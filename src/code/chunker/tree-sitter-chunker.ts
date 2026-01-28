@@ -8,6 +8,9 @@
  */
 
 import Parser from "tree-sitter";
+import { remark } from "remark";
+import remarkGfm from "remark-gfm";
+import type { Root, Heading, Code, Content } from "mdast";
 
 import type { ChunkerConfig, CodeChunk } from "../types.js";
 import type { CodeChunker } from "./base.js";
@@ -25,12 +28,18 @@ interface LanguageDefinition {
    * If a class/module exceeds maxChunkSize, we recurse to find these smaller units.
    */
   childChunkTypes?: string[];
+  /**
+   * Flag to identify documentation languages (markdown, etc.)
+   * Used for filtering search results by content type
+   */
+  isDocumentation?: boolean;
 }
 
 interface LanguageConfig {
   parser: Parser;
   chunkableTypes: string[];
   childChunkTypes?: string[];
+  isDocumentation?: boolean;
 }
 
 /**
@@ -114,6 +123,17 @@ const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // - "rescue" → loses protected code context
     // - "singleton_class" → we pass through it to find methods inside
   },
+  markdown: {
+    // Markdown uses remark parser (unified/mdast) instead of tree-sitter
+    // due to compatibility issues with tree-sitter-markdown grammar (requires tree-sitter 0.26+)
+    // Remark is a robust CommonMark/GFM parser used by VS Code, Gatsby, etc.
+    loadModule: () => Promise.resolve(null),
+    chunkableTypes: [],
+    // Flag for documentation files - enables filtering in search API
+    isDocumentation: true,
+    // Skip tree-sitter parsing, use remark-based chunker
+    skipTreeSitter: true,
+  } as LanguageDefinition & { skipTreeSitter?: boolean },
 };
 
 export class TreeSitterChunker implements CodeChunker {
@@ -194,6 +214,7 @@ export class TreeSitterChunker implements CodeChunker {
         parser,
         chunkableTypes: definition.chunkableTypes,
         childChunkTypes: definition.childChunkTypes,
+        isDocumentation: definition.isDocumentation,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -202,6 +223,15 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   async chunk(code: string, filePath: string, language: string): Promise<CodeChunk[]> {
+    // Check if this language should skip tree-sitter (e.g., markdown uses remark)
+    const definition = LANGUAGE_DEFINITIONS[language];
+    if (definition && (definition as LanguageDefinition & { skipTreeSitter?: boolean }).skipTreeSitter) {
+      // Use specialized chunker for this language (e.g., remark for markdown)
+      if (definition.isDocumentation) {
+        return this.chunkMarkdownSimple(code, filePath, language);
+      }
+    }
+
     // Lazy-load parser for this language
     const langConfig = await this.getLanguageConfig(language);
 
@@ -212,6 +242,7 @@ export class TreeSitterChunker implements CodeChunker {
 
     try {
       const tree = langConfig.parser.parse(code);
+
       const chunks: CodeChunk[] = [];
 
       // Find all chunkable nodes
@@ -357,6 +388,217 @@ export class TreeSitterChunker implements CodeChunker {
       loaded: Array.from(this.parserCache.keys()),
       available: Object.keys(LANGUAGE_DEFINITIONS),
     };
+  }
+
+  /**
+   * Remark-based markdown chunker using unified/mdast AST parser.
+   * Uses remark (CommonMark/GFM parser) instead of tree-sitter due to
+   * compatibility issues with tree-sitter-markdown grammar (requires tree-sitter 0.26+).
+   *
+   * Creates chunks for:
+   * 1. Sections (heading + content until next heading of same/higher level)
+   * 2. Fenced code blocks with language detection (for searching code examples)
+   */
+  private async chunkMarkdownSimple(
+    code: string,
+    filePath: string,
+    language: string,
+  ): Promise<CodeChunk[]> {
+    const chunks: CodeChunk[] = [];
+    const lines = code.split("\n");
+
+    // Parse markdown with remark (GFM for GitHub flavored markdown)
+    const tree = remark().use(remarkGfm).parse(code) as Root;
+
+    // Collect headings with positions
+    interface HeadingInfo {
+      depth: number;
+      text: string;
+      startLine: number;
+      endLine: number;
+      nodeIndex: number;
+    }
+
+    const headings: HeadingInfo[] = [];
+
+    for (let i = 0; i < tree.children.length; i++) {
+      const node = tree.children[i];
+      if (node.type === "heading" && node.position) {
+        // Extract text from heading children
+        const text = this.extractTextFromMdastNode(node);
+        headings.push({
+          depth: node.depth,
+          text,
+          startLine: node.position.start.line,
+          endLine: node.position.end.line,
+          nodeIndex: i,
+        });
+      }
+    }
+
+    // Collect code blocks
+    interface CodeBlockInfo {
+      lang: string | undefined;
+      value: string;
+      startLine: number;
+      endLine: number;
+    }
+
+    const codeBlocks: CodeBlockInfo[] = [];
+
+    const collectCodeBlocks = (node: Content) => {
+      if (node.type === "code" && node.position) {
+        codeBlocks.push({
+          lang: (node as Code).lang || undefined,
+          value: (node as Code).value,
+          startLine: node.position.start.line,
+          endLine: node.position.end.line,
+        });
+      }
+      if ("children" in node && Array.isArray(node.children)) {
+        for (const child of node.children) {
+          collectCodeBlocks(child as Content);
+        }
+      }
+    };
+
+    for (const child of tree.children) {
+      collectCodeBlocks(child);
+    }
+
+    // Create section chunks
+    for (let i = 0; i < headings.length; i++) {
+      const heading = headings[i];
+
+      // Find end of section (next heading of ANY level, or end of document)
+      // This creates smaller, more focused chunks for semantic search
+      let sectionEndLine = lines.length;
+      if (i + 1 < headings.length) {
+        sectionEndLine = headings[i + 1].startLine - 1;
+      }
+
+      // Extract section content from original code
+      const sectionLines = lines.slice(heading.startLine - 1, sectionEndLine);
+      const sectionContent = sectionLines.join("\n").trim();
+
+      // Skip very small sections
+      if (sectionContent.length < 50) {
+        continue;
+      }
+
+      // If section is too large, split it
+      if (sectionContent.length > this.config.maxChunkSize * 2) {
+        const subChunks = await this.fallbackChunker.chunk(sectionContent, filePath, language);
+        for (const subChunk of subChunks) {
+          chunks.push({
+            ...subChunk,
+            startLine: heading.startLine + subChunk.startLine - 1,
+            endLine: heading.startLine + subChunk.endLine - 1,
+            metadata: {
+              ...subChunk.metadata,
+              chunkIndex: chunks.length,
+              name: heading.text,
+              parentName: heading.text,
+              parentType: `h${heading.depth}`,
+              isDocumentation: true,
+            },
+          });
+        }
+        continue;
+      }
+
+      chunks.push({
+        content: sectionContent,
+        startLine: heading.startLine,
+        endLine: sectionEndLine,
+        metadata: {
+          filePath,
+          language,
+          chunkIndex: chunks.length,
+          chunkType: "block",
+          name: heading.text,
+          isDocumentation: true,
+        },
+      });
+    }
+
+    // Create code block chunks (for searching code examples in docs)
+    for (const block of codeBlocks) {
+      // Skip very small code blocks
+      if (block.value.length < 30) {
+        continue;
+      }
+
+      chunks.push({
+        content: block.value,
+        startLine: block.startLine + 1, // +1 to skip ``` line
+        endLine: block.endLine - 1,     // -1 to skip closing ```
+        metadata: {
+          filePath,
+          // Use the code block's language, not "markdown"
+          language: block.lang || "code",
+          chunkIndex: chunks.length,
+          chunkType: "block",
+          name: block.lang ? `Code: ${block.lang}` : "Code block",
+          isDocumentation: true,
+        },
+      });
+    }
+
+    // Handle preamble (content before first heading)
+    if (headings.length > 0 && headings[0].startLine > 1) {
+      const preamble = lines.slice(0, headings[0].startLine - 1).join("\n").trim();
+      if (preamble.length >= 50) {
+        chunks.unshift({
+          content: preamble,
+          startLine: 1,
+          endLine: headings[0].startLine - 1,
+          metadata: {
+            filePath,
+            language,
+            chunkIndex: 0,
+            chunkType: "block",
+            name: "Preamble",
+            isDocumentation: true,
+          },
+        });
+        // Re-index all chunks
+        for (let i = 1; i < chunks.length; i++) {
+          chunks[i].metadata.chunkIndex = i;
+        }
+      }
+    }
+
+    // If no headings and no code blocks, treat whole document as one chunk
+    if (chunks.length === 0 && code.length >= 50) {
+      chunks.push({
+        content: code.trim(),
+        startLine: 1,
+        endLine: lines.length,
+        metadata: {
+          filePath,
+          language,
+          chunkIndex: 0,
+          chunkType: "block",
+          isDocumentation: true,
+        },
+      });
+    }
+
+    return chunks;
+  }
+
+  /**
+   * Extract text content from mdast node (handles nested inlines like emphasis, links, etc.)
+   */
+  private extractTextFromMdastNode(node: Content): string {
+    if (node.type === "text") {
+      return (node as { type: "text"; value: string }).value;
+    }
+    if ("children" in node && Array.isArray(node.children)) {
+      return node.children.map((child: Content) => this.extractTextFromMdastNode(child)).join("");
+    }
+    return "";
   }
 
   /**
