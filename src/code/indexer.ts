@@ -218,6 +218,7 @@ export class CodeIndexer {
                       chunkType: chunk.metadata.chunkType,
                       parentName: chunk.metadata.parentName,
                       parentType: chunk.metadata.parentType,
+                      isDocumentation: chunk.metadata.isDocumentation,
                     },
                   },
                   chunkId: metadataExtractor.generateChunkId(chunk),
@@ -405,7 +406,7 @@ export class CodeIndexer {
 
     // Build filter
     let filter: any;
-    if (options?.fileTypes || options?.pathPattern) {
+    if (options?.fileTypes || options?.pathPattern || options?.documentationOnly) {
       filter = { must: [] };
 
       if (options.fileTypes && options.fileTypes.length > 0) {
@@ -426,6 +427,14 @@ export class CodeIndexer {
         filter.must.push({
           key: "relativePath",
           match: { text: regex },
+        });
+      }
+
+      // Filter to documentation only (markdown, READMEs, etc.)
+      if (options.documentationOnly) {
+        filter.must.push({
+          key: "isDocumentation",
+          match: { value: true },
         });
       }
     }
@@ -815,6 +824,7 @@ export class CodeIndexer {
                       chunkType: chunk.metadata.chunkType,
                       parentName: chunk.metadata.parentName,
                       parentType: chunk.metadata.parentType,
+                      isDocumentation: chunk.metadata.isDocumentation,
                     },
                   },
                   chunkId: metadataExtractor.generateChunkId(chunk),
