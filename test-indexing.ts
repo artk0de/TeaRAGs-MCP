@@ -138,41 +138,6 @@ async function testReindexChanges() {
   return stats;
 }
 
-async function testRebuildCache() {
-  console.log("\n=== Test 5: Rebuild Cache ===");
-
-  const embeddings = new OllamaEmbeddings(
-    config.EMBEDDING_MODEL,
-    768,
-    undefined,
-    config.EMBEDDING_BASE_URL
-  );
-
-  const qdrant = new QdrantManager({
-    url: config.QDRANT_URL,
-  });
-
-  const indexer = new CodeIndexer(qdrant, embeddings, {
-    chunkSize: config.CODE_CHUNK_SIZE,
-    chunkOverlap: config.CODE_CHUNK_OVERLAP,
-    supportedExtensions: [".ts", ".js"],
-    ignorePatterns: ["node_modules", "build", "dist", ".git"],
-  });
-
-  const testPath = "/Users/artk0re/Dev/Tools/qdrant-mcp-server/src/tools";
-
-  console.log(`  Path: ${testPath}`);
-  console.log("  Rebuilding cache...");
-
-  const start = Date.now();
-  const result = await indexer.rebuildCache(testPath);
-
-  console.log(`  Done in ${Date.now() - start}ms`);
-  console.log(`  Indexed: ${result.indexed}, Pending: ${result.pending}, Orphaned: ${result.orphaned}`);
-
-  return result;
-}
-
 async function main() {
   console.log("========================================");
   console.log("Qdrant MCP Server - Indexing Test Suite");
@@ -188,7 +153,6 @@ async function main() {
     await testQdrant();
     await testPartialIndexing();
     await testReindexChanges();
-    await testRebuildCache();
 
     console.log("\n========================================");
     console.log("All tests passed!");

@@ -41,10 +41,41 @@ import type { QdrantManager } from "../../src/qdrant/client.js";
 class MockQdrantManager implements Partial<QdrantManager> {
   private collections = new Map<string, any>();
   private points = new Map<string, any[]>();
+  private payloadIndexes = new Map<string, Set<string>>();
 
   // Collection management
   async collectionExists(name: string): Promise<boolean> {
     return this.collections.has(name);
+  }
+
+  // Payload index methods (for schema migration)
+  async hasPayloadIndex(collectionName: string, fieldName: string): Promise<boolean> {
+    const indexes = this.payloadIndexes.get(collectionName);
+    return indexes?.has(fieldName) ?? false;
+  }
+
+  async createPayloadIndex(
+    collectionName: string,
+    fieldName: string,
+    _fieldSchema: string,
+  ): Promise<void> {
+    if (!this.payloadIndexes.has(collectionName)) {
+      this.payloadIndexes.set(collectionName, new Set());
+    }
+    this.payloadIndexes.get(collectionName)!.add(fieldName);
+  }
+
+  async ensurePayloadIndex(
+    collectionName: string,
+    fieldName: string,
+    fieldSchema: string,
+  ): Promise<boolean> {
+    const exists = await this.hasPayloadIndex(collectionName, fieldName);
+    if (!exists) {
+      await this.createPayloadIndex(collectionName, fieldName, fieldSchema);
+      return true;
+    }
+    return false;
   }
 
   async listCollections(): Promise<string[]> {
@@ -185,6 +216,16 @@ class MockQdrantManager implements Partial<QdrantManager> {
       collectionName,
       points.filter((p) => !pathsSet.has(p.payload?.relativePath)),
     );
+  }
+
+  async deletePointsByPathsBatched(
+    collectionName: string,
+    relativePaths: string[],
+    _options?: { batchSize?: number; concurrency?: number },
+    _progressCallback?: (progress: { processed: number; total: number; batchNumber: number }) => void,
+  ): Promise<{ deletedCount: number; batchesProcessed: number }> {
+    await this.deletePointsByPaths(collectionName, relativePaths);
+    return { deletedCount: relativePaths.length, batchesProcessed: 1 };
   }
 
   // Indexing control

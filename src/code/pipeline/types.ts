@@ -44,6 +44,10 @@ export interface ChunkItem extends WorkItem {
       chunkIndex: number;
       name?: string;
       chunkType?: string;
+      /** Parent class/module name for methods extracted from large classes */
+      parentName?: string;
+      /** Parent AST node type (e.g., "class", "module") */
+      parentType?: string;
     };
   };
   /** Pre-computed chunk ID */

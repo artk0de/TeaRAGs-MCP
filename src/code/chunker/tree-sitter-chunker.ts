@@ -105,11 +105,14 @@ const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
       "singleton_class",   // class << self ... end
     ],
     // When class/module is too large, recursively look for these smaller units
-    childChunkTypes: ["method", "singleton_method", "singleton_class"],
+    // NOTE: "singleton_class" removed from childChunkTypes - we traverse THROUGH it
+    // to find the methods inside (class << self ... end contains methods)
+    childChunkTypes: ["method", "singleton_method"],
     // Removed problematic types:
     // - "lambda", "block" → too small (1 line), fragments context
     // - "do_block" → creates too many tiny chunks from iterators
     // - "rescue" → loses protected code context
+    // - "singleton_class" → we pass through it to find methods inside
   },
 };
 

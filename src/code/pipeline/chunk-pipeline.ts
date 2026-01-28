@@ -325,6 +325,12 @@ export class ChunkPipeline {
             ...(item.chunk.metadata.chunkType && {
               chunkType: item.chunk.metadata.chunkType,
             }),
+            ...(item.chunk.metadata.parentName && {
+              parentName: item.chunk.metadata.parentName,
+            }),
+            ...(item.chunk.metadata.parentType && {
+              parentType: item.chunk.metadata.parentType,
+            }),
           },
         };
       });
