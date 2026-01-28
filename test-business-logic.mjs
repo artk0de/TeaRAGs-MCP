@@ -17,6 +17,8 @@ import { ShardedSnapshotManager } from "./build/code/sync/sharded-snapshot.js";
 import { ConsistentHash } from "./build/code/sync/consistent-hash.js";
 import { SnapshotMigrator } from "./build/code/sync/migration.js";
 import { PointsAccumulator, createAccumulator } from "./build/qdrant/accumulator.js";
+import { PipelineManager, WorkerPool, BatchAccumulator, ChunkPipeline, pipelineLog, createQdrantPipeline, DEFAULT_CONFIG } from "./build/code/pipeline/index.js";
+import { SchemaManager, CURRENT_SCHEMA_VERSION } from "./build/code/schema-migration.js";
 import { promises as fs } from "node:fs";
 import { join, basename } from "node:path";
 import { randomUUID } from "crypto";
@@ -30,6 +32,9 @@ const config = {
 
 const TEST_COLLECTION = `test_bl_${Date.now()}`;
 const TEST_DIR = `/tmp/qdrant_test_${Date.now()}`;
+
+// Track all indexed paths for cleanup
+const indexedPaths = new Set();
 
 let passed = 0;
 let failed = 0;
@@ -238,7 +243,7 @@ async function testQdrantOperations(qdrant) {
   const afterFilterDelete = await qdrant.getCollectionInfo(TEST_COLLECTION);
   assert(afterFilterDelete.pointsCount === 1, `Delete by filter: ${afterFilterDelete.pointsCount} remaining`);
 
-  // Batch delete by paths
+  // Batch delete by paths (single request)
   await qdrant.addPoints(TEST_COLLECTION, [
     { id: randomUUID(), vector: makeVector(5), payload: { relativePath: "src/a.ts" } },
     { id: randomUUID(), vector: makeVector(6), payload: { relativePath: "src/b.ts" } },
@@ -247,6 +252,42 @@ async function testQdrantOperations(qdrant) {
   await qdrant.deletePointsByPaths(TEST_COLLECTION, ["src/a.ts", "src/b.ts"]);
   const afterPathDelete = await qdrant.getCollectionInfo(TEST_COLLECTION);
   assert(afterPathDelete.pointsCount === 2, `Batch delete by paths: ${afterPathDelete.pointsCount} remaining`);
+
+  // Pipelined batch delete (with batching and concurrency)
+  log("info", "Testing pipelined batch delete...");
+
+  // Add many points to test batching
+  const manyPoints = Array.from({ length: 50 }, (_, i) => ({
+    id: randomUUID(),
+    vector: makeVector(100 + i),
+    payload: { relativePath: `batch/file${i}.ts` },
+  }));
+  await qdrant.addPoints(TEST_COLLECTION, manyPoints);
+
+  const beforeBatchDelete = await qdrant.getCollectionInfo(TEST_COLLECTION);
+  const pathsToDelete = Array.from({ length: 30 }, (_, i) => `batch/file${i}.ts`);
+
+  let progressCalls = 0;
+  const batchResult = await qdrant.deletePointsByPathsBatched(TEST_COLLECTION, pathsToDelete, {
+    batchSize: 10,
+    concurrency: 2,
+    onProgress: (deleted, total) => {
+      progressCalls++;
+    },
+  });
+
+  const afterBatchDelete = await qdrant.getCollectionInfo(TEST_COLLECTION);
+  assert(batchResult.deletedPaths === 30, `Batched delete reports correct count: ${batchResult.deletedPaths}`);
+  assert(batchResult.batchCount === 3, `Batched delete used correct batches: ${batchResult.batchCount}`);
+  assert(progressCalls >= 1, `Progress callback was invoked: ${progressCalls} times`);
+  assert(afterBatchDelete.pointsCount === beforeBatchDelete.pointsCount - 30,
+    `Batched delete removed correct points: ${afterBatchDelete.pointsCount}`);
+
+  // Cleanup remaining batch points to restore state for next test
+  const remainingBatchPaths = Array.from({ length: 20 }, (_, i) => `batch/file${30 + i}.ts`);
+  await qdrant.deletePointsByPathsBatched(TEST_COLLECTION, remainingBatchPaths, { batchSize: 20 });
+  const afterCleanup = await qdrant.getCollectionInfo(TEST_COLLECTION);
+  assert(afterCleanup.pointsCount === 2, `Batch cleanup restored state: ${afterCleanup.pointsCount}`);
 
   // Optimized add
   const optPoints = [{ id: randomUUID(), vector: makeVector(8), payload: { test: "optimized" } }];
@@ -416,6 +457,7 @@ export class ProductService {
   await createTestFile(TEST_DIR, "src/product.ts", file2Content);
 
   // Initial indexing
+  indexedPaths.add(TEST_DIR);
   const stats = await indexer.indexCodebase(TEST_DIR, { force: true });
   assert(stats.filesScanned >= 2, `Files scanned: ${stats.filesScanned}`);
   assert(stats.filesIndexed >= 2, `Files indexed: ${stats.filesIndexed}`);
@@ -503,6 +545,7 @@ async function testHashConsistency(qdrant, embeddings) {
   await createTestFile(hashTestDir, "version.ts", content1);
 
   // Index initial version
+  indexedPaths.add(hashTestDir);
   await indexer.indexCodebase(hashTestDir, { force: true });
 
   // Calculate expected hash
@@ -550,6 +593,7 @@ async function testIgnorePatterns(qdrant, embeddings) {
     ignorePatterns: ["node_modules", ".git", "dist", "*.spec.ts"],
   }));
 
+  indexedPaths.add(ignoreTestDir);
   const stats = await indexer.indexCodebase(ignoreTestDir, { force: true });
 
   // Should only index src/app.ts
@@ -626,6 +670,7 @@ function helperFunction() {
     chunkOverlap: 30,
   }));
 
+  indexedPaths.add(chunkTestDir);
   const stats = await indexer.indexCodebase(chunkTestDir, { force: true });
   assert(stats.chunksCreated > 1, `Multiple chunks created: ${stats.chunksCreated}`);
 
@@ -676,12 +721,32 @@ class PythonClass:
         return "python"
 `);
 
+  // Ruby
+  await createTestFile(langTestDir, "service.rb", `
+class RubyService
+  def initialize(config)
+    @config = config
+  end
+
+  def process(data)
+    data.map { |item| transform(item) }
+  rescue StandardError => e
+    handle_error(e)
+  end
+
+  def self.create(options)
+    new(options)
+  end
+end
+`);
+
   const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
-    supportedExtensions: [".ts", ".js", ".py"],
+    supportedExtensions: [".ts", ".js", ".py", ".rb"],
   }));
 
+  indexedPaths.add(langTestDir);
   const stats = await indexer.indexCodebase(langTestDir, { force: true });
-  assert(stats.filesIndexed === 3, `All language files indexed: ${stats.filesIndexed}`);
+  assert(stats.filesIndexed === 4, `All language files indexed: ${stats.filesIndexed}`);
 
   // Search in each language
   const tsResults = await indexer.searchCode(langTestDir, "TypeScriptClass");
@@ -692,6 +757,120 @@ class PythonClass:
 
   const pyResults = await indexer.searchCode(langTestDir, "PythonClass");
   assert(pyResults.length > 0, `Python searchable: ${pyResults.length}`);
+
+  const rbResults = await indexer.searchCode(langTestDir, "RubyService process");
+  assert(rbResults.length > 0, `Ruby searchable: ${rbResults.length}`);
+}
+
+async function testRubyASTChunking(qdrant, embeddings) {
+  section("8b. Ruby AST Chunking (Rails Patterns)");
+
+  const rubyTestDir = join(TEST_DIR, "ruby_test");
+  await fs.mkdir(rubyTestDir, { recursive: true });
+
+  // Rails-style Service object
+  await createTestFile(rubyTestDir, "user_service.rb", `
+# User service with typical Rails patterns
+class UserService
+  def initialize(repository)
+    @repository = repository
+  end
+
+  def find_user(id)
+    @repository.find(id)
+  rescue ActiveRecord::RecordNotFound => e
+    Rails.logger.error("User not found: #{id}")
+    nil
+  end
+
+  def create_user(params)
+    User.create!(params)
+  rescue ActiveRecord::RecordInvalid => e
+    { error: e.message }
+  end
+
+  def self.call(id)
+    new(UserRepository.new).find_user(id)
+  end
+end
+`);
+
+  // Rails Concern / Module
+  await createTestFile(rubyTestDir, "authenticatable.rb", `
+module Authenticatable
+  extend ActiveSupport::Concern
+
+  included do
+    before_action :authenticate_user!
+  end
+
+  def authenticate_user!
+    redirect_to login_path unless current_user
+  end
+
+  def current_user
+    @current_user ||= User.find_by(id: session[:user_id])
+  end
+end
+`);
+
+  // Ruby with lambdas and blocks
+  await createTestFile(rubyTestDir, "validator.rb", `
+class Validator
+  RULES = {
+    email: ->(value) { value.match?(/\\A[^@]+@[^@]+\\z/) },
+    phone: lambda { |v| v.gsub(/\\D/, '').length == 10 }
+  }
+
+  def validate(data)
+    data.each_pair do |key, value|
+      rule = RULES[key]
+      next unless rule
+      yield key, rule.call(value)
+    end
+  end
+
+  def transform(items)
+    items.map { |item| process(item) }
+         .select { |result| result.valid? }
+         .group_by(&:category)
+  end
+end
+`);
+
+  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
+    supportedExtensions: [".rb"],
+  }));
+
+  indexedPaths.add(rubyTestDir);
+  const stats = await indexer.indexCodebase(rubyTestDir, { force: true });
+  assert(stats.filesIndexed === 3, `Ruby files indexed: ${stats.filesIndexed}`);
+  assert(stats.chunksCreated > 0, `Ruby chunks created: ${stats.chunksCreated}`);
+
+  // Test semantic search for Ruby patterns
+  log("info", "Testing Ruby semantic search...");
+
+  // Error handling
+  const rescueResults = await indexer.searchCode(rubyTestDir, "error handling rescue exception");
+  assert(rescueResults.length > 0, `Rescue/error handling found: ${rescueResults.length}`);
+
+  // Service object pattern
+  const serviceResults = await indexer.searchCode(rubyTestDir, "UserService find create");
+  assert(serviceResults.length > 0, `Service object found: ${serviceResults.length}`);
+
+  // Concern/module
+  const concernResults = await indexer.searchCode(rubyTestDir, "Authenticatable authenticate current_user");
+  assert(concernResults.length > 0, `Concern/module found: ${concernResults.length}`);
+
+  // Lambda/proc
+  const lambdaResults = await indexer.searchCode(rubyTestDir, "lambda validation rules");
+  assert(lambdaResults.length > 0, `Lambda/validation found: ${lambdaResults.length}`);
+
+  // Block operations
+  const blockResults = await indexer.searchCode(rubyTestDir, "map select transform");
+  assert(blockResults.length > 0, `Block operations found: ${blockResults.length}`);
+
+  log("pass", "Ruby AST chunking works for Rails patterns");
 }
 
 async function testSearchAccuracy(qdrant, embeddings) {
@@ -757,6 +936,7 @@ export class CacheService {
     chunkOverlap: 100,
   }));
 
+  indexedPaths.add(searchTestDir);
   await indexer.indexCodebase(searchTestDir, { force: true });
 
   // Semantic search tests - verify that search returns meaningful content
@@ -805,6 +985,7 @@ async function testEdgeCases(qdrant, embeddings) {
   const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
 
   // Should not crash
+  indexedPaths.add(edgeTestDir);
   let errorOccurred = false;
   try {
     await indexer.indexCodebase(edgeTestDir, { force: true });
@@ -860,6 +1041,7 @@ export class Service${i} {
 `);
   }
 
+  indexedPaths.add(batchTestDir);
   const indexStats = await indexer.indexCodebase(batchTestDir, { force: true });
   assert(indexStats.filesIndexed === 5, `All files indexed: ${indexStats.filesIndexed}`);
   assert(indexStats.chunksCreated > 0, `Chunks created: ${indexStats.chunksCreated}`);
@@ -967,6 +1149,7 @@ async function testConcurrentSafety(qdrant, embeddings) {
   const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
 
   // Index first
+  indexedPaths.add(concTestDir);
   await indexer.indexCodebase(concTestDir, { force: true });
 
   // Concurrent searches should not interfere
@@ -1181,6 +1364,430 @@ async function testParallelSync() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 13. Pipeline & WorkerPool Tests
+// ═══════════════════════════════════════════════════════════════
+
+async function testPipelineWorkerpool(qdrant) {
+  section("13. Pipeline & WorkerPool Tests");
+
+  // Test 1: WorkerPool bounded concurrency
+  log("info", "Testing WorkerPool bounded concurrency...");
+
+  let maxConcurrent = 0;
+  let currentConcurrent = 0;
+  const concurrencyLog = [];
+
+  const workerPool = new WorkerPool({
+    concurrency: 2,
+    maxRetries: 2,
+    retryBaseDelayMs: 50,
+    retryMaxDelayMs: 500,
+  });
+
+  const handler = async (batch) => {
+    currentConcurrent++;
+    maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
+    concurrencyLog.push({ id: batch.id, concurrent: currentConcurrent });
+    await new Promise((r) => setTimeout(r, 50));
+    currentConcurrent--;
+  };
+
+  // Submit 6 batches - should process max 2 at a time
+  const batches = Array.from({ length: 6 }, (_, i) => ({
+    id: `batch-${i}`,
+    type: "upsert",
+    items: [{ type: "upsert", id: `item-${i}`, point: { id: `p-${i}`, vector: [1], payload: {} } }],
+    createdAt: Date.now(),
+  }));
+
+  const promises = batches.map((batch) => workerPool.submit(batch, handler));
+  await Promise.all(promises);
+
+  assert(maxConcurrent <= 2, `WorkerPool respects concurrency limit: max=${maxConcurrent}`);
+
+  const stats = workerPool.getStats();
+  assert(stats.processed === 6, `WorkerPool processed all batches: ${stats.processed}`);
+  assert(stats.errors === 0, `WorkerPool no errors: ${stats.errors}`);
+  workerPool.forceShutdown();
+
+  // Test 2: WorkerPool retry with backoff
+  log("info", "Testing WorkerPool retry with exponential backoff...");
+
+  let retryAttempts = 0;
+  const retryPool = new WorkerPool({
+    concurrency: 1,
+    maxRetries: 3,
+    retryBaseDelayMs: 20,
+    retryMaxDelayMs: 200,
+  });
+
+  const failingHandler = async (batch) => {
+    retryAttempts++;
+    if (retryAttempts < 3) {
+      throw new Error(`Simulated failure ${retryAttempts}`);
+    }
+    // Success on 3rd attempt
+  };
+
+  const retryBatch = {
+    id: "retry-test",
+    type: "upsert",
+    items: [{ type: "upsert", id: "retry-item", point: { id: "rp", vector: [1], payload: {} } }],
+    createdAt: Date.now(),
+  };
+
+  const retryResult = await retryPool.submit(retryBatch, failingHandler);
+  assert(retryResult.success, "WorkerPool retry succeeded after failures");
+  assert(retryResult.retryCount === 2, `WorkerPool retry count: ${retryResult.retryCount}`);
+  assert(retryAttempts === 3, `Total attempts made: ${retryAttempts}`);
+  retryPool.forceShutdown();
+
+  // Test 3: BatchAccumulator batch formation
+  log("info", "Testing BatchAccumulator batch formation...");
+
+  const receivedBatches = [];
+  const accumulator = new BatchAccumulator(
+    { batchSize: 3, flushTimeoutMs: 100, maxQueueSize: 10 },
+    "upsert",
+    (batch) => receivedBatches.push(batch)
+  );
+
+  // Add 5 items - should create 1 full batch (3) immediately
+  for (let i = 0; i < 5; i++) {
+    accumulator.add({
+      type: "upsert",
+      id: `acc-item-${i}`,
+      point: { id: `ap-${i}`, vector: [1], payload: {} },
+    });
+  }
+
+  assert(receivedBatches.length === 1, `BatchAccumulator created batch on size: ${receivedBatches.length}`);
+  assert(receivedBatches[0].items.length === 3, `First batch has 3 items: ${receivedBatches[0].items.length}`);
+  assert(accumulator.getPendingCount() === 2, `BatchAccumulator has 2 pending: ${accumulator.getPendingCount()}`);
+
+  // Test flush
+  accumulator.flush();
+  assert(receivedBatches.length === 2, `BatchAccumulator flushed partial batch: ${receivedBatches.length}`);
+  assert(receivedBatches[1].items.length === 2, `Second batch has 2 items: ${receivedBatches[1].items.length}`);
+
+  // Test 4: BatchAccumulator timeout flush
+  log("info", "Testing BatchAccumulator timeout flush...");
+
+  const timeoutBatches = [];
+  const timeoutAccumulator = new BatchAccumulator(
+    { batchSize: 10, flushTimeoutMs: 50, maxQueueSize: 10 },
+    "delete",
+    (batch) => timeoutBatches.push(batch)
+  );
+
+  timeoutAccumulator.add({ type: "delete", id: "del-1", relativePath: "path1.ts" });
+  assert(timeoutBatches.length === 0, "No batch yet before timeout");
+
+  // Wait for timeout flush
+  await new Promise((r) => setTimeout(r, 100));
+  assert(timeoutBatches.length === 1, `Batch flushed after timeout: ${timeoutBatches.length}`);
+  assert(timeoutBatches[0].items.length === 1, "Timeout batch has correct items");
+
+  // Test 5: PipelineManager coordination
+  log("info", "Testing PipelineManager coordination...");
+
+  let upsertBatchCount = 0;
+  let deleteBatchCount = 0;
+
+  const pipeline = new PipelineManager(
+    {
+      handleUpsertBatch: async (batch) => {
+        upsertBatchCount++;
+        await new Promise((r) => setTimeout(r, 20));
+      },
+      handleDeleteBatch: async (batch) => {
+        deleteBatchCount++;
+        await new Promise((r) => setTimeout(r, 10));
+      },
+    },
+    {
+      workerPool: { concurrency: 2, maxRetries: 1, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+      upsertAccumulator: { batchSize: 2, flushTimeoutMs: 30, maxQueueSize: 10 },
+      deleteAccumulator: { batchSize: 3, flushTimeoutMs: 30, maxQueueSize: 10 },
+    }
+  );
+
+  pipeline.start();
+
+  // Add upserts and deletes
+  for (let i = 0; i < 5; i++) {
+    pipeline.addUpsert({ id: `up-${i}`, vector: [1, 2, 3], payload: { x: i } });
+  }
+  for (let i = 0; i < 4; i++) {
+    pipeline.addDelete(`delete-path-${i}.ts`);
+  }
+
+  await pipeline.flush();
+
+  const pipelineStats = pipeline.getStats();
+  assert(pipelineStats.itemsProcessed === 9, `Pipeline processed 9 items: ${pipelineStats.itemsProcessed}`);
+  assert(upsertBatchCount >= 2, `Upsert batches created: ${upsertBatchCount}`);
+  assert(deleteBatchCount >= 1, `Delete batches created: ${deleteBatchCount}`);
+  assert(pipelineStats.errors === 0, `Pipeline no errors: ${pipelineStats.errors}`);
+
+  await pipeline.shutdown();
+
+  // Test 6: WorkerPool force shutdown cancels pending
+  log("info", "Testing WorkerPool force shutdown...");
+
+  const neverResolvingPool = new WorkerPool({ concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 });
+  const neverHandler = () => new Promise(() => {}); // Never resolves
+
+  const p1 = neverResolvingPool.submit({ id: "never-1", type: "upsert", items: [], createdAt: Date.now() }, neverHandler);
+  const p2 = neverResolvingPool.submit({ id: "never-2", type: "upsert", items: [], createdAt: Date.now() }, neverHandler);
+  const p3 = neverResolvingPool.submit({ id: "never-3", type: "upsert", items: [], createdAt: Date.now() }, neverHandler);
+
+  // Force shutdown while work is pending
+  neverResolvingPool.forceShutdown();
+
+  // Queued items should be cancelled (resolved with error)
+  const [r2, r3] = await Promise.all([p2, p3]);
+  assert(r2.success === false && r2.error === "WorkerPool force shutdown", "Force shutdown cancels queued batch");
+  assert(neverResolvingPool.getQueueDepth() === 0, "Queue empty after force shutdown");
+
+  // Test 7: ChunkPipeline integration (chunks → embeddings → Qdrant)
+  log("info", "Testing ChunkPipeline integration...");
+
+  // Create mock embedding provider that tracks calls
+  let embeddingBatchCalls = 0;
+  let totalChunksEmbedded = 0;
+  const mockEmbeddings = {
+    embedBatch: async (texts) => {
+      embeddingBatchCalls++;
+      totalChunksEmbedded += texts.length;
+      // Return mock embeddings
+      return texts.map(() => ({ embedding: [1, 2, 3, 4, 5] }));
+    },
+    getDimensions: () => 5,
+  };
+
+  // Create mock Qdrant that tracks calls
+  let qdrantUpsertCalls = 0;
+  let totalPointsUpserted = 0;
+  const mockQdrant = {
+    addPointsOptimized: async (collection, points, options) => {
+      qdrantUpsertCalls++;
+      totalPointsUpserted += points.length;
+    },
+    addPointsWithSparse: async (collection, points) => {
+      qdrantUpsertCalls++;
+      totalPointsUpserted += points.length;
+    },
+  };
+
+  const chunkPipeline = new ChunkPipeline(
+    mockQdrant,
+    mockEmbeddings,
+    "test_chunk_collection",
+    {
+      workerPool: { concurrency: 2, maxRetries: 1, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+      accumulator: { batchSize: 3, flushTimeoutMs: 50, maxQueueSize: 10 },
+      enableHybrid: false,
+    }
+  );
+
+  chunkPipeline.start();
+
+  // Add 7 chunks - should create batches of 3
+  for (let i = 0; i < 7; i++) {
+    chunkPipeline.addChunk(
+      {
+        content: `test content ${i}`,
+        startLine: i * 10,
+        endLine: i * 10 + 10,
+        metadata: {
+          filePath: `/test/path/file${i}.ts`,
+          language: "typescript",
+          chunkIndex: i,
+        },
+      },
+      `chunk-${i}`,
+      "/test/path"
+    );
+  }
+
+  // Flush and wait for all processing
+  await chunkPipeline.flush();
+
+  const chunkStats = chunkPipeline.getStats();
+  assert(chunkStats.itemsProcessed === 7, `ChunkPipeline processed all chunks: ${chunkStats.itemsProcessed}`);
+  assert(embeddingBatchCalls >= 2, `ChunkPipeline called embedBatch in batches: ${embeddingBatchCalls}`);
+  assert(totalChunksEmbedded === 7, `All chunks were embedded: ${totalChunksEmbedded}`);
+  assert(qdrantUpsertCalls >= 2, `ChunkPipeline called Qdrant in batches: ${qdrantUpsertCalls}`);
+  assert(totalPointsUpserted === 7, `All points were upserted: ${totalPointsUpserted}`);
+  assert(chunkStats.errors === 0, `ChunkPipeline no errors: ${chunkStats.errors}`);
+
+  await chunkPipeline.shutdown();
+
+  // Test 8: Parallel Pipeline Optimization (Delete + Add can run in parallel)
+  log("info", "Testing parallel pipeline optimization...");
+
+  const timeline = [];
+  const recordEvent = (event) => {
+    timeline.push({ event, time: Date.now() });
+  };
+
+  // Simulate the parallel pipeline flow
+  const simulateDelete = async () => {
+    recordEvent("delete_start");
+    await new Promise(r => setTimeout(r, 50)); // Simulate delete taking 50ms
+    recordEvent("delete_end");
+  };
+
+  const simulateAdd = async () => {
+    recordEvent("add_start");
+    await new Promise(r => setTimeout(r, 100)); // Simulate add taking 100ms
+    recordEvent("add_end");
+    return 10; // chunks added
+  };
+
+  const simulateModified = async () => {
+    recordEvent("modified_start");
+    await new Promise(r => setTimeout(r, 80)); // Simulate modified taking 80ms
+    recordEvent("modified_end");
+    return 20; // chunks modified
+  };
+
+  const startTime = Date.now();
+
+  // Optimized parallel flow (same as in indexer.ts)
+  const deletePromise = simulateDelete();
+  const addPromise = simulateAdd();
+
+  // Modified starts after delete (not after add!)
+  await deletePromise;
+  const modifiedPromise = simulateModified();
+
+  // Wait for both add and modified
+  const [addedChunks2, modifiedChunks2] = await Promise.all([addPromise, modifiedPromise]);
+
+  const totalTime = Date.now() - startTime;
+
+  // Analyze timeline
+  const events = timeline.map(t => ({ ...t, relativeTime: t.time - timeline[0].time }));
+  const deleteEnd = events.find(e => e.event === "delete_end").relativeTime;
+  const addEnd = events.find(e => e.event === "add_end").relativeTime;
+  const modifiedStart = events.find(e => e.event === "modified_start").relativeTime;
+
+  // Verify parallelism
+  assert(
+    modifiedStart >= deleteEnd - 5 && modifiedStart <= deleteEnd + 15,
+    `Modified started right after delete (modified_start=${modifiedStart}ms, delete_end=${deleteEnd}ms)`
+  );
+
+  // Total time should be ~150ms (delete 50ms, then max(add remaining 50ms, modified 80ms))
+  // Not 230ms (delete 50ms + add 100ms + modified 80ms sequential)
+  assert(
+    totalTime < 200,
+    `Parallel pipelines completed in ${totalTime}ms (should be <200ms if parallel)`
+  );
+
+  assert(addedChunks2 === 10, "Add chunks returned correctly");
+  assert(modifiedChunks2 === 20, "Modified chunks returned correctly");
+
+  log("pass", "Pipeline & WorkerPool tests complete");
+}
+
+async function testSchemaAndDeleteOptimization(qdrant) {
+  section("15. Schema Migration & Delete Optimization");
+
+  // Test 9: SchemaManager and payload index migration
+  log("info", "Testing SchemaManager and payload index...");
+
+  const schemaTestCollection = `test_schema_${Date.now()}`;
+
+  // Create collection first
+  await qdrant.createCollection(schemaTestCollection, 5, "Cosine", false);
+
+  try {
+    // Test hasPayloadIndex (should be false for new collection)
+    const indexExistsBefore = await qdrant.hasPayloadIndex(schemaTestCollection, "relativePath");
+    assert(indexExistsBefore === false, "New collection has no relativePath index");
+
+    // Test createPayloadIndex
+    await qdrant.createPayloadIndex(schemaTestCollection, "relativePath", "keyword");
+
+    // Verify index was created
+    const indexExistsAfter = await qdrant.hasPayloadIndex(schemaTestCollection, "relativePath");
+    assert(indexExistsAfter === true, "Index created successfully");
+
+    // Test ensurePayloadIndex (should not recreate)
+    const created = await qdrant.ensurePayloadIndex(schemaTestCollection, "relativePath", "keyword");
+    assert(created === false, "ensurePayloadIndex returns false when index exists");
+
+    // Test SchemaManager
+    const schemaManager = new SchemaManager(qdrant);
+
+    // Create a new collection without index
+    const schemaTestCollection2 = `test_schema2_${Date.now()}`;
+    await qdrant.createCollection(schemaTestCollection2, 5, "Cosine", false);
+
+    try {
+      // Get schema version (should be 0 for new collection without index)
+      const versionBefore = await schemaManager.getSchemaVersion(schemaTestCollection2);
+      assert(versionBefore === 0, `New collection has schema version 0: ${versionBefore}`);
+
+      // Ensure current schema (should migrate to v4)
+      const migrationResult = await schemaManager.ensureCurrentSchema(schemaTestCollection2);
+      assert(migrationResult.success === true, "Migration successful");
+      assert(migrationResult.fromVersion === 0, "Migrated from v0");
+      assert(migrationResult.toVersion === CURRENT_SCHEMA_VERSION, `Migrated to v${CURRENT_SCHEMA_VERSION}`);
+      assert(migrationResult.migrationsApplied.length > 0, "At least one migration applied");
+
+      // Verify index was created during migration
+      const indexExistsPostMigration = await qdrant.hasPayloadIndex(schemaTestCollection2, "relativePath");
+      assert(indexExistsPostMigration === true, "Index created during migration");
+
+      // Verify schema version is now current
+      const versionAfter = await schemaManager.getSchemaVersion(schemaTestCollection2);
+      assert(versionAfter === CURRENT_SCHEMA_VERSION, `Schema version is now ${CURRENT_SCHEMA_VERSION}: ${versionAfter}`);
+
+      // Run migration again (should skip)
+      const migrationResult2 = await schemaManager.ensureCurrentSchema(schemaTestCollection2);
+      assert(migrationResult2.success === true, "Second migration call successful");
+      assert(migrationResult2.migrationsApplied.length === 0, "No migrations needed on second call");
+
+    } finally {
+      await qdrant.deleteCollection(schemaTestCollection2);
+    }
+
+    // Test 10: Delete configuration defaults
+    log("info", "Testing delete optimization configuration...");
+
+    // Check DEFAULT_CONFIG has separate delete worker pool
+    assert(
+      DEFAULT_CONFIG.deleteWorkerPool !== undefined,
+      "DEFAULT_CONFIG has deleteWorkerPool"
+    );
+    assert(
+      DEFAULT_CONFIG.deleteWorkerPool.concurrency >= 8,
+      `Delete concurrency is high (${DEFAULT_CONFIG.deleteWorkerPool.concurrency})`
+    );
+    assert(
+      DEFAULT_CONFIG.deleteAccumulator.batchSize >= 500,
+      `Delete batch size is large (${DEFAULT_CONFIG.deleteAccumulator.batchSize})`
+    );
+
+    // Verify upsert and delete have independent settings
+    assert(
+      DEFAULT_CONFIG.workerPool.concurrency !== DEFAULT_CONFIG.deleteWorkerPool.concurrency ||
+      DEFAULT_CONFIG.upsertAccumulator.batchSize !== DEFAULT_CONFIG.deleteAccumulator.batchSize,
+      "Upsert and delete have different settings"
+    );
+
+    log("pass", "Schema migration and delete optimization verified");
+
+  } finally {
+    await qdrant.deleteCollection(schemaTestCollection);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════
 
@@ -1217,27 +1824,32 @@ async function main() {
     await testIgnorePatterns(qdrant, embeddings);
     await testChunkBoundaries(qdrant, embeddings);
     await testMultiLanguage(qdrant, embeddings);
+    await testRubyASTChunking(qdrant, embeddings);
     await testSearchAccuracy(qdrant, embeddings);
     await testEdgeCases(qdrant, embeddings);
     await testBatchPipeline(qdrant, embeddings);
     await testConcurrentSafety(qdrant, embeddings);
     await testParallelSync();
+    await testPipelineWorkerpool(qdrant);
+    await testSchemaAndDeleteOptimization(qdrant);
 
     // Cleanup
     section("Cleanup");
-    await cleanup();
-    log("pass", "Test directory removed");
 
-    // Try to clean up any test collections
-    const collections = await qdrant.listCollections();
-    for (const col of collections) {
-      if (col.startsWith("code_") && col.includes("qdrant_test_")) {
-        try {
-          await qdrant.deleteCollection(col);
-          log("pass", `Deleted collection: ${col}`);
-        } catch (e) {}
+    // Clear all indexed collections first
+    const cleanupIndexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
+    for (const path of indexedPaths) {
+      try {
+        await cleanupIndexer.clearIndex(path);
+        log("pass", `Cleared index for: ${path}`);
+      } catch (e) {
+        // Ignore cleanup errors
       }
     }
+
+    // Remove test directory
+    await cleanup();
+    log("pass", "Test directory removed");
 
   } catch (error) {
     console.error(`\n${c.red}Fatal error:${c.reset}`, error.message);

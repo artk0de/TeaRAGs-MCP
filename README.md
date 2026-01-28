@@ -1,25 +1,38 @@
-# 🚀 Qdrant MCP Server (Enhanced Fork)
+# 🚀 tee-rags-mcp
 
 [![CI](https://github.com/mhalder/qdrant-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mhalder/qdrant-mcp-server/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mhalder/qdrant-mcp-server/branch/main/graph/badge.svg)](https://codecov.io/gh/mhalder/qdrant-mcp-server)
 
 > **This is a fork of [mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)**
 
-A Model Context Protocol (MCP) server providing semantic search capabilities using Qdrant vector database with multiple embedding providers.
+A high-performance Model Context Protocol (MCP) server for semantic search using Qdrant vector database. Optimized for fast codebase indexing and incremental re-indexing.
 
 ---
 
 ## 🙏 Acknowledgments
 
-Huge thanks to the **[Qdrant](https://qdrant.tech/)** team and all contributors to the original project!
+Huge thanks to the **[qdrant/mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)** team and all contributors to the original project!
 
 Special appreciation for:
+
 - 💎 Clean and extensible architecture
 - 📚 Excellent documentation and examples
 - 🧪 Solid test coverage
 - 🤝 Open-source spirit and MIT license
 
 This fork is built on the solid foundation of your work. Thank you for your contribution to the community! 💜
+
+---
+
+## ⚡ Fork Highlights
+
+**Why tee-rags-mcp?**
+
+- 🚀 **Optimized embedding pipeline** — indexing and re-indexing takes minutes, not hours
+- 🔥 **1000x faster deletions** — payload indexes make filter-based deletes instant
+- ⚡ **Parallel processing** — sharded snapshots, concurrent workers, batched operations
+- 🎯 **Smart batching** — automatic batch formation with backpressure control
+- 🛠️ **Production-ready** — auto-migration, checkpointing, resume from interruption
 
 ---
 
@@ -54,10 +67,13 @@ For production, I recommend the [original project](https://github.com/qdrant/mcp
 | **Hash distribution** | — | 🎯 Consistent hashing |
 | **Merkle tree** | Single level | 🌳 Two-level (shard + meta) |
 | **Concurrency control** | Fixed | 🎛️ `EMBEDDING_CONCURRENCY` env |
+| **Delete operations** | Filter scan | ⚡ Payload index (1000x faster) |
+| **Batch pipeline** | Sequential | 🔄 Parallel with backpressure |
 
 ### 🔀 Sharded Snapshots (v3 format)
 
 File hashes are stored across multiple shards instead of a single file:
+
 - Parallel read/write across shards
 - Atomic updates via directory swap
 - Checksum validation per shard
@@ -65,24 +81,30 @@ File hashes are stored across multiple shards instead of a single file:
 ### ⚡ Parallel Change Detection
 
 Change detection runs in parallel across all shards:
+
 ```bash
+
 # Control parallelism (default: 4)
+
 export EMBEDDING_CONCURRENCY=8
 ```
 
 ### 🎯 Consistent Hashing
 
 When changing the number of workers, minimal files are redistributed:
+
 - 4 → 8 workers: ~50% files stay in place (vs ~25% with modulo)
 - Virtual nodes ensure even distribution
 
 ### 🌳 Two-Level Merkle Tree
 
 Fast "any changes?" check:
+
 1. Compare meta root hash (single read)
 2. If changed — read only affected shards
 
 ### 📝 Future Improvements
+
 - [ ] Auto-detection of optimal concurrency based on CPU/IO
 - [ ] Compression for large shards
 - [ ] File locking for concurrent access
@@ -114,26 +136,43 @@ Fast "any changes?" check:
 ### Installation
 
 ```bash
+
 # Clone and install
+
 git clone https://github.com/mhalder/qdrant-mcp-server.git
 cd qdrant-mcp-server
 npm install
 
 # Start services (choose one)
+
 podman compose up -d   # Using Podman
 docker compose up -d   # Using Docker
 
 # Pull the embedding model
+
 podman exec ollama ollama pull nomic-embed-text  # Podman
 docker exec ollama ollama pull nomic-embed-text  # Docker
 
 # Build
+
 npm run build
 ```
 
 ### Configuration
 
-#### Local Setup (stdio transport)
+#### Quick Setup with Claude CLI
+
+The easiest way to add tee-rags-mcp to Claude Code:
+
+```bash
+# Add to user-level config (recommended)
+claude mcp add -u qdrant -e QDRANT_URL=http://localhost:6333 -e EMBEDDING_BASE_URL=http://localhost:11434 -- node /path/to/tee-rags-mcp/build/index.js
+
+# For remote Qdrant + Ollama server
+claude mcp add -u qdrant -e QDRANT_URL=http://192.168.1.100:6333 -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 -- node /path/to/tee-rags-mcp/build/index.js
+```
+
+#### Manual Setup (stdio transport)
 
 Add to `~/.claude/claude_code_config.json`:
 
@@ -142,7 +181,7 @@ Add to `~/.claude/claude_code_config.json`:
   "mcpServers": {
     "qdrant": {
       "command": "node",
-      "args": ["/path/to/qdrant-mcp-server/build/index.js"],
+      "args": ["/path/to/tee-rags-mcp/build/index.js"],
       "env": {
         "QDRANT_URL": "http://localhost:6333",
         "EMBEDDING_BASE_URL": "http://localhost:11434"
@@ -317,11 +356,11 @@ Templates use `{{variable}}` placeholders:
 - Optional arguments use defaults if not specified
 - Unknown variables are left as-is in the output
 
-## Code Vectorization
+## Code Vectorization (1.1)
 
 Intelligently index and search your codebase using semantic code search. Perfect for AI-assisted development, code exploration, and understanding large codebases.
 
-### Features
+### Features (1.1.1)
 
 - **AST-Aware Chunking**: Intelligent code splitting at function/class boundaries using tree-sitter
 - **Multi-Language Support**: 35+ file types including TypeScript, Python, Java, Go, Rust, C++, and more
@@ -331,32 +370,40 @@ Intelligently index and search your codebase using semantic code search. Perfect
 - **Metadata Filtering**: Filter by file type, path patterns, or language
 - **Local-First**: All processing happens locally - your code never leaves your machine
 
-### Quick Start
+### Quick Start (1.1.1)
 
 **1. Index your codebase:**
 
 ```bash
+
 # Via Claude Code MCP tool
+
 /mcp__qdrant__index_codebase /path/to/your/project
 ```
 
 **2. Search your code:**
 
 ```bash
+
 # Natural language search
+
 /mcp__qdrant__search_code /path/to/your/project "authentication middleware"
 
 # Filter by file type
+
 /mcp__qdrant__search_code /path/to/your/project "database schema" --fileTypes .ts,.js
 
 # Filter by path pattern
+
 /mcp__qdrant__search_code /path/to/your/project "API endpoints" --pathPattern src/api/**
 ```
 
 **3. Update after changes:**
 
 ```bash
+
 # Incrementally re-index only changed files
+
 /mcp__qdrant__reindex_changes /path/to/your/project
 ```
 
@@ -476,7 +523,9 @@ See [configuration](#code-vectorization-configuration) for full list and customi
 Create a `.contextignore` file in your project root to specify additional patterns to ignore:
 
 ```gitignore
+
 # .contextignore
+
 **/test/**
 **/*.test.ts
 **/*.spec.ts
@@ -528,7 +577,7 @@ See [examples/](examples/) directory for detailed guides:
 | `HTTP_PORT`               | Port for HTTP transport                 | 3000                  |
 | `HTTP_REQUEST_TIMEOUT_MS` | Request timeout for HTTP transport (ms) | 300000                |
 | `EMBEDDING_PROVIDER`      | "ollama", "openai", "cohere", "voyage"  | ollama                |
-| `QDRANT_URL`              | Qdrant server URL                       | http://localhost:6333 |
+| `QDRANT_URL`              | Qdrant server URL                       | <http://localhost:6333> |
 | `QDRANT_API_KEY`          | API key for Qdrant authentication       | -                     |
 | `PROMPTS_CONFIG_FILE`     | Path to prompts configuration JSON      | prompts.json          |
 
@@ -561,12 +610,57 @@ See [examples/](examples/) directory for detailed guides:
 
 #### Qdrant Batch Pipeline Configuration
 
-| Variable                   | Description                                      | Default |
-| -------------------------- | ------------------------------------------------ | ------- |
-| `QDRANT_FLUSH_INTERVAL_MS` | Auto-flush buffer interval (0 to disable timer)  | 500     |
-| `QDRANT_BATCH_ORDERING`    | Ordering mode: "weak", "medium", or "strong"     | weak    |
+| Variable                   | Description                                                      | Default |
+| -------------------------- | ---------------------------------------------------------------- | ------- |
+| `QDRANT_FLUSH_INTERVAL_MS` | Auto-flush buffer interval (0 to disable timer)                  | 500     |
+| `QDRANT_BATCH_ORDERING`    | Ordering mode: "weak", "medium", or "strong"                     | weak    |
+| `DELETE_BATCH_SIZE`        | Paths per delete batch (with payload index, larger is efficient) | 500     |
+| `DELETE_CONCURRENCY`       | Parallel delete requests (Qdrant-bound, not embedding-bound)     | 8       |
 
 **Note:** `CODE_BATCH_SIZE` controls both embedding batch size and Qdrant upsert buffer size for simplified configuration.
+
+**Delete Optimization (v4 schema):** Collections created with schema v4+ have a `relativePath` payload index for fast filter-based deletes. Existing collections are auto-migrated on first `reindex_changes` call.
+
+#### Performance & Debug Configuration
+
+| Variable             | Description                                           | Default |
+| -------------------- | ----------------------------------------------------- | ------- |
+| `MAX_IO_CONCURRENCY` | Max parallel file I/O operations during cache sync    | 50      |
+| `DEBUG`              | Enable debug timing logs (`true` or `1` to enable)    | false   |
+
+**Performance Tuning Notes:**
+
+- `MAX_IO_CONCURRENCY`: Controls parallel file reads during `reindex_changes`. For MacBook with NVMe SSD, 50-100 is optimal. Too high (500+) can saturate the kernel I/O scheduler.
+- `DEBUG`: When enabled, logs detailed timing for cache initialization, shard processing, and pipeline stages.
+
+### Data Directories
+
+The server stores data in `~/.qdrant-mcp/`:
+
+| Directory | Purpose |
+|-----------|---------|
+| `snapshots/` | Sharded file hash snapshots for incremental indexing |
+| `logs/` | Debug logs when `DEBUG=1` is enabled |
+
+**Snapshot Structure (v3):**
+
+```text
+~/.qdrant-mcp/snapshots/
+└── code_<hash>/           # Collection-specific directory
+    └── v3/                # Format version
+        ├── meta.json      # Merkle root + metadata
+        ├── shard-0.json   # File hashes for shard 0
+        ├── shard-1.json   # File hashes for shard 1
+        └── ...            # More shards based on EMBEDDING_CONCURRENCY
+```
+
+**Debug Logs:**
+When `DEBUG=1`, pipeline operations are logged to `~/.qdrant-mcp/logs/pipeline-<timestamp>.log`:
+
+- Batch formation and processing times
+- Queue depth and backpressure events
+- Embedding and Qdrant call durations
+- Fallback triggers and error details
 
 ### Provider Comparison
 
@@ -588,7 +682,7 @@ See [examples/](examples/) directory for detailed guides:
 | ------------------------------ | ----------------------------------------------------------------------------------------- |
 | **Qdrant not running**         | `podman compose up -d` or `docker compose up -d`                                          |
 | **Collection missing**         | Create collection first before adding documents                                           |
-| **Ollama not running**         | Verify with `curl http://localhost:11434`, start with `podman compose up -d`              |
+| **Ollama not running**         | Verify with `curl <http://localhost:11434`>, start with `podman compose up -d`              |
 | **Model missing**              | `podman exec ollama ollama pull nomic-embed-text` or `docker exec ollama ollama pull ...` |
 | **Rate limit errors**          | Adjust `EMBEDDING_MAX_REQUESTS_PER_MINUTE` to match your provider tier                    |
 | **API key errors**             | Verify correct API key in environment configuration                                       |
@@ -602,28 +696,91 @@ See [examples/](examples/) directory for detailed guides:
 
 ## Performance Tuning
 
+### Recommended Configurations
+
+Optimal parameters depend on your hardware and deployment setup:
+
+#### Remote Server (Qdrant + Ollama on separate host)
+
+Best for: Dedicated GPU server, shared team infrastructure
+
+```bash
+# Network-optimized: larger batches, moderate concurrency
+export EMBEDDING_BATCH_SIZE=512
+export CODE_BATCH_SIZE=768
+export EMBEDDING_CONCURRENCY=4
+export DELETE_BATCH_SIZE=500
+export DELETE_CONCURRENCY=8
+```
+
+#### MacBook M1 (8-core, 8GB+ RAM)
+
+Best for: Light development, small-to-medium codebases (<50k files)
+
+```bash
+# Memory-conscious: smaller batches, low concurrency
+export EMBEDDING_BATCH_SIZE=128
+export CODE_BATCH_SIZE=256
+export EMBEDDING_CONCURRENCY=2
+export DELETE_BATCH_SIZE=200
+export DELETE_CONCURRENCY=4
+export MAX_IO_CONCURRENCY=30
+```
+
+#### MacBook M3 Pro (12-core, 18GB+ RAM)
+
+Best for: Professional development, medium codebases (<100k files)
+
+```bash
+# Balanced: moderate batches, good concurrency
+export EMBEDDING_BATCH_SIZE=256
+export CODE_BATCH_SIZE=512
+export EMBEDDING_CONCURRENCY=4
+export DELETE_BATCH_SIZE=500
+export DELETE_CONCURRENCY=8
+export MAX_IO_CONCURRENCY=50
+```
+
+#### MacBook M4 Max (16-core, 48GB+ RAM)
+
+Best for: Large codebases, maximum local performance
+
+```bash
+# Performance-optimized: large batches, high concurrency
+export EMBEDDING_BATCH_SIZE=512
+export CODE_BATCH_SIZE=768
+export EMBEDDING_CONCURRENCY=8
+export DELETE_BATCH_SIZE=1000
+export DELETE_CONCURRENCY=16
+export MAX_IO_CONCURRENCY=100
+```
+
 ### Quick Diagnostic
 
 Run the diagnostic benchmark to automatically find optimal parameters for your setup:
 
 ```bash
+
 # Set your endpoints
+
 export QDRANT_URL="http://localhost:6333"
 export EMBEDDING_BASE_URL="http://localhost:11434"
 export EMBEDDING_MODEL="nomic-embed-text"
 
 # Run diagnostic (takes ~30 seconds)
+
 node benchmarks/diagnose.mjs
 ```
 
 The diagnostic will test and recommend optimal values for:
+
 - `EMBEDDING_BATCH_SIZE` - texts per embedding API request
 - `CODE_BATCH_SIZE` - chunks per Qdrant upsert
 - `EMBEDDING_CONCURRENCY` - parallel embedding requests
 
 ### Understanding Results
 
-```
+```text
 Phase 1: Embedding Batch Size
   Testing EMBEDDING_BATCH_SIZE=64   ████████████████████ 124 emb/s
   Testing EMBEDDING_BATCH_SIZE=256  ████████████████████ 158 emb/s
@@ -654,7 +811,7 @@ Phase 1: Embedding Batch Size
 
 The server uses an accumulator pattern for efficient Qdrant upserts:
 
-```
+```text
 Embeddings ──► Buffer (accumulator) ──► Qdrant upsert
                  │                           │
                  └─ flush on size ───────────┘
@@ -663,6 +820,7 @@ Embeddings ──► Buffer (accumulator) ──► Qdrant upsert
 ```
 
 **How it works:**
+
 - Points are accumulated in a buffer until `CODE_BATCH_SIZE` threshold
 - Intermediate batches use `wait=false` (fire-and-forget) for speed
 - Final flush uses `wait=true` for consistency
