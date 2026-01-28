@@ -12,6 +12,7 @@ const mockClient = {
   retrieve: vi.fn().mockResolvedValue([]),
   delete: vi.fn().mockResolvedValue({}),
   query: vi.fn().mockResolvedValue({ points: [] }),
+  createPayloadIndex: vi.fn().mockResolvedValue({}),
 };
 
 vi.mock("@qdrant/js-client-rest", () => ({
@@ -36,6 +37,7 @@ describe("QdrantManager", () => {
     mockClient.retrieve.mockReset().mockResolvedValue([]);
     mockClient.delete.mockReset().mockResolvedValue({});
     mockClient.query.mockReset().mockResolvedValue({ points: [] });
+    mockClient.createPayloadIndex.mockReset().mockResolvedValue({});
     vi.mocked(QdrantClient).mockClear();
     manager = new QdrantManager("http://localhost:6333");
   });
@@ -1118,6 +1120,272 @@ describe("QdrantManager", () => {
       ).rejects.toThrow(
         'Failed to add points with sparse vectors to collection "test-collection": Unexpected error',
       );
+    });
+  });
+
+  describe("deletePointsByPaths", () => {
+    it("should delete points with OR filter for multiple paths", async () => {
+      mockClient.delete.mockResolvedValue({});
+
+      const paths = ["src/file1.ts", "src/file2.ts", "src/file3.ts"];
+      await manager.deletePointsByPaths("test-collection", paths);
+
+      expect(mockClient.delete).toHaveBeenCalledWith("test-collection", {
+        wait: true,
+        filter: {
+          should: [
+            { key: "relativePath", match: { value: "src/file1.ts" } },
+            { key: "relativePath", match: { value: "src/file2.ts" } },
+            { key: "relativePath", match: { value: "src/file3.ts" } },
+          ],
+        },
+      });
+    });
+
+    it("should do nothing for empty paths array", async () => {
+      await manager.deletePointsByPaths("test-collection", []);
+      expect(mockClient.delete).not.toHaveBeenCalled();
+    });
+
+    it("should handle single path", async () => {
+      mockClient.delete.mockResolvedValue({});
+
+      await manager.deletePointsByPaths("test-collection", ["single.ts"]);
+
+      expect(mockClient.delete).toHaveBeenCalledWith("test-collection", {
+        wait: true,
+        filter: {
+          should: [{ key: "relativePath", match: { value: "single.ts" } }],
+        },
+      });
+    });
+  });
+
+  describe("deletePointsByPathsBatched", () => {
+    it("should process paths in batches", async () => {
+      mockClient.delete.mockResolvedValue({});
+
+      const paths = Array.from({ length: 25 }, (_, i) => `file${i}.ts`);
+      const result = await manager.deletePointsByPathsBatched(
+        "test-collection",
+        paths,
+        { batchSize: 10, concurrency: 2 },
+      );
+
+      expect(result.deletedPaths).toBe(25);
+      expect(result.batchCount).toBe(3); // 10 + 10 + 5
+      expect(mockClient.delete).toHaveBeenCalledTimes(3);
+    });
+
+    it("should return immediately for empty paths", async () => {
+      const result = await manager.deletePointsByPathsBatched(
+        "test-collection",
+        [],
+        {},
+      );
+
+      expect(result.deletedPaths).toBe(0);
+      expect(result.batchCount).toBe(0);
+      expect(result.durationMs).toBe(0);
+      expect(mockClient.delete).not.toHaveBeenCalled();
+    });
+
+    it("should use wait=false for intermediate batches and wait=true for last batch", async () => {
+      mockClient.delete.mockResolvedValue({});
+
+      const paths = Array.from({ length: 20 }, (_, i) => `file${i}.ts`);
+      await manager.deletePointsByPathsBatched("test-collection", paths, {
+        batchSize: 10,
+        concurrency: 4,
+      });
+
+      const calls = mockClient.delete.mock.calls;
+      expect(calls).toHaveLength(2);
+
+      // First batch should have wait=false
+      expect(calls[0][1].wait).toBe(false);
+
+      // Last batch should have wait=true
+      expect(calls[1][1].wait).toBe(true);
+    });
+
+    it("should invoke progress callback", async () => {
+      mockClient.delete.mockResolvedValue({});
+
+      const paths = Array.from({ length: 15 }, (_, i) => `file${i}.ts`);
+      const progressCalls: [number, number][] = [];
+
+      await manager.deletePointsByPathsBatched("test-collection", paths, {
+        batchSize: 5,
+        concurrency: 2,
+        onProgress: (deleted, total) => {
+          progressCalls.push([deleted, total]);
+        },
+      });
+
+      expect(progressCalls).toHaveLength(3);
+      expect(progressCalls[2]).toEqual([15, 15]); // Final progress
+    });
+
+    it("should respect concurrency limit", async () => {
+      let activeCalls = 0;
+      let maxActiveCalls = 0;
+
+      mockClient.delete.mockImplementation(async () => {
+        activeCalls++;
+        maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
+        await new Promise((r) => setTimeout(r, 10));
+        activeCalls--;
+        return {};
+      });
+
+      const paths = Array.from({ length: 50 }, (_, i) => `file${i}.ts`);
+      await manager.deletePointsByPathsBatched("test-collection", paths, {
+        batchSize: 10,
+        concurrency: 2,
+      });
+
+      // Should never exceed concurrency + 1 (final batch runs after waiting)
+      expect(maxActiveCalls).toBeLessThanOrEqual(3);
+    });
+
+    it("should handle errors during batch deletion", async () => {
+      mockClient.delete.mockRejectedValue(new Error("Delete failed"));
+
+      const paths = ["file1.ts", "file2.ts"];
+
+      await expect(
+        manager.deletePointsByPathsBatched("test-collection", paths, {}),
+      ).rejects.toThrow("Delete failed");
+    });
+
+    it("should calculate duration correctly", async () => {
+      mockClient.delete.mockImplementation(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+        return {};
+      });
+
+      const paths = ["file1.ts", "file2.ts"];
+      const result = await manager.deletePointsByPathsBatched(
+        "test-collection",
+        paths,
+        {},
+      );
+
+      expect(result.durationMs).toBeGreaterThan(0);
+    });
+  });
+
+  describe("createPayloadIndex", () => {
+    it("should create a keyword payload index", async () => {
+      await manager.createPayloadIndex("test-collection", "relativePath", "keyword");
+
+      expect(mockClient.createPayloadIndex).toHaveBeenCalledWith("test-collection", {
+        field_name: "relativePath",
+        field_schema: "keyword",
+        wait: true,
+      });
+    });
+
+    it("should create an integer payload index", async () => {
+      await manager.createPayloadIndex("test-collection", "startLine", "integer");
+
+      expect(mockClient.createPayloadIndex).toHaveBeenCalledWith("test-collection", {
+        field_name: "startLine",
+        field_schema: "integer",
+        wait: true,
+      });
+    });
+
+    it("should create a text payload index for full-text search", async () => {
+      await manager.createPayloadIndex("test-collection", "content", "text");
+
+      expect(mockClient.createPayloadIndex).toHaveBeenCalledWith("test-collection", {
+        field_name: "content",
+        field_schema: "text",
+        wait: true,
+      });
+    });
+  });
+
+  describe("hasPayloadIndex", () => {
+    it("should return true if index exists", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "test-collection",
+        payload_schema: {
+          relativePath: { data_type: "keyword", points: 1000 },
+        },
+        config: { params: { vectors: { size: 768, distance: "Cosine" } } },
+      });
+
+      const exists = await manager.hasPayloadIndex("test-collection", "relativePath");
+
+      expect(exists).toBe(true);
+    });
+
+    it("should return false if index does not exist", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "test-collection",
+        payload_schema: {},
+        config: { params: { vectors: { size: 768, distance: "Cosine" } } },
+      });
+
+      const exists = await manager.hasPayloadIndex("test-collection", "relativePath");
+
+      expect(exists).toBe(false);
+    });
+
+    it("should return false if payload_schema is undefined", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "test-collection",
+        config: { params: { vectors: { size: 768, distance: "Cosine" } } },
+      });
+
+      const exists = await manager.hasPayloadIndex("test-collection", "relativePath");
+
+      expect(exists).toBe(false);
+    });
+
+    it("should return false on error", async () => {
+      mockClient.getCollection.mockRejectedValue(new Error("Collection not found"));
+
+      const exists = await manager.hasPayloadIndex("test-collection", "relativePath");
+
+      expect(exists).toBe(false);
+    });
+  });
+
+  describe("ensurePayloadIndex", () => {
+    it("should create index if it does not exist", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "test-collection",
+        payload_schema: {},
+        config: { params: { vectors: { size: 768, distance: "Cosine" } } },
+      });
+
+      const created = await manager.ensurePayloadIndex("test-collection", "relativePath", "keyword");
+
+      expect(created).toBe(true);
+      expect(mockClient.createPayloadIndex).toHaveBeenCalledWith("test-collection", {
+        field_name: "relativePath",
+        field_schema: "keyword",
+        wait: true,
+      });
+    });
+
+    it("should not create index if it already exists", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "test-collection",
+        payload_schema: {
+          relativePath: { data_type: "keyword", points: 1000 },
+        },
+        config: { params: { vectors: { size: 768, distance: "Cosine" } } },
+      });
+
+      const created = await manager.ensurePayloadIndex("test-collection", "relativePath", "keyword");
+
+      expect(created).toBe(false);
+      expect(mockClient.createPayloadIndex).not.toHaveBeenCalled();
     });
   });
 });

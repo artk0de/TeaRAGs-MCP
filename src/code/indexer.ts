@@ -11,7 +11,10 @@ import { BM25SparseVectorGenerator } from "../embeddings/sparse.js";
 import type { QdrantManager } from "../qdrant/client.js";
 import { TreeSitterChunker } from "./chunker/tree-sitter-chunker.js";
 import { MetadataExtractor } from "./metadata.js";
+import { ChunkPipeline, DEFAULT_CONFIG } from "./pipeline/index.js";
+import { pipelineLog } from "./pipeline/debug-logger.js";
 import { FileScanner } from "./scanner.js";
+import { SchemaManager } from "./schema-migration.js";
 import { SnapshotMigrator } from "./sync/migration.js";
 import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 import type {
@@ -124,6 +127,10 @@ export class CodeIndexer {
           "Cosine",
           this.config.enableHybridSearch,
         );
+
+        // Initialize schema with payload indexes for optimal performance
+        const schemaManager = new SchemaManager(this.qdrant);
+        await schemaManager.initializeSchema(collectionName);
       }
 
       // Store "indexing in progress" marker immediately after collection is ready
@@ -572,6 +579,17 @@ export class CodeIndexer {
       const migrator = new SnapshotMigrator(snapshotDir, collectionName, absolutePath);
       await migrator.ensureMigrated();
 
+      // AUTO-MIGRATE: Upgrade collection schema to v4 (payload indexes) if needed
+      const schemaManager = new SchemaManager(this.qdrant);
+      const schemaMigration = await schemaManager.ensureCurrentSchema(collectionName);
+      if (schemaMigration.migrationsApplied.length > 0) {
+        pipelineLog.reindexPhase("schema_migration", {
+          fromVersion: schemaMigration.fromVersion,
+          toVersion: schemaMigration.toVersion,
+          migrations: schemaMigration.migrationsApplied,
+        });
+      }
+
       // Initialize parallel synchronizer (uses sharded snapshots)
       const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
       const hasSnapshot = await synchronizer.initialize();
@@ -640,10 +658,18 @@ export class CodeIndexer {
       });
       const metadataExtractor = new MetadataExtractor();
 
-      // OPTIMIZATION 1: Batch deletion of old chunks (single Qdrant request)
+      // OPTIMIZATION: Parallel pipelines for delete and index operations
+      // - Added files: can be indexed immediately (no old chunks to delete)
+      // - Modified files: must wait for deletion of old chunks before indexing
+      // - Deleted files: only need deletion, no indexing
       const filesToDelete = [...changes.modified, ...changes.deleted];
+      const addedFiles = [...changes.added];
+      const modifiedFiles = [...changes.modified];
 
-      if (filesToDelete.length > 0) {
+      // Helper function to perform deletion
+      const performDeletion = async (): Promise<void> => {
+        if (filesToDelete.length === 0) return;
+
         progressCallback?.({
           phase: "scanning",
           current: 0,
@@ -652,226 +678,277 @@ export class CodeIndexer {
           message: `Deleting old chunks for ${filesToDelete.length} files...`,
         });
 
-        // Single request with OR filter - much faster than N parallel requests!
-        // Qdrant handles large filters efficiently
         try {
-          await this.qdrant.deletePointsByPaths(collectionName, filesToDelete);
+          const deleteResult = await this.qdrant.deletePointsByPathsBatched(
+            collectionName,
+            filesToDelete,
+            {
+              batchSize: 100,
+              concurrency: 4,
+              onProgress: (deleted, total) => {
+                progressCallback?.({
+                  phase: "scanning",
+                  current: deleted,
+                  total: total,
+                  percentage: 5 + Math.floor((deleted / total) * 5),
+                  message: `Deleting old chunks: ${deleted}/${total} files...`,
+                });
+              },
+            },
+          );
+
+          if (process.env.DEBUG) {
+            console.error(
+              `[Reindex] Deleted ${deleteResult.deletedPaths} paths in ${deleteResult.batchCount} batches (${deleteResult.durationMs}ms)`,
+            );
+          }
         } catch (error) {
-          console.error(`Failed to batch delete chunks:`, error);
-          // Fallback to individual deletions if batch fails
-          for (const relativePath of filesToDelete) {
-            try {
-              const filter = {
-                must: [{ key: "relativePath", match: { value: relativePath } }],
-              };
-              await this.qdrant.deletePointsByFilter(collectionName, filter);
-            } catch (innerError) {
-              console.error(`Failed to delete chunks for ${relativePath}:`, innerError);
+          // FALLBACK LEVEL 1: Batched delete failed, trying single combined request
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          pipelineLog.fallback({ component: "Reindex" }, 1, `deletePointsByPathsBatched failed: ${errorMsg}`);
+          console.error(
+            `[Reindex] FALLBACK L1: deletePointsByPathsBatched failed for ${filesToDelete.length} paths:`,
+            errorMsg
+          );
+
+          try {
+            const fallbackStart = Date.now();
+            await this.qdrant.deletePointsByPaths(collectionName, filesToDelete);
+            pipelineLog.step({ component: "Reindex" }, "FALLBACK_L1_SUCCESS", {
+              durationMs: Date.now() - fallbackStart,
+              paths: filesToDelete.length,
+            });
+            console.error(
+              `[Reindex] FALLBACK L1 SUCCESS: deletePointsByPaths completed in ${Date.now() - fallbackStart}ms`
+            );
+          } catch (fallbackError) {
+            // FALLBACK LEVEL 2: Combined request also failed, doing individual deletions
+            const fallbackErrorMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+            pipelineLog.fallback({ component: "Reindex" }, 2, `deletePointsByPaths failed: ${fallbackErrorMsg}`);
+            console.error(
+              `[Reindex] FALLBACK L2: deletePointsByPaths also failed:`,
+              fallbackErrorMsg
+            );
+            console.error(
+              `[Reindex] FALLBACK L2: Starting INDIVIDUAL deletions for ${filesToDelete.length} paths (SLOW!)`
+            );
+
+            let deleted = 0;
+            let failed = 0;
+            const individualStart = Date.now();
+
+            for (const relativePath of filesToDelete) {
+              try {
+                const filter = {
+                  must: [{ key: "relativePath", match: { value: relativePath } }],
+                };
+                await this.qdrant.deletePointsByFilter(collectionName, filter);
+                deleted++;
+              } catch (innerError) {
+                failed++;
+                if (process.env.DEBUG) {
+                  console.error(`[Reindex] FALLBACK L2: Failed to delete ${relativePath}:`, innerError);
+                }
+              }
             }
+
+            pipelineLog.step({ component: "Reindex" }, "FALLBACK_L2_COMPLETE", {
+              deleted,
+              failed,
+              durationMs: Date.now() - individualStart,
+            });
+            console.error(
+              `[Reindex] FALLBACK L2 COMPLETE: ${deleted} deleted, ${failed} failed in ${Date.now() - individualStart}ms`
+            );
           }
         }
-      }
+      };
 
-      let filesToIndex = [...changes.added, ...changes.modified];
+      // Initialize ChunkPipeline for even load distribution
+      // This replaces direct embedding/store calls with a batching pipeline
+      const chunkPipeline = new ChunkPipeline(
+        this.qdrant,
+        this.embeddings,
+        collectionName,
+        {
+          workerPool: DEFAULT_CONFIG.workerPool,
+          accumulator: DEFAULT_CONFIG.upsertAccumulator,
+          enableHybrid: this.config.enableHybridSearch,
+        },
+      );
+      chunkPipeline.start();
 
-      // CHECKPOINT RESUME: Filter out already processed files
-      if (resumeFromCheckpoint && checkpoint) {
-        const originalCount = filesToIndex.length;
-        filesToIndex = synchronizer.filterProcessedFiles(filesToIndex, checkpoint);
-        console.error(
-          `[Reindex] Checkpoint filter: ${originalCount} → ${filesToIndex.length} files remaining`
-        );
-      }
+      // Helper function to index a batch of files using ChunkPipeline
+      // Instead of direct embedding/store, files are chunked and sent to the pipeline
+      const indexFiles = async (
+        files: string[],
+        label: string
+      ): Promise<number> => {
+        if (files.length === 0) return 0;
 
-      // CORNER CASE: No files to index (or all already processed)
-      if (filesToIndex.length === 0) {
-        stats.chunksAdded = 0;
-        await synchronizer.updateSnapshot(currentFiles);
-        await synchronizer.deleteCheckpoint(); // Clean up checkpoint
-        stats.durationMs = Date.now() - startTime;
-        return stats;
-      }
+        let chunksCreated = 0;
+        const fileProcessingConcurrency = 20;
 
-      // DEBUG: Log exactly what files will be sent to embeddings
-      if (process.env.DEBUG) {
-        console.error(
-          `[Reindex] Files to embed: ${filesToIndex.length} ` +
-          `(added: ${changes.added.length}, modified: ${changes.modified.length})`
-        );
-        if (filesToIndex.length <= 20) {
-          console.error(`[Reindex] Files: ${filesToIndex.join(', ')}`);
-        } else {
-          console.error(`[Reindex] First 20: ${filesToIndex.slice(0, 20).join(', ')}...`);
-        }
-      }
+        for (let i = 0; i < files.length; i += fileProcessingConcurrency) {
+          const fileBatch = files.slice(i, i + fileProcessingConcurrency);
 
-      // OPTIMIZATION 2 & 3: Parallel processing + TRUE Pipelining
-      const fileProcessingConcurrency = 20; // Process 20 files at once
-      const batchSize = this.config.batchSize;
+          if (process.env.DEBUG && i === 0) {
+            console.error(`[Reindex] ${label}: starting ${files.length} files`);
+          }
 
-      let processedFiles = resumeFromCheckpoint && checkpoint
-        ? checkpoint.processedFiles.length
-        : 0;
-      let totalChunksCreated = 0;
+          // PARALLEL: Read and chunk files concurrently
+          const chunkResults = await Promise.all(
+            fileBatch.map(async (filePath) => {
+              try {
+                const absoluteFilePath = join(absolutePath, filePath);
+                const code = await fs.readFile(absoluteFilePath, "utf-8");
 
-      // TRUE PIPELINING: Overlap embedding and Qdrant storage
-      // While storing batch N, we're already embedding batch N+1
-      let pendingStorePromise: Promise<void> | null = null;
-      const sparseGenerator = this.config.enableHybridSearch
-        ? new BM25SparseVectorGenerator()
-        : null;
+                if (metadataExtractor.containsSecrets(code)) {
+                  return [];
+                }
 
-      // Process files in parallel batches
-      for (let i = 0; i < filesToIndex.length; i += fileProcessingConcurrency) {
-        const fileBatch = filesToIndex.slice(i, i + fileProcessingConcurrency);
+                const language = metadataExtractor.extractLanguage(absoluteFilePath);
+                const chunks = await chunker.chunk(code, absoluteFilePath, language);
 
-        progressCallback?.({
-          phase: "chunking",
-          current: processedFiles + fileBatch.length,
-          total: filesToIndex.length,
-          percentage: Math.round(((processedFiles + fileBatch.length) / filesToIndex.length) * 40),
-          message: `Processing files ${processedFiles + fileBatch.length}/${filesToIndex.length}`,
-        });
-
-        // PARALLEL: Read and chunk files concurrently
-        const chunkResults = await Promise.all(
-          fileBatch.map(async (filePath) => {
-            try {
-              const absoluteFilePath = join(absolutePath, filePath);
-              const code = await fs.readFile(absoluteFilePath, "utf-8");
-
-              // Check for secrets
-              if (metadataExtractor.containsSecrets(code)) {
+                return chunks.map((chunk) => ({
+                  chunk: {
+                    content: chunk.content,
+                    startLine: chunk.startLine,
+                    endLine: chunk.endLine,
+                    metadata: {
+                      filePath: chunk.metadata.filePath,
+                      language: chunk.metadata.language,
+                      chunkIndex: chunk.metadata.chunkIndex,
+                      name: chunk.metadata.name,
+                      chunkType: chunk.metadata.chunkType,
+                    },
+                  },
+                  chunkId: metadataExtractor.generateChunkId(chunk),
+                  codebasePath: absolutePath,
+                }));
+              } catch (error) {
+                console.error(`Failed to process ${filePath}:`, error);
                 return [];
               }
+            })
+          );
 
-              const language = metadataExtractor.extractLanguage(absoluteFilePath);
-              const chunks = await chunker.chunk(code, absoluteFilePath, language);
+          const allChunks = chunkResults.flat();
+          if (allChunks.length === 0) continue;
 
-              return chunks.map((chunk) => ({
-                chunk,
-                id: metadataExtractor.generateChunkId(chunk),
-              }));
-            } catch (error) {
-              console.error(`Failed to process ${filePath}:`, error);
-              return [];
+          chunksCreated += allChunks.length;
+
+          // Send chunks to pipeline (will be batched and processed with even load)
+          for (const chunkData of allChunks) {
+            // Wait for backpressure if needed
+            if (chunkPipeline.isBackpressured()) {
+              await chunkPipeline.waitForBackpressure(30000);
             }
-          })
+            chunkPipeline.addChunk(
+              chunkData.chunk,
+              chunkData.chunkId,
+              chunkData.codebasePath,
+            );
+          }
+        }
+
+        if (process.env.DEBUG) {
+          console.error(`[Reindex] ${label}: completed ${files.length} files, ${chunksCreated} chunks queued`);
+        }
+
+        return chunksCreated;
+      };
+
+      // PARALLEL PIPELINES: Optimized for maximum throughput
+      // - Delete and Add start simultaneously (Add doesn't need old chunks deleted)
+      // - Modified starts immediately after Delete (doesn't wait for Add)
+      // - Add and Modified can run in parallel after Delete completes
+      const startTime2 = Date.now();
+
+      pipelineLog.reindexPhase("PARALLEL_START", {
+        deleted: filesToDelete.length,
+        added: addedFiles.length,
+        modified: modifiedFiles.length,
+      });
+
+      if (process.env.DEBUG) {
+        console.error(
+          `[Reindex] Starting parallel pipelines: ` +
+          `delete=${filesToDelete.length}, added=${addedFiles.length}, modified=${modifiedFiles.length}`
         );
-
-        // Flatten results
-        const allChunks = chunkResults.flat();
-
-        // CORNER CASE: File batch produced no chunks (all empty/secrets/errors)
-        if (allChunks.length === 0) {
-          processedFiles += fileBatch.length;
-          continue; // Skip to next file batch
-        }
-
-        totalChunksCreated += allChunks.length;
-
-        // TRUE PIPELINING: Overlap embedding (GPU) with storage (network)
-        for (let j = 0; j < allChunks.length; j += batchSize) {
-          const batch = allChunks.slice(j, j + batchSize);
-          const isLastBatch = j + batchSize >= allChunks.length &&
-            i + fileProcessingConcurrency >= filesToIndex.length;
-
-          const embedProgress = processedFiles + fileBatch.length;
-          progressCallback?.({
-            phase: "embedding",
-            current: embedProgress,
-            total: filesToIndex.length,
-            percentage: 40 + Math.round((embedProgress / filesToIndex.length) * 30),
-            message: `Generating embeddings (${totalChunksCreated} chunks)`,
-          });
-
-          const texts = batch.map((b) => b.chunk.content);
-          const embeddings = await this.embeddings.embedBatch(texts);
-
-          const points = batch.map((b, idx) => ({
-            id: b.id,
-            vector: embeddings[idx].embedding,
-            payload: {
-              content: b.chunk.content,
-              relativePath: relative(absolutePath, b.chunk.metadata.filePath),
-              startLine: b.chunk.startLine,
-              endLine: b.chunk.endLine,
-              fileExtension: extname(b.chunk.metadata.filePath),
-              language: b.chunk.metadata.language,
-              codebasePath: absolutePath,
-              chunkIndex: b.chunk.metadata.chunkIndex,
-              ...(b.chunk.metadata.name && { name: b.chunk.metadata.name }),
-              ...(b.chunk.metadata.chunkType && {
-                chunkType: b.chunk.metadata.chunkType,
-              }),
-            },
-          }));
-
-          progressCallback?.({
-            phase: "storing",
-            current: embedProgress,
-            total: filesToIndex.length,
-            percentage: 70 + Math.round((embedProgress / filesToIndex.length) * 30),
-            message: `Storing chunks (${totalChunksCreated} total)`,
-          });
-
-          // Wait for previous store to complete before starting new one
-          // This ensures we don't overwhelm Qdrant while still pipelining
-          if (pendingStorePromise) {
-            await pendingStorePromise;
-          }
-
-          // Start store operation - DON'T await if not last batch!
-          // This allows embedding of next batch to start while storing
-          // Use optimized method with wait=false for intermediate batches
-          if (sparseGenerator) {
-            const hybridPoints = points.map((point, idx) => ({
-              ...point,
-              sparseVector: sparseGenerator.generate(
-                allChunks[j + idx].chunk.content,
-              ),
-            }));
-            if (isLastBatch) {
-              await this.qdrant.addPointsWithSparse(collectionName, hybridPoints);
-              pendingStorePromise = null;
-            } else {
-              pendingStorePromise = this.qdrant.addPointsWithSparse(collectionName, hybridPoints);
-            }
-          } else {
-            if (isLastBatch) {
-              // Last batch: use optimized with wait=true for consistency
-              await this.qdrant.addPointsOptimized(collectionName, points, {
-                wait: true,
-                ordering: "weak",
-              });
-              pendingStorePromise = null;
-            } else {
-              // Intermediate batches: use optimized with wait=false for speed
-              pendingStorePromise = this.qdrant.addPointsOptimized(
-                collectionName,
-                points,
-                { wait: false, ordering: "weak" },
-              );
-            }
-          }
-        } // End embedding batch loop
-
-        processedFiles += fileBatch.length;
-
-        // CHECKPOINT: Save progress every N files for resumability
-        if (processedFiles % CHECKPOINT_INTERVAL === 0 || processedFiles === filesToIndex.length) {
-          // Build list of processed files for checkpoint
-          const processedFilesList = filesToIndex.slice(0, i + fileProcessingConcurrency);
-          await synchronizer.saveCheckpoint(processedFilesList, filesToIndex.length, "indexing");
-        }
-      } // End file processing loop
-
-      // Ensure any pending store is complete
-      if (pendingStorePromise) {
-        await pendingStorePromise;
       }
 
-      stats.chunksAdded = totalChunksCreated;
+      // Start both Delete and Add simultaneously
+      const deleteStartTime = Date.now();
+      const deletePromise = performDeletion();
+      const addPromise = indexFiles(addedFiles, "added");
+
+      pipelineLog.reindexPhase("DELETE_AND_ADD_STARTED", {
+        deleteFiles: filesToDelete.length,
+        addFiles: addedFiles.length,
+      });
+
+      // Modified only needs to wait for Delete (not Add!)
+      // This allows Modified and Add to run in parallel after Delete completes
+      await deletePromise;
+
+      pipelineLog.reindexPhase("DELETE_COMPLETE", {
+        durationMs: Date.now() - deleteStartTime,
+        deleted: filesToDelete.length,
+      });
+
+      if (process.env.DEBUG) {
+        console.error(
+          `[Reindex] Delete complete, starting modified indexing (add still running in parallel)`
+        );
+      }
+
+      // Start Modified - now runs in parallel with remaining Add work
+      const modifiedStartTime = Date.now();
+      const modifiedPromise = indexFiles(modifiedFiles, "modified");
+
+      pipelineLog.reindexPhase("MODIFIED_STARTED", {
+        modifiedFiles: modifiedFiles.length,
+        addStillRunning: true,
+      });
+
+      // Wait for both Add and Modified to complete
+      const [addedChunks, modifiedChunks] = await Promise.all([
+        addPromise,
+        modifiedPromise,
+      ]);
+
+      pipelineLog.reindexPhase("ADD_AND_MODIFIED_COMPLETE", {
+        addedChunks,
+        modifiedChunks,
+        addDurationMs: Date.now() - startTime2,
+        modifiedDurationMs: Date.now() - modifiedStartTime,
+      });
+
+      // Flush and shutdown ChunkPipeline to ensure all chunks are processed
+      if (process.env.DEBUG) {
+        const pipelineStats = chunkPipeline.getStats();
+        console.error(
+          `[Reindex] ChunkPipeline before flush: ` +
+            `pending=${chunkPipeline.getPendingCount()}, ` +
+            `processed=${pipelineStats.itemsProcessed}, ` +
+            `batches=${pipelineStats.batchesProcessed}`
+        );
+      }
+
+      await chunkPipeline.flush();
+      await chunkPipeline.shutdown();
+
+      const pipelineStats = chunkPipeline.getStats();
+      if (process.env.DEBUG) {
+        console.error(
+          `[Reindex] Parallel pipelines completed in ${Date.now() - startTime2}ms ` +
+            `(pipeline: ${pipelineStats.itemsProcessed} chunks in ${pipelineStats.batchesProcessed} batches, ` +
+            `${pipelineStats.throughput.toFixed(1)} chunks/s)`
+        );
+      }
+
+      stats.chunksAdded = addedChunks + modifiedChunks;
 
       // Update snapshot
       await synchronizer.updateSnapshot(currentFiles);
@@ -881,7 +958,6 @@ export class CodeIndexer {
 
       stats.durationMs = Date.now() - startTime;
 
-      // DEBUG: Final summary
       if (process.env.DEBUG) {
         console.error(
           `[Reindex] Complete: ${stats.filesAdded} added, ` +
@@ -897,6 +973,10 @@ export class CodeIndexer {
       throw new Error(`Incremental re-indexing failed: ${errorMessage}`);
     }
   }
+
+  // ============ PLACEHOLDER FOR OLD CODE REMOVAL ============
+  // The old sequential code below has been replaced by the parallel pipelines above
+  // This marker indicates where the old code was
 
   /**
    * Rebuild cache/snapshot by comparing actual files with Qdrant collection.

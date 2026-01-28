@@ -80,6 +80,58 @@ export class QdrantManager {
     await this.client.createCollection(name, config);
   }
 
+  /**
+   * Create a payload index on a field for faster filtering.
+   * Supported schemas: "keyword", "integer", "float", "bool", "geo", "datetime", "text", "uuid"
+   *
+   * IMPORTANT: Indexes should be created immediately after collection setup.
+   * Creating them on large existing collections may be slow and block updates.
+   */
+  async createPayloadIndex(
+    collectionName: string,
+    fieldName: string,
+    fieldSchema: "keyword" | "integer" | "float" | "bool" | "geo" | "datetime" | "text" | "uuid",
+  ): Promise<void> {
+    await this.client.createPayloadIndex(collectionName, {
+      field_name: fieldName,
+      field_schema: fieldSchema,
+      wait: true,
+    });
+  }
+
+  /**
+   * Check if a payload index exists on a field.
+   */
+  async hasPayloadIndex(
+    collectionName: string,
+    fieldName: string,
+  ): Promise<boolean> {
+    try {
+      const info = await this.client.getCollection(collectionName);
+      const indexes = info.payload_schema || {};
+      return fieldName in indexes;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Ensure a payload index exists, creating it if missing.
+   * Returns true if index was created, false if already existed.
+   */
+  async ensurePayloadIndex(
+    collectionName: string,
+    fieldName: string,
+    fieldSchema: "keyword" | "integer" | "float" | "bool" | "geo" | "datetime" | "text" | "uuid",
+  ): Promise<boolean> {
+    const exists = await this.hasPayloadIndex(collectionName, fieldName);
+    if (exists) {
+      return false;
+    }
+    await this.createPayloadIndex(collectionName, fieldName, fieldSchema);
+    return true;
+  }
+
   async collectionExists(name: string): Promise<boolean> {
     try {
       await this.client.getCollection(name);
@@ -357,6 +409,100 @@ export class QdrantManager {
         })),
       },
     });
+  }
+
+  /**
+   * PIPELINED BATCH DELETE: Delete points with batching and parallelism.
+   *
+   * Strategy:
+   * - Split paths into batches (default: 500 paths per batch with payload index)
+   * - Run batches with concurrency limit (default: 8 concurrent requests)
+   * - Use wait=false for intermediate batches (fire-and-forget)
+   * - Use wait=true for final batch (consistency guarantee)
+   *
+   * IMPORTANT: For best performance, ensure `relativePath` field has a
+   * keyword payload index. Without index, filter-based deletes scan all points.
+   *
+   * This approach significantly speeds up deletion of large file sets
+   * while maintaining eventual consistency.
+   *
+   * @param collectionName - Collection to delete from
+   * @param relativePaths - Array of file paths to delete
+   * @param options - Configuration options
+   */
+  async deletePointsByPathsBatched(
+    collectionName: string,
+    relativePaths: string[],
+    options: {
+      batchSize?: number;
+      concurrency?: number;
+      onProgress?: (deleted: number, total: number) => void;
+    } = {},
+  ): Promise<{ deletedPaths: number; batchCount: number; durationMs: number }> {
+    const startTime = Date.now();
+
+    if (relativePaths.length === 0) {
+      return { deletedPaths: 0, batchCount: 0, durationMs: 0 };
+    }
+
+    // Default: 500 paths per batch, 8 concurrent (optimized for indexed relativePath)
+    const {
+      batchSize = parseInt(process.env.DELETE_BATCH_SIZE || "500", 10),
+      concurrency = parseInt(process.env.DELETE_CONCURRENCY || "8", 10),
+      onProgress,
+    } = options;
+
+    // Split into batches
+    const batches: string[][] = [];
+    for (let i = 0; i < relativePaths.length; i += batchSize) {
+      batches.push(relativePaths.slice(i, i + batchSize));
+    }
+
+    let deletedCount = 0;
+
+    // Process batches with concurrency limit using pipelining
+    // Track pending promises to limit concurrency
+    const pendingPromises: Promise<void>[] = [];
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const isLastBatch = i === batches.length - 1;
+
+      // Wait for oldest promise if at concurrency limit
+      if (pendingPromises.length >= concurrency) {
+        await pendingPromises.shift();
+      }
+
+      // Create delete promise
+      const deletePromise = this.client.delete(collectionName, {
+        wait: isLastBatch, // Only wait for final batch
+        filter: {
+          should: batch.map((path) => ({
+            key: "relativePath",
+            match: { value: path },
+          })),
+        },
+      }).then(() => {
+        deletedCount += batch.length;
+        onProgress?.(deletedCount, relativePaths.length);
+      });
+
+      if (!isLastBatch) {
+        pendingPromises.push(deletePromise);
+      } else {
+        // Wait for final batch
+        await deletePromise;
+      }
+    }
+
+    // Wait for any remaining pending promises
+    await Promise.all(pendingPromises);
+
+    return {
+      deletedPaths: relativePaths.length,
+      batchCount: batches.length,
+      durationMs: Date.now() - startTime,
+    };
   }
 
   /**
