@@ -192,4 +192,46 @@ export function registerCodeTools(
       };
     },
   );
+
+  // rebuild_cache
+  server.registerTool(
+    "rebuild_cache",
+    {
+      title: "Rebuild Cache",
+      description:
+        "Rebuild file index cache by comparing actual files with Qdrant collection. " +
+        "Shows which files are indexed vs pending. Use after manual file changes, " +
+        "interrupted indexing, or to verify/fix state. Cleans up orphaned chunks.",
+      inputSchema: schemas.RebuildCacheSchema,
+    },
+    async ({ path }) => {
+      const result = await codeIndexer.rebuildCache(path);
+
+      let message = `Cache rebuild complete:\n`;
+      message += `- Indexed files: ${result.indexed}\n`;
+      message += `- Pending files: ${result.pending}\n`;
+      message += `- Orphaned (cleaned): ${result.orphaned}\n`;
+      message += `- Cache version: ${result.cacheVersion}\n`;
+      message += `- Snapshot updated: ${result.snapshotUpdated}`;
+
+      if (result.details) {
+        if (result.details.pendingFiles.length > 0) {
+          message += `\n\nPending files (first 20):\n`;
+          message += result.details.pendingFiles
+            .map((f) => `  - ${f}`)
+            .join("\n");
+        }
+        if (result.details.orphanedPaths.length > 0) {
+          message += `\n\nOrphaned paths (first 20, cleaned up):\n`;
+          message += result.details.orphanedPaths
+            .map((f) => `  - ${f}`)
+            .join("\n");
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: message }],
+      };
+    },
+  );
 }

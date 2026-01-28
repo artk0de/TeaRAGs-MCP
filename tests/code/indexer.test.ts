@@ -2,29 +2,65 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Mock tree-sitter modules to prevent native binding crashes
+// Note: vi.mock() is hoisted, so all values must be inline (no external references)
+vi.mock("tree-sitter", () => ({
+  default: class MockParser {
+    setLanguage() {}
+    parse() {
+      return {
+        rootNode: {
+          type: "program",
+          startPosition: { row: 0, column: 0 },
+          endPosition: { row: 0, column: 0 },
+          children: [],
+          text: "",
+          namedChildren: [],
+        },
+      };
+    }
+  },
+}));
+vi.mock("tree-sitter-bash", () => ({ default: {} }));
+vi.mock("tree-sitter-go", () => ({ default: {} }));
+vi.mock("tree-sitter-java", () => ({ default: {} }));
+vi.mock("tree-sitter-javascript", () => ({ default: {} }));
+vi.mock("tree-sitter-python", () => ({ default: {} }));
+vi.mock("tree-sitter-rust", () => ({ default: {} }));
+vi.mock("tree-sitter-typescript", () => ({
+  default: { typescript: {}, tsx: {} },
+}));
+
 import { CodeIndexer } from "../../src/code/indexer.js";
 import type { CodeConfig } from "../../src/code/types.js";
 import type { EmbeddingProvider } from "../../src/embeddings/base.js";
 import type { QdrantManager } from "../../src/qdrant/client.js";
 
-// Mock implementations
+// Mock implementations - mirrors all QdrantManager public methods
 class MockQdrantManager implements Partial<QdrantManager> {
   private collections = new Map<string, any>();
   private points = new Map<string, any[]>();
 
+  // Collection management
   async collectionExists(name: string): Promise<boolean> {
     return this.collections.has(name);
   }
 
+  async listCollections(): Promise<string[]> {
+    return Array.from(this.collections.keys());
+  }
+
   async createCollection(
     name: string,
-    _vectorSize: number,
-    _distance: "Cosine" | "Euclid" | "Dot" = "Cosine",
-    _enableHybrid?: boolean,
+    vectorSize: number,
+    distance: "Cosine" | "Euclid" | "Dot" = "Cosine",
+    enableHybrid?: boolean,
   ): Promise<void> {
     this.collections.set(name, {
-      vectorSize: _vectorSize,
-      hybridEnabled: _enableHybrid || false,
+      vectorSize,
+      distance,
+      hybridEnabled: enableHybrid || false,
     });
     this.points.set(name, []);
   }
@@ -34,82 +70,130 @@ class MockQdrantManager implements Partial<QdrantManager> {
     this.points.delete(name);
   }
 
+  async getCollectionInfo(name: string): Promise<any> {
+    const collection = this.collections.get(name);
+    const points = this.points.get(name) || [];
+    return {
+      name,
+      pointsCount: points.length,
+      hybridEnabled: collection?.hybridEnabled || false,
+      vectorSize: collection?.vectorSize || 384,
+      distance: collection?.distance || "Cosine",
+    };
+  }
+
+  // Points management - dense vectors
   async addPoints(collectionName: string, points: any[]): Promise<void> {
+    if (points.length === 0) return;
     const existing = this.points.get(collectionName) || [];
-    // Upsert: remove existing points with same ID, then add new ones
     const newIds = new Set(points.map((p) => p.id));
     const filtered = existing.filter((p) => !newIds.has(p.id));
     this.points.set(collectionName, [...filtered, ...points]);
   }
 
-  async addPointsWithSparse(
+  async addPointsOptimized(
     collectionName: string,
     points: any[],
+    _options?: { wait?: boolean; ordering?: string },
   ): Promise<void> {
     await this.addPoints(collectionName, points);
   }
 
+  // Points management - hybrid (dense + sparse) vectors
+  async addPointsWithSparse(collectionName: string, points: any[]): Promise<void> {
+    await this.addPoints(collectionName, points);
+  }
+
+  async addPointsWithSparseOptimized(
+    collectionName: string,
+    points: any[],
+    _options?: { wait?: boolean; ordering?: string },
+  ): Promise<void> {
+    await this.addPoints(collectionName, points);
+  }
+
+  // Search
   async search(
     collectionName: string,
     _vector: number[],
     limit: number,
-    _filter?: any,
+    filter?: any,
   ): Promise<any[]> {
-    const points = this.points.get(collectionName) || [];
+    let points = this.points.get(collectionName) || [];
+
+    // Apply filter if provided
+    if (filter?.must) {
+      for (const condition of filter.must) {
+        if (condition.key && condition.match?.any) {
+          points = points.filter((p) =>
+            condition.match.any.includes(p.payload?.[condition.key]),
+          );
+        }
+      }
+    }
+
     return points.slice(0, limit).map((p, idx) => ({
       id: p.id,
-      score: 0.9 - idx * 0.1,
+      score: 0.95 - idx * 0.05,
       payload: p.payload,
     }));
   }
 
   async hybridSearch(
     collectionName: string,
-    _vector: number[],
+    vector: number[],
     _sparseVector: any,
     limit: number,
-    _filter?: any,
+    filter?: any,
   ): Promise<any[]> {
-    return this.search(collectionName, _vector, limit, _filter);
+    return this.search(collectionName, vector, limit, filter);
   }
 
-  async getCollectionInfo(name: string): Promise<any> {
-    const collection = this.collections.get(name);
-    const points = this.points.get(name) || [];
-    return {
-      pointsCount: points.length,
-      hybridEnabled: collection?.hybridEnabled || false,
-      vectorSize: collection?.vectorSize || 384,
-    };
-  }
-
+  // Point retrieval
   async getPoint(
     collectionName: string,
     id: string | number,
   ): Promise<{ id: string | number; payload?: Record<string, any> } | null> {
     const points = this.points.get(collectionName) || [];
     const point = points.find((p) => p.id === id);
-    if (!point) {
-      return null;
-    }
-    return {
-      id: point.id,
-      payload: point.payload,
-    };
+    return point ? { id: point.id, payload: point.payload } : null;
   }
 
-  async deletePointsByFilter(
-    collectionName: string,
-    filter: Record<string, any>,
-  ): Promise<void> {
+  // Deletion
+  async deletePoints(collectionName: string, ids: (string | number)[]): Promise<void> {
+    const points = this.points.get(collectionName) || [];
+    const idsSet = new Set(ids);
+    this.points.set(collectionName, points.filter((p) => !idsSet.has(p.id)));
+  }
+
+  async deletePointsByFilter(collectionName: string, filter: Record<string, any>): Promise<void> {
     const points = this.points.get(collectionName) || [];
     const pathToDelete = filter?.must?.[0]?.match?.value;
     if (pathToDelete) {
-      const filtered = points.filter(
-        (p) => p.payload?.relativePath !== pathToDelete,
+      this.points.set(
+        collectionName,
+        points.filter((p) => p.payload?.relativePath !== pathToDelete),
       );
-      this.points.set(collectionName, filtered);
     }
+  }
+
+  async deletePointsByPaths(collectionName: string, relativePaths: string[]): Promise<void> {
+    if (relativePaths.length === 0) return;
+    const points = this.points.get(collectionName) || [];
+    const pathsSet = new Set(relativePaths);
+    this.points.set(
+      collectionName,
+      points.filter((p) => !pathsSet.has(p.payload?.relativePath)),
+    );
+  }
+
+  // Indexing control
+  async disableIndexing(_collectionName: string): Promise<void> {
+    // No-op for mock
+  }
+
+  async enableIndexing(_collectionName: string, _threshold?: number): Promise<void> {
+    // No-op for mock
   }
 }
 
@@ -348,11 +432,12 @@ describe("CodeIndexer", () => {
 
     it("should batch embed operations", async () => {
       // Create multiple files to trigger batching
+      // Files need to be > 100 chars for fallback chunker to create chunks (when tree-sitter is mocked)
       for (let i = 0; i < 5; i++) {
         await createTestFile(
           codebaseDir,
           `file${i}.ts`,
-          `export function test${i}() {\n  console.log('Test function ${i}');\n  return ${i};\n}`,
+          `export function test${i}() {\n  console.log('Test function ${i}');\n  const value = ${i};\n  const result = value * 2;\n  return result;\n}\n\nexport const config${i} = { enabled: true };`,
         );
       }
 
@@ -868,28 +953,28 @@ function helper(param: string): boolean {
     });
 
     it("should delete old chunks when file is modified", async () => {
+      // Content must be > 100 chars for fallback chunker when tree-sitter is mocked
       await createTestFile(
         codebaseDir,
         "test.ts",
-        "export const originalValue = 1;\nconsole.log('Original version');",
+        "export const originalValue = 1;\nconsole.log('Original version');\nconst extra = 'padding to make this file longer than 100 characters for fallback chunker';",
       );
       await indexer.indexCodebase(codebaseDir);
 
-      const deletePointsByFilterSpy = vi.spyOn(qdrant, "deletePointsByFilter");
+      const deletePointsByPathsSpy = vi.spyOn(qdrant, "deletePointsByPaths");
 
+      // Modified content with different size to bypass mtime cache
       await createTestFile(
         codebaseDir,
         "test.ts",
-        "export const modifiedValue = 2;\nconsole.log('Modified version');",
+        "export const modifiedValue = 2;\nconsole.log('Modified version');\nconst extra = 'this is different content with a different length to trigger change detection correctly';",
       );
 
       await indexer.reindexChanges(codebaseDir);
 
-      expect(deletePointsByFilterSpy).toHaveBeenCalledWith(
+      expect(deletePointsByPathsSpy).toHaveBeenCalledWith(
         expect.stringContaining("code_"),
-        {
-          must: [{ key: "relativePath", match: { value: "test.ts" } }],
-        },
+        expect.arrayContaining(["test.ts"]),
       );
     });
 
@@ -901,76 +986,78 @@ function helper(param: string): boolean {
       );
       await indexer.indexCodebase(codebaseDir);
 
-      const deletePointsByFilterSpy = vi.spyOn(qdrant, "deletePointsByFilter");
+      const deletePointsByPathsSpy = vi.spyOn(qdrant, "deletePointsByPaths");
 
       await fs.unlink(join(codebaseDir, "test.ts"));
 
       await indexer.reindexChanges(codebaseDir);
 
-      expect(deletePointsByFilterSpy).toHaveBeenCalledWith(
+      expect(deletePointsByPathsSpy).toHaveBeenCalledWith(
         expect.stringContaining("code_"),
-        {
-          must: [{ key: "relativePath", match: { value: "test.ts" } }],
-        },
+        expect.arrayContaining(["test.ts"]),
       );
     });
 
     it("should not affect chunks from unchanged files", async () => {
+      // Files must be > 100 chars for fallback chunker when tree-sitter is mocked
       await createTestFile(
         codebaseDir,
         "unchanged.ts",
-        "export const unchanged = 1;\nconsole.log('Unchanged');",
+        "export const unchanged = 1;\nconsole.log('Unchanged');\nconst padding = 'extra content to ensure file is larger than 100 chars for fallback chunker';",
       );
       await createTestFile(
         codebaseDir,
         "changed.ts",
-        "export const original = 2;\nconsole.log('Original');",
+        "export const original = 2;\nconsole.log('Original');\nconst padding = 'extra content to ensure file is larger than 100 chars for fallback chunker';",
       );
       await indexer.indexCodebase(codebaseDir);
 
-      const deletePointsByFilterSpy = vi.spyOn(qdrant, "deletePointsByFilter");
+      const deletePointsByPathsSpy = vi.spyOn(qdrant, "deletePointsByPaths");
 
+      // Modified content with different size to bypass mtime cache
       await createTestFile(
         codebaseDir,
         "changed.ts",
-        "export const modified = 3;\nconsole.log('Modified');",
+        "export const modified = 3;\nconsole.log('Modified');\nconst differentPadding = 'completely different content with different length to trigger change detection';",
       );
 
       await indexer.reindexChanges(codebaseDir);
 
       // Should only delete chunks for changed.ts, not unchanged.ts
-      expect(deletePointsByFilterSpy).toHaveBeenCalledTimes(1);
-      expect(deletePointsByFilterSpy).toHaveBeenCalledWith(
+      expect(deletePointsByPathsSpy).toHaveBeenCalledWith(
         expect.stringContaining("code_"),
-        {
-          must: [{ key: "relativePath", match: { value: "changed.ts" } }],
-        },
+        expect.arrayContaining(["changed.ts"]),
       );
+      // Verify unchanged.ts was NOT in the deleted paths
+      const deletedPaths = deletePointsByPathsSpy.mock.calls[0]?.[1] || [];
+      expect(deletedPaths).not.toContain("unchanged.ts");
     });
 
     it("should handle deletion errors gracefully", async () => {
+      // File must be > 100 chars for fallback chunker when tree-sitter is mocked
       await createTestFile(
         codebaseDir,
         "test.ts",
-        "export const original = 1;\nconsole.log('Original');",
+        "export const original = 1;\nconsole.log('Original');\nconst padding = 'extra content to ensure file is larger than 100 chars for fallback chunker';",
       );
       await indexer.indexCodebase(codebaseDir);
 
-      // Mock deletePointsByFilter to throw an error
-      const deletePointsByFilterSpy = vi
-        .spyOn(qdrant, "deletePointsByFilter")
+      // Mock deletePointsByPaths to throw an error
+      const deletePointsByPathsSpy = vi
+        .spyOn(qdrant, "deletePointsByPaths")
         .mockRejectedValueOnce(new Error("Deletion failed"));
 
+      // Modified content with different size to bypass mtime cache
       await createTestFile(
         codebaseDir,
         "test.ts",
-        "export const modified = 2;\nconsole.log('Modified');",
+        "export const modified = 2;\nconsole.log('Modified');\nconst differentPadding = 'completely different content with different length to trigger change';",
       );
 
       // Should not throw, should continue with reindexing
       const stats = await indexer.reindexChanges(codebaseDir);
 
-      expect(deletePointsByFilterSpy).toHaveBeenCalled();
+      expect(deletePointsByPathsSpy).toHaveBeenCalled();
       expect(stats.filesModified).toBe(1);
     });
   });

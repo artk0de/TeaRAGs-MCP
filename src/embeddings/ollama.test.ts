@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OllamaEmbeddings } from "./ollama.js";
 
 // Mock fetch globally
@@ -12,7 +12,13 @@ describe("OllamaEmbeddings", () => {
     mockFetch = global.fetch as any;
     mockFetch.mockReset();
 
+    // Use legacy API for tests (old /api/embeddings endpoint)
+    process.env.OLLAMA_LEGACY_API = "true";
     embeddings = new OllamaEmbeddings();
+  });
+
+  afterEach(() => {
+    delete process.env.OLLAMA_LEGACY_API;
   });
 
   describe("constructor", () => {
@@ -87,6 +93,7 @@ describe("OllamaEmbeddings", () => {
           body: JSON.stringify({
             model: "nomic-embed-text",
             prompt: "test text",
+            options: { num_gpu: 999 },
           }),
         },
       );
@@ -538,6 +545,131 @@ describe("OllamaEmbeddings", () => {
       await expect(embeddings.embed("test")).rejects.toThrow(
         "Custom API failure",
       );
+    });
+  });
+
+  describe("native batch API (/api/embed)", () => {
+    let batchEmbeddings: OllamaEmbeddings;
+
+    beforeEach(() => {
+      // Disable legacy API for batch tests
+      delete process.env.OLLAMA_LEGACY_API;
+      batchEmbeddings = new OllamaEmbeddings();
+    });
+
+    it("should use /api/embed endpoint for single text", async () => {
+      const mockEmbedding = Array(768).fill(0.5);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: [mockEmbedding],
+        }),
+      });
+
+      const result = await batchEmbeddings.embed("test text");
+
+      expect(result).toEqual({
+        embedding: mockEmbedding,
+        dimensions: 768,
+      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:11434/api/embed",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            model: "nomic-embed-text",
+            input: ["test text"],
+            options: { num_gpu: 999 },
+          }),
+        }),
+      );
+    });
+
+    it("should batch multiple texts in single request", async () => {
+      const mockEmbeddings = [
+        Array(768).fill(0.1),
+        Array(768).fill(0.2),
+        Array(768).fill(0.3),
+      ];
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: mockEmbeddings,
+        }),
+      });
+
+      const results = await batchEmbeddings.embedBatch([
+        "text1",
+        "text2",
+        "text3",
+      ]);
+
+      expect(results).toHaveLength(3);
+      expect(results[0].embedding).toEqual(mockEmbeddings[0]);
+      expect(results[1].embedding).toEqual(mockEmbeddings[1]);
+      expect(results[2].embedding).toEqual(mockEmbeddings[2]);
+
+      // Should be ONE request for all texts
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:11434/api/embed",
+        expect.objectContaining({
+          body: JSON.stringify({
+            model: "nomic-embed-text",
+            input: ["text1", "text2", "text3"],
+            options: { num_gpu: 999 },
+          }),
+        }),
+      );
+    });
+
+    it("should handle empty embeddings response", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: [],
+        }),
+      });
+
+      await expect(batchEmbeddings.embed("test")).rejects.toThrow(
+        "No embeddings returned",
+      );
+    });
+
+    it("should handle API error in batch mode", async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () => "Internal server error",
+      });
+
+      await expect(batchEmbeddings.embed("test")).rejects.toThrow();
+    });
+
+    it("should respect EMBEDDING_BATCH_SIZE env variable", async () => {
+      // Set batch size to 2
+      process.env.EMBEDDING_BATCH_SIZE = "2";
+      const sizedEmbeddings = new OllamaEmbeddings();
+
+      const mockEmbeddings = [Array(768).fill(0.1), Array(768).fill(0.2)];
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: mockEmbeddings,
+        }),
+      });
+
+      // Send 4 texts, should result in 2 batch requests
+      await sizedEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+
+      // Should be 2 requests (batch size 2)
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      delete process.env.EMBEDDING_BATCH_SIZE;
     });
   });
 });

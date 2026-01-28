@@ -176,7 +176,8 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file1.ts", "original content");
       await synchronizer.updateSnapshot(["file1.ts"]);
 
-      await createFile(codebaseDir, "file1.ts", "modified content");
+      // Change content AND size to bypass mtime cache (1s tolerance)
+      await createFile(codebaseDir, "file1.ts", "modified content with extra text to change size");
 
       const changes = await synchronizer.detectChanges(["file1.ts"]);
 
@@ -190,8 +191,8 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file2.ts", "content2");
       await synchronizer.updateSnapshot(["file1.ts", "file2.ts"]);
 
-      // Modify file1
-      await createFile(codebaseDir, "file1.ts", "modified content1");
+      // Modify file1 with different size to bypass mtime cache
+      await createFile(codebaseDir, "file1.ts", "modified content1 with extra text");
 
       // Add file3
       await createFile(codebaseDir, "file3.ts", "content3");
@@ -402,7 +403,8 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file.ts", "original");
       await synchronizer.updateSnapshot(["file.ts"]);
 
-      await createFile(codebaseDir, "file.ts", "modified");
+      // Change content AND size to bypass mtime cache
+      await createFile(codebaseDir, "file.ts", "modified with different length");
 
       const changes = await synchronizer.detectChanges(["file.ts"]);
 
@@ -413,7 +415,8 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file.ts", "content");
       await synchronizer.updateSnapshot(["file.ts"]);
 
-      await createFile(codebaseDir, "file.ts", "content ");
+      // Add multiple whitespace chars to ensure size change
+      await createFile(codebaseDir, "file.ts", "content   ");
 
       const changes = await synchronizer.detectChanges(["file.ts"]);
 
@@ -485,7 +488,8 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file.ts", "original content");
       await synchronizer.updateSnapshot(["file.ts"]);
 
-      await createFile(codebaseDir, "file.ts", "modified content");
+      // Change content AND size to bypass mtime cache (1s tolerance)
+      await createFile(codebaseDir, "file.ts", "modified content with extra text to change size");
 
       const needsReindex = await synchronizer.needsReindex(["file.ts"]);
 
@@ -560,6 +564,302 @@ describe("FileSynchronizer", () => {
 
       const isValid = await synchronizer.validateSnapshot();
       expect(isValid).toBe(true);
+    });
+  });
+
+  // ============ CHECKPOINT CORNER CASES ============
+  describe("checkpoint functionality", () => {
+    let checkpointPath: string;
+
+    beforeEach(async () => {
+      checkpointPath = join(
+        homedir(),
+        ".qdrant-mcp",
+        "snapshots",
+        `${collectionName}.checkpoint.json`,
+      );
+    });
+
+    afterEach(async () => {
+      // Clean up checkpoint file
+      try {
+        await fs.rm(checkpointPath, { force: true });
+      } catch (_error) {
+        // Ignore cleanup errors
+      }
+    });
+
+    describe("saveCheckpoint", () => {
+      it("should save checkpoint with processedFiles and totalFiles", async () => {
+        await synchronizer.saveCheckpoint(["file1.ts", "file2.ts"], 10, "indexing");
+
+        const data = await fs.readFile(checkpointPath, "utf-8");
+        const checkpoint = JSON.parse(data);
+
+        expect(checkpoint.processedFiles).toEqual(["file1.ts", "file2.ts"]);
+        expect(checkpoint.totalFiles).toBe(10);
+        expect(checkpoint.phase).toBe("indexing");
+        expect(checkpoint.timestamp).toBeDefined();
+      });
+
+      it("should overwrite previous checkpoint", async () => {
+        await synchronizer.saveCheckpoint(["file1.ts"], 5, "indexing");
+        await synchronizer.saveCheckpoint(["file1.ts", "file2.ts", "file3.ts"], 5, "indexing");
+
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint?.processedFiles).toHaveLength(3);
+      });
+
+      it("should handle empty processedFiles array", async () => {
+        await synchronizer.saveCheckpoint([], 100, "deleting");
+
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint?.processedFiles).toEqual([]);
+        expect(checkpoint?.totalFiles).toBe(100);
+        expect(checkpoint?.phase).toBe("deleting");
+      });
+
+      it("should save with deleting phase", async () => {
+        await synchronizer.saveCheckpoint(["file1.ts"], 10, "deleting");
+
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint?.phase).toBe("deleting");
+      });
+    });
+
+    describe("loadCheckpoint", () => {
+      it("should return null when no checkpoint exists", async () => {
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint).toBeNull();
+      });
+
+      it("should load valid checkpoint", async () => {
+        await synchronizer.saveCheckpoint(["file1.ts"], 5, "indexing");
+
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint).not.toBeNull();
+        expect(checkpoint?.processedFiles).toEqual(["file1.ts"]);
+      });
+
+      it("should return null for stale checkpoint (>24 hours)", async () => {
+        // Create a checkpoint with old timestamp
+        const staleCheckpoint = {
+          processedFiles: ["file1.ts"],
+          totalFiles: 10,
+          timestamp: Date.now() - (25 * 60 * 60 * 1000), // 25 hours ago
+          phase: "indexing",
+        };
+        await fs.mkdir(join(homedir(), ".qdrant-mcp", "snapshots"), { recursive: true });
+        await fs.writeFile(checkpointPath, JSON.stringify(staleCheckpoint));
+
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint).toBeNull();
+      });
+
+      it("should return null for corrupted JSON", async () => {
+        await fs.mkdir(join(homedir(), ".qdrant-mcp", "snapshots"), { recursive: true });
+        await fs.writeFile(checkpointPath, "{ invalid json }");
+
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint).toBeNull();
+      });
+
+      it("should return null for checkpoint missing processedFiles", async () => {
+        const invalidCheckpoint = {
+          totalFiles: 10,
+          timestamp: Date.now(),
+          phase: "indexing",
+        };
+        await fs.mkdir(join(homedir(), ".qdrant-mcp", "snapshots"), { recursive: true });
+        await fs.writeFile(checkpointPath, JSON.stringify(invalidCheckpoint));
+
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint).toBeNull();
+      });
+
+      it("should return null for checkpoint missing totalFiles", async () => {
+        const invalidCheckpoint = {
+          processedFiles: ["file1.ts"],
+          timestamp: Date.now(),
+          phase: "indexing",
+        };
+        await fs.mkdir(join(homedir(), ".qdrant-mcp", "snapshots"), { recursive: true });
+        await fs.writeFile(checkpointPath, JSON.stringify(invalidCheckpoint));
+
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint).toBeNull();
+      });
+    });
+
+    describe("deleteCheckpoint", () => {
+      it("should delete existing checkpoint", async () => {
+        await synchronizer.saveCheckpoint(["file1.ts"], 5, "indexing");
+        expect(await synchronizer.hasCheckpoint()).toBe(true);
+
+        await synchronizer.deleteCheckpoint();
+        expect(await synchronizer.hasCheckpoint()).toBe(false);
+      });
+
+      it("should not throw when checkpoint does not exist", async () => {
+        await expect(synchronizer.deleteCheckpoint()).resolves.not.toThrow();
+      });
+    });
+
+    describe("hasCheckpoint", () => {
+      it("should return false when no checkpoint exists", async () => {
+        const hasCheckpoint = await synchronizer.hasCheckpoint();
+        expect(hasCheckpoint).toBe(false);
+      });
+
+      it("should return true when checkpoint exists", async () => {
+        await synchronizer.saveCheckpoint(["file1.ts"], 5, "indexing");
+
+        const hasCheckpoint = await synchronizer.hasCheckpoint();
+        expect(hasCheckpoint).toBe(true);
+      });
+    });
+
+    describe("filterProcessedFiles", () => {
+      it("should filter out already processed files", () => {
+        const checkpoint = {
+          processedFiles: ["file1.ts", "file2.ts"],
+          totalFiles: 5,
+          timestamp: Date.now(),
+          phase: "indexing" as const,
+        };
+
+        const remaining = synchronizer.filterProcessedFiles(
+          ["file1.ts", "file2.ts", "file3.ts", "file4.ts"],
+          checkpoint
+        );
+
+        expect(remaining).toEqual(["file3.ts", "file4.ts"]);
+      });
+
+      it("should return all files when none are processed", () => {
+        const checkpoint = {
+          processedFiles: [],
+          totalFiles: 4,
+          timestamp: Date.now(),
+          phase: "indexing" as const,
+        };
+
+        const remaining = synchronizer.filterProcessedFiles(
+          ["file1.ts", "file2.ts", "file3.ts", "file4.ts"],
+          checkpoint
+        );
+
+        expect(remaining).toEqual(["file1.ts", "file2.ts", "file3.ts", "file4.ts"]);
+      });
+
+      it("should return empty array when all files are processed", () => {
+        const checkpoint = {
+          processedFiles: ["file1.ts", "file2.ts"],
+          totalFiles: 2,
+          timestamp: Date.now(),
+          phase: "indexing" as const,
+        };
+
+        const remaining = synchronizer.filterProcessedFiles(
+          ["file1.ts", "file2.ts"],
+          checkpoint
+        );
+
+        expect(remaining).toEqual([]);
+      });
+
+      it("should handle files deleted since checkpoint was saved", () => {
+        // Checkpoint has file3.ts, but current files don't include it (deleted)
+        const checkpoint = {
+          processedFiles: ["file1.ts", "file2.ts", "file3.ts"],
+          totalFiles: 5,
+          timestamp: Date.now(),
+          phase: "indexing" as const,
+        };
+
+        const remaining = synchronizer.filterProcessedFiles(
+          ["file1.ts", "file2.ts", "file4.ts", "file5.ts"], // file3.ts is missing
+          checkpoint
+        );
+
+        // file3.ts was processed but doesn't exist - that's OK, we just skip it
+        // file4.ts and file5.ts are new and should be returned
+        expect(remaining).toEqual(["file4.ts", "file5.ts"]);
+      });
+
+      it("should handle files added since checkpoint was saved", () => {
+        const checkpoint = {
+          processedFiles: ["file1.ts"],
+          totalFiles: 2,
+          timestamp: Date.now(),
+          phase: "indexing" as const,
+        };
+
+        // file3.ts was added after checkpoint
+        const remaining = synchronizer.filterProcessedFiles(
+          ["file1.ts", "file2.ts", "file3.ts"],
+          checkpoint
+        );
+
+        expect(remaining).toEqual(["file2.ts", "file3.ts"]);
+      });
+    });
+
+    describe("checkpoint integration scenarios", () => {
+      it("should support resume workflow after interruption", async () => {
+        // Simulate indexing 2 of 4 files before interruption
+        await synchronizer.saveCheckpoint(["file1.ts", "file2.ts"], 4, "indexing");
+
+        // Simulate restart - create new synchronizer instance
+        const newSync = new FileSynchronizer(codebaseDir, collectionName);
+
+        // Load checkpoint
+        const checkpoint = await newSync.loadCheckpoint();
+        expect(checkpoint).not.toBeNull();
+
+        // Filter remaining files
+        const allFiles = ["file1.ts", "file2.ts", "file3.ts", "file4.ts"];
+        const remaining = newSync.filterProcessedFiles(allFiles, checkpoint!);
+
+        expect(remaining).toEqual(["file3.ts", "file4.ts"]);
+
+        // After successful completion, delete checkpoint
+        await newSync.deleteCheckpoint();
+        expect(await newSync.hasCheckpoint()).toBe(false);
+      });
+
+      it("should handle multiple checkpoint saves during progress", async () => {
+        // Save checkpoint after each file
+        await synchronizer.saveCheckpoint(["file1.ts"], 4, "indexing");
+        let checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint?.processedFiles).toHaveLength(1);
+
+        await synchronizer.saveCheckpoint(["file1.ts", "file2.ts"], 4, "indexing");
+        checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint?.processedFiles).toHaveLength(2);
+
+        await synchronizer.saveCheckpoint(["file1.ts", "file2.ts", "file3.ts"], 4, "indexing");
+        checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint?.processedFiles).toHaveLength(3);
+      });
+
+      it("should properly handle checkpoint when totalFiles changes", async () => {
+        // Checkpoint saved with totalFiles=4
+        await synchronizer.saveCheckpoint(["file1.ts", "file2.ts"], 4, "indexing");
+
+        // On resume, scan finds different number of files (e.g., file5.ts was added)
+        const checkpoint = await synchronizer.loadCheckpoint();
+        expect(checkpoint?.totalFiles).toBe(4); // Original count
+
+        // But we use filterProcessedFiles with actual files, which handles this correctly
+        const actualFiles = ["file1.ts", "file2.ts", "file3.ts", "file4.ts", "file5.ts"];
+        const remaining = synchronizer.filterProcessedFiles(actualFiles, checkpoint!);
+
+        // file5.ts is new and should be processed
+        expect(remaining).toContain("file3.ts");
+        expect(remaining).toContain("file4.ts");
+        expect(remaining).toContain("file5.ts");
+      });
     });
   });
 });
