@@ -10,18 +10,31 @@
 
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { homedir } from "node:os";
 import { relative, join } from "node:path";
 import type { FileChanges } from "../types.js";
 import { ConsistentHash } from "./consistent-hash.js";
 import { MerkleTree } from "./merkle.js";
 import { ShardedSnapshotManager, type FileMetadata, type LoadedSnapshot } from "./sharded-snapshot.js";
 
+/**
+ * Checkpoint data for resumable indexing
+ */
+export interface Checkpoint {
+  processedFiles: string[];  // Relative paths of files already indexed
+  totalFiles: number;        // Total files to process
+  timestamp: number;         // When checkpoint was created
+  phase: "deleting" | "indexing";  // Current phase
+}
+
 export class ParallelFileSynchronizer {
   private readonly codebasePath: string;
   private readonly collectionName: string;
+  private readonly snapshotDir: string;
   private readonly snapshotManager: ShardedSnapshotManager;
   private readonly concurrency: number;
   private readonly hashRing: ConsistentHash;
+  private readonly checkpointPath: string;
 
   private previousSnapshot: LoadedSnapshot | null = null;
 
@@ -33,6 +46,7 @@ export class ParallelFileSynchronizer {
   ) {
     this.codebasePath = codebasePath;
     this.collectionName = collectionName;
+    this.snapshotDir = snapshotDir;
 
     // Get concurrency from param, env, or default
     this.concurrency = concurrency
@@ -44,6 +58,7 @@ export class ParallelFileSynchronizer {
       collectionName,
       this.concurrency
     );
+    this.checkpointPath = join(snapshotDir, `${collectionName}.checkpoint.json`);
   }
 
   /**
@@ -143,6 +158,90 @@ export class ParallelFileSynchronizer {
   async deleteSnapshot(): Promise<void> {
     await this.snapshotManager.delete();
     this.previousSnapshot = null;
+  }
+
+  // ============ CHECKPOINT METHODS ============
+
+  /**
+   * Save checkpoint for resumable indexing
+   */
+  async saveCheckpoint(
+    processedFiles: string[],
+    totalFiles: number,
+    phase: "deleting" | "indexing" = "indexing"
+  ): Promise<void> {
+    const checkpoint: Checkpoint = {
+      processedFiles,
+      totalFiles,
+      timestamp: Date.now(),
+      phase,
+    };
+
+    try {
+      await fs.mkdir(this.snapshotDir, { recursive: true });
+      const tempPath = `${this.checkpointPath}.tmp`;
+      await fs.writeFile(tempPath, JSON.stringify(checkpoint, null, 2));
+      await fs.rename(tempPath, this.checkpointPath);
+    } catch (error) {
+      console.error("[Checkpoint] Failed to save:", error);
+    }
+  }
+
+  /**
+   * Load checkpoint if exists
+   */
+  async loadCheckpoint(): Promise<Checkpoint | null> {
+    try {
+      const data = await fs.readFile(this.checkpointPath, "utf-8");
+      const checkpoint: Checkpoint = JSON.parse(data);
+
+      if (!checkpoint.processedFiles || !checkpoint.totalFiles) {
+        return null;
+      }
+
+      // Check if checkpoint is too old (> 24 hours)
+      const maxAge = 24 * 60 * 60 * 1000;
+      if (Date.now() - checkpoint.timestamp > maxAge) {
+        console.error("[Checkpoint] Stale checkpoint (> 24h), ignoring");
+        await this.deleteCheckpoint();
+        return null;
+      }
+
+      return checkpoint;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Delete checkpoint
+   */
+  async deleteCheckpoint(): Promise<void> {
+    try {
+      await fs.unlink(this.checkpointPath);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Check if checkpoint exists
+   */
+  async hasCheckpoint(): Promise<boolean> {
+    try {
+      await fs.access(this.checkpointPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Filter out already processed files based on checkpoint
+   */
+  filterProcessedFiles(allFiles: string[], checkpoint: Checkpoint): string[] {
+    const processedSet = new Set(checkpoint.processedFiles);
+    return allFiles.filter((f) => !processedSet.has(f));
   }
 
   /**

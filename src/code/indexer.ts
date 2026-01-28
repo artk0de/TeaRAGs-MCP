@@ -4,6 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { homedir } from "node:os";
 import { extname, join, relative, resolve } from "node:path";
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../embeddings/sparse.js";
@@ -11,7 +12,8 @@ import type { QdrantManager } from "../qdrant/client.js";
 import { TreeSitterChunker } from "./chunker/tree-sitter-chunker.js";
 import { MetadataExtractor } from "./metadata.js";
 import { FileScanner } from "./scanner.js";
-import { FileSynchronizer } from "./sync/synchronizer.js";
+import { SnapshotMigrator } from "./sync/migration.js";
+import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 import type {
   ChangeStats,
   CodeChunk,
@@ -199,7 +201,8 @@ export class CodeIndexer {
 
       // Save snapshot for incremental updates (only for files that were actually indexed)
       try {
-        const synchronizer = new FileSynchronizer(absolutePath, collectionName);
+        const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
+        const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
         await synchronizer.updateSnapshot(indexedFiles);
       } catch (error) {
         // Snapshot failure shouldn't fail the entire indexing
@@ -564,8 +567,13 @@ export class CodeIndexer {
         throw new Error(`Codebase not indexed: ${path}`);
       }
 
-      // Initialize synchronizer
-      const synchronizer = new FileSynchronizer(absolutePath, collectionName);
+      // AUTO-MIGRATE: Upgrade old snapshots to v3 (sharded) if needed
+      const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
+      const migrator = new SnapshotMigrator(snapshotDir, collectionName, absolutePath);
+      await migrator.ensureMigrated();
+
+      // Initialize parallel synchronizer (uses sharded snapshots)
+      const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
       const hasSnapshot = await synchronizer.initialize();
 
       if (!hasSnapshot) {
@@ -573,9 +581,6 @@ export class CodeIndexer {
           "No previous snapshot found. Use index_codebase for initial indexing.",
         );
       }
-
-      // AUTO-MIGRATE: Upgrade v1 snapshot to v2 if needed
-      await synchronizer.ensureSnapshotV2();
 
       // Check for existing checkpoint (resume from interruption)
       const checkpoint = await synchronizer.loadCheckpoint();
@@ -957,7 +962,13 @@ export class CodeIndexer {
     const orphanedPaths = Array.from(indexedSet).filter((p) => !currentRelativePaths.has(p));
 
     // 4. Rebuild snapshot with current state
-    const synchronizer = new FileSynchronizer(absolutePath, collectionName);
+    const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
+
+    // AUTO-MIGRATE: Upgrade old snapshots to v3 if needed
+    const migrator = new SnapshotMigrator(snapshotDir, collectionName, absolutePath);
+    await migrator.ensureMigrated();
+
+    const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
     await synchronizer.initialize();
 
     // Only include files that are both indexed AND exist
@@ -1035,13 +1046,17 @@ export class CodeIndexer {
       // The comparison will mark everything as "pending"
 
       // Better approach: Use the snapshot if it exists
-      const synchronizer = new FileSynchronizer(codebasePath, collectionName);
+      const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
+
+      // AUTO-MIGRATE: Upgrade old snapshots to v3 if needed
+      const migrator = new SnapshotMigrator(snapshotDir, collectionName, codebasePath);
+      await migrator.ensureMigrated();
+
+      const synchronizer = new ParallelFileSynchronizer(codebasePath, collectionName, snapshotDir);
       const hasSnapshot = await synchronizer.initialize();
 
       if (hasSnapshot) {
         // Get paths from snapshot (much faster than scrolling Qdrant)
-        // The snapshot has all the file hashes, so we can get paths from there
-        // But FileSynchronizer doesn't expose previousHashes directly...
 
         // Let's detect changes which will give us the current indexed paths
         const scanner = new FileScanner({
@@ -1092,7 +1107,8 @@ export class CodeIndexer {
 
     // Also delete snapshot
     try {
-      const synchronizer = new FileSynchronizer(absolutePath, collectionName);
+      const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
+      const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
       await synchronizer.deleteSnapshot();
     } catch (_error) {
       // Ignore snapshot deletion errors
