@@ -128,3 +128,7 @@ export const GetIndexStatusSchema = {
 export const ClearIndexSchema = {
   path: z.string().describe("Path to codebase"),
 };
+
+export const RebuildCacheSchema = {
+  path: z.string().describe("Path to codebase"),
+};

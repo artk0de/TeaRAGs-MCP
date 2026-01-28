@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    // Setup file mocks tree-sitter native modules to prevent crashes
+    setupFiles: ["./tests/vitest.setup.ts"],
     exclude: ["**/node_modules/**", "**/build/**", "**/dist/**"],
     coverage: {
       provider: "v8",

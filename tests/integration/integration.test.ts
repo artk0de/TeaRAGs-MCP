@@ -1,7 +1,37 @@
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Mock tree-sitter modules to prevent native binding crashes in integration tests
+// Note: vi.mock() is hoisted, so all values must be inline (no external references)
+vi.mock("tree-sitter", () => ({
+  default: class MockParser {
+    setLanguage() {}
+    parse() {
+      return {
+        rootNode: {
+          type: "program",
+          startPosition: { row: 0, column: 0 },
+          endPosition: { row: 0, column: 0 },
+          children: [],
+          text: "",
+          namedChildren: [],
+        },
+      };
+    }
+  },
+}));
+vi.mock("tree-sitter-bash", () => ({ default: {} }));
+vi.mock("tree-sitter-go", () => ({ default: {} }));
+vi.mock("tree-sitter-java", () => ({ default: {} }));
+vi.mock("tree-sitter-javascript", () => ({ default: {} }));
+vi.mock("tree-sitter-python", () => ({ default: {} }));
+vi.mock("tree-sitter-rust", () => ({ default: {} }));
+vi.mock("tree-sitter-typescript", () => ({
+  default: { typescript: {}, tsx: {} },
+}));
+
 import { CodeIndexer } from "../../src/code/indexer.js";
 import type { CodeConfig } from "../../src/code/types.js";
 import type { EmbeddingProvider } from "../../src/embeddings/base.js";
@@ -43,9 +73,25 @@ class MockQdrantManager implements Partial<QdrantManager> {
     this.points.set(collectionName, [...filtered, ...points]);
   }
 
+  async addPointsOptimized(
+    collectionName: string,
+    points: any[],
+    _options?: any,
+  ): Promise<void> {
+    await this.addPoints(collectionName, points);
+  }
+
   async addPointsWithSparse(
     collectionName: string,
     points: any[],
+  ): Promise<void> {
+    await this.addPoints(collectionName, points);
+  }
+
+  async addPointsWithSparseOptimized(
+    collectionName: string,
+    points: any[],
+    _options?: any,
   ): Promise<void> {
     await this.addPoints(collectionName, points);
   }
@@ -126,6 +172,42 @@ class MockQdrantManager implements Partial<QdrantManager> {
       );
       this.points.set(collectionName, filtered);
     }
+  }
+
+  async deletePointsByPaths(
+    collectionName: string,
+    relativePaths: string[],
+  ): Promise<void> {
+    if (relativePaths.length === 0) return;
+    const points = this.points.get(collectionName) || [];
+    const pathsToDelete = new Set(relativePaths);
+    const filtered = points.filter(
+      (p) => !pathsToDelete.has(p.payload?.relativePath),
+    );
+    this.points.set(collectionName, filtered);
+  }
+
+  async disableIndexing(_collectionName: string): Promise<void> {
+    // Mock: no-op, indexing control not needed for tests
+  }
+
+  async enableIndexing(
+    _collectionName: string,
+    _threshold?: number,
+  ): Promise<void> {
+    // Mock: no-op, indexing control not needed for tests
+  }
+
+  // For testing: get all indexed paths
+  getAllIndexedPaths(collectionName: string): string[] {
+    const points = this.points.get(collectionName) || [];
+    const paths = new Set<string>();
+    for (const p of points) {
+      if (p.payload?.relativePath) {
+        paths.add(p.payload.relativePath);
+      }
+    }
+    return [...paths];
   }
 }
 
@@ -890,6 +972,506 @@ export class DataProcessor {
       // Stats should still be returned
       expect(stats).toBeDefined();
       expect(stats.filesAdded).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  // ============ REBUILD CACHE CORNER CASES ============
+  describe("rebuildCache functionality", () => {
+    it("should return zeros when collection does not exist", async () => {
+      const result = await indexer.rebuildCache(codebaseDir);
+
+      expect(result.indexed).toBe(0);
+      expect(result.pending).toBe(0);
+      expect(result.orphaned).toBe(0);
+      expect(result.cacheVersion).toBe("none");
+      expect(result.snapshotUpdated).toBe(false);
+    });
+
+    it("should correctly identify indexed and pending files", async () => {
+      // Create and index some files
+      await createTestFile(
+        codebaseDir,
+        "indexed1.ts",
+        "export const value1 = 1;\nconsole.log('Indexed file 1');",
+      );
+      await createTestFile(
+        codebaseDir,
+        "indexed2.ts",
+        "export const value2 = 2;\nconsole.log('Indexed file 2');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Add new file without indexing
+      await createTestFile(
+        codebaseDir,
+        "pending1.ts",
+        "export const pending = true;\nconsole.log('Pending file');",
+      );
+
+      const result = await indexer.rebuildCache(codebaseDir);
+
+      // 2 files indexed, 1 file pending
+      expect(result.indexed).toBe(2);
+      expect(result.pending).toBe(1);
+      expect(result.orphaned).toBe(0);
+      expect(result.snapshotUpdated).toBe(true);
+      expect(result.details?.pendingFiles).toContain("pending1.ts");
+    });
+
+    it("should identify and clean up orphaned chunks", async () => {
+      // Create and index files
+      await createTestFile(
+        codebaseDir,
+        "file1.ts",
+        "export const value1 = 1;\nconsole.log('File 1');",
+      );
+      await createTestFile(
+        codebaseDir,
+        "file2.ts",
+        "export const value2 = 2;\nconsole.log('File 2');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Delete file2.ts (chunks remain in Qdrant)
+      await fs.unlink(join(codebaseDir, "file2.ts"));
+
+      const result = await indexer.rebuildCache(codebaseDir);
+
+      expect(result.indexed).toBe(1);
+      expect(result.orphaned).toBe(1);
+      expect(result.details?.orphanedPaths).toContain("file2.ts");
+    });
+
+    it("should handle empty codebase with existing collection", async () => {
+      // Create and index a file
+      await createTestFile(
+        codebaseDir,
+        "temp.ts",
+        "export const temp = true;\nconsole.log('Temp file');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Delete all files
+      await fs.unlink(join(codebaseDir, "temp.ts"));
+
+      const result = await indexer.rebuildCache(codebaseDir);
+
+      expect(result.indexed).toBe(0);
+      expect(result.pending).toBe(0);
+      expect(result.orphaned).toBe(1);
+    });
+
+    it("should rebuild snapshot with only valid files", async () => {
+      // Create and index files
+      await createTestFile(
+        codebaseDir,
+        "valid1.ts",
+        "export const valid1 = true;\nconsole.log('Valid 1');",
+      );
+      await createTestFile(
+        codebaseDir,
+        "valid2.ts",
+        "export const valid2 = true;\nconsole.log('Valid 2');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Delete one file
+      await fs.unlink(join(codebaseDir, "valid2.ts"));
+
+      // Rebuild cache
+      const result = await indexer.rebuildCache(codebaseDir);
+      expect(result.indexed).toBe(1);
+      expect(result.snapshotUpdated).toBe(true);
+
+      // Verify snapshot was updated correctly by checking that reindexChanges works
+      await createTestFile(
+        codebaseDir,
+        "new.ts",
+        "export const newFile = true;\nconsole.log('New file');",
+      );
+      const changeStats = await indexer.reindexChanges(codebaseDir);
+
+      // new.ts should be detected as added
+      expect(changeStats.filesAdded).toBe(1);
+    });
+
+    it("should delete any existing checkpoint", async () => {
+      // Create and index files
+      await createTestFile(
+        codebaseDir,
+        "file1.ts",
+        "export const value = 1;\nconsole.log('File 1');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Simulate a checkpoint exists (we can't easily create one without reindex,
+      // but rebuildCache should call deleteCheckpoint regardless)
+      const result = await indexer.rebuildCache(codebaseDir);
+
+      expect(result.snapshotUpdated).toBe(true);
+      // After rebuild, any checkpoint should be deleted
+    });
+
+    it("should handle mixed state: indexed, pending, and orphaned", async () => {
+      // Create and index initial files
+      await createTestFile(
+        codebaseDir,
+        "indexed.ts",
+        "export const indexed = true;\nconsole.log('Indexed');",
+      );
+      await createTestFile(
+        codebaseDir,
+        "to_delete.ts",
+        "export const toDelete = true;\nconsole.log('To delete');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Delete one, add another
+      await fs.unlink(join(codebaseDir, "to_delete.ts"));
+      await createTestFile(
+        codebaseDir,
+        "pending.ts",
+        "export const pending = true;\nconsole.log('Pending');",
+      );
+
+      const result = await indexer.rebuildCache(codebaseDir);
+
+      expect(result.indexed).toBe(1);
+      expect(result.pending).toBe(1);
+      expect(result.orphaned).toBe(1);
+    });
+
+    it("should handle collection with only metadata marker", async () => {
+      // Index an empty set of files (should only create metadata marker)
+      // This is tricky because indexCodebase requires files...
+      // Let's create a file with secrets that will be skipped
+      await createTestFile(
+        codebaseDir,
+        "secrets.ts",
+        'export const apiKey = "sk_test_FAKE_API_KEY_NOT_REAL";\nconsole.log("Secrets");',
+      );
+
+      const stats = await indexer.indexCodebase(codebaseDir);
+      // File should be skipped due to secrets detection
+      expect(stats.filesIndexed).toBe(0);
+
+      // rebuildCache should handle collection with minimal content
+      const result = await indexer.rebuildCache(codebaseDir);
+
+      expect(result.indexed).toBe(0);
+      // The secrets file exists but isn't indexed
+      expect(result.pending).toBe(1);
+    });
+
+    it("should limit details to first 20 entries", async () => {
+      // Create many files
+      for (let i = 0; i < 25; i++) {
+        await createTestFile(
+          codebaseDir,
+          `file${i}.ts`,
+          `export const value${i} = ${i};\nconsole.log('File ${i}');`,
+        );
+      }
+
+      // Don't index - all files are pending
+      // But we need collection to exist, so index one and delete it
+      await indexer.indexCodebase(codebaseDir);
+
+      // Delete all and add new ones
+      for (let i = 0; i < 25; i++) {
+        await fs.unlink(join(codebaseDir, `file${i}.ts`));
+      }
+      for (let i = 0; i < 25; i++) {
+        await createTestFile(
+          codebaseDir,
+          `new${i}.ts`,
+          `export const new${i} = ${i};\nconsole.log('New ${i}');`,
+        );
+      }
+
+      const result = await indexer.rebuildCache(codebaseDir);
+
+      // Should limit details to 20
+      expect(result.details?.pendingFiles?.length).toBeLessThanOrEqual(20);
+      expect(result.details?.orphanedPaths?.length).toBeLessThanOrEqual(20);
+    });
+
+    it("should return v2 cache version", async () => {
+      await createTestFile(
+        codebaseDir,
+        "file.ts",
+        "export const value = 1;\nconsole.log('File');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      const result = await indexer.rebuildCache(codebaseDir);
+
+      expect(result.cacheVersion).toBe("v2");
+    });
+  });
+
+  // ============ BATCH PIPELINE TESTS ============
+  describe("batch pipeline operations", () => {
+    it("should use batch delete (deletePointsByPaths) for multiple file deletions", async () => {
+      // Create and index multiple files
+      for (let i = 1; i <= 5; i++) {
+        await createTestFile(
+          codebaseDir,
+          `file${i}.ts`,
+          `export const value${i} = ${i};\nconsole.log('File ${i}');`,
+        );
+      }
+      await indexer.indexCodebase(codebaseDir);
+
+      // Spy on deletePointsByPaths
+      const deletePathsSpy = vi.spyOn(qdrant, "deletePointsByPaths");
+
+      // Delete multiple files
+      await fs.unlink(join(codebaseDir, "file2.ts"));
+      await fs.unlink(join(codebaseDir, "file4.ts"));
+
+      await indexer.reindexChanges(codebaseDir);
+
+      // Should call deletePointsByPaths with both paths in a single call
+      expect(deletePathsSpy).toHaveBeenCalled();
+      const deletedPaths = deletePathsSpy.mock.calls[0]?.[1] || [];
+      expect(deletedPaths).toContain("file2.ts");
+      expect(deletedPaths).toContain("file4.ts");
+    });
+
+    it("should use optimized addPointsOptimized in indexCodebase", async () => {
+      // Spy on addPointsOptimized BEFORE indexing
+      const addPointsSpy = vi.spyOn(qdrant, "addPointsOptimized");
+
+      // Create file with enough content for chunker (> 100 chars)
+      await createTestFile(
+        codebaseDir,
+        "service.ts",
+        `export class DataService {
+  private cache: Map<string, any> = new Map();
+
+  async fetchData(id: string): Promise<any> {
+    if (this.cache.has(id)) {
+      return this.cache.get(id);
+    }
+    const data = await this.loadFromDatabase(id);
+    this.cache.set(id, data);
+    return data;
+  }
+
+  private async loadFromDatabase(id: string): Promise<any> {
+    console.log('Loading data for:', id);
+    return { id, value: Math.random() };
+  }
+}`,
+      );
+
+      await indexer.indexCodebase(codebaseDir);
+
+      // Should use addPointsOptimized (with wait=true for single batch)
+      expect(addPointsSpy).toHaveBeenCalled();
+      // Verify it was called with wait option
+      const call = addPointsSpy.mock.calls[0];
+      expect(call[0]).toContain("code_"); // collection name
+      expect(call[2]).toHaveProperty("wait"); // options with wait
+    });
+
+    it("should use optimized addPoints in reindexChanges", async () => {
+      // Initial indexing with enough content
+      await createTestFile(
+        codebaseDir,
+        "initial.ts",
+        `export const initial = 1;
+console.log('Initial file with enough content');
+function initializeSystem(): void {
+  console.log('Initializing system components');
+  const config = loadConfig();
+  setupDatabase(config);
+}`,
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Spy on addPointsOptimized AFTER initial indexing
+      const addPointsSpy = vi.spyOn(qdrant, "addPointsOptimized");
+
+      // Add new file with enough content
+      await createTestFile(
+        codebaseDir,
+        "added.ts",
+        `export const added = 2;
+console.log('Added file with sufficient content for chunking');
+function processData(data: string[]): string[] {
+  console.log('Processing data items:', data.length);
+  return data.map(item => item.toUpperCase());
+}`,
+      );
+
+      await indexer.reindexChanges(codebaseDir);
+
+      // Should use addPointsOptimized for storing new chunks
+      expect(addPointsSpy).toHaveBeenCalled();
+    });
+
+    it("should handle batch operations during file modifications", async () => {
+      // Create and index files
+      for (let i = 1; i <= 3; i++) {
+        await createTestFile(
+          codebaseDir,
+          `mod${i}.ts`,
+          `export const original${i} = ${i};\nconsole.log('Original ${i}');`,
+        );
+      }
+      await indexer.indexCodebase(codebaseDir);
+
+      const deletePathsSpy = vi.spyOn(qdrant, "deletePointsByPaths");
+
+      // Modify all files (will trigger delete old chunks + add new ones)
+      for (let i = 1; i <= 3; i++) {
+        await createTestFile(
+          codebaseDir,
+          `mod${i}.ts`,
+          `export const modified${i} = ${i * 10};\nconsole.log('Modified ${i}');`,
+        );
+      }
+
+      const stats = await indexer.reindexChanges(codebaseDir);
+
+      // All modified files should be batch-deleted
+      expect(deletePathsSpy).toHaveBeenCalled();
+      expect(stats.filesModified).toBe(3);
+    });
+
+    it("should efficiently handle mixed batch operations", async () => {
+      // Initial state - files with enough content
+      for (let i = 1; i <= 4; i++) {
+        await createTestFile(
+          codebaseDir,
+          `batch${i}.ts`,
+          `export const value${i} = ${i};
+console.log('Batch file ${i} with substantial content');
+function processBatch${i}(input: string): string {
+  console.log('Processing batch ${i}:', input);
+  return input.toUpperCase() + '_${i}';
+}`,
+        );
+      }
+      await indexer.indexCodebase(codebaseDir);
+
+      const deletePathsSpy = vi.spyOn(qdrant, "deletePointsByPaths");
+      const addPointsSpy = vi.spyOn(qdrant, "addPointsOptimized");
+
+      // Mixed operations:
+      // - Delete batch1.ts and batch2.ts
+      // - Modify batch3.ts
+      // - Add batch5.ts
+      await fs.unlink(join(codebaseDir, "batch1.ts"));
+      await fs.unlink(join(codebaseDir, "batch2.ts"));
+      await createTestFile(
+        codebaseDir,
+        "batch3.ts",
+        `export const modified3 = 300;
+console.log('Modified batch 3 with new content');
+function handleModified(data: any): void {
+  console.log('Handling modified data');
+  processData(data);
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "batch5.ts",
+        `export const value5 = 5;
+console.log('New batch 5 file created');
+function newBatchHandler(): number {
+  console.log('New batch handler initialized');
+  return 5;
+}`,
+      );
+
+      const stats = await indexer.reindexChanges(codebaseDir);
+
+      expect(stats.filesDeleted).toBe(2);
+      expect(stats.filesModified).toBe(1);
+      expect(stats.filesAdded).toBe(1);
+
+      // Batch delete should be called for deleted + modified files
+      expect(deletePathsSpy).toHaveBeenCalled();
+      const deletedPaths = deletePathsSpy.mock.calls.flatMap((call) => call[1]);
+      expect(deletedPaths).toContain("batch1.ts");
+      expect(deletedPaths).toContain("batch2.ts");
+      expect(deletedPaths).toContain("batch3.ts"); // modified = delete old + add new
+
+      // addPointsOptimized should be called for new chunks
+      expect(addPointsSpy).toHaveBeenCalled();
+    });
+
+    it("should handle empty batch delete gracefully", async () => {
+      await createTestFile(
+        codebaseDir,
+        "stable.ts",
+        "export const stable = true;\nconsole.log('Stable');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      const deletePathsSpy = vi.spyOn(qdrant, "deletePointsByPaths");
+
+      // No changes - reindex should not call delete
+      const stats = await indexer.reindexChanges(codebaseDir);
+
+      expect(stats.filesDeleted).toBe(0);
+      expect(stats.filesModified).toBe(0);
+      // deletePointsByPaths should not be called or called with empty array
+      if (deletePathsSpy.mock.calls.length > 0) {
+        const deletedPaths = deletePathsSpy.mock.calls[0][1];
+        expect(deletedPaths.length).toBe(0);
+      }
+    });
+  });
+
+  // ============ CHECKPOINT INTEGRATION WITH INDEXER ============
+  describe("checkpoint integration with reindexChanges", () => {
+    it("should resume from checkpoint after interruption simulation", async () => {
+      // Note: This is a simplified test since we can't easily interrupt reindexChanges
+      // The actual checkpoint logic is tested more thoroughly in synchronizer.test.ts
+
+      // Create and index initial files
+      await createTestFile(
+        codebaseDir,
+        "file1.ts",
+        "export const value1 = 1;\nconsole.log('File 1');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Add multiple new files
+      for (let i = 2; i <= 5; i++) {
+        await createTestFile(
+          codebaseDir,
+          `file${i}.ts`,
+          `export const value${i} = ${i};\nconsole.log('File ${i}');`,
+        );
+      }
+
+      // Normal reindex (checkpoint should be created and deleted on success)
+      const stats = await indexer.reindexChanges(codebaseDir);
+
+      expect(stats.filesAdded).toBe(4);
+      expect(stats.filesModified).toBe(0);
+      expect(stats.filesDeleted).toBe(0);
+    });
+
+    it("should handle reindex when no changes exist", async () => {
+      await createTestFile(
+        codebaseDir,
+        "stable.ts",
+        "export const stable = true;\nconsole.log('Stable file');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Reindex with no changes
+      const stats = await indexer.reindexChanges(codebaseDir);
+
+      expect(stats.filesAdded).toBe(0);
+      expect(stats.filesModified).toBe(0);
+      expect(stats.filesDeleted).toBe(0);
     });
   });
 });

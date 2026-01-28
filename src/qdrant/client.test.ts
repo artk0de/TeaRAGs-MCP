@@ -399,6 +399,7 @@ describe("QdrantManager", () => {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
         filter: undefined,
+        with_payload: true,
       });
     });
 
@@ -411,6 +412,7 @@ describe("QdrantManager", () => {
         vector: [0.1, 0.2, 0.3],
         limit: 10,
         filter: undefined,
+        with_payload: true,
       });
     });
 
@@ -424,6 +426,7 @@ describe("QdrantManager", () => {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
         filter,
+        with_payload: true,
       });
     });
 
@@ -442,6 +445,7 @@ describe("QdrantManager", () => {
             { key: "type", match: { value: "document" } },
           ],
         },
+        with_payload: true,
       });
     });
 
@@ -454,6 +458,7 @@ describe("QdrantManager", () => {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
         filter: undefined,
+        with_payload: true,
       });
     });
 
@@ -469,6 +474,7 @@ describe("QdrantManager", () => {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
         filter,
+        with_payload: true,
       });
     });
 
@@ -484,6 +490,7 @@ describe("QdrantManager", () => {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
         filter,
+        with_payload: true,
       });
     });
 
@@ -536,6 +543,7 @@ describe("QdrantManager", () => {
         vector: { name: "dense", vector: [0.1, 0.2, 0.3] },
         limit: 5,
         filter: undefined,
+        with_payload: true,
       });
     });
 
@@ -571,6 +579,7 @@ describe("QdrantManager", () => {
         vector: [0.1, 0.2, 0.3],
         limit: 5,
         filter: undefined,
+        with_payload: true,
       });
     });
   });

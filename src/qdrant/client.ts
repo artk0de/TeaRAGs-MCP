@@ -142,6 +142,11 @@ export class QdrantManager {
       payload?: Record<string, any>;
     }>,
   ): Promise<void> {
+    // Guard against empty arrays - Qdrant throws "Empty update request"
+    if (points.length === 0) {
+      return;
+    }
+
     try {
       // Normalize all IDs to ensure string IDs are in UUID format
       const normalizedPoints = points.map((point) => ({
@@ -160,6 +165,80 @@ export class QdrantManager {
         `Failed to add points to collection "${collectionName}": ${errorMessage}`,
       );
     }
+  }
+
+  /**
+   * Optimized addPoints for bulk uploads.
+   * Uses wait=false for faster throughput (fire-and-forget).
+   * Use ordering="weak" for maximum performance.
+   *
+   * @param waitForResult - If true, waits for server confirmation (slower but safer)
+   * @param ordering - "weak" (fastest, may reorder) or "medium" (consistent)
+   */
+  async addPointsOptimized(
+    collectionName: string,
+    points: Array<{
+      id: string | number;
+      vector: number[];
+      payload?: Record<string, any>;
+    }>,
+    options: {
+      wait?: boolean;
+      ordering?: "weak" | "medium" | "strong";
+    } = {},
+  ): Promise<void> {
+    // Guard against empty arrays - Qdrant throws "Empty update request"
+    if (points.length === 0) {
+      return;
+    }
+
+    const { wait = false, ordering = "weak" } = options;
+
+    try {
+      const normalizedPoints = points.map((point) => ({
+        ...point,
+        id: this.normalizeId(point.id),
+      }));
+
+      await this.client.upsert(collectionName, {
+        wait,
+        ordering,
+        points: normalizedPoints,
+      });
+    } catch (error: any) {
+      const errorMessage =
+        error?.data?.status?.error || error?.message || String(error);
+      throw new Error(
+        `Failed to add points (optimized) to collection "${collectionName}": ${errorMessage}`,
+      );
+    }
+  }
+
+  /**
+   * Disable indexing for bulk upload performance.
+   * Call enableIndexing() after upload completes.
+   */
+  async disableIndexing(collectionName: string): Promise<void> {
+    await this.client.updateCollection(collectionName, {
+      optimizers_config: {
+        indexing_threshold: 0,
+      },
+    });
+  }
+
+  /**
+   * Re-enable indexing after bulk upload.
+   * @param threshold - Default 20000 (Qdrant default)
+   */
+  async enableIndexing(
+    collectionName: string,
+    threshold: number = 20000,
+  ): Promise<void> {
+    await this.client.updateCollection(collectionName, {
+      optimizers_config: {
+        indexing_threshold: threshold,
+      },
+    });
   }
 
   async search(
@@ -195,6 +274,7 @@ export class QdrantManager {
       vector: collectionInfo.hybridEnabled ? { name: "dense", vector } : vector,
       limit,
       filter: qdrantFilter,
+      with_payload: true,  // Explicitly request payloads
     });
 
     return results.map((result) => ({
@@ -251,6 +331,31 @@ export class QdrantManager {
     await this.client.delete(collectionName, {
       wait: true,
       filter: filter,
+    });
+  }
+
+  /**
+   * OPTIMIZED: Batch delete points for multiple file paths in a single request.
+   * Uses OR (should) filter to match any of the specified paths.
+   *
+   * Before: N files → N HTTP requests (even with Promise.all)
+   * After: N files → 1 HTTP request with combined filter
+   */
+  async deletePointsByPaths(
+    collectionName: string,
+    relativePaths: string[],
+  ): Promise<void> {
+    if (relativePaths.length === 0) return;
+
+    // Single request with OR filter (should = any match)
+    await this.client.delete(collectionName, {
+      wait: true,
+      filter: {
+        should: relativePaths.map((path) => ({
+          key: "relativePath",
+          match: { value: path },
+        })),
+      },
     });
   }
 
@@ -334,6 +439,11 @@ export class QdrantManager {
       payload?: Record<string, any>;
     }>,
   ): Promise<void> {
+    // Guard against empty arrays - Qdrant throws "Empty update request"
+    if (points.length === 0) {
+      return;
+    }
+
     try {
       // Normalize all IDs to ensure string IDs are in UUID format
       const normalizedPoints = points.map((point) => ({
@@ -354,6 +464,58 @@ export class QdrantManager {
         error?.data?.status?.error || error?.message || String(error);
       throw new Error(
         `Failed to add points with sparse vectors to collection "${collectionName}": ${errorMessage}`,
+      );
+    }
+  }
+
+  /**
+   * Optimized addPointsWithSparse for bulk uploads.
+   * Uses wait=false for faster throughput (fire-and-forget).
+   * Use ordering="weak" for maximum performance.
+   *
+   * @param options.wait - If true, waits for server confirmation (slower but safer)
+   * @param options.ordering - "weak" (fastest, may reorder) or "medium" (consistent)
+   */
+  async addPointsWithSparseOptimized(
+    collectionName: string,
+    points: Array<{
+      id: string | number;
+      vector: number[];
+      sparseVector: SparseVector;
+      payload?: Record<string, any>;
+    }>,
+    options: {
+      wait?: boolean;
+      ordering?: "weak" | "medium" | "strong";
+    } = {},
+  ): Promise<void> {
+    // Guard against empty arrays - Qdrant throws "Empty update request"
+    if (points.length === 0) {
+      return;
+    }
+
+    const { wait = false, ordering = "weak" } = options;
+
+    try {
+      const normalizedPoints = points.map((point) => ({
+        id: this.normalizeId(point.id),
+        vector: {
+          dense: point.vector,
+          text: point.sparseVector,
+        },
+        payload: point.payload,
+      }));
+
+      await this.client.upsert(collectionName, {
+        wait,
+        ordering,
+        points: normalizedPoints,
+      });
+    } catch (error: any) {
+      const errorMessage =
+        error?.data?.status?.error || error?.message || String(error);
+      throw new Error(
+        `Failed to add points with sparse vectors (optimized) to collection "${collectionName}": ${errorMessage}`,
       );
     }
   }
