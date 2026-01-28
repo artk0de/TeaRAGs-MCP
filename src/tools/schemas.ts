@@ -115,6 +115,13 @@ export const SearchCodeSchema = {
     .string()
     .optional()
     .describe("Filter by path glob pattern (e.g., 'src/services/**')"),
+  documentationOnly: z
+    .boolean()
+    .optional()
+    .describe(
+      "Search only in documentation files (markdown, READMEs, etc.). " +
+      "Default: false (search in all files). Set to true to find information in docs only.",
+    ),
 };
 
 export const ReindexChangesSchema = {

@@ -48,6 +48,8 @@ export interface ChunkItem extends WorkItem {
       parentName?: string;
       /** Parent AST node type (e.g., "class", "module") */
       parentType?: string;
+      /** True for documentation chunks (markdown, etc.) */
+      isDocumentation?: boolean;
     };
   };
   /** Pre-computed chunk ID */

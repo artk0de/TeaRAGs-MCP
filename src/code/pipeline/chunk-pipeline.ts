@@ -331,6 +331,9 @@ export class ChunkPipeline {
             ...(item.chunk.metadata.parentType && {
               parentType: item.chunk.metadata.parentType,
             }),
+            ...(item.chunk.metadata.isDocumentation && {
+              isDocumentation: item.chunk.metadata.isDocumentation,
+            }),
           },
         };
       });

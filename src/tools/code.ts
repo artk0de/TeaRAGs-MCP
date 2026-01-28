@@ -58,14 +58,17 @@ export function registerCodeTools(
     {
       title: "Search Code",
       description:
-        "Search indexed codebase using natural language queries. Returns semantically relevant code chunks with file paths and line numbers.",
+        "Search indexed codebase using natural language queries. Returns semantically relevant code chunks with file paths and line numbers. " +
+        "Supports filtering by file types and path patterns. " +
+        "Use documentationOnly=true to search only in documentation (markdown, READMEs).",
       inputSchema: schemas.SearchCodeSchema,
     },
-    async ({ path, query, limit, fileTypes, pathPattern }) => {
+    async ({ path, query, limit, fileTypes, pathPattern, documentationOnly }) => {
       const results = await codeIndexer.searchCode(path, query, {
         limit,
         fileTypes,
         pathPattern,
+        documentationOnly,
       });
 
       if (results.length === 0) {

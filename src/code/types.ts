@@ -76,6 +76,8 @@ export interface SearchOptions {
   fileTypes?: string[];
   pathPattern?: string;
   scoreThreshold?: number;
+  /** Search only in documentation files (markdown, etc.) */
+  documentationOnly?: boolean;
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed";
