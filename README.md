@@ -1,9 +1,93 @@
-# Qdrant MCP Server
+# 🚀 Qdrant MCP Server (Enhanced Fork)
 
 [![CI](https://github.com/mhalder/qdrant-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mhalder/qdrant-mcp-server/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mhalder/qdrant-mcp-server/branch/main/graph/badge.svg)](https://codecov.io/gh/mhalder/qdrant-mcp-server)
 
+> **This is a fork of [mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)**
+
 A Model Context Protocol (MCP) server providing semantic search capabilities using Qdrant vector database with multiple embedding providers.
+
+---
+
+## 🙏 Acknowledgments
+
+Huge thanks to the **[Qdrant](https://qdrant.tech/)** team and all contributors to the original project!
+
+Special appreciation for:
+- 💎 Clean and extensible architecture
+- 📚 Excellent documentation and examples
+- 🧪 Solid test coverage
+- 🤝 Open-source spirit and MIT license
+
+This fork is built on the solid foundation of your work. Thank you for your contribution to the community! 💜
+
+---
+
+## 🍴 Why Fork?
+
+Why a fork instead of PRs to the original?
+
+> I love to experiment. A lot. And fast. 🧪
+>
+> Coordinating changes with maintainers is the right thing to do, but it takes time:
+> discussions, reviews, compromises, waiting. Sometimes an idea lives for a day,
+> sometimes it turns into something useful.
+>
+> A fork gives me freedom to try crazy ideas without fear of breaking someone else's
+> project or wasting anyone's time reviewing something that might not even work.
+
+**For maintainers & contributors:** If you find something useful here — feel free to
+cherry-pick it into upstream. No need to ask, MIT license covers it.
+Questions? Reach me at: `artk0re@icloud.com` 📬
+
+**TL;DR:** This is an experimental playground. Use at your own risk.
+For production, I recommend the [original project](https://github.com/qdrant/mcp-server-qdrant).
+
+---
+
+## ✨ What's New in This Fork
+
+| Feature | Original | This Fork |
+|---------|----------|-----------|
+| **Snapshot storage** | Single JSON file | 🔀 Sharded storage (v3) |
+| **Change detection** | Sequential | ⚡ Parallel (N workers) |
+| **Hash distribution** | — | 🎯 Consistent hashing |
+| **Merkle tree** | Single level | 🌳 Two-level (shard + meta) |
+| **Concurrency control** | Fixed | 🎛️ `EMBEDDING_CONCURRENCY` env |
+
+### 🔀 Sharded Snapshots (v3 format)
+
+File hashes are stored across multiple shards instead of a single file:
+- Parallel read/write across shards
+- Atomic updates via directory swap
+- Checksum validation per shard
+
+### ⚡ Parallel Change Detection
+
+Change detection runs in parallel across all shards:
+```bash
+# Control parallelism (default: 4)
+export EMBEDDING_CONCURRENCY=8
+```
+
+### 🎯 Consistent Hashing
+
+When changing the number of workers, minimal files are redistributed:
+- 4 → 8 workers: ~50% files stay in place (vs ~25% with modulo)
+- Virtual nodes ensure even distribution
+
+### 🌳 Two-Level Merkle Tree
+
+Fast "any changes?" check:
+1. Compare meta root hash (single read)
+2. If changed — read only affected shards
+
+### 📝 Future Improvements
+- [ ] Auto-detection of optimal concurrency based on CPU/IO
+- [ ] Compression for large shards
+- [ ] File locking for concurrent access
+
+---
 
 ## Features
 
@@ -160,6 +244,7 @@ See [Advanced Configuration](#advanced-configuration) section below for all opti
 | `reindex_changes`  | Incrementally re-index only changed files (detects added/modified/deleted) |
 | `get_index_status` | Get indexing status and statistics for a codebase                          |
 | `clear_index`      | Delete all indexed data for a codebase                                     |
+| `rebuild_cache`    | Rebuild file index cache - verify/fix state after interruptions            |
 
 ### Resources
 
@@ -449,16 +534,18 @@ See [examples/](examples/) directory for detailed guides:
 
 #### Embedding Configuration
 
-| Variable                            | Description              | Default           |
-| ----------------------------------- | ------------------------ | ----------------- |
-| `EMBEDDING_MODEL`                   | Model name               | Provider-specific |
-| `EMBEDDING_BASE_URL`                | Custom API URL           | Provider-specific |
-| `EMBEDDING_MAX_REQUESTS_PER_MINUTE` | Rate limit               | Provider-specific |
-| `EMBEDDING_RETRY_ATTEMPTS`          | Retry count              | 3                 |
-| `EMBEDDING_RETRY_DELAY`             | Initial retry delay (ms) | 1000              |
-| `OPENAI_API_KEY`                    | OpenAI API key           | -                 |
-| `COHERE_API_KEY`                    | Cohere API key           | -                 |
-| `VOYAGE_API_KEY`                    | Voyage AI API key        | -                 |
+| Variable                            | Description                                       | Default           |
+| ----------------------------------- | ------------------------------------------------- | ----------------- |
+| `EMBEDDING_MODEL`                   | Model name                                        | Provider-specific |
+| `EMBEDDING_BASE_URL`                | Custom API URL                                    | Provider-specific |
+| `EMBEDDING_BATCH_SIZE`              | Texts per embedding request (Ollama native batch) | 64                |
+| `EMBEDDING_CONCURRENCY`             | Parallel embedding requests (for multiple GPUs)   | 1                 |
+| `EMBEDDING_MAX_REQUESTS_PER_MINUTE` | Rate limit                                        | Provider-specific |
+| `EMBEDDING_RETRY_ATTEMPTS`          | Retry count                                       | 3                 |
+| `EMBEDDING_RETRY_DELAY`             | Initial retry delay (ms)                          | 1000              |
+| `OPENAI_API_KEY`                    | OpenAI API key                                    | -                 |
+| `COHERE_API_KEY`                    | Cohere API key                                    | -                 |
+| `VOYAGE_API_KEY`                    | Voyage AI API key                                 | -                 |
 
 #### Code Vectorization Configuration
 
@@ -471,6 +558,15 @@ See [examples/](examples/) directory for detailed guides:
 | `CODE_CUSTOM_EXTENSIONS` | Additional file extensions (comma-separated) | -       |
 | `CODE_CUSTOM_IGNORE`     | Additional ignore patterns (comma-separated) | -       |
 | `CODE_DEFAULT_LIMIT`     | Default search result limit                  | 5       |
+
+#### Qdrant Batch Pipeline Configuration
+
+| Variable                   | Description                                      | Default |
+| -------------------------- | ------------------------------------------------ | ------- |
+| `QDRANT_FLUSH_INTERVAL_MS` | Auto-flush buffer interval (0 to disable timer)  | 500     |
+| `QDRANT_BATCH_ORDERING`    | Ordering mode: "weak", "medium", or "strong"     | weak    |
+
+**Note:** `CODE_BATCH_SIZE` controls both embedding batch size and Qdrant upsert buffer size for simplified configuration.
 
 ### Provider Comparison
 
@@ -503,6 +599,91 @@ See [examples/](examples/) directory for detailed guides:
 | **Files not found**            | Check `.gitignore` and `.contextignore` patterns                                          |
 | **Search returns no results**  | Try broader queries, check if codebase is indexed with `get_index_status`                 |
 | **Out of memory during index** | Reduce `CODE_CHUNK_SIZE` or `CODE_BATCH_SIZE`                                             |
+
+## Performance Tuning
+
+### Quick Diagnostic
+
+Run the diagnostic benchmark to automatically find optimal parameters for your setup:
+
+```bash
+# Set your endpoints
+export QDRANT_URL="http://localhost:6333"
+export EMBEDDING_BASE_URL="http://localhost:11434"
+export EMBEDDING_MODEL="nomic-embed-text"
+
+# Run diagnostic (takes ~30 seconds)
+node benchmarks/diagnose.mjs
+```
+
+The diagnostic will test and recommend optimal values for:
+- `EMBEDDING_BATCH_SIZE` - texts per embedding API request
+- `CODE_BATCH_SIZE` - chunks per Qdrant upsert
+- `EMBEDDING_CONCURRENCY` - parallel embedding requests
+
+### Understanding Results
+
+```
+Phase 1: Embedding Batch Size
+  Testing EMBEDDING_BATCH_SIZE=64   ████████████████████ 124 emb/s
+  Testing EMBEDDING_BATCH_SIZE=256  ████████████████████ 158 emb/s
+  Testing EMBEDDING_BATCH_SIZE=512  ████████████████████ 174 emb/s  ← Best
+  Testing EMBEDDING_BATCH_SIZE=1024 ███████████████░░░░░ 148 emb/s
+  ↳ Stopping: performance degradation detected
+
+  ✓ Optimal: EMBEDDING_BATCH_SIZE=512
+```
+
+- **Green bar (████)**: Performance close to best
+- **Yellow bar**: Slight degradation
+- **Degradation detected**: Batch size too large for GPU memory
+
+### Benchmark Files
+
+| File | Purpose |
+|------|---------|
+| `benchmarks/diagnose.mjs` | Quick auto-tuning (~30s) |
+| `benchmarks/embedding-batch.mjs` | Detailed EMBEDDING_BATCH_SIZE analysis |
+| `benchmarks/code-batch.mjs` | Detailed CODE_BATCH_SIZE analysis |
+| `benchmarks/concurrency.mjs` | Concurrency + batch size matrix |
+| `benchmarks/pipelining.mjs` | Sequential vs pipelined comparison |
+| `benchmarks/qdrant-optimized.mjs` | Qdrant wait/ordering options |
+| `benchmarks/accumulator-buffer.mjs` | Buffer size + auto-flush optimization |
+
+### Batch Pipeline Optimization
+
+The server uses an accumulator pattern for efficient Qdrant upserts:
+
+```
+Embeddings ──► Buffer (accumulator) ──► Qdrant upsert
+                 │                           │
+                 └─ flush on size ───────────┘
+                 └─ flush on timer (500ms) ──┘
+                 └─ flush explicit ──────────┘
+```
+
+**How it works:**
+- Points are accumulated in a buffer until `CODE_BATCH_SIZE` threshold
+- Intermediate batches use `wait=false` (fire-and-forget) for speed
+- Final flush uses `wait=true` for consistency
+- Auto-flush timer prevents data from being stuck in buffer
+
+Run the accumulator benchmark to find optimal settings:
+
+```bash
+QDRANT_URL=http://localhost:6333 \
+EMBEDDING_BASE_URL=http://localhost:11434 \
+node benchmarks/accumulator-buffer.mjs
+```
+
+### Typical Optimal Values
+
+| Hardware | EMBEDDING_BATCH_SIZE | CODE_BATCH_SIZE |
+|----------|---------------------|-----------------|
+| CPU only | 32-64 | 128-256 |
+| GPU 4GB | 128-256 | 256-384 |
+| GPU 8GB+ | 512-1024 | 512-768 |
+| GPU 12GB+ | 1024-2048 | 768+ |
 
 ## Development
 
