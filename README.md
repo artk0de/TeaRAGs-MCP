@@ -1,4 +1,4 @@
-# 🚀 tee-rags-mcp
+# 🚀 Tea Rags MCP
 
 [![CI](https://github.com/mhalder/qdrant-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mhalder/qdrant-mcp-server/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mhalder/qdrant-mcp-server/branch/main/graph/badge.svg)](https://codecov.io/gh/mhalder/qdrant-mcp-server)
@@ -26,7 +26,7 @@ This fork is built on the solid foundation of your work. Thank you for your cont
 
 ## ⚡ Fork Highlights
 
-**Why tee-rags-mcp?**
+**Why tea-rags-mcp?**
 
 - 🚀 **Optimized embedding pipeline** — indexing and re-indexing takes minutes, not hours
 - 🔥 **1000x faster deletions** — payload indexes make filter-based deletes instant
@@ -160,55 +160,24 @@ npm run build
 
 ### Configuration
 
-#### Quick Setup with Claude CLI
-
-The easiest way to add tee-rags-mcp to Claude Code:
+#### Add to Claude Code (recommended)
 
 ```bash
-# Add to user-level config (recommended)
-claude mcp add -u qdrant -e QDRANT_URL=http://localhost:6333 -e EMBEDDING_BASE_URL=http://localhost:11434 -- node /path/to/tee-rags-mcp/build/index.js
+# Local setup (Qdrant + Ollama on localhost)
+claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+  -e QDRANT_URL=http://localhost:6333 \
+  -e EMBEDDING_BASE_URL=http://localhost:11434
 
-# For remote Qdrant + Ollama server
-claude mcp add -u qdrant -e QDRANT_URL=http://192.168.1.100:6333 -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 -- node /path/to/tee-rags-mcp/build/index.js
-```
+# Remote server setup (Qdrant + Ollama on separate host)
+claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+  -e QDRANT_URL=http://192.168.1.100:6333 \
+  -e EMBEDDING_BASE_URL=http://192.168.1.100:11434
 
-#### Manual Setup (stdio transport)
-
-Add to `~/.claude/claude_code_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "qdrant": {
-      "command": "node",
-      "args": ["/path/to/tee-rags-mcp/build/index.js"],
-      "env": {
-        "QDRANT_URL": "http://localhost:6333",
-        "EMBEDDING_BASE_URL": "http://localhost:11434"
-      }
-    }
-  }
-}
-```
-
-#### Connecting to Secured Qdrant Instances
-
-For Qdrant Cloud or self-hosted instances with API key authentication:
-
-```json
-{
-  "mcpServers": {
-    "qdrant": {
-      "command": "node",
-      "args": ["/path/to/qdrant-mcp-server/build/index.js"],
-      "env": {
-        "QDRANT_URL": "https://your-cluster.qdrant.io:6333",
-        "QDRANT_API_KEY": "your-api-key-here",
-        "EMBEDDING_BASE_URL": "http://localhost:11434"
-      }
-    }
-  }
-}
+# Qdrant Cloud with API key
+claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+  -e QDRANT_URL=https://your-cluster.qdrant.io:6333 \
+  -e QDRANT_API_KEY=your-api-key-here \
+  -e EMBEDDING_BASE_URL=http://localhost:11434
 ```
 
 #### Remote Setup (HTTP transport)
