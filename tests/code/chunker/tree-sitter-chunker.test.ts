@@ -173,6 +173,201 @@ end
       expect(chunks.some((c) => c.metadata.chunkType === "class" || c.metadata.chunkType === "function")).toBe(true);
     });
 
+    it("should set parentName and parentType for methods in large classes", async () => {
+      // Create a chunker with smaller maxChunkSize to trigger splitting
+      const smallConfig = {
+        chunkSize: 200,
+        chunkOverlap: 20,
+        maxChunkSize: 300, // maxChunkSize * 2 = 600, so class > 600 chars triggers splitting
+      };
+      const smallChunker = new TreeSitterChunker(smallConfig);
+
+      // Create a class large enough to trigger AST-aware splitting
+      const code = `
+class LargeService
+  def method_one
+    # This is the first method with some content
+    puts "Processing method one"
+    result = compute_something
+    return result
+  end
+
+  def method_two
+    # This is the second method with some content
+    puts "Processing method two"
+    data = fetch_data
+    return data
+  end
+
+  def method_three
+    # This is the third method with some content
+    puts "Processing method three"
+    value = calculate_value
+    return value
+  end
+
+  def method_four
+    # This is the fourth method to make class larger
+    puts "Processing method four"
+    output = generate_output
+    return output
+  end
+end
+      `;
+
+      const chunks = await smallChunker.chunk(code, "large_service.rb", "ruby");
+
+      // Should have multiple method chunks
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Find method chunks (not the whole class)
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+
+      // At least some methods should have parentName and parentType
+      const chunksWithParent = methodChunks.filter(
+        c => c.metadata.parentName && c.metadata.parentType
+      );
+
+      expect(chunksWithParent.length).toBeGreaterThan(0);
+
+      // Verify parentName is the class name
+      for (const chunk of chunksWithParent) {
+        expect(chunk.metadata.parentName).toBe("LargeService");
+        expect(chunk.metadata.parentType).toBe("class");
+      }
+    });
+
+    it("should set parentName and parentType for methods in large modules", async () => {
+      const smallConfig = {
+        chunkSize: 200,
+        chunkOverlap: 20,
+        maxChunkSize: 300,
+      };
+      const smallChunker = new TreeSitterChunker(smallConfig);
+
+      const code = `
+module LargeModule
+  def helper_one
+    # First helper method with implementation
+    puts "Helper one processing"
+    result = process_data
+    return result
+  end
+
+  def helper_two
+    # Second helper method with implementation
+    puts "Helper two processing"
+    data = transform_data
+    return data
+  end
+
+  def helper_three
+    # Third helper method with implementation
+    puts "Helper three processing"
+    output = format_output
+    return output
+  end
+
+  def helper_four
+    # Fourth helper method for larger module
+    puts "Helper four processing"
+    value = compute_value
+    return value
+  end
+end
+      `;
+
+      const chunks = await smallChunker.chunk(code, "large_module.rb", "ruby");
+
+      // Should have multiple method chunks
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Find chunks with parent metadata
+      const chunksWithParent = chunks.filter(
+        c => c.metadata.parentName && c.metadata.parentType
+      );
+
+      expect(chunksWithParent.length).toBeGreaterThan(0);
+
+      // Verify parentName is the module name
+      for (const chunk of chunksWithParent) {
+        expect(chunk.metadata.parentName).toBe("LargeModule");
+        expect(chunk.metadata.parentType).toBe("module");
+      }
+    });
+
+    it("should extract methods from class << self blocks in large classes", async () => {
+      const smallConfig = {
+        chunkSize: 200,
+        chunkOverlap: 20,
+        maxChunkSize: 300,
+      };
+      const smallChunker = new TreeSitterChunker(smallConfig);
+
+      const code = `
+class ConfigurationManager
+  class << self
+    def load_config
+      # Load configuration from file
+      puts "Loading configuration"
+      config = read_file
+      return config
+    end
+
+    def save_config(data)
+      # Save configuration to file
+      puts "Saving configuration"
+      write_file(data)
+      return true
+    end
+
+    def reset_config
+      # Reset configuration to defaults
+      puts "Resetting configuration"
+      defaults = get_defaults
+      return defaults
+    end
+
+    def validate_config(config)
+      # Validate configuration values
+      puts "Validating configuration"
+      errors = check_values(config)
+      return errors
+    end
+  end
+end
+      `;
+
+      const chunks = await smallChunker.chunk(code, "config_manager.rb", "ruby");
+
+      // Should extract individual methods
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // Should have function-type chunks (methods)
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThan(0);
+    });
+
+    it("should NOT set parentName/parentType for small classes that fit in one chunk", async () => {
+      // Use default chunker with larger limits
+      const code = `
+class SmallService
+  def simple_method
+    return 42
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "small_service.rb", "ruby");
+
+      // Small class should be kept as single chunk
+      expect(chunks.length).toBe(1);
+
+      // No parent metadata since class wasn't split
+      expect(chunks[0].metadata.parentName).toBeUndefined();
+      expect(chunks[0].metadata.parentType).toBeUndefined();
+    });
+
     it("should chunk Ruby singleton methods", async () => {
       const code = `
 class Configuration
