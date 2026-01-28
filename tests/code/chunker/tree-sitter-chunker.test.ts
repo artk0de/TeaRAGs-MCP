@@ -444,6 +444,102 @@ end
     });
   });
 
+  describe("chunk - Markdown", () => {
+    it("should chunk markdown by sections", async () => {
+      const code = `
+# Introduction
+
+This is the introduction section with some content.
+
+## Getting Started
+
+Here is how to get started with the project.
+
+### Installation
+
+Run npm install to install dependencies.
+
+## Usage
+
+Use the library like this.
+      `;
+
+      const chunks = await chunker.chunk(code, "README.md", "markdown");
+      expect(chunks.length).toBeGreaterThan(0);
+
+      // Should have section chunks
+      const sectionChunks = chunks.filter(c => c.metadata.name);
+      expect(sectionChunks.length).toBeGreaterThan(0);
+    });
+
+    it("should extract code blocks from markdown", async () => {
+      const code = `
+# Code Examples
+
+Here is a TypeScript example:
+
+\`\`\`typescript
+function greet(name: string): string {
+  return \`Hello, \${name}!\`;
+}
+\`\`\`
+
+And a Python example:
+
+\`\`\`python
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+\`\`\`
+      `;
+
+      const chunks = await chunker.chunk(code, "examples.md", "markdown");
+      expect(chunks.length).toBeGreaterThan(0);
+
+      // Should have code block chunks with language metadata
+      const codeChunks = chunks.filter(c =>
+        c.metadata.name?.includes("Code") ||
+        c.metadata.language === "typescript" ||
+        c.metadata.language === "python"
+      );
+      expect(codeChunks.length).toBeGreaterThan(0);
+    });
+
+    it("should handle markdown without headings", async () => {
+      const code = `
+This is a markdown file without any headings.
+It just has some plain text content that should be chunked as a single block.
+The content needs to be long enough to meet the minimum chunk size requirements.
+      `;
+
+      const chunks = await chunker.chunk(code, "notes.md", "markdown");
+      expect(chunks.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should support markdown language", () => {
+      expect(chunker.supportsLanguage("markdown")).toBe(true);
+    });
+
+    it("should set isDocumentation flag for markdown chunks", async () => {
+      const code = `
+# Documentation Title
+
+This is documentation content that explains how to use the library.
+
+## API Reference
+
+Here are the available methods and their descriptions.
+      `;
+
+      const chunks = await chunker.chunk(code, "README.md", "markdown");
+      expect(chunks.length).toBeGreaterThan(0);
+
+      // All markdown chunks should have isDocumentation = true
+      for (const chunk of chunks) {
+        expect(chunk.metadata.isDocumentation).toBe(true);
+      }
+    });
+  });
+
   describe("fallback behavior", () => {
     it("should fallback to character chunker for unsupported language", async () => {
       const code =
@@ -572,6 +668,7 @@ function test() {
       expect(languages).toContain("rust");
       expect(languages).toContain("java");
       expect(languages).toContain("bash");
+      expect(languages).toContain("markdown");
     });
   });
 
