@@ -556,6 +556,7 @@ See [examples/](examples/) directory for detailed guides:
 | ----------------------------------- | ------------------------------------------------- | ----------------- |
 | `EMBEDDING_MODEL`                   | Model name                                        | Provider-specific |
 | `EMBEDDING_BASE_URL`                | Custom API URL                                    | Provider-specific |
+| `EMBEDDING_DIMENSION`               | Vector dimensions (auto-detected from model)      | Auto              |
 | `EMBEDDING_BATCH_SIZE`              | Texts per embedding request (Ollama native batch) | 64                |
 | `EMBEDDING_CONCURRENCY`             | Parallel embedding requests (for multiple GPUs)   | 1                 |
 | `EMBEDDING_MAX_REQUESTS_PER_MINUTE` | Rate limit                                        | Provider-specific |
