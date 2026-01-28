@@ -1,4 +1,8 @@
-# 🚀 Tea Rags MCP
+<img src="public/logo.png" width="50%">
+
+<h1 align="left" style="margin-top: 0;">
+  🚀 Tea Rags MCP
+</h1>
 
 [![CI](https://github.com/mhalder/qdrant-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mhalder/qdrant-mcp-server/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mhalder/qdrant-mcp-server/branch/main/graph/badge.svg)](https://codecov.io/gh/mhalder/qdrant-mcp-server)
@@ -33,6 +37,7 @@ This fork is built on the solid foundation of your work. Thank you for your cont
 - ⚡ **Parallel processing** — sharded snapshots, concurrent workers, batched operations
 - 🎯 **Smart batching** — automatic batch formation with backpressure control
 - 🛠️ **Production-ready** — auto-migration, checkpointing, resume from interruption
+- 💎 **Ruby AST Aware** - supports ruby Ruby AST aware chunking
 
 ---
 
@@ -252,7 +257,6 @@ See [Advanced Configuration](#advanced-configuration) section below for all opti
 | `reindex_changes`  | Incrementally re-index only changed files (detects added/modified/deleted) |
 | `get_index_status` | Get indexing status and statistics for a codebase                          |
 | `clear_index`      | Delete all indexed data for a codebase                                     |
-| `rebuild_cache`    | Rebuild file index cache - verify/fix state after interruptions            |
 
 ### Resources
 

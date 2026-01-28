@@ -206,11 +206,12 @@ export class ShardedSnapshotManager {
       throw new Error(`Failed to read meta.json: ${error}`);
     }
 
-    // Load all shards
+    // Load all shards IN PARALLEL for faster initialization
     const files = new Map<string, FileMetadata>();
-    const shardMerkleRoots: string[] = [];
+    const shardMerkleRoots: string[] = new Array(meta.shards.length);
 
-    for (const shardInfo of meta.shards) {
+    // OPTIMIZATION: Read all shards concurrently instead of sequentially
+    const shardLoadPromises = meta.shards.map(async (shardInfo) => {
       const shardPath = join(
         this.snapshotDir,
         `shard-${shardInfo.index.toString().padStart(2, "0")}.json`
@@ -231,12 +232,21 @@ export class ShardedSnapshotManager {
       // Parse shard data
       const shardData: ShardData = JSON.parse(shardContent);
 
+      return { shardInfo, shardData };
+    });
+
+    // Wait for all shards to load in parallel
+    const loadedShards = await Promise.all(shardLoadPromises);
+
+    // Merge results (preserving shard order for merkle roots)
+    for (const { shardInfo, shardData } of loadedShards) {
       // Add files to result
       for (const [path, metadata] of Object.entries(shardData.files)) {
         files.set(path, metadata);
       }
 
-      shardMerkleRoots.push(shardData.merkleRoot);
+      // Store merkle root at correct index
+      shardMerkleRoots[shardInfo.index] = shardData.merkleRoot;
     }
 
     return {

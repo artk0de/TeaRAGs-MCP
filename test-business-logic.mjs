@@ -458,7 +458,7 @@ export class ProductService {
 
   // Initial indexing
   indexedPaths.add(TEST_DIR);
-  const stats = await indexer.indexCodebase(TEST_DIR, { force: true });
+  const stats = await indexer.indexCodebase(TEST_DIR, { forceReindex: true });
   assert(stats.filesScanned >= 2, `Files scanned: ${stats.filesScanned}`);
   assert(stats.filesIndexed >= 2, `Files indexed: ${stats.filesIndexed}`);
   assert(stats.chunksCreated > 0, `Chunks created: ${stats.chunksCreated}`);
@@ -522,11 +522,6 @@ export class OrderService {
   const deletedResults = await indexer.searchCode(TEST_DIR, "ProductService getProduct");
   // Note: This might still return results if chunks overlap or weren't cleaned up
   // The key test is that the file count decreased
-
-  // === REBUILD CACHE ===
-  const cacheResult = await indexer.rebuildCache(TEST_DIR);
-  assert(cacheResult.indexed >= 2, `Cache rebuilt: ${cacheResult.indexed} indexed`);
-  assert(cacheResult.orphaned >= 0, `Orphaned chunks: ${cacheResult.orphaned}`);
 }
 
 async function testHashConsistency(qdrant, embeddings) {
@@ -546,7 +541,7 @@ async function testHashConsistency(qdrant, embeddings) {
 
   // Index initial version
   indexedPaths.add(hashTestDir);
-  await indexer.indexCodebase(hashTestDir, { force: true });
+  await indexer.indexCodebase(hashTestDir, { forceReindex: true });
 
   // Calculate expected hash
   const expectedHash1 = hashContent(content1);
@@ -594,7 +589,7 @@ async function testIgnorePatterns(qdrant, embeddings) {
   }));
 
   indexedPaths.add(ignoreTestDir);
-  const stats = await indexer.indexCodebase(ignoreTestDir, { force: true });
+  const stats = await indexer.indexCodebase(ignoreTestDir, { forceReindex: true });
 
   // Should only index src/app.ts
   assert(stats.filesIndexed === 1, `Only non-ignored files indexed: ${stats.filesIndexed}`);
@@ -671,7 +666,7 @@ function helperFunction() {
   }));
 
   indexedPaths.add(chunkTestDir);
-  const stats = await indexer.indexCodebase(chunkTestDir, { force: true });
+  const stats = await indexer.indexCodebase(chunkTestDir, { forceReindex: true });
   assert(stats.chunksCreated > 1, `Multiple chunks created: ${stats.chunksCreated}`);
 
   // Search for content in different sections
@@ -745,7 +740,7 @@ end
   }));
 
   indexedPaths.add(langTestDir);
-  const stats = await indexer.indexCodebase(langTestDir, { force: true });
+  const stats = await indexer.indexCodebase(langTestDir, { forceReindex: true });
   assert(stats.filesIndexed === 4, `All language files indexed: ${stats.filesIndexed}`);
 
   // Search in each language
@@ -843,7 +838,7 @@ end
   }));
 
   indexedPaths.add(rubyTestDir);
-  const stats = await indexer.indexCodebase(rubyTestDir, { force: true });
+  const stats = await indexer.indexCodebase(rubyTestDir, { forceReindex: true });
   assert(stats.filesIndexed === 3, `Ruby files indexed: ${stats.filesIndexed}`);
   assert(stats.chunksCreated > 0, `Ruby chunks created: ${stats.chunksCreated}`);
 
@@ -937,7 +932,7 @@ export class CacheService {
   }));
 
   indexedPaths.add(searchTestDir);
-  await indexer.indexCodebase(searchTestDir, { force: true });
+  await indexer.indexCodebase(searchTestDir, { forceReindex: true });
 
   // Semantic search tests - verify that search returns meaningful content
   const authQuery = await indexer.searchCode(searchTestDir, "user authentication login password", { limit: 5 });
@@ -988,7 +983,7 @@ async function testEdgeCases(qdrant, embeddings) {
   indexedPaths.add(edgeTestDir);
   let errorOccurred = false;
   try {
-    await indexer.indexCodebase(edgeTestDir, { force: true });
+    await indexer.indexCodebase(edgeTestDir, { forceReindex: true });
   } catch (e) {
     errorOccurred = true;
     console.log(`    Error: ${e.message}`);
@@ -1042,7 +1037,7 @@ export class Service${i} {
   }
 
   indexedPaths.add(batchTestDir);
-  const indexStats = await indexer.indexCodebase(batchTestDir, { force: true });
+  const indexStats = await indexer.indexCodebase(batchTestDir, { forceReindex: true });
   assert(indexStats.filesIndexed === 5, `All files indexed: ${indexStats.filesIndexed}`);
   assert(indexStats.chunksCreated > 0, `Chunks created: ${indexStats.chunksCreated}`);
 
@@ -1150,7 +1145,7 @@ async function testConcurrentSafety(qdrant, embeddings) {
 
   // Index first
   indexedPaths.add(concTestDir);
-  await indexer.indexCodebase(concTestDir, { force: true });
+  await indexer.indexCodebase(concTestDir, { forceReindex: true });
 
   // Concurrent searches should not interfere
   const searches = await Promise.all([
@@ -1787,6 +1782,109 @@ async function testSchemaAndDeleteOptimization(qdrant) {
   }
 }
 
+async function testForceReindexBehavior(qdrant, embeddings) {
+  section("16. ForceReindex Early Return & Parallel Indexing");
+
+  const forceTestDir = join(TEST_DIR, "force_reindex_test");
+  await fs.mkdir(forceTestDir, { recursive: true });
+
+  // Create test files
+  await createTestFile(forceTestDir, "service1.ts", `
+export class Service1 {
+  process(data: string): string {
+    return data.toUpperCase();
+  }
+}
+`);
+  await createTestFile(forceTestDir, "service2.ts", `
+export class Service2 {
+  calculate(x: number): number {
+    return x * 2;
+  }
+}
+`);
+
+  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
+
+  // === TEST 1: Initial indexing should succeed ===
+  log("info", "Testing initial indexing...");
+  indexedPaths.add(forceTestDir);
+  const initialStats = await indexer.indexCodebase(forceTestDir);
+  assert(initialStats.status === "completed", `Initial indexing completed: ${initialStats.status}`);
+  assert(initialStats.filesIndexed >= 2, `Initial files indexed: ${initialStats.filesIndexed}`);
+  assert(initialStats.chunksCreated > 0, `Initial chunks created: ${initialStats.chunksCreated}`);
+
+  // === TEST 2: Re-indexing without forceReindex should return early ===
+  log("info", "Testing early return when collection exists...");
+  const reindexStats = await indexer.indexCodebase(forceTestDir);
+  assert(reindexStats.status === "completed", `Reindex returns completed status`);
+  assert(reindexStats.filesIndexed === 0, `No files indexed on re-run without force: ${reindexStats.filesIndexed}`);
+  assert(reindexStats.chunksCreated === 0, `No chunks created on re-run without force: ${reindexStats.chunksCreated}`);
+  assert(
+    reindexStats.errors?.some(e => e.includes("Collection already exists")),
+    "Error message mentions collection exists"
+  );
+
+  // === TEST 3: Re-indexing with forceReindex should work ===
+  log("info", "Testing forceReindex=true...");
+  const forceStats = await indexer.indexCodebase(forceTestDir, { forceReindex: true });
+  assert(forceStats.status === "completed", `Force reindex completed: ${forceStats.status}`);
+  assert(forceStats.filesIndexed >= 2, `Force reindex indexed files: ${forceStats.filesIndexed}`);
+  assert(forceStats.chunksCreated > 0, `Force reindex created chunks: ${forceStats.chunksCreated}`);
+
+  // === TEST 4: Verify search still works after force reindex ===
+  log("info", "Testing search after force reindex...");
+  const searchResults = await indexer.searchCode(forceTestDir, "process data");
+  assert(searchResults.length > 0, `Search returns results after force reindex: ${searchResults.length}`);
+
+  // === TEST 5: Parallel processing validation ===
+  log("info", "Testing parallel file processing...");
+
+  // Create more files for parallel processing test
+  const parallelDir = join(TEST_DIR, "parallel_index_test");
+  await fs.mkdir(parallelDir, { recursive: true });
+
+  for (let i = 0; i < 30; i++) {
+    await createTestFile(parallelDir, `module${i}.ts`, `
+// Module ${i} - Test file for parallel processing
+export class Module${i} {
+  private id: number = ${i};
+
+  process(): number {
+    console.log('Processing module ${i}');
+    return this.id * 2;
+  }
+
+  getName(): string {
+    return 'Module${i}';
+  }
+}
+`);
+  }
+
+  indexedPaths.add(parallelDir);
+  const startTime = Date.now();
+  const parallelStats = await indexer.indexCodebase(parallelDir);
+  const duration = Date.now() - startTime;
+
+  assert(parallelStats.status === "completed", `Parallel indexing completed: ${parallelStats.status}`);
+  assert(parallelStats.filesIndexed === 30, `All 30 files indexed: ${parallelStats.filesIndexed}`);
+  assert(parallelStats.chunksCreated > 0, `Chunks created: ${parallelStats.chunksCreated}`);
+
+  // Verify random samples are searchable
+  const sampleResults1 = await indexer.searchCode(parallelDir, "Module5 process");
+  const sampleResults2 = await indexer.searchCode(parallelDir, "Module15 getName");
+  const sampleResults3 = await indexer.searchCode(parallelDir, "Module25 id");
+
+  assert(sampleResults1.length > 0, `Module5 searchable: ${sampleResults1.length}`);
+  assert(sampleResults2.length > 0, `Module15 searchable: ${sampleResults2.length}`);
+  assert(sampleResults3.length > 0, `Module25 searchable: ${sampleResults3.length}`);
+
+  console.log(`    30 files indexed in ${(duration / 1000).toFixed(2)}s (${(30 / (duration / 1000)).toFixed(1)} files/s)`);
+
+  log("pass", "ForceReindex behavior and parallel indexing verified");
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════
@@ -1832,6 +1930,7 @@ async function main() {
     await testParallelSync();
     await testPipelineWorkerpool(qdrant);
     await testSchemaAndDeleteOptimization(qdrant);
+    await testForceReindexBehavior(qdrant, embeddings);
 
     // Cleanup
     section("Cleanup");

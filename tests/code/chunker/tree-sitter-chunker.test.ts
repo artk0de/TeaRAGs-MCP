@@ -154,6 +154,101 @@ function farewell(name) {
     });
   });
 
+  describe("chunk - Ruby", () => {
+    it("should chunk Ruby methods", async () => {
+      const code = `
+class UserService
+  def find_user(id)
+    User.find(id)
+  end
+
+  def create_user(params)
+    User.create(params)
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "test.rb", "ruby");
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks.some((c) => c.metadata.chunkType === "class" || c.metadata.chunkType === "function")).toBe(true);
+    });
+
+    it("should chunk Ruby singleton methods", async () => {
+      const code = `
+class Configuration
+  def self.load_from_file(path)
+    YAML.load_file(path)
+  end
+
+  def self.default_settings
+    { timeout: 30, retries: 3 }
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "config.rb", "ruby");
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+
+    it("should chunk Ruby modules", async () => {
+      const code = `
+module Authenticatable
+  def authenticate(credentials)
+    # Authentication logic
+    true
+  end
+
+  def logout
+    session.clear
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "concerns.rb", "ruby");
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+
+    it("should chunk Ruby lambdas and procs", async () => {
+      const code = `
+class Calculator
+  OPERATIONS = {
+    add: ->(a, b) { a + b },
+    subtract: lambda { |a, b| a - b }
+  }
+
+  def process(data)
+    data.map do |item|
+      transform(item)
+    end
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "calculator.rb", "ruby");
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+
+    it("should chunk Ruby begin/rescue blocks", async () => {
+      const code = `
+class ApiClient
+  def fetch_data(url)
+    begin
+      response = HTTP.get(url)
+      parse_response(response)
+    rescue NetworkError => e
+      handle_network_error(e)
+    rescue ParseError => e
+      handle_parse_error(e)
+    end
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "api_client.rb", "ruby");
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+  });
+
   describe("fallback behavior", () => {
     it("should fallback to character chunker for unsupported language", async () => {
       const code =
@@ -240,8 +335,48 @@ function test() {
       expect(chunker.supportsLanguage("python")).toBe(true);
     });
 
+    it("should support Ruby", () => {
+      expect(chunker.supportsLanguage("ruby")).toBe(true);
+    });
+
     it("should not support unknown languages", () => {
       expect(chunker.supportsLanguage("unknown")).toBe(false);
+    });
+  });
+
+  describe("lazy loading", () => {
+    it("should have no parsers loaded initially", () => {
+      const freshChunker = new TreeSitterChunker(config);
+      const stats = freshChunker.getLoadedParsers();
+      expect(stats.loaded).toHaveLength(0);
+      expect(stats.available.length).toBeGreaterThan(0);
+    });
+
+    it("should load parser on first use", async () => {
+      const freshChunker = new TreeSitterChunker(config);
+      await freshChunker.chunk("function test() { return 1; }", "test.ts", "typescript");
+      const stats = freshChunker.getLoadedParsers();
+      expect(stats.loaded).toContain("typescript");
+    });
+
+    it("should preload multiple languages", async () => {
+      const freshChunker = new TreeSitterChunker(config);
+      await freshChunker.preloadLanguages(["python", "ruby"]);
+      const stats = freshChunker.getLoadedParsers();
+      expect(stats.loaded).toContain("python");
+      expect(stats.loaded).toContain("ruby");
+    });
+
+    it("should return all supported languages", () => {
+      const languages = chunker.getSupportedLanguages();
+      expect(languages).toContain("typescript");
+      expect(languages).toContain("javascript");
+      expect(languages).toContain("python");
+      expect(languages).toContain("ruby");
+      expect(languages).toContain("go");
+      expect(languages).toContain("rust");
+      expect(languages).toContain("java");
+      expect(languages).toContain("bash");
     });
   });
 

@@ -115,210 +115,202 @@ export class CodeIndexer {
       const collectionExists =
         await this.qdrant.collectionExists(collectionName);
 
+      // Early return if collection already exists and forceReindex is not set
+      // This prevents duplicate indexing - use reindexChanges for incremental updates
+      if (collectionExists && !options?.forceReindex) {
+        stats.status = "completed";
+        stats.durationMs = Date.now() - startTime;
+        stats.errors?.push(
+          `Collection already exists. Use forceReindex=true to re-index from scratch, or use reindexChanges for incremental updates.`,
+        );
+        return stats;
+      }
+
       if (options?.forceReindex && collectionExists) {
         await this.qdrant.deleteCollection(collectionName);
       }
 
-      if (!collectionExists || options?.forceReindex) {
-        const vectorSize = this.embeddings.getDimensions();
-        await this.qdrant.createCollection(
-          collectionName,
-          vectorSize,
-          "Cosine",
-          this.config.enableHybridSearch,
-        );
+      // Create new collection (either first time or after force delete)
+      const vectorSize = this.embeddings.getDimensions();
+      await this.qdrant.createCollection(
+        collectionName,
+        vectorSize,
+        "Cosine",
+        this.config.enableHybridSearch,
+      );
 
-        // Initialize schema with payload indexes for optimal performance
-        const schemaManager = new SchemaManager(this.qdrant);
-        await schemaManager.initializeSchema(collectionName);
-      }
+      // Initialize schema with payload indexes for optimal performance
+      const schemaManager = new SchemaManager(this.qdrant);
+      await schemaManager.initializeSchema(collectionName);
 
       // Store "indexing in progress" marker immediately after collection is ready
       await this.storeIndexingMarker(collectionName, false);
 
-      // 3. Process files and create chunks
+      // 3. Initialize parallel processing components
       const chunker = new TreeSitterChunker({
         chunkSize: this.config.chunkSize,
         chunkOverlap: this.config.chunkOverlap,
         maxChunkSize: this.config.chunkSize * 2,
       });
       const metadataExtractor = new MetadataExtractor();
-      const allChunks: Array<{ chunk: CodeChunk; id: string }> = [];
-      const indexedFiles: string[] = []; // Track only files that were actually indexed
+      const indexedFiles: string[] = [];
 
-      for (const [index, filePath] of files.entries()) {
-        try {
-          progressCallback?.({
-            phase: "chunking",
-            current: index + 1,
-            total: files.length,
-            percentage: Math.round(((index + 1) / files.length) * 40), // 0-40%
-            message: `Chunking file ${index + 1}/${files.length}`,
-          });
+      // Initialize ChunkPipeline for parallel embedding and storage
+      const chunkPipeline = new ChunkPipeline(
+        this.qdrant,
+        this.embeddings,
+        collectionName,
+        {
+          workerPool: DEFAULT_CONFIG.workerPool,
+          accumulator: DEFAULT_CONFIG.upsertAccumulator,
+          enableHybrid: this.config.enableHybridSearch,
+        },
+      );
+      chunkPipeline.start();
 
-          const code = await fs.readFile(filePath, "utf-8");
+      // 4. Process files in parallel batches
+      const fileProcessingConcurrency = 20;
+      let totalChunksQueued = 0;
+      let hitChunkLimit = false;
 
-          // Check for secrets (basic detection)
-          if (metadataExtractor.containsSecrets(code)) {
-            stats.errors?.push(
-              `Skipped ${filePath}: potential secrets detected`,
-            );
+      for (let i = 0; i < files.length && !hitChunkLimit; i += fileProcessingConcurrency) {
+        const fileBatch = files.slice(i, i + fileProcessingConcurrency);
+
+        progressCallback?.({
+          phase: "chunking",
+          current: Math.min(i + fileProcessingConcurrency, files.length),
+          total: files.length,
+          percentage: Math.round((Math.min(i + fileProcessingConcurrency, files.length) / files.length) * 40),
+          message: `Processing files ${i + 1}-${Math.min(i + fileProcessingConcurrency, files.length)}/${files.length}`,
+        });
+
+        // PARALLEL: Read and chunk files concurrently
+        const chunkResults = await Promise.all(
+          fileBatch.map(async (filePath) => {
+            try {
+              const code = await fs.readFile(filePath, "utf-8");
+
+              // Check for secrets (basic detection)
+              if (metadataExtractor.containsSecrets(code)) {
+                return { filePath, chunks: [], skipped: true, error: "potential secrets detected" };
+              }
+
+              const language = metadataExtractor.extractLanguage(filePath);
+              const chunks = await chunker.chunk(code, filePath, language);
+
+              // Apply chunk limits if configured
+              const chunksToAdd = this.config.maxChunksPerFile
+                ? chunks.slice(0, this.config.maxChunksPerFile)
+                : chunks;
+
+              return {
+                filePath,
+                chunks: chunksToAdd.map((chunk) => ({
+                  chunk: {
+                    content: chunk.content,
+                    startLine: chunk.startLine,
+                    endLine: chunk.endLine,
+                    metadata: {
+                      filePath: chunk.metadata.filePath,
+                      language: chunk.metadata.language,
+                      chunkIndex: chunk.metadata.chunkIndex,
+                      name: chunk.metadata.name,
+                      chunkType: chunk.metadata.chunkType,
+                      parentName: chunk.metadata.parentName,
+                      parentType: chunk.metadata.parentType,
+                    },
+                  },
+                  chunkId: metadataExtractor.generateChunkId(chunk),
+                })),
+                skipped: false,
+              };
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              return { filePath, chunks: [], skipped: true, error: errorMessage };
+            }
+          }),
+        );
+
+        // Process results and send chunks to pipeline
+        for (const result of chunkResults) {
+          if (result.skipped) {
+            if (result.error) {
+              stats.errors?.push(`Skipped ${result.filePath}: ${result.error}`);
+            }
             continue;
           }
 
-          const language = metadataExtractor.extractLanguage(filePath);
-          const chunks = await chunker.chunk(code, filePath, language);
-
-          // Apply chunk limits if configured
-          const chunksToAdd = this.config.maxChunksPerFile
-            ? chunks.slice(0, this.config.maxChunksPerFile)
-            : chunks;
-
-          for (const chunk of chunksToAdd) {
-            const id = metadataExtractor.generateChunkId(chunk);
-            allChunks.push({ chunk, id });
-
+          // Send chunks to pipeline
+          for (const chunkData of result.chunks) {
             // Check total chunk limit
-            if (
-              this.config.maxTotalChunks &&
-              allChunks.length >= this.config.maxTotalChunks
-            ) {
+            if (this.config.maxTotalChunks && totalChunksQueued >= this.config.maxTotalChunks) {
+              hitChunkLimit = true;
               break;
             }
+
+            // Wait for backpressure if needed
+            if (chunkPipeline.isBackpressured()) {
+              await chunkPipeline.waitForBackpressure(30000);
+            }
+
+            chunkPipeline.addChunk(
+              chunkData.chunk as CodeChunk,
+              chunkData.chunkId,
+              absolutePath,
+            );
+            totalChunksQueued++;
           }
+
+          if (hitChunkLimit) break;
 
           stats.filesIndexed++;
-          indexedFiles.push(filePath);
+          indexedFiles.push(result.filePath);
+        }
 
-          // Check total chunk limit
-          if (
-            this.config.maxTotalChunks &&
-            allChunks.length >= this.config.maxTotalChunks
-          ) {
-            break;
-          }
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          stats.errors?.push(`Failed to process ${filePath}: ${errorMessage}`);
+        // Report embedding progress
+        const pipelineStats = chunkPipeline.getStats();
+        if (pipelineStats.itemsProcessed > 0) {
+          progressCallback?.({
+            phase: "embedding",
+            current: pipelineStats.itemsProcessed,
+            total: totalChunksQueued,
+            percentage: 40 + Math.round((pipelineStats.itemsProcessed / Math.max(totalChunksQueued, 1)) * 50),
+            message: `Embedding and storing: ${pipelineStats.itemsProcessed}/${totalChunksQueued} chunks`,
+          });
         }
       }
 
-      stats.chunksCreated = allChunks.length;
+      stats.chunksCreated = totalChunksQueued;
 
-      // Save snapshot for incremental updates (only for files that were actually indexed)
+      // 5. Flush and shutdown pipeline to complete all pending operations
+      progressCallback?.({
+        phase: "storing",
+        current: totalChunksQueued,
+        total: totalChunksQueued,
+        percentage: 90,
+        message: "Finalizing embeddings and storage...",
+      });
+
+      await chunkPipeline.flush();
+      await chunkPipeline.shutdown();
+
+      const finalPipelineStats = chunkPipeline.getStats();
+      if (process.env.DEBUG) {
+        console.error(
+          `[Index] Pipeline completed: ${finalPipelineStats.itemsProcessed} chunks in ${finalPipelineStats.batchesProcessed} batches, ` +
+          `${finalPipelineStats.throughput.toFixed(1)} chunks/s`
+        );
+      }
+
+      // Save snapshot for incremental updates
       try {
         const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
         const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
         await synchronizer.updateSnapshot(indexedFiles);
       } catch (error) {
-        // Snapshot failure shouldn't fail the entire indexing
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.error("Failed to save snapshot:", errorMessage);
         stats.errors?.push(`Snapshot save failed: ${errorMessage}`);
-      }
-
-      if (allChunks.length === 0) {
-        // Still store completion marker even with no chunks
-        await this.storeIndexingMarker(collectionName, true);
-        stats.status = "completed";
-        stats.durationMs = Date.now() - startTime;
-        return stats;
-      }
-
-      // 4. Generate embeddings and store in batches
-      const batchSize = this.config.batchSize;
-      for (let i = 0; i < allChunks.length; i += batchSize) {
-        const batch = allChunks.slice(i, i + batchSize);
-
-        progressCallback?.({
-          phase: "embedding",
-          current: i + batch.length,
-          total: allChunks.length,
-          percentage:
-            40 + Math.round(((i + batch.length) / allChunks.length) * 30), // 40-70%
-          message: `Generating embeddings ${i + batch.length}/${allChunks.length}`,
-        });
-
-        try {
-          const texts = batch.map((b) => b.chunk.content);
-          const embeddings = await this.embeddings.embedBatch(texts);
-
-          // 5. Store to Qdrant
-          const points = batch.map((b, idx) => ({
-            id: b.id,
-            vector: embeddings[idx].embedding,
-            payload: {
-              content: b.chunk.content,
-              relativePath: relative(absolutePath, b.chunk.metadata.filePath),
-              startLine: b.chunk.startLine,
-              endLine: b.chunk.endLine,
-              fileExtension: extname(b.chunk.metadata.filePath),
-              language: b.chunk.metadata.language,
-              codebasePath: absolutePath,
-              chunkIndex: b.chunk.metadata.chunkIndex,
-              ...(b.chunk.metadata.name && { name: b.chunk.metadata.name }),
-              ...(b.chunk.metadata.chunkType && {
-                chunkType: b.chunk.metadata.chunkType,
-              }),
-            },
-          }));
-
-          progressCallback?.({
-            phase: "storing",
-            current: i + batch.length,
-            total: allChunks.length,
-            percentage:
-              70 + Math.round(((i + batch.length) / allChunks.length) * 30), // 70-100%
-            message: `Storing chunks ${i + batch.length}/${allChunks.length}`,
-          });
-
-          // OPTIMIZED: Use wait=false for intermediate batches, wait=true for last batch
-          const isLastBatch = i + batchSize >= allChunks.length;
-
-          if (this.config.enableHybridSearch) {
-            // Generate sparse vectors for hybrid search
-            const sparseGenerator = new BM25SparseVectorGenerator();
-            const hybridPoints = batch.map((b, idx) => ({
-              id: b.id,
-              vector: embeddings[idx].embedding,
-              sparseVector: sparseGenerator.generate(b.chunk.content),
-              payload: {
-                content: b.chunk.content,
-                relativePath: relative(absolutePath, b.chunk.metadata.filePath),
-                startLine: b.chunk.startLine,
-                endLine: b.chunk.endLine,
-                fileExtension: extname(b.chunk.metadata.filePath),
-                language: b.chunk.metadata.language,
-                codebasePath: absolutePath,
-                chunkIndex: b.chunk.metadata.chunkIndex,
-                ...(b.chunk.metadata.name && { name: b.chunk.metadata.name }),
-                ...(b.chunk.metadata.chunkType && {
-                  chunkType: b.chunk.metadata.chunkType,
-                }),
-              },
-            }));
-
-            await this.qdrant.addPointsWithSparseOptimized(
-              collectionName,
-              hybridPoints,
-              { wait: isLastBatch, ordering: "weak" },
-            );
-          } else {
-            await this.qdrant.addPointsOptimized(collectionName, points, {
-              wait: isLastBatch,
-              ordering: "weak",
-            });
-          }
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          stats.errors?.push(
-            `Failed to process batch at index ${i}: ${errorMessage}`,
-          );
-          stats.status = "partial";
-        }
       }
 
       // Store completion marker to indicate indexing is complete
@@ -821,6 +813,8 @@ export class CodeIndexer {
                       chunkIndex: chunk.metadata.chunkIndex,
                       name: chunk.metadata.name,
                       chunkType: chunk.metadata.chunkType,
+                      parentName: chunk.metadata.parentName,
+                      parentType: chunk.metadata.parentType,
                     },
                   },
                   chunkId: metadataExtractor.generateChunkId(chunk),
@@ -972,205 +966,6 @@ export class CodeIndexer {
         error instanceof Error ? error.message : String(error);
       throw new Error(`Incremental re-indexing failed: ${errorMessage}`);
     }
-  }
-
-  // ============ PLACEHOLDER FOR OLD CODE REMOVAL ============
-  // The old sequential code below has been replaced by the parallel pipelines above
-  // This marker indicates where the old code was
-
-  /**
-   * Rebuild cache/snapshot by comparing actual files with Qdrant collection.
-   * Useful after manual file changes, interrupted indexing, or to verify state.
-   *
-   * Returns statistics about indexed vs pending files.
-   */
-  async rebuildCache(path: string): Promise<{
-    indexed: number;
-    pending: number;
-    orphaned: number;
-    cacheVersion: string;
-    snapshotUpdated: boolean;
-    details?: {
-      pendingFiles: string[];
-      orphanedPaths: string[];
-    };
-  }> {
-    const absolutePath = await this.validatePath(path);
-    const collectionName = this.getCollectionName(absolutePath);
-
-    // Check if collection exists
-    const exists = await this.qdrant.collectionExists(collectionName);
-    if (!exists) {
-      return {
-        indexed: 0,
-        pending: 0,
-        orphaned: 0,
-        cacheVersion: "none",
-        snapshotUpdated: false,
-      };
-    }
-
-    // 1. Scan current files in the codebase
-    const scanner = new FileScanner({
-      supportedExtensions: this.config.supportedExtensions,
-      ignorePatterns: this.config.ignorePatterns,
-      customIgnorePatterns: this.config.customIgnorePatterns,
-    });
-
-    await scanner.loadIgnorePatterns(absolutePath);
-    const currentFiles = await scanner.scanDirectory(absolutePath);
-
-    // Convert to relative paths for comparison
-    const currentRelativePaths = new Set(
-      currentFiles.map((f) => relative(absolutePath, f))
-    );
-
-    // 2. Get all indexed paths from Qdrant
-    // We need to scroll through all points to get unique relativePaths
-    const indexedPaths = await this.getIndexedPaths(collectionName, absolutePath);
-
-    // 3. Compare
-    const indexedSet = new Set(indexedPaths);
-
-    // Files that are indexed and exist
-    const validIndexed = Array.from(indexedSet).filter((p) => currentRelativePaths.has(p));
-
-    // Files that exist but are not indexed (pending)
-    const pendingFiles = Array.from(currentRelativePaths).filter((p) => !indexedSet.has(p));
-
-    // Files that are indexed but no longer exist (orphaned)
-    const orphanedPaths = Array.from(indexedSet).filter((p) => !currentRelativePaths.has(p));
-
-    // 4. Rebuild snapshot with current state
-    const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
-
-    // AUTO-MIGRATE: Upgrade old snapshots to v3 if needed
-    const migrator = new SnapshotMigrator(snapshotDir, collectionName, absolutePath);
-    await migrator.ensureMigrated();
-
-    const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
-    await synchronizer.initialize();
-
-    // Only include files that are both indexed AND exist
-    const validFiles = currentFiles.filter((f) => {
-      const rel = relative(absolutePath, f);
-      return indexedSet.has(rel);
-    });
-
-    // Update snapshot with valid files only
-    if (validFiles.length > 0) {
-      await synchronizer.updateSnapshot(validFiles);
-    }
-
-    // Delete any checkpoint that might exist
-    await synchronizer.deleteCheckpoint();
-
-    // 5. Optionally clean up orphaned chunks (files deleted but chunks remain)
-    if (orphanedPaths.length > 0) {
-      console.error(`[rebuildCache] Found ${orphanedPaths.length} orphaned paths, cleaning up...`);
-      try {
-        await this.qdrant.deletePointsByPaths(collectionName, orphanedPaths);
-      } catch (error) {
-        console.error(`[rebuildCache] Failed to clean orphaned chunks:`, error);
-      }
-    }
-
-    return {
-      indexed: validIndexed.length,
-      pending: pendingFiles.length,
-      orphaned: orphanedPaths.length,
-      cacheVersion: "v2",
-      snapshotUpdated: true,
-      details: {
-        pendingFiles: pendingFiles.slice(0, 20), // Limit to first 20 for readability
-        orphanedPaths: orphanedPaths.slice(0, 20),
-      },
-    };
-  }
-
-  /**
-   * Get all unique relativePaths from indexed chunks in Qdrant.
-   * Uses scroll API to handle large collections.
-   */
-  private async getIndexedPaths(
-    collectionName: string,
-    codebasePath: string
-  ): Promise<string[]> {
-    const indexedPaths = new Set<string>();
-
-    try {
-      // Use Qdrant scroll to get all points
-      // This is a workaround since QdrantManager doesn't expose scroll directly
-      // We'll use search with a very high limit and filter by codebasePath
-      const info = await this.qdrant.getCollectionInfo(collectionName);
-      const pointsCount = info.pointsCount;
-
-      if (pointsCount === 0) {
-        return [];
-      }
-
-      // Create a dummy query vector to search (we need embeddings just to use search)
-      // Instead, we'll use the internal client scroll
-      // For now, estimate based on collection info and use a high search limit
-      // This is a simplification - ideally we'd expose scroll in QdrantManager
-
-      // Use search with zero vector to get points (Qdrant returns all when using scroll)
-      // Actually, let's just query for unique paths via filter
-      // We need access to the underlying client for proper scroll
-
-      // Workaround: Get unique paths from a large search
-      // This isn't perfect but works for most cases
-      // For production, QdrantManager should expose scroll API
-
-      // For now, return empty and let the caller know
-      // The comparison will mark everything as "pending"
-
-      // Better approach: Use the snapshot if it exists
-      const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
-
-      // AUTO-MIGRATE: Upgrade old snapshots to v3 if needed
-      const migrator = new SnapshotMigrator(snapshotDir, collectionName, codebasePath);
-      await migrator.ensureMigrated();
-
-      const synchronizer = new ParallelFileSynchronizer(codebasePath, collectionName, snapshotDir);
-      const hasSnapshot = await synchronizer.initialize();
-
-      if (hasSnapshot) {
-        // Get paths from snapshot (much faster than scrolling Qdrant)
-
-        // Let's detect changes which will give us the current indexed paths
-        const scanner = new FileScanner({
-          supportedExtensions: this.config.supportedExtensions,
-          ignorePatterns: this.config.ignorePatterns,
-          customIgnorePatterns: this.config.customIgnorePatterns,
-        });
-        await scanner.loadIgnorePatterns(codebasePath);
-        const currentFiles = await scanner.scanDirectory(codebasePath);
-
-        // detectChanges compares current files with snapshot
-        // The "deleted" files are those in snapshot but not in currentFiles
-        const changes = await synchronizer.detectChanges(currentFiles);
-
-        // Files in snapshot = current files that are NOT added + deleted files
-        // i.e., snapshot files = (current - added) + deleted
-        const currentRelative = currentFiles.map((f) =>
-          relative(codebasePath, f)
-        );
-        const addedSet = new Set(changes.added);
-        const existingInSnapshot = currentRelative.filter(
-          (p) => !addedSet.has(p)
-        );
-        const allSnapshotPaths = [...existingInSnapshot, ...changes.deleted];
-
-        for (const p of allSnapshotPaths) {
-          indexedPaths.add(p);
-        }
-      }
-    } catch (error) {
-      console.error(`[getIndexedPaths] Error:`, error);
-    }
-
-    return Array.from(indexedPaths);
   }
 
   /**
