@@ -159,6 +159,32 @@ async function testEmbeddings(embeddings) {
   const emb2 = await embeddings.embed(text);
   const similarity = cosineSim(emb1.embedding, emb2.embedding);
   assert(similarity > 0.99, `Same text produces consistent embeddings (sim=${similarity.toFixed(4)})`);
+
+  // Large batch (tests internal batching)
+  log("info", "Testing large batch (50 texts)...");
+  const largeBatch = Array.from({ length: 50 }, (_, i) =>
+    `function test_${i}() { const value = ${i} * 2; return value + ${i % 10}; }`
+  );
+  const largeBatchStart = Date.now();
+  const largeBatchResult = await embeddings.embedBatch(largeBatch);
+  const largeBatchTime = Date.now() - largeBatchStart;
+  assert(largeBatchResult.length === 50, `Large batch returns all embeddings: ${largeBatchResult.length}`);
+  log("info", `Large batch completed in ${largeBatchTime}ms (${Math.round(50000 / largeBatchTime)} emb/sec)`);
+
+  // Parallel embedding requests
+  log("info", "Testing parallel embedding requests (3 x 20 texts)...");
+  const createBatch = (id) => Array.from({ length: 20 }, (_, i) =>
+    `function batch${id}_${i}() { return ${i} * ${id}; }`
+  );
+  const parallelStart = Date.now();
+  const parallelResults = await Promise.all([
+    embeddings.embedBatch(createBatch(1)),
+    embeddings.embedBatch(createBatch(2)),
+    embeddings.embedBatch(createBatch(3)),
+  ]);
+  const parallelTime = Date.now() - parallelStart;
+  assert(parallelResults.every(r => r.length === 20), `Parallel batches all complete: ${parallelResults.map(r => r.length).join(", ")}`);
+  log("info", `Parallel requests completed in ${parallelTime}ms`);
 }
 
 async function testQdrantOperations(qdrant) {
@@ -231,6 +257,11 @@ async function testQdrantOperations(qdrant) {
   // Non-existent
   assert(!(await qdrant.collectionExists("nonexistent_xyz")), "Non-existent collection returns false");
   assert((await qdrant.getPoint(TEST_COLLECTION, "fake-id")) === null, "Non-existent point returns null");
+
+  // List collections
+  const allCollections = await qdrant.listCollections();
+  assert(Array.isArray(allCollections), `listCollections returns array: ${typeof allCollections}`);
+  assert(allCollections.includes(TEST_COLLECTION), `Test collection in list: ${allCollections.length} total`);
 
   // Cleanup
   await qdrant.deleteCollection(TEST_COLLECTION);
