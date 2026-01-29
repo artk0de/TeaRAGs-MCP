@@ -31,7 +31,7 @@ const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
  * @param fn Async function to apply to each item
  * @param concurrency Max parallel operations
  */
-async function parallelLimit<T, R>(
+export async function parallelLimit<T, R>(
   items: T[],
   fn: (item: T) => Promise<R>,
   concurrency: number = MAX_IO_CONCURRENCY

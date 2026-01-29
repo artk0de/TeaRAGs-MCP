@@ -10,13 +10,14 @@ import type { EmbeddingProvider } from "../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../embeddings/sparse.js";
 import type { QdrantManager } from "../qdrant/client.js";
 import { TreeSitterChunker } from "./chunker/tree-sitter-chunker.js";
+import { GitMetadataService } from "./git/index.js";
 import { MetadataExtractor } from "./metadata.js";
 import { ChunkPipeline, DEFAULT_CONFIG } from "./pipeline/index.js";
 import { pipelineLog } from "./pipeline/debug-logger.js";
 import { FileScanner } from "./scanner.js";
 import { SchemaManager } from "./schema-migration.js";
 import { SnapshotMigrator } from "./sync/migration.js";
-import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
+import { ParallelFileSynchronizer, parallelLimit } from "./sync/parallel-synchronizer.js";
 import type {
   ChangeStats,
   CodeChunk,
@@ -155,6 +156,14 @@ export class CodeIndexer {
       const metadataExtractor = new MetadataExtractor();
       const indexedFiles: string[] = [];
 
+      // Initialize git metadata service (optional)
+      const gitMetadataService = this.config.enableGitMetadata
+        ? new GitMetadataService({ debug: process.env.DEBUG === "true" })
+        : null;
+      if (gitMetadataService) {
+        await gitMetadataService.initialize();
+      }
+
       // Initialize ChunkPipeline for parallel embedding and storage
       const chunkPipeline = new ChunkPipeline(
         this.qdrant,
@@ -168,118 +177,123 @@ export class CodeIndexer {
       );
       chunkPipeline.start();
 
-      // 4. Process files in parallel batches
-      const fileProcessingConcurrency = 20;
+      // 4. STREAMING: Process files with bounded concurrency, send chunks immediately
+      // This eliminates burst-pause pattern by streaming chunks as files are processed
+      const fileProcessingConcurrency = parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "10", 10);
       let totalChunksQueued = 0;
-      let hitChunkLimit = false;
+      let filesProcessed = 0;
 
-      for (let i = 0; i < files.length && !hitChunkLimit; i += fileProcessingConcurrency) {
-        const fileBatch = files.slice(i, i + fileProcessingConcurrency);
+      // NOTE: prefetchBlame removed - it blocks GPU for too long!
+      // Git blame now runs lazily during file processing, allowing:
+      // - First files to reach pipeline immediately
+      // - GPU to start embedding while other files still processing
+      // - Better CPU/GPU overlap instead of sequential phases
 
-        progressCallback?.({
-          phase: "chunking",
-          current: Math.min(i + fileProcessingConcurrency, files.length),
-          total: files.length,
-          percentage: Math.round((Math.min(i + fileProcessingConcurrency, files.length) / files.length) * 40),
-          message: `Processing files ${i + 1}-${Math.min(i + fileProcessingConcurrency, files.length)}/${files.length}`,
-        });
+      // STREAMING: Process files with bounded concurrency
+      // Each file sends chunks to pipeline immediately after processing
+      await parallelLimit(
+        files,
+        async (filePath) => {
+          try {
+            const code = await fs.readFile(filePath, "utf-8");
 
-        // PARALLEL: Read and chunk files concurrently
-        const chunkResults = await Promise.all(
-          fileBatch.map(async (filePath) => {
-            try {
-              const code = await fs.readFile(filePath, "utf-8");
+            // Check for secrets (basic detection)
+            if (metadataExtractor.containsSecrets(code)) {
+              stats.errors?.push(`Skipped ${filePath}: potential secrets detected`);
+              return;
+            }
 
-              // Check for secrets (basic detection)
-              if (metadataExtractor.containsSecrets(code)) {
-                return { filePath, chunks: [], skipped: true, error: "potential secrets detected" };
+            const language = metadataExtractor.extractLanguage(filePath);
+            const chunks = await chunker.chunk(code, filePath, language);
+
+            // Apply chunk limits if configured
+            const chunksToAdd = this.config.maxChunksPerFile
+              ? chunks.slice(0, this.config.maxChunksPerFile)
+              : chunks;
+
+            // Process and send chunks IMMEDIATELY (streaming)
+            for (const chunk of chunksToAdd) {
+              // Check total chunk limit
+              if (this.config.maxTotalChunks && totalChunksQueued >= this.config.maxTotalChunks) {
+                return;
               }
 
-              const language = metadataExtractor.extractLanguage(filePath);
-              const chunks = await chunker.chunk(code, filePath, language);
-
-              // Apply chunk limits if configured
-              const chunksToAdd = this.config.maxChunksPerFile
-                ? chunks.slice(0, this.config.maxChunksPerFile)
-                : chunks;
-
-              return {
-                filePath,
-                chunks: chunksToAdd.map((chunk) => ({
-                  chunk: {
-                    content: chunk.content,
-                    startLine: chunk.startLine,
-                    endLine: chunk.endLine,
-                    metadata: {
-                      filePath: chunk.metadata.filePath,
-                      language: chunk.metadata.language,
-                      chunkIndex: chunk.metadata.chunkIndex,
-                      name: chunk.metadata.name,
-                      chunkType: chunk.metadata.chunkType,
-                      parentName: chunk.metadata.parentName,
-                      parentType: chunk.metadata.parentType,
-                      isDocumentation: chunk.metadata.isDocumentation,
-                    },
-                  },
-                  chunkId: metadataExtractor.generateChunkId(chunk),
-                })),
-                skipped: false,
+              const baseChunk = {
+                content: chunk.content,
+                startLine: chunk.startLine,
+                endLine: chunk.endLine,
+                metadata: {
+                  filePath: chunk.metadata.filePath,
+                  language: chunk.metadata.language,
+                  chunkIndex: chunk.metadata.chunkIndex,
+                  name: chunk.metadata.name,
+                  chunkType: chunk.metadata.chunkType,
+                  parentName: chunk.metadata.parentName,
+                  parentType: chunk.metadata.parentType,
+                  isDocumentation: chunk.metadata.isDocumentation,
+                } as CodeChunk["metadata"],
               };
-            } catch (error) {
-              const errorMessage = error instanceof Error ? error.message : String(error);
-              return { filePath, chunks: [], skipped: true, error: errorMessage };
-            }
-          }),
-        );
 
-        // Process results and send chunks to pipeline
-        for (const result of chunkResults) {
-          if (result.skipped) {
-            if (result.error) {
-              stats.errors?.push(`Skipped ${result.filePath}: ${result.error}`);
+              // Add git metadata if service is enabled (blame already in L1 cache)
+              // IMPORTANT: Pass fileContent to avoid re-reading file for hash check
+              if (gitMetadataService) {
+                const gitMeta = await gitMetadataService.getChunkMetadata(
+                  filePath,
+                  chunk.startLine,
+                  chunk.endLine,
+                  code, // Pass content to avoid fs.readFile for each chunk!
+                );
+                if (gitMeta) {
+                  baseChunk.metadata.git = {
+                    lastModifiedAt: gitMeta.lastModifiedAt,
+                    firstCreatedAt: gitMeta.firstCreatedAt,
+                    dominantAuthor: gitMeta.dominantAuthor,
+                    dominantAuthorEmail: gitMeta.dominantAuthorEmail,
+                    authors: gitMeta.authors,
+                    commitCount: gitMeta.commitCount,
+                    lastCommitHash: gitMeta.lastCommitHash,
+                    ageDays: gitMeta.ageDays,
+                    taskIds: gitMeta.taskIds,
+                  };
+                }
+              }
+
+              // Wait for backpressure if needed
+              if (chunkPipeline.isBackpressured()) {
+                await chunkPipeline.waitForBackpressure(30000);
+              }
+
+              // IMMEDIATE: Send chunk to pipeline right away
+              chunkPipeline.addChunk(
+                baseChunk as CodeChunk,
+                metadataExtractor.generateChunkId(chunk),
+                absolutePath,
+              );
+              totalChunksQueued++;
             }
-            continue;
+
+            stats.filesIndexed++;
+            indexedFiles.push(filePath);
+            filesProcessed++;
+
+            // Report progress: first file, then every 10 files
+            if (filesProcessed === 1 || filesProcessed % 10 === 0) {
+              const pipelineStats = chunkPipeline.getStats();
+              progressCallback?.({
+                phase: "chunking",
+                current: filesProcessed,
+                total: files.length,
+                percentage: 10 + Math.round((filesProcessed / files.length) * 40),
+                message: `Processing: ${filesProcessed}/${files.length} files, ${pipelineStats.itemsProcessed}/${totalChunksQueued} chunks embedded`,
+              });
+            }
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            stats.errors?.push(`Skipped ${filePath}: ${errorMessage}`);
           }
-
-          // Send chunks to pipeline
-          for (const chunkData of result.chunks) {
-            // Check total chunk limit
-            if (this.config.maxTotalChunks && totalChunksQueued >= this.config.maxTotalChunks) {
-              hitChunkLimit = true;
-              break;
-            }
-
-            // Wait for backpressure if needed
-            if (chunkPipeline.isBackpressured()) {
-              await chunkPipeline.waitForBackpressure(30000);
-            }
-
-            chunkPipeline.addChunk(
-              chunkData.chunk as CodeChunk,
-              chunkData.chunkId,
-              absolutePath,
-            );
-            totalChunksQueued++;
-          }
-
-          if (hitChunkLimit) break;
-
-          stats.filesIndexed++;
-          indexedFiles.push(result.filePath);
-        }
-
-        // Report embedding progress
-        const pipelineStats = chunkPipeline.getStats();
-        if (pipelineStats.itemsProcessed > 0) {
-          progressCallback?.({
-            phase: "embedding",
-            current: pipelineStats.itemsProcessed,
-            total: totalChunksQueued,
-            percentage: 40 + Math.round((pipelineStats.itemsProcessed / Math.max(totalChunksQueued, 1)) * 50),
-            message: `Embedding and storing: ${pipelineStats.itemsProcessed}/${totalChunksQueued} chunks`,
-          });
-        }
-      }
+        },
+        fileProcessingConcurrency,
+      );
 
       stats.chunksCreated = totalChunksQueued;
 
@@ -406,17 +420,30 @@ export class CodeIndexer {
 
     // Build filter
     let filter: any;
-    if (options?.fileTypes || options?.pathPattern || options?.documentationOnly) {
+    const hasBasicFilters =
+      options?.fileTypes || options?.pathPattern || options?.documentationOnly;
+    // Git filters per canonical algorithm (aggregated signals only)
+    const hasGitFilters =
+      options?.author ||
+      options?.modifiedAfter ||
+      options?.modifiedBefore ||
+      options?.minAgeDays !== undefined ||
+      options?.maxAgeDays !== undefined ||
+      options?.minCommitCount !== undefined ||
+      options?.taskId;
+
+    if (hasBasicFilters || hasGitFilters) {
       filter = { must: [] };
 
-      if (options.fileTypes && options.fileTypes.length > 0) {
+      // Basic filters
+      if (options?.fileTypes && options.fileTypes.length > 0) {
         filter.must.push({
           key: "fileExtension",
           match: { any: options.fileTypes },
         });
       }
 
-      if (options.pathPattern) {
+      if (options?.pathPattern) {
         // Convert glob pattern to regex (simplified)
         const regex = options.pathPattern
           .replace(/\./g, "\\.")
@@ -431,10 +458,66 @@ export class CodeIndexer {
       }
 
       // Filter to documentation only (markdown, READMEs, etc.)
-      if (options.documentationOnly) {
+      if (options?.documentationOnly) {
         filter.must.push({
           key: "isDocumentation",
           match: { value: true },
+        });
+      }
+
+      // Git metadata filters (canonical algorithm: nested git.* keys)
+      if (options?.author) {
+        filter.must.push({
+          key: "git.dominantAuthor",
+          match: { value: options.author },
+        });
+      }
+
+      if (options?.modifiedAfter) {
+        const timestamp = Math.floor(
+          new Date(options.modifiedAfter).getTime() / 1000,
+        );
+        filter.must.push({
+          key: "git.lastModifiedAt",
+          range: { gte: timestamp },
+        });
+      }
+
+      if (options?.modifiedBefore) {
+        const timestamp = Math.floor(
+          new Date(options.modifiedBefore).getTime() / 1000,
+        );
+        filter.must.push({
+          key: "git.lastModifiedAt",
+          range: { lte: timestamp },
+        });
+      }
+
+      if (options?.minAgeDays !== undefined) {
+        filter.must.push({
+          key: "git.ageDays",
+          range: { gte: options.minAgeDays },
+        });
+      }
+
+      if (options?.maxAgeDays !== undefined) {
+        filter.must.push({
+          key: "git.ageDays",
+          range: { lte: options.maxAgeDays },
+        });
+      }
+
+      if (options?.minCommitCount !== undefined) {
+        filter.must.push({
+          key: "git.commitCount",
+          range: { gte: options.minCommitCount },
+        });
+      }
+
+      if (options?.taskId) {
+        filter.must.push({
+          key: "git.taskIds",
+          match: { any: [options.taskId] },
         });
       }
     }
@@ -465,7 +548,7 @@ export class CodeIndexer {
       ? results.filter((r) => r.score >= (options.scoreThreshold || 0))
       : results;
 
-    // Format results
+    // Format results (include git metadata if present)
     return filteredResults.map((r) => ({
       content: r.payload?.content || "",
       filePath: r.payload?.relativePath || "",
@@ -474,6 +557,22 @@ export class CodeIndexer {
       language: r.payload?.language || "unknown",
       score: r.score,
       fileExtension: r.payload?.fileExtension || "",
+      // Include git metadata if it exists (canonical algorithm: aggregated signals)
+      ...(r.payload?.git && {
+        metadata: {
+          git: {
+            lastModifiedAt: r.payload.git.lastModifiedAt,
+            firstCreatedAt: r.payload.git.firstCreatedAt,
+            dominantAuthor: r.payload.git.dominantAuthor,
+            dominantAuthorEmail: r.payload.git.dominantAuthorEmail,
+            authors: r.payload.git.authors,
+            commitCount: r.payload.git.commitCount,
+            lastCommitHash: r.payload.git.lastCommitHash,
+            ageDays: r.payload.git.ageDays,
+            taskIds: r.payload.git.taskIds,
+          },
+        },
+      }),
     }));
   }
 
@@ -563,6 +662,7 @@ export class CodeIndexer {
       chunksAdded: 0,
       chunksDeleted: 0,
       durationMs: 0,
+      status: "completed",
     };
 
     try {
@@ -658,6 +758,14 @@ export class CodeIndexer {
         maxChunkSize: this.config.chunkSize * 2,
       });
       const metadataExtractor = new MetadataExtractor();
+
+      // Initialize git metadata service (optional)
+      const gitMetadataService = this.config.enableGitMetadata
+        ? new GitMetadataService({ debug: process.env.DEBUG === "true" })
+        : null;
+      if (gitMetadataService) {
+        await gitMetadataService.initialize();
+      }
 
       // OPTIMIZATION: Parallel pipelines for delete and index operations
       // - Added files: can be indexed immediately (no old chunks to delete)
@@ -779,8 +887,8 @@ export class CodeIndexer {
       );
       chunkPipeline.start();
 
-      // Helper function to index a batch of files using ChunkPipeline
-      // Instead of direct embedding/store, files are chunked and sent to the pipeline
+      // STREAMING: Helper function to index files with bounded concurrency
+      // Chunks are sent to pipeline immediately as files are processed
       const indexFiles = async (
         files: string[],
         label: string
@@ -788,73 +896,91 @@ export class CodeIndexer {
         if (files.length === 0) return 0;
 
         let chunksCreated = 0;
-        const fileProcessingConcurrency = 20;
+        const streamingConcurrency = parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "10", 10);
 
-        for (let i = 0; i < files.length; i += fileProcessingConcurrency) {
-          const fileBatch = files.slice(i, i + fileProcessingConcurrency);
+        if (process.env.DEBUG) {
+          console.error(`[Reindex] ${label}: starting ${files.length} files (streaming, concurrency=${streamingConcurrency})`);
+        }
 
-          if (process.env.DEBUG && i === 0) {
-            console.error(`[Reindex] ${label}: starting ${files.length} files`);
-          }
+        // NOTE: prefetchBlame removed - it blocks GPU for too long!
+        // Git blame runs lazily during file processing for better CPU/GPU overlap
 
-          // PARALLEL: Read and chunk files concurrently
-          const chunkResults = await Promise.all(
-            fileBatch.map(async (filePath) => {
-              try {
-                const absoluteFilePath = join(absolutePath, filePath);
-                const code = await fs.readFile(absoluteFilePath, "utf-8");
+        // STREAMING: Process files with bounded concurrency, send chunks immediately
+        await parallelLimit(
+          files,
+          async (filePath) => {
+            try {
+              const absoluteFilePath = join(absolutePath, filePath);
+              const code = await fs.readFile(absoluteFilePath, "utf-8");
 
-                if (metadataExtractor.containsSecrets(code)) {
-                  return [];
+              if (metadataExtractor.containsSecrets(code)) {
+                return;
+              }
+
+              const language = metadataExtractor.extractLanguage(absoluteFilePath);
+              const chunks = await chunker.chunk(code, absoluteFilePath, language);
+
+              // Process and send chunks IMMEDIATELY (streaming)
+              for (const chunk of chunks) {
+                const baseChunk = {
+                  content: chunk.content,
+                  startLine: chunk.startLine,
+                  endLine: chunk.endLine,
+                  metadata: {
+                    filePath: chunk.metadata.filePath,
+                    language: chunk.metadata.language,
+                    chunkIndex: chunk.metadata.chunkIndex,
+                    name: chunk.metadata.name,
+                    chunkType: chunk.metadata.chunkType,
+                    parentName: chunk.metadata.parentName,
+                    parentType: chunk.metadata.parentType,
+                    isDocumentation: chunk.metadata.isDocumentation,
+                  } as CodeChunk["metadata"],
+                };
+
+                // Add git metadata if service is enabled (blame already in L1 cache)
+                // IMPORTANT: Pass fileContent to avoid re-reading file for hash check
+                if (gitMetadataService) {
+                  const gitMeta = await gitMetadataService.getChunkMetadata(
+                    absoluteFilePath,
+                    chunk.startLine,
+                    chunk.endLine,
+                    code, // Pass content to avoid fs.readFile for each chunk!
+                  );
+                  if (gitMeta) {
+                    baseChunk.metadata.git = {
+                      lastModifiedAt: gitMeta.lastModifiedAt,
+                      firstCreatedAt: gitMeta.firstCreatedAt,
+                      dominantAuthor: gitMeta.dominantAuthor,
+                      dominantAuthorEmail: gitMeta.dominantAuthorEmail,
+                      authors: gitMeta.authors,
+                      commitCount: gitMeta.commitCount,
+                      lastCommitHash: gitMeta.lastCommitHash,
+                      ageDays: gitMeta.ageDays,
+                      taskIds: gitMeta.taskIds,
+                    };
+                  }
                 }
 
-                const language = metadataExtractor.extractLanguage(absoluteFilePath);
-                const chunks = await chunker.chunk(code, absoluteFilePath, language);
+                // Wait for backpressure if needed
+                if (chunkPipeline.isBackpressured()) {
+                  await chunkPipeline.waitForBackpressure(30000);
+                }
 
-                return chunks.map((chunk) => ({
-                  chunk: {
-                    content: chunk.content,
-                    startLine: chunk.startLine,
-                    endLine: chunk.endLine,
-                    metadata: {
-                      filePath: chunk.metadata.filePath,
-                      language: chunk.metadata.language,
-                      chunkIndex: chunk.metadata.chunkIndex,
-                      name: chunk.metadata.name,
-                      chunkType: chunk.metadata.chunkType,
-                      parentName: chunk.metadata.parentName,
-                      parentType: chunk.metadata.parentType,
-                      isDocumentation: chunk.metadata.isDocumentation,
-                    },
-                  },
-                  chunkId: metadataExtractor.generateChunkId(chunk),
-                  codebasePath: absolutePath,
-                }));
-              } catch (error) {
-                console.error(`Failed to process ${filePath}:`, error);
-                return [];
+                // IMMEDIATE: Send chunk to pipeline right away
+                chunkPipeline.addChunk(
+                  baseChunk as CodeChunk,
+                  metadataExtractor.generateChunkId(chunk),
+                  absolutePath,
+                );
+                chunksCreated++;
               }
-            })
-          );
-
-          const allChunks = chunkResults.flat();
-          if (allChunks.length === 0) continue;
-
-          chunksCreated += allChunks.length;
-
-          // Send chunks to pipeline (will be batched and processed with even load)
-          for (const chunkData of allChunks) {
-            // Wait for backpressure if needed
-            if (chunkPipeline.isBackpressured()) {
-              await chunkPipeline.waitForBackpressure(30000);
+            } catch (error) {
+              console.error(`Failed to process ${filePath}:`, error);
             }
-            chunkPipeline.addChunk(
-              chunkData.chunk,
-              chunkData.chunkId,
-              chunkData.codebasePath,
-            );
-          }
-        }
+          },
+          streamingConcurrency,
+        );
 
         if (process.env.DEBUG) {
           console.error(`[Reindex] ${label}: completed ${files.length} files, ${chunksCreated} chunks queued`);

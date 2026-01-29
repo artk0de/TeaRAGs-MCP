@@ -6,7 +6,16 @@ export default defineConfig({
     environment: "node",
     // Setup file mocks tree-sitter native modules to prevent crashes
     setupFiles: ["./tests/vitest.setup.ts"],
-    exclude: ["**/node_modules/**", "**/build/**", "**/dist/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/build/**",
+      "**/dist/**",
+      // Exclude integration tests - they require real external services
+      "**/tests/integration/**",
+      // Exclude legacy integration test files
+      "test-*.mjs",
+      "test-*.ts",
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
@@ -21,6 +30,7 @@ export default defineConfig({
         "src/index.ts",
         "scripts/**",
         "tests/**/fixtures/**",
+        "tests/integration/**",
       ],
       thresholds: {
         "src/qdrant/client.ts": {

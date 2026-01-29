@@ -179,6 +179,8 @@ const codeConfig: CodeConfig = {
     10,
   ),
   enableHybridSearch: process.env.CODE_ENABLE_HYBRID === "true",
+  // Git metadata enrichment - adds author, commit info, task IDs, code age, etc.
+  enableGitMetadata: process.env.CODE_ENABLE_GIT_METADATA === "true",
 };
 
 const codeIndexer = new CodeIndexer(qdrant, embeddings, codeConfig);

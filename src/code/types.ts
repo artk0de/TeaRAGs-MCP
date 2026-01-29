@@ -22,6 +22,9 @@ export interface CodeConfig {
   // Search
   defaultSearchLimit: number;
   enableHybridSearch: boolean;
+
+  // Git metadata (optional, adds author/commit info to chunks)
+  enableGitMetadata?: boolean;
 }
 
 export interface ScannerConfig {
@@ -58,6 +61,7 @@ export interface ChangeStats {
   chunksAdded: number;
   chunksDeleted: number;
   durationMs: number;
+  status: "completed" | "partial" | "failed";
 }
 
 export interface CodeSearchResult {
@@ -68,6 +72,29 @@ export interface CodeSearchResult {
   language: string;
   score: number;
   fileExtension: string;
+  /** Metadata including git information (if enableGitMetadata was true during indexing) */
+  metadata?: {
+    git?: {
+      /** Unix timestamp of most recent change in chunk */
+      lastModifiedAt: number;
+      /** Unix timestamp of oldest change in chunk (first created) */
+      firstCreatedAt: number;
+      /** Author with most lines in this chunk */
+      dominantAuthor: string;
+      /** Email of dominant author */
+      dominantAuthorEmail: string;
+      /** All unique authors who touched this chunk */
+      authors: string[];
+      /** Number of unique commits (churn indicator) */
+      commitCount: number;
+      /** Commit hash of the most recent change */
+      lastCommitHash: string;
+      /** Days since last modification */
+      ageDays: number;
+      /** Task IDs from commits touching this chunk (e.g., ["TD-1234", "#567"]) */
+      taskIds: string[];
+    };
+  };
 }
 
 export interface SearchOptions {
@@ -78,6 +105,22 @@ export interface SearchOptions {
   scoreThreshold?: number;
   /** Search only in documentation files (markdown, etc.) */
   documentationOnly?: boolean;
+
+  // Git metadata filters (requires enableGitMetadata during indexing)
+  /** Filter by dominant author name */
+  author?: string;
+  /** Filter code modified after this date (ISO string or Date) */
+  modifiedAfter?: string | Date;
+  /** Filter code modified before this date (ISO string or Date) */
+  modifiedBefore?: string | Date;
+  /** Filter code older than N days */
+  minAgeDays?: number;
+  /** Filter code newer than N days */
+  maxAgeDays?: number;
+  /** Filter by minimum commit count (churn) */
+  minCommitCount?: number;
+  /** Filter by task ID (e.g., "TD-1234", "#567") */
+  taskId?: string;
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed";
@@ -121,6 +164,29 @@ export interface CodeChunk {
      * Used to filter search results: include/exclude documentation
      */
     isDocumentation?: boolean;
+
+    // Git metadata (populated when enableGitMetadata is true)
+    // Uses canonical algorithm: one blame per file, aggregated signals only
+    git?: {
+      /** Unix timestamp of most recent change in chunk */
+      lastModifiedAt: number;
+      /** Unix timestamp of oldest change in chunk (first created) */
+      firstCreatedAt: number;
+      /** Author with most lines in this chunk */
+      dominantAuthor: string;
+      /** Email of dominant author */
+      dominantAuthorEmail: string;
+      /** All unique authors who touched this chunk */
+      authors: string[];
+      /** Number of unique commits (churn indicator) */
+      commitCount: number;
+      /** Commit hash of the most recent change */
+      lastCommitHash: string;
+      /** Days since last modification */
+      ageDays: number;
+      /** Task IDs from commits touching this chunk (e.g., ["TD-1234", "#567"]) */
+      taskIds: string[];
+    };
   };
 }
 
