@@ -14,7 +14,8 @@
     "test:coverage": "vitest --coverage",
     "test:providers": "node scripts/verify-providers.js",
     "type-check": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test-integration": "node tests/integration/index.mjs"
   },
   "keywords": [
     "mcp",

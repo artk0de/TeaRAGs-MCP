@@ -50,6 +50,19 @@ export interface ChunkItem extends WorkItem {
       parentType?: string;
       /** True for documentation chunks (markdown, etc.) */
       isDocumentation?: boolean;
+
+      // Git metadata (canonical algorithm: aggregated signals only)
+      git?: {
+        lastModifiedAt: number;
+        firstCreatedAt: number;
+        dominantAuthor: string;
+        dominantAuthorEmail: string;
+        authors: string[];
+        commitCount: number;
+        lastCommitHash: string;
+        ageDays: number;
+        taskIds: string[];
+      };
     };
   };
   /** Pre-computed chunk ID */
@@ -169,33 +182,36 @@ export type BatchHandler<T extends WorkItem> = (
 /**
  * Default configuration values
  *
- * Tuning notes:
- * - BATCH_FORMATION_TIMEOUT_MS: Time to wait for batch to fill before flushing
- *   Higher = better batching efficiency, lower = faster response
- * - WORKER_FLUSH_TIMEOUT_MS: Time before WorkerPool flushes partial work
- *   Higher = more even load distribution
- * - DELETE_CONCURRENCY: Separate from EMBEDDING_CONCURRENCY because delete
- *   operations are Qdrant-bound (not embedding-bound), so can be higher
- * - DELETE_BATCH_SIZE: Larger batches (500) with payload index are efficient
+ * GPU Optimization for Ollama embeddings:
+ * - LARGE batches = better GPU utilization (CUDA cores parallelize within batch)
+ * - Optimal batch size: 256-512 for most GPUs (RTX 4090: 256 = 12,450 tokens/sec)
+ * - Timeout is safety net for small codebases, not primary batch trigger
+ *
+ * Key insight: GPU works best when fed LARGE batches. Small frequent batches
+ * cause GPU idle time between kernel launches. The problem is not batch size,
+ * but ensuring chunks are generated FAST enough to fill batches quickly.
  */
 export const DEFAULT_CONFIG: PipelineConfig = {
   workerPool: {
+    // Concurrent embedding workers (parallel batches to Ollama)
     concurrency: parseInt(process.env.EMBEDDING_CONCURRENCY || "4", 10),
     maxRetries: 3,
     retryBaseDelayMs: 100,
     retryMaxDelayMs: 5000,
   },
   deleteWorkerPool: {
-    // Delete is Qdrant-bound (not embedding), so can use higher concurrency
+    // Delete is Qdrant-bound (not embedding), can use higher concurrency
     concurrency: parseInt(process.env.DELETE_CONCURRENCY || "8", 10),
     maxRetries: 3,
     retryBaseDelayMs: 100,
     retryMaxDelayMs: 5000,
   },
   upsertAccumulator: {
-    batchSize: parseInt(process.env.CODE_BATCH_SIZE || "50", 10),
-    // Longer timeout (5s) for batch formation - allows more items to accumulate
+    // LARGE batches for optimal GPU utilization
+    batchSize: parseInt(process.env.CODE_BATCH_SIZE || "256", 10),
+    // Timeout is safety net, batches should fill fast if chunk generation is fast
     flushTimeoutMs: parseInt(process.env.BATCH_FORMATION_TIMEOUT_MS || "5000", 10),
+    // Queue size based on concurrency
     maxQueueSize: parseInt(process.env.EMBEDDING_CONCURRENCY || "4", 10) * 2,
   },
   deleteAccumulator: {

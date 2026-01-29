@@ -125,11 +125,57 @@ Fast "any changes?" check:
 - **Hybrid Search**: Combine semantic and keyword search for better results
 - **Semantic Search**: Natural language search with metadata filtering
 - **Incremental Indexing**: Efficient updates - only re-index changed files
+- **Git Blame Metadata**: Enrich code with authorship, dates, churn metrics, and task IDs from commit history
+- **Flexible Performance Tuning**: Configurable batch sizes, concurrency, and pipeline parameters for maximum resource utilization
+- **Smart Caching**: Two-level cache (memory + disk) with content-hash invalidation for git blame and file snapshots
 - **Configurable Prompts**: Create custom prompts for guided workflows without code changes
 - **Rate Limiting**: Intelligent throttling with exponential backoff
 - **Full CRUD**: Create, search, and manage collections and documents
 - **Flexible Deployment**: Run locally (stdio) or as a remote HTTP server
 - **API Key Authentication**: Connect to secured Qdrant instances (Qdrant Cloud, self-hosted with API keys)
+
+<details>
+<summary><strong>🔍 Feature Details</strong></summary>
+
+#### Git Blame Metadata
+
+Each code chunk is enriched with aggregated signals from `git blame`:
+
+- **Dominant author** — who wrote most lines in the chunk (for ownership questions)
+- **All authors** — everyone who contributed to this code
+- **Timestamps** — first created and last modified dates
+- **Age in days** — how stale is the code
+- **Commit count** — churn indicator (high = frequently changed = potentially problematic)
+- **Task IDs** — automatically extracted from commit messages (JIRA, GitHub, Azure DevOps patterns)
+
+This enables powerful filters: find code by author, find legacy code, find high-churn areas, trace code to tickets.
+
+#### Flexible Performance Tuning
+
+Every bottleneck is configurable via environment variables:
+
+| Layer | Variables | Purpose |
+|-------|-----------|---------|
+| Embedding | `EMBEDDING_BATCH_SIZE`, `EMBEDDING_CONCURRENCY` | GPU utilization, parallel requests |
+| Pipeline | `CODE_BATCH_SIZE`, `BATCH_FORMATION_TIMEOUT_MS` | Batch accumulation strategy |
+| Qdrant | `DELETE_BATCH_SIZE`, `DELETE_CONCURRENCY` | Bulk operations throughput |
+| I/O | `MAX_IO_CONCURRENCY`, `FILE_PROCESSING_CONCURRENCY` | Parallel file reads |
+
+The pipeline uses backpressure control — if Qdrant or embeddings slow down, file processing automatically pauses to prevent memory overflow.
+
+#### Smart Caching
+
+Two-level caching minimizes redundant work:
+
+| Cache | Storage | Invalidation | Purpose |
+|-------|---------|--------------|---------|
+| Git blame | Memory (L1) + Disk (L2) | Content hash | Avoid re-running `git blame` for unchanged files |
+| File snapshots | Sharded JSON | Merkle tree | Fast "any changes?" check for incremental indexing |
+| Collection info | Memory | TTL | Reduce Qdrant API calls |
+
+**Content-hash invalidation**: Cache keys include file content hash, so changing a file automatically invalidates its cached blame data — no stale data, no manual cache clearing.
+
+</details>
 
 ## Quick Start
 
@@ -515,17 +561,187 @@ Create a `.contextignore` file in your project root to specify additional patter
 4. **Check Status First**: Use `get_index_status` to verify a codebase is indexed before searching
 5. **Local Embedding**: Use Ollama (default) to keep everything local and private
 
+### Git Metadata Enrichment
+
+Enrich code search with git history information. When enabled, each code chunk is annotated with authorship, modification dates, and task IDs from commit messages.
+
+**Enable git metadata:**
+
+```bash
+export CODE_ENABLE_GIT_METADATA=true
+```
+
+**What's captured (per chunk):**
+
+| Signal | Description | Use Case |
+|--------|-------------|----------|
+| `dominantAuthor` | Author with most lines in chunk | "Find code written by John" |
+| `authors[]` | All authors who touched the chunk | Team attribution |
+| `lastModifiedAt` | Unix timestamp of latest change | "Code changed after 2024-01-01" |
+| `firstCreatedAt` | Unix timestamp of oldest change | Code origin tracking |
+| `ageDays` | Days since last modification | "Old code (>365 days)" |
+| `commitCount` | Number of unique commits | Churn indicator (high = frequently changed) |
+| `taskIds[]` | Extracted from commit messages | "Find code for TD-1234" |
+| `lastCommitHash` | Most recent commit SHA | Audit trail |
+
+**Search with git filters:**
+
+```typescript
+// Find code by author
+search_code({
+  path: "/workspace/my-app",
+  query: "authentication logic",
+  author: "John Doe",
+});
+
+// Find recently changed code
+search_code({
+  path: "/workspace/my-app",
+  query: "payment processing",
+  maxAgeDays: 30, // Changed in last 30 days
+});
+
+// Find old code (potential tech debt)
+search_code({
+  path: "/workspace/my-app",
+  query: "database connection",
+  minAgeDays: 365, // Not changed in a year
+});
+
+// Find code by task ID
+search_code({
+  path: "/workspace/my-app",
+  query: "user registration",
+  taskId: "TD-1234",
+});
+
+// Find high-churn code
+search_code({
+  path: "/workspace/my-app",
+  query: "API handlers",
+  minCommitCount: 10, // Changed 10+ times
+});
+
+// Combine filters
+search_code({
+  path: "/workspace/my-app",
+  query: "error handling",
+  author: "Jane",
+  modifiedAfter: "2024-01-01",
+  modifiedBefore: "2024-06-30",
+});
+```
+
+**Task ID extraction:**
+
+Task IDs are automatically extracted from commit summary lines:
+
+| Pattern | Example | Extracted |
+|---------|---------|-----------|
+| JIRA/Linear | `feat: implement TD-1234 feature` | `TD-1234` |
+| GitHub | `fix: resolve issue #123` | `#123` |
+| Azure DevOps | `feat: add AB#456 functionality` | `AB#456` |
+| GitLab MR | `merge !789 changes` | `!789` |
+
+**Algorithm details:**
+
+- One `git blame` call per file (cached by content hash)
+- Aggregated signals only — no per-line storage overhead
+- Commit messages are NOT stored (only extracted task IDs)
+- Cache invalidates automatically when file content changes
+- L1 (memory) + L2 (disk) caching for performance
+
+<details>
+<summary><strong>📋 Example Questions for Code Analysis with Git Metadata</strong></summary>
+
+#### By Author
+
+| Question | Filters |
+|----------|---------|
+| What code did John write? | `author="John"` |
+| Who is the expert on the auth module? | `query="authorization"` → check `dominantAuthor` |
+| Who can help me understand this code? | Search → find author with most contributions |
+| Whose code needs review from last week? | `author="John"`, `maxAgeDays=7` |
+| Whose code changes most frequently? | `author="X"`, `minCommitCount=5` |
+
+#### By Code Age
+
+| Question | Filters |
+|----------|---------|
+| What code hasn't been touched in a while? | `minAgeDays=90` |
+| What changed in the last week? | `maxAgeDays=7` |
+| What legacy code needs documentation? | `minAgeDays=60`, `query="service"` |
+| What was done in this sprint? | `maxAgeDays=14` |
+| What old code is still being used? | `minAgeDays=180`, `query="import"` |
+| Which components haven't been updated in a year? | `minAgeDays=365` |
+
+#### By Change Frequency (Churn)
+
+| Question | Filters |
+|----------|---------|
+| What code is frequently rewritten? (problematic) | `minCommitCount=10` |
+| Where are there many hotfixes? | `minCommitCount=5`, `query="fix"` |
+| Which modules are most unstable? | `minCommitCount=8` |
+| What needs refactoring? | `minCommitCount=6`, `minAgeDays=30` |
+| Where do bugs appear most often? | `minCommitCount=7`, `query="error handling"` |
+
+#### By Task/Ticket ID
+
+| Question | Filters |
+|----------|---------|
+| What code relates to JIRA-1234? | `taskId="JIRA-1234"` |
+| What was done for GitHub issue #567? | `taskId="#567"` |
+| What code is linked to this requirement? | `taskId="REQ-100"` |
+| Show everything related to feature X | `taskId="FEAT-X"` |
+| Which files were affected by this task? | `taskId="TD-5678"` |
+
+#### By Date Range
+
+| Question | Filters |
+|----------|---------|
+| What changed after release 1.0? | `modifiedAfter="2024-03-01"` |
+| What code existed before the refactoring? | `modifiedBefore="2024-01-01"` |
+| What changed between releases? | `modifiedAfter="2024-01-01"`, `modifiedBefore="2024-06-01"` |
+| What was done in Q1 2024? | `modifiedAfter="2024-01-01"`, `modifiedBefore="2024-04-01"` |
+
+#### Combined Queries
+
+| Question | Filters |
+|----------|---------|
+| Complex code that hasn't changed and needs docs | `query="complex"`, `minAgeDays=60` |
+| John's recent code in the payment module | `author="John"`, `maxAgeDays=14`, `query="payment"` |
+| Old high-churn code (risk!) | `minAgeDays=90`, `minCommitCount=5` |
+| Code for a task that was frequently reworked | `taskId="X"`, `minCommitCount=3` |
+| What a specific author did for a task | `author="John"`, `taskId="TD-123"` |
+| Legacy code in critical modules | `minAgeDays=180`, `pathPattern="src/core/**"` |
+| Recent changes in authentication | `maxAgeDays=7`, `query="authentication"` |
+| Problematic areas in the last month | `maxAgeDays=30`, `minCommitCount=4` |
+
+#### Analytical Questions
+
+| Question | Approach |
+|----------|----------|
+| Where has technical debt accumulated? | `minAgeDays=90` + `minCommitCount=1` (changed but not refactored) |
+| What code needs test coverage? | `minCommitCount=5` (frequently breaks) |
+| Who owns which module? | Group by `pathPattern` + analyze `dominantAuthor` |
+| What code lacks documentation? | `minAgeDays=60` + `documentationOnly=false` |
+| What needs code review? | `maxAgeDays=7` + `minCommitCount=2` |
+
+</details>
+
 ### Performance
 
-Typical performance on a modern laptop (Apple M1/M2 or similar):
+Typical performance with GPU-accelerated embeddings (Ollama + CUDA/Metal):
 
-| Codebase Size     | Files | Indexing Time | Search Latency |
-| ----------------- | ----- | ------------- | -------------- |
-| Small (10k LOC)   | 50    | ~10s          | <100ms         |
-| Medium (100k LOC) | 500   | ~2min         | <200ms         |
-| Large (500k LOC)  | 2,500 | ~10min        | <500ms         |
+| Codebase Size          | Files  | Indexing Time | Search Latency |
+| ---------------------- | ------ | ------------- | -------------- |
+| Small (10k LOC)        | ~30    | ~5s           | <100ms         |
+| Medium (50k LOC)       | ~150   | ~15s          | <100ms         |
+| Large (100k LOC)       | ~300   | ~30s          | <200ms         |
+| Very Large (500k LOC)  | ~1,500 | ~2min         | <300ms         |
+| Enterprise (3.5M LOC)  | ~10k   | ~10min        | <500ms         |
 
-**Note**: Indexing time varies based on embedding provider. Ollama (local) is fastest for initial indexing.
+**Note**: Benchmarked with Ollama `nomic-embed-text` on RTX 4090 / Apple M-series. CPU-only embedding is 5-10x slower.
 
 ## Examples
 
@@ -572,15 +788,16 @@ See [examples/](examples/) directory for detailed guides:
 
 #### Code Vectorization Configuration
 
-| Variable                 | Description                                  | Default |
-| ------------------------ | -------------------------------------------- | ------- |
-| `CODE_CHUNK_SIZE`        | Maximum chunk size in characters             | 2500    |
-| `CODE_CHUNK_OVERLAP`     | Overlap between chunks in characters         | 300     |
-| `CODE_ENABLE_AST`        | Enable AST-aware chunking (tree-sitter)      | true    |
-| `CODE_BATCH_SIZE`        | Number of chunks to embed in one batch       | 100     |
-| `CODE_CUSTOM_EXTENSIONS` | Additional file extensions (comma-separated) | -       |
-| `CODE_CUSTOM_IGNORE`     | Additional ignore patterns (comma-separated) | -       |
-| `CODE_DEFAULT_LIMIT`     | Default search result limit                  | 5       |
+| Variable                   | Description                                         | Default |
+| -------------------------- | --------------------------------------------------- | ------- |
+| `CODE_CHUNK_SIZE`          | Maximum chunk size in characters                    | 2500    |
+| `CODE_CHUNK_OVERLAP`       | Overlap between chunks in characters                | 300     |
+| `CODE_ENABLE_AST`          | Enable AST-aware chunking (tree-sitter)             | true    |
+| `CODE_BATCH_SIZE`          | Number of chunks to embed in one batch              | 100     |
+| `CODE_CUSTOM_EXTENSIONS`   | Additional file extensions (comma-separated)        | -       |
+| `CODE_CUSTOM_IGNORE`       | Additional ignore patterns (comma-separated)        | -       |
+| `CODE_DEFAULT_LIMIT`       | Default search result limit                         | 5       |
+| `CODE_ENABLE_GIT_METADATA` | Enrich chunks with git blame (author, dates, tasks) | false   |
 
 #### Qdrant Batch Pipeline Configuration
 
@@ -640,10 +857,31 @@ When `DEBUG=1`, pipeline operations are logged to `~/.qdrant-mcp/logs/pipeline-<
 
 | Provider   | Models                                                          | Dimensions     | Rate Limit | Notes                |
 | ---------- | --------------------------------------------------------------- | -------------- | ---------- | -------------------- |
-| **Ollama** | `nomic-embed-text` (default), `mxbai-embed-large`, `all-minilm` | 768, 1024, 384 | None       | Local, no API key    |
+| **Ollama** | `nomic-embed-text` (default), `jina-embeddings-v2-base-code`, `mxbai-embed-large` | 768, 768, 1024 | None       | Local, no API key    |
 | **OpenAI** | `text-embedding-3-small` (default), `text-embedding-3-large`    | 1536, 3072     | 3500/min   | Cloud API            |
 | **Cohere** | `embed-english-v3.0` (default), `embed-multilingual-v3.0`       | 1024           | 100/min    | Multilingual support |
 | **Voyage** | `voyage-2` (default), `voyage-large-2`, `voyage-code-2`         | 1024, 1536     | 300/min    | Code-specialized     |
+
+#### Recommended: Jina Code Embeddings
+
+For code search, we recommend **`jina-embeddings-v2-base-code`** over the default `nomic-embed-text`:
+
+```bash
+# Pull the model
+ollama pull jina-embeddings-v2-base-code
+
+# Configure
+export EMBEDDING_MODEL="jina-embeddings-v2-base-code"
+```
+
+**Why Jina Code Embeddings?**
+
+| Aspect | Benefit |
+|--------|---------|
+| **Code-optimized** | Trained specifically on source code, understands syntax and semantics |
+| **Multilingual** | 30+ programming languages with consistent quality |
+| **Enterprise-proven** | Battle-tested on 3.5M+ LOC codebases with excellent search relevance |
+| **Same dimensions** | 768 dimensions — drop-in replacement for `nomic-embed-text` |
 
 **Note:** Ollama models require pulling before use:
 
@@ -823,18 +1061,59 @@ node benchmarks/accumulator-buffer.mjs
 npm run dev          # Development with auto-reload
 npm run build        # Production build
 npm run type-check   # TypeScript validation
-npm test             # Run test suite
+npm test             # Run unit test suite (mocked, fast)
 npm run test:coverage # Coverage report
+npm run test-integration # Run real integration tests (requires Qdrant + Ollama)
 ```
 
 ### Testing
 
-**586 tests** across 21 test files with **97%+ coverage**:
+#### Unit Tests (Mocked)
+
+**864 tests** across test files with **97%+ coverage**:
 
 - **Unit Tests**: QdrantManager (56), Ollama (41), OpenAI (25), Cohere (29), Voyage (31), Factory (43), Prompts (50), Transport (15), MCP Server (19)
-- **Integration Tests**: Code indexer (56), scanner (15), chunker (24), synchronizer (42), snapshot (26), merkle tree (28)
+- **Integration Tests (Mocked)**: Code indexer (56), scanner (15), chunker (24), synchronizer (42), snapshot (26), merkle tree (28)
 
 **CI/CD**: GitHub Actions runs build, type-check, and tests on Node.js 22 LTS for every push/PR.
+
+#### Real Integration Tests
+
+**233 tests** across 18 modular test suites testing against real Qdrant and Ollama:
+
+```bash
+# Run all integration tests
+npm run test-integration
+
+# Run a specific suite (1-18)
+TEST_SUITE=1 npm run test-integration  # Embeddings
+TEST_SUITE=18 npm run test-integration # Git Metadata
+
+# Skip cleanup for debugging
+SKIP_CLEANUP=1 npm run test-integration
+```
+
+**Test Suites**:
+1. Embeddings (single, batch, parallel)
+2. Qdrant Operations (CRUD, filters, batch delete)
+3. PointsAccumulator (batch pipeline)
+4. File Indexing Lifecycle
+5. Hash & Snapshot Consistency
+6. Ignore Patterns
+7. Chunk Boundaries & Line Numbers
+8. Multi-Language Support
+9. Ruby AST Chunking (Rails patterns)
+10. Search Accuracy
+11. Edge Cases
+12. Batch Pipeline in CodeIndexer
+13. Concurrent Operations
+14. Parallel File Sync & Sharded Snapshots
+15. Pipeline & WorkerPool
+16. Schema Migration & Delete Optimization
+17. ForceReindex & Parallel Indexing
+18. Git Metadata Integration
+
+**Requirements**: Running Qdrant (default: `http://localhost:6333`) and Ollama (default: `http://localhost:11434`).
 
 ## Contributing
 
