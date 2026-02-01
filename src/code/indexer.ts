@@ -230,6 +230,7 @@ export class CodeIndexer {
                   chunkType: chunk.metadata.chunkType,
                   parentName: chunk.metadata.parentName,
                   parentType: chunk.metadata.parentType,
+                  symbolId: chunk.metadata.symbolId,
                   isDocumentation: chunk.metadata.isDocumentation,
                 } as CodeChunk["metadata"],
               };
