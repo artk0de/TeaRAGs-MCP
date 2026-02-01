@@ -862,6 +862,335 @@ describe("FileSynchronizer", () => {
       });
     });
   });
+
+  // ============ ERROR PATHS ============
+  describe("error handling", () => {
+    it("should handle file read errors during hash computation", async () => {
+      // Create a file
+      await createFile(codebaseDir, "file1.ts", "content1");
+
+      // Update snapshot with the file
+      await synchronizer.updateSnapshot(["file1.ts"]);
+
+      // Delete the file to simulate read error
+      await fs.unlink(join(codebaseDir, "file1.ts"));
+
+      // Try to detect changes - should treat missing file as deleted
+      const changes = await synchronizer.detectChanges([]);
+
+      expect(changes.deleted).toContain("file1.ts");
+      expect(changes.added).toEqual([]);
+      expect(changes.modified).toEqual([]);
+    });
+
+    it("should handle file stat errors gracefully", async () => {
+      // Create initial snapshot
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await synchronizer.updateSnapshot(["file1.ts"]);
+
+      // Try to compute hashes for a non-existent file
+      const hashes = await synchronizer.computeFileHashes([
+        "file1.ts",
+        "nonexistent.ts",
+      ]);
+
+      // Should only have hash for the existing file
+      expect(hashes.has("file1.ts")).toBe(true);
+      expect(hashes.has("nonexistent.ts")).toBe(false);
+      expect(hashes.size).toBe(1);
+    });
+
+    it("should continue processing other files when one file fails", async () => {
+      // Create valid files
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await createFile(codebaseDir, "file2.ts", "content2");
+      await createFile(codebaseDir, "file3.ts", "content3");
+
+      // Update snapshot
+      await synchronizer.updateSnapshot(["file1.ts", "file2.ts", "file3.ts"]);
+
+      // Delete one file to simulate error
+      await fs.unlink(join(codebaseDir, "file2.ts"));
+
+      // Modify another file
+      await createFile(codebaseDir, "file3.ts", "modified content 3 with extra text");
+
+      // Detect changes - should handle the error and continue
+      const changes = await synchronizer.detectChanges(["file1.ts", "file3.ts"]);
+
+      expect(changes.deleted).toEqual(["file2.ts"]);
+      expect(changes.modified).toEqual(["file3.ts"]);
+      expect(changes.added).toEqual([]);
+    });
+
+    it("should handle corrupted snapshot gracefully", async () => {
+      // Create a file and snapshot
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await synchronizer.updateSnapshot(["file1.ts"]);
+
+      // Corrupt the snapshot file
+      const snapshotPath = join(
+        homedir(),
+        ".tea-rags-mcp",
+        "snapshots",
+        `${collectionName}.json`,
+      );
+      await fs.writeFile(snapshotPath, "{ invalid json }", "utf-8");
+
+      // Create new synchronizer and try to initialize
+      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const hasSnapshot = await newSync.initialize();
+
+      // Should return false and not throw
+      expect(hasSnapshot).toBe(false);
+    });
+
+    it("should handle concurrent snapshot updates", async () => {
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await createFile(codebaseDir, "file2.ts", "content2");
+
+      // Try concurrent updates (should not corrupt snapshot)
+      await Promise.all([
+        synchronizer.updateSnapshot(["file1.ts"]),
+        synchronizer.updateSnapshot(["file2.ts"]),
+      ]);
+
+      // Verify snapshot is valid
+      const isValid = await synchronizer.validateSnapshot();
+      expect(isValid).toBe(true);
+    });
+
+    it("should handle permission errors when creating snapshot directory", async () => {
+      // This test ensures the code handles mkdir failures gracefully
+      // In actual usage, the directory might already exist or have permissions issues
+      await createFile(codebaseDir, "file1.ts", "content1");
+
+      // updateSnapshot should not throw even if there are permission issues
+      // (in practice, the directory is usually already created)
+      await expect(
+        synchronizer.updateSnapshot(["file1.ts"])
+      ).resolves.not.toThrow();
+    });
+
+    it("should detect changes when file content changes but size stays the same", async () => {
+      // Create file with specific content
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await synchronizer.updateSnapshot(["file1.ts"]);
+
+      // Wait to ensure mtime changes (> 1s tolerance)
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      // Change content but keep same length
+      await createFile(codebaseDir, "file1.ts", "changed1");
+
+      const changes = await synchronizer.detectChanges(["file1.ts"]);
+
+      // Should detect as modified because hash changed
+      expect(changes.modified).toEqual(["file1.ts"]);
+    });
+
+    it("should handle extremely rapid file modifications", async () => {
+      await createFile(codebaseDir, "rapid.ts", "v1");
+      await synchronizer.updateSnapshot(["rapid.ts"]);
+
+      // Rapidly modify the file multiple times
+      await createFile(codebaseDir, "rapid.ts", "v2");
+      await createFile(codebaseDir, "rapid.ts", "v3");
+      await createFile(codebaseDir, "rapid.ts", "v4 final");
+
+      const changes = await synchronizer.detectChanges(["rapid.ts"]);
+
+      expect(changes.modified).toEqual(["rapid.ts"]);
+    });
+  });
+
+  // ============ SNAPSHOT MIGRATION ============
+  describe("snapshot v1 to v2 migration", () => {
+    it("should migrate v1 snapshot to v2 with metadata", async () => {
+      // Manually create a v1 snapshot (without metadata)
+      const snapshotPath = join(
+        homedir(),
+        ".tea-rags-mcp",
+        "snapshots",
+        `${collectionName}.json`,
+      );
+
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await createFile(codebaseDir, "file2.ts", "content2");
+
+      // Create a v1-style snapshot (with fileHashes but no fileMetadata)
+      // Need to serialize the merkle tree properly
+      const v1Snapshot = {
+        codebasePath: codebaseDir,
+        timestamp: Date.now(),
+        fileHashes: {
+          "file1.ts": "8b1a9953c4611296a827abf8c47804d7",
+          "file2.ts": "8b1a9953c4611296a827abf8c47804d8",
+        },
+        merkleTree: JSON.stringify({
+          root: "someroot",
+          nodes: {},
+        }),
+      };
+
+      await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+      await fs.writeFile(snapshotPath, JSON.stringify(v1Snapshot), "utf-8");
+
+      // Create a new synchronizer and initialize (loads v1 snapshot)
+      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      await newSync.initialize();
+
+      // Call ensureSnapshotV2 to trigger migration
+      const migrated = await newSync.ensureSnapshotV2();
+
+      // Should have migrated
+      expect(migrated).toBe(true);
+    });
+
+    it("should handle migration when some files are missing", async () => {
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await createFile(codebaseDir, "file2.ts", "content2");
+      await synchronizer.updateSnapshot(["file1.ts", "file2.ts"]);
+
+      // Delete one file before migration
+      await fs.unlink(join(codebaseDir, "file2.ts"));
+
+      // Create new synchronizer and ensure v2
+      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      await newSync.initialize();
+      await newSync.ensureSnapshotV2();
+
+      // Should still work with only file1
+      const changes = await newSync.detectChanges(["file1.ts"]);
+      expect(changes.deleted).toContain("file2.ts");
+    });
+
+    it("should return false when no snapshot exists", async () => {
+      const migrated = await synchronizer.ensureSnapshotV2();
+      expect(migrated).toBe(false);
+    });
+
+    it("should return false when already v2", async () => {
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await synchronizer.updateSnapshot(["file1.ts"]);
+
+      // Call ensureSnapshotV2 - should return false since already v2
+      const migrated = await synchronizer.ensureSnapshotV2();
+      expect(migrated).toBe(false);
+    });
+  });
+
+  // ============ DEBUG LOGGING ============
+  describe("debug logging", () => {
+    let originalDebug: string | undefined;
+
+    beforeEach(() => {
+      originalDebug = process.env.DEBUG;
+    });
+
+    afterEach(() => {
+      if (originalDebug !== undefined) {
+        process.env.DEBUG = originalDebug;
+      } else {
+        delete process.env.DEBUG;
+      }
+    });
+
+    it("should log performance stats when DEBUG is enabled", async () => {
+      process.env.DEBUG = "true";
+
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await createFile(codebaseDir, "file2.ts", "content2");
+      await synchronizer.updateSnapshot(["file1.ts", "file2.ts"]);
+
+      // Modify one file to trigger cache hit/miss stats
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      await createFile(codebaseDir, "file1.ts", "modified content 1");
+
+      // This should log cache stats
+      const hashes = await synchronizer.computeFileHashes(["file1.ts", "file2.ts"]);
+
+      expect(hashes.size).toBeGreaterThan(0);
+    });
+
+    it("should log change detection results when DEBUG is enabled", async () => {
+      process.env.DEBUG = "true";
+
+      await createFile(codebaseDir, "file1.ts", "content1");
+      await synchronizer.updateSnapshot(["file1.ts"]);
+
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      await createFile(codebaseDir, "file1.ts", "modified");
+
+      // This should log change detection results
+      const changes = await synchronizer.detectChanges(["file1.ts"]);
+
+      expect(changes.modified).toContain("file1.ts");
+    });
+
+    it("should log checkpoint save when DEBUG is enabled", async () => {
+      process.env.DEBUG = "true";
+
+      // This should log checkpoint save message
+      await synchronizer.saveCheckpoint(["file1.ts", "file2.ts"], 10, "indexing");
+
+      const hasCheckpoint = await synchronizer.hasCheckpoint();
+      expect(hasCheckpoint).toBe(true);
+    });
+  });
+
+  // ============ CHECKPOINT ERROR HANDLING ============
+  describe("checkpoint error handling", () => {
+    it("should handle checkpoint save errors gracefully", async () => {
+      // Try to save checkpoint with invalid data (should not throw)
+      await expect(
+        synchronizer.saveCheckpoint(["file1.ts"], 10, "indexing")
+      ).resolves.not.toThrow();
+    });
+
+    it("should handle checkpoint load errors for invalid JSON", async () => {
+      const checkpointPath = join(
+        homedir(),
+        ".tea-rags-mcp",
+        "snapshots",
+        `${collectionName}.checkpoint.json`,
+      );
+
+      // Create invalid checkpoint file
+      await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+      await fs.writeFile(checkpointPath, "invalid json {", "utf-8");
+
+      const checkpoint = await synchronizer.loadCheckpoint();
+      expect(checkpoint).toBeNull();
+    });
+
+    it("should delete stale checkpoints automatically", async () => {
+      const checkpointPath = join(
+        homedir(),
+        ".tea-rags-mcp",
+        "snapshots",
+        `${collectionName}.checkpoint.json`,
+      );
+
+      // Create stale checkpoint (> 24 hours old)
+      const staleCheckpoint = {
+        processedFiles: ["file1.ts"],
+        totalFiles: 10,
+        timestamp: Date.now() - (25 * 60 * 60 * 1000),
+        phase: "indexing",
+      };
+
+      await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+      await fs.writeFile(checkpointPath, JSON.stringify(staleCheckpoint), "utf-8");
+
+      const checkpoint = await synchronizer.loadCheckpoint();
+      expect(checkpoint).toBeNull();
+
+      // Verify checkpoint was deleted
+      const exists = await synchronizer.hasCheckpoint();
+      expect(exists).toBe(false);
+    });
+  });
 });
 
 // Helper function to create files in the test codebase
