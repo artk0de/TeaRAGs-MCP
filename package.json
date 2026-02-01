@@ -15,7 +15,8 @@
     "test:providers": "node scripts/verify-providers.js",
     "type-check": "tsc --noEmit",
     "prepare": "husky",
-    "test-integration": "node tests/integration/index.mjs"
+    "test-integration": "node tests/integration/index.mjs",
+    "tune": "node benchmarks/tune.mjs"
   },
   "keywords": [
     "mcp",

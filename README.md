@@ -569,7 +569,24 @@ Or add `DEBUG=true` to your MCP server configuration in `env` section.
 
 ## Performance Tuning
 
-For detailed performance optimization guides, hardware-specific configurations, and benchmarking tools, see [docs/PERFORMANCE_TUNING.md](docs/PERFORMANCE_TUNING.md).
+Automatically find optimal settings for your hardware:
+
+```bash
+npm run tune
+```
+
+This benchmarks your Qdrant + Ollama setup and creates `tuned_environment_variables.env` with optimal values for:
+
+| Parameter | Description |
+|-----------|-------------|
+| `EMBEDDING_BATCH_SIZE` | Texts per embedding request |
+| `EMBEDDING_CONCURRENCY` | Parallel embedding requests |
+| `CODE_BATCH_SIZE` | Chunks per Qdrant upsert |
+| `QDRANT_BATCH_ORDERING` | Ordering mode (weak/medium/strong) |
+
+**Stopping criteria:** The benchmark automatically stops when performance degrades (20% drop, 3 consecutive drops, errors, or timeouts).
+
+For detailed manual tuning guides, see [docs/PERFORMANCE_TUNING.md](docs/PERFORMANCE_TUNING.md).
 
 ---
 
