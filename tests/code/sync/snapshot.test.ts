@@ -408,4 +408,252 @@ describe("SnapshotManager", () => {
       });
     });
   });
+
+  describe("error handling and edge cases", () => {
+    it("should handle snapshot save errors during write", async () => {
+      const fileHashes = new Map([["test.ts", "hash123"]]);
+      const tree = new MerkleTree();
+      tree.build(fileHashes);
+
+      // Create a read-only directory to force write failure
+      const readOnlyDir = join(tempDir, "readonly");
+      await fs.mkdir(readOnlyDir, { recursive: true });
+
+      const readOnlySnapshotPath = join(readOnlyDir, "snapshot.json");
+      const readOnlyManager = new SnapshotManager(readOnlySnapshotPath);
+
+      // Make directory read-only on Unix-like systems
+      if (process.platform !== "win32") {
+        await fs.chmod(readOnlyDir, 0o444);
+
+        await expect(
+          readOnlyManager.save("/test/codebase", fileHashes, tree),
+        ).rejects.toThrow();
+
+        // Restore permissions for cleanup
+        await fs.chmod(readOnlyDir, 0o755);
+      }
+    });
+
+    it("should handle snapshot save errors with invalid path", async () => {
+      const fileHashes = new Map([["test.ts", "hash123"]]);
+      const tree = new MerkleTree();
+      tree.build(fileHashes);
+
+      // Use a path that includes null bytes (invalid on most filesystems)
+      const invalidPath = join(tempDir, "invalid\x00path.json");
+      const invalidManager = new SnapshotManager(invalidPath);
+
+      await expect(
+        invalidManager.save("/test/codebase", fileHashes, tree),
+      ).rejects.toThrow();
+    });
+
+    it("should calculate merkle root correctly for multiple files", async () => {
+      const fileHashes = new Map([
+        ["file1.ts", "abc123"],
+        ["file2.ts", "def456"],
+        ["file3.ts", "ghi789"],
+      ]);
+
+      const tree = new MerkleTree();
+      tree.build(fileHashes);
+
+      const root = tree.getRootHash();
+
+      expect(root).toBeDefined();
+      expect(typeof root).toBe("string");
+      expect(root.length).toBeGreaterThan(0);
+
+      // Verify consistency: same inputs produce same root
+      const tree2 = new MerkleTree();
+      tree2.build(fileHashes);
+      expect(tree2.getRootHash()).toBe(root);
+    });
+
+    it("should calculate different merkle roots for different file sets", async () => {
+      const fileHashes1 = new Map([
+        ["file1.ts", "hash1"],
+        ["file2.ts", "hash2"],
+      ]);
+
+      const fileHashes2 = new Map([
+        ["file1.ts", "hash1"],
+        ["file3.ts", "hash3"],
+      ]);
+
+      const tree1 = new MerkleTree();
+      tree1.build(fileHashes1);
+
+      const tree2 = new MerkleTree();
+      tree2.build(fileHashes2);
+
+      expect(tree1.getRootHash()).not.toBe(tree2.getRootHash());
+    });
+
+    it("should preserve merkle root through save/load cycle", async () => {
+      const fileHashes = new Map([
+        ["file1.ts", "hash1"],
+        ["file2.ts", "hash2"],
+        ["file3.ts", "hash3"],
+      ]);
+
+      const tree = new MerkleTree();
+      tree.build(fileHashes);
+      const originalRoot = tree.getRootHash();
+
+      await snapshotManager.save("/test/codebase", fileHashes, tree);
+
+      const loaded = await snapshotManager.load();
+
+      expect(loaded).toBeDefined();
+      expect(loaded?.merkleTree.getRootHash()).toBe(originalRoot);
+    });
+  });
+
+  describe("snapshot format versioning", () => {
+    it("should save and load v2 snapshot with metadata", async () => {
+      const fileHashes = new Map([
+        ["file1.ts", "hash1"],
+        ["file2.ts", "hash2"],
+      ]);
+
+      const fileMetadata = new Map([
+        ["file1.ts", { mtime: 1234567890, size: 100, hash: "hash1" }],
+        ["file2.ts", { mtime: 1234567891, size: 200, hash: "hash2" }],
+      ]);
+
+      const tree = new MerkleTree();
+      tree.build(fileHashes);
+
+      await snapshotManager.save(
+        "/test/codebase",
+        fileHashes,
+        tree,
+        fileMetadata,
+      );
+
+      const loaded = await snapshotManager.load();
+
+      expect(loaded).toBeDefined();
+      expect(loaded?.fileMetadata).toBeDefined();
+      expect(loaded?.fileMetadata?.size).toBe(2);
+      expect(loaded?.fileMetadata?.get("file1.ts")).toEqual({
+        mtime: 1234567890,
+        size: 100,
+        hash: "hash1",
+      });
+      expect(loaded?.fileMetadata?.get("file2.ts")).toEqual({
+        mtime: 1234567891,
+        size: 200,
+        hash: "hash2",
+      });
+    });
+
+    it("should load v1 snapshot without metadata", async () => {
+      const snapshotPath = join(tempDir, `${collectionName}.json`);
+
+      // Manually create a v1 snapshot
+      const v1Snapshot = {
+        codebasePath: "/test/codebase",
+        timestamp: Date.now(),
+        fileHashes: {
+          "file1.ts": "hash1",
+          "file2.ts": "hash2",
+        },
+        merkleTree: new MerkleTree().serialize(),
+      };
+
+      await fs.writeFile(snapshotPath, JSON.stringify(v1Snapshot), "utf-8");
+
+      const loaded = await snapshotManager.load();
+
+      expect(loaded).toBeDefined();
+      expect(loaded?.codebasePath).toBe("/test/codebase");
+      expect(loaded?.fileHashes.size).toBe(2);
+      expect(loaded?.fileMetadata).toBeUndefined();
+    });
+
+    it("should detect v2 snapshot version", async () => {
+      const fileHashes = new Map([["file.ts", "hash"]]);
+      const fileMetadata = new Map([
+        ["file.ts", { mtime: 1234567890, size: 100, hash: "hash" }],
+      ]);
+      const tree = new MerkleTree();
+      tree.build(fileHashes);
+
+      await snapshotManager.save(
+        "/test/codebase",
+        fileHashes,
+        tree,
+        fileMetadata,
+      );
+
+      const version = await snapshotManager.getVersion();
+      expect(version).toBe("2");
+    });
+
+    it("should detect v1 snapshot version", async () => {
+      const snapshotPath = join(tempDir, `${collectionName}.json`);
+
+      // Manually create a v1 snapshot
+      const v1Snapshot = {
+        codebasePath: "/test/codebase",
+        timestamp: Date.now(),
+        fileHashes: { "file.ts": "hash" },
+        merkleTree: new MerkleTree().serialize(),
+      };
+
+      await fs.writeFile(snapshotPath, JSON.stringify(v1Snapshot), "utf-8");
+
+      const version = await snapshotManager.getVersion();
+      expect(version).toBe("1");
+    });
+
+    it("should return null version for non-existent snapshot", async () => {
+      const version = await snapshotManager.getVersion();
+      expect(version).toBeNull();
+    });
+
+    it("should detect when migration is needed", async () => {
+      const snapshotPath = join(tempDir, `${collectionName}.json`);
+
+      // Create a v1 snapshot
+      const v1Snapshot = {
+        codebasePath: "/test/codebase",
+        timestamp: Date.now(),
+        fileHashes: { "file.ts": "hash" },
+        merkleTree: new MerkleTree().serialize(),
+      };
+
+      await fs.writeFile(snapshotPath, JSON.stringify(v1Snapshot), "utf-8");
+
+      const needsMigration = await snapshotManager.needsMigration();
+      expect(needsMigration).toBe(true);
+    });
+
+    it("should detect when migration is not needed", async () => {
+      const fileHashes = new Map([["file.ts", "hash"]]);
+      const fileMetadata = new Map([
+        ["file.ts", { mtime: 1234567890, size: 100, hash: "hash" }],
+      ]);
+      const tree = new MerkleTree();
+      tree.build(fileHashes);
+
+      await snapshotManager.save(
+        "/test/codebase",
+        fileHashes,
+        tree,
+        fileMetadata,
+      );
+
+      const needsMigration = await snapshotManager.needsMigration();
+      expect(needsMigration).toBe(false);
+    });
+
+    it("should handle needsMigration with no snapshot", async () => {
+      const needsMigration = await snapshotManager.needsMigration();
+      expect(needsMigration).toBe(false);
+    });
+  });
 });
