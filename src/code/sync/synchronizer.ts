@@ -48,8 +48,8 @@ export class FileSynchronizer {
     collectionName: string
   ) {
     this.collectionName = collectionName;
-    // Store snapshots in ~/.qdrant-mcp/snapshots/
-    const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
+    // Store snapshots in ~/.tea-rags-mcp/snapshots/
+    const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
     const snapshotPath = join(snapshotDir, `${collectionName}.json`);
     this.checkpointPath = join(snapshotDir, `${collectionName}.checkpoint.json`);
     this.snapshotManager = new SnapshotManager(snapshotPath);
@@ -341,7 +341,7 @@ export class FileSynchronizer {
 
     try {
       // Ensure directory exists
-      const dir = join(homedir(), ".qdrant-mcp", "snapshots");
+      const dir = join(homedir(), ".tea-rags-mcp", "snapshots");
       await fs.mkdir(dir, { recursive: true });
 
       // Write checkpoint atomically (write to temp, then rename)

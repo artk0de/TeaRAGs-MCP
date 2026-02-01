@@ -16,7 +16,7 @@ podman exec ollama ollama pull nomic-embed-text  # Podman
 docker exec ollama ollama pull nomic-embed-text  # Docker
 ```
 
-Configure MCP server as described in [main README](../README.md).
+Configure MCP server as described in [main README](../../README.md).
 
 ## Available Examples
 
@@ -127,10 +127,10 @@ Basic → Hybrid Search → Rate Limiting → Knowledge Base → Advanced Filter
 
 ## Next Steps
 
-1. Review [main README](../README.md) for full tool documentation
+1. Review [main README](../../README.md) for full tool documentation
 2. Apply patterns to your own use cases
 3. Explore advanced features and configurations
-4. Share your examples via [CONTRIBUTING.md](../CONTRIBUTING.md)
+4. Share your examples via [CONTRIBUTING.md](../../CONTRIBUTING.md)
 
 ## Additional Resources
 

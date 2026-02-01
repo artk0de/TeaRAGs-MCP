@@ -1,7 +1,7 @@
 /**
  * Debug Logger for Pipeline Operations
  *
- * Writes detailed trace logs to ~/.qdrant-mcp/logs/ when DEBUG=1
+ * Writes detailed trace logs to ~/.tea-rags-mcp/logs/ when DEBUG=1
  * Helps diagnose:
  * - Pipeline step timing
  * - Batch formation and processing
@@ -14,7 +14,7 @@ import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const LOG_DIR = join(homedir(), ".qdrant-mcp", "logs");
+const LOG_DIR = join(homedir(), ".tea-rags-mcp", "logs");
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
 export interface LogContext {

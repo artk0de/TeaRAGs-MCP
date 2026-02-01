@@ -63,7 +63,7 @@ export class GitMetadataService {
 
   constructor(options?: GitMetadataOptions) {
     this.cacheDir =
-      options?.cacheDir ?? join(homedir(), ".qdrant-mcp", "git-cache");
+      options?.cacheDir ?? join(homedir(), ".tea-rags-mcp", "git-cache");
     this.debug =
       options?.debug ?? (process.env.DEBUG === "true" || process.env.DEBUG === "1");
     if (this.debug) {
