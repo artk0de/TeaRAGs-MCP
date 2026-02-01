@@ -34,24 +34,31 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Run tests with coverage
+      - name: Run tests with coverage (quality gate)
         run: npm run test:coverage
+        # Note: This step enforces 90% coverage thresholds via vitest.config.ts
+        # If thresholds are not met, this step will fail with exit code 1
 
       - name: Run provider verification tests
         run: npm run test:providers
 
+      - name: Quality Gate - Verify coverage reports
+        run: |
+          if [ ! -f coverage/coverage-final.json ]; then
+            echo "❌ ERROR: Coverage report not generated"
+            exit 1
+          fi
+          echo "✅ Coverage report generated successfully"
+          echo ""
+          echo "📊 Quality Gate Status:"
+          echo "  Required: statements ≥ 90%, lines ≥ 90%, functions ≥ 90%, branches ≥ 80%"
+          echo "  Note: Vitest enforces thresholds automatically"
+          echo "  If you see this message, coverage thresholds were met ✅"
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
-        continue-on-error: true
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage
           flags: unittests
-          fail_ci_if_error: true
-
-      - name: Verify coverage thresholds
-        run: |
-          if grep -q "ERROR: Coverage" coverage/coverage-summary.txt 2>/dev/null; then
-            echo "Coverage thresholds not met"
-            exit 1
-          fi
+          fail_ci_if_error: false
