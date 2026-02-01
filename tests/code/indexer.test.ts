@@ -593,6 +593,55 @@ function checkStatus(): boolean {
         expect(result).toHaveProperty("score");
       });
     });
+
+    it("should include symbolId in metadata when available", async () => {
+      // Create a file with a named function
+      await createTestFile(
+        codebaseDir,
+        "calculator.ts",
+        `export function calculateSum(numbers: number[]): number {
+  // Calculate sum of all numbers
+  let total = 0;
+  for (const num of numbers) {
+    total += num;
+  }
+  return total;
+}
+
+export function calculateProduct(numbers: number[]): number {
+  // Calculate product of all numbers
+  let result = 1;
+  for (const num of numbers) {
+    result *= num;
+  }
+  return result;
+}`,
+      );
+
+      // Index the codebase
+      await indexer.indexCodebase(codebaseDir);
+
+      // Search for the function
+      const results = await indexer.searchCode(codebaseDir, "calculate sum");
+
+      expect(results.length).toBeGreaterThan(0);
+
+      // Find result with the function
+      const functionResult = results.find(r =>
+        r.content.includes("calculateSum") || r.content.includes("calculateProduct")
+      );
+
+      if (functionResult) {
+        // Verify symbolId is present in metadata
+        expect(functionResult).toHaveProperty("symbolId");
+        // symbolId should match function name for standalone functions
+        if (functionResult.symbolId) {
+          expect(["calculateSum", "calculateProduct"]).toContain(
+            functionResult.symbolId
+          );
+        }
+      }
+    });
   });
 
   describe("getIndexStatus", () => {

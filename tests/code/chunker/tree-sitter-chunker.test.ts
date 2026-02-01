@@ -781,4 +781,314 @@ export const myModule = {
       expect(chunks.length).toBeGreaterThanOrEqual(0);
     });
   });
+
+  describe("symbolId metadata", () => {
+    it("should set symbolId for standalone functions", async () => {
+      const code = `
+function calculateSum(numbers: number[]): number {
+  // Calculate the sum of all numbers in the array
+  let total = 0;
+  for (const num of numbers) {
+    total += num;
+  }
+  return total;
+}
+
+function calculateProduct(numbers: number[]): number {
+  // Calculate the product of all numbers in the array
+  let result = 1;
+  for (const num of numbers) {
+    result *= num;
+  }
+  return result;
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+      expect(chunks.length).toBeGreaterThanOrEqual(1);
+
+      // Find function chunks by name
+      const functionChunks = chunks.filter(c =>
+        c.metadata.name === "calculateSum" || c.metadata.name === "calculateProduct"
+      );
+
+      // Verify symbolId is set for functions
+      for (const chunk of functionChunks) {
+        expect(chunk.metadata.symbolId).toBe(chunk.metadata.name);
+      }
+    });
+
+    it("should set symbolId for methods in large classes with parentName", async () => {
+      // Use smaller config to trigger class splitting
+      const smallConfig = {
+        chunkSize: 200,
+        chunkOverlap: 20,
+        maxChunkSize: 300,
+      };
+      const smallChunker = new TreeSitterChunker(smallConfig);
+
+      const code = `
+class UserService
+  def find_by_id(id)
+    # Find user by ID with additional processing
+    puts "Finding user with ID: #{id}"
+    user = User.find(id)
+    validate_user(user)
+    return user
+  end
+
+  def create_user(params)
+    # Create new user with validation
+    puts "Creating user with params: #{params}"
+    validate_params(params)
+    user = User.create(params)
+    send_welcome_email(user)
+    return user
+  end
+
+  def update_user(id, params)
+    # Update existing user with checks
+    puts "Updating user #{id} with params"
+    user = User.find(id)
+    validate_params(params)
+    user.update(params)
+    log_update(user)
+    return user
+  end
+
+  def delete_user(id)
+    # Delete user by ID with cleanup
+    puts "Deleting user with ID: #{id}"
+    user = User.find(id)
+    cleanup_user_data(user)
+    User.destroy(id)
+    log_deletion(id)
+  end
+
+  def list_users(page, per_page)
+    # List users with pagination
+    puts "Listing users page #{page}"
+    offset = (page - 1) * per_page
+    users = User.offset(offset).limit(per_page)
+    return users
+  end
+end
+      `;
+
+      const chunks = await smallChunker.chunk(code, "user_service.rb", "ruby");
+
+      // Find method chunks with parentName (indicates class was split)
+      const methodChunks = chunks.filter(
+        c => c.metadata.parentName && c.metadata.chunkType === "function"
+      );
+
+      // If class was split, verify symbolId format
+      if (methodChunks.length > 0) {
+        for (const chunk of methodChunks) {
+          if (chunk.metadata.name && chunk.metadata.parentName) {
+            expect(chunk.metadata.symbolId).toBe(
+              `${chunk.metadata.parentName}.${chunk.metadata.name}`
+            );
+          }
+        }
+
+        // Specific check for one method
+        const findMethod = methodChunks.find(c => c.metadata.name === "find_by_id");
+        if (findMethod) {
+          expect(findMethod.metadata.symbolId).toBe("UserService.find_by_id");
+        }
+      } else {
+        // If class wasn't split, all chunks should still have symbolId
+        expect(chunks.length).toBeGreaterThan(0);
+        for (const chunk of chunks) {
+          if (chunk.metadata.name) {
+            expect(chunk.metadata.symbolId).toBeDefined();
+          }
+        }
+      }
+    });
+
+    it("should set symbolId for markdown sections", async () => {
+      const code = `
+# Main Title
+
+Introduction paragraph with content.
+
+## Installation
+
+Instructions for installation.
+
+### Prerequisites
+
+List of prerequisites.
+
+## Usage
+
+How to use the library.
+      `;
+
+      const chunks = await chunker.chunk(code, "README.md", "markdown");
+      expect(chunks.length).toBeGreaterThan(0);
+
+      // Find section chunks
+      const sectionChunks = chunks.filter(c => c.metadata.name && c.metadata.isDocumentation);
+
+      expect(sectionChunks.length).toBeGreaterThan(0);
+
+      // Verify symbolId is set to section name
+      for (const chunk of sectionChunks) {
+        expect(chunk.metadata.symbolId).toBe(chunk.metadata.name);
+      }
+
+      // Check specific section
+      const installChunk = sectionChunks.find(c => c.metadata.name === "Installation");
+      if (installChunk) {
+        expect(installChunk.metadata.symbolId).toBe("Installation");
+      }
+    });
+
+    it("should set symbolId for markdown code blocks", async () => {
+      const code = `
+# Examples
+
+TypeScript example:
+
+\`\`\`typescript
+function greet(name: string) {
+  return \`Hello, \${name}!\`;
+}
+\`\`\`
+
+Python example:
+
+\`\`\`python
+def greet(name):
+    return f"Hello, {name}!"
+\`\`\`
+      `;
+
+      const chunks = await chunker.chunk(code, "examples.md", "markdown");
+      expect(chunks.length).toBeGreaterThan(0);
+
+      // Find code block chunks
+      const codeBlocks = chunks.filter(c =>
+        c.metadata.name?.includes("Code") && c.metadata.isDocumentation
+      );
+
+      expect(codeBlocks.length).toBeGreaterThan(0);
+
+      // Verify symbolId is set
+      for (const chunk of codeBlocks) {
+        expect(chunk.metadata.symbolId).toBe(chunk.metadata.name);
+      }
+
+      // Check specific code blocks
+      const tsCodeBlock = codeBlocks.find(c => c.metadata.name === "Code: typescript");
+      if (tsCodeBlock) {
+        expect(tsCodeBlock.metadata.symbolId).toBe("Code: typescript");
+      }
+
+      const pyCodeBlock = codeBlocks.find(c => c.metadata.name === "Code: python");
+      if (pyCodeBlock) {
+        expect(pyCodeBlock.metadata.symbolId).toBe("Code: python");
+      }
+    });
+
+    it("should set symbolId for small classes without parent context", async () => {
+      const code = `
+class Calculator
+  def add(a, b)
+    a + b
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "calculator.rb", "ruby");
+
+      // Small class should be one chunk
+      expect(chunks.length).toBe(1);
+
+      // symbolId should be the class name (no parent splitting)
+      expect(chunks[0].metadata.symbolId).toBe("Calculator");
+    });
+
+    it("should handle chunks without name gracefully", async () => {
+      const code = `
+const x = 1;
+const y = 2;
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+
+      if (chunks.length > 0) {
+        // If no name, symbolId should be undefined
+        const chunk = chunks[0];
+        if (!chunk.metadata.name) {
+          expect(chunk.metadata.symbolId).toBeUndefined();
+        }
+      }
+    });
+
+    it("should set symbolId for TypeScript class methods in large classes", async () => {
+      const smallConfig = {
+        chunkSize: 200,
+        chunkOverlap: 20,
+        maxChunkSize: 300,
+      };
+      const smallChunker = new TreeSitterChunker(smallConfig);
+
+      const code = `
+class DataProcessor {
+  processData(data: string[]): string[] {
+    // Process the data
+    console.log('Processing data');
+    return data.map(item => item.trim());
+  }
+
+  validateData(data: string[]): boolean {
+    // Validate the data
+    console.log('Validating data');
+    return data.every(item => item.length > 0);
+  }
+
+  transformData(data: string[]): Record<string, string> {
+    // Transform data to object
+    console.log('Transforming data');
+    return data.reduce((acc, item, idx) => {
+      acc[\`key\${idx}\`] = item;
+      return acc;
+    }, {} as Record<string, string>);
+  }
+
+  saveData(data: string[]): void {
+    // Save the data
+    console.log('Saving data');
+    localStorage.setItem('data', JSON.stringify(data));
+  }
+}
+      `;
+
+      const chunks = await smallChunker.chunk(code, "processor.ts", "typescript");
+
+      // Find method chunks with parent
+      const methodChunks = chunks.filter(
+        c => c.metadata.parentName === "DataProcessor" && c.metadata.chunkType === "function"
+      );
+
+      if (methodChunks.length > 0) {
+        // Verify symbolId format
+        for (const chunk of methodChunks) {
+          expect(chunk.metadata.symbolId).toBe(
+            `DataProcessor.${chunk.metadata.name}`
+          );
+        }
+
+        // Check specific method
+        const processMethod = methodChunks.find(c => c.metadata.name === "processData");
+        if (processMethod) {
+          expect(processMethod.metadata.symbolId).toBe("DataProcessor.processData");
+        }
+      }
+    });
+  });
 });

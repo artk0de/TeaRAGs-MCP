@@ -143,6 +143,15 @@ export class TreeSitterChunker implements CodeChunker {
   /** Track loading promises to avoid duplicate loads */
   private loadingPromises: Map<string, Promise<LanguageConfig | null>> = new Map();
 
+  /**
+   * Build symbolId from name and optional parentName
+   * Format: "ParentName.childName" or just "name"
+   */
+  private buildSymbolId(name?: string, parentName?: string): string | undefined {
+    if (!name) return undefined;
+    return parentName ? `${parentName}.${name}` : name;
+  }
+
   constructor(private config: ChunkerConfig) {
     this.fallbackChunker = new CharacterChunker(config);
     // NO parser initialization here - lazy load on demand!
@@ -292,6 +301,7 @@ export class TreeSitterChunker implements CodeChunker {
                 // Skip too small chunks
                 if (childContent.length < 50) continue;
 
+                const childName = this.extractName(childNode, code);
                 chunks.push({
                   content: childContent.trim(),
                   startLine: childNode.startPosition.row + 1,
@@ -301,9 +311,10 @@ export class TreeSitterChunker implements CodeChunker {
                     language,
                     chunkIndex: chunks.length,
                     chunkType: this.getChunkType(childNode.type),
-                    name: this.extractName(childNode, code),
+                    name: childName,
                     parentName,  // Keep class/module context
                     parentType,
+                    symbolId: this.buildSymbolId(childName, parentName),
                   },
                 });
               }
@@ -330,6 +341,7 @@ export class TreeSitterChunker implements CodeChunker {
           continue;
         }
 
+        const nodeName = this.extractName(node, code);
         chunks.push({
           content: content.trim(),
           startLine: node.startPosition.row + 1,
@@ -339,7 +351,8 @@ export class TreeSitterChunker implements CodeChunker {
             language,
             chunkIndex: index,
             chunkType: this.getChunkType(node.type),
-            name: this.extractName(node, code),
+            name: nodeName,
+            symbolId: this.buildSymbolId(nodeName),
           },
         });
       }
@@ -517,6 +530,7 @@ export class TreeSitterChunker implements CodeChunker {
           chunkIndex: chunks.length,
           chunkType: "block",
           name: heading.text,
+          symbolId: heading.text,
           isDocumentation: true,
         },
       });
@@ -529,6 +543,7 @@ export class TreeSitterChunker implements CodeChunker {
         continue;
       }
 
+      const codeBlockName = block.lang ? `Code: ${block.lang}` : "Code block";
       chunks.push({
         content: block.value,
         startLine: block.startLine + 1, // +1 to skip ``` line
@@ -539,7 +554,8 @@ export class TreeSitterChunker implements CodeChunker {
           language: block.lang || "code",
           chunkIndex: chunks.length,
           chunkType: "block",
-          name: block.lang ? `Code: ${block.lang}` : "Code block",
+          name: codeBlockName,
+          symbolId: codeBlockName,
           isDocumentation: true,
         },
       });
@@ -559,6 +575,7 @@ export class TreeSitterChunker implements CodeChunker {
             chunkIndex: 0,
             chunkType: "block",
             name: "Preamble",
+            symbolId: "Preamble",
             isDocumentation: true,
           },
         });
