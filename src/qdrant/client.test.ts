@@ -13,6 +13,7 @@ const mockClient = {
   delete: vi.fn().mockResolvedValue({}),
   query: vi.fn().mockResolvedValue({ points: [] }),
   createPayloadIndex: vi.fn().mockResolvedValue({}),
+  updateCollection: vi.fn().mockResolvedValue({}),
 };
 
 vi.mock("@qdrant/js-client-rest", () => ({
@@ -38,6 +39,7 @@ describe("QdrantManager", () => {
     mockClient.delete.mockReset().mockResolvedValue({});
     mockClient.query.mockReset().mockResolvedValue({ points: [] });
     mockClient.createPayloadIndex.mockReset().mockResolvedValue({});
+    mockClient.updateCollection.mockReset().mockResolvedValue({});
     vi.mocked(QdrantClient).mockClear();
     manager = new QdrantManager("http://localhost:6333");
   });
@@ -362,6 +364,148 @@ describe("QdrantManager", () => {
         'Failed to add points to collection "test-collection": Unknown error',
       );
     });
+
+    it("should handle empty points array gracefully", async () => {
+      await manager.addPoints("test-collection", []);
+
+      // Should not call upsert for empty arrays
+      expect(mockClient.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("addPointsOptimized", () => {
+    it("should add points with optimized settings", async () => {
+      const points = [
+        { id: 1, vector: [0.1, 0.2, 0.3], payload: { text: "test" } },
+      ];
+
+      await manager.addPointsOptimized("test-collection", points, {
+        wait: false,
+        ordering: "weak",
+      });
+
+      expect(mockClient.upsert).toHaveBeenCalledWith("test-collection", {
+        wait: false,
+        ordering: "weak",
+        points: [
+          { id: 1, vector: [0.1, 0.2, 0.3], payload: { text: "test" } },
+        ],
+      });
+    });
+
+    it("should use default options when not provided", async () => {
+      const points = [{ id: 1, vector: [0.1, 0.2, 0.3] }];
+
+      await manager.addPointsOptimized("test-collection", points);
+
+      expect(mockClient.upsert).toHaveBeenCalledWith("test-collection", {
+        wait: false,
+        ordering: "weak",
+        points: expect.any(Array),
+      });
+    });
+
+    it("should handle empty points array gracefully", async () => {
+      await manager.addPointsOptimized("test-collection", []);
+
+      // Should not call upsert for empty arrays
+      expect(mockClient.upsert).not.toHaveBeenCalled();
+    });
+
+    it("should normalize string IDs to UUID format", async () => {
+      const points = [
+        { id: "my-optimized-id", vector: [0.1, 0.2, 0.3], payload: { text: "test" } },
+      ];
+
+      await manager.addPointsOptimized("test-collection", points);
+
+      const calls = mockClient.upsert.mock.calls;
+      expect(calls).toHaveLength(1);
+
+      const normalizedId = calls[0][1].points[0].id;
+      expect(normalizedId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+      expect(normalizedId).not.toBe("my-optimized-id");
+    });
+
+    it("should throw error with error.data.status.error message", async () => {
+      const points = [{ id: 1, vector: [0.1, 0.2, 0.3] }];
+
+      mockClient.upsert.mockRejectedValue({
+        data: {
+          status: {
+            error: "Dimension mismatch",
+          },
+        },
+      });
+
+      await expect(
+        manager.addPointsOptimized("test-collection", points),
+      ).rejects.toThrow(
+        'Failed to add points (optimized) to collection "test-collection": Dimension mismatch',
+      );
+    });
+
+    it("should throw error with error.message fallback", async () => {
+      const points = [{ id: 1, vector: [0.1, 0.2, 0.3] }];
+
+      mockClient.upsert.mockRejectedValue(new Error("Connection lost"));
+
+      await expect(
+        manager.addPointsOptimized("test-collection", points),
+      ).rejects.toThrow(
+        'Failed to add points (optimized) to collection "test-collection": Connection lost',
+      );
+    });
+
+    it("should throw error with String(error) fallback", async () => {
+      const points = [{ id: 1, vector: [0.1, 0.2, 0.3] }];
+
+      mockClient.upsert.mockRejectedValue("Server error");
+
+      await expect(
+        manager.addPointsOptimized("test-collection", points),
+      ).rejects.toThrow(
+        'Failed to add points (optimized) to collection "test-collection": Server error',
+      );
+    });
+  });
+
+  describe("disableIndexing and enableIndexing", () => {
+    beforeEach(() => {
+      mockClient.updateCollection = vi.fn().mockResolvedValue({});
+    });
+
+    it("should disable indexing for bulk upload", async () => {
+      await manager.disableIndexing("test-collection");
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("test-collection", {
+        optimizers_config: {
+          indexing_threshold: 0,
+        },
+      });
+    });
+
+    it("should enable indexing with default threshold", async () => {
+      await manager.enableIndexing("test-collection");
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("test-collection", {
+        optimizers_config: {
+          indexing_threshold: 20000,
+        },
+      });
+    });
+
+    it("should enable indexing with custom threshold", async () => {
+      await manager.enableIndexing("test-collection", 50000);
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("test-collection", {
+        optimizers_config: {
+          indexing_threshold: 50000,
+        },
+      });
+    });
   });
 
   describe("search", () => {
@@ -584,6 +728,33 @@ describe("QdrantManager", () => {
         with_payload: true,
       });
     });
+
+    it("should search with complex filters and return matching results", async () => {
+      mockClient.search.mockResolvedValue([
+        { id: "1", score: 0.95, payload: { category: "test", priority: 1 } },
+      ]);
+
+      const results = await manager.search(
+        "test-collection",
+        [0.1, 0.2, 0.3],
+        10,
+        {
+          must: [{ key: "category", match: { value: "test" } }],
+        },
+      );
+
+      expect(results.length).toBe(1);
+      expect(results[0].id).toBe("1");
+      expect(results[0].payload).toEqual({ category: "test", priority: 1 });
+      expect(mockClient.search).toHaveBeenCalledWith("test-collection", {
+        vector: [0.1, 0.2, 0.3],
+        limit: 10,
+        filter: {
+          must: [{ key: "category", match: { value: "test" } }],
+        },
+        with_payload: true,
+      });
+    });
   });
 
   describe("getPoint", () => {
@@ -666,6 +837,23 @@ describe("QdrantManager", () => {
         ],
       };
       await manager.deletePointsByFilter("test-collection", filter);
+
+      expect(mockClient.delete).toHaveBeenCalledWith("test-collection", {
+        wait: true,
+        filter: filter,
+      });
+    });
+
+    it("should handle delete operation failures gracefully", async () => {
+      const filter = {
+        must: [{ key: "category", match: { value: "test" } }],
+      };
+
+      mockClient.delete.mockRejectedValueOnce(new Error("Delete failed"));
+
+      await expect(
+        manager.deletePointsByFilter("test-collection", filter),
+      ).rejects.toThrow("Delete failed");
 
       expect(mockClient.delete).toHaveBeenCalledWith("test-collection", {
         wait: true,
@@ -1119,6 +1307,156 @@ describe("QdrantManager", () => {
         manager.addPointsWithSparse("test-collection", points),
       ).rejects.toThrow(
         'Failed to add points with sparse vectors to collection "test-collection": Unexpected error',
+      );
+    });
+
+    it("should handle empty points array gracefully", async () => {
+      await manager.addPointsWithSparse("test-collection", []);
+
+      // Should not call upsert for empty arrays
+      expect(mockClient.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("addPointsWithSparseOptimized", () => {
+    it("should add points with optimized settings (wait=false)", async () => {
+      const points = [
+        {
+          id: 1,
+          vector: [0.1, 0.2, 0.3],
+          sparseVector: { indices: [1, 5], values: [0.5, 0.3] },
+          payload: { text: "test" },
+        },
+      ];
+
+      await manager.addPointsWithSparseOptimized("test-collection", points, {
+        wait: false,
+        ordering: "weak",
+      });
+
+      expect(mockClient.upsert).toHaveBeenCalledWith("test-collection", {
+        wait: false,
+        ordering: "weak",
+        points: [
+          {
+            id: 1,
+            vector: {
+              dense: [0.1, 0.2, 0.3],
+              text: { indices: [1, 5], values: [0.5, 0.3] },
+            },
+            payload: { text: "test" },
+          },
+        ],
+      });
+    });
+
+    it("should use default options when not provided", async () => {
+      const points = [
+        {
+          id: 1,
+          vector: [0.1, 0.2, 0.3],
+          sparseVector: { indices: [1], values: [0.5] },
+          payload: { text: "test" },
+        },
+      ];
+
+      await manager.addPointsWithSparseOptimized("test-collection", points);
+
+      expect(mockClient.upsert).toHaveBeenCalledWith("test-collection", {
+        wait: false,
+        ordering: "weak",
+        points: expect.any(Array),
+      });
+    });
+
+    it("should handle empty points array gracefully", async () => {
+      await manager.addPointsWithSparseOptimized("test-collection", []);
+
+      // Should not call upsert for empty arrays
+      expect(mockClient.upsert).not.toHaveBeenCalled();
+    });
+
+    it("should normalize string IDs to UUID format", async () => {
+      const points = [
+        {
+          id: "my-optimized-doc",
+          vector: [0.1, 0.2, 0.3],
+          sparseVector: { indices: [1], values: [0.5] },
+          payload: { text: "test" },
+        },
+      ];
+
+      await manager.addPointsWithSparseOptimized("test-collection", points);
+
+      const calls = mockClient.upsert.mock.calls;
+      expect(calls).toHaveLength(1);
+      expect(calls[0][0]).toBe("test-collection");
+
+      const normalizedId = calls[0][1].points[0].id;
+      // Check that it's a valid UUID format
+      expect(normalizedId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+      expect(normalizedId).not.toBe("my-optimized-doc");
+    });
+
+    it("should throw error with error.data.status.error message", async () => {
+      const points = [
+        {
+          id: 1,
+          vector: [0.1, 0.2, 0.3],
+          sparseVector: { indices: [1], values: [0.5] },
+        },
+      ];
+
+      mockClient.upsert.mockRejectedValue({
+        data: {
+          status: {
+            error: "Sparse vector dimension mismatch",
+          },
+        },
+      });
+
+      await expect(
+        manager.addPointsWithSparseOptimized("test-collection", points),
+      ).rejects.toThrow(
+        'Failed to add points with sparse vectors (optimized) to collection "test-collection": Sparse vector dimension mismatch',
+      );
+    });
+
+    it("should throw error with error.message fallback", async () => {
+      const points = [
+        {
+          id: 1,
+          vector: [0.1, 0.2, 0.3],
+          sparseVector: { indices: [1], values: [0.5] },
+        },
+      ];
+
+      mockClient.upsert.mockRejectedValue(new Error("Network timeout"));
+
+      await expect(
+        manager.addPointsWithSparseOptimized("test-collection", points),
+      ).rejects.toThrow(
+        'Failed to add points with sparse vectors (optimized) to collection "test-collection": Network timeout',
+      );
+    });
+
+    it("should throw error with String(error) fallback", async () => {
+      const points = [
+        {
+          id: 1,
+          vector: [0.1, 0.2, 0.3],
+          sparseVector: { indices: [1], values: [0.5] },
+        },
+      ];
+
+      mockClient.upsert.mockRejectedValue("Unknown error occurred");
+
+      await expect(
+        manager.addPointsWithSparseOptimized("test-collection", points),
+      ).rejects.toThrow(
+        'Failed to add points with sparse vectors (optimized) to collection "test-collection": Unknown error occurred',
       );
     });
   });
