@@ -7,326 +7,139 @@
  * - EMBEDDING_CONCURRENCY
  * - CODE_BATCH_SIZE
  * - QDRANT_BATCH_ORDERING
- *
- * Strong stopping criteria:
- * - Degradation threshold (20% drop from best)
- * - Consecutive degradations (3 in a row)
- * - Absolute timeout per test (30s)
- * - Error rate threshold (>10% failures)
- * - No improvement threshold (<5% gain)
+ * - QDRANT_FLUSH_INTERVAL_MS
+ * - QDRANT_DELETE_BATCH_SIZE
+ * - QDRANT_DELETE_CONCURRENCY
  *
  * Run: npm run tune
  * Output: tuned_environment_variables.env
  */
 
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
 import { OllamaEmbeddings } from "../build/embeddings/ollama.js";
 import { QdrantManager } from "../build/qdrant/client.js";
-import { randomUUID } from "crypto";
-import { writeFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+
+import { config, CRITERIA, TEST_VALUES, SMART_STEPPING, SAMPLE_SIZE } from "./lib/config.mjs";
+import { c, bar, formatRate, printHeader, printBox } from "./lib/colors.mjs";
+import { StoppingDecision } from "./lib/stopping.mjs";
+import { smartSteppingSearch, linearSteppingSearch } from "./lib/smart-stepping.mjs";
+import {
+  generateTexts,
+  generatePoints,
+  benchmarkCodeBatchSize,
+  benchmarkOrdering,
+  benchmarkFlushInterval,
+  benchmarkDeleteBatchSize,
+  benchmarkDeleteConcurrency,
+} from "./lib/benchmarks.mjs";
+import { runBatchSizeBenchmark, runConcurrencyBenchmark } from "./lib/embedding-steps.mjs";
+import { cleanupAllCollections } from "./lib/cleanup.mjs";
+import { printTimeEstimates } from "./lib/estimator.mjs";
+import { writeEnvFile, printSummary, printUsage } from "./lib/output.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
 
-// ============ CONFIGURATION ============
+// Global cleanup handler
+let qdrantClient = null;
 
-const config = {
-  QDRANT_URL: process.env.QDRANT_URL || "http://localhost:6333",
-  EMBEDDING_BASE_URL: process.env.EMBEDDING_BASE_URL || "http://localhost:11434",
-  EMBEDDING_MODEL: process.env.EMBEDDING_MODEL || "nomic-embed-text",
-  EMBEDDING_DIMENSION: parseInt(process.env.EMBEDDING_DIMENSION || "768", 10),
-};
+/**
+ * Check connectivity to required services
+ * Returns array of error messages (empty if all OK)
+ */
+async function checkConnectivity() {
+  const errors = [];
 
-// ============ STOPPING CRITERIA ============
-
-const CRITERIA = {
-  DEGRADATION_THRESHOLD: 0.20,      // 20% drop from best = stop
-  CONSECUTIVE_DEGRADATIONS: 3,      // 3 drops in a row = stop
-  TEST_TIMEOUT_MS: 30000,           // 30s max per single test
-  ERROR_RATE_THRESHOLD: 0.10,       // >10% errors = stop
-  NO_IMPROVEMENT_THRESHOLD: 0.05,   // <5% improvement = stop
-  WARMUP_RUNS: 1,
-  TEST_RUNS: 2,
-};
-
-// ============ TEST VALUES ============
-
-const TEST_VALUES = {
-  EMBEDDING_BATCH_SIZE: [32, 64, 128, 256, 512, 1024, 2048],
-  CODE_BATCH_SIZE: [64, 128, 256, 384, 512, 768, 1024],
-  EMBEDDING_CONCURRENCY: [1, 2, 4, 8],
-  QDRANT_BATCH_ORDERING: ["weak", "medium", "strong"],
-};
-
-// Sample sizes
-const SAMPLE_SIZE = 512;
-
-// ============ COLORS ============
-
-const c = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  green: "\x1b[32m",
-  yellow: "\x1b[33m",
-  red: "\x1b[31m",
-  blue: "\x1b[34m",
-  cyan: "\x1b[36m",
-  gray: "\x1b[90m",
-  bgGreen: "\x1b[42m",
-  bgYellow: "\x1b[43m",
-  bgRed: "\x1b[41m",
-};
-
-// ============ UTILITIES ============
-
-function bar(current, best, width = 20) {
-  const ratio = Math.min(current / best, 1);
-  const filled = Math.round(ratio * width);
-  const clr = ratio >= 0.95 ? c.green : ratio >= 0.8 ? c.yellow : c.gray;
-  return `${clr}${"█".repeat(filled)}${"░".repeat(width - filled)}${c.reset}`;
-}
-
-function formatRate(value, unit) {
-  const clr = value >= 1000 ? c.green : value >= 500 ? c.yellow : c.gray;
-  return `${clr}${c.bold}${value}${c.reset} ${c.dim}${unit}${c.reset}`;
-}
-
-function generateTexts(count) {
-  return Array.from({ length: count }, (_, i) =>
-    `function process_${i}(data) {
-      const result = data.map(item => ({
-        id: item.id * ${i},
-        value: Math.sqrt(item.value) + ${i % 100}
-      }));
-      return result.filter(r => r.value > 0);
-    }`
-  );
-}
-
-function printHeader(title, subtitle = "") {
-  console.log();
-  console.log(`${c.blue}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${c.reset}`);
-  console.log(`${c.bold}${title}${c.reset}`);
-  if (subtitle) console.log(`${c.dim}${subtitle}${c.reset}`);
-  console.log(`${c.blue}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${c.reset}`);
-  console.log();
-}
-
-// ============ STOPPING LOGIC ============
-
-class StoppingDecision {
-  constructor() {
-    this.results = [];
-    this.bestRate = 0;
-    this.consecutiveDegradations = 0;
-    this.errors = 0;
-    this.totalTests = 0;
-  }
-
-  addResult(result) {
-    this.results.push(result);
-    this.totalTests++;
-
-    if (result.error) {
-      this.errors++;
-      return this.checkStop("error");
-    }
-
-    if (result.rate > this.bestRate) {
-      this.bestRate = result.rate;
-      this.consecutiveDegradations = 0;
-    } else {
-      const degradation = (this.bestRate - result.rate) / this.bestRate;
-      if (degradation >= CRITERIA.DEGRADATION_THRESHOLD) {
-        this.consecutiveDegradations++;
-      } else {
-        this.consecutiveDegradations = 0;
+  // Check Qdrant connectivity
+  const qdrantCheck = await (async () => {
+    try {
+      const response = await fetch(`${config.QDRANT_URL}/collections`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) {
+        return `Qdrant returned status ${response.status}`;
       }
-    }
-
-    return this.checkStop();
-  }
-
-  checkStop(reason = null) {
-    // Error rate too high
-    if (this.errors / this.totalTests > CRITERIA.ERROR_RATE_THRESHOLD && this.totalTests >= 3) {
-      return { stop: true, reason: `Error rate exceeded ${CRITERIA.ERROR_RATE_THRESHOLD * 100}%` };
-    }
-
-    // Consecutive degradations
-    if (this.consecutiveDegradations >= CRITERIA.CONSECUTIVE_DEGRADATIONS) {
-      return { stop: true, reason: `${CRITERIA.CONSECUTIVE_DEGRADATIONS} consecutive degradations` };
-    }
-
-    // Single large degradation
-    if (this.results.length >= 2) {
-      const last = this.results[this.results.length - 1];
-      const degradation = (this.bestRate - last.rate) / this.bestRate;
-      if (degradation >= CRITERIA.DEGRADATION_THRESHOLD) {
-        return { stop: true, reason: `Performance dropped ${Math.round(degradation * 100)}% from best` };
+      return null;
+    } catch (err) {
+      if (err.cause?.code === "ECONNREFUSED") {
+        return `Cannot connect to Qdrant at ${config.QDRANT_URL}`;
       }
-    }
-
-    // No improvement (for concurrency tests)
-    if (this.results.length >= 2) {
-      const prev = this.results[this.results.length - 2];
-      const curr = this.results[this.results.length - 1];
-      const improvement = (curr.rate - prev.rate) / prev.rate;
-      if (improvement < CRITERIA.NO_IMPROVEMENT_THRESHOLD && curr.rate <= this.bestRate) {
-        return { stop: true, reason: `No significant improvement (<${CRITERIA.NO_IMPROVEMENT_THRESHOLD * 100}%)` };
+      if (err.name === "TimeoutError") {
+        return `Connection to Qdrant timed out (${config.QDRANT_URL})`;
       }
+      return `Qdrant error: ${err.message}`;
     }
+  })();
 
-    return { stop: false };
-  }
+  // Check Ollama connectivity and model availability
+  const ollamaCheck = await (async () => {
+    try {
+      // First check if Ollama is reachable
+      const tagsResponse = await fetch(`${config.EMBEDDING_BASE_URL}/api/tags`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!tagsResponse.ok) {
+        return `Ollama returned status ${tagsResponse.status}`;
+      }
 
-  getBest() {
-    return this.results.reduce((best, r) =>
-      (!r.error && r.rate > (best?.rate || 0)) ? r : best, null);
-  }
-}
+      // Check if the model exists
+      const tags = await tagsResponse.json();
+      const models = tags.models || [];
+      const modelNames = models.map(m => m.name.replace(/:latest$/, ""));
 
-// ============ BENCHMARK FUNCTIONS ============
-
-async function withTimeout(promise, ms, label) {
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms)
-  );
-  return Promise.race([promise, timeout]);
-}
-
-async function benchmarkEmbeddingBatchSize(embeddings, texts, batchSize) {
-  process.env.EMBEDDING_BATCH_SIZE = String(batchSize);
-
-  const testTexts = texts.slice(0, Math.min(batchSize, texts.length));
-
-  try {
-    // Warmup
-    for (let i = 0; i < CRITERIA.WARMUP_RUNS; i++) {
-      await withTimeout(
-        embeddings.embedBatch(testTexts.slice(0, 32)),
-        CRITERIA.TEST_TIMEOUT_MS,
-        "warmup"
+      // Check both with and without :latest suffix
+      const targetModel = config.EMBEDDING_MODEL.replace(/:latest$/, "");
+      const modelExists = modelNames.some(name =>
+        name === targetModel || name === config.EMBEDDING_MODEL
       );
+
+      if (!modelExists) {
+        const availableModels = modelNames.length > 0
+          ? `\n    Available models: ${modelNames.slice(0, 5).join(", ")}${modelNames.length > 5 ? "..." : ""}`
+          : "\n    No models found. Run: ollama pull " + config.EMBEDDING_MODEL;
+        return `Model "${config.EMBEDDING_MODEL}" not found on Ollama${availableModels}`;
+      }
+
+      return null;
+    } catch (err) {
+      if (err.cause?.code === "ECONNREFUSED") {
+        return `Cannot connect to Ollama at ${config.EMBEDDING_BASE_URL}`;
+      }
+      if (err.name === "TimeoutError") {
+        return `Connection to Ollama timed out (${config.EMBEDDING_BASE_URL})`;
+      }
+      return `Ollama error: ${err.message}`;
     }
+  })();
 
-    // Test runs
-    const times = [];
-    for (let i = 0; i < CRITERIA.TEST_RUNS; i++) {
-      const start = Date.now();
-      await withTimeout(
-        embeddings.embedBatch(testTexts),
-        CRITERIA.TEST_TIMEOUT_MS,
-        `batch size ${batchSize}`
-      );
-      times.push(Date.now() - start);
-    }
+  if (qdrantCheck) errors.push(qdrantCheck);
+  if (ollamaCheck) errors.push(ollamaCheck);
 
-    const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
-    const rate = Math.round(testTexts.length * 1000 / avgTime);
-
-    return { batchSize, time: Math.round(avgTime), rate, error: null };
-  } catch (error) {
-    return { batchSize, time: 0, rate: 0, error: error.message };
-  }
+  return errors;
 }
 
-async function benchmarkCodeBatchSize(qdrant, points, batchSize) {
-  const collection = `tune_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-  try {
-    await qdrant.createCollection(collection, config.EMBEDDING_DIMENSION, "Cosine");
-
-    const start = Date.now();
-    for (let i = 0; i < points.length; i += batchSize) {
-      const batch = points.slice(i, i + batchSize);
-      await withTimeout(
-        qdrant.addPointsOptimized(collection, batch, {
-          wait: i + batchSize >= points.length,
-          ordering: "weak",
-        }),
-        CRITERIA.TEST_TIMEOUT_MS,
-        `code batch ${batchSize}`
-      );
-    }
-    const time = Date.now() - start;
-    const rate = Math.round(points.length * 1000 / time);
-
-    return { batchSize, time, rate, error: null };
-  } catch (error) {
-    return { batchSize, time: 0, rate: 0, error: error.message };
-  } finally {
-    try { await qdrant.deleteCollection(collection); } catch {}
+process.on("SIGINT", async () => {
+  console.log(`\n${c.yellow}Interrupted. Cleaning up...${c.reset}`);
+  if (qdrantClient) {
+    await cleanupAllCollections(qdrantClient);
   }
-}
-
-async function benchmarkConcurrency(embeddings, texts, concurrency) {
-  process.env.EMBEDDING_CONCURRENCY = String(concurrency);
-
-  try {
-    const start = Date.now();
-    await withTimeout(
-      embeddings.embedBatch(texts),
-      CRITERIA.TEST_TIMEOUT_MS * 2,
-      `concurrency ${concurrency}`
-    );
-    const time = Date.now() - start;
-    const rate = Math.round(texts.length * 1000 / time);
-
-    return { concurrency, time, rate, error: null };
-  } catch (error) {
-    return { concurrency, time: 0, rate: 0, error: error.message };
-  }
-}
-
-async function benchmarkOrdering(qdrant, points, ordering) {
-  const collection = `tune_ord_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const batchSize = 256;
-
-  try {
-    await qdrant.createCollection(collection, config.EMBEDDING_DIMENSION, "Cosine");
-
-    const start = Date.now();
-    for (let i = 0; i < points.length; i += batchSize) {
-      const batch = points.slice(i, i + batchSize);
-      await withTimeout(
-        qdrant.addPointsOptimized(collection, batch, {
-          wait: i + batchSize >= points.length,
-          ordering,
-        }),
-        CRITERIA.TEST_TIMEOUT_MS,
-        `ordering ${ordering}`
-      );
-    }
-    const time = Date.now() - start;
-    const rate = Math.round(points.length * 1000 / time);
-
-    return { ordering, time, rate, error: null };
-  } catch (error) {
-    return { ordering, time: 0, rate: 0, error: error.message };
-  } finally {
-    try { await qdrant.deleteCollection(collection); } catch {}
-  }
-}
-
-// ============ MAIN ============
+  process.exit(1);
+});
 
 async function main() {
   console.clear();
-  console.log();
-  console.log(`${c.cyan}${c.bold}╔══════════════════════════════════════════════════════════╗${c.reset}`);
-  console.log(`${c.cyan}${c.bold}║${c.reset}     ${c.bold}TEA RAGS MCP — PERFORMANCE TUNING${c.reset}                  ${c.cyan}${c.bold}║${c.reset}`);
-  console.log(`${c.cyan}${c.bold}║${c.reset}     ${c.dim}Automatic parameter optimization${c.reset}                     ${c.cyan}${c.bold}║${c.reset}`);
-  console.log(`${c.cyan}${c.bold}╚══════════════════════════════════════════════════════════╝${c.reset}`);
-  console.log();
+  printBox("TEA RAGS MCP — PERFORMANCE TUNING", "Automatic parameter optimization");
 
+  // Print configuration (dimension will be shown after initialization)
   console.log(`${c.bold}Configuration:${c.reset}`);
-  console.log(`  ${c.dim}Qdrant:${c.reset}    ${config.QDRANT_URL}`);
-  console.log(`  ${c.dim}Ollama:${c.reset}    ${config.EMBEDDING_BASE_URL}`);
-  console.log(`  ${c.dim}Model:${c.reset}     ${config.EMBEDDING_MODEL}`);
-  console.log(`  ${c.dim}Dimension:${c.reset} ${config.EMBEDDING_DIMENSION}`);
+  console.log(`  ${c.dim}Qdrant:${c.reset}      ${config.QDRANT_URL}`);
+  console.log(`  ${c.dim}Ollama:${c.reset}      ${config.EMBEDDING_BASE_URL}`);
+  console.log(`  ${c.dim}Model:${c.reset}       ${config.EMBEDDING_MODEL}`);
+  console.log(`  ${c.dim}Sample size:${c.reset} ${SAMPLE_SIZE} chunks${process.env.TUNE_SAMPLE_SIZE ? ` ${c.cyan}(custom)${c.reset}` : ""}`);
   console.log();
 
   console.log(`${c.bold}Stopping criteria:${c.reset}`);
@@ -334,16 +147,55 @@ async function main() {
   console.log(`  ${c.dim}Consecutive drops:${c.reset}     ${CRITERIA.CONSECUTIVE_DEGRADATIONS}`);
   console.log(`  ${c.dim}Test timeout:${c.reset}          ${CRITERIA.TEST_TIMEOUT_MS / 1000}s`);
   console.log(`  ${c.dim}Error rate limit:${c.reset}      ${CRITERIA.ERROR_RATE_THRESHOLD * 100}%`);
+  console.log(`  ${c.dim}Warmup runs:${c.reset}           ${CRITERIA.WARMUP_RUNS}`);
+  console.log(`  ${c.dim}Test runs:${c.reset}             ${CRITERIA.TEST_RUNS}`);
+  console.log();
+
+  // Check connectivity to services
+  console.log(`${c.dim}Checking services...${c.reset}`);
+  const connectivityErrors = await checkConnectivity();
+
+  if (connectivityErrors.length > 0) {
+    console.log();
+    console.log(`${c.red}${c.bold}Connection errors:${c.reset}`);
+    for (const err of connectivityErrors) {
+      console.log(`  ${c.red}✗${c.reset} ${err}`);
+    }
+    console.log();
+    console.log(`${c.bold}Configuration:${c.reset}`);
+    console.log(`  ${c.dim}QDRANT_URL${c.reset}=${config.QDRANT_URL} ${c.dim}(default: http://localhost:6333)${c.reset}`);
+    console.log(`  ${c.dim}EMBEDDING_BASE_URL${c.reset}=${config.EMBEDDING_BASE_URL} ${c.dim}(default: http://localhost:11434)${c.reset}`);
+    console.log(`  ${c.dim}EMBEDDING_MODEL${c.reset}=${config.EMBEDDING_MODEL} ${c.dim}(default: jina-embeddings-v2-base-code)${c.reset}`);
+    console.log();
+    console.log(`${c.bold}To fix:${c.reset}`);
+    console.log(`  1. Start Qdrant:  ${c.cyan}docker compose up -d qdrant${c.reset}`);
+    console.log(`  2. Start Ollama:  ${c.cyan}docker compose up -d ollama${c.reset}`);
+    console.log(`  3. Pull model:    ${c.cyan}docker exec ollama ollama pull ${config.EMBEDDING_MODEL}${c.reset}`);
+    console.log();
+    process.exit(1);
+  }
+  console.log(`  ${c.green}✓${c.reset} Qdrant connected`);
+  console.log(`  ${c.green}✓${c.reset} Ollama connected (model: ${config.EMBEDDING_MODEL})`);
   console.log();
 
   // Initialize clients
   const embeddings = new OllamaEmbeddings(
     config.EMBEDDING_MODEL,
-    config.EMBEDDING_DIMENSION,
+    config.EMBEDDING_DIMENSION, // undefined = auto-detect
     undefined,
     config.EMBEDDING_BASE_URL
   );
+
+  // Get actual dimension (auto-detected if not specified)
+  const actualDimension = embeddings.getDimensions();
+  if (!config.EMBEDDING_DIMENSION) {
+    config.EMBEDDING_DIMENSION = actualDimension;
+  }
+  console.log(`  ${c.green}✓${c.reset} Vector dimension: ${actualDimension}${!process.env.EMBEDDING_DIMENSION ? ` ${c.dim}(auto-detected)${c.reset}` : ""}`);
+  console.log();
+
   const qdrant = new QdrantManager(config.QDRANT_URL);
+  qdrantClient = qdrant;
 
   // Generate test data
   console.log(`${c.dim}Generating ${SAMPLE_SIZE} test samples...${c.reset}`);
@@ -352,108 +204,66 @@ async function main() {
   console.log(`${c.dim}Warming up embedding service...${c.reset}`);
   process.env.EMBEDDING_BATCH_SIZE = "32";
   process.env.EMBEDDING_CONCURRENCY = "1";
-  await embeddings.embedBatch(texts.slice(0, 32));
+  await embeddings.embedBatch(texts.slice(0, 64));
 
   const optimal = {};
   const startTime = Date.now();
 
   // ============ PHASE 1: EMBEDDING_BATCH_SIZE ============
 
-  printHeader("Phase 1: Embedding Batch Size", "Finding optimal EMBEDDING_BATCH_SIZE");
+  printHeader("Phase 1: Embedding Batch Size", "Finding optimal EMBEDDING_BATCH_SIZE (smart stepping: x2 + midpoint)");
+  console.log(`  ${c.dim}Testing with ${SAMPLE_SIZE} chunks...${c.reset}\n`);
 
-  const embDecision = new StoppingDecision();
+  const embResult = await runBatchSizeBenchmark(embeddings, texts);
 
-  for (const size of TEST_VALUES.EMBEDDING_BATCH_SIZE) {
-    process.stdout.write(`  Testing EMBEDDING_BATCH_SIZE=${c.bold}${size.toString().padStart(4)}${c.reset} `);
-
-    const result = await benchmarkEmbeddingBatchSize(embeddings, texts, size);
-    const decision = embDecision.addResult(result);
-
-    if (result.error) {
-      console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
-    } else {
-      console.log(`${bar(result.rate, embDecision.bestRate)} ${formatRate(result.rate, "emb/s")} ${c.dim}(${result.time}ms)${c.reset}`);
-    }
-
-    if (decision.stop) {
-      console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
-      break;
-    }
-  }
-
-  const bestEmb = embDecision.getBest();
-  optimal.EMBEDDING_BATCH_SIZE = bestEmb?.batchSize || 64;
+  optimal.EMBEDDING_BATCH_SIZE = embResult.bestValue;
   console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE}${c.reset}`);
-  if (bestEmb) console.log(`    ${c.dim}Speed: ${bestEmb.rate} embeddings/sec${c.reset}`);
+  console.log(`    ${c.dim}Embedding speed: ${embResult.bestRate} chunks/sec${c.reset}`);
 
   process.env.EMBEDDING_BATCH_SIZE = String(optimal.EMBEDDING_BATCH_SIZE);
 
   // ============ PHASE 2: EMBEDDING_CONCURRENCY ============
 
-  printHeader("Phase 2: Embedding Concurrency", "Finding optimal EMBEDDING_CONCURRENCY");
+  printHeader("Phase 2: Embedding Concurrency", "Finding optimal EMBEDDING_CONCURRENCY (scaling test)");
 
-  const concDecision = new StoppingDecision();
+  const concResult = await runConcurrencyBenchmark(embeddings, texts, embResult, optimal.EMBEDDING_BATCH_SIZE);
 
-  for (const conc of TEST_VALUES.EMBEDDING_CONCURRENCY) {
-    process.stdout.write(`  Testing EMBEDDING_CONCURRENCY=${c.bold}${conc}${c.reset} `);
-
-    const result = await benchmarkConcurrency(embeddings, texts, conc);
-    const decision = concDecision.addResult(result);
-
-    if (result.error) {
-      console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
-    } else {
-      console.log(`${bar(result.rate, concDecision.bestRate)} ${formatRate(result.rate, "emb/s")} ${c.dim}(${result.time}ms)${c.reset}`);
-    }
-
-    if (decision.stop) {
-      console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
-      break;
-    }
-  }
-
-  const bestConc = concDecision.getBest();
-  optimal.EMBEDDING_CONCURRENCY = bestConc?.concurrency || 1;
+  optimal.EMBEDDING_CONCURRENCY = concResult.bestValue;
   console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY}${c.reset}`);
-  if (bestConc) console.log(`    ${c.dim}Speed: ${bestConc.rate} embeddings/sec${c.reset}`);
+  console.log(`    ${c.dim}Embedding speed: ${concResult.bestRate} chunks/sec${c.reset}`);
 
   // ============ PHASE 3: CODE_BATCH_SIZE ============
 
-  printHeader("Phase 3: Qdrant Batch Size", "Finding optimal CODE_BATCH_SIZE");
+  printHeader("Phase 3: Qdrant Batch Size", "Finding optimal CODE_BATCH_SIZE (smart stepping: x2 + midpoint)");
 
   console.log(`  ${c.dim}Pre-generating embeddings for Qdrant tests...${c.reset}`);
   const embeddingResults = await embeddings.embedBatch(texts);
-  const points = embeddingResults.map((r, i) => ({
-    id: randomUUID(),
-    vector: r.embedding,
-    payload: { content: texts[i], index: i },
-  }));
+  const points = generatePoints(embeddingResults, texts);
   console.log(`  ${c.dim}Done. Testing batch sizes...${c.reset}\n`);
 
-  const codeDecision = new StoppingDecision();
+  let codeBestRate = 0;
+  const codeResult = await smartSteppingSearch({
+    start: SMART_STEPPING.CODE_BATCH_SIZE.start,
+    max: SMART_STEPPING.CODE_BATCH_SIZE.max,
+    testFn: async (size) => {
+      return await benchmarkCodeBatchSize(qdrant, points, size);
+    },
+    onResult: (size, result, isMidpoint) => {
+      const prefix = isMidpoint ? `  ${c.cyan}↳ Midpoint${c.reset} ` : "  Testing ";
+      process.stdout.write(`${prefix}CODE_BATCH_SIZE=${c.bold}${size.toString().padStart(4)}${c.reset} `);
 
-  for (const size of TEST_VALUES.CODE_BATCH_SIZE) {
-    process.stdout.write(`  Testing CODE_BATCH_SIZE=${c.bold}${size.toString().padStart(4)}${c.reset} `);
+      if (result.error) {
+        console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+      } else {
+        if (result.rate > codeBestRate) codeBestRate = result.rate;
+        console.log(`${bar(result.rate, codeBestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms)${c.reset}`);
+      }
+    },
+  });
 
-    const result = await benchmarkCodeBatchSize(qdrant, points, size);
-    const decision = codeDecision.addResult(result);
-
-    if (result.error) {
-      console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
-    } else {
-      console.log(`${bar(result.rate, codeDecision.bestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms)${c.reset}`);
-    }
-
-    if (decision.stop) {
-      console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
-      break;
-    }
-  }
-
-  const bestCode = codeDecision.getBest();
-  optimal.CODE_BATCH_SIZE = bestCode?.batchSize || 100;
+  optimal.CODE_BATCH_SIZE = codeResult.bestValue;
   console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: CODE_BATCH_SIZE=${optimal.CODE_BATCH_SIZE}${c.reset}`);
-  if (bestCode) console.log(`    ${c.dim}Speed: ${bestCode.rate} chunks/sec${c.reset}`);
+  console.log(`    ${c.dim}Speed: ${codeResult.bestRate} chunks/sec${c.reset}`);
 
   // ============ PHASE 4: QDRANT_BATCH_ORDERING ============
 
@@ -482,64 +292,145 @@ async function main() {
   console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING}${c.reset}`);
   if (bestOrder) console.log(`    ${c.dim}Speed: ${bestOrder.rate} chunks/sec${c.reset}`);
 
+  // ============ PHASE 5: QDRANT_FLUSH_INTERVAL_MS ============
+
+  printHeader("Phase 5: Qdrant Flush Interval", "Finding optimal QDRANT_FLUSH_INTERVAL_MS");
+
+  const flushDecision = new StoppingDecision();
+
+  for (const interval of TEST_VALUES.QDRANT_FLUSH_INTERVAL_MS) {
+    process.stdout.write(`  Testing QDRANT_FLUSH_INTERVAL_MS=${c.bold}${interval.toString().padStart(4)}${c.reset} `);
+
+    const result = await benchmarkFlushInterval(qdrant, points, interval, optimal.CODE_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
+    const decision = flushDecision.addResult(result);
+
+    if (result.error) {
+      console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+    } else {
+      console.log(`${bar(result.rate, flushDecision.bestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms)${c.reset}`);
+    }
+
+    if (decision.stop) {
+      console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+      break;
+    }
+  }
+
+  const bestFlush = flushDecision.getBest();
+  optimal.QDRANT_FLUSH_INTERVAL_MS = bestFlush?.interval || 500;
+  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS}${c.reset}`);
+  if (bestFlush) console.log(`    ${c.dim}Speed: ${bestFlush.rate} chunks/sec${c.reset}`);
+
+  // ============ PHASE 6: QDRANT_DELETE_BATCH_SIZE ============
+
+  printHeader("Phase 6: Delete Batch Size", "Finding optimal QDRANT_DELETE_BATCH_SIZE");
+
+  const delDecision = new StoppingDecision();
+
+  for (const size of TEST_VALUES.QDRANT_DELETE_BATCH_SIZE) {
+    process.stdout.write(`  Testing QDRANT_DELETE_BATCH_SIZE=${c.bold}${size.toString().padStart(4)}${c.reset} `);
+
+    const result = await benchmarkDeleteBatchSize(qdrant, points, size, optimal.CODE_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
+    const decision = delDecision.addResult(result);
+
+    if (result.error) {
+      console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+    } else {
+      console.log(`${bar(result.rate, delDecision.bestRate)} ${formatRate(result.rate, "del/s")} ${c.dim}(${result.time}ms)${c.reset}`);
+    }
+
+    if (decision.stop) {
+      console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+      break;
+    }
+  }
+
+  const bestDel = delDecision.getBest();
+  optimal.QDRANT_DELETE_BATCH_SIZE = bestDel?.batchSize || 500;
+  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE}${c.reset}`);
+  if (bestDel) console.log(`    ${c.dim}Speed: ${bestDel.rate} deletions/sec${c.reset}`);
+
+  // ============ PHASE 7: QDRANT_DELETE_CONCURRENCY ============
+
+  printHeader("Phase 7: Delete Concurrency", "Finding optimal QDRANT_DELETE_CONCURRENCY");
+
+  const delConcDecision = new StoppingDecision();
+
+  for (const conc of TEST_VALUES.QDRANT_DELETE_CONCURRENCY) {
+    process.stdout.write(`  Testing QDRANT_DELETE_CONCURRENCY=${c.bold}${conc.toString().padStart(2)}${c.reset} `);
+
+    const result = await benchmarkDeleteConcurrency(qdrant, points, conc, optimal.CODE_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING, optimal.QDRANT_DELETE_BATCH_SIZE);
+    const decision = delConcDecision.addResult(result);
+
+    if (result.error) {
+      console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+    } else {
+      console.log(`${bar(result.rate, delConcDecision.bestRate)} ${formatRate(result.rate, "del/s")} ${c.dim}(${result.time}ms)${c.reset}`);
+    }
+
+    if (decision.stop) {
+      console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+      break;
+    }
+  }
+
+  const bestDelConc = delConcDecision.getBest();
+  optimal.QDRANT_DELETE_CONCURRENCY = bestDelConc?.concurrency || 8;
+  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}${c.reset}`);
+  if (bestDelConc) console.log(`    ${c.dim}Speed: ${bestDelConc.rate} deletions/sec${c.reset}`);
+
+  // ============ CLEANUP ============
+
+  await cleanupAllCollections(qdrant);
+
   // ============ SUMMARY ============
 
   const totalTime = Math.round((Date.now() - startTime) / 1000);
 
+  printBox("TUNING COMPLETE", "");
+
+  printSummary(optimal);
+
+  // Time estimation table
+  // Use the concurrency test rate (which includes optimal batch size + concurrency)
+  // This is the actual embedding throughput with optimal settings
+  const embeddingRate = concResult.bestRate || embResult.bestRate || 0;
+  const storageRate = codeResult.bestRate || 0;
+
+  // Calculate actual indexing rate (bottleneck)
+  const indexingRate = Math.min(embeddingRate, storageRate);
+  const bottleneck = embeddingRate < storageRate ? "embedding" : "storage";
+
+  console.log(`${c.bold}Indexing Pipeline Performance:${c.reset}`);
+  console.log(`  ${c.dim}Embedding:${c.reset}  ${embeddingRate} chunks/sec`);
+  console.log(`  ${c.dim}Storage:${c.reset}    ${storageRate} chunks/sec`);
+  console.log(`  ${c.dim}Bottleneck:${c.reset} ${c.yellow}${bottleneck}${c.reset} (${indexingRate} chunks/sec)`);
   console.log();
-  console.log(`${c.cyan}${c.bold}╔══════════════════════════════════════════════════════════╗${c.reset}`);
-  console.log(`${c.cyan}${c.bold}║${c.reset}                  ${c.bold}TUNING COMPLETE${c.reset}                        ${c.cyan}${c.bold}║${c.reset}`);
-  console.log(`${c.cyan}${c.bold}╚══════════════════════════════════════════════════════════╝${c.reset}`);
-  console.log();
 
-  console.log(`${c.bold}Optimal configuration:${c.reset}`);
-  console.log();
-  console.log(`  EMBEDDING_BATCH_SIZE   = ${c.green}${c.bold}${optimal.EMBEDDING_BATCH_SIZE}${c.reset}`);
-  console.log(`  EMBEDDING_CONCURRENCY  = ${c.green}${c.bold}${optimal.EMBEDDING_CONCURRENCY}${c.reset}`);
-  console.log(`  CODE_BATCH_SIZE        = ${c.green}${c.bold}${optimal.CODE_BATCH_SIZE}${c.reset}`);
-  console.log(`  QDRANT_BATCH_ORDERING  = ${c.green}${c.bold}${optimal.QDRANT_BATCH_ORDERING}${c.reset}`);
-  console.log();
+  printTimeEstimates(indexingRate, storageRate);
 
-  // Write to env file
-  const envContent = `# Tea Rags MCP - Tuned Environment Variables
-# Generated: ${new Date().toISOString()}
-# Hardware: ${config.EMBEDDING_BASE_URL} (${config.EMBEDDING_MODEL})
-# Duration: ${totalTime}s
-
-# Embedding configuration
-EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE}
-EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY}
-
-# Qdrant batch configuration
-CODE_BATCH_SIZE=${optimal.CODE_BATCH_SIZE}
-QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING}
-
-# Performance metrics (for reference)
-# Embedding rate: ${bestEmb?.rate || "N/A"} emb/s
-# Storage rate: ${bestCode?.rate || "N/A"} chunks/s
-`;
-
-  const envPath = join(PROJECT_ROOT, "tuned_environment_variables.env");
-  writeFileSync(envPath, envContent);
+  // Write output file
+  const metrics = {
+    embeddingRate,
+    storageRate,
+    deletionRate: bestDel?.rate || 0,
+  };
+  const envPath = writeEnvFile(PROJECT_ROOT, optimal, metrics, totalTime);
 
   console.log(`${c.bold}Output file:${c.reset}`);
   console.log(`  ${c.dim}${envPath}${c.reset}`);
   console.log();
 
-  console.log(`${c.bold}Usage:${c.reset}`);
-  console.log(`  ${c.dim}# Add to Claude Code MCP config:${c.reset}`);
-  console.log(`  ${c.dim}claude mcp add tea-rags ... \\${c.reset}`);
-  console.log(`    -e EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE} \\`);
-  console.log(`    -e EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY} \\`);
-  console.log(`    -e CODE_BATCH_SIZE=${optimal.CODE_BATCH_SIZE} \\`);
-  console.log(`    -e QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING}`);
-  console.log();
+  printUsage(optimal);
 
   console.log(`${c.dim}Total tuning time: ${totalTime}s${c.reset}`);
   console.log();
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(`${c.red}${c.bold}Fatal error:${c.reset}`, error.message);
+  if (qdrantClient) {
+    await cleanupAllCollections(qdrantClient);
+  }
   process.exit(1);
 });

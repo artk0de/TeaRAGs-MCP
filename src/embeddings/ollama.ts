@@ -41,7 +41,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private useNativeBatch: boolean;
 
   constructor(
-    model: string = "nomic-embed-text",
+    model: string = "unclemusclez/jina-embeddings-v2-base-code:latest",
     dimensions?: number,
     rateLimitConfig?: RateLimitConfig,
     baseUrl: string = "http://localhost:11434",
@@ -125,6 +125,11 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * Sends all texts in ONE request instead of N separate requests
    */
   private async callBatchApi(texts: string[]): Promise<OllamaEmbedBatchResponse> {
+    // Configurable GPU usage: 0 = CPU only, 999 = all layers on GPU
+    const numGpu = process.env.OLLAMA_NUM_GPU
+      ? parseInt(process.env.OLLAMA_NUM_GPU, 10)
+      : 999;
+
     const response = await fetch(`${this.baseUrl}/api/embed`, {
       method: "POST",
       headers: {
@@ -134,7 +139,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         model: this.model,
         input: texts,  // Array of texts!
         options: {
-          num_gpu: 999,  // Offload all layers to GPU
+          num_gpu: numGpu,
         },
       }),
     });
@@ -155,6 +160,11 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * Fallback for older Ollama versions
    */
   private async callApi(text: string): Promise<OllamaEmbedResponse> {
+    // Configurable GPU usage: 0 = CPU only, 999 = all layers on GPU
+    const numGpu = process.env.OLLAMA_NUM_GPU
+      ? parseInt(process.env.OLLAMA_NUM_GPU, 10)
+      : 999;
+
     try {
       const response = await fetch(`${this.baseUrl}/api/embeddings`, {
         method: "POST",
@@ -165,7 +175,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
           model: this.model,
           prompt: text,
           options: {
-            num_gpu: 999,  // Offload all layers to GPU
+            num_gpu: numGpu,
           },
         }),
       });
@@ -253,7 +263,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * Performance: ~50-100x less network overhead
    *
    * Batch size configurable via EMBEDDING_BATCH_SIZE env var:
-   * - 0 = no limit (send all in one request)
+   * - 0 = use single requests with EMBEDDING_CONCURRENCY (fallback mode)
    * - 32 = conservative (recommended for limited VRAM)
    * - 64 = balanced (default, good for 8GB+ VRAM)
    * - 128-512 = aggressive (for high-end GPUs)
@@ -266,19 +276,41 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       return [];
     }
 
+    // Check batch size setting
+    const envBatchSize = process.env.EMBEDDING_BATCH_SIZE;
+    const configuredBatchSize = envBatchSize
+      ? parseInt(envBatchSize, 10)
+      : 64;
+
+    // EMBEDDING_BATCH_SIZE=0 means: use single requests with concurrency
+    // This can be faster on CPU (num_gpu=0) than batch API
+    if (configuredBatchSize === 0) {
+      const envConcurrency = process.env.EMBEDDING_CONCURRENCY;
+      const concurrency = envConcurrency ? parseInt(envConcurrency, 10) : 1;
+
+      if (process.env.DEBUG) {
+        console.error(
+          `[Ollama] Single requests mode: ${texts.length} texts with concurrency=${concurrency}`,
+        );
+      }
+
+      // Process texts in groups with concurrency
+      const results: EmbeddingResult[] = [];
+      for (let i = 0; i < texts.length; i += concurrency) {
+        const group = texts.slice(i, i + concurrency);
+        const groupResults = await Promise.all(
+          group.map((text) => this.embed(text)),
+        );
+        results.push(...groupResults);
+      }
+      return results;
+    }
+
     // Use native batch API - ONE request for ALL texts (in chunks)
     if (this.useNativeBatch) {
       return this.limiter.schedule(() =>
         this.retryWithBackoff(async () => {
-          // Configurable batch size via env var
-          // 0 = no limit (all texts in single request)
-          // Default: 64 (balanced for GPU utilization)
-          const envBatchSize = process.env.EMBEDDING_BATCH_SIZE;
-          const configuredBatchSize = envBatchSize
-            ? parseInt(envBatchSize, 10)
-            : 64;
-          const MAX_BATCH_SIZE =
-            configuredBatchSize === 0 ? Infinity : configuredBatchSize;
+          const MAX_BATCH_SIZE = configuredBatchSize;
 
           // Configurable concurrency for parallel batch processing
           // Default: 1 (sequential - single Ollama instance)
