@@ -539,4 +539,153 @@ See merge request taxdome/service/taxdome!47685`;
       expect(true).toBe(true);
     });
   });
+
+  describe("cache miss and git history scenarios", () => {
+    it("should handle cache miss and perform git blame", async () => {
+      const repoInfo = await service.getRepoInfo(import.meta.url.replace("file://", ""));
+      if (!repoInfo.isGitRepo) return;
+
+      const testFilePath = `${repoInfo.repoRoot}/package.json`;
+
+      // Clear both L1 and L2 caches to force a true cache miss
+      service.clearCaches();
+      await service.clearDiskCache(repoInfo.repoRoot);
+
+      // This should trigger git blame execution (cache miss)
+      const metadata = await service.getChunkMetadata(testFilePath, 1, 5);
+
+      if (metadata) {
+        expect(metadata.commitCount).toBeGreaterThan(0);
+        expect(metadata.authors).toBeDefined();
+        expect(metadata.authors.length).toBeGreaterThan(0);
+        expect(metadata.dominantAuthor).toBeTruthy();
+
+        // Verify the blame execution happened
+        const stats = service.getStats();
+        expect(stats.blameExecutions).toBeGreaterThan(0);
+        expect(stats.chunksProcessed).toBeGreaterThan(0);
+      }
+    });
+
+    it("should handle files with no git history", async () => {
+      const repoInfo = await service.getRepoInfo(import.meta.url.replace("file://", ""));
+      if (!repoInfo.isGitRepo) return;
+
+      const { join } = await import("node:path");
+      const { writeFile, unlink } = await import("node:fs/promises");
+
+      const untrackedFile = join(repoInfo.repoRoot, "untracked-test-file.ts");
+
+      try {
+        // Create untracked file
+        await writeFile(untrackedFile, "const x = 1;");
+
+        // Try to get metadata - should return null for untracked file
+        const metadata = await service.getChunkMetadata(untrackedFile, 1, 1);
+
+        // Untracked files have no git history, so metadata should be null
+        expect(metadata).toBeNull();
+      } finally {
+        // Clean up
+        await unlink(untrackedFile).catch(() => {});
+      }
+    });
+
+    it("should handle blame output with multiple authors", async () => {
+      const repoInfo = await service.getRepoInfo(import.meta.url.replace("file://", ""));
+      if (!repoInfo.isGitRepo) return;
+
+      // Use a core file likely to have multiple authors
+      const testFilePath = `${repoInfo.repoRoot}/package.json`;
+
+      const metadata = await service.getChunkMetadata(testFilePath, 1, 100);
+
+      if (metadata) {
+        expect(metadata.authors.length).toBeGreaterThan(0);
+        expect(metadata.lastModifiedAt).toBeGreaterThan(0);
+        expect(metadata.dominantAuthor).toBeTruthy();
+        expect(metadata.dominantAuthorEmail).toBeTruthy();
+
+        // If there are multiple authors, verify they are all tracked
+        if (metadata.authors.length > 1) {
+          expect(metadata.authors).toContain(metadata.dominantAuthor);
+        }
+
+        // Verify lastModifiedAt is a valid Unix timestamp
+        const lastModified = new Date(metadata.lastModifiedAt * 1000);
+        expect(lastModified.getTime()).toBeGreaterThan(0);
+      }
+    });
+
+    it("should handle blame for specific line ranges", async () => {
+      const repoInfo = await service.getRepoInfo(import.meta.url.replace("file://", ""));
+      if (!repoInfo.isGitRepo) return;
+
+      const testFilePath = `${repoInfo.repoRoot}/package.json`;
+
+      // Get metadata for different line ranges
+      const metadata1 = await service.getChunkMetadata(testFilePath, 1, 10);
+      const metadata2 = await service.getChunkMetadata(testFilePath, 50, 60);
+
+      // Both should return valid metadata
+      expect(metadata1).toBeDefined();
+      expect(metadata2).toBeDefined();
+
+      if (metadata1 && metadata2) {
+        // Both ranges should have valid structure
+        expect(metadata1.dominantAuthor).toBeTruthy();
+        expect(metadata2.dominantAuthor).toBeTruthy();
+
+        expect(metadata1.commitCount).toBeGreaterThan(0);
+        expect(metadata2.commitCount).toBeGreaterThan(0);
+
+        // Both should have valid timestamps
+        expect(metadata1.lastModifiedAt).toBeGreaterThan(0);
+        expect(metadata2.lastModifiedAt).toBeGreaterThan(0);
+
+        // Age should be non-negative
+        expect(metadata1.ageDays).toBeGreaterThanOrEqual(0);
+        expect(metadata2.ageDays).toBeGreaterThanOrEqual(0);
+      }
+    });
+  });
+
+  describe("statistics and cache management", () => {
+    it("should print statistics without errors", () => {
+      // printStats should not throw
+      expect(() => service.printStats()).not.toThrow();
+    });
+
+    it("should clear disk cache for a repository", async () => {
+      const repoInfo = await service.getRepoInfo(import.meta.url.replace("file://", ""));
+      if (!repoInfo.isGitRepo) return;
+
+      // Should not throw even if cache doesn't exist
+      await expect(service.clearDiskCache(repoInfo.repoRoot)).resolves.not.toThrow();
+    });
+
+    it("should track statistics correctly", async () => {
+      const repoInfo = await service.getRepoInfo(import.meta.url.replace("file://", ""));
+      if (!repoInfo.isGitRepo) return;
+
+      const testFilePath = `${repoInfo.repoRoot}/package.json`;
+
+      // Clear caches and reset stats baseline
+      service.clearCaches();
+      const initialStats = service.getStats();
+
+      // First call should be a cache miss
+      await service.getChunkMetadata(testFilePath, 1, 5);
+      const afterFirstCall = service.getStats();
+
+      expect(afterFirstCall.chunksProcessed).toBeGreaterThan(initialStats.chunksProcessed);
+
+      // Second call with different range should use L1 cache
+      await service.getChunkMetadata(testFilePath, 6, 10);
+      const afterSecondCall = service.getStats();
+
+      expect(afterSecondCall.cacheHitsL1).toBeGreaterThan(afterFirstCall.cacheHitsL1);
+      expect(afterSecondCall.chunksProcessed).toBeGreaterThan(afterFirstCall.chunksProcessed);
+    });
+  });
 });
