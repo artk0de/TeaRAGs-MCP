@@ -36,7 +36,7 @@ describe("FileSynchronizer", () => {
     try {
       const snapshotPath = join(
         homedir(),
-        ".qdrant-mcp",
+        ".tea-rags-mcp",
         "snapshots",
         `${collectionName}.json`,
       );
@@ -574,7 +574,7 @@ describe("FileSynchronizer", () => {
     beforeEach(async () => {
       checkpointPath = join(
         homedir(),
-        ".qdrant-mcp",
+        ".tea-rags-mcp",
         "snapshots",
         `${collectionName}.checkpoint.json`,
       );
@@ -649,7 +649,7 @@ describe("FileSynchronizer", () => {
           timestamp: Date.now() - (25 * 60 * 60 * 1000), // 25 hours ago
           phase: "indexing",
         };
-        await fs.mkdir(join(homedir(), ".qdrant-mcp", "snapshots"), { recursive: true });
+        await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
         await fs.writeFile(checkpointPath, JSON.stringify(staleCheckpoint));
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -657,7 +657,7 @@ describe("FileSynchronizer", () => {
       });
 
       it("should return null for corrupted JSON", async () => {
-        await fs.mkdir(join(homedir(), ".qdrant-mcp", "snapshots"), { recursive: true });
+        await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
         await fs.writeFile(checkpointPath, "{ invalid json }");
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -670,7 +670,7 @@ describe("FileSynchronizer", () => {
           timestamp: Date.now(),
           phase: "indexing",
         };
-        await fs.mkdir(join(homedir(), ".qdrant-mcp", "snapshots"), { recursive: true });
+        await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
         await fs.writeFile(checkpointPath, JSON.stringify(invalidCheckpoint));
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -683,7 +683,7 @@ describe("FileSynchronizer", () => {
           timestamp: Date.now(),
           phase: "indexing",
         };
-        await fs.mkdir(join(homedir(), ".qdrant-mcp", "snapshots"), { recursive: true });
+        await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
         await fs.writeFile(checkpointPath, JSON.stringify(invalidCheckpoint));
 
         const checkpoint = await synchronizer.loadCheckpoint();

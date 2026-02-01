@@ -29,13 +29,13 @@ Redesign snapshot storage and change detection to support parallel processing, i
 
 **Current (v2):**
 ```
-~/.qdrant-mcp/snapshots/
+~/.tea-rags-mcp/snapshots/
   └── code_a1b2c3d4.json     ← single file
 ```
 
 **New (v3):**
 ```
-~/.qdrant-mcp/snapshots/code_a1b2c3d4/
+~/.tea-rags-mcp/snapshots/code_a1b2c3d4/
   ├── meta.json              ← ~1KB: version, timestamp, shard root hashes
   ├── shard-00.json          ← files where hash(path) maps to shard 0
   ├── shard-01.json

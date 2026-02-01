@@ -82,7 +82,7 @@ export interface GitRepoInfo {
  * Options for git metadata service
  */
 export interface GitMetadataOptions {
-  /** Cache directory (default: ~/.qdrant-mcp/git-cache) */
+  /** Cache directory (default: ~/.tea-rags-mcp/git-cache) */
   cacheDir?: string;
   /** Enable debug logging */
   debug?: boolean;

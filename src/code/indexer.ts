@@ -320,7 +320,7 @@ export class CodeIndexer {
 
       // Save snapshot for incremental updates
       try {
-        const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
+        const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
         const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
         await synchronizer.updateSnapshot(indexedFiles);
       } catch (error) {
@@ -677,7 +677,7 @@ export class CodeIndexer {
       }
 
       // AUTO-MIGRATE: Upgrade old snapshots to v3 (sharded) if needed
-      const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
+      const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
       const migrator = new SnapshotMigrator(snapshotDir, collectionName, absolutePath);
       await migrator.ensureMigrated();
 
@@ -1119,7 +1119,7 @@ export class CodeIndexer {
 
     // Also delete snapshot
     try {
-      const snapshotDir = join(homedir(), ".qdrant-mcp", "snapshots");
+      const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
       const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
       await synchronizer.deleteSnapshot();
     } catch (_error) {

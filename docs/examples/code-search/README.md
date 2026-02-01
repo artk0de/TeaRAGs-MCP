@@ -282,5 +282,5 @@ export CODE_CUSTOM_IGNORE="**/*.generated.ts,**/dist/**"
 ## Next Steps
 
 - Explore [hybrid search](../filters/) for better accuracy
-- Set up [custom prompts](../../prompts.example.json) for code search workflows
+- Set up [custom prompts](../../../prompts.example.json) for code search workflows
 - Integrate with your AI assistant for interactive code exploration
