@@ -41,6 +41,12 @@ export default defineConfig({
         "src/code/git/types.ts",
       ],
       thresholds: {
+        // Global thresholds
+        lines: 90,
+        functions: 90,
+        branches: 85,
+        statements: 90,
+        // File-specific thresholds
         "src/qdrant/client.ts": {
           lines: 90,
           functions: 100,
