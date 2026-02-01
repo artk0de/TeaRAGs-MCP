@@ -194,44 +194,40 @@ See [Advanced Configuration](#advanced-configuration) section below for all opti
 
 ### Work with your agent
 
-Once configured, you can use these tools with your AI assistant:
+Once configured, just talk to your AI assistant naturally:
 
-**Index your codebase (first time):**
-```bash
-# Full indexing - run once for new projects
-index_codebase /path/to/your/project
-```
+**First time setup:**
+> "Index this codebase for semantic search"
+>
+> "Set up code search for my project"
 
-**Incremental updates (after code changes):**
-```bash
-# Only re-indexes changed files - fast!
-reindex_changes /path/to/your/project
+**After making changes:**
+> "Update the search index with my recent changes"
+>
+> "Reindex the codebase, I pulled new commits"
 
-# When to use: after git pull, after editing files, daily sync
-```
+**Searching your code:**
+> "How does authentication work in this project?"
+>
+> "Find where we handle payment errors"
+>
+> "Show me the database connection logic"
+>
+> "Where is the retry mechanism implemented?"
 
-**Check index status:**
-```bash
-get_index_status /path/to/your/project
-# Returns: indexed files count, chunks, last update time
-```
+**With git metadata filters** (requires `CODE_ENABLE_GIT_METADATA=true`):
+> "Find code that Alice wrote recently"
+>
+> "Show me files with high churn rate"
+>
+> "What changes were made for ticket PROJ-123?"
 
-**Search your code:**
-```bash
-# Semantic search
-search_code /path/to/project "authentication middleware"
-
-# With git metadata filters (requires CODE_ENABLE_GIT_METADATA=true)
-search_code /path/to/project "recent changes" --author "alice@example.com"
-search_code /path/to/project "bug fixes" --minChurn 5
-```
-
-**Manage collections:**
-```bash
-list_collections                    # See all indexed projects
-get_collection_info "code_abc123"   # Collection details
-clear_index /path/to/project        # Remove index completely
-```
+**Managing indexes:**
+> "What codebases are indexed?"
+>
+> "Show me stats for the current index"
+>
+> "Clear the index and start fresh"
 
 ## Advanced configuration
 <details>

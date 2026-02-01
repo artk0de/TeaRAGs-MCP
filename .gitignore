@@ -37,3 +37,9 @@ ollama_storage/
 # Test artifacts and planning docs
 test-collection*
 collection-with-*
+
+# Git worktrees
+.worktrees/
+
+# Performance tuning results
+tuned_environment_variables.env
