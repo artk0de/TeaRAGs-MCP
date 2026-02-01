@@ -48,6 +48,8 @@ export class GitMetadataService {
   private blameCache = new Map<string, BlameCache>();
   private repoRootCache = new Map<string, GitRepoInfo>();
   private contentHashCache = new Map<string, string>();
+  /** Cache of commit SHA -> full body (for extracting taskIds from merge/squash commits) */
+  private commitBodyCache = new Map<string, Map<string, string>>();
 
   // Stats for debugging
   private stats = {
@@ -55,6 +57,7 @@ export class GitMetadataService {
     cacheHitsL2: 0,
     cacheMisses: 0,
     blameExecutions: 0,
+    logExecutions: 0,
     chunksProcessed: 0,
   };
 
@@ -317,20 +320,28 @@ export class GitMetadataService {
       return diskCached;
     }
 
-    // Run git blame (ONCE per file, as per spec)
+    // Run git blame + git log in PARALLEL (for full commit bodies)
     this.stats.cacheMisses++;
     if (this.debug) {
-      console.log(`[GitMetadata] Cache miss, running git blame: ${relative(repoRoot, filePath)}`);
+      console.log(`[GitMetadata] Cache miss, running git blame + log: ${relative(repoRoot, filePath)}`);
     }
-    const blameStartTime = this.debug ? Date.now() : 0;
-    const blameData = await this.runGitBlame(filePath, repoRoot);
+    const startTime = this.debug ? Date.now() : 0;
+
+    const [blameData, commitBodies] = await Promise.all([
+      this.runGitBlame(filePath, repoRoot),
+      this.getCommitBodies(filePath, repoRoot),
+    ]);
+
     if (!blameData) {
       return null;
     }
-    
+
+    // Enrich taskIds from full commit bodies (for merge/squash commits)
+    this.enrichTaskIdsFromBodies(blameData, commitBodies);
+
     if (this.debug) {
-      const blameElapsed = Date.now() - blameStartTime;
-      console.log(`[GitMetadata] Blame completed: ${relative(repoRoot, filePath)} (${blameData.size} lines, ${blameElapsed}ms)`);
+      const elapsed = Date.now() - startTime;
+      console.log(`[GitMetadata] Blame+log completed: ${relative(repoRoot, filePath)} (${blameData.size} lines, ${elapsed}ms)`);
     }
 
     const cache: BlameCache = {
@@ -374,6 +385,123 @@ export class GitMetadataService {
         console.error(`[GitMetadata] git blame failed:`, error);
       }
       return null;
+    }
+  }
+
+  /**
+   * Get commit bodies for a file (for extracting taskIds from full commit messages)
+   * Returns Map<commitSha, fullBody>
+   */
+  private async getCommitBodies(
+    filePath: string,
+    repoRoot: string,
+  ): Promise<Map<string, string>> {
+    const cacheKey = `${repoRoot}:${relative(repoRoot, filePath)}`;
+
+    // Check cache
+    const cached = this.commitBodyCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    this.stats.logExecutions++;
+    try {
+      const relativePath = relative(repoRoot, filePath);
+
+      // Use NULL byte as separator to handle multi-line commit messages
+      const { stdout } = await execFileAsync(
+        "git",
+        ["log", "--format=%H%x00%B%x00", "--", relativePath],
+        { cwd: repoRoot, maxBuffer: 50 * 1024 * 1024 },
+      );
+
+      const bodies = this.parseLogOutput(stdout);
+      this.commitBodyCache.set(cacheKey, bodies);
+
+      if (this.debug) {
+        console.log(`[GitMetadata] Loaded ${bodies.size} commit bodies for ${relativePath}`);
+      }
+
+      return bodies;
+    } catch (error) {
+      if (this.debug) {
+        console.error(`[GitMetadata] git log failed:`, error);
+      }
+      return new Map();
+    }
+  }
+
+  /**
+   * Parse git log output into Map<sha, fullBody>
+   * Format: SHA\0BODY\0SHA\0BODY\0...
+   */
+  private parseLogOutput(output: string): Map<string, string> {
+    const bodies = new Map<string, string>();
+
+    // Split by NULL byte, filter empty
+    const parts = output.split("\0").filter(p => p.trim());
+
+    for (let i = 0; i < parts.length - 1; i += 2) {
+      const sha = parts[i].trim();
+      const body = parts[i + 1] || "";
+      if (sha.length === 40) {
+        bodies.set(sha, body);
+      }
+    }
+
+    return bodies;
+  }
+
+  /**
+   * Enrich taskIds from full commit bodies for commits where summary didn't have taskIds.
+   * This handles merge/squash commits where taskIds are in the body, not the first line.
+   *
+   * Mutates blameData in place.
+   */
+  private enrichTaskIdsFromBodies(
+    blameData: Map<number, BlameLineData>,
+    commitBodies: Map<string, string>,
+  ): void {
+    // Collect unique commits that need enrichment (no taskIds from summary)
+    const commitsNeedingEnrichment = new Set<string>();
+    for (const lineData of blameData.values()) {
+      if (!lineData.taskIds || lineData.taskIds.length === 0) {
+        commitsNeedingEnrichment.add(lineData.commit);
+      }
+    }
+
+    if (commitsNeedingEnrichment.size === 0) {
+      return;
+    }
+
+    // Build enriched taskIds map for commits needing it
+    const enrichedTaskIds = new Map<string, string[]>();
+    for (const commit of commitsNeedingEnrichment) {
+      const body = commitBodies.get(commit);
+      if (body) {
+        const taskIds = this.extractTaskIds(body);
+        if (taskIds.length > 0) {
+          enrichedTaskIds.set(commit, taskIds);
+        }
+      }
+    }
+
+    if (enrichedTaskIds.size === 0) {
+      return;
+    }
+
+    // Update blameData with enriched taskIds
+    for (const lineData of blameData.values()) {
+      if (!lineData.taskIds || lineData.taskIds.length === 0) {
+        const enriched = enrichedTaskIds.get(lineData.commit);
+        if (enriched) {
+          lineData.taskIds = enriched;
+        }
+      }
+    }
+
+    if (this.debug) {
+      console.log(`[GitMetadata] Enriched ${enrichedTaskIds.size} commits with taskIds from body`);
     }
   }
 

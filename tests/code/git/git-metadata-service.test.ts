@@ -294,6 +294,113 @@ describe("GitMetadataService", () => {
       // Should not extract #123 from HTML entity
       expect(taskIds).not.toContain("#123");
     });
+
+    it("should extract task IDs from merge commit branch names", () => {
+      const taskIds = extractTaskIds(
+        service,
+        "Merge branch 'feature/TD-74777-add-backend-validation' into 'master'"
+      );
+
+      expect(taskIds).toContain("TD-74777");
+    });
+
+    it("should extract task IDs from full merge commit body", () => {
+      const body = `Merge branch 'feature/TD-74777-add-backend-validation' into 'master'
+
+[TD-74777] [TD-74596] [Backend] add validation
+
+Closes TD-74777
+
+See merge request taxdome/service/taxdome!47685`;
+
+      const taskIds = extractTaskIds(service, body);
+
+      expect(taskIds).toContain("TD-74777");
+      expect(taskIds).toContain("TD-74596");
+      expect(taskIds).toContain("!47685");
+    });
+  });
+
+  describe("parseLogOutput", () => {
+    const parseLogOutput = (svc: GitMetadataService, output: string): Map<string, string> => {
+      return (svc as any).parseLogOutput(output);
+    };
+
+    it("should parse git log output with NULL separators", () => {
+      const output = "a".repeat(40) + "\0First commit body\0" + "b".repeat(40) + "\0Second commit\n\nWith multiple lines\0";
+
+      const bodies = parseLogOutput(service, output);
+
+      expect(bodies.size).toBe(2);
+      expect(bodies.get("a".repeat(40))).toBe("First commit body");
+      expect(bodies.get("b".repeat(40))).toContain("Second commit");
+      expect(bodies.get("b".repeat(40))).toContain("With multiple lines");
+    });
+
+    it("should handle empty output", () => {
+      const bodies = parseLogOutput(service, "");
+
+      expect(bodies.size).toBe(0);
+    });
+  });
+
+  describe("enrichTaskIdsFromBodies", () => {
+    const enrichTaskIdsFromBodies = (
+      svc: GitMetadataService,
+      blameData: Map<number, any>,
+      commitBodies: Map<string, string>
+    ): void => {
+      return (svc as any).enrichTaskIdsFromBodies(blameData, commitBodies);
+    };
+
+    it("should enrich taskIds from body when summary has none", () => {
+      const commitSha = "a".repeat(40);
+      const blameData = new Map([
+        [1, { commit: commitSha, author: "Test", authorEmail: "test@test.com", authorTime: 123, taskIds: undefined }],
+        [2, { commit: commitSha, author: "Test", authorEmail: "test@test.com", authorTime: 123, taskIds: undefined }],
+      ]);
+
+      const commitBodies = new Map([
+        [commitSha, "Merge branch 'feature'\n\n[TD-1234] [TD-5678] Implementation"],
+      ]);
+
+      enrichTaskIdsFromBodies(service, blameData, commitBodies);
+
+      expect(blameData.get(1)?.taskIds).toContain("TD-1234");
+      expect(blameData.get(1)?.taskIds).toContain("TD-5678");
+      expect(blameData.get(2)?.taskIds).toContain("TD-1234");
+    });
+
+    it("should not override existing taskIds from summary", () => {
+      const commitSha = "a".repeat(40);
+      const blameData = new Map([
+        [1, { commit: commitSha, author: "Test", authorEmail: "test@test.com", authorTime: 123, taskIds: ["TD-1111"] }],
+      ]);
+
+      const commitBodies = new Map([
+        [commitSha, "[TD-2222] Different task in body"],
+      ]);
+
+      enrichTaskIdsFromBodies(service, blameData, commitBodies);
+
+      // Should keep original taskIds, not override
+      expect(blameData.get(1)?.taskIds).toContain("TD-1111");
+      expect(blameData.get(1)?.taskIds).not.toContain("TD-2222");
+    });
+
+    it("should handle commits with no body in log", () => {
+      const commitSha = "a".repeat(40);
+      const blameData = new Map([
+        [1, { commit: commitSha, author: "Test", authorEmail: "test@test.com", authorTime: 123, taskIds: undefined }],
+      ]);
+
+      const commitBodies = new Map<string, string>(); // Empty - no bodies
+
+      enrichTaskIdsFromBodies(service, blameData, commitBodies);
+
+      // Should remain undefined
+      expect(blameData.get(1)?.taskIds).toBeUndefined();
+    });
   });
 
   describe("prefetchBlame", () => {
