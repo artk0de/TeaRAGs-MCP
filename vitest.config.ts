@@ -31,6 +31,14 @@ export default defineConfig({
         "scripts/**",
         "tests/**/fixtures/**",
         "tests/integration/**",
+        // Re-export files (no executable code to test)
+        "src/code/git/index.ts",
+        "src/code/pipeline/index.ts",
+        "src/prompts/index.ts",
+        // Type-only files (no executable code to test)
+        "src/prompts/types.ts",
+        "src/code/types.ts",
+        "src/code/git/types.ts",
       ],
       thresholds: {
         "src/qdrant/client.ts": {
