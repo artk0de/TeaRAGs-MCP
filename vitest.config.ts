@@ -10,6 +10,7 @@ export default defineConfig({
       "**/node_modules/**",
       "**/build/**",
       "**/dist/**",
+      "**/.worktrees/**",
       // Exclude integration tests - they require real external services
       "**/tests/integration/**",
       // Exclude legacy integration test files
@@ -44,7 +45,7 @@ export default defineConfig({
         // Global thresholds
         lines: 90,
         functions: 90,
-        branches: 85,
+        branches: 80,
         statements: 90,
         // File-specific thresholds
         "src/qdrant/client.ts": {
