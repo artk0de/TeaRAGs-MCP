@@ -4,10 +4,13 @@
   🚀 Tea Rags MCP
 </h1>
 
-[![local-first](https://img.shields.io/badge/deployment-local--first-15803d)](#installation)
+![MCP compatible](https://img.shields.io/badge/MCP-compatible-%234f46e5)
 [![quickstart < 5 min](https://img.shields.io/badge/quickstart-%3C%205%20min-f59e0b)](#quick-start)
-[![provider agnostic](https://img.shields.io/badge/provider-agnostic-0891b2)](#prov)
+[![local-first](https://img.shields.io/badge/deployment-local--first-15803d)](#installation)
 [![reproducible: docker](https://img.shields.io/badge/reproducible-docker-0f172a)](#installation)
+[![provider agnostic](https://img.shields.io/badge/provider-agnostic-0891b2)](#prov)
+![embeddings](https://img.shields.io/badge/embeddings-supported-%230d9488)
+![reranking](https://img.shields.io/badge/retrieval-reranking-%2303734f)
 
 [![CI](https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/artk0de/TeaRAGs-MCP/graph/badge.svg?token=BU255N03YF)](https://codecov.io/gh/artk0de/TeaRAGs-MCP)
@@ -319,6 +322,7 @@ See [Advanced Performance Tuning](docs/PERFORMANCE_TUNING.md) for details and lo
 | `OPENAI_API_KEY`                    | OpenAI API key                                    | -                 |
 | `COHERE_API_KEY`                    | Cohere API key                                    | -                 |
 | `VOYAGE_API_KEY`                    | Voyage AI API key                                 | -                 |
+| `OLLAMA_NUM_GPU`                    | Ollama GPU's num (Set `0` to enable CPU only mode)                                                 | 999                |
 
 #### Code Vectorization Configuration
 
