@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|mcp__git-global__git_commit",
         "hooks": [
           {
             "type": "command",

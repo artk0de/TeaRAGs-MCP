@@ -71,15 +71,54 @@ server.registerTool(
 );
 ```
 
+## API Contract Changes (MANDATORY)
+
+When you change ANY of these, you MUST update `src/tools/schemas.ts`:
+
+| Change in Code | Required Schema Update |
+|----------------|------------------------|
+| New enum value in handler | Add to `.enum([...])` with description |
+| New parameter used | Add field with `.describe()` |
+| Parameter type change | Update Zod type |
+| New response field | Update tool description |
+| Default value change | Update `.describe()` text |
+| Behavior change | Update tool description |
+
+### Examples
+
+**Adding enum value:**
+```typescript
+// Before: rerank?: "relevance" | "recent"
+// After: rerank?: "relevance" | "recent" | "hotspots"
+
+// schemas.ts MUST be updated:
+rerank: z
+  .enum(["relevance", "recent", "hotspots"])  // ← add new value
+  .optional()
+  .describe("... hotspots: find high-churn code")  // ← describe it
+```
+
+**Adding parameter:**
+```typescript
+// If handler now uses `metaOnly` param:
+metaOnly: z
+  .boolean()
+  .optional()
+  .describe("Return only metadata without content (default: false)")
+```
+
 ## Checklist for Tool Changes
 
 Before completing any tool modification:
 
 - [ ] Schema defined in `src/tools/schemas.ts` with `.describe()` on all fields
+- [ ] **All enum values documented** in `.describe()`
+- [ ] **All new parameters added** to schema
 - [ ] Handler uses schema: `inputSchema: schemas.XxxSchema`
 - [ ] Handler destructures all schema params
 - [ ] Test covers new functionality in `src/tools/*.test.ts`
 - [ ] If new handler file: registered in `src/tools/index.ts`
+- [ ] README.md updated if user-facing change
 
 ## Dependencies
 
