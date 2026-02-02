@@ -65,6 +65,15 @@ export const SemanticSearchSchema = {
     .optional()
     .describe("Maximum number of results (default: 5)"),
   filter: z.record(z.any()).optional().describe("Optional metadata filter"),
+  pathPattern: z
+    .string()
+    .optional()
+    .describe(
+      "Filter by path glob pattern. Supports full glob syntax: " +
+        "'**/workflow/**' (domain search), 'src/**/*.ts' (directory + extension), " +
+        "'{models,services}/**' (multiple directories). " +
+        "Filtering happens client-side after Qdrant search.",
+    ),
 };
 
 export const HybridSearchSchema = {
@@ -114,7 +123,12 @@ export const SearchCodeSchema = {
   pathPattern: z
     .string()
     .optional()
-    .describe("Filter by path glob pattern (e.g., 'src/services/**')"),
+    .describe(
+      "Filter by path glob pattern. Supports full glob syntax: " +
+        "'**/workflow/**' (domain search), 'src/**/*.ts' (directory + extension), " +
+        "'{models,services}/**' (multiple directories). " +
+        "Filtering happens client-side after Qdrant search.",
+    ),
   documentationOnly: z
     .boolean()
     .optional()
