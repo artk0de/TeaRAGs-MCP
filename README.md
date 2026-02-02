@@ -422,6 +422,58 @@ export EMBEDDING_MODEL="unclemusclez/jina-embeddings-v2-base-code:latest"
 | `get_index_status` | Get indexing status and statistics for a codebase                          |
 | `clear_index`      | Delete all indexed data for a codebase                                     |
 
+### Search Parameters
+
+#### `rerank` - Result Reranking
+
+Reorder search results based on git metadata signals.
+
+**For `semantic_search` / `hybrid_search` (analytics):**
+
+| Preset | Use Case | Boost |
+|--------|----------|-------|
+| `relevance` | Default semantic similarity | - |
+| `techDebt` | Find legacy problematic code | old + high churn |
+| `hotspots` | Bug hunting | high churn + recent |
+| `codeReview` | Review recent changes | recently modified |
+| `onboarding` | Entry points for new devs | docs + stable code |
+| `securityAudit` | Old code in critical paths | age + auth/security paths |
+| `refactoring` | Refactoring candidates | large chunks + high churn |
+| `ownership` | Knowledge transfer | single author concentration |
+| `impactAnalysis` | Dependency analysis | import count |
+
+**For `search_code` (practical development):**
+
+| Preset | Use Case | Boost |
+|--------|----------|-------|
+| `relevance` | Default semantic similarity | - |
+| `recent` | Find recently modified code | low ageDays |
+| `stable` | Find stable implementation examples | low commitCount |
+
+**Custom weights:**
+```json
+{ "custom": { "similarity": 0.7, "recency": 0.3 } }
+```
+
+#### `metaOnly` - Metadata Only Response
+
+For `semantic_search` / `hybrid_search` only. Returns metadata without content:
+
+```json
+{
+  "score": 0.87,
+  "relativePath": "src/auth/login.ts",
+  "startLine": 45,
+  "endLine": 89,
+  "language": "typescript",
+  "chunkType": "function",
+  "name": "handleLogin",
+  "git": { "ageDays": 5, "commitCount": 12, "dominantAuthor": "alice" }
+}
+```
+
+Use for file discovery, analytics, or reducing response size.
+
 ### Resources
 
 - `qdrant://collections` - List all collections
