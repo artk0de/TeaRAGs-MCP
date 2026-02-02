@@ -4,6 +4,11 @@
   🚀 Tea Rags MCP
 </h1>
 
+[![local-first](https://img.shields.io/badge/deployment-local--first-15803d)](#installation)
+[![quickstart < 5 min](https://img.shields.io/badge/quickstart-%3C%205%20min-f59e0b)](#quick-start)
+[![provider agnostic](https://img.shields.io/badge/provider-agnostic-0891b2)](#prov)
+[![reproducible: docker](https://img.shields.io/badge/reproducible-docker-0f172a)](#installation)
+
 [![CI](https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/artk0de/TeaRAGs-MCP/graph/badge.svg?token=BU255N03YF)](https://codecov.io/gh/artk0de/TeaRAGs-MCP)
 
