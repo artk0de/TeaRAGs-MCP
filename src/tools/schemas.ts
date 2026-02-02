@@ -126,24 +126,19 @@ export const SemanticSearchSchema = {
     ])
     .optional()
     .describe(
-      "Reranking mode for analytics use cases. Presets: " +
-        "'relevance' (default, similarity only), " +
-        "'techDebt' (old + high churn), " +
-        "'hotspots' (bug hunting: high churn + recent), " +
-        "'codeReview' (recent changes), " +
-        "'onboarding' (entry points, docs, stable code), " +
-        "'securityAudit' (old code in critical paths), " +
-        "'refactoring' (refactoring candidates), " +
-        "'ownership' (knowledge transfer), " +
-        "'impactAnalysis' (dependencies). " +
-        "Or use {custom: {similarity: 0.5, churn: 0.3, ...}} for custom weights.",
+      "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
+        "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'impactAnalysis' | {custom: weights}. " +
+        "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
+        "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
+        "refactoring=large+churn, ownership=single author, impactAnalysis=imports.",
     ),
   metaOnly: z
     .boolean()
     .optional()
     .describe(
-      "Return only metadata without content (for file discovery/analytics). " +
-        "Reduces response size significantly. Default: false.",
+      "For code analytics: return only metadata (path, lines, git info) without content. " +
+        "Use for: file discovery, codebase structure analysis, ownership reports, churn analysis. " +
+        "Significantly reduces response size. Default: false.",
     ),
 };
 
@@ -183,24 +178,19 @@ export const HybridSearchSchema = {
     ])
     .optional()
     .describe(
-      "Reranking mode for analytics use cases. Presets: " +
-        "'relevance' (default, similarity only), " +
-        "'techDebt' (old + high churn), " +
-        "'hotspots' (bug hunting: high churn + recent), " +
-        "'codeReview' (recent changes), " +
-        "'onboarding' (entry points, docs, stable code), " +
-        "'securityAudit' (old code in critical paths), " +
-        "'refactoring' (refactoring candidates), " +
-        "'ownership' (knowledge transfer), " +
-        "'impactAnalysis' (dependencies). " +
-        "Or use {custom: {similarity: 0.5, churn: 0.3, ...}} for custom weights.",
+      "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
+        "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'impactAnalysis' | {custom: weights}. " +
+        "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
+        "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
+        "refactoring=large+churn, ownership=single author, impactAnalysis=imports.",
     ),
   metaOnly: z
     .boolean()
     .optional()
     .describe(
-      "Return only metadata without content (for file discovery/analytics). " +
-        "Reduces response size significantly. Default: false.",
+      "For code analytics: return only metadata (path, lines, git info) without content. " +
+        "Use for: file discovery, codebase structure analysis, ownership reports, churn analysis. " +
+        "Significantly reduces response size. Default: false.",
     ),
 };
 
@@ -312,11 +302,8 @@ export const SearchCodeSchema = {
     ])
     .optional()
     .describe(
-      "Reranking mode for practical development. Presets: " +
-        "'relevance' (default, similarity only), " +
-        "'recent' (boost recently modified code), " +
-        "'stable' (boost stable/low-churn code). " +
-        "Or use {custom: {similarity: 0.7, recency: 0.3}} for custom weights.",
+      "Reranking mode. Enum: 'relevance' | 'recent' | 'stable' | {custom: weights}. " +
+        "relevance=default similarity, recent=boost recently modified, stable=boost low-churn code.",
     ),
 };
 
