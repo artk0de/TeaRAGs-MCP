@@ -21,7 +21,7 @@ import { fileURLToPath } from "url";
 import { OllamaEmbeddings } from "../build/embeddings/ollama.js";
 import { QdrantManager } from "../build/qdrant/client.js";
 
-import { config, CRITERIA, TEST_VALUES, SMART_STEPPING, SAMPLE_SIZE } from "./lib/config.mjs";
+import { config, CRITERIA, TEST_VALUES, SMART_STEPPING, SAMPLE_SIZE, isFullMode } from "./lib/config.mjs";
 import { c, bar, formatRate, printHeader, printBox } from "./lib/colors.mjs";
 import { StoppingDecision } from "./lib/stopping.mjs";
 import { smartSteppingSearch, linearSteppingSearch } from "./lib/smart-stepping.mjs";
@@ -34,7 +34,7 @@ import {
   benchmarkDeleteBatchSize,
   benchmarkDeleteConcurrency,
 } from "./lib/benchmarks.mjs";
-import { runBatchSizeBenchmark, runConcurrencyBenchmark } from "./lib/embedding-steps.mjs";
+import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
 import { cleanupAllCollections } from "./lib/cleanup.mjs";
 import { printTimeEstimates } from "./lib/estimator.mjs";
 import { writeEnvFile, printSummary, printUsage } from "./lib/output.mjs";
@@ -132,23 +132,26 @@ process.on("SIGINT", async () => {
 
 async function main() {
   console.clear();
-  printBox("TEA RAGS MCP — PERFORMANCE TUNING", "Automatic parameter optimization");
+  printBox("TEA RAGS MCP — PERFORMANCE TUNING", `Automatic parameter optimization (${isFullMode ? "full" : "quick"} mode)`);
 
   // Print configuration (dimension will be shown after initialization)
   console.log(`${c.bold}Configuration:${c.reset}`);
-  console.log(`  ${c.dim}Qdrant:${c.reset}      ${config.QDRANT_URL}`);
-  console.log(`  ${c.dim}Ollama:${c.reset}      ${config.EMBEDDING_BASE_URL}`);
-  console.log(`  ${c.dim}Model:${c.reset}       ${config.EMBEDDING_MODEL}`);
-  console.log(`  ${c.dim}Sample size:${c.reset} ${SAMPLE_SIZE} chunks${process.env.TUNE_SAMPLE_SIZE ? ` ${c.cyan}(custom)${c.reset}` : ""}`);
+  console.log(`  ${c.dim}Qdrant:${c.reset}        ${config.QDRANT_URL}`);
+  console.log(`  ${c.dim}Ollama:${c.reset}        ${config.EMBEDDING_BASE_URL}`);
+  console.log(`  ${c.dim}Model:${c.reset}         ${config.EMBEDDING_MODEL}`);
   console.log();
 
-  console.log(`${c.bold}Stopping criteria:${c.reset}`);
-  console.log(`  ${c.dim}Degradation threshold:${c.reset} ${CRITERIA.DEGRADATION_THRESHOLD * 100}%`);
-  console.log(`  ${c.dim}Consecutive drops:${c.reset}     ${CRITERIA.CONSECUTIVE_DEGRADATIONS}`);
-  console.log(`  ${c.dim}Test timeout:${c.reset}          ${CRITERIA.TEST_TIMEOUT_MS / 1000}s`);
-  console.log(`  ${c.dim}Error rate limit:${c.reset}      ${CRITERIA.ERROR_RATE_THRESHOLD * 100}%`);
-  console.log(`  ${c.dim}Warmup runs:${c.reset}           ${CRITERIA.WARMUP_RUNS}`);
-  console.log(`  ${c.dim}Test runs:${c.reset}             ${CRITERIA.TEST_RUNS}`);
+  console.log(`${c.bold}Embedding calibration:${c.reset}`);
+  console.log(`  ${c.dim}Algorithm:${c.reset}     Three-phase plateau detection`);
+  console.log(`  ${c.dim}Total chunks:${c.reset}  4096 (fixed workload)`);
+  console.log(`  ${c.dim}Runs:${c.reset}          2 per configuration (median)`);
+  console.log(`  ${c.dim}Batch search:${c.reset}  [256, 1024, 2048, 3072, 4096]`);
+  console.log(`  ${c.dim}Concurrency:${c.reset}   [1, 2, 4] (tested on plateau only)`);
+  console.log();
+
+  console.log(`${c.bold}Qdrant tests:${c.reset}`);
+  console.log(`  ${c.dim}Sample size:${c.reset}   ${SAMPLE_SIZE} chunks`);
+  console.log(`  ${c.dim}Test timeout:${c.reset}  ${CRITERIA.TEST_TIMEOUT_MS / 1000}s`);
   console.log();
 
   // Check connectivity to services
@@ -197,48 +200,38 @@ async function main() {
   const qdrant = new QdrantManager(config.QDRANT_URL);
   qdrantClient = qdrant;
 
-  // Generate test data
-  console.log(`${c.dim}Generating ${SAMPLE_SIZE} test samples...${c.reset}`);
-  const texts = generateTexts(SAMPLE_SIZE);
-
-  console.log(`${c.dim}Warming up embedding service...${c.reset}`);
-  process.env.EMBEDDING_BATCH_SIZE = "32";
-  process.env.EMBEDDING_CONCURRENCY = "1";
-  await embeddings.embedBatch(texts.slice(0, 64));
+  // Generate test data for Qdrant tests
+  console.log(`${c.dim}Generating ${SAMPLE_SIZE} test samples for Qdrant tests...${c.reset}`);
+  const qdrantTexts = generateTexts(SAMPLE_SIZE);
 
   const optimal = {};
   const startTime = Date.now();
 
-  // ============ PHASE 1: EMBEDDING_BATCH_SIZE ============
+  // ============ EMBEDDING CALIBRATION (3-PHASE) ============
 
-  printHeader("Phase 1: Embedding Batch Size", "Finding optimal EMBEDDING_BATCH_SIZE (smart stepping: x2 + midpoint)");
-  console.log(`  ${c.dim}Testing with ${SAMPLE_SIZE} chunks...${c.reset}\n`);
+  printHeader("Embedding Calibration", "Three-phase plateau detection (batch → concurrency → selection)");
 
-  const embResult = await runBatchSizeBenchmark(embeddings, texts);
+  const embeddingResult = await calibrateEmbeddings(embeddings, { verbose: true });
 
-  optimal.EMBEDDING_BATCH_SIZE = embResult.bestValue;
+  optimal.EMBEDDING_BATCH_SIZE = embeddingResult.EMBEDDING_BATCH_SIZE;
+  optimal.EMBEDDING_CONCURRENCY = embeddingResult.EMBEDDING_CONCURRENCY;
+
   console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE}${c.reset}`);
-  console.log(`    ${c.dim}Embedding speed: ${embResult.bestRate} chunks/sec${c.reset}`);
+  console.log(`  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY}${c.reset}`);
+  console.log(`    ${c.dim}Throughput: ${embeddingResult.throughput_chunks_per_sec.toFixed(1)} chunks/sec${c.reset}`);
+  console.log(`    ${c.dim}Plateau detected: ${embeddingResult.plateau_detected ? "yes" : "no"}${c.reset}`);
+  console.log(`    ${c.dim}Configurations tested: ${embeddingResult.stable_configs_count} stable, ${embeddingResult.discarded_configs_count} discarded${c.reset}`);
 
   process.env.EMBEDDING_BATCH_SIZE = String(optimal.EMBEDDING_BATCH_SIZE);
-
-  // ============ PHASE 2: EMBEDDING_CONCURRENCY ============
-
-  printHeader("Phase 2: Embedding Concurrency", "Finding optimal EMBEDDING_CONCURRENCY (scaling test)");
-
-  const concResult = await runConcurrencyBenchmark(embeddings, texts, embResult, optimal.EMBEDDING_BATCH_SIZE);
-
-  optimal.EMBEDDING_CONCURRENCY = concResult.bestValue;
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY}${c.reset}`);
-  console.log(`    ${c.dim}Embedding speed: ${concResult.bestRate} chunks/sec${c.reset}`);
+  process.env.EMBEDDING_CONCURRENCY = String(optimal.EMBEDDING_CONCURRENCY);
 
   // ============ PHASE 3: CODE_BATCH_SIZE ============
 
   printHeader("Phase 3: Qdrant Batch Size", "Finding optimal CODE_BATCH_SIZE (smart stepping: x2 + midpoint)");
 
   console.log(`  ${c.dim}Pre-generating embeddings for Qdrant tests...${c.reset}`);
-  const embeddingResults = await embeddings.embedBatch(texts);
-  const points = generatePoints(embeddingResults, texts);
+  const embeddingResults = await embeddings.embedBatch(qdrantTexts);
+  const points = generatePoints(embeddingResults, qdrantTexts);
   console.log(`  ${c.dim}Done. Testing batch sizes...${c.reset}\n`);
 
   let codeBestRate = 0;
@@ -392,9 +385,8 @@ async function main() {
   printSummary(optimal);
 
   // Time estimation table
-  // Use the concurrency test rate (which includes optimal batch size + concurrency)
-  // This is the actual embedding throughput with optimal settings
-  const embeddingRate = concResult.bestRate || embResult.bestRate || 0;
+  // Use embedding calibration result (includes optimal batch size + concurrency)
+  const embeddingRate = Math.round(embeddingResult.throughput_chunks_per_sec);
   const storageRate = codeResult.bestRate || 0;
 
   // Calculate actual indexing rate (bottleneck)
@@ -407,7 +399,7 @@ async function main() {
   console.log(`  ${c.dim}Bottleneck:${c.reset} ${c.yellow}${bottleneck}${c.reset} (${indexingRate} chunks/sec)`);
   console.log();
 
-  printTimeEstimates(indexingRate, storageRate);
+  printTimeEstimates(embeddingRate, storageRate);
 
   // Write output file
   const metrics = {

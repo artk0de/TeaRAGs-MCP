@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { config, CRITERIA, CODE_CHUNK_SIZE, BATCH_TEST_SAMPLES } from "./config.mjs";
+import { config, CRITERIA, MEDIAN_CODE_CHUNK_SIZE, EMBEDDING_CALIBRATION } from "./config.mjs";
 
 // Track all created collections for cleanup
 export const createdCollections = new Set();
@@ -18,11 +18,21 @@ export async function withTimeout(promise, ms, label) {
 }
 
 /**
+ * Calculate median of an array
+ */
+export function median(arr) {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
  * Generate realistic code chunks for benchmarking
- * Each chunk matches CODE_CHUNK_SIZE to simulate real GPU load
+ * Each chunk matches MEDIAN_CODE_CHUNK_SIZE to simulate real GPU load
  */
 export function generateTexts(count) {
-  const targetSize = CODE_CHUNK_SIZE;
+  const targetSize = MEDIAN_CODE_CHUNK_SIZE;
 
   return Array.from({ length: count }, (_, i) => {
     // Base code template (~200 chars)
@@ -73,36 +83,69 @@ export class DataProcessor_${i} {
   });
 }
 
-export async function benchmarkEmbeddingBatchSize(embeddings, texts, batchSize) {
+/**
+ * Benchmark embedding batch size with FIXED sample count
+ *
+ * KEY PRINCIPLE: Same number of samples for ALL batch sizes.
+ * This ensures apples-to-apples comparison.
+ *
+ * @param {Object} embeddings - Embeddings client
+ * @param {string[]} texts - Test texts (should have FIXED_SAMPLES count)
+ * @param {number} batchSize - Batch size to test
+ * @param {number} runs - Number of runs (default from config)
+ * @param {Object} options - Additional options
+ * @param {number} options.plateauTimeout - Max time before degradation (ms)
+ * @returns {Promise<{batchSize, time, rate, times[], batches, error, degraded}>}
+ */
+export async function benchmarkEmbeddingBatchSize(embeddings, texts, batchSize, runs = EMBEDDING_CALIBRATION.RUNS, options = {}) {
   process.env.EMBEDDING_BATCH_SIZE = String(batchSize);
+  process.env.EMBEDDING_CONCURRENCY = "1"; // Isolate batch size variable
 
-  // Use BATCH_TEST_SAMPLES for quick batch size testing (multiple batches for sustained GPU load)
-  const sampleCount = Math.min(BATCH_TEST_SAMPLES, texts.length);
-  const testTexts = texts.slice(0, sampleCount);
-  const warmupSamples = Math.min(batchSize, sampleCount);
+  const expectedBatches = Math.ceil(texts.length / batchSize);
+  const { plateauTimeout } = options;
+
+  // Use plateau timeout if provided, otherwise default
+  const timeout = plateauTimeout
+    ? Math.min(plateauTimeout, CRITERIA.TEST_TIMEOUT_MS * 4)
+    : CRITERIA.TEST_TIMEOUT_MS * 4;
 
   try {
-    // Brief warmup
-    await withTimeout(
-      embeddings.embedBatch(testTexts.slice(0, warmupSamples)),
-      CRITERIA.TEST_TIMEOUT_MS,
-      "warmup"
-    );
+    const times = [];
 
-    // Single test run with enough samples for sustained GPU load
-    const start = Date.now();
-    await withTimeout(
-      embeddings.embedBatch(testTexts),
-      CRITERIA.TEST_TIMEOUT_MS * 2,
-      `batch size ${batchSize}`
-    );
-    const time = Date.now() - start;
+    for (let i = 0; i < runs; i++) {
+      const start = Date.now();
+      await withTimeout(
+        embeddings.embedBatch(texts),
+        timeout,
+        `batch size ${batchSize} run ${i + 1}`
+      );
+      times.push(Date.now() - start);
+    }
 
-    const rate = Math.round(testTexts.length * 1000 / time);
+    const medianTime = median(times);
+    const rate = Math.round(texts.length * 1000 / medianTime);
 
-    return { batchSize, time, rate, error: null };
+    return {
+      batchSize,
+      time: medianTime,
+      rate,
+      times,
+      batches: expectedBatches,
+      error: null,
+      degraded: false
+    };
   } catch (error) {
-    return { batchSize, time: 0, rate: 0, error: error.message };
+    // Check if timeout was due to plateau degradation
+    const isDegradation = plateauTimeout && error.message.includes("Timeout");
+    return {
+      batchSize,
+      time: 0,
+      rate: 0,
+      times: [],
+      batches: expectedBatches,
+      error: isDegradation ? "degradation" : error.message,
+      degraded: isDegradation
+    };
   }
 }
 
@@ -140,77 +183,74 @@ export async function benchmarkCodeBatchSize(qdrant, points, batchSize) {
 }
 
 /**
- * Benchmark embedding concurrency
+ * Benchmark embedding concurrency with FIXED sample count
  *
- * IMPORTANT: For proper concurrency measurement, each worker must process
- * the SAME number of batches. This means total samples scale with concurrency:
- * - concurrency=1: baseBatchCount batches → baseSamples
- * - concurrency=2: 2 workers × baseBatchCount → 2x baseSamples
- * - concurrency=4: 4 workers × baseBatchCount → 4x baseSamples
+ * KEY PRINCIPLE: Same number of samples for ALL concurrency levels.
+ * This ensures apples-to-apples comparison.
  *
- * This measures TRUE parallel scaling: if time stays same but work doubles,
- * concurrency gives real throughput improvement.
+ * Concurrency affects HOW batches are processed (parallel vs sequential),
+ * not HOW MANY samples we test.
  *
  * @param {Object} embeddings - Embeddings client
- * @param {string[]} texts - Test texts pool (should be large enough for all concurrency levels)
+ * @param {string[]} texts - Test texts (should have FIXED_SAMPLES count)
  * @param {number} concurrency - Concurrency level to test
- * @param {number} optimalBatchSize - Batch size from previous step (for calculating batch count)
- * @returns {Promise<{concurrency, time, rate, totalBatches, error}>}
+ * @param {number} batchSize - Batch size to use
+ * @param {number} runs - Number of runs (default from config)
+ * @param {Object} options - Additional options
+ * @param {number} options.plateauTimeout - Max time before degradation (ms)
+ * @returns {Promise<{concurrency, time, rate, times[], batches, error, degraded}>}
  */
-export async function benchmarkConcurrency(embeddings, texts, concurrency, optimalBatchSize) {
+export async function benchmarkConcurrency(embeddings, texts, concurrency, batchSize, runs = EMBEDDING_CALIBRATION.RUNS, options = {}) {
+  process.env.EMBEDDING_BATCH_SIZE = String(batchSize);
   process.env.EMBEDDING_CONCURRENCY = String(concurrency);
 
-  // Base batch count from batch size test
-  const baseBatchCount = Math.ceil(BATCH_TEST_SAMPLES / optimalBatchSize);
+  const expectedBatches = Math.ceil(texts.length / batchSize);
+  const expectedGroups = Math.ceil(expectedBatches / concurrency);
+  const { plateauTimeout } = options;
 
-  // With concurrency, each worker processes baseBatchCount batches
-  // Total batches = baseBatchCount * concurrency
-  // Total samples = totalBatches * optimalBatchSize
-  const totalBatches = baseBatchCount * concurrency;
-  const totalSamples = totalBatches * optimalBatchSize;
-
-  // Ensure we have enough texts (use cycling if needed)
-  let testTexts;
-  if (totalSamples <= texts.length) {
-    testTexts = texts.slice(0, totalSamples);
-  } else {
-    // Cycle through texts if we need more
-    testTexts = [];
-    for (let i = 0; i < totalSamples; i++) {
-      testTexts.push(texts[i % texts.length]);
-    }
-  }
+  // Use plateau timeout if provided, otherwise default
+  const timeout = plateauTimeout
+    ? Math.min(plateauTimeout, CRITERIA.TEST_TIMEOUT_MS * 4)
+    : CRITERIA.TEST_TIMEOUT_MS * 4;
 
   try {
-    // Brief warmup with new concurrency setting
-    const warmupSize = Math.min(optimalBatchSize * concurrency, testTexts.length);
-    await withTimeout(
-      embeddings.embedBatch(testTexts.slice(0, warmupSize)),
-      CRITERIA.TEST_TIMEOUT_MS,
-      "warmup"
-    );
+    const times = [];
 
-    const start = Date.now();
-    await withTimeout(
-      embeddings.embedBatch(testTexts),
-      CRITERIA.TEST_TIMEOUT_MS * 3, // More time for higher concurrency
-      `concurrency ${concurrency}`
-    );
-    const time = Date.now() - start;
+    for (let i = 0; i < runs; i++) {
+      const start = Date.now();
+      await withTimeout(
+        embeddings.embedBatch(texts),
+        timeout,
+        `concurrency ${concurrency} run ${i + 1}`
+      );
+      times.push(Date.now() - start);
+    }
 
-    // Rate = total embeddings processed per second
-    const rate = Math.round(testTexts.length * 1000 / time);
+    const medianTime = median(times);
+    const rate = Math.round(texts.length * 1000 / medianTime);
 
     return {
       concurrency,
-      time,
+      time: medianTime,
       rate,
-      totalBatches,
-      totalSamples: testTexts.length,
-      error: null
+      times,
+      batches: expectedBatches,
+      groups: expectedGroups,
+      error: null,
+      degraded: false
     };
   } catch (error) {
-    return { concurrency, time: 0, rate: 0, totalBatches: 0, totalSamples: 0, error: error.message };
+    const isDegradation = plateauTimeout && error.message.includes("Timeout");
+    return {
+      concurrency,
+      time: 0,
+      rate: 0,
+      times: [],
+      batches: expectedBatches,
+      groups: expectedGroups,
+      error: isDegradation ? "degradation" : error.message,
+      degraded: isDegradation
+    };
   }
 }
 
