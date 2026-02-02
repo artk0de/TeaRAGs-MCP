@@ -3,6 +3,7 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { CodeIndexer } from "../code/indexer.js";
 import {
   rerankSemanticSearchResults,
   type RerankMode,
@@ -37,15 +38,29 @@ export function registerSearchTools(
         "Search for documents using natural language queries. Returns the most semantically similar documents.",
       inputSchema: schemas.SemanticSearchSchema,
     },
-    async ({ collection, query, limit, filter, pathPattern, rerank, metaOnly }) => {
+    async ({ collection, path, query, limit, filter, pathPattern, rerank, metaOnly }) => {
+      // Resolve collection name from path or use provided collection
+      if (!collection && !path) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error: Either 'collection' or 'path' parameter is required.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const collectionName = collection || CodeIndexer.resolveCollectionName(path!);
+
       // Check if collection exists
-      const exists = await qdrant.collectionExists(collection);
+      const exists = await qdrant.collectionExists(collectionName);
       if (!exists) {
         return {
           content: [
             {
               type: "text",
-              text: `Error: Collection "${collection}" does not exist.`,
+              text: `Error: Collection "${collectionName}" does not exist.${path ? ` Codebase at "${path}" may not be indexed.` : ""}`,
             },
           ],
           isError: true,
@@ -62,7 +77,7 @@ export function registerSearchTools(
 
       // Search
       const results = await qdrant.search(
-        collection,
+        collectionName,
         embedding,
         fetchLimit,
         filter,
@@ -94,6 +109,7 @@ export function registerSearchTools(
           language: r.payload?.language,
           chunkType: r.payload?.chunkType,
           name: r.payload?.name,
+          imports: r.payload?.imports,
           git: r.payload?.git,
         }));
         return {
@@ -120,15 +136,29 @@ export function registerSearchTools(
         "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid set to true.",
       inputSchema: schemas.HybridSearchSchema,
     },
-    async ({ collection, query, limit, filter, pathPattern, rerank, metaOnly }) => {
+    async ({ collection, path, query, limit, filter, pathPattern, rerank, metaOnly }) => {
+      // Resolve collection name from path or use provided collection
+      if (!collection && !path) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error: Either 'collection' or 'path' parameter is required.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const collectionName = collection || CodeIndexer.resolveCollectionName(path!);
+
       // Check if collection exists
-      const exists = await qdrant.collectionExists(collection);
+      const exists = await qdrant.collectionExists(collectionName);
       if (!exists) {
         return {
           content: [
             {
               type: "text",
-              text: `Error: Collection "${collection}" does not exist.`,
+              text: `Error: Collection "${collectionName}" does not exist.${path ? ` Codebase at "${path}" may not be indexed.` : ""}`,
             },
           ],
           isError: true,
@@ -136,13 +166,13 @@ export function registerSearchTools(
       }
 
       // Check if collection has hybrid search enabled
-      const collectionInfo = await qdrant.getCollectionInfo(collection);
+      const collectionInfo = await qdrant.getCollectionInfo(collectionName);
       if (!collectionInfo.hybridEnabled) {
         return {
           content: [
             {
               type: "text",
-              text: `Error: Collection "${collection}" does not have hybrid search enabled. Create a new collection with enableHybrid set to true.`,
+              text: `Error: Collection "${collectionName}" does not have hybrid search enabled. Create a new collection with enableHybrid set to true.`,
             },
           ],
           isError: true,
@@ -163,7 +193,7 @@ export function registerSearchTools(
 
       // Perform hybrid search
       const results = await qdrant.hybridSearch(
-        collection,
+        collectionName,
         embedding,
         sparseVector,
         fetchLimit,
@@ -196,6 +226,7 @@ export function registerSearchTools(
           language: r.payload?.language,
           chunkType: r.payload?.chunkType,
           name: r.payload?.name,
+          imports: r.payload?.imports,
           git: r.payload?.git,
         }));
         return {

@@ -1,9 +1,26 @@
 ---
 paths:
   - "src/tools/schemas.ts"
+  - "src/code/types.ts"
+  - "src/code/pipeline/types.ts"
 ---
 
 # MCP Schema Standards
+
+## Metadata Types → Schema Sync (MANDATORY)
+
+When modifying `CodeChunk.metadata` in `src/code/types.ts`:
+
+1. **Add field to `src/tools/schemas.ts`** filter description
+2. **Update `src/code/pipeline/types.ts`** ChunkItem if needed
+3. **Update README.md** response examples
+4. **Update this file** under "Search Result Payload Fields"
+
+**Files that define chunk metadata:**
+- `src/code/types.ts` → `CodeChunk.metadata` interface
+- `src/code/pipeline/types.ts` → `ChunkItem.chunk.metadata`
+- `src/code/pipeline/chunk-pipeline.ts` → payload construction
+- `src/code/indexer.ts` → metadata extraction
 
 ## Zod Schema Requirements
 
