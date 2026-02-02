@@ -16,7 +16,9 @@
     "type-check": "tsc --noEmit",
     "prepare": "husky",
     "test-integration": "node tests/integration/index.mjs",
-    "tune": "node benchmarks/tune.mjs"
+    "tune": "node benchmarks/tune.mjs",
+    "benchmark-embeddings": "node benchmarks/benchmark-embeddings.mjs",
+    "benchmark-cpu": "node benchmarks/benchmark-cpu.mjs"
   },
   "keywords": [
     "mcp",
