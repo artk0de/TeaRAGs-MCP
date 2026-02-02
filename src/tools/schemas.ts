@@ -97,7 +97,21 @@ export const SemanticSearchSchema = {
     .number()
     .optional()
     .describe("Maximum number of results (default: 5)"),
-  filter: z.record(z.any()).optional().describe("Optional metadata filter"),
+  filter: z
+    .record(z.any())
+    .optional()
+    .describe(
+      "Qdrant filter object with must/should/must_not conditions. " +
+        "Available fields for code chunks (index_codebase): " +
+        "relativePath (string), fileExtension (string), language (string), " +
+        "startLine (number), endLine (number), chunkIndex (number), " +
+        "isDocumentation (boolean), name (string), chunkType (string: function|class|interface|block), " +
+        "parentName (string), parentType (string), " +
+        "git.dominantAuthor (string), git.authors (string[]), " +
+        "git.lastModifiedAt (unix timestamp), git.firstCreatedAt (unix timestamp), " +
+        "git.commitCount (number), git.ageDays (number), git.taskIds (string[]). " +
+        "For generic documents (add_documents): user-defined metadata fields.",
+    ),
   pathPattern: z
     .string()
     .optional()
@@ -140,7 +154,21 @@ export const HybridSearchSchema = {
     .number()
     .optional()
     .describe("Maximum number of results (default: 5)"),
-  filter: z.record(z.any()).optional().describe("Optional metadata filter"),
+  filter: z
+    .record(z.any())
+    .optional()
+    .describe(
+      "Qdrant filter object with must/should/must_not conditions. " +
+        "Available fields for code chunks (index_codebase): " +
+        "relativePath (string), fileExtension (string), language (string), " +
+        "startLine (number), endLine (number), chunkIndex (number), " +
+        "isDocumentation (boolean), name (string), chunkType (string: function|class|interface|block), " +
+        "parentName (string), parentType (string), " +
+        "git.dominantAuthor (string), git.authors (string[]), " +
+        "git.lastModifiedAt (unix timestamp), git.firstCreatedAt (unix timestamp), " +
+        "git.commitCount (number), git.ageDays (number), git.taskIds (string[]). " +
+        "For generic documents (add_documents): user-defined metadata fields.",
+    ),
   pathPattern: z
     .string()
     .optional()

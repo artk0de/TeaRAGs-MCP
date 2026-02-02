@@ -385,6 +385,8 @@ export EMBEDDING_MODEL="unclemusclez/jina-embeddings-v2-base-code:latest"
 | **Code-optimized** | Trained specifically on source code |
 | **Multilingual** | 30+ programming languages |
 | **Enterprise-proven** | Battle-tested on 3.5M+ LOC codebases |
+| **Best performance/quality** | Optimal balance for local/on-premise setups |
+| **CPU-friendly** | Runs efficiently without GPU (great for Ollama) |
 
 </details>
 
