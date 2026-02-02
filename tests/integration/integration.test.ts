@@ -629,6 +629,346 @@ export const thirdValue = 3;`,
 
       expect(Array.isArray(results)).toBe(true);
     });
+
+    it("should filter results by glob pattern correctly", async () => {
+      // Create files in different directories with enough content for chunker
+      await createTestFile(
+        codebaseDir,
+        "src/api/users.ts",
+        `export function getUsers(): User[] {
+  console.log('Fetching users from database');
+  const users = database.query('SELECT * FROM users');
+  return users.map(user => ({ id: user.id, name: user.name }));
+}
+
+export function getUserById(id: string): User | null {
+  console.log('Fetching user by id:', id);
+  return database.queryOne('SELECT * FROM users WHERE id = ?', [id]);
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "src/api/posts.ts",
+        `export function getPosts(): Post[] {
+  console.log('Fetching posts from database');
+  const posts = database.query('SELECT * FROM posts');
+  return posts.map(post => ({ id: post.id, title: post.title }));
+}
+
+export function getPostById(id: string): Post | null {
+  console.log('Fetching post by id:', id);
+  return database.queryOne('SELECT * FROM posts WHERE id = ?', [id]);
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "src/utils/helpers.ts",
+        `export function formatDate(date: Date): string {
+  console.log('Formatting date:', date);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return \`\${year}-\${month}-\${day}\`;
+}
+
+export function parseDate(str: string): Date {
+  console.log('Parsing date string:', str);
+  return new Date(str);
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "lib/core.ts",
+        `export function initCore(): boolean {
+  console.log('Initializing core system');
+  const config = loadConfig();
+  const database = connectDatabase(config);
+  const cache = initializeCache();
+  return true;
+}
+
+export function shutdownCore(): void {
+  console.log('Shutting down core system');
+  closeConnections();
+}`,
+      );
+
+      await indexer.indexCodebase(codebaseDir, { forceReindex: true });
+
+      // Test: should only return files from src/api/**
+      const apiResults = await indexer.searchCode(codebaseDir, "export function", {
+        pathPattern: "src/api/**",
+        limit: 10,
+      });
+
+      expect(apiResults.length).toBeGreaterThan(0);
+      apiResults.forEach((result) => {
+        expect(result.filePath).toMatch(/^src\/api\//);
+      });
+
+      // Test: should only return files from src/** (both api and utils)
+      const srcResults = await indexer.searchCode(codebaseDir, "export function", {
+        pathPattern: "src/**",
+        limit: 10,
+      });
+
+      expect(srcResults.length).toBeGreaterThan(0);
+      srcResults.forEach((result) => {
+        expect(result.filePath).toMatch(/^src\//);
+      });
+
+      // Test: should exclude non-matching paths
+      const libResults = await indexer.searchCode(codebaseDir, "export function", {
+        pathPattern: "lib/**",
+        limit: 10,
+      });
+
+      libResults.forEach((result) => {
+        expect(result.filePath).toMatch(/^lib\//);
+      });
+    });
+
+    it("should support domain-style glob patterns", async () => {
+      // Create files in workflow domain across directories with enough content
+      await createTestFile(
+        codebaseDir,
+        "models/workflow/task.ts",
+        `export class WorkflowTask {
+  private id: string;
+  private status: string;
+  private createdAt: Date;
+
+  constructor(id: string) {
+    this.id = id;
+    this.status = 'pending';
+    this.createdAt = new Date();
+    console.log('Created workflow task:', id);
+  }
+
+  execute(): void {
+    console.log('Executing workflow task:', this.id);
+    this.status = 'running';
+  }
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "services/workflow/executor.ts",
+        `export class WorkflowExecutor {
+  private queue: WorkflowTask[] = [];
+
+  addTask(task: WorkflowTask): void {
+    console.log('Adding task to workflow executor');
+    this.queue.push(task);
+  }
+
+  async processQueue(): Promise<void> {
+    console.log('Processing workflow queue');
+    for (const task of this.queue) {
+      await task.execute();
+    }
+  }
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "services/auth/login.ts",
+        `export class AuthService {
+  private sessions: Map<string, Session> = new Map();
+
+  async login(username: string, password: string): Promise<Session> {
+    console.log('Authenticating user:', username);
+    const user = await this.validateCredentials(username, password);
+    const session = this.createSession(user);
+    return session;
+  }
+
+  logout(sessionId: string): void {
+    console.log('Logging out session:', sessionId);
+    this.sessions.delete(sessionId);
+  }
+}`,
+      );
+
+      await indexer.indexCodebase(codebaseDir, { forceReindex: true });
+
+      // Test: **/workflow/** should match workflow in any directory
+      const workflowResults = await indexer.searchCode(codebaseDir, "export class", {
+        pathPattern: "**/workflow/**",
+        limit: 10,
+      });
+
+      expect(workflowResults.length).toBeGreaterThan(0);
+      workflowResults.forEach((result) => {
+        expect(result.filePath).toContain("workflow");
+      });
+
+      // Verify auth service is NOT in results
+      const hasAuth = workflowResults.some((r) => r.filePath.includes("auth"));
+      expect(hasAuth).toBe(false);
+    });
+
+    it("should support brace expansion glob patterns", async () => {
+      // Create files in multiple directories
+      await createTestFile(
+        codebaseDir,
+        "controllers/user.ts",
+        `export class UserController {
+  async getUser(id: string): Promise<User> {
+    console.log('Getting user:', id);
+    return this.userService.findById(id);
+  }
+
+  async createUser(data: UserData): Promise<User> {
+    console.log('Creating user with data:', data);
+    return this.userService.create(data);
+  }
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "services/user.ts",
+        `export class UserService {
+  async findById(id: string): Promise<User> {
+    console.log('Finding user by id:', id);
+    return this.repository.findOne(id);
+  }
+
+  async create(data: UserData): Promise<User> {
+    console.log('Creating user in database');
+    return this.repository.save(data);
+  }
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "models/user.ts",
+        `export interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface UserData {
+  name: string;
+  email: string;
+  password: string;
+}`,
+      );
+
+      await indexer.indexCodebase(codebaseDir, { forceReindex: true });
+
+      // Test brace expansion: {controllers,services}/**
+      const results = await indexer.searchCode(codebaseDir, "User", {
+        pathPattern: "{controllers,services}/**",
+        limit: 10,
+      });
+
+      expect(results.length).toBeGreaterThan(0);
+      results.forEach((result) => {
+        expect(
+          result.filePath.startsWith("controllers/") ||
+            result.filePath.startsWith("services/"),
+        ).toBe(true);
+      });
+
+      // Verify models is NOT in results
+      const hasModels = results.some((r) => r.filePath.startsWith("models/"));
+      expect(hasModels).toBe(false);
+    });
+
+    it("should support file extension glob patterns", async () => {
+      // Create both ts and js files
+      await createTestFile(
+        codebaseDir,
+        "utils/parser.ts",
+        `export function parseJSON(str: string): any {
+  console.log('Parsing JSON string');
+  try {
+    return JSON.parse(str);
+  } catch (error) {
+    console.error('Failed to parse JSON:', error);
+    return null;
+  }
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "utils/legacy.js",
+        `function legacyHelper(data) {
+  console.log('Running legacy helper');
+  var result = processData(data);
+  console.log('Legacy processing complete');
+  return result;
+}
+
+module.exports = { legacyHelper };`,
+      );
+
+      await indexer.indexCodebase(codebaseDir, { forceReindex: true });
+
+      // Test: **/*.ts should only match TypeScript files
+      const tsResults = await indexer.searchCode(codebaseDir, "function", {
+        pathPattern: "**/*.ts",
+        limit: 10,
+      });
+
+      tsResults.forEach((result) => {
+        expect(result.filePath).toMatch(/\.ts$/);
+      });
+    });
+
+    it("should handle negation-like patterns correctly", async () => {
+      // Create test files and spec files
+      await createTestFile(
+        codebaseDir,
+        "core/engine.ts",
+        `export class Engine {
+  private running: boolean = false;
+
+  start(): void {
+    console.log('Starting engine');
+    this.running = true;
+  }
+
+  stop(): void {
+    console.log('Stopping engine');
+    this.running = false;
+  }
+}`,
+      );
+      await createTestFile(
+        codebaseDir,
+        "core/engine.test.ts",
+        `import { Engine } from './engine';
+
+describe('Engine', () => {
+  it('should start correctly', () => {
+    const engine = new Engine();
+    engine.start();
+    expect(engine.running).toBe(true);
+  });
+
+  it('should stop correctly', () => {
+    const engine = new Engine();
+    engine.stop();
+    expect(engine.running).toBe(false);
+  });
+});`,
+      );
+
+      await indexer.indexCodebase(codebaseDir, { forceReindex: true });
+
+      // Search in non-test files only using specific pattern
+      const coreResults = await indexer.searchCode(codebaseDir, "Engine", {
+        pathPattern: "core/engine.ts",
+        limit: 10,
+      });
+
+      coreResults.forEach((result) => {
+        expect(result.filePath).not.toContain(".test.");
+      });
+    });
   });
 
   describe("Hybrid search workflow", () => {
