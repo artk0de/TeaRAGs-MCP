@@ -1,1 +1,9 @@
+#!/bin/bash
+
+# Run tests
 npm test -- --run
+
+# Coverage check (optional, set CHECK_COVERAGE=1 to enable)
+if [ "$CHECK_COVERAGE" = "1" ]; then
+  .claude/hooks/check-coverage.sh
+fi
