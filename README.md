@@ -468,9 +468,12 @@ For `semantic_search` / `hybrid_search` only. Returns metadata without content:
   "language": "typescript",
   "chunkType": "function",
   "name": "handleLogin",
+  "imports": ["express", "jsonwebtoken", "./utils"],
   "git": { "ageDays": 5, "commitCount": 12, "dominantAuthor": "alice" }
 }
 ```
+
+**Note:** `imports` contains file-level imports (inherited by all chunks from that file). Used by `impactAnalysis` reranking to boost files with many dependencies.
 
 Use for file discovery, analytics, or reducing response size.
 

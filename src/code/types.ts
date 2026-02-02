@@ -173,6 +173,12 @@ export interface CodeChunk {
      */
     isDocumentation?: boolean;
 
+    /**
+     * Imports extracted from the file (file-level, inherited by all chunks)
+     * Used for impactAnalysis reranking
+     */
+    imports?: string[];
+
     // Git metadata (populated when enableGitMetadata is true)
     // Uses canonical algorithm: one blame per file, aggregated signals only
     git?: {

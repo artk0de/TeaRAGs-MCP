@@ -1,12 +1,10 @@
 #!/bin/bash
 # PreToolUse hook: Require user confirmation before git commit
 #
-# Returns JSON with permissionDecision to trigger confirmation dialog:
-# - "allow" = bypass permission dialog
-# - "deny"  = block with reason shown to Claude
-# - "ask"   = show confirmation dialog to user
+# Triggered by: Bash|mcp__git-global__git_commit
 #
-# Exit 0 with JSON = processed, Exit 0 without JSON = allow
+# Exit 0 without JSON = allow
+# Exit 0 with JSON hookSpecificOutput.permissionDecision = "ask" = prompt user
 
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
@@ -14,25 +12,27 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
 # Function to request confirmation
 ask_confirmation() {
-  local reason="$1"
-  jq -n \
-    --arg reason "$reason" \
-    '{
-      "decision": "ask",
-      "reason": $reason
-    }'
+  jq -n '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "ask",
+      "permissionDecisionReason": "Git commit requires your confirmation"
+    }
+  }'
   exit 0
 }
 
-# Check Bash git commit
-if [ "$TOOL_NAME" = "Bash" ] && echo "$COMMAND" | grep -qE "^git\s+commit\s"; then
-  ask_confirmation "Git commit requires your confirmation"
+# Case 1: Bash git commit
+if [ "$TOOL_NAME" = "Bash" ]; then
+  if echo "$COMMAND" | grep -qE '(^|&&|;|\|)\s*git\s+commit'; then
+    ask_confirmation
+  fi
+  exit 0
 fi
 
-# Check MCP git commit
+# Case 2: MCP git commit
 if [ "$TOOL_NAME" = "mcp__git-global__git_commit" ]; then
-  ask_confirmation "Git commit requires your confirmation"
+  ask_confirmation
 fi
 
-# Allow all other operations
 exit 0
