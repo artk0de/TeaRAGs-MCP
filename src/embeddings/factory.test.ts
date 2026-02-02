@@ -192,7 +192,7 @@ describe("EmbeddingProviderFactory", () => {
         });
 
         expect(provider).toBeInstanceOf(OllamaEmbeddings);
-        expect(provider.getModel()).toBe("jina-embeddings-v2-base-code");
+        expect(provider.getModel()).toBe("unclemusclez/jina-embeddings-v2-base-code:latest");
         expect(provider.getDimensions()).toBe(768);
       });
 
