@@ -87,7 +87,7 @@ export function registerSearchTools(
         "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid set to true.",
       inputSchema: schemas.HybridSearchSchema,
     },
-    async ({ collection, query, limit, filter }) => {
+    async ({ collection, query, limit, filter, pathPattern }) => {
       // Check if collection exists
       const exists = await qdrant.collectionExists(collection);
       if (!exists) {
@@ -123,17 +123,31 @@ export function registerSearchTools(
       const sparseGenerator = new BM25SparseVectorGenerator();
       const sparseVector = sparseGenerator.generate(query);
 
+      // Calculate fetch limit (fetch more if we need to filter by glob)
+      const requestedLimit = limit || 5;
+      const fetchLimit = calculateFetchLimit(
+        requestedLimit,
+        Boolean(pathPattern),
+      );
+
       // Perform hybrid search
       const results = await qdrant.hybridSearch(
         collection,
         embedding,
         sparseVector,
-        limit || 5,
+        fetchLimit,
         filter,
       );
 
+      // Apply glob pattern filter if specified
+      const filteredResults = pathPattern
+        ? filterResultsByGlob(results, pathPattern).slice(0, requestedLimit)
+        : results;
+
       return {
-        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text", text: JSON.stringify(filteredResults, null, 2) },
+        ],
       };
     },
   );

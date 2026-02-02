@@ -69,10 +69,8 @@ export const SemanticSearchSchema = {
     .string()
     .optional()
     .describe(
-      "Filter by path glob pattern. Supports full glob syntax: " +
-        "'**/workflow/**' (domain search), 'src/**/*.ts' (directory + extension), " +
-        "'{models,services}/**' (multiple directories). " +
-        "Filtering happens client-side after Qdrant search.",
+      "Glob pattern for filtering by file path (client-side via picomatch). " +
+        "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
     ),
 };
 
@@ -84,6 +82,13 @@ export const HybridSearchSchema = {
     .optional()
     .describe("Maximum number of results (default: 5)"),
   filter: z.record(z.any()).optional().describe("Optional metadata filter"),
+  pathPattern: z
+    .string()
+    .optional()
+    .describe(
+      "Glob pattern for filtering by file path (client-side via picomatch). " +
+        "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
+    ),
 };
 
 // Code indexing schemas
@@ -124,10 +129,8 @@ export const SearchCodeSchema = {
     .string()
     .optional()
     .describe(
-      "Filter by path glob pattern. Supports full glob syntax: " +
-        "'**/workflow/**' (domain search), 'src/**/*.ts' (directory + extension), " +
-        "'{models,services}/**' (multiple directories). " +
-        "Filtering happens client-side after Qdrant search.",
+      "Glob pattern for filtering by file path (client-side via picomatch). " +
+        "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
     ),
   documentationOnly: z
     .boolean()
