@@ -15,7 +15,8 @@ coverage/
 # IDE
 .vscode/
 .idea/
-.claude/
+.claude/**/*.local.md
+.claude/**/*.local.json
 *.swp
 *.swo
 *~
@@ -43,3 +44,4 @@ collection-with-*
 
 # Performance tuning results
 tuned_environment_variables.env
+.beads
