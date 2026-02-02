@@ -201,7 +201,8 @@ export const DEFAULT_CONFIG: PipelineConfig = {
   },
   deleteWorkerPool: {
     // Delete is Qdrant-bound (not embedding), can use higher concurrency
-    concurrency: parseInt(process.env.DELETE_CONCURRENCY || "8", 10),
+    // QDRANT_DELETE_CONCURRENCY is the canonical name, DELETE_CONCURRENCY is deprecated but still supported
+    concurrency: parseInt(process.env.QDRANT_DELETE_CONCURRENCY || process.env.DELETE_CONCURRENCY || "8", 10),
     maxRetries: 3,
     retryBaseDelayMs: 100,
     retryMaxDelayMs: 5000,
@@ -216,9 +217,10 @@ export const DEFAULT_CONFIG: PipelineConfig = {
   },
   deleteAccumulator: {
     // Larger batches (500) are efficient with payload index on relativePath
-    batchSize: parseInt(process.env.DELETE_BATCH_SIZE || "500", 10),
+    // QDRANT_DELETE_BATCH_SIZE is the canonical name, DELETE_BATCH_SIZE is deprecated but still supported
+    batchSize: parseInt(process.env.QDRANT_DELETE_BATCH_SIZE || process.env.DELETE_BATCH_SIZE || "500", 10),
     // Faster flush for deletes (1s) - deletes are quick
     flushTimeoutMs: parseInt(process.env.DELETE_FLUSH_TIMEOUT_MS || "1000", 10),
-    maxQueueSize: parseInt(process.env.DELETE_CONCURRENCY || "8", 10) * 2,
+    maxQueueSize: parseInt(process.env.QDRANT_DELETE_CONCURRENCY || process.env.DELETE_CONCURRENCY || "8", 10) * 2,
   },
 };
