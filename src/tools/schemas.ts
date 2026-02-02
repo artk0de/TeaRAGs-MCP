@@ -9,6 +9,39 @@
 
 import { z } from "zod";
 
+// Custom scoring weights schema (shared)
+const ScoringWeightsSchema = z.object({
+  similarity: z.number().optional(),
+  recency: z.number().optional(),
+  stability: z.number().optional(),
+  churn: z.number().optional(),
+  age: z.number().optional(),
+  ownership: z.number().optional(),
+  chunkSize: z.number().optional(),
+  documentation: z.number().optional(),
+  imports: z.number().optional(),
+});
+
+// Rerank presets for semantic_search (analytics)
+const SemanticSearchRerankPresetSchema = z.enum([
+  "relevance",
+  "techDebt",
+  "hotspots",
+  "codeReview",
+  "onboarding",
+  "securityAudit",
+  "refactoring",
+  "ownership",
+  "impactAnalysis",
+]);
+
+// Rerank presets for search_code (practical development)
+const SearchCodeRerankPresetSchema = z.enum([
+  "relevance",
+  "recent",
+  "stable",
+]);
+
 // Collection management schemas
 export const CreateCollectionSchema = {
   name: z.string().describe("Name of the collection"),
@@ -72,6 +105,32 @@ export const SemanticSearchSchema = {
       "Glob pattern for filtering by file path (client-side via picomatch). " +
         "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
     ),
+  rerank: z
+    .union([
+      SemanticSearchRerankPresetSchema,
+      z.object({ custom: ScoringWeightsSchema }),
+    ])
+    .optional()
+    .describe(
+      "Reranking mode for analytics use cases. Presets: " +
+        "'relevance' (default, similarity only), " +
+        "'techDebt' (old + high churn), " +
+        "'hotspots' (bug hunting: high churn + recent), " +
+        "'codeReview' (recent changes), " +
+        "'onboarding' (entry points, docs, stable code), " +
+        "'securityAudit' (old code in critical paths), " +
+        "'refactoring' (refactoring candidates), " +
+        "'ownership' (knowledge transfer), " +
+        "'impactAnalysis' (dependencies). " +
+        "Or use {custom: {similarity: 0.5, churn: 0.3, ...}} for custom weights.",
+    ),
+  metaOnly: z
+    .boolean()
+    .optional()
+    .describe(
+      "Return only metadata without content (for file discovery/analytics). " +
+        "Reduces response size significantly. Default: false.",
+    ),
 };
 
 export const HybridSearchSchema = {
@@ -88,6 +147,32 @@ export const HybridSearchSchema = {
     .describe(
       "Glob pattern for filtering by file path (client-side via picomatch). " +
         "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
+    ),
+  rerank: z
+    .union([
+      SemanticSearchRerankPresetSchema,
+      z.object({ custom: ScoringWeightsSchema }),
+    ])
+    .optional()
+    .describe(
+      "Reranking mode for analytics use cases. Presets: " +
+        "'relevance' (default, similarity only), " +
+        "'techDebt' (old + high churn), " +
+        "'hotspots' (bug hunting: high churn + recent), " +
+        "'codeReview' (recent changes), " +
+        "'onboarding' (entry points, docs, stable code), " +
+        "'securityAudit' (old code in critical paths), " +
+        "'refactoring' (refactoring candidates), " +
+        "'ownership' (knowledge transfer), " +
+        "'impactAnalysis' (dependencies). " +
+        "Or use {custom: {similarity: 0.5, churn: 0.3, ...}} for custom weights.",
+    ),
+  metaOnly: z
+    .boolean()
+    .optional()
+    .describe(
+      "Return only metadata without content (for file discovery/analytics). " +
+        "Reduces response size significantly. Default: false.",
     ),
 };
 
@@ -191,6 +276,19 @@ export const SearchCodeSchema = {
     .describe(
       "Filter by task/issue ID from commit messages. Supports JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890). " +
         "Use for: requirements tracing, impact analysis, audit, compliance, 'what code was written for this ticket?'",
+    ),
+  rerank: z
+    .union([
+      SearchCodeRerankPresetSchema,
+      z.object({ custom: ScoringWeightsSchema }),
+    ])
+    .optional()
+    .describe(
+      "Reranking mode for practical development. Presets: " +
+        "'relevance' (default, similarity only), " +
+        "'recent' (boost recently modified code), " +
+        "'stable' (boost stable/low-churn code). " +
+        "Or use {custom: {similarity: 0.7, recency: 0.3}} for custom weights.",
     ),
 };
 

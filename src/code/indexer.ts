@@ -13,6 +13,11 @@ import {
   filterResultsByGlob,
   calculateFetchLimit,
 } from "../qdrant/filters/index.js";
+import {
+  rerankSearchCodeResults,
+  type RerankMode,
+  type SearchCodeRerankPreset,
+} from "./reranker.js";
 import { TreeSitterChunker } from "./chunker/tree-sitter-chunker.js";
 import { GitMetadataService } from "./git/index.js";
 import { MetadataExtractor } from "./metadata.js";
@@ -513,12 +518,12 @@ export class CodeIndexer {
       }
     }
 
-    // Calculate fetch limit (fetch more if we need to filter by glob pattern)
+    // Calculate fetch limit (fetch more if we need to filter by glob pattern or rerank)
     const requestedLimit = options?.limit || this.config.defaultSearchLimit;
-    const fetchLimit = calculateFetchLimit(
-      requestedLimit,
-      Boolean(options?.pathPattern),
-    );
+    const needsOverfetch =
+      Boolean(options?.pathPattern) ||
+      Boolean(options?.rerank && options.rerank !== "relevance");
+    const fetchLimit = calculateFetchLimit(requestedLimit, needsOverfetch);
 
     // Search with hybrid or standard search
     let results;
@@ -542,16 +547,22 @@ export class CodeIndexer {
     }
 
     // Apply glob pattern filter if specified (client-side filtering)
-    const globFilteredResults = options?.pathPattern
+    let filteredResults = options?.pathPattern
       ? filterResultsByGlob(results, options.pathPattern)
       : results;
 
+    // Apply reranking if specified
+    if (options?.rerank && options.rerank !== "relevance") {
+      filteredResults = rerankSearchCodeResults(
+        filteredResults,
+        options.rerank as RerankMode<SearchCodeRerankPreset>,
+      );
+    }
+
     // Apply score threshold if specified
-    const filteredResults = options?.scoreThreshold
-      ? globFilteredResults.filter(
-          (r) => r.score >= (options.scoreThreshold || 0),
-        )
-      : globFilteredResults;
+    filteredResults = options?.scoreThreshold
+      ? filteredResults.filter((r) => r.score >= (options.scoreThreshold || 0))
+      : filteredResults;
 
     // Format results (include git metadata if present)
     // Limit to requested count after all filtering

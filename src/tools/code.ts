@@ -96,6 +96,7 @@ export function registerCodeTools(
       maxAgeDays,
       minCommitCount,
       taskId,
+      rerank,
     }) => {
       const results = await codeIndexer.searchCode(path, query, {
         limit,
@@ -109,6 +110,7 @@ export function registerCodeTools(
         maxAgeDays,
         minCommitCount,
         taskId,
+        rerank,
       });
 
       if (results.length === 0) {

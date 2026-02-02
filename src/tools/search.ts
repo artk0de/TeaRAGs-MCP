@@ -3,6 +3,11 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  rerankSemanticSearchResults,
+  type RerankMode,
+  type SemanticSearchRerankPreset,
+} from "../code/reranker.js";
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../embeddings/sparse.js";
 import type { QdrantManager } from "../qdrant/client.js";
@@ -32,7 +37,7 @@ export function registerSearchTools(
         "Search for documents using natural language queries. Returns the most semantically similar documents.",
       inputSchema: schemas.SemanticSearchSchema,
     },
-    async ({ collection, query, limit, filter, pathPattern }) => {
+    async ({ collection, query, limit, filter, pathPattern, rerank, metaOnly }) => {
       // Check if collection exists
       const exists = await qdrant.collectionExists(collection);
       if (!exists) {
@@ -50,12 +55,10 @@ export function registerSearchTools(
       // Generate embedding for query
       const { embedding } = await embeddings.embed(query);
 
-      // Calculate fetch limit (fetch more if we need to filter by glob)
+      // Calculate fetch limit (fetch more if we need to filter by glob or rerank)
       const requestedLimit = limit || 5;
-      const fetchLimit = calculateFetchLimit(
-        requestedLimit,
-        Boolean(pathPattern),
-      );
+      const needsOverfetch = Boolean(pathPattern) || Boolean(rerank && rerank !== "relevance");
+      const fetchLimit = calculateFetchLimit(requestedLimit, needsOverfetch);
 
       // Search
       const results = await qdrant.search(
@@ -66,9 +69,39 @@ export function registerSearchTools(
       );
 
       // Apply glob pattern filter if specified
-      const filteredResults = pathPattern
-        ? filterResultsByGlob(results, pathPattern).slice(0, requestedLimit)
+      let filteredResults = pathPattern
+        ? filterResultsByGlob(results, pathPattern)
         : results;
+
+      // Apply reranking if specified
+      if (rerank && rerank !== "relevance") {
+        filteredResults = rerankSemanticSearchResults(
+          filteredResults,
+          rerank as RerankMode<SemanticSearchRerankPreset>,
+        );
+      }
+
+      // Trim to requested limit
+      filteredResults = filteredResults.slice(0, requestedLimit);
+
+      // Format output based on metaOnly flag
+      if (metaOnly) {
+        const metaResults = filteredResults.map((r) => ({
+          score: r.score,
+          relativePath: r.payload?.relativePath,
+          startLine: r.payload?.startLine,
+          endLine: r.payload?.endLine,
+          language: r.payload?.language,
+          chunkType: r.payload?.chunkType,
+          name: r.payload?.name,
+          git: r.payload?.git,
+        }));
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(metaResults, null, 2) },
+          ],
+        };
+      }
 
       return {
         content: [
@@ -87,7 +120,7 @@ export function registerSearchTools(
         "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid set to true.",
       inputSchema: schemas.HybridSearchSchema,
     },
-    async ({ collection, query, limit, filter, pathPattern }) => {
+    async ({ collection, query, limit, filter, pathPattern, rerank, metaOnly }) => {
       // Check if collection exists
       const exists = await qdrant.collectionExists(collection);
       if (!exists) {
@@ -123,12 +156,10 @@ export function registerSearchTools(
       const sparseGenerator = new BM25SparseVectorGenerator();
       const sparseVector = sparseGenerator.generate(query);
 
-      // Calculate fetch limit (fetch more if we need to filter by glob)
+      // Calculate fetch limit (fetch more if we need to filter by glob or rerank)
       const requestedLimit = limit || 5;
-      const fetchLimit = calculateFetchLimit(
-        requestedLimit,
-        Boolean(pathPattern),
-      );
+      const needsOverfetch = Boolean(pathPattern) || Boolean(rerank && rerank !== "relevance");
+      const fetchLimit = calculateFetchLimit(requestedLimit, needsOverfetch);
 
       // Perform hybrid search
       const results = await qdrant.hybridSearch(
@@ -140,9 +171,39 @@ export function registerSearchTools(
       );
 
       // Apply glob pattern filter if specified
-      const filteredResults = pathPattern
-        ? filterResultsByGlob(results, pathPattern).slice(0, requestedLimit)
+      let filteredResults = pathPattern
+        ? filterResultsByGlob(results, pathPattern)
         : results;
+
+      // Apply reranking if specified
+      if (rerank && rerank !== "relevance") {
+        filteredResults = rerankSemanticSearchResults(
+          filteredResults,
+          rerank as RerankMode<SemanticSearchRerankPreset>,
+        );
+      }
+
+      // Trim to requested limit
+      filteredResults = filteredResults.slice(0, requestedLimit);
+
+      // Format output based on metaOnly flag
+      if (metaOnly) {
+        const metaResults = filteredResults.map((r) => ({
+          score: r.score,
+          relativePath: r.payload?.relativePath,
+          startLine: r.payload?.startLine,
+          endLine: r.payload?.endLine,
+          language: r.payload?.language,
+          chunkType: r.payload?.chunkType,
+          name: r.payload?.name,
+          git: r.payload?.git,
+        }));
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(metaResults, null, 2) },
+          ],
+        };
+      }
 
       return {
         content: [
