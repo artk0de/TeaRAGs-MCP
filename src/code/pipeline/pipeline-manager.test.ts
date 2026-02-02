@@ -10,8 +10,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PipelineManager } from "./pipeline-manager.js";
+import { PipelineManager, createQdrantPipeline } from "./pipeline-manager.js";
 import type { Batch, DeleteItem, PipelineConfig, UpsertItem } from "./types.js";
+import type { QdrantManager } from "../../../qdrant/client.js";
 
 describe("PipelineManager", () => {
   let pipeline: PipelineManager;
@@ -382,6 +383,53 @@ describe("PipelineManager", () => {
     });
   });
 
+  describe("Backpressure coordination", () => {
+    it("should pause accumulators when queue is full", async () => {
+      vi.useRealTimers();
+
+      let processingCount = 0;
+      const slowPipeline = new PipelineManager(
+        {
+          handleUpsertBatch: async () => {
+            processingCount++;
+            // Slow handler to build up queue
+            await new Promise((r) => setTimeout(r, 200));
+          },
+          handleDeleteBatch: vi.fn(),
+        },
+        {
+          workerPool: {
+            concurrency: 1,
+            maxRetries: 0,
+            retryBaseDelayMs: 50,
+            retryMaxDelayMs: 500,
+          },
+          upsertAccumulator: {
+            batchSize: 1,
+            flushTimeoutMs: 10,
+            maxQueueSize: 2, // Very small queue
+          },
+          deleteAccumulator: {
+            batchSize: 1,
+            flushTimeoutMs: 10,
+            maxQueueSize: 2,
+          },
+        },
+      );
+
+      slowPipeline.start();
+
+      // Add items to fill the queue
+      for (let i = 1; i <= 5; i++) {
+        slowPipeline.addUpsert(createPoint(i));
+      }
+
+      // Wait for processing to complete
+      await slowPipeline.shutdown();
+      expect(processingCount).toBeGreaterThan(0);
+    });
+  });
+
   describe("Edge cases", () => {
     it("should handle empty flush", async () => {
       await pipeline.flush();
@@ -434,6 +482,119 @@ describe("PipelineManager", () => {
 
       // Shutdown should wait for in-progress work
       await realPipeline.shutdown();
+    });
+  });
+
+  describe("createQdrantPipeline", () => {
+    it("should create a pipeline with default config", () => {
+      const mockQdrant = {
+        addPointsOptimized: vi.fn().mockResolvedValue(undefined),
+        deletePointsByPaths: vi.fn().mockResolvedValue(undefined),
+      } as unknown as QdrantManager;
+
+      const qdrantPipeline = createQdrantPipeline(mockQdrant, "test-collection");
+      expect(qdrantPipeline).toBeInstanceOf(PipelineManager);
+      qdrantPipeline.forceShutdown();
+    });
+
+    it("should create a pipeline with custom config", () => {
+      const mockQdrant = {
+        addPointsOptimized: vi.fn().mockResolvedValue(undefined),
+        deletePointsByPaths: vi.fn().mockResolvedValue(undefined),
+      } as unknown as QdrantManager;
+
+      const qdrantPipeline = createQdrantPipeline(mockQdrant, "test-collection", {
+        config: {
+          workerPool: { concurrency: 4, maxRetries: 3, retryBaseDelayMs: 100, retryMaxDelayMs: 1000 },
+        },
+      });
+      expect(qdrantPipeline).toBeInstanceOf(PipelineManager);
+      qdrantPipeline.forceShutdown();
+    });
+
+    it("should handle upsert batches", async () => {
+      vi.useRealTimers();
+
+      const mockQdrant = {
+        addPointsOptimized: vi.fn().mockResolvedValue(undefined),
+        deletePointsByPaths: vi.fn().mockResolvedValue(undefined),
+      } as unknown as QdrantManager;
+
+      const qdrantPipeline = createQdrantPipeline(mockQdrant, "test-collection", {
+        config: {
+          upsertAccumulator: { batchSize: 2, flushTimeoutMs: 10, maxQueueSize: 10 },
+        },
+      });
+
+      qdrantPipeline.start();
+      qdrantPipeline.addUpsert({
+        id: "test-1",
+        vector: [1, 2, 3],
+        payload: { test: true },
+      });
+      qdrantPipeline.addUpsert({
+        id: "test-2",
+        vector: [4, 5, 6],
+        payload: { test: true },
+      });
+
+      await qdrantPipeline.flush();
+      await qdrantPipeline.shutdown();
+
+      expect(mockQdrant.addPointsOptimized).toHaveBeenCalled();
+    });
+
+    it("should handle delete batches", async () => {
+      vi.useRealTimers();
+
+      const mockQdrant = {
+        addPointsOptimized: vi.fn().mockResolvedValue(undefined),
+        deletePointsByPaths: vi.fn().mockResolvedValue(undefined),
+      } as unknown as QdrantManager;
+
+      const qdrantPipeline = createQdrantPipeline(mockQdrant, "test-collection", {
+        config: {
+          deleteAccumulator: { batchSize: 2, flushTimeoutMs: 10, maxQueueSize: 10 },
+        },
+      });
+
+      qdrantPipeline.start();
+      qdrantPipeline.addDelete("path1.ts");
+      qdrantPipeline.addDelete("path2.ts");
+
+      await qdrantPipeline.flush();
+      await qdrantPipeline.shutdown();
+
+      expect(mockQdrant.deletePointsByPaths).toHaveBeenCalled();
+    });
+
+    it("should handle hybrid mode with sparse vectors", async () => {
+      vi.useRealTimers();
+
+      const mockQdrant = {
+        addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
+        deletePointsByPaths: vi.fn().mockResolvedValue(undefined),
+      } as unknown as QdrantManager;
+
+      const qdrantPipeline = createQdrantPipeline(mockQdrant, "test-collection", {
+        enableHybrid: true,
+        config: {
+          upsertAccumulator: { batchSize: 1, flushTimeoutMs: 10, maxQueueSize: 10 },
+        },
+      });
+
+      qdrantPipeline.start();
+      qdrantPipeline.addUpsert({
+        id: "test-1",
+        vector: [1, 2, 3],
+        sparseVector: { indices: [0, 1], values: [0.5, 0.5] },
+        payload: { test: true },
+      });
+
+      await qdrantPipeline.flush();
+      await qdrantPipeline.shutdown();
+
+      expect(mockQdrant.addPointsWithSparse).toHaveBeenCalled();
     });
   });
 });
