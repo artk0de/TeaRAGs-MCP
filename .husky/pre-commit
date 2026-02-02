@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Run beads sync if available (optional - contributors may not have bd)
+if command -v bd >/dev/null 2>&1; then
+  bd hook pre-commit "$@" 2>/dev/null || true
+fi
+
 # Get list of staged files
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
 
