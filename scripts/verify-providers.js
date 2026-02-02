@@ -101,9 +101,9 @@ test("Ollama provider does not require API key", () => {
   if (!provider) {
     throw new Error("Failed to create Ollama provider");
   }
-  if (provider.getModel() !== "jina-embeddings-v2-base-code") {
+  if (provider.getModel() !== "unclemusclez/jina-embeddings-v2-base-code:latest") {
     throw new Error(
-      `Expected default model 'jina-embeddings-v2-base-code', got '${provider.getModel()}'`,
+      `Expected default model 'unclemusclez/jina-embeddings-v2-base-code:latest', got '${provider.getModel()}'`,
     );
   }
   if (provider.getDimensions() !== 768) {
