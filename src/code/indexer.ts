@@ -1151,6 +1151,14 @@ export class CodeIndexer {
    * Generate deterministic collection name from codebase path
    */
   private getCollectionName(path: string): string {
+    return CodeIndexer.resolveCollectionName(path);
+  }
+
+  /**
+   * Static utility to generate collection name from path.
+   * Used by search tools to resolve collection from path parameter.
+   */
+  static resolveCollectionName(path: string): string {
     const absolutePath = resolve(path);
     const hash = createHash("md5").update(absolutePath).digest("hex");
     return `code_${hash.substring(0, 8)}`;

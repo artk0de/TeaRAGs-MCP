@@ -91,7 +91,19 @@ export const DeleteDocumentsSchema = {
 
 // Search schemas
 export const SemanticSearchSchema = {
-  collection: z.string().describe("Name of the collection to search"),
+  collection: z
+    .string()
+    .optional()
+    .describe(
+      "Name of the collection to search. Required if 'path' not provided.",
+    ),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Path to indexed codebase (alternative to 'collection'). " +
+        "Collection name is auto-resolved from path. Required if 'collection' not provided.",
+    ),
   query: z.string().describe("Search query text"),
   limit: z
     .number()
@@ -144,7 +156,19 @@ export const SemanticSearchSchema = {
 };
 
 export const HybridSearchSchema = {
-  collection: z.string().describe("Name of the collection to search"),
+  collection: z
+    .string()
+    .optional()
+    .describe(
+      "Name of the collection to search. Required if 'path' not provided.",
+    ),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Path to indexed codebase (alternative to 'collection'). " +
+        "Collection name is auto-resolved from path. Required if 'collection' not provided.",
+    ),
   query: z.string().describe("Search query text"),
   limit: z
     .number()
