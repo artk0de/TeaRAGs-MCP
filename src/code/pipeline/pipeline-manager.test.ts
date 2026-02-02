@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PipelineManager, createQdrantPipeline } from "./pipeline-manager.js";
 import type { Batch, DeleteItem, PipelineConfig, UpsertItem } from "./types.js";
-import type { QdrantManager } from "../../../qdrant/client.js";
+import type { QdrantManager } from "../../qdrant/client.js";
 
 describe("PipelineManager", () => {
   let pipeline: PipelineManager;
