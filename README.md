@@ -5,7 +5,7 @@
 </h1>
 
 ![MCP compatible](https://img.shields.io/badge/MCP-compatible-%234f46e5)
-[![quickstart < 5 min](https://img.shields.io/badge/quickstart-%3C%205%20min-f59e0b)](#quick-start)
+[![quickstart < 5 min](https://img.shields.io/badge/quickstart-%3C%2015%20min-f59e0b)](#quick-start)
 [![local-first](https://img.shields.io/badge/deployment-local--first-15803d)](#installation)
 [![reproducible: docker](https://img.shields.io/badge/reproducible-docker-0f172a)](#installation)
 [![provider agnostic](https://img.shields.io/badge/provider-agnostic-0891b2)](#prov)

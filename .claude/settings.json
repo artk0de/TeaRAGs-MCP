@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "(Edit|Write) && tool_input.file_path matches \"^.*(src/|benchmarks/).*$\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-docs-needed.sh"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/validate-mcp-schema.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npm test --run 2>/dev/null || (echo 'Tests failing - run npm test to see details' >&2 && exit 2)"
+          }
+        ]
+      }
+    ]
+  }
+}
