@@ -14,7 +14,8 @@ describe("OllamaEmbeddings", () => {
 
     // Use legacy API for tests (old /api/embeddings endpoint)
     process.env.OLLAMA_LEGACY_API = "true";
-    embeddings = new OllamaEmbeddings();
+    // Use explicit model for tests to avoid dependency on default
+    embeddings = new OllamaEmbeddings("nomic-embed-text");
   });
 
   afterEach(() => {
@@ -23,8 +24,9 @@ describe("OllamaEmbeddings", () => {
 
   describe("constructor", () => {
     it("should use default model and dimensions", () => {
-      expect(embeddings.getModel()).toBe("nomic-embed-text");
-      expect(embeddings.getDimensions()).toBe(768);
+      const defaultEmbeddings = new OllamaEmbeddings();
+      expect(defaultEmbeddings.getModel()).toBe("unclemusclez/jina-embeddings-v2-base-code:latest");
+      expect(defaultEmbeddings.getDimensions()).toBe(768);
     });
 
     it("should use custom model", () => {
@@ -554,7 +556,7 @@ describe("OllamaEmbeddings", () => {
     beforeEach(() => {
       // Disable legacy API for batch tests
       delete process.env.OLLAMA_LEGACY_API;
-      batchEmbeddings = new OllamaEmbeddings();
+      batchEmbeddings = new OllamaEmbeddings("nomic-embed-text");
     });
 
     it("should use /api/embed endpoint for single text", async () => {
@@ -652,7 +654,7 @@ describe("OllamaEmbeddings", () => {
     it("should respect EMBEDDING_BATCH_SIZE env variable", async () => {
       // Set batch size to 2
       process.env.EMBEDDING_BATCH_SIZE = "2";
-      const sizedEmbeddings = new OllamaEmbeddings();
+      const sizedEmbeddings = new OllamaEmbeddings("nomic-embed-text");
 
       const mockEmbeddings = [Array(768).fill(0.1), Array(768).fill(0.2)];
       mockFetch.mockResolvedValue({
@@ -670,6 +672,146 @@ describe("OllamaEmbeddings", () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
 
       delete process.env.EMBEDDING_BATCH_SIZE;
+    });
+
+    it("should fallback to single requests when EMBEDDING_BATCH_SIZE=0", async () => {
+      process.env.EMBEDDING_BATCH_SIZE = "0";
+      const singleEmbeddings = new OllamaEmbeddings("nomic-embed-text");
+
+      const mockEmbedding = Array(768).fill(0.5);
+      // Mock individual /api/embed calls (single request mode)
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: [mockEmbedding],
+        }),
+      });
+
+      await singleEmbeddings.embedBatch(["t1", "t2", "t3"]);
+
+      // Should make 3 separate requests (single mode)
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      // Each call should have single text in input array
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:11434/api/embed",
+        expect.objectContaining({
+          body: JSON.stringify({
+            model: "nomic-embed-text",
+            input: ["t1"],
+            options: { num_gpu: 999 },
+          }),
+        }),
+      );
+
+      delete process.env.EMBEDDING_BATCH_SIZE;
+    });
+
+    it("should respect EMBEDDING_CONCURRENCY with single requests mode", async () => {
+      process.env.EMBEDDING_BATCH_SIZE = "0";
+      process.env.EMBEDDING_CONCURRENCY = "2";
+      const concurrentEmbeddings = new OllamaEmbeddings("nomic-embed-text");
+
+      const mockEmbedding = Array(768).fill(0.5);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: [mockEmbedding],
+        }),
+      });
+
+      await concurrentEmbeddings.embedBatch(["t1", "t2", "t3", "t4"]);
+
+      // Should make 4 requests total
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+
+      delete process.env.EMBEDDING_BATCH_SIZE;
+      delete process.env.EMBEDDING_CONCURRENCY;
+    });
+
+    it("should respect OLLAMA_NUM_GPU env variable in batch mode", async () => {
+      process.env.OLLAMA_NUM_GPU = "0";
+      const cpuEmbeddings = new OllamaEmbeddings("nomic-embed-text");
+
+      const mockEmbedding = Array(768).fill(0.5);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: [mockEmbedding],
+        }),
+      });
+
+      await cpuEmbeddings.embed("test");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:11434/api/embed",
+        expect.objectContaining({
+          body: JSON.stringify({
+            model: "nomic-embed-text",
+            input: ["test"],
+            options: { num_gpu: 0 },
+          }),
+        }),
+      );
+
+      delete process.env.OLLAMA_NUM_GPU;
+    });
+
+    it("should default to num_gpu=999 when OLLAMA_NUM_GPU not set", async () => {
+      const gpuEmbeddings = new OllamaEmbeddings("nomic-embed-text");
+
+      const mockEmbedding = Array(768).fill(0.5);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: [mockEmbedding],
+        }),
+      });
+
+      await gpuEmbeddings.embed("test");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:11434/api/embed",
+        expect.objectContaining({
+          body: expect.stringContaining('"num_gpu":999'),
+        }),
+      );
+    });
+
+    it("should respect OLLAMA_NUM_GPU in single requests mode (BATCH_SIZE=0)", async () => {
+      process.env.EMBEDDING_BATCH_SIZE = "0";
+      process.env.OLLAMA_NUM_GPU = "0";
+      const cpuSingleEmbeddings = new OllamaEmbeddings("nomic-embed-text");
+
+      const mockEmbedding = Array(768).fill(0.5);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: [mockEmbedding],
+        }),
+      });
+
+      // Single mode should still use num_gpu parameter
+      await cpuSingleEmbeddings.embedBatch(["t1", "t2"]);
+
+      // Each single request should have num_gpu: 0
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:11434/api/embed",
+        expect.objectContaining({
+          body: JSON.stringify({
+            model: "nomic-embed-text",
+            input: ["t1"],
+            options: { num_gpu: 0 },
+          }),
+        }),
+      );
+
+      delete process.env.EMBEDDING_BATCH_SIZE;
+      delete process.env.OLLAMA_NUM_GPU;
     });
   });
 });

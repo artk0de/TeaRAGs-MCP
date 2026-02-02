@@ -15,13 +15,14 @@ A high-performance MCP server for intelligent codebase analysis. Enterprise-read
 
 ## Table of Contents
 
-1. [Key Features](#-key-features)
+1. [Key Features](#key-features)
    1. [This fork vs original](#this-fork-vs-original)
 2. [Quick Start](#quick-start)
    1. [Prerequisites](#prerequisites)
    2. [Installation](#installation)
-   3. [Configuration](#configuration)
-   4. [Work with your agent](#work-with-your-agent)
+   3. [Performance tuning](#performance-tuning)
+   4. [Configuration](#configuration)
+   5. [Work with your agent](#work-with-your-agent)
 3. [Advanced Configuration](#advanced-configuration)
    1. [Environment Variables](#environment-variables)
    2. [Data Directories](#data-directories)
@@ -36,8 +37,7 @@ A high-performance MCP server for intelligent codebase analysis. Enterprise-read
 7. [Examples](#examples)
 8. [Troubleshooting](#troubleshooting)
 9. [FAQ](#faq)
-10. [Performance Tuning](#performance-tuning)
-11. [Development](#development)
+10. [Development](#development)
     1. [Testing](#testing)
 12. [Contributing](#contributing)
 13. [Acknowledgments](#acknowledgments)
@@ -122,8 +122,8 @@ podman compose up -d   # Using Podman
 docker compose up -d   # Using Docker
 
 # Pull the embedding model
-podman exec ollama ollama pull nomic-embed-text  # Podman
-docker exec ollama ollama pull nomic-embed-text  # Docker
+podman exec ollama ollama pull unclemusclez/jina-embeddings-v2-base-code:latest  # Podman
+docker exec ollama ollama pull unclemusclez/jina-embeddings-v2-base-code:latest  # Docker
 
 # Build
 npm run build
@@ -229,6 +229,58 @@ Once configured, just talk to your AI assistant naturally:
 >
 > "Clear the index and start fresh"
 
+### Performance tuning
+
+> **⚡ Auto-tuning benchmark!**
+>
+> Don't guess — let the benchmark find optimal settings for your hardware:
+> ```bash
+> npm run tune
+> ```
+> Creates `tuned_environment_variables.env` with optimal values in ~60-90 seconds.
+
+**For local setup**, just run `npm run tune` — defaults work out of the box:
+- `QDRANT_URL` defaults to `http://localhost:6333`
+- `EMBEDDING_BASE_URL` defaults to `http://localhost:11434`
+- `EMBEDDING_MODEL` defaults to `unclemusclez/jina-embeddings-v2-base-code:latest` **(code-specialized model)**
+
+**For remote setup**, configure via environment variables:
+```bash
+QDRANT_URL=http://192.168.1.100:6333 \
+EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
+npm run tune
+```
+
+The benchmark tests 7 parameters and shows estimated indexing times for projects from 10K to 10M LoC:
+
+```
+╔══════════════════════════════════════════════════════════╗
+║     TEA RAGS MCP — PERFORMANCE TUNING                    ║
+╚══════════════════════════════════════════════════════════╝
+
+Phase 1: Embedding Batch Size ... ✓ Optimal: 128
+Phase 2: Embedding Concurrency ... ✓ Optimal: 2
+Phase 3: Qdrant Batch Size ... ✓ Optimal: 384
+...
+
+Estimated indexing times:
+  VS Code              3.5M LoC    ~12 min
+  Linux kernel        10.0M LoC    ~36 min
+```
+
+Then add tuned values to your MCP config:
+
+```bash
+claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+  -e QDRANT_URL=http://localhost:6333 \
+  -e EMBEDDING_BATCH_SIZE=128 \
+  -e EMBEDDING_CONCURRENCY=2 \
+  -e CODE_BATCH_SIZE=384 \
+  # ... copy other values from tuned_environment_variables.env
+```
+
+See [Advanced Performance Tuning](docs/PERFORMANCE_TUNING.md) for details and local vs remote setup comparison.
+
 ## Advanced configuration
 <details>
 <summary><strong>⚙️ Environment variables, embedding configuration, performance tuning</strong></summary>
@@ -251,11 +303,11 @@ Once configured, just talk to your AI assistant naturally:
 
 | Variable                            | Description                                       | Default           |
 | ----------------------------------- | ------------------------------------------------- | ----------------- |
-| `EMBEDDING_MODEL`                   | Model name                                        | Provider-specific |
+| `EMBEDDING_MODEL`                   | Model name                                        | `unclemusclez/jina-embeddings-v2-base-code:latest` |
 | `EMBEDDING_BASE_URL`                | Custom API URL                                    | Provider-specific |
 | `EMBEDDING_DIMENSION`               | Vector dimensions (auto-detected from model)      | Auto              |
-| `EMBEDDING_BATCH_SIZE`              | Texts per embedding request (Ollama native batch) | 64                |
-| `EMBEDDING_CONCURRENCY`             | Parallel embedding requests (for multiple GPUs)   | 1                 |
+| `EMBEDDING_BATCH_SIZE`              | Texts per embedding request (Ollama native batch). Set to `0` for single requests mode (fallback) | 64                |
+| `EMBEDDING_CONCURRENCY`             | Parallel embedding requests (for multiple GPUs, or with `BATCH_SIZE=0`)   | 1                 |
 | `EMBEDDING_MAX_REQUESTS_PER_MINUTE` | Rate limit                                        | Provider-specific |
 | `EMBEDDING_RETRY_ATTEMPTS`          | Retry count                                       | 3                 |
 | `EMBEDDING_RETRY_DELAY`             | Initial retry delay (ms)                          | 1000              |
@@ -282,8 +334,8 @@ Once configured, just talk to your AI assistant naturally:
 | -------------------------- | ---------------------------------------------------------------- | ------- |
 | `QDRANT_FLUSH_INTERVAL_MS` | Auto-flush buffer interval (0 to disable timer)                  | 500     |
 | `QDRANT_BATCH_ORDERING`    | Ordering mode: "weak", "medium", or "strong"                     | weak    |
-| `DELETE_BATCH_SIZE`        | Paths per delete batch (with payload index, larger is efficient) | 500     |
-| `DELETE_CONCURRENCY`       | Parallel delete requests (Qdrant-bound, not embedding-bound)     | 8       |
+| `QDRANT_DELETE_BATCH_SIZE` | Paths per delete batch (with payload index, larger is efficient) | 500     |
+| `QDRANT_DELETE_CONCURRENCY`| Parallel delete requests (Qdrant-bound, not embedding-bound)     | 8       |
 
 #### Performance & Debug Configuration
 
@@ -305,18 +357,18 @@ The server stores data in `~/.tea-rags-mcp/`:
 
 | Provider   | Models                                                          | Dimensions     | Rate Limit | Notes                |
 | ---------- | --------------------------------------------------------------- | -------------- | ---------- | -------------------- |
-| **Ollama** | `nomic-embed-text`, `jina-embeddings-v2-base-code`, `mxbai-embed-large` | 768, 768, 1024 | None       | Local, no API key    |
+| **Ollama** | `unclemusclez/jina-embeddings-v2-base-code` **(default)**, `nomic-embed-text`, `mxbai-embed-large` | 768, 768, 1024 | None       | Local, no API key    |
 | **OpenAI** | `text-embedding-3-small`, `text-embedding-3-large`              | 1536, 3072     | 3500/min   | Cloud API            |
 | **Cohere** | `embed-english-v3.0`, `embed-multilingual-v3.0`                 | 1024           | 100/min    | Multilingual support |
 | **Voyage** | `voyage-2`, `voyage-large-2`, `voyage-code-2`                   | 1024, 1536     | 300/min    | Code-specialized     |
 
 #### Recommended: Jina Code Embeddings
 
-For code search, we recommend **`jina-embeddings-v2-base-code`**:
+For code search, we recommend **`unclemusclez/jina-embeddings-v2-base-code`** (default):
 
 ```bash
-ollama pull jina-embeddings-v2-base-code
-export EMBEDDING_MODEL="jina-embeddings-v2-base-code"
+ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
+export EMBEDDING_MODEL="unclemusclez/jina-embeddings-v2-base-code:latest"
 ```
 
 | Aspect | Benefit |
@@ -448,17 +500,51 @@ Index and search your codebase using semantic code search. For detailed document
 <details>
 <summary><strong>📊 Performance Benchmarks</strong></summary>
 
-Benchmarked on hybrid setup: MacBook Pro M3 Pro (client) + Windows PC with 12GB VRAM (Qdrant + Ollama server).
+#### Indexing Times by Setup
 
-| Codebase Size          | Files  | Indexing Time | Search Latency |
-| ---------------------- | ------ | ------------- | -------------- |
-| Small (10k LOC)        | ~30    | ~5s           | <100ms         |
-| Medium (50k LOC)       | ~150   | ~15s          | <100ms         |
-| Large (100k LOC)       | ~300   | ~30s          | <200ms         |
-| Very Large (500k LOC)  | ~1,500 | ~2min         | <300ms         |
-| Enterprise (3.5M LOC)  | ~10k   | ~10min        | <500ms         |
+| Codebase | LoC | 🏠 Local Setup | 🌐 Remote GPU |
+|----------|-----|----------------|---------------|
+| Small CLI tool | 10K | ~2s | ~2s |
+| Medium library | 50K | ~11s | ~9s |
+| Large library | 100K | ~21s | ~17s |
+| Enterprise app | 500K | ~2 min | ~1.5 min |
+| Large codebase | 1M | ~3.5 min | ~3 min |
+| VS Code | 3.5M | ~12 min | ~10 min |
+| Kubernetes | 5M | ~18 min | ~15 min |
+| Linux kernel | 10M | ~36 min | ~29 min |
 
-**Note**: Using Ollama `jina-embeddings-v2-base-code`. CPU-only embedding is 5-10x slower.
+#### Setup Comparison
+
+| | 🏠 **Local** (Docker on Mac) | 🌐 **Remote** (GPU Server) |
+|---|---|---|
+| **Topology** | Mac → localhost Qdrant + Ollama | Mac → LAN → GPU Server |
+| **Embedding speed** | 100-150 emb/s | 150-200 emb/s |
+| **Storage speed** | 5000-8000 ch/s | 1500-2500 ch/s |
+| **Why faster/slower** | No network latency | Dedicated GPU, but network overhead |
+
+#### Tuned Parameters by Setup
+
+**🏠 Local Setup (Mac + Docker):**
+```bash
+EMBEDDING_BATCH_SIZE=128
+EMBEDDING_CONCURRENCY=2
+CODE_BATCH_SIZE=384
+QDRANT_BATCH_ORDERING=weak
+QDRANT_FLUSH_INTERVAL_MS=100
+```
+
+**🌐 Remote GPU Server:**
+```bash
+EMBEDDING_BATCH_SIZE=128
+EMBEDDING_CONCURRENCY=4
+CODE_BATCH_SIZE=256
+QDRANT_BATCH_ORDERING=medium
+QDRANT_FLUSH_INTERVAL_MS=250
+```
+
+> **💡 Tip:** Run `npm run tune` to automatically find optimal values for your specific hardware!
+
+**Note**: Using Ollama `unclemusclez/jina-embeddings-v2-base-code:latest` (default). CPU-only embedding is 5-10x slower.
 
 </details>
 
@@ -560,12 +646,6 @@ DEBUG=1 claude
 Or add `DEBUG=true` to your MCP server configuration in `env` section.
 
 </details>
-
----
-
-## Performance Tuning
-
-For detailed performance optimization guides, hardware-specific configurations, and benchmarking tools, see [docs/PERFORMANCE_TUNING.md](docs/PERFORMANCE_TUNING.md).
 
 ---
 
