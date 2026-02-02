@@ -1,9 +1,31 @@
 #!/bin/bash
 
-# Run tests
-npm test -- --run
+# Get list of staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
 
-# Coverage check (optional, set CHECK_COVERAGE=1 to enable)
-if [ "$CHECK_COVERAGE" = "1" ]; then
-  .claude/hooks/check-coverage.sh
+# Check if src/ files changed
+SRC_CHANGED=$(echo "$STAGED_FILES" | grep -E "^src/" || true)
+
+# Check if TypeScript/JavaScript files changed
+TS_FILES=$(echo "$STAGED_FILES" | grep -E "\.(ts|tsx|js|jsx)$" || true)
+
+# Run tests only if src/ changed
+if [ -n "$SRC_CHANGED" ]; then
+  echo "📦 src/ changed, running tests..."
+  npm test -- --run
+
+  # Coverage check (optional, set CHECK_COVERAGE=1 to enable)
+  if [ "$CHECK_COVERAGE" = "1" ]; then
+    .claude/hooks/check-coverage.sh
+  fi
+else
+  echo "⏭️  No src/ changes, skipping tests"
+fi
+
+# Type check only if TS files changed
+if [ -n "$TS_FILES" ]; then
+  echo "🔍 TypeScript files changed, running type check..."
+  npm run type-check
+else
+  echo "⏭️  No TypeScript changes, skipping type check"
 fi
