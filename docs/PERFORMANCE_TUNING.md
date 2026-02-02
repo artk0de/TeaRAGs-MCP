@@ -26,14 +26,14 @@ Configure the benchmark via environment variables:
 | `EMBEDDING_BASE_URL` | Ollama server URL | `http://localhost:11434` |
 | `EMBEDDING_MODEL` | Embedding model name | `unclemusclez/jina-embeddings-v2-base-code:latest` |
 | `EMBEDDING_DIMENSION` | Vector dimension | Auto-detected from model response |
-| `CODE_CHUNK_SIZE` | Size of test chunks in characters | `2500` (realistic GPU load) |
-| `TUNE_SAMPLE_SIZE` | Total number of test chunks to generate | `4096` |
-| `BATCH_TEST_SAMPLES` | Samples per batch size test | `256` (balance speed/accuracy) |
+| `MEDIAN_CODE_CHUNK_SIZE` | Median chunk size in characters | `500` (matches production collections) |
+| `MAX_TOTAL_CHUNKS` | Maximum chunks per batch test | `4096` |
 
 **Important Notes:**
-- `CODE_CHUNK_SIZE=2500` simulates realistic code chunk workload (85-90% GPU utilization)
-- `BATCH_TEST_SAMPLES=256` provides good accuracy while keeping tests fast (~5s per test)
+- `MEDIAN_CODE_CHUNK_SIZE=500` matches median chunk size in real production collections
+- Embedding calibration uses adaptive chunk count: `min(batch×2, MAX_TOTAL_CHUNKS)` per batch size
 - Vector dimension is auto-detected by making a test embedding call - no manual configuration needed
+- Three-phase plateau detection algorithm finds stable optimal configurations, not theoretical peaks
 
 **Local setup** (defaults work out of the box):
 ```bash
@@ -57,14 +57,14 @@ npm run tune
 EMBEDDING_MODEL=nomic-embed-text npm run tune
 ```
 
-Increase `TUNE_SAMPLE_SIZE` for more accurate results (at the cost of longer benchmark time):
+Increase `MAX_TOTAL_CHUNKS` for more accurate results (at the cost of longer benchmark time):
 
 ```bash
 # More accurate results for production tuning
-TUNE_SAMPLE_SIZE=4096 npm run tune
+MAX_TOTAL_CHUNKS=8192 npm run tune
 
 # Quick check with fewer samples
-TUNE_SAMPLE_SIZE=1024 npm run tune
+MAX_TOTAL_CHUNKS=2048 npm run tune
 ```
 
 ### Output
@@ -76,7 +76,7 @@ The benchmark creates `tuned_environment_variables.env` in the project root:
 # Generated: 2026-02-01T16:22:01.258Z
 # Hardware: http://localhost:11434 (jina-embeddings-v2-base-code)
 # Duration: 60s
-# Sample size: 2048 chunks
+# Max chunks: 4096
 
 # Embedding configuration
 EMBEDDING_BATCH_SIZE=128
@@ -107,76 +107,102 @@ QDRANT_DELETE_CONCURRENCY=8
 # Linux kernel         (10.0M LoC): 35m 40s
 ```
 
-### Stopping Criteria
-
-The benchmark automatically stops testing each parameter when:
-- Performance drops 20% from the best result found
-- 3 consecutive degradations occur
-- Test timeout (45s) exceeded
-- Error rate exceeds 10%
-
-This ensures the benchmark completes quickly (~60-90 seconds) while finding optimal values
-
 ## 🎯 Embeddings Benchmark
 
-For GPU-specific optimization and testing embedding throughput only:
+For GPU-specific optimization using three-phase plateau detection:
 
 ```bash
 npm run benchmark-embeddings
 ```
 
-This focused benchmark:
-- Tests **only** embedding parameters (`EMBEDDING_BATCH_SIZE` and `EMBEDDING_CONCURRENCY`)
-- Skips Qdrant storage tests (faster, ~30-45 seconds)
-- Focuses on GPU utilization and embedding throughput
-- Shows embeddings per second (emb/s) instead of chunks/sec
+### Three-Phase Calibration Algorithm
+
+This benchmark uses a sophisticated plateau-detection algorithm designed for production robustness:
+
+#### **Phase 1: Batch Plateau Detection** (CONCURRENCY=1)
+- Tests batch sizes: [256, 512, 1024, 2048, 3072, 4096]
+- Uses adaptive chunk count: `min(batch×2, MAX_TOTAL_CHUNKS)` per batch
+- Stops when improvement < 3% (plateau detected) or timeout exceeded
+- Plateau timeout: calculated from previous throughput to detect degradation early
+
+#### **Phase 2: Concurrency Testing** (on plateau only)
+- Tests concurrency: [1, 2, 4] on plateau batches only
+- Plateau timeout: calculated from baseline (CONC=1) throughput
+- Stops testing higher concurrency if timeout exceeded (degradation)
+- Reuses CONC=1 results from Phase 1 (no redundant testing)
+
+#### **Phase 3: Robust Selection**
+- Selects from configurations within 2% of maximum throughput
+- **Prefers**: Lower concurrency → Lower batch size → Higher throughput
+- Avoids overfitting to noise, reduces tail-risk
+
+### Key Principles
+
+The algorithm follows engineering best practices:
+
+1. **Adaptive Workload**: Each batch size tests `min(batch×2, MAX_TOTAL_CHUNKS)` chunks
+2. **Plateau Over Peak**: Seeks stable performance range, not theoretical maximum
+3. **Noise Tolerance**: Differences < 2-3% considered measurement noise
+4. **Robustness**: Prefers simpler configs (lower concurrency/batch) when performance is equivalent
 
 ### When to Use
 
 Use `benchmark-embeddings` when you:
-- Want to optimize GPU utilization without testing Qdrant
+- Want to understand GPU/CPU characteristics without Qdrant
 - Are comparing different embedding models
-- Need to tune for CPU vs GPU performance
-- Want quick feedback on embedding performance
+- Need to diagnose embedding bottlenecks
+- Want to see the full calibration process with detailed output
 
 Use `tune` (full benchmark) when you:
-- Need complete end-to-end optimization
-- Want to optimize both embedding AND storage
-- Are setting up production configuration
+- Need complete end-to-end optimization (embedding + Qdrant)
+- Want production-ready configuration file
+- Are setting up new deployment
 
-### Output Differences
+### Example Output (Remote GPU)
 
-**`npm run tune`** (full benchmark):
 ```
-Embedding:  54 chunks/sec
-Storage:    6617 chunks/sec
-Bottleneck: embedding (54 chunks/sec)
+Phase 1: Batch Plateau Detection (CONCURRENCY=1)
+   512 chunks @ batch 256              143 chunks/s  (3.6s)  +100.0%
+  1024 chunks @ batch 512  (max 11.1s) 145 chunks/s  (7.1s)  +1.4%
+  → Plateau detected, stopping
+  Plateau batches: [256, 512]
+
+Phase 2: Concurrency Effect Test
+  BATCH=256
+    CONC=1  (from Phase 1)  143 chunks/s
+    CONC=2  (1024 chunks, max 11.1s)  STABLE  152 chunks/s  +6.3%
+    CONC=4  (2048 chunks, max 22.1s)  STABLE  153 chunks/s  +0.7%
+    → Concurrency plateau, stopping
+  BATCH=512
+    CONC=1  (from Phase 1)  145 chunks/s
+    CONC=2  (2048 chunks, max 21.8s)  STABLE  147 chunks/s  +1.4%
+    → Concurrency plateau, stopping
+
+Phase 3: Configuration Selection
+  Acceptable configurations: 5/5
+  Max throughput: 153 chunks/s
+
+  Recommended configurations:
+  🏠 Local GPU:  BATCH_SIZE=512  CONCURRENCY=2  (153 chunks/s)
+  🌐 Remote GPU: BATCH_SIZE=256  CONCURRENCY=4  (153 chunks/s)
+
+  Detected setup: 🌐 Remote
+  Selected: BATCH_SIZE=256, CONCURRENCY=4
 ```
 
-**`npm run benchmark-embeddings`** (embedding-only):
-```
-Embedding rate:     54 emb/s
-Time per embedding: 18.52 ms
-```
+**Hardware:** Remote AMD Radeon 7800M GPU via LAN, jina-embeddings-v2-base-code
 
-### Example: Testing Different Models
+### Testing Different Models
 
 ```bash
-# Test jina-embeddings-v2-base-code (768 dims)
-EMBEDDING_MODEL=jina-embeddings-v2-base-code npm run benchmark-embeddings
+# Test jina-embeddings-v2-base-code (768 dims) - default
+npm run benchmark-embeddings
 
-# Test mxbai-embed-large (1024 dims)
+# Test different model
 EMBEDDING_MODEL=mxbai-embed-large:latest npm run benchmark-embeddings
 
-# Test nomic-embed-text (768 dims)
-EMBEDDING_MODEL=nomic-embed-text npm run benchmark-embeddings
-```
-
-### Quick GPU Test
-
-```bash
-# Quick 64-sample test for fast feedback
-TUNE_SAMPLE_SIZE=64 npm run benchmark-embeddings
+# Remote GPU
+EMBEDDING_BASE_URL=http://192.168.1.100:11434 npm run benchmark-embeddings
 ```
 
 ## Deployment Topologies
@@ -196,18 +222,24 @@ Everything runs on your machine:
 ```
 
 **Pros:** Lowest latency, fastest storage, fully offline
-**Cons:** Uses local GPU/CPU resources
+**Cons:** Uses local GPU/CPU resources, slower embedding than remote GPU
 
-**Typical tuned values:**
+**Calibrated values (M3 Pro, jina-embeddings-v2-base-code):**
 ```bash
-EMBEDDING_BATCH_SIZE=64
-EMBEDDING_CONCURRENCY=2
+EMBEDDING_BATCH_SIZE=512
+EMBEDDING_CONCURRENCY=1
 CODE_BATCH_SIZE=192
 QDRANT_BATCH_ORDERING=weak
 QDRANT_FLUSH_INTERVAL_MS=100
-QDRANT_DELETE_BATCH_SIZE=750
-QDRANT_DELETE_CONCURRENCY=4
+QDRANT_DELETE_BATCH_SIZE=1500
+QDRANT_DELETE_CONCURRENCY=12
+# Embedding: 87 chunks/s, Storage: 6273 chunks/s
 ```
+
+**Why these values:**
+- `EMBEDDING_BATCH_SIZE=512` + `CONCURRENCY=1`: GPU-bound workload, concurrency adds overhead without benefit
+- `QDRANT_BATCH_ORDERING=weak`: Local Qdrant doesn't need strong ordering guarantees
+- `QDRANT_FLUSH_INTERVAL_MS=100`: Fast flushes for local SSD
 
 ### ⭐ Remote GPU + Local Qdrant (Recommended)
 
@@ -226,16 +258,22 @@ Embedding on a dedicated GPU server, Qdrant runs locally in Docker:
 **Pros:** Best of both worlds — fast GPU embedding + fast local storage
 **Cons:** Requires local Docker for Qdrant
 
-**Typical tuned values:**
+**Calibrated values (Remote AMD 7800M + local Qdrant):**
 ```bash
-EMBEDDING_BATCH_SIZE=48
-EMBEDDING_CONCURRENCY=4
-CODE_BATCH_SIZE=192
+EMBEDDING_BATCH_SIZE=256
+EMBEDDING_CONCURRENCY=6
+CODE_BATCH_SIZE=512
 QDRANT_BATCH_ORDERING=strong
-QDRANT_FLUSH_INTERVAL_MS=100
-QDRANT_DELETE_BATCH_SIZE=750
-QDRANT_DELETE_CONCURRENCY=4
+QDRANT_FLUSH_INTERVAL_MS=250
+QDRANT_DELETE_BATCH_SIZE=500
+QDRANT_DELETE_CONCURRENCY=16
+# Embedding: 156 chunks/s, Storage: 6966 chunks/s
 ```
+
+**Why these values:**
+- `EMBEDDING_BATCH_SIZE=256` + `CONCURRENCY=6`: Network latency hidden by concurrent requests
+- `QDRANT_BATCH_ORDERING=strong`: Higher ordering ensures data consistency
+- Higher storage rate (6966 chunks/s) because Qdrant is local
 
 ### 🌐 Full Remote Setup
 
@@ -252,31 +290,44 @@ Both Qdrant and Ollama on a dedicated server (e.g., Windows PC with GPU):
 ```
 
 **Pros:** Dedicated GPU, doesn't affect local machine resources
-**Cons:** Network latency significantly impacts storage throughput
+**Cons:** Network latency significantly impacts storage throughput (~4x slower than local)
 
-**Typical tuned values:**
+**Calibrated values (Remote AMD 7800M + remote Qdrant):**
 ```bash
-EMBEDDING_BATCH_SIZE=48
+EMBEDDING_BATCH_SIZE=256
 EMBEDDING_CONCURRENCY=4
-CODE_BATCH_SIZE=128
-QDRANT_BATCH_ORDERING=medium
-QDRANT_FLUSH_INTERVAL_MS=250
-QDRANT_DELETE_BATCH_SIZE=750
-QDRANT_DELETE_CONCURRENCY=4
+CODE_BATCH_SIZE=256
+QDRANT_BATCH_ORDERING=weak
+QDRANT_FLUSH_INTERVAL_MS=500
+QDRANT_DELETE_BATCH_SIZE=1000
+QDRANT_DELETE_CONCURRENCY=12
+# Embedding: 154 chunks/s, Storage: 1810 chunks/s
 ```
+
+**Why these values:**
+- `EMBEDDING_BATCH_SIZE=256` + `CONCURRENCY=4`: Balance between hiding latency and avoiding queue buildup
+- `QDRANT_BATCH_ORDERING=weak`: Reduce round-trips over network
+- `QDRANT_FLUSH_INTERVAL_MS=500`: Larger flush windows amortize network latency
+- Storage is bottlenecked by network (1810 chunks/s vs 6966 for local)
 
 ### Performance Comparison
 
-| Metric | 🏠 Fully Local | ⭐ Remote GPU + Local Qdrant | 🌐 Full Remote |
-|--------|----------------|------------------------------|----------------|
-| **Qdrant latency** | <1ms | <1ms | 5-50ms |
-| **Storage rate** | 7136 ch/s | 7288 ch/s | 1994 ch/s |
-| **Embedding rate** | 142 emb/s | 177 emb/s | 173 emb/s |
-| **Optimal ordering** | `weak` | `strong` | `medium` |
-| **Flush interval** | 100ms | 100ms | 250ms |
+| Metric | 🏠 Fully Local (M3 Pro) | ⭐ Remote GPU + Local Qdrant | 🌐 Full Remote |
+|--------|-------------------------|------------------------------|----------------|
+| Optimal batch | 512 | 256 | 256 |
+| Optimal concurrency | 1 | 6 | 4 |
+| Optimal ordering | `weak` | `strong` | `weak` |
+| **Qdrant latency** | **<1ms** | **<1ms** | 5-50ms |
+| **Storage rate** | 6273 ch/s | **6966 ch/s** | 1810 ch/s |
+| **Embedding rate** | 87 ch/s | **156 ch/s** | 154 ch/s |
+| **VS Code (3.5M LoC)** | 13m 36s | **7m 39s** | 8m 13s |
 
 > **Why is Full Remote storage slower?**
 > Each batch upsert requires a network round-trip (request → processing → response). Even on local LAN with 1-5ms latency, this adds up when sending thousands of batches. Local Docker uses loopback interface with microsecond latency.
+
+> **Why different EMBEDDING_BATCH_SIZE and CONCURRENCY?**
+> - **Local GPU (512/1)**: GPU-bound workload. Larger batches = less overhead. Concurrency adds no benefit.
+> - **Remote GPU (256/4-6)**: Network latency is significant. Smaller batches + higher concurrency hides latency by overlapping network I/O with GPU compute. While one batch transfers, GPU processes another.
 
 ### Recommended Setup
 
@@ -284,38 +335,45 @@ QDRANT_DELETE_CONCURRENCY=4
 
 | Factor | Why This Setup Wins |
 |--------|---------------------|
-| **Total indexing time** | Fastest overall (~9.6 min for VS Code 3.5M LoC) |
-| **Storage performance** | Local Qdrant = microsecond latency, 7288 ch/s |
-| **Embedding performance** | Dedicated GPU = 177 emb/s |
+| **Total indexing time** | Fastest overall (~7m 39s for VS Code 3.5M LoC) |
+| **Storage performance** | Local Qdrant = microsecond latency, 6966 ch/s |
+| **Embedding performance** | Dedicated GPU = 156 ch/s (1.8x faster than local M3) |
 | **Resource usage** | Only Docker for Qdrant locally (lightweight) |
 | **Flexibility** | GPU server can serve multiple machines |
 
 **When to choose other setups:**
 
-- **Fully Local**: When you have a powerful GPU on your development machine and want to work fully offline
-- **Full Remote**: When you cannot run Docker locally (e.g., corporate restrictions) or need to index from multiple thin clients
+- **Fully Local**: When you have a powerful GPU on your development machine and want to work fully offline. M3 Pro achieves 87 ch/s which is still fast for most projects.
+- **Full Remote**: When you cannot run Docker locally (e.g., corporate restrictions) or need to index from multiple thin clients. Network latency reduces storage to 1810 ch/s but embedding remains fast at 154 ch/s.
 
 ## Performance Benchmarks
 
 ### Estimated Indexing Times
 
-| Codebase | LoC | 🏠 Fully Local | ⭐ Remote GPU + Local Qdrant | 🌐 Full Remote |
-|----------|-----|----------------|------------------------------|----------------|
-| Small CLI tool | 10K | ~2s | ~2s | ~2s |
-| Medium library | 50K | ~10s | ~8s | ~8s |
-| Large library | 100K | ~20s | ~16s | ~16s |
-| Enterprise app | 500K | ~1m 41s | ~1m 20s | ~1m 23s |
-| Large codebase | 1M | ~3m 22s | ~2m 40s | ~2m 46s |
-| VS Code | 3.5M | ~11m 47s | ~9m 23s | ~9m 39s |
-| Kubernetes | 5M | ~16m 50s | ~13m 23s | ~13m 47s |
-| Linux kernel | 10M | ~33m 40s | ~26m 47s | ~27m 33s |
+| Codebase | LoC | Chunks | 🏠 Local (87 ch/s) | ⭐ Remote GPU (156 ch/s) | 🌐 Full Remote (154 ch/s) |
+|----------|-----|--------|-------------------|-------------------------|---------------------------|
+| Small CLI tool | 10K | 200 | 2s | 1s | 1s |
+| Medium library | 50K | 1K | 12s | 7s | 7s |
+| Large library | 100K | 2K | 23s | 13s | 14s |
+| Enterprise app | 500K | 10K | 1m 57s | 1m 6s | 1m 10s |
+| Large codebase | 1M | 20K | 3m 53s | 2m 11s | 2m 21s |
+| **VS Code** | **3.5M** | **70K** | **13m 36s** | **7m 39s** | **8m 13s** |
+| Kubernetes | 5M | 100K | 19m 25s | 10m 55s | 11m 45s |
+| Linux kernel | 10M | 200K | 38m 51s | 21m 51s | 23m 29s |
 
-**Note**: Times based on `jina-embeddings-v2-base-code` model. CPU-only embedding is 5-10x slower.
+**Note**: Based on CODE_CHUNK_SIZE=2500, AVG_LOC_PER_CHUNK=50, jina-embeddings-v2-base-code. CPU-only embedding is 5-10x slower.
 
 **Benchmark hardware:**
 - Local: Apple M3 Pro, Docker Qdrant, local Ollama
-- Remote GPU: NVIDIA GPU server (Windows) via LAN, jina-embeddings-v2-base-code
-- Measured rates: Local 142 emb/s, Remote GPU + Local Qdrant 177 emb/s, Full Remote 173 emb/s
+- Remote GPU: AMD Radeon RX 7800M (external eGPU) via LAN
+- Model: unclemusclez/jina-embeddings-v2-base-code:latest
+
+**Measured rates:**
+| Setup | Embedding Rate | Storage Rate | Bottleneck |
+|-------|---------------|--------------|------------|
+| 🏠 Local | 87 ch/s | 6273 ch/s | Embedding |
+| ⭐ Remote GPU | **156 ch/s** | **6966 ch/s** | Embedding |
+| 🌐 Full Remote | 154 ch/s | 1810 ch/s | Embedding |
 
 ## Embedding Performance
 
@@ -338,30 +396,61 @@ ollama run nomic-embed-text "test" --verbose
 
 # Recommended: Use code-specialized model
 ollama pull jina-embeddings-v2-base-code
-export EMBEDDING_MODEL="jina-embeddings-v2-base-code"
+export EMBEDDING_MODEL="jina-unclemusclez/jina-embeddings-v2-base-code:latest-v2-base-code"
 ```
 
 ### Batch Size Tuning
 
-| VRAM | Recommended `EMBEDDING_BATCH_SIZE` |
-|------|-----------------------------------|
-| 4GB | 32 |
-| 8GB | 64 (default) |
-| 12GB+ | 128 |
-| CPU only | 16 |
+**Key Insight**: Optimal batch size depends on whether Ollama is local or remote.
+
+| Setup | Recommended `EMBEDDING_BATCH_SIZE` | Why |
+|-------|-----------------------------------|-----|
+| Local GPU | 512 | Minimize per-batch overhead |
+| Remote GPU | 256 | Smaller batches + concurrency hides latency |
+| CPU only | 64-128 | Balance memory vs throughput |
 
 ```bash
-export EMBEDDING_BATCH_SIZE=128  # For 12GB+ VRAM
+# Local GPU
+export EMBEDDING_BATCH_SIZE=512
+export EMBEDDING_CONCURRENCY=1
+
+# Remote GPU
+export EMBEDDING_BATCH_SIZE=256
+export EMBEDDING_CONCURRENCY=4
 ```
 
 ### Concurrency Tuning
 
-For multiple GPUs or high-end hardware:
+**Key Insight**: Concurrency is **only beneficial for remote GPU**. Local GPU sees no improvement from concurrency — it adds overhead without benefit.
+
+| Setup | Recommended `EMBEDDING_CONCURRENCY` | Why |
+|-------|-------------------------------------|-----|
+| Local GPU | 1 | GPU-bound, concurrency adds overhead |
+| Remote GPU | 4-6 | Hide network latency with parallel requests |
 
 ```bash
-# Multiple embedding requests in parallel
-export EMBEDDING_CONCURRENCY=2  # For multi-GPU setups
+# For local GPU — don't use concurrency
+export EMBEDDING_CONCURRENCY=1
+
+# For remote GPU — use concurrency to hide network latency
+export EMBEDDING_CONCURRENCY=4
 ```
+
+### Performance Insights
+
+Based on extensive benchmarking across different setups:
+
+1. **Local M3 Pro is GPU-bound**: Adding concurrency does not improve throughput. BATCH=512 + CONC=1 achieves peak performance (87 ch/s).
+
+2. **Remote GPU benefits from concurrency**: While one batch transfers over network, GPU processes another. CONC=4-6 hides ~90% of network latency.
+
+3. **Storage rate is consistent for local Qdrant**: ~6300-7000 ch/s regardless of where Ollama runs. This confirms storage is not the bottleneck.
+
+4. **Network latency crushes remote Qdrant storage**: 6966 ch/s → 1810 ch/s (3.8x drop). Always run Qdrant locally if possible.
+
+5. **Plateau detection is reliable**: The algorithm stops testing early when improvements drop below 3%, saving significant benchmark time.
+
+6. **Embedding is always the bottleneck**: Even at 156 ch/s (remote GPU), embedding is 40x slower than storage (6966 ch/s). Invest in GPU, not Qdrant infrastructure.
 
 ## Indexing Performance
 
@@ -544,14 +633,47 @@ Returns:
 
 ## Configuration Summary
 
+### Local GPU Setup (M3 Pro or similar)
+
 ```bash
-# Recommended for 12GB VRAM, large codebase
-export EMBEDDING_MODEL="jina-embeddings-v2-base-code"
-export EMBEDDING_BATCH_SIZE=128
+export EMBEDDING_MODEL="unclemusclez/jina-embeddings-v2-base-code:latest"
+export EMBEDDING_BATCH_SIZE=512
 export EMBEDDING_CONCURRENCY=1
-export CODE_CHUNK_SIZE=2500
-export CODE_BATCH_SIZE=100
-export MAX_IO_CONCURRENCY=100
+export CODE_BATCH_SIZE=192
 export QDRANT_BATCH_ORDERING=weak
-export DEBUG=0  # Set to 1 for troubleshooting
+export QDRANT_FLUSH_INTERVAL_MS=100
+export QDRANT_DELETE_BATCH_SIZE=1500
+export QDRANT_DELETE_CONCURRENCY=12
+# Expected: 87 ch/s embedding, 6273 ch/s storage
+```
+
+### Remote GPU Setup (AMD Radeon 7800M via LAN)
+
+```bash
+export EMBEDDING_BASE_URL=http://your-gpu-server:11434
+export EMBEDDING_MODEL="unclemusclez/jina-embeddings-v2-base-code:latest"
+export EMBEDDING_BATCH_SIZE=256
+export EMBEDDING_CONCURRENCY=6
+export CODE_BATCH_SIZE=512
+export QDRANT_BATCH_ORDERING=strong
+export QDRANT_FLUSH_INTERVAL_MS=250
+export QDRANT_DELETE_BATCH_SIZE=500
+export QDRANT_DELETE_CONCURRENCY=16
+# Expected: 156 ch/s embedding, 6966 ch/s storage
+```
+
+### Full Remote Setup (GPU + Qdrant on remote server)
+
+```bash
+export QDRANT_URL=http://your-server:6333
+export EMBEDDING_BASE_URL=http://your-server:11434
+export EMBEDDING_MODEL="unclemusclez/jina-embeddings-v2-base-code:latest"
+export EMBEDDING_BATCH_SIZE=256
+export EMBEDDING_CONCURRENCY=4
+export CODE_BATCH_SIZE=256
+export QDRANT_BATCH_ORDERING=weak
+export QDRANT_FLUSH_INTERVAL_MS=500
+export QDRANT_DELETE_BATCH_SIZE=1000
+export QDRANT_DELETE_CONCURRENCY=12
+# Expected: 154 ch/s embedding, 1810 ch/s storage
 ```

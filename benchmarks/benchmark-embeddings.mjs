@@ -1,199 +1,127 @@
 #!/usr/bin/env node
 /**
- * Embedding-Only Benchmark
+ * Embedding Diagnostic Benchmark
  *
- * Tests EMBEDDING_BATCH_SIZE and EMBEDDING_CONCURRENCY only.
- * Focused on GPU utilization and embedding throughput.
+ * Automatically calibrates EMBEDDING_BATCH_SIZE and EMBEDDING_CONCURRENCY
+ * using a three-phase plateau-detection algorithm.
+ *
+ * Phase 1: Find batch size plateau (CONCURRENCY=1)
+ * Phase 2: Test concurrency on plateau batches
+ * Phase 3: Select robust configuration (within 2% of max, prefer lower concurrency/batch)
  *
  * Run: npm run benchmark-embeddings
- *
- * Environment variables:
- *   EMBEDDING_BASE_URL  - Ollama server URL (default: http://localhost:11434)
- *   EMBEDDING_MODEL     - Model name (default: jina-embeddings-v2-base-code)
- *   TUNE_SAMPLE_SIZE    - Number of test chunks (default: 4096)
  */
 
 import { OllamaEmbeddings } from "../build/embeddings/ollama.js";
+import { config, MEDIAN_CODE_CHUNK_SIZE, AVG_LOC_PER_CHUNK } from "./lib/config.mjs";
+import { c, printBox } from "./lib/colors.mjs";
+import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
 
-import { config, CRITERIA, SAMPLE_SIZE, CODE_CHUNK_SIZE, BATCH_TEST_SAMPLES } from "./lib/config.mjs";
-import { c, bar, formatRate, printHeader, printBox } from "./lib/colors.mjs";
-import { generateTexts } from "./lib/benchmarks.mjs";
-import { runBatchSizeBenchmark, runConcurrencyBenchmark, formatTime } from "./lib/embedding-steps.mjs";
+/**
+ * Format time in human readable format
+ */
+function formatTime(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
 
 /**
  * Check Ollama connectivity and model availability
  */
 async function checkOllama() {
   try {
-    const tagsResponse = await fetch(`${config.EMBEDDING_BASE_URL}/api/tags`, {
-      method: "GET",
+    const response = await fetch(`${config.EMBEDDING_BASE_URL}/api/tags`, {
       signal: AbortSignal.timeout(5000),
     });
-    if (!tagsResponse.ok) {
-      return { ok: false, error: `Ollama returned status ${tagsResponse.status}` };
+    if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
+
+    const { models } = await response.json();
+    const modelNames = (models || []).map(m => m.name.replace(/:latest$/, ""));
+    const target = config.EMBEDDING_MODEL.replace(/:latest$/, "");
+
+    if (!modelNames.some(n => n === target || n === config.EMBEDDING_MODEL)) {
+      return { ok: false, error: `Model "${config.EMBEDDING_MODEL}" not found` };
     }
-
-    const tags = await tagsResponse.json();
-    const models = tags.models || [];
-    const modelNames = models.map(m => m.name.replace(/:latest$/, ""));
-
-    const targetModel = config.EMBEDDING_MODEL.replace(/:latest$/, "");
-    const modelExists = modelNames.some(name =>
-      name === targetModel || name === config.EMBEDDING_MODEL
-    );
-
-    if (!modelExists) {
-      const availableModels = modelNames.length > 0
-        ? `Available: ${modelNames.slice(0, 5).join(", ")}${modelNames.length > 5 ? "..." : ""}`
-        : "No models found";
-      return { ok: false, error: `Model "${config.EMBEDDING_MODEL}" not found. ${availableModels}` };
-    }
-
     return { ok: true };
-  } catch (err) {
-    if (err.cause?.code === "ECONNREFUSED") {
-      return { ok: false, error: `Cannot connect to Ollama at ${config.EMBEDDING_BASE_URL}` };
-    }
-    if (err.name === "TimeoutError") {
-      return { ok: false, error: `Connection timed out (${config.EMBEDDING_BASE_URL})` };
-    }
-    return { ok: false, error: err.message };
+  } catch (e) {
+    return { ok: false, error: e.message };
   }
-}
-
-/**
- * Calculate throughput metrics
- */
-function calculateMetrics(results) {
-  const validResults = results.filter(r => !r.error);
-  if (validResults.length === 0) return null;
-
-  const rates = validResults.map(r => r.rate);
-  const times = validResults.map(r => r.time);
-
-  return {
-    minRate: Math.min(...rates),
-    maxRate: Math.max(...rates),
-    avgRate: Math.round(rates.reduce((a, b) => a + b, 0) / rates.length),
-    minTime: Math.min(...times),
-    maxTime: Math.max(...times),
-    avgTime: Math.round(times.reduce((a, b) => a + b, 0) / times.length),
-  };
 }
 
 async function main() {
   console.clear();
-  printBox("EMBEDDING BENCHMARK", "GPU utilization and throughput testing");
+  printBox("EMBEDDING CALIBRATION BENCHMARK", "Three-phase plateau detection");
 
-  // Print configuration
+  // Show configuration
   console.log(`${c.bold}Configuration:${c.reset}`);
-  console.log(`  ${c.dim}Ollama:${c.reset}       ${config.EMBEDDING_BASE_URL}`);
-  console.log(`  ${c.dim}Model:${c.reset}        ${config.EMBEDDING_MODEL}`);
-  console.log(`  ${c.dim}Chunk size:${c.reset}   ${CODE_CHUNK_SIZE} chars${process.env.CODE_CHUNK_SIZE ? ` ${c.cyan}(custom)${c.reset}` : ""}`);
-  console.log(`  ${c.dim}Sample size:${c.reset}  ${SAMPLE_SIZE} chunks${process.env.TUNE_SAMPLE_SIZE ? ` ${c.cyan}(custom)${c.reset}` : ""}`);
-  console.log(`  ${c.dim}Batch test:${c.reset}   ${BATCH_TEST_SAMPLES} samples/test${process.env.BATCH_TEST_SAMPLES ? ` ${c.cyan}(custom)${c.reset}` : ""}`);
-  console.log();
+  console.log(`  ${c.dim}Ollama:${c.reset}        ${config.EMBEDDING_BASE_URL}`);
+  console.log(`  ${c.dim}Model:${c.reset}         ${config.EMBEDDING_MODEL}`);
+  console.log(`  ${c.dim}Chunk size:${c.reset}    ${MEDIAN_CODE_CHUNK_SIZE} chars (median from production)`);
   console.log();
 
   // Check Ollama
-  console.log(`${c.dim}Checking Ollama...${c.reset}`);
+  process.stdout.write(`${c.dim}Checking Ollama...${c.reset} `);
   const ollamaCheck = await checkOllama();
   if (!ollamaCheck.ok) {
-    console.log(`\n${c.red}${c.bold}Error:${c.reset} ${ollamaCheck.error}`);
-    console.log(`\n${c.bold}To fix:${c.reset}`);
-    console.log(`  1. Start Ollama:  ${c.cyan}docker compose up -d ollama${c.reset}`);
-    console.log(`  2. Pull model:    ${c.cyan}docker exec ollama ollama pull ${config.EMBEDDING_MODEL}${c.reset}`);
+    console.log(`${c.red}FAILED${c.reset}`);
+    console.log(`\n${c.red}Error:${c.reset} ${ollamaCheck.error}`);
     process.exit(1);
   }
-  console.log(`  ${c.green}✓${c.reset} Ollama connected (model: ${config.EMBEDDING_MODEL})`);
+  console.log(`${c.green}OK${c.reset}`);
 
   // Initialize embeddings
-  const embeddings = new OllamaEmbeddings(
-    config.EMBEDDING_MODEL,
-    config.EMBEDDING_DIMENSION, // undefined = auto-detect
-    undefined,
-    config.EMBEDDING_BASE_URL
-  );
+  const embeddings = new OllamaEmbeddings(config.EMBEDDING_MODEL, undefined, undefined, config.EMBEDDING_BASE_URL);
+  console.log(`  ${c.green}✓${c.reset} Vector dimension: ${embeddings.getDimensions()}`);
+  console.log();
 
-  // Get actual dimension (auto-detected if not specified)
-  const actualDimension = embeddings.getDimensions();
-  if (!config.EMBEDDING_DIMENSION) {
-    config.EMBEDDING_DIMENSION = actualDimension;
+  // Run calibration
+  const result = await calibrateEmbeddings(embeddings, { verbose: true });
+
+  // ========== OUTPUT ==========
+  console.log();
+
+  // Detect setup type
+  const isRemote = !config.EMBEDDING_BASE_URL.includes("localhost") &&
+                   !config.EMBEDDING_BASE_URL.includes("127.0.0.1");
+  const setupIcon = isRemote ? "🌐" : "🏠";
+  const setupName = isRemote ? "Remote GPU" : "Local GPU";
+
+  printBox(`${setupIcon} ${setupName.toUpperCase()} - OPTIMAL CONFIGURATION`, "");
+
+  // Main result
+  console.log(`  ${c.bold}EMBEDDING_BATCH_SIZE${c.reset}   = ${c.green}${c.bold}${result.EMBEDDING_BATCH_SIZE}${c.reset}`);
+  console.log(`  ${c.bold}EMBEDDING_CONCURRENCY${c.reset}  = ${c.green}${c.bold}${result.EMBEDDING_CONCURRENCY}${c.reset}`);
+  console.log();
+  console.log(`  ${c.bold}Throughput:${c.reset} ${c.cyan}${result.throughput_chunks_per_sec} chunks/s${c.reset}`);
+  console.log();
+
+  // Explain the choice
+  console.log(`${c.bold}Why this configuration?${c.reset}`);
+  if (isRemote) {
+    console.log(`  ${c.dim}•${c.reset} Remote GPU detected (${config.EMBEDDING_BASE_URL})`);
+    console.log(`  ${c.dim}•${c.reset} Lower batch + higher concurrency hides network latency`);
+    console.log(`  ${c.dim}•${c.reset} While one batch transfers, GPU processes another`);
+    if (result.EMBEDDING_CONCURRENCY > 1) {
+      console.log(`  ${c.dim}•${c.reset} CONCURRENCY=${result.EMBEDDING_CONCURRENCY} overlaps network I/O with GPU compute`);
+    }
+  } else {
+    console.log(`  ${c.dim}•${c.reset} Local GPU detected (minimal network latency)`);
+    console.log(`  ${c.dim}•${c.reset} Higher batch + lower concurrency minimizes overhead`);
+    if (result.EMBEDDING_CONCURRENCY === 1) {
+      console.log(`  ${c.dim}•${c.reset} CONCURRENCY=1 indicates GPU-bound workload`);
+    }
   }
-
-  console.log(`  ${c.green}✓${c.reset} Vector dimension: ${actualDimension}${!process.env.EMBEDDING_DIMENSION ? ` ${c.dim}(auto-detected)${c.reset}` : ""}`);
   console.log();
 
-  // Generate test data
-  console.log(`${c.dim}Generating ${SAMPLE_SIZE} test samples...${c.reset}`);
-  const texts = generateTexts(SAMPLE_SIZE);
-
-  console.log(`${c.dim}Warming up GPU...${c.reset}`);
-  process.env.EMBEDDING_BATCH_SIZE = "64";
-  process.env.EMBEDDING_CONCURRENCY = "1";
-  await embeddings.embedBatch(texts.slice(0, 128));
+  // Environment export
+  console.log(`${c.bold}Add to your environment:${c.reset}`);
   console.log();
-
-  const startTime = Date.now();
-
-  // ============ PHASE 1: EMBEDDING_BATCH_SIZE ============
-
-  printHeader("Phase 1: Batch Size", "Finding optimal EMBEDDING_BATCH_SIZE");
-
-  const embResult = await runBatchSizeBenchmark(embeddings, texts);
-
-  const optimalBatchSize = embResult.bestValue;
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_BATCH_SIZE=${optimalBatchSize}${c.reset}`);
-  console.log(`    ${c.dim}Speed: ${embResult.bestRate} embeddings/sec${c.reset}`);
-
-  process.env.EMBEDDING_BATCH_SIZE = String(optimalBatchSize);
-
-  // ============ PHASE 2: EMBEDDING_CONCURRENCY ============
-
-  printHeader("Phase 2: Concurrency", "Finding optimal EMBEDDING_CONCURRENCY");
-
-  const concResult = await runConcurrencyBenchmark(embeddings, texts, embResult, optimalBatchSize);
-
-  const optimalConcurrency = concResult.bestValue;
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_CONCURRENCY=${optimalConcurrency}${c.reset}`);
-  console.log(`    ${c.dim}Speed: ${concResult.bestRate} embeddings/sec${c.reset}`);
-
-  // ============ SUMMARY ============
-
-  const totalTime = Date.now() - startTime;
-
-  printBox("BENCHMARK COMPLETE", "");
-
-  // Optimal configuration
-  console.log(`${c.bold}Optimal configuration:${c.reset}`);
-  console.log(`  EMBEDDING_BATCH_SIZE   = ${c.green}${c.bold}${optimalBatchSize}${c.reset}`);
-  console.log(`  EMBEDDING_CONCURRENCY  = ${c.green}${c.bold}${optimalConcurrency}${c.reset}`);
+  console.log(`  ${c.cyan}export EMBEDDING_BATCH_SIZE=${result.EMBEDDING_BATCH_SIZE}${c.reset}`);
+  console.log(`  ${c.cyan}export EMBEDDING_CONCURRENCY=${result.EMBEDDING_CONCURRENCY}${c.reset}`);
   console.log();
-
-  // Performance metrics
-  const finalRate = concResult.bestRate || embResult.bestRate;
-  console.log(`${c.bold}Performance metrics:${c.reset}`);
-  console.log(`  ${c.dim}Embedding rate:${c.reset}     ${c.bold}${finalRate}${c.reset} emb/s`);
-  console.log(`  ${c.dim}Time per embedding:${c.reset} ${c.bold}${(1000 / finalRate).toFixed(2)}${c.reset} ms`);
-  console.log();
-
-  // Batch size analysis
-  const batchMetrics = calculateMetrics(embResult.results);
-  if (batchMetrics) {
-    console.log(`${c.bold}Batch size analysis:${c.reset}`);
-    console.log(`  ${c.dim}Rate range:${c.reset}  ${batchMetrics.minRate} - ${batchMetrics.maxRate} emb/s`);
-    console.log(`  ${c.dim}Time range:${c.reset}  ${batchMetrics.minTime} - ${batchMetrics.maxTime} ms`);
-    console.log();
-  }
-
-  // Concurrency analysis
-  const concMetrics = calculateMetrics(concResult.results);
-  if (concMetrics) {
-    console.log(`${c.bold}Concurrency analysis:${c.reset}`);
-    console.log(`  ${c.dim}Rate range:${c.reset}  ${concMetrics.minRate} - ${concMetrics.maxRate} emb/s`);
-    console.log(`  ${c.dim}Scaling:${c.reset}     ${((concMetrics.maxRate / concMetrics.minRate - 1) * 100).toFixed(0)}% improvement with parallelism`);
-    console.log();
-  }
 
   // Time estimates
   console.log(`${c.bold}Estimated indexing times:${c.reset}`);
@@ -204,19 +132,20 @@ async function main() {
     { name: "VS Code (3.5M)", loc: 3_500_000 },
   ];
   for (const p of projects) {
-    const chunks = Math.ceil(p.loc / 35);
-    const seconds = Math.ceil(chunks / finalRate);
-    console.log(`  ${c.dim}${p.name.padEnd(15)}${c.reset} ${formatTime(seconds * 1000)}`);
+    const chunks = Math.ceil(p.loc / AVG_LOC_PER_CHUNK);
+    const seconds = Math.ceil(chunks / result.throughput_chunks_per_sec);
+    console.log(`  ${c.dim}${p.name.padEnd(20)}${c.reset} ${c.bold}${formatTime(seconds * 1000)}${c.reset}`);
   }
   console.log();
 
-  console.log(`${c.dim}Total benchmark time: ${formatTime(totalTime)}${c.reset}`);
-  console.log();
-
-  process.exit(0);
+  // Stats
+  console.log(`${c.dim}────────────────────────────────────────${c.reset}`);
+  console.log(`${c.dim}Configs tested: ${result.stable_configs_count} stable, ${result.discarded_configs_count} discarded${c.reset}`);
+  console.log(`${c.bold}Total benchmark time: ${formatTime(result.calibration_time_ms)}${c.reset}`);
 }
 
-main().catch((error) => {
-  console.error(`${c.red}${c.bold}Fatal error:${c.reset}`, error.message);
+main().catch(err => {
+  console.error(`${c.red}Fatal error:${c.reset}`, err.message);
+  console.error(err.stack);
   process.exit(1);
 });
