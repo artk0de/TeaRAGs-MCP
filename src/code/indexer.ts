@@ -9,6 +9,10 @@ import { extname, join, relative, resolve } from "node:path";
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../embeddings/sparse.js";
 import type { QdrantManager } from "../qdrant/client.js";
+import {
+  filterResultsByGlob,
+  calculateFetchLimit,
+} from "../qdrant/filters/index.js";
 import { TreeSitterChunker } from "./chunker/tree-sitter-chunker.js";
 import { GitMetadataService } from "./git/index.js";
 import { MetadataExtractor } from "./metadata.js";
@@ -421,8 +425,8 @@ export class CodeIndexer {
 
     // Build filter
     let filter: any;
-    const hasBasicFilters =
-      options?.fileTypes || options?.pathPattern || options?.documentationOnly;
+    // Note: pathPattern is handled via client-side filtering, not Qdrant filter
+    const hasBasicFilters = options?.fileTypes || options?.documentationOnly;
     // Git filters per canonical algorithm (aggregated signals only)
     const hasGitFilters =
       options?.author ||
@@ -441,20 +445,6 @@ export class CodeIndexer {
         filter.must.push({
           key: "fileExtension",
           match: { any: options.fileTypes },
-        });
-      }
-
-      if (options?.pathPattern) {
-        // Convert glob pattern to regex (simplified)
-        const regex = options.pathPattern
-          .replace(/\./g, "\\.")
-          .replace(/\*\*/g, ".*")
-          .replace(/\*/g, "[^/]*")
-          .replace(/\?/g, ".");
-
-        filter.must.push({
-          key: "relativePath",
-          match: { text: regex },
         });
       }
 
@@ -523,6 +513,13 @@ export class CodeIndexer {
       }
     }
 
+    // Calculate fetch limit (fetch more if we need to filter by glob pattern)
+    const requestedLimit = options?.limit || this.config.defaultSearchLimit;
+    const fetchLimit = calculateFetchLimit(
+      requestedLimit,
+      Boolean(options?.pathPattern),
+    );
+
     // Search with hybrid or standard search
     let results;
     if (useHybrid) {
@@ -532,25 +529,33 @@ export class CodeIndexer {
         collectionName,
         embedding,
         sparseVector,
-        options?.limit || this.config.defaultSearchLimit,
+        fetchLimit,
         filter,
       );
     } else {
       results = await this.qdrant.search(
         collectionName,
         embedding,
-        options?.limit || this.config.defaultSearchLimit,
+        fetchLimit,
         filter,
       );
     }
 
-    // Apply score threshold if specified
-    const filteredResults = options?.scoreThreshold
-      ? results.filter((r) => r.score >= (options.scoreThreshold || 0))
+    // Apply glob pattern filter if specified (client-side filtering)
+    const globFilteredResults = options?.pathPattern
+      ? filterResultsByGlob(results, options.pathPattern)
       : results;
 
+    // Apply score threshold if specified
+    const filteredResults = options?.scoreThreshold
+      ? globFilteredResults.filter(
+          (r) => r.score >= (options.scoreThreshold || 0),
+        )
+      : globFilteredResults;
+
     // Format results (include git metadata if present)
-    return filteredResults.map((r) => ({
+    // Limit to requested count after all filtering
+    return filteredResults.slice(0, requestedLimit).map((r) => ({
       content: r.payload?.content || "",
       filePath: r.payload?.relativePath || "",
       startLine: r.payload?.startLine || 0,

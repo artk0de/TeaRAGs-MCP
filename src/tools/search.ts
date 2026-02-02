@@ -6,6 +6,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../embeddings/sparse.js";
 import type { QdrantManager } from "../qdrant/client.js";
+import {
+  filterResultsByGlob,
+  calculateFetchLimit,
+} from "../qdrant/filters/index.js";
 import * as schemas from "./schemas.js";
 
 export interface SearchToolDependencies {
@@ -28,7 +32,7 @@ export function registerSearchTools(
         "Search for documents using natural language queries. Returns the most semantically similar documents.",
       inputSchema: schemas.SemanticSearchSchema,
     },
-    async ({ collection, query, limit, filter }) => {
+    async ({ collection, query, limit, filter, pathPattern }) => {
       // Check if collection exists
       const exists = await qdrant.collectionExists(collection);
       if (!exists) {
@@ -46,16 +50,30 @@ export function registerSearchTools(
       // Generate embedding for query
       const { embedding } = await embeddings.embed(query);
 
+      // Calculate fetch limit (fetch more if we need to filter by glob)
+      const requestedLimit = limit || 5;
+      const fetchLimit = calculateFetchLimit(
+        requestedLimit,
+        Boolean(pathPattern),
+      );
+
       // Search
       const results = await qdrant.search(
         collection,
         embedding,
-        limit || 5,
+        fetchLimit,
         filter,
       );
 
+      // Apply glob pattern filter if specified
+      const filteredResults = pathPattern
+        ? filterResultsByGlob(results, pathPattern).slice(0, requestedLimit)
+        : results;
+
       return {
-        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text", text: JSON.stringify(filteredResults, null, 2) },
+        ],
       };
     },
   );
