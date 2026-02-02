@@ -213,6 +213,7 @@ export class CodeIndexer {
             }
 
             const language = metadataExtractor.extractLanguage(filePath);
+            const { imports } = metadataExtractor.extractImportsExports(code, language);
             const chunks = await chunker.chunk(code, filePath, language);
 
             // Apply chunk limits if configured
@@ -241,6 +242,7 @@ export class CodeIndexer {
                   parentType: chunk.metadata.parentType,
                   symbolId: chunk.metadata.symbolId,
                   isDocumentation: chunk.metadata.isDocumentation,
+                  ...(imports.length > 0 && { imports }),
                 } as CodeChunk["metadata"],
               };
 
@@ -935,6 +937,7 @@ export class CodeIndexer {
               }
 
               const language = metadataExtractor.extractLanguage(absoluteFilePath);
+              const { imports } = metadataExtractor.extractImportsExports(code, language);
               const chunks = await chunker.chunk(code, absoluteFilePath, language);
 
               // Process and send chunks IMMEDIATELY (streaming)
@@ -952,6 +955,7 @@ export class CodeIndexer {
                     parentName: chunk.metadata.parentName,
                     parentType: chunk.metadata.parentType,
                     isDocumentation: chunk.metadata.isDocumentation,
+                    ...(imports.length > 0 && { imports }),
                   } as CodeChunk["metadata"],
                 };
 

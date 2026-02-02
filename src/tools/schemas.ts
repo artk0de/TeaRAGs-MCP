@@ -109,7 +109,8 @@ export const SemanticSearchSchema = {
         "parentName (string), parentType (string), " +
         "git.dominantAuthor (string), git.authors (string[]), " +
         "git.lastModifiedAt (unix timestamp), git.firstCreatedAt (unix timestamp), " +
-        "git.commitCount (number), git.ageDays (number), git.taskIds (string[]). " +
+        "git.commitCount (number), git.ageDays (number), git.taskIds (string[]), " +
+        "imports (string[] - file-level imports for impactAnalysis). " +
         "For generic documents (add_documents): user-defined metadata fields.",
     ),
   pathPattern: z
@@ -161,7 +162,8 @@ export const HybridSearchSchema = {
         "parentName (string), parentType (string), " +
         "git.dominantAuthor (string), git.authors (string[]), " +
         "git.lastModifiedAt (unix timestamp), git.firstCreatedAt (unix timestamp), " +
-        "git.commitCount (number), git.ageDays (number), git.taskIds (string[]). " +
+        "git.commitCount (number), git.ageDays (number), git.taskIds (string[]), " +
+        "imports (string[] - file-level imports for impactAnalysis). " +
         "For generic documents (add_documents): user-defined metadata fields.",
     ),
   pathPattern: z

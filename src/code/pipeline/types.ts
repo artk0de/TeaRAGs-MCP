@@ -50,6 +50,8 @@ export interface ChunkItem extends WorkItem {
       parentType?: string;
       /** True for documentation chunks (markdown, etc.) */
       isDocumentation?: boolean;
+      /** File-level imports (inherited by all chunks from the file) */
+      imports?: string[];
 
       // Git metadata (canonical algorithm: aggregated signals only)
       git?: {

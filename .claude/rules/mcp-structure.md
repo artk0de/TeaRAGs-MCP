@@ -125,3 +125,33 @@ Before completing any tool modification:
 - Tool handlers → `src/qdrant/client.ts` (Qdrant operations)
 - Tool handlers → `src/code/indexer.ts` (code indexing)
 - Tool handlers → `src/embeddings/` (embedding providers)
+
+## MCP Testing Workflow (MANDATORY)
+
+**This project IS an MCP server. Code changes require server reconnect before integration testing.**
+
+### After modifying any src/ files:
+
+1. **Build & Unit Tests**
+   ```bash
+   npm run build && npm test
+   ```
+
+2. **Request MCP Reconnect** (MANDATORY before using `mcp__tea-rags__*` tools)
+
+   Use `AskUserQuestion` tool to ask user to reconnect:
+   ```
+   question: "MCP server code was modified. Please reconnect tea-rags MCP (/mcp reconnect tea-rags), then select 'Done'."
+   options: ["Done - reconnected", "Skip integration testing"]
+   ```
+
+3. **Integration Testing** (only after user confirms reconnect)
+   - Use `mcp__tea-rags__*` tools to verify changes
+   - For indexing changes: use `index_codebase` with `forceReindex: true`
+
+### Why this matters
+
+- MCP server runs as **separate process**
+- Code changes **don't auto-reload**
+- Testing with old server = **false positives/negatives**
+- Always: build → reconnect → test with `mcp__tea-rags__*`

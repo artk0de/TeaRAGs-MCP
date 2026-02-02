@@ -334,6 +334,10 @@ export class ChunkPipeline {
             ...(item.chunk.metadata.isDocumentation && {
               isDocumentation: item.chunk.metadata.isDocumentation,
             }),
+            // File-level imports (inherited by all chunks from the file)
+            ...(item.chunk.metadata.imports?.length && {
+              imports: item.chunk.metadata.imports,
+            }),
             // Git metadata (canonical algorithm: nested git object with aggregated signals)
             ...(item.chunk.metadata.git && {
               git: {
