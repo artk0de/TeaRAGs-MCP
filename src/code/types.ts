@@ -121,6 +121,12 @@ export interface SearchOptions {
   minCommitCount?: number;
   /** Filter by task ID (e.g., "TD-1234", "#567") */
   taskId?: string;
+  /** Reranking mode: preset name or custom weights */
+  rerank?:
+    | "relevance"
+    | "recent"
+    | "stable"
+    | { custom: Record<string, number> };
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed";
