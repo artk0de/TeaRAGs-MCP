@@ -26,15 +26,17 @@ git commit -m "feat: add new feature"
 
 ## Development Commands
 
-| Command                  | Purpose                      |
-| ------------------------ | ---------------------------- |
-| `npm run build`          | Build for production         |
-| `npm run dev`            | Development with auto-reload |
-| `npm test`               | Run test suite               |
-| `npm run test:ui`        | Tests with UI                |
-| `npm run test:coverage`  | Coverage report              |
-| `npm run test:providers` | Provider verification        |
-| `npm run type-check`     | TypeScript validation        |
+| Command                       | Purpose                           |
+| ----------------------------- | --------------------------------- |
+| `npm run build`               | Build for production              |
+| `npm run dev`                 | Development with auto-reload      |
+| `npm test`                    | Run test suite                    |
+| `npm run test:ui`             | Tests with UI                     |
+| `npm run test:coverage`       | Coverage report                   |
+| `npm run test:providers`      | Provider verification             |
+| `npm run type-check`          | TypeScript validation             |
+| `npm run tune`                | Auto-calibrate all parameters     |
+| `npm run benchmark-embeddings`| Calibrate embedding parameters    |
 
 ## Commit Convention
 

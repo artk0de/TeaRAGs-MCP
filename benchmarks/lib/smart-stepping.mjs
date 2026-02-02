@@ -32,6 +32,7 @@ export async function smartSteppingSearch({
   testFn,
   onResult,
   onStop,  // Callback when stopping: (reason) => void
+  disablePlateau = false,  // TEMP: disable plateau detection for testing
 }) {
   const results = [];
   let bestValue = start;
@@ -98,8 +99,8 @@ export async function smartSteppingSearch({
       break;
     }
 
-    // Check for plateau (3 values with <15% variance)
-    if (results.length >= 3) {
+    // Check for plateau (3 values with <15% variance) - UNLESS disabled
+    if (!disablePlateau && results.length >= 3) {
       const last3 = results.slice(-3).filter(r => !r.error && !r.isMidpoint);
       if (last3.length >= 3) {
         const rates = last3.map(r => r.rate);

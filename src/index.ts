@@ -101,7 +101,7 @@ async function checkOllamaAvailability() {
       // Check if the required embedding model exists
       const tagsResponse = await fetch(`${baseUrl}/api/tags`);
       const { models } = await tagsResponse.json();
-      const modelName = process.env.EMBEDDING_MODEL || "nomic-embed-text";
+      const modelName = process.env.EMBEDDING_MODEL || "jina-embeddings-v2-base-code";
       const modelExists = models.some(
         (m: any) => m.name === modelName || m.name.startsWith(`${modelName}:`),
       );
@@ -138,13 +138,13 @@ async function checkOllamaAvailability() {
           `  - Using Docker: docker compose up -d\n` +
           `  - Or install locally: curl -fsSL https://ollama.ai/install.sh | sh\n` +
           `\nThen pull the embedding model:\n` +
-          `  ollama pull nomic-embed-text`;
+          `  ollama pull jina-embeddings-v2-base-code`;
       } else {
         helpText =
           `Please ensure:\n` +
           `  - Ollama is running at the specified URL\n` +
           `  - The URL is accessible from this machine\n` +
-          `  - The embedding model is available (e.g., nomic-embed-text)`;
+          `  - The embedding model is available (e.g., jina-embeddings-v2-base-code)`;
       }
 
       console.error(`${errorMessage}\n${helpText}`);

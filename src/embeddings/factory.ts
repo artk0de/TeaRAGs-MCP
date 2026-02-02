@@ -52,7 +52,7 @@ export class EmbeddingProviderFactory {
 
       case "ollama":
         return new OllamaEmbeddings(
-          model || "nomic-embed-text",
+          model || "jina-embeddings-v2-base-code",
           dimensions,
           rateLimitConfig,
           baseUrl || "http://localhost:11434",
