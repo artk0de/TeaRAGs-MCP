@@ -66,6 +66,8 @@ A high-performance MCP server for intelligent codebase analysis. Enterprise-read
 - 🔧 **Flexible deployment** — fully local, local network, or dedicated remote host
 - ⚙️ **Highly configurable** — fine-tune batch sizes, concurrency, caching for your hardware. Performance calibration benchmarks included
 - 🛠️ **Developer experience** — new versions don't break existing caches, auto-migrations
+- 🤡 **ABSURDLY OPTIMIZED NAMING** — thousands of top engineers (allegedly) suffered so you can type the tool name with your left hand only.
+Yes. This is real. Try it. Right now. 
 
 ### This fork vs original
 
