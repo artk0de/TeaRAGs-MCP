@@ -8,6 +8,7 @@
  * - QDRANT_UPSERT_BATCH_SIZE
  * - QDRANT_BATCH_ORDERING
  * - QDRANT_FLUSH_INTERVAL_MS
+ * - BATCH_FORMATION_TIMEOUT_MS
  * - QDRANT_DELETE_BATCH_SIZE
  * - QDRANT_DELETE_CONCURRENCY
  *
@@ -31,6 +32,7 @@ import {
   benchmarkCodeBatchSize,
   benchmarkOrdering,
   benchmarkFlushInterval,
+  benchmarkBatchFormationTimeout,
   benchmarkDeleteBatchSize,
   benchmarkDeleteConcurrency,
 } from "./lib/benchmarks.mjs";
@@ -314,9 +316,39 @@ async function main() {
   console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS}${c.reset}`);
   if (bestFlush) console.log(`    ${c.dim}Speed: ${bestFlush.rate} chunks/sec${c.reset}`);
 
-  // ============ PHASE 6: QDRANT_DELETE_BATCH_SIZE ============
+  // ============ PHASE 6: BATCH_FORMATION_TIMEOUT_MS ============
 
-  printHeader("Phase 6: Delete Batch Size", "Finding optimal QDRANT_DELETE_BATCH_SIZE");
+  printHeader("Phase 6: Batch Formation Timeout", "Finding optimal BATCH_FORMATION_TIMEOUT_MS (partial batch simulation)");
+
+  const bftDecision = new StoppingDecision();
+
+  for (const timeoutMs of TEST_VALUES.BATCH_FORMATION_TIMEOUT_MS) {
+    process.stdout.write(`  Testing BATCH_FORMATION_TIMEOUT_MS=${c.bold}${timeoutMs.toString().padStart(4)}${c.reset} `);
+
+    const result = await benchmarkBatchFormationTimeout(qdrant, points, timeoutMs, optimal.QDRANT_UPSERT_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
+    const decision = bftDecision.addResult(result);
+
+    if (result.error) {
+      console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+    } else {
+      const fillInfo = `fill=${Math.round(result.fillRate * 100)}%`;
+      console.log(`${bar(result.rate, bftDecision.bestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms, ${fillInfo})${c.reset}`);
+    }
+
+    if (decision.stop) {
+      console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+      break;
+    }
+  }
+
+  const bestBft = bftDecision.getBest();
+  optimal.BATCH_FORMATION_TIMEOUT_MS = bestBft?.timeoutMs || 2000;
+  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS}${c.reset}`);
+  if (bestBft) console.log(`    ${c.dim}Speed: ${bestBft.rate} chunks/sec (fill rate: ${Math.round(bestBft.fillRate * 100)}%)${c.reset}`);
+
+  // ============ PHASE 7: QDRANT_DELETE_BATCH_SIZE ============
+
+  printHeader("Phase 7: Delete Batch Size", "Finding optimal QDRANT_DELETE_BATCH_SIZE");
 
   const delDecision = new StoppingDecision();
 
@@ -343,9 +375,9 @@ async function main() {
   console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE}${c.reset}`);
   if (bestDel) console.log(`    ${c.dim}Speed: ${bestDel.rate} deletions/sec${c.reset}`);
 
-  // ============ PHASE 7: QDRANT_DELETE_CONCURRENCY ============
+  // ============ PHASE 8: QDRANT_DELETE_CONCURRENCY ============
 
-  printHeader("Phase 7: Delete Concurrency", "Finding optimal QDRANT_DELETE_CONCURRENCY");
+  printHeader("Phase 8: Delete Concurrency", "Finding optimal QDRANT_DELETE_CONCURRENCY");
 
   const delConcDecision = new StoppingDecision();
 

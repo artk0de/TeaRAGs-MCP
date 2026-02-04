@@ -17,6 +17,8 @@ import { join } from "node:path";
 const LOG_DIR = join(homedir(), ".tea-rags-mcp", "logs");
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
+export type PipelineStage = "scan" | "parse" | "git" | "embed" | "qdrant";
+
 export interface LogContext {
   component: string;
   operation?: string;
@@ -24,9 +26,75 @@ export interface LogContext {
   threadId?: string;
 }
 
+interface StageData {
+  totalMs: number;
+  count: number;
+  activeStart: number | null;
+}
+
+class StageProfiler {
+  private stages: Map<PipelineStage, StageData> = new Map();
+
+  private getOrCreate(stage: PipelineStage): StageData {
+    let data = this.stages.get(stage);
+    if (!data) {
+      data = { totalMs: 0, count: 0, activeStart: null };
+      this.stages.set(stage, data);
+    }
+    return data;
+  }
+
+  startStage(stage: PipelineStage): void {
+    const data = this.getOrCreate(stage);
+    data.activeStart = Date.now();
+  }
+
+  endStage(stage: PipelineStage): void {
+    const data = this.getOrCreate(stage);
+    if (data.activeStart !== null) {
+      data.totalMs += Date.now() - data.activeStart;
+      data.count++;
+      data.activeStart = null;
+    }
+  }
+
+  addTime(stage: PipelineStage, durationMs: number): void {
+    const data = this.getOrCreate(stage);
+    data.totalMs += durationMs;
+    data.count++;
+  }
+
+  getSummary(): Record<PipelineStage, { totalMs: number; count: number; percentage: number }> {
+    const totalMs = Array.from(this.stages.values()).reduce((sum, d) => sum + d.totalMs, 0);
+    const result = {} as Record<PipelineStage, { totalMs: number; count: number; percentage: number }>;
+
+    for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
+      const data = this.stages.get(stage);
+      if (data && data.totalMs > 0) {
+        result[stage] = {
+          totalMs: data.totalMs,
+          count: data.count,
+          percentage: totalMs > 0 ? (data.totalMs / totalMs) * 100 : 0,
+        };
+      }
+    }
+
+    return result;
+  }
+
+  getTotalMs(): number {
+    return Array.from(this.stages.values()).reduce((sum, d) => sum + d.totalMs, 0);
+  }
+
+  reset(): void {
+    this.stages.clear();
+  }
+}
+
 class DebugLogger {
   private logFile: string | null = null;
   private sessionStart: number;
+  private profiler = new StageProfiler();
   private counters = {
     batches: 0,
     chunks: 0,
@@ -238,15 +306,65 @@ ENV: DEBUG=${process.env.DEBUG}
   }
 
   /**
+   * Start timing a pipeline stage
+   */
+  stageStart(stage: PipelineStage): void {
+    this.profiler.startStage(stage);
+  }
+
+  /**
+   * End timing a pipeline stage
+   */
+  stageEnd(stage: PipelineStage): void {
+    this.profiler.endStage(stage);
+  }
+
+  /**
+   * Add pre-measured time to a pipeline stage
+   */
+  addStageTime(stage: PipelineStage, durationMs: number): void {
+    this.profiler.addTime(stage, durationMs);
+  }
+
+  /**
+   * Get stage profiling summary
+   */
+  getStageSummary(): Record<PipelineStage, { totalMs: number; count: number; percentage: number }> {
+    return this.profiler.getSummary();
+  }
+
+  /**
+   * Reset stage profiler (for new indexing session)
+   */
+  resetProfiler(): void {
+    this.profiler.reset();
+  }
+
+  /**
    * Log pipeline stats summary
    */
   summary(ctx: LogContext, stats: Record<string, unknown>): void {
+    const stageSummary = this.profiler.getSummary();
+    const stageTotalMs = this.profiler.getTotalMs();
+
+    let stageBlock = "";
+    if (stageTotalMs > 0) {
+      stageBlock = "\nSTAGE PROFILING:\n";
+      for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
+        const data = stageSummary[stage];
+        if (data) {
+          stageBlock += `  ${stage.padEnd(9)}: ${data.totalMs.toString().padStart(6)}ms  (${data.percentage.toFixed(1).padStart(5)}%)  [${data.count.toString().padStart(4)} calls]\n`;
+        }
+      }
+      stageBlock += `  ${"TOTAL".padEnd(9)}: ${stageTotalMs.toString().padStart(6)}ms\n`;
+    }
+
     this.writeRaw(`
 --------------------------------------------------------------------------------
 SUMMARY for ${ctx.component}
 --------------------------------------------------------------------------------
 ${JSON.stringify(stats, null, 2)}
-Session counters: ${JSON.stringify(this.counters)}
+Session counters: ${JSON.stringify(this.counters)}${stageBlock}
 --------------------------------------------------------------------------------
 `);
   }

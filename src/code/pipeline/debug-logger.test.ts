@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
-import type { LogContext } from "./debug-logger.js";
+import type { LogContext, PipelineStage } from "./debug-logger.js";
 
 // Mock fs module before importing the module under test
 vi.mock("node:fs", () => ({
@@ -510,6 +510,112 @@ describe("DebugLogger", () => {
       const parts = call.split(" Message");
       expect(parts[1]).toBe("");
     });
+  });
+});
+
+describe("Stage Profiling", () => {
+  let consoleErrorSpy: any;
+
+  beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.clearAllMocks();
+    pipelineLog.resetProfiler();
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("should track time with addStageTime", () => {
+    pipelineLog.addStageTime("embed", 1000);
+    pipelineLog.addStageTime("embed", 2000);
+    pipelineLog.addStageTime("qdrant", 500);
+
+    const summary = pipelineLog.getStageSummary();
+
+    expect(summary.embed.totalMs).toBe(3000);
+    expect(summary.embed.count).toBe(2);
+    expect(summary.qdrant.totalMs).toBe(500);
+    expect(summary.qdrant.count).toBe(1);
+  });
+
+  it("should track time with startStage/endStage", async () => {
+    pipelineLog.stageStart("scan");
+    await new Promise(resolve => setTimeout(resolve, 20));
+    pipelineLog.stageEnd("scan");
+
+    const summary = pipelineLog.getStageSummary();
+    expect(summary.scan.totalMs).toBeGreaterThanOrEqual(15);
+    expect(summary.scan.count).toBe(1);
+  });
+
+  it("should calculate percentages correctly", () => {
+    pipelineLog.addStageTime("scan", 100);
+    pipelineLog.addStageTime("parse", 200);
+    pipelineLog.addStageTime("embed", 700);
+
+    const summary = pipelineLog.getStageSummary();
+
+    expect(summary.scan.percentage).toBeCloseTo(10, 0);
+    expect(summary.parse.percentage).toBeCloseTo(20, 0);
+    expect(summary.embed.percentage).toBeCloseTo(70, 0);
+  });
+
+  it("should only include stages with recorded time", () => {
+    pipelineLog.addStageTime("embed", 500);
+
+    const summary = pipelineLog.getStageSummary();
+
+    expect(summary.embed).toBeDefined();
+    expect(summary.scan).toBeUndefined();
+    expect(summary.git).toBeUndefined();
+  });
+
+  it("should reset profiler", () => {
+    pipelineLog.addStageTime("embed", 1000);
+    pipelineLog.resetProfiler();
+
+    const summary = pipelineLog.getStageSummary();
+    expect(Object.keys(summary)).toHaveLength(0);
+  });
+
+  it("should include stage profiling in summary output", () => {
+    pipelineLog.addStageTime("scan", 100);
+    pipelineLog.addStageTime("parse", 300);
+    pipelineLog.addStageTime("embed", 600);
+
+    const ctx: LogContext = { component: "TestPipeline" };
+    pipelineLog.summary(ctx, { test: true });
+
+    expect(fs.appendFileSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("STAGE PROFILING:")
+    );
+    expect(fs.appendFileSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("scan")
+    );
+    expect(fs.appendFileSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("embed")
+    );
+    expect(fs.appendFileSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("TOTAL")
+    );
+  });
+
+  it("should not include stage profiling in summary when no stages recorded", () => {
+    pipelineLog.resetProfiler();
+    const ctx: LogContext = { component: "TestPipeline" };
+    pipelineLog.summary(ctx, { test: true });
+
+    // Find the last call with SUMMARY
+    const summaryCall = (fs.appendFileSync as any).mock.calls.find(
+      (call: any[]) => typeof call[1] === "string" && call[1].includes("SUMMARY for TestPipeline")
+    );
+    expect(summaryCall).toBeDefined();
+    expect(summaryCall[1]).not.toContain("STAGE PROFILING:");
   });
 });
 

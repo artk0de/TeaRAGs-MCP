@@ -342,6 +342,45 @@ export async function benchmarkFlushInterval(qdrant, points, interval, optimalBa
   }
 }
 
+export async function benchmarkBatchFormationTimeout(qdrant, points, timeoutMs, optimalBatchSize, optimalOrdering) {
+  const collection = `tune_bft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  createdCollections.add(collection);
+
+  try {
+    await qdrant.createCollection(collection, config.EMBEDDING_DIMENSION, "Cosine");
+
+    // Simulate batch formation effect:
+    // Short timeout → many small partial batches (simulate 30-50% fill rate)
+    // Long timeout → fewer full batches (simulate 80-100% fill rate)
+    const fillRate = Math.min(1.0, 0.3 + (timeoutMs / 5000) * 0.7);
+    const effectiveBatchSize = Math.max(1, Math.round(optimalBatchSize * fillRate));
+
+    const start = Date.now();
+    for (let i = 0; i < points.length; i += effectiveBatchSize) {
+      const batch = points.slice(i, i + effectiveBatchSize);
+      await withTimeout(
+        qdrant.addPointsOptimized(collection, batch, {
+          wait: i + effectiveBatchSize >= points.length,
+          ordering: optimalOrdering,
+        }),
+        CRITERIA.TEST_TIMEOUT_MS,
+        `batch formation timeout ${timeoutMs}ms`
+      );
+    }
+    const time = Date.now() - start;
+    const rate = Math.round(points.length * 1000 / time);
+
+    return { timeoutMs, time, rate, effectiveBatchSize, fillRate, error: null };
+  } catch (error) {
+    return { timeoutMs, time: 0, rate: 0, effectiveBatchSize: 0, fillRate: 0, error: error.message };
+  } finally {
+    try {
+      await qdrant.deleteCollection(collection);
+      createdCollections.delete(collection);
+    } catch {}
+  }
+}
+
 export async function benchmarkDeleteBatchSize(qdrant, points, deleteBatchSize, optimalBatchSize, optimalOrdering) {
   const collection = `tune_del_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   createdCollections.add(collection);

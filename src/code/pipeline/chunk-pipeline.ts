@@ -300,7 +300,9 @@ export class ChunkPipeline {
       // 2. Generate embeddings
       const embedStart = Date.now();
       const embeddings = await this.embeddings.embedBatch(texts);
-      pipelineLog.embedCall(ctx, texts.length, Date.now() - embedStart);
+      const embedDuration = Date.now() - embedStart;
+      pipelineLog.embedCall(ctx, texts.length, embedDuration);
+      pipelineLog.addStageTime("embed", embedDuration);
 
       // 3. Build points
       const points = batch.items.map((item, idx) => {
@@ -366,13 +368,17 @@ export class ChunkPipeline {
           ),
         }));
         await this.qdrant.addPointsWithSparse(this.collectionName, hybridPoints);
-        pipelineLog.qdrantCall(ctx, "UPSERT_HYBRID", points.length, Date.now() - qdrantStart);
+        const qdrantDurationHybrid = Date.now() - qdrantStart;
+        pipelineLog.qdrantCall(ctx, "UPSERT_HYBRID", points.length, qdrantDurationHybrid);
+        pipelineLog.addStageTime("qdrant", qdrantDurationHybrid);
       } else {
         await this.qdrant.addPointsOptimized(this.collectionName, points, {
           wait: false,
           ordering: "weak",
         });
-        pipelineLog.qdrantCall(ctx, "UPSERT", points.length, Date.now() - qdrantStart);
+        const qdrantDuration = Date.now() - qdrantStart;
+        pipelineLog.qdrantCall(ctx, "UPSERT", points.length, qdrantDuration);
+        pipelineLog.addStageTime("qdrant", qdrantDuration);
       }
     };
   }
