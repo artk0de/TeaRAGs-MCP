@@ -25,6 +25,14 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "npm"
 
+      - name: Pre-fetch node-gyp headers (avoid ETIMEDOUT during npm ci)
+        run: |
+          for i in 1 2 3; do
+            npx node-gyp install && break
+            echo "Retry $i: node-gyp install failed, retrying..."
+            sleep 5
+          done
+
       - name: Install dependencies
         run: npm ci
 
