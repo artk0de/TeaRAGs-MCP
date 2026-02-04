@@ -352,7 +352,9 @@ See [Advanced Performance Tuning](docs/PERFORMANCE_TUNING.md) for details and lo
 
 | Variable                      | Description                                           | Default |
 | ----------------------------- | ----------------------------------------------------- | ------- |
-| `FILE_PROCESSING_CONCURRENCY` | Parallel file read + AST parsing during indexing      | 50      |
+| `CHUNKER_POOL_SIZE`           | Worker threads for parallel AST parsing               | 4       |
+| `FILE_PROCESSING_CONCURRENCY` | Parallel file read + chunk dispatch during indexing   | 50      |
+| `MIN_BATCH_SIZE`              | Min chunks before timeout flush (0 = no minimum)     | 0       |
 | `BATCH_FORMATION_TIMEOUT_MS`  | Flush partial embedding batch after timeout (ms)      | 2000    |
 | `MAX_IO_CONCURRENCY`          | Max parallel file I/O operations during cache sync    | 50      |
 | `DEBUG`                       | Enable debug timing logs (`true` or `1` to enable)    | false   |
