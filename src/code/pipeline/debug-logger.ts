@@ -26,46 +26,14 @@ export interface LogContext {
   threadId?: string;
 }
 
-interface Interval {
-  start: number;
-  end: number;
-}
-
 interface StageData {
   totalMs: number;
   count: number;
   // For startStage/endStage: track active intervals per "thread"
   activeStarts: number[];
-  // All recorded intervals for wall time calculation
-  intervals: Interval[];
-}
-
-/**
- * Merge overlapping intervals and return total wall time
- */
-function mergeIntervalsAndSum(intervals: Interval[]): number {
-  if (intervals.length === 0) return 0;
-  if (intervals.length === 1) return intervals[0].end - intervals[0].start;
-
-  // Sort by start time
-  const sorted = [...intervals].sort((a, b) => a.start - b.start);
-  const merged: Interval[] = [sorted[0]];
-
-  for (let i = 1; i < sorted.length; i++) {
-    const current = sorted[i];
-    const last = merged[merged.length - 1];
-
-    if (current.start <= last.end) {
-      // Overlapping - extend the last interval
-      last.end = Math.max(last.end, current.end);
-    } else {
-      // Non-overlapping - add new interval
-      merged.push(current);
-    }
-  }
-
-  // Sum all merged intervals
-  return merged.reduce((sum, iv) => sum + (iv.end - iv.start), 0);
+  // Wall time: track earliest start and latest end across all operations
+  firstStart: number | null; // min(callTime - duration) for addTime, min(startTime) for startStage
+  lastEnd: number | null; // max(callTime) for addTime, max(endTime) for endStage
 }
 
 class StageProfiler {
@@ -74,7 +42,7 @@ class StageProfiler {
   private getOrCreate(stage: PipelineStage): StageData {
     let data = this.stages.get(stage);
     if (!data) {
-      data = { totalMs: 0, count: 0, activeStarts: [], intervals: [] };
+      data = { totalMs: 0, count: 0, activeStarts: [], firstStart: null, lastEnd: null };
       this.stages.set(stage, data);
     }
     return data;
@@ -84,6 +52,10 @@ class StageProfiler {
     const now = Date.now();
     const data = this.getOrCreate(stage);
     data.activeStarts.push(now);
+    // Track earliest start time
+    if (data.firstStart === null || now < data.firstStart) {
+      data.firstStart = now;
+    }
   }
 
   endStage(stage: PipelineStage): void {
@@ -91,10 +63,12 @@ class StageProfiler {
     const data = this.getOrCreate(stage);
     const start = data.activeStarts.shift();
     if (start !== undefined) {
-      const duration = now - start;
-      data.totalMs += duration;
+      data.totalMs += now - start;
       data.count++;
-      data.intervals.push({ start, end: now });
+      // Track latest end time
+      if (data.lastEnd === null || now > data.lastEnd) {
+        data.lastEnd = now;
+      }
     }
   }
 
@@ -103,8 +77,15 @@ class StageProfiler {
     const data = this.getOrCreate(stage);
     data.totalMs += durationMs;
     data.count++;
-    // For addTime, we assume the work just finished, so interval is [now-duration, now]
-    data.intervals.push({ start: now - durationMs, end: now });
+    // Implied start time = callTime - duration
+    const impliedStart = now - durationMs;
+    if (data.firstStart === null || impliedStart < data.firstStart) {
+      data.firstStart = impliedStart;
+    }
+    // Track latest end time (now = when this work finished)
+    if (data.lastEnd === null || now > data.lastEnd) {
+      data.lastEnd = now;
+    }
   }
 
   getSummary(): Record<PipelineStage, { totalMs: number; wallMs: number; count: number; percentage: number }> {
@@ -114,7 +95,10 @@ class StageProfiler {
     for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
       const data = this.stages.get(stage);
       if (data && data.totalMs > 0) {
-        const wallMs = mergeIntervalsAndSum(data.intervals);
+        // Wall time = span from earliest start to latest end
+        const wallMs = (data.firstStart !== null && data.lastEnd !== null)
+          ? data.lastEnd - data.firstStart
+          : 0;
         result[stage] = {
           totalMs: data.totalMs,
           wallMs,
