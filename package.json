@@ -1,5 +1,5 @@
 {
-  "name": "@mhalder/qdrant-mcp-server",
+  "name": "@artk0de/tea-rags-mcp",
   "version": "2.2.0",
   "description": "MCP server for semantic search using local Qdrant and Ollama (default) with support for OpenAI, Cohere, and Voyage AI",
   "type": "module",

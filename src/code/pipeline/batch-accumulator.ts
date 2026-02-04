@@ -30,6 +30,8 @@ export class BatchAccumulator<T extends WorkItem> {
   private flushTimer: NodeJS.Timeout | null = null;
   private isPaused = false;
   private batchCount = 0;
+  private deferCount = 0;
+  private static readonly MAX_DEFERS = 3;
 
   constructor(
     config: BatchAccumulatorConfig,
@@ -176,26 +178,31 @@ export class BatchAccumulator<T extends WorkItem> {
       return; // Timer already running
     }
 
+    this.deferCount = 0;
+    this.scheduleFlush(this.config.flushTimeoutMs);
+  }
+
+  private scheduleFlush(delayMs: number): void {
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
 
-      const minBatch = this.config.minBatchSize;
+      if (this.pendingItems.length === 0) return;
+
+      const minBatch =
+        this.config.minBatchSize ?? Math.floor(this.config.batchSize * 0.5);
+
       if (
-        minBatch != null &&
         minBatch > 0 &&
-        this.pendingItems.length < minBatch
+        this.pendingItems.length < minBatch &&
+        this.deferCount < BatchAccumulator.MAX_DEFERS
       ) {
-        // Below minimum — re-arm with shorter timeout, force flush on second fire
-        if (this.pendingItems.length > 0) {
-          this.flushTimer = setTimeout(() => {
-            this.flushTimer = null;
-            this.flush();
-          }, this.config.flushTimeoutMs / 2);
-        }
+        // Below minimum and defers left — re-arm with shorter timeout
+        this.deferCount++;
+        this.scheduleFlush(this.config.flushTimeoutMs / 2);
       } else {
         this.flush();
       }
-    }, this.config.flushTimeoutMs);
+    }, delayMs);
   }
 
   private clearFlushTimer(): void {
@@ -203,5 +210,6 @@ export class BatchAccumulator<T extends WorkItem> {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
+    this.deferCount = 0;
   }
 }
