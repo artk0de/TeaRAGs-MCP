@@ -311,8 +311,8 @@ describe("createAccumulator", () => {
     expect(acc).toBeDefined();
   });
 
-  it("should read CODE_BATCH_SIZE from env", () => {
-    process.env.CODE_BATCH_SIZE = "200";
+  it("should read QDRANT_UPSERT_BATCH_SIZE from env (with CODE_BATCH_SIZE fallback)", () => {
+    process.env.QDRANT_UPSERT_BATCH_SIZE = "200";
     const mockQdrant = createMockQdrant();
     const acc = createAccumulator(
       mockQdrant as unknown as QdrantManager,

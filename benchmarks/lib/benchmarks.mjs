@@ -98,6 +98,8 @@ export class DataProcessor_${i} {
  * @returns {Promise<{batchSize, time, rate, times[], batches, error, degraded}>}
  */
 export async function benchmarkEmbeddingBatchSize(embeddings, texts, batchSize, runs = EMBEDDING_CALIBRATION.RUNS, options = {}) {
+  // EMBEDDING_BATCH_SIZE now controls pipeline accumulator, not Ollama splitting.
+  // Benchmark simulates accumulator behavior by splitting texts into batches.
   process.env.EMBEDDING_BATCH_SIZE = String(batchSize);
   process.env.EMBEDDING_CONCURRENCY = "1"; // Isolate batch size variable
 
@@ -114,8 +116,13 @@ export async function benchmarkEmbeddingBatchSize(embeddings, texts, batchSize, 
 
     for (let i = 0; i < runs; i++) {
       const start = Date.now();
+      // Simulate pipeline accumulator: split texts into batches and call embedBatch for each
+      const batches = [];
+      for (let j = 0; j < texts.length; j += batchSize) {
+        batches.push(texts.slice(j, j + batchSize));
+      }
       await withTimeout(
-        embeddings.embedBatch(texts),
+        Promise.all(batches.map(batch => embeddings.embedBatch(batch))),
         timeout,
         `batch size ${batchSize} run ${i + 1}`
       );
@@ -201,6 +208,8 @@ export async function benchmarkCodeBatchSize(qdrant, points, batchSize) {
  * @returns {Promise<{concurrency, time, rate, times[], batches, error, degraded}>}
  */
 export async function benchmarkConcurrency(embeddings, texts, concurrency, batchSize, runs = EMBEDDING_CALIBRATION.RUNS, options = {}) {
+  // EMBEDDING_BATCH_SIZE now controls pipeline accumulator, not Ollama splitting.
+  // Benchmark simulates accumulator: split texts, then process with concurrency.
   process.env.EMBEDDING_BATCH_SIZE = String(batchSize);
   process.env.EMBEDDING_CONCURRENCY = String(concurrency);
 
@@ -218,11 +227,20 @@ export async function benchmarkConcurrency(embeddings, texts, concurrency, batch
 
     for (let i = 0; i < runs; i++) {
       const start = Date.now();
-      await withTimeout(
-        embeddings.embedBatch(texts),
-        timeout,
-        `concurrency ${concurrency} run ${i + 1}`
-      );
+      // Simulate pipeline: split into batches, process groups with concurrency
+      const batches = [];
+      for (let j = 0; j < texts.length; j += batchSize) {
+        batches.push(texts.slice(j, j + batchSize));
+      }
+      // Process batches in groups of `concurrency`
+      for (let g = 0; g < batches.length; g += concurrency) {
+        const group = batches.slice(g, g + concurrency);
+        await withTimeout(
+          Promise.all(group.map(batch => embeddings.embedBatch(batch))),
+          timeout,
+          `concurrency ${concurrency} run ${i + 1}`
+        );
+      }
       times.push(Date.now() - start);
     }
 

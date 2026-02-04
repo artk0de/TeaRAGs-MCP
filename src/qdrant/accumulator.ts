@@ -211,12 +211,9 @@ export class PointsAccumulator {
 /**
  * Factory function to create accumulator with environment-based config.
  *
- * Uses CODE_BATCH_SIZE for buffer size (same as chunks per Qdrant upsert).
- * This keeps configuration simple - one param controls both embedding batch
- * and Qdrant upsert batch.
- *
  * Environment variables:
- * - CODE_BATCH_SIZE: Buffer size (default: 100)
+ * - QDRANT_UPSERT_BATCH_SIZE: Points per Qdrant upsert batch (default: 100)
+ *   Legacy: CODE_BATCH_SIZE (deprecated, use QDRANT_UPSERT_BATCH_SIZE)
  * - QDRANT_FLUSH_INTERVAL_MS: Auto-flush interval (default: 500, 0 to disable)
  * - QDRANT_BATCH_ORDERING: Ordering mode "weak"|"medium"|"strong" (default: "weak")
  */
@@ -226,9 +223,9 @@ export function createAccumulator(
   isHybrid: boolean = false,
 ): PointsAccumulator {
   const config: Partial<AccumulatorConfig> = {
-    // Use CODE_BATCH_SIZE for buffer (same param as chunks per upsert)
+    // QDRANT_UPSERT_BATCH_SIZE is canonical, CODE_BATCH_SIZE is deprecated fallback
     bufferSize: parseInt(
-      process.env.CODE_BATCH_SIZE || "100",
+      process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "100",
       10,
     ),
     flushIntervalMs: parseInt(

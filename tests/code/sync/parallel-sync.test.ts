@@ -55,12 +55,12 @@ describe("ParallelFileSynchronizer", () => {
       process.env.EMBEDDING_CONCURRENCY = originalEnv;
     });
 
-    it("should default to 4 if no concurrency specified", () => {
+    it("should default to 1 if no concurrency specified", () => {
       const originalEnv = process.env.EMBEDDING_CONCURRENCY;
       delete process.env.EMBEDDING_CONCURRENCY;
 
       const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir);
-      expect(sync.getConcurrency()).toBe(4);
+      expect(sync.getConcurrency()).toBe(1);
 
       process.env.EMBEDDING_CONCURRENCY = originalEnv;
     });

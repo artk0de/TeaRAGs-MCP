@@ -171,7 +171,7 @@ const codeConfig: CodeConfig = {
   supportedExtensions: DEFAULT_CODE_EXTENSIONS,
   ignorePatterns: DEFAULT_IGNORE_PATTERNS,
   batchSize: parseInt(
-    process.env.CODE_BATCH_SIZE || String(DEFAULT_BATCH_SIZE),
+    process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || String(DEFAULT_BATCH_SIZE),
     10,
   ),
   defaultSearchLimit: parseInt(

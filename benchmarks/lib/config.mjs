@@ -50,7 +50,7 @@ export const EMBEDDING_CALIBRATION = isFullMode ? {
 
 // Smart stepping parameters (for Qdrant tests, NOT for embedding calibration)
 export const SMART_STEPPING = {
-  CODE_BATCH_SIZE: { start: 64, max: 8192 },
+  QDRANT_UPSERT_BATCH_SIZE: { start: 64, max: 8192 },
 };
 
 // Fixed test values for parameters where smart stepping doesn't apply

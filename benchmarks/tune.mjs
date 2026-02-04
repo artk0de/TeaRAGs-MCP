@@ -5,7 +5,7 @@
  * Automatically finds optimal values for all performance parameters:
  * - EMBEDDING_BATCH_SIZE
  * - EMBEDDING_CONCURRENCY
- * - CODE_BATCH_SIZE
+ * - QDRANT_UPSERT_BATCH_SIZE
  * - QDRANT_BATCH_ORDERING
  * - QDRANT_FLUSH_INTERVAL_MS
  * - QDRANT_DELETE_BATCH_SIZE
@@ -225,9 +225,9 @@ async function main() {
   process.env.EMBEDDING_BATCH_SIZE = String(optimal.EMBEDDING_BATCH_SIZE);
   process.env.EMBEDDING_CONCURRENCY = String(optimal.EMBEDDING_CONCURRENCY);
 
-  // ============ PHASE 3: CODE_BATCH_SIZE ============
+  // ============ PHASE 3: QDRANT_UPSERT_BATCH_SIZE ============
 
-  printHeader("Phase 3: Qdrant Batch Size", "Finding optimal CODE_BATCH_SIZE (smart stepping: x2 + midpoint)");
+  printHeader("Phase 3: Qdrant Batch Size", "Finding optimal QDRANT_UPSERT_BATCH_SIZE (smart stepping: x2 + midpoint)");
 
   console.log(`  ${c.dim}Pre-generating embeddings for Qdrant tests...${c.reset}`);
   const embeddingResults = await embeddings.embedBatch(qdrantTexts);
@@ -236,14 +236,14 @@ async function main() {
 
   let codeBestRate = 0;
   const codeResult = await smartSteppingSearch({
-    start: SMART_STEPPING.CODE_BATCH_SIZE.start,
-    max: SMART_STEPPING.CODE_BATCH_SIZE.max,
+    start: SMART_STEPPING.QDRANT_UPSERT_BATCH_SIZE.start,
+    max: SMART_STEPPING.QDRANT_UPSERT_BATCH_SIZE.max,
     testFn: async (size) => {
       return await benchmarkCodeBatchSize(qdrant, points, size);
     },
     onResult: (size, result, isMidpoint) => {
       const prefix = isMidpoint ? `  ${c.cyan}↳ Midpoint${c.reset} ` : "  Testing ";
-      process.stdout.write(`${prefix}CODE_BATCH_SIZE=${c.bold}${size.toString().padStart(4)}${c.reset} `);
+      process.stdout.write(`${prefix}QDRANT_UPSERT_BATCH_SIZE=${c.bold}${size.toString().padStart(4)}${c.reset} `);
 
       if (result.error) {
         console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
@@ -254,8 +254,8 @@ async function main() {
     },
   });
 
-  optimal.CODE_BATCH_SIZE = codeResult.bestValue;
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: CODE_BATCH_SIZE=${optimal.CODE_BATCH_SIZE}${c.reset}`);
+  optimal.QDRANT_UPSERT_BATCH_SIZE = codeResult.bestValue;
+  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_UPSERT_BATCH_SIZE=${optimal.QDRANT_UPSERT_BATCH_SIZE}${c.reset}`);
   console.log(`    ${c.dim}Speed: ${codeResult.bestRate} chunks/sec${c.reset}`);
 
   // ============ PHASE 4: QDRANT_BATCH_ORDERING ============
@@ -294,7 +294,7 @@ async function main() {
   for (const interval of TEST_VALUES.QDRANT_FLUSH_INTERVAL_MS) {
     process.stdout.write(`  Testing QDRANT_FLUSH_INTERVAL_MS=${c.bold}${interval.toString().padStart(4)}${c.reset} `);
 
-    const result = await benchmarkFlushInterval(qdrant, points, interval, optimal.CODE_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
+    const result = await benchmarkFlushInterval(qdrant, points, interval, optimal.QDRANT_UPSERT_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
     const decision = flushDecision.addResult(result);
 
     if (result.error) {
@@ -323,7 +323,7 @@ async function main() {
   for (const size of TEST_VALUES.QDRANT_DELETE_BATCH_SIZE) {
     process.stdout.write(`  Testing QDRANT_DELETE_BATCH_SIZE=${c.bold}${size.toString().padStart(4)}${c.reset} `);
 
-    const result = await benchmarkDeleteBatchSize(qdrant, points, size, optimal.CODE_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
+    const result = await benchmarkDeleteBatchSize(qdrant, points, size, optimal.QDRANT_UPSERT_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
     const decision = delDecision.addResult(result);
 
     if (result.error) {
@@ -352,7 +352,7 @@ async function main() {
   for (const conc of TEST_VALUES.QDRANT_DELETE_CONCURRENCY) {
     process.stdout.write(`  Testing QDRANT_DELETE_CONCURRENCY=${c.bold}${conc.toString().padStart(2)}${c.reset} `);
 
-    const result = await benchmarkDeleteConcurrency(qdrant, points, conc, optimal.CODE_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING, optimal.QDRANT_DELETE_BATCH_SIZE);
+    const result = await benchmarkDeleteConcurrency(qdrant, points, conc, optimal.QDRANT_UPSERT_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING, optimal.QDRANT_DELETE_BATCH_SIZE);
     const decision = delConcDecision.addResult(result);
 
     if (result.error) {

@@ -27,7 +27,7 @@ EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE}
 EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY}
 
 # Qdrant storage configuration
-CODE_BATCH_SIZE=${optimal.CODE_BATCH_SIZE}
+QDRANT_UPSERT_BATCH_SIZE=${optimal.QDRANT_UPSERT_BATCH_SIZE}
 QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING}
 QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS}
 
@@ -72,7 +72,7 @@ export function printSummary(optimal) {
   console.log(`  EMBEDDING_CONCURRENCY     = ${c.green}${c.bold}${optimal.EMBEDDING_CONCURRENCY}${c.reset}`);
   console.log();
   console.log(`  ${c.dim}# Qdrant storage${c.reset}`);
-  console.log(`  CODE_BATCH_SIZE           = ${c.green}${c.bold}${optimal.CODE_BATCH_SIZE}${c.reset}`);
+  console.log(`  QDRANT_UPSERT_BATCH_SIZE           = ${c.green}${c.bold}${optimal.QDRANT_UPSERT_BATCH_SIZE}${c.reset}`);
   console.log(`  QDRANT_BATCH_ORDERING     = ${c.green}${c.bold}${optimal.QDRANT_BATCH_ORDERING}${c.reset}`);
   console.log(`  QDRANT_FLUSH_INTERVAL_MS  = ${c.green}${c.bold}${optimal.QDRANT_FLUSH_INTERVAL_MS}${c.reset}`);
   console.log();
@@ -91,7 +91,7 @@ export function printUsage(optimal) {
   console.log(`  ${c.dim}claude mcp add tea-rags ... \\${c.reset}`);
   console.log(`    -e EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE} \\`);
   console.log(`    -e EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY} \\`);
-  console.log(`    -e CODE_BATCH_SIZE=${optimal.CODE_BATCH_SIZE} \\`);
+  console.log(`    -e QDRANT_UPSERT_BATCH_SIZE=${optimal.QDRANT_UPSERT_BATCH_SIZE} \\`);
   console.log(`    -e QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING} \\`);
   console.log(`    -e QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS} \\`);
   console.log(`    -e QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE} \\`);
