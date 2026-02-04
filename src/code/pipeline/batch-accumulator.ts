@@ -178,7 +178,23 @@ export class BatchAccumulator<T extends WorkItem> {
 
     this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
-      this.flush();
+
+      const minBatch = this.config.minBatchSize;
+      if (
+        minBatch != null &&
+        minBatch > 0 &&
+        this.pendingItems.length < minBatch
+      ) {
+        // Below minimum — re-arm with shorter timeout, force flush on second fire
+        if (this.pendingItems.length > 0) {
+          this.flushTimer = setTimeout(() => {
+            this.flushTimer = null;
+            this.flush();
+          }, this.config.flushTimeoutMs / 2);
+        }
+      } else {
+        this.flush();
+      }
     }, this.config.flushTimeoutMs);
   }
 

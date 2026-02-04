@@ -18,7 +18,7 @@ import {
   type RerankMode,
   type SearchCodeRerankPreset,
 } from "./reranker.js";
-import { TreeSitterChunker } from "./chunker/tree-sitter-chunker.js";
+import { ChunkerPool } from "./chunker/chunker-pool.js";
 import { GitMetadataService } from "./git/index.js";
 import { MetadataExtractor } from "./metadata.js";
 import { ChunkPipeline, DEFAULT_CONFIG } from "./pipeline/index.js";
@@ -111,7 +111,10 @@ export class CodeIndexer {
       });
 
       await scanner.loadIgnorePatterns(absolutePath);
+      pipelineLog.resetProfiler();
+      pipelineLog.stageStart("scan");
       const files = await scanner.scanDirectory(absolutePath);
+      pipelineLog.stageEnd("scan");
 
       stats.filesScanned = files.length;
 
@@ -157,11 +160,13 @@ export class CodeIndexer {
       await this.storeIndexingMarker(collectionName, false);
 
       // 3. Initialize parallel processing components
-      const chunker = new TreeSitterChunker({
+      const chunkerConfig = {
         chunkSize: this.config.chunkSize,
         chunkOverlap: this.config.chunkOverlap,
         maxChunkSize: this.config.chunkSize * 2,
-      });
+      };
+      const chunkerPoolSize = parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10);
+      const chunkerPool = new ChunkerPool(chunkerPoolSize, chunkerConfig);
       const metadataExtractor = new MetadataExtractor();
       const indexedFiles: string[] = [];
 
@@ -214,7 +219,9 @@ export class CodeIndexer {
 
             const language = metadataExtractor.extractLanguage(filePath);
             const { imports } = metadataExtractor.extractImportsExports(code, language);
-            const chunks = await chunker.chunk(code, filePath, language);
+            const parseStart = Date.now();
+            const { chunks } = await chunkerPool.processFile(filePath, code, language);
+            pipelineLog.addStageTime("parse", Date.now() - parseStart);
 
             // Apply chunk limits if configured
             const chunksToAdd = this.config.maxChunksPerFile
@@ -249,12 +256,14 @@ export class CodeIndexer {
               // Add git metadata if service is enabled (blame already in L1 cache)
               // IMPORTANT: Pass fileContent to avoid re-reading file for hash check
               if (gitMetadataService) {
+                const gitStart = Date.now();
                 const gitMeta = await gitMetadataService.getChunkMetadata(
                   filePath,
                   chunk.startLine,
                   chunk.endLine,
                   code, // Pass content to avoid fs.readFile for each chunk!
                 );
+                pipelineLog.addStageTime("git", Date.now() - gitStart);
                 if (gitMeta) {
                   baseChunk.metadata.git = {
                     lastModifiedAt: gitMeta.lastModifiedAt,
@@ -319,7 +328,10 @@ export class CodeIndexer {
       });
 
       await chunkPipeline.flush();
-      await chunkPipeline.shutdown();
+      await Promise.all([
+        chunkPipeline.shutdown(),
+        chunkerPool.shutdown(),
+      ]);
 
       const finalPipelineStats = chunkPipeline.getStats();
       if (process.env.DEBUG) {
@@ -749,10 +761,15 @@ export class CodeIndexer {
       });
 
       await scanner.loadIgnorePatterns(absolutePath);
+      pipelineLog.resetProfiler();
+      pipelineLog.stageStart("scan");
       const currentFiles = await scanner.scanDirectory(absolutePath);
+      pipelineLog.stageEnd("scan");
 
       // Detect changes
+      pipelineLog.stageStart("scan");
       const changes = await synchronizer.detectChanges(currentFiles);
+      pipelineLog.stageEnd("scan");
       stats.filesAdded = changes.added.length;
       stats.filesModified = changes.modified.length;
       stats.filesDeleted = changes.deleted.length;
@@ -771,11 +788,13 @@ export class CodeIndexer {
       // Checkpoint configuration
       const CHECKPOINT_INTERVAL = 100; // Save checkpoint every N files
 
-      const chunker = new TreeSitterChunker({
+      const chunkerConfig = {
         chunkSize: this.config.chunkSize,
         chunkOverlap: this.config.chunkOverlap,
         maxChunkSize: this.config.chunkSize * 2,
-      });
+      };
+      const chunkerPoolSize = parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10);
+      const chunkerPool = new ChunkerPool(chunkerPoolSize, chunkerConfig);
       const metadataExtractor = new MetadataExtractor();
 
       // Initialize git metadata service (optional)
@@ -938,7 +957,9 @@ export class CodeIndexer {
 
               const language = metadataExtractor.extractLanguage(absoluteFilePath);
               const { imports } = metadataExtractor.extractImportsExports(code, language);
-              const chunks = await chunker.chunk(code, absoluteFilePath, language);
+              const parseStart = Date.now();
+              const { chunks } = await chunkerPool.processFile(absoluteFilePath, code, language);
+              pipelineLog.addStageTime("parse", Date.now() - parseStart);
 
               // Process and send chunks IMMEDIATELY (streaming)
               for (const chunk of chunks) {
@@ -962,12 +983,14 @@ export class CodeIndexer {
                 // Add git metadata if service is enabled (blame already in L1 cache)
                 // IMPORTANT: Pass fileContent to avoid re-reading file for hash check
                 if (gitMetadataService) {
+                  const gitStart = Date.now();
                   const gitMeta = await gitMetadataService.getChunkMetadata(
                     absoluteFilePath,
                     chunk.startLine,
                     chunk.endLine,
                     code, // Pass content to avoid fs.readFile for each chunk!
                   );
+                  pipelineLog.addStageTime("git", Date.now() - gitStart);
                   if (gitMeta) {
                     baseChunk.metadata.git = {
                       lastModifiedAt: gitMeta.lastModifiedAt,
@@ -1088,7 +1111,10 @@ export class CodeIndexer {
       }
 
       await chunkPipeline.flush();
-      await chunkPipeline.shutdown();
+      await Promise.all([
+        chunkPipeline.shutdown(),
+        chunkerPool.shutdown(),
+      ]);
 
       const pipelineStats = chunkPipeline.getStats();
       if (process.env.DEBUG) {
