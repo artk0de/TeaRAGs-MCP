@@ -30,6 +30,7 @@ EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY}
 QDRANT_UPSERT_BATCH_SIZE=${optimal.QDRANT_UPSERT_BATCH_SIZE}
 QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING}
 QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS}
+BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS}
 
 # Qdrant deletion configuration
 QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE}
@@ -75,6 +76,7 @@ export function printSummary(optimal) {
   console.log(`  QDRANT_UPSERT_BATCH_SIZE           = ${c.green}${c.bold}${optimal.QDRANT_UPSERT_BATCH_SIZE}${c.reset}`);
   console.log(`  QDRANT_BATCH_ORDERING     = ${c.green}${c.bold}${optimal.QDRANT_BATCH_ORDERING}${c.reset}`);
   console.log(`  QDRANT_FLUSH_INTERVAL_MS  = ${c.green}${c.bold}${optimal.QDRANT_FLUSH_INTERVAL_MS}${c.reset}`);
+  console.log(`  BATCH_FORMATION_TIMEOUT_MS = ${c.green}${c.bold}${optimal.BATCH_FORMATION_TIMEOUT_MS}${c.reset}`);
   console.log();
   console.log(`  ${c.dim}# Qdrant deletion${c.reset}`);
   console.log(`  QDRANT_DELETE_BATCH_SIZE         = ${c.green}${c.bold}${optimal.QDRANT_DELETE_BATCH_SIZE}${c.reset}`);
@@ -94,6 +96,7 @@ export function printUsage(optimal) {
   console.log(`    -e QDRANT_UPSERT_BATCH_SIZE=${optimal.QDRANT_UPSERT_BATCH_SIZE} \\`);
   console.log(`    -e QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING} \\`);
   console.log(`    -e QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS} \\`);
+  console.log(`    -e BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS} \\`);
   console.log(`    -e QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE} \\`);
   console.log(`    -e QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}`);
   console.log();
