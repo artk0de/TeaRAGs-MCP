@@ -579,6 +579,71 @@ describe("Stage Profiling", () => {
     expect(Object.keys(summary)).toHaveLength(0);
   });
 
+  it("should track wall time for addStageTime calls", async () => {
+    // Simulate concurrent addStageTime calls spread over 50ms
+    pipelineLog.addStageTime("git", 500);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    pipelineLog.addStageTime("git", 500);
+
+    const summary = pipelineLog.getStageSummary();
+
+    // Cumulative: 1000ms (sum of individual durations)
+    expect(summary.git.totalMs).toBe(1000);
+    // Wall time: ~50ms (time between first and last call)
+    expect(summary.git.wallMs).toBeGreaterThanOrEqual(40);
+    expect(summary.git.wallMs).toBeLessThan(200);
+  });
+
+  it("should track wall time for startStage/endStage calls", async () => {
+    pipelineLog.stageStart("parse");
+    await new Promise(resolve => setTimeout(resolve, 30));
+    pipelineLog.stageEnd("parse");
+
+    pipelineLog.stageStart("parse");
+    await new Promise(resolve => setTimeout(resolve, 30));
+    pipelineLog.stageEnd("parse");
+
+    const summary = pipelineLog.getStageSummary();
+
+    // Cumulative: ~60ms (two 30ms calls)
+    expect(summary.parse.totalMs).toBeGreaterThanOrEqual(40);
+    // Wall time: ~60ms (from first start to last end)
+    expect(summary.parse.wallMs).toBeGreaterThanOrEqual(50);
+  });
+
+  it("should report wallMs as 0 when only one call made", () => {
+    pipelineLog.addStageTime("qdrant", 500);
+
+    const summary = pipelineLog.getStageSummary();
+
+    // Single call = no meaningful wall time spread
+    expect(summary.qdrant.wallMs).toBe(0);
+  });
+
+  it("should reset wall time on profiler reset", () => {
+    pipelineLog.addStageTime("embed", 1000);
+    pipelineLog.resetProfiler();
+
+    pipelineLog.addStageTime("embed", 500);
+    const summary = pipelineLog.getStageSummary();
+    expect(summary.embed.totalMs).toBe(500);
+    expect(summary.embed.wallMs).toBe(0); // Single call after reset
+  });
+
+  it("should include wall time in summary output", async () => {
+    pipelineLog.addStageTime("embed", 300);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    pipelineLog.addStageTime("embed", 300);
+
+    const ctx: LogContext = { component: "TestPipeline" };
+    pipelineLog.summary(ctx, { test: true });
+
+    expect(fs.appendFileSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("wall:")
+    );
+  });
+
   it("should include stage profiling in summary output", () => {
     pipelineLog.addStageTime("scan", 100);
     pipelineLog.addStageTime("parse", 300);

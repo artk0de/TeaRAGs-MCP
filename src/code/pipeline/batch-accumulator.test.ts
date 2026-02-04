@@ -24,6 +24,7 @@ describe("BatchAccumulator", () => {
 
     config = {
       batchSize: 5,
+      minBatchSize: 0,
       flushTimeoutMs: 100,
       maxQueueSize: 10,
     };
@@ -374,7 +375,7 @@ describe("BatchAccumulator", () => {
       expect(acc.getPendingCount()).toBe(2);
     });
 
-    it("should force flush on second timeout even when below minBatchSize", () => {
+    it("should force flush after max defers even when below minBatchSize", () => {
       const minBatchConfig: BatchAccumulatorConfig = {
         batchSize: 5,
         minBatchSize: 3,
@@ -393,11 +394,19 @@ describe("BatchAccumulator", () => {
       acc.add(createItem(1));
       acc.add(createItem(2));
 
-      // First timeout (100ms) — deferred
+      // First timeout (100ms) — defer 1
       vi.advanceTimersByTime(100);
       expect(receivedBatches).toHaveLength(0);
 
-      // Second timeout (50ms = flushTimeoutMs / 2) — forced flush
+      // Defer 2 (50ms)
+      vi.advanceTimersByTime(50);
+      expect(receivedBatches).toHaveLength(0);
+
+      // Defer 3 (50ms)
+      vi.advanceTimersByTime(50);
+      expect(receivedBatches).toHaveLength(0);
+
+      // Max defers (3) exhausted — forced flush (50ms)
       vi.advanceTimersByTime(50);
       expect(receivedBatches).toHaveLength(1);
       expect(receivedBatches[0].items).toHaveLength(2);
@@ -453,10 +462,10 @@ describe("BatchAccumulator", () => {
       vi.advanceTimersByTime(100);
       expect(receivedBatches).toHaveLength(0);
 
-      // Add another item during deferred window — now 3 >= minBatchSize
+      // Add another item during first deferred window — now 3 >= minBatchSize
       acc.add(createItem(3));
 
-      // Second timeout fires — should flush all 3
+      // Next deferred timeout fires — 3 >= minBatchSize, should flush
       vi.advanceTimersByTime(50);
       expect(receivedBatches).toHaveLength(1);
       expect(receivedBatches[0].items).toHaveLength(3);
@@ -555,15 +564,37 @@ describe("BatchAccumulator", () => {
       expect(receivedBatches).toHaveLength(0);
     });
 
-    it("should default to no minBatchSize when not configured", () => {
-      // Default config without minBatchSize — original behavior
-      accumulator.add(createItem(1));
+    it("should auto-calculate minBatchSize as 50% of batchSize when not configured", () => {
+      // Config without explicit minBatchSize — auto = floor(10 * 0.5) = 5
+      const autoConfig: BatchAccumulatorConfig = {
+        batchSize: 10,
+        flushTimeoutMs: 100,
+        maxQueueSize: 10,
+      };
+      const autoBatches: Batch<UpsertItem>[] = [];
+      const autoAcc = new BatchAccumulator<UpsertItem>(
+        autoConfig,
+        "upsert",
+        (batch) => { autoBatches.push(batch); },
+      );
 
+      // Add 3 items (below auto minBatchSize=5)
+      for (let i = 0; i < 3; i++) autoAcc.add(createItem(i));
+
+      // First timeout — should NOT flush (3 < 5)
       vi.advanceTimersByTime(100);
+      expect(autoBatches).toHaveLength(0);
 
-      // Should flush even 1 item (no minBatchSize)
-      expect(receivedBatches).toHaveLength(1);
-      expect(receivedBatches[0].items).toHaveLength(1);
+      // Defers 1-3 (50ms each) — still below min
+      vi.advanceTimersByTime(50);
+      expect(autoBatches).toHaveLength(0);
+      vi.advanceTimersByTime(50);
+      expect(autoBatches).toHaveLength(0);
+
+      // Max defers exhausted — forced flush
+      vi.advanceTimersByTime(50);
+      expect(autoBatches).toHaveLength(1);
+      expect(autoBatches[0].items).toHaveLength(3);
     });
   });
 
@@ -594,6 +625,7 @@ describe("BatchAccumulator", () => {
     it("should handle very long flush timeout", () => {
       const longTimeoutConfig: BatchAccumulatorConfig = {
         batchSize: 5,
+        minBatchSize: 0,
         flushTimeoutMs: 60000,
         maxQueueSize: 10,
       };

@@ -215,8 +215,10 @@ export const DEFAULT_CONFIG: PipelineConfig = {
     // Chunks to accumulate before sending to embedding
     // EMBEDDING_BATCH_SIZE is canonical, CODE_BATCH_SIZE is deprecated fallback
     batchSize: parseInt(process.env.EMBEDDING_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "1024", 10),
-    // Minimum chunks before timeout flush (0 or unset = no minimum)
-    minBatchSize: parseInt(process.env.MIN_BATCH_SIZE || "0", 10) || undefined,
+    // Minimum chunks before timeout flush (unset = 50% of batchSize, 0 = disabled)
+    minBatchSize: process.env.MIN_BATCH_SIZE != null
+      ? parseInt(process.env.MIN_BATCH_SIZE, 10)
+      : undefined,
     // Flush partial batch after timeout to avoid GPU idle time
     flushTimeoutMs: parseInt(process.env.BATCH_FORMATION_TIMEOUT_MS || "2000", 10),
     // Queue size based on concurrency

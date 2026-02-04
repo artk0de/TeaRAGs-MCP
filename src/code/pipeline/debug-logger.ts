@@ -30,6 +30,8 @@ interface StageData {
   totalMs: number;
   count: number;
   activeStart: number | null;
+  wallFirstSeen: number | null;
+  wallLastSeen: number | null;
 }
 
 class StageProfiler {
@@ -38,41 +40,56 @@ class StageProfiler {
   private getOrCreate(stage: PipelineStage): StageData {
     let data = this.stages.get(stage);
     if (!data) {
-      data = { totalMs: 0, count: 0, activeStart: null };
+      data = { totalMs: 0, count: 0, activeStart: null, wallFirstSeen: null, wallLastSeen: null };
       this.stages.set(stage, data);
     }
     return data;
   }
 
   startStage(stage: PipelineStage): void {
+    const now = Date.now();
     const data = this.getOrCreate(stage);
-    data.activeStart = Date.now();
+    data.activeStart = now;
+    if (data.wallFirstSeen === null) {
+      data.wallFirstSeen = now;
+    }
   }
 
   endStage(stage: PipelineStage): void {
+    const now = Date.now();
     const data = this.getOrCreate(stage);
     if (data.activeStart !== null) {
-      data.totalMs += Date.now() - data.activeStart;
+      data.totalMs += now - data.activeStart;
       data.count++;
       data.activeStart = null;
+      data.wallLastSeen = now;
     }
   }
 
   addTime(stage: PipelineStage, durationMs: number): void {
+    const now = Date.now();
     const data = this.getOrCreate(stage);
     data.totalMs += durationMs;
     data.count++;
+    if (data.wallFirstSeen === null) {
+      data.wallFirstSeen = now;
+    }
+    data.wallLastSeen = now;
   }
 
-  getSummary(): Record<PipelineStage, { totalMs: number; count: number; percentage: number }> {
+  getSummary(): Record<PipelineStage, { totalMs: number; wallMs: number; count: number; percentage: number }> {
     const totalMs = Array.from(this.stages.values()).reduce((sum, d) => sum + d.totalMs, 0);
-    const result = {} as Record<PipelineStage, { totalMs: number; count: number; percentage: number }>;
+    const result = {} as Record<PipelineStage, { totalMs: number; wallMs: number; count: number; percentage: number }>;
 
     for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
       const data = this.stages.get(stage);
       if (data && data.totalMs > 0) {
+        const wallMs = (data.wallFirstSeen !== null && data.wallLastSeen !== null)
+          ? data.wallLastSeen - data.wallFirstSeen
+          : 0;
         result[stage] = {
           totalMs: data.totalMs,
+          wallMs,
           count: data.count,
           percentage: totalMs > 0 ? (data.totalMs / totalMs) * 100 : 0,
         };
@@ -120,16 +137,36 @@ class DebugLogger {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       this.logFile = join(LOG_DIR, `pipeline-${timestamp}.log`);
 
+      const env = (key: string, fallback: string) =>
+        process.env[key] != null ? process.env[key] : `${fallback} (default)`;
+
+      const batchSize = parseInt(process.env.EMBEDDING_BATCH_SIZE || "1024", 10);
+      const minBatchRaw = process.env.MIN_BATCH_SIZE;
+      const minBatchEffective = minBatchRaw != null
+        ? (parseInt(minBatchRaw, 10) || 0)
+        : Math.floor(batchSize * 0.5);
+      const concurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
+
       this.writeRaw(`
 ================================================================================
 PIPELINE DEBUG LOG - Session started at ${new Date().toISOString()}
 ================================================================================
-ENV: DEBUG=${process.env.DEBUG}
-     EMBEDDING_CONCURRENCY=${process.env.EMBEDDING_CONCURRENCY || "1 (default)"}
-     EMBEDDING_BATCH_SIZE=${process.env.EMBEDDING_BATCH_SIZE || "1024 (default, chunks per embedding batch)"}
-     QDRANT_UPSERT_BATCH_SIZE=${process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "100 (default, points per Qdrant upsert)"}
-     BATCH_FORMATION_TIMEOUT_MS=${process.env.BATCH_FORMATION_TIMEOUT_MS || "2000 (default)"}
-     FILE_PROCESSING_CONCURRENCY=${process.env.FILE_PROCESSING_CONCURRENCY || "50 (default)"}
+ENV:
+  EMBEDDING_BASE_URL          = ${env("EMBEDDING_BASE_URL", "http://localhost:11434")}
+  EMBEDDING_MODEL             = ${env("EMBEDDING_MODEL", "nomic-embed-text")}
+  EMBEDDING_CONCURRENCY       = ${env("EMBEDDING_CONCURRENCY", "1")}
+  EMBEDDING_BATCH_SIZE        = ${env("EMBEDDING_BATCH_SIZE", "1024")}
+  MIN_BATCH_SIZE              = ${minBatchRaw != null ? minBatchRaw : "unset"} → effective: ${minBatchEffective}
+  BATCH_FORMATION_TIMEOUT_MS  = ${env("BATCH_FORMATION_TIMEOUT_MS", "2000")}
+  CHUNKER_POOL_SIZE           = ${env("CHUNKER_POOL_SIZE", "4")}
+  FILE_PROCESSING_CONCURRENCY = ${env("FILE_PROCESSING_CONCURRENCY", "50")}
+  MAX_IO_CONCURRENCY          = ${env("MAX_IO_CONCURRENCY", "100")}
+  QDRANT_UPSERT_BATCH_SIZE    = ${env("QDRANT_UPSERT_BATCH_SIZE", "100")}
+  CODE_ENABLE_GIT_METADATA    = ${env("CODE_ENABLE_GIT_METADATA", "false")}
+DERIVED:
+  maxQueueSize                = ${concurrency * 2} (EMBEDDING_CONCURRENCY × 2)
+  backpressure ON threshold   = ${concurrency * 2} batches
+  backpressure OFF threshold  = ${Math.floor(concurrency * 2 * 0.5)} batches
 ================================================================================
 `);
     } catch (error) {
@@ -329,7 +366,7 @@ ENV: DEBUG=${process.env.DEBUG}
   /**
    * Get stage profiling summary
    */
-  getStageSummary(): Record<PipelineStage, { totalMs: number; count: number; percentage: number }> {
+  getStageSummary(): Record<PipelineStage, { totalMs: number; wallMs: number; count: number; percentage: number }> {
     return this.profiler.getSummary();
   }
 
@@ -353,7 +390,8 @@ ENV: DEBUG=${process.env.DEBUG}
       for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
         const data = stageSummary[stage];
         if (data) {
-          stageBlock += `  ${stage.padEnd(9)}: ${data.totalMs.toString().padStart(6)}ms  (${data.percentage.toFixed(1).padStart(5)}%)  [${data.count.toString().padStart(4)} calls]\n`;
+          const wallInfo = data.wallMs > 0 ? `  wall: ${data.wallMs.toString().padStart(6)}ms` : "";
+          stageBlock += `  ${stage.padEnd(9)}: ${data.totalMs.toString().padStart(6)}ms  (${data.percentage.toFixed(1).padStart(5)}%)  [${data.count.toString().padStart(4)} calls]${wallInfo}\n`;
         }
       }
       stageBlock += `  ${"TOTAL".padEnd(9)}: ${stageTotalMs.toString().padStart(6)}ms\n`;
