@@ -423,13 +423,23 @@ DERIVED:
       // Calculate total wall time from all stages merged
       const pipelineWallMs = (stats as { uptimeMs?: number }).uptimeMs || stageTotalMs;
 
+      // Concurrency per stage (for estimating incremental time)
+      const concurrency: Record<PipelineStage, number> = {
+        scan: 1, // Serial file scanning
+        parse: parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10),
+        git: parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "50", 10),
+        embed: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10),
+        qdrant: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10),
+      };
+
       // Column widths
-      const W = { stage: 7, cum: 10, cpu: 6, wall: 10, wallP: 6, calls: 6 };
+      const W = { stage: 7, cum: 10, cpu: 6, wall: 10, wallP: 6, added: 8, calls: 6 };
 
       stageBlock = "\nSTAGE PROFILING:\n";
-      stageBlock += `  ${"stage".padEnd(W.stage)}  ${"cumul.".padStart(W.cum)}  ${"cpu%".padStart(W.cpu)}  ${"wall".padStart(W.wall)}  ${"wall%".padStart(W.wallP)}  ${"calls".padStart(W.calls)}\n`;
-      stageBlock += `  ${"-".repeat(W.stage)}  ${"-".repeat(W.cum)}  ${"-".repeat(W.cpu)}  ${"-".repeat(W.wall)}  ${"-".repeat(W.wallP)}  ${"-".repeat(W.calls)}\n`;
+      stageBlock += `  ${"stage".padEnd(W.stage)}  ${"cumul.".padStart(W.cum)}  ${"cpu%".padStart(W.cpu)}  ${"wall".padStart(W.wall)}  ${"wall%".padStart(W.wallP)}  ${"~added".padStart(W.added)}  ${"calls".padStart(W.calls)}\n`;
+      stageBlock += `  ${"-".repeat(W.stage)}  ${"-".repeat(W.cum)}  ${"-".repeat(W.cpu)}  ${"-".repeat(W.wall)}  ${"-".repeat(W.wallP)}  ${"-".repeat(W.added)}  ${"-".repeat(W.calls)}\n`;
 
+      let totalAddedMs = 0;
       for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
         const data = stageSummary[stage];
         if (data) {
@@ -437,11 +447,15 @@ DERIVED:
           const wallPercent = pipelineWallMs > 0
             ? (((data.wallMs / pipelineWallMs) * 100).toFixed(1) + "%").padStart(W.wallP)
             : "-".padStart(W.wallP);
-          stageBlock += `  ${stage.padEnd(W.stage)}  ${formatDuration(data.totalMs, W.cum)}  ${cpuPercent}  ${formatDuration(data.wallMs, W.wall)}  ${wallPercent}  ${data.count.toString().padStart(W.calls)}\n`;
+          // Estimated incremental time = cumulative / concurrency
+          const addedMs = Math.round(data.totalMs / concurrency[stage]);
+          totalAddedMs += addedMs;
+          stageBlock += `  ${stage.padEnd(W.stage)}  ${formatDuration(data.totalMs, W.cum)}  ${cpuPercent}  ${formatDuration(data.wallMs, W.wall)}  ${wallPercent}  ${formatDuration(addedMs, W.added)}  ${data.count.toString().padStart(W.calls)}\n`;
         }
       }
-      stageBlock += `  ${"-".repeat(W.stage)}  ${"-".repeat(W.cum)}  ${"-".repeat(W.cpu)}  ${"-".repeat(W.wall)}  ${"-".repeat(W.wallP)}  ${"-".repeat(W.calls)}\n`;
-      stageBlock += `  ${"TOTAL".padEnd(W.stage)}  ${formatDuration(stageTotalMs, W.cum)}  ${" ".repeat(W.cpu)}  ${formatDuration(pipelineWallMs, W.wall)}\n`;
+      stageBlock += `  ${"-".repeat(W.stage)}  ${"-".repeat(W.cum)}  ${"-".repeat(W.cpu)}  ${"-".repeat(W.wall)}  ${"-".repeat(W.wallP)}  ${"-".repeat(W.added)}  ${"-".repeat(W.calls)}\n`;
+      stageBlock += `  ${"TOTAL".padEnd(W.stage)}  ${formatDuration(stageTotalMs, W.cum)}  ${" ".repeat(W.cpu)}  ${formatDuration(pipelineWallMs, W.wall)}  ${" ".repeat(W.wallP)}  ${formatDuration(totalAddedMs, W.added)}\n`;
+      stageBlock += `\n  ~added = cumul. / concurrency (estimated incremental cost)\n`;
     }
 
     this.writeRaw(`
