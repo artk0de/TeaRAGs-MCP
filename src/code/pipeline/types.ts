@@ -124,6 +124,8 @@ export interface WorkerPoolConfig {
 export interface BatchAccumulatorConfig {
   /** Target batch size */
   batchSize: number;
+  /** Minimum items before timeout flush (default: batchSize * 0.5) */
+  minBatchSize?: number;
   /** Flush timeout (ms) - send partial batch after this time */
   flushTimeoutMs: number;
   /** Maximum queue size before applying backpressure */
@@ -213,6 +215,8 @@ export const DEFAULT_CONFIG: PipelineConfig = {
     // Chunks to accumulate before sending to embedding
     // EMBEDDING_BATCH_SIZE is canonical, CODE_BATCH_SIZE is deprecated fallback
     batchSize: parseInt(process.env.EMBEDDING_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "1024", 10),
+    // Minimum chunks before timeout flush (0 or unset = no minimum)
+    minBatchSize: parseInt(process.env.MIN_BATCH_SIZE || "0", 10) || undefined,
     // Flush partial batch after timeout to avoid GPU idle time
     flushTimeoutMs: parseInt(process.env.BATCH_FORMATION_TIMEOUT_MS || "2000", 10),
     // Queue size based on concurrency
