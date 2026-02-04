@@ -138,18 +138,24 @@ class StageProfiler {
 
 /**
  * Format milliseconds as human-readable duration (e.g., "2m 30s", "45.5s", "150ms")
+ * @param ms - milliseconds
+ * @param width - optional fixed width with right-padding
  */
-function formatDuration(ms: number): string {
+function formatDuration(ms: number, width?: number): string {
+  let result: string;
   if (ms < 1000) {
-    return `${ms}ms`;
+    result = `${ms}ms`;
+  } else {
+    const totalSeconds = ms / 1000;
+    if (totalSeconds < 60) {
+      result = `${totalSeconds.toFixed(1)}s`;
+    } else {
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = Math.round(totalSeconds % 60);
+      result = `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+    }
   }
-  const totalSeconds = ms / 1000;
-  if (totalSeconds < 60) {
-    return `${totalSeconds.toFixed(1)}s`;
-  }
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = Math.round(totalSeconds % 60);
-  return `${minutes}m ${seconds}s`;
+  return width ? result.padStart(width) : result;
 }
 
 class DebugLogger {
@@ -433,22 +439,25 @@ DERIVED:
       // Calculate total wall time from all stages merged
       const pipelineWallMs = (stats as { uptimeMs?: number }).uptimeMs || stageTotalMs;
 
+      // Column widths
+      const W = { stage: 7, cum: 10, cpu: 6, wall: 10, wallP: 6, calls: 6 };
+
       stageBlock = "\nSTAGE PROFILING:\n";
-      stageBlock += `  ${"stage".padEnd(9)}  ${"cumulative".padStart(10)}  ${"cpu%".padStart(6)}  ${"wall".padStart(10)}  ${"wall%".padStart(6)}  ${"calls".padStart(6)}\n`;
-      stageBlock += `  ${"-".repeat(9)}  ${"-".repeat(10)}  ${"-".repeat(6)}  ${"-".repeat(10)}  ${"-".repeat(6)}  ${"-".repeat(6)}\n`;
+      stageBlock += `  ${"stage".padEnd(W.stage)}  ${"cumul.".padStart(W.cum)}  ${"cpu%".padStart(W.cpu)}  ${"wall".padStart(W.wall)}  ${"wall%".padStart(W.wallP)}  ${"calls".padStart(W.calls)}\n`;
+      stageBlock += `  ${"-".repeat(W.stage)}  ${"-".repeat(W.cum)}  ${"-".repeat(W.cpu)}  ${"-".repeat(W.wall)}  ${"-".repeat(W.wallP)}  ${"-".repeat(W.calls)}\n`;
 
       for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
         const data = stageSummary[stage];
         if (data) {
-          const cpuPercent = data.percentage.toFixed(1).padStart(5) + "%";
+          const cpuPercent = (data.percentage.toFixed(1) + "%").padStart(W.cpu);
           const wallPercent = pipelineWallMs > 0
-            ? ((data.wallMs / pipelineWallMs) * 100).toFixed(1).padStart(5) + "%"
-            : "    -";
-          stageBlock += `  ${stage.padEnd(9)}  ${formatDuration(data.totalMs).padStart(10)}  ${cpuPercent}  ${formatDuration(data.wallMs).padStart(10)}  ${wallPercent}  ${data.count.toString().padStart(6)}\n`;
+            ? (((data.wallMs / pipelineWallMs) * 100).toFixed(1) + "%").padStart(W.wallP)
+            : "-".padStart(W.wallP);
+          stageBlock += `  ${stage.padEnd(W.stage)}  ${formatDuration(data.totalMs, W.cum)}  ${cpuPercent}  ${formatDuration(data.wallMs, W.wall)}  ${wallPercent}  ${data.count.toString().padStart(W.calls)}\n`;
         }
       }
-      stageBlock += `  ${"-".repeat(9)}  ${"-".repeat(10)}  ${"-".repeat(6)}  ${"-".repeat(10)}  ${"-".repeat(6)}  ${"-".repeat(6)}\n`;
-      stageBlock += `  ${"TOTAL".padEnd(9)}  ${formatDuration(stageTotalMs).padStart(10)}          ${formatDuration(pipelineWallMs).padStart(10)}\n`;
+      stageBlock += `  ${"-".repeat(W.stage)}  ${"-".repeat(W.cum)}  ${"-".repeat(W.cpu)}  ${"-".repeat(W.wall)}  ${"-".repeat(W.wallP)}  ${"-".repeat(W.calls)}\n`;
+      stageBlock += `  ${"TOTAL".padEnd(W.stage)}  ${formatDuration(stageTotalMs, W.cum)}  ${" ".repeat(W.cpu)}  ${formatDuration(pipelineWallMs, W.wall)}\n`;
     }
 
     this.writeRaw(`
