@@ -579,19 +579,45 @@ describe("Stage Profiling", () => {
     expect(Object.keys(summary)).toHaveLength(0);
   });
 
-  it("should track wall time for addStageTime calls", async () => {
-    // Simulate concurrent addStageTime calls spread over 50ms
+  it("should track wall time for addStageTime with overlapping intervals", async () => {
+    // addStageTime assumes work just finished at "now", so intervals are [now-duration, now]
+    // First call: [t0-500, t0]
+    // Wait 50ms
+    // Second call: [t1-500, t1] where t1 = t0+50
+    // These intervals overlap! [t0-500, t0] and [t0-450, t0+50] merge to [t0-500, t0+50] = 550ms
     pipelineLog.addStageTime("git", 500);
     await new Promise(resolve => setTimeout(resolve, 50));
     pipelineLog.addStageTime("git", 500);
 
     const summary = pipelineLog.getStageSummary();
 
-    // Cumulative: 1000ms (sum of individual durations)
+    // Cumulative: 1000ms (sum of durations)
     expect(summary.git.totalMs).toBe(1000);
-    // Wall time: ~50ms (time between first and last call)
-    expect(summary.git.wallMs).toBeGreaterThanOrEqual(40);
-    expect(summary.git.wallMs).toBeLessThan(200);
+    // Wall time: ~550ms (merged overlapping intervals)
+    expect(summary.git.wallMs).toBeGreaterThanOrEqual(500);
+    expect(summary.git.wallMs).toBeLessThan(700);
+  });
+
+  it("should merge overlapping intervals for wall time", async () => {
+    // Simulate overlapping parallel work
+    // Worker 1: starts at 0, duration 100ms -> interval [0, 100]
+    // Worker 2: starts at 20ms, duration 100ms -> interval [20, 120]
+    // Merged wall time should be ~120ms, not 200ms
+    pipelineLog.stageStart("parse");
+    await new Promise(resolve => setTimeout(resolve, 20));
+    pipelineLog.stageStart("parse"); // overlapping start
+    await new Promise(resolve => setTimeout(resolve, 80));
+    pipelineLog.stageEnd("parse"); // first ends at ~100
+    await new Promise(resolve => setTimeout(resolve, 20));
+    pipelineLog.stageEnd("parse"); // second ends at ~120
+
+    const summary = pipelineLog.getStageSummary();
+
+    // Cumulative: ~200ms (100 + 100)
+    expect(summary.parse.totalMs).toBeGreaterThanOrEqual(150);
+    // Wall time: ~120ms (merged overlapping intervals)
+    expect(summary.parse.wallMs).toBeGreaterThanOrEqual(100);
+    expect(summary.parse.wallMs).toBeLessThan(summary.parse.totalMs);
   });
 
   it("should track wall time for startStage/endStage calls", async () => {
@@ -607,17 +633,17 @@ describe("Stage Profiling", () => {
 
     // Cumulative: ~60ms (two 30ms calls)
     expect(summary.parse.totalMs).toBeGreaterThanOrEqual(40);
-    // Wall time: ~60ms (from first start to last end)
-    expect(summary.parse.wallMs).toBeGreaterThanOrEqual(50);
+    // Wall time: ~60ms (two non-overlapping intervals)
+    expect(summary.parse.wallMs).toBeGreaterThanOrEqual(40);
   });
 
-  it("should report wallMs as 0 when only one call made", () => {
+  it("should report wallMs equal to totalMs for single call", () => {
     pipelineLog.addStageTime("qdrant", 500);
 
     const summary = pipelineLog.getStageSummary();
 
-    // Single call = no meaningful wall time spread
-    expect(summary.qdrant.wallMs).toBe(0);
+    // Single call = wall time equals cumulative
+    expect(summary.qdrant.wallMs).toBe(500);
   });
 
   it("should reset wall time on profiler reset", () => {
@@ -627,7 +653,7 @@ describe("Stage Profiling", () => {
     pipelineLog.addStageTime("embed", 500);
     const summary = pipelineLog.getStageSummary();
     expect(summary.embed.totalMs).toBe(500);
-    expect(summary.embed.wallMs).toBe(0); // Single call after reset
+    expect(summary.embed.wallMs).toBe(500); // Single call = wall equals total
   });
 
   it("should include wall time in summary output", async () => {
@@ -638,9 +664,32 @@ describe("Stage Profiling", () => {
     const ctx: LogContext = { component: "TestPipeline" };
     pipelineLog.summary(ctx, { test: true });
 
+    // New format has "wall" column header and "wall%" column
     expect(fs.appendFileSync).toHaveBeenCalledWith(
       expect.any(String),
-      expect.stringContaining("wall:")
+      expect.stringContaining("wall%")
+    );
+  });
+
+  it("should format durations in human-readable format", () => {
+    // 2 minutes 30 seconds
+    pipelineLog.addStageTime("git", 150000);
+    // 45 seconds
+    pipelineLog.addStageTime("embed", 45000);
+    // 1.5 seconds
+    pipelineLog.addStageTime("scan", 1500);
+
+    const ctx: LogContext = { component: "TestPipeline" };
+    pipelineLog.summary(ctx, { test: true });
+
+    // Check for human-readable format like "2m 30s" or "45.0s" or "1.5s"
+    expect(fs.appendFileSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("2m 30s")
+    );
+    expect(fs.appendFileSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("45.0s")
     );
   });
 

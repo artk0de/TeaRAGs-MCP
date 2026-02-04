@@ -26,12 +26,46 @@ export interface LogContext {
   threadId?: string;
 }
 
+interface Interval {
+  start: number;
+  end: number;
+}
+
 interface StageData {
   totalMs: number;
   count: number;
-  activeStart: number | null;
-  wallFirstSeen: number | null;
-  wallLastSeen: number | null;
+  // For startStage/endStage: track active intervals per "thread"
+  activeStarts: number[];
+  // All recorded intervals for wall time calculation
+  intervals: Interval[];
+}
+
+/**
+ * Merge overlapping intervals and return total wall time
+ */
+function mergeIntervalsAndSum(intervals: Interval[]): number {
+  if (intervals.length === 0) return 0;
+  if (intervals.length === 1) return intervals[0].end - intervals[0].start;
+
+  // Sort by start time
+  const sorted = [...intervals].sort((a, b) => a.start - b.start);
+  const merged: Interval[] = [sorted[0]];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const current = sorted[i];
+    const last = merged[merged.length - 1];
+
+    if (current.start <= last.end) {
+      // Overlapping - extend the last interval
+      last.end = Math.max(last.end, current.end);
+    } else {
+      // Non-overlapping - add new interval
+      merged.push(current);
+    }
+  }
+
+  // Sum all merged intervals
+  return merged.reduce((sum, iv) => sum + (iv.end - iv.start), 0);
 }
 
 class StageProfiler {
@@ -40,7 +74,7 @@ class StageProfiler {
   private getOrCreate(stage: PipelineStage): StageData {
     let data = this.stages.get(stage);
     if (!data) {
-      data = { totalMs: 0, count: 0, activeStart: null, wallFirstSeen: null, wallLastSeen: null };
+      data = { totalMs: 0, count: 0, activeStarts: [], intervals: [] };
       this.stages.set(stage, data);
     }
     return data;
@@ -49,20 +83,18 @@ class StageProfiler {
   startStage(stage: PipelineStage): void {
     const now = Date.now();
     const data = this.getOrCreate(stage);
-    data.activeStart = now;
-    if (data.wallFirstSeen === null) {
-      data.wallFirstSeen = now;
-    }
+    data.activeStarts.push(now);
   }
 
   endStage(stage: PipelineStage): void {
     const now = Date.now();
     const data = this.getOrCreate(stage);
-    if (data.activeStart !== null) {
-      data.totalMs += now - data.activeStart;
+    const start = data.activeStarts.shift();
+    if (start !== undefined) {
+      const duration = now - start;
+      data.totalMs += duration;
       data.count++;
-      data.activeStart = null;
-      data.wallLastSeen = now;
+      data.intervals.push({ start, end: now });
     }
   }
 
@@ -71,10 +103,8 @@ class StageProfiler {
     const data = this.getOrCreate(stage);
     data.totalMs += durationMs;
     data.count++;
-    if (data.wallFirstSeen === null) {
-      data.wallFirstSeen = now;
-    }
-    data.wallLastSeen = now;
+    // For addTime, we assume the work just finished, so interval is [now-duration, now]
+    data.intervals.push({ start: now - durationMs, end: now });
   }
 
   getSummary(): Record<PipelineStage, { totalMs: number; wallMs: number; count: number; percentage: number }> {
@@ -84,9 +114,7 @@ class StageProfiler {
     for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
       const data = this.stages.get(stage);
       if (data && data.totalMs > 0) {
-        const wallMs = (data.wallFirstSeen !== null && data.wallLastSeen !== null)
-          ? data.wallLastSeen - data.wallFirstSeen
-          : 0;
+        const wallMs = mergeIntervalsAndSum(data.intervals);
         result[stage] = {
           totalMs: data.totalMs,
           wallMs,
@@ -106,6 +134,22 @@ class StageProfiler {
   reset(): void {
     this.stages.clear();
   }
+}
+
+/**
+ * Format milliseconds as human-readable duration (e.g., "2m 30s", "45.5s", "150ms")
+ */
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+  const totalSeconds = ms / 1000;
+  if (totalSeconds < 60) {
+    return `${totalSeconds.toFixed(1)}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  return `${minutes}m ${seconds}s`;
 }
 
 class DebugLogger {
@@ -386,15 +430,25 @@ DERIVED:
 
     let stageBlock = "";
     if (stageTotalMs > 0) {
+      // Calculate total wall time from all stages merged
+      const pipelineWallMs = (stats as { uptimeMs?: number }).uptimeMs || stageTotalMs;
+
       stageBlock = "\nSTAGE PROFILING:\n";
+      stageBlock += `  ${"stage".padEnd(9)}  ${"cumulative".padStart(10)}  ${"cpu%".padStart(6)}  ${"wall".padStart(10)}  ${"wall%".padStart(6)}  ${"calls".padStart(6)}\n`;
+      stageBlock += `  ${"-".repeat(9)}  ${"-".repeat(10)}  ${"-".repeat(6)}  ${"-".repeat(10)}  ${"-".repeat(6)}  ${"-".repeat(6)}\n`;
+
       for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
         const data = stageSummary[stage];
         if (data) {
-          const wallInfo = data.wallMs > 0 ? `  wall: ${data.wallMs.toString().padStart(6)}ms` : "";
-          stageBlock += `  ${stage.padEnd(9)}: ${data.totalMs.toString().padStart(6)}ms  (${data.percentage.toFixed(1).padStart(5)}%)  [${data.count.toString().padStart(4)} calls]${wallInfo}\n`;
+          const cpuPercent = data.percentage.toFixed(1).padStart(5) + "%";
+          const wallPercent = pipelineWallMs > 0
+            ? ((data.wallMs / pipelineWallMs) * 100).toFixed(1).padStart(5) + "%"
+            : "    -";
+          stageBlock += `  ${stage.padEnd(9)}  ${formatDuration(data.totalMs).padStart(10)}  ${cpuPercent}  ${formatDuration(data.wallMs).padStart(10)}  ${wallPercent}  ${data.count.toString().padStart(6)}\n`;
         }
       }
-      stageBlock += `  ${"TOTAL".padEnd(9)}: ${stageTotalMs.toString().padStart(6)}ms\n`;
+      stageBlock += `  ${"-".repeat(9)}  ${"-".repeat(10)}  ${"-".repeat(6)}  ${"-".repeat(10)}  ${"-".repeat(6)}  ${"-".repeat(6)}\n`;
+      stageBlock += `  ${"TOTAL".padEnd(9)}  ${formatDuration(stageTotalMs).padStart(10)}          ${formatDuration(pipelineWallMs).padStart(10)}\n`;
     }
 
     this.writeRaw(`
