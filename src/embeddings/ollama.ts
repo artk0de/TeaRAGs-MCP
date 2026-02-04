@@ -276,114 +276,46 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       return [];
     }
 
-    // Check batch size setting
-    const envBatchSize = process.env.EMBEDDING_BATCH_SIZE;
-    const configuredBatchSize = envBatchSize
-      ? parseInt(envBatchSize, 10)
-      : 64;
+    // Batch size is controlled by pipeline accumulator (EMBEDDING_BATCH_SIZE env).
+    // This method sends ALL received texts in a single API call.
 
-    // EMBEDDING_BATCH_SIZE=0 means: use single requests with concurrency
-    // This can be faster on CPU (num_gpu=0) than batch API
-    if (configuredBatchSize === 0) {
-      const envConcurrency = process.env.EMBEDDING_CONCURRENCY;
-      const concurrency = envConcurrency ? parseInt(envConcurrency, 10) : 1;
-
-      if (process.env.DEBUG) {
-        console.error(
-          `[Ollama] Single requests mode: ${texts.length} texts with concurrency=${concurrency}`,
-        );
-      }
-
-      // Process texts in groups with concurrency
-      const results: EmbeddingResult[] = [];
-      for (let i = 0; i < texts.length; i += concurrency) {
-        const group = texts.slice(i, i + concurrency);
-        const groupResults = await Promise.all(
-          group.map((text) => this.embed(text)),
-        );
-        results.push(...groupResults);
-      }
-      return results;
-    }
-
-    // Use native batch API - ONE request for ALL texts (in chunks)
+    // Use native batch API - ONE request for ALL texts
     if (this.useNativeBatch) {
       return this.limiter.schedule(() =>
         this.retryWithBackoff(async () => {
-          const MAX_BATCH_SIZE = configuredBatchSize;
-
-          // Configurable concurrency for parallel batch processing
-          // Default: 1 (sequential - single Ollama instance)
-          // Higher values useful for multiple Ollama instances or external APIs
-          const envConcurrency = process.env.EMBEDDING_CONCURRENCY;
-          const concurrency = envConcurrency ? parseInt(envConcurrency, 10) : 1;
-
-          // Split texts into batches
-          const batches: string[][] = [];
-          for (let i = 0; i < texts.length; i += MAX_BATCH_SIZE) {
-            batches.push(texts.slice(i, i + MAX_BATCH_SIZE));
-          }
-
           if (process.env.DEBUG) {
             console.error(
-              `[Ollama] Processing ${batches.length} batches with concurrency=${concurrency}`,
+              `[Ollama] Native batch: ${texts.length} texts in 1 request`,
             );
           }
 
-          // Process batches with concurrency control
-          const allResults: EmbeddingResult[][] = [];
+          const response = await this.callBatchApi(texts);
 
-          for (let i = 0; i < batches.length; i += concurrency) {
-            const batchGroup = batches.slice(i, i + concurrency);
-
-            const groupResults = await Promise.all(
-              batchGroup.map(async (batch) => {
-                if (process.env.DEBUG) {
-                  console.error(
-                    `[Ollama] Native batch: ${batch.length} texts in 1 request`,
-                  );
-                }
-                const response = await this.callBatchApi(batch);
-
-                if (
-                  !response.embeddings ||
-                  response.embeddings.length !== batch.length
-                ) {
-                  throw new Error(
-                    `Ollama returned ${response.embeddings?.length || 0} embeddings for ${batch.length} texts`,
-                  );
-                }
-
-                return response.embeddings.map((embedding: number[]) => ({
-                  embedding,
-                  dimensions: this.dimensions,
-                }));
-              }),
+          if (
+            !response.embeddings ||
+            response.embeddings.length !== texts.length
+          ) {
+            throw new Error(
+              `Ollama returned ${response.embeddings?.length || 0} embeddings for ${texts.length} texts`,
             );
-
-            allResults.push(...groupResults);
           }
 
-          // Flatten results maintaining order
-          return allResults.flat();
+          return response.embeddings.map((embedding: number[]) => ({
+            embedding,
+            dimensions: this.dimensions,
+          }));
         }),
       );
     }
 
-    // Fallback: Legacy parallel individual requests
+    // Fallback: Legacy parallel individual requests (old Ollama without /api/embed)
     if (process.env.DEBUG) {
       console.error(`[Ollama] Fallback: ${texts.length} individual requests`);
     }
-    const CHUNK_SIZE = 50;
     const results: EmbeddingResult[] = [];
 
-    for (let i = 0; i < texts.length; i += CHUNK_SIZE) {
-      const chunk = texts.slice(i, i + CHUNK_SIZE);
-      // The Bottleneck limiter will handle rate limiting and concurrency (maxConcurrent: 10)
-      const chunkResults = await Promise.all(
-        chunk.map((text) => this.embed(text)),
-      );
-      results.push(...chunkResults);
+    for (const text of texts) {
+      results.push(await this.embed(text));
     }
 
     return results;

@@ -196,7 +196,7 @@ export type BatchHandler<T extends WorkItem> = (
 export const DEFAULT_CONFIG: PipelineConfig = {
   workerPool: {
     // Concurrent embedding workers (parallel batches to Ollama)
-    concurrency: parseInt(process.env.EMBEDDING_CONCURRENCY || "4", 10),
+    concurrency: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10),
     maxRetries: 3,
     retryBaseDelayMs: 100,
     retryMaxDelayMs: 5000,
@@ -210,12 +210,13 @@ export const DEFAULT_CONFIG: PipelineConfig = {
     retryMaxDelayMs: 5000,
   },
   upsertAccumulator: {
-    // LARGE batches for optimal GPU utilization
-    batchSize: parseInt(process.env.CODE_BATCH_SIZE || "256", 10),
-    // Timeout is safety net, batches should fill fast if chunk generation is fast
-    flushTimeoutMs: parseInt(process.env.BATCH_FORMATION_TIMEOUT_MS || "5000", 10),
+    // Chunks to accumulate before sending to embedding
+    // EMBEDDING_BATCH_SIZE is canonical, CODE_BATCH_SIZE is deprecated fallback
+    batchSize: parseInt(process.env.EMBEDDING_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "1024", 10),
+    // Flush partial batch after timeout to avoid GPU idle time
+    flushTimeoutMs: parseInt(process.env.BATCH_FORMATION_TIMEOUT_MS || "2000", 10),
     // Queue size based on concurrency
-    maxQueueSize: parseInt(process.env.EMBEDDING_CONCURRENCY || "4", 10) * 2,
+    maxQueueSize: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10) * 2,
   },
   deleteAccumulator: {
     // Larger batches (500) are efficient with payload index on relativePath

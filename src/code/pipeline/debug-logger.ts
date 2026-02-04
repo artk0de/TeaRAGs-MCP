@@ -57,11 +57,11 @@ class DebugLogger {
 PIPELINE DEBUG LOG - Session started at ${new Date().toISOString()}
 ================================================================================
 ENV: DEBUG=${process.env.DEBUG}
-     EMBEDDING_CONCURRENCY=${process.env.EMBEDDING_CONCURRENCY || "4 (default)"}
-     EMBEDDING_BATCH_SIZE=${process.env.EMBEDDING_BATCH_SIZE || "64 (default, Ollama native batch)"}
-     CODE_BATCH_SIZE=${process.env.CODE_BATCH_SIZE || "256 (default, large batches for GPU)"}
-     BATCH_FORMATION_TIMEOUT_MS=${process.env.BATCH_FORMATION_TIMEOUT_MS || "5000 (default)"}
-     FILE_PROCESSING_CONCURRENCY=${process.env.FILE_PROCESSING_CONCURRENCY || "10 (default)"}
+     EMBEDDING_CONCURRENCY=${process.env.EMBEDDING_CONCURRENCY || "1 (default)"}
+     EMBEDDING_BATCH_SIZE=${process.env.EMBEDDING_BATCH_SIZE || "1024 (default, chunks per embedding batch)"}
+     QDRANT_UPSERT_BATCH_SIZE=${process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "100 (default, points per Qdrant upsert)"}
+     BATCH_FORMATION_TIMEOUT_MS=${process.env.BATCH_FORMATION_TIMEOUT_MS || "2000 (default)"}
+     FILE_PROCESSING_CONCURRENCY=${process.env.FILE_PROCESSING_CONCURRENCY || "50 (default)"}
 ================================================================================
 `);
     } catch (error) {

@@ -83,7 +83,7 @@ EMBEDDING_BATCH_SIZE=128
 EMBEDDING_CONCURRENCY=2
 
 # Qdrant storage configuration
-CODE_BATCH_SIZE=384
+QDRANT_UPSERT_BATCH_SIZE=384
 QDRANT_BATCH_ORDERING=weak
 QDRANT_FLUSH_INTERVAL_MS=100
 
@@ -228,7 +228,7 @@ Everything runs on your machine:
 ```bash
 EMBEDDING_BATCH_SIZE=512
 EMBEDDING_CONCURRENCY=1
-CODE_BATCH_SIZE=192
+QDRANT_UPSERT_BATCH_SIZE=192
 QDRANT_BATCH_ORDERING=weak
 QDRANT_FLUSH_INTERVAL_MS=100
 QDRANT_DELETE_BATCH_SIZE=1500
@@ -262,7 +262,7 @@ Embedding on a dedicated GPU server, Qdrant runs locally in Docker:
 ```bash
 EMBEDDING_BATCH_SIZE=256
 EMBEDDING_CONCURRENCY=6
-CODE_BATCH_SIZE=512
+QDRANT_UPSERT_BATCH_SIZE=512
 QDRANT_BATCH_ORDERING=strong
 QDRANT_FLUSH_INTERVAL_MS=250
 QDRANT_DELETE_BATCH_SIZE=500
@@ -296,7 +296,7 @@ Both Qdrant and Ollama on a dedicated server (e.g., Windows PC with GPU):
 ```bash
 EMBEDDING_BATCH_SIZE=256
 EMBEDDING_CONCURRENCY=4
-CODE_BATCH_SIZE=256
+QDRANT_UPSERT_BATCH_SIZE=256
 QDRANT_BATCH_ORDERING=weak
 QDRANT_FLUSH_INTERVAL_MS=500
 QDRANT_DELETE_BATCH_SIZE=1000
@@ -574,7 +574,7 @@ Cache is invalidated automatically when file content changes.
 ### Memory Issues
 
 - [ ] Reduce `CODE_CHUNK_SIZE`
-- [ ] Reduce `CODE_BATCH_SIZE`
+- [ ] Reduce `QDRANT_UPSERT_BATCH_SIZE`
 - [ ] Increase Qdrant memory
 - [ ] Index subdirectories separately
 
@@ -613,14 +613,14 @@ Returns:
 | CPU embedding | Use GPU-accelerated Ollama |
 | Cloud provider rate limits | Switch to Ollama |
 | Large files | Exclude with `.contextignore` |
-| Many small files | Increase `CODE_BATCH_SIZE` |
+| Many small files | Increase `QDRANT_UPSERT_BATCH_SIZE` |
 
 ### Memory Exhaustion
 
 | Cause | Solution |
 |-------|----------|
 | Large chunks | Reduce `CODE_CHUNK_SIZE` |
-| Large batches | Reduce `CODE_BATCH_SIZE` |
+| Large batches | Reduce `QDRANT_UPSERT_BATCH_SIZE` |
 | Qdrant memory | Increase container limits |
 
 ### Slow Search
@@ -639,7 +639,7 @@ Returns:
 export EMBEDDING_MODEL="unclemusclez/jina-embeddings-v2-base-code:latest"
 export EMBEDDING_BATCH_SIZE=512
 export EMBEDDING_CONCURRENCY=1
-export CODE_BATCH_SIZE=192
+export QDRANT_UPSERT_BATCH_SIZE=192
 export QDRANT_BATCH_ORDERING=weak
 export QDRANT_FLUSH_INTERVAL_MS=100
 export QDRANT_DELETE_BATCH_SIZE=1500
@@ -654,7 +654,7 @@ export EMBEDDING_BASE_URL=http://your-gpu-server:11434
 export EMBEDDING_MODEL="unclemusclez/jina-embeddings-v2-base-code:latest"
 export EMBEDDING_BATCH_SIZE=256
 export EMBEDDING_CONCURRENCY=6
-export CODE_BATCH_SIZE=512
+export QDRANT_UPSERT_BATCH_SIZE=512
 export QDRANT_BATCH_ORDERING=strong
 export QDRANT_FLUSH_INTERVAL_MS=250
 export QDRANT_DELETE_BATCH_SIZE=500
@@ -670,7 +670,7 @@ export EMBEDDING_BASE_URL=http://your-server:11434
 export EMBEDDING_MODEL="unclemusclez/jina-embeddings-v2-base-code:latest"
 export EMBEDDING_BATCH_SIZE=256
 export EMBEDDING_CONCURRENCY=4
-export CODE_BATCH_SIZE=256
+export QDRANT_UPSERT_BATCH_SIZE=256
 export QDRANT_BATCH_ORDERING=weak
 export QDRANT_FLUSH_INTERVAL_MS=500
 export QDRANT_DELETE_BATCH_SIZE=1000

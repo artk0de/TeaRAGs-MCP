@@ -188,7 +188,7 @@ export class CodeIndexer {
 
       // 4. STREAMING: Process files with bounded concurrency, send chunks immediately
       // This eliminates burst-pause pattern by streaming chunks as files are processed
-      const fileProcessingConcurrency = parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "10", 10);
+      const fileProcessingConcurrency = parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "50", 10);
       let totalChunksQueued = 0;
       let filesProcessed = 0;
 
@@ -915,7 +915,7 @@ export class CodeIndexer {
         if (files.length === 0) return 0;
 
         let chunksCreated = 0;
-        const streamingConcurrency = parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "10", 10);
+        const streamingConcurrency = parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "50", 10);
 
         if (process.env.DEBUG) {
           console.error(`[Reindex] ${label}: starting ${files.length} files (streaming, concurrency=${streamingConcurrency})`);

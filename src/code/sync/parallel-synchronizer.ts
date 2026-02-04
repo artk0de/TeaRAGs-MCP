@@ -98,7 +98,7 @@ export class ParallelFileSynchronizer {
 
     // Get concurrency from param, env, or default
     this.concurrency = concurrency
-      ?? parseInt(process.env.EMBEDDING_CONCURRENCY || "4", 10);
+      ?? parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
 
     this.hashRing = new ConsistentHash(this.concurrency);
     this.snapshotManager = new ShardedSnapshotManager(

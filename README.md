@@ -283,9 +283,9 @@ Then add tuned values to your MCP config:
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
   -e QDRANT_URL=http://localhost:6333 \
-  -e EMBEDDING_BATCH_SIZE=128 \
+  -e EMBEDDING_BATCH_SIZE=256 \
   -e EMBEDDING_CONCURRENCY=2 \
-  -e CODE_BATCH_SIZE=384 \
+  -e QDRANT_UPSERT_BATCH_SIZE=384 \
   # ... copy other values from tuned_environment_variables.env
 ```
 
@@ -316,8 +316,8 @@ See [Advanced Performance Tuning](docs/PERFORMANCE_TUNING.md) for details and lo
 | `EMBEDDING_MODEL`                   | Model name                                        | `unclemusclez/jina-embeddings-v2-base-code:latest` |
 | `EMBEDDING_BASE_URL`                | Custom API URL                                    | Provider-specific |
 | `EMBEDDING_DIMENSION`               | Vector dimensions (auto-detected from model)      | Auto              |
-| `EMBEDDING_BATCH_SIZE`              | Texts per embedding request (Ollama native batch). Set to `0` for single requests mode (fallback) | 64                |
-| `EMBEDDING_CONCURRENCY`             | Parallel embedding requests (for multiple GPUs, or with `BATCH_SIZE=0`)   | 1                 |
+| `EMBEDDING_BATCH_SIZE`              | Chunks per embedding batch (pipeline accumulator size)                    | 1024              |
+| `EMBEDDING_CONCURRENCY`             | Parallel embedding workers (for remote GPU latency hiding)                | 1                 |
 | `EMBEDDING_MAX_REQUESTS_PER_MINUTE` | Rate limit                                        | Provider-specific |
 | `EMBEDDING_RETRY_ATTEMPTS`          | Retry count                                       | 3                 |
 | `EMBEDDING_RETRY_DELAY`             | Initial retry delay (ms)                          | 1000              |
@@ -333,7 +333,6 @@ See [Advanced Performance Tuning](docs/PERFORMANCE_TUNING.md) for details and lo
 | `CODE_CHUNK_SIZE`          | Maximum chunk size in characters                    | 2500    |
 | `CODE_CHUNK_OVERLAP`       | Overlap between chunks in characters                | 300     |
 | `CODE_ENABLE_AST`          | Enable AST-aware chunking (tree-sitter)             | true    |
-| `CODE_BATCH_SIZE`          | Number of chunks to embed in one batch              | 100     |
 | `CODE_CUSTOM_EXTENSIONS`   | Additional file extensions (comma-separated)        | -       |
 | `CODE_CUSTOM_IGNORE`       | Additional ignore patterns (comma-separated)        | -       |
 | `CODE_DEFAULT_LIMIT`       | Default search result limit                         | 5       |
@@ -343,6 +342,7 @@ See [Advanced Performance Tuning](docs/PERFORMANCE_TUNING.md) for details and lo
 
 | Variable                   | Description                                                      | Default |
 | -------------------------- | ---------------------------------------------------------------- | ------- |
+| `QDRANT_UPSERT_BATCH_SIZE` | Points per Qdrant upsert batch                                  | 100     |
 | `QDRANT_FLUSH_INTERVAL_MS` | Auto-flush buffer interval (0 to disable timer)                  | 500     |
 | `QDRANT_BATCH_ORDERING`    | Ordering mode: "weak", "medium", or "strong"                     | weak    |
 | `QDRANT_DELETE_BATCH_SIZE` | Paths per delete batch (with payload index, larger is efficient) | 500     |
@@ -350,10 +350,12 @@ See [Advanced Performance Tuning](docs/PERFORMANCE_TUNING.md) for details and lo
 
 #### Performance & Debug Configuration
 
-| Variable             | Description                                           | Default |
-| -------------------- | ----------------------------------------------------- | ------- |
-| `MAX_IO_CONCURRENCY` | Max parallel file I/O operations during cache sync    | 50      |
-| `DEBUG`              | Enable debug timing logs (`true` or `1` to enable)    | false   |
+| Variable                      | Description                                           | Default |
+| ----------------------------- | ----------------------------------------------------- | ------- |
+| `FILE_PROCESSING_CONCURRENCY` | Parallel file read + AST parsing during indexing      | 50      |
+| `BATCH_FORMATION_TIMEOUT_MS`  | Flush partial embedding batch after timeout (ms)      | 2000    |
+| `MAX_IO_CONCURRENCY`          | Max parallel file I/O operations during cache sync    | 50      |
+| `DEBUG`                       | Enable debug timing logs (`true` or `1` to enable)    | false   |
 
 ### Data Directories
 
@@ -594,18 +596,18 @@ Index and search your codebase using semantic code search. For detailed document
 
 **🏠 Local Setup (Mac + Docker):**
 ```bash
-EMBEDDING_BATCH_SIZE=128
-EMBEDDING_CONCURRENCY=2
-CODE_BATCH_SIZE=384
+EMBEDDING_BATCH_SIZE=512
+EMBEDDING_CONCURRENCY=1
+QDRANT_UPSERT_BATCH_SIZE=384
 QDRANT_BATCH_ORDERING=weak
 QDRANT_FLUSH_INTERVAL_MS=100
 ```
 
 **🌐 Remote GPU Server:**
 ```bash
-EMBEDDING_BATCH_SIZE=128
+EMBEDDING_BATCH_SIZE=256
 EMBEDDING_CONCURRENCY=4
-CODE_BATCH_SIZE=256
+QDRANT_UPSERT_BATCH_SIZE=256
 QDRANT_BATCH_ORDERING=medium
 QDRANT_FLUSH_INTERVAL_MS=250
 ```
@@ -647,10 +649,10 @@ See [docs/examples/](docs/examples/) directory for detailed guides:
 | **Qdrant unauthorized**        | Set `QDRANT_API_KEY` environment variable for secured instances                           |
 | **Filter errors**              | Ensure Qdrant filter format, check field names match metadata                             |
 | **Codebase not indexed**       | Run `index_codebase` before `search_code`                                                 |
-| **Slow indexing**              | Use Ollama (local) for faster indexing, or increase `CODE_BATCH_SIZE`                     |
+| **Slow indexing**              | Use Ollama (local) for faster indexing, or increase `EMBEDDING_BATCH_SIZE`                |
 | **Files not found**            | Check `.gitignore` and `.contextignore` patterns                                          |
 | **Search returns no results**  | Try broader queries, check if codebase is indexed with `get_index_status`                 |
-| **Out of memory during index** | Reduce `CODE_CHUNK_SIZE` or `CODE_BATCH_SIZE`                                             |
+| **Out of memory during index** | Reduce `CODE_CHUNK_SIZE` or `EMBEDDING_BATCH_SIZE`                                        |
 
 </details>
 
