@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/reload-project-rules.sh",
-            "statusMessage": "Reloading project rules (CLAUDE.local.md, AGENTS.local.md) into context before compaction"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash|mcp__git-global__git_commit",
