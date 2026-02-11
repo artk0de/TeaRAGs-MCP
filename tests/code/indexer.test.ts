@@ -1595,10 +1595,9 @@ export function process() {
       expect(stats.enrichmentDurationMs).toBeGreaterThanOrEqual(0);
     });
 
-    it("should use EMBEDDING_CONCURRENCY/2 as default git concurrency", async () => {
-      // Set EMBEDDING_CONCURRENCY and verify the default git concurrency formula
-      const originalEnv = process.env.EMBEDDING_CONCURRENCY;
-      process.env.EMBEDDING_CONCURRENCY = "4";
+    it("should respect GIT_ENRICHMENT_CONCURRENCY env override", async () => {
+      const originalEnv = process.env.GIT_ENRICHMENT_CONCURRENCY;
+      process.env.GIT_ENRICHMENT_CONCURRENCY = "5";
 
       try {
         const gitConfig = { ...config, enableGitMetadata: true };
@@ -1606,16 +1605,15 @@ export function process() {
 
         await createTestFile(codebaseDir, "test.ts", "export function compute(x: number): number {\n  return x * 42;\n}");
 
-        // The test verifies the formula works without errors
-        // (actual concurrency is internal implementation detail)
+        // Verifies custom concurrency doesn't cause errors
         const stats = await gitIndexer.indexCodebase(codebaseDir);
         expect(stats.status).toBe("completed");
         expect(stats.enrichmentStatus).toBeDefined();
       } finally {
         if (originalEnv !== undefined) {
-          process.env.EMBEDDING_CONCURRENCY = originalEnv;
+          process.env.GIT_ENRICHMENT_CONCURRENCY = originalEnv;
         } else {
-          delete process.env.EMBEDDING_CONCURRENCY;
+          delete process.env.GIT_ENRICHMENT_CONCURRENCY;
         }
       }
     });

@@ -197,7 +197,7 @@ ENV:
   MAX_IO_CONCURRENCY          = ${env("MAX_IO_CONCURRENCY", "100")}
   QDRANT_UPSERT_BATCH_SIZE    = ${env("QDRANT_UPSERT_BATCH_SIZE", "100")}
   CODE_ENABLE_GIT_METADATA    = ${env("CODE_ENABLE_GIT_METADATA", "false")}
-  GIT_ENRICHMENT_CONCURRENCY  = ${env("GIT_ENRICHMENT_CONCURRENCY", String(Math.max(1, Math.floor(concurrency / 2))))}
+  GIT_ENRICHMENT_CONCURRENCY  = ${env("GIT_ENRICHMENT_CONCURRENCY", "10")}
 DERIVED:
   maxQueueSize                = ${concurrency * 2} (EMBEDDING_CONCURRENCY × 2)
   backpressure ON threshold   = ${concurrency * 2} batches
@@ -436,15 +436,15 @@ DERIVED:
 
       // Concurrency per stage (for estimating incremental time)
       const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
-      const gitEnrichDefault = Math.max(1, Math.floor(embeddingConcurrency / 2));
+      const gitConcurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10);
       const concurrency: Record<PipelineStage, number> = {
         scan: 1, // Serial file scanning
         parse: parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10),
         git: parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "50", 10),
         embed: embeddingConcurrency,
         qdrant: embeddingConcurrency,
-        gitBlame: parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || String(gitEnrichDefault), 10),
-        enrichGit: parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || String(gitEnrichDefault), 10),
+        gitBlame: gitConcurrency,
+        enrichGit: gitConcurrency,
       };
 
       // Column widths
