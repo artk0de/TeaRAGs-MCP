@@ -14,6 +14,8 @@ const mockClient = {
   query: vi.fn().mockResolvedValue({ points: [] }),
   createPayloadIndex: vi.fn().mockResolvedValue({}),
   updateCollection: vi.fn().mockResolvedValue({}),
+  setPayload: vi.fn().mockResolvedValue({}),
+  batchUpdate: vi.fn().mockResolvedValue({}),
 };
 
 vi.mock("@qdrant/js-client-rest", () => ({
@@ -40,6 +42,8 @@ describe("QdrantManager", () => {
     mockClient.query.mockReset().mockResolvedValue({ points: [] });
     mockClient.createPayloadIndex.mockReset().mockResolvedValue({});
     mockClient.updateCollection.mockReset().mockResolvedValue({});
+    mockClient.setPayload.mockReset().mockResolvedValue({});
+    mockClient.batchUpdate.mockReset().mockResolvedValue({});
     vi.mocked(QdrantClient).mockClear();
     manager = new QdrantManager("http://localhost:6333");
   });
@@ -1724,6 +1728,115 @@ describe("QdrantManager", () => {
 
       expect(created).toBe(false);
       expect(mockClient.createPayloadIndex).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("setPayload", () => {
+    it("should call client.setPayload with normalized IDs and defaults", async () => {
+      await manager.setPayload("test-collection", { git: { ageDays: 5 } }, {
+        points: ["point-1", "point-2"],
+      });
+
+      expect(mockClient.setPayload).toHaveBeenCalledWith("test-collection", {
+        payload: { git: { ageDays: 5 } },
+        points: [expect.any(String), expect.any(String)],
+        filter: undefined,
+        wait: false,
+        ordering: "weak",
+      });
+    });
+
+    it("should pass custom wait and ordering options", async () => {
+      await manager.setPayload("test-collection", { key: "value" }, {
+        points: ["id-1"],
+        wait: true,
+        ordering: "strong",
+      });
+
+      expect(mockClient.setPayload).toHaveBeenCalledWith("test-collection", {
+        payload: { key: "value" },
+        points: [expect.any(String)],
+        filter: undefined,
+        wait: true,
+        ordering: "strong",
+      });
+    });
+
+    it("should support filter-based payload update", async () => {
+      const filter = { must: [{ key: "language", match: { value: "typescript" } }] };
+      await manager.setPayload("test-collection", { reviewed: true }, { filter });
+
+      expect(mockClient.setPayload).toHaveBeenCalledWith("test-collection", {
+        payload: { reviewed: true },
+        points: undefined,
+        filter,
+        wait: false,
+        ordering: "weak",
+      });
+    });
+  });
+
+  describe("batchSetPayload", () => {
+    it("should early return on empty operations", async () => {
+      await manager.batchSetPayload("test-collection", []);
+
+      expect(mockClient.batchUpdate).not.toHaveBeenCalled();
+    });
+
+    it("should call batchUpdate with set_payload operations", async () => {
+      const operations = [
+        { payload: { git: { ageDays: 1 } }, points: ["id-1"] as (string | number)[] },
+        { payload: { git: { ageDays: 2 } }, points: ["id-2"] as (string | number)[] },
+      ];
+
+      await manager.batchSetPayload("test-collection", operations);
+
+      expect(mockClient.batchUpdate).toHaveBeenCalledWith("test-collection", {
+        operations: [
+          { set_payload: { payload: { git: { ageDays: 1 } }, points: [expect.any(String)] } },
+          { set_payload: { payload: { git: { ageDays: 2 } }, points: [expect.any(String)] } },
+        ],
+        wait: false,
+        ordering: "weak",
+      });
+    });
+
+    it("should split into sub-batches of 100", async () => {
+      const operations = Array.from({ length: 150 }, (_, i) => ({
+        payload: { index: i },
+        points: [`id-${i}`] as (string | number)[],
+      }));
+
+      await manager.batchSetPayload("test-collection", operations);
+
+      // Should have been called twice: batch of 100 + batch of 50
+      expect(mockClient.batchUpdate).toHaveBeenCalledTimes(2);
+
+      // First batch: 100 operations, wait=false (not last)
+      const firstCall = mockClient.batchUpdate.mock.calls[0];
+      expect(firstCall[1].operations).toHaveLength(100);
+      expect(firstCall[1].wait).toBe(false);
+
+      // Second batch: 50 operations, wait=false (default)
+      const secondCall = mockClient.batchUpdate.mock.calls[1];
+      expect(secondCall[1].operations).toHaveLength(50);
+    });
+
+    it("should pass custom wait option to last batch", async () => {
+      const operations = Array.from({ length: 150 }, (_, i) => ({
+        payload: { index: i },
+        points: [`id-${i}`] as (string | number)[],
+      }));
+
+      await manager.batchSetPayload("test-collection", operations, { wait: true });
+
+      // Last batch should have wait=true
+      const lastCall = mockClient.batchUpdate.mock.calls[1];
+      expect(lastCall[1].wait).toBe(true);
+
+      // Non-last batch should have wait=false
+      const firstCall = mockClient.batchUpdate.mock.calls[0];
+      expect(firstCall[1].wait).toBe(false);
     });
   });
 });

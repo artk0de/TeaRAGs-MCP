@@ -228,6 +228,25 @@ class MockQdrantManager implements Partial<QdrantManager> {
     return { deletedCount: relativePaths.length, batchesProcessed: 1 };
   }
 
+  // Payload update (for Phase 2 git enrichment)
+  batchSetPayloadCalls: Array<{ collectionName: string; operations: any[] }> = [];
+
+  async setPayload(
+    collectionName: string,
+    _payload: Record<string, any>,
+    _options: any,
+  ): Promise<void> {
+    // No-op for mock
+  }
+
+  async batchSetPayload(
+    collectionName: string,
+    operations: Array<{ payload: Record<string, any>; points: (string | number)[] }>,
+    _options?: any,
+  ): Promise<void> {
+    this.batchSetPayloadCalls.push({ collectionName, operations });
+  }
+
   // Indexing control
   async disableIndexing(_collectionName: string): Promise<void> {
     // No-op for mock
@@ -1410,6 +1429,138 @@ export function process() {
       expect(progressUpdates.length).toBeGreaterThan(0);
       expect(progressUpdates).toContain("scanning");
     });
+  });
+
+  describe("Two-phase indexing (git enrichment)", () => {
+    it("should set enrichmentStatus to skipped when enableGitMetadata is false", async () => {
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export function hello(): string { return 'hello'; }",
+      );
+
+      const stats = await indexer.indexCodebase(codebaseDir);
+
+      expect(stats.status).toBe("completed");
+      expect(stats.enrichmentStatus).toBe("skipped");
+      expect(stats.enrichmentDurationMs).toBeUndefined();
+    });
+
+    it("should run Phase 2 enrichment when enableGitMetadata is true", async () => {
+      const gitConfig = { ...config, enableGitMetadata: true };
+      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export function greet(name: string): string {\n  return `Hello, ${name}!`;\n}",
+      );
+
+      const stats = await gitIndexer.indexCodebase(codebaseDir);
+
+      // Phase 2 should run even if git metadata is null (not a git repo)
+      expect(stats.status).toBe("completed");
+      expect(stats.enrichmentStatus).toBeDefined();
+      expect(["completed", "partial"]).toContain(stats.enrichmentStatus);
+      expect(stats.enrichmentDurationMs).toBeDefined();
+      expect(stats.enrichmentDurationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should not include git metadata in Phase 1 chunks", async () => {
+      const gitConfig = { ...config, enableGitMetadata: true };
+      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export function calculate(x: number): number {\n  return x * 2;\n}",
+      );
+
+      const addPointsSpy = vi.spyOn(qdrant, "addPoints");
+      const addPointsOptSpy = vi.spyOn(qdrant, "addPointsOptimized");
+      const addSparseOptSpy = vi.spyOn(qdrant, "addPointsWithSparseOptimized");
+
+      await gitIndexer.indexCodebase(codebaseDir);
+
+      // Phase 1 should NOT include git metadata in points
+      const allCalls = [
+        ...addPointsSpy.mock.calls,
+        ...addPointsOptSpy.mock.calls,
+        ...addSparseOptSpy.mock.calls,
+      ];
+
+      for (const call of allCalls) {
+        const points = call[1] as any[];
+        for (const point of points) {
+          if (point.payload?._type === "indexing_metadata") continue;
+          expect(point.payload?.git).toBeUndefined();
+        }
+      }
+    });
+
+    it("should set enrichmentStatus to skipped in reindexChanges when enableGitMetadata is false", async () => {
+      await createTestFile(
+        codebaseDir,
+        "initial.ts",
+        "export const initialValue = 1;\nconsole.log('Initial');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      await createTestFile(
+        codebaseDir,
+        "added.ts",
+        "export function newFeature(): boolean {\n  console.log('New feature added');\n  return true;\n}",
+      );
+
+      const stats = await indexer.reindexChanges(codebaseDir);
+
+      expect(stats.enrichmentStatus).toBe("skipped");
+    });
+
+    it("should run Phase 2 enrichment in reindexChanges when enableGitMetadata is true", async () => {
+      const gitConfig = { ...config, enableGitMetadata: true };
+      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+
+      await createTestFile(
+        codebaseDir,
+        "initial.ts",
+        "export const initialValue = 1;\nconsole.log('Initial file here');",
+      );
+      await gitIndexer.indexCodebase(codebaseDir);
+
+      await createTestFile(
+        codebaseDir,
+        "added.ts",
+        "export function addedFunc(): void {\n  console.log('Added function');\n  return;\n}",
+      );
+
+      const stats = await gitIndexer.reindexChanges(codebaseDir);
+
+      expect(stats.enrichmentStatus).toBeDefined();
+      expect(["completed", "partial"]).toContain(stats.enrichmentStatus);
+      expect(stats.enrichmentDurationMs).toBeDefined();
+      expect(stats.enrichmentDurationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should call progress callback with enriching phase", async () => {
+      const gitConfig = { ...config, enableGitMetadata: true };
+      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export function hello(): string {\n  return 'hello world';\n}",
+      );
+
+      const progressCallback = vi.fn();
+      await gitIndexer.indexCodebase(codebaseDir, undefined, progressCallback);
+
+      const enrichingCalls = progressCallback.mock.calls.filter(
+        (call) => call[0].phase === "enriching",
+      );
+      expect(enrichingCalls.length).toBeGreaterThan(0);
+    });
+
   });
 
   describe("Error handling edge cases", () => {

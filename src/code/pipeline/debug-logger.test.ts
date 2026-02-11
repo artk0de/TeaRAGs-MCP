@@ -731,6 +731,54 @@ describe("Stage Profiling", () => {
     expect(summaryCall).toBeDefined();
     expect(summaryCall[1]).not.toContain("STAGE PROFILING:");
   });
+
+  it("should track enrichGit stage with addStageTime", () => {
+    pipelineLog.addStageTime("enrichGit", 200);
+    pipelineLog.addStageTime("enrichGit", 300);
+
+    const summary = pipelineLog.getStageSummary();
+
+    expect(summary.enrichGit).toBeDefined();
+    expect(summary.enrichGit.totalMs).toBe(500);
+    expect(summary.enrichGit.count).toBe(2);
+  });
+
+  it("should include enrichGit stage in summary output", () => {
+    pipelineLog.addStageTime("embed", 1000);
+    pipelineLog.addStageTime("enrichGit", 500);
+
+    const ctx: LogContext = { component: "TestPipeline" };
+    pipelineLog.summary(ctx, { test: true });
+
+    expect(fs.appendFileSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("enrichGit")
+    );
+  });
+
+  it("should log enrichmentPhase messages", () => {
+    pipelineLog.enrichmentPhase("START", { files: 10, totalChunks: 50 });
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("PHASE: START")
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("GitEnrich")
+    );
+  });
+
+  it("should log enrichmentPhase COMPLETE with data", () => {
+    pipelineLog.enrichmentPhase("COMPLETE", {
+      enrichedFiles: 10,
+      enrichedChunks: 50,
+      failedFiles: 0,
+      durationMs: 1234,
+    });
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("PHASE: COMPLETE")
+    );
+  });
 });
 
 describe("DebugLogger - DEBUG environment variable", () => {

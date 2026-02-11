@@ -52,6 +52,9 @@ export interface IndexStats {
   durationMs: number;
   status: "completed" | "partial" | "failed";
   errors?: string[];
+  /** Git enrichment status (Phase 2 of two-phase indexing) */
+  enrichmentStatus?: "completed" | "partial" | "skipped";
+  enrichmentDurationMs?: number;
 }
 
 export interface ChangeStats {
@@ -62,6 +65,9 @@ export interface ChangeStats {
   chunksDeleted: number;
   durationMs: number;
   status: "completed" | "partial" | "failed";
+  /** Git enrichment status (Phase 2 of two-phase indexing) */
+  enrichmentStatus?: "completed" | "partial" | "skipped";
+  enrichmentDurationMs?: number;
 }
 
 export interface CodeSearchResult {
@@ -146,7 +152,7 @@ export interface IndexStatus {
 export type ProgressCallback = (progress: ProgressUpdate) => void;
 
 export interface ProgressUpdate {
-  phase: "scanning" | "chunking" | "embedding" | "storing";
+  phase: "scanning" | "chunking" | "embedding" | "storing" | "enriching";
   current: number;
   total: number;
   percentage: number;
@@ -208,4 +214,11 @@ export interface FileChanges {
   added: string[];
   modified: string[];
   deleted: string[];
+}
+
+/** Maps a chunk to its point ID for Phase 2 git enrichment */
+export interface ChunkLookupEntry {
+  chunkId: string;
+  startLine: number;
+  endLine: number;
 }

@@ -29,6 +29,7 @@ import { SnapshotMigrator } from "./sync/migration.js";
 import { ParallelFileSynchronizer, parallelLimit } from "./sync/parallel-synchronizer.js";
 import type {
   ChangeStats,
+  ChunkLookupEntry,
   CodeChunk,
   CodeConfig,
   CodeSearchResult,
@@ -170,14 +171,6 @@ export class CodeIndexer {
       const metadataExtractor = new MetadataExtractor();
       const indexedFiles: string[] = [];
 
-      // Initialize git metadata service (optional)
-      const gitMetadataService = this.config.enableGitMetadata
-        ? new GitMetadataService({ debug: process.env.DEBUG === "true" })
-        : null;
-      if (gitMetadataService) {
-        await gitMetadataService.initialize();
-      }
-
       // Initialize ChunkPipeline for parallel embedding and storage
       const chunkPipeline = new ChunkPipeline(
         this.qdrant,
@@ -196,6 +189,9 @@ export class CodeIndexer {
       const fileProcessingConcurrency = parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "50", 10);
       let totalChunksQueued = 0;
       let filesProcessed = 0;
+
+      // Phase 2 chunk tracking: maps absolute file paths to chunk entries for git enrichment
+      const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
       // NOTE: prefetchBlame removed - it blocks GPU for too long!
       // Git blame now runs lazily during file processing, allowing:
@@ -253,44 +249,26 @@ export class CodeIndexer {
                 } as CodeChunk["metadata"],
               };
 
-              // Add git metadata if service is enabled (blame already in L1 cache)
-              // IMPORTANT: Pass fileContent to avoid re-reading file for hash check
-              if (gitMetadataService) {
-                const gitStart = Date.now();
-                const gitMeta = await gitMetadataService.getChunkMetadata(
-                  filePath,
-                  chunk.startLine,
-                  chunk.endLine,
-                  code, // Pass content to avoid fs.readFile for each chunk!
-                );
-                pipelineLog.addStageTime("git", Date.now() - gitStart);
-                if (gitMeta) {
-                  baseChunk.metadata.git = {
-                    lastModifiedAt: gitMeta.lastModifiedAt,
-                    firstCreatedAt: gitMeta.firstCreatedAt,
-                    dominantAuthor: gitMeta.dominantAuthor,
-                    dominantAuthorEmail: gitMeta.dominantAuthorEmail,
-                    authors: gitMeta.authors,
-                    commitCount: gitMeta.commitCount,
-                    lastCommitHash: gitMeta.lastCommitHash,
-                    ageDays: gitMeta.ageDays,
-                    taskIds: gitMeta.taskIds,
-                  };
-                }
-              }
-
               // Wait for backpressure if needed
               if (chunkPipeline.isBackpressured()) {
                 await chunkPipeline.waitForBackpressure(30000);
               }
 
               // IMMEDIATE: Send chunk to pipeline right away
+              const chunkId = metadataExtractor.generateChunkId(chunk);
               chunkPipeline.addChunk(
                 baseChunk as CodeChunk,
-                metadataExtractor.generateChunkId(chunk),
+                chunkId,
                 absolutePath,
               );
               totalChunksQueued++;
+
+              // Track for Phase 2 git enrichment
+              if (this.config.enableGitMetadata) {
+                const entries = chunkMap.get(filePath) || [];
+                entries.push({ chunkId, startLine: chunk.startLine, endLine: chunk.endLine });
+                chunkMap.set(filePath, entries);
+              }
             }
 
             stats.filesIndexed++;
@@ -339,6 +317,37 @@ export class CodeIndexer {
           `[Index] Pipeline completed: ${finalPipelineStats.itemsProcessed} chunks in ${finalPipelineStats.batchesProcessed} batches, ` +
           `${finalPipelineStats.throughput.toFixed(1)} chunks/s`
         );
+      }
+
+      // Phase 2: Git metadata enrichment (runs after all embeddings are stored)
+      if (this.config.enableGitMetadata && chunkMap.size > 0) {
+        progressCallback?.({
+          phase: "enriching",
+          current: 0,
+          total: chunkMap.size,
+          percentage: 92,
+          message: `Starting git metadata enrichment for ${chunkMap.size} files...`,
+        });
+
+        const enrichResult = await this.enrichGitMetadata(
+          collectionName,
+          absolutePath,
+          chunkMap,
+          progressCallback,
+        );
+
+        stats.enrichmentStatus = enrichResult.failedFiles === 0 ? "completed" : "partial";
+        stats.enrichmentDurationMs = enrichResult.durationMs;
+
+        if (process.env.DEBUG) {
+          console.error(
+            `[Index] Git enrichment: ${enrichResult.enrichedFiles} files, ` +
+            `${enrichResult.enrichedChunks} chunks in ${(enrichResult.durationMs / 1000).toFixed(1)}s` +
+            (enrichResult.failedFiles > 0 ? ` (${enrichResult.failedFiles} failed)` : "")
+          );
+        }
+      } else if (!this.config.enableGitMetadata) {
+        stats.enrichmentStatus = "skipped";
       }
 
       // Save snapshot for incremental updates
@@ -414,6 +423,110 @@ export class CodeIndexer {
       // Non-fatal: log but don't fail the indexing
       console.error("Failed to store indexing marker:", error);
     }
+  }
+
+  /**
+   * Phase 2: Enrich existing Qdrant points with git metadata via setPayload.
+   * Runs AFTER Phase 1 (embedding/storage) to avoid blocking GPU with git blame.
+   */
+  private async enrichGitMetadata(
+    collectionName: string,
+    absolutePath: string,
+    chunkMap: Map<string, ChunkLookupEntry[]>,
+    progressCallback?: ProgressCallback,
+  ): Promise<{ enrichedFiles: number; enrichedChunks: number; failedFiles: number; durationMs: number }> {
+    const enrichStart = Date.now();
+    let enrichedFiles = 0;
+    let enrichedChunks = 0;
+    let failedFiles = 0;
+
+    const gitMetadataService = new GitMetadataService({ debug: process.env.DEBUG === "true" });
+    await gitMetadataService.initialize();
+
+    const files = Array.from(chunkMap.entries());
+    const concurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10);
+
+    pipelineLog.enrichmentPhase("START", {
+      files: files.length,
+      totalChunks: Array.from(chunkMap.values()).reduce((sum, entries) => sum + entries.length, 0),
+      concurrency,
+    });
+
+    let filesProcessed = 0;
+
+    await parallelLimit(
+      files,
+      async ([filePath, chunkEntries]) => {
+        try {
+          const code = await fs.readFile(filePath, "utf-8");
+          const operations: Array<{ payload: Record<string, any>; points: (string | number)[] }> = [];
+
+          for (const entry of chunkEntries) {
+            const gitStart = Date.now();
+            const gitMeta = await gitMetadataService.getChunkMetadata(
+              filePath,
+              entry.startLine,
+              entry.endLine,
+              code,
+            );
+            pipelineLog.addStageTime("enrichGit", Date.now() - gitStart);
+
+            if (gitMeta) {
+              operations.push({
+                payload: {
+                  git: {
+                    lastModifiedAt: gitMeta.lastModifiedAt,
+                    firstCreatedAt: gitMeta.firstCreatedAt,
+                    dominantAuthor: gitMeta.dominantAuthor,
+                    dominantAuthorEmail: gitMeta.dominantAuthorEmail,
+                    authors: gitMeta.authors,
+                    commitCount: gitMeta.commitCount,
+                    lastCommitHash: gitMeta.lastCommitHash,
+                    ageDays: gitMeta.ageDays,
+                    taskIds: gitMeta.taskIds,
+                  },
+                },
+                points: [entry.chunkId],
+              });
+            }
+          }
+
+          if (operations.length > 0) {
+            await this.qdrant.batchSetPayload(collectionName, operations);
+            enrichedChunks += operations.length;
+          }
+          enrichedFiles++;
+        } catch (error) {
+          failedFiles++;
+          if (process.env.DEBUG) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error(`[GitEnrich] Failed to enrich ${filePath}: ${msg}`);
+          }
+        }
+
+        filesProcessed++;
+        if (filesProcessed === 1 || filesProcessed % 20 === 0) {
+          progressCallback?.({
+            phase: "enriching",
+            current: filesProcessed,
+            total: files.length,
+            percentage: Math.round((filesProcessed / files.length) * 100),
+            message: `Git enrichment: ${filesProcessed}/${files.length} files, ${enrichedChunks} chunks enriched`,
+          });
+        }
+      },
+      concurrency,
+    );
+
+    const durationMs = Date.now() - enrichStart;
+    pipelineLog.enrichmentPhase("COMPLETE", {
+      enrichedFiles,
+      enrichedChunks,
+      failedFiles,
+      durationMs,
+    });
+
+    return { enrichedFiles, enrichedChunks, failedFiles, durationMs };
   }
 
   /**
@@ -797,13 +910,8 @@ export class CodeIndexer {
       const chunkerPool = new ChunkerPool(chunkerPoolSize, chunkerConfig);
       const metadataExtractor = new MetadataExtractor();
 
-      // Initialize git metadata service (optional)
-      const gitMetadataService = this.config.enableGitMetadata
-        ? new GitMetadataService({ debug: process.env.DEBUG === "true" })
-        : null;
-      if (gitMetadataService) {
-        await gitMetadataService.initialize();
-      }
+      // Phase 2 chunk tracking: maps absolute file paths to chunk entries for git enrichment
+      const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
       // OPTIMIZATION: Parallel pipelines for delete and index operations
       // - Added files: can be indexed immediately (no old chunks to delete)
@@ -975,36 +1083,11 @@ export class CodeIndexer {
                     chunkType: chunk.metadata.chunkType,
                     parentName: chunk.metadata.parentName,
                     parentType: chunk.metadata.parentType,
+                    symbolId: chunk.metadata.symbolId,
                     isDocumentation: chunk.metadata.isDocumentation,
                     ...(imports.length > 0 && { imports }),
                   } as CodeChunk["metadata"],
                 };
-
-                // Add git metadata if service is enabled (blame already in L1 cache)
-                // IMPORTANT: Pass fileContent to avoid re-reading file for hash check
-                if (gitMetadataService) {
-                  const gitStart = Date.now();
-                  const gitMeta = await gitMetadataService.getChunkMetadata(
-                    absoluteFilePath,
-                    chunk.startLine,
-                    chunk.endLine,
-                    code, // Pass content to avoid fs.readFile for each chunk!
-                  );
-                  pipelineLog.addStageTime("git", Date.now() - gitStart);
-                  if (gitMeta) {
-                    baseChunk.metadata.git = {
-                      lastModifiedAt: gitMeta.lastModifiedAt,
-                      firstCreatedAt: gitMeta.firstCreatedAt,
-                      dominantAuthor: gitMeta.dominantAuthor,
-                      dominantAuthorEmail: gitMeta.dominantAuthorEmail,
-                      authors: gitMeta.authors,
-                      commitCount: gitMeta.commitCount,
-                      lastCommitHash: gitMeta.lastCommitHash,
-                      ageDays: gitMeta.ageDays,
-                      taskIds: gitMeta.taskIds,
-                    };
-                  }
-                }
 
                 // Wait for backpressure if needed
                 if (chunkPipeline.isBackpressured()) {
@@ -1012,12 +1095,20 @@ export class CodeIndexer {
                 }
 
                 // IMMEDIATE: Send chunk to pipeline right away
+                const chunkId = metadataExtractor.generateChunkId(chunk);
                 chunkPipeline.addChunk(
                   baseChunk as CodeChunk,
-                  metadataExtractor.generateChunkId(chunk),
+                  chunkId,
                   absolutePath,
                 );
                 chunksCreated++;
+
+                // Track for Phase 2 git enrichment
+                if (this.config.enableGitMetadata) {
+                  const entries = chunkMap.get(absoluteFilePath) || [];
+                  entries.push({ chunkId, startLine: chunk.startLine, endLine: chunk.endLine });
+                  chunkMap.set(absoluteFilePath, entries);
+                }
               }
             } catch (error) {
               console.error(`Failed to process ${filePath}:`, error);
@@ -1126,6 +1217,37 @@ export class CodeIndexer {
       }
 
       stats.chunksAdded = addedChunks + modifiedChunks;
+
+      // Phase 2: Git metadata enrichment (runs after all embeddings are stored)
+      if (this.config.enableGitMetadata && chunkMap.size > 0) {
+        progressCallback?.({
+          phase: "enriching",
+          current: 0,
+          total: chunkMap.size,
+          percentage: 92,
+          message: `Starting git metadata enrichment for ${chunkMap.size} files...`,
+        });
+
+        const enrichResult = await this.enrichGitMetadata(
+          collectionName,
+          absolutePath,
+          chunkMap,
+          progressCallback,
+        );
+
+        stats.enrichmentStatus = enrichResult.failedFiles === 0 ? "completed" : "partial";
+        stats.enrichmentDurationMs = enrichResult.durationMs;
+
+        if (process.env.DEBUG) {
+          console.error(
+            `[Reindex] Git enrichment: ${enrichResult.enrichedFiles} files, ` +
+            `${enrichResult.enrichedChunks} chunks in ${(enrichResult.durationMs / 1000).toFixed(1)}s` +
+            (enrichResult.failedFiles > 0 ? ` (${enrichResult.failedFiles} failed)` : "")
+          );
+        }
+      } else if (!this.config.enableGitMetadata) {
+        stats.enrichmentStatus = "skipped";
+      }
 
       // Update snapshot
       await synchronizer.updateSnapshot(currentFiles);
