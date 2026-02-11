@@ -45,6 +45,13 @@ export function registerCodeTools(
 
       let statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
 
+      if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
+        statusMessage += `\nGit enrichment: ${stats.enrichmentStatus}`;
+        if (stats.enrichmentDurationMs) {
+          statusMessage += ` (${(stats.enrichmentDurationMs / 1000).toFixed(1)}s)`;
+        }
+      }
+
       if (stats.status === "partial") {
         statusMessage += `\n\nWarnings:\n${stats.errors?.join("\n")}`;
       } else if (stats.status === "failed") {
@@ -165,6 +172,13 @@ export function registerCodeTools(
       message += `- Files deleted: ${stats.filesDeleted}\n`;
       message += `- Chunks added: ${stats.chunksAdded}\n`;
       message += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
+
+      if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
+        message += `\n- Git enrichment: ${stats.enrichmentStatus}`;
+        if (stats.enrichmentDurationMs) {
+          message += ` (${(stats.enrichmentDurationMs / 1000).toFixed(1)}s)`;
+        }
+      }
 
       if (
         stats.filesAdded === 0 &&

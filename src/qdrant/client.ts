@@ -507,6 +507,75 @@ export class QdrantManager {
   }
 
   /**
+   * Update payload fields on existing points WITHOUT re-uploading vectors.
+   * Used by Phase 2 git enrichment to add git metadata after embedding.
+   *
+   * @param collectionName - Collection to update
+   * @param payload - Key-value pairs to SET (merges with existing payload)
+   * @param options - Target points by IDs or filter, plus ordering/wait
+   */
+  async setPayload(
+    collectionName: string,
+    payload: Record<string, any>,
+    options: {
+      points?: (string | number)[];
+      filter?: Record<string, any>;
+      wait?: boolean;
+      ordering?: "weak" | "medium" | "strong";
+    },
+  ): Promise<void> {
+    const normalizedPoints = options.points?.map((id) => this.normalizeId(id));
+
+    await this.client.setPayload(collectionName, {
+      payload,
+      points: normalizedPoints,
+      filter: options.filter,
+      wait: options.wait ?? false,
+      ordering: options.ordering ?? "weak",
+    });
+  }
+
+  /**
+   * Batch multiple setPayload operations into a single HTTP request.
+   * Uses Qdrant's batchUpdate API with set_payload operations.
+   */
+  async batchSetPayload(
+    collectionName: string,
+    operations: Array<{
+      payload: Record<string, any>;
+      points: (string | number)[];
+    }>,
+    options: {
+      wait?: boolean;
+      ordering?: "weak" | "medium" | "strong";
+    } = {},
+  ): Promise<void> {
+    if (operations.length === 0) return;
+
+    const { wait = false, ordering = "weak" } = options;
+
+    // Split into sub-batches of 100 operations to avoid oversized requests
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < operations.length; i += BATCH_SIZE) {
+      const batch = operations.slice(i, i + BATCH_SIZE);
+      const isLast = i + BATCH_SIZE >= operations.length;
+
+      const updateOps = batch.map((op) => ({
+        set_payload: {
+          payload: op.payload,
+          points: op.points.map((id) => this.normalizeId(id)),
+        },
+      }));
+
+      await this.client.batchUpdate(collectionName, {
+        operations: updateOps,
+        wait: isLast ? wait : false,
+        ordering,
+      });
+    }
+  }
+
+  /**
    * Performs hybrid search combining semantic vector search with sparse vector (keyword) search
    * using Reciprocal Rank Fusion (RRF) to combine results
    */

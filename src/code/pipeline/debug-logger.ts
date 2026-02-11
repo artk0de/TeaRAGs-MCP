@@ -17,7 +17,7 @@ import { join } from "node:path";
 const LOG_DIR = join(homedir(), ".tea-rags-mcp", "logs");
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
-export type PipelineStage = "scan" | "parse" | "git" | "embed" | "qdrant";
+export type PipelineStage = "scan" | "parse" | "git" | "embed" | "qdrant" | "enrichGit";
 
 export interface LogContext {
   component: string;
@@ -92,7 +92,7 @@ class StageProfiler {
     const totalMs = Array.from(this.stages.values()).reduce((sum, d) => sum + d.totalMs, 0);
     const result = {} as Record<PipelineStage, { totalMs: number; wallMs: number; count: number; percentage: number }>;
 
-    for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
+    for (const stage of ["scan", "parse", "git", "embed", "qdrant", "enrichGit"] as PipelineStage[]) {
       const data = this.stages.get(stage);
       if (data && data.totalMs > 0) {
         // Wall time = span from earliest start to latest end
@@ -197,6 +197,7 @@ ENV:
   MAX_IO_CONCURRENCY          = ${env("MAX_IO_CONCURRENCY", "100")}
   QDRANT_UPSERT_BATCH_SIZE    = ${env("QDRANT_UPSERT_BATCH_SIZE", "100")}
   CODE_ENABLE_GIT_METADATA    = ${env("CODE_ENABLE_GIT_METADATA", "false")}
+  GIT_ENRICHMENT_CONCURRENCY  = ${env("GIT_ENRICHMENT_CONCURRENCY", "10")}
 DERIVED:
   maxQueueSize                = ${concurrency * 2} (EMBEDDING_CONCURRENCY × 2)
   backpressure ON threshold   = ${concurrency * 2} batches
@@ -377,6 +378,16 @@ DERIVED:
   }
 
   /**
+   * Log git enrichment phase progress (Phase 2 of two-phase indexing)
+   */
+  enrichmentPhase(
+    phase: string,
+    data?: Record<string, unknown>,
+  ): void {
+    this.step({ component: "GitEnrich" }, `PHASE: ${phase}`, data);
+  }
+
+  /**
    * Start timing a pipeline stage
    */
   stageStart(stage: PipelineStage): void {
@@ -430,6 +441,7 @@ DERIVED:
         git: parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "50", 10),
         embed: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10),
         qdrant: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10),
+        enrichGit: parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10),
       };
 
       // Column widths
@@ -440,7 +452,7 @@ DERIVED:
       stageBlock += `  ${"-".repeat(W.stage)}  ${"-".repeat(W.cum)}  ${"-".repeat(W.cpu)}  ${"-".repeat(W.wall)}  ${"-".repeat(W.wallP)}  ${"-".repeat(W.added)}  ${"-".repeat(W.calls)}\n`;
 
       let totalAddedMs = 0;
-      for (const stage of ["scan", "parse", "git", "embed", "qdrant"] as PipelineStage[]) {
+      for (const stage of ["scan", "parse", "git", "embed", "qdrant", "enrichGit"] as PipelineStage[]) {
         const data = stageSummary[stage];
         if (data) {
           const cpuPercent = (data.percentage.toFixed(1) + "%").padStart(W.cpu);

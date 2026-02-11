@@ -48,6 +48,8 @@ export interface ChunkItem extends WorkItem {
       parentName?: string;
       /** Parent AST node type (e.g., "class", "module") */
       parentType?: string;
+      /** Symbol identifier: "ClassName.methodName" or just "functionName" */
+      symbolId?: string;
       /** True for documentation chunks (markdown, etc.) */
       isDocumentation?: boolean;
       /** File-level imports (inherited by all chunks from the file) */
