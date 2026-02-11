@@ -700,21 +700,27 @@ export class GitLogReader {
 
             if (hunks.length === 0) return;
 
-            // Map hunks to chunks
+            // Map hunks to chunks — collect affected chunks first, then update once per commit
+            const affectedChunkIds = new Set<string>();
             for (const hunk of hunks) {
               const hunkStart = hunk.newStart;
               const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
 
               for (const entry of entries) {
                 if (overlaps(hunkStart, hunkEnd, entry.startLine, entry.endLine)) {
-                  const acc = accumulators.get(entry.chunkId)!;
-                  acc.commitShas.add(commitSha);
-                  acc.authors.add(authorName);
-                  if (isBugFix) acc.bugFixCount++;
-                  if (commitTimestamp > acc.lastModifiedAt) {
-                    acc.lastModifiedAt = commitTimestamp;
-                  }
+                  affectedChunkIds.add(entry.chunkId);
                 }
+              }
+            }
+
+            // Update accumulators once per commit per chunk (avoids multi-hunk double-counting)
+            for (const chunkId of affectedChunkIds) {
+              const acc = accumulators.get(chunkId)!;
+              acc.commitShas.add(commitSha);
+              acc.authors.add(authorName);
+              if (isBugFix) acc.bugFixCount++;
+              if (commitTimestamp > acc.lastModifiedAt) {
+                acc.lastModifiedAt = commitTimestamp;
               }
             }
           }),
