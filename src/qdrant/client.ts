@@ -544,6 +544,7 @@ export class QdrantManager {
     operations: Array<{
       payload: Record<string, any>;
       points: (string | number)[];
+      key?: string;
     }>,
     options: {
       wait?: boolean;
@@ -564,6 +565,7 @@ export class QdrantManager {
         set_payload: {
           payload: op.payload,
           points: op.points.map((id) => this.normalizeId(id)),
+          ...(op.key ? { key: op.key } : {}),
         },
       }));
 

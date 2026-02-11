@@ -552,21 +552,22 @@ export class CodeIndexer {
               chunkConcurrency,
             );
 
-            // Apply chunk-level overlays via batchSetPayload with dot-notation
-            let chunkBatch: Array<{ payload: Record<string, any>; points: (string | number)[] }> = [];
+            // Apply chunk-level overlays via batchSetPayload with key:"git" for nested merge
+            let chunkBatch: Array<{ payload: Record<string, any>; points: (string | number)[]; key?: string }> = [];
 
             for (const [, overlayMap] of chunkChurnMap) {
               for (const [chunkId, overlay] of overlayMap) {
                 chunkBatch.push({
                   payload: {
-                    "git.chunkCommitCount": overlay.chunkCommitCount,
-                    "git.chunkChurnRatio": overlay.chunkChurnRatio,
-                    "git.chunkContributorCount": overlay.chunkContributorCount,
-                    "git.chunkBugFixRate": overlay.chunkBugFixRate,
-                    "git.chunkLastModifiedAt": overlay.chunkLastModifiedAt,
-                    "git.chunkAgeDays": overlay.chunkAgeDays,
+                    chunkCommitCount: overlay.chunkCommitCount,
+                    chunkChurnRatio: overlay.chunkChurnRatio,
+                    chunkContributorCount: overlay.chunkContributorCount,
+                    chunkBugFixRate: overlay.chunkBugFixRate,
+                    chunkLastModifiedAt: overlay.chunkLastModifiedAt,
+                    chunkAgeDays: overlay.chunkAgeDays,
                   },
                   points: [chunkId],
+                  key: "git",
                 });
 
                 if (chunkBatch.length >= BATCH_SIZE) {
