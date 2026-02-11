@@ -45,7 +45,9 @@ export function registerCodeTools(
 
       let statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
 
-      if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
+      if (stats.enrichmentStatus === "background") {
+        statusMessage += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
+      } else if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
         statusMessage += `\nGit enrichment: ${stats.enrichmentStatus}`;
         if (stats.enrichmentDurationMs) {
           statusMessage += ` (${(stats.enrichmentDurationMs / 1000).toFixed(1)}s)`;
@@ -173,7 +175,9 @@ export function registerCodeTools(
       message += `- Chunks added: ${stats.chunksAdded}\n`;
       message += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
 
-      if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
+      if (stats.enrichmentStatus === "background") {
+        message += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
+      } else if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
         message += `\n- Git enrichment: ${stats.enrichmentStatus}`;
         if (stats.enrichmentDurationMs) {
           message += ` (${(stats.enrichmentDurationMs / 1000).toFixed(1)}s)`;
@@ -217,18 +221,26 @@ export function registerCodeTools(
       }
 
       if (status.status === "indexing") {
+        let text = `Codebase at "${path}" is currently being indexed. ${status.chunksCount || 0} chunks processed so far.`;
+        if (status.enrichment) {
+          text += `\nGit enrichment: ${status.enrichment.status}`;
+          if (status.enrichment.percentage !== undefined) {
+            text += ` (${status.enrichment.percentage}%)`;
+          }
+        }
         return {
-          content: [
-            {
-              type: "text",
-              text: `Codebase at "${path}" is currently being indexed. ${status.chunksCount || 0} chunks processed so far.`,
-            },
-          ],
+          content: [{ type: "text", text }],
         };
       }
 
+      // Include enrichment info in the response
+      const response: Record<string, any> = { ...status };
+      if (status.enrichment) {
+        response.enrichment = status.enrichment;
+      }
+
       return {
-        content: [{ type: "text", text: JSON.stringify(status, null, 2) }],
+        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
       };
     },
   );
