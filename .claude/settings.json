@@ -1,12 +1,24 @@
 {
   "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/reload-project-rules.sh",
+            "statusMessage": "Reloading project rules (CLAUDE.local.md, AGENTS.local.md) into context before compaction"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash|mcp__git-global__git_commit",
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/confirm-git-commit.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/confirm-git-commit.sh",
+            "statusMessage": "Validating git commit (must show changes summary first)"
           }
         ]
       }
@@ -17,11 +29,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-docs-needed.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-docs-needed.sh",
+            "statusMessage": "Checking if documentation update needed"
           },
           {
             "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/validate-mcp-schema.sh"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/validate-mcp-schema.sh",
+            "statusMessage": "Validating MCP tool schema"
           }
         ]
       }
@@ -31,7 +45,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npm test --run 2>/dev/null || (echo 'Tests failing - run npm test to see details' >&2 && exit 2)"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && CODE_CHANGES=$(git diff --name-only HEAD 2>/dev/null; git diff --name-only --cached 2>/dev/null) && if [ -z \"$CODE_CHANGES\" ] || echo \"$CODE_CHANGES\" | grep -qvE '\\.(md|json)$|^\\.claude/|^\\.beads/'; then npm test --run 2>/dev/null || (echo 'Tests failing - run npm test to see details. NOTE: If test failures are pre-existing (not caused by changes in this session), do NOT attempt to fix them. Only fix tests broken by YOUR changes in the current session.' >&2 && exit 2); fi",
+            "statusMessage": "Running tests (skipped if only .md/.json/.claude/.beads files changed)"
           }
         ]
       }
