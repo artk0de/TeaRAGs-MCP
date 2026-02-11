@@ -767,6 +767,41 @@ describe("Stage Profiling", () => {
     );
   });
 
+  it("should track gitBlame stage with addStageTime", () => {
+    pipelineLog.addStageTime("gitBlame", 1000);
+    pipelineLog.addStageTime("gitBlame", 2000);
+
+    const summary = pipelineLog.getStageSummary();
+    expect(summary.gitBlame).toBeDefined();
+    expect(summary.gitBlame.totalMs).toBe(3000);
+    expect(summary.gitBlame.count).toBe(2);
+  });
+
+  it("should include gitBlame stage in summary output", () => {
+    pipelineLog.addStageTime("embed", 1000);
+    pipelineLog.addStageTime("gitBlame", 2000);
+
+    const ctx: LogContext = { component: "ChunkPipeline" };
+    pipelineLog.summary(ctx, { uptimeMs: 5000 });
+
+    expect(fs.appendFileSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("gitBlame")
+    );
+  });
+
+  it("should log enrichmentPhase PREFETCH_START and PREFETCH_COMPLETE", () => {
+    pipelineLog.enrichmentPhase("PREFETCH_START", { concurrency: 2 });
+    pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", { prefetched: 10, failed: 0, durationMs: 5000 });
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("PREFETCH_START")
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("PREFETCH_COMPLETE")
+    );
+  });
+
   it("should log enrichmentPhase COMPLETE with data", () => {
     pipelineLog.enrichmentPhase("COMPLETE", {
       enrichedFiles: 10,

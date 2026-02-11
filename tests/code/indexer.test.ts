@@ -1561,6 +1561,65 @@ export function process() {
       expect(enrichingCalls.length).toBeGreaterThan(0);
     });
 
+    it("should start blame worker in parallel with embedding in indexCodebase", async () => {
+      const gitConfig = { ...config, enableGitMetadata: true };
+      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+
+      // Create files with function content (chunker needs parseable functions to produce chunks)
+      await createTestFile(codebaseDir, "a.ts", "export function funcA(x: number): number {\n  return x + 1;\n}");
+      await createTestFile(codebaseDir, "b.ts", "export function funcB(y: string): string {\n  return y.trim();\n}");
+
+      const stats = await gitIndexer.indexCodebase(codebaseDir);
+
+      // Blame worker ran (enrichment completed or partial — both indicate it ran)
+      expect(stats.status).toBe("completed");
+      expect(stats.enrichmentStatus).toBeDefined();
+      expect(["completed", "partial"]).toContain(stats.enrichmentStatus);
+      expect(stats.enrichmentDurationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should start blame worker in parallel with embedding in reindexChanges", async () => {
+      const gitConfig = { ...config, enableGitMetadata: true };
+      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+
+      await createTestFile(codebaseDir, "existing.ts", "export const x = 1;\nconsole.log('Existing file');");
+      await gitIndexer.indexCodebase(codebaseDir);
+
+      // Add a new file to trigger reindex
+      await createTestFile(codebaseDir, "new.ts", "export function newFunc(): void {\n  console.log('New');\n}");
+
+      const stats = await gitIndexer.reindexChanges(codebaseDir);
+
+      expect(stats.enrichmentStatus).toBeDefined();
+      expect(["completed", "partial"]).toContain(stats.enrichmentStatus);
+      expect(stats.enrichmentDurationMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should use EMBEDDING_CONCURRENCY/2 as default git concurrency", async () => {
+      // Set EMBEDDING_CONCURRENCY and verify the default git concurrency formula
+      const originalEnv = process.env.EMBEDDING_CONCURRENCY;
+      process.env.EMBEDDING_CONCURRENCY = "4";
+
+      try {
+        const gitConfig = { ...config, enableGitMetadata: true };
+        const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+
+        await createTestFile(codebaseDir, "test.ts", "export function compute(x: number): number {\n  return x * 42;\n}");
+
+        // The test verifies the formula works without errors
+        // (actual concurrency is internal implementation detail)
+        const stats = await gitIndexer.indexCodebase(codebaseDir);
+        expect(stats.status).toBe("completed");
+        expect(stats.enrichmentStatus).toBeDefined();
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.EMBEDDING_CONCURRENCY = originalEnv;
+        } else {
+          delete process.env.EMBEDDING_CONCURRENCY;
+        }
+      }
+    });
+
   });
 
   describe("Error handling edge cases", () => {

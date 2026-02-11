@@ -17,7 +17,7 @@ import { join } from "node:path";
 const LOG_DIR = join(homedir(), ".tea-rags-mcp", "logs");
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
-export type PipelineStage = "scan" | "parse" | "git" | "embed" | "qdrant" | "enrichGit";
+export type PipelineStage = "scan" | "parse" | "git" | "embed" | "qdrant" | "gitBlame" | "enrichGit";
 
 export interface LogContext {
   component: string;
@@ -92,7 +92,7 @@ class StageProfiler {
     const totalMs = Array.from(this.stages.values()).reduce((sum, d) => sum + d.totalMs, 0);
     const result = {} as Record<PipelineStage, { totalMs: number; wallMs: number; count: number; percentage: number }>;
 
-    for (const stage of ["scan", "parse", "git", "embed", "qdrant", "enrichGit"] as PipelineStage[]) {
+    for (const stage of ["scan", "parse", "git", "embed", "qdrant", "gitBlame", "enrichGit"] as PipelineStage[]) {
       const data = this.stages.get(stage);
       if (data && data.totalMs > 0) {
         // Wall time = span from earliest start to latest end
@@ -197,7 +197,7 @@ ENV:
   MAX_IO_CONCURRENCY          = ${env("MAX_IO_CONCURRENCY", "100")}
   QDRANT_UPSERT_BATCH_SIZE    = ${env("QDRANT_UPSERT_BATCH_SIZE", "100")}
   CODE_ENABLE_GIT_METADATA    = ${env("CODE_ENABLE_GIT_METADATA", "false")}
-  GIT_ENRICHMENT_CONCURRENCY  = ${env("GIT_ENRICHMENT_CONCURRENCY", "10")}
+  GIT_ENRICHMENT_CONCURRENCY  = ${env("GIT_ENRICHMENT_CONCURRENCY", String(Math.max(1, Math.floor(concurrency / 2))))}
 DERIVED:
   maxQueueSize                = ${concurrency * 2} (EMBEDDING_CONCURRENCY × 2)
   backpressure ON threshold   = ${concurrency * 2} batches
@@ -435,13 +435,16 @@ DERIVED:
       const pipelineWallMs = (stats as { uptimeMs?: number }).uptimeMs || stageTotalMs;
 
       // Concurrency per stage (for estimating incremental time)
+      const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
+      const gitEnrichDefault = Math.max(1, Math.floor(embeddingConcurrency / 2));
       const concurrency: Record<PipelineStage, number> = {
         scan: 1, // Serial file scanning
         parse: parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10),
         git: parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "50", 10),
-        embed: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10),
-        qdrant: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10),
-        enrichGit: parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10),
+        embed: embeddingConcurrency,
+        qdrant: embeddingConcurrency,
+        gitBlame: parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || String(gitEnrichDefault), 10),
+        enrichGit: parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || String(gitEnrichDefault), 10),
       };
 
       // Column widths
@@ -452,7 +455,7 @@ DERIVED:
       stageBlock += `  ${"-".repeat(W.stage)}  ${"-".repeat(W.cum)}  ${"-".repeat(W.cpu)}  ${"-".repeat(W.wall)}  ${"-".repeat(W.wallP)}  ${"-".repeat(W.added)}  ${"-".repeat(W.calls)}\n`;
 
       let totalAddedMs = 0;
-      for (const stage of ["scan", "parse", "git", "embed", "qdrant", "enrichGit"] as PipelineStage[]) {
+      for (const stage of ["scan", "parse", "git", "embed", "qdrant", "gitBlame", "enrichGit"] as PipelineStage[]) {
         const data = stageSummary[stage];
         if (data) {
           const cpuPercent = (data.percentage.toFixed(1) + "%").padStart(W.cpu);
