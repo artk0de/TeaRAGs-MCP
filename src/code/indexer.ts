@@ -193,11 +193,76 @@ export class CodeIndexer {
       // Phase 2 chunk tracking: maps absolute file paths to chunk entries for git enrichment
       const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
-      // NOTE: prefetchBlame removed - it blocks GPU for too long!
-      // Git blame now runs lazily during file processing, allowing:
-      // - First files to reach pipeline immediately
-      // - GPU to start embedding while other files still processing
-      // - Better CPU/GPU overlap instead of sequential phases
+      // Git blame task buffer: processed file paths are pushed here,
+      // blame workers consume them in parallel with embedding pipeline.
+      // Object container prevents TypeScript from narrowing mutable state in closures.
+      const blame = {
+        buffer: [] as string[],
+        done: false,
+        wakeup: null as (() => void) | null,
+      };
+
+      // Start concurrent git blame worker pool (runs alongside embedding)
+      // Formula: GitBlameProcessCount = EMBEDDING_CONCURRENCY / 2
+      let gitBlamePromise: Promise<{ service: GitMetadataService; prefetched: number; failed: number }> | null = null;
+
+      if (this.config.enableGitMetadata) {
+        const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
+        const gitConcurrency = parseInt(
+          process.env.GIT_ENRICHMENT_CONCURRENCY || String(Math.max(1, Math.floor(embeddingConcurrency / 2))),
+          10,
+        );
+        const gitService = new GitMetadataService({ debug: process.env.DEBUG === "true" });
+        await gitService.initialize();
+
+        pipelineLog.enrichmentPhase("PREFETCH_START", { concurrency: gitConcurrency });
+        const prefetchStart = Date.now();
+
+        // Blame worker: consumes files from buffer with bounded concurrency
+        gitBlamePromise = (async () => {
+          let prefetched = 0;
+          let failed = 0;
+          const active = new Set<Promise<void>>();
+          let cursor = 0;
+
+          while (true) {
+            // Launch blame for available files up to concurrency limit
+            while (cursor < blame.buffer.length && active.size < gitConcurrency) {
+              const file = blame.buffer[cursor++];
+              const p = gitService.prefetchBlame([file]).then(r => {
+                prefetched += r.prefetched;
+                failed += r.failed;
+              }).catch(() => { failed++; }).finally(() => active.delete(p));
+              active.add(p);
+            }
+
+            // All files consumed and all blames finished
+            if (cursor >= blame.buffer.length && blame.done && active.size === 0) break;
+
+            // At concurrency limit — wait for one to finish
+            if (active.size >= gitConcurrency && active.size > 0) {
+              await Promise.race(active);
+              continue;
+            }
+
+            // Buffer empty but more files coming — wait for signal
+            if (cursor >= blame.buffer.length && !blame.done) {
+              await new Promise<void>(r => { blame.wakeup = r; });
+              blame.wakeup = null;
+              continue;
+            }
+
+            // Drain remaining active blames
+            if (active.size > 0) {
+              await Promise.all(active);
+            }
+          }
+
+          pipelineLog.addStageTime("gitBlame", Date.now() - prefetchStart);
+          pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", { prefetched, failed, durationMs: Date.now() - prefetchStart });
+          return { service: gitService, prefetched, failed };
+        })();
+      }
 
       // STREAMING: Process files with bounded concurrency
       // Each file sends chunks to pipeline immediately after processing
@@ -275,6 +340,12 @@ export class CodeIndexer {
             indexedFiles.push(filePath);
             filesProcessed++;
 
+            // File processed → push to blame buffer (blame workers pick it up immediately)
+            if (this.config.enableGitMetadata) {
+              blame.buffer.push(filePath);
+              blame.wakeup?.();
+            }
+
             // Report progress: first file, then every 10 files
             if (filesProcessed === 1 || filesProcessed % 10 === 0) {
               const pipelineStats = chunkPipeline.getStats();
@@ -293,6 +364,10 @@ export class CodeIndexer {
         },
         fileProcessingConcurrency,
       );
+
+      // Signal blame workers: no more files coming
+      blame.done = true;
+      blame.wakeup?.();
 
       stats.chunksCreated = totalChunksQueued;
 
@@ -319,14 +394,17 @@ export class CodeIndexer {
         );
       }
 
-      // Phase 2: Git metadata enrichment (runs after all embeddings are stored)
-      if (this.config.enableGitMetadata && chunkMap.size > 0) {
+      // Wait for git blame to finish (may already be done)
+      const blameResult = gitBlamePromise ? await gitBlamePromise : null;
+
+      // Phase 2: Apply git metadata (fast — blame is L1 cached)
+      if (blameResult && chunkMap.size > 0) {
         progressCallback?.({
           phase: "enriching",
           current: 0,
           total: chunkMap.size,
           percentage: 92,
-          message: `Starting git metadata enrichment for ${chunkMap.size} files...`,
+          message: `Applying git metadata for ${chunkMap.size} files...`,
         });
 
         const enrichResult = await this.enrichGitMetadata(
@@ -334,6 +412,7 @@ export class CodeIndexer {
           absolutePath,
           chunkMap,
           progressCallback,
+          blameResult.service,
         );
 
         stats.enrichmentStatus = enrichResult.failedFiles === 0 ? "completed" : "partial";
@@ -427,24 +506,30 @@ export class CodeIndexer {
 
   /**
    * Phase 2: Enrich existing Qdrant points with git metadata via setPayload.
-   * Runs AFTER Phase 1 (embedding/storage) to avoid blocking GPU with git blame.
+   * When a pre-warmed GitMetadataService is provided (blame already cached via prefetchBlame),
+   * this method runs fast — all getChunkMetadata calls hit L1 cache.
    */
   private async enrichGitMetadata(
     collectionName: string,
     absolutePath: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
     progressCallback?: ProgressCallback,
+    gitService?: GitMetadataService,
   ): Promise<{ enrichedFiles: number; enrichedChunks: number; failedFiles: number; durationMs: number }> {
     const enrichStart = Date.now();
     let enrichedFiles = 0;
     let enrichedChunks = 0;
     let failedFiles = 0;
 
-    const gitMetadataService = new GitMetadataService({ debug: process.env.DEBUG === "true" });
-    await gitMetadataService.initialize();
+    const gitMetadataService = gitService ?? new GitMetadataService({ debug: process.env.DEBUG === "true" });
+    if (!gitService) {
+      await gitMetadataService.initialize();
+    }
 
     const files = Array.from(chunkMap.entries());
-    const concurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10);
+    const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
+    const gitEnrichDefault = Math.max(1, Math.floor(embeddingConcurrency / 2));
+    const concurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || String(gitEnrichDefault), 10);
 
     pipelineLog.enrichmentPhase("START", {
       files: files.length,
@@ -914,12 +999,79 @@ export class CodeIndexer {
       const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
       // OPTIMIZATION: Parallel pipelines for delete and index operations
-      // - Added files: can be indexed immediately (no old chunks to delete)
-      // - Modified files: must wait for deletion of old chunks before indexing
-      // - Deleted files: only need deletion, no indexing
       const filesToDelete = [...changes.modified, ...changes.deleted];
       const addedFiles = [...changes.added];
       const modifiedFiles = [...changes.modified];
+
+      // Git blame task buffer: processed file paths are pushed here,
+      // blame workers consume them in parallel with embedding pipeline.
+      const blame = {
+        buffer: [] as string[],
+        done: false,
+        wakeup: null as (() => void) | null,
+      };
+
+      // Start concurrent git blame worker pool (runs alongside embedding)
+      // Formula: GitBlameProcessCount = EMBEDDING_CONCURRENCY / 2
+      let gitBlamePromise: Promise<{ service: GitMetadataService; prefetched: number; failed: number }> | null = null;
+
+      if (this.config.enableGitMetadata && (addedFiles.length > 0 || modifiedFiles.length > 0)) {
+        const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
+        const gitConcurrency = parseInt(
+          process.env.GIT_ENRICHMENT_CONCURRENCY || String(Math.max(1, Math.floor(embeddingConcurrency / 2))),
+          10,
+        );
+        const gitService = new GitMetadataService({ debug: process.env.DEBUG === "true" });
+        await gitService.initialize();
+
+        pipelineLog.enrichmentPhase("PREFETCH_START", { concurrency: gitConcurrency });
+        const prefetchStart = Date.now();
+
+        // Blame worker: consumes files from buffer with bounded concurrency
+        gitBlamePromise = (async () => {
+          let prefetched = 0;
+          let failed = 0;
+          const active = new Set<Promise<void>>();
+          let cursor = 0;
+
+          while (true) {
+            // Launch blame for available files up to concurrency limit
+            while (cursor < blame.buffer.length && active.size < gitConcurrency) {
+              const file = blame.buffer[cursor++];
+              const p = gitService.prefetchBlame([file]).then(r => {
+                prefetched += r.prefetched;
+                failed += r.failed;
+              }).catch(() => { failed++; }).finally(() => active.delete(p));
+              active.add(p);
+            }
+
+            // All files consumed and all blames finished
+            if (cursor >= blame.buffer.length && blame.done && active.size === 0) break;
+
+            // At concurrency limit — wait for one to finish
+            if (active.size >= gitConcurrency && active.size > 0) {
+              await Promise.race(active);
+              continue;
+            }
+
+            // Buffer empty but more files coming — wait for signal
+            if (cursor >= blame.buffer.length && !blame.done) {
+              await new Promise<void>(r => { blame.wakeup = r; });
+              blame.wakeup = null;
+              continue;
+            }
+
+            // Drain remaining active blames
+            if (active.size > 0) {
+              await Promise.all(active);
+            }
+          }
+
+          pipelineLog.addStageTime("gitBlame", Date.now() - prefetchStart);
+          pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", { prefetched, failed, durationMs: Date.now() - prefetchStart });
+          return { service: gitService, prefetched, failed };
+        })();
+      }
 
       // Helper function to perform deletion
       const performDeletion = async (): Promise<void> => {
@@ -1048,9 +1200,6 @@ export class CodeIndexer {
           console.error(`[Reindex] ${label}: starting ${files.length} files (streaming, concurrency=${streamingConcurrency})`);
         }
 
-        // NOTE: prefetchBlame removed - it blocks GPU for too long!
-        // Git blame runs lazily during file processing for better CPU/GPU overlap
-
         // STREAMING: Process files with bounded concurrency, send chunks immediately
         await parallelLimit(
           files,
@@ -1109,6 +1258,12 @@ export class CodeIndexer {
                   entries.push({ chunkId, startLine: chunk.startLine, endLine: chunk.endLine });
                   chunkMap.set(absoluteFilePath, entries);
                 }
+              }
+
+              // File processed → push to blame buffer (blame workers pick it up)
+              if (this.config.enableGitMetadata && chunksCreated > 0) {
+                blame.buffer.push(absoluteFilePath);
+                blame.wakeup?.();
               }
             } catch (error) {
               console.error(`Failed to process ${filePath}:`, error);
@@ -1190,6 +1345,10 @@ export class CodeIndexer {
         modifiedDurationMs: Date.now() - modifiedStartTime,
       });
 
+      // Signal blame workers: no more files coming
+      blame.done = true;
+      blame.wakeup?.();
+
       // Flush and shutdown ChunkPipeline to ensure all chunks are processed
       if (process.env.DEBUG) {
         const pipelineStats = chunkPipeline.getStats();
@@ -1218,14 +1377,17 @@ export class CodeIndexer {
 
       stats.chunksAdded = addedChunks + modifiedChunks;
 
-      // Phase 2: Git metadata enrichment (runs after all embeddings are stored)
-      if (this.config.enableGitMetadata && chunkMap.size > 0) {
+      // Wait for git blame prefetch (may already be done — ran in parallel with embedding)
+      const blameResult = gitBlamePromise ? await gitBlamePromise : null;
+
+      // Phase 2: Apply git metadata (fast when blame is L1 cached from prefetch)
+      if (blameResult && chunkMap.size > 0) {
         progressCallback?.({
           phase: "enriching",
           current: 0,
           total: chunkMap.size,
           percentage: 92,
-          message: `Starting git metadata enrichment for ${chunkMap.size} files...`,
+          message: `Applying git metadata for ${chunkMap.size} files...`,
         });
 
         const enrichResult = await this.enrichGitMetadata(
@@ -1233,6 +1395,7 @@ export class CodeIndexer {
           absolutePath,
           chunkMap,
           progressCallback,
+          blameResult.service,
         );
 
         stats.enrichmentStatus = enrichResult.failedFiles === 0 ? "completed" : "partial";
