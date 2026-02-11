@@ -207,11 +207,9 @@ export class CodeIndexer {
       let gitBlamePromise: Promise<{ service: GitMetadataService; prefetched: number; failed: number }> | null = null;
 
       if (this.config.enableGitMetadata) {
-        const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
-        const gitConcurrency = parseInt(
-          process.env.GIT_ENRICHMENT_CONCURRENCY || String(Math.max(1, Math.floor(embeddingConcurrency / 2))),
-          10,
-        );
+        // Git blame is CPU-bound (spawns git processes), embedding is GPU-bound — they don't compete.
+        // Default concurrency=10 ensures blame finishes within the embedding window.
+        const gitConcurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10);
         const gitService = new GitMetadataService({ debug: process.env.DEBUG === "true" });
         await gitService.initialize();
 
@@ -527,9 +525,7 @@ export class CodeIndexer {
     }
 
     const files = Array.from(chunkMap.entries());
-    const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
-    const gitEnrichDefault = Math.max(1, Math.floor(embeddingConcurrency / 2));
-    const concurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || String(gitEnrichDefault), 10);
+    const concurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10);
 
     pipelineLog.enrichmentPhase("START", {
       files: files.length,
@@ -1016,11 +1012,7 @@ export class CodeIndexer {
       let gitBlamePromise: Promise<{ service: GitMetadataService; prefetched: number; failed: number }> | null = null;
 
       if (this.config.enableGitMetadata && (addedFiles.length > 0 || modifiedFiles.length > 0)) {
-        const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
-        const gitConcurrency = parseInt(
-          process.env.GIT_ENRICHMENT_CONCURRENCY || String(Math.max(1, Math.floor(embeddingConcurrency / 2))),
-          10,
-        );
+        const gitConcurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10);
         const gitService = new GitMetadataService({ debug: process.env.DEBUG === "true" });
         await gitService.initialize();
 
