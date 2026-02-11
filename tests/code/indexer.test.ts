@@ -1446,7 +1446,7 @@ export function process() {
       expect(stats.enrichmentDurationMs).toBeUndefined();
     });
 
-    it("should run Phase 2 enrichment when enableGitMetadata is true", async () => {
+    it("should start background enrichment when enableGitMetadata is true", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
@@ -1458,12 +1458,9 @@ export function process() {
 
       const stats = await gitIndexer.indexCodebase(codebaseDir);
 
-      // Phase 2 should run even if git metadata is null (not a git repo)
+      // Background enrichment: returns immediately with "background" status
       expect(stats.status).toBe("completed");
-      expect(stats.enrichmentStatus).toBeDefined();
-      expect(["completed", "partial"]).toContain(stats.enrichmentStatus);
-      expect(stats.enrichmentDurationMs).toBeDefined();
-      expect(stats.enrichmentDurationMs).toBeGreaterThanOrEqual(0);
+      expect(stats.enrichmentStatus).toBe("background");
     });
 
     it("should not include git metadata in Phase 1 chunks", async () => {
@@ -1517,7 +1514,7 @@ export function process() {
       expect(stats.enrichmentStatus).toBe("skipped");
     });
 
-    it("should run Phase 2 enrichment in reindexChanges when enableGitMetadata is true", async () => {
+    it("should start background enrichment in reindexChanges when enableGitMetadata is true", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
@@ -1536,13 +1533,11 @@ export function process() {
 
       const stats = await gitIndexer.reindexChanges(codebaseDir);
 
-      expect(stats.enrichmentStatus).toBeDefined();
-      expect(["completed", "partial"]).toContain(stats.enrichmentStatus);
-      expect(stats.enrichmentDurationMs).toBeDefined();
-      expect(stats.enrichmentDurationMs).toBeGreaterThanOrEqual(0);
+      // Background enrichment: returns immediately with "background" status
+      expect(stats.enrichmentStatus).toBe("background");
     });
 
-    it("should call progress callback with enriching phase", async () => {
+    it("should not call enriching progress callback (enrichment is background)", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
@@ -1555,44 +1550,39 @@ export function process() {
       const progressCallback = vi.fn();
       await gitIndexer.indexCodebase(codebaseDir, undefined, progressCallback);
 
+      // No enriching phase in progress — enrichment runs in background after return
       const enrichingCalls = progressCallback.mock.calls.filter(
         (call) => call[0].phase === "enriching",
       );
-      expect(enrichingCalls.length).toBeGreaterThan(0);
+      expect(enrichingCalls.length).toBe(0);
     });
 
-    it("should start blame worker in parallel with embedding in indexCodebase", async () => {
+    it("should start background enrichment for multiple files in indexCodebase", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
-      // Create files with function content (chunker needs parseable functions to produce chunks)
       await createTestFile(codebaseDir, "a.ts", "export function funcA(x: number): number {\n  return x + 1;\n}");
       await createTestFile(codebaseDir, "b.ts", "export function funcB(y: string): string {\n  return y.trim();\n}");
 
       const stats = await gitIndexer.indexCodebase(codebaseDir);
 
-      // Blame worker ran (enrichment completed or partial — both indicate it ran)
+      // Background enrichment fires, indexing returns immediately
       expect(stats.status).toBe("completed");
-      expect(stats.enrichmentStatus).toBeDefined();
-      expect(["completed", "partial"]).toContain(stats.enrichmentStatus);
-      expect(stats.enrichmentDurationMs).toBeGreaterThanOrEqual(0);
+      expect(stats.enrichmentStatus).toBe("background");
     });
 
-    it("should start blame worker in parallel with embedding in reindexChanges", async () => {
+    it("should start background enrichment in reindexChanges for new files", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
       await createTestFile(codebaseDir, "existing.ts", "export const x = 1;\nconsole.log('Existing file');");
       await gitIndexer.indexCodebase(codebaseDir);
 
-      // Add a new file to trigger reindex
       await createTestFile(codebaseDir, "new.ts", "export function newFunc(): void {\n  console.log('New');\n}");
 
       const stats = await gitIndexer.reindexChanges(codebaseDir);
 
-      expect(stats.enrichmentStatus).toBeDefined();
-      expect(["completed", "partial"]).toContain(stats.enrichmentStatus);
-      expect(stats.enrichmentDurationMs).toBeGreaterThanOrEqual(0);
+      expect(stats.enrichmentStatus).toBe("background");
     });
 
     it("should respect GIT_ENRICHMENT_CONCURRENCY env override", async () => {

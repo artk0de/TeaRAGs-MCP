@@ -13,6 +13,7 @@ describe("reranker", () => {
     ageDays: number,
     commitCount: number,
     isDoc = false,
+    extraGit: Partial<RerankableResult["payload"] extends infer P ? P extends { git?: infer G } ? G : never : never> = {},
   ): RerankableResult => ({
     score,
     payload: {
@@ -26,6 +27,7 @@ describe("reranker", () => {
         commitCount,
         dominantAuthor: "alice",
         authors: ["alice"],
+        ...extraGit,
       },
     },
   });
@@ -157,6 +159,71 @@ describe("reranker", () => {
       expect(presets).toContain("recent");
       expect(presets).toContain("stable");
       expect(presets).not.toContain("techDebt"); // semantic_search only
+    });
+  });
+
+  describe("new signals: bugFix, volatility, density, chunkChurn", () => {
+    it("should normalize bugFix signal correctly (50% → 0.5)", () => {
+      const results = [
+        createResult(0.8, 30, 5, false, { bugFixRate: 50 }),
+        createResult(0.8, 30, 5, false, { bugFixRate: 0 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { bugFix: 1.0 },
+      });
+      // 50% bugFixRate should rank higher
+      expect(reranked[0].payload?.git?.bugFixRate).toBe(50);
+      expect(reranked[0].score).toBeGreaterThan(reranked[1].score);
+    });
+
+    it("should prefer chunk-level churn over file-level in hotspots", () => {
+      const results = [
+        // File has high churn (20), but this chunk is cold (chunkCommitCount=1)
+        createResult(0.8, 10, 20, false, { chunkCommitCount: 1 }),
+        // File has low churn (3), but this chunk is hot (chunkCommitCount=15)
+        createResult(0.8, 10, 3, false, { chunkCommitCount: 15 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "hotspots");
+      // Chunk with high chunkCommitCount should rank higher
+      expect(reranked[0].payload?.git?.chunkCommitCount).toBe(15);
+    });
+
+    it("should boost high bugFixRate + old code in techDebt preset", () => {
+      const results = [
+        createResult(0.8, 200, 10, false, { bugFixRate: 80, churnVolatility: 30 }),
+        createResult(0.8, 10, 10, false, { bugFixRate: 5, churnVolatility: 2 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "techDebt");
+      // High bugFixRate + old code should rank higher
+      expect(reranked[0].payload?.git?.bugFixRate).toBe(80);
+    });
+
+    it("should not crash when mixing chunk-level and file-level results", () => {
+      const results = [
+        createResult(0.9, 10, 5, false, { chunkCommitCount: 8 }),
+        createResult(0.8, 20, 3, false), // no chunk-level data
+      ];
+      const reranked = rerankSemanticSearchResults(results, "hotspots");
+      expect(reranked).toHaveLength(2);
+    });
+
+    it("should use dominantAuthorPct for ownership when available", () => {
+      const results = [
+        createResult(0.8, 30, 5, false, { dominantAuthorPct: 90, authors: ["alice", "bob", "charlie"] as any }),
+        createResult(0.8, 30, 5, false, { dominantAuthorPct: 30, authors: ["a", "b", "c", "d"] as any }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "ownership");
+      // 90% ownership should rank higher
+      expect(reranked[0].payload?.git?.dominantAuthorPct).toBe(90);
+    });
+
+    it("should boost density signal in codeReview preset", () => {
+      const results = [
+        createResult(0.8, 5, 3, false, { changeDensity: 15 }),  // high density
+        createResult(0.8, 5, 3, false, { changeDensity: 1 }),   // low density
+      ];
+      const reranked = rerankSemanticSearchResults(results, "codeReview");
+      expect(reranked[0].payload?.git?.changeDensity).toBe(15);
     });
   });
 

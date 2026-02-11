@@ -1,72 +1,151 @@
 /**
- * Git Metadata Types - Canonical algorithm implementation
+ * Git Metadata Types
  *
  * Design principles:
- * - One git blame call per file
- * - Cache by content hash (not mtime)
- * - Aggregated signals only (no per-line storage in vector DB)
- * - Task IDs extracted from commit summaries (but full messages not stored)
+ * - File-level git metadata (no per-line blame)
+ * - All metrics derived from git log via isomorphic-git
+ * - Research-backed churn metrics (Nagappan & Ball 2005)
+ * - 0 process spawns — direct .git reading
  */
 
 /**
- * Git blame data for a single line (internal use only)
+ * Commit info extracted from git log (used by GitLogReader)
+ */
+export interface CommitInfo {
+  sha: string;
+  author: string;
+  authorEmail: string;
+  timestamp: number; // unix seconds
+  body: string; // full commit message (for taskId extraction)
+}
+
+/**
+ * Per-file churn data aggregated from git log
+ */
+export interface FileChurnData {
+  commits: CommitInfo[];
+  linesAdded: number;
+  linesDeleted: number;
+}
+
+/**
+ * File-level git metadata (stored in vector DB for all chunks of a file)
+ *
+ * Replaces per-chunk blame-based GitChunkMetadata.
+ * All chunks of a file share the same GitFileMetadata.
+ */
+export interface GitFileMetadata {
+  // Authorship (file-level):
+  /** Author with most commits to this file */
+  dominantAuthor: string;
+  /** Email of dominant author */
+  dominantAuthorEmail: string;
+  /** All unique authors who touched this file */
+  authors: string[];
+  /** Percentage of commits by dominant author */
+  dominantAuthorPct: number;
+
+  // Temporal:
+  /** Unix timestamp of most recent commit */
+  lastModifiedAt: number;
+  /** Unix timestamp of first commit */
+  firstCreatedAt: number;
+  /** Commit hash of the most recent change */
+  lastCommitHash: string;
+  /** Days since last modification */
+  ageDays: number;
+
+  // Real churn (from git log):
+  /** Total commits touching this file */
+  commitCount: number;
+  /** Total lines added across all commits */
+  linesAdded: number;
+  /** Total lines deleted across all commits */
+  linesDeleted: number;
+  /** (linesAdded + linesDeleted) / currentLines */
+  relativeChurn: number;
+  /** Σ exp(-0.1 × daysAgo) — recency-weighted commit frequency */
+  recencyWeightedFreq: number;
+  /** commits / months — average change density */
+  changeDensity: number;
+  /** stddev(days between commits) — volatility of change pattern */
+  churnVolatility: number;
+
+  // Derived:
+  /** Percentage of commits with fix/bug/hotfix/patch keywords (0-100) */
+  bugFixRate: number;
+  /** Number of unique contributors (= authors.length, explicit for filtering) */
+  contributorCount: number;
+
+  // Tickets:
+  /** Task IDs extracted from commit messages (e.g., ["TD-1234", "#567"]) */
+  taskIds: string[];
+}
+
+/**
+ * Chunk-level churn overlay — computed by diffing commit trees and
+ * mapping hunks to chunk line ranges.
+ *
+ * Applied on top of file-level GitFileMetadata to provide per-chunk granularity.
+ */
+export interface ChunkChurnOverlay {
+  /** Commits that touched lines of this specific chunk */
+  chunkCommitCount: number;
+  /** chunkCommitCount / file.commitCount (0-1) */
+  chunkChurnRatio: number;
+  /** Unique authors who modified this specific chunk */
+  chunkContributorCount: number;
+  /** Percentage of bug-fix commits for this chunk (0-100) */
+  chunkBugFixRate: number;
+  /** Unix timestamp of last modification to this chunk */
+  chunkLastModifiedAt: number;
+  /** Days since last modification to this chunk */
+  chunkAgeDays: number;
+}
+
+/**
+ * @deprecated Use GitFileMetadata instead. Kept for backward compatibility with existing tests.
+ * Aggregated git metadata for a chunk (was stored in vector DB)
+ */
+export interface GitChunkMetadata {
+  lastModifiedAt: number;
+  firstCreatedAt: number;
+  dominantAuthor: string;
+  dominantAuthorEmail: string;
+  authors: string[];
+  commitCount: number;
+  lastCommitHash: string;
+  ageDays: number;
+  taskIds: string[];
+}
+
+/**
+ * @deprecated Blame-based caching is no longer used. Kept for type compatibility.
  */
 export interface BlameLineData {
   commit: string;
   author: string;
   authorEmail: string;
-  authorTime: number; // Unix timestamp
-  /** Task IDs extracted from commit summary (e.g., "TD-1234", "#567") */
+  authorTime: number;
   taskIds?: string[];
 }
 
 /**
- * Aggregated git metadata for a chunk (stored in vector DB)
- *
- * This is the ONLY git data that gets stored per chunk.
- * Derived from line-level blame via aggregation.
- */
-export interface GitChunkMetadata {
-  /** Unix timestamp of most recent change in chunk */
-  lastModifiedAt: number;
-  /** Unix timestamp of oldest change in chunk (first created) */
-  firstCreatedAt: number;
-  /** Author with most lines in this chunk */
-  dominantAuthor: string;
-  /** Email of dominant author */
-  dominantAuthorEmail: string;
-  /** All unique authors who touched this chunk */
-  authors: string[];
-  /** Number of unique commits touching this chunk (churn indicator) */
-  commitCount: number;
-  /** Commit hash of the most recent change */
-  lastCommitHash: string;
-  /** Days since last modification */
-  ageDays: number;
-  /** Task IDs from commits touching this chunk (e.g., ["TD-1234", "JIRA-567"]) */
-  taskIds: string[];
-}
-
-/**
- * Cached blame data for a file
+ * @deprecated Blame-based caching is no longer used. Kept for type compatibility.
  */
 export interface BlameCache {
-  /** SHA-256 hash of file content */
   contentHash: string;
-  /** Line number -> blame data (1-indexed) */
   lines: Map<number, BlameLineData>;
-  /** When cache was created */
   cachedAt: number;
 }
 
 /**
- * Serializable blame cache for disk storage
+ * @deprecated Blame-based caching is no longer used. Kept for type compatibility.
  */
 export interface BlameCacheFile {
   version: 4;
   contentHash: string;
   cachedAt: number;
-  /** Array of [lineNumber, commit, author, authorEmail, authorTime, taskIds] */
   lines: Array<[number, string, string, string, number, string[]]>;
 }
 

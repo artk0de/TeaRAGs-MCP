@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
-import { extname, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../embeddings/sparse.js";
 import type { QdrantManager } from "../qdrant/client.js";
@@ -19,7 +19,7 @@ import {
   type SearchCodeRerankPreset,
 } from "./reranker.js";
 import { ChunkerPool } from "./chunker/chunker-pool.js";
-import { GitMetadataService } from "./git/index.js";
+import { GitLogReader, computeFileMetadata } from "./git/git-log-reader.js";
 import { MetadataExtractor } from "./metadata.js";
 import { ChunkPipeline, DEFAULT_CONFIG } from "./pipeline/index.js";
 import { pipelineLog } from "./pipeline/debug-logger.js";
@@ -33,6 +33,7 @@ import type {
   CodeChunk,
   CodeConfig,
   CodeSearchResult,
+  EnrichmentInfo,
   IndexOptions,
   IndexStats,
   IndexStatus,
@@ -44,6 +45,9 @@ import type {
 const INDEXING_METADATA_ID = "__indexing_metadata__";
 
 export class CodeIndexer {
+  /** Active background enrichment promises, keyed by collection name */
+  private activeEnrichments = new Map<string, Promise<void>>();
+
   constructor(
     private qdrant: QdrantManager,
     private embeddings: EmbeddingProvider,
@@ -193,75 +197,6 @@ export class CodeIndexer {
       // Phase 2 chunk tracking: maps absolute file paths to chunk entries for git enrichment
       const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
-      // Git blame task buffer: processed file paths are pushed here,
-      // blame workers consume them in parallel with embedding pipeline.
-      // Object container prevents TypeScript from narrowing mutable state in closures.
-      const blame = {
-        buffer: [] as string[],
-        done: false,
-        wakeup: null as (() => void) | null,
-      };
-
-      // Start concurrent git blame worker pool (runs alongside embedding)
-      // Formula: GitBlameProcessCount = EMBEDDING_CONCURRENCY / 2
-      let gitBlamePromise: Promise<{ service: GitMetadataService; prefetched: number; failed: number }> | null = null;
-
-      if (this.config.enableGitMetadata) {
-        // Git blame is CPU-bound (spawns git processes), embedding is GPU-bound — they don't compete.
-        // Default concurrency=10 ensures blame finishes within the embedding window.
-        const gitConcurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10);
-        const gitService = new GitMetadataService({ debug: process.env.DEBUG === "true" });
-        await gitService.initialize();
-
-        pipelineLog.enrichmentPhase("PREFETCH_START", { concurrency: gitConcurrency });
-        const prefetchStart = Date.now();
-
-        // Blame worker: consumes files from buffer with bounded concurrency
-        gitBlamePromise = (async () => {
-          let prefetched = 0;
-          let failed = 0;
-          const active = new Set<Promise<void>>();
-          let cursor = 0;
-
-          while (true) {
-            // Launch blame for available files up to concurrency limit
-            while (cursor < blame.buffer.length && active.size < gitConcurrency) {
-              const file = blame.buffer[cursor++];
-              const p = gitService.prefetchBlame([file]).then(r => {
-                prefetched += r.prefetched;
-                failed += r.failed;
-              }).catch(() => { failed++; }).finally(() => active.delete(p));
-              active.add(p);
-            }
-
-            // All files consumed and all blames finished
-            if (cursor >= blame.buffer.length && blame.done && active.size === 0) break;
-
-            // At concurrency limit — wait for one to finish
-            if (active.size >= gitConcurrency && active.size > 0) {
-              await Promise.race(active);
-              continue;
-            }
-
-            // Buffer empty but more files coming — wait for signal
-            if (cursor >= blame.buffer.length && !blame.done) {
-              await new Promise<void>(r => { blame.wakeup = r; });
-              blame.wakeup = null;
-              continue;
-            }
-
-            // Drain remaining active blames
-            if (active.size > 0) {
-              await Promise.all(active);
-            }
-          }
-
-          pipelineLog.addStageTime("gitBlame", Date.now() - prefetchStart);
-          pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", { prefetched, failed, durationMs: Date.now() - prefetchStart });
-          return { service: gitService, prefetched, failed };
-        })();
-      }
-
       // STREAMING: Process files with bounded concurrency
       // Each file sends chunks to pipeline immediately after processing
       await parallelLimit(
@@ -338,12 +273,6 @@ export class CodeIndexer {
             indexedFiles.push(filePath);
             filesProcessed++;
 
-            // File processed → push to blame buffer (blame workers pick it up immediately)
-            if (this.config.enableGitMetadata) {
-              blame.buffer.push(filePath);
-              blame.wakeup?.();
-            }
-
             // Report progress: first file, then every 10 files
             if (filesProcessed === 1 || filesProcessed % 10 === 0) {
               const pipelineStats = chunkPipeline.getStats();
@@ -362,10 +291,6 @@ export class CodeIndexer {
         },
         fileProcessingConcurrency,
       );
-
-      // Signal blame workers: no more files coming
-      blame.done = true;
-      blame.wakeup?.();
 
       stats.chunksCreated = totalChunksQueued;
 
@@ -392,37 +317,10 @@ export class CodeIndexer {
         );
       }
 
-      // Wait for git blame to finish (may already be done)
-      const blameResult = gitBlamePromise ? await gitBlamePromise : null;
-
-      // Phase 2: Apply git metadata (fast — blame is L1 cached)
-      if (blameResult && chunkMap.size > 0) {
-        progressCallback?.({
-          phase: "enriching",
-          current: 0,
-          total: chunkMap.size,
-          percentage: 92,
-          message: `Applying git metadata for ${chunkMap.size} files...`,
-        });
-
-        const enrichResult = await this.enrichGitMetadata(
-          collectionName,
-          absolutePath,
-          chunkMap,
-          progressCallback,
-          blameResult.service,
-        );
-
-        stats.enrichmentStatus = enrichResult.failedFiles === 0 ? "completed" : "partial";
-        stats.enrichmentDurationMs = enrichResult.durationMs;
-
-        if (process.env.DEBUG) {
-          console.error(
-            `[Index] Git enrichment: ${enrichResult.enrichedFiles} files, ` +
-            `${enrichResult.enrichedChunks} chunks in ${(enrichResult.durationMs / 1000).toFixed(1)}s` +
-            (enrichResult.failedFiles > 0 ? ` (${enrichResult.failedFiles} failed)` : "")
-          );
-        }
+      // Start background git enrichment (fire-and-forget, non-blocking)
+      if (this.config.enableGitMetadata && chunkMap.size > 0) {
+        this.startBackgroundEnrichment(collectionName, absolutePath, chunkMap);
+        stats.enrichmentStatus = "background";
       } else if (!this.config.enableGitMetadata) {
         stats.enrichmentStatus = "skipped";
       }
@@ -503,111 +401,247 @@ export class CodeIndexer {
   }
 
   /**
-   * Phase 2: Enrich existing Qdrant points with git metadata via setPayload.
-   * When a pre-warmed GitMetadataService is provided (blame already cached via prefetchBlame),
-   * this method runs fast — all getChunkMetadata calls hit L1 cache.
+   * Update enrichment progress marker in Qdrant (merge into __indexing_metadata__ point).
    */
-  private async enrichGitMetadata(
+  private async updateEnrichmentMarker(
+    collectionName: string,
+    info: Partial<EnrichmentInfo>,
+  ): Promise<void> {
+    try {
+      const enrichment: Record<string, any> = { ...info };
+      if (info.totalFiles && info.processedFiles !== undefined) {
+        enrichment.percentage = Math.round((info.processedFiles / info.totalFiles) * 100);
+      }
+      await this.qdrant.setPayload(
+        collectionName,
+        { enrichment },
+        { points: [INDEXING_METADATA_ID] },
+      );
+    } catch (error) {
+      // Non-fatal
+      if (process.env.DEBUG) {
+        console.error("[BackgroundEnrichment] Failed to update marker:", error);
+      }
+    }
+  }
+
+  /**
+   * Fire-and-forget background git enrichment using isomorphic-git.
+   * Reads entire git log in a single pass (0 blame spawns),
+   * then applies file-level churn metrics to all chunks via batchSetPayload.
+   */
+  private startBackgroundEnrichment(
     collectionName: string,
     absolutePath: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
-    progressCallback?: ProgressCallback,
-    gitService?: GitMetadataService,
-  ): Promise<{ enrichedFiles: number; enrichedChunks: number; failedFiles: number; durationMs: number }> {
-    const enrichStart = Date.now();
-    let enrichedFiles = 0;
-    let enrichedChunks = 0;
-    let failedFiles = 0;
-
-    const gitMetadataService = gitService ?? new GitMetadataService({ debug: process.env.DEBUG === "true" });
-    if (!gitService) {
-      await gitMetadataService.initialize();
+  ): void {
+    // Prevent duplicate enrichments for the same collection
+    if (this.activeEnrichments.has(collectionName)) {
+      console.error(`[BackgroundEnrichment] Already running for ${collectionName}, skipping`);
+      return;
     }
 
-    const files = Array.from(chunkMap.entries());
-    const concurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10);
+    const startTime = Date.now();
 
-    pipelineLog.enrichmentPhase("START", {
-      files: files.length,
-      totalChunks: Array.from(chunkMap.values()).reduce((sum, entries) => sum + entries.length, 0),
-      concurrency,
-    });
+    const enrichment = (async () => {
+      try {
+        // 1. Mark enrichment in progress
+        await this.updateEnrichmentMarker(collectionName, {
+          status: "in_progress",
+          totalFiles: chunkMap.size,
+          processedFiles: 0,
+          startedAt: new Date().toISOString(),
+        });
 
-    let filesProcessed = 0;
+        pipelineLog.enrichmentPhase("BACKGROUND_START", {
+          files: chunkMap.size,
+          totalChunks: Array.from(chunkMap.values()).reduce((sum, e) => sum + e.length, 0),
+        });
+        const gitLogStart = Date.now();
 
-    await parallelLimit(
-      files,
-      async ([filePath, chunkEntries]) => {
-        try {
-          const code = await fs.readFile(filePath, "utf-8");
-          const operations: Array<{ payload: Record<string, any>; points: (string | number)[] }> = [];
+        // 2. Read entire git history via isomorphic-git (single pass, 0 process spawns)
+        const logReader = new GitLogReader();
+        const fileMetadataMap = await logReader.buildFileMetadataMap(absolutePath);
 
-          for (const entry of chunkEntries) {
-            const gitStart = Date.now();
-            const gitMeta = await gitMetadataService.getChunkMetadata(
-              filePath,
-              entry.startLine,
-              entry.endLine,
-              code,
-            );
-            pipelineLog.addStageTime("enrichGit", Date.now() - gitStart);
+        pipelineLog.addStageTime("gitLog", Date.now() - gitLogStart);
+        pipelineLog.enrichmentPhase("GIT_LOG_COMPLETE", {
+          filesInLog: fileMetadataMap.size,
+          durationMs: Date.now() - gitLogStart,
+        });
 
-            if (gitMeta) {
-              operations.push({
-                payload: {
-                  git: {
-                    lastModifiedAt: gitMeta.lastModifiedAt,
-                    firstCreatedAt: gitMeta.firstCreatedAt,
-                    dominantAuthor: gitMeta.dominantAuthor,
-                    dominantAuthorEmail: gitMeta.dominantAuthorEmail,
-                    authors: gitMeta.authors,
-                    commitCount: gitMeta.commitCount,
-                    lastCommitHash: gitMeta.lastCommitHash,
-                    ageDays: gitMeta.ageDays,
-                    taskIds: gitMeta.taskIds,
-                  },
-                },
-                points: [entry.chunkId],
-              });
+        // 3. For each file: compute churn metrics → batchSetPayload
+        let processedFiles = 0;
+        let enrichedChunks = 0;
+        let failedFiles = 0;
+        const BATCH_SIZE = 100;
+        let batch: Array<{ payload: Record<string, any>; points: (string | number)[] }> = [];
+
+        for (const [filePath, chunkEntries] of chunkMap) {
+          const relativePath = relative(absolutePath, filePath);
+          const churnData = fileMetadataMap.get(relativePath);
+
+          if (churnData) {
+            // Estimate current line count from max endLine of chunks
+            const maxEndLine = chunkEntries.reduce((max, e) => Math.max(max, e.endLine), 0);
+            const metadata = computeFileMetadata(churnData, maxEndLine);
+
+            // All chunks of the file get the SAME payload (file-level metrics)
+            const gitPayload = { git: metadata };
+            for (const entry of chunkEntries) {
+              batch.push({ payload: gitPayload, points: [entry.chunkId] });
+            }
+          } else {
+            failedFiles++;
+          }
+
+          // Flush batch when it reaches BATCH_SIZE
+          if (batch.length >= BATCH_SIZE) {
+            try {
+              await this.qdrant.batchSetPayload(collectionName, batch);
+              enrichedChunks += batch.length;
+            } catch (error) {
+              if (process.env.DEBUG) {
+                console.error("[BackgroundEnrichment] Batch flush failed:", error);
+              }
+            }
+            batch = [];
+          }
+
+          processedFiles++;
+
+          // Update progress marker every 50 files
+          if (processedFiles % 50 === 0) {
+            await this.updateEnrichmentMarker(collectionName, {
+              status: "in_progress",
+              processedFiles,
+              totalFiles: chunkMap.size,
+            }).catch(() => {});
+          }
+        }
+
+        // Flush remaining batch
+        if (batch.length > 0) {
+          try {
+            await this.qdrant.batchSetPayload(collectionName, batch);
+            enrichedChunks += batch.length;
+          } catch (error) {
+            if (process.env.DEBUG) {
+              console.error("[BackgroundEnrichment] Final batch flush failed:", error);
             }
           }
-
-          if (operations.length > 0) {
-            await this.qdrant.batchSetPayload(collectionName, operations);
-            enrichedChunks += operations.length;
-          }
-          enrichedFiles++;
-        } catch (error) {
-          failedFiles++;
-          if (process.env.DEBUG) {
-            const msg = error instanceof Error ? error.message : String(error);
-            console.error(`[GitEnrich] Failed to enrich ${filePath}: ${msg}`);
-          }
         }
 
-        filesProcessed++;
-        if (filesProcessed === 1 || filesProcessed % 20 === 0) {
-          progressCallback?.({
-            phase: "enriching",
-            current: filesProcessed,
-            total: files.length,
-            percentage: Math.round((filesProcessed / files.length) * 100),
-            message: `Git enrichment: ${filesProcessed}/${files.length} files, ${enrichedChunks} chunks enriched`,
+        // 3b. Chunk-level churn overlay (Phase 2b)
+        let chunkOverlaysApplied = 0;
+        if (process.env.GIT_CHUNK_ENABLED !== "false") {
+          const chunkChurnStart = Date.now();
+          const chunkDepth = parseInt(process.env.GIT_CHUNK_DEPTH ?? "200", 10);
+          const chunkConcurrency = parseInt(process.env.GIT_CHUNK_CONCURRENCY ?? "10", 10);
+
+          pipelineLog.enrichmentPhase("CHUNK_CHURN_START", {
+            depthLimit: chunkDepth,
+            concurrency: chunkConcurrency,
+            files: chunkMap.size,
           });
+
+          try {
+            const chunkChurnMap = await logReader.buildChunkChurnMap(
+              absolutePath,
+              chunkMap,
+              chunkDepth,
+              chunkConcurrency,
+            );
+
+            // Apply chunk-level overlays via batchSetPayload with dot-notation
+            let chunkBatch: Array<{ payload: Record<string, any>; points: (string | number)[] }> = [];
+
+            for (const [, overlayMap] of chunkChurnMap) {
+              for (const [chunkId, overlay] of overlayMap) {
+                chunkBatch.push({
+                  payload: {
+                    "git.chunkCommitCount": overlay.chunkCommitCount,
+                    "git.chunkChurnRatio": overlay.chunkChurnRatio,
+                    "git.chunkContributorCount": overlay.chunkContributorCount,
+                    "git.chunkBugFixRate": overlay.chunkBugFixRate,
+                    "git.chunkLastModifiedAt": overlay.chunkLastModifiedAt,
+                    "git.chunkAgeDays": overlay.chunkAgeDays,
+                  },
+                  points: [chunkId],
+                });
+
+                if (chunkBatch.length >= BATCH_SIZE) {
+                  try {
+                    await this.qdrant.batchSetPayload(collectionName, chunkBatch);
+                    chunkOverlaysApplied += chunkBatch.length;
+                  } catch (error) {
+                    if (process.env.DEBUG) {
+                      console.error("[BackgroundEnrichment] Chunk churn batch failed:", error);
+                    }
+                  }
+                  chunkBatch = [];
+                }
+              }
+            }
+
+            // Flush remaining chunk batch
+            if (chunkBatch.length > 0) {
+              try {
+                await this.qdrant.batchSetPayload(collectionName, chunkBatch);
+                chunkOverlaysApplied += chunkBatch.length;
+              } catch (error) {
+                if (process.env.DEBUG) {
+                  console.error("[BackgroundEnrichment] Chunk churn final batch failed:", error);
+                }
+              }
+            }
+
+            pipelineLog.enrichmentPhase("CHUNK_CHURN_COMPLETE", {
+              overlaysApplied: chunkOverlaysApplied,
+              durationMs: Date.now() - chunkChurnStart,
+            });
+          } catch (error) {
+            console.error("[BackgroundEnrichment] Chunk churn failed:", error);
+            pipelineLog.enrichmentPhase("CHUNK_CHURN_FAILED", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
-      },
-      concurrency,
-    );
 
-    const durationMs = Date.now() - enrichStart;
-    pipelineLog.enrichmentPhase("COMPLETE", {
-      enrichedFiles,
-      enrichedChunks,
-      failedFiles,
-      durationMs,
-    });
+        const durationMs = Date.now() - startTime;
 
-    return { enrichedFiles, enrichedChunks, failedFiles, durationMs };
+        // 4. Mark enrichment complete
+        await this.updateEnrichmentMarker(collectionName, {
+          status: failedFiles > 0 ? "partial" : "completed",
+          processedFiles: chunkMap.size,
+          totalFiles: chunkMap.size,
+          completedAt: new Date().toISOString(),
+          durationMs,
+          failedFiles,
+        });
+
+        pipelineLog.enrichmentPhase("BACKGROUND_COMPLETE", {
+          enrichedChunks,
+          chunkOverlaysApplied,
+          failedFiles,
+          durationMs,
+        });
+
+        if (process.env.DEBUG) {
+          console.error(
+            `[BackgroundEnrichment] Completed: ${enrichedChunks} chunks, ` +
+            `${failedFiles} files without git data, ${(durationMs / 1000).toFixed(1)}s`,
+          );
+        }
+      } catch (error) {
+        console.error("[BackgroundEnrichment] Failed:", error);
+        await this.updateEnrichmentMarker(collectionName, {
+          status: "failed",
+        }).catch(() => {});
+      }
+    })();
+
+    this.activeEnrichments.set(collectionName, enrichment);
+    enrichment.finally(() => this.activeEnrichments.delete(collectionName));
   }
 
   /**
@@ -782,20 +816,10 @@ export class CodeIndexer {
       language: r.payload?.language || "unknown",
       score: r.score,
       fileExtension: r.payload?.fileExtension || "",
-      // Include git metadata if it exists (canonical algorithm: aggregated signals)
+      // Include git metadata if it exists (file-level churn metrics)
       ...(r.payload?.git && {
         metadata: {
-          git: {
-            lastModifiedAt: r.payload.git.lastModifiedAt,
-            firstCreatedAt: r.payload.git.firstCreatedAt,
-            dominantAuthor: r.payload.git.dominantAuthor,
-            dominantAuthorEmail: r.payload.git.dominantAuthorEmail,
-            authors: r.payload.git.authors,
-            commitCount: r.payload.git.commitCount,
-            lastCommitHash: r.payload.git.lastCommitHash,
-            ageDays: r.payload.git.ageDays,
-            taskIds: r.payload.git.taskIds,
-          },
+          git: r.payload.git,
         },
       }),
     }));
@@ -829,18 +853,23 @@ export class CodeIndexer {
       ? Math.max(0, info.pointsCount - 1)
       : info.pointsCount;
 
+    // Read enrichment info from marker (if present)
+    const enrichmentPayload = indexingMarker?.payload?.enrichment as EnrichmentInfo | undefined;
+    const enrichment: EnrichmentInfo | undefined = enrichmentPayload?.status
+      ? enrichmentPayload
+      : undefined;
+
     if (isInProgress) {
-      // Indexing in progress - marker exists with indexingComplete=false
       return {
         isIndexed: false,
         status: "indexing",
         collectionName,
         chunksCount: actualChunksCount,
+        enrichment,
       };
     }
 
     if (isComplete) {
-      // Indexing completed - marker exists with indexingComplete=true
       return {
         isIndexed: true,
         status: "indexed",
@@ -849,11 +878,11 @@ export class CodeIndexer {
         lastUpdated: indexingMarker.payload?.completedAt
           ? new Date(indexingMarker.payload.completedAt)
           : undefined,
+        enrichment,
       };
     }
 
     // Legacy collection (no marker) - check if it has content
-    // If it has chunks, assume it's indexed (backwards compatibility)
     if (actualChunksCount > 0) {
       return {
         isIndexed: true,
@@ -863,7 +892,6 @@ export class CodeIndexer {
       };
     }
 
-    // Collection exists but no chunks and no marker - not indexed
     return {
       isIndexed: false,
       status: "not_indexed",
@@ -998,72 +1026,6 @@ export class CodeIndexer {
       const filesToDelete = [...changes.modified, ...changes.deleted];
       const addedFiles = [...changes.added];
       const modifiedFiles = [...changes.modified];
-
-      // Git blame task buffer: processed file paths are pushed here,
-      // blame workers consume them in parallel with embedding pipeline.
-      const blame = {
-        buffer: [] as string[],
-        done: false,
-        wakeup: null as (() => void) | null,
-      };
-
-      // Start concurrent git blame worker pool (runs alongside embedding)
-      // Formula: GitBlameProcessCount = EMBEDDING_CONCURRENCY / 2
-      let gitBlamePromise: Promise<{ service: GitMetadataService; prefetched: number; failed: number }> | null = null;
-
-      if (this.config.enableGitMetadata && (addedFiles.length > 0 || modifiedFiles.length > 0)) {
-        const gitConcurrency = parseInt(process.env.GIT_ENRICHMENT_CONCURRENCY || "10", 10);
-        const gitService = new GitMetadataService({ debug: process.env.DEBUG === "true" });
-        await gitService.initialize();
-
-        pipelineLog.enrichmentPhase("PREFETCH_START", { concurrency: gitConcurrency });
-        const prefetchStart = Date.now();
-
-        // Blame worker: consumes files from buffer with bounded concurrency
-        gitBlamePromise = (async () => {
-          let prefetched = 0;
-          let failed = 0;
-          const active = new Set<Promise<void>>();
-          let cursor = 0;
-
-          while (true) {
-            // Launch blame for available files up to concurrency limit
-            while (cursor < blame.buffer.length && active.size < gitConcurrency) {
-              const file = blame.buffer[cursor++];
-              const p = gitService.prefetchBlame([file]).then(r => {
-                prefetched += r.prefetched;
-                failed += r.failed;
-              }).catch(() => { failed++; }).finally(() => active.delete(p));
-              active.add(p);
-            }
-
-            // All files consumed and all blames finished
-            if (cursor >= blame.buffer.length && blame.done && active.size === 0) break;
-
-            // At concurrency limit — wait for one to finish
-            if (active.size >= gitConcurrency && active.size > 0) {
-              await Promise.race(active);
-              continue;
-            }
-
-            // Buffer empty but more files coming — wait for signal
-            if (cursor >= blame.buffer.length && !blame.done) {
-              await new Promise<void>(r => { blame.wakeup = r; });
-              blame.wakeup = null;
-              continue;
-            }
-
-            // Drain remaining active blames
-            if (active.size > 0) {
-              await Promise.all(active);
-            }
-          }
-
-          pipelineLog.addStageTime("gitBlame", Date.now() - prefetchStart);
-          pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", { prefetched, failed, durationMs: Date.now() - prefetchStart });
-          return { service: gitService, prefetched, failed };
-        })();
-      }
 
       // Helper function to perform deletion
       const performDeletion = async (): Promise<void> => {
@@ -1252,11 +1214,6 @@ export class CodeIndexer {
                 }
               }
 
-              // File processed → push to blame buffer (blame workers pick it up)
-              if (this.config.enableGitMetadata && chunksCreated > 0) {
-                blame.buffer.push(absoluteFilePath);
-                blame.wakeup?.();
-              }
             } catch (error) {
               console.error(`Failed to process ${filePath}:`, error);
             }
@@ -1337,10 +1294,6 @@ export class CodeIndexer {
         modifiedDurationMs: Date.now() - modifiedStartTime,
       });
 
-      // Signal blame workers: no more files coming
-      blame.done = true;
-      blame.wakeup?.();
-
       // Flush and shutdown ChunkPipeline to ensure all chunks are processed
       if (process.env.DEBUG) {
         const pipelineStats = chunkPipeline.getStats();
@@ -1369,37 +1322,10 @@ export class CodeIndexer {
 
       stats.chunksAdded = addedChunks + modifiedChunks;
 
-      // Wait for git blame prefetch (may already be done — ran in parallel with embedding)
-      const blameResult = gitBlamePromise ? await gitBlamePromise : null;
-
-      // Phase 2: Apply git metadata (fast when blame is L1 cached from prefetch)
-      if (blameResult && chunkMap.size > 0) {
-        progressCallback?.({
-          phase: "enriching",
-          current: 0,
-          total: chunkMap.size,
-          percentage: 92,
-          message: `Applying git metadata for ${chunkMap.size} files...`,
-        });
-
-        const enrichResult = await this.enrichGitMetadata(
-          collectionName,
-          absolutePath,
-          chunkMap,
-          progressCallback,
-          blameResult.service,
-        );
-
-        stats.enrichmentStatus = enrichResult.failedFiles === 0 ? "completed" : "partial";
-        stats.enrichmentDurationMs = enrichResult.durationMs;
-
-        if (process.env.DEBUG) {
-          console.error(
-            `[Reindex] Git enrichment: ${enrichResult.enrichedFiles} files, ` +
-            `${enrichResult.enrichedChunks} chunks in ${(enrichResult.durationMs / 1000).toFixed(1)}s` +
-            (enrichResult.failedFiles > 0 ? ` (${enrichResult.failedFiles} failed)` : "")
-          );
-        }
+      // Start background git enrichment (fire-and-forget, non-blocking)
+      if (this.config.enableGitMetadata && chunkMap.size > 0) {
+        this.startBackgroundEnrichment(collectionName, absolutePath, chunkMap);
+        stats.enrichmentStatus = "background";
       } else if (!this.config.enableGitMetadata) {
         stats.enrichmentStatus = "skipped";
       }

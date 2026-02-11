@@ -52,8 +52,8 @@ export interface IndexStats {
   durationMs: number;
   status: "completed" | "partial" | "failed";
   errors?: string[];
-  /** Git enrichment status (Phase 2 of two-phase indexing) */
-  enrichmentStatus?: "completed" | "partial" | "skipped";
+  /** Git enrichment status */
+  enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
   enrichmentDurationMs?: number;
 }
 
@@ -65,8 +65,8 @@ export interface ChangeStats {
   chunksDeleted: number;
   durationMs: number;
   status: "completed" | "partial" | "failed";
-  /** Git enrichment status (Phase 2 of two-phase indexing) */
-  enrichmentStatus?: "completed" | "partial" | "skipped";
+  /** Git enrichment status */
+  enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
   enrichmentDurationMs?: number;
 }
 
@@ -81,24 +81,32 @@ export interface CodeSearchResult {
   /** Metadata including git information (if enableGitMetadata was true during indexing) */
   metadata?: {
     git?: {
-      /** Unix timestamp of most recent change in chunk */
       lastModifiedAt: number;
-      /** Unix timestamp of oldest change in chunk (first created) */
       firstCreatedAt: number;
-      /** Author with most lines in this chunk */
       dominantAuthor: string;
-      /** Email of dominant author */
       dominantAuthorEmail: string;
-      /** All unique authors who touched this chunk */
       authors: string[];
-      /** Number of unique commits (churn indicator) */
+      dominantAuthorPct: number;
       commitCount: number;
-      /** Commit hash of the most recent change */
       lastCommitHash: string;
-      /** Days since last modification */
       ageDays: number;
-      /** Task IDs from commits touching this chunk (e.g., ["TD-1234", "#567"]) */
+      linesAdded: number;
+      linesDeleted: number;
+      relativeChurn: number;
+      recencyWeightedFreq: number;
+      changeDensity: number;
+      churnVolatility: number;
+      bugFixRate: number;
+      contributorCount: number;
       taskIds: string[];
+
+      // Chunk-level churn overlay (optional)
+      chunkCommitCount?: number;
+      chunkChurnRatio?: number;
+      chunkContributorCount?: number;
+      chunkBugFixRate?: number;
+      chunkLastModifiedAt?: number;
+      chunkAgeDays?: number;
     };
   };
 }
@@ -137,6 +145,20 @@ export interface SearchOptions {
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed";
 
+/** Status of background git enrichment */
+export type EnrichmentStatusValue = "pending" | "in_progress" | "completed" | "partial" | "failed";
+
+export interface EnrichmentInfo {
+  status: EnrichmentStatusValue;
+  totalFiles?: number;
+  processedFiles?: number;
+  percentage?: number;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  failedFiles?: number;
+}
+
 export interface IndexStatus {
   /** @deprecated Use `status` instead. True only when status is 'indexed'. */
   isIndexed: boolean;
@@ -147,6 +169,8 @@ export interface IndexStatus {
   chunksCount?: number;
   lastUpdated?: Date;
   languages?: string[];
+  /** Background git enrichment progress */
+  enrichment?: EnrichmentInfo;
 }
 
 export type ProgressCallback = (progress: ProgressUpdate) => void;
@@ -186,26 +210,58 @@ export interface CodeChunk {
     imports?: string[];
 
     // Git metadata (populated when enableGitMetadata is true)
-    // Uses canonical algorithm: one blame per file, aggregated signals only
+    // File-level metrics from git log via isomorphic-git (all chunks of a file share the same)
     git?: {
-      /** Unix timestamp of most recent change in chunk */
+      /** Unix timestamp of most recent commit */
       lastModifiedAt: number;
-      /** Unix timestamp of oldest change in chunk (first created) */
+      /** Unix timestamp of first commit */
       firstCreatedAt: number;
-      /** Author with most lines in this chunk */
+      /** Author with most commits to this file */
       dominantAuthor: string;
       /** Email of dominant author */
       dominantAuthorEmail: string;
-      /** All unique authors who touched this chunk */
+      /** All unique authors who touched this file */
       authors: string[];
-      /** Number of unique commits (churn indicator) */
+      /** Percentage of commits by dominant author */
+      dominantAuthorPct: number;
+      /** Total commits touching this file */
       commitCount: number;
       /** Commit hash of the most recent change */
       lastCommitHash: string;
       /** Days since last modification */
       ageDays: number;
-      /** Task IDs from commits touching this chunk (e.g., ["TD-1234", "#567"]) */
+      /** Total lines added across all commits */
+      linesAdded: number;
+      /** Total lines deleted across all commits */
+      linesDeleted: number;
+      /** (linesAdded + linesDeleted) / currentLines */
+      relativeChurn: number;
+      /** Recency-weighted commit frequency */
+      recencyWeightedFreq: number;
+      /** commits / months */
+      changeDensity: number;
+      /** stddev(days between commits) */
+      churnVolatility: number;
+      /** Percentage of commits with fix/bug/hotfix/patch keywords (0-100) */
+      bugFixRate: number;
+      /** Number of unique contributors */
+      contributorCount: number;
+      /** Task IDs from commit messages (e.g., ["TD-1234", "#567"]) */
       taskIds: string[];
+
+      // Chunk-level churn overlay (Phase B, optional — only when chunk-level analysis is enabled)
+      /** Commits that touched lines of this specific chunk */
+      chunkCommitCount?: number;
+      /** chunkCommitCount / file.commitCount (0-1) */
+      chunkChurnRatio?: number;
+      /** Unique authors who modified this specific chunk */
+      chunkContributorCount?: number;
+      /** Percentage of bug-fix commits for this chunk (0-100) */
+      chunkBugFixRate?: number;
+      /** Unix timestamp of last modification to this chunk */
+      chunkLastModifiedAt?: number;
+      /** Days since last modification to this chunk */
+      chunkAgeDays?: number;
     };
   };
 }

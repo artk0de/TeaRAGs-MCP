@@ -19,6 +19,10 @@ export interface ScoringWeights {
   chunkSize?: number; // lines of code (0-1)
   documentation?: number; // isDocumentation boost
   imports?: number; // import/dependency count
+  bugFix?: number; // bugFixRate — higher = more fixes (0-1)
+  volatility?: number; // churnVolatility — erratic changes (0-1)
+  density?: number; // changeDensity — commits/month (0-1)
+  chunkChurn?: number; // chunk-level commit count (0-1)
 }
 
 /**
@@ -55,8 +59,22 @@ export interface GitMetadata {
   ageDays?: number;
   commitCount?: number;
   dominantAuthor?: string;
+  dominantAuthorEmail?: string;
   authors?: string[];
+  dominantAuthorPct?: number;
+  relativeChurn?: number;
+  recencyWeightedFreq?: number;
+  changeDensity?: number;
+  churnVolatility?: number;
+  bugFixRate?: number;
+  contributorCount?: number;
   taskIds?: string[];
+  // Chunk-level (Phase B):
+  chunkCommitCount?: number;
+  chunkChurnRatio?: number;
+  chunkContributorCount?: number;
+  chunkBugFixRate?: number;
+  chunkAgeDays?: number;
 }
 
 /**
@@ -85,6 +103,10 @@ interface NormalizationBounds {
   maxCommitCount: number;
   maxChunkSize: number;
   maxImports: number;
+  maxBugFixRate: number;
+  maxVolatility: number;
+  maxChangeDensity: number;
+  maxChunkCommitCount: number;
 }
 
 const DEFAULT_BOUNDS: NormalizationBounds = {
@@ -92,6 +114,10 @@ const DEFAULT_BOUNDS: NormalizationBounds = {
   maxCommitCount: 50,
   maxChunkSize: 500, // lines
   maxImports: 20,
+  maxBugFixRate: 100, // percentage
+  maxVolatility: 60, // stddev days
+  maxChangeDensity: 20, // commits/month
+  maxChunkCommitCount: 30,
 };
 
 /**
@@ -101,20 +127,26 @@ const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights
   relevance: { similarity: 1.0 },
 
   techDebt: {
-    similarity: 0.4,
-    age: 0.3,
-    churn: 0.3,
+    similarity: 0.25,
+    age: 0.2,
+    churn: 0.2,
+    bugFix: 0.15,
+    volatility: 0.2,
   },
 
   hotspots: {
-    similarity: 0.5,
-    churn: 0.3,
-    recency: 0.2,
+    similarity: 0.35,
+    chunkChurn: 0.25,
+    recency: 0.1,
+    bugFix: 0.15,
+    volatility: 0.15,
   },
 
   codeReview: {
-    similarity: 0.6,
-    recency: 0.4,
+    similarity: 0.4,
+    recency: 0.2,
+    density: 0.2,
+    chunkChurn: 0.2,
   },
 
   onboarding: {
@@ -124,15 +156,20 @@ const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights
   },
 
   securityAudit: {
-    similarity: 0.5,
-    age: 0.3,
+    similarity: 0.35,
+    age: 0.2,
+    ownership: 0.15,
+    bugFix: 0.15,
     // pathRisk would be handled separately
   },
 
   refactoring: {
-    similarity: 0.4,
-    churn: 0.3,
-    chunkSize: 0.3,
+    similarity: 0.25,
+    chunkChurn: 0.25,
+    chunkSize: 0.15,
+    volatility: 0.15,
+    bugFix: 0.1,
+    age: 0.1,
   },
 
   ownership: {
@@ -185,7 +222,12 @@ function getChunkSize(result: RerankableResult): number {
  * Higher value = more concentrated ownership
  */
 function getOwnershipScore(result: RerankableResult): number {
-  const authors = result.payload?.git?.authors;
+  const git = result.payload?.git;
+  // Use dominantAuthorPct (0-100) when available for precise ownership
+  if (git?.dominantAuthorPct !== undefined && git.dominantAuthorPct > 0) {
+    return git.dominantAuthorPct / 100;
+  }
+  const authors = git?.authors;
   if (!authors || authors.length === 0) return 0;
   if (authors.length === 1) return 1;
   // More authors = less concentrated ownership
@@ -224,17 +266,26 @@ function calculateSignals(
   const chunkSize = getChunkSize(result);
   const imports = result.payload?.imports?.length ?? 0;
 
+  // Prefer chunk-level data when available
+  const effectiveCommitCount = git?.chunkCommitCount ?? commitCount;
+  const effectiveAgeDays = git?.chunkAgeDays ?? ageDays;
+
   return {
     similarity: result.score,
-    recency: 1 - normalize(ageDays, bounds.maxAgeDays),
-    stability: 1 - normalize(commitCount, bounds.maxCommitCount),
-    churn: normalize(commitCount, bounds.maxCommitCount),
-    age: normalize(ageDays, bounds.maxAgeDays),
+    recency: 1 - normalize(effectiveAgeDays, bounds.maxAgeDays),
+    stability: 1 - normalize(effectiveCommitCount, bounds.maxCommitCount),
+    churn: normalize(effectiveCommitCount, bounds.maxCommitCount),
+    age: normalize(effectiveAgeDays, bounds.maxAgeDays),
     ownership: getOwnershipScore(result),
     chunkSize: normalize(chunkSize, bounds.maxChunkSize),
     documentation: result.payload?.isDocumentation ? 1 : 0,
     imports: normalize(imports, bounds.maxImports),
     pathRisk: getPathRiskScore(result),
+    // New signals:
+    bugFix: normalize(git?.bugFixRate ?? 0, bounds.maxBugFixRate),
+    volatility: normalize(git?.churnVolatility ?? 0, bounds.maxVolatility),
+    density: normalize(git?.changeDensity ?? 0, bounds.maxChangeDensity),
+    chunkChurn: normalize(git?.chunkCommitCount ?? 0, bounds.maxChunkCommitCount),
   };
 }
 
