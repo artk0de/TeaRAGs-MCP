@@ -155,34 +155,47 @@ function farewell(name) {
   });
 
   describe("chunk - Ruby", () => {
-    it("should chunk Ruby methods", async () => {
+    it("should always extract methods from classes regardless of class size", async () => {
       const code = `
 class UserService
   def find_user(id)
-    User.find(id)
+    # Finds a user by their unique identifier
+    user = User.find_by(id: id)
+    raise NotFoundError unless user
+    user
   end
 
   def create_user(params)
-    User.create(params)
+    # Creates a new user with the given parameters
+    user = User.new(params)
+    user.save!
+    user
   end
 end
       `;
 
       const chunks = await chunker.chunk(code, "test.rb", "ruby");
-      expect(chunks.length).toBeGreaterThan(0);
-      expect(chunks.some((c) => c.metadata.chunkType === "class" || c.metadata.chunkType === "function")).toBe(true);
+
+      // Should extract individual methods, not keep class as one chunk
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(2);
+
+      // Each method should have parentName and parentType
+      for (const chunk of methodChunks) {
+        expect(chunk.metadata.parentName).toBe("UserService");
+        expect(chunk.metadata.parentType).toBe("class");
+      }
+
+      // Verify method names
+      const names = methodChunks.map(c => c.metadata.name).sort();
+      expect(names).toEqual(["create_user", "find_user"]);
+
+      // Verify symbolId format: ClassName.methodName
+      expect(methodChunks.find(c => c.metadata.name === "find_user")?.metadata.symbolId)
+        .toBe("UserService.find_user");
     });
 
-    it("should set parentName and parentType for methods in large classes", async () => {
-      // Create a chunker with smaller maxChunkSize to trigger splitting
-      const smallConfig = {
-        chunkSize: 200,
-        chunkOverlap: 20,
-        maxChunkSize: 300, // maxChunkSize * 2 = 600, so class > 600 chars triggers splitting
-      };
-      const smallChunker = new TreeSitterChunker(smallConfig);
-
-      // Create a class large enough to trigger AST-aware splitting
+    it("should extract methods with parentName/parentType from classes of any size", async () => {
       const code = `
 class LargeService
   def method_one
@@ -215,36 +228,20 @@ class LargeService
 end
       `;
 
-      const chunks = await smallChunker.chunk(code, "large_service.rb", "ruby");
+      const chunks = await chunker.chunk(code, "large_service.rb", "ruby");
 
-      // Should have multiple method chunks
-      expect(chunks.length).toBeGreaterThan(1);
-
-      // Find method chunks (not the whole class)
+      // Should have individual method chunks
       const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(4);
 
-      // At least some methods should have parentName and parentType
-      const chunksWithParent = methodChunks.filter(
-        c => c.metadata.parentName && c.metadata.parentType
-      );
-
-      expect(chunksWithParent.length).toBeGreaterThan(0);
-
-      // Verify parentName is the class name
-      for (const chunk of chunksWithParent) {
+      // All methods should have parentName and parentType
+      for (const chunk of methodChunks) {
         expect(chunk.metadata.parentName).toBe("LargeService");
         expect(chunk.metadata.parentType).toBe("class");
       }
     });
 
-    it("should set parentName and parentType for methods in large modules", async () => {
-      const smallConfig = {
-        chunkSize: 200,
-        chunkOverlap: 20,
-        maxChunkSize: 300,
-      };
-      const smallChunker = new TreeSitterChunker(smallConfig);
-
+    it("should extract methods from modules with parentName/parentType", async () => {
       const code = `
 module LargeModule
   def helper_one
@@ -277,33 +274,20 @@ module LargeModule
 end
       `;
 
-      const chunks = await smallChunker.chunk(code, "large_module.rb", "ruby");
+      const chunks = await chunker.chunk(code, "large_module.rb", "ruby");
 
-      // Should have multiple method chunks
-      expect(chunks.length).toBeGreaterThan(1);
+      // Should have individual method chunks
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(4);
 
-      // Find chunks with parent metadata
-      const chunksWithParent = chunks.filter(
-        c => c.metadata.parentName && c.metadata.parentType
-      );
-
-      expect(chunksWithParent.length).toBeGreaterThan(0);
-
-      // Verify parentName is the module name
-      for (const chunk of chunksWithParent) {
+      // All methods should have parentName = module name
+      for (const chunk of methodChunks) {
         expect(chunk.metadata.parentName).toBe("LargeModule");
         expect(chunk.metadata.parentType).toBe("module");
       }
     });
 
-    it("should extract methods from class << self blocks in large classes", async () => {
-      const smallConfig = {
-        chunkSize: 200,
-        chunkOverlap: 20,
-        maxChunkSize: 300,
-      };
-      const smallChunker = new TreeSitterChunker(smallConfig);
-
+    it("should extract methods from class << self blocks", async () => {
       const code = `
 class ConfigurationManager
   class << self
@@ -338,80 +322,193 @@ class ConfigurationManager
 end
       `;
 
-      const chunks = await smallChunker.chunk(code, "config_manager.rb", "ruby");
+      const chunks = await chunker.chunk(code, "config_manager.rb", "ruby");
 
       // Should extract individual methods
-      expect(chunks.length).toBeGreaterThan(1);
-
-      // Should have function-type chunks (methods)
       const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
-      expect(methodChunks.length).toBeGreaterThan(0);
+      expect(methodChunks.length).toBe(4);
+
+      // Methods inside class << self should have class as parent
+      for (const chunk of methodChunks) {
+        expect(chunk.metadata.parentName).toBe("ConfigurationManager");
+        expect(chunk.metadata.parentType).toBe("class");
+      }
     });
 
-    it("should NOT set parentName/parentType for small classes that fit in one chunk", async () => {
-      // Use default chunker with larger limits
+    it("should extract class-level code (scopes, associations, validations) as separate chunk", async () => {
       const code = `
-class SmallService
-  def simple_method
-    return 42
+class User < ApplicationRecord
+  include Trackable
+  include Searchable
+
+  has_many :posts, dependent: :destroy
+  has_many :comments, dependent: :destroy
+  belongs_to :organization
+
+  scope :active, -> { where(active: true) }
+  scope :recent, -> { where("created_at > ?", 1.week.ago) }
+  scope :admins, -> { where(role: "admin") }
+
+  validates :name, presence: true
+  validates :email, presence: true, uniqueness: true
+  validates :role, inclusion: { in: %w[admin user guest] }
+
+  before_save :normalize_email
+
+  def full_name
+    # Returns the full name by combining first and last name
+    [first_name, last_name].compact.join(" ")
+  end
+
+  def deactivate!
+    # Deactivates the user and notifies admins
+    update!(active: false)
+    NotificationService.notify_admins(self)
+  end
+
+  def admin?
+    # Checks whether the user has admin privileges
+    role == "admin" || organization&.admin?(self)
   end
 end
       `;
 
-      const chunks = await chunker.chunk(code, "small_service.rb", "ruby");
+      const chunks = await chunker.chunk(code, "user.rb", "ruby");
 
-      // Small class should be kept as single chunk
+      // Should have method chunks
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(3);
+
+      // Should have a class-body chunk with scopes, associations, validations
+      const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
+      expect(bodyChunks.length).toBe(1);
+
+      const body = bodyChunks[0];
+      // Class body should contain the class-level declarations
+      expect(body.content).toContain("has_many :posts");
+      expect(body.content).toContain("scope :active");
+      expect(body.content).toContain("validates :name");
+      expect(body.content).toContain("include Trackable");
+      expect(body.content).toContain("before_save :normalize_email");
+
+      // Class body should NOT contain method implementations
+      expect(body.content).not.toContain("def full_name");
+      expect(body.content).not.toContain("def deactivate!");
+
+      // Class body should have parent metadata
+      expect(body.metadata.parentName).toBe("User");
+      expect(body.metadata.parentType).toBe("class");
+      expect(body.metadata.name).toBe("User");
+    });
+
+    it("should keep class as single chunk when it has no methods", async () => {
+      // A class with only declarations (no methods) stays as one chunk
+      const code = `
+class UserSerializer < ActiveModel::Serializer
+  attributes :id, :name, :email, :role
+  has_many :posts, serializer: PostSerializer
+  belongs_to :organization, serializer: OrgSerializer
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "user_serializer.rb", "ruby");
+
+      // Should be a single chunk (no methods to extract)
       expect(chunks.length).toBe(1);
-
-      // No parent metadata since class wasn't split
-      expect(chunks[0].metadata.parentName).toBeUndefined();
-      expect(chunks[0].metadata.parentType).toBeUndefined();
+      expect(chunks[0].metadata.chunkType).toBe("class");
+      expect(chunks[0].metadata.name).toBe("UserSerializer");
     });
 
-    it("should chunk Ruby singleton methods", async () => {
-      const code = `
-class Configuration
-  def self.load_from_file(path)
-    YAML.load_file(path)
-  end
-
-  def self.default_settings
-    { timeout: 30, retries: 3 }
-  end
-end
-      `;
-
-      const chunks = await chunker.chunk(code, "config.rb", "ruby");
-      expect(chunks.length).toBeGreaterThan(0);
-    });
-
-    it("should chunk Ruby modules", async () => {
+    it("should handle module with includes and methods", async () => {
       const code = `
 module Authenticatable
-  def authenticate(credentials)
-    # Authentication logic
-    true
+  extend ActiveSupport::Concern
+
+  included do
+    has_secure_password
+    validates :password, length: { minimum: 8 }
   end
 
-  def logout
-    session.clear
+  def authenticate(credentials)
+    # Verify credentials against stored password hash
+    return false unless credentials[:password]
+    authenticate_password(credentials[:password])
+  end
+
+  def generate_token
+    # Generate a secure authentication token for API access
+    SecureRandom.hex(32).tap do |token|
+      update!(auth_token: token)
+    end
   end
 end
       `;
 
       const chunks = await chunker.chunk(code, "concerns.rb", "ruby");
-      expect(chunks.length).toBeGreaterThan(0);
+
+      // Should have method chunks
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(2);
+
+      for (const chunk of methodChunks) {
+        expect(chunk.metadata.parentName).toBe("Authenticatable");
+        expect(chunk.metadata.parentType).toBe("module");
+      }
+
+      // Should have a body chunk with module-level code
+      const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
+      expect(bodyChunks.length).toBe(1);
+      expect(bodyChunks[0].content).toContain("extend ActiveSupport::Concern");
+      expect(bodyChunks[0].content).toContain("has_secure_password");
     });
 
-    it("should chunk Ruby lambdas and procs", async () => {
+    it("should chunk Ruby singleton methods with parentName", async () => {
+      const code = `
+class Configuration
+  DEFAULT_TIMEOUT = 30
+  DEFAULT_RETRIES = 3
+
+  def self.load_from_file(path)
+    # Load YAML configuration from the specified file path
+    config = YAML.load_file(path)
+    validate!(config)
+    config
+  end
+
+  def self.default_settings
+    # Returns default configuration settings hash
+    { timeout: DEFAULT_TIMEOUT, retries: DEFAULT_RETRIES }
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "config.rb", "ruby");
+
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(2);
+
+      for (const chunk of methodChunks) {
+        expect(chunk.metadata.parentName).toBe("Configuration");
+        expect(chunk.metadata.parentType).toBe("class");
+      }
+    });
+
+    it("should chunk Ruby lambdas and procs as part of class body", async () => {
       const code = `
 class Calculator
   OPERATIONS = {
     add: ->(a, b) { a + b },
-    subtract: lambda { |a, b| a - b }
+    subtract: lambda { |a, b| a - b },
+    multiply: ->(a, b) { a * b }
+  }
+
+  VALIDATORS = {
+    positive: ->(n) { n > 0 },
+    even: ->(n) { n.even? }
   }
 
   def process(data)
+    # Process data through the operation pipeline
     data.map do |item|
       transform(item)
     end
@@ -420,10 +517,20 @@ end
       `;
 
       const chunks = await chunker.chunk(code, "calculator.rb", "ruby");
-      expect(chunks.length).toBeGreaterThan(0);
+
+      // Should extract the method
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(1);
+      expect(methodChunks[0].metadata.name).toBe("process");
+
+      // Constants with lambdas should be in the class body chunk
+      const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
+      expect(bodyChunks.length).toBe(1);
+      expect(bodyChunks[0].content).toContain("OPERATIONS");
+      expect(bodyChunks[0].content).toContain("VALIDATORS");
     });
 
-    it("should chunk Ruby begin/rescue blocks", async () => {
+    it("should chunk Ruby begin/rescue blocks within methods", async () => {
       const code = `
 class ApiClient
   def fetch_data(url)
@@ -436,11 +543,45 @@ class ApiClient
       handle_parse_error(e)
     end
   end
+
+  def post_data(url, payload)
+    begin
+      response = HTTP.post(url, body: payload)
+      parse_response(response)
+    rescue NetworkError => e
+      retry_with_backoff(e)
+    end
+  end
 end
       `;
 
       const chunks = await chunker.chunk(code, "api_client.rb", "ruby");
-      expect(chunks.length).toBeGreaterThan(0);
+
+      // Methods should be extracted individually, rescue blocks stay inside
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(2);
+      expect(methodChunks[0].content).toContain("rescue NetworkError");
+    });
+
+    it("should handle class with only very short methods (under min threshold)", async () => {
+      // When all methods are too short, keep as single class chunk
+      const code = `
+class SmallService
+  def name
+    @name
+  end
+
+  def id
+    @id
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "small_service.rb", "ruby");
+
+      // Class with only tiny methods — kept as single class chunk
+      expect(chunks.length).toBe(1);
+      expect(chunks[0].metadata.chunkType).toBe("class");
     });
   });
 
