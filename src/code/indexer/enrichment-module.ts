@@ -56,6 +56,9 @@ export class EnrichmentModule {
   private missedPathSamples: string[] = []; // first 10
   private gitLogFileCount = 0; // total files in git log (for context)
 
+  // Backfill: missed file relative paths → chunk IDs for post-hoc enrichment
+  private missedFileChunks = new Map<string, Array<{ chunkId: string; endLine: number }>>();
+
   // Timing metrics
   private startTime = 0;
   private prefetchStartTime = 0;
@@ -357,7 +360,12 @@ export class EnrichmentModule {
       this.inFlightWork = [];
     }
 
-    // 3. Chunk churn runs in background — do NOT await here.
+    // 3. Backfill file-level metadata for missed files (no --since, pathspec only)
+    if (this.missedFileChunks.size > 0 && this.logReader) {
+      await this.backfillMissedFiles(collectionName);
+    }
+
+    // 4. Chunk churn runs in background — do NOT await here.
     //    It updates Qdrant payloads independently and logs its own completion.
     //    Waiting here blocks the MCP response on large repos (taxdome: 21K files → hang).
 
@@ -430,6 +438,82 @@ export class EnrichmentModule {
   // --- Private methods ---
 
   /**
+   * Backfill file-level git metadata for files not in the main --since window.
+   * Runs `git log --numstat -- <paths>` without --since restriction.
+   */
+  private async backfillMissedFiles(collectionName: string): Promise<void> {
+    const repoRoot = this.gitRepoRoot;
+    if (!repoRoot || !this.logReader) return;
+
+    const missedPaths = Array.from(this.missedFileChunks.keys());
+    pipelineLog.enrichmentPhase("BACKFILL_START", {
+      missedFiles: missedPaths.length,
+    });
+
+    const backfillStart = Date.now();
+    let backfillData: Map<string, any>;
+    try {
+      const timeoutMs = parseInt(process.env.GIT_BACKFILL_TIMEOUT_MS ?? "30000", 10);
+      backfillData = await this.logReader.buildFileMetadataForPaths(
+        repoRoot,
+        missedPaths,
+        timeoutMs,
+      );
+    } catch (error) {
+      pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    const operations: Array<{
+      payload: Record<string, any>;
+      points: (string | number)[];
+    }> = [];
+    let backfilledFiles = 0;
+
+    for (const [relPath, chunks] of this.missedFileChunks) {
+      const churnData = backfillData.get(relPath);
+      if (!churnData) continue; // Still no data (file outside git history)
+
+      const maxEndLine = chunks.reduce((max, c) => Math.max(max, c.endLine), 0);
+      const metadata = computeFileMetadata(churnData, maxEndLine);
+      const gitPayload = { git: metadata };
+
+      for (const chunk of chunks) {
+        operations.push({ payload: gitPayload, points: [chunk.chunkId] });
+      }
+      backfilledFiles++;
+    }
+
+    if (operations.length > 0) {
+      for (let i = 0; i < operations.length; i += BATCH_SIZE) {
+        const batch = operations.slice(i, i + BATCH_SIZE);
+        try {
+          await this.qdrant.batchSetPayload(collectionName, batch);
+        } catch (error) {
+          if (process.env.DEBUG) {
+            console.error("[EnrichmentModule] backfill batchSetPayload failed:", error);
+          }
+        }
+      }
+    }
+
+    const backfillDuration = Date.now() - backfillStart;
+    // Update match counters: backfilled files are no longer "missed"
+    this.matchedFiles += backfilledFiles;
+    this.missedFiles -= backfilledFiles;
+
+    pipelineLog.enrichmentPhase("BACKFILL_COMPLETE", {
+      missedFiles: missedPaths.length,
+      backfilledFiles,
+      backfilledChunks: operations.length,
+      stillMissed: missedPaths.length - backfilledFiles,
+      durationMs: backfillDuration,
+    });
+  }
+
+  /**
    * Flush all pending batches that were queued while git log was reading.
    */
   private flushPendingBatches(): void {
@@ -491,6 +575,12 @@ export class EnrichmentModule {
         if (this.missedPathSamples.length < 10) {
           this.missedPathSamples.push(relativePath);
         }
+        // Track for backfill (post-hoc enrichment without --since)
+        const existing = this.missedFileChunks.get(relativePath) || [];
+        for (const item of fileItems) {
+          existing.push({ chunkId: item.chunkId, endLine: item.chunk.endLine });
+        }
+        this.missedFileChunks.set(relativePath, existing);
         continue;
       }
       this.matchedFiles++;

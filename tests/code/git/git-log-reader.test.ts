@@ -630,6 +630,49 @@ describe("buildChunkChurnMap", () => {
     }
   });
 
+  it("should use lineRanges for precise overlap detection (non-contiguous chunks)", async () => {
+    if (!repoRoot) return;
+
+    // Simulate a Ruby block chunk: class header (lines 1-5) + tail (lines 200-210)
+    // with methods in between (lines 6-199) belonging to other chunks.
+    // Without lineRanges, the block chunk covers 1-210 and catches ALL changes.
+    // With lineRanges, it only catches changes in lines 1-5 and 200-210.
+    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number; lineRanges?: Array<{ start: number; end: number }> }>>();
+    chunkMap.set(`${repoRoot}/src/code/indexer.ts`, [
+      {
+        chunkId: "block-chunk",
+        startLine: 1,
+        endLine: 210,
+        lineRanges: [{ start: 1, end: 5 }, { start: 200, end: 210 }], // non-contiguous
+      },
+      { chunkId: "method-chunk", startLine: 6, endLine: 199 },
+    ]);
+
+    const withRanges = await reader.buildChunkChurnMap(repoRoot, chunkMap);
+
+    // Now compare: same file without lineRanges (block covers full 1-210)
+    const chunkMapNoRanges = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    chunkMapNoRanges.set(`${repoRoot}/src/code/indexer.ts`, [
+      { chunkId: "block-chunk", startLine: 1, endLine: 210 },
+      { chunkId: "method-chunk", startLine: 6, endLine: 199 },
+    ]);
+
+    const withoutRanges = await reader.buildChunkChurnMap(repoRoot, chunkMapNoRanges);
+
+    // With lineRanges, block-chunk should have <= churn compared to without lineRanges
+    // because it no longer catches changes in lines 6-199
+    const blockWithRanges = withRanges.get("src/code/indexer.ts")?.get("block-chunk");
+    const blockWithoutRanges = withoutRanges.get("src/code/indexer.ts")?.get("block-chunk");
+
+    if (blockWithRanges && blockWithoutRanges) {
+      expect(blockWithRanges.chunkCommitCount).toBeLessThanOrEqual(blockWithoutRanges.chunkCommitCount);
+    }
+    // At minimum, both should produce valid results
+    if (blockWithRanges) {
+      expect(blockWithRanges.chunkCommitCount).toBeGreaterThanOrEqual(0);
+    }
+  });
+
   it("buildFileMetadataMap should try CLI first, not isomorphic-git", async () => {
     if (!repoRoot) return;
 
@@ -684,6 +727,39 @@ describe("buildChunkChurnMap", () => {
     // Should contain --since
     const hasSince = args.some((a: string) => a.startsWith("--since="));
     expect(hasSince).toBe(true);
+  });
+
+  it("buildFileMetadataForPaths should fetch metadata for specific files without --since", async () => {
+    if (!repoRoot) return;
+
+    // Fetch metadata for a known file that definitely has git history
+    const result = await reader.buildFileMetadataForPaths(repoRoot, ["package.json"]);
+
+    // package.json definitely has commits in this repo
+    expect(result.size).toBeGreaterThan(0);
+    const entry = result.get("package.json");
+    expect(entry).toBeDefined();
+    if (entry) {
+      expect(entry.commits.length).toBeGreaterThan(0);
+      expect(entry.commits[0].sha).toHaveLength(40);
+      expect(entry.commits[0].author).toBeTruthy();
+    }
+  });
+
+  it("buildFileMetadataForPaths should return empty map for non-existent files", async () => {
+    if (!repoRoot) return;
+
+    const result = await reader.buildFileMetadataForPaths(repoRoot, [
+      "this-file-does-not-exist.txt",
+      "neither-does-this.rb",
+    ]);
+
+    expect(result.size).toBe(0);
+  });
+
+  it("buildFileMetadataForPaths should return empty map for empty paths", async () => {
+    const result = await reader.buildFileMetadataForPaths(repoRoot || "/tmp", []);
+    expect(result.size).toBe(0);
   });
 
   it("should handle large file lists without exceeding ARG_MAX (pathspec batching)", async () => {

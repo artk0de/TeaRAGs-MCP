@@ -340,6 +340,118 @@ describe("reranker", () => {
     });
   });
 
+  describe("blockPenalty: penalize block chunks without chunk-level data", () => {
+    const createResultWithChunkType = (
+      score: number,
+      chunkType: string,
+      git: Partial<RerankableResult["payload"] extends infer P ? P extends { git?: infer G } ? G : never : never> = {},
+    ): RerankableResult => ({
+      score,
+      payload: {
+        relativePath: `src/file-${score}.ts`,
+        startLine: 1,
+        endLine: 50,
+        language: "typescript",
+        chunkType,
+        git: {
+          ageDays: 10,
+          commitCount: 20,
+          dominantAuthor: "alice",
+          authors: ["alice"],
+          recencyWeightedFreq: 5.0,
+          bugFixRate: 40,
+          churnVolatility: 20,
+          ...git,
+        },
+      },
+    });
+
+    it("should penalize block chunks without chunk-level data in hotspots", () => {
+      const results = [
+        // Block chunk with only file-level data (no chunkCommitCount) — should be penalized
+        createResultWithChunkType(0.8, "block", {}),
+        // Function chunk with same file-level data — should NOT be penalized
+        createResultWithChunkType(0.8, "function", {}),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "hotspots");
+      // Function should rank higher due to block penalty
+      expect(reranked[0].payload?.chunkType).toBe("function");
+    });
+
+    it("should NOT penalize block chunks that have chunk-level data", () => {
+      const results = [
+        // Block with chunk-level data — should NOT be penalized
+        createResultWithChunkType(0.8, "block", { chunkCommitCount: 15, chunkChurnRatio: 0.8 }),
+        // Function without chunk-level data — no penalty either
+        createResultWithChunkType(0.8, "function", {}),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "hotspots");
+      // Block with chunk data should rank at least as high (it has high chunkCommitCount)
+      expect(reranked[0].payload?.chunkType).toBe("block");
+    });
+
+    it("should NOT penalize function/class/interface chunks", () => {
+      const results = [
+        createResultWithChunkType(0.8, "function", {}),
+        createResultWithChunkType(0.8, "class", {}),
+        createResultWithChunkType(0.8, "interface", {}),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "hotspots");
+      // All scores should be equal (no penalties applied)
+      expect(reranked[0].score).toBeCloseTo(reranked[1].score, 5);
+      expect(reranked[1].score).toBeCloseTo(reranked[2].score, 5);
+    });
+
+    it("should apply blockPenalty in techDebt preset", () => {
+      const results = [
+        createResultWithChunkType(0.8, "block", { ageDays: 200 }),
+        createResultWithChunkType(0.8, "function", { ageDays: 200 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "techDebt");
+      expect(reranked[0].payload?.chunkType).toBe("function");
+    });
+
+    it("should apply blockPenalty in codeReview preset", () => {
+      const results = [
+        createResultWithChunkType(0.8, "block", { changeDensity: 15 }),
+        createResultWithChunkType(0.8, "function", { changeDensity: 15 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "codeReview");
+      expect(reranked[0].payload?.chunkType).toBe("function");
+    });
+
+    it("should apply blockPenalty in refactoring preset", () => {
+      const results = [
+        createResultWithChunkType(0.8, "block", { relativeChurn: 3.0 }),
+        createResultWithChunkType(0.8, "function", { relativeChurn: 3.0 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "refactoring");
+      expect(reranked[0].payload?.chunkType).toBe("function");
+    });
+
+    it("should support blockPenalty as custom negative weight", () => {
+      const results = [
+        createResultWithChunkType(0.8, "block", {}),
+        createResultWithChunkType(0.7, "function", {}),
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { similarity: 0.5, churn: 0.3, blockPenalty: -0.3 },
+      });
+      // Function should rank higher despite lower similarity, because block gets penalty
+      expect(reranked[0].payload?.chunkType).toBe("function");
+    });
+
+    it("should not affect presets without blockPenalty (e.g., onboarding)", () => {
+      const results = [
+        createResultWithChunkType(0.9, "block", {}),
+        createResultWithChunkType(0.7, "function", {}),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "onboarding");
+      // Block should still rank first (higher similarity, no penalty in this preset)
+      expect(reranked[0].payload?.chunkType).toBe("block");
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty results", () => {
       const result = rerankSemanticSearchResults([], "techDebt");

@@ -240,6 +240,8 @@ export interface CodeChunk {
     parentType?: string; // Parent AST node type (e.g., "class", "module")
     /** Symbol identifier: "ClassName.methodName" or just "functionName" */
     symbolId?: string;
+    /** Non-contiguous line ranges (e.g., Ruby body groups with gaps where methods live) */
+    lineRanges?: Array<{ start: number; end: number }>;
     /**
      * True for documentation chunks (markdown, etc.)
      * Used to filter search results: include/exclude documentation
@@ -320,4 +322,6 @@ export interface ChunkLookupEntry {
   chunkId: string;
   startLine: number;
   endLine: number;
+  /** Non-contiguous line ranges for precise overlap detection (e.g., Ruby body groups) */
+  lineRanges?: Array<{ start: number; end: number }>;
 }
