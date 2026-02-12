@@ -216,6 +216,7 @@ export class EnrichmentModule {
           chunkMap,
           chunkConcurrency,
           chunkMaxAgeMonths,
+          this.gitLogResult ?? undefined,
         );
 
         // Apply chunk-level overlays
