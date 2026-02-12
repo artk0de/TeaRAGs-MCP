@@ -547,6 +547,61 @@ describe("buildChunkChurnMap", () => {
     }
   });
 
+  it("should use file-level commit count as ratio denominator when fileChurnDataMap provided", async () => {
+    if (!repoRoot) return;
+
+    // First, get actual file churn data for a known file
+    const fileChurnMap = await reader.buildFileMetadataMap(repoRoot, 6);
+    const testFile = "src/code/indexer.ts";
+    const fileChurnData = fileChurnMap.get(testFile);
+    if (!fileChurnData || fileChurnData.commits.length === 0) return;
+
+    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    chunkMap.set(`${repoRoot}/${testFile}`, [
+      { chunkId: "chunk-a", startLine: 1, endLine: 50 },
+      { chunkId: "chunk-b", startLine: 51, endLine: 200 },
+      { chunkId: "chunk-c", startLine: 201, endLine: 500 },
+    ]);
+
+    // Call WITH file-level data — ratio uses real file commit count as denominator
+    const withFileData = await reader.buildChunkChurnMap(repoRoot, chunkMap, 10, 6, fileChurnMap);
+    const overlayMap = withFileData.get(testFile);
+    if (!overlayMap) return;
+
+    for (const [, overlay] of overlayMap) {
+      // chunkChurnRatio must be <= 1.0 since file-level commits (12mo) >= chunk-level (6mo)
+      expect(overlay.chunkChurnRatio).toBeLessThanOrEqual(1.0);
+      expect(overlay.chunkChurnRatio).toBeGreaterThanOrEqual(0);
+      // chunkCommitCount should not exceed file commit count
+      expect(overlay.chunkCommitCount).toBeLessThanOrEqual(fileChurnData.commits.length);
+    }
+  });
+
+  it("should cap chunkContributorCount at file-level contributor count", async () => {
+    if (!repoRoot) return;
+
+    const fileChurnMap = await reader.buildFileMetadataMap(repoRoot, 6);
+    const testFile = "src/code/indexer.ts";
+    const fileChurnData = fileChurnMap.get(testFile);
+    if (!fileChurnData || fileChurnData.commits.length === 0) return;
+
+    const fileContributors = new Set(fileChurnData.commits.map(c => c.author)).size;
+
+    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    chunkMap.set(`${repoRoot}/${testFile}`, [
+      { chunkId: "chunk-a", startLine: 1, endLine: 50 },
+      { chunkId: "chunk-b", startLine: 51, endLine: 200 },
+    ]);
+
+    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap, 10, 6, fileChurnMap);
+    const overlayMap = result.get(testFile);
+    if (!overlayMap) return;
+
+    for (const [, overlay] of overlayMap) {
+      expect(overlay.chunkContributorCount).toBeLessThanOrEqual(fileContributors);
+    }
+  });
+
   it("should produce different churn for different chunks of the same file", async () => {
     if (!repoRoot) return;
 

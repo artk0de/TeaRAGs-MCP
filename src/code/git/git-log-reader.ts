@@ -593,6 +593,7 @@ export class GitLogReader {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     concurrency = 10,
     maxAgeMonths = 6,
+    fileChurnDataMap?: Map<string, FileChurnData>,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
     // Check HEAD-based cache
     try {
@@ -605,7 +606,7 @@ export class GitLogReader {
       // If HEAD resolution fails, skip caching and proceed
     }
 
-    const result = await this._buildChunkChurnMapUncached(repoRoot, chunkMap, concurrency, maxAgeMonths);
+    const result = await this._buildChunkChurnMapUncached(repoRoot, chunkMap, concurrency, maxAgeMonths, fileChurnDataMap);
 
     // Store in cache
     try {
@@ -775,6 +776,7 @@ export class GitLogReader {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     concurrency: number,
     maxAgeMonths: number,
+    fileChurnDataMap?: Map<string, FileChurnData>,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
     const nowSec = Date.now() / 1000;
     const maxFileLines = parseInt(
@@ -961,14 +963,29 @@ export class GitLogReader {
     const result = new Map<string, Map<string, ChunkChurnOverlay>>();
 
     for (const [relPath, entries] of relativeChunkMap) {
-      const fileCommitShas = new Set<string>();
-      for (const entry of entries) {
-        const acc = accumulators.get(entry.chunkId)!;
-        for (const sha of acc.commitShas) {
-          fileCommitShas.add(sha);
+      // Use file-level commit count from buildFileMetadataMap when available.
+      // This fixes chunkChurnRatio always being ~1.0 (the old denominator was
+      // recomputed as the union of chunk SHAs, which ≈ max(chunkCommitCount)
+      // for tightly-coupled files).
+      const fileChurnData = fileChurnDataMap?.get(relPath);
+      let fileCommitCount: number;
+      let fileContributorCount: number | undefined;
+
+      if (fileChurnData) {
+        fileCommitCount = Math.max(fileChurnData.commits.length, 1);
+        const uniqueAuthors = new Set(fileChurnData.commits.map(c => c.author));
+        fileContributorCount = uniqueAuthors.size;
+      } else {
+        // Fallback: union of chunk commit SHAs (original behavior)
+        const fileCommitShas = new Set<string>();
+        for (const entry of entries) {
+          const acc = accumulators.get(entry.chunkId)!;
+          for (const sha of acc.commitShas) {
+            fileCommitShas.add(sha);
+          }
         }
+        fileCommitCount = Math.max(fileCommitShas.size, 1);
       }
-      const fileCommitCount = Math.max(fileCommitShas.size, 1);
 
       const overlayMap = new Map<string, ChunkChurnOverlay>();
 
@@ -980,7 +997,11 @@ export class GitLogReader {
         overlayMap.set(entry.chunkId, {
           chunkCommitCount,
           chunkChurnRatio: Math.round((chunkCommitCount / fileCommitCount) * 100) / 100,
-          chunkContributorCount: acc.authors.size,
+          // Cap chunk contributors at file-level to prevent inversions
+          // (chunk uses 6mo window, file uses 12mo — different author sets)
+          chunkContributorCount: fileContributorCount !== undefined
+            ? Math.min(acc.authors.size, fileContributorCount)
+            : acc.authors.size,
           chunkBugFixRate:
             chunkCommitCount > 0
               ? Math.round((acc.bugFixCount / totalCommitsForChunk) * 100)
