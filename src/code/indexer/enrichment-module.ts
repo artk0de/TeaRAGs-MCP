@@ -221,22 +221,43 @@ export class EnrichmentModule {
 
     if (process.env.GIT_CHUNK_ENABLED === "false") return;
 
+    // Use git repo root for chunk churn (paths must match git log convention)
+    const repoRoot = this.gitRepoRoot || absolutePath;
+
+    // Filter chunkMap by ignore patterns (align with file-level enrichment filtering)
+    let effectiveChunkMap = chunkMap;
+    if (this.ignoreFilter) {
+      effectiveChunkMap = new Map();
+      let filtered = 0;
+      for (const [filePath, entries] of chunkMap) {
+        const relPath = relative(repoRoot, filePath);
+        if (this.ignoreFilter.ignores(relPath)) {
+          filtered++;
+        } else {
+          effectiveChunkMap.set(filePath, entries);
+        }
+      }
+      if (filtered > 0) {
+        pipelineLog.enrichmentPhase("CHUNK_CHURN_FILTERED", {
+          filtered,
+          remaining: effectiveChunkMap.size,
+        });
+      }
+    }
+
     pipelineLog.enrichmentPhase("CHUNK_CHURN_START", {
       concurrency: chunkConcurrency,
       maxAgeMonths: chunkMaxAgeMonths,
-      files: chunkMap.size,
+      files: effectiveChunkMap.size,
     });
 
     const chunkChurnStart = Date.now();
-
-    // Use git repo root for chunk churn (paths must match git log convention)
-    const repoRoot = this.gitRepoRoot || absolutePath;
 
     this.chunkChurnPromise = (async () => {
       try {
         const chunkChurnMap = await this.logReader!.buildChunkChurnMap(
           repoRoot,
-          chunkMap,
+          effectiveChunkMap,
           chunkConcurrency,
           chunkMaxAgeMonths,
           this.gitLogResult ?? undefined,
