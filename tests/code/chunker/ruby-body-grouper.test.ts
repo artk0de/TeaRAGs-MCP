@@ -173,7 +173,7 @@ describe("RubyBodyGrouper", () => {
       "end",
     ]);
     const groups = grouper.groupLines(lines);
-    // class/end are 'other', has_many is associations, validates is validations
+    // class is 'other', has_many is associations, validates is validations, end is dropped
     expect(groups.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -393,6 +393,229 @@ describe("RubyBodyGrouper", () => {
     it("should return undefined for non-identifier lines", () => {
       expect(grouper.classifyLine("  # comment")).toBeUndefined();
       expect(grouper.classifyLine("  }")).toBeUndefined();
+    });
+
+    it("should classify aasm as state_machine", () => {
+      expect(grouper.classifyLine("  aasm column: :status do")).toBe(
+        "state_machine",
+      );
+    });
+
+    it("should classify class_attribute and mattr_* as attributes", () => {
+      expect(grouper.classifyLine("  class_attribute :api_key")).toBe(
+        "attributes",
+      );
+      expect(
+        grouper.classifyLine("  mattr_accessor :default_timeout"),
+      ).toBe("attributes");
+      expect(grouper.classifyLine("  mattr_reader :config")).toBe(
+        "attributes",
+      );
+      expect(grouper.classifyLine("  mattr_writer :logger")).toBe(
+        "attributes",
+      );
+      expect(
+        grouper.classifyLine("  cattr_accessor :instance_count"),
+      ).toBe("attributes");
+      expect(grouper.classifyLine("  cattr_reader :pool")).toBe("attributes");
+      expect(grouper.classifyLine("  cattr_writer :backend")).toBe(
+        "attributes",
+      );
+    });
+  });
+
+  describe("block-aware body grouping", () => {
+    // Plan test case 1: do...end scope body captured in scopes group
+    it("should capture do...end scope body in the scopes group", () => {
+      const lines = makeLines([
+        "  scope :affected_by_time_entry, ->(time_entry) do",
+        "    joins(:allocations)",
+        "      .where('allocations.start_date <= ?', time_entry.date)",
+        "      .distinct",
+        "  end",
+        "  scope :simple, -> { where(active: true) }",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("scopes");
+      // All 6 lines (including do...end body) should be in one group
+      expect(groups[0].lines).toHaveLength(6);
+    });
+
+    // Plan test case 2: multiline -> { } lambda captured
+    it("should capture multiline -> { } lambda body", () => {
+      const lines = makeLines([
+        "  scope :active, -> {",
+        "    where(active: true)",
+        "      .where('deleted_at IS NULL')",
+        "  }",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("scopes");
+      expect(groups[0].lines).toHaveLength(4);
+    });
+
+    // Plan test case 3: nested { } (hash inside lambda) tracked correctly
+    it("should handle nested { } inside lambda correctly", () => {
+      const lines = makeLines([
+        "  scope :with_status, ->(status) {",
+        "    where(status: { in: status })",
+        "      .order({ created_at: :desc })",
+        "  }",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("scopes");
+      expect(groups[0].lines).toHaveLength(4);
+    });
+
+    // Plan test case 4: `end` does NOT create separate "other" group
+    it("should not create separate 'other' group for standalone end", () => {
+      const lines = makeLines([
+        "  scope :complex, ->(param) do",
+        "    where(field: param)",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      // end should be absorbed into the scope group, not create a separate "other" group
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("scopes");
+      expect(groups[0].lines).toHaveLength(3);
+    });
+
+    // Plan test case 5: mix of do...end and inline { } scopes
+    it("should handle mix of do...end and inline { } scopes", () => {
+      const lines = makeLines([
+        "  scope :complex, ->(param) do",
+        "    joins(:items)",
+        "      .where(active: true)",
+        "  end",
+        "  scope :simple, -> { where(draft: false) }",
+        "  scope :another, ->(x) do",
+        "    where(x: x)",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("scopes");
+      expect(groups[0].lines).toHaveLength(8);
+    });
+
+    // Plan test case 6: aasm do...end with nested event do...end → one state_machine group
+    it("should group aasm do...end with nested events as one state_machine group", () => {
+      const lines = makeLines([
+        "  aasm column: :status do",
+        "    state :pending, initial: true",
+        "    state :processing",
+        "    state :completed",
+        "",
+        "    event :process do",
+        "      transitions from: :pending, to: :processing",
+        "    end",
+        "",
+        "    event :complete do",
+        "      transitions from: :processing, to: :completed",
+        "    end",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("state_machine");
+      // All 13 lines should be in one group
+      expect(groups[0].lines).toHaveLength(13);
+    });
+
+    // Plan test case 7: included do...end is transparent — content groups as flat body
+    it("should treat included do...end as transparent — content groups normally", () => {
+      const lines = makeLines([
+        "  included do",
+        "    include AASM",
+        "",
+        "    enum :status, { pending: 0, active: 1 }",
+        "",
+        "    validates :name, presence: true",
+        "    validates :email, presence: true",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      // included/end should be transparent, content should group by type:
+      // includes (include AASM), enums (enum), validations (validates x2)
+      const types = groups.map((g) => g.type);
+      expect(types).toEqual(["includes", "enums", "validations"]);
+    });
+
+    // Plan test case 8: extended do...end is transparent
+    it("should treat extended do...end as transparent — content groups normally", () => {
+      const lines = makeLines([
+        "  extended do",
+        "    has_many :items",
+        "    belongs_to :parent",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      const types = groups.map((g) => g.type);
+      expect(types).toEqual(["associations"]);
+    });
+
+    // Plan test case 9: class_attribute, mattr_accessor → "attributes" group
+    it("should group class_attribute and mattr_accessor as attributes", () => {
+      const lines = makeLines([
+        "  class_attribute :api_key",
+        "  mattr_accessor :default_timeout",
+        "  cattr_accessor :instance_count",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("attributes");
+      expect(groups[0].lines).toHaveLength(3);
+    });
+
+    // Plan test case 10: unknown identifiers (where, presence) → continuation
+    it("should treat unknown identifiers as continuation", () => {
+      const lines = makeLines([
+        "  scope :active, ->(x) do",
+        "    where(active: true)",
+        "    presence(true)",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("scopes");
+      expect(groups[0].lines).toHaveLength(4);
+    });
+
+    // Plan test case 11: callback after_commit do...end → body captured
+    it("should capture after_commit do...end body in callbacks group", () => {
+      const lines = makeLines([
+        "  after_commit do",
+        "    notify_subscribers",
+        "    update_search_index",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("callbacks");
+      expect(groups[0].lines).toHaveLength(4);
+    });
+
+    // Plan test case 12: random DSL methods not in keywords → continuation
+    it("should treat random DSL methods as continuation of current group", () => {
+      const lines = makeLines([
+        "  has_many :posts, dependent: :destroy",
+        "  has_many :comments, through: :posts",
+        "",
+        "  scope :active, ->(x) do",
+        "    joins(:stuff)",
+        "    merge(OtherModel.active)",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(2);
+      expect(groups[0].type).toBe("associations");
+      expect(groups[1].type).toBe("scopes");
+      // scope group: scope line + joins + merge + end = 4 lines
+      expect(groups[1].lines).toHaveLength(4);
     });
   });
 });
