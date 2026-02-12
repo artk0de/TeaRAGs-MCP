@@ -157,6 +157,43 @@ export interface EnrichmentInfo {
   completedAt?: string;
   durationMs?: number;
   failedFiles?: number;
+  /** Files that matched in the git log map */
+  matchedFiles?: number;
+  /** Files that did NOT match in the git log map */
+  missedFiles?: number;
+}
+
+/** Status of background chunk-level git enrichment */
+export interface ChunkEnrichmentInfo {
+  status: "in_progress" | "completed" | "failed";
+  overlaysApplied?: number;
+  durationMs?: number;
+}
+
+/** Metrics from streaming git enrichment (parallel with embedding) */
+export interface EnrichmentMetrics {
+  /** Time spent reading git log */
+  prefetchDurationMs: number;
+  /** How much git log overlapped with embedding (ms) */
+  overlapMs: number;
+  /** Overlap as fraction of git log time (0.0-1.0) */
+  overlapRatio: number;
+  /** Batches applied via callback while embedding was still running */
+  streamingApplies: number;
+  /** Batches applied from pending queue after git log resolved */
+  flushApplies: number;
+  /** Time spent on chunk-level churn analysis */
+  chunkChurnDurationMs: number;
+  /** Total enrichment wall time */
+  totalDurationMs: number;
+  /** Files that matched in the git log map */
+  matchedFiles: number;
+  /** Files that did NOT match in the git log map (path mismatch) */
+  missedFiles: number;
+  /** First 10 unmatched paths for diagnosing path mismatch patterns */
+  missedPathSamples: string[];
+  /** Estimated ms saved by streaming overlap vs sequential execution */
+  estimatedSavedMs: number;
 }
 
 export interface IndexStatus {
@@ -169,8 +206,10 @@ export interface IndexStatus {
   chunksCount?: number;
   lastUpdated?: Date;
   languages?: string[];
-  /** Background git enrichment progress */
+  /** Background git enrichment progress (file-level) */
   enrichment?: EnrichmentInfo;
+  /** Background chunk-level git enrichment progress */
+  chunkEnrichment?: ChunkEnrichmentInfo;
 }
 
 export type ProgressCallback = (progress: ProgressUpdate) => void;

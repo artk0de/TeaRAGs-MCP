@@ -145,6 +145,14 @@ export class IndexingModule {
           enableHybrid: this.config.enableHybridSearch,
         },
       );
+      // Start git log reading in parallel with embedding (Phase 2a prefetch)
+      if (this.config.enableGitMetadata) {
+        this.enrichment.prefetchGitLog(absolutePath, collectionName);
+        chunkPipeline.setOnBatchUpserted((items) => {
+          this.enrichment.onChunksStored(collectionName, absolutePath, items);
+        });
+      }
+
       chunkPipeline.start();
 
       // 4. STREAMING: Process files with bounded concurrency, send chunks immediately
@@ -276,9 +284,15 @@ export class IndexingModule {
         );
       }
 
-      // Start background git enrichment (fire-and-forget, non-blocking)
+      // Complete git enrichment — fire-and-forget
+      // Phase 2a (streaming applies) is already in-flight from onChunksStored callbacks.
+      // Phase 2b (chunk churn) is started here and runs in background.
+      // awaitCompletion waits for Phase 2a only, chunk churn continues independently.
       if (this.config.enableGitMetadata && chunkMap.size > 0) {
-        this.enrichment.startBackgroundEnrichment(collectionName, absolutePath, chunkMap, { enableGitMetadata: true });
+        this.enrichment.startChunkChurn(collectionName, absolutePath, chunkMap);
+        this.enrichment.awaitCompletion(collectionName).catch((error) => {
+          console.error("[Index] Background enrichment failed:", error);
+        });
         stats.enrichmentStatus = "background";
       } else if (!this.config.enableGitMetadata) {
         stats.enrichmentStatus = "skipped";

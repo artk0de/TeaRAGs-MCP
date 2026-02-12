@@ -272,6 +272,14 @@ export class ReindexModule {
           enableHybrid: this.config.enableHybridSearch,
         },
       );
+      // Start git log reading in parallel with embedding (Phase 2a prefetch)
+      if (this.config.enableGitMetadata) {
+        this.enrichment.prefetchGitLog(absolutePath, collectionName);
+        chunkPipeline.setOnBatchUpserted((items) => {
+          this.enrichment.onChunksStored(collectionName, absolutePath, items);
+        });
+      }
+
       chunkPipeline.start();
 
       // STREAMING: Helper function to index files with bounded concurrency
@@ -457,9 +465,12 @@ export class ReindexModule {
 
       stats.chunksAdded = addedChunks + modifiedChunks;
 
-      // Start background git enrichment (fire-and-forget, non-blocking)
+      // Complete git enrichment — fire-and-forget
       if (this.config.enableGitMetadata && chunkMap.size > 0) {
-        this.enrichment.startBackgroundEnrichment(collectionName, absolutePath, chunkMap, { enableGitMetadata: true });
+        this.enrichment.startChunkChurn(collectionName, absolutePath, chunkMap);
+        this.enrichment.awaitCompletion(collectionName).catch((error) => {
+          console.error("[Reindex] Background enrichment failed:", error);
+        });
         stats.enrichmentStatus = "background";
       } else if (!this.config.enableGitMetadata) {
         stats.enrichmentStatus = "skipped";

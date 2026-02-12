@@ -52,6 +52,7 @@ export class ChunkPipeline {
   private accumulator: BatchAccumulator<ChunkItem>;
   private pendingBatches: Promise<BatchResult>[] = [];
 
+  private onBatchUpsertedCb?: (items: ChunkItem[]) => void;
   private isRunning = false;
   private stats = {
     chunksProcessed: 0,
@@ -93,6 +94,14 @@ export class ChunkPipeline {
       "upsert",
       (batch) => this.submitBatch(batch),
     );
+  }
+
+  /**
+   * Register a callback that fires after each successful batch upsert.
+   * Used by EnrichmentModule to stream git metadata as chunks are stored.
+   */
+  setOnBatchUpserted(cb: (items: ChunkItem[]) => void): void {
+    this.onBatchUpsertedCb = cb;
   }
 
   /**
@@ -383,6 +392,9 @@ export class ChunkPipeline {
         pipelineLog.qdrantCall(ctx, "UPSERT", points.length, qdrantDuration);
         pipelineLog.addStageTime("qdrant", qdrantDuration);
       }
+
+      // 5. Notify callback after successful upsert (for streaming enrichment)
+      this.onBatchUpsertedCb?.(batch.items);
     };
   }
 
