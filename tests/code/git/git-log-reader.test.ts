@@ -501,7 +501,7 @@ describe("buildChunkChurnMap", () => {
 
   it("should return empty map when chunkMap is empty", async () => {
     if (!repoRoot) return;
-    const result = await reader.buildChunkChurnMap(repoRoot, new Map(), 50, 5);
+    const result = await reader.buildChunkChurnMap(repoRoot, new Map());
     expect(result.size).toBe(0);
   });
 
@@ -512,7 +512,7 @@ describe("buildChunkChurnMap", () => {
     chunkMap.set(`${repoRoot}/package.json`, [
       { chunkId: "test-id-1", startLine: 1, endLine: 90 },
     ]);
-    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap, 50, 5);
+    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap);
     expect(result.size).toBe(0);
   });
 
@@ -527,7 +527,7 @@ describe("buildChunkChurnMap", () => {
       { chunkId: "chunk-bot", startLine: 201, endLine: 500 },
     ]);
 
-    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap, 50, 5);
+    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap);
 
     // May or may not have results depending on commit history touching indexer.ts
     if (result.size > 0) {
@@ -558,7 +558,7 @@ describe("buildChunkChurnMap", () => {
       { chunkId: "chunk-search", startLine: 570, endLine: 750 },
     ]);
 
-    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap, 100, 5);
+    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap);
 
     if (result.size > 0) {
       const overlayMap = result.get("src/code/indexer.ts");

@@ -195,14 +195,14 @@ All presets automatically prefer chunk-level data when available (e.g., `chunkCo
 
 | Preset | Signals | Use case |
 |--------|---------|----------|
-| `hotspots` | chunkChurn + recency + bugFix + volatility | Bug-prone areas at function granularity |
+| `hotspots` | chunkChurn + chunkRelativeChurn + burstActivity + bugFix + volatility | Bug-prone areas at function granularity |
 | `techDebt` | age + churn + bugFix + volatility | Legacy assessment with fix-rate indicator |
-| `codeReview` | recency + density + chunkChurn | Recent changes with activity intensity |
+| `codeReview` | recency + burstActivity + density + chunkChurn | Recent changes with activity intensity |
 | `stable` | low churn | Reliable implementations |
-| `ownership` | dominantAuthorPct | Knowledge transfer (uses precise % now) |
-| `refactoring` | chunkChurn + chunkSize + volatility + bugFix + age | Refactor candidates at chunk level |
-| `securityAudit` | age + ownership + bugFix | Old critical code with fix history |
-| `impactAnalysis` | imports | Dependency analysis |
+| `ownership` | ownership + knowledgeSilo | Knowledge transfer, bus factor analysis |
+| `refactoring` | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age | Refactor candidates at chunk level |
+| `securityAudit` | age + ownership + bugFix + pathRisk + volatility | Old critical code in sensitive paths |
+| `impactAnalysis` | similarity + imports | Dependency analysis |
 | `onboarding` | documentation + stability | Entry points for new team members |
 
 ### Scoring Weights Reference
@@ -220,10 +220,15 @@ Available weight keys for custom reranking:
 | `chunkSize` | Lines of code in chunk | chunk metadata |
 | `documentation` | Is documentation file | chunk metadata |
 | `imports` | Import/dependency count | file metadata |
-| `bugFix` | bugFixRate (0-100 normalized) | git |
+| `bugFix` | bugFixRate (prefers chunk-level) | git |
 | `volatility` | churnVolatility (stddev of commit gaps) | git |
 | `density` | changeDensity (commits/month) | git |
 | `chunkChurn` | chunkCommitCount | git chunk-level |
+| `relativeChurnNorm` | relativeChurn normalized (churn relative to file size) | git |
+| `burstActivity` | recencyWeightedFreq — recent burst of changes | git |
+| `pathRisk` | Security-sensitive path pattern match (0 or 1) | file metadata |
+| `knowledgeSilo` | Single-contributor flag (1 / 0.5 / 0) | git |
+| `chunkRelativeChurn` | chunkChurnRatio — chunk's share of file churn | git chunk-level |
 
 ## Environment Variables
 
@@ -234,7 +239,6 @@ Available weight keys for custom reranking:
 | `GIT_LOG_TIMEOUT_MS` | `30000` | Timeout for isomorphic-git; falls back to native CLI on expiry |
 | `GIT_LOG_SAFETY_DEPTH` | `10000` | Max commits for isomorphic-git `depth` and CLI `--max-count` |
 | `GIT_CHUNK_ENABLED` | `"true"` | Enable chunk-level churn analysis |
-| `GIT_CHUNK_DEPTH` | `200` | Max commits to analyze for chunk-level churn |
 | `GIT_CHUNK_MAX_AGE_MONTHS` | `6` | Time window for chunk-level churn analysis (months). `0` = no age limit. |
 | `GIT_CHUNK_CONCURRENCY` | `10` | Parallel commit processing for chunk churn |
 | `GIT_CHUNK_MAX_FILE_LINES` | `10000` | Skip files larger than this for chunk analysis |
@@ -262,9 +266,44 @@ Chunk-level analysis is automatically skipped for:
 - **Binary files** — blob read fails gracefully
 - **Root commits** — no parent to diff against
 
+## Research Context
+
+### Why Relative Churn Beats Absolute Churn
+
+Nagappan & Ball (ICSE 2005) studied Windows Server 2003 and found that absolute metrics (raw commit count, raw lines changed) are **poor** defect predictors. Relative metrics — churn normalized by file size, component size, or time — achieved **89% accuracy** discriminating fault-prone from clean binaries. tea-rags implements this insight:
+
+| tea-rags metric | Corresponding Nagappan metric | Type |
+|-----------------|-------------------------------|------|
+| `relativeChurn` | ChurnedLOC / TotalLOC | Relative (size-normalized) |
+| `changeDensity` | ChurnCount / Months | Relative (time-normalized) |
+| `chunkChurnRatio` | ChunkChurn / FileChurn | Relative (scope-normalized) |
+| `commitCount` | Raw churn count | Absolute (weaker signal) |
+
+### Hotspot Model (CodeScene)
+
+Adam Tornhill's empirical work showed that **Hotspot = Complexity × Change Frequency** identifies the most defect-dense code. In a 400 KLOC study: 4% of code = 72% of defects. tea-rags approximates this through the `hotspots` preset (churn signals × volatility), with full hotspot scoring planned when complexity metrics are added.
+
+### Process vs Code vs Network Metrics
+
+Empirical surveys (Rebrö 2023, Zhang 2025) confirm that **process metrics** (churn, change frequency, author patterns) are the strongest standalone predictors, but combining all three categories yields the best results:
+
+| Category | tea-rags coverage | Key metrics |
+|----------|-------------------|-------------|
+| Process (churn) | Full | commitCount, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq, bugFixRate |
+| Author (process) | Full | dominantAuthor, dominantAuthorPct, contributorCount, knowledgeSilo |
+| Network (dependencies) | Partial (fan-out only) | imports[] |
+| Complexity | Planned | cyclomatic, cognitive (via tree-sitter AST) |
+
+Fan-in (importedBy) and instability metrics are planned — see [BLAST_RADIUS.md](./BLAST_RADIUS.md).
+
 ## References
 
-1. Nagappan, N. & Ball, T. (2005). "Use of Relative Code Churn Measures to Predict System Defect Density." ICSE 2005.
-2. Munson, J.C. & Elbaum, S.G. (1998). "Code Churn: A Measure for Estimating the Impact of Code Change."
-3. Hassan, A.E. (2009). "Predicting Faults Using the Complexity of Code Changes." ICSE 2009.
-4. Graves, T.L. et al. (2000). "Predicting Fault Incidence Using Software Change History." IEEE TSE.
+1. Nagappan, N. & Ball, T. (2005). "Use of Relative Code Churn Measures to Predict System Defect Density." ICSE 2005, pp. 284–292.
+2. Nagappan, N. & Ball, T. (2007). "Using Software Dependencies and Churn Metrics to Predict Field Failures." ISSRE 2007.
+3. Munson, J.C. & Elbaum, S.G. (1998). "Code Churn: A Measure for Estimating the Impact of Code Change."
+4. Hassan, A.E. (2009). "Predicting Faults Using the Complexity of Code Changes." ICSE 2009.
+5. Graves, T.L. et al. (2000). "Predicting Fault Incidence Using Software Change History." IEEE TSE.
+6. Tornhill, A. (2024). "Your Code as a Crime Scene, Second Edition." Pragmatic Bookshelf.
+7. Shin, Y. et al. (2010). "Can CCC Metrics Be Used as Early Indicators of Vulnerabilities?" ACM SAC.
+8. Rebrö, D.A. (2023). "Source Code Metrics for Software Defects Prediction." arXiv:2301.08022.
+9. Martin, R.C. (2002). "Agile Software Development: Principles, Patterns, and Practices." Prentice Hall.

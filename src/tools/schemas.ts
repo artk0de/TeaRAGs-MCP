@@ -20,6 +20,15 @@ const ScoringWeightsSchema = z.object({
   chunkSize: z.number().optional(),
   documentation: z.number().optional(),
   imports: z.number().optional(),
+  bugFix: z.number().optional(),
+  volatility: z.number().optional(),
+  density: z.number().optional(),
+  chunkChurn: z.number().optional(),
+  relativeChurnNorm: z.number().optional(),
+  burstActivity: z.number().optional(),
+  pathRisk: z.number().optional(),
+  knowledgeSilo: z.number().optional(),
+  chunkRelativeChurn: z.number().optional(),
 });
 
 // Rerank presets for semantic_search (analytics)

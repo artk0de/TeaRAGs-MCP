@@ -574,7 +574,7 @@ export class GitLogReader {
    * Build chunk-level churn overlays by diffing commit trees and mapping hunks to chunk line ranges.
    *
    * Algorithm:
-   * 1. Walk last `depthLimit` commits via isomorphic-git
+   * 1. Walk commits within `maxAgeMonths` window via isomorphic-git
    * 2. For each commit with a parent: diffTrees → changed files
    * 3. Filter to files in chunkMap that have >1 chunk
    * 4. readBlob(parent) + readBlob(commit) → structuredPatch → hunks
@@ -585,8 +585,8 @@ export class GitLogReader {
   async buildChunkChurnMap(
     repoRoot: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
-    depthLimit = 200,
     concurrency = 10,
+    maxAgeMonths = 6,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
     // Check HEAD-based cache
     try {
@@ -599,7 +599,7 @@ export class GitLogReader {
       // If HEAD resolution fails, skip caching and proceed
     }
 
-    const result = await this._buildChunkChurnMapUncached(repoRoot, chunkMap, depthLimit, concurrency);
+    const result = await this._buildChunkChurnMapUncached(repoRoot, chunkMap, concurrency, maxAgeMonths);
 
     // Store in cache
     try {
@@ -612,11 +612,80 @@ export class GitLogReader {
     return result;
   }
 
+  /**
+   * Get commits touching specific files via CLI pathspec filtering.
+   * Much faster than reading all commits then filtering — git does the filtering.
+   *
+   * @returns Array of { commit, changedFiles } for commits that touch at least one path.
+   */
+  private async getCommitsByPathspec(
+    repoRoot: string,
+    sinceDate: Date,
+    filePaths: string[],
+  ): Promise<Array<{ commit: CommitInfo; changedFiles: string[] }>> {
+    if (filePaths.length === 0) return [];
+
+    const timeoutMs = parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "30000", 10);
+    const args = [
+      "log",
+      `--since=${sinceDate.toISOString()}`,
+      "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
+      "--numstat",
+      "--",
+      ...filePaths,
+    ];
+
+    const { stdout } = await execFileAsync(
+      "git",
+      args,
+      { cwd: repoRoot, maxBuffer: 100 * 1024 * 1024, timeout: timeoutMs },
+    );
+
+    const result: Array<{ commit: CommitInfo; changedFiles: string[] }> = [];
+    const sections = stdout.split("\0");
+    let i = 0;
+
+    while (i < sections.length) {
+      if (!sections[i]?.trim()) { i++; continue; }
+
+      const sha = sections[i]?.trim();
+      if (!sha || sha.length !== 40 || !/^[a-f0-9]+$/.test(sha)) { i++; continue; }
+
+      const author = sections[i + 1] || "";
+      const email = sections[i + 2] || "";
+      const timestamp = parseInt(sections[i + 3] || "0", 10);
+      const body = sections[i + 4] || "";
+      i += 5;
+
+      const commit: CommitInfo = { sha, author, authorEmail: email, timestamp, body };
+      const changedFiles: string[] = [];
+
+      // Parse numstat section
+      const numstatSection = sections[i] || "";
+      i++;
+
+      for (const line of numstatSection.split("\n")) {
+        if (!line.trim()) continue;
+        const parts = line.split("\t");
+        if (parts.length < 3) continue;
+        // Binary files show "-\t-" — skip them
+        if (parts[0] === "-" && parts[1] === "-") continue;
+        changedFiles.push(parts[2]);
+      }
+
+      if (changedFiles.length > 0) {
+        result.push({ commit, changedFiles });
+      }
+    }
+
+    return result;
+  }
+
   private async _buildChunkChurnMapUncached(
     repoRoot: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
-    depthLimit: number,
     concurrency: number,
+    maxAgeMonths: number,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
     const nowSec = Date.now() / 1000;
     const maxFileLines = parseInt(
@@ -629,7 +698,6 @@ export class GitLogReader {
     const relativeChunkMap = new Map<string, ChunkLookupEntry[]>();
     for (const [filePath, entries] of chunkMap) {
       if (entries.length <= 1) continue; // skip single-chunk files
-      // Check if filePath is already relative or needs conversion
       const relPath = filePath.startsWith(repoRoot)
         ? filePath.slice(repoRoot.length + 1)
         : filePath;
@@ -640,7 +708,7 @@ export class GitLogReader {
       return new Map();
     }
 
-    // Per-chunk accumulators: chunkId → { commits: Set<sha>, authors: Set, bugFixes: number, lastModified: number }
+    // Per-chunk accumulators
     const accumulators = new Map<
       string,
       {
@@ -651,7 +719,6 @@ export class GitLogReader {
       }
     >();
 
-    // Initialize accumulators for all chunks
     for (const [, entries] of relativeChunkMap) {
       for (const entry of entries) {
         accumulators.set(entry.chunkId, {
@@ -663,121 +730,123 @@ export class GitLogReader {
       }
     }
 
-    // Get commits (newest first)
-    let commits: Awaited<ReturnType<typeof git.log>>;
+    const effectiveMonths = maxAgeMonths > 0 ? maxAgeMonths : 120;
+    const sinceDate = new Date(Date.now() - effectiveMonths * 30 * 86400 * 1000);
+    const filePaths = Array.from(relativeChunkMap.keys());
+
+    // Debug timing
+    const debug = process.env.DEBUG === "true" || process.env.DEBUG === "1";
+    const t0 = Date.now();
+
+    // Use CLI pathspec filtering — only fetches commits touching our files
+    let commitEntries: Array<{ commit: CommitInfo; changedFiles: string[] }>;
+    let usedCli = true;
     try {
-      commits = await git.log({
-        fs,
-        dir: repoRoot,
-        ref: "HEAD",
-        depth: depthLimit,
-        cache: this.cache,
-      });
-    } catch {
-      return new Map();
+      commitEntries = await this.getCommitsByPathspec(repoRoot, sinceDate, filePaths);
+    } catch (error) {
+      // Fallback: isomorphic-git full log + diffTrees
+      usedCli = false;
+      if (debug) {
+        console.error(
+          `[ChunkChurn] CLI pathspec failed, falling back to isomorphic-git:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+      commitEntries = await this._getCommitsViaIsomorphicGit(repoRoot, sinceDate, relativeChunkMap);
     }
 
-    // Process commits with bounded concurrency using a simple semaphore
+    const t1 = Date.now();
+
+    if (debug) {
+      console.error(
+        `[ChunkChurn] ${usedCli ? "CLI pathspec" : "isomorphic-git fallback"}: ` +
+        `${commitEntries.length} commits for ${filePaths.length} files in ${t1 - t0}ms`,
+      );
+    }
+
+    // Process commits: for each, read blobs and compute hunk→chunk mapping
+    let blobReads = 0;
+    let patchCalls = 0;
+    let skippedLargeFiles = 0;
+    let skippedEmptyBlobs = 0;
+
+    // Process commits with bounded concurrency
     let activeCount = 0;
     const queue: Array<() => void> = [];
-
     const acquire = (): Promise<void> => {
-      if (activeCount < concurrency) {
-        activeCount++;
-        return Promise.resolve();
-      }
+      if (activeCount < concurrency) { activeCount++; return Promise.resolve(); }
       return new Promise<void>((resolve) => queue.push(resolve));
     };
-
     const release = (): void => {
       const next = queue.shift();
-      if (next) {
-        next();
-      } else {
-        activeCount--;
-      }
+      if (next) { next(); } else { activeCount--; }
     };
 
-    const processCommit = async (commit: (typeof commits)[0]): Promise<void> => {
+    const processCommitEntry = async (entry: { commit: CommitInfo; changedFiles: string[] }): Promise<void> => {
       await acquire();
       try {
-        const parentOids = commit.commit.parent;
-        if (parentOids.length === 0) return; // skip root commit
+        const { commit, changedFiles } = entry;
 
-        const parentOid = parentOids[0];
-        let changedFiles: string[];
+        // Filter to files we care about (CLI already filtered, but double-check)
+        const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f));
+        if (relevantFiles.length === 0) return;
+
+        const isBugFix = BUG_FIX_PATTERN_CHUNK.test(commit.body);
+
+        // For hunk mapping, we need parent SHA. CLI doesn't give us parent directly,
+        // so we use `commit.sha~1` syntax via isomorphic-git readBlob.
+        // We need to resolve parent OID for blob reads.
+        let parentOid: string;
         try {
-          changedFiles = await this.diffTrees(repoRoot, parentOid, commit.oid);
+          const commitObj = await git.readCommit({ fs, dir: repoRoot, oid: commit.sha, cache: this.cache });
+          if (commitObj.commit.parent.length === 0) return; // root commit
+          parentOid = commitObj.commit.parent[0];
         } catch {
           return;
         }
 
-        // Filter to files we care about
-        const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f));
-        if (relevantFiles.length === 0) return;
-
-        const isBugFix = BUG_FIX_PATTERN_CHUNK.test(commit.commit.message);
-        const authorName = commit.commit.author.name;
-        const commitTimestamp = commit.commit.author.timestamp;
-        const commitSha = commit.oid;
-
-        // Process each relevant file
         await Promise.all(
           relevantFiles.map(async (filePath) => {
             const entries = relativeChunkMap.get(filePath)!;
 
-            // Skip files that are too large (by max endLine of chunks)
             const maxLine = entries.reduce((max, e) => Math.max(max, e.endLine), 0);
-            if (maxLine > maxFileLines) return;
+            if (maxLine > maxFileLines) { skippedLargeFiles++; return; }
 
-            // Read old and new content
             const [oldContent, newContent] = await Promise.all([
               this.readBlobAsString(repoRoot, parentOid, filePath),
-              this.readBlobAsString(repoRoot, commit.oid, filePath),
+              this.readBlobAsString(repoRoot, commit.sha, filePath),
             ]);
+            blobReads += 2;
 
-            // Skip if both are empty (binary or deleted)
-            if (!oldContent && !newContent) return;
+            if (!oldContent && !newContent) { skippedEmptyBlobs++; return; }
 
-            // Generate structured patch to get hunks with line numbers
             let hunks: Array<{ newStart: number; newLines: number }>;
             try {
-              const patch = structuredPatch(
-                filePath,
-                filePath,
-                oldContent,
-                newContent,
-                "",
-                "",
-              );
+              const patch = structuredPatch(filePath, filePath, oldContent, newContent, "", "");
               hunks = patch.hunks;
-            } catch {
-              return;
-            }
+              patchCalls++;
+            } catch { return; }
 
             if (hunks.length === 0) return;
 
-            // Map hunks to chunks — collect affected chunks first, then update once per commit
             const affectedChunkIds = new Set<string>();
             for (const hunk of hunks) {
               const hunkStart = hunk.newStart;
               const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
-
-              for (const entry of entries) {
-                if (overlaps(hunkStart, hunkEnd, entry.startLine, entry.endLine)) {
-                  affectedChunkIds.add(entry.chunkId);
+              for (const e of entries) {
+                if (overlaps(hunkStart, hunkEnd, e.startLine, e.endLine)) {
+                  affectedChunkIds.add(e.chunkId);
                 }
               }
             }
 
-            // Update accumulators once per commit per chunk (avoids multi-hunk double-counting)
             for (const chunkId of affectedChunkIds) {
               const acc = accumulators.get(chunkId)!;
-              acc.commitShas.add(commitSha);
-              acc.authors.add(authorName);
+              acc.commitShas.add(commit.sha);
+              acc.authors.add(commit.author);
               if (isBugFix) acc.bugFixCount++;
-              if (commitTimestamp > acc.lastModifiedAt) {
-                acc.lastModifiedAt = commitTimestamp;
+              if (commit.timestamp > acc.lastModifiedAt) {
+                acc.lastModifiedAt = commit.timestamp;
               }
             }
           }),
@@ -787,15 +856,21 @@ export class GitLogReader {
       }
     };
 
-    // Process all commits in parallel (bounded by concurrency)
-    await Promise.all(commits.map(processCommit));
+    await Promise.all(commitEntries.map(processCommitEntry));
 
-    // Build result map: relativePath → Map<chunkId, ChunkChurnOverlay>
+    const t2 = Date.now();
+
+    if (debug) {
+      console.error(
+        `[ChunkChurn] Hunk mapping: ${patchCalls} patches, ${blobReads} blob reads in ${t2 - t1}ms` +
+        ` (skipped: ${skippedLargeFiles} large files, ${skippedEmptyBlobs} empty blobs)`,
+      );
+    }
+
+    // Build result map
     const result = new Map<string, Map<string, ChunkChurnOverlay>>();
 
     for (const [relPath, entries] of relativeChunkMap) {
-      // Get file-level commit count for ratio calculation
-      // We need to count total unique commits for this file across all chunks
       const fileCommitShas = new Set<string>();
       for (const entry of entries) {
         const acc = accumulators.get(entry.chunkId)!;
@@ -810,7 +885,7 @@ export class GitLogReader {
       for (const entry of entries) {
         const acc = accumulators.get(entry.chunkId)!;
         const chunkCommitCount = acc.commitShas.size;
-        const totalCommitsForChunk = chunkCommitCount || 1; // avoid division by zero
+        const totalCommitsForChunk = chunkCommitCount || 1;
 
         overlayMap.set(entry.chunkId, {
           chunkCommitCount,
@@ -831,6 +906,69 @@ export class GitLogReader {
       if (overlayMap.size > 0) {
         result.set(relPath, overlayMap);
       }
+    }
+
+    if (debug) {
+      const totalMs = Date.now() - t0;
+      const filesWithOverlays = result.size;
+      const totalOverlays = Array.from(result.values()).reduce((sum, m) => sum + m.size, 0);
+      console.error(
+        `[ChunkChurn] Total: ${totalMs}ms | ${commitEntries.length} commits → ` +
+        `${totalOverlays} overlays across ${filesWithOverlays} files`,
+      );
+    }
+
+    return result;
+  }
+
+  /**
+   * Fallback: get commits via isomorphic-git when CLI pathspec fails.
+   * Reads all commits then filters via diffTrees (slower but more portable).
+   */
+  private async _getCommitsViaIsomorphicGit(
+    repoRoot: string,
+    sinceDate: Date,
+    relativeChunkMap: Map<string, ChunkLookupEntry[]>,
+  ): Promise<Array<{ commit: CommitInfo; changedFiles: string[] }>> {
+    const result: Array<{ commit: CommitInfo; changedFiles: string[] }> = [];
+
+    let commits: Awaited<ReturnType<typeof git.log>>;
+    try {
+      commits = await git.log({
+        fs,
+        dir: repoRoot,
+        ref: "HEAD",
+        since: sinceDate,
+        cache: this.cache,
+      });
+    } catch {
+      return result;
+    }
+
+    for (const commit of commits) {
+      const parentOids = commit.commit.parent;
+      if (parentOids.length === 0) continue;
+
+      let changedFiles: string[];
+      try {
+        changedFiles = await this.diffTrees(repoRoot, parentOids[0], commit.oid);
+      } catch {
+        continue;
+      }
+
+      const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f));
+      if (relevantFiles.length === 0) continue;
+
+      result.push({
+        commit: {
+          sha: commit.oid,
+          author: commit.commit.author.name,
+          authorEmail: commit.commit.author.email,
+          timestamp: commit.commit.author.timestamp,
+          body: commit.commit.message,
+        },
+        changedFiles: relevantFiles,
+      });
     }
 
     return result;
