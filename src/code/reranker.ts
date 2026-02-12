@@ -23,6 +23,11 @@ export interface ScoringWeights {
   volatility?: number; // churnVolatility — erratic changes (0-1)
   density?: number; // changeDensity — commits/month (0-1)
   chunkChurn?: number; // chunk-level commit count (0-1)
+  relativeChurnNorm?: number; // relativeChurn normalized (churn relative to file size)
+  burstActivity?: number; // recencyWeightedFreq — recent burst of changes (0-1)
+  pathRisk?: number; // security-sensitive path pattern match (0 or 1)
+  knowledgeSilo?: number; // single-contributor flag (1.0 / 0.5 / 0)
+  chunkRelativeChurn?: number; // chunkChurnRatio — chunk's share of file churn (0-1)
 }
 
 /**
@@ -107,6 +112,9 @@ interface NormalizationBounds {
   maxVolatility: number;
   maxChangeDensity: number;
   maxChunkCommitCount: number;
+  maxRelativeChurn: number;
+  maxBurstActivity: number;
+  maxChunkChurnRatio: number;
 }
 
 const DEFAULT_BOUNDS: NormalizationBounds = {
@@ -118,6 +126,9 @@ const DEFAULT_BOUNDS: NormalizationBounds = {
   maxVolatility: 60, // stddev days
   maxChangeDensity: 20, // commits/month
   maxChunkCommitCount: 30,
+  maxRelativeChurn: 5.0, // 5x file size in total changes
+  maxBurstActivity: 10.0, // 10 recent-weighted commits
+  maxChunkChurnRatio: 1.0, // ratio is already 0-1
 };
 
 /**
@@ -135,17 +146,19 @@ const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights
   },
 
   hotspots: {
-    similarity: 0.35,
-    chunkChurn: 0.25,
-    recency: 0.1,
+    similarity: 0.25,
+    chunkChurn: 0.15,
+    chunkRelativeChurn: 0.15,
+    burstActivity: 0.15,
     bugFix: 0.15,
     volatility: 0.15,
   },
 
   codeReview: {
-    similarity: 0.4,
-    recency: 0.2,
-    density: 0.2,
+    similarity: 0.35,
+    recency: 0.15,
+    burstActivity: 0.15,
+    density: 0.15,
     chunkChurn: 0.2,
   },
 
@@ -156,16 +169,18 @@ const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights
   },
 
   securityAudit: {
-    similarity: 0.35,
-    age: 0.2,
-    ownership: 0.15,
+    similarity: 0.3,
+    age: 0.15,
+    ownership: 0.1,
     bugFix: 0.15,
-    // pathRisk would be handled separately
+    pathRisk: 0.15,
+    volatility: 0.15,
   },
 
   refactoring: {
-    similarity: 0.25,
-    chunkChurn: 0.25,
+    similarity: 0.2,
+    chunkChurn: 0.15,
+    relativeChurnNorm: 0.15,
     chunkSize: 0.15,
     volatility: 0.15,
     bugFix: 0.1,
@@ -173,8 +188,9 @@ const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights
   },
 
   ownership: {
-    similarity: 0.5,
-    ownership: 0.5,
+    similarity: 0.4,
+    ownership: 0.35,
+    knowledgeSilo: 0.25,
   },
 
   impactAnalysis: {
@@ -235,6 +251,18 @@ function getOwnershipScore(result: RerankableResult): number {
 }
 
 /**
+ * Flag single-contributor code (knowledge silo risk)
+ * 1 contributor = 1.0 (high silo risk), 2 = 0.5, 3+ = 0
+ */
+function getKnowledgeSiloScore(result: RerankableResult, effectiveCount?: number): number {
+  const count = effectiveCount ?? result.payload?.git?.contributorCount;
+  if (count === undefined || count <= 0) return 0;
+  if (count === 1) return 1.0;
+  if (count === 2) return 0.5;
+  return 0;
+}
+
+/**
  * Check if path matches security-sensitive patterns
  */
 function getPathRiskScore(result: RerankableResult): number {
@@ -269,6 +297,8 @@ function calculateSignals(
   // Prefer chunk-level data when available
   const effectiveCommitCount = git?.chunkCommitCount ?? commitCount;
   const effectiveAgeDays = git?.chunkAgeDays ?? ageDays;
+  const effectiveBugFixRate = git?.chunkBugFixRate ?? git?.bugFixRate ?? 0;
+  const effectiveContributorCount = git?.chunkContributorCount ?? git?.contributorCount;
 
   return {
     similarity: result.score,
@@ -281,11 +311,14 @@ function calculateSignals(
     documentation: result.payload?.isDocumentation ? 1 : 0,
     imports: normalize(imports, bounds.maxImports),
     pathRisk: getPathRiskScore(result),
-    // New signals:
-    bugFix: normalize(git?.bugFixRate ?? 0, bounds.maxBugFixRate),
+    bugFix: normalize(effectiveBugFixRate, bounds.maxBugFixRate),
     volatility: normalize(git?.churnVolatility ?? 0, bounds.maxVolatility),
     density: normalize(git?.changeDensity ?? 0, bounds.maxChangeDensity),
     chunkChurn: normalize(git?.chunkCommitCount ?? 0, bounds.maxChunkCommitCount),
+    relativeChurnNorm: normalize(git?.relativeChurn ?? 0, bounds.maxRelativeChurn),
+    burstActivity: normalize(git?.recencyWeightedFreq ?? 0, bounds.maxBurstActivity),
+    knowledgeSilo: getKnowledgeSiloScore(result, effectiveContributorCount),
+    chunkRelativeChurn: normalize(git?.chunkChurnRatio ?? 0, bounds.maxChunkChurnRatio),
   };
 }
 

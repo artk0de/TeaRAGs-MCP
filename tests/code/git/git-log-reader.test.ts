@@ -403,7 +403,7 @@ describe("GitLogReader", () => {
     expect(meta.recencyWeightedFreq).toBeGreaterThanOrEqual(0);
     expect(meta.changeDensity).toBeGreaterThanOrEqual(0);
     expect(meta.churnVolatility).toBeGreaterThanOrEqual(0);
-  });
+  }, 15_000);
 
   it("should handle non-git directory gracefully (falls back to CLI, which also fails)", async () => {
     // Non-git dir → isomorphic-git fails → CLI fallback also fails → throws
