@@ -406,6 +406,11 @@ General pattern for multi-step agent workflows:
 
 Not all steps are needed for every task. An incident response agent might only do steps 1-2. A refactoring agent needs all 5.
 
+## Related Documentation
+
+- [GIT_CHURN.md](./GIT_CHURN.md) — Detailed reference for all churn metrics (file-level and chunk-level), architecture, filtering examples, and research context.
+- [BLAST_RADIUS.md](./BLAST_RADIUS.md) — Theoretical foundations for blast radius metrics: fan-in/fan-out, Martin's instability, graph centrality, hotspot model, CRAP metric, and implementation roadmap.
+
 ## Known Limitations
 
 1. **Schema gap:** The `ScoringWeightsSchema` in the MCP tool definitions does not yet expose the newer weight keys (`relativeChurnNorm`, `burstActivity`, `pathRisk`, `knowledgeSilo`, `chunkRelativeChurn`). Agents using preset strings are unaffected; agents constructing custom weights for these signals will need the schema updated.
@@ -415,3 +420,5 @@ Not all steps are needed for every task. An incident response agent might only d
 3. **Git metadata required:** All reranking presets except `relevance` require `CODE_ENABLE_GIT_METADATA=true` during indexing. Without git enrichment, non-relevance presets silently degrade to similarity-only scoring.
 
 4. **Chunk-level data is partial:** Chunk-level metrics (chunkCommitCount, chunkBugFixRate, etc.) are only available for files with multiple chunks and recent commits within the `GIT_CHUNK_MAX_AGE_MONTHS` window. Single-chunk files and old-only commits fall back to file-level metrics.
+
+5. **No fan-in (importedBy) data yet:** The current `impactAnalysis` preset uses only fan-out (imports count). Fan-in metrics and the `blastRadius` preset are planned — see [BLAST_RADIUS.md](./BLAST_RADIUS.md).

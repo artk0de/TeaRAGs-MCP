@@ -25,6 +25,7 @@ A longitudinal study of fan-in and fan-out in open-source systems (Counsell et a
 - Refactored classes tend to have larger fan-in and fan-out values
 
 **References:**
+
 - Henry, S. & Kafura, D. (1981). "Software Structure Metrics Based on Information Flow." IEEE TSE.
 - Counsell, S. et al. (2010). "An Evolutionary Study of Fan-in and Fan-out Metrics in OSS." IEEE CSMR.
 - Counsell, S. et al. (2011). "A Longitudinal Study of Fan-In and Fan-Out Coupling in Open-Source Systems."
@@ -46,6 +47,7 @@ The **Stable Dependencies Principle** states: depend in the direction of stabili
 **Key insight for blast radius:** Instability `I = Ce / (Ce + Ca)` elegantly combines fan-in and fan-out into a single metric. Modules with low instability (high fan-in relative to fan-out) have the largest blast radius.
 
 **References:**
+
 - Martin, R.C. (2002). "Agile Software Development: Principles, Patterns, and Practices." Prentice Hall.
 - Almugrin, S. & Melton, A. (2015). "A Validation of Martin's Metric." Journal of Object Technology.
 
@@ -65,6 +67,7 @@ He (2013) applied centrality metrics to Java software dependency networks and fo
 The node2defect approach (ASE 2018) used network embedding on dependency graphs to predict defects, outperforming traditional metrics alone.
 
 **References:**
+
 - He, Z. et al. (2013). "Using Software Dependency to Bug Prediction." Mathematical Problems in Engineering.
 - Qu, Y. et al. (2018). "node2defect: Using Network Embedding to Improve Software Defect Prediction." ASE 2018.
 - Zimmermann, T. & Nagappan, N. (2008). "Predicting Defects Using Network Analysis on Dependency Graphs." ICSE 2008.
@@ -82,6 +85,7 @@ The key insight: complexity only matters if you need to deal with it frequently.
 **Empirical validation:** In a case study of 400 KLOC with 89 developers and 18,000+ commits, hotspot analysis identified 7 of 8 most defect-dense modules. **4% of code was responsible for 72% of all defects.**
 
 **References:**
+
 - Tornhill, A. (2015). "Your Code as a Crime Scene." Pragmatic Bookshelf.
 - Tornhill, A. (2024). "Your Code as a Crime Scene, Second Edition." Pragmatic Bookshelf.
 
@@ -96,6 +100,7 @@ Beyond direct import dependencies, CodeScene measures **temporal coupling** — 
 **Filter:** Commits touching >50 files are excluded (reorganizations create false positives).
 
 **References:**
+
 - CodeScene Documentation. "Temporal Coupling." docs.enterprise.codescene.io.
 
 ### 2.3. Relative Code Churn (Nagappan & Ball, Microsoft, ICSE 2005)
@@ -111,6 +116,7 @@ The foundational Microsoft Research study on Windows Server 2003 demonstrated th
 Results: relative code churn predicted defect density with **89% accuracy** on Windows Server 2003 binaries.
 
 **References:**
+
 - Nagappan, N. & Ball, T. (2005). "Use of Relative Code Churn Measures to Predict System Defect Density." ICSE 2005, pp. 284–292.
 
 ## 3. Composite Risk Metrics
@@ -119,7 +125,7 @@ Results: relative code churn predicted defect density with **89% accuracy** on W
 
 The CRAP metric combines cyclomatic complexity with test coverage:
 
-```
+```text
 CRAP(m) = comp(m)² × (1 - cov(m)/100)³ + comp(m)
 ```
 
@@ -133,6 +139,7 @@ CRAP(m) = comp(m)² × (1 - cov(m)/100)³ + comp(m)
 CRAP threshold of 30 was empirically chosen. Below 30 = low maintenance risk. Above 30 = "crappy" code.
 
 **References:**
+
 - Crap4j Project. crap4j.org. "The Code C.R.A.P. Metric Hits the Fan."
 - NDepend Blog. "CRAP Metric Is a Thing And It Tells You About Risk in Your Code."
 
@@ -151,6 +158,7 @@ SonarQube defines technical debt as remediation cost (in minutes) and rates main
 SonarQube measures both **cyclomatic complexity** (path count) and **cognitive complexity** (human readability). These are complementary: cyclomatic measures testability, cognitive measures comprehensibility.
 
 **References:**
+
 - SonarSource. "Understanding Measures and Metrics." docs.sonarsource.com.
 
 ### 3.3. Defect Prediction via Combined Metrics
@@ -169,6 +177,7 @@ Nagappan & Ball (Microsoft) demonstrated that software dependencies and churn me
 CCC metrics (coupling, cohesion, complexity) were shown to correlate with security vulnerabilities in Mozilla Firefox at statistically significant levels.
 
 **References:**
+
 - Nagappan, N. & Ball, T. (2007). "Using Software Dependencies and Churn Metrics to Predict Field Failures." ISSRE 2007.
 - Shin, Y. et al. (2010). "Can Complexity, Coupling, and Cohesion Metrics Be Used as Early Indicators of Vulnerabilities?" ACM SAC 2010.
 - Rebrö, D.A. (2023). "Source Code Metrics for Software Defects Prediction." arXiv:2301.08022.
@@ -178,6 +187,7 @@ CCC metrics (coupling, cohesion, complexity) were shown to correlate with securi
 ### 4.1. CodeScene
 
 The most mature blast-radius-aware system. Combines:
+
 - Hotspot analysis (complexity × change frequency)
 - Temporal coupling (co-change analysis)
 - X-Ray (method-level temporal coupling within hotspots)
