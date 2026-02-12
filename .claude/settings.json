@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && CODE_CHANGES=$(git diff --name-only HEAD 2>/dev/null; git diff --name-only --cached 2>/dev/null) && if [ -z \"$CODE_CHANGES\" ] || echo \"$CODE_CHANGES\" | grep -qvE '\\.(md|json)$|^\\.claude/|^\\.beads/'; then npm test --run 2>/dev/null || (echo 'Tests failing - run npm test to see details. NOTE: If test failures are pre-existing (not caused by changes in this session), do NOT attempt to fix them. Only fix tests broken by YOUR changes in the current session.' >&2 && exit 2); fi",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-run-tests.sh",
             "statusMessage": "Running tests (skipped if only .md/.json/.claude/.beads files changed)"
           }
         ]
