@@ -4,6 +4,20 @@ import { OllamaEmbeddings } from "./ollama.js";
 // Mock fetch globally
 global.fetch = vi.fn();
 
+// Mock Bottleneck to pass through directly — avoids internal promise chains
+// that cause unhandled rejections when combined with vi.useFakeTimers
+vi.mock("bottleneck", () => ({
+  default: class MockBottleneck {
+    constructor(_options?: any) {}
+    schedule<T>(fn: () => Promise<T>): Promise<T> {
+      return fn();
+    }
+    on() {
+      return this;
+    }
+  },
+}));
+
 describe("OllamaEmbeddings", () => {
   let embeddings: OllamaEmbeddings;
   let mockFetch: any;
@@ -331,6 +345,15 @@ describe("OllamaEmbeddings", () => {
   });
 
   describe("rate limiting", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    });
+
+    afterEach(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+      vi.useRealTimers();
+    });
+
     it("should retry on rate limit error (429 status)", async () => {
       const mockEmbedding = Array(768).fill(0.5);
 
@@ -350,7 +373,9 @@ describe("OllamaEmbeddings", () => {
           json: async () => ({ embedding: mockEmbedding }),
         });
 
-      const result = await embeddings.embed("test text");
+      const promise = embeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
 
       expect(result.embedding).toEqual(mockEmbedding);
       expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -368,7 +393,9 @@ describe("OllamaEmbeddings", () => {
           json: async () => ({ embedding: mockEmbedding }),
         });
 
-      const result = await embeddings.embed("test text");
+      const promise = embeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
 
       expect(result.embedding).toEqual(mockEmbedding);
       expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -403,7 +430,9 @@ describe("OllamaEmbeddings", () => {
         });
 
       const startTime = Date.now();
-      await rateLimitEmbeddings.embed("test text");
+      const promise = rateLimitEmbeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await promise;
       const duration = Date.now() - startTime;
 
       // Should wait: 100ms (first retry) + 200ms (second retry) = 300ms
@@ -426,7 +455,11 @@ describe("OllamaEmbeddings", () => {
         text: async () => "Rate limit exceeded",
       });
 
-      await expect(rateLimitEmbeddings.embed("test text")).rejects.toThrow(
+      const promise = rateLimitEmbeddings.embed("test text");
+      promise.catch(() => {}); // prevent unhandled rejection detection
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(promise).rejects.toThrow(
         "Ollama API rate limit exceeded after 2 retry attempts",
       );
 
@@ -451,7 +484,9 @@ describe("OllamaEmbeddings", () => {
           json: async () => ({ embedding: mockEmbedding }),
         });
 
-      const results = await embeddings.embedBatch(["text1", "text2"]);
+      const promise = embeddings.embedBatch(["text1", "text2"]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const results = await promise;
 
       expect(results).toHaveLength(2);
       // First call fails and retries, then succeeds. Second call succeeds immediately.

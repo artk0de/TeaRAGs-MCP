@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { CohereEmbeddings } from "./cohere.js";
 import { CohereClient } from "cohere-ai";
 
@@ -10,6 +10,20 @@ vi.mock("cohere-ai", () => ({
   CohereClient: vi.fn().mockImplementation(function () {
     return mockClient;
   }),
+}));
+
+// Mock Bottleneck to pass through directly — avoids internal promise chains
+// that cause unhandled rejections when combined with vi.useFakeTimers
+vi.mock("bottleneck", () => ({
+  default: class MockBottleneck {
+    constructor(_options?: any) {}
+    schedule<T>(fn: () => Promise<T>): Promise<T> {
+      return fn();
+    }
+    on() {
+      return this;
+    }
+  },
 }));
 
 describe("CohereEmbeddings", () => {
@@ -266,6 +280,15 @@ describe("CohereEmbeddings", () => {
   });
 
   describe("rate limiting", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    });
+
+    afterEach(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+      vi.useRealTimers();
+    });
+
     it("should retry on rate limit error (status 429)", async () => {
       const mockEmbedding = Array(1024).fill(0.5);
 
@@ -274,7 +297,9 @@ describe("CohereEmbeddings", () => {
         .mockRejectedValueOnce({ status: 429, message: "Rate limit exceeded" })
         .mockResolvedValue({ embeddings: [mockEmbedding] });
 
-      const result = await embeddings.embed("test text");
+      const promise = embeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
 
       expect(result.embedding).toEqual(mockEmbedding);
       expect(mockClient.embed).toHaveBeenCalledTimes(3);
@@ -290,7 +315,9 @@ describe("CohereEmbeddings", () => {
         })
         .mockResolvedValue({ embeddings: [mockEmbedding] });
 
-      const result = await embeddings.embed("test text");
+      const promise = embeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
 
       expect(result.embedding).toEqual(mockEmbedding);
       expect(mockClient.embed).toHaveBeenCalledTimes(2);
@@ -305,7 +332,9 @@ describe("CohereEmbeddings", () => {
         })
         .mockResolvedValue({ embeddings: [mockEmbedding] });
 
-      const result = await embeddings.embed("test text");
+      const promise = embeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
 
       expect(result.embedding).toEqual(mockEmbedding);
       expect(mockClient.embed).toHaveBeenCalledTimes(2);
@@ -334,7 +363,9 @@ describe("CohereEmbeddings", () => {
         .mockResolvedValue({ embeddings: [mockEmbedding] });
 
       const startTime = Date.now();
-      await rateLimitEmbeddings.embed("test text");
+      const promise = rateLimitEmbeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await promise;
       const duration = Date.now() - startTime;
 
       // Should wait: 100ms (first retry) + 200ms (second retry) = 300ms
@@ -359,7 +390,11 @@ describe("CohereEmbeddings", () => {
 
       mockClient.embed.mockRejectedValue(rateLimitError);
 
-      await expect(rateLimitEmbeddings.embed("test text")).rejects.toThrow(
+      const promise = rateLimitEmbeddings.embed("test text");
+      promise.catch(() => {}); // prevent unhandled rejection detection
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(promise).rejects.toThrow(
         "Cohere API rate limit exceeded after 2 retry attempts",
       );
 
@@ -375,7 +410,9 @@ describe("CohereEmbeddings", () => {
           embeddings: mockEmbeddings,
         });
 
-      const results = await embeddings.embedBatch(["text1", "text2"]);
+      const promise = embeddings.embedBatch(["text1", "text2"]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const results = await promise;
 
       expect(results).toHaveLength(2);
       expect(mockClient.embed).toHaveBeenCalledTimes(2);
