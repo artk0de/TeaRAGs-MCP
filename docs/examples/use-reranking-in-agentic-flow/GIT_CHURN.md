@@ -13,7 +13,7 @@ All metrics are stored in Qdrant as part of the `git.*` payload and are availabl
 
 ## Architecture
 
-```
+```text
 Phase 1: File-level enrichment
   git log (isomorphic-git, reads .git directly)
     → per-file CommitInfo[] + linesAdded/linesDeleted
@@ -43,6 +43,7 @@ Phase 2: Chunk-level churn overlay
 **Formula:** Count of distinct commits touching this file.
 
 **Use cases:**
+
 - High churn detection: `commitCount >= 10` indicates frequently modified code
 - Stability assessment: `commitCount == 1` means code hasn't changed since creation
 
@@ -51,6 +52,7 @@ Phase 2: Chunk-level churn overlay
 **Formula:** `(linesAdded + linesDeleted) / currentLines`
 
 **Interpretation:**
+
 - `relativeChurn < 0.5` — Stable code, few modifications relative to size
 - `relativeChurn 1.0-3.0` — Moderate churn, actively developed
 - `relativeChurn > 5.0` — High churn, code has been rewritten multiple times
@@ -64,6 +66,7 @@ Phase 2: Chunk-level churn overlay
 Exponential decay weighting — recent commits contribute more than old ones. A commit from today contributes ~1.0, from 7 days ago ~0.5, from 23 days ago ~0.1.
 
 **Use cases:**
+
 - "What code is actively being worked on?" — sort by `recencyWeightedFreq DESC`
 - Sprint/release analysis — high values indicate active development
 - Incident response — find recently changed code near the bug
@@ -73,6 +76,7 @@ Exponential decay weighting — recent commits contribute more than old ones. A 
 **Formula:** `commitCount / months` (where months = span from first to last commit)
 
 **Interpretation:**
+
 - `changeDensity < 1` — Less than one change per month (stable)
 - `changeDensity 1-5` — Regular maintenance
 - `changeDensity > 10` — Hotspot, frequent changes
@@ -82,6 +86,7 @@ Exponential decay weighting — recent commits contribute more than old ones. A 
 **Formula:** `stddev(days between consecutive commits)`
 
 Measures the regularity of changes:
+
 - **Low volatility** (< 5): Regular, predictable changes (e.g., CI-driven updates)
 - **High volatility** (> 30): Irregular bursts of activity, potentially problematic
 
@@ -92,6 +97,7 @@ Measures the regularity of changes:
 Percentage of commits to this file that are bug fixes. Higher values indicate code that has needed more corrections.
 
 **Use cases:**
+
 - Tech debt assessment: files with `bugFixRate > 40` may need redesign
 - Quality metrics: track bugFixRate trends across releases
 - Security audit: high bugFixRate in auth/crypto code warrants review
@@ -103,6 +109,7 @@ Percentage of commits to this file that are bug fixes. Higher values indicate co
 Number of unique contributors to this file. Redundant with `authors[]` but provided as a numeric field for Qdrant range filters.
 
 **Use cases:**
+
 - Knowledge silo detection: `contributorCount == 1` (bus factor risk)
 - Collaboration metrics: high contributorCount indicates shared ownership
 
@@ -250,6 +257,7 @@ For a typical project (~2000 files, ~200 commits):
 **File-level enrichment:** Reads git history (bounded by `GIT_LOG_MAX_AGE_MONTHS`, default 12 months) via isomorphic-git, with CLI fallback on timeout (`GIT_LOG_TIMEOUT_MS`). Typically 0.5-2s for small repos.
 
 **Chunk-level churn:** Walks last N commits, diffs trees, reads blobs, computes line-level patches:
+
 - 200 commits x ~5 changed files/commit x 60% in index x filter (>1 chunk) = ~400 file diffs
 - Each: 2 blob reads (pack cache ~1ms) + 1 structuredPatch (~0.5ms) = ~2.5ms
 - With 10 concurrent workers: **~100ms**
@@ -260,6 +268,7 @@ Both phases are cached by HEAD SHA and run in background (non-blocking to indexi
 ## Skip Conditions
 
 Chunk-level analysis is automatically skipped for:
+
 - **Single-chunk files** — chunk = file, no granularity benefit
 - **Files with 1 commit** — all chunks would get identical data
 - **Files > GIT_CHUNK_MAX_FILE_LINES** — performance guard
