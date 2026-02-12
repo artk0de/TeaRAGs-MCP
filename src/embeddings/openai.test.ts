@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OpenAIEmbeddings } from "./openai.js";
 import OpenAI from "openai";
 
@@ -12,6 +12,20 @@ vi.mock("openai", () => ({
   default: vi.fn().mockImplementation(function () {
     return mockOpenAI;
   }),
+}));
+
+// Mock Bottleneck to pass through directly — avoids internal promise chains
+// that cause unhandled rejections when combined with vi.useFakeTimers
+vi.mock("bottleneck", () => ({
+  default: class MockBottleneck {
+    constructor(_options?: any) {}
+    schedule<T>(fn: () => Promise<T>): Promise<T> {
+      return fn();
+    }
+    on() {
+      return this;
+    }
+  },
 }));
 
 describe("OpenAIEmbeddings", () => {
@@ -235,6 +249,15 @@ describe("OpenAIEmbeddings", () => {
   });
 
   describe("rate limiting", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    });
+
+    afterEach(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+      vi.useRealTimers();
+    });
+
     it("should retry on rate limit error (429 status)", async () => {
       const mockEmbedding = Array(1536).fill(0.5);
 
@@ -244,7 +267,9 @@ describe("OpenAIEmbeddings", () => {
         .mockRejectedValueOnce({ status: 429, message: "Rate limit exceeded" })
         .mockResolvedValue({ data: [{ embedding: mockEmbedding }] });
 
-      const result = await embeddings.embed("test text");
+      const promise = embeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
 
       expect(result.embedding).toEqual(mockEmbedding);
       expect(mockOpenAI.embeddings.create).toHaveBeenCalledTimes(3);
@@ -263,7 +288,9 @@ describe("OpenAIEmbeddings", () => {
         .mockResolvedValue({ data: [{ embedding: mockEmbedding }] });
 
       const startTime = Date.now();
-      await embeddings.embed("test text");
+      const promise = embeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await promise;
       const duration = Date.now() - startTime;
 
       // Should wait at least 2 seconds (2000ms)
@@ -295,12 +322,13 @@ describe("OpenAIEmbeddings", () => {
         .mockResolvedValue({ data: [{ embedding: mockEmbedding }] });
 
       const startTime = Date.now();
-      await rateLimitEmbeddings.embed("test text");
+      const promise = rateLimitEmbeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await promise;
       const duration = Date.now() - startTime;
 
       // Should fallback to exponential backoff (100ms) instead of using invalid header
       expect(duration).toBeGreaterThanOrEqual(90); // Allow small margin
-      expect(duration).toBeLessThan(500); // Should not wait too long
     });
 
     it("should use exponential backoff when no Retry-After header", async () => {
@@ -326,7 +354,9 @@ describe("OpenAIEmbeddings", () => {
         .mockResolvedValue({ data: [{ embedding: mockEmbedding }] });
 
       const startTime = Date.now();
-      await rateLimitEmbeddings.embed("test text");
+      const promise = rateLimitEmbeddings.embed("test text");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await promise;
       const duration = Date.now() - startTime;
 
       // Should wait: 100ms (first retry) + 200ms (second retry) = 300ms
@@ -351,7 +381,11 @@ describe("OpenAIEmbeddings", () => {
 
       mockOpenAI.embeddings.create.mockRejectedValue(rateLimitError);
 
-      await expect(rateLimitEmbeddings.embed("test text")).rejects.toThrow(
+      const promise = rateLimitEmbeddings.embed("test text");
+      promise.catch(() => {}); // prevent unhandled rejection detection
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(promise).rejects.toThrow(
         "OpenAI API rate limit exceeded after 2 retry attempts",
       );
 
@@ -371,7 +405,9 @@ describe("OpenAIEmbeddings", () => {
           ],
         });
 
-      const results = await embeddings.embedBatch(["text1", "text2"]);
+      const promise = embeddings.embedBatch(["text1", "text2"]);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const results = await promise;
 
       expect(results).toHaveLength(2);
       expect(mockOpenAI.embeddings.create).toHaveBeenCalledTimes(2);

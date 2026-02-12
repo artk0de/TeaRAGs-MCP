@@ -14,23 +14,62 @@ SRC_CHANGED=$(echo "$STAGED_FILES" | grep -E "^src/" || true)
 # Check if TypeScript/JavaScript files changed
 TS_FILES=$(echo "$STAGED_FILES" | grep -E "\.(ts|tsx|js|jsx)$" || true)
 
-# Run tests only if src/ changed
+# Determine what needs to run
+RUN_TESTS=""
+RUN_TYPECHECK=""
+
 if [ -n "$SRC_CHANGED" ]; then
-  echo "📦 src/ changed, running tests..."
-  npm test -- --run
+  RUN_TESTS=1
+else
+  echo "⏭️  No src/ changes, skipping tests"
+fi
+
+if [ -n "$TS_FILES" ]; then
+  RUN_TYPECHECK=1
+else
+  echo "⏭️  No TypeScript changes, skipping type check"
+fi
+
+# Run tests and type-check in parallel when both are needed
+if [ -n "$RUN_TESTS" ] && [ -n "$RUN_TYPECHECK" ]; then
+  echo "📦 Running tests and type-check in parallel..."
+
+  npm test -- --run &
+  TEST_PID=$!
+
+  npm run type-check &
+  TYPECHECK_PID=$!
+
+  TEST_EXIT=0
+  TYPECHECK_EXIT=0
+
+  wait $TEST_PID || TEST_EXIT=$?
+  wait $TYPECHECK_PID || TYPECHECK_EXIT=$?
+
+  if [ $TEST_EXIT -ne 0 ]; then
+    echo "❌ Tests failed"
+  fi
+  if [ $TYPECHECK_EXIT -ne 0 ]; then
+    echo "❌ Type check failed"
+  fi
+  if [ $TEST_EXIT -ne 0 ] || [ $TYPECHECK_EXIT -ne 0 ]; then
+    exit 1
+  fi
 
   # Coverage check (optional, set CHECK_COVERAGE=1 to enable)
   if [ "$CHECK_COVERAGE" = "1" ]; then
     .claude/hooks/check-coverage.sh
   fi
-else
-  echo "⏭️  No src/ changes, skipping tests"
-fi
 
-# Type check only if TS files changed
-if [ -n "$TS_FILES" ]; then
+elif [ -n "$RUN_TESTS" ]; then
+  echo "📦 src/ changed, running tests..."
+  npm test -- --run
+
+  if [ "$CHECK_COVERAGE" = "1" ]; then
+    .claude/hooks/check-coverage.sh
+  fi
+
+elif [ -n "$RUN_TYPECHECK" ]; then
   echo "🔍 TypeScript files changed, running type check..."
   npm run type-check
-else
-  echo "⏭️  No TypeScript changes, skipping type check"
 fi
