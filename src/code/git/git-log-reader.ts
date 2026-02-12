@@ -203,17 +203,28 @@ export class GitLogReader {
   private chunkChurnCache = new Map<string, { headSha: string; data: Map<string, Map<string, ChunkChurnOverlay>> }>();
 
   /**
-   * Build per-file FileChurnData from the entire git history.
+   * Build per-file FileChurnData from git history.
    * 0 process spawns — reads .git/objects/pack/ directly.
    *
-   * Falls back to CLI git log if isomorphic-git fails.
+   * Falls back to CLI git log if isomorphic-git fails or times out.
+   *
+   * @param maxAgeMonths - limit commits to last N months (default: GIT_LOG_MAX_AGE_MONTHS env, default 12).
+   *   Set to 0 to disable (read all commits with safety depth limit).
    */
-  async buildFileMetadataMap(repoRoot: string): Promise<Map<string, FileChurnData>> {
+  async buildFileMetadataMap(
+    repoRoot: string,
+    maxAgeMonths?: number,
+  ): Promise<Map<string, FileChurnData>> {
+    const effectiveMaxAge = maxAgeMonths ?? parseFloat(process.env.GIT_LOG_MAX_AGE_MONTHS ?? "12");
+
+    // Cache key includes maxAge to avoid returning stale results for different time windows
+    const cacheKey = `${repoRoot}:${effectiveMaxAge}`;
+
     // Check HEAD-based cache (non-fatal if HEAD resolution fails)
     let headSha: string | null = null;
     try {
       headSha = await this.getHead(repoRoot);
-      const cached = this.fileMetadataCache.get(repoRoot);
+      const cached = this.fileMetadataCache.get(cacheKey);
       if (cached && cached.headSha === headSha) {
         return cached.data;
       }
@@ -221,22 +232,46 @@ export class GitLogReader {
       // Not a git repo or HEAD unresolvable — skip caching, proceed to build
     }
 
+    const sinceDate =
+      effectiveMaxAge > 0
+        ? new Date(Date.now() - effectiveMaxAge * 30 * 86400 * 1000)
+        : undefined;
+
+    const timeoutMs = parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "30000", 10);
+
     let result: Map<string, FileChurnData>;
     try {
-      result = await this.buildViaIsomorphicGit(repoRoot);
+      result = await this.withTimeout(
+        this.buildViaIsomorphicGit(repoRoot, sinceDate),
+        timeoutMs,
+        "isomorphic-git timed out",
+      );
     } catch (error) {
       console.error(
         `[GitLogReader] isomorphic-git failed, falling back to CLI:`,
         error instanceof Error ? error.message : error,
       );
-      result = await this.buildViaCli(repoRoot);
+      result = await this.buildViaCli(repoRoot, sinceDate);
     }
 
     // Store in cache if we got a valid HEAD
     if (headSha) {
-      this.fileMetadataCache.set(repoRoot, { headSha, data: result });
+      this.fileMetadataCache.set(cacheKey, { headSha, data: result });
     }
     return result;
+  }
+
+  /**
+   * Race a promise against a timeout. Rejects with Error(message) on expiry.
+   */
+  private withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(message)), ms);
+      promise.then(
+        (val) => { clearTimeout(timer); resolve(val); },
+        (err) => { clearTimeout(timer); reject(err); },
+      );
+    });
   }
 
   /** HEAD SHA */
@@ -257,14 +292,20 @@ export class GitLogReader {
    * 2. For each pair of consecutive commits, diff the trees
    * 3. Build per-file commit list and numstat via TREE walk
    */
-  private async buildViaIsomorphicGit(repoRoot: string): Promise<Map<string, FileChurnData>> {
+  private async buildViaIsomorphicGit(
+    repoRoot: string,
+    sinceDate?: Date,
+  ): Promise<Map<string, FileChurnData>> {
     const fileMap = new Map<string, FileChurnData>();
+    const safetyDepth = parseInt(process.env.GIT_LOG_SAFETY_DEPTH ?? "10000", 10);
 
-    // Get all commits (ordered newest-first)
+    // Get commits (ordered newest-first), bounded by since + depth
     const commits = await git.log({
       fs,
       dir: repoRoot,
       ref: "HEAD",
+      since: sinceDate,
+      depth: safetyDepth,
       cache: this.cache,
     });
 
@@ -311,7 +352,7 @@ export class GitLogReader {
 
     // isomorphic-git doesn't support --numstat natively,
     // so we collect line stats via a single CLI call (fast — one process only)
-    await this.enrichLineStats(repoRoot, fileMap);
+    await this.enrichLineStats(repoRoot, fileMap, sinceDate);
 
     return fileMap;
   }
@@ -383,11 +424,17 @@ export class GitLogReader {
   private async enrichLineStats(
     repoRoot: string,
     fileMap: Map<string, FileChurnData>,
+    sinceDate?: Date,
   ): Promise<void> {
     try {
+      const safetyDepth = parseInt(process.env.GIT_LOG_SAFETY_DEPTH ?? "10000", 10);
+      const args = ["log", "--all", "--numstat", "--format=", `--max-count=${safetyDepth}`];
+      if (sinceDate) {
+        args.push(`--since=${sinceDate.toISOString()}`);
+      }
       const { stdout } = await execFileAsync(
         "git",
-        ["log", "--all", "--numstat", "--format="],
+        args,
         { cwd: repoRoot, maxBuffer: 100 * 1024 * 1024 },
       );
 
@@ -419,17 +466,27 @@ export class GitLogReader {
    * Fallback: CLI git log with --numstat and custom format.
    * Single process spawn for the entire repo.
    */
-  private async buildViaCli(repoRoot: string): Promise<Map<string, FileChurnData>> {
+  private async buildViaCli(
+    repoRoot: string,
+    sinceDate?: Date,
+  ): Promise<Map<string, FileChurnData>> {
     const fileMap = new Map<string, FileChurnData>();
+    const safetyDepth = parseInt(process.env.GIT_LOG_SAFETY_DEPTH ?? "10000", 10);
+
+    const args = [
+      "log",
+      "--all",
+      "--numstat",
+      `--max-count=${safetyDepth}`,
+      "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
+    ];
+    if (sinceDate) {
+      args.push(`--since=${sinceDate.toISOString()}`);
+    }
 
     const { stdout } = await execFileAsync(
       "git",
-      [
-        "log",
-        "--all",
-        "--numstat",
-        "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
-      ],
+      args,
       { cwd: repoRoot, maxBuffer: 200 * 1024 * 1024 },
     );
 

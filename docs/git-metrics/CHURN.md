@@ -230,8 +230,12 @@ Available weight keys for custom reranking:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CODE_ENABLE_GIT_METADATA` | `"false"` | Enable git enrichment during indexing |
+| `GIT_LOG_MAX_AGE_MONTHS` | `12` | Time window for file-level git analysis (months). `0` = no age limit (safety depth still applies). |
+| `GIT_LOG_TIMEOUT_MS` | `30000` | Timeout for isomorphic-git; falls back to native CLI on expiry |
+| `GIT_LOG_SAFETY_DEPTH` | `10000` | Max commits for isomorphic-git `depth` and CLI `--max-count` |
 | `GIT_CHUNK_ENABLED` | `"true"` | Enable chunk-level churn analysis |
 | `GIT_CHUNK_DEPTH` | `200` | Max commits to analyze for chunk-level churn |
+| `GIT_CHUNK_MAX_AGE_MONTHS` | `6` | Time window for chunk-level churn analysis (months). `0` = no age limit. |
 | `GIT_CHUNK_CONCURRENCY` | `10` | Parallel commit processing for chunk churn |
 | `GIT_CHUNK_MAX_FILE_LINES` | `10000` | Skip files larger than this for chunk analysis |
 
@@ -239,7 +243,7 @@ Available weight keys for custom reranking:
 
 For a typical project (~2000 files, ~200 commits):
 
-**File-level enrichment:** Reads entire git history in a single isomorphic-git pass. Typically 0.5-2s.
+**File-level enrichment:** Reads git history (bounded by `GIT_LOG_MAX_AGE_MONTHS`, default 12 months) via isomorphic-git, with CLI fallback on timeout (`GIT_LOG_TIMEOUT_MS`). Typically 0.5-2s for small repos.
 
 **Chunk-level churn:** Walks last N commits, diffs trees, reads blobs, computes line-level patches:
 - 200 commits x ~5 changed files/commit x 60% in index x filter (>1 chunk) = ~400 file diffs
