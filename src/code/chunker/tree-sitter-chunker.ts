@@ -29,6 +29,12 @@ interface LanguageDefinition {
    */
   childChunkTypes?: string[];
   /**
+   * Always extract child chunks from container types (class/module) regardless of size.
+   * In Ruby, methods are always inside classes/modules, so we must always extract them.
+   * Without this, small classes become a single chunk and methods are not searchable.
+   */
+  alwaysExtractChildren?: boolean;
+  /**
    * Flag to identify documentation languages (markdown, etc.)
    * Used for filtering search results by content type
    */
@@ -39,6 +45,7 @@ interface LanguageConfig {
   parser: Parser;
   chunkableTypes: string[];
   childChunkTypes?: string[];
+  alwaysExtractChildren?: boolean;
   isDocumentation?: boolean;
 }
 
@@ -117,6 +124,9 @@ const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // NOTE: "singleton_class" removed from childChunkTypes - we traverse THROUGH it
     // to find the methods inside (class << self ... end contains methods)
     childChunkTypes: ["method", "singleton_method"],
+    // In Ruby, virtually all code lives inside class/module. Without this flag,
+    // small classes become a single chunk and individual methods are not searchable.
+    alwaysExtractChildren: true,
     // Removed problematic types:
     // - "lambda", "block" → too small (1 line), fragments context
     // - "do_block" → creates too many tiny chunks from iterators
@@ -223,6 +233,7 @@ export class TreeSitterChunker implements CodeChunker {
         parser,
         chunkableTypes: definition.chunkableTypes,
         childChunkTypes: definition.childChunkTypes,
+        alwaysExtractChildren: definition.alwaysExtractChildren,
         isDocumentation: definition.isDocumentation,
       };
     } catch (error) {
@@ -265,80 +276,111 @@ export class TreeSitterChunker implements CodeChunker {
           continue;
         }
 
-        // If chunk is too large, try AST-aware splitting first
-        if (content.length > this.config.maxChunkSize * 2) {
+        // Determine if we should extract children from this node.
+        // Two cases: (1) node is too large for a single chunk, or
+        // (2) language always extracts children (e.g., Ruby methods from classes)
+        const isTooLarge = content.length > this.config.maxChunkSize * 2;
+        const hasChildTypes = langConfig.childChunkTypes && langConfig.childChunkTypes.length > 0;
+        const shouldExtractChildren = hasChildTypes && (isTooLarge || langConfig.alwaysExtractChildren);
+
+        if (shouldExtractChildren) {
           const parentName = this.extractName(node, code);
           const parentType = node.type;
 
-          // Try to find smaller chunkable units inside (e.g., methods inside class)
-          if (langConfig.childChunkTypes && langConfig.childChunkTypes.length > 0) {
-            const childNodes = this.findChildChunkableNodes(node, langConfig.childChunkTypes);
+          const childNodes = this.findChildChunkableNodes(node, langConfig.childChunkTypes!);
 
-            if (childNodes.length > 0) {
-              // Found methods/functions inside - chunk them individually
-              for (const childNode of childNodes) {
-                const childContent = code.substring(childNode.startIndex, childNode.endIndex);
+          // Filter to children that meet minimum size
+          const validChildren = childNodes.filter(
+            (c) => code.substring(c.startIndex, c.endIndex).length >= 50,
+          );
 
-                // Skip if child is also too large (will be handled by character fallback)
-                if (childContent.length > this.config.maxChunkSize * 2) {
-                  const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
-                  for (const subChunk of subChunks) {
-                    chunks.push({
-                      ...subChunk,
-                      startLine: childNode.startPosition.row + 1 + subChunk.startLine - 1,
-                      endLine: childNode.startPosition.row + 1 + subChunk.endLine - 1,
-                      metadata: {
-                        ...subChunk.metadata,
-                        chunkIndex: chunks.length,
-                        parentName,
-                        parentType,
-                      },
-                    });
-                  }
-                  continue;
+          if (validChildren.length > 0) {
+            // Extract each child (method) as individual chunk
+            for (const childNode of validChildren) {
+              const childContent = code.substring(childNode.startIndex, childNode.endIndex);
+
+              // If child is also too large, use character fallback
+              if (childContent.length > this.config.maxChunkSize * 2) {
+                const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
+                for (const subChunk of subChunks) {
+                  chunks.push({
+                    ...subChunk,
+                    startLine: childNode.startPosition.row + 1 + subChunk.startLine - 1,
+                    endLine: childNode.startPosition.row + 1 + subChunk.endLine - 1,
+                    metadata: {
+                      ...subChunk.metadata,
+                      chunkIndex: chunks.length,
+                      parentName,
+                      parentType,
+                    },
+                  });
                 }
+                continue;
+              }
 
-                // Skip too small chunks
-                if (childContent.length < 50) continue;
+              const childName = this.extractName(childNode, code);
+              chunks.push({
+                content: childContent.trim(),
+                startLine: childNode.startPosition.row + 1,
+                endLine: childNode.endPosition.row + 1,
+                metadata: {
+                  filePath,
+                  language,
+                  chunkIndex: chunks.length,
+                  chunkType: this.getChunkType(childNode.type),
+                  name: childName,
+                  parentName,
+                  parentType,
+                  symbolId: this.buildSymbolId(childName, parentName),
+                },
+              });
+            }
 
-                const childName = this.extractName(childNode, code);
+            // Extract class-level code (everything outside methods) as a body chunk.
+            // This captures scopes, associations, validations, includes, constants, etc.
+            if (langConfig.alwaysExtractChildren) {
+              const bodyContent = this.extractContainerBody(node, validChildren, code);
+              if (bodyContent && bodyContent.trim().length >= 50) {
                 chunks.push({
-                  content: childContent.trim(),
-                  startLine: childNode.startPosition.row + 1,
-                  endLine: childNode.endPosition.row + 1,
+                  content: bodyContent.trim(),
+                  startLine: node.startPosition.row + 1,
+                  endLine: node.endPosition.row + 1,
                   metadata: {
                     filePath,
                     language,
                     chunkIndex: chunks.length,
-                    chunkType: this.getChunkType(childNode.type),
-                    name: childName,
-                    parentName,  // Keep class/module context
+                    chunkType: "block",
+                    name: parentName,
+                    parentName,
                     parentType,
-                    symbolId: this.buildSymbolId(childName, parentName),
+                    symbolId: this.buildSymbolId(parentName),
                   },
                 });
               }
-              continue;
             }
+            continue;
           }
 
-          // No child chunks found - fall back to character chunking
-          const subChunks = await this.fallbackChunker.chunk(content, filePath, language);
-          // Adjust line numbers for sub-chunks
-          for (const subChunk of subChunks) {
-            chunks.push({
-              ...subChunk,
-              startLine: node.startPosition.row + 1 + subChunk.startLine - 1,
-              endLine: node.startPosition.row + 1 + subChunk.endLine - 1,
-              metadata: {
-                ...subChunk.metadata,
-                chunkIndex: chunks.length,
-                parentName,
-                parentType,
-              },
-            });
+          // No valid children found
+          if (isTooLarge) {
+            // Fall back to character chunking for oversized nodes
+            const subChunks = await this.fallbackChunker.chunk(content, filePath, language);
+            for (const subChunk of subChunks) {
+              chunks.push({
+                ...subChunk,
+                startLine: node.startPosition.row + 1 + subChunk.startLine - 1,
+                endLine: node.startPosition.row + 1 + subChunk.endLine - 1,
+                metadata: {
+                  ...subChunk.metadata,
+                  chunkIndex: chunks.length,
+                  parentName,
+                  parentType,
+                },
+              });
+            }
+            continue;
           }
-          continue;
+          // alwaysExtractChildren but no valid children — fall through to single chunk
         }
 
         const nodeName = this.extractName(node, code);
@@ -676,6 +718,40 @@ export class TreeSitterChunker implements CodeChunker {
 
     traverse(parentNode);
     return nodes;
+  }
+
+  /**
+   * Extract the "body" of a container node (class/module), excluding child chunks (methods).
+   * Collects class-level code: includes, associations, scopes, validations, constants, etc.
+   * Returns the collected lines as a string, or undefined if nothing remains.
+   */
+  private extractContainerBody(
+    containerNode: Parser.SyntaxNode,
+    childNodes: Parser.SyntaxNode[],
+    code: string,
+  ): string | undefined {
+    const containerStartRow = containerNode.startPosition.row;
+    const containerEndRow = containerNode.endPosition.row;
+    const lines = code.split("\n");
+
+    // Build a set of line numbers occupied by child nodes (methods)
+    const methodLines = new Set<number>();
+    for (const child of childNodes) {
+      for (let row = child.startPosition.row; row <= child.endPosition.row; row++) {
+        methodLines.add(row);
+      }
+    }
+
+    // Collect lines from the container that are NOT inside any method
+    const bodyLines: string[] = [];
+    for (let row = containerStartRow; row <= containerEndRow; row++) {
+      if (!methodLines.has(row)) {
+        bodyLines.push(lines[row]);
+      }
+    }
+
+    const body = bodyLines.join("\n").trim();
+    return body.length > 0 ? body : undefined;
   }
 
   /**
