@@ -229,6 +229,20 @@ describe("computeFileMetadata", () => {
     expect(meta.bugFixRate).toBe(100);
   });
 
+  it("should NOT count merge commits as bug fixes", () => {
+    const commits = [
+      makeCommit({ body: "fix: resolve crash on login" }),
+      makeCommit({ body: "Merge branch 'fix/TD-12345' into develop" }),
+      makeCommit({ body: "Merge pull request #99 from user/fix-payment" }),
+      makeCommit({ body: "feat: add new feature" }),
+    ];
+    const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
+    const meta = computeFileMetadata(data, 100);
+
+    // Only the actual fix commit counts, not the 2 merge commits
+    expect(meta.bugFixRate).toBe(25); // 1 fix / 4 commits = 25%
+  });
+
   it("should compute contributorCount = 3 (Alice, Bob, Charlie)", () => {
     const commits = [
       makeCommit({ author: "Alice", authorEmail: "alice@ex.com" }),
