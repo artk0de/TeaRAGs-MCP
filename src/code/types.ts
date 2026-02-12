@@ -159,8 +159,10 @@ export interface EnrichmentInfo {
   failedFiles?: number;
   /** Files that matched in the git log map */
   matchedFiles?: number;
-  /** Files that did NOT match in the git log map */
+  /** Files with no entry in git log (not modified within GIT_LOG_MAX_AGE_MONTHS) */
   missedFiles?: number;
+  /** Total files present in git log (contextualizes matchedFiles/missedFiles) */
+  gitLogFileCount?: number;
 }
 
 /** Status of background chunk-level git enrichment */
@@ -188,10 +190,12 @@ export interface EnrichmentMetrics {
   totalDurationMs: number;
   /** Files that matched in the git log map */
   matchedFiles: number;
-  /** Files that did NOT match in the git log map (path mismatch) */
+  /** Files with no entry in git log (not modified in GIT_LOG_MAX_AGE_MONTHS window) */
   missedFiles: number;
-  /** First 10 unmatched paths for diagnosing path mismatch patterns */
+  /** First 10 unmatched paths for diagnosing issues */
   missedPathSamples: string[];
+  /** Total files present in git log output (contextualizes matchedFiles) */
+  gitLogFileCount: number;
   /** Estimated ms saved by streaming overlap vs sequential execution */
   estimatedSavedMs: number;
 }

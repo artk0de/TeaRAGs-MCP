@@ -11,6 +11,7 @@
  * 3. Embedding finishes first -> all queued -> burst apply when git log resolves
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { Ignore } from "ignore";
@@ -36,6 +37,9 @@ export class EnrichmentModule {
   private gitLogResult: Map<string, any> | null = null;
   private gitLogFailed = false;
 
+  // Git repo root (from `git rev-parse --show-toplevel`), may differ from absolutePath
+  private gitRepoRoot: string | null = null;
+
   // Pending queue (batches waiting for git log)
   private pendingBatches: PendingBatch[] = [];
 
@@ -46,10 +50,11 @@ export class EnrichmentModule {
   // Ignore filter for git log path filtering
   private ignoreFilter: Ignore | null = null;
 
-  // Path mismatch diagnostics
+  // Path match diagnostics
   private matchedFiles = 0;
   private missedFiles = 0;
   private missedPathSamples: string[] = []; // first 10
+  private gitLogFileCount = 0; // total files in git log (for context)
 
   // Timing metrics
   private startTime = 0;
@@ -67,6 +72,7 @@ export class EnrichmentModule {
     matchedFiles: 0,
     missedFiles: 0,
     missedPathSamples: [],
+    gitLogFileCount: 0,
     estimatedSavedMs: 0,
   };
 
@@ -102,10 +108,22 @@ export class EnrichmentModule {
 
     this.logReader = new GitLogReader();
 
-    pipelineLog.enrichmentPhase("PREFETCH_START", { path: absolutePath });
+    // Resolve actual git repo root (may differ from absolutePath due to symlinks,
+    // case sensitivity on macOS, or git worktrees). Sync to avoid delaying prefetch.
+    this.gitRepoRoot = this.resolveGitRepoRoot(absolutePath);
+    const repoRoot = this.gitRepoRoot;
+
+    if (repoRoot !== absolutePath) {
+      pipelineLog.enrichmentPhase("REPO_ROOT_DIFFERS", {
+        absolutePath,
+        gitRepoRoot: repoRoot,
+      });
+    }
+
+    pipelineLog.enrichmentPhase("PREFETCH_START", { path: repoRoot });
 
     this.gitLogPromise = this.logReader
-      .buildFileMetadataMap(absolutePath)
+      .buildFileMetadataMap(repoRoot)
       .then((result) => {
         this.prefetchEndTime = Date.now();
         this.gitLogResult = result;
@@ -127,6 +145,8 @@ export class EnrichmentModule {
             });
           }
         }
+
+        this.gitLogFileCount = result.size;
 
         pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", {
           filesInLog: result.size,
@@ -209,10 +229,13 @@ export class EnrichmentModule {
 
     const chunkChurnStart = Date.now();
 
+    // Use git repo root for chunk churn (paths must match git log convention)
+    const repoRoot = this.gitRepoRoot || absolutePath;
+
     this.chunkChurnPromise = (async () => {
       try {
         const chunkChurnMap = await this.logReader!.buildChunkChurnMap(
-          absolutePath,
+          repoRoot,
           chunkMap,
           chunkConcurrency,
           chunkMaxAgeMonths,
@@ -330,10 +353,11 @@ export class EnrichmentModule {
 
     this.metrics.totalDurationMs = Date.now() - (this.startTime || Date.now());
 
-    // Aggregate path mismatch diagnostics
+    // Aggregate path match diagnostics
     this.metrics.matchedFiles = this.matchedFiles;
     this.metrics.missedFiles = this.missedFiles;
     this.metrics.missedPathSamples = [...this.missedPathSamples];
+    this.metrics.gitLogFileCount = this.gitLogFileCount;
 
     // Estimate streaming savings:
     // Sequential = prefetch + all enrichApply time (serial)
@@ -348,6 +372,7 @@ export class EnrichmentModule {
       durationMs: this.metrics.totalDurationMs,
       matchedFiles: this.metrics.matchedFiles,
       missedFiles: this.metrics.missedFiles,
+      gitLogFileCount: this.gitLogFileCount,
     });
 
     pipelineLog.enrichmentPhase("ALL_COMPLETE", {
@@ -434,8 +459,11 @@ export class EnrichmentModule {
       points: (string | number)[];
     }> = [];
 
+    // Use git repo root for path computation (handles symlinks, case differences)
+    const pathBase = this.gitRepoRoot || absolutePath;
+
     for (const [filePath, fileItems] of byFile) {
-      const relativePath = relative(absolutePath, filePath);
+      const relativePath = relative(pathBase, filePath);
       const churnData = this.gitLogResult.get(relativePath);
       if (!churnData) {
         this.missedFiles++;
@@ -474,5 +502,21 @@ export class EnrichmentModule {
 
     const applyDuration = Date.now() - applyStart;
     pipelineLog.addStageTime("enrichApply", applyDuration);
+  }
+
+  /**
+   * Resolve the actual git repo root via `git rev-parse --show-toplevel`.
+   * Sync to avoid delaying the async prefetch chain.
+   * Falls back to absolutePath if git command fails.
+   */
+  private resolveGitRepoRoot(absolutePath: string): string {
+    try {
+      return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+        cwd: absolutePath,
+        encoding: "utf-8",
+      }).trim();
+    } catch {
+      return absolutePath;
+    }
   }
 }
