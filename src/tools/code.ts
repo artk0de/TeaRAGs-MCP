@@ -46,7 +46,27 @@ export function registerCodeTools(
       let statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
 
       if (stats.enrichmentStatus === "background") {
-        statusMessage += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
+        // Fetch current enrichment progress from Qdrant
+        try {
+          const currentStatus = await codeIndexer.getIndexStatus(path);
+          if (currentStatus.enrichment) {
+            const e = currentStatus.enrichment;
+            statusMessage += `\n\nGit enrichment: ${e.status}`;
+            if (e.percentage !== undefined) statusMessage += ` (${e.percentage}%)`;
+            if (e.matchedFiles !== undefined && e.missedFiles !== undefined) {
+              const total = e.matchedFiles + e.missedFiles;
+              const rate = total > 0 ? Math.round((e.matchedFiles / total) * 100) : 0;
+              statusMessage += `\nPath match rate: ${rate}% (${e.matchedFiles}/${total} files)`;
+            }
+            if (e.status !== "completed") {
+              statusMessage += `\n[Use get_index_status to track progress.]`;
+            }
+          } else {
+            statusMessage += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
+          }
+        } catch {
+          statusMessage += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
+        }
       } else if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
         statusMessage += `\nGit enrichment: ${stats.enrichmentStatus}`;
         if (stats.enrichmentDurationMs) {
@@ -176,7 +196,27 @@ export function registerCodeTools(
       message += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
 
       if (stats.enrichmentStatus === "background") {
-        message += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
+        // Fetch current enrichment progress from Qdrant
+        try {
+          const currentStatus = await codeIndexer.getIndexStatus(path);
+          if (currentStatus.enrichment) {
+            const e = currentStatus.enrichment;
+            message += `\n\nGit enrichment: ${e.status}`;
+            if (e.percentage !== undefined) message += ` (${e.percentage}%)`;
+            if (e.matchedFiles !== undefined && e.missedFiles !== undefined) {
+              const total = e.matchedFiles + e.missedFiles;
+              const rate = total > 0 ? Math.round((e.matchedFiles / total) * 100) : 0;
+              message += `\nPath match rate: ${rate}% (${e.matchedFiles}/${total} files)`;
+            }
+            if (e.status !== "completed") {
+              message += `\n[Use get_index_status to track progress.]`;
+            }
+          } else {
+            message += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
+          }
+        } catch {
+          message += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
+        }
       } else if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
         message += `\n- Git enrichment: ${stats.enrichmentStatus}`;
         if (stats.enrichmentDurationMs) {
