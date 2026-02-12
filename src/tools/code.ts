@@ -203,7 +203,12 @@ export function registerCodeTools(
     "get_index_status",
     {
       title: "Get Index Status",
-      description: "Get indexing status and statistics for a codebase.",
+      description:
+        "Get indexing status and statistics for a codebase. " +
+        "When CODE_ENABLE_GIT_METADATA=true, also shows git enrichment progress " +
+        "(in_progress with percentage, completed, or failed). " +
+        "Git enrichment runs in the background after indexing completes — " +
+        "check this tool periodically until enrichment is complete before using git-based filters or rerank presets.",
       inputSchema: schemas.GetIndexStatusSchema,
     },
     async ({ path }) => {
@@ -239,8 +244,16 @@ export function registerCodeTools(
         response.enrichment = status.enrichment;
       }
 
+      let text = JSON.stringify(response, null, 2);
+
+      // Add visible enrichment status line so agents notice it
+      if (status.enrichment && status.enrichment.status === "in_progress") {
+        const pct = status.enrichment.percentage ?? 0;
+        text += `\n\n⏳ Git enrichment is still running (${pct}% — ${status.enrichment.processedFiles ?? 0}/${status.enrichment.totalFiles ?? "?"} files). Git-based filters and rerank presets will not work until enrichment completes.`;
+      }
+
       return {
-        content: [{ type: "text", text: JSON.stringify(response, null, 2) }],
+        content: [{ type: "text", text }],
       };
     },
   );
