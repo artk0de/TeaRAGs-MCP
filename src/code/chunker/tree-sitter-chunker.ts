@@ -15,6 +15,7 @@ import type { Root, Heading, Code, Content } from "mdast";
 import type { ChunkerConfig, CodeChunk } from "../types.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character-chunker.js";
+import { RubyBodyGrouper, type BodyLine } from "./ruby-body-grouper.js";
 
 interface LanguageDefinition {
   /** Function to load the language module (lazy) */
@@ -150,6 +151,7 @@ export class TreeSitterChunker implements CodeChunker {
   /** Cache of initialized parsers (lazy-loaded) */
   private parserCache: Map<string, LanguageConfig> = new Map();
   private fallbackChunker: CharacterChunker;
+  private rubyBodyGrouper = new RubyBodyGrouper();
   /** Track loading promises to avoid duplicate loads */
   private loadingPromises: Map<string, Promise<LanguageConfig | null>> = new Map();
 
@@ -336,26 +338,66 @@ export class TreeSitterChunker implements CodeChunker {
               });
             }
 
-            // Extract class-level code (everything outside methods) as a body chunk.
-            // This captures scopes, associations, validations, includes, constants, etc.
+            // Extract class-level code (everything outside methods) as body chunk(s).
+            // For Ruby: semantic grouping (associations, validations, scopes, etc.)
+            // For other languages: single body chunk (existing behavior)
             if (langConfig.alwaysExtractChildren) {
-              const bodyContent = this.extractContainerBody(node, validChildren, code);
-              if (bodyContent && bodyContent.trim().length >= 50) {
-                chunks.push({
-                  content: bodyContent.trim(),
-                  startLine: node.startPosition.row + 1,
-                  endLine: node.endPosition.row + 1,
-                  metadata: {
-                    filePath,
-                    language,
-                    chunkIndex: chunks.length,
-                    chunkType: "block",
-                    name: parentName,
-                    parentName,
-                    parentType,
-                    symbolId: this.buildSymbolId(parentName),
-                  },
-                });
+              if (language === "ruby") {
+                const bodyLines = this.extractContainerBodyLines(node, validChildren, code);
+                const groups = this.rubyBodyGrouper.groupLines(bodyLines, this.config.maxChunkSize);
+                const classHeader = this.extractClassHeader(node, code);
+
+                for (const group of groups) {
+                  const groupContent = group.lines.map((l) => l.text).join("\n").trim();
+
+                  // Prepend class header for context
+                  const contentWithContext = classHeader
+                    ? `${classHeader}\n${groupContent}`
+                    : groupContent;
+
+                  // Check size after including header (header is part of the chunk)
+                  if (contentWithContext.length < 50) continue;
+
+                  // Use the group's actual line ranges for startLine/endLine
+                  const minLine = Math.min(...group.lineRanges.map((r) => r.start));
+                  const maxLine = Math.max(...group.lineRanges.map((r) => r.end));
+
+                  chunks.push({
+                    content: contentWithContext,
+                    startLine: minLine,
+                    endLine: maxLine,
+                    metadata: {
+                      filePath,
+                      language,
+                      chunkIndex: chunks.length,
+                      chunkType: "block",
+                      name: parentName,
+                      parentName,
+                      parentType,
+                      symbolId: this.buildSymbolId(parentName),
+                    },
+                  });
+                }
+              } else {
+                // Non-Ruby: single body chunk (existing behavior)
+                const bodyContent = this.extractContainerBody(node, validChildren, code);
+                if (bodyContent && bodyContent.trim().length >= 50) {
+                  chunks.push({
+                    content: bodyContent.trim(),
+                    startLine: node.startPosition.row + 1,
+                    endLine: node.endPosition.row + 1,
+                    metadata: {
+                      filePath,
+                      language,
+                      chunkIndex: chunks.length,
+                      chunkType: "block",
+                      name: parentName,
+                      parentName,
+                      parentType,
+                      symbolId: this.buildSymbolId(parentName),
+                    },
+                  });
+                }
               }
             }
             continue;
@@ -752,6 +794,58 @@ export class TreeSitterChunker implements CodeChunker {
 
     const body = bodyLines.join("\n").trim();
     return body.length > 0 ? body : undefined;
+  }
+
+  /**
+   * Extract body lines with original source line numbers.
+   * Used by RubyBodyGrouper for semantic grouping with line tracking.
+   */
+  private extractContainerBodyLines(
+    containerNode: Parser.SyntaxNode,
+    childNodes: Parser.SyntaxNode[],
+    code: string,
+  ): BodyLine[] {
+    const containerStartRow = containerNode.startPosition.row;
+    const containerEndRow = containerNode.endPosition.row;
+    const lines = code.split("\n");
+
+    // Build a set of line numbers occupied by child nodes (methods)
+    const methodLines = new Set<number>();
+    for (const child of childNodes) {
+      for (let row = child.startPosition.row; row <= child.endPosition.row; row++) {
+        methodLines.add(row);
+      }
+    }
+
+    // Collect non-method lines with their 1-based source line numbers.
+    // Skip container boundaries (class/end lines) — the header is prepended separately.
+    const bodyLines: BodyLine[] = [];
+    for (let row = containerStartRow + 1; row < containerEndRow; row++) {
+      if (!methodLines.has(row)) {
+        bodyLines.push({
+          text: lines[row],
+          sourceLine: row + 1, // 1-based
+        });
+      }
+    }
+
+    return bodyLines;
+  }
+
+  /**
+   * Extract class/module declaration line for context injection.
+   * Returns "class Foo < Bar" or "module Baz" or undefined.
+   */
+  private extractClassHeader(
+    node: Parser.SyntaxNode,
+    code: string,
+  ): string | undefined {
+    const lines = code.split("\n");
+    const firstLine = lines[node.startPosition.row];
+    if (firstLine && /^\s*(class|module)\s+/.test(firstLine)) {
+      return firstLine.trim();
+    }
+    return undefined;
   }
 
   /**

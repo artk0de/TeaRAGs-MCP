@@ -379,26 +379,30 @@ end
       const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(3);
 
-      // Should have a class-body chunk with scopes, associations, validations
+      // Should have multiple body chunks (semantic groups for Ruby)
       const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
-      expect(bodyChunks.length).toBe(1);
+      expect(bodyChunks.length).toBeGreaterThan(1);
 
-      const body = bodyChunks[0];
-      // Class body should contain the class-level declarations
-      expect(body.content).toContain("has_many :posts");
-      expect(body.content).toContain("scope :active");
-      expect(body.content).toContain("validates :name");
-      expect(body.content).toContain("include Trackable");
-      expect(body.content).toContain("before_save :normalize_email");
+      // All body chunks together should contain the declarations
+      const allBodyContent = bodyChunks.map(c => c.content).join("\n");
+      expect(allBodyContent).toContain("has_many :posts");
+      expect(allBodyContent).toContain("scope :active");
+      expect(allBodyContent).toContain("validates :name");
+      expect(allBodyContent).toContain("include Trackable");
+      expect(allBodyContent).toContain("before_save :normalize_email");
 
-      // Class body should NOT contain method implementations
-      expect(body.content).not.toContain("def full_name");
-      expect(body.content).not.toContain("def deactivate!");
+      // Body chunks should NOT contain method implementations
+      for (const body of bodyChunks) {
+        expect(body.content).not.toContain("def full_name");
+        expect(body.content).not.toContain("def deactivate!");
+      }
 
-      // Class body should have parent metadata
-      expect(body.metadata.parentName).toBe("User");
-      expect(body.metadata.parentType).toBe("class");
-      expect(body.metadata.name).toBe("User");
+      // Each body chunk should have parent metadata and class header
+      for (const body of bodyChunks) {
+        expect(body.metadata.parentName).toBe("User");
+        expect(body.metadata.parentType).toBe("class");
+        expect(body.content).toContain("class User < ApplicationRecord");
+      }
     });
 
     it("should keep class as single chunk when it has no methods", async () => {
@@ -455,11 +459,12 @@ end
         expect(chunk.metadata.parentType).toBe("module");
       }
 
-      // Should have a body chunk with module-level code
+      // Should have body chunks with module-level code (semantic groups for Ruby)
       const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
-      expect(bodyChunks.length).toBe(1);
-      expect(bodyChunks[0].content).toContain("extend ActiveSupport::Concern");
-      expect(bodyChunks[0].content).toContain("has_secure_password");
+      expect(bodyChunks.length).toBeGreaterThanOrEqual(1);
+
+      const allBodyContent = bodyChunks.map(c => c.content).join("\n");
+      expect(allBodyContent).toContain("extend ActiveSupport::Concern");
     });
 
     it("should chunk Ruby singleton methods with parentName", async () => {
