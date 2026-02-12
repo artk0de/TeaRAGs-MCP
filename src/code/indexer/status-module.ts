@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { QdrantManager } from "../../qdrant/client.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
-import type { EnrichmentInfo, IndexStatus } from "../types.js";
+import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../types.js";
 import { INDEXING_METADATA_ID, validatePath, resolveCollectionName } from "./shared.js";
 
 export class StatusModule {
@@ -48,6 +48,12 @@ export class StatusModule {
       ? enrichmentPayload
       : undefined;
 
+    // Read chunk-level enrichment info (separate key, written by chunk churn)
+    const chunkEnrichmentPayload = indexingMarker?.payload?.chunkEnrichment as ChunkEnrichmentInfo | undefined;
+    const chunkEnrichment: ChunkEnrichmentInfo | undefined = chunkEnrichmentPayload?.status
+      ? chunkEnrichmentPayload
+      : undefined;
+
     if (isInProgress) {
       return {
         isIndexed: false,
@@ -55,6 +61,7 @@ export class StatusModule {
         collectionName,
         chunksCount: actualChunksCount,
         enrichment,
+        chunkEnrichment,
       };
     }
 
@@ -68,6 +75,7 @@ export class StatusModule {
           ? new Date(indexingMarker.payload.completedAt)
           : undefined,
         enrichment,
+        chunkEnrichment,
       };
     }
 

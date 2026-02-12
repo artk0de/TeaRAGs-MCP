@@ -574,4 +574,80 @@ describe("buildChunkChurnMap", () => {
       }
     }
   });
+
+  it("buildFileMetadataMap should try CLI first, not isomorphic-git", async () => {
+    if (!repoRoot) return;
+
+    // Spy on private methods to verify CLI is tried first
+    const cliSpy = vi.spyOn(reader as any, "buildViaCli");
+    const isoGitSpy = vi.spyOn(reader as any, "buildViaIsomorphicGit");
+
+    await reader.buildFileMetadataMap(repoRoot, 1); // 1 month window
+
+    // CLI should be called (primary)
+    expect(cliSpy).toHaveBeenCalled();
+    // isomorphic-git should NOT be called when CLI succeeds
+    expect(isoGitSpy).not.toHaveBeenCalled();
+
+    cliSpy.mockRestore();
+    isoGitSpy.mockRestore();
+  });
+
+  it("should fall back to isomorphic-git when CLI fails", async () => {
+    if (!repoRoot) return;
+
+    // Make CLI throw, forcing fallback to isomorphic-git
+    const cliSpy = vi.spyOn(reader as any, "buildViaCli")
+      .mockRejectedValue(new Error("git not found"));
+    const isoGitSpy = vi.spyOn(reader as any, "buildViaIsomorphicGit")
+      .mockResolvedValue(new Map([["test.ts", { commits: [], linesAdded: 1, linesDeleted: 0 }]]));
+
+    const result = await reader.buildFileMetadataMap(repoRoot, 1);
+
+    expect(cliSpy).toHaveBeenCalled();
+    expect(isoGitSpy).toHaveBeenCalled();
+    expect(result.size).toBe(1);
+
+    cliSpy.mockRestore();
+    isoGitSpy.mockRestore();
+  });
+
+  it("buildViaCli should NOT use --all flag and should NOT use --max-count", async () => {
+    if (!repoRoot) return;
+
+    // Access the private buildViaCli source to verify CLI args
+    // We test via buildCliArgs static method (exposed for testing)
+    const args = (reader as any).buildCliArgs(new Date("2025-01-01"));
+
+    // Should NOT contain --all (HEAD only)
+    expect(args).not.toContain("--all");
+    // Should contain HEAD
+    expect(args).toContain("HEAD");
+    // Should NOT contain --max-count (rely on --since only)
+    const hasMaxCount = args.some((a: string) => a.startsWith("--max-count"));
+    expect(hasMaxCount).toBe(false);
+    // Should contain --since
+    const hasSince = args.some((a: string) => a.startsWith("--since="));
+    expect(hasSince).toBe(true);
+  });
+
+  it("should handle large file lists without exceeding ARG_MAX (pathspec batching)", async () => {
+    if (!repoRoot) return;
+
+    // Create a chunkMap with many files (>500) to trigger batching
+    // Use fake paths — they won't match git history, but the CLI calls must not crash
+    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    for (let i = 0; i < 800; i++) {
+      chunkMap.set(`${repoRoot}/fake/deep/path/file-${i}.ts`, [
+        { chunkId: `chunk-${i}-a`, startLine: 1, endLine: 50 },
+        { chunkId: `chunk-${i}-b`, startLine: 51, endLine: 100 },
+      ]);
+    }
+
+    // Should NOT throw E2BIG or hang — batching prevents ARG_MAX overflow
+    const result = await reader.buildChunkChurnMap(repoRoot, chunkMap, 10, 1);
+
+    // No real git history for fake files, so result should be empty or have zero-commit overlays
+    expect(result).toBeInstanceOf(Map);
+  });
 });

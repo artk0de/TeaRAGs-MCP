@@ -1,8 +1,9 @@
 /**
- * GitLogReader — reads git history via isomorphic-git (0 process spawns).
+ * GitLogReader — reads git history via CLI `git log` (primary)
+ * with isomorphic-git fallback.
  *
  * Builds per-file FileChurnData from git log in a single pass.
- * Falls back to CLI `git log --all --numstat` if isomorphic-git fails.
+ * Falls back to isomorphic-git if CLI git log fails or times out.
  */
 
 import git from "isomorphic-git";
@@ -204,12 +205,12 @@ export class GitLogReader {
 
   /**
    * Build per-file FileChurnData from git history.
-   * 0 process spawns — reads .git/objects/pack/ directly.
+   * Primary: CLI `git log HEAD --numstat` (single process spawn).
    *
-   * Falls back to CLI git log if isomorphic-git fails or times out.
+   * Falls back to isomorphic-git if CLI fails or times out.
    *
    * @param maxAgeMonths - limit commits to last N months (default: GIT_LOG_MAX_AGE_MONTHS env, default 12).
-   *   Set to 0 to disable (read all commits with safety depth limit).
+   *   Set to 0 to disable (read all commits).
    */
   async buildFileMetadataMap(
     repoRoot: string,
@@ -237,21 +238,21 @@ export class GitLogReader {
         ? new Date(Date.now() - effectiveMaxAge * 30 * 86400 * 1000)
         : undefined;
 
-    const timeoutMs = parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "30000", 10);
+    const timeoutMs = parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "60000", 10);
 
     let result: Map<string, FileChurnData>;
     try {
       result = await this.withTimeout(
-        this.buildViaIsomorphicGit(repoRoot, sinceDate),
+        this.buildViaCli(repoRoot, sinceDate),
         timeoutMs,
-        "isomorphic-git timed out",
+        "CLI git log timed out",
       );
     } catch (error) {
       console.error(
-        `[GitLogReader] isomorphic-git failed, falling back to CLI:`,
+        `[GitLogReader] CLI failed, falling back to isomorphic-git:`,
         error instanceof Error ? error.message : error,
       );
-      result = await this.buildViaCli(repoRoot, sinceDate);
+      result = await this.buildViaIsomorphicGit(repoRoot, sinceDate);
     }
 
     // Store in cache if we got a valid HEAD
@@ -284,6 +285,24 @@ export class GitLogReader {
     }
   }
 
+
+  /**
+   * Build the CLI args array for `git log`.
+   * Uses HEAD (not --all) and no --max-count.
+   */
+  private buildCliArgs(sinceDate?: Date): string[] {
+    const args = [
+      "log",
+      "HEAD",
+      "--numstat",
+      "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
+    ];
+    if (sinceDate) {
+      args.push(`--since=${sinceDate.toISOString()}`);
+    }
+    return args;
+  }
+
   /**
    * Primary path: isomorphic-git reads .git directly.
    *
@@ -297,15 +316,13 @@ export class GitLogReader {
     sinceDate?: Date,
   ): Promise<Map<string, FileChurnData>> {
     const fileMap = new Map<string, FileChurnData>();
-    const safetyDepth = parseInt(process.env.GIT_LOG_SAFETY_DEPTH ?? "10000", 10);
 
-    // Get commits (ordered newest-first), bounded by since + depth
+    // Get commits (ordered newest-first), bounded by since date
     const commits = await git.log({
       fs,
       dir: repoRoot,
       ref: "HEAD",
       since: sinceDate,
-      depth: safetyDepth,
       cache: this.cache,
     });
 
@@ -427,15 +444,14 @@ export class GitLogReader {
     sinceDate?: Date,
   ): Promise<void> {
     try {
-      const safetyDepth = parseInt(process.env.GIT_LOG_SAFETY_DEPTH ?? "10000", 10);
-      const args = ["log", "--all", "--numstat", "--format=", `--max-count=${safetyDepth}`];
+      const args = ["log", "HEAD", "--numstat", "--format="];
       if (sinceDate) {
         args.push(`--since=${sinceDate.toISOString()}`);
       }
       const { stdout } = await execFileAsync(
         "git",
         args,
-        { cwd: repoRoot, maxBuffer: 100 * 1024 * 1024 },
+        { cwd: repoRoot, maxBuffer: Infinity },
       );
 
       // Parse numstat output: "added\tdeleted\tfilepath" per line
@@ -471,23 +487,13 @@ export class GitLogReader {
     sinceDate?: Date,
   ): Promise<Map<string, FileChurnData>> {
     const fileMap = new Map<string, FileChurnData>();
-    const safetyDepth = parseInt(process.env.GIT_LOG_SAFETY_DEPTH ?? "10000", 10);
 
-    const args = [
-      "log",
-      "--all",
-      "--numstat",
-      `--max-count=${safetyDepth}`,
-      "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
-    ];
-    if (sinceDate) {
-      args.push(`--since=${sinceDate.toISOString()}`);
-    }
+    const args = this.buildCliArgs(sinceDate);
 
     const { stdout } = await execFileAsync(
       "git",
       args,
-      { cwd: repoRoot, maxBuffer: 200 * 1024 * 1024 },
+      { cwd: repoRoot, maxBuffer: Infinity },
     );
 
     // Parse: each commit starts with \0SHA\0author\0email\0timestamp\0body\0
@@ -618,14 +624,36 @@ export class GitLogReader {
    *
    * @returns Array of { commit, changedFiles } for commits that touch at least one path.
    */
+  /**
+   * Batch size for pathspec CLI calls.
+   * Keeps each `git log -- file1...fileN` well under OS ARG_MAX (~1MB on macOS).
+   * 500 paths × ~80 chars avg ≈ 40KB, safely below the limit.
+   */
+  private static readonly PATHSPEC_BATCH_SIZE = 500;
+
   private async getCommitsByPathspec(
     repoRoot: string,
     sinceDate: Date,
     filePaths: string[],
+    timeoutMs?: number,
   ): Promise<Array<{ commit: CommitInfo; changedFiles: string[] }>> {
     if (filePaths.length === 0) return [];
 
-    const timeoutMs = parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "30000", 10);
+    // Batch large file lists to avoid exceeding OS ARG_MAX
+    if (filePaths.length > GitLogReader.PATHSPEC_BATCH_SIZE) {
+      return this.getCommitsByPathspecBatched(repoRoot, sinceDate, filePaths, timeoutMs);
+    }
+
+    return this.getCommitsByPathspecSingle(repoRoot, sinceDate, filePaths, timeoutMs);
+  }
+
+  private async getCommitsByPathspecSingle(
+    repoRoot: string,
+    sinceDate: Date,
+    filePaths: string[],
+    timeoutMs?: number,
+  ): Promise<Array<{ commit: CommitInfo; changedFiles: string[] }>> {
+    const effectiveTimeoutMs = timeoutMs ?? parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "30000", 10);
     const args = [
       "log",
       `--since=${sinceDate.toISOString()}`,
@@ -638,9 +666,70 @@ export class GitLogReader {
     const { stdout } = await execFileAsync(
       "git",
       args,
-      { cwd: repoRoot, maxBuffer: 100 * 1024 * 1024, timeout: timeoutMs },
+      { cwd: repoRoot, maxBuffer: Infinity, timeout: effectiveTimeoutMs },
     );
 
+    return this.parsePathspecOutput(stdout);
+  }
+
+  /**
+   * Run multiple pathspec CLI calls in batches, merge results by commit SHA.
+   * Same commit may appear in multiple batches (touched files in different batches).
+   */
+  private async getCommitsByPathspecBatched(
+    repoRoot: string,
+    sinceDate: Date,
+    filePaths: string[],
+    timeoutMs?: number,
+  ): Promise<Array<{ commit: CommitInfo; changedFiles: string[] }>> {
+    const batchSize = GitLogReader.PATHSPEC_BATCH_SIZE;
+    const batches: string[][] = [];
+    for (let i = 0; i < filePaths.length; i += batchSize) {
+      batches.push(filePaths.slice(i, i + batchSize));
+    }
+
+    const debug = process.env.DEBUG === "true" || process.env.DEBUG === "1";
+    if (debug) {
+      console.error(
+        `[ChunkChurn] Pathspec batching: ${filePaths.length} files → ${batches.length} batches of ≤${batchSize}`,
+      );
+    }
+
+    // Run batches sequentially to avoid overloading git
+    const merged = new Map<string, { commit: CommitInfo; changedFiles: Set<string> }>();
+
+    for (const batch of batches) {
+      try {
+        const batchResult = await this.getCommitsByPathspecSingle(repoRoot, sinceDate, batch, timeoutMs);
+        for (const entry of batchResult) {
+          const existing = merged.get(entry.commit.sha);
+          if (existing) {
+            for (const f of entry.changedFiles) existing.changedFiles.add(f);
+          } else {
+            merged.set(entry.commit.sha, {
+              commit: entry.commit,
+              changedFiles: new Set(entry.changedFiles),
+            });
+          }
+        }
+      } catch (error) {
+        if (debug) {
+          console.error(
+            `[ChunkChurn] Pathspec batch failed (${batch.length} files):`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+        // Continue with other batches — partial results are better than none
+      }
+    }
+
+    return Array.from(merged.values()).map(({ commit, changedFiles }) => ({
+      commit,
+      changedFiles: Array.from(changedFiles),
+    }));
+  }
+
+  private parsePathspecOutput(stdout: string): Array<{ commit: CommitInfo; changedFiles: string[] }> {
     const result: Array<{ commit: CommitInfo; changedFiles: string[] }> = [];
     const sections = stdout.split("\0");
     let i = 0;
@@ -742,7 +831,8 @@ export class GitLogReader {
     let commitEntries: Array<{ commit: CommitInfo; changedFiles: string[] }>;
     let usedCli = true;
     try {
-      commitEntries = await this.getCommitsByPathspec(repoRoot, sinceDate, filePaths);
+      const chunkTimeoutMs = parseInt(process.env.GIT_CHUNK_TIMEOUT_MS ?? "120000", 10);
+      commitEntries = await this.getCommitsByPathspec(repoRoot, sinceDate, filePaths, chunkTimeoutMs);
     } catch (error) {
       // Fallback: isomorphic-git full log + diffTrees
       usedCli = false;

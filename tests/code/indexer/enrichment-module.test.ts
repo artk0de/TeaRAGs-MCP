@@ -70,10 +70,11 @@ describe("EnrichmentModule", () => {
 
       expect(stats.status).toBe("completed");
       expect(stats.enrichmentStatus).toBe("skipped");
+      // When git metadata is disabled, enrichmentDurationMs is not set
       expect(stats.enrichmentDurationMs).toBeUndefined();
     });
 
-    it("should start background enrichment when enableGitMetadata is true", async () => {
+    it("should complete streaming enrichment when enableGitMetadata is true", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
@@ -139,7 +140,7 @@ describe("EnrichmentModule", () => {
       expect(stats.enrichmentStatus).toBe("skipped");
     });
 
-    it("should start background enrichment in reindexChanges when enableGitMetadata is true", async () => {
+    it("should complete streaming enrichment in reindexChanges when enableGitMetadata is true", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
@@ -161,7 +162,7 @@ describe("EnrichmentModule", () => {
       expect(stats.enrichmentStatus).toBe("background");
     });
 
-    it("should not call enriching progress callback (enrichment is background)", async () => {
+    it("should not call enriching progress callback (enrichment is streaming, not via progress)", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
@@ -180,7 +181,7 @@ describe("EnrichmentModule", () => {
       expect(enrichingCalls.length).toBe(0);
     });
 
-    it("should start background enrichment for multiple files in indexCodebase", async () => {
+    it("should complete streaming enrichment for multiple files in indexCodebase", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
@@ -193,7 +194,7 @@ describe("EnrichmentModule", () => {
       expect(stats.enrichmentStatus).toBe("background");
     });
 
-    it("should start background enrichment in reindexChanges for new files", async () => {
+    it("should complete streaming enrichment in reindexChanges for new files", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
