@@ -231,7 +231,12 @@ export class IndexingModule {
               // Track for Phase 2 git enrichment
               if (this.config.enableGitMetadata) {
                 const entries = chunkMap.get(filePath) || [];
-                entries.push({ chunkId, startLine: chunk.startLine, endLine: chunk.endLine });
+                entries.push({
+                  chunkId,
+                  startLine: chunk.startLine,
+                  endLine: chunk.endLine,
+                  lineRanges: chunk.metadata.lineRanges,
+                });
                 chunkMap.set(filePath, entries);
               }
             }

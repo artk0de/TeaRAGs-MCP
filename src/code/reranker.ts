@@ -28,6 +28,7 @@ export interface ScoringWeights {
   pathRisk?: number; // security-sensitive path pattern match (0 or 1)
   knowledgeSilo?: number; // single-contributor flag (1.0 / 0.5 / 0)
   chunkRelativeChurn?: number; // chunkChurnRatio — chunk's share of file churn (0-1)
+  blockPenalty?: number; // negative weight: penalize block chunks with only file-level churn data
 }
 
 /**
@@ -93,6 +94,7 @@ export interface RerankableResult {
     endLine?: number;
     language?: string;
     isDocumentation?: boolean;
+    chunkType?: string;
     imports?: string[];
     exports?: string[];
     git?: GitMetadata;
@@ -143,6 +145,7 @@ const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights
     churn: 0.2,
     bugFix: 0.15,
     volatility: 0.2,
+    blockPenalty: -0.15,
   },
 
   hotspots: {
@@ -152,6 +155,7 @@ const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights
     burstActivity: 0.15,
     bugFix: 0.15,
     volatility: 0.15,
+    blockPenalty: -0.15,
   },
 
   codeReview: {
@@ -160,6 +164,7 @@ const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights
     burstActivity: 0.15,
     density: 0.15,
     chunkChurn: 0.2,
+    blockPenalty: -0.1,
   },
 
   onboarding: {
@@ -185,6 +190,7 @@ const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights
     volatility: 0.15,
     bugFix: 0.1,
     age: 0.1,
+    blockPenalty: -0.1,
   },
 
   ownership: {
@@ -282,6 +288,19 @@ function getPathRiskScore(result: RerankableResult): number {
 }
 
 /**
+ * Detect block chunks that only have file-level churn data.
+ * Returns 1.0 for block chunks without chunk-level git data (penalty target),
+ * 0.0 otherwise (no penalty).
+ */
+function getBlockPenaltySignal(result: RerankableResult): number {
+  const chunkType = result.payload?.chunkType;
+  if (chunkType !== "block") return 0;
+  // Block with chunk-level data is fine — the data is specific to this chunk
+  if (result.payload?.git?.chunkCommitCount !== undefined) return 0;
+  return 1.0;
+}
+
+/**
  * Calculate scoring signals from result
  */
 function calculateSignals(
@@ -319,6 +338,7 @@ function calculateSignals(
     burstActivity: normalize(git?.recencyWeightedFreq ?? 0, bounds.maxBurstActivity),
     knowledgeSilo: getKnowledgeSiloScore(result, effectiveContributorCount),
     chunkRelativeChurn: normalize(git?.chunkChurnRatio ?? 0, bounds.maxChunkChurnRatio),
+    blockPenalty: getBlockPenaltySignal(result),
   };
 }
 
@@ -333,9 +353,9 @@ function calculateScore(
   let totalWeight = 0;
 
   for (const [key, weight] of Object.entries(weights)) {
-    if (weight && weight > 0 && key in signals) {
+    if (weight && weight !== 0 && key in signals) {
       score += signals[key] * weight;
-      totalWeight += weight;
+      totalWeight += Math.abs(weight);
     }
   }
 
@@ -368,7 +388,7 @@ export function rerankResults<T extends RerankableResult>(
 
   // If only similarity weight, skip reranking
   const weightKeys = Object.keys(weights).filter(
-    (k) => weights[k as keyof ScoringWeights] && weights[k as keyof ScoringWeights]! > 0,
+    (k) => weights[k as keyof ScoringWeights] && weights[k as keyof ScoringWeights]! !== 0,
   );
   if (weightKeys.length === 1 && weightKeys[0] === "similarity") {
     return results;

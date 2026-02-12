@@ -375,6 +375,7 @@ export class TreeSitterChunker implements CodeChunker {
                       parentName,
                       parentType,
                       symbolId: this.buildSymbolId(parentName),
+                      lineRanges: group.lineRanges,
                     },
                   });
                 }

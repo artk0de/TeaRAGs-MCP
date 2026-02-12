@@ -482,12 +482,59 @@ export class GitLogReader {
    * Fallback: CLI git log with --numstat and custom format.
    * Single process spawn for the entire repo.
    */
+  /**
+   * Fetch file-level metadata for specific files (no --since filter).
+   * Used as a backfill for files that weren't in the main git log window.
+   * Batches file paths to stay within OS ARG_MAX limits.
+   */
+  async buildFileMetadataForPaths(
+    repoRoot: string,
+    paths: string[],
+    timeoutMs = 30000,
+  ): Promise<Map<string, FileChurnData>> {
+    if (paths.length === 0) return new Map();
+
+    const result = new Map<string, FileChurnData>();
+    const BATCH = 500; // stay within ARG_MAX
+
+    for (let i = 0; i < paths.length; i += BATCH) {
+      const batch = paths.slice(i, i + BATCH);
+      const args = [
+        "log",
+        "HEAD",
+        "--numstat",
+        "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
+        "--",
+        ...batch,
+      ];
+
+      try {
+        const batchResult = await this.withTimeout(
+          execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity })
+            .then(({ stdout }) => this.parseNumstatOutput(stdout)),
+          timeoutMs,
+          "git log backfill timed out",
+        );
+        for (const [path, data] of batchResult) {
+          result.set(path, data);
+        }
+      } catch (error) {
+        if (process.env.DEBUG) {
+          console.error(
+            `[GitLogReader] Backfill batch failed:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+    }
+
+    return result;
+  }
+
   private async buildViaCli(
     repoRoot: string,
     sinceDate?: Date,
   ): Promise<Map<string, FileChurnData>> {
-    const fileMap = new Map<string, FileChurnData>();
-
     const args = this.buildCliArgs(sinceDate);
 
     const { stdout } = await execFileAsync(
@@ -496,19 +543,25 @@ export class GitLogReader {
       { cwd: repoRoot, maxBuffer: Infinity },
     );
 
-    // Parse: each commit starts with \0SHA\0author\0email\0timestamp\0body\0
-    // followed by numstat lines until next \0
+    return this.parseNumstatOutput(stdout);
+  }
+
+  /**
+   * Parse git log --numstat output into a FileChurnData map.
+   * Shared by buildViaCli and buildFileMetadataForPaths.
+   */
+  private parseNumstatOutput(stdout: string): Map<string, FileChurnData> {
+    const fileMap = new Map<string, FileChurnData>();
+
     const sections = stdout.split("\0");
     let i = 0;
 
     while (i < sections.length) {
-      // Skip empty sections
       if (!sections[i]?.trim()) {
         i++;
         continue;
       }
 
-      // Try to find a commit header: SHA, author, email, timestamp, body
       const sha = sections[i]?.trim();
       if (!sha || sha.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
         i++;
@@ -523,8 +576,6 @@ export class GitLogReader {
 
       const commitInfo: CommitInfo = { sha, author, authorEmail: email, timestamp, body };
 
-      // Parse numstat lines (they appear between body and next \0SHA)
-      // The numstat section is the text before the next commit header
       const numstatSection = sections[i] || "";
       i++;
 
@@ -926,7 +977,8 @@ export class GitLogReader {
               const hunkStart = hunk.newStart;
               const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
               for (const e of entries) {
-                if (overlaps(hunkStart, hunkEnd, e.startLine, e.endLine)) {
+                const ranges = e.lineRanges || [{ start: e.startLine, end: e.endLine }];
+                if (ranges.some(r => overlaps(hunkStart, hunkEnd, r.start, r.end))) {
                   affectedChunkIds.add(e.chunkId);
                 }
               }
