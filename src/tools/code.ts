@@ -56,7 +56,13 @@ export function registerCodeTools(
             if (e.matchedFiles !== undefined && e.missedFiles !== undefined) {
               const total = e.matchedFiles + e.missedFiles;
               const rate = total > 0 ? Math.round((e.matchedFiles / total) * 100) : 0;
-              statusMessage += `\nPath match rate: ${rate}% (${e.matchedFiles}/${total} files)`;
+              statusMessage += `\nGit metadata coverage: ${rate}% (${e.matchedFiles}/${total} indexed files)`;
+              if (e.gitLogFileCount !== undefined) {
+                statusMessage += `\nGit log contains ${e.gitLogFileCount} files (GIT_LOG_MAX_AGE_MONTHS window)`;
+              }
+              if (rate < 80 && e.missedFiles > 0) {
+                statusMessage += `\nHint: Low coverage is normal for mature codebases. Increase GIT_LOG_MAX_AGE_MONTHS for broader coverage.`;
+              }
             }
             if (e.status !== "completed") {
               statusMessage += `\n[Use get_index_status to track progress.]`;
@@ -206,7 +212,13 @@ export function registerCodeTools(
             if (e.matchedFiles !== undefined && e.missedFiles !== undefined) {
               const total = e.matchedFiles + e.missedFiles;
               const rate = total > 0 ? Math.round((e.matchedFiles / total) * 100) : 0;
-              message += `\nPath match rate: ${rate}% (${e.matchedFiles}/${total} files)`;
+              message += `\nGit metadata coverage: ${rate}% (${e.matchedFiles}/${total} indexed files)`;
+              if (e.gitLogFileCount !== undefined) {
+                message += `\nGit log contains ${e.gitLogFileCount} files (GIT_LOG_MAX_AGE_MONTHS window)`;
+              }
+              if (rate < 80 && e.missedFiles > 0) {
+                message += `\nHint: Low coverage is normal for mature codebases. Increase GIT_LOG_MAX_AGE_MONTHS for broader coverage.`;
+              }
             }
             if (e.status !== "completed") {
               message += `\n[Use get_index_status to track progress.]`;
