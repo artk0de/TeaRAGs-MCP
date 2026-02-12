@@ -16,8 +16,20 @@ import type { ChunkLookupEntry } from "../types.js";
 
 const execFileAsync = promisify(execFile);
 
-const BUG_FIX_PATTERN_CHUNK = /\b(fix|bug|hotfix|patch|resolve[sd]?|defect)\b/i;
+const BUG_FIX_PATTERN = /\b(fix|bug|hotfix|patch|resolve[sd]?|defect)\b/i;
+const MERGE_SUBJECT = /^Merge\b/i;
 const MAX_FILE_LINES_DEFAULT = 10000;
+
+/**
+ * Check if a commit is a bug fix based on its message.
+ * Skips merge commits — "Merge branch 'fix/TD-123'" is not a fix signal,
+ * the actual fix commit within the branch is already counted separately.
+ */
+function isBugFixCommit(body: string): boolean {
+  const subject = body.split("\n")[0];
+  if (MERGE_SUBJECT.test(subject)) return false;
+  return BUG_FIX_PATTERN.test(body);
+}
 
 /**
  * Check if a hunk range overlaps with a chunk range.
@@ -167,9 +179,8 @@ export function computeFileMetadata(
   }
 
   // Bug fix rate: percentage of commits with fix/bug/hotfix/patch keywords
-  const BUG_FIX_PATTERN = /\b(fix|bug|hotfix|patch|resolve[sd]?|defect)\b/i;
   const bugFixRate = Math.round(
-    (commits.filter((c) => BUG_FIX_PATTERN.test(c.body)).length / commits.length) * 100,
+    (commits.filter((c) => isBugFixCommit(c.body)).length / commits.length) * 100,
   );
   const contributorCount = authorCounts.size;
 
@@ -934,7 +945,7 @@ export class GitLogReader {
         const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f));
         if (relevantFiles.length === 0) return;
 
-        const isBugFix = BUG_FIX_PATTERN_CHUNK.test(commit.body);
+        const isBugFix = isBugFixCommit(commit.body);
 
         // For hunk mapping, we need parent SHA. CLI doesn't give us parent directly,
         // so we use `commit.sha~1` syntax via isomorphic-git readBlob.
