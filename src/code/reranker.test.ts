@@ -227,6 +227,119 @@ describe("reranker", () => {
     });
   });
 
+  describe("new signals: relativeChurnNorm, burstActivity, pathRisk, knowledgeSilo, chunkRelativeChurn", () => {
+    it("should normalize relativeChurn via relativeChurnNorm signal", () => {
+      // LOW relativeChurn first — if signal doesn't exist, order won't change
+      const results = [
+        createResult(0.8, 100, 10, false, { relativeChurn: 0.1 }),
+        createResult(0.8, 100, 10, false, { relativeChurn: 4.0 }),
+      ];
+      // Isolate the signal via custom weights
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { similarity: 0.1, relativeChurnNorm: 0.9 },
+      });
+      // High relativeChurn must be reordered to first
+      expect(reranked[0].payload?.git?.relativeChurn).toBe(4.0);
+    });
+
+    it("should normalize recencyWeightedFreq via burstActivity signal", () => {
+      // LOW burst first — if signal doesn't exist, order won't change
+      const results = [
+        createResult(0.8, 5, 3, false, { recencyWeightedFreq: 0.5 }),
+        createResult(0.8, 5, 3, false, { recencyWeightedFreq: 8.0 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { similarity: 0.1, burstActivity: 0.9 },
+      });
+      // High burstActivity must be reordered to first
+      expect(reranked[0].payload?.git?.recencyWeightedFreq).toBe(8.0);
+    });
+
+    it("should wire pathRisk into securityAudit preset", () => {
+      // Non-auth path first — securityAudit must reorder auth path to top
+      const results: RerankableResult[] = [
+        {
+          score: 0.8,
+          payload: {
+            relativePath: "src/utils/format.ts",
+            startLine: 1, endLine: 50, language: "typescript",
+            git: { ageDays: 100, commitCount: 10, bugFixRate: 50 },
+          },
+        },
+        {
+          score: 0.8,
+          payload: {
+            relativePath: "src/auth/login.ts",
+            startLine: 1, endLine: 50, language: "typescript",
+            git: { ageDays: 100, commitCount: 10, bugFixRate: 50 },
+          },
+        },
+      ];
+      const reranked = rerankSemanticSearchResults(results, "securityAudit");
+      // Auth path should rank higher due to pathRisk signal
+      expect(reranked[0].payload?.relativePath).toBe("src/auth/login.ts");
+    });
+
+    it("should flag single-contributor code via knowledgeSilo signal", () => {
+      // Both have SAME dominantAuthorPct=80 — only knowledgeSilo differentiates
+      // Multi-contributor first — if signal doesn't exist, order won't change
+      const results = [
+        createResult(0.8, 30, 5, false, { contributorCount: 5, dominantAuthorPct: 80, authors: ["a", "b", "c", "d", "e"] as any }),
+        createResult(0.8, 30, 5, false, { contributorCount: 1, dominantAuthorPct: 80, authors: ["alice"] as any }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { similarity: 0.1, knowledgeSilo: 0.9 },
+      });
+      // Single contributor (knowledgeSilo=1.0) must be reordered to first
+      expect(reranked[0].payload?.git?.contributorCount).toBe(1);
+    });
+
+    it("should normalize chunkChurnRatio via chunkRelativeChurn signal", () => {
+      // Same chunkCommitCount — only ratio differs. LOW ratio first.
+      const results = [
+        createResult(0.8, 10, 10, false, { chunkCommitCount: 5, chunkChurnRatio: 0.1 }),
+        createResult(0.8, 10, 10, false, { chunkCommitCount: 5, chunkChurnRatio: 0.9 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { similarity: 0.1, chunkRelativeChurn: 0.9 },
+      });
+      // High chunkChurnRatio must be reordered to first
+      expect(reranked[0].payload?.git?.chunkChurnRatio).toBe(0.9);
+    });
+  });
+
+  describe("chunk-level preference for bugFix and knowledgeSilo", () => {
+    it("should prefer chunkBugFixRate over file-level bugFixRate", () => {
+      // File has low bugFixRate (10%), but chunk has high chunkBugFixRate (80%)
+      // vs file with high bugFixRate (80%) but chunk has low chunkBugFixRate (10%)
+      // LOW chunk bugfix first — must be reordered if chunk-level preferred
+      const results = [
+        createResult(0.8, 30, 10, false, { bugFixRate: 80, chunkBugFixRate: 10 }),
+        createResult(0.8, 30, 10, false, { bugFixRate: 10, chunkBugFixRate: 80 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { similarity: 0.1, bugFix: 0.9 },
+      });
+      // Chunk with high chunkBugFixRate should rank first
+      expect(reranked[0].payload?.git?.chunkBugFixRate).toBe(80);
+    });
+
+    it("should prefer chunkContributorCount over file-level contributorCount for knowledgeSilo", () => {
+      // File has 5 contributors, but this chunk only has 1
+      // vs file with 1 contributor but chunk has 3
+      // Multi-contributor chunk first — must be reordered if chunk-level preferred
+      const results = [
+        createResult(0.8, 30, 10, false, { contributorCount: 1, chunkContributorCount: 3 }),
+        createResult(0.8, 30, 10, false, { contributorCount: 5, chunkContributorCount: 1 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { similarity: 0.1, knowledgeSilo: 0.9 },
+      });
+      // Chunk with chunkContributorCount=1 (silo) should rank first
+      expect(reranked[0].payload?.git?.chunkContributorCount).toBe(1);
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty results", () => {
       const result = rerankSemanticSearchResults([], "techDebt");

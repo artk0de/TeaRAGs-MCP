@@ -436,17 +436,17 @@ Reorder search results based on git metadata signals.
 
 **For `semantic_search` / `hybrid_search` (analytics):**
 
-| Preset | Use Case | Boost |
-|--------|----------|-------|
-| `relevance` | Default semantic similarity | - |
-| `techDebt` | Find legacy problematic code | old + high churn |
-| `hotspots` | Bug hunting | high churn + recent |
-| `codeReview` | Review recent changes | recently modified |
-| `onboarding` | Entry points for new devs | docs + stable code |
-| `securityAudit` | Old code in critical paths | age + auth/security paths |
-| `refactoring` | Refactoring candidates | large chunks + high churn |
-| `ownership` | Knowledge transfer | single author concentration |
-| `impactAnalysis` | Dependency analysis | import count |
+| Preset | Use Case | Signals |
+|--------|----------|---------|
+| `relevance` | Default semantic similarity | similarity only |
+| `techDebt` | Find legacy problematic code | age + churn + bugFix + volatility |
+| `hotspots` | Bug hunting | chunkChurn + chunkRelativeChurn + burstActivity + bugFix + volatility |
+| `codeReview` | Review recent changes | recency + burstActivity + density + chunkChurn |
+| `onboarding` | Entry points for new devs | documentation + stability |
+| `securityAudit` | Old code in critical paths | age + pathRisk + bugFix + ownership + volatility |
+| `refactoring` | Refactoring candidates | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age |
+| `ownership` | Knowledge transfer | ownership + knowledgeSilo (flags single-author code) |
+| `impactAnalysis` | Dependency analysis | imports count |
 
 **For `search_code` (practical development):**
 
@@ -460,6 +460,8 @@ Reorder search results based on git metadata signals.
 ```json
 { "custom": { "similarity": 0.7, "recency": 0.3 } }
 ```
+
+Available weight keys: `similarity`, `recency`, `stability`, `churn`, `age`, `ownership`, `chunkSize`, `documentation`, `imports`, `bugFix`, `volatility`, `density`, `chunkChurn`, `relativeChurnNorm`, `burstActivity`, `pathRisk`, `knowledgeSilo`, `chunkRelativeChurn`
 
 #### `metaOnly` - Metadata Only Response
 
