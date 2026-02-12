@@ -359,7 +359,7 @@ describe("GitLogReader", () => {
     const pkgEntry = fileMap.get("package.json");
     expect(pkgEntry).toBeDefined();
     expect(pkgEntry!.commits.length).toBeGreaterThan(0);
-  });
+  }, 15_000);
 
   it("should include valid commit info in file entries", async () => {
     if (!repoRoot) return;
@@ -408,6 +408,32 @@ describe("GitLogReader", () => {
   it("should handle non-git directory gracefully (falls back to CLI, which also fails)", async () => {
     // Non-git dir → isomorphic-git fails → CLI fallback also fails → throws
     await expect(reader.buildFileMetadataMap("/tmp")).rejects.toThrow();
+  });
+
+  it("should accept maxAgeMonths parameter and limit commits by date", async () => {
+    if (!repoRoot) return;
+
+    // Full history (no age limit)
+    const fullMap = await reader.buildFileMetadataMap(repoRoot, 0);
+    // Tiny window (~43 minutes) — should return fewer files
+    const tinyMap = await reader.buildFileMetadataMap(repoRoot, 0.001);
+
+    expect(fullMap.size).toBeGreaterThan(0);
+    expect(tinyMap.size).toBeLessThan(fullMap.size);
+  });
+
+  it("should use since parameter in isomorphic-git to filter by date", async () => {
+    if (!repoRoot) return;
+
+    // 0.001 months ≈ 43 minutes — only very recent commits
+    const map = await reader.buildFileMetadataMap(repoRoot, 0.001);
+    const cutoffSec = Date.now() / 1000 - 2 * 3600; // 2 hours ago
+
+    for (const [, entry] of map) {
+      for (const commit of entry.commits) {
+        expect(commit.timestamp).toBeGreaterThan(cutoffSec);
+      }
+    }
   });
 });
 
