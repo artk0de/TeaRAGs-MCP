@@ -92,6 +92,13 @@ const DECLARATION_KEYWORDS: Record<string, string> = {
   attribute: "attributes",
   has_one_attached: "attributes",
   has_many_attached: "attributes",
+  class_attribute: "attributes",
+  mattr_accessor: "attributes",
+  mattr_reader: "attributes",
+  mattr_writer: "attributes",
+  cattr_accessor: "attributes",
+  cattr_reader: "attributes",
+  cattr_writer: "attributes",
 
   // nested attributes
   accepts_nested_attributes_for: "nested_attrs",
@@ -102,6 +109,9 @@ const DECLARATION_KEYWORDS: Record<string, string> = {
 
   // enums
   enum: "enums",
+
+  // state machine
+  aasm: "state_machine",
 
   // serialization
   serialize: "other",
@@ -116,7 +126,6 @@ const STATEMENT_KEYWORDS = new Set([
   "self",
   "class",
   "module",
-  "end",
   "def",
   "private",
   "protected",
@@ -130,6 +139,22 @@ const STATEMENT_KEYWORDS = new Set([
   "return",
   "raise",
 ]);
+
+/**
+ * Concern-level DSL methods whose `do...end` blocks should be transparent.
+ * Content inside these blocks is classified normally as flat body.
+ */
+const BLOCK_DEPTH_EXCEPTIONS = new Set([
+  "included",
+  "extended",
+  "class_methods",
+]);
+
+/** Matches a `do` keyword at end of line (with optional block params and comment) */
+const DO_END_REGEX = /\bdo\s*(\|[^|]*\|)?\s*(#.*)?$/;
+
+/** Matches a standalone `end` keyword (possibly with trailing comment) */
+const END_REGEX = /^\s*end\s*(#.*)?$/;
 
 export class RubyBodyGrouper {
   /**
@@ -178,6 +203,10 @@ export class RubyBodyGrouper {
     let currentType: string | null = null;
     let currentLines: BodyLine[] = [];
     let pendingBlanks: BodyLine[] = [];
+    let blockDepth = 0;
+    let braceDepth = 0;
+    /** True when inside a transparent block (included/extended/class_methods) */
+    let transparentBlock = false;
 
     const flushGroup = () => {
       if (currentLines.length > 0 && currentType) {
@@ -193,6 +222,66 @@ export class RubyBodyGrouper {
     };
 
     for (const line of lines) {
+      const trimmed = line.text.trim();
+
+      // --- Inside a do...end block (non-transparent) ---
+      if (blockDepth > 0 && !transparentBlock) {
+        // Check for nested do → blockDepth++
+        if (DO_END_REGEX.test(trimmed)) {
+          blockDepth++;
+        }
+        // Check for end → blockDepth--
+        if (END_REGEX.test(trimmed)) {
+          blockDepth--;
+        }
+
+        if (blockDepth === 0) {
+          // Block closed — absorb all pending blanks + this end line into current group
+          currentLines.push(...pendingBlanks, line);
+          pendingBlanks = [];
+        } else {
+          // Still inside block — accumulate
+          pendingBlanks.push(line);
+        }
+        continue;
+      }
+
+      // --- Inside a transparent do...end block ---
+      if (blockDepth > 0 && transparentBlock) {
+        // Check for end that closes the transparent block
+        if (END_REGEX.test(trimmed)) {
+          blockDepth--;
+          if (blockDepth === 0) {
+            transparentBlock = false;
+            // Drop the `end` line — transparent wrapper
+            continue;
+          }
+        }
+        // Check for nested do inside transparent block
+        if (DO_END_REGEX.test(trimmed)) {
+          blockDepth++;
+        }
+        // Fall through to normal classification below
+      }
+
+      // --- Inside a multiline brace block ---
+      if (braceDepth > 0) {
+        const opens = (trimmed.match(/{/g) || []).length;
+        const closes = (trimmed.match(/}/g) || []).length;
+        braceDepth += opens - closes;
+
+        if (braceDepth <= 0) {
+          // Brace block closed — absorb pending + this line
+          braceDepth = 0;
+          currentLines.push(...pendingBlanks, line);
+          pendingBlanks = [];
+        } else {
+          pendingBlanks.push(line);
+        }
+        continue;
+      }
+
+      // --- Normal classification ---
       const type = this.classifyLine(line.text);
 
       if (type === undefined) {
@@ -212,6 +301,33 @@ export class RubyBodyGrouper {
         flushGroup();
         currentType = type;
         currentLines = [line];
+      }
+
+      // --- Check if this line opens a do...end block ---
+      if (DO_END_REGEX.test(trimmed)) {
+        // Extract the first keyword to check exceptions
+        const kwMatch = trimmed.match(/^(\w+)/);
+        if (kwMatch && BLOCK_DEPTH_EXCEPTIONS.has(kwMatch[1])) {
+          // Transparent block — don't add to group, content is classified normally
+          transparentBlock = true;
+          blockDepth = 1;
+          // Remove this line from current group (it was just added above)
+          currentLines.pop();
+          // If that was the only line, reset group
+          if (currentLines.length === 0) {
+            currentType = null;
+          }
+        } else {
+          blockDepth = 1;
+        }
+      }
+
+      // --- Check if this line opens a multiline brace block ---
+      const opens = (trimmed.match(/{/g) || []).length;
+      const closes = (trimmed.match(/}/g) || []).length;
+      const balance = opens - closes;
+      if (balance > 0) {
+        braceDepth = balance;
       }
     }
 
