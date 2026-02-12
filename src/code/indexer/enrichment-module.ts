@@ -13,6 +13,7 @@
 
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
+import type { Ignore } from "ignore";
 import type { QdrantManager } from "../../qdrant/client.js";
 import { GitLogReader, computeFileMetadata } from "../git/git-log-reader.js";
 import { pipelineLog } from "../pipeline/debug-logger.js";
@@ -41,6 +42,9 @@ export class EnrichmentModule {
   // In-flight work tracking
   private inFlightWork: Promise<void>[] = [];
   private chunkChurnPromise: Promise<void> | null = null;
+
+  // Ignore filter for git log path filtering
+  private ignoreFilter: Ignore | null = null;
 
   // Path mismatch diagnostics
   private matchedFiles = 0;
@@ -74,9 +78,10 @@ export class EnrichmentModule {
    *
    * @param collectionName - optional, used to set enrichment "in_progress" marker in Qdrant
    */
-  prefetchGitLog(absolutePath: string, collectionName?: string): void {
+  prefetchGitLog(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore): void {
     this.startTime = Date.now();
     this.prefetchStartTime = Date.now();
+    this.ignoreFilter = ignoreFilter ?? null;
 
     // Set enrichment marker to "in_progress" so get_index_status shows it
     if (collectionName) {
@@ -105,6 +110,23 @@ export class EnrichmentModule {
         this.prefetchEndTime = Date.now();
         this.gitLogResult = result;
         this.metrics.prefetchDurationMs = this.prefetchEndTime - this.prefetchStartTime;
+
+        // Filter git log results by ignore patterns (.gitignore, .contextignore)
+        if (this.ignoreFilter) {
+          let filtered = 0;
+          for (const [path] of result) {
+            if (this.ignoreFilter.ignores(path)) {
+              result.delete(path);
+              filtered++;
+            }
+          }
+          if (filtered > 0) {
+            pipelineLog.enrichmentPhase("PREFETCH_FILTERED", {
+              filtered,
+              remainingFiles: result.size,
+            });
+          }
+        }
 
         pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", {
           filesInLog: result.size,

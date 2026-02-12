@@ -274,7 +274,7 @@ export class ReindexModule {
       );
       // Start git log reading in parallel with embedding (Phase 2a prefetch)
       if (this.config.enableGitMetadata) {
-        this.enrichment.prefetchGitLog(absolutePath, collectionName);
+        this.enrichment.prefetchGitLog(absolutePath, collectionName, scanner.getIgnoreFilter());
         chunkPipeline.setOnBatchUpserted((items) => {
           this.enrichment.onChunksStored(collectionName, absolutePath, items);
         });

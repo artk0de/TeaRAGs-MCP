@@ -65,6 +65,14 @@ export class FileScanner {
   }
 
   /**
+   * Get the configured ignore filter instance.
+   * Used by enrichment module to filter git log results.
+   */
+  getIgnoreFilter(): Ignore {
+    return this.ig;
+  }
+
+  /**
    * Get list of supported file extensions
    */
   getSupportedExtensions(): string[] {

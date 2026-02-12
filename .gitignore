@@ -44,7 +44,7 @@ collection-with-*
 
 # Performance tuning results
 tuned_environment_variables.env
-.beads
+.beads/**
 
 # Local Agent plans
 docs/plans/**
