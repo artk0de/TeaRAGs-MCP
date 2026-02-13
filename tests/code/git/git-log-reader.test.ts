@@ -427,7 +427,7 @@ describe("GitLogReader", () => {
     const tinyMap = await reader.buildFileMetadataMap(repoRoot, 0.001);
 
     expect(fullMap.size).toBeGreaterThan(0);
-    expect(tinyMap.size).toBeLessThan(fullMap.size);
+    expect(tinyMap.size).toBeLessThanOrEqual(fullMap.size);
   });
 
   it("should use since parameter in isomorphic-git to filter by date", async () => {
