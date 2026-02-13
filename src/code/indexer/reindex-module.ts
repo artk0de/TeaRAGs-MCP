@@ -7,25 +7,20 @@
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
 import type { EmbeddingProvider } from "../../embeddings/base.js";
 import type { QdrantManager } from "../../qdrant/client.js";
 import { ChunkerPool } from "../chunker/chunker-pool.js";
 import { MetadataExtractor } from "../metadata.js";
-import { ChunkPipeline, DEFAULT_CONFIG } from "../pipeline/index.js";
 import { pipelineLog } from "../pipeline/debug-logger.js";
+import { ChunkPipeline, DEFAULT_CONFIG } from "../pipeline/index.js";
 import { FileScanner } from "../scanner.js";
 import { SchemaManager } from "../schema-migration.js";
 import { SnapshotMigrator } from "../sync/migration.js";
 import { ParallelFileSynchronizer, parallelLimit } from "../sync/parallel-synchronizer.js";
-import type {
-  ChangeStats,
-  ChunkLookupEntry,
-  CodeChunk,
-  CodeConfig,
-  ProgressCallback,
-} from "../types.js";
-import { validatePath, resolveCollectionName } from "./shared.js";
+import type { ChangeStats, ChunkLookupEntry, CodeChunk, CodeConfig, ProgressCallback } from "../types.js";
 import type { EnrichmentModule } from "./enrichment-module.js";
+import { resolveCollectionName, validatePath } from "./shared.js";
 
 export class ReindexModule {
   constructor(
@@ -38,10 +33,7 @@ export class ReindexModule {
   /**
    * Incrementally re-index only changed files
    */
-  async reindexChanges(
-    path: string,
-    progressCallback?: ProgressCallback,
-  ): Promise<ChangeStats> {
+  async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
     const startTime = Date.now();
     const stats: ChangeStats = {
       filesAdded: 0,
@@ -84,9 +76,7 @@ export class ReindexModule {
       const hasSnapshot = await synchronizer.initialize();
 
       if (!hasSnapshot) {
-        throw new Error(
-          "No previous snapshot found. Use index_codebase for initial indexing.",
-        );
+        throw new Error("No previous snapshot found. Use index_codebase for initial indexing.");
       }
 
       // Check for existing checkpoint (resume from interruption)
@@ -98,7 +88,7 @@ export class ReindexModule {
         resumeFromCheckpoint = true;
         alreadyProcessedFiles = new Set(checkpoint.processedFiles);
         console.error(
-          `[Reindex] Resuming from checkpoint: ${checkpoint.processedFiles.length} files already processed`
+          `[Reindex] Resuming from checkpoint: ${checkpoint.processedFiles.length} files already processed`,
         );
       }
 
@@ -131,11 +121,7 @@ export class ReindexModule {
       stats.filesModified = changes.modified.length;
       stats.filesDeleted = changes.deleted.length;
 
-      if (
-        stats.filesAdded === 0 &&
-        stats.filesModified === 0 &&
-        stats.filesDeleted === 0
-      ) {
+      if (stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0) {
         // Clean up checkpoint if exists
         await synchronizer.deleteCheckpoint();
         stats.durationMs = Date.now() - startTime;
@@ -175,23 +161,19 @@ export class ReindexModule {
         });
 
         try {
-          const deleteResult = await this.qdrant.deletePointsByPathsBatched(
-            collectionName,
-            filesToDelete,
-            {
-              batchSize: 100,
-              concurrency: 4,
-              onProgress: (deleted, total) => {
-                progressCallback?.({
-                  phase: "scanning",
-                  current: deleted,
-                  total: total,
-                  percentage: 5 + Math.floor((deleted / total) * 5),
-                  message: `Deleting old chunks: ${deleted}/${total} files...`,
-                });
-              },
+          const deleteResult = await this.qdrant.deletePointsByPathsBatched(collectionName, filesToDelete, {
+            batchSize: 100,
+            concurrency: 4,
+            onProgress: (deleted, total) => {
+              progressCallback?.({
+                phase: "scanning",
+                current: deleted,
+                total: total,
+                percentage: 5 + Math.floor((deleted / total) * 5),
+                message: `Deleting old chunks: ${deleted}/${total} files...`,
+              });
             },
-          );
+          });
 
           if (process.env.DEBUG) {
             console.error(
@@ -204,7 +186,7 @@ export class ReindexModule {
           pipelineLog.fallback({ component: "Reindex" }, 1, `deletePointsByPathsBatched failed: ${errorMsg}`);
           console.error(
             `[Reindex] FALLBACK L1: deletePointsByPathsBatched failed for ${filesToDelete.length} paths:`,
-            errorMsg
+            errorMsg,
           );
 
           try {
@@ -215,18 +197,15 @@ export class ReindexModule {
               paths: filesToDelete.length,
             });
             console.error(
-              `[Reindex] FALLBACK L1 SUCCESS: deletePointsByPaths completed in ${Date.now() - fallbackStart}ms`
+              `[Reindex] FALLBACK L1 SUCCESS: deletePointsByPaths completed in ${Date.now() - fallbackStart}ms`,
             );
           } catch (fallbackError) {
             // FALLBACK LEVEL 2: Combined request also failed, doing individual deletions
             const fallbackErrorMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
             pipelineLog.fallback({ component: "Reindex" }, 2, `deletePointsByPaths failed: ${fallbackErrorMsg}`);
+            console.error(`[Reindex] FALLBACK L2: deletePointsByPaths also failed:`, fallbackErrorMsg);
             console.error(
-              `[Reindex] FALLBACK L2: deletePointsByPaths also failed:`,
-              fallbackErrorMsg
-            );
-            console.error(
-              `[Reindex] FALLBACK L2: Starting INDIVIDUAL deletions for ${filesToDelete.length} paths (SLOW!)`
+              `[Reindex] FALLBACK L2: Starting INDIVIDUAL deletions for ${filesToDelete.length} paths (SLOW!)`,
             );
 
             let deleted = 0;
@@ -254,7 +233,7 @@ export class ReindexModule {
               durationMs: Date.now() - individualStart,
             });
             console.error(
-              `[Reindex] FALLBACK L2 COMPLETE: ${deleted} deleted, ${failed} failed in ${Date.now() - individualStart}ms`
+              `[Reindex] FALLBACK L2 COMPLETE: ${deleted} deleted, ${failed} failed in ${Date.now() - individualStart}ms`,
             );
           }
         }
@@ -262,16 +241,11 @@ export class ReindexModule {
 
       // Initialize ChunkPipeline for even load distribution
       // This replaces direct embedding/store calls with a batching pipeline
-      const chunkPipeline = new ChunkPipeline(
-        this.qdrant,
-        this.embeddings,
-        collectionName,
-        {
-          workerPool: DEFAULT_CONFIG.workerPool,
-          accumulator: DEFAULT_CONFIG.upsertAccumulator,
-          enableHybrid: this.config.enableHybridSearch,
-        },
-      );
+      const chunkPipeline = new ChunkPipeline(this.qdrant, this.embeddings, collectionName, {
+        workerPool: DEFAULT_CONFIG.workerPool,
+        accumulator: DEFAULT_CONFIG.upsertAccumulator,
+        enableHybrid: this.config.enableHybridSearch,
+      });
       // Start git log reading in parallel with embedding (Phase 2a prefetch)
       if (this.config.enableGitMetadata) {
         this.enrichment.prefetchGitLog(absolutePath, collectionName, scanner.getIgnoreFilter());
@@ -284,17 +258,16 @@ export class ReindexModule {
 
       // STREAMING: Helper function to index files with bounded concurrency
       // Chunks are sent to pipeline immediately as files are processed
-      const indexFiles = async (
-        files: string[],
-        label: string
-      ): Promise<number> => {
+      const indexFiles = async (files: string[], label: string): Promise<number> => {
         if (files.length === 0) return 0;
 
         let chunksCreated = 0;
         const streamingConcurrency = parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "50", 10);
 
         if (process.env.DEBUG) {
-          console.error(`[Reindex] ${label}: starting ${files.length} files (streaming, concurrency=${streamingConcurrency})`);
+          console.error(
+            `[Reindex] ${label}: starting ${files.length} files (streaming, concurrency=${streamingConcurrency})`,
+          );
         }
 
         // STREAMING: Process files with bounded concurrency, send chunks immediately
@@ -342,11 +315,7 @@ export class ReindexModule {
 
                 // IMMEDIATE: Send chunk to pipeline right away
                 const chunkId = metadataExtractor.generateChunkId(chunk);
-                chunkPipeline.addChunk(
-                  baseChunk as CodeChunk,
-                  chunkId,
-                  absolutePath,
-                );
+                chunkPipeline.addChunk(baseChunk as CodeChunk, chunkId, absolutePath);
                 chunksCreated++;
 
                 // Track for Phase 2 git enrichment
@@ -356,7 +325,6 @@ export class ReindexModule {
                   chunkMap.set(absoluteFilePath, entries);
                 }
               }
-
             } catch (error) {
               console.error(`Failed to process ${filePath}:`, error);
             }
@@ -386,7 +354,7 @@ export class ReindexModule {
       if (process.env.DEBUG) {
         console.error(
           `[Reindex] Starting parallel pipelines: ` +
-          `delete=${filesToDelete.length}, added=${addedFiles.length}, modified=${modifiedFiles.length}`
+            `delete=${filesToDelete.length}, added=${addedFiles.length}, modified=${modifiedFiles.length}`,
         );
       }
 
@@ -410,9 +378,7 @@ export class ReindexModule {
       });
 
       if (process.env.DEBUG) {
-        console.error(
-          `[Reindex] Delete complete, starting modified indexing (add still running in parallel)`
-        );
+        console.error(`[Reindex] Delete complete, starting modified indexing (add still running in parallel)`);
       }
 
       // Start Modified - now runs in parallel with remaining Add work
@@ -425,10 +391,7 @@ export class ReindexModule {
       });
 
       // Wait for both Add and Modified to complete
-      const [addedChunks, modifiedChunks] = await Promise.all([
-        addPromise,
-        modifiedPromise,
-      ]);
+      const [addedChunks, modifiedChunks] = await Promise.all([addPromise, modifiedPromise]);
 
       pipelineLog.reindexPhase("ADD_AND_MODIFIED_COMPLETE", {
         addedChunks,
@@ -444,22 +407,19 @@ export class ReindexModule {
           `[Reindex] ChunkPipeline before flush: ` +
             `pending=${chunkPipeline.getPendingCount()}, ` +
             `processed=${pipelineStats.itemsProcessed}, ` +
-            `batches=${pipelineStats.batchesProcessed}`
+            `batches=${pipelineStats.batchesProcessed}`,
         );
       }
 
       await chunkPipeline.flush();
-      await Promise.all([
-        chunkPipeline.shutdown(),
-        chunkerPool.shutdown(),
-      ]);
+      await Promise.all([chunkPipeline.shutdown(), chunkerPool.shutdown()]);
 
       const pipelineStats = chunkPipeline.getStats();
       if (process.env.DEBUG) {
         console.error(
           `[Reindex] Parallel pipelines completed in ${Date.now() - startTime2}ms ` +
             `(pipeline: ${pipelineStats.itemsProcessed} chunks in ${pipelineStats.batchesProcessed} batches, ` +
-            `${pipelineStats.throughput.toFixed(1)} chunks/s)`
+            `${pipelineStats.throughput.toFixed(1)} chunks/s)`,
         );
       }
 
@@ -469,8 +429,11 @@ export class ReindexModule {
       let enrichmentDone = false;
       if (this.config.enableGitMetadata && chunkMap.size > 0) {
         this.enrichment.startChunkChurn(collectionName, absolutePath, chunkMap);
-        this.enrichment.awaitCompletion(collectionName)
-          .then(() => { enrichmentDone = true; })
+        this.enrichment
+          .awaitCompletion(collectionName)
+          .then(() => {
+            enrichmentDone = true;
+          })
           .catch((error) => {
             console.error("[Reindex] Background enrichment failed:", error);
           });
@@ -494,15 +457,14 @@ export class ReindexModule {
       if (process.env.DEBUG) {
         console.error(
           `[Reindex] Complete: ${stats.filesAdded} added, ` +
-          `${stats.filesModified} modified, ${stats.filesDeleted} deleted. ` +
-          `Created ${stats.chunksAdded} chunks in ${(stats.durationMs / 1000).toFixed(1)}s`
+            `${stats.filesModified} modified, ${stats.filesDeleted} deleted. ` +
+            `Created ${stats.chunksAdded} chunks in ${(stats.durationMs / 1000).toFixed(1)}s`,
         );
       }
 
       return stats;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Incremental re-indexing failed: ${errorMessage}`);
     }
   }

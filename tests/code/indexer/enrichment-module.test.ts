@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CodeIndexer } from "../../../src/code/indexer.js";
+import type { CodeConfig } from "../../../src/code/types.js";
+import {
+  cleanupTempDir,
+  createTempTestDir,
+  createTestFile,
+  defaultTestConfig,
+  MockEmbeddingProvider,
+  MockQdrantManager,
+} from "./test-helpers.js";
+
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
     setLanguage() {}
@@ -27,17 +38,6 @@ vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
 
-import { CodeIndexer } from "../../../src/code/indexer.js";
-import type { CodeConfig } from "../../../src/code/types.js";
-import {
-  MockQdrantManager,
-  MockEmbeddingProvider,
-  createTestFile,
-  defaultTestConfig,
-  createTempTestDir,
-  cleanupTempDir,
-} from "./test-helpers.js";
-
 describe("EnrichmentModule", () => {
   let indexer: CodeIndexer;
   let qdrant: MockQdrantManager;
@@ -60,11 +60,7 @@ describe("EnrichmentModule", () => {
 
   describe("Two-phase indexing (git enrichment)", () => {
     it("should set enrichmentStatus to skipped when enableGitMetadata is false", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export function hello(): string { return 'hello'; }",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export function hello(): string { return 'hello'; }");
 
       const stats = await indexer.indexCodebase(codebaseDir);
 
@@ -87,7 +83,7 @@ describe("EnrichmentModule", () => {
       const stats = await gitIndexer.indexCodebase(codebaseDir);
 
       expect(stats.status).toBe("completed");
-      expect(stats.enrichmentStatus).toBe("background");
+      expect(stats.enrichmentStatus).toBe("completed");
     });
 
     it("should not include git metadata in Phase 1 chunks", async () => {
@@ -106,11 +102,7 @@ describe("EnrichmentModule", () => {
 
       await gitIndexer.indexCodebase(codebaseDir);
 
-      const allCalls = [
-        ...addPointsSpy.mock.calls,
-        ...addPointsOptSpy.mock.calls,
-        ...addSparseOptSpy.mock.calls,
-      ];
+      const allCalls = [...addPointsSpy.mock.calls, ...addPointsOptSpy.mock.calls, ...addSparseOptSpy.mock.calls];
 
       for (const call of allCalls) {
         const points = call[1] as any[];
@@ -122,11 +114,7 @@ describe("EnrichmentModule", () => {
     });
 
     it("should set enrichmentStatus to skipped in reindexChanges when enableGitMetadata is false", async () => {
-      await createTestFile(
-        codebaseDir,
-        "initial.ts",
-        "export const initialValue = 1;\nconsole.log('Initial');",
-      );
+      await createTestFile(codebaseDir, "initial.ts", "export const initialValue = 1;\nconsole.log('Initial');");
       await indexer.indexCodebase(codebaseDir);
 
       await createTestFile(
@@ -159,25 +147,19 @@ describe("EnrichmentModule", () => {
 
       const stats = await gitIndexer.reindexChanges(codebaseDir);
 
-      expect(stats.enrichmentStatus).toBe("background");
+      expect(stats.enrichmentStatus).toBe("completed");
     });
 
     it("should not call enriching progress callback (enrichment is streaming, not via progress)", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
       const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export function hello(): string {\n  return 'hello world';\n}",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export function hello(): string {\n  return 'hello world';\n}");
 
       const progressCallback = vi.fn();
       await gitIndexer.indexCodebase(codebaseDir, undefined, progressCallback);
 
-      const enrichingCalls = progressCallback.mock.calls.filter(
-        (call) => call[0].phase === "enriching",
-      );
+      const enrichingCalls = progressCallback.mock.calls.filter((call) => call[0].phase === "enriching");
       expect(enrichingCalls.length).toBe(0);
     });
 
@@ -191,7 +173,7 @@ describe("EnrichmentModule", () => {
       const stats = await gitIndexer.indexCodebase(codebaseDir);
 
       expect(stats.status).toBe("completed");
-      expect(stats.enrichmentStatus).toBe("background");
+      expect(stats.enrichmentStatus).toBe("completed");
     });
 
     it("should complete streaming enrichment in reindexChanges for new files", async () => {
@@ -205,7 +187,7 @@ describe("EnrichmentModule", () => {
 
       const stats = await gitIndexer.reindexChanges(codebaseDir);
 
-      expect(stats.enrichmentStatus).toBe("background");
+      expect(stats.enrichmentStatus).toBe("completed");
     });
 
     it("should respect GIT_ENRICHMENT_CONCURRENCY env override", async () => {
@@ -216,7 +198,11 @@ describe("EnrichmentModule", () => {
         const gitConfig = { ...config, enableGitMetadata: true };
         const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
 
-        await createTestFile(codebaseDir, "test.ts", "export function compute(x: number): number {\n  return x * 42;\n}");
+        await createTestFile(
+          codebaseDir,
+          "test.ts",
+          "export function compute(x: number): number {\n  return x * 42;\n}",
+        );
 
         const stats = await gitIndexer.indexCodebase(codebaseDir);
         expect(stats.status).toBe("completed");
