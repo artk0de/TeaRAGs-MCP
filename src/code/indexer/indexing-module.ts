@@ -289,16 +289,17 @@ export class IndexingModule {
         );
       }
 
-      // Complete git enrichment — fire-and-forget
-      // Phase 2a (streaming applies) is already in-flight from onChunksStored callbacks.
-      // Phase 2b (chunk churn) is started here and runs in background.
-      // awaitCompletion waits for Phase 2a only, chunk churn continues independently.
+      // Complete git enrichment — fire-and-forget.
+      // Phase 2a (streaming applies + backfill) and Phase 2b (chunk churn) run in background.
+      // We track the promise to check if it finishes before indexCodebase returns.
+      let enrichmentDone = false;
       if (this.config.enableGitMetadata && chunkMap.size > 0) {
         this.enrichment.startChunkChurn(collectionName, absolutePath, chunkMap);
-        this.enrichment.awaitCompletion(collectionName).catch((error) => {
-          console.error("[Index] Background enrichment failed:", error);
-        });
-        stats.enrichmentStatus = "background";
+        this.enrichment.awaitCompletion(collectionName)
+          .then(() => { enrichmentDone = true; })
+          .catch((error) => {
+            console.error("[Index] Background enrichment failed:", error);
+          });
       } else if (!this.config.enableGitMetadata) {
         stats.enrichmentStatus = "skipped";
       }
@@ -316,6 +317,11 @@ export class IndexingModule {
 
       // Store completion marker to indicate indexing is complete
       await this.storeIndexingMarker(collectionName, true);
+
+      // Check enrichment status: it may have completed during snapshot/marker writes
+      if (this.config.enableGitMetadata && chunkMap.size > 0) {
+        stats.enrichmentStatus = enrichmentDone ? "completed" : "background";
+      }
 
       stats.durationMs = Date.now() - startTime;
       return stats;

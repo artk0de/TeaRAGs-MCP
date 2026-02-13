@@ -465,13 +465,15 @@ export class ReindexModule {
 
       stats.chunksAdded = addedChunks + modifiedChunks;
 
-      // Complete git enrichment — fire-and-forget
+      // Complete git enrichment — fire-and-forget.
+      let enrichmentDone = false;
       if (this.config.enableGitMetadata && chunkMap.size > 0) {
         this.enrichment.startChunkChurn(collectionName, absolutePath, chunkMap);
-        this.enrichment.awaitCompletion(collectionName).catch((error) => {
-          console.error("[Reindex] Background enrichment failed:", error);
-        });
-        stats.enrichmentStatus = "background";
+        this.enrichment.awaitCompletion(collectionName)
+          .then(() => { enrichmentDone = true; })
+          .catch((error) => {
+            console.error("[Reindex] Background enrichment failed:", error);
+          });
       } else if (!this.config.enableGitMetadata) {
         stats.enrichmentStatus = "skipped";
       }
@@ -481,6 +483,11 @@ export class ReindexModule {
 
       // Delete checkpoint on successful completion
       await synchronizer.deleteCheckpoint();
+
+      // Check enrichment status: it may have completed during snapshot writes
+      if (this.config.enableGitMetadata && chunkMap.size > 0) {
+        stats.enrichmentStatus = enrichmentDone ? "completed" : "background";
+      }
 
       stats.durationMs = Date.now() - startTime;
 
