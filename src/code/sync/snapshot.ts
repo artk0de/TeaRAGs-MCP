@@ -47,7 +47,7 @@ export interface SnapshotV1 {
 export type Snapshot = SnapshotV1 | SnapshotV2;
 
 export class SnapshotManager {
-  constructor(private snapshotPath: string) {}
+  constructor(private readonly snapshotPath: string) {}
 
   /**
    * Save snapshot to disk (v2 format with metadata)
@@ -88,7 +88,7 @@ export class SnapshotManager {
   } | null> {
     try {
       const data = await fs.readFile(this.snapshotPath, "utf-8");
-      const snapshot: Snapshot = JSON.parse(data);
+      const snapshot = JSON.parse(data) as Snapshot;
 
       const fileHashes = new Map(Object.entries(snapshot.fileHashes));
       const tree = MerkleTree.deserialize(snapshot.merkleTree);
@@ -161,7 +161,7 @@ export class SnapshotManager {
   async getVersion(): Promise<"1" | "2" | null> {
     try {
       const data = await fs.readFile(this.snapshotPath, "utf-8");
-      const snapshot: Snapshot = JSON.parse(data);
+      const snapshot = JSON.parse(data) as Snapshot;
 
       if ("version" in snapshot && snapshot.version === "2") {
         return "2";

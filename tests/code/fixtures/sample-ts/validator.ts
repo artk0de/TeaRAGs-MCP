@@ -106,15 +106,15 @@ export class Validator {
           return data;
         } else if (data === null || data === undefined) {
           return [];
-        } else {
-          return [data];
         }
+        return [data];
+
       case "object":
         if (typeof data === "object" && data !== null) {
           return data;
-        } else {
-          return { value: data };
         }
+        return { value: data };
+
       case "json":
         try {
           return JSON.parse(data);

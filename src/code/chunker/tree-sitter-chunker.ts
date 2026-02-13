@@ -7,7 +7,7 @@
  * After: Parsers loaded on demand (~0ms startup, ~100-200ms first use per language)
  */
 
-import type { Code, Content, Heading, Root } from "mdast";
+import type { Content } from "mdast";
 import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import Parser from "tree-sitter";
@@ -20,10 +20,10 @@ import { createHookContext } from "./hooks/types.js";
 
 export class TreeSitterChunker implements CodeChunker {
   /** Cache of initialized parsers (lazy-loaded) */
-  private parserCache: Map<string, LanguageConfig> = new Map();
-  private fallbackChunker: CharacterChunker;
+  private readonly parserCache: Map<string, LanguageConfig> = new Map();
+  private readonly fallbackChunker: CharacterChunker;
   /** Track loading promises to avoid duplicate loads */
-  private loadingPromises: Map<string, Promise<LanguageConfig | null>> = new Map();
+  private readonly loadingPromises: Map<string, Promise<LanguageConfig | null>> = new Map();
 
   /**
    * Build symbolId from name and optional parentName
@@ -34,7 +34,7 @@ export class TreeSitterChunker implements CodeChunker {
     return parentName ? `${parentName}.${name}` : name;
   }
 
-  constructor(private config: ChunkerConfig) {
+  constructor(private readonly config: ChunkerConfig) {
     this.fallbackChunker = new CharacterChunker(config);
     // NO parser initialization here - lazy load on demand!
   }
@@ -45,13 +45,15 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private async getLanguageConfig(language: string): Promise<LanguageConfig | null> {
     // Check cache first
-    if (this.parserCache.has(language)) {
-      return this.parserCache.get(language)!;
+    const cached = this.parserCache.get(language);
+    if (cached) {
+      return cached;
     }
 
     // Check if already loading (avoid duplicate loads)
-    if (this.loadingPromises.has(language)) {
-      return this.loadingPromises.get(language)!;
+    const loading = this.loadingPromises.get(language);
+    if (loading) {
+      return loading;
     }
 
     // Check if language is defined
@@ -83,12 +85,14 @@ export class TreeSitterChunker implements CodeChunker {
       const startTime = Date.now();
 
       // Dynamic import of language module
-      const mod = await definition.loadModule();
-      const langModule = definition.extractLanguage ? definition.extractLanguage(mod) : mod.default || mod;
+      const mod = (await definition.loadModule()) as Record<string, unknown>;
+      const langModule = (
+        definition.extractLanguage ? definition.extractLanguage(mod) : mod.default || mod
+      ) as Parser.Language;
 
       // Create and configure parser
       const parser = new Parser();
-      parser.setLanguage(langModule as any);
+      parser.setLanguage(langModule);
 
       if (process.env.DEBUG) {
         console.error(`[TreeSitter] Lazy-loaded ${language} parser in ${Date.now() - startTime}ms`);
@@ -153,7 +157,7 @@ export class TreeSitterChunker implements CodeChunker {
           const parentName = this.extractName(node, code);
           const parentType = node.type;
 
-          const childNodes = this.findChildChunkableNodes(node, langConfig.childChunkTypes!);
+          const childNodes = this.findChildChunkableNodes(node, langConfig.childChunkTypes ?? []);
 
           // Filter to children that meet minimum size
           const validChildren = childNodes.filter((c) => code.substring(c.startIndex, c.endIndex).length >= 50);
@@ -197,7 +201,7 @@ export class TreeSitterChunker implements CodeChunker {
               // Apply hook-provided prefix (e.g., preceding comments)
               const prefix = ctx.methodPrefixes.get(ci);
               if (prefix) {
-                finalContent = prefix + "\n" + finalContent;
+                finalContent = `${prefix}\n${finalContent}`;
               }
               const overrideStart = ctx.methodStartLines.get(ci);
               if (overrideStart !== undefined) {
@@ -341,7 +345,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Call this if you know which languages will be used
    */
   async preloadLanguages(languages: string[]): Promise<void> {
-    await Promise.all(languages.map((lang) => this.getLanguageConfig(lang)));
+    await Promise.all(languages.map(async (lang) => this.getLanguageConfig(lang)));
   }
 
   /**
@@ -368,7 +372,7 @@ export class TreeSitterChunker implements CodeChunker {
     const lines = code.split("\n");
 
     // Parse markdown with remark (GFM for GitHub flavored markdown)
-    const tree = remark().use(remarkGfm).parse(code) as Root;
+    const tree = remark().use(remarkGfm).parse(code);
 
     // Collect headings with positions
     interface HeadingInfo {
@@ -409,8 +413,8 @@ export class TreeSitterChunker implements CodeChunker {
     const collectCodeBlocks = (node: Content) => {
       if (node.type === "code" && node.position) {
         codeBlocks.push({
-          lang: (node as Code).lang || undefined,
-          value: (node as Code).value,
+          lang: node.lang || undefined,
+          value: node.value,
           startLine: node.position.start.line,
           endLine: node.position.end.line,
         });
@@ -639,7 +643,7 @@ export class TreeSitterChunker implements CodeChunker {
     // Build a set of line numbers occupied by child nodes (methods)
     const methodLines = new Set<number>();
     for (const child of childNodes) {
-      for (let row = child.startPosition.row; row <= child.endPosition.row; row++) {
+      for (let { row } = child.startPosition; row <= child.endPosition.row; row++) {
         methodLines.add(row);
       }
     }

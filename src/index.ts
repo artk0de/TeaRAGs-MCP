@@ -28,11 +28,11 @@ import { registerAllTools } from "./tools/index.js";
 
 // Read package.json for version
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
+const pkg = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8")) as { name: string; version: string };
 
 // Validate environment variables
 const QDRANT_URL = process.env.QDRANT_URL || "http://localhost:6333";
-const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
+const { QDRANT_API_KEY } = process.env;
 const EMBEDDING_PROVIDER = (process.env.EMBEDDING_PROVIDER || "ollama").toLowerCase();
 const TRANSPORT_MODE = (process.env.TRANSPORT_MODE || "stdio").toLowerCase();
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || "3000", 10);
@@ -91,9 +91,9 @@ async function checkOllamaAvailability() {
 
       // Check if the required embedding model exists
       const tagsResponse = await fetch(`${baseUrl}/api/tags`);
-      const { models } = await tagsResponse.json();
+      const { models } = (await tagsResponse.json()) as { models: { name: string }[] };
       const modelName = process.env.EMBEDDING_MODEL || "jina-embeddings-v2-base-code";
-      const modelExists = models.some((m: any) => m.name === modelName || m.name.startsWith(`${modelName}:`));
+      const modelExists = models.some((m) => m.name === modelName || m.name.startsWith(`${modelName}:`));
 
       if (!modelExists) {
         let errorMessage = `Error: Model '${modelName}' not found in Ollama.\n`;
@@ -105,8 +105,7 @@ async function checkOllamaAvailability() {
             `  - Using Docker: docker exec ollama ollama pull ${modelName}\n` +
             `  - Or locally: ollama pull ${modelName}`;
         } else {
-          errorMessage +=
-            `Please ensure the model is available on your Ollama instance:\n` + `  ollama pull ${modelName}`;
+          errorMessage += `Please ensure the model is available on your Ollama instance:\n  ollama pull ${modelName}`;
         }
 
         console.error(errorMessage);
@@ -248,7 +247,7 @@ async function startHttpServer() {
   });
 
   // Helper function to send JSON-RPC error responses
-  const sendErrorResponse = (res: express.Response, code: number, message: string, httpStatus: number = 500) => {
+  const sendErrorResponse = (res: express.Response, code: number, message: string, httpStatus = 500) => {
     if (!res.headersSent) {
       res.status(httpStatus).json({
         jsonrpc: "2.0",
@@ -273,7 +272,7 @@ async function startHttpServer() {
     });
 
     keysToDelete.forEach((ip) => {
-      rateLimiterGroup.deleteKey(ip);
+      void rateLimiterGroup.deleteKey(ip);
       ipLastAccess.delete(ip);
     });
 
@@ -292,7 +291,7 @@ async function startHttpServer() {
 
       // Get or create a limiter for this specific IP
       const limiter = rateLimiterGroup.key(clientIp);
-      await limiter.schedule(() => Promise.resolve());
+      await limiter.schedule(async () => Promise.resolve());
       next();
     } catch (error) {
       // Differentiate between rate limit errors and unexpected errors

@@ -5,8 +5,27 @@ if command -v bd >/dev/null 2>&1; then
   bd hook pre-commit "$@" 2>/dev/null || true
 fi
 
-# Format staged .ts/.js files with prettier
-npx lint-staged
+# Format and lint staged .ts/.js files
+if ! npx lint-staged 2>&1; then
+  echo ""
+  echo "============================================"
+  echo "  lint-staged failed (ESLint or Prettier)"
+  echo "============================================"
+  echo ""
+  echo "If ESLint --fix could not auto-fix the issue:"
+  echo "  1. Read the error message above"
+  echo "  2. Fix the code manually (do NOT change eslint.config.js)"
+  echo "  3. Stage the fix: git add <file>"
+  echo "  4. Retry the commit"
+  echo ""
+  echo "Common fixes:"
+  echo "  - no-floating-promises  → add 'await' or 'void' before the promise"
+  echo "  - no-unused-vars        → remove the unused variable/import"
+  echo "  - eqeqeq                → use === instead of =="
+  echo "  - consistent-type-imports → add 'type' keyword to type-only imports"
+  echo ""
+  exit 1
+fi
 
 # Get list of staged files
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)

@@ -1493,7 +1493,7 @@ class DataProcessor {
       const chunks = await smallChunker.chunk(code, "processor.rb", "ruby");
 
       // The oversized method should be split into sub-chunks with parentName
-      const subChunks = chunks.filter(
+      const _subChunks = chunks.filter(
         (c) =>
           c.metadata.parentName === "DataProcessor" &&
           c.metadata.chunkType !== "function" &&
@@ -1866,6 +1866,7 @@ function funcB() {
         "async function fetchData(url: string): Promise<Response> {",
         "  const response = await fetch(url);",
         "  if (!response.ok) {",
+        // eslint-disable-next-line no-template-curly-in-string
         "    throw new Error(`HTTP error! Status: ${response.status}`);",
         "  }",
         "  return response;",
@@ -1969,7 +1970,7 @@ function funcB() {
       // Temporarily inject a broken language definition to simulate load failure
       // Access the private initializeParser method through any cast
       const result = await (freshChunker as any).initializeParser("broken", {
-        loadModule: () => Promise.reject(new Error("Module not found")),
+        loadModule: async () => Promise.reject(new Error("Module not found")),
         chunkableTypes: [],
       });
 

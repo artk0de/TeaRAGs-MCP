@@ -77,6 +77,7 @@ describe("EnrichmentModule", () => {
       await createTestFile(
         codebaseDir,
         "test.ts",
+        // eslint-disable-next-line no-template-curly-in-string
         "export function greet(name: string): string {\n  return `Hello, ${name}!`;\n}",
       );
 
@@ -105,7 +106,7 @@ describe("EnrichmentModule", () => {
       const allCalls = [...addPointsSpy.mock.calls, ...addPointsOptSpy.mock.calls, ...addSparseOptSpy.mock.calls];
 
       for (const call of allCalls) {
-        const points = call[1] as any[];
+        const points = call[1];
         for (const point of points) {
           if (point.payload?._type === "indexing_metadata") continue;
           expect(point.payload?.git).toBeUndefined();

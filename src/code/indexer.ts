@@ -29,16 +29,16 @@ import type {
 } from "./types.js";
 
 export class CodeIndexer {
-  private enrichment: EnrichmentModule;
-  private indexing: IndexingModule;
-  private search: SearchModule;
-  private status: StatusModule;
-  private reindex: ReindexModule;
+  private readonly enrichment: EnrichmentModule;
+  private readonly indexing: IndexingModule;
+  private readonly search: SearchModule;
+  private readonly status: StatusModule;
+  private readonly reindex: ReindexModule;
 
   constructor(
-    private qdrant: QdrantManager,
-    private embeddings: EmbeddingProvider,
-    private config: CodeConfig,
+    private readonly qdrant: QdrantManager,
+    private readonly embeddings: EmbeddingProvider,
+    private readonly config: CodeConfig,
   ) {
     this.enrichment = new EnrichmentModule(this.qdrant);
     this.indexing = new IndexingModule(this.qdrant, this.embeddings, this.config, this.enrichment);

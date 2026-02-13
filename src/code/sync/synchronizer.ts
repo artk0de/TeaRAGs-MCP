@@ -37,15 +37,15 @@ interface Checkpoint {
 }
 
 export class FileSynchronizer {
-  private snapshotManager: SnapshotManager;
+  private readonly snapshotManager: SnapshotManager;
   private previousHashes: Map<string, string> = new Map();
   private previousMetadata: Map<string, FileMetadata> = new Map();
   private previousTree: MerkleTree | null = null;
-  private checkpointPath: string;
-  private collectionName: string;
+  private readonly checkpointPath: string;
+  private readonly collectionName: string;
 
   constructor(
-    private codebasePath: string,
+    private readonly codebasePath: string,
     collectionName: string,
   ) {
     this.collectionName = collectionName;
@@ -360,7 +360,7 @@ export class FileSynchronizer {
   async loadCheckpoint(): Promise<Checkpoint | null> {
     try {
       const data = await fs.readFile(this.checkpointPath, "utf-8");
-      const checkpoint: Checkpoint = JSON.parse(data);
+      const checkpoint = JSON.parse(data) as Checkpoint;
 
       // Validate checkpoint
       if (!checkpoint.processedFiles || !checkpoint.totalFiles) {

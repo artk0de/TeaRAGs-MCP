@@ -77,7 +77,7 @@ export class Factory<T> {
 
 // Builder pattern with fluent interface
 export class QueryBuilder<T> {
-  private filters: Array<(item: T) => boolean> = [];
+  private filters: ((item: T) => boolean)[] = [];
   private sortFn?: (a: T, b: T) => number;
   private limitValue?: number;
 

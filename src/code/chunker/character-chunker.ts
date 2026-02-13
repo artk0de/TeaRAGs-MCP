@@ -7,7 +7,7 @@ import type { ChunkerConfig, CodeChunk } from "../types.js";
 import type { CodeChunker } from "./base.js";
 
 export class CharacterChunker implements CodeChunker {
-  constructor(private config: ChunkerConfig) {}
+  constructor(private readonly config: ChunkerConfig) {}
 
   async chunk(code: string, filePath: string, language: string): Promise<CodeChunk[]> {
     const chunks: CodeChunk[] = [];

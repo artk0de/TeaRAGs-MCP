@@ -106,7 +106,7 @@ export class MerkleTree {
     });
   }
 
-  private serializeNode(node: MerkleNode | undefined): any | null {
+  private serializeNode(node: MerkleNode | undefined): { hash: string; left: unknown; right: unknown } | null {
     if (!node) return null;
     return {
       hash: node.hash,
@@ -120,13 +120,19 @@ export class MerkleTree {
    */
   static deserialize(data: string): MerkleTree {
     const tree = new MerkleTree();
-    const obj = JSON.parse(data);
+    const obj = JSON.parse(data) as { root: SerializedNode | null };
     tree.root = tree.deserializeNode(obj.root);
     return tree;
   }
 
-  private deserializeNode(obj: any): MerkleNode | undefined {
+  private deserializeNode(obj: SerializedNode | null): MerkleNode | undefined {
     if (!obj) return undefined;
     return new MerkleNode(obj.hash, this.deserializeNode(obj.left), this.deserializeNode(obj.right));
   }
+}
+
+interface SerializedNode {
+  hash: string;
+  left: SerializedNode | null;
+  right: SerializedNode | null;
 }

@@ -24,10 +24,10 @@ import { resolveCollectionName, validatePath } from "./shared.js";
 
 export class ReindexModule {
   constructor(
-    private qdrant: QdrantManager,
-    private embeddings: EmbeddingProvider,
-    private config: CodeConfig,
-    private enrichment: EnrichmentModule,
+    private readonly qdrant: QdrantManager,
+    private readonly embeddings: EmbeddingProvider,
+    private readonly config: CodeConfig,
+    private readonly enrichment: EnrichmentModule,
   ) {}
 
   /**
@@ -82,11 +82,11 @@ export class ReindexModule {
       // Check for existing checkpoint (resume from interruption)
       const checkpoint = await synchronizer.loadCheckpoint();
       let resumeFromCheckpoint = false;
-      let alreadyProcessedFiles = new Set<string>();
+      let _alreadyProcessedFiles = new Set<string>();
 
       if (checkpoint) {
         resumeFromCheckpoint = true;
-        alreadyProcessedFiles = new Set(checkpoint.processedFiles);
+        _alreadyProcessedFiles = new Set(checkpoint.processedFiles);
         console.error(
           `[Reindex] Resuming from checkpoint: ${checkpoint.processedFiles.length} files already processed`,
         );
@@ -129,7 +129,7 @@ export class ReindexModule {
       }
 
       // Checkpoint configuration
-      const CHECKPOINT_INTERVAL = 100; // Save checkpoint every N files
+      const _CHECKPOINT_INTERVAL = 100; // Save checkpoint every N files
 
       const chunkerConfig = {
         chunkSize: this.config.chunkSize,
@@ -168,7 +168,7 @@ export class ReindexModule {
               progressCallback?.({
                 phase: "scanning",
                 current: deleted,
-                total: total,
+                total,
                 percentage: 5 + Math.floor((deleted / total) * 5),
                 message: `Deleting old chunks: ${deleted}/${total} files...`,
               });

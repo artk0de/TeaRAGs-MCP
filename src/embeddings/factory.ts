@@ -1,4 +1,4 @@
-import { EmbeddingProvider, ProviderConfig } from "./base.js";
+import type { EmbeddingProvider, ProviderConfig } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
 import { OllamaEmbeddings } from "./ollama.js";
 import { OpenAIEmbeddings } from "./openai.js";
@@ -48,7 +48,9 @@ export class EmbeddingProviderFactory {
         );
 
       default:
-        throw new Error(`Unknown embedding provider: ${provider}. Supported providers: openai, cohere, voyage, ollama`);
+        throw new Error(
+          `Unknown embedding provider: ${String(provider)}. Supported providers: openai, cohere, voyage, ollama`,
+        );
     }
   }
 

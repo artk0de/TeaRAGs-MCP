@@ -347,9 +347,12 @@ function calculateScore(signals: Record<string, number>, weights: ScoringWeights
   let totalWeight = 0;
 
   for (const [key, weight] of Object.entries(weights)) {
-    if (weight && weight !== 0 && key in signals) {
-      score += signals[key] * weight;
-      totalWeight += Math.abs(weight);
+    if (typeof weight === "number" && weight !== 0 && key in signals) {
+      const signalValue = signals[key];
+      if (typeof signalValue === "number") {
+        score += signalValue * weight;
+        totalWeight += Math.abs(weight);
+      }
     }
   }
 
@@ -381,9 +384,10 @@ export function rerankResults<T extends RerankableResult>(
   }
 
   // If only similarity weight, skip reranking
-  const weightKeys = Object.keys(weights).filter(
-    (k) => weights[k as keyof ScoringWeights] && weights[k as keyof ScoringWeights]! !== 0,
-  );
+  const weightKeys = Object.keys(weights).filter((k) => {
+    const w = weights[k as keyof ScoringWeights];
+    return w !== undefined && w !== 0;
+  });
   if (weightKeys.length === 1 && weightKeys[0] === "similarity") {
     return results;
   }

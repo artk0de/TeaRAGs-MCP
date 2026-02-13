@@ -1,7 +1,7 @@
 import Bottleneck from "bottleneck";
 import OpenAI from "openai";
 
-import { EmbeddingProvider, EmbeddingResult, ProviderConfig, RateLimitConfig } from "./base.js";
+import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 
 interface OpenAIError {
   status?: number;
@@ -14,16 +14,16 @@ interface OpenAIError {
 }
 
 export class OpenAIEmbeddings implements EmbeddingProvider {
-  private client: OpenAI;
-  private model: string;
-  private dimensions: number;
-  private limiter: Bottleneck;
-  private retryAttempts: number;
-  private retryDelayMs: number;
+  private readonly client: OpenAI;
+  private readonly model: string;
+  private readonly dimensions: number;
+  private readonly limiter: Bottleneck;
+  private readonly retryAttempts: number;
+  private readonly retryDelayMs: number;
 
   constructor(
     apiKey: string,
-    model: string = "text-embedding-3-small",
+    model = "text-embedding-3-small",
     dimensions?: number,
     rateLimitConfig?: RateLimitConfig,
   ) {
@@ -58,7 +58,7 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
     });
   }
 
-  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt: number = 0): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {
@@ -103,7 +103,7 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
-    return this.limiter.schedule(() =>
+    return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
         const response = await this.client.embeddings.create({
           model: this.model,
@@ -120,7 +120,7 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    return this.limiter.schedule(() =>
+    return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
         const response = await this.client.embeddings.create({
           model: this.model,

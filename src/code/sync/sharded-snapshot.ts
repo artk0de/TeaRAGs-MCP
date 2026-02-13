@@ -36,12 +36,12 @@ interface SnapshotMeta {
     virtualNodesPerShard: number;
     shardCount: number;
   };
-  shards: Array<{
+  shards: {
     index: number;
     fileCount: number;
     merkleRoot: string;
     checksum: string;
-  }>;
+  }[];
   metaRootHash: string;
 }
 
@@ -70,7 +70,7 @@ export class ShardedSnapshotManager {
   private readonly shardCount: number;
   private readonly virtualNodesPerShard: number;
 
-  constructor(baseDir: string, collectionName: string, shardCount: number = 4, virtualNodesPerShard: number = 150) {
+  constructor(baseDir: string, collectionName: string, shardCount = 4, virtualNodesPerShard = 150) {
     this.snapshotDir = join(baseDir, collectionName);
     this.shardCount = shardCount;
     this.virtualNodesPerShard = virtualNodesPerShard;
@@ -102,14 +102,18 @@ export class ShardedSnapshotManager {
 
       for (const [path, metadata] of files) {
         const shardIndex = hashRing.getShard(path);
-        shardFiles.get(shardIndex)!.set(path, metadata);
+        const shard = shardFiles.get(shardIndex);
+        if (shard) {
+          shard.set(path, metadata);
+        }
       }
 
       // Write shards and compute merkle roots
       const shardInfos: SnapshotMeta["shards"] = [];
 
       for (let i = 0; i < this.shardCount; i++) {
-        const filesInShard = shardFiles.get(i)!;
+        const filesInShard = shardFiles.get(i);
+        if (!filesInShard) continue;
 
         // Compute merkle root for this shard
         const fileHashes = new Map<string, string>();
@@ -197,14 +201,14 @@ export class ShardedSnapshotManager {
     let meta: SnapshotMeta;
     try {
       const metaContent = await fs.readFile(metaPath, "utf-8");
-      meta = JSON.parse(metaContent);
+      meta = JSON.parse(metaContent) as SnapshotMeta;
     } catch (error) {
-      throw new Error(`Failed to read meta.json: ${error}`);
+      throw new Error(`Failed to read meta.json: ${String(error)}`);
     }
 
     // Load all shards IN PARALLEL for faster initialization
     const files = new Map<string, FileMetadata>();
-    const shardMerkleRoots: string[] = new Array(meta.shards.length);
+    const shardMerkleRoots: string[] = Array.from({ length: meta.shards.length }, () => "");
 
     // OPTIMIZATION: Read all shards concurrently instead of sequentially
     const shardLoadPromises = meta.shards.map(async (shardInfo) => {
@@ -217,12 +221,12 @@ export class ShardedSnapshotManager {
       const actualChecksum = createHash("sha256").update(shardContent).digest("hex");
       if (actualChecksum !== shardInfo.checksum) {
         throw new Error(
-          `Checksum mismatch for shard ${shardInfo.index}: ` + `expected ${shardInfo.checksum}, got ${actualChecksum}`,
+          `Checksum mismatch for shard ${shardInfo.index}: expected ${shardInfo.checksum}, got ${actualChecksum}`,
         );
       }
 
       // Parse shard data
-      const shardData: ShardData = JSON.parse(shardContent);
+      const shardData = JSON.parse(shardContent) as ShardData;
 
       return { shardInfo, shardData };
     });
@@ -299,7 +303,9 @@ export class ShardedSnapshotManager {
 
     try {
       const entries = await fs.readdir(parentDir);
-      const baseName = this.snapshotDir.split("/").pop()!;
+      const pathParts = this.snapshotDir.split("/");
+      const baseName = pathParts[pathParts.length - 1];
+      if (!baseName) return;
 
       for (const entry of entries) {
         if (entry.startsWith(`${baseName}.tmp.`)) {

@@ -26,13 +26,14 @@ export class WorkerPool {
   private readonly onCompletion?: BatchCompletionCallback;
   private readonly onQueueChange?: (queueSize: number) => void;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- heterogeneous batch queue requires existential type
   private queue: QueuedBatch<any>[] = [];
   private activeWorkers = 0;
   private isShuttingDown = false;
   private totalProcessed = 0;
   private totalErrors = 0;
   private totalTimeMs = 0;
-  private startTime: number;
+  private readonly startTime: number;
 
   constructor(
     config: WorkerPoolConfig,
@@ -49,7 +50,7 @@ export class WorkerPool {
    * Submit a batch for processing
    * @returns Promise that resolves when batch is processed
    */
-  submit<T extends WorkItem>(batch: Batch<T>, handler: BatchHandler<T>): Promise<BatchResult> {
+  async submit<T extends WorkItem>(batch: Batch<T>, handler: BatchHandler<T>): Promise<BatchResult> {
     if (this.isShuttingDown) {
       return Promise.reject(new Error("WorkerPool is shutting down"));
     }
@@ -178,7 +179,7 @@ export class WorkerPool {
 
     this.notifyQueueChange();
     this.activeWorkers++;
-    this.processWithRetry(queuedBatch);
+    void this.processWithRetry(queuedBatch);
   }
 
   private async processWithRetry<T extends WorkItem>(queuedBatch: QueuedBatch<T>): Promise<void> {

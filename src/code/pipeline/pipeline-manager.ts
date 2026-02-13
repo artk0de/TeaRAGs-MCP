@@ -50,13 +50,13 @@ export class PipelineManager {
   private readonly config: PipelineConfig;
   private readonly handlers: PipelineHandlers;
 
-  private workerPool: WorkerPool;
-  private upsertAccumulator: BatchAccumulator<UpsertItem>;
-  private deleteAccumulator: BatchAccumulator<DeleteItem>;
+  private readonly workerPool: WorkerPool;
+  private readonly upsertAccumulator: BatchAccumulator<UpsertItem>;
+  private readonly deleteAccumulator: BatchAccumulator<DeleteItem>;
 
   private isRunning = false;
   private pendingBatches: Promise<BatchResult>[] = [];
-  private stats = {
+  private readonly stats = {
     itemsProcessed: 0,
     batchesProcessed: 0,
     errors: 0,
@@ -82,18 +82,22 @@ export class PipelineManager {
     // Initialize worker pool
     this.workerPool = new WorkerPool(
       this.config.workerPool,
-      (result) => this.onBatchComplete(result),
-      (queueSize) => this.onQueueChange(queueSize),
+      (result) => {
+        this.onBatchComplete(result);
+      },
+      (queueSize) => {
+        this.onQueueChange(queueSize);
+      },
     );
 
     // Initialize accumulators
-    this.upsertAccumulator = new BatchAccumulator(this.config.upsertAccumulator, "upsert", (batch) =>
-      this.submitBatch(batch, this.handlers.handleUpsertBatch),
-    );
+    this.upsertAccumulator = new BatchAccumulator(this.config.upsertAccumulator, "upsert", (batch) => {
+      this.submitBatch(batch, this.handlers.handleUpsertBatch);
+    });
 
-    this.deleteAccumulator = new BatchAccumulator(this.config.deleteAccumulator, "delete", (batch) =>
-      this.submitBatch(batch, this.handlers.handleDeleteBatch),
-    );
+    this.deleteAccumulator = new BatchAccumulator(this.config.deleteAccumulator, "delete", (batch) => {
+      this.submitBatch(batch, this.handlers.handleDeleteBatch);
+    });
   }
 
   /**
@@ -312,7 +316,7 @@ export class PipelineManager {
     }
   }
 
-  private isPromiseResolved(promise: Promise<any>): boolean {
+  private isPromiseResolved(promise: Promise<unknown>): boolean {
     // Check if promise is resolved by racing with a known resolved promise
     let resolved = false;
     Promise.race([promise.then(() => (resolved = true)), Promise.resolve()]).catch(() => {});

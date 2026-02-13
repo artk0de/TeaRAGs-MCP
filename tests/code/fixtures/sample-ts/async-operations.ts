@@ -7,7 +7,7 @@ export class AsyncOperations {
    * Parallel async operations
    */
   async fetchMultiple(urls: string[]): Promise<any[]> {
-    const promises = urls.map((url) => this.fetchData(url));
+    const promises = urls.map(async (url) => this.fetchData(url));
     return await Promise.all(promises);
   }
 
@@ -29,7 +29,11 @@ export class AsyncOperations {
   async fetchWithTimeout(url: string, timeout: number): Promise<any> {
     return Promise.race([
       this.fetchData(url),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), timeout)),
+      new Promise((_, reject) =>
+        setTimeout(() => {
+          reject(new Error("Timeout"));
+        }, timeout),
+      ),
     ]);
   }
 
@@ -77,7 +81,7 @@ export class AsyncOperations {
   /**
    * Retry with exponential backoff
    */
-  async retryWithBackoff<T>(fn: () => Promise<T>, maxRetries: number = 3): Promise<T> {
+  async retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
     let lastError: Error;
 
     for (let i = 0; i <= maxRetries; i++) {
@@ -99,7 +103,7 @@ export class AsyncOperations {
     return { url, data: "mock data" };
   }
 
-  private delay(ms: number): Promise<void> {
+  private async delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

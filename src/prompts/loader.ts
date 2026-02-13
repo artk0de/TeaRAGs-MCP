@@ -41,7 +41,7 @@ const PromptsConfigSchema = z.object({
 export function loadPromptsConfig(filePath: string): PromptsConfig {
   try {
     const content = readFileSync(filePath, "utf-8");
-    const parsed = JSON.parse(content);
+    const parsed: unknown = JSON.parse(content);
     const validated = PromptsConfigSchema.parse(parsed);
 
     // Validate unique prompt names

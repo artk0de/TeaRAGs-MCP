@@ -13,13 +13,13 @@ interface TokenFrequency {
 }
 
 export class BM25SparseVectorGenerator {
-  private vocabulary: Map<string, number>;
-  private idfScores: Map<string, number>;
+  private readonly vocabulary: Map<string, number>;
+  private readonly idfScores: Map<string, number>;
   private documentCount: number;
-  private k1: number;
-  private b: number;
+  private readonly k1: number;
+  private readonly b: number;
 
-  constructor(k1: number = 1.2, b: number = 0.75) {
+  constructor(k1 = 1.2, b = 0.75) {
     this.vocabulary = new Map();
     this.idfScores = new Map();
     this.documentCount = 0;
@@ -81,7 +81,7 @@ export class BM25SparseVectorGenerator {
    * Generate sparse vector for a query or document
    * Returns indices and values for non-zero dimensions
    */
-  generate(text: string, avgDocLength: number = 50): SparseVector {
+  generate(text: string, avgDocLength = 50): SparseVector {
     const tokens = this.tokenize(text);
     const tf = this.getTermFrequency(tokens);
     const docLength = tokens.length;
@@ -97,7 +97,8 @@ export class BM25SparseVectorGenerator {
         this.vocabulary.set(token, this.vocabulary.size);
       }
 
-      const index = this.vocabulary.get(token)!;
+      const index = this.vocabulary.get(token);
+      if (index === undefined) continue;
 
       // Use a default IDF if not trained
       const idf = this.idfScores.get(token) || 1.0;

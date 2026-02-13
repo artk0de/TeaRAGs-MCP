@@ -273,7 +273,7 @@ describe("QdrantManager", () => {
       await manager.addPoints("test-collection", points);
 
       // Verify the ID was normalized to UUID format
-      const calls = mockClient.upsert.mock.calls;
+      const { calls } = mockClient.upsert.mock;
       expect(calls).toHaveLength(1);
       expect(calls[0][0]).toBe("test-collection");
 
@@ -387,7 +387,7 @@ describe("QdrantManager", () => {
 
       await manager.addPointsOptimized("test-collection", points);
 
-      const calls = mockClient.upsert.mock.calls;
+      const { calls } = mockClient.upsert.mock;
       expect(calls).toHaveLength(1);
 
       const normalizedId = calls[0][1].points[0].id;
@@ -754,7 +754,7 @@ describe("QdrantManager", () => {
 
       expect(mockClient.delete).toHaveBeenCalledWith("test-collection", {
         wait: true,
-        filter: filter,
+        filter,
       });
     });
 
@@ -769,7 +769,7 @@ describe("QdrantManager", () => {
 
       expect(mockClient.delete).toHaveBeenCalledWith("test-collection", {
         wait: true,
-        filter: filter,
+        filter,
       });
     });
 
@@ -784,7 +784,7 @@ describe("QdrantManager", () => {
 
       expect(mockClient.delete).toHaveBeenCalledWith("test-collection", {
         wait: true,
-        filter: filter,
+        filter,
       });
     });
   });
@@ -1088,7 +1088,7 @@ describe("QdrantManager", () => {
 
       await manager.addPointsWithSparse("test-collection", points);
 
-      const calls = mockClient.upsert.mock.calls;
+      const { calls } = mockClient.upsert.mock;
       expect(calls).toHaveLength(1);
       expect(calls[0][0]).toBe("test-collection");
 
@@ -1258,7 +1258,7 @@ describe("QdrantManager", () => {
 
       await manager.addPointsWithSparseOptimized("test-collection", points);
 
-      const calls = mockClient.upsert.mock.calls;
+      const { calls } = mockClient.upsert.mock;
       expect(calls).toHaveLength(1);
       expect(calls[0][0]).toBe("test-collection");
 
@@ -1394,7 +1394,7 @@ describe("QdrantManager", () => {
         concurrency: 4,
       });
 
-      const calls = mockClient.delete.mock.calls;
+      const { calls } = mockClient.delete.mock;
       expect(calls).toHaveLength(2);
 
       // First batch should have wait=false

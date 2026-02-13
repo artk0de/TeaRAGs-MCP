@@ -5,13 +5,13 @@
 // Export everything from a module
 export * from "./auth.js";
 // Named exports from other modules
-export { AuthService, User } from "./auth.js";
+export { AuthService, type User } from "./auth.js";
 // Re-export with alias
 export { CONFIG, ConfigManager, Environment, Environment as Env } from "./config.js";
 // Default export
-export { ConnectionConfig, connect, Database, default, InMemoryDatabase } from "./database.js";
+export { type ConnectionConfig, connect, type Database, default, InMemoryDatabase } from "./database.js";
 export { capitalize, debounce, isValidEmail, retry, slugify } from "./utils.js";
-export { ValidationResult, Validator } from "./validator.js";
+export { type ValidationResult, Validator } from "./validator.js";
 
 // Local exports
 export const VERSION = "1.0.0";

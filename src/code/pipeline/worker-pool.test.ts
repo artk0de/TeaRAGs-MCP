@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Batch, BatchResult, UpsertItem, WorkerPoolConfig } from "./types.js";
+import type { Batch, UpsertItem, WorkerPoolConfig } from "./types.js";
 import { WorkerPool } from "./worker-pool.js";
 
 describe("WorkerPool", () => {
@@ -132,12 +132,12 @@ describe("WorkerPool", () => {
     });
 
     it("should report queue depth correctly", () => {
-      const handler = vi.fn().mockImplementation(() => new Promise(() => {})); // Never resolves
+      const handler = vi.fn().mockImplementation(async () => new Promise(() => {})); // Never resolves
 
-      pool.submit(createBatch("batch-1"), handler);
-      pool.submit(createBatch("batch-2"), handler);
-      pool.submit(createBatch("batch-3"), handler);
-      pool.submit(createBatch("batch-4"), handler);
+      void pool.submit(createBatch("batch-1"), handler);
+      void pool.submit(createBatch("batch-2"), handler);
+      void pool.submit(createBatch("batch-3"), handler);
+      void pool.submit(createBatch("batch-4"), handler);
 
       // 2 active, 2 queued
       expect(pool.getQueueDepth()).toBe(2);
@@ -325,7 +325,7 @@ describe("WorkerPool", () => {
   describe("Shutdown", () => {
     it("should reject new batches after shutdown starts", async () => {
       const handler = vi.fn().mockResolvedValue(undefined);
-      pool.submit(createBatch("batch-1"), handler);
+      void pool.submit(createBatch("batch-1"), handler);
 
       const shutdownPromise = pool.shutdown();
 
@@ -345,7 +345,7 @@ describe("WorkerPool", () => {
         completed = true;
       });
 
-      realPool.submit(createBatch("batch-1"), handler);
+      void realPool.submit(createBatch("batch-1"), handler);
 
       await realPool.shutdown();
 
@@ -353,10 +353,10 @@ describe("WorkerPool", () => {
     });
 
     it("should cancel pending work on force shutdown", async () => {
-      const handler = vi.fn().mockImplementation(() => new Promise(() => {}));
+      const handler = vi.fn().mockImplementation(async () => new Promise(() => {}));
 
-      pool.submit(createBatch("batch-1"), handler);
-      pool.submit(createBatch("batch-2"), handler);
+      void pool.submit(createBatch("batch-1"), handler);
+      void pool.submit(createBatch("batch-2"), handler);
       const p3 = pool.submit(createBatch("batch-3"), handler);
       const p4 = pool.submit(createBatch("batch-4"), handler);
 
@@ -385,9 +385,9 @@ describe("WorkerPool", () => {
         completedCount++;
       });
 
-      realPool.submit(createBatch("batch-1"), handler);
-      realPool.submit(createBatch("batch-2"), handler);
-      realPool.submit(createBatch("batch-3"), handler);
+      void realPool.submit(createBatch("batch-1"), handler);
+      void realPool.submit(createBatch("batch-2"), handler);
+      void realPool.submit(createBatch("batch-3"), handler);
 
       await realPool.drain();
 

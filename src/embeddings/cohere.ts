@@ -1,7 +1,7 @@
 import Bottleneck from "bottleneck";
 import { CohereClient } from "cohere-ai";
 
-import { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 
 interface CohereError {
   status?: number;
@@ -10,17 +10,17 @@ interface CohereError {
 }
 
 export class CohereEmbeddings implements EmbeddingProvider {
-  private client: CohereClient;
-  private model: string;
-  private dimensions: number;
-  private limiter: Bottleneck;
-  private retryAttempts: number;
-  private retryDelayMs: number;
-  private inputType: "search_document" | "search_query" | "classification" | "clustering";
+  private readonly client: CohereClient;
+  private readonly model: string;
+  private readonly dimensions: number;
+  private readonly limiter: Bottleneck;
+  private readonly retryAttempts: number;
+  private readonly retryDelayMs: number;
+  private readonly inputType: "search_document" | "search_query" | "classification" | "clustering";
 
   constructor(
     apiKey: string,
-    model: string = "embed-english-v3.0",
+    model = "embed-english-v3.0",
     dimensions?: number,
     rateLimitConfig?: RateLimitConfig,
     inputType: "search_document" | "search_query" | "classification" | "clustering" = "search_document",
@@ -53,7 +53,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
     });
   }
 
-  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt: number = 0): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {
@@ -85,7 +85,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
-    return this.limiter.schedule(() =>
+    return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
         const response = await this.client.embed({
           texts: [text],
@@ -109,7 +109,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    return this.limiter.schedule(() =>
+    return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
         const response = await this.client.embed({
           texts,

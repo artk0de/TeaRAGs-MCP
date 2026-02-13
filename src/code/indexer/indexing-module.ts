@@ -23,10 +23,10 @@ import { INDEXING_METADATA_ID, resolveCollectionName, validatePath } from "./sha
 
 export class IndexingModule {
   constructor(
-    private qdrant: QdrantManager,
-    private embeddings: EmbeddingProvider,
-    private config: CodeConfig,
-    private enrichment: EnrichmentModule,
+    private readonly qdrant: QdrantManager,
+    private readonly embeddings: EmbeddingProvider,
+    private readonly config: CodeConfig,
+    private readonly enrichment: EnrichmentModule,
   ) {}
 
   /**
@@ -324,7 +324,7 @@ export class IndexingModule {
           console.error("[IndexingMarker] Failed to set completion marker via setPayload:", error);
           // Fallback: overwrite the point (loses enrichment data but at least marks complete)
           const vectorSize = this.embeddings.getDimensions();
-          const zeroVector = new Array(vectorSize).fill(0);
+          const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
           await this.qdrant.addPoints(collectionName, [
             {
               id: INDEXING_METADATA_ID,
@@ -342,7 +342,7 @@ export class IndexingModule {
 
       // Initial marker: create the point with a zero vector (required by Qdrant)
       const vectorSize = this.embeddings.getDimensions();
-      const zeroVector = new Array(vectorSize).fill(0);
+      const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
 
       const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
 

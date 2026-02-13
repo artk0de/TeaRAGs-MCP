@@ -3,11 +3,18 @@ import type Parser from "tree-sitter";
 import { rubyHooks } from "./hooks/ruby/index.js";
 import type { ChunkingHook } from "./hooks/types.js";
 
+// Type for tree-sitter language modules
+interface TreeSitterLanguageModule {
+  default?: unknown;
+  typescript?: unknown;
+  [key: string]: unknown;
+}
+
 export interface LanguageDefinition {
   /** Function to load the language module (lazy) */
-  loadModule: () => any;
+  loadModule: () => Promise<TreeSitterLanguageModule | null>;
   /** Function to extract language from module (some have nested structure) */
-  extractLanguage?: (mod: any) => any;
+  extractLanguage?: (mod: TreeSitterLanguageModule) => unknown;
   /** AST node types that should be chunked */
   chunkableTypes: string[];
   /**
@@ -44,8 +51,13 @@ export interface LanguageConfig {
  */
 export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
   typescript: {
-    loadModule: () => import("tree-sitter-typescript"),
-    extractLanguage: (mod) => mod.default?.typescript || mod.typescript,
+    loadModule: async () => import("tree-sitter-typescript") as Promise<TreeSitterLanguageModule>,
+    extractLanguage: (mod: TreeSitterLanguageModule) => {
+      if (typeof mod.default === "object" && mod.default !== null && "typescript" in mod.default) {
+        return (mod.default as Record<string, unknown>).typescript;
+      }
+      return mod.typescript;
+    },
     chunkableTypes: [
       "function_declaration",
       "method_definition",
@@ -56,38 +68,38 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     ],
   },
   javascript: {
-    loadModule: () => import("tree-sitter-javascript"),
-    extractLanguage: (mod) => mod.default || mod,
+    loadModule: async () => import("tree-sitter-javascript") as Promise<TreeSitterLanguageModule>,
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_declaration", "method_definition", "class_declaration", "export_statement"],
   },
   python: {
-    loadModule: () => import("tree-sitter-python"),
-    extractLanguage: (mod) => mod.default || mod,
+    loadModule: async () => import("tree-sitter-python") as Promise<TreeSitterLanguageModule>,
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_definition", "class_definition", "decorated_definition"],
   },
   go: {
-    loadModule: () => import("tree-sitter-go"),
-    extractLanguage: (mod) => mod.default || mod,
+    loadModule: async () => import("tree-sitter-go") as Promise<TreeSitterLanguageModule>,
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_declaration", "method_declaration", "type_declaration", "interface_declaration"],
   },
   rust: {
-    loadModule: () => import("tree-sitter-rust"),
-    extractLanguage: (mod) => mod.default || mod,
+    loadModule: async () => import("tree-sitter-rust") as Promise<TreeSitterLanguageModule>,
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_item", "impl_item", "trait_item", "struct_item", "enum_item"],
   },
   java: {
-    loadModule: () => import("tree-sitter-java"),
-    extractLanguage: (mod) => mod.default || mod,
+    loadModule: async () => import("tree-sitter-java") as Promise<TreeSitterLanguageModule>,
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["method_declaration", "class_declaration", "interface_declaration", "enum_declaration"],
   },
   bash: {
-    loadModule: () => import("tree-sitter-bash"),
-    extractLanguage: (mod) => mod.default || mod,
+    loadModule: async () => import("tree-sitter-bash") as Promise<TreeSitterLanguageModule>,
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_definition", "command"],
   },
   ruby: {
-    loadModule: () => import("tree-sitter-ruby"),
-    extractLanguage: (mod) => mod.default || mod,
+    loadModule: async () => import("tree-sitter-ruby") as Promise<TreeSitterLanguageModule>,
+    extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: [
       "method", // def method_name ... end
       "singleton_method", // def self.method_name ... end
@@ -113,7 +125,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // Markdown uses remark parser (unified/mdast) instead of tree-sitter
     // due to compatibility issues with tree-sitter-markdown grammar (requires tree-sitter 0.26+)
     // Remark is a robust CommonMark/GFM parser used by VS Code, Gatsby, etc.
-    loadModule: () => Promise.resolve(null),
+    loadModule: async () => Promise.resolve(null),
     chunkableTypes: [],
     // Flag for documentation files - enables filtering in search API
     isDocumentation: true,

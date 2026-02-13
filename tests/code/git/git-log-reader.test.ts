@@ -516,7 +516,7 @@ describe("buildChunkChurnMap", () => {
   it("should skip single-chunk files", async () => {
     if (!repoRoot) return;
     // Create a chunkMap with only single-entry files
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set(`${repoRoot}/package.json`, [{ chunkId: "test-id-1", startLine: 1, endLine: 90 }]);
     const result = await reader.buildChunkChurnMap(repoRoot, chunkMap);
     expect(result.size).toBe(0);
@@ -526,7 +526,7 @@ describe("buildChunkChurnMap", () => {
     if (!repoRoot) return;
 
     // Use src/code/indexer.ts which is a large file with multiple potential chunks
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set(`${repoRoot}/src/code/indexer.ts`, [
       { chunkId: "chunk-top", startLine: 1, endLine: 50 },
       { chunkId: "chunk-mid", startLine: 51, endLine: 200 },
@@ -562,7 +562,7 @@ describe("buildChunkChurnMap", () => {
     const fileChurnData = fileChurnMap.get(testFile);
     if (!fileChurnData || fileChurnData.commits.length === 0) return;
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set(`${repoRoot}/${testFile}`, [
       { chunkId: "chunk-a", startLine: 1, endLine: 50 },
       { chunkId: "chunk-b", startLine: 51, endLine: 200 },
@@ -593,7 +593,7 @@ describe("buildChunkChurnMap", () => {
 
     const fileContributors = new Set(fileChurnData.commits.map((c) => c.author)).size;
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set(`${repoRoot}/${testFile}`, [
       { chunkId: "chunk-a", startLine: 1, endLine: 50 },
       { chunkId: "chunk-b", startLine: 51, endLine: 200 },
@@ -612,7 +612,7 @@ describe("buildChunkChurnMap", () => {
     if (!repoRoot) return;
 
     // Use a file that we know has had changes in different sections
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set(`${repoRoot}/src/code/indexer.ts`, [
       { chunkId: "chunk-imports", startLine: 1, endLine: 30 },
       { chunkId: "chunk-middle", startLine: 100, endLine: 300 },
@@ -645,7 +645,7 @@ describe("buildChunkChurnMap", () => {
     // With lineRanges, it only catches changes in lines 1-5 and 200-210.
     const chunkMap = new Map<
       string,
-      Array<{ chunkId: string; startLine: number; endLine: number; lineRanges?: Array<{ start: number; end: number }> }>
+      { chunkId: string; startLine: number; endLine: number; lineRanges?: { start: number; end: number }[] }[]
     >();
     chunkMap.set(`${repoRoot}/src/code/indexer.ts`, [
       {
@@ -663,7 +663,7 @@ describe("buildChunkChurnMap", () => {
     const withRanges = await reader.buildChunkChurnMap(repoRoot, chunkMap);
 
     // Now compare: same file without lineRanges (block covers full 1-210)
-    const chunkMapNoRanges = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMapNoRanges = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMapNoRanges.set(`${repoRoot}/src/code/indexer.ts`, [
       { chunkId: "block-chunk", startLine: 1, endLine: 210 },
       { chunkId: "method-chunk", startLine: 6, endLine: 199 },
@@ -779,7 +779,7 @@ describe("buildChunkChurnMap", () => {
 
     // Create a chunkMap with many files (>500) to trigger batching
     // Use fake paths — they won't match git history, but the CLI calls must not crash
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     for (let i = 0; i < 800; i++) {
       chunkMap.set(`${repoRoot}/fake/deep/path/file-${i}.ts`, [
         { chunkId: `chunk-${i}-a`, startLine: 1, endLine: 50 },
@@ -1066,7 +1066,7 @@ describe("_getCommitsViaIsomorphicGit error handling", () => {
     const git = await import("isomorphic-git");
     vi.spyOn(git.default, "log").mockRejectedValue(new Error("git log failure"));
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1092,7 +1092,7 @@ describe("_getCommitsViaIsomorphicGit error handling", () => {
       },
     ] as any);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1121,7 +1121,7 @@ describe("_getCommitsViaIsomorphicGit error handling", () => {
     // Mock diffTrees (called via walk) to throw
     vi.spyOn(git.default, "walk").mockRejectedValue(new Error("walk failed"));
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1179,7 +1179,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
         payload: "",
       } as any);
 
-      const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+      const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
       chunkMap.set("big-file.ts", [
         { chunkId: "c1", startLine: 1, endLine: 50 }, // endLine 50 > max 10
         { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1225,7 +1225,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
     const git = await import("isomorphic-git");
     vi.spyOn(git.default, "readCommit").mockRejectedValue(new Error("object not found"));
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1272,7 +1272,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
       payload: "",
     } as any);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1321,7 +1321,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
     // Both readBlob calls return empty (file doesn't exist in either)
     vi.spyOn(git.default, "readBlob").mockRejectedValue(new Error("not found"));
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1374,7 +1374,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
       blob: new TextEncoder().encode("identical content\nline 2\nline 3"),
     } as any);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1404,6 +1404,7 @@ describe("buildChunkChurnMap cache error", () => {
     reader = new GitLogReader();
 
     let callCount = 0;
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     vi.spyOn(reader as any, "getHead").mockImplementation(async () => {
       callCount++;
       if (callCount === 1) return "h".repeat(40); // First call succeeds (cache check)
@@ -1412,7 +1413,7 @@ describe("buildChunkChurnMap cache error", () => {
 
     vi.spyOn(reader as any, "_buildChunkChurnMapUncached").mockResolvedValue(new Map());
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1448,7 +1449,7 @@ describe("buildChunkChurnMap cache error", () => {
       ]),
     );
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1720,6 +1721,7 @@ describe("buildFileMetadataForPaths — batch failure", () => {
     reader = new GitLogReader();
 
     let callCount = 0;
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     vi.spyOn(reader as any, "withTimeout").mockImplementation(async (promise: Promise<any>) => {
       callCount++;
       if (callCount === 1) throw new Error("batch 1 failed");
@@ -1797,7 +1799,7 @@ describe("_buildChunkChurnMapUncached — fallback fileCommitCount", () => {
         blob: new TextEncoder().encode("new content\nline2\nline3"),
       } as any);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 2 },
       { chunkId: "c2", startLine: 3, endLine: 10 },
@@ -1840,7 +1842,7 @@ describe("_buildChunkChurnMapUncached — CLI pathspec fallback", () => {
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1892,7 +1894,7 @@ describe("buildChunkChurnMap — cache hit", () => {
 
     const buildSpy = vi.spyOn(reader as any, "_buildChunkChurnMapUncached").mockResolvedValue(mockOverlay);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -1951,6 +1953,7 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
     const sha = "a".repeat(40);
     let callCount = 0;
 
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     vi.spyOn(reader as any, "getCommitsByPathspecSingle").mockImplementation(async () => {
       callCount++;
       if (callCount === 1) {
@@ -1998,6 +2001,7 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
     reader = new GitLogReader();
 
     let callCount = 0;
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
     vi.spyOn(reader as any, "getCommitsByPathspecSingle").mockImplementation(async () => {
       callCount++;
       if (callCount === 1) throw new Error("batch 1 failed");
@@ -2158,7 +2162,7 @@ describe("_getCommitsViaIsomorphicGit — relevant files found", () => {
     // diffTrees returns files, some in chunkMap and some not
     vi.spyOn(reader as any, "diffTrees").mockResolvedValue(["auth.ts", "unrelated.ts", "config.ts"]);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("auth.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -2195,7 +2199,7 @@ describe("_getCommitsViaIsomorphicGit — relevant files found", () => {
     // Changed files that are NOT in the chunkMap
     vi.spyOn(reader as any, "diffTrees").mockResolvedValue(["other.ts", "readme.md"]);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("auth.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -2260,7 +2264,7 @@ describe("processCommitEntry — no relevant files", () => {
       },
     ]);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("target.ts", [
       { chunkId: "c1", startLine: 1, endLine: 50 },
       { chunkId: "c2", startLine: 51, endLine: 100 },
@@ -2326,7 +2330,7 @@ describe("processCommitEntry — bug fix accumulation", () => {
         blob: new TextEncoder().encode("new line 1\nnew line 2\nnew line 3"),
       } as any);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("auth.ts", [
       { chunkId: "c1", startLine: 1, endLine: 5 },
       { chunkId: "c2", startLine: 6, endLine: 100 },
@@ -2435,7 +2439,7 @@ describe("_buildChunkChurnMapUncached — concurrency control", () => {
         blob: new TextEncoder().encode("v3 line 1\nv3 line 2"),
       } as any);
 
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("test.ts", [
       { chunkId: "c1", startLine: 1, endLine: 2 },
       { chunkId: "c2", startLine: 3, endLine: 10 },
@@ -2521,7 +2525,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     // SHA has uppercase letters (git uses lowercase hex)
     const stdout = [
       "",
-      "AAAA" + "a".repeat(36), // uppercase chars — fails /^[a-f0-9]+$/ test
+      `AAAA${"a".repeat(36)}`, // uppercase chars — fails /^[a-f0-9]+$/ test
       "Alice",
       "alice@ex.com",
       "12345",

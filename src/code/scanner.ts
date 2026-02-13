@@ -10,10 +10,10 @@ import ignore, { type Ignore } from "ignore";
 import type { ScannerConfig } from "./types.js";
 
 export class FileScanner {
-  private ig: Ignore = ignore();
-  private supportedExts: Set<string>;
+  private readonly ig: Ignore = ignore();
+  private readonly supportedExts: Set<string>;
 
-  constructor(private config: ScannerConfig) {
+  constructor(private readonly config: ScannerConfig) {
     this.supportedExts = new Set(config.supportedExtensions);
   }
 

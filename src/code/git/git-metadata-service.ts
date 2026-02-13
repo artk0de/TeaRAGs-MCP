@@ -46,14 +46,14 @@ export class GitMetadataService {
   private readonly debug: boolean;
 
   // In-memory caches (L1)
-  private blameCache = new Map<string, BlameCache>();
-  private repoRootCache = new Map<string, GitRepoInfo>();
-  private contentHashCache = new Map<string, string>();
+  private readonly blameCache = new Map<string, BlameCache>();
+  private readonly repoRootCache = new Map<string, GitRepoInfo>();
+  private readonly contentHashCache = new Map<string, string>();
   /** Cache of commit SHA -> full body (for extracting taskIds from merge/squash commits) */
-  private commitBodyCache = new Map<string, Map<string, string>>();
+  private readonly commitBodyCache = new Map<string, Map<string, string>>();
 
   // Stats for debugging
-  private stats = {
+  private readonly stats = {
     cacheHitsL1: 0,
     cacheHitsL2: 0,
     cacheMisses: 0,
@@ -292,7 +292,7 @@ export class GitMetadataService {
 
     // Check L1 (memory) cache
     const memoryCached = this.blameCache.get(cacheKey);
-    if (memoryCached && memoryCached.contentHash === contentHash) {
+    if (memoryCached?.contentHash === contentHash) {
       this.stats.cacheHitsL1++;
       if (this.debug) {
         console.log(`[GitMetadata] L1 cache hit: ${relative(repoRoot, filePath)} (${memoryCached.lines.size} lines)`);
@@ -676,7 +676,7 @@ export class GitMetadataService {
     try {
       const cachePath = this.getCacheFilePath(repoRoot, filePath);
       const data = await fs.readFile(cachePath, "utf-8");
-      const cached: BlameCacheFile = JSON.parse(data);
+      const cached = JSON.parse(data) as BlameCacheFile;
 
       // Validate cache
       if (cached.version !== CACHE_VERSION || cached.contentHash !== contentHash) {
@@ -713,7 +713,7 @@ export class GitMetadataService {
     await fs.mkdir(dirname(cachePath), { recursive: true });
 
     // Convert to serializable format (6-tuple with taskIds)
-    const lines: Array<[number, string, string, string, number, string[]]> = [];
+    const lines: [number, string, string, string, number, string[]][] = [];
     for (const [lineNum, data] of cache.lines) {
       lines.push([lineNum, data.commit, data.author, data.authorEmail, data.authorTime, data.taskIds ?? []]);
     }

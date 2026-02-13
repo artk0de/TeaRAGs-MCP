@@ -12,7 +12,7 @@ export interface ConsistentHashOptions {
 }
 
 export class ConsistentHash {
-  private ring: Map<number, number> = new Map();
+  private readonly ring: Map<number, number> = new Map();
   private sortedPositions: number[] = [];
   private readonly shardCount: number;
   private readonly virtualNodesPerShard: number;
@@ -54,7 +54,11 @@ export class ConsistentHash {
     const hash = this.hash(filePath);
     const idx = this.binarySearchCeil(hash);
     const position = this.sortedPositions[idx];
-    return this.ring.get(position)!;
+    const shard = this.ring.get(position);
+    if (shard === undefined) {
+      throw new Error(`No shard found for position ${position}`);
+    }
+    return shard;
   }
 
   /**

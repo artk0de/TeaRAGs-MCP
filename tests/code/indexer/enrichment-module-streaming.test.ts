@@ -102,7 +102,9 @@ describe("EnrichmentModule streaming API", () => {
     vi.restoreAllMocks();
     try {
       rmSync(repoDir, { recursive: true, force: true });
-    } catch {}
+    } catch {
+      // expected empty - cleanup may fail if directory doesn't exist
+    }
   });
 
   describe("prefetchGitLog", () => {
@@ -253,7 +255,7 @@ describe("EnrichmentModule streaming API", () => {
       enrichment.prefetchGitLog(repoDir);
       await enrichment.awaitCompletion("test_collection");
 
-      const calls = qdrant.setPayload.mock.calls;
+      const { calls } = qdrant.setPayload.mock;
       const completionCall = calls.find((c: any[]) => c[1]?.enrichment?.status === "completed");
       expect(completionCall).toBeDefined();
     });
@@ -395,7 +397,7 @@ describe("EnrichmentModule streaming API", () => {
       enrichment.prefetchGitLog(repoDir, "test_collection");
 
       // Should have called setPayload with enrichment.status = "in_progress"
-      const calls = qdrant.setPayload.mock.calls;
+      const { calls } = qdrant.setPayload.mock;
       const inProgressCall = calls.find((c: any[]) => c[1]?.enrichment?.status === "in_progress");
       expect(inProgressCall).toBeDefined();
     });
@@ -425,7 +427,7 @@ describe("EnrichmentModule streaming API", () => {
       await enrichment.awaitCompletion("test_collection");
 
       // Find the completion marker call
-      const calls = qdrant.setPayload.mock.calls;
+      const { calls } = qdrant.setPayload.mock;
       const completionCall = calls.find((c: any[]) => c[1]?.enrichment?.status === "completed");
       expect(completionCall).toBeDefined();
 
@@ -476,7 +478,7 @@ describe("EnrichmentModule streaming API", () => {
       await new Promise((r) => setTimeout(r, 50));
 
       // Find the chunkEnrichment marker call
-      const calls = qdrant.setPayload.mock.calls;
+      const { calls } = qdrant.setPayload.mock;
       const chunkChurnCall = calls.find((c: any[]) => c[1]?.chunkEnrichment?.status === "completed");
       expect(chunkChurnCall).toBeDefined();
       expect(chunkChurnCall![1].chunkEnrichment.overlaysApplied).toBeGreaterThanOrEqual(0);

@@ -11,7 +11,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { GitMetadataService } from "../../../src/code/git/git-metadata-service.js";
-import type { GitChunkMetadata } from "../../../src/code/git/types.js";
 
 describe("GitMetadataService", () => {
   let service: GitMetadataService;
@@ -313,8 +312,7 @@ See merge request taxdome/service/taxdome!47685`;
     };
 
     it("should parse git log output with NULL separators", () => {
-      const output =
-        "a".repeat(40) + "\0First commit body\0" + "b".repeat(40) + "\0Second commit\n\nWith multiple lines\0";
+      const output = `${"a".repeat(40)}\0First commit body\0${"b".repeat(40)}\0Second commit\n\nWith multiple lines\0`;
 
       const bodies = parseLogOutput(service, output);
 
@@ -512,7 +510,7 @@ See merge request taxdome/service/taxdome!47685`;
 
       // This test file likely has uncommitted changes after we modified it
       const filePath = import.meta.url.replace("file://", "");
-      const metadata = await service.getChunkMetadata(filePath, 1, 10);
+      const _metadata = await service.getChunkMetadata(filePath, 1, 10);
 
       // May return null or partial metadata - both are valid
       // We just verify no crash occurs
@@ -633,7 +631,9 @@ See merge request taxdome/service/taxdome!47685`;
   describe("statistics and cache management", () => {
     it("should print statistics without errors", () => {
       // printStats should not throw
-      expect(() => service.printStats()).not.toThrow();
+      expect(() => {
+        service.printStats();
+      }).not.toThrow();
     });
 
     it("should clear disk cache for a repository", async () => {

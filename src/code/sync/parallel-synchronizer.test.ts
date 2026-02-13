@@ -9,12 +9,11 @@
  * - Fast path (mtime+size) vs slow path (hash computation)
  */
 
-import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { ParallelFileSynchronizer } from "./parallel-synchronizer.js";
 
@@ -175,7 +174,7 @@ describe("ParallelFileSynchronizer", () => {
       const files = await createTestFiles(10);
 
       await synchronizer.initialize();
-      const changes = await synchronizer.detectChanges(files);
+      const _changes = await synchronizer.detectChanges(files);
 
       // updateSnapshot should use cached hashes (fast path)
       const startTime = Date.now();

@@ -20,7 +20,7 @@ vi.mock("openai", () => ({
 vi.mock("bottleneck", () => ({
   default: class MockBottleneck {
     constructor(_options?: any) {}
-    schedule<T>(fn: () => Promise<T>): Promise<T> {
+    async schedule<T>(fn: () => Promise<T>): Promise<T> {
       return fn();
     }
     on() {

@@ -19,6 +19,7 @@ import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../qdrant/client.js";
 import { computeFileMetadata, GitLogReader } from "../git/git-log-reader.js";
+import type { FileChurnData } from "../git/types.js";
 import { pipelineLog } from "../pipeline/debug-logger.js";
 import type { ChunkItem } from "../pipeline/types.js";
 import type { ChunkLookupEntry, EnrichmentInfo, EnrichmentMetrics } from "../types.js";
@@ -35,8 +36,8 @@ interface PendingBatch {
 export class EnrichmentModule {
   // Git log state
   private logReader: GitLogReader | null = null;
-  private gitLogPromise: Promise<Map<string, any>> | null = null;
-  private gitLogResult: Map<string, any> | null = null;
+  private gitLogPromise: Promise<Map<string, FileChurnData>> | null = null;
+  private gitLogResult: Map<string, FileChurnData> | null = null;
   private gitLogFailed = false;
 
   // Git repo root (from `git rev-parse --show-toplevel`), may differ from absolutePath
@@ -55,18 +56,18 @@ export class EnrichmentModule {
   // Path match diagnostics
   private matchedFiles = 0;
   private missedFiles = 0;
-  private missedPathSamples: string[] = []; // first 10
+  private readonly missedPathSamples: string[] = []; // first 10
   private gitLogFileCount = 0; // total files in git log (for context)
 
   // Backfill: missed file relative paths → chunk IDs for post-hoc enrichment
-  private missedFileChunks = new Map<string, Array<{ chunkId: string; endLine: number }>>();
+  private readonly missedFileChunks = new Map<string, { chunkId: string; endLine: number }[]>();
 
   // Timing metrics
   private startTime = 0;
   private prefetchStartTime = 0;
   private prefetchEndTime = 0;
   private pipelineFlushTime = 0; // when last onChunksStored was called
-  private metrics: EnrichmentMetrics = {
+  private readonly metrics: EnrichmentMetrics = {
     prefetchDurationMs: 0,
     overlapMs: 0,
     overlapRatio: 0,
@@ -81,7 +82,7 @@ export class EnrichmentModule {
     estimatedSavedMs: 0,
   };
 
-  constructor(private qdrant: QdrantManager) {}
+  constructor(private readonly qdrant: QdrantManager) {}
 
   /**
    * Start git log reading at T=0. Non-blocking.
@@ -252,7 +253,8 @@ export class EnrichmentModule {
 
     this.chunkChurnPromise = (async () => {
       try {
-        const chunkChurnMap = await this.logReader!.buildChunkChurnMap(
+        if (!this.logReader) return;
+        const chunkChurnMap = await this.logReader.buildChunkChurnMap(
           repoRoot,
           effectiveChunkMap,
           chunkConcurrency,
@@ -261,11 +263,11 @@ export class EnrichmentModule {
         );
 
         // Apply chunk-level overlays
-        let chunkBatch: Array<{
-          payload: Record<string, any>;
+        let chunkBatch: {
+          payload: Record<string, unknown>;
           points: (string | number)[];
           key?: string;
-        }> = [];
+        }[] = [];
         let overlaysApplied = 0;
 
         for (const [, overlayMap] of chunkChurnMap) {
@@ -410,7 +412,7 @@ export class EnrichmentModule {
    */
   async updateEnrichmentMarker(collectionName: string, info: Partial<EnrichmentInfo>): Promise<void> {
     try {
-      const enrichment: Record<string, any> = { ...info };
+      const enrichment: Record<string, unknown> = { ...info };
       if (info.totalFiles && info.processedFiles !== undefined) {
         enrichment.percentage = Math.round((info.processedFiles / info.totalFiles) * 100);
       }
@@ -438,7 +440,7 @@ export class EnrichmentModule {
     });
 
     const backfillStart = Date.now();
-    let backfillData: Map<string, any>;
+    let backfillData: Map<string, FileChurnData>;
     try {
       const timeoutMs = parseInt(process.env.GIT_BACKFILL_TIMEOUT_MS ?? "30000", 10);
       backfillData = await this.logReader.buildFileMetadataForPaths(repoRoot, missedPaths, timeoutMs);
@@ -449,14 +451,14 @@ export class EnrichmentModule {
       return;
     }
 
-    const operations: Array<{
-      payload: Record<string, any>;
+    const operations: {
+      payload: Record<string, unknown>;
       points: (string | number)[];
-    }> = [];
+    }[] = [];
     let backfilledFiles = 0;
 
     for (const [relPath, chunks] of this.missedFileChunks) {
-      const churnData = backfillData.get(relPath);
+      const churnData: FileChurnData | undefined = backfillData.get(relPath);
       if (!churnData) continue; // Still no data (file outside git history)
 
       const maxEndLine = chunks.reduce((max, c) => Math.max(max, c.endLine), 0);
@@ -534,17 +536,17 @@ export class EnrichmentModule {
       byFile.set(fp, existing);
     }
 
-    const operations: Array<{
-      payload: Record<string, any>;
+    const operations: {
+      payload: Record<string, unknown>;
       points: (string | number)[];
-    }> = [];
+    }[] = [];
 
     // Use git repo root for path computation (handles symlinks, case differences)
     const pathBase = this.gitRepoRoot || absolutePath;
 
     for (const [filePath, fileItems] of byFile) {
       const relativePath = relative(pathBase, filePath);
-      const churnData = this.gitLogResult.get(relativePath);
+      const churnData: FileChurnData | undefined = this.gitLogResult.get(relativePath);
       if (!churnData) {
         this.missedFiles++;
         if (this.missedPathSamples.length < 10) {

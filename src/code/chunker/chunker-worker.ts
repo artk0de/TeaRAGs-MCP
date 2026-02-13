@@ -30,19 +30,21 @@ if (parentPort) {
   const config = workerData as ChunkerConfig;
   const chunker = new TreeSitterChunker(config);
 
-  parentPort.on("message", async (request: WorkerRequest) => {
-    try {
-      const chunks = await chunker.chunk(request.code, request.filePath, request.language);
-      parentPort!.postMessage({
-        filePath: request.filePath,
-        chunks,
-      } satisfies WorkerResponse);
-    } catch (error) {
-      parentPort!.postMessage({
-        filePath: request.filePath,
-        chunks: [],
-        error: error instanceof Error ? error.message : String(error),
-      } satisfies WorkerResponse);
-    }
+  parentPort.on("message", (request: WorkerRequest) => {
+    void (async () => {
+      try {
+        const chunks = await chunker.chunk(request.code, request.filePath, request.language);
+        parentPort?.postMessage({
+          filePath: request.filePath,
+          chunks,
+        } satisfies WorkerResponse);
+      } catch (error) {
+        parentPort?.postMessage({
+          filePath: request.filePath,
+          chunks: [],
+          error: error instanceof Error ? error.message : String(error),
+        } satisfies WorkerResponse);
+      }
+    })();
   });
 }
