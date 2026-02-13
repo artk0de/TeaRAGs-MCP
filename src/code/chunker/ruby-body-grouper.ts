@@ -161,6 +161,12 @@ const DO_END_REGEX = /\bdo\s*(\|[^|]*\|)?\s*(#.*)?$/;
 /** Matches a standalone `end` keyword (possibly with trailing comment) */
 const END_REGEX = /^\s*end\s*(#.*)?$/;
 
+/**
+ * Keywords that open a block terminated by `end` (without `do`).
+ * Used to track block depth for `class << self...end`, `module...end`, etc.
+ */
+const KEYWORD_BLOCK_OPENERS = new Set(["class", "module"]);
+
 export class RubyBodyGrouper {
   /**
    * Classify a line's first keyword into a declaration group type.
@@ -212,6 +218,8 @@ export class RubyBodyGrouper {
     let braceDepth = 0;
     /** True when inside a transparent block (included/extended/class_methods) */
     let transparentBlock = false;
+    /** True when inside a keyword block (class/module) that flushes on close */
+    let keywordBlock = false;
 
     const flushGroup = () => {
       if (currentLines.length > 0 && currentType) {
@@ -229,11 +237,16 @@ export class RubyBodyGrouper {
     for (const line of lines) {
       const trimmed = line.text.trim();
 
-      // --- Inside a do...end block (non-transparent) ---
+      // --- Inside a do...end or keyword block (non-transparent) ---
       if (blockDepth > 0 && !transparentBlock) {
-        // Check for nested do → blockDepth++
+        // Check for nested do or keyword block → blockDepth++
         if (DO_END_REGEX.test(trimmed)) {
           blockDepth++;
+        } else {
+          const kwMatch = trimmed.match(/^(\w+)/);
+          if (kwMatch && KEYWORD_BLOCK_OPENERS.has(kwMatch[1])) {
+            blockDepth++;
+          }
         }
         // Check for end → blockDepth--
         if (END_REGEX.test(trimmed)) {
@@ -244,6 +257,11 @@ export class RubyBodyGrouper {
           // Block closed — absorb all pending blanks + this end line into current group
           currentLines.push(...pendingBlanks, line);
           pendingBlanks = [];
+          // Keyword blocks (class/module) flush immediately on close
+          if (keywordBlock) {
+            keywordBlock = false;
+            flushGroup();
+          }
         } else {
           // Still inside block — accumulate
           pendingBlanks.push(line);
@@ -290,9 +308,29 @@ export class RubyBodyGrouper {
       const type = this.classifyLine(line.text);
 
       if (type === undefined) {
-        // Blank or continuation line — queue as pending
-        if (currentType) {
+        // Check if this unclassified line opens a block (do...end or class/module)
+        // Only when not already inside a block (transparent blocks handle depth internally)
+        const opensDo = blockDepth === 0 && DO_END_REGEX.test(trimmed);
+        const kwMatch = trimmed.match(/^(\w+)/);
+        const opensKeywordBlock =
+          blockDepth === 0 &&
+          !!kwMatch &&
+          KEYWORD_BLOCK_OPENERS.has(kwMatch[1]);
+
+        if (opensDo || opensKeywordBlock) {
+          // Unclassified line that opens a block → start new "other" group
+          flushGroup();
+          currentType = "other";
+          currentLines = [line];
+          blockDepth = 1;
+          keywordBlock = opensKeywordBlock;
+        } else if (currentType) {
+          // Active group — queue as pending continuation
           pendingBlanks.push(line);
+        } else if (trimmed.length > 0) {
+          // No active group, non-blank unclassified line — start "other" group
+          currentType = "other";
+          currentLines = [line];
         }
         continue;
       }
@@ -309,7 +347,8 @@ export class RubyBodyGrouper {
       }
 
       // --- Check if this line opens a do...end block ---
-      if (DO_END_REGEX.test(trimmed)) {
+      // Skip if already inside a block (transparent blocks manage depth internally)
+      if (blockDepth === 0 && DO_END_REGEX.test(trimmed)) {
         // Extract the first keyword to check exceptions
         const kwMatch = trimmed.match(/^(\w+)/);
         if (kwMatch && BLOCK_DEPTH_EXCEPTIONS.has(kwMatch[1])) {
@@ -327,12 +366,34 @@ export class RubyBodyGrouper {
         }
       }
 
+      // --- Check if this line opens a class/module...end block ---
+      if (blockDepth === 0) {
+        const kwMatch = trimmed.match(/^(\w+)/);
+        if (kwMatch && KEYWORD_BLOCK_OPENERS.has(kwMatch[1])) {
+          blockDepth = 1;
+          keywordBlock = true;
+        }
+      }
+
       // --- Check if this line opens a multiline brace block ---
       const opens = (trimmed.match(/{/g) || []).length;
       const closes = (trimmed.match(/}/g) || []).length;
       const balance = opens - closes;
       if (balance > 0) {
         braceDepth = balance;
+      }
+    }
+
+    // Absorb trailing non-blank pending lines into current group before final flush.
+    // At end-of-input there's no next classified line to disambiguate — these are
+    // continuations of the current group (e.g. `date_ransackers` after a ransacker do..end).
+    if (currentType && pendingBlanks.length > 0) {
+      const trailingNonBlanks = pendingBlanks.filter(
+        (l) => l.text.trim().length > 0,
+      );
+      if (trailingNonBlanks.length > 0) {
+        currentLines.push(...pendingBlanks);
+        pendingBlanks = [];
       }
     }
 

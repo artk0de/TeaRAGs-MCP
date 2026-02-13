@@ -173,8 +173,10 @@ describe("RubyBodyGrouper", () => {
       "end",
     ]);
     const groups = grouper.groupLines(lines);
-    // class is 'other', has_many is associations, validates is validations, end is dropped
-    expect(groups.length).toBeGreaterThanOrEqual(2);
+    // class...end is now tracked as a block — all content in one "other" group
+    expect(groups).toHaveLength(1);
+    expect(groups[0].type).toBe("other");
+    expect(groups[0].lines).toHaveLength(4);
   });
 
   describe("BodyLine interface and line ranges", () => {
@@ -656,6 +658,126 @@ describe("RubyBodyGrouper", () => {
       // remaining groups are split scopes
       const scopeGroups = groups.filter((g) => g.type === "scopes");
       expect(scopeGroups.length).toBeGreaterThan(1);
+    });
+
+    // Bug fix: unclassified lines with no active group should default to "other"
+    it("should add unclassified non-blank lines to 'other' when no group is active", () => {
+      const lines = makeLines([
+        "  has_many :posts",
+        "",
+        "  validates :email",
+        "",
+        "  ransacker :priority, formatter: proc { |v| v } do |parent|",
+        "    parent.table[:priority]",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      const types = groups.map((g) => g.type);
+      // ransacker is not a known keyword but should be captured as "other", not lost
+      expect(types).toContain("other");
+      expect(groups).toHaveLength(3);
+    });
+
+    it("should capture multiple consecutive unclassified lines as one 'other' group", () => {
+      const lines = makeLines([
+        "  ransacker :priority do |parent|",
+        "    parent.table[:priority]",
+        "  end",
+        "",
+        "  ransacker :time_variance do",
+        "    time_variance_sql",
+        "  end",
+        "",
+        "  date_ransackers :start_date, :moved_at",
+      ]);
+      const groups = grouper.groupLines(lines);
+      // All ransacker/date_ransackers lines should form "other" group(s), not be dropped
+      expect(groups.length).toBeGreaterThanOrEqual(1);
+      const totalLines = groups.reduce((sum, g) => sum + g.lines.length, 0);
+      // ransacker(3) + blank + ransacker(3) + blank + date_ransackers(1) → at least 7 non-blank lines captured
+      expect(totalLines).toBeGreaterThanOrEqual(7);
+    });
+
+    it("should not lose unclassified lines between known groups", () => {
+      const lines = makeLines([
+        "  scope :active, -> { where(active: true) }",
+        "",
+        "  ransacker :name do",
+        "    arel_table[:name]",
+        "  end",
+        "",
+        "  validates :email, presence: true",
+      ]);
+      const groups = grouper.groupLines(lines);
+      const types = groups.map((g) => g.type);
+      // scopes, then ransacker as "other", then validations
+      expect(types).toEqual(["scopes", "other", "validations"]);
+    });
+
+    // Bug fix: class/module keywords should track block depth like do...end
+    // The bug: without block-depth tracking, `end` is continuation and subsequent
+    // "other" lines leak into the class << self group.
+    it("should not leak lines after 'class << self...end' into same group", () => {
+      const lines = makeLines([
+        "  class << self",
+        "    CONST_A = 1",
+        "  end",
+        "",
+        "  private",
+      ]);
+      const groups = grouper.groupLines(lines);
+      // Without fix: class << self, CONST_A, end, private → all one "other" group
+      // With fix: class << self...end is scoped, then private is separate "other"
+      expect(groups).toHaveLength(2);
+      expect(groups[0].lines.map((l) => l.text.trim())).toContain("CONST_A = 1");
+      expect(groups[0].lines.map((l) => l.text.trim())).not.toContain("private");
+    });
+
+    it("should scope class << self body and not merge with subsequent other-type lines", () => {
+      const lines = makeLines([
+        "  has_many :posts",
+        "",
+        "  class << self",
+        "    TIMEOUT = 30",
+        "  end",
+        "",
+        "  self.table_name = 'custom'",
+      ]);
+      const groups = grouper.groupLines(lines);
+      const types = groups.map((g) => g.type);
+      // associations, class << self (other), self.table_name (other) — should be 3 groups
+      expect(types).toEqual(["associations", "other", "other"]);
+    });
+
+    it("should handle nested class inside class << self with block depth", () => {
+      const lines = makeLines([
+        "  class << self",
+        "    class Error < StandardError",
+        "    end",
+        "    CONST = 1",
+        "  end",
+        "",
+        "  SEPARATE_CONST = 99",
+      ]);
+      const groups = grouper.groupLines(lines);
+      // class << self...end should be one group, SEPARATE_CONST should be separate
+      expect(groups).toHaveLength(2);
+      expect(groups[1].lines[0].text.trim()).toBe("SEPARATE_CONST = 99");
+    });
+
+    it("should handle module...end as block-scoped group", () => {
+      const lines = makeLines([
+        "  module Helpers",
+        "    LIMIT = 100",
+        "  end",
+        "",
+        "  OUTSIDE = 200",
+      ]);
+      const groups = grouper.groupLines(lines);
+      // module...end should be one "other" group, OUTSIDE is separate "other"
+      expect(groups).toHaveLength(2);
+      expect(groups[0].lines.map((l) => l.text.trim())).toContain("LIMIT = 100");
+      expect(groups[1].lines[0].text.trim()).toBe("OUTSIDE = 200");
     });
 
     // Plan test case 12: random DSL methods not in keywords → continuation
