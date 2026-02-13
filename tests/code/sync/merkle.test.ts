@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { MerkleNode, MerkleTree } from "../../../src/code/sync/merkle.js";
 
 describe("MerkleNode", () => {
@@ -87,14 +88,14 @@ describe("MerkleTree", () => {
         new Map([
           ["file1.ts", "hash1"],
           ["file2.ts", "hash2"],
-        ])
+        ]),
       );
 
       tree2.build(
         new Map([
           ["file1.ts", "hash1"],
           ["file3.ts", "hash3"],
-        ])
+        ]),
       );
 
       expect(tree1.root?.hash).not.toBe(tree2.root?.hash);
@@ -148,7 +149,7 @@ describe("MerkleTree", () => {
           ["file1.ts", "hash1"],
           ["file2.ts", "hash2"],
           ["file3.ts", "hash3"],
-        ])
+        ]),
       );
 
       const serialized = tree.serialize();
@@ -189,7 +190,7 @@ describe("MerkleTree", () => {
         new Map([
           ["a.ts", "hash_a"],
           ["b.ts", "hash_b"],
-        ])
+        ]),
       );
 
       const serialized = tree.serialize();
@@ -200,7 +201,7 @@ describe("MerkleTree", () => {
         new Map([
           ["a.ts", "hash_a"],
           ["b.ts", "hash_b"],
-        ])
+        ]),
       );
 
       expect(deserialized.getRootHash()).toBe(tree.getRootHash());
@@ -359,7 +360,7 @@ describe("MerkleTree", () => {
         new Map([
           ["file1.ts", "hash1"],
           ["file2.ts", "hash2"],
-        ])
+        ]),
       );
 
       expect(tree.root).toBeDefined();
@@ -374,7 +375,7 @@ describe("MerkleTree", () => {
           ["file1.ts", "hash1"],
           ["file2.ts", "hash2"],
           ["file3.ts", "hash3"],
-        ])
+        ]),
       );
 
       expect(tree.root).toBeDefined();
@@ -397,7 +398,7 @@ describe("MerkleTree", () => {
           ["file with spaces.ts", "hash1"],
           ["file-with-dashes.ts", "hash2"],
           ["file_with_underscores.ts", "hash3"],
-        ])
+        ]),
       );
 
       expect(tree.root).toBeDefined();

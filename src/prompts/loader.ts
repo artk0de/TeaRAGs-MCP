@@ -3,7 +3,9 @@
  */
 
 import { readFileSync } from "node:fs";
+
 import { z } from "zod";
+
 import type { PromptDefinition, PromptsConfig } from "./types.js";
 
 // Zod schema for validation

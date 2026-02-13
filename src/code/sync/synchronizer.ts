@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
+
 import type { FileChanges } from "../types.js";
 import { MerkleTree } from "./merkle.js";
 import { SnapshotManager } from "./snapshot.js";
@@ -20,19 +21,19 @@ import { SnapshotManager } from "./snapshot.js";
  * File metadata for fast change detection
  */
 interface FileMetadata {
-  mtime: number;  // Modification timestamp (ms)
-  size: number;   // File size (bytes)
-  hash: string;   // SHA256 content hash
+  mtime: number; // Modification timestamp (ms)
+  size: number; // File size (bytes)
+  hash: string; // SHA256 content hash
 }
 
 /**
  * Checkpoint data for resumable indexing
  */
 interface Checkpoint {
-  processedFiles: string[];  // Relative paths of files already indexed
-  totalFiles: number;        // Total files to process
-  timestamp: number;         // When checkpoint was created
-  phase: "deleting" | "indexing";  // Current phase
+  processedFiles: string[]; // Relative paths of files already indexed
+  totalFiles: number; // Total files to process
+  timestamp: number; // When checkpoint was created
+  phase: "deleting" | "indexing"; // Current phase
 }
 
 export class FileSynchronizer {
@@ -45,7 +46,7 @@ export class FileSynchronizer {
 
   constructor(
     private codebasePath: string,
-    collectionName: string
+    collectionName: string,
   ) {
     this.collectionName = collectionName;
     // Store snapshots in ~/.tea-rags-mcp/snapshots/
@@ -92,7 +93,7 @@ export class FileSynchronizer {
       return false; // No snapshot exists
     }
 
-    console.error('[FileSynchronizer] Migrating snapshot v1 → v2...');
+    console.error("[FileSynchronizer] Migrating snapshot v1 → v2...");
     const startTime = Date.now();
     const metadata = new Map<string, FileMetadata>();
     let migratedCount = 0;
@@ -131,7 +132,7 @@ export class FileSynchronizer {
       const duration = Date.now() - startTime;
       console.error(
         `[FileSynchronizer] Migration complete: ${migratedCount} files upgraded ` +
-        `(${missingCount} missing) in ${duration}ms`
+          `(${missingCount} missing) in ${duration}ms`,
       );
       return true;
     }
@@ -144,9 +145,7 @@ export class FileSynchronizer {
    */
   private async getFileMetadata(filePath: string): Promise<{ mtime: number; size: number } | null> {
     try {
-      const absolutePath = filePath.startsWith(this.codebasePath)
-        ? filePath
-        : join(this.codebasePath, filePath);
+      const absolutePath = filePath.startsWith(this.codebasePath) ? filePath : join(this.codebasePath, filePath);
 
       const stats = await fs.stat(absolutePath);
       return {
@@ -163,9 +162,7 @@ export class FileSynchronizer {
    */
   private async hashFile(filePath: string): Promise<string> {
     try {
-      const absolutePath = filePath.startsWith(this.codebasePath)
-        ? filePath
-        : join(this.codebasePath, filePath);
+      const absolutePath = filePath.startsWith(this.codebasePath) ? filePath : join(this.codebasePath, filePath);
       const content = await fs.readFile(absolutePath, "utf-8");
       return createHash("sha256").update(content).digest("hex");
     } catch (_error) {
@@ -183,9 +180,7 @@ export class FileSynchronizer {
     let hashComputations = 0;
 
     for (const filePath of filePaths) {
-      const relativePath = filePath.startsWith(this.codebasePath)
-        ? relative(this.codebasePath, filePath)
-        : filePath;
+      const relativePath = filePath.startsWith(this.codebasePath) ? relative(this.codebasePath, filePath) : filePath;
 
       // Get current metadata
       const metadata = await this.getFileMetadata(filePath);
@@ -195,9 +190,11 @@ export class FileSynchronizer {
       const cached = this.previousMetadata.get(relativePath);
 
       // FAST PATH: Use cached hash if mtime and size match
-      if (cached &&
-          Math.abs(cached.mtime - metadata.mtime) < 1000 && // 1s tolerance for FS precision
-          cached.size === metadata.size) {
+      if (
+        cached &&
+        Math.abs(cached.mtime - metadata.mtime) < 1000 && // 1s tolerance for FS precision
+        cached.size === metadata.size
+      ) {
         fileHashes.set(relativePath, cached.hash);
         cachedHits++;
         continue;
@@ -215,7 +212,7 @@ export class FileSynchronizer {
     if (process.env.DEBUG) {
       console.error(
         `[FileSynchronizer] Cache: ${cachedHits} hits, ${hashComputations} computations ` +
-        `(${((cachedHits / (cachedHits + hashComputations)) * 100).toFixed(1)}% cached)`
+          `(${((cachedHits / (cachedHits + hashComputations)) * 100).toFixed(1)}% cached)`,
       );
     }
 
@@ -229,9 +226,7 @@ export class FileSynchronizer {
     const metadata = new Map<string, FileMetadata>();
 
     for (const filePath of filePaths) {
-      const relativePath = filePath.startsWith(this.codebasePath)
-        ? relative(this.codebasePath, filePath)
-        : filePath;
+      const relativePath = filePath.startsWith(this.codebasePath) ? relative(this.codebasePath, filePath) : filePath;
 
       const meta = await this.getFileMetadata(filePath);
       if (!meta) continue;
@@ -264,13 +259,13 @@ export class FileSynchronizer {
     if (process.env.DEBUG) {
       console.error(
         `[FileSynchronizer] Change detection: ` +
-        `${changes.added.length} added, ` +
-        `${changes.modified.length} modified, ` +
-        `${changes.deleted.length} deleted ` +
-        `(from ${currentFiles.length} current files, ${this.previousHashes.size} in snapshot)`
+          `${changes.added.length} added, ` +
+          `${changes.modified.length} modified, ` +
+          `${changes.deleted.length} deleted ` +
+          `(from ${currentFiles.length} current files, ${this.previousHashes.size} in snapshot)`,
       );
       if (changes.modified.length > 0 && changes.modified.length <= 10) {
-        console.error(`[FileSynchronizer] Modified files: ${changes.modified.join(', ')}`);
+        console.error(`[FileSynchronizer] Modified files: ${changes.modified.join(", ")}`);
       }
     }
 
@@ -330,7 +325,7 @@ export class FileSynchronizer {
   async saveCheckpoint(
     processedFiles: string[],
     totalFiles: number,
-    phase: "deleting" | "indexing" = "indexing"
+    phase: "deleting" | "indexing" = "indexing",
   ): Promise<void> {
     const checkpoint: Checkpoint = {
       processedFiles,
@@ -350,9 +345,7 @@ export class FileSynchronizer {
       await fs.rename(tempPath, this.checkpointPath);
 
       if (process.env.DEBUG) {
-        console.error(
-          `[Checkpoint] Saved: ${processedFiles.length}/${totalFiles} files (${phase})`
-        );
+        console.error(`[Checkpoint] Saved: ${processedFiles.length}/${totalFiles} files (${phase})`);
       }
     } catch (error) {
       console.error("[Checkpoint] Failed to save:", error);
@@ -384,7 +377,7 @@ export class FileSynchronizer {
 
       console.error(
         `[Checkpoint] Found: ${checkpoint.processedFiles.length}/${checkpoint.totalFiles} ` +
-        `files (${checkpoint.phase})`
+          `files (${checkpoint.phase})`,
       );
       return checkpoint;
     } catch {

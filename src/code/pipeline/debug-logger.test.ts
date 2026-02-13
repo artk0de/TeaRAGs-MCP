@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import type { LogContext, PipelineStage } from "./debug-logger.js";
 
 // Mock fs module before importing the module under test
@@ -34,12 +35,8 @@ describe("DebugLogger", () => {
 
       pipelineLog.step(ctx, message);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("TestComponent")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining(message)
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("TestComponent"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(message));
     });
 
     it("should include optional data in log output", () => {
@@ -48,18 +45,14 @@ describe("DebugLogger", () => {
 
       pipelineLog.step(ctx, "With data", data);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining(JSON.stringify(data))
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(JSON.stringify(data)));
     });
 
     it("should include timing information in logs", () => {
       const ctx: LogContext = { component: "TestComponent" };
       pipelineLog.step(ctx, "Timed message");
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/\[\+\s*\d+\.\d{3}s\]/)
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringMatching(/\[\+\s*\d+\.\d{3}s\]/));
     });
 
     it("should write to file system", () => {
@@ -75,36 +68,24 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "BatchProcessor" };
       pipelineLog.batchFormed(ctx, "batch-123", 50, "size");
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("BATCH_FORMED: batch-123")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"items":50')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"trigger":"size"')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("BATCH_FORMED: batch-123"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"items":50'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"trigger":"size"'));
     });
 
     it("should support different trigger types", () => {
       const ctx: LogContext = { component: "BatchProcessor" };
 
       pipelineLog.batchFormed(ctx, "batch-1", 10, "size");
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"trigger":"size"')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"trigger":"size"'));
 
       consoleErrorSpy.mockClear();
       pipelineLog.batchFormed(ctx, "batch-2", 20, "timeout");
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"trigger":"timeout"')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"trigger":"timeout"'));
 
       consoleErrorSpy.mockClear();
       pipelineLog.batchFormed(ctx, "batch-3", 30, "flush");
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"trigger":"flush"')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"trigger":"flush"'));
     });
 
     it("should increment batch counter", () => {
@@ -128,12 +109,8 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "BatchProcessor" };
       pipelineLog.batchStart(ctx, "batch-456", 25);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("BATCH_START: batch-456")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"items":25')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("BATCH_START: batch-456"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"items":25'));
     });
   });
 
@@ -142,27 +119,17 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "BatchProcessor" };
       pipelineLog.batchComplete(ctx, "batch-789", 30, 1500, 2);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("BATCH_COMPLETE: batch-789")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"items":30')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"durationMs":1500')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"retryCount":2')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("BATCH_COMPLETE: batch-789"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"items":30'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"durationMs":1500'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"retryCount":2'));
     });
 
     it("should increment chunk counter", () => {
       const ctx: LogContext = { component: "BatchProcessor" };
       pipelineLog.batchComplete(ctx, "batch-chunks", 10, 100, 0);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"totalChunks":')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"totalChunks":'));
     });
   });
 
@@ -171,30 +138,18 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "BatchProcessor" };
       pipelineLog.batchFailed(ctx, "batch-fail", "Network error", 1, 3);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("BATCH_FAILED: batch-fail")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"error":"Network error"')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"attempt":1')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"maxRetries":3')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"willRetry":true')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("BATCH_FAILED: batch-fail"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"error":"Network error"'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"attempt":1'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"maxRetries":3'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"willRetry":true'));
     });
 
     it("should show willRetry as false when max retries reached", () => {
       const ctx: LogContext = { component: "BatchProcessor" };
       pipelineLog.batchFailed(ctx, "batch-fail-final", "Fatal error", 3, 3);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"willRetry":false')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"willRetry":false'));
     });
   });
 
@@ -203,18 +158,10 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "QueueManager" };
       pipelineLog.queueState(ctx, 100, 4, 50);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("QUEUE_STATE")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"queueDepth":100')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"activeWorkers":4')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"pendingItems":50')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("QUEUE_STATE"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"queueDepth":100'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"activeWorkers":4'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"pendingItems":50'));
     });
   });
 
@@ -223,24 +170,16 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "QueueManager" };
       pipelineLog.backpressure(ctx, true, "Queue depth exceeded");
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("BACKPRESSURE_ON")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"reason":"Queue depth exceeded"')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("BACKPRESSURE_ON"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"reason":"Queue depth exceeded"'));
     });
 
     it("should log backpressure off event", () => {
       const ctx: LogContext = { component: "QueueManager" };
       pipelineLog.backpressure(ctx, false, "Queue normalized");
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("BACKPRESSURE_OFF")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"reason":"Queue normalized"')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("BACKPRESSURE_OFF"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"reason":"Queue normalized"'));
     });
   });
 
@@ -249,36 +188,24 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "EmbeddingService" };
       pipelineLog.embedCall(ctx, 64, 250);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("EMBED_CALL")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"texts":64')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"durationMs":250')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("EMBED_CALL"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"texts":64'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"durationMs":250'));
     });
 
     it("should work without duration parameter", () => {
       const ctx: LogContext = { component: "EmbeddingService" };
       pipelineLog.embedCall(ctx, 32);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("EMBED_CALL")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"texts":32')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("EMBED_CALL"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"texts":32'));
     });
 
     it("should increment embed call counter", () => {
       const ctx: LogContext = { component: "EmbeddingService" };
       pipelineLog.embedCall(ctx, 16);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"totalCalls":')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"totalCalls":'));
     });
   });
 
@@ -287,39 +214,27 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "QdrantService" };
       pipelineLog.qdrantCall(ctx, "upsert", 100, 500);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("QDRANT_UPSERT")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"points":100')
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"durationMs":500')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("QDRANT_UPSERT"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"points":100'));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"durationMs":500'));
     });
 
     it("should uppercase operation names", () => {
       const ctx: LogContext = { component: "QdrantService" };
 
       pipelineLog.qdrantCall(ctx, "delete", 5);
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("QDRANT_DELETE")
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("QDRANT_DELETE"));
 
       consoleErrorSpy.mockClear();
       pipelineLog.qdrantCall(ctx, "search", 10);
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("QDRANT_SEARCH")
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("QDRANT_SEARCH"));
     });
 
     it("should increment Qdrant call counter", () => {
       const ctx: LogContext = { component: "QdrantService" };
       pipelineLog.qdrantCall(ctx, "upsert", 50);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"totalCalls":')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"totalCalls":'));
     });
   });
 
@@ -328,36 +243,26 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "RetryManager" };
       pipelineLog.fallback(ctx, 2, "Primary endpoint failed");
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("FALLBACK_L2")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"reason":"Primary endpoint failed"')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("FALLBACK_L2"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"reason":"Primary endpoint failed"'));
     });
 
     it("should support different fallback levels", () => {
       const ctx: LogContext = { component: "RetryManager" };
 
       pipelineLog.fallback(ctx, 1, "Level 1");
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("FALLBACK_L1")
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("FALLBACK_L1"));
 
       consoleErrorSpy.mockClear();
       pipelineLog.fallback(ctx, 3, "Level 3");
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("FALLBACK_L3")
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("FALLBACK_L3"));
     });
 
     it("should increment fallback counter", () => {
       const ctx: LogContext = { component: "RetryManager" };
       pipelineLog.fallback(ctx, 1, "Timeout");
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"totalFallbacks":')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"totalFallbacks":'));
     });
   });
 
@@ -365,36 +270,24 @@ describe("DebugLogger", () => {
     it("should log reindex phase with data", () => {
       pipelineLog.reindexPhase("SCAN", { files: 100 });
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Reindex")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("PHASE: SCAN")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"files":100')
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("Reindex"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("PHASE: SCAN"));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"files":100'));
     });
 
     it("should work without data parameter", () => {
       pipelineLog.reindexPhase("COMPLETE");
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("PHASE: COMPLETE")
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("PHASE: COMPLETE"));
     });
 
     it("should support various phase names", () => {
       pipelineLog.reindexPhase("START");
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("PHASE: START")
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("PHASE: START"));
 
       consoleErrorSpy.mockClear();
       pipelineLog.reindexPhase("PROCESS");
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("PHASE: PROCESS")
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("PHASE: PROCESS"));
     });
   });
 
@@ -411,15 +304,12 @@ describe("DebugLogger", () => {
 
       expect(fs.appendFileSync).toHaveBeenCalledWith(
         expect.any(String),
-        expect.stringContaining("SUMMARY for Pipeline")
+        expect.stringContaining("SUMMARY for Pipeline"),
       );
+      expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('"totalFiles": 500'));
       expect(fs.appendFileSync).toHaveBeenCalledWith(
         expect.any(String),
-        expect.stringContaining('"totalFiles": 500')
-      );
-      expect(fs.appendFileSync).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.stringContaining('"totalChunks": 2000')
+        expect.stringContaining('"totalChunks": 2000'),
       );
     });
 
@@ -427,10 +317,7 @@ describe("DebugLogger", () => {
       const ctx: LogContext = { component: "Pipeline" };
       pipelineLog.summary(ctx, {});
 
-      expect(fs.appendFileSync).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.stringContaining("Session counters:")
-      );
+      expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("Session counters:"));
     });
   });
 
@@ -474,18 +361,14 @@ describe("DebugLogger", () => {
       pipelineLog.step(ctx, "Message");
 
       // Should have format like [+   0.123s]
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/\[\+\s*\d+\.\d{3}s\]/)
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringMatching(/\[\+\s*\d+\.\d{3}s\]/));
     });
 
     it("should include component name in brackets", () => {
       const ctx: LogContext = { component: "MyComponent" };
       pipelineLog.step(ctx, "Message");
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[MyComponent]")
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("[MyComponent]"));
     });
 
     it("should format data as JSON with pipe separator", () => {
@@ -494,12 +377,8 @@ describe("DebugLogger", () => {
 
       pipelineLog.step(ctx, "Message", data);
 
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining(" | ")
-      );
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining(JSON.stringify(data))
-      );
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(" | "));
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining(JSON.stringify(data)));
     });
 
     it("should not include pipe separator without data", () => {
@@ -541,7 +420,7 @@ describe("Stage Profiling", () => {
 
   it("should track time with startStage/endStage", async () => {
     pipelineLog.stageStart("scan");
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     pipelineLog.stageEnd("scan");
 
     const summary = pipelineLog.getStageSummary();
@@ -586,7 +465,7 @@ describe("Stage Profiling", () => {
     // Second call: [t1-500, t1] where t1 = t0+50
     // These intervals overlap! [t0-500, t0] and [t0-450, t0+50] merge to [t0-500, t0+50] = 550ms
     pipelineLog.addStageTime("git", 500);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     pipelineLog.addStageTime("git", 500);
 
     const summary = pipelineLog.getStageSummary();
@@ -604,11 +483,11 @@ describe("Stage Profiling", () => {
     // Worker 2: starts at 20ms, duration 100ms -> interval [20, 120]
     // Merged wall time should be ~120ms, not 200ms
     pipelineLog.stageStart("parse");
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     pipelineLog.stageStart("parse"); // overlapping start
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     pipelineLog.stageEnd("parse"); // first ends at ~150
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     pipelineLog.stageEnd("parse"); // second ends at ~200
 
     const summary = pipelineLog.getStageSummary();
@@ -622,11 +501,11 @@ describe("Stage Profiling", () => {
 
   it("should track wall time for startStage/endStage calls", async () => {
     pipelineLog.stageStart("parse");
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     pipelineLog.stageEnd("parse");
 
     pipelineLog.stageStart("parse");
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     pipelineLog.stageEnd("parse");
 
     const summary = pipelineLog.getStageSummary();
@@ -658,17 +537,14 @@ describe("Stage Profiling", () => {
 
   it("should include wall time in summary output", async () => {
     pipelineLog.addStageTime("embed", 300);
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     pipelineLog.addStageTime("embed", 300);
 
     const ctx: LogContext = { component: "TestPipeline" };
     pipelineLog.summary(ctx, { test: true });
 
     // New format has "wall" column header and "wall%" column
-    expect(fs.appendFileSync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining("wall%")
-    );
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("wall%"));
   });
 
   it("should format durations in human-readable format", () => {
@@ -683,14 +559,8 @@ describe("Stage Profiling", () => {
     pipelineLog.summary(ctx, { test: true });
 
     // Check for human-readable format like "2m 30s" or "45.0s" or "1.5s"
-    expect(fs.appendFileSync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining("2m 30s")
-    );
-    expect(fs.appendFileSync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining("45.0s")
-    );
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("2m 30s"));
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("45.0s"));
   });
 
   it("should include stage profiling in summary output", () => {
@@ -701,22 +571,10 @@ describe("Stage Profiling", () => {
     const ctx: LogContext = { component: "TestPipeline" };
     pipelineLog.summary(ctx, { test: true });
 
-    expect(fs.appendFileSync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining("STAGE PROFILING:")
-    );
-    expect(fs.appendFileSync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining("scan")
-    );
-    expect(fs.appendFileSync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining("embed")
-    );
-    expect(fs.appendFileSync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining("TOTAL")
-    );
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("STAGE PROFILING:"));
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("scan"));
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("embed"));
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("TOTAL"));
   });
 
   it("should not include stage profiling in summary when no stages recorded", () => {
@@ -726,7 +584,7 @@ describe("Stage Profiling", () => {
 
     // Find the last call with SUMMARY
     const summaryCall = (fs.appendFileSync as any).mock.calls.find(
-      (call: any[]) => typeof call[1] === "string" && call[1].includes("SUMMARY for TestPipeline")
+      (call: any[]) => typeof call[1] === "string" && call[1].includes("SUMMARY for TestPipeline"),
     );
     expect(summaryCall).toBeDefined();
     expect(summaryCall[1]).not.toContain("STAGE PROFILING:");
@@ -750,21 +608,14 @@ describe("Stage Profiling", () => {
     const ctx: LogContext = { component: "TestPipeline" };
     pipelineLog.summary(ctx, { test: true });
 
-    expect(fs.appendFileSync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining("enrichGit")
-    );
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("enrichGit"));
   });
 
   it("should log enrichmentPhase messages", () => {
     pipelineLog.enrichmentPhase("START", { files: 10, totalChunks: 50 });
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("PHASE: START")
-    );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("GitEnrich")
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("PHASE: START"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("GitEnrich"));
   });
 
   it("should track gitLog stage with addStageTime", () => {
@@ -784,22 +635,15 @@ describe("Stage Profiling", () => {
     const ctx: LogContext = { component: "ChunkPipeline" };
     pipelineLog.summary(ctx, { uptimeMs: 5000 });
 
-    expect(fs.appendFileSync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining("gitLog")
-    );
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("gitLog"));
   });
 
   it("should log enrichmentPhase PREFETCH_START and PREFETCH_COMPLETE", () => {
     pipelineLog.enrichmentPhase("PREFETCH_START", { concurrency: 2 });
     pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", { prefetched: 10, failed: 0, durationMs: 5000 });
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("PREFETCH_START")
-    );
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("PREFETCH_COMPLETE")
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("PREFETCH_START"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("PREFETCH_COMPLETE"));
   });
 
   it("should log enrichmentPhase COMPLETE with data", () => {
@@ -810,9 +654,7 @@ describe("Stage Profiling", () => {
       durationMs: 1234,
     });
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("PHASE: COMPLETE")
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("PHASE: COMPLETE"));
   });
 });
 

@@ -14,7 +14,7 @@ import type { PromptArgument, RenderedPrompt } from "./types.js";
 export function renderTemplate(
   template: string,
   args: Record<string, string> = {},
-  definitions: PromptArgument[] = []
+  definitions: PromptArgument[] = [],
 ): RenderedPrompt {
   let rendered = template;
 
@@ -51,10 +51,7 @@ export function renderTemplate(
  * @param definitions Argument definitions
  * @throws Error if required arguments are missing
  */
-export function validateArguments(
-  args: Record<string, string>,
-  definitions: PromptArgument[]
-): void {
+export function validateArguments(args: Record<string, string>, definitions: PromptArgument[]): void {
   const missing: string[] = [];
 
   for (const def of definitions) {

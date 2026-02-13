@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import {
-  rerankSemanticSearchResults,
-  rerankSearchCodeResults,
   getAvailablePresets,
+  rerankSearchCodeResults,
+  rerankSemanticSearchResults,
   type RerankableResult,
 } from "./reranker.js";
 
@@ -13,7 +14,9 @@ describe("reranker", () => {
     ageDays: number,
     commitCount: number,
     isDoc = false,
-    extraGit: Partial<RerankableResult["payload"] extends infer P ? P extends { git?: infer G } ? G : never : never> = {},
+    extraGit: Partial<
+      RerankableResult["payload"] extends infer P ? (P extends { git?: infer G } ? G : never) : never
+    > = {},
   ): RerankableResult => ({
     score,
     payload: {
@@ -50,9 +53,7 @@ describe("reranker", () => {
       const result = rerankSemanticSearchResults(mockResults, "techDebt");
       // Old + high churn code should be boosted
       // Result with ageDays=100, commitCount=20 should rank higher
-      const oldHighChurnResult = result.find(
-        (r) => r.payload?.git?.ageDays === 100,
-      );
+      const oldHighChurnResult = result.find((r) => r.payload?.git?.ageDays === 100);
       expect(oldHighChurnResult).toBeDefined();
       // Should be boosted compared to relevance-only
     });
@@ -122,9 +123,7 @@ describe("reranker", () => {
     it("should boost stable code for 'stable' preset", () => {
       const result = rerankSearchCodeResults(mockResults, "stable");
       // Result with commitCount=1 (most stable) should be boosted
-      const stableResult = result.find(
-        (r) => r.payload?.git?.commitCount === 1,
-      );
+      const stableResult = result.find((r) => r.payload?.git?.commitCount === 1);
       expect(stableResult).toBeDefined();
     });
 
@@ -219,8 +218,8 @@ describe("reranker", () => {
 
     it("should boost density signal in codeReview preset", () => {
       const results = [
-        createResult(0.8, 5, 3, false, { changeDensity: 15 }),  // high density
-        createResult(0.8, 5, 3, false, { changeDensity: 1 }),   // low density
+        createResult(0.8, 5, 3, false, { changeDensity: 15 }), // high density
+        createResult(0.8, 5, 3, false, { changeDensity: 1 }), // low density
       ];
       const reranked = rerankSemanticSearchResults(results, "codeReview");
       expect(reranked[0].payload?.git?.changeDensity).toBe(15);
@@ -262,7 +261,9 @@ describe("reranker", () => {
           score: 0.8,
           payload: {
             relativePath: "src/utils/format.ts",
-            startLine: 1, endLine: 50, language: "typescript",
+            startLine: 1,
+            endLine: 50,
+            language: "typescript",
             git: { ageDays: 100, commitCount: 10, bugFixRate: 50 },
           },
         },
@@ -270,7 +271,9 @@ describe("reranker", () => {
           score: 0.8,
           payload: {
             relativePath: "src/auth/login.ts",
-            startLine: 1, endLine: 50, language: "typescript",
+            startLine: 1,
+            endLine: 50,
+            language: "typescript",
             git: { ageDays: 100, commitCount: 10, bugFixRate: 50 },
           },
         },
@@ -284,7 +287,11 @@ describe("reranker", () => {
       // Both have SAME dominantAuthorPct=80 — only knowledgeSilo differentiates
       // Multi-contributor first — if signal doesn't exist, order won't change
       const results = [
-        createResult(0.8, 30, 5, false, { contributorCount: 5, dominantAuthorPct: 80, authors: ["a", "b", "c", "d", "e"] as any }),
+        createResult(0.8, 30, 5, false, {
+          contributorCount: 5,
+          dominantAuthorPct: 80,
+          authors: ["a", "b", "c", "d", "e"] as any,
+        }),
         createResult(0.8, 30, 5, false, { contributorCount: 1, dominantAuthorPct: 80, authors: ["alice"] as any }),
       ];
       const reranked = rerankSemanticSearchResults(results, {
@@ -344,7 +351,9 @@ describe("reranker", () => {
     const createResultWithChunkType = (
       score: number,
       chunkType: string,
-      git: Partial<RerankableResult["payload"] extends infer P ? P extends { git?: infer G } ? G : never : never> = {},
+      git: Partial<
+        RerankableResult["payload"] extends infer P ? (P extends { git?: infer G } ? G : never) : never
+      > = {},
     ): RerankableResult => ({
       score,
       payload: {
@@ -430,10 +439,7 @@ describe("reranker", () => {
     });
 
     it("should support blockPenalty as custom negative weight", () => {
-      const results = [
-        createResultWithChunkType(0.8, "block", {}),
-        createResultWithChunkType(0.7, "function", {}),
-      ];
+      const results = [createResultWithChunkType(0.8, "block", {}), createResultWithChunkType(0.7, "function", {})];
       const reranked = rerankSemanticSearchResults(results, {
         custom: { similarity: 0.5, churn: 0.3, blockPenalty: -0.3 },
       });
@@ -442,10 +448,7 @@ describe("reranker", () => {
     });
 
     it("should not affect presets without blockPenalty (e.g., onboarding)", () => {
-      const results = [
-        createResultWithChunkType(0.9, "block", {}),
-        createResultWithChunkType(0.7, "function", {}),
-      ];
+      const results = [createResultWithChunkType(0.9, "block", {}), createResultWithChunkType(0.7, "function", {})];
       const reranked = rerankSemanticSearchResults(results, "onboarding");
       // Block should still rank first (higher similarity, no penalty in this preset)
       expect(reranked[0].payload?.chunkType).toBe("block");
@@ -471,10 +474,7 @@ describe("reranker", () => {
     });
 
     it("should handle unknown preset gracefully", () => {
-      const result = rerankSemanticSearchResults(
-        [createResult(0.9, 10, 5)],
-        "unknownPreset" as any,
-      );
+      const result = rerankSemanticSearchResults([createResult(0.9, 10, 5)], "unknownPreset" as any);
       // Should fall back to relevance
       expect(result).toHaveLength(1);
     });

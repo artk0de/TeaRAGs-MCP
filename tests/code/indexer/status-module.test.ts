@@ -1,6 +1,18 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { CodeIndexer } from "../../../src/code/indexer.js";
+import type { CodeConfig } from "../../../src/code/types.js";
+import {
+  cleanupTempDir,
+  createTempTestDir,
+  createTestFile,
+  defaultTestConfig,
+  MockEmbeddingProvider,
+  MockQdrantManager,
+} from "./test-helpers.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
@@ -28,17 +40,6 @@ vi.mock("tree-sitter-rust", () => ({ default: {} }));
 vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
-
-import { CodeIndexer } from "../../../src/code/indexer.js";
-import type { CodeConfig } from "../../../src/code/types.js";
-import {
-  MockQdrantManager,
-  MockEmbeddingProvider,
-  createTestFile,
-  defaultTestConfig,
-  createTempTestDir,
-  cleanupTempDir,
-} from "./test-helpers.js";
 
 describe("StatusModule", () => {
   let indexer: CodeIndexer;
@@ -119,12 +120,8 @@ describe("StatusModule", () => {
         expect(status.status).toBe("indexed");
         expect(status.lastUpdated).toBeDefined();
         expect(status.lastUpdated).toBeInstanceOf(Date);
-        expect(status.lastUpdated!.getTime()).toBeGreaterThanOrEqual(
-          beforeIndexing.getTime(),
-        );
-        expect(status.lastUpdated!.getTime()).toBeLessThanOrEqual(
-          afterIndexing.getTime(),
-        );
+        expect(status.lastUpdated!.getTime()).toBeGreaterThanOrEqual(beforeIndexing.getTime());
+        expect(status.lastUpdated!.getTime()).toBeLessThanOrEqual(afterIndexing.getTime());
       });
 
       it("should return correct chunks count excluding metadata point", async () => {
@@ -236,18 +233,11 @@ describe("StatusModule", () => {
 
         let statusDuringIndexing: any = null;
 
-        const indexingPromise = indexer.indexCodebase(
-          codebaseDir,
-          undefined,
-          async (progress) => {
-            if (
-              progress.phase === "embedding" &&
-              statusDuringIndexing === null
-            ) {
-              statusDuringIndexing = await indexer.getIndexStatus(codebaseDir);
-            }
-          },
-        );
+        const indexingPromise = indexer.indexCodebase(codebaseDir, undefined, async (progress) => {
+          if (progress.phase === "embedding" && statusDuringIndexing === null) {
+            statusDuringIndexing = await indexer.getIndexStatus(codebaseDir);
+          }
+        });
 
         await indexingPromise;
 
@@ -273,19 +263,12 @@ describe("StatusModule", () => {
 
         let chunksCountDuringIndexing: number | undefined;
 
-        await indexer.indexCodebase(
-          codebaseDir,
-          undefined,
-          async (progress) => {
-            if (
-              progress.phase === "storing" &&
-              chunksCountDuringIndexing === undefined
-            ) {
-              const status = await indexer.getIndexStatus(codebaseDir);
-              chunksCountDuringIndexing = status.chunksCount;
-            }
-          },
-        );
+        await indexer.indexCodebase(codebaseDir, undefined, async (progress) => {
+          if (progress.phase === "storing" && chunksCountDuringIndexing === undefined) {
+            const status = await indexer.getIndexStatus(codebaseDir);
+            chunksCountDuringIndexing = status.chunksCount;
+          }
+        });
 
         if (chunksCountDuringIndexing !== undefined) {
           expect(typeof chunksCountDuringIndexing).toBe("number");
@@ -313,11 +296,7 @@ describe("StatusModule", () => {
 
   describe("clearIndex", () => {
     it("should clear indexed codebase", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export const configValue = 1;\nconsole.log('Config loaded');",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export const configValue = 1;\nconsole.log('Config loaded');");
       await indexer.indexCodebase(codebaseDir);
 
       await indexer.clearIndex(codebaseDir);
@@ -331,11 +310,7 @@ describe("StatusModule", () => {
     });
 
     it("should allow re-indexing after clearing", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export const reindexValue = 1;\nconsole.log('Reindexing');",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export const reindexValue = 1;\nconsole.log('Reindexing');");
       await indexer.indexCodebase(codebaseDir);
 
       await indexer.clearIndex(codebaseDir);

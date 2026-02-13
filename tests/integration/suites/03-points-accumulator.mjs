@@ -3,9 +3,10 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
-import { PointsAccumulator, createAccumulator } from "../../../build/qdrant/accumulator.js";
+import { basename, join } from "node:path";
+
+import { createAccumulator, PointsAccumulator } from "../../../build/qdrant/accumulator.js";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testPointsAccumulator(qdrant) {
   section("3. PointsAccumulator (Batch Pipeline)");

@@ -5,6 +5,7 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
+
 import { ChunkerPool } from "../../../src/code/chunker/chunker-pool.js";
 import { TreeSitterChunker } from "../../../src/code/chunker/tree-sitter-chunker.js";
 import type { ChunkerConfig } from "../../../src/code/types.js";
@@ -136,9 +137,7 @@ describe("ChunkerPool", () => {
       pool = new ChunkerPool(1, CHUNKER_CONFIG);
       await pool.shutdown();
 
-      await expect(
-        pool.processFile("test.ts", TYPESCRIPT_CODE, "typescript"),
-      ).rejects.toThrow("shut down");
+      await expect(pool.processFile("test.ts", TYPESCRIPT_CODE, "typescript")).rejects.toThrow("shut down");
     });
   });
 
@@ -147,7 +146,8 @@ describe("ChunkerPool", () => {
       pool = new ChunkerPool(1, CHUNKER_CONFIG);
 
       // "haskell" is not supported — should fall back to character chunking
-      const code = "module Main where\nmain = putStrLn \"Hello\"\n-- more code here to reach minimum size\n-- padding line\n-- padding line\n-- padding line";
+      const code =
+        'module Main where\nmain = putStrLn "Hello"\n-- more code here to reach minimum size\n-- padding line\n-- padding line\n-- padding line';
       const result = await pool.processFile("test.hs", code, "haskell");
 
       expect(result.filePath).toBe("test.hs");

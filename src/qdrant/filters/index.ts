@@ -5,9 +5,4 @@
  * when native Qdrant filters don't support the required functionality.
  */
 
-export {
-  createGlobMatcher,
-  filterResultsByGlob,
-  calculateFetchLimit,
-  type ResultWithPath,
-} from "./glob.js";
+export { createGlobMatcher, filterResultsByGlob, calculateFetchLimit, type ResultWithPath } from "./glob.js";

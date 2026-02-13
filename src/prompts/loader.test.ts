@@ -1,7 +1,9 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { getPrompt, listPrompts, loadPromptsConfig } from "./loader.js";
 import type { PromptsConfig } from "./types.js";
 
@@ -165,9 +167,7 @@ describe("loadPromptsConfig", () => {
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
     expect(() => loadPromptsConfig(filePath)).toThrow("Invalid prompts configuration");
-    expect(() => loadPromptsConfig(filePath)).toThrow(
-      "lowercase letters, numbers, and underscores"
-    );
+    expect(() => loadPromptsConfig(filePath)).toThrow("lowercase letters, numbers, and underscores");
   });
 
   it("should accept valid prompt name formats", () => {
@@ -244,9 +244,7 @@ describe("loadPromptsConfig", () => {
     const filePath = join(testDir, "duplicate-args.json");
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
-    expect(() => loadPromptsConfig(filePath)).toThrow(
-      'Duplicate argument name in prompt "test_prompt": arg1'
-    );
+    expect(() => loadPromptsConfig(filePath)).toThrow('Duplicate argument name in prompt "test_prompt": arg1');
   });
 
   it("should allow same argument name in different prompts", () => {

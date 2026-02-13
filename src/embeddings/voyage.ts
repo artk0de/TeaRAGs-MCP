@@ -1,4 +1,5 @@
 import Bottleneck from "bottleneck";
+
 import { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 
 interface VoyageError {
@@ -61,17 +62,12 @@ export class VoyageEmbeddings implements EmbeddingProvider {
     });
   }
 
-  private async retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    attempt: number = 0,
-  ): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt: number = 0): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {
       const apiError = error as VoyageError;
-      const isRateLimitError =
-        apiError?.status === 429 ||
-        apiError?.message?.toLowerCase().includes("rate limit");
+      const isRateLimitError = apiError?.status === 429 || apiError?.message?.toLowerCase().includes("rate limit");
 
       if (isRateLimitError && attempt < this.retryAttempts) {
         const delayMs = this.retryDelayMs * Math.pow(2, attempt);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { BM25SparseVectorGenerator } from "./sparse.js";
 
 describe("BM25SparseVectorGenerator", () => {

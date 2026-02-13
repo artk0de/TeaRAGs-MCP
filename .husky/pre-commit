@@ -5,6 +5,9 @@ if command -v bd >/dev/null 2>&1; then
   bd hook pre-commit "$@" 2>/dev/null || true
 fi
 
+# Format staged .ts/.js files with prettier
+npx lint-staged
+
 # Get list of staged files
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
 

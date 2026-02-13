@@ -10,9 +10,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PipelineManager, createQdrantPipeline } from "./pipeline-manager.js";
-import type { Batch, DeleteItem, PipelineConfig, UpsertItem } from "./types.js";
+
 import type { QdrantManager } from "../../qdrant/client.js";
+import { createQdrantPipeline, PipelineManager } from "./pipeline-manager.js";
+import type { Batch, DeleteItem, PipelineConfig, UpsertItem } from "./types.js";
 
 describe("PipelineManager", () => {
   let pipeline: PipelineManager;
@@ -77,9 +78,7 @@ describe("PipelineManager", () => {
         handleDeleteBatch: vi.fn(),
       });
 
-      expect(() => notStartedPipeline.addUpsert(createPoint(1))).toThrow(
-        "Pipeline not started",
-      );
+      expect(() => notStartedPipeline.addUpsert(createPoint(1))).toThrow("Pipeline not started");
     });
 
     it("should accept items after start", () => {
@@ -627,9 +626,7 @@ describe("PipelineManager", () => {
         handleDeleteBatch: vi.fn(),
       });
 
-      expect(() => notStartedPipeline.addDelete("path.ts")).toThrow(
-        "Pipeline not started",
-      );
+      expect(() => notStartedPipeline.addDelete("path.ts")).toThrow("Pipeline not started");
     });
   });
 
@@ -642,7 +639,9 @@ describe("PipelineManager", () => {
         {
           handleUpsertBatch: async () => {
             // Block indefinitely until we release
-            await new Promise<void>((r) => { resolveHandler = r; });
+            await new Promise<void>((r) => {
+              resolveHandler = r;
+            });
           },
           handleDeleteBatch: vi.fn(),
         },

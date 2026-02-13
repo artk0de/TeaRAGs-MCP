@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
 import { CURRENT_SCHEMA_VERSION, SchemaManager } from "./schema-migration.js";
 
 // Mock QdrantManager
@@ -100,11 +101,7 @@ describe("SchemaManager", () => {
       expect(result.fromVersion).toBe(0);
       expect(result.toVersion).toBe(CURRENT_SCHEMA_VERSION);
       expect(result.migrationsApplied).toContain("v4: Created keyword index on relativePath");
-      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith(
-        "test-collection",
-        "relativePath",
-        "keyword",
-      );
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "relativePath", "keyword");
     });
 
     it("should report when index already exists during migration", async () => {
@@ -174,11 +171,7 @@ describe("SchemaManager", () => {
 
       await schemaManager.initializeSchema("new-collection");
 
-      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith(
-        "new-collection",
-        "relativePath",
-        "keyword",
-      );
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "relativePath", "keyword");
     });
 
     it("should store schema metadata after initialization", async () => {

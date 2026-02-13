@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { VoyageEmbeddings } from "./voyage.js";
 
 // Mock fetch globally
@@ -36,20 +37,13 @@ describe("VoyageEmbeddings", () => {
     });
 
     it("should use custom model", () => {
-      const customEmbeddings = new VoyageEmbeddings(
-        "test-api-key",
-        "voyage-large-2",
-      );
+      const customEmbeddings = new VoyageEmbeddings("test-api-key", "voyage-large-2");
       expect(customEmbeddings.getModel()).toBe("voyage-large-2");
       expect(customEmbeddings.getDimensions()).toBe(1536);
     });
 
     it("should use custom dimensions", () => {
-      const customEmbeddings = new VoyageEmbeddings(
-        "test-api-key",
-        "voyage-2",
-        512,
-      );
+      const customEmbeddings = new VoyageEmbeddings("test-api-key", "voyage-2", 512);
       expect(customEmbeddings.getDimensions()).toBe(512);
     });
 
@@ -70,10 +64,7 @@ describe("VoyageEmbeddings", () => {
     });
 
     it("should default to 1024 for unknown models", () => {
-      const unknownEmbeddings = new VoyageEmbeddings(
-        "test-api-key",
-        "custom-model",
-      );
+      const unknownEmbeddings = new VoyageEmbeddings("test-api-key", "custom-model");
       expect(unknownEmbeddings.getDimensions()).toBe(1024);
     });
 
@@ -110,20 +101,17 @@ describe("VoyageEmbeddings", () => {
         embedding: mockEmbedding,
         dimensions: 1024,
       });
-      expect(mockFetch).toHaveBeenCalledWith(
-        "https://api.voyageai.com/v1/embeddings",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer test-api-key",
-          },
-          body: JSON.stringify({
-            input: ["test text"],
-            model: "voyage-2",
-          }),
+      expect(mockFetch).toHaveBeenCalledWith("https://api.voyageai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer test-api-key",
         },
-      );
+        body: JSON.stringify({
+          input: ["test text"],
+          model: "voyage-2",
+        }),
+      });
     });
 
     it("should include input_type when specified", async () => {
@@ -190,10 +178,7 @@ describe("VoyageEmbeddings", () => {
 
       await customEmbeddings.embed("test");
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        "https://custom.voyage.com/v1/embeddings",
-        expect.any(Object),
-      );
+      expect(mockFetch).toHaveBeenCalledWith("https://custom.voyage.com/v1/embeddings", expect.any(Object));
     });
 
     it("should throw error if no embedding returned", async () => {
@@ -206,9 +191,7 @@ describe("VoyageEmbeddings", () => {
         }),
       });
 
-      await expect(embeddings.embed("test")).rejects.toThrow(
-        "No embedding returned from Voyage AI API",
-      );
+      await expect(embeddings.embed("test")).rejects.toThrow("No embedding returned from Voyage AI API");
     });
 
     it("should handle API errors", async () => {
@@ -230,11 +213,7 @@ describe("VoyageEmbeddings", () => {
 
   describe("embedBatch", () => {
     it("should generate embeddings for multiple texts", async () => {
-      const mockEmbeddings = [
-        Array(1024).fill(0.1),
-        Array(1024).fill(0.2),
-        Array(1024).fill(0.3),
-      ];
+      const mockEmbeddings = [Array(1024).fill(0.1), Array(1024).fill(0.2), Array(1024).fill(0.3)];
       mockFetch.mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -321,17 +300,13 @@ describe("VoyageEmbeddings", () => {
         }),
       });
 
-      await expect(embeddings.embedBatch(["text1"])).rejects.toThrow(
-        "No embeddings returned from Voyage AI API",
-      );
+      await expect(embeddings.embedBatch(["text1"])).rejects.toThrow("No embeddings returned from Voyage AI API");
     });
 
     it("should propagate errors in batch", async () => {
       mockFetch.mockRejectedValue(new Error("Batch API Error"));
 
-      await expect(embeddings.embedBatch(["text1", "text2"])).rejects.toThrow(
-        "Batch API Error",
-      );
+      await expect(embeddings.embedBatch(["text1", "text2"])).rejects.toThrow("Batch API Error");
     });
   });
 
@@ -341,11 +316,7 @@ describe("VoyageEmbeddings", () => {
     });
 
     it("should return custom dimensions", () => {
-      const customEmbeddings = new VoyageEmbeddings(
-        "test-api-key",
-        "voyage-2",
-        512,
-      );
+      const customEmbeddings = new VoyageEmbeddings("test-api-key", "voyage-2", 512);
       expect(customEmbeddings.getDimensions()).toBe(512);
     });
   });
@@ -356,10 +327,7 @@ describe("VoyageEmbeddings", () => {
     });
 
     it("should return custom model", () => {
-      const customEmbeddings = new VoyageEmbeddings(
-        "test-api-key",
-        "voyage-large-2",
-      );
+      const customEmbeddings = new VoyageEmbeddings("test-api-key", "voyage-large-2");
       expect(customEmbeddings.getModel()).toBe("voyage-large-2");
     });
   });
@@ -430,15 +398,10 @@ describe("VoyageEmbeddings", () => {
     });
 
     it("should use exponential backoff", async () => {
-      const rateLimitEmbeddings = new VoyageEmbeddings(
-        "test-api-key",
-        "voyage-2",
-        undefined,
-        {
-          retryAttempts: 3,
-          retryDelayMs: 100,
-        },
-      );
+      const rateLimitEmbeddings = new VoyageEmbeddings("test-api-key", "voyage-2", undefined, {
+        retryAttempts: 3,
+        retryDelayMs: 100,
+      });
 
       const mockEmbedding = Array(1024).fill(0.5);
 
@@ -473,15 +436,10 @@ describe("VoyageEmbeddings", () => {
     });
 
     it("should throw error after max retries exceeded", async () => {
-      const rateLimitEmbeddings = new VoyageEmbeddings(
-        "test-api-key",
-        "voyage-2",
-        undefined,
-        {
-          retryAttempts: 2,
-          retryDelayMs: 100,
-        },
-      );
+      const rateLimitEmbeddings = new VoyageEmbeddings("test-api-key", "voyage-2", undefined, {
+        retryAttempts: 2,
+        retryDelayMs: 100,
+      });
 
       mockFetch.mockResolvedValue({
         ok: false,
@@ -493,9 +451,7 @@ describe("VoyageEmbeddings", () => {
       promise.catch(() => {}); // prevent unhandled rejection detection
       await vi.advanceTimersByTimeAsync(10_000);
 
-      await expect(promise).rejects.toThrow(
-        "Voyage AI API rate limit exceeded after 2 retry attempts",
-      );
+      await expect(promise).rejects.toThrow("Voyage AI API rate limit exceeded after 2 retry attempts");
 
       expect(mockFetch).toHaveBeenCalledTimes(3);
     });
@@ -538,16 +494,11 @@ describe("VoyageEmbeddings", () => {
     });
 
     it("should accept custom rate limit configuration", () => {
-      const customEmbeddings = new VoyageEmbeddings(
-        "test-api-key",
-        "voyage-2",
-        undefined,
-        {
-          maxRequestsPerMinute: 500,
-          retryAttempts: 5,
-          retryDelayMs: 2000,
-        },
-      );
+      const customEmbeddings = new VoyageEmbeddings("test-api-key", "voyage-2", undefined, {
+        maxRequestsPerMinute: 500,
+        retryAttempts: 5,
+        retryDelayMs: 2000,
+      });
 
       expect(customEmbeddings).toBeDefined();
     });

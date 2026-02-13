@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import Bottleneck from "bottleneck";
 import express from "express";
+
 import {
   DEFAULT_BATCH_SIZE,
   DEFAULT_CHUNK_OVERLAP,
@@ -27,27 +28,20 @@ import { registerAllTools } from "./tools/index.js";
 
 // Read package.json for version
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(
-  readFileSync(join(__dirname, "../package.json"), "utf-8"),
-);
+const pkg = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
 
 // Validate environment variables
 const QDRANT_URL = process.env.QDRANT_URL || "http://localhost:6333";
 const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
-const EMBEDDING_PROVIDER = (
-  process.env.EMBEDDING_PROVIDER || "ollama"
-).toLowerCase();
+const EMBEDDING_PROVIDER = (process.env.EMBEDDING_PROVIDER || "ollama").toLowerCase();
 const TRANSPORT_MODE = (process.env.TRANSPORT_MODE || "stdio").toLowerCase();
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || "3000", 10);
-const PROMPTS_CONFIG_FILE =
-  process.env.PROMPTS_CONFIG_FILE || join(__dirname, "../prompts.json");
+const PROMPTS_CONFIG_FILE = process.env.PROMPTS_CONFIG_FILE || join(__dirname, "../prompts.json");
 
 // Validate HTTP_PORT when HTTP mode is selected
 if (TRANSPORT_MODE === "http") {
   if (Number.isNaN(HTTP_PORT) || HTTP_PORT < 1 || HTTP_PORT > 65535) {
-    console.error(
-      `Error: Invalid HTTP_PORT "${process.env.HTTP_PORT}". Must be a number between 1 and 65535.`,
-    );
+    console.error(`Error: Invalid HTTP_PORT "${process.env.HTTP_PORT}". Must be a number between 1 and 65535.`);
     process.exit(1);
   }
 }
@@ -78,9 +72,7 @@ if (EMBEDDING_PROVIDER !== "ollama") {
   }
 
   if (!apiKey) {
-    console.error(
-      `Error: ${requiredKeyName} is required for ${EMBEDDING_PROVIDER} provider.`,
-    );
+    console.error(`Error: ${requiredKeyName} is required for ${EMBEDDING_PROVIDER} provider.`);
     process.exit(1);
   }
 }
@@ -89,8 +81,7 @@ if (EMBEDDING_PROVIDER !== "ollama") {
 async function checkOllamaAvailability() {
   if (EMBEDDING_PROVIDER === "ollama") {
     const baseUrl = process.env.EMBEDDING_BASE_URL || "http://localhost:11434";
-    const isLocalhost =
-      baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
+    const isLocalhost = baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
 
     try {
       const response = await fetch(`${baseUrl}/api/version`);
@@ -102,9 +93,7 @@ async function checkOllamaAvailability() {
       const tagsResponse = await fetch(`${baseUrl}/api/tags`);
       const { models } = await tagsResponse.json();
       const modelName = process.env.EMBEDDING_MODEL || "jina-embeddings-v2-base-code";
-      const modelExists = models.some(
-        (m: any) => m.name === modelName || m.name.startsWith(`${modelName}:`),
-      );
+      const modelExists = models.some((m: any) => m.name === modelName || m.name.startsWith(`${modelName}:`));
 
       if (!modelExists) {
         let errorMessage = `Error: Model '${modelName}' not found in Ollama.\n`;
@@ -117,8 +106,7 @@ async function checkOllamaAvailability() {
             `  - Or locally: ollama pull ${modelName}`;
         } else {
           errorMessage +=
-            `Please ensure the model is available on your Ollama instance:\n` +
-            `  ollama pull ${modelName}`;
+            `Please ensure the model is available on your Ollama instance:\n` + `  ollama pull ${modelName}`;
         }
 
         console.error(errorMessage);
@@ -126,9 +114,7 @@ async function checkOllamaAvailability() {
       }
     } catch (error) {
       const errorMessage =
-        error instanceof Error
-          ? `Error: ${error.message}`
-          : `Error: Ollama is not running at ${baseUrl}.\n`;
+        error instanceof Error ? `Error: ${error.message}` : `Error: Ollama is not running at ${baseUrl}.\n`;
 
       let helpText = "";
       if (isLocalhost) {
@@ -159,14 +145,8 @@ const embeddings = EmbeddingProviderFactory.createFromEnv();
 
 // Initialize code indexer
 const codeConfig: CodeConfig = {
-  chunkSize: parseInt(
-    process.env.CODE_CHUNK_SIZE || String(DEFAULT_CHUNK_SIZE),
-    10,
-  ),
-  chunkOverlap: parseInt(
-    process.env.CODE_CHUNK_OVERLAP || String(DEFAULT_CHUNK_OVERLAP),
-    10,
-  ),
+  chunkSize: parseInt(process.env.CODE_CHUNK_SIZE || String(DEFAULT_CHUNK_SIZE), 10),
+  chunkOverlap: parseInt(process.env.CODE_CHUNK_OVERLAP || String(DEFAULT_CHUNK_OVERLAP), 10),
   enableASTChunking: process.env.CODE_ENABLE_AST !== "false",
   supportedExtensions: DEFAULT_CODE_EXTENSIONS,
   ignorePatterns: DEFAULT_IGNORE_PATTERNS,
@@ -174,10 +154,7 @@ const codeConfig: CodeConfig = {
     process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || String(DEFAULT_BATCH_SIZE),
     10,
   ),
-  defaultSearchLimit: parseInt(
-    process.env.CODE_SEARCH_LIMIT || String(DEFAULT_SEARCH_LIMIT),
-    10,
-  ),
+  defaultSearchLimit: parseInt(process.env.CODE_SEARCH_LIMIT || String(DEFAULT_SEARCH_LIMIT), 10),
   enableHybridSearch: process.env.CODE_ENABLE_HYBRID === "true",
   // Git metadata enrichment - adds author, commit info, task IDs, code age, etc.
   enableGitMetadata: process.env.CODE_ENABLE_GIT_METADATA === "true",
@@ -190,14 +167,9 @@ let promptsConfig: PromptsConfig | null = null;
 if (existsSync(PROMPTS_CONFIG_FILE)) {
   try {
     promptsConfig = loadPromptsConfig(PROMPTS_CONFIG_FILE);
-    console.error(
-      `Loaded ${promptsConfig.prompts.length} prompts from ${PROMPTS_CONFIG_FILE}`,
-    );
+    console.error(`Loaded ${promptsConfig.prompts.length} prompts from ${PROMPTS_CONFIG_FILE}`);
   } catch (error) {
-    console.error(
-      `Failed to load prompts configuration from ${PROMPTS_CONFIG_FILE}:`,
-      error,
-    );
+    console.error(`Failed to load prompts configuration from ${PROMPTS_CONFIG_FILE}:`, error);
     process.exit(1);
   }
 }
@@ -246,10 +218,7 @@ const RATE_LIMIT_MAX_REQUESTS = 100; // Max requests per window
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const RATE_LIMIT_MAX_CONCURRENT = 10; // Max concurrent requests per IP
 const RATE_LIMITER_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-const REQUEST_TIMEOUT_MS = parseInt(
-  process.env.HTTP_REQUEST_TIMEOUT_MS || "300000",
-  10,
-);
+const REQUEST_TIMEOUT_MS = parseInt(process.env.HTTP_REQUEST_TIMEOUT_MS || "300000", 10);
 const SHUTDOWN_GRACE_PERIOD_MS = 10 * 1000; // 10 seconds
 
 // Validate REQUEST_TIMEOUT_MS
@@ -279,12 +248,7 @@ async function startHttpServer() {
   });
 
   // Helper function to send JSON-RPC error responses
-  const sendErrorResponse = (
-    res: express.Response,
-    code: number,
-    message: string,
-    httpStatus: number = 500,
-  ) => {
+  const sendErrorResponse = (res: express.Response, code: number, message: string, httpStatus: number = 500) => {
     if (!res.headersSent) {
       res.status(httpStatus).json({
         jsonrpc: "2.0",
@@ -319,11 +283,7 @@ async function startHttpServer() {
   }, RATE_LIMITER_CLEANUP_INTERVAL_MS);
 
   // Rate limiting middleware
-  const rateLimitMiddleware = async (
-    req: express.Request,
-    res: express.Response,
-    next: express.NextFunction,
-  ) => {
+  const rateLimitMiddleware = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const clientIp = req.ip || req.socket.remoteAddress || "unknown";
 
     try {
@@ -415,9 +375,7 @@ async function startHttpServer() {
 
   const httpServer = app
     .listen(HTTP_PORT, () => {
-      console.error(
-        `Qdrant MCP server running on http://localhost:${HTTP_PORT}/mcp`,
-      );
+      console.error(`Qdrant MCP server running on http://localhost:${HTTP_PORT}/mcp`);
     })
     .on("error", (error) => {
       console.error("HTTP server error:", error);
@@ -431,9 +389,7 @@ async function startHttpServer() {
     if (isShuttingDown) return;
     isShuttingDown = true;
 
-    console.error(
-      "Shutdown signal received, closing HTTP server gracefully...",
-    );
+    console.error("Shutdown signal received, closing HTTP server gracefully...");
 
     // Clear the cleanup interval to allow graceful shutdown
     clearInterval(cleanupIntervalId);
@@ -462,9 +418,7 @@ async function main() {
   } else if (TRANSPORT_MODE === "stdio") {
     await startStdioServer();
   } else {
-    console.error(
-      `Error: Invalid TRANSPORT_MODE "${TRANSPORT_MODE}". Supported modes: stdio, http.`,
-    );
+    console.error(`Error: Invalid TRANSPORT_MODE "${TRANSPORT_MODE}". Supported modes: stdio, http.`);
     process.exit(1);
   }
 }

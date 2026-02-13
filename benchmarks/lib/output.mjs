@@ -6,6 +6,7 @@
 
 import { writeFileSync } from "fs";
 import { join } from "path";
+
 import { c } from "./colors.mjs";
 import { config, SAMPLE_SIZE } from "./config.mjs";
 import { getTimeEstimatesData } from "./estimator.mjs";
@@ -42,7 +43,7 @@ QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}
 # Deletion rate: ${metrics.deletionRate || "N/A"} del/s
 
 # Estimated indexing times:
-${estimates.map(e => `# ${e.name.padEnd(20)} (${formatLoc(e.loc)} LoC): ${e.formattedTotal}`).join("\n")}
+${estimates.map((e) => `# ${e.name.padEnd(20)} (${formatLoc(e.loc)} LoC): ${e.formattedTotal}`).join("\n")}
 `;
 }
 
@@ -73,7 +74,9 @@ export function printSummary(optimal) {
   console.log(`  EMBEDDING_CONCURRENCY     = ${c.green}${c.bold}${optimal.EMBEDDING_CONCURRENCY}${c.reset}`);
   console.log();
   console.log(`  ${c.dim}# Qdrant storage${c.reset}`);
-  console.log(`  QDRANT_UPSERT_BATCH_SIZE           = ${c.green}${c.bold}${optimal.QDRANT_UPSERT_BATCH_SIZE}${c.reset}`);
+  console.log(
+    `  QDRANT_UPSERT_BATCH_SIZE           = ${c.green}${c.bold}${optimal.QDRANT_UPSERT_BATCH_SIZE}${c.reset}`,
+  );
   console.log(`  QDRANT_BATCH_ORDERING     = ${c.green}${c.bold}${optimal.QDRANT_BATCH_ORDERING}${c.reset}`);
   console.log(`  QDRANT_FLUSH_INTERVAL_MS  = ${c.green}${c.bold}${optimal.QDRANT_FLUSH_INTERVAL_MS}${c.reset}`);
   console.log(`  BATCH_FORMATION_TIMEOUT_MS = ${c.green}${c.bold}${optimal.BATCH_FORMATION_TIMEOUT_MS}${c.reset}`);

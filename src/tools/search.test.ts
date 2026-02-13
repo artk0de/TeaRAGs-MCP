@@ -1,8 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  filterResultsByGlob,
-  calculateFetchLimit,
-} from "../qdrant/filters/index.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { calculateFetchLimit, filterResultsByGlob } from "../qdrant/filters/index.js";
 
 // Test the glob filtering integration
 describe("Search tools glob filtering", () => {
@@ -15,7 +13,7 @@ describe("Search tools glob filtering", () => {
       },
       {
         id: "2",
-        score: 0.90,
+        score: 0.9,
         payload: { relativePath: "src/api/posts.ts", content: "post code" },
       },
       {
@@ -25,7 +23,7 @@ describe("Search tools glob filtering", () => {
       },
       {
         id: "4",
-        score: 0.80,
+        score: 0.8,
         payload: { relativePath: "lib/core.ts", content: "core code" },
       },
     ];
@@ -94,7 +92,7 @@ describe("Search tools glob filtering", () => {
       // Simulate what happens in semantic_search handler
       const mockQdrantResults = [
         { id: "1", score: 0.95, payload: { relativePath: "src/api/users.ts" } },
-        { id: "2", score: 0.90, payload: { relativePath: "lib/utils.ts" } },
+        { id: "2", score: 0.9, payload: { relativePath: "lib/utils.ts" } },
       ];
       const pathPattern = "src/**";
       const requestedLimit = 5;
@@ -111,7 +109,7 @@ describe("Search tools glob filtering", () => {
     it("should not filter when pathPattern is not provided", () => {
       const mockQdrantResults = [
         { id: "1", score: 0.95, payload: { relativePath: "src/api/users.ts" } },
-        { id: "2", score: 0.90, payload: { relativePath: "lib/utils.ts" } },
+        { id: "2", score: 0.9, payload: { relativePath: "lib/utils.ts" } },
       ];
       const pathPattern = undefined;
 
@@ -127,7 +125,7 @@ describe("Search tools glob filtering", () => {
     it("should apply glob filter when pathPattern parameter is passed", () => {
       const mockQdrantResults = [
         { id: "1", score: 0.95, payload: { relativePath: "models/workflow/task.ts" } },
-        { id: "2", score: 0.90, payload: { relativePath: "models/auth/user.ts" } },
+        { id: "2", score: 0.9, payload: { relativePath: "models/auth/user.ts" } },
         { id: "3", score: 0.85, payload: { relativePath: "services/workflow/exec.ts" } },
       ];
       const pathPattern = "**/workflow/**";
@@ -147,14 +145,12 @@ describe("Search tools glob filtering", () => {
       // Simulate indexer.searchCode behavior
       const mockQdrantResults = [
         { id: "1", score: 0.95, payload: { relativePath: "src/services/auth.ts" } },
-        { id: "2", score: 0.90, payload: { relativePath: "src/services/user.ts" } },
+        { id: "2", score: 0.9, payload: { relativePath: "src/services/user.ts" } },
         { id: "3", score: 0.85, payload: { relativePath: "tests/services/auth.test.ts" } },
       ];
       const pathPattern = "src/**";
 
-      const globFilteredResults = pathPattern
-        ? filterResultsByGlob(mockQdrantResults, pathPattern)
-        : mockQdrantResults;
+      const globFilteredResults = pathPattern ? filterResultsByGlob(mockQdrantResults, pathPattern) : mockQdrantResults;
 
       expect(globFilteredResults).toHaveLength(2);
       expect(globFilteredResults.every((r) => r.payload?.relativePath?.startsWith("src/"))).toBe(true);

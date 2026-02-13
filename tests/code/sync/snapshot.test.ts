@@ -1,7 +1,9 @@
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { MerkleTree } from "../../../src/code/sync/merkle.js";
 import { SnapshotManager } from "../../../src/code/sync/snapshot.js";
 
@@ -12,10 +14,7 @@ describe("SnapshotManager", () => {
 
   beforeEach(async () => {
     // Create a temporary directory for test snapshots
-    tempDir = join(
-      tmpdir(),
-      `qdrant-mcp-test-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-    );
+    tempDir = join(tmpdir(), `qdrant-mcp-test-${Date.now()}-${Math.random().toString(36).substring(7)}`);
     await fs.mkdir(tempDir, { recursive: true });
 
     collectionName = "test-collection";
@@ -177,11 +176,7 @@ describe("SnapshotManager", () => {
 
     it("should handle missing fields in snapshot", async () => {
       const snapshotPath = join(tempDir, `${collectionName}.json`);
-      await fs.writeFile(
-        snapshotPath,
-        JSON.stringify({ codebasePath: "/test" }),
-        "utf-8",
-      );
+      await fs.writeFile(snapshotPath, JSON.stringify({ codebasePath: "/test" }), "utf-8");
 
       const loaded = await snapshotManager.load();
 
@@ -376,9 +371,7 @@ describe("SnapshotManager", () => {
         const tree = new MerkleTree();
         tree.build(fileHashes);
 
-        promises.push(
-          snapshotManager.save(`/test/codebase${i}`, fileHashes, tree),
-        );
+        promises.push(snapshotManager.save(`/test/codebase${i}`, fileHashes, tree));
       }
 
       await Promise.all(promises);
@@ -395,11 +388,7 @@ describe("SnapshotManager", () => {
 
       await snapshotManager.save("/test/codebase", fileHashes, tree);
 
-      const promises = [
-        snapshotManager.load(),
-        snapshotManager.load(),
-        snapshotManager.load(),
-      ];
+      const promises = [snapshotManager.load(), snapshotManager.load(), snapshotManager.load()];
 
       const results = await Promise.all(promises);
 
@@ -426,9 +415,7 @@ describe("SnapshotManager", () => {
       if (process.platform !== "win32") {
         await fs.chmod(readOnlyDir, 0o444);
 
-        await expect(
-          readOnlyManager.save("/test/codebase", fileHashes, tree),
-        ).rejects.toThrow();
+        await expect(readOnlyManager.save("/test/codebase", fileHashes, tree)).rejects.toThrow();
 
         // Restore permissions for cleanup
         await fs.chmod(readOnlyDir, 0o755);
@@ -444,9 +431,7 @@ describe("SnapshotManager", () => {
       const invalidPath = join(tempDir, "invalid\x00path.json");
       const invalidManager = new SnapshotManager(invalidPath);
 
-      await expect(
-        invalidManager.save("/test/codebase", fileHashes, tree),
-      ).rejects.toThrow();
+      await expect(invalidManager.save("/test/codebase", fileHashes, tree)).rejects.toThrow();
     });
 
     it("should calculate merkle root correctly for multiple files", async () => {
@@ -526,12 +511,7 @@ describe("SnapshotManager", () => {
       const tree = new MerkleTree();
       tree.build(fileHashes);
 
-      await snapshotManager.save(
-        "/test/codebase",
-        fileHashes,
-        tree,
-        fileMetadata,
-      );
+      await snapshotManager.save("/test/codebase", fileHashes, tree, fileMetadata);
 
       const loaded = await snapshotManager.load();
 
@@ -576,18 +556,11 @@ describe("SnapshotManager", () => {
 
     it("should detect v2 snapshot version", async () => {
       const fileHashes = new Map([["file.ts", "hash"]]);
-      const fileMetadata = new Map([
-        ["file.ts", { mtime: 1234567890, size: 100, hash: "hash" }],
-      ]);
+      const fileMetadata = new Map([["file.ts", { mtime: 1234567890, size: 100, hash: "hash" }]]);
       const tree = new MerkleTree();
       tree.build(fileHashes);
 
-      await snapshotManager.save(
-        "/test/codebase",
-        fileHashes,
-        tree,
-        fileMetadata,
-      );
+      await snapshotManager.save("/test/codebase", fileHashes, tree, fileMetadata);
 
       const version = await snapshotManager.getVersion();
       expect(version).toBe("2");
@@ -634,18 +607,11 @@ describe("SnapshotManager", () => {
 
     it("should detect when migration is not needed", async () => {
       const fileHashes = new Map([["file.ts", "hash"]]);
-      const fileMetadata = new Map([
-        ["file.ts", { mtime: 1234567890, size: 100, hash: "hash" }],
-      ]);
+      const fileMetadata = new Map([["file.ts", { mtime: 1234567890, size: 100, hash: "hash" }]]);
       const tree = new MerkleTree();
       tree.build(fileHashes);
 
-      await snapshotManager.save(
-        "/test/codebase",
-        fileHashes,
-        tree,
-        fileMetadata,
-      );
+      await snapshotManager.save("/test/codebase", fileHashes, tree, fileMetadata);
 
       const needsMigration = await snapshotManager.needsMigration();
       expect(needsMigration).toBe(false);

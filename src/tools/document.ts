@@ -3,6 +3,7 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../embeddings/sparse.js";
 import type { QdrantManager } from "../qdrant/client.js";
@@ -13,10 +14,7 @@ export interface DocumentToolDependencies {
   embeddings: EmbeddingProvider;
 }
 
-export function registerDocumentTools(
-  server: McpServer,
-  deps: DocumentToolDependencies,
-): void {
+export function registerDocumentTools(server: McpServer, deps: DocumentToolDependencies): void {
   const { qdrant, embeddings } = deps;
 
   // add_documents

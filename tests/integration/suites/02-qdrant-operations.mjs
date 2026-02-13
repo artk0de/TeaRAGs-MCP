@@ -3,8 +3,9 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testQdrantOperations(qdrant) {
   const TEST_COLLECTION = `test_${Date.now()}`;
@@ -41,7 +42,10 @@ export async function testQdrantOperations(qdrant) {
   // Filter search
   const filtered = await qdrant.search(TEST_COLLECTION, makeVector(1), 10, { category: "A" });
   assert(filtered.length === 2, `Filter by category: ${filtered.length} results`);
-  assert(filtered.every(r => r.payload?.category === "A"), "All results match filter");
+  assert(
+    filtered.every((r) => r.payload?.category === "A"),
+    "All results match filter",
+  );
 
   // Get point
   const point = await qdrant.getPoint(TEST_COLLECTION, points[0].id);
@@ -55,7 +59,7 @@ export async function testQdrantOperations(qdrant) {
 
   // Delete by filter
   await qdrant.deletePointsByFilter(TEST_COLLECTION, {
-    must: [{ key: "category", match: { value: "B" } }]
+    must: [{ key: "category", match: { value: "B" } }],
   });
   const afterFilterDelete = await qdrant.getCollectionInfo(TEST_COLLECTION);
   assert(afterFilterDelete.pointsCount === 1, `Delete by filter: ${afterFilterDelete.pointsCount} remaining`);
@@ -97,8 +101,10 @@ export async function testQdrantOperations(qdrant) {
   assert(batchResult.deletedPaths === 30, `Batched delete reports correct count: ${batchResult.deletedPaths}`);
   assert(batchResult.batchCount === 3, `Batched delete used correct batches: ${batchResult.batchCount}`);
   assert(progressCalls >= 1, `Progress callback was invoked: ${progressCalls} times`);
-  assert(afterBatchDelete.pointsCount === beforeBatchDelete.pointsCount - 30,
-    `Batched delete removed correct points: ${afterBatchDelete.pointsCount}`);
+  assert(
+    afterBatchDelete.pointsCount === beforeBatchDelete.pointsCount - 30,
+    `Batched delete removed correct points: ${afterBatchDelete.pointsCount}`,
+  );
 
   // Cleanup remaining batch points to restore state for next test
   const remainingBatchPaths = Array.from({ length: 20 }, (_, i) => `batch/file${30 + i}.ts`);

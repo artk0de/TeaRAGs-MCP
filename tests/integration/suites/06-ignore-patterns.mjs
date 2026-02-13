@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testIgnorePatterns(qdrant, embeddings) {
   section("6. Ignore Patterns");
@@ -24,9 +25,13 @@ export async function testIgnorePatterns(qdrant, embeddings) {
   await createTestFile(ignoreTestDir, "dist/bundle.ts", "export const DIST = 'build';");
   await createTestFile(ignoreTestDir, "test.spec.ts", "describe('test', () => {});");
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
-    ignorePatterns: ["node_modules", ".git", "dist", "*.spec.ts"],
-  }));
+  const indexer = new CodeIndexer(
+    qdrant,
+    embeddings,
+    getIndexerConfig({
+      ignorePatterns: ["node_modules", ".git", "dist", "*.spec.ts"],
+    }),
+  );
 
   resources.trackIndexedPath(ignoreTestDir);
   const stats = await indexer.indexCodebase(ignoreTestDir, { forceReindex: true });
@@ -40,13 +45,12 @@ export async function testIgnorePatterns(qdrant, embeddings) {
   const allResults = await indexer.searchCode(ignoreTestDir, "export const", { limit: 10 });
 
   // Helper to check if any result is from ignored path
-  const hasIgnoredPath = (results, pattern) =>
-    results.some(r => r.filePath && r.filePath.includes(pattern));
+  const hasIgnoredPath = (results, pattern) => results.some((r) => r.filePath && r.filePath.includes(pattern));
 
   assert(!hasIgnoredPath(allResults, "node_modules"), "node_modules content not indexed");
   assert(!hasIgnoredPath(allResults, ".git"), ".git content not indexed");
   assert(!hasIgnoredPath(allResults, "dist"), "dist content not indexed");
-  assert(!allResults.some(r => r.filePath?.endsWith(".spec.ts")), "*.spec.ts content not indexed");
+  assert(!allResults.some((r) => r.filePath?.endsWith(".spec.ts")), "*.spec.ts content not indexed");
 
   // But main app should be searchable
   const appResults = await indexer.searchCode(ignoreTestDir, "APP main");

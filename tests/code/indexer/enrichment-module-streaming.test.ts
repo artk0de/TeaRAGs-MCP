@@ -8,36 +8,41 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Import AFTER mock setup
+import { EnrichmentModule } from "../../../src/code/indexer/enrichment-module.js";
 import type { ChunkItem } from "../../../src/code/pipeline/types.js";
 import type { ChunkLookupEntry } from "../../../src/code/types.js";
 
 // Shared mock state — vi.hoisted runs before vi.mock factory
-const { mockBuildFileMetadataMap, mockBuildChunkChurnMap, mockComputeFileMetadata, mockBuildFileMetadataForPaths } = vi.hoisted(() => ({
-  mockBuildFileMetadataMap: vi.fn(),
-  mockBuildChunkChurnMap: vi.fn(),
-  mockBuildFileMetadataForPaths: vi.fn(),
-  mockComputeFileMetadata: vi.fn().mockReturnValue({
-    dominantAuthor: "Alice",
-    dominantAuthorEmail: "alice@test.com",
-    authors: ["Alice"],
-    dominantAuthorPct: 100,
-    lastModifiedAt: 1700000000,
-    firstCreatedAt: 1690000000,
-    lastCommitHash: "abc123",
-    ageDays: 10,
-    commitCount: 5,
-    linesAdded: 100,
-    linesDeleted: 20,
-    relativeChurn: 0.5,
-    recencyWeightedFreq: 2.5,
-    changeDensity: 1.5,
-    churnVolatility: 0.8,
-    bugFixRate: 20,
-    contributorCount: 1,
-    taskIds: ["TD-100"],
-  }),
-}));
+const { mockBuildFileMetadataMap, mockBuildChunkChurnMap, mockComputeFileMetadata, mockBuildFileMetadataForPaths } =
+  vi.hoisted(() => ({
+    mockBuildFileMetadataMap: vi.fn(),
+    mockBuildChunkChurnMap: vi.fn(),
+    mockBuildFileMetadataForPaths: vi.fn(),
+    mockComputeFileMetadata: vi.fn().mockReturnValue({
+      dominantAuthor: "Alice",
+      dominantAuthorEmail: "alice@test.com",
+      authors: ["Alice"],
+      dominantAuthorPct: 100,
+      lastModifiedAt: 1700000000,
+      firstCreatedAt: 1690000000,
+      lastCommitHash: "abc123",
+      ageDays: 10,
+      commitCount: 5,
+      linesAdded: 100,
+      linesDeleted: 20,
+      relativeChurn: 0.5,
+      recencyWeightedFreq: 2.5,
+      changeDensity: 1.5,
+      churnVolatility: 0.8,
+      bugFixRate: 20,
+      contributorCount: 1,
+      taskIds: ["TD-100"],
+    }),
+  }));
 
 vi.mock("../../../src/code/git/git-log-reader.js", () => ({
   GitLogReader: class MockGitLogReader {
@@ -48,9 +53,6 @@ vi.mock("../../../src/code/git/git-log-reader.js", () => ({
   computeFileMetadata: mockComputeFileMetadata,
 }));
 
-// Import AFTER mock setup
-import { EnrichmentModule } from "../../../src/code/indexer/enrichment-module.js";
-
 // Helpers
 function createMockQdrant() {
   return {
@@ -59,10 +61,7 @@ function createMockQdrant() {
   };
 }
 
-function makeChunkItems(
-  filePaths: string[],
-  codebasePath: string,
-): ChunkItem[] {
+function makeChunkItems(filePaths: string[], codebasePath: string): ChunkItem[] {
   return filePaths.map((fp, i) => ({
     type: "upsert" as const,
     id: `chunk-${i}`,
@@ -101,14 +100,14 @@ describe("EnrichmentModule streaming API", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    try { rmSync(repoDir, { recursive: true, force: true }); } catch {}
+    try {
+      rmSync(repoDir, { recursive: true, force: true });
+    } catch {}
   });
 
   describe("prefetchGitLog", () => {
     it("should start async git log reading", async () => {
-      const fileMap = new Map([
-        ["a.ts", { commits: [], linesAdded: 10, linesDeleted: 2 }],
-      ]);
+      const fileMap = new Map([["a.ts", { commits: [], linesAdded: 10, linesDeleted: 2 }]]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
       enrichment.prefetchGitLog(repoDir);
@@ -122,7 +121,14 @@ describe("EnrichmentModule streaming API", () => {
   describe("onChunksStored - streaming apply", () => {
     it("should apply metadata immediately when git log already resolved", async () => {
       const fileMap = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
@@ -161,7 +167,14 @@ describe("EnrichmentModule streaming API", () => {
 
       // Now resolve git log
       const fileMap = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       resolveGitLog(fileMap);
 
@@ -241,9 +254,7 @@ describe("EnrichmentModule streaming API", () => {
       await enrichment.awaitCompletion("test_collection");
 
       const calls = qdrant.setPayload.mock.calls;
-      const completionCall = calls.find(
-        (c: any[]) => c[1]?.enrichment?.status === "completed",
-      );
+      const completionCall = calls.find((c: any[]) => c[1]?.enrichment?.status === "completed");
       expect(completionCall).toBeDefined();
     });
   });
@@ -252,7 +263,14 @@ describe("EnrichmentModule streaming API", () => {
     it("should track matched and missed files in metrics", async () => {
       // Git log has "a.ts" but NOT "b.ts"
       const fileMap = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
@@ -260,10 +278,7 @@ describe("EnrichmentModule streaming API", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       // Send chunks for both a.ts (matched) and b.ts (missed)
-      const items = makeChunkItems(
-        [`${repoDir}/a.ts`, `${repoDir}/b.ts`],
-        repoDir,
-      );
+      const items = makeChunkItems([`${repoDir}/a.ts`, `${repoDir}/b.ts`], repoDir);
       enrichment.onChunksStored("test_collection", repoDir, items);
 
       const metrics = await enrichment.awaitCompletion("test_collection");
@@ -309,7 +324,14 @@ describe("EnrichmentModule streaming API", () => {
 
       // Resolve git log after a short delay
       const fileMap = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       resolveGitLog(fileMap);
 
@@ -346,10 +368,13 @@ describe("EnrichmentModule streaming API", () => {
       enrichment.prefetchGitLog(repoDir);
 
       const chunkMap = new Map<string, ChunkLookupEntry[]>([
-        [`${repoDir}/a.ts`, [
-          { chunkId: "chunk-0", startLine: 1, endLine: 10 },
-          { chunkId: "chunk-1", startLine: 11, endLine: 20 },
-        ]],
+        [
+          `${repoDir}/a.ts`,
+          [
+            { chunkId: "chunk-0", startLine: 1, endLine: 10 },
+            { chunkId: "chunk-1", startLine: 11, endLine: 20 },
+          ],
+        ],
       ]);
       enrichment.startChunkChurn("test_collection", repoDir, chunkMap);
 
@@ -371,9 +396,7 @@ describe("EnrichmentModule streaming API", () => {
 
       // Should have called setPayload with enrichment.status = "in_progress"
       const calls = qdrant.setPayload.mock.calls;
-      const inProgressCall = calls.find(
-        (c: any[]) => c[1]?.enrichment?.status === "in_progress",
-      );
+      const inProgressCall = calls.find((c: any[]) => c[1]?.enrichment?.status === "in_progress");
       expect(inProgressCall).toBeDefined();
     });
   });
@@ -382,26 +405,28 @@ describe("EnrichmentModule streaming API", () => {
     it("should write matchedFiles and missedFiles to enrichment marker on completion", async () => {
       // Git log has "a.ts" but NOT "b.ts"
       const fileMap = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
       enrichment.prefetchGitLog(repoDir, "test_collection");
       await new Promise((r) => setTimeout(r, 10));
 
-      const items = makeChunkItems(
-        [`${repoDir}/a.ts`, `${repoDir}/b.ts`],
-        repoDir,
-      );
+      const items = makeChunkItems([`${repoDir}/a.ts`, `${repoDir}/b.ts`], repoDir);
       enrichment.onChunksStored("test_collection", repoDir, items);
 
       await enrichment.awaitCompletion("test_collection");
 
       // Find the completion marker call
       const calls = qdrant.setPayload.mock.calls;
-      const completionCall = calls.find(
-        (c: any[]) => c[1]?.enrichment?.status === "completed",
-      );
+      const completionCall = calls.find((c: any[]) => c[1]?.enrichment?.status === "completed");
       expect(completionCall).toBeDefined();
 
       const enrichmentPayload = completionCall![1].enrichment;
@@ -418,14 +443,17 @@ describe("EnrichmentModule streaming API", () => {
         [
           "a.ts",
           new Map([
-            ["chunk-0", {
-              chunkCommitCount: 3,
-              chunkChurnRatio: 0.6,
-              chunkContributorCount: 2,
-              chunkBugFixRate: 33,
-              chunkLastModifiedAt: 1700000000,
-              chunkAgeDays: 5,
-            }],
+            [
+              "chunk-0",
+              {
+                chunkCommitCount: 3,
+                chunkChurnRatio: 0.6,
+                chunkContributorCount: 2,
+                chunkBugFixRate: 33,
+                chunkLastModifiedAt: 1700000000,
+                chunkAgeDays: 5,
+              },
+            ],
           ]),
         ],
       ]);
@@ -434,10 +462,13 @@ describe("EnrichmentModule streaming API", () => {
       enrichment.prefetchGitLog(repoDir, "test_collection");
 
       const chunkMap = new Map<string, ChunkLookupEntry[]>([
-        [`${repoDir}/a.ts`, [
-          { chunkId: "chunk-0", startLine: 1, endLine: 10 },
-          { chunkId: "chunk-1", startLine: 11, endLine: 20 },
-        ]],
+        [
+          `${repoDir}/a.ts`,
+          [
+            { chunkId: "chunk-0", startLine: 1, endLine: 10 },
+            { chunkId: "chunk-1", startLine: 11, endLine: 20 },
+          ],
+        ],
       ]);
       enrichment.startChunkChurn("test_collection", repoDir, chunkMap);
 
@@ -446,9 +477,7 @@ describe("EnrichmentModule streaming API", () => {
 
       // Find the chunkEnrichment marker call
       const calls = qdrant.setPayload.mock.calls;
-      const chunkChurnCall = calls.find(
-        (c: any[]) => c[1]?.chunkEnrichment?.status === "completed",
-      );
+      const chunkChurnCall = calls.find((c: any[]) => c[1]?.chunkEnrichment?.status === "completed");
       expect(chunkChurnCall).toBeDefined();
       expect(chunkChurnCall![1].chunkEnrichment.overlaysApplied).toBeGreaterThanOrEqual(0);
     });
@@ -472,15 +501,27 @@ describe("EnrichmentModule streaming API", () => {
 
     it("should not block other batches when batchSetPayload fails", async () => {
       const fileMap = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
-        ["b.ts", { commits: [{ sha: "def", author: "Bob", authorEmail: "b@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 5, linesDeleted: 1 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
+        [
+          "b.ts",
+          {
+            commits: [{ sha: "def", author: "Bob", authorEmail: "b@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 5,
+            linesDeleted: 1,
+          },
+        ],
       ]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
       // First call fails, second succeeds
-      qdrant.batchSetPayload
-        .mockRejectedValueOnce(new Error("Qdrant error"))
-        .mockResolvedValue(undefined);
+      qdrant.batchSetPayload.mockRejectedValueOnce(new Error("Qdrant error")).mockResolvedValue(undefined);
 
       enrichment.prefetchGitLog(repoDir);
       await new Promise((r) => setTimeout(r, 10));
@@ -522,9 +563,7 @@ describe("EnrichmentModule streaming API", () => {
     });
 
     it("should not filter when no ignored files match", async () => {
-      const fileMap = new Map([
-        ["a.ts", { commits: [], linesAdded: 10, linesDeleted: 2 }],
-      ]);
+      const fileMap = new Map([["a.ts", { commits: [], linesAdded: 10, linesDeleted: 2 }]]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
       const mockIgnoreFilter = {
@@ -570,9 +609,7 @@ describe("EnrichmentModule streaming API", () => {
 
   describe("startChunkChurn ignoreFilter", () => {
     it("should filter chunkMap by ignore patterns before processing", async () => {
-      const fileMap = new Map([
-        ["a.ts", { commits: [], linesAdded: 10, linesDeleted: 2 }],
-      ]);
+      const fileMap = new Map([["a.ts", { commits: [], linesAdded: 10, linesDeleted: 2 }]]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
       const chunkChurnResult = new Map();
@@ -646,9 +683,7 @@ describe("EnrichmentModule streaming API", () => {
       mockBuildChunkChurnMap.mockResolvedValue(chunkChurnResult);
 
       // Make batchSetPayload fail on first call (mid-batch) but succeed on remainder
-      qdrant.batchSetPayload
-        .mockRejectedValueOnce(new Error("Qdrant batch error"))
-        .mockResolvedValue(undefined);
+      qdrant.batchSetPayload.mockRejectedValueOnce(new Error("Qdrant batch error")).mockResolvedValue(undefined);
 
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -679,14 +714,17 @@ describe("EnrichmentModule streaming API", () => {
         [
           "a.ts",
           new Map([
-            ["chunk-0", {
-              chunkCommitCount: 1,
-              chunkChurnRatio: 0.5,
-              chunkContributorCount: 1,
-              chunkBugFixRate: 0,
-              chunkLastModifiedAt: 1700000000,
-              chunkAgeDays: 3,
-            }],
+            [
+              "chunk-0",
+              {
+                chunkCommitCount: 1,
+                chunkChurnRatio: 0.5,
+                chunkContributorCount: 1,
+                chunkBugFixRate: 0,
+                chunkLastModifiedAt: 1700000000,
+                chunkAgeDays: 3,
+              },
+            ],
           ]),
         ],
       ]);
@@ -724,14 +762,17 @@ describe("EnrichmentModule streaming API", () => {
         [
           "a.ts",
           new Map([
-            ["chunk-0", {
-              chunkCommitCount: 2,
-              chunkChurnRatio: 0.4,
-              chunkContributorCount: 1,
-              chunkBugFixRate: 50,
-              chunkLastModifiedAt: 1700000000,
-              chunkAgeDays: 7,
-            }],
+            [
+              "chunk-0",
+              {
+                chunkCommitCount: 2,
+                chunkChurnRatio: 0.4,
+                chunkContributorCount: 1,
+                chunkBugFixRate: 50,
+                chunkLastModifiedAt: 1700000000,
+                chunkAgeDays: 7,
+              },
+            ],
           ]),
         ],
       ]);
@@ -823,7 +864,14 @@ describe("EnrichmentModule streaming API", () => {
   describe("applyFileMetadata batchSetPayload error handler", () => {
     it("should log error when batchSetPayload fails during file metadata apply", async () => {
       const fileMap = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
@@ -924,13 +972,27 @@ describe("EnrichmentModule streaming API", () => {
     it("should backfill metadata for files not in the main git log window", async () => {
       // Git log returns only "a.ts" — "b.ts" will be missed
       const fileMap = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
       // Backfill returns data for "b.ts"
       const backfillData = new Map([
-        ["b.ts", { commits: [{ sha: "def", author: "Bob", authorEmail: "b@t.com", timestamp: 1690000000, body: "add b" }], linesAdded: 5, linesDeleted: 0 }],
+        [
+          "b.ts",
+          {
+            commits: [{ sha: "def", author: "Bob", authorEmail: "b@t.com", timestamp: 1690000000, body: "add b" }],
+            linesAdded: 5,
+            linesDeleted: 0,
+          },
+        ],
       ]);
       mockBuildFileMetadataForPaths.mockResolvedValue(backfillData);
 
@@ -938,10 +1000,7 @@ describe("EnrichmentModule streaming API", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       // Send chunks for both a.ts (matched) and b.ts (missed -> will be backfilled)
-      const items = makeChunkItems(
-        [`${repoDir}/a.ts`, `${repoDir}/b.ts`],
-        repoDir,
-      );
+      const items = makeChunkItems([`${repoDir}/a.ts`, `${repoDir}/b.ts`], repoDir);
       enrichment.onChunksStored("test_collection", repoDir, items);
 
       const metrics = await enrichment.awaitCompletion("test_collection");
@@ -949,13 +1008,13 @@ describe("EnrichmentModule streaming API", () => {
       // buildFileMetadataForPaths should have been called with the missed path
       expect(mockBuildFileMetadataForPaths).toHaveBeenCalledWith(
         expect.any(String), // repoRoot
-        ["b.ts"],           // missed paths
+        ["b.ts"], // missed paths
         expect.any(Number), // timeoutMs
       );
 
       // After backfill: b.ts was backfilled so matchedFiles increases, missedFiles decreases
       expect(metrics.matchedFiles).toBe(2); // a.ts (original) + b.ts (backfilled)
-      expect(metrics.missedFiles).toBe(0);  // b.ts was backfilled
+      expect(metrics.missedFiles).toBe(0); // b.ts was backfilled
 
       // batchSetPayload should have been called for backfill as well
       expect(qdrant.batchSetPayload).toHaveBeenCalled();
@@ -985,7 +1044,14 @@ describe("EnrichmentModule streaming API", () => {
     it("should skip backfill when no files were missed", async () => {
       // Git log has all files
       const fileMap = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       mockBuildFileMetadataMap.mockResolvedValue(fileMap);
 
@@ -1007,7 +1073,14 @@ describe("EnrichmentModule streaming API", () => {
 
       // Backfill returns data for only one of the two missed files
       const backfillData = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       mockBuildFileMetadataForPaths.mockResolvedValue(backfillData);
 
@@ -1015,17 +1088,14 @@ describe("EnrichmentModule streaming API", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       // Both a.ts and b.ts are missed
-      const items = makeChunkItems(
-        [`${repoDir}/a.ts`, `${repoDir}/b.ts`],
-        repoDir,
-      );
+      const items = makeChunkItems([`${repoDir}/a.ts`, `${repoDir}/b.ts`], repoDir);
       enrichment.onChunksStored("test_collection", repoDir, items);
 
       const metrics = await enrichment.awaitCompletion("test_collection");
 
       // a.ts was backfilled, b.ts was not
       expect(metrics.matchedFiles).toBe(1); // a.ts backfilled
-      expect(metrics.missedFiles).toBe(1);  // b.ts still missed
+      expect(metrics.missedFiles).toBe(1); // b.ts still missed
     });
 
     it("should handle batchSetPayload error during backfill", async () => {
@@ -1034,7 +1104,14 @@ describe("EnrichmentModule streaming API", () => {
 
       // Backfill returns data
       const backfillData = new Map([
-        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+        [
+          "a.ts",
+          {
+            commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }],
+            linesAdded: 10,
+            linesDeleted: 2,
+          },
+        ],
       ]);
       mockBuildFileMetadataForPaths.mockResolvedValue(backfillData);
 
@@ -1079,11 +1156,7 @@ describe("EnrichmentModule streaming API", () => {
         await enrichment.awaitCompletion("test_collection");
 
         // Should have passed 5000 as timeout
-        expect(mockBuildFileMetadataForPaths).toHaveBeenCalledWith(
-          expect.any(String),
-          expect.any(Array),
-          5000,
-        );
+        expect(mockBuildFileMetadataForPaths).toHaveBeenCalledWith(expect.any(String), expect.any(Array), 5000);
       } finally {
         if (originalEnv !== undefined) {
           process.env.GIT_BACKFILL_TIMEOUT_MS = originalEnv;

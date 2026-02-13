@@ -1,6 +1,18 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { CodeIndexer } from "../../../src/code/indexer.js";
+import type { CodeConfig } from "../../../src/code/types.js";
+import {
+  cleanupTempDir,
+  createTempTestDir,
+  createTestFile,
+  defaultTestConfig,
+  MockEmbeddingProvider,
+  MockQdrantManager,
+} from "./test-helpers.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
@@ -28,17 +40,6 @@ vi.mock("tree-sitter-rust", () => ({ default: {} }));
 vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
-
-import { CodeIndexer } from "../../../src/code/indexer.js";
-import type { CodeConfig } from "../../../src/code/types.js";
-import {
-  MockQdrantManager,
-  MockEmbeddingProvider,
-  createTestFile,
-  defaultTestConfig,
-  createTempTestDir,
-  cleanupTempDir,
-} from "./test-helpers.js";
 
 describe("IndexingModule", () => {
   let indexer: CodeIndexer;
@@ -106,12 +107,7 @@ describe("IndexingModule", () => {
 
       await indexer.indexCodebase(codebaseDir);
 
-      expect(createCollectionSpy).toHaveBeenCalledWith(
-        expect.stringContaining("code_"),
-        384,
-        "Cosine",
-        false,
-      );
+      expect(createCollectionSpy).toHaveBeenCalledWith(expect.stringContaining("code_"), 384, "Cosine", false);
     });
 
     it("should force re-index when option is set", async () => {
@@ -141,16 +137,8 @@ describe("IndexingModule", () => {
       await indexer.indexCodebase(codebaseDir, undefined, progressCallback);
 
       expect(progressCallback).toHaveBeenCalled();
-      expect(
-        progressCallback.mock.calls.some(
-          (call) => call[0].phase === "scanning",
-        ),
-      ).toBe(true);
-      expect(
-        progressCallback.mock.calls.some(
-          (call) => call[0].phase === "chunking",
-        ),
-      ).toBe(true);
+      expect(progressCallback.mock.calls.some((call) => call[0].phase === "scanning")).toBe(true);
+      expect(progressCallback.mock.calls.some((call) => call[0].phase === "chunking")).toBe(true);
     });
 
     it("should respect custom extensions", async () => {
@@ -165,11 +153,7 @@ describe("IndexingModule", () => {
     });
 
     it("should handle files with secrets gracefully", async () => {
-      await createTestFile(
-        codebaseDir,
-        "secrets.ts",
-        'const apiKey = "sk_test_FAKE_KEY_FOR_TESTING_ONLY_NOT_REAL";',
-      );
+      await createTestFile(codebaseDir, "secrets.ts", 'const apiKey = "sk_test_FAKE_KEY_FOR_TESTING_ONLY_NOT_REAL";');
 
       const stats = await indexer.indexCodebase(codebaseDir);
 
@@ -179,11 +163,7 @@ describe("IndexingModule", () => {
 
     it("should enable hybrid search when configured", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIndexer = new CodeIndexer(
-        qdrant as any,
-        embeddings,
-        hybridConfig,
-      );
+      const hybridIndexer = new CodeIndexer(qdrant as any, embeddings, hybridConfig);
 
       await createTestFile(
         codebaseDir,
@@ -195,32 +175,23 @@ describe("IndexingModule", () => {
 
       await hybridIndexer.indexCodebase(codebaseDir);
 
-      expect(createCollectionSpy).toHaveBeenCalledWith(
-        expect.stringContaining("code_"),
-        384,
-        "Cosine",
-        true,
-      );
+      expect(createCollectionSpy).toHaveBeenCalledWith(expect.stringContaining("code_"), 384, "Cosine", true);
     });
 
     it("should handle file read errors", async () => {
       await createTestFile(codebaseDir, "test.ts", "content");
 
       const originalReadFile = fs.readFile;
-      vi.spyOn(fs, "readFile").mockImplementation(
-        async (path: any, ...args: any[]) => {
-          if (path.includes("test.ts")) {
-            throw new Error("Permission denied");
-          }
-          return originalReadFile(path, ...args);
-        },
-      );
+      vi.spyOn(fs, "readFile").mockImplementation(async (path: any, ...args: any[]) => {
+        if (path.includes("test.ts")) {
+          throw new Error("Permission denied");
+        }
+        return originalReadFile(path, ...args);
+      });
 
       const stats = await indexer.indexCodebase(codebaseDir);
 
-      expect(stats.errors?.some((e) => e.includes("Permission denied"))).toBe(
-        true,
-      );
+      expect(stats.errors?.some((e) => e.includes("Permission denied"))).toBe(true);
 
       vi.restoreAllMocks();
     });
@@ -248,18 +219,11 @@ describe("IndexingModule", () => {
         ...config,
         maxChunksPerFile: 2,
       };
-      const limitedIndexer = new CodeIndexer(
-        qdrant as any,
-        embeddings,
-        limitedConfig,
-      );
+      const limitedIndexer = new CodeIndexer(qdrant as any, embeddings, limitedConfig);
 
       const largeContent = Array(50)
         .fill(null)
-        .map(
-          (_, i) =>
-            `function test${i}() { console.log('test ${i}'); return ${i}; }`,
-        )
+        .map((_, i) => `function test${i}() { console.log('test ${i}'); return ${i}; }`)
         .join("\n\n");
 
       await createTestFile(codebaseDir, "large.ts", largeContent);
@@ -275,11 +239,7 @@ describe("IndexingModule", () => {
         ...config,
         maxTotalChunks: 3,
       };
-      const limitedIndexer = new CodeIndexer(
-        qdrant as any,
-        embeddings,
-        limitedConfig,
-      );
+      const limitedIndexer = new CodeIndexer(qdrant as any, embeddings, limitedConfig);
 
       for (let i = 0; i < 10; i++) {
         await createTestFile(
@@ -300,11 +260,7 @@ describe("IndexingModule", () => {
         ...config,
         maxTotalChunks: 1,
       };
-      const limitedIndexer = new CodeIndexer(
-        qdrant as any,
-        embeddings,
-        limitedConfig,
-      );
+      const limitedIndexer = new CodeIndexer(qdrant as any, embeddings, limitedConfig);
 
       const content = `
 function first() {
@@ -341,11 +297,7 @@ function third() {
       // @ts-expect-error - Mocking for test
       fs.readFile = async (path: any, encoding: any) => {
         callCount++;
-        if (
-          callCount === 1 &&
-          typeof path === "string" &&
-          path.endsWith("test.ts")
-        ) {
+        if (callCount === 1 && typeof path === "string" && path.endsWith("test.ts")) {
           throw "String error";
         }
         return originalReadFile(path, encoding);
@@ -355,9 +307,7 @@ function third() {
         const stats = await indexer.indexCodebase(codebaseDir);
 
         expect(stats.status).toBe("completed");
-        expect(stats.errors?.some((e) => e.includes("String error"))).toBe(
-          true,
-        );
+        expect(stats.errors?.some((e) => e.includes("String error"))).toBe(true);
       } finally {
         fs.readFile = originalReadFile;
       }

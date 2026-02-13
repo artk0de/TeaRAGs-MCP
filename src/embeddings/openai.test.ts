@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { OpenAIEmbeddings } from "./openai.js";
 import OpenAI from "openai";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { OpenAIEmbeddings } from "./openai.js";
 
 const mockOpenAI = {
   embeddings: {
@@ -32,9 +33,7 @@ describe("OpenAIEmbeddings", () => {
   let embeddings: OpenAIEmbeddings;
 
   beforeEach(() => {
-    mockOpenAI.embeddings.create
-      .mockReset()
-      .mockResolvedValue({ data: [{ embedding: [] }] });
+    mockOpenAI.embeddings.create.mockReset().mockResolvedValue({ data: [{ embedding: [] }] });
     vi.mocked(OpenAI).mockClear();
     embeddings = new OpenAIEmbeddings("test-api-key");
   });
@@ -46,28 +45,18 @@ describe("OpenAIEmbeddings", () => {
     });
 
     it("should use custom model", () => {
-      const customEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-3-large",
-      );
+      const customEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-3-large");
       expect(customEmbeddings.getModel()).toBe("text-embedding-3-large");
       expect(customEmbeddings.getDimensions()).toBe(3072);
     });
 
     it("should use custom dimensions", () => {
-      const customEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-3-small",
-        512,
-      );
+      const customEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-3-small", 512);
       expect(customEmbeddings.getDimensions()).toBe(512);
     });
 
     it("should use default dimensions for text-embedding-ada-002", () => {
-      const adaEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-ada-002",
-      );
+      const adaEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-ada-002");
       expect(adaEmbeddings.getDimensions()).toBe(1536);
     });
   });
@@ -112,11 +101,7 @@ describe("OpenAIEmbeddings", () => {
     });
 
     it("should use custom model configuration", async () => {
-      const customEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-3-large",
-        3072,
-      );
+      const customEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-3-large", 3072);
       const mockEmbedding = Array(3072).fill(0.1);
       mockOpenAI.embeddings.create.mockResolvedValue({
         data: [{ embedding: mockEmbedding }],
@@ -140,17 +125,9 @@ describe("OpenAIEmbeddings", () => {
 
   describe("embedBatch", () => {
     it("should generate embeddings for multiple texts", async () => {
-      const mockEmbeddings = [
-        Array(1536).fill(0.1),
-        Array(1536).fill(0.2),
-        Array(1536).fill(0.3),
-      ];
+      const mockEmbeddings = [Array(1536).fill(0.1), Array(1536).fill(0.2), Array(1536).fill(0.3)];
       mockOpenAI.embeddings.create.mockResolvedValue({
-        data: [
-          { embedding: mockEmbeddings[0] },
-          { embedding: mockEmbeddings[1] },
-          { embedding: mockEmbeddings[2] },
-        ],
+        data: [{ embedding: mockEmbeddings[0] }, { embedding: mockEmbeddings[1] }, { embedding: mockEmbeddings[2] }],
       });
 
       const texts = ["text1", "text2", "text3"];
@@ -209,13 +186,9 @@ describe("OpenAIEmbeddings", () => {
     });
 
     it("should propagate errors in batch", async () => {
-      mockOpenAI.embeddings.create.mockRejectedValue(
-        new Error("Batch API Error"),
-      );
+      mockOpenAI.embeddings.create.mockRejectedValue(new Error("Batch API Error"));
 
-      await expect(embeddings.embedBatch(["text1", "text2"])).rejects.toThrow(
-        "Batch API Error",
-      );
+      await expect(embeddings.embedBatch(["text1", "text2"])).rejects.toThrow("Batch API Error");
     });
   });
 
@@ -225,11 +198,7 @@ describe("OpenAIEmbeddings", () => {
     });
 
     it("should return custom dimensions", () => {
-      const customEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-3-small",
-        512,
-      );
+      const customEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-3-small", 512);
       expect(customEmbeddings.getDimensions()).toBe(512);
     });
   });
@@ -240,10 +209,7 @@ describe("OpenAIEmbeddings", () => {
     });
 
     it("should return custom model", () => {
-      const customEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-3-large",
-      );
+      const customEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-3-large");
       expect(customEmbeddings.getModel()).toBe("text-embedding-3-large");
     });
   });
@@ -298,15 +264,10 @@ describe("OpenAIEmbeddings", () => {
     });
 
     it("should fallback to exponential backoff with invalid Retry-After header", async () => {
-      const rateLimitEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-3-small",
-        undefined,
-        {
-          retryAttempts: 2,
-          retryDelayMs: 100, // 100ms for faster tests
-        },
-      );
+      const rateLimitEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-3-small", undefined, {
+        retryAttempts: 2,
+        retryDelayMs: 100, // 100ms for faster tests
+      });
 
       const mockEmbedding = Array(1536).fill(0.5);
 
@@ -332,15 +293,10 @@ describe("OpenAIEmbeddings", () => {
     });
 
     it("should use exponential backoff when no Retry-After header", async () => {
-      const rateLimitEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-3-small",
-        undefined,
-        {
-          retryAttempts: 3,
-          retryDelayMs: 100, // 100ms for faster tests
-        },
-      );
+      const rateLimitEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-3-small", undefined, {
+        retryAttempts: 3,
+        retryDelayMs: 100, // 100ms for faster tests
+      });
 
       const mockEmbedding = Array(1536).fill(0.5);
       const rateLimitError = {
@@ -364,15 +320,10 @@ describe("OpenAIEmbeddings", () => {
     });
 
     it("should throw error after max retries exceeded", async () => {
-      const rateLimitEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-3-small",
-        undefined,
-        {
-          retryAttempts: 2,
-          retryDelayMs: 100,
-        },
-      );
+      const rateLimitEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-3-small", undefined, {
+        retryAttempts: 2,
+        retryDelayMs: 100,
+      });
 
       const rateLimitError = {
         status: 429,
@@ -385,9 +336,7 @@ describe("OpenAIEmbeddings", () => {
       promise.catch(() => {}); // prevent unhandled rejection detection
       await vi.advanceTimersByTimeAsync(10_000);
 
-      await expect(promise).rejects.toThrow(
-        "OpenAI API rate limit exceeded after 2 retry attempts",
-      );
+      await expect(promise).rejects.toThrow("OpenAI API rate limit exceeded after 2 retry attempts");
 
       // Should try initial + 2 retries = 3 total attempts
       expect(mockOpenAI.embeddings.create).toHaveBeenCalledTimes(3);
@@ -399,10 +348,7 @@ describe("OpenAIEmbeddings", () => {
       mockOpenAI.embeddings.create
         .mockRejectedValueOnce({ status: 429, message: "Rate limit exceeded" })
         .mockResolvedValue({
-          data: [
-            { embedding: mockEmbeddings[0] },
-            { embedding: mockEmbeddings[1] },
-          ],
+          data: [{ embedding: mockEmbeddings[0] }, { embedding: mockEmbeddings[1] }],
         });
 
       const promise = embeddings.embedBatch(["text1", "text2"]);
@@ -417,23 +363,16 @@ describe("OpenAIEmbeddings", () => {
       const apiError = new Error("Invalid API key");
       mockOpenAI.embeddings.create.mockRejectedValue(apiError);
 
-      await expect(embeddings.embed("test text")).rejects.toThrow(
-        "Invalid API key",
-      );
+      await expect(embeddings.embed("test text")).rejects.toThrow("Invalid API key");
       expect(mockOpenAI.embeddings.create).toHaveBeenCalledTimes(1);
     });
 
     it("should accept custom rate limit configuration", () => {
-      const customEmbeddings = new OpenAIEmbeddings(
-        "test-api-key",
-        "text-embedding-3-small",
-        undefined,
-        {
-          maxRequestsPerMinute: 1000,
-          retryAttempts: 5,
-          retryDelayMs: 2000,
-        },
-      );
+      const customEmbeddings = new OpenAIEmbeddings("test-api-key", "text-embedding-3-small", undefined, {
+        maxRequestsPerMinute: 1000,
+        retryAttempts: 5,
+        retryDelayMs: 2000,
+      });
 
       expect(customEmbeddings).toBeDefined();
     });

@@ -1,7 +1,9 @@
 import { promises as fs } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { FileSynchronizer } from "../../../src/code/sync/synchronizer.js";
 
 describe("FileSynchronizer", () => {
@@ -12,10 +14,7 @@ describe("FileSynchronizer", () => {
 
   beforeEach(async () => {
     // Create temporary directories for testing
-    tempDir = join(
-      tmpdir(),
-      `qdrant-mcp-test-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-    );
+    tempDir = join(tmpdir(), `qdrant-mcp-test-${Date.now()}-${Math.random().toString(36).substring(7)}`);
     codebaseDir = join(tempDir, "codebase");
     await fs.mkdir(codebaseDir, { recursive: true });
 
@@ -34,12 +33,7 @@ describe("FileSynchronizer", () => {
 
     // Clean up snapshot file
     try {
-      const snapshotPath = join(
-        homedir(),
-        ".tea-rags-mcp",
-        "snapshots",
-        `${collectionName}.json`,
-      );
+      const snapshotPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.json`);
       await fs.rm(snapshotPath, { force: true });
     } catch (_error) {
       // Ignore cleanup errors
@@ -88,11 +82,7 @@ describe("FileSynchronizer", () => {
 
       await synchronizer.updateSnapshot(["file1.ts", "file2.ts"]);
 
-      const newSync = new FileSynchronizer(
-        codebaseDir,
-        collectionName,
-        tempDir,
-      );
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, tempDir);
       const hasSnapshot = await newSync.initialize();
 
       expect(hasSnapshot).toBe(true);
@@ -147,10 +137,7 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file1.ts", "content1");
       await createFile(codebaseDir, "file2.ts", "content2");
 
-      const changes = await synchronizer.detectChanges([
-        "file1.ts",
-        "file2.ts",
-      ]);
+      const changes = await synchronizer.detectChanges(["file1.ts", "file2.ts"]);
 
       expect(changes.added).toContain("file1.ts");
       expect(changes.added).toContain("file2.ts");
@@ -199,10 +186,7 @@ describe("FileSynchronizer", () => {
 
       // Delete file2
 
-      const changes = await synchronizer.detectChanges([
-        "file1.ts",
-        "file3.ts",
-      ]);
+      const changes = await synchronizer.detectChanges(["file1.ts", "file3.ts"]);
 
       expect(changes.added).toEqual(["file3.ts"]);
       expect(changes.modified).toEqual(["file1.ts"]);
@@ -224,10 +208,7 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file1.ts", "content1");
       await createFile(codebaseDir, "file2.ts", "content2");
 
-      const changes = await synchronizer.detectChanges([
-        "file1.ts",
-        "file2.ts",
-      ]);
+      const changes = await synchronizer.detectChanges(["file1.ts", "file2.ts"]);
 
       expect(changes.added).toContain("file1.ts");
       expect(changes.added).toContain("file2.ts");
@@ -277,10 +258,7 @@ describe("FileSynchronizer", () => {
 
       await synchronizer.updateSnapshot(["file1.ts", "file2.ts"]);
 
-      const changes = await synchronizer.detectChanges([
-        "file1.ts",
-        "file2.ts",
-      ]);
+      const changes = await synchronizer.detectChanges(["file1.ts", "file2.ts"]);
 
       expect(changes.added).toEqual([]);
       expect(changes.modified).toEqual([]);
@@ -314,11 +292,7 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file-with-dashes.ts", "content");
       await createFile(codebaseDir, "file_with_underscores.ts", "content");
 
-      await synchronizer.updateSnapshot([
-        "file with spaces.ts",
-        "file-with-dashes.ts",
-        "file_with_underscores.ts",
-      ]);
+      await synchronizer.updateSnapshot(["file with spaces.ts", "file-with-dashes.ts", "file_with_underscores.ts"]);
 
       const changes = await synchronizer.detectChanges([
         "file with spaces.ts",
@@ -337,9 +311,7 @@ describe("FileSynchronizer", () => {
 
       await synchronizer.updateSnapshot(["src/components/Button.tsx"]);
 
-      const changes = await synchronizer.detectChanges([
-        "src/components/Button.tsx",
-      ]);
+      const changes = await synchronizer.detectChanges(["src/components/Button.tsx"]);
 
       expect(changes.modified).toEqual([]);
     });
@@ -502,10 +474,7 @@ describe("FileSynchronizer", () => {
 
       await createFile(codebaseDir, "file2.ts", "content2");
 
-      const needsReindex = await synchronizer.needsReindex([
-        "file1.ts",
-        "file2.ts",
-      ]);
+      const needsReindex = await synchronizer.needsReindex(["file1.ts", "file2.ts"]);
 
       expect(needsReindex).toBe(true);
     });
@@ -572,12 +541,7 @@ describe("FileSynchronizer", () => {
     let checkpointPath: string;
 
     beforeEach(async () => {
-      checkpointPath = join(
-        homedir(),
-        ".tea-rags-mcp",
-        "snapshots",
-        `${collectionName}.checkpoint.json`,
-      );
+      checkpointPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.checkpoint.json`);
     });
 
     afterEach(async () => {
@@ -646,7 +610,7 @@ describe("FileSynchronizer", () => {
         const staleCheckpoint = {
           processedFiles: ["file1.ts"],
           totalFiles: 10,
-          timestamp: Date.now() - (25 * 60 * 60 * 1000), // 25 hours ago
+          timestamp: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
           phase: "indexing",
         };
         await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
@@ -730,7 +694,7 @@ describe("FileSynchronizer", () => {
 
         const remaining = synchronizer.filterProcessedFiles(
           ["file1.ts", "file2.ts", "file3.ts", "file4.ts"],
-          checkpoint
+          checkpoint,
         );
 
         expect(remaining).toEqual(["file3.ts", "file4.ts"]);
@@ -746,7 +710,7 @@ describe("FileSynchronizer", () => {
 
         const remaining = synchronizer.filterProcessedFiles(
           ["file1.ts", "file2.ts", "file3.ts", "file4.ts"],
-          checkpoint
+          checkpoint,
         );
 
         expect(remaining).toEqual(["file1.ts", "file2.ts", "file3.ts", "file4.ts"]);
@@ -760,10 +724,7 @@ describe("FileSynchronizer", () => {
           phase: "indexing" as const,
         };
 
-        const remaining = synchronizer.filterProcessedFiles(
-          ["file1.ts", "file2.ts"],
-          checkpoint
-        );
+        const remaining = synchronizer.filterProcessedFiles(["file1.ts", "file2.ts"], checkpoint);
 
         expect(remaining).toEqual([]);
       });
@@ -779,7 +740,7 @@ describe("FileSynchronizer", () => {
 
         const remaining = synchronizer.filterProcessedFiles(
           ["file1.ts", "file2.ts", "file4.ts", "file5.ts"], // file3.ts is missing
-          checkpoint
+          checkpoint,
         );
 
         // file3.ts was processed but doesn't exist - that's OK, we just skip it
@@ -796,10 +757,7 @@ describe("FileSynchronizer", () => {
         };
 
         // file3.ts was added after checkpoint
-        const remaining = synchronizer.filterProcessedFiles(
-          ["file1.ts", "file2.ts", "file3.ts"],
-          checkpoint
-        );
+        const remaining = synchronizer.filterProcessedFiles(["file1.ts", "file2.ts", "file3.ts"], checkpoint);
 
         expect(remaining).toEqual(["file2.ts", "file3.ts"]);
       });
@@ -889,10 +847,7 @@ describe("FileSynchronizer", () => {
       await synchronizer.updateSnapshot(["file1.ts"]);
 
       // Try to compute hashes for a non-existent file
-      const hashes = await synchronizer.computeFileHashes([
-        "file1.ts",
-        "nonexistent.ts",
-      ]);
+      const hashes = await synchronizer.computeFileHashes(["file1.ts", "nonexistent.ts"]);
 
       // Should only have hash for the existing file
       expect(hashes.has("file1.ts")).toBe(true);
@@ -929,12 +884,7 @@ describe("FileSynchronizer", () => {
       await synchronizer.updateSnapshot(["file1.ts"]);
 
       // Corrupt the snapshot file
-      const snapshotPath = join(
-        homedir(),
-        ".tea-rags-mcp",
-        "snapshots",
-        `${collectionName}.json`,
-      );
+      const snapshotPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.json`);
       await fs.writeFile(snapshotPath, "{ invalid json }", "utf-8");
 
       // Create new synchronizer and try to initialize
@@ -950,10 +900,7 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file2.ts", "content2");
 
       // Try concurrent updates (should not corrupt snapshot)
-      await Promise.all([
-        synchronizer.updateSnapshot(["file1.ts"]),
-        synchronizer.updateSnapshot(["file2.ts"]),
-      ]);
+      await Promise.all([synchronizer.updateSnapshot(["file1.ts"]), synchronizer.updateSnapshot(["file2.ts"])]);
 
       // Verify snapshot is valid
       const isValid = await synchronizer.validateSnapshot();
@@ -967,9 +914,7 @@ describe("FileSynchronizer", () => {
 
       // updateSnapshot should not throw even if there are permission issues
       // (in practice, the directory is usually already created)
-      await expect(
-        synchronizer.updateSnapshot(["file1.ts"])
-      ).resolves.not.toThrow();
+      await expect(synchronizer.updateSnapshot(["file1.ts"])).resolves.not.toThrow();
     });
 
     it("should detect changes when file content changes but size stays the same", async () => {
@@ -1008,12 +953,7 @@ describe("FileSynchronizer", () => {
   describe("snapshot v1 to v2 migration", () => {
     it("should migrate v1 snapshot to v2 with metadata", async () => {
       // Manually create a v1 snapshot (without metadata)
-      const snapshotPath = join(
-        homedir(),
-        ".tea-rags-mcp",
-        "snapshots",
-        `${collectionName}.json`,
-      );
+      const snapshotPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.json`);
 
       await createFile(codebaseDir, "file1.ts", "content1");
       await createFile(codebaseDir, "file2.ts", "content2");
@@ -1143,18 +1083,11 @@ describe("FileSynchronizer", () => {
   describe("checkpoint error handling", () => {
     it("should handle checkpoint save errors gracefully", async () => {
       // Try to save checkpoint with invalid data (should not throw)
-      await expect(
-        synchronizer.saveCheckpoint(["file1.ts"], 10, "indexing")
-      ).resolves.not.toThrow();
+      await expect(synchronizer.saveCheckpoint(["file1.ts"], 10, "indexing")).resolves.not.toThrow();
     });
 
     it("should handle checkpoint load errors for invalid JSON", async () => {
-      const checkpointPath = join(
-        homedir(),
-        ".tea-rags-mcp",
-        "snapshots",
-        `${collectionName}.checkpoint.json`,
-      );
+      const checkpointPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.checkpoint.json`);
 
       // Create invalid checkpoint file
       await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
@@ -1165,18 +1098,13 @@ describe("FileSynchronizer", () => {
     });
 
     it("should delete stale checkpoints automatically", async () => {
-      const checkpointPath = join(
-        homedir(),
-        ".tea-rags-mcp",
-        "snapshots",
-        `${collectionName}.checkpoint.json`,
-      );
+      const checkpointPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.checkpoint.json`);
 
       // Create stale checkpoint (> 24 hours old)
       const staleCheckpoint = {
         processedFiles: ["file1.ts"],
         totalFiles: 10,
-        timestamp: Date.now() - (25 * 60 * 60 * 1000),
+        timestamp: Date.now() - 25 * 60 * 60 * 1000,
         phase: "indexing",
       };
 
@@ -1194,11 +1122,7 @@ describe("FileSynchronizer", () => {
 });
 
 // Helper function to create files in the test codebase
-async function createFile(
-  baseDir: string,
-  relativePath: string,
-  content: string,
-): Promise<void> {
+async function createFile(baseDir: string, relativePath: string, content: string): Promise<void> {
   const fullPath = join(baseDir, relativePath);
   const dir = join(fullPath, "..");
   await fs.mkdir(dir, { recursive: true });

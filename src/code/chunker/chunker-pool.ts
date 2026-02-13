@@ -6,9 +6,10 @@
  * unblocking the main thread event loop.
  */
 
-import { Worker } from "node:worker_threads";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
+
 import type { ChunkerConfig, CodeChunk } from "../types.js";
 import type { WorkerRequest, WorkerResponse } from "./chunker-worker.js";
 
@@ -108,11 +109,7 @@ export class ChunkerPool {
    * Process a single file in a worker thread.
    * Returns the same chunks that TreeSitterChunker.chunk() would produce.
    */
-  async processFile(
-    filePath: string,
-    code: string,
-    language: string,
-  ): Promise<FileChunkResult> {
+  async processFile(filePath: string, code: string, language: string): Promise<FileChunkResult> {
     if (this.isShutdown) {
       throw new Error("ChunkerPool is shut down");
     }
@@ -146,9 +143,7 @@ export class ChunkerPool {
     this.queue = [];
 
     // Terminate all workers
-    await Promise.all(
-      this.workers.map((pw) => pw.worker.terminate()),
-    );
+    await Promise.all(this.workers.map((pw) => pw.worker.terminate()));
     this.workers = [];
 
     if (DEBUG) {
@@ -156,11 +151,7 @@ export class ChunkerPool {
     }
   }
 
-  private dispatch(
-    poolWorker: PoolWorker,
-    request: WorkerRequest,
-    pending: PendingRequest,
-  ): void {
+  private dispatch(poolWorker: PoolWorker, request: WorkerRequest, pending: PendingRequest): void {
     poolWorker.busy = true;
     poolWorker.pending = pending;
     poolWorker.worker.postMessage(request);

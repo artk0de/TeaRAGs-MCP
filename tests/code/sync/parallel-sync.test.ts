@@ -2,10 +2,12 @@
  * Tests for parallel file synchronization using sharded snapshots
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { ParallelFileSynchronizer } from "../../../src/code/sync/parallel-synchronizer.js";
 
 describe("ParallelFileSynchronizer", () => {
@@ -106,10 +108,7 @@ describe("ParallelFileSynchronizer", () => {
       const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
 
       // Create initial snapshot
-      const initialFiles = [
-        join(codebaseDir, "src", "a.ts"),
-        join(codebaseDir, "src", "b.ts"),
-      ];
+      const initialFiles = [join(codebaseDir, "src", "a.ts"), join(codebaseDir, "src", "b.ts")];
       await sync.updateSnapshot(initialFiles);
 
       // Add new file
@@ -132,10 +131,7 @@ describe("ParallelFileSynchronizer", () => {
     it("should detect modified files", async () => {
       const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
 
-      const files = [
-        join(codebaseDir, "src", "a.ts"),
-        join(codebaseDir, "src", "b.ts"),
-      ];
+      const files = [join(codebaseDir, "src", "a.ts"), join(codebaseDir, "src", "b.ts")];
       await sync.updateSnapshot(files);
 
       // Modify file (change content)
@@ -165,10 +161,7 @@ describe("ParallelFileSynchronizer", () => {
 
       // Detect changes with reduced file list
       await sync.initialize();
-      const currentFiles = [
-        join(codebaseDir, "src", "a.ts"),
-        join(codebaseDir, "src", "b.ts"),
-      ];
+      const currentFiles = [join(codebaseDir, "src", "a.ts"), join(codebaseDir, "src", "b.ts")];
       const changes = await sync.detectChanges(currentFiles);
 
       expect(changes.added).toHaveLength(0);
@@ -271,7 +264,7 @@ describe("ParallelFileSynchronizer", () => {
 
       // Touch file (changes mtime but not content)
       const content = await fs.readFile(filePath, "utf-8");
-      await new Promise(resolve => setTimeout(resolve, 10)); // Small delay
+      await new Promise((resolve) => setTimeout(resolve, 10)); // Small delay
       await fs.writeFile(filePath, content);
 
       await sync.initialize();
@@ -286,10 +279,7 @@ describe("ParallelFileSynchronizer", () => {
     it("should quickly detect if any changes exist via meta root hash", async () => {
       const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
 
-      const files = [
-        join(codebaseDir, "src", "a.ts"),
-        join(codebaseDir, "src", "b.ts"),
-      ];
+      const files = [join(codebaseDir, "src", "a.ts"), join(codebaseDir, "src", "b.ts")];
       await sync.updateSnapshot(files);
 
       await sync.initialize();

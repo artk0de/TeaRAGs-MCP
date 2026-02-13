@@ -27,6 +27,7 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
+
 import type {
   BlameCache,
   BlameCacheFile,
@@ -62,10 +63,8 @@ export class GitMetadataService {
   };
 
   constructor(options?: GitMetadataOptions) {
-    this.cacheDir =
-      options?.cacheDir ?? join(homedir(), ".tea-rags-mcp", "git-cache");
-    this.debug =
-      options?.debug ?? (process.env.DEBUG === "true" || process.env.DEBUG === "1");
+    this.cacheDir = options?.cacheDir ?? join(homedir(), ".tea-rags-mcp", "git-cache");
+    this.debug = options?.debug ?? (process.env.DEBUG === "true" || process.env.DEBUG === "1");
     if (this.debug) {
       console.log(`[GitMetadata] Service initialized (cacheDir=${this.cacheDir})`);
     }
@@ -97,7 +96,7 @@ export class GitMetadataService {
   ): Promise<GitChunkMetadata | null> {
     this.stats.chunksProcessed++;
     const startTime = this.debug ? Date.now() : 0;
-    
+
     // Step 1: Check if in git repo
     const repoInfo = await this.getRepoInfo(filePath);
     if (!repoInfo.isGitRepo) {
@@ -113,16 +112,16 @@ export class GitMetadataService {
 
       // Step 3: Aggregate blame data over chunk line range
       const result = this.aggregateBlameForRange(blameMap, startLine, endLine);
-      
+
       if (this.debug && result) {
         const elapsed = Date.now() - startTime;
         console.log(
           `[GitMetadata] Chunk L${startLine}-${endLine}: ` +
-          `author=${result.dominantAuthor}, commits=${result.commitCount}, ` +
-          `taskIds=[${result.taskIds.join(',')}], age=${result.ageDays}d (${elapsed}ms)`
+            `author=${result.dominantAuthor}, commits=${result.commitCount}, ` +
+            `taskIds=[${result.taskIds.join(",")}], age=${result.ageDays}d (${elapsed}ms)`,
         );
       }
-      
+
       return result;
     } catch (error) {
       if (this.debug) {
@@ -188,7 +187,7 @@ export class GitMetadataService {
       const elapsed = Date.now() - startTime;
       console.log(
         `[GitMetadata] Prefetch complete: ${filePaths.length} files in ${elapsed}ms ` +
-        `(${prefetched} ok, ${failed} failed)`,
+          `(${prefetched} ok, ${failed} failed)`,
       );
     }
 
@@ -199,11 +198,7 @@ export class GitMetadataService {
    * Aggregate blame data for a line range
    * This produces the ONLY git data stored per chunk
    */
-  private aggregateBlameForRange(
-    blameMap: BlameCache,
-    startLine: number,
-    endLine: number,
-  ): GitChunkMetadata | null {
+  private aggregateBlameForRange(blameMap: BlameCache, startLine: number, endLine: number): GitChunkMetadata | null {
     const authorLineCounts = new Map<string, { count: number; email: string }>();
     const commits = new Set<string>();
     const allTaskIds = new Set<string>();
@@ -289,11 +284,7 @@ export class GitMetadataService {
   /**
    * Get blame map for a file (cached by content hash)
    */
-  private async getBlameMap(
-    filePath: string,
-    repoRoot: string,
-    fileContent?: string,
-  ): Promise<BlameCache | null> {
+  private async getBlameMap(filePath: string, repoRoot: string, fileContent?: string): Promise<BlameCache | null> {
     // Compute content hash for cache key
     const content = fileContent ?? (await fs.readFile(filePath, "utf-8"));
     const contentHash = this.computeContentHash(content);
@@ -341,7 +332,9 @@ export class GitMetadataService {
 
     if (this.debug) {
       const elapsed = Date.now() - startTime;
-      console.log(`[GitMetadata] Blame+log completed: ${relative(repoRoot, filePath)} (${blameData.size} lines, ${elapsed}ms)`);
+      console.log(
+        `[GitMetadata] Blame+log completed: ${relative(repoRoot, filePath)} (${blameData.size} lines, ${elapsed}ms)`,
+      );
     }
 
     const cache: BlameCache = {
@@ -365,19 +358,15 @@ export class GitMetadataService {
    * Run git blame ONCE per file
    * Returns line number -> blame data map
    */
-  private async runGitBlame(
-    filePath: string,
-    repoRoot: string,
-  ): Promise<Map<number, BlameLineData> | null> {
+  private async runGitBlame(filePath: string, repoRoot: string): Promise<Map<number, BlameLineData> | null> {
     this.stats.blameExecutions++;
     try {
       const relativePath = relative(repoRoot, filePath);
 
-      const { stdout } = await execFileAsync(
-        "git",
-        ["blame", "--porcelain", "-w", relativePath],
-        { cwd: repoRoot, maxBuffer: 50 * 1024 * 1024 },
-      );
+      const { stdout } = await execFileAsync("git", ["blame", "--porcelain", "-w", relativePath], {
+        cwd: repoRoot,
+        maxBuffer: 50 * 1024 * 1024,
+      });
 
       return this.parseBlameOutput(stdout);
     } catch (error) {
@@ -392,10 +381,7 @@ export class GitMetadataService {
    * Get commit bodies for a file (for extracting taskIds from full commit messages)
    * Returns Map<commitSha, fullBody>
    */
-  private async getCommitBodies(
-    filePath: string,
-    repoRoot: string,
-  ): Promise<Map<string, string>> {
+  private async getCommitBodies(filePath: string, repoRoot: string): Promise<Map<string, string>> {
     const cacheKey = `${repoRoot}:${relative(repoRoot, filePath)}`;
 
     // Check cache
@@ -409,11 +395,10 @@ export class GitMetadataService {
       const relativePath = relative(repoRoot, filePath);
 
       // Use NULL byte as separator to handle multi-line commit messages
-      const { stdout } = await execFileAsync(
-        "git",
-        ["log", "--format=%H%x00%B%x00", "--", relativePath],
-        { cwd: repoRoot, maxBuffer: 50 * 1024 * 1024 },
-      );
+      const { stdout } = await execFileAsync("git", ["log", "--format=%H%x00%B%x00", "--", relativePath], {
+        cwd: repoRoot,
+        maxBuffer: 50 * 1024 * 1024,
+      });
 
       const bodies = this.parseLogOutput(stdout);
       this.commitBodyCache.set(cacheKey, bodies);
@@ -439,7 +424,7 @@ export class GitMetadataService {
     const bodies = new Map<string, string>();
 
     // Split by NULL byte, filter empty
-    const parts = output.split("\0").filter(p => p.trim());
+    const parts = output.split("\0").filter((p) => p.trim());
 
     for (let i = 0; i < parts.length - 1; i += 2) {
       const sha = parts[i].trim();
@@ -458,10 +443,7 @@ export class GitMetadataService {
    *
    * Mutates blameData in place.
    */
-  private enrichTaskIdsFromBodies(
-    blameData: Map<number, BlameLineData>,
-    commitBodies: Map<string, string>,
-  ): void {
+  private enrichTaskIdsFromBodies(blameData: Map<number, BlameLineData>, commitBodies: Map<string, string>): void {
     // Collect unique commits that need enrichment (no taskIds from summary)
     const commitsNeedingEnrichment = new Set<string>();
     for (const lineData of blameData.values()) {
@@ -536,9 +518,7 @@ export class GitMetadataService {
       }
 
       // Header: <sha1> <orig-line> <final-line> [<num-lines>]
-      const headerMatch = headerLine.match(
-        /^([a-f0-9]{40})\s+\d+\s+(\d+)/,
-      );
+      const headerMatch = headerLine.match(/^([a-f0-9]{40})\s+\d+\s+(\d+)/);
       if (!headerMatch) {
         i++;
         continue;
@@ -658,11 +638,10 @@ export class GitMetadataService {
     if (cached) return cached;
 
     try {
-      const { stdout } = await execFileAsync(
-        "git",
-        ["rev-parse", "--show-toplevel"],
-        { cwd: dirPath, maxBuffer: 1024 * 1024 },
-      );
+      const { stdout } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
+        cwd: dirPath,
+        maxBuffer: 1024 * 1024,
+      });
 
       const info: GitRepoInfo = { repoRoot: stdout.trim(), isGitRepo: true };
       this.repoRootCache.set(dirPath, info);
@@ -686,21 +665,14 @@ export class GitMetadataService {
    */
   private getCacheFilePath(repoRoot: string, filePath: string): string {
     const repoHash = createHash("md5").update(repoRoot).digest("hex").substring(0, 8);
-    const fileHash = createHash("md5")
-      .update(relative(repoRoot, filePath))
-      .digest("hex")
-      .substring(0, 12);
+    const fileHash = createHash("md5").update(relative(repoRoot, filePath)).digest("hex").substring(0, 12);
     return join(this.cacheDir, repoHash, `${fileHash}.json`);
   }
 
   /**
    * Load blame cache from disk (if content hash matches)
    */
-  private async loadFromDisk(
-    repoRoot: string,
-    filePath: string,
-    contentHash: string,
-  ): Promise<BlameCache | null> {
+  private async loadFromDisk(repoRoot: string, filePath: string, contentHash: string): Promise<BlameCache | null> {
     try {
       const cachePath = this.getCacheFilePath(repoRoot, filePath);
       const data = await fs.readFile(cachePath, "utf-8");
@@ -736,25 +708,14 @@ export class GitMetadataService {
   /**
    * Save blame cache to disk
    */
-  private async saveToDisk(
-    repoRoot: string,
-    filePath: string,
-    cache: BlameCache,
-  ): Promise<void> {
+  private async saveToDisk(repoRoot: string, filePath: string, cache: BlameCache): Promise<void> {
     const cachePath = this.getCacheFilePath(repoRoot, filePath);
     await fs.mkdir(dirname(cachePath), { recursive: true });
 
     // Convert to serializable format (6-tuple with taskIds)
     const lines: Array<[number, string, string, string, number, string[]]> = [];
     for (const [lineNum, data] of cache.lines) {
-      lines.push([
-        lineNum,
-        data.commit,
-        data.author,
-        data.authorEmail,
-        data.authorTime,
-        data.taskIds ?? [],
-      ]);
+      lines.push([lineNum, data.commit, data.author, data.authorEmail, data.authorTime, data.taskIds ?? []]);
     }
 
     const cacheFile: BlameCacheFile = {
@@ -778,14 +739,14 @@ export class GitMetadataService {
    * Print cache statistics
    */
   printStats(): void {
-    console.log('[GitMetadata] Statistics:');
+    console.log("[GitMetadata] Statistics:");
     console.log(`  L1 cache hits: ${this.stats.cacheHitsL1}`);
     console.log(`  L2 cache hits: ${this.stats.cacheHitsL2}`);
     console.log(`  Cache misses:  ${this.stats.cacheMisses}`);
     console.log(`  Blame calls:   ${this.stats.blameExecutions}`);
     console.log(`  Chunks:        ${this.stats.chunksProcessed}`);
     const total = this.stats.cacheHitsL1 + this.stats.cacheHitsL2 + this.stats.cacheMisses;
-    const hitRate = total > 0 ? ((this.stats.cacheHitsL1 + this.stats.cacheHitsL2) / total * 100).toFixed(1) : '0.0';
+    const hitRate = total > 0 ? (((this.stats.cacheHitsL1 + this.stats.cacheHitsL2) / total) * 100).toFixed(1) : "0.0";
     console.log(`  Hit rate:      ${hitRate}%`);
   }
 
@@ -797,7 +758,7 @@ export class GitMetadataService {
     this.repoRootCache.clear();
     this.contentHashCache.clear();
     if (this.debug) {
-      console.log('[GitMetadata] All caches cleared');
+      console.log("[GitMetadata] All caches cleared");
     }
   }
 

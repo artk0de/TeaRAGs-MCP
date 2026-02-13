@@ -2,10 +2,12 @@
  * Tests for snapshot migration v2 → v3
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { SnapshotMigrator } from "../../../src/code/sync/migration.js";
 import { ShardedSnapshotManager } from "../../../src/code/sync/sharded-snapshot.js";
 
@@ -60,10 +62,7 @@ describe("SnapshotMigrator", () => {
         merkleTree: '{"root":null}',
       };
 
-      await fs.writeFile(
-        join(snapshotDir, "test-collection.json"),
-        JSON.stringify(v2Snapshot, null, 2)
-      );
+      await fs.writeFile(join(snapshotDir, "test-collection.json"), JSON.stringify(v2Snapshot, null, 2));
 
       const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir);
       expect(await migrator.needsMigration()).toBe(true);
@@ -81,10 +80,7 @@ describe("SnapshotMigrator", () => {
         merkleTree: '{"root":null}',
       };
 
-      await fs.writeFile(
-        join(snapshotDir, "test-collection.json"),
-        JSON.stringify(v1Snapshot, null, 2)
-      );
+      await fs.writeFile(join(snapshotDir, "test-collection.json"), JSON.stringify(v1Snapshot, null, 2));
 
       const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir);
       expect(await migrator.needsMigration()).toBe(true);
@@ -93,9 +89,7 @@ describe("SnapshotMigrator", () => {
     it("should return false for v3 snapshot (sharded)", async () => {
       // Create v3 sharded snapshot using ShardedSnapshotManager
       const manager = new ShardedSnapshotManager(snapshotDir, "test-collection", 4);
-      const files = new Map([
-        ["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }],
-      ]);
+      const files = new Map([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }]]);
       await manager.save(codebaseDir, files);
 
       const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir);
@@ -189,7 +183,7 @@ describe("SnapshotMigrator", () => {
         timestamp: Date.now(),
         fileHashes: {
           "src/a.ts": "hash-a",
-          "src/missing.ts": "hash-missing",  // This file doesn't exist
+          "src/missing.ts": "hash-missing", // This file doesn't exist
         },
         fileMetadata: {
           "src/a.ts": { mtime: 1000, size: 100, hash: "hash-a" },
@@ -198,17 +192,14 @@ describe("SnapshotMigrator", () => {
         merkleTree: '{"root":null}',
       };
 
-      await fs.writeFile(
-        join(snapshotDir, "test-collection.json"),
-        JSON.stringify(v2Snapshot, null, 2)
-      );
+      await fs.writeFile(join(snapshotDir, "test-collection.json"), JSON.stringify(v2Snapshot, null, 2));
 
       // Migrate should succeed, skipping missing files
       const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir, 4);
       const result = await migrator.migrate();
 
       expect(result.success).toBe(true);
-      expect(result.filesCount).toBe(1);  // Only existing file
+      expect(result.filesCount).toBe(1); // Only existing file
       expect(result.skippedCount).toBe(1); // Missing file skipped
     });
 
@@ -232,10 +223,7 @@ describe("SnapshotMigrator", () => {
         merkleTree: '{"root":null}',
       };
 
-      await fs.writeFile(
-        join(snapshotDir, "test-collection.json"),
-        JSON.stringify(v2Snapshot, null, 2)
-      );
+      await fs.writeFile(join(snapshotDir, "test-collection.json"), JSON.stringify(v2Snapshot, null, 2));
 
       const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir, 4);
       await migrator.migrate();
@@ -258,10 +246,7 @@ describe("SnapshotMigrator", () => {
         merkleTree: '{"root":null}',
       };
 
-      await fs.writeFile(
-        join(snapshotDir, "test-collection.json"),
-        JSON.stringify(v2Snapshot, null, 2)
-      );
+      await fs.writeFile(join(snapshotDir, "test-collection.json"), JSON.stringify(v2Snapshot, null, 2));
 
       // Use migrator's ensureMigrated helper
       const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir, 4);

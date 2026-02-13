@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testEdgeCases(qdrant, embeddings) {
   section("10. Edge Cases");
@@ -24,10 +25,10 @@ export async function testEdgeCases(qdrant, embeddings) {
   await createTestFile(edgeTestDir, "oneline.ts", "export const x = 1;");
 
   // Very long line
-  await createTestFile(edgeTestDir, "longline.ts", `export const data = "${'x'.repeat(5000)}";`);
+  await createTestFile(edgeTestDir, "longline.ts", `export const data = "${"x".repeat(5000)}";`);
 
   // Binary-like content (but still .ts)
-  await createTestFile(edgeTestDir, "binary.ts", `export const buf = Buffer.from([${Array(100).fill(0).join(',')}]);`);
+  await createTestFile(edgeTestDir, "binary.ts", `export const buf = Buffer.from([${Array(100).fill(0).join(",")}]);`);
 
   // Deeply nested
   await fs.mkdir(join(edgeTestDir, "a/b/c/d/e"), { recursive: true });

@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testMultiLanguage(qdrant, embeddings) {
   section("8. Multi-Language Support");
@@ -15,29 +16,44 @@ export async function testMultiLanguage(qdrant, embeddings) {
   await fs.mkdir(langTestDir, { recursive: true });
 
   // TypeScript
-  await createTestFile(langTestDir, "app.ts", `
+  await createTestFile(
+    langTestDir,
+    "app.ts",
+    `
 export class TypeScriptClass {
   method(): string { return "ts"; }
 }
-`);
+`,
+  );
 
   // JavaScript
-  await createTestFile(langTestDir, "util.js", `
+  await createTestFile(
+    langTestDir,
+    "util.js",
+    `
 function javascriptFunction() {
   return { type: "js" };
 }
 module.exports = { javascriptFunction };
-`);
+`,
+  );
 
   // Python
-  await createTestFile(langTestDir, "script.py", `
+  await createTestFile(
+    langTestDir,
+    "script.py",
+    `
 class PythonClass:
     def method(self):
         return "python"
-`);
+`,
+  );
 
   // Ruby
-  await createTestFile(langTestDir, "service.rb", `
+  await createTestFile(
+    langTestDir,
+    "service.rb",
+    `
 class RubyService
   def initialize(config)
     @config = config
@@ -53,11 +69,16 @@ class RubyService
     new(options)
   end
 end
-`);
+`,
+  );
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
-    supportedExtensions: [".ts", ".js", ".py", ".rb"],
-  }));
+  const indexer = new CodeIndexer(
+    qdrant,
+    embeddings,
+    getIndexerConfig({
+      supportedExtensions: [".ts", ".js", ".py", ".rb"],
+    }),
+  );
 
   resources.trackIndexedPath(langTestDir);
   const stats = await indexer.indexCodebase(langTestDir, { forceReindex: true });

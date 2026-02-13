@@ -3,8 +3,9 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testEmbeddings(embeddings) {
   section("1. Embeddings");
@@ -15,7 +16,10 @@ export async function testEmbeddings(embeddings) {
 
   const batch = await embeddings.embedBatch(["fn foo() {}", "fn bar() {}", "fn baz() {}"]);
   assert(batch.length === 3, `Batch returns correct count: ${batch.length}`);
-  assert(batch.every(b => b.embedding.length === 768), "All embeddings have correct dimensions");
+  assert(
+    batch.every((b) => b.embedding.length === 768),
+    "All embeddings have correct dimensions",
+  );
 
   const empty = await embeddings.embedBatch([]);
   assert(empty.length === 0, "Empty batch returns empty array");
@@ -34,7 +38,10 @@ export async function testEmbeddings(embeddings) {
 
   const simCode = cosineSim(jsCode.embedding, pyCode.embedding);
   const simUnrelated = cosineSim(jsCode.embedding, recipe.embedding);
-  assert(simCode > simUnrelated, `Similar code more similar than unrelated (${simCode.toFixed(3)} > ${simUnrelated.toFixed(3)})`);
+  assert(
+    simCode > simUnrelated,
+    `Similar code more similar than unrelated (${simCode.toFixed(3)} > ${simUnrelated.toFixed(3)})`,
+  );
 
   // Edge cases
   const longText = "x".repeat(10000);
@@ -45,7 +52,7 @@ export async function testEmbeddings(embeddings) {
   const unicodeResult = await embeddings.embed(unicode);
   assert(unicodeResult.embedding.length === 768, "Unicode/multilingual text handled");
 
-  const special = 'fn() { "test": true, \'escape\': `backtick`, <tag/>, &amp; }';
+  const special = "fn() { \"test\": true, 'escape': `backtick`, <tag/>, &amp; }";
   const specialResult = await embeddings.embed(special);
   assert(specialResult.embedding.length === 768, "Special characters handled");
 
@@ -58,8 +65,9 @@ export async function testEmbeddings(embeddings) {
 
   // Large batch (tests internal batching)
   log("info", "Testing large batch (50 texts)...");
-  const largeBatch = Array.from({ length: 50 }, (_, i) =>
-    `function test_${i}() { const value = ${i} * 2; return value + ${i % 10}; }`
+  const largeBatch = Array.from(
+    { length: 50 },
+    (_, i) => `function test_${i}() { const value = ${i} * 2; return value + ${i % 10}; }`,
   );
   const largeBatchStart = Date.now();
   const largeBatchResult = await embeddings.embedBatch(largeBatch);
@@ -69,9 +77,8 @@ export async function testEmbeddings(embeddings) {
 
   // Parallel embedding requests
   log("info", "Testing parallel embedding requests (3 x 20 texts)...");
-  const createBatch = (id) => Array.from({ length: 20 }, (_, i) =>
-    `function batch${id}_${i}() { return ${i} * ${id}; }`
-  );
+  const createBatch = (id) =>
+    Array.from({ length: 20 }, (_, i) => `function batch${id}_${i}() { return ${i} * ${id}; }`);
   const parallelStart = Date.now();
   const parallelResults = await Promise.all([
     embeddings.embedBatch(createBatch(1)),
@@ -79,6 +86,9 @@ export async function testEmbeddings(embeddings) {
     embeddings.embedBatch(createBatch(3)),
   ]);
   const parallelTime = Date.now() - parallelStart;
-  assert(parallelResults.every(r => r.length === 20), `Parallel batches all complete: ${parallelResults.map(r => r.length).join(", ")}`);
+  assert(
+    parallelResults.every((r) => r.length === 20),
+    `Parallel batches all complete: ${parallelResults.map((r) => r.length).join(", ")}`,
+  );
   log("info", `Parallel requests completed in ${parallelTime}ms`);
 }

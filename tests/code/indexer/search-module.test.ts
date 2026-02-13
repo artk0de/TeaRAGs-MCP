@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CodeIndexer } from "../../../src/code/indexer.js";
+import type { CodeConfig } from "../../../src/code/types.js";
+import {
+  cleanupTempDir,
+  createTempTestDir,
+  createTestFile,
+  defaultTestConfig,
+  MockEmbeddingProvider,
+  MockQdrantManager,
+} from "./test-helpers.js";
+
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
     setLanguage() {}
@@ -26,17 +37,6 @@ vi.mock("tree-sitter-rust", () => ({ default: {} }));
 vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
-
-import { CodeIndexer } from "../../../src/code/indexer.js";
-import type { CodeConfig } from "../../../src/code/types.js";
-import {
-  MockQdrantManager,
-  MockEmbeddingProvider,
-  createTestFile,
-  defaultTestConfig,
-  createTempTestDir,
-  cleanupTempDir,
-} from "./test-helpers.js";
 
 describe("SearchModule", () => {
   let indexer: CodeIndexer;
@@ -81,9 +81,7 @@ describe("SearchModule", () => {
       const nonIndexedDir = join(tempDir, "non-indexed");
       await fs.mkdir(nonIndexedDir, { recursive: true });
 
-      await expect(indexer.searchCode(nonIndexedDir, "test")).rejects.toThrow(
-        "not indexed",
-      );
+      await expect(indexer.searchCode(nonIndexedDir, "test")).rejects.toThrow("not indexed");
     });
 
     it("should respect limit option", async () => {
@@ -117,11 +115,7 @@ describe("SearchModule", () => {
 
     it("should use hybrid search when enabled", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIndexer = new CodeIndexer(
-        qdrant as any,
-        embeddings,
-        hybridConfig,
-      );
+      const hybridIndexer = new CodeIndexer(qdrant as any, embeddings, hybridConfig);
 
       await createTestFile(
         codebaseDir,
@@ -191,16 +185,14 @@ export function calculateProduct(numbers: number[]): number {
 
       expect(results.length).toBeGreaterThan(0);
 
-      const functionResult = results.find(r =>
-        r.content.includes("calculateSum") || r.content.includes("calculateProduct")
+      const functionResult = results.find(
+        (r) => r.content.includes("calculateSum") || r.content.includes("calculateProduct"),
       );
 
       if (functionResult) {
         expect(functionResult).toHaveProperty("symbolId");
         if (functionResult.symbolId) {
-          expect(["calculateSum", "calculateProduct"]).toContain(
-            functionResult.symbolId
-          );
+          expect(["calculateSum", "calculateProduct"]).toContain(functionResult.symbolId);
         }
       }
     });
@@ -213,11 +205,7 @@ export function calculateProduct(numbers: number[]): number {
         "app.ts",
         "export function appMain(): void {\n  console.log('Application started');\n}",
       );
-      await createTestFile(
-        codebaseDir,
-        "README.md",
-        "# Documentation\n\nThis is the project documentation.",
-      );
+      await createTestFile(codebaseDir, "README.md", "# Documentation\n\nThis is the project documentation.");
       await indexer.indexCodebase(codebaseDir);
     });
 
@@ -233,9 +221,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([
-            { key: "isDocumentation", match: { value: true } },
-          ]),
+          must: expect.arrayContaining([{ key: "isDocumentation", match: { value: true } }]),
         }),
       );
     });
@@ -252,9 +238,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([
-            { key: "git.dominantAuthor", match: { value: "John Doe" } },
-          ]),
+          must: expect.arrayContaining([{ key: "git.dominantAuthor", match: { value: "John Doe" } }]),
         }),
       );
     });
@@ -273,9 +257,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([
-            { key: "git.lastModifiedAt", range: { gte: expectedTimestamp } },
-          ]),
+          must: expect.arrayContaining([{ key: "git.lastModifiedAt", range: { gte: expectedTimestamp } }]),
         }),
       );
     });
@@ -294,9 +276,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([
-            { key: "git.lastModifiedAt", range: { lte: expectedTimestamp } },
-          ]),
+          must: expect.arrayContaining([{ key: "git.lastModifiedAt", range: { lte: expectedTimestamp } }]),
         }),
       );
     });
@@ -313,9 +293,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([
-            { key: "git.ageDays", range: { gte: 30 } },
-          ]),
+          must: expect.arrayContaining([{ key: "git.ageDays", range: { gte: 30 } }]),
         }),
       );
     });
@@ -332,9 +310,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([
-            { key: "git.ageDays", range: { lte: 7 } },
-          ]),
+          must: expect.arrayContaining([{ key: "git.ageDays", range: { lte: 7 } }]),
         }),
       );
     });
@@ -351,9 +327,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([
-            { key: "git.commitCount", range: { gte: 5 } },
-          ]),
+          must: expect.arrayContaining([{ key: "git.commitCount", range: { gte: 5 } }]),
         }),
       );
     });
@@ -370,9 +344,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([
-            { key: "git.taskIds", match: { any: ["TD-12345"] } },
-          ]),
+          must: expect.arrayContaining([{ key: "git.taskIds", match: { any: ["TD-12345"] } }]),
         }),
       );
     });

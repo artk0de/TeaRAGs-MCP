@@ -10,11 +10,13 @@
  * - Edge cases (empty snapshots, many files)
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { promises as fs } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { ShardedSnapshotManager, type FileMetadata } from "./sharded-snapshot.js";
 
 describe("ShardedSnapshotManager", () => {
@@ -42,7 +44,9 @@ describe("ShardedSnapshotManager", () => {
     return {
       mtime: Date.now(),
       size: Math.floor(Math.random() * 10000),
-      hash: createHash("sha256").update(path + Date.now()).digest("hex"),
+      hash: createHash("sha256")
+        .update(path + Date.now())
+        .digest("hex"),
     };
   }
 
@@ -115,11 +119,7 @@ describe("ShardedSnapshotManager", () => {
       await manager.save("/test", files);
 
       // Load multiple times and verify consistency
-      const results = await Promise.all([
-        manager.load(),
-        manager.load(),
-        manager.load(),
-      ]);
+      const results = await Promise.all([manager.load(), manager.load(), manager.load()]);
 
       // All loads should return the same merkle roots in the same order
       const firstRoots = results[0]!.shardMerkleRoots;
@@ -205,10 +205,7 @@ describe("ShardedSnapshotManager", () => {
       const meta = JSON.parse(metaContent);
 
       // Each shard should have some files (with 100 files and 4 shards)
-      const totalFiles = meta.shards.reduce(
-        (sum: number, s: { fileCount: number }) => sum + s.fileCount,
-        0
-      );
+      const totalFiles = meta.shards.reduce((sum: number, s: { fileCount: number }) => sum + s.fileCount, 0);
       expect(totalFiles).toBe(100);
 
       // Distribution should be roughly even (not all in one shard)
@@ -223,7 +220,7 @@ describe("ShardedSnapshotManager", () => {
       const customManager = new ShardedSnapshotManager(
         testDir,
         "custom-shards",
-        8 // 8 shards instead of default 4
+        8, // 8 shards instead of default 4
       );
 
       const files = createTestFiles(50);

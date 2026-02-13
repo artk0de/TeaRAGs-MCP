@@ -1,0 +1,8 @@
+build/
+node_modules/
+coverage/
+*.db
+*.db-shm
+*.db-wal
+.beads/
+.worktrees/

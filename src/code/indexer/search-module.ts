@@ -7,21 +7,10 @@
 import type { EmbeddingProvider } from "../../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../../embeddings/sparse.js";
 import type { QdrantManager } from "../../qdrant/client.js";
-import {
-  filterResultsByGlob,
-  calculateFetchLimit,
-} from "../../qdrant/filters/index.js";
-import {
-  rerankSearchCodeResults,
-  type RerankMode,
-  type SearchCodeRerankPreset,
-} from "../reranker.js";
-import type {
-  CodeConfig,
-  CodeSearchResult,
-  SearchOptions,
-} from "../types.js";
-import { validatePath, resolveCollectionName } from "./shared.js";
+import { calculateFetchLimit, filterResultsByGlob } from "../../qdrant/filters/index.js";
+import { rerankSearchCodeResults, type RerankMode, type SearchCodeRerankPreset } from "../reranker.js";
+import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
+import { resolveCollectionName, validatePath } from "./shared.js";
 
 export class SearchModule {
   constructor(
@@ -33,11 +22,7 @@ export class SearchModule {
   /**
    * Search code semantically
    */
-  async searchCode(
-    path: string,
-    query: string,
-    options?: SearchOptions,
-  ): Promise<CodeSearchResult[]> {
+  async searchCode(path: string, query: string, options?: SearchOptions): Promise<CodeSearchResult[]> {
     const absolutePath = await validatePath(path);
     const collectionName = resolveCollectionName(absolutePath);
 
@@ -49,9 +34,7 @@ export class SearchModule {
 
     // Check if collection has hybrid search enabled
     const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
-    const useHybrid =
-      (options?.useHybrid ?? this.config.enableHybridSearch) &&
-      collectionInfo.hybridEnabled;
+    const useHybrid = (options?.useHybrid ?? this.config.enableHybridSearch) && collectionInfo.hybridEnabled;
 
     // Generate query embedding
     const { embedding } = await this.embeddings.embed(query);
@@ -98,9 +81,7 @@ export class SearchModule {
       }
 
       if (options?.modifiedAfter) {
-        const timestamp = Math.floor(
-          new Date(options.modifiedAfter).getTime() / 1000,
-        );
+        const timestamp = Math.floor(new Date(options.modifiedAfter).getTime() / 1000);
         filter.must.push({
           key: "git.lastModifiedAt",
           range: { gte: timestamp },
@@ -108,9 +89,7 @@ export class SearchModule {
       }
 
       if (options?.modifiedBefore) {
-        const timestamp = Math.floor(
-          new Date(options.modifiedBefore).getTime() / 1000,
-        );
+        const timestamp = Math.floor(new Date(options.modifiedBefore).getTime() / 1000);
         filter.must.push({
           key: "git.lastModifiedAt",
           range: { lte: timestamp },
@@ -148,9 +127,7 @@ export class SearchModule {
 
     // Calculate fetch limit (fetch more if we need to filter by glob pattern or rerank)
     const requestedLimit = options?.limit || this.config.defaultSearchLimit;
-    const needsOverfetch =
-      Boolean(options?.pathPattern) ||
-      Boolean(options?.rerank && options.rerank !== "relevance");
+    const needsOverfetch = Boolean(options?.pathPattern) || Boolean(options?.rerank && options.rerank !== "relevance");
     const fetchLimit = calculateFetchLimit(requestedLimit, needsOverfetch);
 
     // Search with hybrid or standard search
@@ -158,33 +135,17 @@ export class SearchModule {
     if (useHybrid) {
       const sparseGenerator = new BM25SparseVectorGenerator();
       const sparseVector = sparseGenerator.generate(query);
-      results = await this.qdrant.hybridSearch(
-        collectionName,
-        embedding,
-        sparseVector,
-        fetchLimit,
-        filter,
-      );
+      results = await this.qdrant.hybridSearch(collectionName, embedding, sparseVector, fetchLimit, filter);
     } else {
-      results = await this.qdrant.search(
-        collectionName,
-        embedding,
-        fetchLimit,
-        filter,
-      );
+      results = await this.qdrant.search(collectionName, embedding, fetchLimit, filter);
     }
 
     // Apply glob pattern filter if specified (client-side filtering)
-    let filteredResults = options?.pathPattern
-      ? filterResultsByGlob(results, options.pathPattern)
-      : results;
+    let filteredResults = options?.pathPattern ? filterResultsByGlob(results, options.pathPattern) : results;
 
     // Apply reranking if specified
     if (options?.rerank && options.rerank !== "relevance") {
-      filteredResults = rerankSearchCodeResults(
-        filteredResults,
-        options.rerank as RerankMode<SearchCodeRerankPreset>,
-      );
+      filteredResults = rerankSearchCodeResults(filteredResults, options.rerank as RerankMode<SearchCodeRerankPreset>);
     }
 
     // Apply score threshold if specified

@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
-import { SchemaManager, CURRENT_SCHEMA_VERSION } from "../../../build/code/schema-migration.js";
+import { basename, join } from "node:path";
+
 import { DEFAULT_CONFIG } from "../../../build/code/pipeline/index.js";
+import { CURRENT_SCHEMA_VERSION, SchemaManager } from "../../../build/code/schema-migration.js";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testSchemaAndDeleteOptimization(qdrant) {
   section("15. Schema Migration & Delete Optimization");
@@ -60,13 +61,15 @@ export async function testSchemaAndDeleteOptimization(qdrant) {
 
       // Verify schema version is now current
       const versionAfter = await schemaManager.getSchemaVersion(schemaTestCollection2);
-      assert(versionAfter === CURRENT_SCHEMA_VERSION, `Schema version is now ${CURRENT_SCHEMA_VERSION}: ${versionAfter}`);
+      assert(
+        versionAfter === CURRENT_SCHEMA_VERSION,
+        `Schema version is now ${CURRENT_SCHEMA_VERSION}: ${versionAfter}`,
+      );
 
       // Run migration again (should skip)
       const migrationResult2 = await schemaManager.ensureCurrentSchema(schemaTestCollection2);
       assert(migrationResult2.success === true, "Second migration call successful");
       assert(migrationResult2.migrationsApplied.length === 0, "No migrations needed on second call");
-
     } finally {
       await qdrant.deleteCollection(schemaTestCollection2);
     }
@@ -75,28 +78,24 @@ export async function testSchemaAndDeleteOptimization(qdrant) {
     log("info", "Testing delete optimization configuration...");
 
     // Check DEFAULT_CONFIG has separate delete worker pool
-    assert(
-      DEFAULT_CONFIG.deleteWorkerPool !== undefined,
-      "DEFAULT_CONFIG has deleteWorkerPool"
-    );
+    assert(DEFAULT_CONFIG.deleteWorkerPool !== undefined, "DEFAULT_CONFIG has deleteWorkerPool");
     assert(
       DEFAULT_CONFIG.deleteWorkerPool.concurrency >= 8,
-      `Delete concurrency is high (${DEFAULT_CONFIG.deleteWorkerPool.concurrency})`
+      `Delete concurrency is high (${DEFAULT_CONFIG.deleteWorkerPool.concurrency})`,
     );
     assert(
       DEFAULT_CONFIG.deleteAccumulator.batchSize >= 500,
-      `Delete batch size is large (${DEFAULT_CONFIG.deleteAccumulator.batchSize})`
+      `Delete batch size is large (${DEFAULT_CONFIG.deleteAccumulator.batchSize})`,
     );
 
     // Verify upsert and delete have independent settings
     assert(
       DEFAULT_CONFIG.workerPool.concurrency !== DEFAULT_CONFIG.deleteWorkerPool.concurrency ||
-      DEFAULT_CONFIG.upsertAccumulator.batchSize !== DEFAULT_CONFIG.deleteAccumulator.batchSize,
-      "Upsert and delete have different settings"
+        DEFAULT_CONFIG.upsertAccumulator.batchSize !== DEFAULT_CONFIG.deleteAccumulator.batchSize,
+      "Upsert and delete have different settings",
     );
 
     log("pass", "Schema migration and delete optimization verified");
-
   } finally {
     await qdrant.deleteCollection(schemaTestCollection);
   }

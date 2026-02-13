@@ -9,13 +9,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type {
-  Batch,
-  BatchAccumulatorConfig,
-  BackpressureCallback,
-  OperationType,
-  WorkItem,
-} from "./types.js";
+
+import type { BackpressureCallback, Batch, BatchAccumulatorConfig, OperationType, WorkItem } from "./types.js";
 
 /** Enable debug logging */
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
@@ -120,9 +115,7 @@ export class BatchAccumulator<T extends WorkItem> {
       this.onBackpressure?.(true);
 
       if (DEBUG) {
-        console.error(
-          `[BatchAccumulator] ${this.operationType}: backpressure ACTIVE`,
-        );
+        console.error(`[BatchAccumulator] ${this.operationType}: backpressure ACTIVE`);
       }
     }
   }
@@ -136,9 +129,7 @@ export class BatchAccumulator<T extends WorkItem> {
       this.onBackpressure?.(false);
 
       if (DEBUG) {
-        console.error(
-          `[BatchAccumulator] ${this.operationType}: backpressure RELEASED`,
-        );
+        console.error(`[BatchAccumulator] ${this.operationType}: backpressure RELEASED`);
       }
     }
   }
@@ -188,14 +179,9 @@ export class BatchAccumulator<T extends WorkItem> {
 
       if (this.pendingItems.length === 0) return;
 
-      const minBatch =
-        this.config.minBatchSize ?? Math.floor(this.config.batchSize * 0.5);
+      const minBatch = this.config.minBatchSize ?? Math.floor(this.config.batchSize * 0.5);
 
-      if (
-        minBatch > 0 &&
-        this.pendingItems.length < minBatch &&
-        this.deferCount < BatchAccumulator.MAX_DEFERS
-      ) {
+      if (minBatch > 0 && this.pendingItems.length < minBatch && this.deferCount < BatchAccumulator.MAX_DEFERS) {
         // Below minimum and defers left — re-arm with shorter timeout
         this.deferCount++;
         this.scheduleFlush(this.config.flushTimeoutMs / 2);

@@ -10,6 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { BatchAccumulator } from "./batch-accumulator.js";
 import type { Batch, BatchAccumulatorConfig, UpsertItem } from "./types.js";
 
@@ -259,12 +260,7 @@ describe("BatchAccumulator", () => {
 
     it("should invoke backpressure callback on pause", () => {
       const callback = vi.fn();
-      const accumulatorWithCallback = new BatchAccumulator(
-        config,
-        "upsert",
-        () => {},
-        callback,
-      );
+      const accumulatorWithCallback = new BatchAccumulator(config, "upsert", () => {}, callback);
 
       accumulatorWithCallback.pause();
 
@@ -273,12 +269,7 @@ describe("BatchAccumulator", () => {
 
     it("should invoke backpressure callback on resume", () => {
       const callback = vi.fn();
-      const accumulatorWithCallback = new BatchAccumulator(
-        config,
-        "upsert",
-        () => {},
-        callback,
-      );
+      const accumulatorWithCallback = new BatchAccumulator(config, "upsert", () => {}, callback);
 
       accumulatorWithCallback.pause();
       accumulatorWithCallback.resume();
@@ -289,12 +280,7 @@ describe("BatchAccumulator", () => {
 
     it("should not double-pause", () => {
       const callback = vi.fn();
-      const accumulatorWithCallback = new BatchAccumulator(
-        config,
-        "upsert",
-        () => {},
-        callback,
-      );
+      const accumulatorWithCallback = new BatchAccumulator(config, "upsert", () => {}, callback);
 
       accumulatorWithCallback.pause();
       accumulatorWithCallback.pause();
@@ -304,12 +290,7 @@ describe("BatchAccumulator", () => {
 
     it("should not double-resume", () => {
       const callback = vi.fn();
-      const accumulatorWithCallback = new BatchAccumulator(
-        config,
-        "upsert",
-        () => {},
-        callback,
-      );
+      const accumulatorWithCallback = new BatchAccumulator(config, "upsert", () => {}, callback);
 
       accumulatorWithCallback.pause();
       accumulatorWithCallback.resume();
@@ -357,13 +338,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
 
-      const acc = new BatchAccumulator<UpsertItem>(
-        minBatchConfig,
-        "upsert",
-        (batch) => {
-          receivedBatches.push(batch);
-        },
-      );
+      const acc = new BatchAccumulator<UpsertItem>(minBatchConfig, "upsert", (batch) => {
+        receivedBatches.push(batch);
+      });
 
       acc.add(createItem(1));
       acc.add(createItem(2));
@@ -383,13 +360,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
 
-      const acc = new BatchAccumulator<UpsertItem>(
-        minBatchConfig,
-        "upsert",
-        (batch) => {
-          receivedBatches.push(batch);
-        },
-      );
+      const acc = new BatchAccumulator<UpsertItem>(minBatchConfig, "upsert", (batch) => {
+        receivedBatches.push(batch);
+      });
 
       acc.add(createItem(1));
       acc.add(createItem(2));
@@ -421,13 +394,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
 
-      const acc = new BatchAccumulator<UpsertItem>(
-        minBatchConfig,
-        "upsert",
-        (batch) => {
-          receivedBatches.push(batch);
-        },
-      );
+      const acc = new BatchAccumulator<UpsertItem>(minBatchConfig, "upsert", (batch) => {
+        receivedBatches.push(batch);
+      });
 
       acc.add(createItem(1));
       acc.add(createItem(2));
@@ -447,13 +416,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
 
-      const acc = new BatchAccumulator<UpsertItem>(
-        minBatchConfig,
-        "upsert",
-        (batch) => {
-          receivedBatches.push(batch);
-        },
-      );
+      const acc = new BatchAccumulator<UpsertItem>(minBatchConfig, "upsert", (batch) => {
+        receivedBatches.push(batch);
+      });
 
       acc.add(createItem(1));
       acc.add(createItem(2));
@@ -479,13 +444,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
 
-      const acc = new BatchAccumulator<UpsertItem>(
-        minBatchConfig,
-        "upsert",
-        (batch) => {
-          receivedBatches.push(batch);
-        },
-      );
+      const acc = new BatchAccumulator<UpsertItem>(minBatchConfig, "upsert", (batch) => {
+        receivedBatches.push(batch);
+      });
 
       acc.add(createItem(1));
       acc.add(createItem(2));
@@ -511,13 +472,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
 
-      const acc = new BatchAccumulator<UpsertItem>(
-        minBatchConfig,
-        "upsert",
-        (batch) => {
-          receivedBatches.push(batch);
-        },
-      );
+      const acc = new BatchAccumulator<UpsertItem>(minBatchConfig, "upsert", (batch) => {
+        receivedBatches.push(batch);
+      });
 
       acc.add(createItem(1));
 
@@ -542,13 +499,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
 
-      const acc = new BatchAccumulator<UpsertItem>(
-        minBatchConfig,
-        "upsert",
-        (batch) => {
-          receivedBatches.push(batch);
-        },
-      );
+      const acc = new BatchAccumulator<UpsertItem>(minBatchConfig, "upsert", (batch) => {
+        receivedBatches.push(batch);
+      });
 
       acc.add(createItem(1));
 
@@ -572,11 +525,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
       const autoBatches: Batch<UpsertItem>[] = [];
-      const autoAcc = new BatchAccumulator<UpsertItem>(
-        autoConfig,
-        "upsert",
-        (batch) => { autoBatches.push(batch); },
-      );
+      const autoAcc = new BatchAccumulator<UpsertItem>(autoConfig, "upsert", (batch) => {
+        autoBatches.push(batch);
+      });
 
       // Add 3 items (below auto minBatchSize=5)
       for (let i = 0; i < 3; i++) autoAcc.add(createItem(i));
@@ -606,13 +557,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
 
-      const smallBatchAccumulator = new BatchAccumulator<UpsertItem>(
-        smallBatchConfig,
-        "upsert",
-        (batch) => {
-          receivedBatches.push(batch);
-        },
-      );
+      const smallBatchAccumulator = new BatchAccumulator<UpsertItem>(smallBatchConfig, "upsert", (batch) => {
+        receivedBatches.push(batch);
+      });
 
       smallBatchAccumulator.add(createItem(1));
       smallBatchAccumulator.add(createItem(2));
@@ -630,13 +577,9 @@ describe("BatchAccumulator", () => {
         maxQueueSize: 10,
       };
 
-      const longTimeoutAccumulator = new BatchAccumulator<UpsertItem>(
-        longTimeoutConfig,
-        "upsert",
-        (batch) => {
-          receivedBatches.push(batch);
-        },
-      );
+      const longTimeoutAccumulator = new BatchAccumulator<UpsertItem>(longTimeoutConfig, "upsert", (batch) => {
+        receivedBatches.push(batch);
+      });
 
       longTimeoutAccumulator.add(createItem(1));
 

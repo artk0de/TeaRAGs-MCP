@@ -43,7 +43,9 @@ export function printBox(title, subtitle = "") {
   console.log(`${c.cyan}${c.bold}╔══════════════════════════════════════════════════════════╗${c.reset}`);
   console.log(`${c.cyan}${c.bold}║${c.reset}     ${c.bold}${title.padEnd(50)}${c.reset}${c.cyan}${c.bold}║${c.reset}`);
   if (subtitle) {
-    console.log(`${c.cyan}${c.bold}║${c.reset}     ${c.dim}${subtitle.padEnd(50)}${c.reset}${c.cyan}${c.bold}║${c.reset}`);
+    console.log(
+      `${c.cyan}${c.bold}║${c.reset}     ${c.dim}${subtitle.padEnd(50)}${c.reset}${c.cyan}${c.bold}║${c.reset}`,
+    );
   }
   console.log(`${c.cyan}${c.bold}╚══════════════════════════════════════════════════════════╝${c.reset}`);
   console.log();

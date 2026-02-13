@@ -3,13 +3,14 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
-import { ParallelFileSynchronizer } from "../../../build/code/sync/parallel-synchronizer.js";
-import { ShardedSnapshotManager } from "../../../build/code/sync/sharded-snapshot.js";
+import { basename, join } from "node:path";
+
 import { ConsistentHash } from "../../../build/code/sync/consistent-hash.js";
 import { SnapshotMigrator } from "../../../build/code/sync/migration.js";
+import { ParallelFileSynchronizer } from "../../../build/code/sync/parallel-synchronizer.js";
+import { ShardedSnapshotManager } from "../../../build/code/sync/sharded-snapshot.js";
 import { TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testParallelSync() {
   section("13. Parallel File Synchronization & Sharded Snapshots");
@@ -76,12 +77,7 @@ export async function testParallelSync() {
   // === TEST: ParallelFileSynchronizer change detection ===
   log("info", "Testing ParallelFileSynchronizer...");
 
-  const sync = new ParallelFileSynchronizer(
-    parallelTestDir,
-    "test-sync-collection",
-    snapshotDir,
-    4
-  );
+  const sync = new ParallelFileSynchronizer(parallelTestDir, "test-sync-collection", snapshotDir, 4);
 
   assert(sync.getConcurrency() === 4, `Concurrency is 4: ${sync.getConcurrency()}`);
 
@@ -168,7 +164,7 @@ export async function testParallelSync() {
   assert(await migrator.needsMigration(), "Migration needed for v2 snapshot");
 
   const migrationResult = await migrator.migrate();
-  assert(migrationResult.success, `Migration succeeded: ${migrationResult.error || 'ok'}`);
+  assert(migrationResult.success, `Migration succeeded: ${migrationResult.error || "ok"}`);
   assert(migrationResult.filesCount === 3, `Migrated 3 files: ${migrationResult.filesCount}`);
 
   // Old file should be deleted, backup should exist

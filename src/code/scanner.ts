@@ -4,7 +4,9 @@
 
 import { promises as fs } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
+
 import ignore, { type Ignore } from "ignore";
+
 import type { ScannerConfig } from "./types.js";
 
 export class FileScanner {
@@ -82,11 +84,7 @@ export class FileScanner {
   /**
    * Recursively walk directory tree
    */
-  private async walkDirectory(
-    currentPath: string,
-    rootPath: string,
-    files: string[]
-  ): Promise<void> {
+  private async walkDirectory(currentPath: string, rootPath: string, files: string[]): Promise<void> {
     try {
       const entries = await fs.readdir(currentPath, { withFileTypes: true });
 

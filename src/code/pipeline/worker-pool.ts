@@ -8,14 +8,7 @@
  * - Graceful shutdown
  */
 
-import type {
-  Batch,
-  BatchCompletionCallback,
-  BatchHandler,
-  BatchResult,
-  WorkerPoolConfig,
-  WorkItem,
-} from "./types.js";
+import type { Batch, BatchCompletionCallback, BatchHandler, BatchResult, WorkerPoolConfig, WorkItem } from "./types.js";
 
 /** Enable debug logging */
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
@@ -56,10 +49,7 @@ export class WorkerPool {
    * Submit a batch for processing
    * @returns Promise that resolves when batch is processed
    */
-  submit<T extends WorkItem>(
-    batch: Batch<T>,
-    handler: BatchHandler<T>,
-  ): Promise<BatchResult> {
+  submit<T extends WorkItem>(batch: Batch<T>, handler: BatchHandler<T>): Promise<BatchResult> {
     if (this.isShuttingDown) {
       return Promise.reject(new Error("WorkerPool is shutting down"));
     }
@@ -115,8 +105,7 @@ export class WorkerPool {
     return {
       processed: this.totalProcessed,
       errors: this.totalErrors,
-      avgTimeMs:
-        this.totalProcessed > 0 ? this.totalTimeMs / this.totalProcessed : 0,
+      avgTimeMs: this.totalProcessed > 0 ? this.totalTimeMs / this.totalProcessed : 0,
       queueDepth: this.queue.length,
       activeWorkers: this.activeWorkers,
       throughput: uptimeMs > 0 ? (this.totalProcessed / uptimeMs) * 1000 : 0,
@@ -192,9 +181,7 @@ export class WorkerPool {
     this.processWithRetry(queuedBatch);
   }
 
-  private async processWithRetry<T extends WorkItem>(
-    queuedBatch: QueuedBatch<T>,
-  ): Promise<void> {
+  private async processWithRetry<T extends WorkItem>(queuedBatch: QueuedBatch<T>): Promise<void> {
     const { batch, handler, resolve } = queuedBatch;
     const startTime = Date.now();
 
@@ -224,8 +211,7 @@ export class WorkerPool {
       this.onCompletion?.(result);
       resolve(result);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       if (queuedBatch.retryCount < this.config.maxRetries) {
         // Retry with exponential backoff
@@ -259,9 +245,7 @@ export class WorkerPool {
           retryCount: queuedBatch.retryCount,
         };
 
-        console.error(
-          `[WorkerPool] Batch ${batch.id} failed after ${queuedBatch.retryCount} retries: ${errorMessage}`,
-        );
+        console.error(`[WorkerPool] Batch ${batch.id} failed after ${queuedBatch.retryCount} retries: ${errorMessage}`);
 
         this.onCompletion?.(result);
         resolve(result); // Resolve with failure result (don't reject)
@@ -274,8 +258,7 @@ export class WorkerPool {
 
   private calculateBackoff(retryCount: number): number {
     // Exponential backoff with jitter
-    const baseDelay =
-      this.config.retryBaseDelayMs * Math.pow(2, retryCount - 1);
+    const baseDelay = this.config.retryBaseDelayMs * Math.pow(2, retryCount - 1);
     const jitter = Math.random() * 0.3 * baseDelay; // 0-30% jitter
     return Math.min(baseDelay + jitter, this.config.retryMaxDelayMs);
   }

@@ -2,7 +2,8 @@
  * Tests for ConsistentHash - consistent hashing ring for shard distribution
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import { ConsistentHash } from "../../../src/code/sync/consistent-hash.js";
 
 describe("ConsistentHash", () => {
@@ -31,12 +32,7 @@ describe("ConsistentHash", () => {
 
     it("should return shard index within valid range", () => {
       const ring = new ConsistentHash(4);
-      const paths = [
-        "src/index.ts",
-        "lib/utils.ts",
-        "tests/app.test.ts",
-        "README.md",
-      ];
+      const paths = ["src/index.ts", "lib/utils.ts", "tests/app.test.ts", "README.md"];
 
       for (const path of paths) {
         const shard = ring.getShard(path);

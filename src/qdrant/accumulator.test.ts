@@ -2,8 +2,9 @@
  * Tests for PointsAccumulator
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { PointsAccumulator, createAccumulator, type DensePoint, type HybridPoint } from "./accumulator.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createAccumulator, PointsAccumulator, type DensePoint, type HybridPoint } from "./accumulator.js";
 import type { QdrantManager } from "./client.js";
 
 // Mock QdrantManager
@@ -44,10 +45,7 @@ describe("PointsAccumulator", () => {
 
   describe("constructor", () => {
     it("should create accumulator with default config", () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection");
 
       const stats = acc.getStats();
       expect(stats.totalPointsFlushed).toBe(0);
@@ -56,12 +54,11 @@ describe("PointsAccumulator", () => {
     });
 
     it("should create accumulator with custom config", () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 50, flushIntervalMs: 1000, ordering: "medium" },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 50,
+        flushIntervalMs: 1000,
+        ordering: "medium",
+      });
 
       expect(acc).toBeDefined();
     });
@@ -69,12 +66,10 @@ describe("PointsAccumulator", () => {
 
   describe("add() - dense points", () => {
     it("should buffer points without flushing when under threshold", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 0 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 0,
+      });
 
       await acc.add(createPoints(50));
 
@@ -83,12 +78,10 @@ describe("PointsAccumulator", () => {
     });
 
     it("should auto-flush when buffer reaches threshold", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 0 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 0,
+      });
 
       await acc.add(createPoints(150));
 
@@ -98,12 +91,10 @@ describe("PointsAccumulator", () => {
     });
 
     it("should flush multiple batches when adding many points", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 0 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 0,
+      });
 
       await acc.add(createPoints(350));
 
@@ -113,20 +104,18 @@ describe("PointsAccumulator", () => {
     });
 
     it("should use wait=false for auto-flush", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 0, ordering: "weak" },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 0,
+        ordering: "weak",
+      });
 
       await acc.add(createPoints(100));
 
-      expect(mockQdrant.addPointsOptimized).toHaveBeenCalledWith(
-        "test-collection",
-        expect.any(Array),
-        { wait: false, ordering: "weak" },
-      );
+      expect(mockQdrant.addPointsOptimized).toHaveBeenCalledWith("test-collection", expect.any(Array), {
+        wait: false,
+        ordering: "weak",
+      });
     });
   });
 
@@ -148,31 +137,26 @@ describe("PointsAccumulator", () => {
 
   describe("flush()", () => {
     it("should flush remaining points with wait=true", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 0 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 0,
+      });
 
       await acc.add(createPoints(50));
       await acc.flush();
 
-      expect(mockQdrant.addPointsOptimized).toHaveBeenCalledWith(
-        "test-collection",
-        expect.any(Array),
-        { wait: true, ordering: "weak" },
-      );
+      expect(mockQdrant.addPointsOptimized).toHaveBeenCalledWith("test-collection", expect.any(Array), {
+        wait: true,
+        ordering: "weak",
+      });
       expect(acc.getStats().pendingPoints).toBe(0);
     });
 
     it("should not call API when buffer is empty", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 0 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 0,
+      });
 
       await acc.flush();
 
@@ -182,12 +166,10 @@ describe("PointsAccumulator", () => {
 
   describe("auto-flush timer", () => {
     it("should flush on timer when enabled", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 500 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 500,
+      });
 
       await acc.add(createPoints(30));
       expect(mockQdrant.addPointsOptimized).not.toHaveBeenCalled();
@@ -199,12 +181,10 @@ describe("PointsAccumulator", () => {
     });
 
     it("should stop timer on explicit flush", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 500 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 500,
+      });
 
       await acc.add(createPoints(30));
       await acc.flush();
@@ -220,12 +200,10 @@ describe("PointsAccumulator", () => {
     it("should restore points to buffer on error", async () => {
       mockQdrant.addPointsOptimized.mockRejectedValueOnce(new Error("Connection failed"));
 
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 0 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 0,
+      });
 
       await acc.add(createPoints(50));
 
@@ -238,12 +216,10 @@ describe("PointsAccumulator", () => {
 
   describe("getStats() and resetStats()", () => {
     it("should track statistics correctly", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 0 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 0,
+      });
 
       await acc.add(createPoints(250));
 
@@ -255,12 +231,10 @@ describe("PointsAccumulator", () => {
     });
 
     it("should reset statistics", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 0 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 0,
+      });
 
       await acc.add(createPoints(150));
       acc.resetStats();
@@ -274,12 +248,10 @@ describe("PointsAccumulator", () => {
 
   describe("dispose()", () => {
     it("should flush and cleanup", async () => {
-      const acc = new PointsAccumulator(
-        mockQdrant as unknown as QdrantManager,
-        "test-collection",
-        false,
-        { bufferSize: 100, flushIntervalMs: 500 },
-      );
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 500,
+      });
 
       await acc.add(createPoints(30));
       await acc.dispose();
@@ -303,10 +275,7 @@ describe("createAccumulator", () => {
 
   it("should use default values", () => {
     const mockQdrant = createMockQdrant();
-    const acc = createAccumulator(
-      mockQdrant as unknown as QdrantManager,
-      "test-collection",
-    );
+    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection");
 
     expect(acc).toBeDefined();
   });
@@ -314,10 +283,7 @@ describe("createAccumulator", () => {
   it("should read QDRANT_UPSERT_BATCH_SIZE from env (with CODE_BATCH_SIZE fallback)", () => {
     process.env.QDRANT_UPSERT_BATCH_SIZE = "200";
     const mockQdrant = createMockQdrant();
-    const acc = createAccumulator(
-      mockQdrant as unknown as QdrantManager,
-      "test-collection",
-    );
+    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection");
 
     expect(acc).toBeDefined();
   });
@@ -325,10 +291,7 @@ describe("createAccumulator", () => {
   it("should read QDRANT_FLUSH_INTERVAL_MS from env", () => {
     process.env.QDRANT_FLUSH_INTERVAL_MS = "1000";
     const mockQdrant = createMockQdrant();
-    const acc = createAccumulator(
-      mockQdrant as unknown as QdrantManager,
-      "test-collection",
-    );
+    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection");
 
     expect(acc).toBeDefined();
   });

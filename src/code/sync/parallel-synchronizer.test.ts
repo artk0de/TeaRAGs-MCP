@@ -9,11 +9,13 @@
  * - Fast path (mtime+size) vs slow path (hash computation)
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { promises as fs } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { ParallelFileSynchronizer } from "./parallel-synchronizer.js";
 
 describe("ParallelFileSynchronizer", () => {
@@ -36,7 +38,7 @@ describe("ParallelFileSynchronizer", () => {
       codebaseDir,
       "test-collection",
       snapshotDir,
-      4 // 4 shards
+      4, // 4 shards
     );
   });
 
@@ -83,12 +85,7 @@ describe("ParallelFileSynchronizer", () => {
       await synchronizer.updateSnapshot(files);
 
       // Create new synchronizer and initialize
-      const newSync = new ParallelFileSynchronizer(
-        codebaseDir,
-        "test-collection",
-        snapshotDir,
-        4
-      );
+      const newSync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
       const hasSnapshot = await newSync.initialize();
       expect(hasSnapshot).toBe(true);
     });
@@ -121,12 +118,7 @@ describe("ParallelFileSynchronizer", () => {
       await new Promise((r) => setTimeout(r, 10));
 
       // Create new synchronizer and detect changes
-      const newSync = new ParallelFileSynchronizer(
-        codebaseDir,
-        "test-collection",
-        snapshotDir,
-        4
-      );
+      const newSync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
       await newSync.initialize();
       const changes = await newSync.detectChanges(files);
 
@@ -148,12 +140,7 @@ describe("ParallelFileSynchronizer", () => {
       const remainingFiles = files.filter((_, i) => i !== 3);
 
       // Create new synchronizer and detect changes
-      const newSync = new ParallelFileSynchronizer(
-        codebaseDir,
-        "test-collection",
-        snapshotDir,
-        4
-      );
+      const newSync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
       await newSync.initialize();
       const changes = await newSync.detectChanges(remainingFiles);
 
@@ -210,12 +197,7 @@ describe("ParallelFileSynchronizer", () => {
       await synchronizer.updateSnapshot(files);
 
       // Verify snapshot was created
-      const newSync = new ParallelFileSynchronizer(
-        codebaseDir,
-        "test-collection",
-        snapshotDir,
-        4
-      );
+      const newSync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
       const hasSnapshot = await newSync.initialize();
       expect(hasSnapshot).toBe(true);
     });
@@ -235,12 +217,7 @@ describe("ParallelFileSynchronizer", () => {
       await synchronizer.updateSnapshot(files);
 
       // Verify snapshot was created correctly
-      const newSync = new ParallelFileSynchronizer(
-        codebaseDir,
-        "test-collection",
-        snapshotDir,
-        4
-      );
+      const newSync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
       await newSync.initialize();
       const newChanges = await newSync.detectChanges(files);
 
@@ -276,12 +253,7 @@ describe("ParallelFileSynchronizer", () => {
       await synchronizer.updateSnapshot(files);
 
       // Create new synchronizer - should use fast path for all files
-      const newSync = new ParallelFileSynchronizer(
-        codebaseDir,
-        "test-collection",
-        snapshotDir,
-        4
-      );
+      const newSync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
       await newSync.initialize();
 
       const startTime = Date.now();
@@ -343,11 +315,7 @@ describe("ParallelFileSynchronizer", () => {
     });
 
     it("should handle files with special characters", async () => {
-      const specialPaths = [
-        "src/file with spaces.ts",
-        "src/file-with-dashes.ts",
-        "src/file_with_underscores.ts",
-      ];
+      const specialPaths = ["src/file with spaces.ts", "src/file-with-dashes.ts", "src/file_with_underscores.ts"];
 
       for (const path of specialPaths) {
         await createTestFile(path, `// ${path}`);
@@ -372,12 +340,7 @@ describe("ParallelFileSynchronizer", () => {
       await synchronizer.deleteSnapshot();
 
       // Should work like fresh start
-      const newSync = new ParallelFileSynchronizer(
-        codebaseDir,
-        "test-collection",
-        snapshotDir,
-        4
-      );
+      const newSync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
       const hasSnapshot = await newSync.initialize();
       expect(hasSnapshot).toBe(false);
     });
@@ -390,12 +353,7 @@ describe("ParallelFileSynchronizer", () => {
     });
 
     it("should use provided concurrency value", () => {
-      const customSync = new ParallelFileSynchronizer(
-        codebaseDir,
-        "test-collection",
-        snapshotDir,
-        8
-      );
+      const customSync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 8);
       expect(customSync.getConcurrency()).toBe(8);
     });
   });
@@ -420,12 +378,7 @@ describe("parallelLimit utility", () => {
         files.push(path);
       }
 
-      const sync = new ParallelFileSynchronizer(
-        codebaseDir,
-        "test-collection",
-        snapshotDir,
-        4
-      );
+      const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
 
       await sync.initialize();
       const changes = await sync.detectChanges(files);

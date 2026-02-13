@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 export interface CollectionInfo {
@@ -37,8 +38,7 @@ export class QdrantManager {
     }
 
     // Check if already a valid UUID (8-4-4-4-12 format)
-    const uuidRegex =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (uuidRegex.test(id)) {
       return id;
     }
@@ -102,10 +102,7 @@ export class QdrantManager {
   /**
    * Check if a payload index exists on a field.
    */
-  async hasPayloadIndex(
-    collectionName: string,
-    fieldName: string,
-  ): Promise<boolean> {
+  async hasPayloadIndex(collectionName: string, fieldName: string): Promise<boolean> {
     try {
       const info = await this.client.getCollection(collectionName);
       const indexes = info.payload_schema || {};
@@ -211,11 +208,8 @@ export class QdrantManager {
         points: normalizedPoints,
       });
     } catch (error: any) {
-      const errorMessage =
-        error?.data?.status?.error || error?.message || String(error);
-      throw new Error(
-        `Failed to add points to collection "${collectionName}": ${errorMessage}`,
-      );
+      const errorMessage = error?.data?.status?.error || error?.message || String(error);
+      throw new Error(`Failed to add points to collection "${collectionName}": ${errorMessage}`);
     }
   }
 
@@ -258,11 +252,8 @@ export class QdrantManager {
         points: normalizedPoints,
       });
     } catch (error: any) {
-      const errorMessage =
-        error?.data?.status?.error || error?.message || String(error);
-      throw new Error(
-        `Failed to add points (optimized) to collection "${collectionName}": ${errorMessage}`,
-      );
+      const errorMessage = error?.data?.status?.error || error?.message || String(error);
+      throw new Error(`Failed to add points (optimized) to collection "${collectionName}": ${errorMessage}`);
     }
   }
 
@@ -282,10 +273,7 @@ export class QdrantManager {
    * Re-enable indexing after bulk upload.
    * @param threshold - Default 20000 (Qdrant default)
    */
-  async enableIndexing(
-    collectionName: string,
-    threshold: number = 20000,
-  ): Promise<void> {
+  async enableIndexing(collectionName: string, threshold: number = 20000): Promise<void> {
     await this.client.updateCollection(collectionName, {
       optimizers_config: {
         indexing_threshold: threshold,
@@ -326,7 +314,7 @@ export class QdrantManager {
       vector: collectionInfo.hybridEnabled ? { name: "dense", vector } : vector,
       limit,
       filter: qdrantFilter,
-      with_payload: true,  // Explicitly request payloads
+      with_payload: true, // Explicitly request payloads
     });
 
     return results.map((result) => ({
@@ -359,10 +347,7 @@ export class QdrantManager {
     }
   }
 
-  async deletePoints(
-    collectionName: string,
-    ids: (string | number)[],
-  ): Promise<void> {
+  async deletePoints(collectionName: string, ids: (string | number)[]): Promise<void> {
     // Normalize IDs to ensure string IDs are in UUID format
     const normalizedIds = ids.map((id) => this.normalizeId(id));
 
@@ -376,10 +361,7 @@ export class QdrantManager {
    * Deletes points matching a filter condition.
    * Useful for deleting all chunks associated with a specific file path.
    */
-  async deletePointsByFilter(
-    collectionName: string,
-    filter: Record<string, any>,
-  ): Promise<void> {
+  async deletePointsByFilter(collectionName: string, filter: Record<string, any>): Promise<void> {
     await this.client.delete(collectionName, {
       wait: true,
       filter: filter,
@@ -393,10 +375,7 @@ export class QdrantManager {
    * Before: N files → N HTTP requests (even with Promise.all)
    * After: N files → 1 HTTP request with combined filter
    */
-  async deletePointsByPaths(
-    collectionName: string,
-    relativePaths: string[],
-  ): Promise<void> {
+  async deletePointsByPaths(collectionName: string, relativePaths: string[]): Promise<void> {
     if (relativePaths.length === 0) return;
 
     // Single request with OR filter (should = any match)
@@ -475,18 +454,20 @@ export class QdrantManager {
       }
 
       // Create delete promise
-      const deletePromise = this.client.delete(collectionName, {
-        wait: isLastBatch, // Only wait for final batch
-        filter: {
-          should: batch.map((path) => ({
-            key: "relativePath",
-            match: { value: path },
-          })),
-        },
-      }).then(() => {
-        deletedCount += batch.length;
-        onProgress?.(deletedCount, relativePaths.length);
-      });
+      const deletePromise = this.client
+        .delete(collectionName, {
+          wait: isLastBatch, // Only wait for final batch
+          filter: {
+            should: batch.map((path) => ({
+              key: "relativePath",
+              match: { value: path },
+            })),
+          },
+        })
+        .then(() => {
+          deletedCount += batch.length;
+          onProgress?.(deletedCount, relativePaths.length);
+        });
 
       if (!isLastBatch) {
         pendingPromises.push(deletePromise);
@@ -637,11 +618,8 @@ export class QdrantManager {
         payload: result.payload || undefined,
       }));
     } catch (error: any) {
-      const errorMessage =
-        error?.data?.status?.error || error?.message || String(error);
-      throw new Error(
-        `Hybrid search failed on collection "${collectionName}": ${errorMessage}`,
-      );
+      const errorMessage = error?.data?.status?.error || error?.message || String(error);
+      throw new Error(`Hybrid search failed on collection "${collectionName}": ${errorMessage}`);
     }
   }
 
@@ -678,11 +656,8 @@ export class QdrantManager {
         points: normalizedPoints,
       });
     } catch (error: any) {
-      const errorMessage =
-        error?.data?.status?.error || error?.message || String(error);
-      throw new Error(
-        `Failed to add points with sparse vectors to collection "${collectionName}": ${errorMessage}`,
-      );
+      const errorMessage = error?.data?.status?.error || error?.message || String(error);
+      throw new Error(`Failed to add points with sparse vectors to collection "${collectionName}": ${errorMessage}`);
     }
   }
 
@@ -730,8 +705,7 @@ export class QdrantManager {
         points: normalizedPoints,
       });
     } catch (error: any) {
-      const errorMessage =
-        error?.data?.status?.error || error?.message || String(error);
+      const errorMessage = error?.data?.status?.error || error?.message || String(error);
       throw new Error(
         `Failed to add points with sparse vectors (optimized) to collection "${collectionName}": ${errorMessage}`,
       );

@@ -13,20 +13,21 @@
  */
 
 import { extname, relative } from "node:path";
+
 import type { EmbeddingProvider } from "../../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../../embeddings/sparse.js";
 import type { QdrantManager } from "../../qdrant/client.js";
 import { BatchAccumulator } from "./batch-accumulator.js";
 import { pipelineLog } from "./debug-logger.js";
-import type {
-  Batch,
-  BatchAccumulatorConfig,
-  BatchResult,
-  ChunkItem,
-  PipelineStats,
-  WorkerPoolConfig,
+import {
+  DEFAULT_CONFIG,
+  type Batch,
+  type BatchAccumulatorConfig,
+  type BatchResult,
+  type ChunkItem,
+  type PipelineStats,
+  type WorkerPoolConfig,
 } from "./types.js";
-import { DEFAULT_CONFIG } from "./types.js";
 import { WorkerPool } from "./worker-pool.js";
 
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
@@ -77,9 +78,7 @@ export class ChunkPipeline {
       enableHybrid: config?.enableHybrid ?? false,
     };
 
-    this.sparseGenerator = this.config.enableHybrid
-      ? new BM25SparseVectorGenerator()
-      : null;
+    this.sparseGenerator = this.config.enableHybrid ? new BM25SparseVectorGenerator() : null;
 
     // Initialize worker pool
     this.workerPool = new WorkerPool(
@@ -89,11 +88,7 @@ export class ChunkPipeline {
     );
 
     // Initialize accumulator
-    this.accumulator = new BatchAccumulator(
-      this.config.accumulator,
-      "upsert",
-      (batch) => this.submitBatch(batch),
-    );
+    this.accumulator = new BatchAccumulator(this.config.accumulator, "upsert", (batch) => this.submitBatch(batch));
   }
 
   /**
@@ -135,11 +130,7 @@ export class ChunkPipeline {
    * Add a chunk for processing
    * @returns true if accepted, false if backpressure active
    */
-  addChunk(
-    chunk: ChunkItem["chunk"],
-    chunkId: string,
-    codebasePath: string,
-  ): boolean {
+  addChunk(chunk: ChunkItem["chunk"], chunkId: string, codebasePath: string): boolean {
     if (!this.isRunning) {
       throw new Error("ChunkPipeline not started");
     }
@@ -259,8 +250,7 @@ export class ChunkPipeline {
    */
   getStats(): PipelineStats {
     const poolStats = this.workerPool.getStats();
-    const uptimeMs =
-      this.stats.startTime > 0 ? Date.now() - this.stats.startTime : 0;
+    const uptimeMs = this.stats.startTime > 0 ? Date.now() - this.stats.startTime : 0;
 
     return {
       itemsProcessed: this.stats.chunksProcessed,
@@ -268,8 +258,7 @@ export class ChunkPipeline {
       errors: this.stats.errors,
       queueDepth: poolStats.queueDepth,
       avgBatchTimeMs: poolStats.avgTimeMs,
-      throughput:
-        uptimeMs > 0 ? (this.stats.chunksProcessed / uptimeMs) * 1000 : 0,
+      throughput: uptimeMs > 0 ? (this.stats.chunksProcessed / uptimeMs) * 1000 : 0,
       uptimeMs,
     };
   }
@@ -288,9 +277,7 @@ export class ChunkPipeline {
 
     // Cleanup completed promises periodically
     if (this.pendingBatches.length > 100) {
-      this.pendingBatches = this.pendingBatches.filter(
-        (p) => !this.isPromiseResolved(p),
-      );
+      this.pendingBatches = this.pendingBatches.filter((p) => !this.isPromiseResolved(p));
     }
   }
 
@@ -315,10 +302,7 @@ export class ChunkPipeline {
 
       // 3. Build points
       const points = batch.items.map((item, idx) => {
-        const relativePath = relative(
-          item.codebasePath,
-          item.chunk.metadata.filePath,
-        );
+        const relativePath = relative(item.codebasePath, item.chunk.metadata.filePath);
 
         return {
           id: item.chunkId,
@@ -375,9 +359,7 @@ export class ChunkPipeline {
       if (this.sparseGenerator) {
         const hybridPoints = points.map((point, idx) => ({
           ...point,
-          sparseVector: this.sparseGenerator!.generate(
-            batch.items[idx].chunk.content,
-          ),
+          sparseVector: this.sparseGenerator!.generate(batch.items[idx].chunk.content),
         }));
         await this.qdrant.addPointsWithSparse(this.collectionName, hybridPoints);
         const qdrantDurationHybrid = Date.now() - qdrantStart;
@@ -414,22 +396,13 @@ export class ChunkPipeline {
         this.config.workerPool.maxRetries,
       );
       if (DEBUG) {
-        console.error(
-          `[ChunkPipeline] Batch ${result.batchId} failed: ${result.error}`,
-        );
+        console.error(`[ChunkPipeline] Batch ${result.batchId} failed: ${result.error}`);
       }
     } else {
-      pipelineLog.batchComplete(
-        ctx,
-        result.batchId,
-        result.itemCount,
-        result.durationMs,
-        result.retryCount || 0,
-      );
+      pipelineLog.batchComplete(ctx, result.batchId, result.itemCount, result.durationMs, result.retryCount || 0);
       if (DEBUG) {
         console.error(
-          `[ChunkPipeline] Batch ${result.batchId} complete: ` +
-            `${result.itemCount} chunks in ${result.durationMs}ms`,
+          `[ChunkPipeline] Batch ${result.batchId} complete: ` + `${result.itemCount} chunks in ${result.durationMs}ms`,
         );
       }
     }
@@ -455,10 +428,7 @@ export class ChunkPipeline {
 
   private isPromiseResolved(promise: Promise<any>): boolean {
     let resolved = false;
-    Promise.race([
-      promise.then(() => (resolved = true)),
-      Promise.resolve(),
-    ]).catch(() => {});
+    Promise.race([promise.then(() => (resolved = true)), Promise.resolve()]).catch(() => {});
     return resolved;
   }
 }

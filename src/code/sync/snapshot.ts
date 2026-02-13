@@ -10,15 +10,16 @@
 
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
+
 import { MerkleTree } from "./merkle.js";
 
 /**
  * File metadata for fast change detection
  */
 interface FileMetadata {
-  mtime: number;  // Modification timestamp (ms)
-  size: number;   // File size (bytes)
-  hash: string;   // SHA256 content hash
+  mtime: number; // Modification timestamp (ms)
+  size: number; // File size (bytes)
+  hash: string; // SHA256 content hash
 }
 
 /**
@@ -55,16 +56,14 @@ export class SnapshotManager {
     codebasePath: string,
     fileHashes: Map<string, string>,
     tree: MerkleTree,
-    fileMetadata?: Map<string, FileMetadata>
+    fileMetadata?: Map<string, FileMetadata>,
   ): Promise<void> {
     const snapshot: SnapshotV2 = {
       version: "2",
       codebasePath,
       timestamp: Date.now(),
       fileHashes: Object.fromEntries(fileHashes),
-      fileMetadata: fileMetadata
-        ? Object.fromEntries(fileMetadata)
-        : {},
+      fileMetadata: fileMetadata ? Object.fromEntries(fileMetadata) : {},
       merkleTree: tree.serialize(),
     };
 

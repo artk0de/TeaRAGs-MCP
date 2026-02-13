@@ -4,6 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+
 import { renderTemplate, validateArguments } from "./template.js";
 import type { PromptArgument, PromptsConfig } from "./types.js";
 
@@ -24,10 +25,7 @@ function buildArgsSchema(args: PromptArgument[]): Record<string, z.ZodTypeAny> {
 /**
  * Register all prompts from configuration on the server
  */
-export function registerAllPrompts(
-  server: McpServer,
-  config: PromptsConfig | null,
-): void {
+export function registerAllPrompts(server: McpServer, config: PromptsConfig | null): void {
   if (!config) {
     return; // No prompts = no prompts capability
   }
@@ -48,11 +46,7 @@ export function registerAllPrompts(
         validateArguments(argsRecord, prompt.arguments);
 
         // Render template
-        const rendered = renderTemplate(
-          prompt.template,
-          argsRecord,
-          prompt.arguments,
-        );
+        const rendered = renderTemplate(prompt.template, argsRecord, prompt.arguments);
 
         return {
           messages: [

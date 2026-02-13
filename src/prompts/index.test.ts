@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import * as PromptsModule from "./index.js";
 
 describe("prompts module exports", () => {

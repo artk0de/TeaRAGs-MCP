@@ -1,7 +1,13 @@
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { CodeIndexer } from "../../src/code/indexer.js";
+import type { CodeConfig } from "../../src/code/types.js";
+import type { EmbeddingProvider } from "../../src/embeddings/base.js";
+import type { QdrantManager } from "../../src/qdrant/client.js";
 
 // Mock tree-sitter modules to prevent native binding crashes in integration tests
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
@@ -32,11 +38,6 @@ vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
 
-import { CodeIndexer } from "../../src/code/indexer.js";
-import type { CodeConfig } from "../../src/code/types.js";
-import type { EmbeddingProvider } from "../../src/embeddings/base.js";
-import type { QdrantManager } from "../../src/qdrant/client.js";
-
 // Mock implementations (same as indexer.test.ts)
 class MockQdrantManager implements Partial<QdrantManager> {
   private collections = new Map<string, any>();
@@ -52,22 +53,14 @@ class MockQdrantManager implements Partial<QdrantManager> {
     return indexes?.has(fieldName) ?? false;
   }
 
-  async createPayloadIndex(
-    collectionName: string,
-    fieldName: string,
-    _fieldSchema: string,
-  ): Promise<void> {
+  async createPayloadIndex(collectionName: string, fieldName: string, _fieldSchema: string): Promise<void> {
     if (!this.payloadIndexes.has(collectionName)) {
       this.payloadIndexes.set(collectionName, new Set());
     }
     this.payloadIndexes.get(collectionName)!.add(fieldName);
   }
 
-  async ensurePayloadIndex(
-    collectionName: string,
-    fieldName: string,
-    fieldSchema: string,
-  ): Promise<boolean> {
+  async ensurePayloadIndex(collectionName: string, fieldName: string, fieldSchema: string): Promise<boolean> {
     const exists = await this.hasPayloadIndex(collectionName, fieldName);
     if (!exists) {
       await this.createPayloadIndex(collectionName, fieldName, fieldSchema);
@@ -103,35 +96,19 @@ class MockQdrantManager implements Partial<QdrantManager> {
     this.points.set(collectionName, [...filtered, ...points]);
   }
 
-  async addPointsOptimized(
-    collectionName: string,
-    points: any[],
-    _options?: any,
-  ): Promise<void> {
+  async addPointsOptimized(collectionName: string, points: any[], _options?: any): Promise<void> {
     await this.addPoints(collectionName, points);
   }
 
-  async addPointsWithSparse(
-    collectionName: string,
-    points: any[],
-  ): Promise<void> {
+  async addPointsWithSparse(collectionName: string, points: any[]): Promise<void> {
     await this.addPoints(collectionName, points);
   }
 
-  async addPointsWithSparseOptimized(
-    collectionName: string,
-    points: any[],
-    _options?: any,
-  ): Promise<void> {
+  async addPointsWithSparseOptimized(collectionName: string, points: any[], _options?: any): Promise<void> {
     await this.addPoints(collectionName, points);
   }
 
-  async search(
-    collectionName: string,
-    _vector: number[],
-    limit: number,
-    filter?: any,
-  ): Promise<any[]> {
+  async search(collectionName: string, _vector: number[], limit: number, filter?: any): Promise<any[]> {
     const points = this.points.get(collectionName) || [];
     let filtered = points;
 
@@ -139,9 +116,7 @@ class MockQdrantManager implements Partial<QdrantManager> {
     if (filter?.must) {
       for (const condition of filter.must) {
         if (condition.key === "fileExtension") {
-          filtered = filtered.filter((p) =>
-            condition.match.any.includes(p.payload.fileExtension),
-          );
+          filtered = filtered.filter((p) => condition.match.any.includes(p.payload.fileExtension));
         }
       }
     }
@@ -190,30 +165,20 @@ class MockQdrantManager implements Partial<QdrantManager> {
     };
   }
 
-  async deletePointsByFilter(
-    collectionName: string,
-    filter: Record<string, any>,
-  ): Promise<void> {
+  async deletePointsByFilter(collectionName: string, filter: Record<string, any>): Promise<void> {
     const points = this.points.get(collectionName) || [];
     const pathToDelete = filter?.must?.[0]?.match?.value;
     if (pathToDelete) {
-      const filtered = points.filter(
-        (p) => p.payload?.relativePath !== pathToDelete,
-      );
+      const filtered = points.filter((p) => p.payload?.relativePath !== pathToDelete);
       this.points.set(collectionName, filtered);
     }
   }
 
-  async deletePointsByPaths(
-    collectionName: string,
-    relativePaths: string[],
-  ): Promise<void> {
+  async deletePointsByPaths(collectionName: string, relativePaths: string[]): Promise<void> {
     if (relativePaths.length === 0) return;
     const points = this.points.get(collectionName) || [];
     const pathsToDelete = new Set(relativePaths);
-    const filtered = points.filter(
-      (p) => !pathsToDelete.has(p.payload?.relativePath),
-    );
+    const filtered = points.filter((p) => !pathsToDelete.has(p.payload?.relativePath));
     this.points.set(collectionName, filtered);
   }
 
@@ -231,10 +196,7 @@ class MockQdrantManager implements Partial<QdrantManager> {
     // Mock: no-op, indexing control not needed for tests
   }
 
-  async enableIndexing(
-    _collectionName: string,
-    _threshold?: number,
-  ): Promise<void> {
+  async enableIndexing(_collectionName: string, _threshold?: number): Promise<void> {
     // Mock: no-op, indexing control not needed for tests
   }
 
@@ -260,20 +222,14 @@ class MockEmbeddingProvider implements EmbeddingProvider {
     return "mock-model";
   }
 
-  async embed(
-    text: string,
-  ): Promise<{ embedding: number[]; dimensions: number }> {
+  async embed(text: string): Promise<{ embedding: number[]; dimensions: number }> {
     // Simple hash-based mock embedding
-    const hash = text
-      .split("")
-      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const hash = text.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
     const base = (hash % 100) / 100;
     return { embedding: new Array(384).fill(base), dimensions: 384 };
   }
 
-  async embedBatch(
-    texts: string[],
-  ): Promise<Array<{ embedding: number[]; dimensions: number }>> {
+  async embedBatch(texts: string[]): Promise<Array<{ embedding: number[]; dimensions: number }>> {
     return Promise.all(texts.map((text) => this.embed(text)));
   }
 }
@@ -287,10 +243,7 @@ describe("CodeIndexer Integration Tests", () => {
   let codebaseDir: string;
 
   beforeEach(async () => {
-    tempDir = join(
-      tmpdir(),
-      `qdrant-mcp-test-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-    );
+    tempDir = join(tmpdir(), `qdrant-mcp-test-${Date.now()}-${Math.random().toString(36).substring(7)}`);
     codebaseDir = join(tempDir, "codebase");
     await fs.mkdir(codebaseDir, { recursive: true });
 
@@ -364,10 +317,7 @@ export function validateEmail(email: string): boolean {
       expect(indexStats.status).toBe("completed");
 
       // Search for authentication-related code
-      const authResults = await indexer.searchCode(
-        codebaseDir,
-        "authentication login",
-      );
+      const authResults = await indexer.searchCode(codebaseDir, "authentication login");
 
       expect(authResults.length).toBeGreaterThan(0);
       // Note: With mocked tree-sitter, language detection may fallback to "unknown"
@@ -489,11 +439,7 @@ export const thirdValue = 3;`,
       await indexer.indexCodebase(codebaseDir);
 
       // Modify the file
-      await createTestFile(
-        codebaseDir,
-        "config.ts",
-        "export const DEBUG_MODE = true;\nconsole.log('Debug mode on');",
-      );
+      await createTestFile(codebaseDir, "config.ts", "export const DEBUG_MODE = true;\nconsole.log('Debug mode on');");
 
       const updateStats = await indexer.reindexChanges(codebaseDir);
 
@@ -526,35 +472,15 @@ export const thirdValue = 3;`,
 
     it("should handle mixed changes in one update", async () => {
       // Initial state
-      await createTestFile(
-        codebaseDir,
-        "file1.ts",
-        "export const alpha = 1;\nconsole.log('Alpha file');",
-      );
-      await createTestFile(
-        codebaseDir,
-        "file2.ts",
-        "export const beta = 2;\nconsole.log('Beta file');",
-      );
-      await createTestFile(
-        codebaseDir,
-        "file3.ts",
-        "export const gamma = 3;\nconsole.log('Gamma file');",
-      );
+      await createTestFile(codebaseDir, "file1.ts", "export const alpha = 1;\nconsole.log('Alpha file');");
+      await createTestFile(codebaseDir, "file2.ts", "export const beta = 2;\nconsole.log('Beta file');");
+      await createTestFile(codebaseDir, "file3.ts", "export const gamma = 3;\nconsole.log('Gamma file');");
 
       await indexer.indexCodebase(codebaseDir);
 
       // Mixed changes
-      await createTestFile(
-        codebaseDir,
-        "file1.ts",
-        "export const alpha = 100;\nconsole.log('Alpha modified');",
-      ); // Modified
-      await createTestFile(
-        codebaseDir,
-        "file4.ts",
-        "export const delta = 4;\nconsole.log('Delta file added');",
-      ); // Added
+      await createTestFile(codebaseDir, "file1.ts", "export const alpha = 100;\nconsole.log('Alpha modified');"); // Modified
+      await createTestFile(codebaseDir, "file4.ts", "export const delta = 4;\nconsole.log('Delta file added');"); // Added
       await fs.unlink(join(codebaseDir, "file3.ts")); // Deleted
 
       const updateStats = await indexer.reindexChanges(codebaseDir);
@@ -567,21 +493,9 @@ export const thirdValue = 3;`,
 
   describe("Search filtering and options", () => {
     beforeEach(async () => {
-      await createTestFile(
-        codebaseDir,
-        "users.ts",
-        "export class UserService {}",
-      );
-      await createTestFile(
-        codebaseDir,
-        "auth.ts",
-        "export class AuthService {}",
-      );
-      await createTestFile(
-        codebaseDir,
-        "utils.js",
-        "export function helper() {}",
-      );
+      await createTestFile(codebaseDir, "users.ts", "export class UserService {}");
+      await createTestFile(codebaseDir, "auth.ts", "export class AuthService {}");
+      await createTestFile(codebaseDir, "utils.js", "export function helper() {}");
       await createTestFile(codebaseDir, "data.py", "class DataProcessor: pass");
 
       await indexer.indexCodebase(codebaseDir);
@@ -616,11 +530,7 @@ export const thirdValue = 3;`,
     });
 
     it("should support path pattern filtering", async () => {
-      await createTestFile(
-        codebaseDir,
-        "src/api/endpoints.ts",
-        "export const API = {}",
-      );
+      await createTestFile(codebaseDir, "src/api/endpoints.ts", "export const API = {}");
       await indexer.indexCodebase(codebaseDir, { forceReindex: true });
 
       const results = await indexer.searchCode(codebaseDir, "export", {
@@ -866,10 +776,7 @@ export interface UserData {
 
       expect(results.length).toBeGreaterThan(0);
       results.forEach((result) => {
-        expect(
-          result.filePath.startsWith("controllers/") ||
-            result.filePath.startsWith("services/"),
-        ).toBe(true);
+        expect(result.filePath.startsWith("controllers/") || result.filePath.startsWith("services/")).toBe(true);
       });
 
       // Verify models is NOT in results
@@ -974,35 +881,20 @@ describe('Engine', () => {
   describe("Hybrid search workflow", () => {
     it("should enable and use hybrid search", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIndexer = new CodeIndexer(
-        qdrant as any,
-        embeddings,
-        hybridConfig,
-      );
+      const hybridIndexer = new CodeIndexer(qdrant as any, embeddings, hybridConfig);
 
-      await createTestFile(
-        codebaseDir,
-        "search.ts",
-        "function performSearch(query: string) { return results; }",
-      );
+      await createTestFile(codebaseDir, "search.ts", "function performSearch(query: string) { return results; }");
 
       await hybridIndexer.indexCodebase(codebaseDir);
 
-      const results = await hybridIndexer.searchCode(
-        codebaseDir,
-        "search query",
-      );
+      const results = await hybridIndexer.searchCode(codebaseDir, "search query");
 
       expect(results.length).toBeGreaterThan(0);
     });
 
     it("should fallback to standard search if hybrid not available", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIndexer = new CodeIndexer(
-        qdrant as any,
-        embeddings,
-        hybridConfig,
-      );
+      const hybridIndexer = new CodeIndexer(qdrant as any, embeddings, hybridConfig);
 
       // Index without hybrid
       await createTestFile(
@@ -1028,11 +920,7 @@ function validate(): boolean {
     it("should handle projects with many files", async () => {
       // Create a large project structure
       for (let i = 0; i < 20; i++) {
-        await createTestFile(
-          codebaseDir,
-          `module${i}.ts`,
-          `export function func${i}() { return ${i}; }`,
-        );
+        await createTestFile(codebaseDir, `module${i}.ts`, `export function func${i}() { return ${i}; }`);
       }
 
       const stats = await indexer.indexCodebase(codebaseDir);
@@ -1058,11 +946,7 @@ function validate(): boolean {
 
   describe("Error handling and recovery", () => {
     it("should continue indexing after encountering errors", async () => {
-      await createTestFile(
-        codebaseDir,
-        "valid.ts",
-        "export const validValue = true;\nconsole.log('Valid file');",
-      );
+      await createTestFile(codebaseDir, "valid.ts", "export const validValue = true;\nconsole.log('Valid file');");
       await createTestFile(
         codebaseDir,
         "secrets.ts",
@@ -1078,11 +962,7 @@ function validate(): boolean {
     });
 
     it("should allow re-indexing after partial failure", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export const testData = true;\nconsole.log('Test data loaded');",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export const testData = true;\nconsole.log('Test data loaded');");
 
       const stats1 = await indexer.indexCodebase(codebaseDir);
       expect(stats1.status).toBe("completed");
@@ -1112,7 +992,7 @@ function validate(): boolean {
       expect(stats2.filesIndexed).toBe(0);
       expect(stats2.chunksCreated).toBe(0);
       expect(stats2.errors).toBeDefined();
-      expect(stats2.errors!.some(e => e.includes("Collection already exists"))).toBe(true);
+      expect(stats2.errors!.some((e) => e.includes("Collection already exists"))).toBe(true);
     });
 
     it("should use parallel file processing during indexing", async () => {
@@ -1215,12 +1095,8 @@ function validate(): boolean {
       expect(status.status).toBe("indexed");
       expect(status.lastUpdated).toBeDefined();
       expect(status.lastUpdated).toBeInstanceOf(Date);
-      expect(status.lastUpdated!.getTime()).toBeGreaterThanOrEqual(
-        beforeIndexing.getTime(),
-      );
-      expect(status.lastUpdated!.getTime()).toBeLessThanOrEqual(
-        afterIndexing.getTime(),
-      );
+      expect(status.lastUpdated!.getTime()).toBeGreaterThanOrEqual(beforeIndexing.getTime());
+      expect(status.lastUpdated!.getTime()).toBeLessThanOrEqual(afterIndexing.getTime());
     });
 
     it("should correctly count chunks excluding metadata point", async () => {
@@ -1270,9 +1146,7 @@ function validate(): boolean {
 
       // Timestamp should be updated
       if (firstTimestamp && status.lastUpdated) {
-        expect(status.lastUpdated.getTime()).toBeGreaterThanOrEqual(
-          firstTimestamp.getTime(),
-        );
+        expect(status.lastUpdated.getTime()).toBeGreaterThanOrEqual(firstTimestamp.getTime());
       }
     });
   });
@@ -1302,18 +1176,10 @@ function validate(): boolean {
     });
 
     it("should report progress during incremental updates", async () => {
-      await createTestFile(
-        codebaseDir,
-        "file1.ts",
-        "export const initial = 1;\nconsole.log('Initial file');",
-      );
+      await createTestFile(codebaseDir, "file1.ts", "export const initial = 1;\nconsole.log('Initial file');");
       await indexer.indexCodebase(codebaseDir);
 
-      await createTestFile(
-        codebaseDir,
-        "file2.ts",
-        "export const additional = 2;\nconsole.log('Additional file');",
-      );
+      await createTestFile(codebaseDir, "file2.ts", "export const additional = 2;\nconsole.log('Additional file');");
 
       const progressUpdates: string[] = [];
       const progressCallback = (progress: any) => {
@@ -1329,18 +1195,10 @@ function validate(): boolean {
   describe("Hybrid search with incremental updates", () => {
     it("should use hybrid search during reindexChanges", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIndexer = new CodeIndexer(
-        qdrant as any,
-        embeddings,
-        hybridConfig,
-      );
+      const hybridIndexer = new CodeIndexer(qdrant as any, embeddings, hybridConfig);
 
       // Initial indexing with hybrid search
-      await createTestFile(
-        codebaseDir,
-        "initial.ts",
-        "export const initial = 1;\nconsole.log('Initial file');",
-      );
+      await createTestFile(codebaseDir, "initial.ts", "export const initial = 1;\nconsole.log('Initial file');");
       await hybridIndexer.indexCodebase(codebaseDir);
 
       // Add a new file with enough content to create chunks
@@ -1377,19 +1235,11 @@ export class DataProcessor {
   describe("Error handling during reindexChanges", () => {
     it("should handle file processing errors gracefully", async () => {
       // Initial indexing
-      await createTestFile(
-        codebaseDir,
-        "file1.ts",
-        "export const value = 1;\nconsole.log('File 1');",
-      );
+      await createTestFile(codebaseDir, "file1.ts", "export const value = 1;\nconsole.log('File 1');");
       await indexer.indexCodebase(codebaseDir);
 
       // Add a new file
-      await createTestFile(
-        codebaseDir,
-        "file2.ts",
-        "export const value2 = 2;\nconsole.log('File 2');",
-      );
+      await createTestFile(codebaseDir, "file2.ts", "export const value2 = 2;\nconsole.log('File 2');");
 
       // This should not throw even if there are processing errors
       const stats = await indexer.reindexChanges(codebaseDir);
@@ -1405,11 +1255,7 @@ export class DataProcessor {
     it("should use batch delete (deletePointsByPaths) for multiple file deletions", async () => {
       // Create and index multiple files
       for (let i = 1; i <= 5; i++) {
-        await createTestFile(
-          codebaseDir,
-          `file${i}.ts`,
-          `export const value${i} = ${i};\nconsole.log('File ${i}');`,
-        );
+        await createTestFile(codebaseDir, `file${i}.ts`, `export const value${i} = ${i};\nconsole.log('File ${i}');`);
       }
       await indexer.indexCodebase(codebaseDir);
 
@@ -1595,11 +1441,7 @@ function newBatchHandler(): number {
     });
 
     it("should handle empty batch delete gracefully", async () => {
-      await createTestFile(
-        codebaseDir,
-        "stable.ts",
-        "export const stable = true;\nconsole.log('Stable');",
-      );
+      await createTestFile(codebaseDir, "stable.ts", "export const stable = true;\nconsole.log('Stable');");
       await indexer.indexCodebase(codebaseDir);
 
       const deletePathsSpy = vi.spyOn(qdrant, "deletePointsByPaths");
@@ -1624,20 +1466,12 @@ function newBatchHandler(): number {
       // The actual checkpoint logic is tested more thoroughly in synchronizer.test.ts
 
       // Create and index initial files
-      await createTestFile(
-        codebaseDir,
-        "file1.ts",
-        "export const value1 = 1;\nconsole.log('File 1');",
-      );
+      await createTestFile(codebaseDir, "file1.ts", "export const value1 = 1;\nconsole.log('File 1');");
       await indexer.indexCodebase(codebaseDir);
 
       // Add multiple new files
       for (let i = 2; i <= 5; i++) {
-        await createTestFile(
-          codebaseDir,
-          `file${i}.ts`,
-          `export const value${i} = ${i};\nconsole.log('File ${i}');`,
-        );
+        await createTestFile(codebaseDir, `file${i}.ts`, `export const value${i} = ${i};\nconsole.log('File ${i}');`);
       }
 
       // Normal reindex (checkpoint should be created and deleted on success)
@@ -1649,11 +1483,7 @@ function newBatchHandler(): number {
     });
 
     it("should handle reindex when no changes exist", async () => {
-      await createTestFile(
-        codebaseDir,
-        "stable.ts",
-        "export const stable = true;\nconsole.log('Stable file');",
-      );
+      await createTestFile(codebaseDir, "stable.ts", "export const stable = true;\nconsole.log('Stable file');");
       await indexer.indexCodebase(codebaseDir);
 
       // Reindex with no changes
@@ -1667,11 +1497,7 @@ function newBatchHandler(): number {
 });
 
 // Helper function
-async function createTestFile(
-  baseDir: string,
-  relativePath: string,
-  content: string,
-): Promise<void> {
+async function createTestFile(baseDir: string, relativePath: string, content: string): Promise<void> {
   const fullPath = join(baseDir, relativePath);
   const dir = join(fullPath, "..");
   await fs.mkdir(dir, { recursive: true });

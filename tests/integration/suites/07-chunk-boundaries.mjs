@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testChunkBoundaries(qdrant, embeddings) {
   section("7. Chunk Boundaries & Line Numbers");
@@ -55,10 +56,14 @@ function helperFunction() {
 
   await createTestFile(chunkTestDir, "large.ts", largeContent);
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
-    chunkSize: 300, // Small chunks to force splitting
-    chunkOverlap: 30,
-  }));
+  const indexer = new CodeIndexer(
+    qdrant,
+    embeddings,
+    getIndexerConfig({
+      chunkSize: 300, // Small chunks to force splitting
+      chunkOverlap: 30,
+    }),
+  );
 
   resources.trackIndexedPath(chunkTestDir);
   const stats = await indexer.indexCodebase(chunkTestDir, { forceReindex: true });

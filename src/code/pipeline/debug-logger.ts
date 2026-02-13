@@ -17,7 +17,16 @@ import { join } from "node:path";
 const LOG_DIR = join(homedir(), ".tea-rags-mcp", "logs");
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
-export type PipelineStage = "scan" | "parse" | "git" | "embed" | "qdrant" | "gitLog" | "enrichGit" | "enrichApply" | "chunkChurn";
+export type PipelineStage =
+  | "scan"
+  | "parse"
+  | "git"
+  | "embed"
+  | "qdrant"
+  | "gitLog"
+  | "enrichGit"
+  | "enrichApply"
+  | "chunkChurn";
 
 export interface LogContext {
   component: string;
@@ -92,13 +101,21 @@ class StageProfiler {
     const totalMs = Array.from(this.stages.values()).reduce((sum, d) => sum + d.totalMs, 0);
     const result = {} as Record<PipelineStage, { totalMs: number; wallMs: number; count: number; percentage: number }>;
 
-    for (const stage of ["scan", "parse", "git", "embed", "qdrant", "gitLog", "enrichGit", "enrichApply", "chunkChurn"] as PipelineStage[]) {
+    for (const stage of [
+      "scan",
+      "parse",
+      "git",
+      "embed",
+      "qdrant",
+      "gitLog",
+      "enrichGit",
+      "enrichApply",
+      "chunkChurn",
+    ] as PipelineStage[]) {
       const data = this.stages.get(stage);
       if (data && data.totalMs > 0) {
         // Wall time = span from earliest start to latest end
-        const wallMs = (data.firstStart !== null && data.lastEnd !== null)
-          ? data.lastEnd - data.firstStart
-          : 0;
+        const wallMs = data.firstStart !== null && data.lastEnd !== null ? data.lastEnd - data.firstStart : 0;
         result[stage] = {
           totalMs: data.totalMs,
           wallMs,
@@ -176,9 +193,7 @@ class DebugLogger {
 
       const batchSize = parseInt(process.env.EMBEDDING_BATCH_SIZE || "1024", 10);
       const minBatchRaw = process.env.MIN_BATCH_SIZE;
-      const minBatchEffective = minBatchRaw != null
-        ? (parseInt(minBatchRaw, 10) || 0)
-        : Math.floor(batchSize * 0.5);
+      const minBatchEffective = minBatchRaw != null ? parseInt(minBatchRaw, 10) || 0 : Math.floor(batchSize * 0.5);
       const concurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
 
       this.writeRaw(`
@@ -251,12 +266,7 @@ DERIVED:
   /**
    * Log batch formation
    */
-  batchFormed(
-    ctx: LogContext,
-    batchId: string,
-    itemCount: number,
-    trigger: "size" | "timeout" | "flush",
-  ): void {
+  batchFormed(ctx: LogContext, batchId: string, itemCount: number, trigger: "size" | "timeout" | "flush"): void {
     this.counters.batches++;
     this.step(ctx, `BATCH_FORMED: ${batchId}`, {
       items: itemCount,
@@ -275,13 +285,7 @@ DERIVED:
   /**
    * Log batch processing complete
    */
-  batchComplete(
-    ctx: LogContext,
-    batchId: string,
-    itemCount: number,
-    durationMs: number,
-    retryCount: number,
-  ): void {
+  batchComplete(ctx: LogContext, batchId: string, itemCount: number, durationMs: number, retryCount: number): void {
     this.counters.chunks += itemCount;
     this.step(ctx, `BATCH_COMPLETE: ${batchId}`, {
       items: itemCount,
@@ -294,13 +298,7 @@ DERIVED:
   /**
    * Log batch failure
    */
-  batchFailed(
-    ctx: LogContext,
-    batchId: string,
-    error: string,
-    attempt: number,
-    maxRetries: number,
-  ): void {
+  batchFailed(ctx: LogContext, batchId: string, error: string, attempt: number, maxRetries: number): void {
     this.step(ctx, `BATCH_FAILED: ${batchId}`, {
       error,
       attempt,
@@ -312,12 +310,7 @@ DERIVED:
   /**
    * Log queue state change
    */
-  queueState(
-    ctx: LogContext,
-    queueDepth: number,
-    activeWorkers: number,
-    pendingItems: number,
-  ): void {
+  queueState(ctx: LogContext, queueDepth: number, activeWorkers: number, pendingItems: number): void {
     this.step(ctx, "QUEUE_STATE", {
       queueDepth,
       activeWorkers,
@@ -349,12 +342,7 @@ DERIVED:
   /**
    * Log Qdrant call
    */
-  qdrantCall(
-    ctx: LogContext,
-    operation: string,
-    pointCount: number,
-    durationMs?: number,
-  ): void {
+  qdrantCall(ctx: LogContext, operation: string, pointCount: number, durationMs?: number): void {
     this.counters.qdrantCalls++;
     this.step(ctx, `QDRANT_${operation.toUpperCase()}`, {
       points: pointCount,
@@ -377,20 +365,14 @@ DERIVED:
   /**
    * Log reindex phase
    */
-  reindexPhase(
-    phase: string,
-    data?: Record<string, unknown>,
-  ): void {
+  reindexPhase(phase: string, data?: Record<string, unknown>): void {
     this.step({ component: "Reindex" }, `PHASE: ${phase}`, data);
   }
 
   /**
    * Log git enrichment phase progress (Phase 2 of two-phase indexing)
    */
-  enrichmentPhase(
-    phase: string,
-    data?: Record<string, unknown>,
-  ): void {
+  enrichmentPhase(phase: string, data?: Record<string, unknown>): void {
     this.step({ component: "GitEnrich" }, `PHASE: ${phase}`, data);
   }
 
@@ -463,13 +445,24 @@ DERIVED:
       stageBlock += `  ${"-".repeat(W.stage)}  ${"-".repeat(W.cum)}  ${"-".repeat(W.cpu)}  ${"-".repeat(W.wall)}  ${"-".repeat(W.wallP)}  ${"-".repeat(W.added)}  ${"-".repeat(W.calls)}\n`;
 
       let totalAddedMs = 0;
-      for (const stage of ["scan", "parse", "git", "embed", "qdrant", "gitLog", "enrichGit", "enrichApply", "chunkChurn"] as PipelineStage[]) {
+      for (const stage of [
+        "scan",
+        "parse",
+        "git",
+        "embed",
+        "qdrant",
+        "gitLog",
+        "enrichGit",
+        "enrichApply",
+        "chunkChurn",
+      ] as PipelineStage[]) {
         const data = stageSummary[stage];
         if (data) {
           const cpuPercent = (data.percentage.toFixed(1) + "%").padStart(W.cpu);
-          const wallPercent = pipelineWallMs > 0
-            ? (((data.wallMs / pipelineWallMs) * 100).toFixed(1) + "%").padStart(W.wallP)
-            : "-".padStart(W.wallP);
+          const wallPercent =
+            pipelineWallMs > 0
+              ? (((data.wallMs / pipelineWallMs) * 100).toFixed(1) + "%").padStart(W.wallP)
+              : "-".padStart(W.wallP);
           // Estimated incremental time = cumulative / concurrency
           const addedMs = Math.round(data.totalMs / concurrency[stage]);
           totalAddedMs += addedMs;

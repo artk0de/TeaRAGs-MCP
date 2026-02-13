@@ -11,6 +11,7 @@
 
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+
 import { ShardedSnapshotManager, type FileMetadata } from "./sharded-snapshot.js";
 
 /**
@@ -46,12 +47,7 @@ export class SnapshotMigrator {
   private readonly newSnapshotDir: string;
   private readonly backupPath: string;
 
-  constructor(
-    snapshotDir: string,
-    collectionName: string,
-    codebasePath: string,
-    shardCount: number = 4
-  ) {
+  constructor(snapshotDir: string, collectionName: string, codebasePath: string, shardCount: number = 4) {
     this.snapshotDir = snapshotDir;
     this.collectionName = collectionName;
     this.codebasePath = codebasePath;
@@ -139,11 +135,7 @@ export class SnapshotMigrator {
       }
 
       // Write new sharded format
-      const manager = new ShardedSnapshotManager(
-        this.snapshotDir,
-        this.collectionName,
-        this.shardCount
-      );
+      const manager = new ShardedSnapshotManager(this.snapshotDir, this.collectionName, this.shardCount);
 
       await manager.save(oldSnapshot.codebasePath, files);
 

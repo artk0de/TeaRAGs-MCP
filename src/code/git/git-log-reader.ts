@@ -6,13 +6,15 @@
  * Falls back to isomorphic-git if CLI git log fails or times out.
  */
 
-import git from "isomorphic-git";
-import * as fs from "node:fs";
 import { execFile } from "node:child_process";
+import * as fs from "node:fs";
 import { promisify } from "node:util";
+
 import { structuredPatch } from "diff";
-import type { CommitInfo, FileChurnData, GitFileMetadata, ChunkChurnOverlay } from "./types.js";
+import git from "isomorphic-git";
+
 import type { ChunkLookupEntry } from "../types.js";
+import type { ChunkChurnOverlay, CommitInfo, FileChurnData, GitFileMetadata } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -35,12 +37,7 @@ function isBugFixCommit(body: string): boolean {
  * Check if a hunk range overlaps with a chunk range.
  * Both ranges are inclusive: [start, end].
  */
-export function overlaps(
-  hunkStart: number,
-  hunkEnd: number,
-  chunkStart: number,
-  chunkEnd: number,
-): boolean {
+export function overlaps(hunkStart: number, hunkEnd: number, chunkStart: number, chunkEnd: number): boolean {
   return hunkStart <= chunkEnd && hunkEnd >= chunkStart;
 }
 
@@ -84,10 +81,7 @@ export function extractTaskIds(text: string): string[] {
 /**
  * Compute churn metrics for a single file from its commit history.
  */
-export function computeFileMetadata(
-  churnData: FileChurnData,
-  currentLineCount: number,
-): GitFileMetadata {
+export function computeFileMetadata(churnData: FileChurnData, currentLineCount: number): GitFileMetadata {
   const nowSec = Date.now() / 1000;
   const commits = churnData.commits;
 
@@ -160,10 +154,7 @@ export function computeFileMetadata(
   }, 0);
 
   // Change density: commits / months
-  const spanMonths = Math.max(
-    (lastCommit.timestamp - firstCommit.timestamp) / (86400 * 30),
-    1,
-  );
+  const spanMonths = Math.max((lastCommit.timestamp - firstCommit.timestamp) / (86400 * 30), 1);
   const changeDensity = commits.length / spanMonths;
 
   // Churn volatility: stddev of days between consecutive commits
@@ -179,9 +170,7 @@ export function computeFileMetadata(
   }
 
   // Bug fix rate: percentage of commits with fix/bug/hotfix/patch keywords
-  const bugFixRate = Math.round(
-    (commits.filter((c) => isBugFixCommit(c.body)).length / commits.length) * 100,
-  );
+  const bugFixRate = Math.round((commits.filter((c) => isBugFixCommit(c.body)).length / commits.length) * 100);
   const contributorCount = authorCounts.size;
 
   return {
@@ -223,10 +212,7 @@ export class GitLogReader {
    * @param maxAgeMonths - limit commits to last N months (default: GIT_LOG_MAX_AGE_MONTHS env, default 12).
    *   Set to 0 to disable (read all commits).
    */
-  async buildFileMetadataMap(
-    repoRoot: string,
-    maxAgeMonths?: number,
-  ): Promise<Map<string, FileChurnData>> {
+  async buildFileMetadataMap(repoRoot: string, maxAgeMonths?: number): Promise<Map<string, FileChurnData>> {
     const effectiveMaxAge = maxAgeMonths ?? parseFloat(process.env.GIT_LOG_MAX_AGE_MONTHS ?? "12");
 
     // Cache key includes maxAge to avoid returning stale results for different time windows
@@ -244,20 +230,13 @@ export class GitLogReader {
       // Not a git repo or HEAD unresolvable — skip caching, proceed to build
     }
 
-    const sinceDate =
-      effectiveMaxAge > 0
-        ? new Date(Date.now() - effectiveMaxAge * 30 * 86400 * 1000)
-        : undefined;
+    const sinceDate = effectiveMaxAge > 0 ? new Date(Date.now() - effectiveMaxAge * 30 * 86400 * 1000) : undefined;
 
     const timeoutMs = parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "60000", 10);
 
     let result: Map<string, FileChurnData>;
     try {
-      result = await this.withTimeout(
-        this.buildViaCli(repoRoot, sinceDate),
-        timeoutMs,
-        "CLI git log timed out",
-      );
+      result = await this.withTimeout(this.buildViaCli(repoRoot, sinceDate), timeoutMs, "CLI git log timed out");
     } catch (error) {
       console.error(
         `[GitLogReader] CLI failed, falling back to isomorphic-git:`,
@@ -280,8 +259,14 @@ export class GitLogReader {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(message)), ms);
       promise.then(
-        (val) => { clearTimeout(timer); resolve(val); },
-        (err) => { clearTimeout(timer); reject(err); },
+        (val) => {
+          clearTimeout(timer);
+          resolve(val);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
       );
     });
   }
@@ -296,18 +281,12 @@ export class GitLogReader {
     }
   }
 
-
   /**
    * Build the CLI args array for `git log`.
    * Uses HEAD (not --all) and no --max-count.
    */
   private buildCliArgs(sinceDate?: Date): string[] {
-    const args = [
-      "log",
-      "HEAD",
-      "--numstat",
-      "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
-    ];
+    const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00"];
     if (sinceDate) {
       args.push(`--since=${sinceDate.toISOString()}`);
     }
@@ -322,10 +301,7 @@ export class GitLogReader {
    * 2. For each pair of consecutive commits, diff the trees
    * 3. Build per-file commit list and numstat via TREE walk
    */
-  private async buildViaIsomorphicGit(
-    repoRoot: string,
-    sinceDate?: Date,
-  ): Promise<Map<string, FileChurnData>> {
+  private async buildViaIsomorphicGit(repoRoot: string, sinceDate?: Date): Promise<Map<string, FileChurnData>> {
     const fileMap = new Map<string, FileChurnData>();
 
     // Get commits (ordered newest-first), bounded by since date
@@ -430,11 +406,7 @@ export class GitLogReader {
 
         if (parentOidFile !== commitOidFile) {
           // Only include blobs, not trees
-          const type = commitEntry
-            ? await commitEntry.type()
-            : parentEntry
-              ? await parentEntry.type()
-              : undefined;
+          const type = commitEntry ? await commitEntry.type() : parentEntry ? await parentEntry.type() : undefined;
           if (type === "blob") {
             changedFiles.push(filepath);
           }
@@ -459,11 +431,7 @@ export class GitLogReader {
       if (sinceDate) {
         args.push(`--since=${sinceDate.toISOString()}`);
       }
-      const { stdout } = await execFileAsync(
-        "git",
-        args,
-        { cwd: repoRoot, maxBuffer: Infinity },
-      );
+      const { stdout } = await execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity });
 
       // Parse numstat output: "added\tdeleted\tfilepath" per line
       for (const line of stdout.split("\n")) {
@@ -510,19 +478,13 @@ export class GitLogReader {
 
     for (let i = 0; i < paths.length; i += BATCH) {
       const batch = paths.slice(i, i + BATCH);
-      const args = [
-        "log",
-        "HEAD",
-        "--numstat",
-        "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
-        "--",
-        ...batch,
-      ];
+      const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
 
       try {
         const batchResult = await this.withTimeout(
-          execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity })
-            .then(({ stdout }) => this.parseNumstatOutput(stdout)),
+          execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity }).then(({ stdout }) =>
+            this.parseNumstatOutput(stdout),
+          ),
           timeoutMs,
           "git log backfill timed out",
         );
@@ -531,10 +493,7 @@ export class GitLogReader {
         }
       } catch (error) {
         if (process.env.DEBUG) {
-          console.error(
-            `[GitLogReader] Backfill batch failed:`,
-            error instanceof Error ? error.message : error,
-          );
+          console.error(`[GitLogReader] Backfill batch failed:`, error instanceof Error ? error.message : error);
         }
       }
     }
@@ -542,17 +501,10 @@ export class GitLogReader {
     return result;
   }
 
-  private async buildViaCli(
-    repoRoot: string,
-    sinceDate?: Date,
-  ): Promise<Map<string, FileChurnData>> {
+  private async buildViaCli(repoRoot: string, sinceDate?: Date): Promise<Map<string, FileChurnData>> {
     const args = this.buildCliArgs(sinceDate);
 
-    const { stdout } = await execFileAsync(
-      "git",
-      args,
-      { cwd: repoRoot, maxBuffer: Infinity },
-    );
+    const { stdout } = await execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity });
 
     return this.parseNumstatOutput(stdout);
   }
@@ -619,11 +571,7 @@ export class GitLogReader {
    * Read a blob at a specific commit as a UTF-8 string.
    * Returns "" if the file didn't exist at that commit.
    */
-  private async readBlobAsString(
-    repoRoot: string,
-    commitOid: string,
-    filepath: string,
-  ): Promise<string> {
+  private async readBlobAsString(repoRoot: string, commitOid: string, filepath: string): Promise<string> {
     try {
       const { blob } = await git.readBlob({
         fs,
@@ -668,7 +616,13 @@ export class GitLogReader {
       // If HEAD resolution fails, skip caching and proceed
     }
 
-    const result = await this._buildChunkChurnMapUncached(repoRoot, chunkMap, concurrency, maxAgeMonths, fileChurnDataMap);
+    const result = await this._buildChunkChurnMapUncached(
+      repoRoot,
+      chunkMap,
+      concurrency,
+      maxAgeMonths,
+      fileChurnDataMap,
+    );
 
     // Store in cache
     try {
@@ -726,11 +680,11 @@ export class GitLogReader {
       ...filePaths,
     ];
 
-    const { stdout } = await execFileAsync(
-      "git",
-      args,
-      { cwd: repoRoot, maxBuffer: Infinity, timeout: effectiveTimeoutMs },
-    );
+    const { stdout } = await execFileAsync("git", args, {
+      cwd: repoRoot,
+      maxBuffer: Infinity,
+      timeout: effectiveTimeoutMs,
+    });
 
     return this.parsePathspecOutput(stdout);
   }
@@ -798,10 +752,16 @@ export class GitLogReader {
     let i = 0;
 
     while (i < sections.length) {
-      if (!sections[i]?.trim()) { i++; continue; }
+      if (!sections[i]?.trim()) {
+        i++;
+        continue;
+      }
 
       const sha = sections[i]?.trim();
-      if (!sha || sha.length !== 40 || !/^[a-f0-9]+$/.test(sha)) { i++; continue; }
+      if (!sha || sha.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
+        i++;
+        continue;
+      }
 
       const author = sections[i + 1] || "";
       const email = sections[i + 2] || "";
@@ -841,19 +801,14 @@ export class GitLogReader {
     fileChurnDataMap?: Map<string, FileChurnData>,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
     const nowSec = Date.now() / 1000;
-    const maxFileLines = parseInt(
-      process.env.GIT_CHUNK_MAX_FILE_LINES ?? String(MAX_FILE_LINES_DEFAULT),
-      10,
-    );
+    const maxFileLines = parseInt(process.env.GIT_CHUNK_MAX_FILE_LINES ?? String(MAX_FILE_LINES_DEFAULT), 10);
 
     // Build relative path → entries lookup (chunkMap keys may be absolute paths)
     // Also filter: only files with >1 chunk benefit from chunk-level analysis
     const relativeChunkMap = new Map<string, ChunkLookupEntry[]>();
     for (const [filePath, entries] of chunkMap) {
       if (entries.length <= 1) continue; // skip single-chunk files
-      const relPath = filePath.startsWith(repoRoot)
-        ? filePath.slice(repoRoot.length + 1)
-        : filePath;
+      const relPath = filePath.startsWith(repoRoot) ? filePath.slice(repoRoot.length + 1) : filePath;
       relativeChunkMap.set(relPath, entries);
     }
 
@@ -914,7 +869,7 @@ export class GitLogReader {
     if (debug) {
       console.error(
         `[ChunkChurn] ${usedCli ? "CLI pathspec" : "isomorphic-git fallback"}: ` +
-        `${commitEntries.length} commits for ${filePaths.length} files in ${t1 - t0}ms`,
+          `${commitEntries.length} commits for ${filePaths.length} files in ${t1 - t0}ms`,
       );
     }
 
@@ -928,12 +883,19 @@ export class GitLogReader {
     let activeCount = 0;
     const queue: Array<() => void> = [];
     const acquire = (): Promise<void> => {
-      if (activeCount < concurrency) { activeCount++; return Promise.resolve(); }
+      if (activeCount < concurrency) {
+        activeCount++;
+        return Promise.resolve();
+      }
       return new Promise<void>((resolve) => queue.push(resolve));
     };
     const release = (): void => {
       const next = queue.shift();
-      if (next) { next(); } else { activeCount--; }
+      if (next) {
+        next();
+      } else {
+        activeCount--;
+      }
     };
 
     const processCommitEntry = async (entry: { commit: CommitInfo; changedFiles: string[] }): Promise<void> => {
@@ -964,7 +926,10 @@ export class GitLogReader {
             const entries = relativeChunkMap.get(filePath)!;
 
             const maxLine = entries.reduce((max, e) => Math.max(max, e.endLine), 0);
-            if (maxLine > maxFileLines) { skippedLargeFiles++; return; }
+            if (maxLine > maxFileLines) {
+              skippedLargeFiles++;
+              return;
+            }
 
             const [oldContent, newContent] = await Promise.all([
               this.readBlobAsString(repoRoot, parentOid, filePath),
@@ -972,14 +937,19 @@ export class GitLogReader {
             ]);
             blobReads += 2;
 
-            if (!oldContent && !newContent) { skippedEmptyBlobs++; return; }
+            if (!oldContent && !newContent) {
+              skippedEmptyBlobs++;
+              return;
+            }
 
             let hunks: Array<{ newStart: number; newLines: number }>;
             try {
               const patch = structuredPatch(filePath, filePath, oldContent, newContent, "", "");
               hunks = patch.hunks;
               patchCalls++;
-            } catch { return; }
+            } catch {
+              return;
+            }
 
             if (hunks.length === 0) return;
 
@@ -989,7 +959,7 @@ export class GitLogReader {
               const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
               for (const e of entries) {
                 const ranges = e.lineRanges || [{ start: e.startLine, end: e.endLine }];
-                if (ranges.some(r => overlaps(hunkStart, hunkEnd, r.start, r.end))) {
+                if (ranges.some((r) => overlaps(hunkStart, hunkEnd, r.start, r.end))) {
                   affectedChunkIds.add(e.chunkId);
                 }
               }
@@ -1018,7 +988,7 @@ export class GitLogReader {
     if (debug) {
       console.error(
         `[ChunkChurn] Hunk mapping: ${patchCalls} patches, ${blobReads} blob reads in ${t2 - t1}ms` +
-        ` (skipped: ${skippedLargeFiles} large files, ${skippedEmptyBlobs} empty blobs)`,
+          ` (skipped: ${skippedLargeFiles} large files, ${skippedEmptyBlobs} empty blobs)`,
       );
     }
 
@@ -1036,7 +1006,7 @@ export class GitLogReader {
 
       if (fileChurnData) {
         fileCommitCount = Math.max(fileChurnData.commits.length, 1);
-        const uniqueAuthors = new Set(fileChurnData.commits.map(c => c.author));
+        const uniqueAuthors = new Set(fileChurnData.commits.map((c) => c.author));
         fileContributorCount = uniqueAuthors.size;
       } else {
         // Fallback: union of chunk commit SHAs (original behavior)
@@ -1062,18 +1032,11 @@ export class GitLogReader {
           chunkChurnRatio: Math.round((chunkCommitCount / fileCommitCount) * 100) / 100,
           // Cap chunk contributors at file-level to prevent inversions
           // (chunk uses 6mo window, file uses 12mo — different author sets)
-          chunkContributorCount: fileContributorCount !== undefined
-            ? Math.min(acc.authors.size, fileContributorCount)
-            : acc.authors.size,
-          chunkBugFixRate:
-            chunkCommitCount > 0
-              ? Math.round((acc.bugFixCount / totalCommitsForChunk) * 100)
-              : 0,
+          chunkContributorCount:
+            fileContributorCount !== undefined ? Math.min(acc.authors.size, fileContributorCount) : acc.authors.size,
+          chunkBugFixRate: chunkCommitCount > 0 ? Math.round((acc.bugFixCount / totalCommitsForChunk) * 100) : 0,
           chunkLastModifiedAt: acc.lastModifiedAt,
-          chunkAgeDays:
-            acc.lastModifiedAt > 0
-              ? Math.max(0, Math.floor((nowSec - acc.lastModifiedAt) / 86400))
-              : 0,
+          chunkAgeDays: acc.lastModifiedAt > 0 ? Math.max(0, Math.floor((nowSec - acc.lastModifiedAt) / 86400)) : 0,
         });
       }
 
@@ -1088,7 +1051,7 @@ export class GitLogReader {
       const totalOverlays = Array.from(result.values()).reduce((sum, m) => sum + m.size, 0);
       console.error(
         `[ChunkChurn] Total: ${totalMs}ms | ${commitEntries.length} commits → ` +
-        `${totalOverlays} overlays across ${filesWithOverlays} files`,
+          `${totalOverlays} overlays across ${filesWithOverlays} files`,
       );
     }
 

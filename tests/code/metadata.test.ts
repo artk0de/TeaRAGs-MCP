@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+
 import { MetadataExtractor } from "../../src/code/metadata.js";
 import type { CodeChunk } from "../../src/code/types.js";
 

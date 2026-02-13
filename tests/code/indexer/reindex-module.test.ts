@@ -1,6 +1,18 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { CodeIndexer } from "../../../src/code/indexer.js";
+import type { CodeConfig } from "../../../src/code/types.js";
+import {
+  cleanupTempDir,
+  createTempTestDir,
+  createTestFile,
+  defaultTestConfig,
+  MockEmbeddingProvider,
+  MockQdrantManager,
+} from "./test-helpers.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
@@ -29,17 +41,6 @@ vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
 
-import { CodeIndexer } from "../../../src/code/indexer.js";
-import type { CodeConfig } from "../../../src/code/types.js";
-import {
-  MockQdrantManager,
-  MockEmbeddingProvider,
-  createTestFile,
-  defaultTestConfig,
-  createTempTestDir,
-  cleanupTempDir,
-} from "./test-helpers.js";
-
 describe("ReindexModule", () => {
   let indexer: CodeIndexer;
   let qdrant: MockQdrantManager;
@@ -62,9 +63,7 @@ describe("ReindexModule", () => {
 
   describe("reindexChanges", () => {
     it("should throw error if not previously indexed", async () => {
-      await expect(indexer.reindexChanges(codebaseDir)).rejects.toThrow(
-        "not indexed",
-      );
+      await expect(indexer.reindexChanges(codebaseDir)).rejects.toThrow("not indexed");
     });
 
     it("should detect and index new files", async () => {
@@ -113,18 +112,10 @@ function helper(param: string): boolean {
     });
 
     it("should detect modified files", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export const originalValue = 1;\nconsole.log('Original');",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export const originalValue = 1;\nconsole.log('Original');");
       await indexer.indexCodebase(codebaseDir);
 
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export const updatedValue = 2;\nconsole.log('Updated');",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export const updatedValue = 2;\nconsole.log('Updated');");
 
       const stats = await indexer.reindexChanges(codebaseDir);
 
@@ -132,11 +123,7 @@ function helper(param: string): boolean {
     });
 
     it("should detect deleted files", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export const toBeDeleted = 1;\nconsole.log('Will be deleted');",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export const toBeDeleted = 1;\nconsole.log('Will be deleted');");
       await indexer.indexCodebase(codebaseDir);
 
       await fs.unlink(join(codebaseDir, "test.ts"));
@@ -147,11 +134,7 @@ function helper(param: string): boolean {
     });
 
     it("should handle no changes", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export const unchangedValue = 1;\nconsole.log('No changes');",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export const unchangedValue = 1;\nconsole.log('No changes');");
       await indexer.indexCodebase(codebaseDir);
 
       const stats = await indexer.reindexChanges(codebaseDir);
@@ -162,18 +145,10 @@ function helper(param: string): boolean {
     });
 
     it("should call progress callback during reindexing", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export const existingValue = 1;\nconsole.log('Existing');",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export const existingValue = 1;\nconsole.log('Existing');");
       await indexer.indexCodebase(codebaseDir);
 
-      await createTestFile(
-        codebaseDir,
-        "new.ts",
-        "export const newValue = 2;\nconsole.log('New file');",
-      );
+      await createTestFile(codebaseDir, "new.ts", "export const newValue = 2;\nconsole.log('New file');");
 
       const progressCallback = vi.fn();
       await indexer.reindexChanges(codebaseDir, progressCallback);
@@ -206,11 +181,7 @@ function helper(param: string): boolean {
     });
 
     it("should delete all chunks when file is deleted", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "export const toDelete = 1;\nconsole.log('Will be deleted');",
-      );
+      await createTestFile(codebaseDir, "test.ts", "export const toDelete = 1;\nconsole.log('Will be deleted');");
       await indexer.indexCodebase(codebaseDir);
 
       const deletePointsByPathsSpy = vi.spyOn(qdrant, "deletePointsByPaths");
@@ -283,11 +254,7 @@ function helper(param: string): boolean {
 
   describe("Progress callback coverage", () => {
     it("should call progress callback during reindexChanges", async () => {
-      await createTestFile(
-        codebaseDir,
-        "file1.ts",
-        "export const initial = 1;\nconsole.log('Initial');",
-      );
+      await createTestFile(codebaseDir, "file1.ts", "export const initial = 1;\nconsole.log('Initial');");
       await indexer.indexCodebase(codebaseDir);
 
       await createTestFile(
@@ -316,11 +283,7 @@ export function process() {
 
   describe("Secret detection skip path", () => {
     it("should skip files containing secrets during reindex", async () => {
-      await createTestFile(
-        codebaseDir,
-        "safe.ts",
-        "export const safeValue = 1;\nconsole.log('Safe file');",
-      );
+      await createTestFile(codebaseDir, "safe.ts", "export const safeValue = 1;\nconsole.log('Safe file');");
       await indexer.indexCodebase(codebaseDir);
 
       // Add a file containing a secret pattern
@@ -346,19 +309,11 @@ console.log('This file has secrets');`,
 
   describe("File processing error handler", () => {
     it("should handle file read errors gracefully during reindex", async () => {
-      await createTestFile(
-        codebaseDir,
-        "good.ts",
-        "export const good = 1;\nconsole.log('Good file');",
-      );
+      await createTestFile(codebaseDir, "good.ts", "export const good = 1;\nconsole.log('Good file');");
       await indexer.indexCodebase(codebaseDir);
 
       // Create a new file that will be detected as added
-      await createTestFile(
-        codebaseDir,
-        "newfile.ts",
-        "export const newValue = 2;\nconsole.log('New');",
-      );
+      await createTestFile(codebaseDir, "newfile.ts", "export const newValue = 2;\nconsole.log('New');");
 
       // Delete the file AFTER scanner detects it but before it reads it,
       // simulating a race condition. Since we can't easily mock the exact
@@ -424,12 +379,9 @@ console.log('This file has secrets');`,
       );
 
       // Make ALL deletion methods fail
-      vi.spyOn(qdrant, "deletePointsByPathsBatched")
-        .mockRejectedValueOnce(new Error("Batched failed"));
-      vi.spyOn(qdrant, "deletePointsByPaths")
-        .mockRejectedValueOnce(new Error("Single failed"));
-      vi.spyOn(qdrant, "deletePointsByFilter")
-        .mockRejectedValue(new Error("Individual failed"));
+      vi.spyOn(qdrant, "deletePointsByPathsBatched").mockRejectedValueOnce(new Error("Batched failed"));
+      vi.spyOn(qdrant, "deletePointsByPaths").mockRejectedValueOnce(new Error("Single failed"));
+      vi.spyOn(qdrant, "deletePointsByFilter").mockRejectedValue(new Error("Individual failed"));
 
       // Should still complete without throwing
       const stats = await indexer.reindexChanges(codebaseDir);

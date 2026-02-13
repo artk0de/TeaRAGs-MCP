@@ -3,9 +3,16 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
-import { PipelineManager, WorkerPool, BatchAccumulator, ChunkPipeline, DEFAULT_CONFIG } from "../../../build/code/pipeline/index.js";
+import { basename, join } from "node:path";
+
+import {
+  BatchAccumulator,
+  ChunkPipeline,
+  DEFAULT_CONFIG,
+  PipelineManager,
+  WorkerPool,
+} from "../../../build/code/pipeline/index.js";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testPipelineWorkerpool(qdrant) {
   section("13. Pipeline & WorkerPool Tests");
@@ -86,10 +93,8 @@ export async function testPipelineWorkerpool(qdrant) {
   log("info", "Testing BatchAccumulator batch formation...");
 
   const receivedBatches = [];
-  const accumulator = new BatchAccumulator(
-    { batchSize: 3, flushTimeoutMs: 100, maxQueueSize: 10 },
-    "upsert",
-    (batch) => receivedBatches.push(batch)
+  const accumulator = new BatchAccumulator({ batchSize: 3, flushTimeoutMs: 100, maxQueueSize: 10 }, "upsert", (batch) =>
+    receivedBatches.push(batch),
   );
 
   // Add 5 items - should create 1 full batch (3) immediately
@@ -117,7 +122,7 @@ export async function testPipelineWorkerpool(qdrant) {
   const timeoutAccumulator = new BatchAccumulator(
     { batchSize: 10, flushTimeoutMs: 50, maxQueueSize: 10 },
     "delete",
-    (batch) => timeoutBatches.push(batch)
+    (batch) => timeoutBatches.push(batch),
   );
 
   timeoutAccumulator.add({ type: "delete", id: "del-1", relativePath: "path1.ts" });
@@ -149,7 +154,7 @@ export async function testPipelineWorkerpool(qdrant) {
       workerPool: { concurrency: 2, maxRetries: 1, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
       upsertAccumulator: { batchSize: 2, flushTimeoutMs: 30, maxQueueSize: 10 },
       deleteAccumulator: { batchSize: 3, flushTimeoutMs: 30, maxQueueSize: 10 },
-    }
+    },
   );
 
   pipeline.start();
@@ -175,12 +180,26 @@ export async function testPipelineWorkerpool(qdrant) {
   // Test 6: WorkerPool force shutdown cancels pending
   log("info", "Testing WorkerPool force shutdown...");
 
-  const neverResolvingPool = new WorkerPool({ concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 });
+  const neverResolvingPool = new WorkerPool({
+    concurrency: 1,
+    maxRetries: 0,
+    retryBaseDelayMs: 10,
+    retryMaxDelayMs: 100,
+  });
   const neverHandler = () => new Promise(() => {}); // Never resolves
 
-  const p1 = neverResolvingPool.submit({ id: "never-1", type: "upsert", items: [], createdAt: Date.now() }, neverHandler);
-  const p2 = neverResolvingPool.submit({ id: "never-2", type: "upsert", items: [], createdAt: Date.now() }, neverHandler);
-  const p3 = neverResolvingPool.submit({ id: "never-3", type: "upsert", items: [], createdAt: Date.now() }, neverHandler);
+  const p1 = neverResolvingPool.submit(
+    { id: "never-1", type: "upsert", items: [], createdAt: Date.now() },
+    neverHandler,
+  );
+  const p2 = neverResolvingPool.submit(
+    { id: "never-2", type: "upsert", items: [], createdAt: Date.now() },
+    neverHandler,
+  );
+  const p3 = neverResolvingPool.submit(
+    { id: "never-3", type: "upsert", items: [], createdAt: Date.now() },
+    neverHandler,
+  );
 
   // Force shutdown while work is pending
   neverResolvingPool.forceShutdown();
@@ -220,16 +239,11 @@ export async function testPipelineWorkerpool(qdrant) {
     },
   };
 
-  const chunkPipeline = new ChunkPipeline(
-    mockQdrant,
-    mockEmbeddings,
-    "test_chunk_collection",
-    {
-      workerPool: { concurrency: 2, maxRetries: 1, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
-      accumulator: { batchSize: 3, flushTimeoutMs: 50, maxQueueSize: 10 },
-      enableHybrid: false,
-    }
-  );
+  const chunkPipeline = new ChunkPipeline(mockQdrant, mockEmbeddings, "test_chunk_collection", {
+    workerPool: { concurrency: 2, maxRetries: 1, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+    accumulator: { batchSize: 3, flushTimeoutMs: 50, maxQueueSize: 10 },
+    enableHybrid: false,
+  });
 
   chunkPipeline.start();
 
@@ -247,7 +261,7 @@ export async function testPipelineWorkerpool(qdrant) {
         },
       },
       `chunk-${i}`,
-      "/test/path"
+      "/test/path",
     );
   }
 
@@ -275,20 +289,20 @@ export async function testPipelineWorkerpool(qdrant) {
   // Simulate the parallel pipeline flow
   const simulateDelete = async () => {
     recordEvent("delete_start");
-    await new Promise(r => setTimeout(r, 50)); // Simulate delete taking 50ms
+    await new Promise((r) => setTimeout(r, 50)); // Simulate delete taking 50ms
     recordEvent("delete_end");
   };
 
   const simulateAdd = async () => {
     recordEvent("add_start");
-    await new Promise(r => setTimeout(r, 100)); // Simulate add taking 100ms
+    await new Promise((r) => setTimeout(r, 100)); // Simulate add taking 100ms
     recordEvent("add_end");
     return 10; // chunks added
   };
 
   const simulateModified = async () => {
     recordEvent("modified_start");
-    await new Promise(r => setTimeout(r, 80)); // Simulate modified taking 80ms
+    await new Promise((r) => setTimeout(r, 80)); // Simulate modified taking 80ms
     recordEvent("modified_end");
     return 20; // chunks modified
   };
@@ -309,23 +323,20 @@ export async function testPipelineWorkerpool(qdrant) {
   const totalTime = Date.now() - startTime;
 
   // Analyze timeline
-  const events = timeline.map(t => ({ ...t, relativeTime: t.time - timeline[0].time }));
-  const deleteEnd = events.find(e => e.event === "delete_end").relativeTime;
-  const addEnd = events.find(e => e.event === "add_end").relativeTime;
-  const modifiedStart = events.find(e => e.event === "modified_start").relativeTime;
+  const events = timeline.map((t) => ({ ...t, relativeTime: t.time - timeline[0].time }));
+  const deleteEnd = events.find((e) => e.event === "delete_end").relativeTime;
+  const addEnd = events.find((e) => e.event === "add_end").relativeTime;
+  const modifiedStart = events.find((e) => e.event === "modified_start").relativeTime;
 
   // Verify parallelism
   assert(
     modifiedStart >= deleteEnd - 5 && modifiedStart <= deleteEnd + 15,
-    `Modified started right after delete (modified_start=${modifiedStart}ms, delete_end=${deleteEnd}ms)`
+    `Modified started right after delete (modified_start=${modifiedStart}ms, delete_end=${deleteEnd}ms)`,
   );
 
   // Total time should be ~150ms (delete 50ms, then max(add remaining 50ms, modified 80ms))
   // Not 230ms (delete 50ms + add 100ms + modified 80ms sequential)
-  assert(
-    totalTime < 200,
-    `Parallel pipelines completed in ${totalTime}ms (should be <200ms if parallel)`
-  );
+  assert(totalTime < 200, `Parallel pipelines completed in ${totalTime}ms (should be <200ms if parallel)`);
 
   assert(addedChunks2 === 10, "Add chunks returned correctly");
   assert(modifiedChunks2 === 20, "Modified chunks returned correctly");

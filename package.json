@@ -70,6 +70,7 @@
   "devDependencies": {
     "@commitlint/cli": "^20.3.1",
     "@commitlint/config-conventional": "^20.3.1",
+    "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^12.0.2",
@@ -83,9 +84,14 @@
     "@vitest/ui": "^4.0.17",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.8.1",
     "semantic-release": "^25.0.2",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2",
     "vitest": "^4.0.17"
+  },
+  "lint-staged": {
+    "*.{ts,js,mts,mjs}": "prettier --write"
   }
 }
