@@ -7,25 +7,19 @@
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
 import type { EmbeddingProvider } from "../../embeddings/base.js";
 import type { QdrantManager } from "../../qdrant/client.js";
 import { ChunkerPool } from "../chunker/chunker-pool.js";
 import { MetadataExtractor } from "../metadata.js";
-import { ChunkPipeline, DEFAULT_CONFIG } from "../pipeline/index.js";
 import { pipelineLog } from "../pipeline/debug-logger.js";
+import { ChunkPipeline, DEFAULT_CONFIG } from "../pipeline/index.js";
 import { FileScanner } from "../scanner.js";
 import { SchemaManager } from "../schema-migration.js";
 import { ParallelFileSynchronizer, parallelLimit } from "../sync/parallel-synchronizer.js";
-import type {
-  ChunkLookupEntry,
-  CodeChunk,
-  CodeConfig,
-  IndexOptions,
-  IndexStats,
-  ProgressCallback,
-} from "../types.js";
-import { INDEXING_METADATA_ID, validatePath, resolveCollectionName } from "./shared.js";
+import type { ChunkLookupEntry, CodeChunk, CodeConfig, IndexOptions, IndexStats, ProgressCallback } from "../types.js";
 import type { EnrichmentModule } from "./enrichment-module.js";
+import { INDEXING_METADATA_ID, resolveCollectionName, validatePath } from "./shared.js";
 
 export class IndexingModule {
   constructor(
@@ -38,11 +32,7 @@ export class IndexingModule {
   /**
    * Index a codebase from scratch or force re-index
    */
-  async indexCodebase(
-    path: string,
-    options?: IndexOptions,
-    progressCallback?: ProgressCallback,
-  ): Promise<IndexStats> {
+  async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
     const startTime = Date.now();
     const stats: IndexStats = {
       filesScanned: 0,
@@ -67,11 +57,9 @@ export class IndexingModule {
       });
 
       const scanner = new FileScanner({
-        supportedExtensions:
-          options?.extensions || this.config.supportedExtensions,
+        supportedExtensions: options?.extensions || this.config.supportedExtensions,
         ignorePatterns: this.config.ignorePatterns,
-        customIgnorePatterns:
-          options?.ignorePatterns || this.config.customIgnorePatterns,
+        customIgnorePatterns: options?.ignorePatterns || this.config.customIgnorePatterns,
       });
 
       await scanner.loadIgnorePatterns(absolutePath);
@@ -89,8 +77,7 @@ export class IndexingModule {
       }
 
       // 2. Create or verify collection
-      const collectionExists =
-        await this.qdrant.collectionExists(collectionName);
+      const collectionExists = await this.qdrant.collectionExists(collectionName);
 
       // Early return if collection already exists and forceReindex is not set
       // This prevents duplicate indexing - use reindexChanges for incremental updates
@@ -109,12 +96,7 @@ export class IndexingModule {
 
       // Create new collection (either first time or after force delete)
       const vectorSize = this.embeddings.getDimensions();
-      await this.qdrant.createCollection(
-        collectionName,
-        vectorSize,
-        "Cosine",
-        this.config.enableHybridSearch,
-      );
+      await this.qdrant.createCollection(collectionName, vectorSize, "Cosine", this.config.enableHybridSearch);
 
       // Initialize schema with payload indexes for optimal performance
       const schemaManager = new SchemaManager(this.qdrant);
@@ -135,16 +117,11 @@ export class IndexingModule {
       const indexedFiles: string[] = [];
 
       // Initialize ChunkPipeline for parallel embedding and storage
-      const chunkPipeline = new ChunkPipeline(
-        this.qdrant,
-        this.embeddings,
-        collectionName,
-        {
-          workerPool: DEFAULT_CONFIG.workerPool,
-          accumulator: DEFAULT_CONFIG.upsertAccumulator,
-          enableHybrid: this.config.enableHybridSearch,
-        },
-      );
+      const chunkPipeline = new ChunkPipeline(this.qdrant, this.embeddings, collectionName, {
+        workerPool: DEFAULT_CONFIG.workerPool,
+        accumulator: DEFAULT_CONFIG.upsertAccumulator,
+        enableHybrid: this.config.enableHybridSearch,
+      });
       // Start git log reading in parallel with embedding (Phase 2a prefetch)
       if (this.config.enableGitMetadata) {
         this.enrichment.prefetchGitLog(absolutePath, collectionName, scanner.getIgnoreFilter());
@@ -185,9 +162,7 @@ export class IndexingModule {
             pipelineLog.addStageTime("parse", Date.now() - parseStart);
 
             // Apply chunk limits if configured
-            const chunksToAdd = this.config.maxChunksPerFile
-              ? chunks.slice(0, this.config.maxChunksPerFile)
-              : chunks;
+            const chunksToAdd = this.config.maxChunksPerFile ? chunks.slice(0, this.config.maxChunksPerFile) : chunks;
 
             // Process and send chunks IMMEDIATELY (streaming)
             for (const chunk of chunksToAdd) {
@@ -221,11 +196,7 @@ export class IndexingModule {
 
               // IMMEDIATE: Send chunk to pipeline right away
               const chunkId = metadataExtractor.generateChunkId(chunk);
-              chunkPipeline.addChunk(
-                baseChunk as CodeChunk,
-                chunkId,
-                absolutePath,
-              );
+              chunkPipeline.addChunk(baseChunk as CodeChunk, chunkId, absolutePath);
               totalChunksQueued++;
 
               // Track for Phase 2 git enrichment
@@ -276,16 +247,13 @@ export class IndexingModule {
       });
 
       await chunkPipeline.flush();
-      await Promise.all([
-        chunkPipeline.shutdown(),
-        chunkerPool.shutdown(),
-      ]);
+      await Promise.all([chunkPipeline.shutdown(), chunkerPool.shutdown()]);
 
       const finalPipelineStats = chunkPipeline.getStats();
       if (process.env.DEBUG) {
         console.error(
           `[Index] Pipeline completed: ${finalPipelineStats.itemsProcessed} chunks in ${finalPipelineStats.batchesProcessed} batches, ` +
-          `${finalPipelineStats.throughput.toFixed(1)} chunks/s`
+            `${finalPipelineStats.throughput.toFixed(1)} chunks/s`,
         );
       }
 
@@ -295,8 +263,11 @@ export class IndexingModule {
       let enrichmentDone = false;
       if (this.config.enableGitMetadata && chunkMap.size > 0) {
         this.enrichment.startChunkChurn(collectionName, absolutePath, chunkMap);
-        this.enrichment.awaitCompletion(collectionName)
-          .then(() => { enrichmentDone = true; })
+        this.enrichment
+          .awaitCompletion(collectionName)
+          .then(() => {
+            enrichmentDone = true;
+          })
           .catch((error) => {
             console.error("[Index] Background enrichment failed:", error);
           });
@@ -326,8 +297,7 @@ export class IndexingModule {
       stats.durationMs = Date.now() - startTime;
       return stats;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       stats.status = "failed";
       stats.errors?.push(`Indexing failed: ${errorMessage}`);
       stats.durationMs = Date.now() - startTime;
@@ -339,10 +309,7 @@ export class IndexingModule {
    * Store an indexing status marker in the collection.
    * Called at the start of indexing with complete=false, and at the end with complete=true.
    */
-  private async storeIndexingMarker(
-    collectionName: string,
-    complete: boolean,
-  ): Promise<void> {
+  private async storeIndexingMarker(collectionName: string, complete: boolean): Promise<void> {
     try {
       if (complete) {
         // Use setPayload (merge) to avoid overwriting enrichment data
@@ -377,8 +344,7 @@ export class IndexingModule {
       const vectorSize = this.embeddings.getDimensions();
       const zeroVector = new Array(vectorSize).fill(0);
 
-      const collectionInfo =
-        await this.qdrant.getCollectionInfo(collectionName);
+      const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
 
       const payload = {
         _type: "indexing_metadata",
