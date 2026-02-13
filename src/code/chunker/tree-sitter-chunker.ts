@@ -7,151 +7,21 @@
  * After: Parsers loaded on demand (~0ms startup, ~100-200ms first use per language)
  */
 
-import Parser from "tree-sitter";
+import type { Code, Content, Heading, Root } from "mdast";
 import { remark } from "remark";
 import remarkGfm from "remark-gfm";
-import type { Root, Heading, Code, Content } from "mdast";
+import Parser from "tree-sitter";
 
 import type { ChunkerConfig, CodeChunk } from "../types.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character-chunker.js";
-import { RubyBodyGrouper, type BodyLine } from "./ruby-body-grouper.js";
-
-interface LanguageDefinition {
-  /** Function to load the language module (lazy) */
-  loadModule: () => any;
-  /** Function to extract language from module (some have nested structure) */
-  extractLanguage?: (mod: any) => any;
-  /** AST node types that should be chunked */
-  chunkableTypes: string[];
-  /**
-   * Child types to look for when a chunkable node is too large.
-   * If a class/module exceeds maxChunkSize, we recurse to find these smaller units.
-   */
-  childChunkTypes?: string[];
-  /**
-   * Always extract child chunks from container types (class/module) regardless of size.
-   * In Ruby, methods are always inside classes/modules, so we must always extract them.
-   * Without this, small classes become a single chunk and methods are not searchable.
-   */
-  alwaysExtractChildren?: boolean;
-  /**
-   * Flag to identify documentation languages (markdown, etc.)
-   * Used for filtering search results by content type
-   */
-  isDocumentation?: boolean;
-}
-
-interface LanguageConfig {
-  parser: Parser;
-  chunkableTypes: string[];
-  childChunkTypes?: string[];
-  alwaysExtractChildren?: boolean;
-  isDocumentation?: boolean;
-}
-
-/**
- * Language definitions - modules are NOT loaded until first use
- */
-const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
-  typescript: {
-    loadModule: () => import("tree-sitter-typescript"),
-    extractLanguage: (mod) => mod.default?.typescript || mod.typescript,
-    chunkableTypes: [
-      "function_declaration",
-      "method_definition",
-      "class_declaration",
-      "interface_declaration",
-      "type_alias_declaration",
-      "enum_declaration",
-    ],
-  },
-  javascript: {
-    loadModule: () => import("tree-sitter-javascript"),
-    extractLanguage: (mod) => mod.default || mod,
-    chunkableTypes: [
-      "function_declaration",
-      "method_definition",
-      "class_declaration",
-      "export_statement",
-    ],
-  },
-  python: {
-    loadModule: () => import("tree-sitter-python"),
-    extractLanguage: (mod) => mod.default || mod,
-    chunkableTypes: ["function_definition", "class_definition", "decorated_definition"],
-  },
-  go: {
-    loadModule: () => import("tree-sitter-go"),
-    extractLanguage: (mod) => mod.default || mod,
-    chunkableTypes: [
-      "function_declaration",
-      "method_declaration",
-      "type_declaration",
-      "interface_declaration",
-    ],
-  },
-  rust: {
-    loadModule: () => import("tree-sitter-rust"),
-    extractLanguage: (mod) => mod.default || mod,
-    chunkableTypes: ["function_item", "impl_item", "trait_item", "struct_item", "enum_item"],
-  },
-  java: {
-    loadModule: () => import("tree-sitter-java"),
-    extractLanguage: (mod) => mod.default || mod,
-    chunkableTypes: [
-      "method_declaration",
-      "class_declaration",
-      "interface_declaration",
-      "enum_declaration",
-    ],
-  },
-  bash: {
-    loadModule: () => import("tree-sitter-bash"),
-    extractLanguage: (mod) => mod.default || mod,
-    chunkableTypes: ["function_definition", "command"],
-  },
-  ruby: {
-    loadModule: () => import("tree-sitter-ruby"),
-    extractLanguage: (mod) => mod.default || mod,
-    chunkableTypes: [
-      "method",            // def method_name ... end
-      "singleton_method",  // def self.method_name ... end
-      "class",             // class Foo ... end (small classes kept whole)
-      "module",            // module Bar ... end (small modules kept whole)
-      "singleton_class",   // class << self ... end
-    ],
-    // When class/module is too large, recursively look for these smaller units
-    // NOTE: "singleton_class" removed from childChunkTypes - we traverse THROUGH it
-    // to find the methods inside (class << self ... end contains methods)
-    childChunkTypes: ["method", "singleton_method"],
-    // In Ruby, virtually all code lives inside class/module. Without this flag,
-    // small classes become a single chunk and individual methods are not searchable.
-    alwaysExtractChildren: true,
-    // Removed problematic types:
-    // - "lambda", "block" → too small (1 line), fragments context
-    // - "do_block" → creates too many tiny chunks from iterators
-    // - "rescue" → loses protected code context
-    // - "singleton_class" → we pass through it to find methods inside
-  },
-  markdown: {
-    // Markdown uses remark parser (unified/mdast) instead of tree-sitter
-    // due to compatibility issues with tree-sitter-markdown grammar (requires tree-sitter 0.26+)
-    // Remark is a robust CommonMark/GFM parser used by VS Code, Gatsby, etc.
-    loadModule: () => Promise.resolve(null),
-    chunkableTypes: [],
-    // Flag for documentation files - enables filtering in search API
-    isDocumentation: true,
-    // Skip tree-sitter parsing, use remark-based chunker
-    skipTreeSitter: true,
-  } as LanguageDefinition & { skipTreeSitter?: boolean },
-};
+import { LANGUAGE_DEFINITIONS, type LanguageConfig, type LanguageDefinition } from "./chunker-config.js";
+import { createHookContext } from "./hooks/types.js";
 
 export class TreeSitterChunker implements CodeChunker {
   /** Cache of initialized parsers (lazy-loaded) */
   private parserCache: Map<string, LanguageConfig> = new Map();
   private fallbackChunker: CharacterChunker;
-  private rubyBodyGrouper = new RubyBodyGrouper();
   /** Track loading promises to avoid duplicate loads */
   private loadingPromises: Map<string, Promise<LanguageConfig | null>> = new Map();
 
@@ -208,27 +78,20 @@ export class TreeSitterChunker implements CodeChunker {
   /**
    * Initialize a parser for a specific language
    */
-  private async initializeParser(
-    language: string,
-    definition: LanguageDefinition,
-  ): Promise<LanguageConfig | null> {
+  private async initializeParser(language: string, definition: LanguageDefinition): Promise<LanguageConfig | null> {
     try {
       const startTime = Date.now();
 
       // Dynamic import of language module
       const mod = await definition.loadModule();
-      const langModule = definition.extractLanguage
-        ? definition.extractLanguage(mod)
-        : mod.default || mod;
+      const langModule = definition.extractLanguage ? definition.extractLanguage(mod) : mod.default || mod;
 
       // Create and configure parser
       const parser = new Parser();
       parser.setLanguage(langModule as any);
 
       if (process.env.DEBUG) {
-        console.error(
-          `[TreeSitter] Lazy-loaded ${language} parser in ${Date.now() - startTime}ms`,
-        );
+        console.error(`[TreeSitter] Lazy-loaded ${language} parser in ${Date.now() - startTime}ms`);
       }
 
       return {
@@ -237,6 +100,7 @@ export class TreeSitterChunker implements CodeChunker {
         childChunkTypes: definition.childChunkTypes,
         alwaysExtractChildren: definition.alwaysExtractChildren,
         isDocumentation: definition.isDocumentation,
+        hooks: definition.hooks,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -292,22 +156,15 @@ export class TreeSitterChunker implements CodeChunker {
           const childNodes = this.findChildChunkableNodes(node, langConfig.childChunkTypes!);
 
           // Filter to children that meet minimum size
-          const validChildren = childNodes.filter(
-            (c) => code.substring(c.startIndex, c.endIndex).length >= 50,
-          );
+          const validChildren = childNodes.filter((c) => code.substring(c.startIndex, c.endIndex).length >= 50);
 
           if (validChildren.length > 0) {
-            // For Ruby: collect preceding comment rows for each method
-            // so they can be included in method chunks and excluded from body lines
-            const codeLines = language === "ruby" ? code.split("\n") : [];
-            const commentRowsPerChild: Set<number>[] = [];
-
-            if (language === "ruby") {
-              for (const childNode of validChildren) {
-                commentRowsPerChild.push(
-                  this.collectPrecedingCommentRows(childNode, codeLines),
-                );
-              }
+            // Run hook chain
+            const ctx = createHookContext(node, validChildren, code, {
+              maxChunkSize: this.config.maxChunkSize,
+            });
+            for (const hook of langConfig.hooks ?? []) {
+              hook.process(ctx);
             }
 
             // Extract each child (method) as individual chunk
@@ -334,16 +191,17 @@ export class TreeSitterChunker implements CodeChunker {
                 continue;
               }
 
-              // Prepend preceding comments for Ruby methods
-              const commentRows = commentRowsPerChild[ci];
               let finalContent = childContent.trim();
               let startLine = childNode.startPosition.row + 1;
 
-              if (commentRows && commentRows.size > 0) {
-                const sortedRows = [...commentRows].sort((a, b) => a - b);
-                const commentText = sortedRows.map((r) => codeLines[r]).join("\n");
-                finalContent = commentText + "\n" + finalContent;
-                startLine = sortedRows[0] + 1; // 1-based
+              // Apply hook-provided prefix (e.g., preceding comments)
+              const prefix = ctx.methodPrefixes.get(ci);
+              if (prefix) {
+                finalContent = prefix + "\n" + finalContent;
+              }
+              const overrideStart = ctx.methodStartLines.get(ci);
+              if (overrideStart !== undefined) {
+                startLine = overrideStart;
               }
 
               const childName = this.extractName(childNode, code);
@@ -364,41 +222,16 @@ export class TreeSitterChunker implements CodeChunker {
               });
             }
 
-            // Extract class-level code (everything outside methods) as body chunk(s).
-            // For Ruby: semantic grouping (associations, validations, scopes, etc.)
-            // For other languages: single body chunk (existing behavior)
+            // Extract class-level code (everything outside methods) as body chunk(s)
             if (langConfig.alwaysExtractChildren) {
-              if (language === "ruby") {
-                // Merge all comment rows into one set to exclude from body lines
-                const allCommentRows = new Set<number>();
-                for (const rows of commentRowsPerChild) {
-                  for (const r of rows) allCommentRows.add(r);
-                }
-                const bodyLines = this.extractContainerBodyLines(
-                  node, validChildren, code, allCommentRows,
-                );
-                const groups = this.rubyBodyGrouper.groupLines(bodyLines, this.config.maxChunkSize);
-                const classHeader = this.extractClassHeader(node, code);
-
-                for (const group of groups) {
-                  const groupContent = group.lines.map((l) => l.text).join("\n").trim();
-
-                  // Prepend class header for context
-                  const contentWithContext = classHeader
-                    ? `${classHeader}\n${groupContent}`
-                    : groupContent;
-
-                  // Check size after including header (header is part of the chunk)
-                  if (contentWithContext.length < 50) continue;
-
-                  // Use the group's actual line ranges for startLine/endLine
-                  const minLine = Math.min(...group.lineRanges.map((r) => r.start));
-                  const maxLine = Math.max(...group.lineRanges.map((r) => r.end));
-
+              const hasHookChain = langConfig.hooks && langConfig.hooks.length > 0;
+              if (hasHookChain) {
+                // Hook chain ran — use hook-provided body chunks (may be empty)
+                for (const result of ctx.bodyChunks) {
                   chunks.push({
-                    content: contentWithContext,
-                    startLine: minLine,
-                    endLine: maxLine,
+                    content: result.content,
+                    startLine: result.startLine,
+                    endLine: result.endLine,
                     metadata: {
                       filePath,
                       language,
@@ -408,12 +241,12 @@ export class TreeSitterChunker implements CodeChunker {
                       parentName,
                       parentType,
                       symbolId: this.buildSymbolId(parentName),
-                      lineRanges: group.lineRanges,
+                      lineRanges: result.lineRanges,
                     },
                   });
                 }
               } else {
-                // Non-Ruby: single body chunk (existing behavior)
+                // No hooks — generic fallback: single body chunk
                 const bodyContent = this.extractContainerBody(node, validChildren, code);
                 if (bodyContent && bodyContent.trim().length >= 50) {
                   chunks.push({
@@ -530,11 +363,7 @@ export class TreeSitterChunker implements CodeChunker {
    * 1. Sections (heading + content until next heading of same/higher level)
    * 2. Fenced code blocks with language detection (for searching code examples)
    */
-  private async chunkMarkdownSimple(
-    code: string,
-    filePath: string,
-    language: string,
-  ): Promise<CodeChunk[]> {
+  private async chunkMarkdownSimple(code: string, filePath: string, language: string): Promise<CodeChunk[]> {
     const chunks: CodeChunk[] = [];
     const lines = code.split("\n");
 
@@ -665,7 +494,7 @@ export class TreeSitterChunker implements CodeChunker {
       chunks.push({
         content: block.value,
         startLine: block.startLine + 1, // +1 to skip ``` line
-        endLine: block.endLine - 1,     // -1 to skip closing ```
+        endLine: block.endLine - 1, // -1 to skip closing ```
         metadata: {
           filePath,
           // Use the code block's language, not "markdown"
@@ -681,7 +510,10 @@ export class TreeSitterChunker implements CodeChunker {
 
     // Handle preamble (content before first heading)
     if (headings.length > 0 && headings[0].startLine > 1) {
-      const preamble = lines.slice(0, headings[0].startLine - 1).join("\n").trim();
+      const preamble = lines
+        .slice(0, headings[0].startLine - 1)
+        .join("\n")
+        .trim();
       if (preamble.length >= 50) {
         chunks.unshift({
           content: preamble,
@@ -739,10 +571,7 @@ export class TreeSitterChunker implements CodeChunker {
   /**
    * Find all chunkable nodes in the AST
    */
-  private findChunkableNodes(
-    node: Parser.SyntaxNode,
-    chunkableTypes: string[],
-  ): Parser.SyntaxNode[] {
+  private findChunkableNodes(node: Parser.SyntaxNode, chunkableTypes: string[]): Parser.SyntaxNode[] {
     const nodes: Parser.SyntaxNode[] = [];
 
     const traverse = (n: Parser.SyntaxNode) => {
@@ -766,10 +595,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Unlike findChunkableNodes, this DOES traverse into the parent's children
    * even if the parent is a chunkable type.
    */
-  private findChildChunkableNodes(
-    parentNode: Parser.SyntaxNode,
-    childChunkTypes: string[],
-  ): Parser.SyntaxNode[] {
+  private findChildChunkableNodes(parentNode: Parser.SyntaxNode, childChunkTypes: string[]): Parser.SyntaxNode[] {
     const nodes: Parser.SyntaxNode[] = [];
 
     const traverse = (n: Parser.SyntaxNode) => {
@@ -828,107 +654,6 @@ export class TreeSitterChunker implements CodeChunker {
 
     const body = bodyLines.join("\n").trim();
     return body.length > 0 ? body : undefined;
-  }
-
-  /**
-   * Extract body lines with original source line numbers.
-   * Used by RubyBodyGrouper for semantic grouping with line tracking.
-   */
-  private extractContainerBodyLines(
-    containerNode: Parser.SyntaxNode,
-    childNodes: Parser.SyntaxNode[],
-    code: string,
-    extraExcludedRows?: Set<number>,
-  ): BodyLine[] {
-    const containerStartRow = containerNode.startPosition.row;
-    const containerEndRow = containerNode.endPosition.row;
-    const lines = code.split("\n");
-
-    // Build a set of line numbers occupied by child nodes (methods)
-    const methodLines = new Set<number>();
-    for (const child of childNodes) {
-      for (let row = child.startPosition.row; row <= child.endPosition.row; row++) {
-        methodLines.add(row);
-      }
-    }
-    // Also exclude rows claimed by method comments
-    if (extraExcludedRows) {
-      for (const row of extraExcludedRows) {
-        methodLines.add(row);
-      }
-    }
-
-    // Collect non-method lines with their 1-based source line numbers.
-    // Skip container boundaries (class/end lines) — the header is prepended separately.
-    const bodyLines: BodyLine[] = [];
-    for (let row = containerStartRow + 1; row < containerEndRow; row++) {
-      if (!methodLines.has(row)) {
-        bodyLines.push({
-          text: lines[row],
-          sourceLine: row + 1, // 1-based
-        });
-      }
-    }
-
-    return bodyLines;
-  }
-
-  /**
-   * Scan lines backwards from a method node to collect preceding comment rows.
-   * Allows up to 1 blank line between comment block and def.
-   * Returns a Set of 0-based row numbers.
-   */
-  private collectPrecedingCommentRows(
-    methodNode: Parser.SyntaxNode,
-    codeLines: string[],
-  ): Set<number> {
-    const rows = new Set<number>();
-    const defRow = methodNode.startPosition.row;
-    let row = defRow - 1;
-    let blankCount = 0;
-
-    // Skip up to 1 blank line between def and comment block
-    while (row >= 0 && codeLines[row].trim().length === 0) {
-      blankCount++;
-      if (blankCount > 1) return rows; // 2+ blank lines → no comment capture
-      row--;
-    }
-
-    // Collect consecutive comment lines going upward
-    while (row >= 0) {
-      const trimmed = codeLines[row].trim();
-      if (trimmed.startsWith("#")) {
-        rows.add(row);
-        row--;
-      } else {
-        break;
-      }
-    }
-
-    // Also include blank line(s) between comments and def if comments were found
-    if (rows.size > 0 && blankCount > 0) {
-      for (let br = defRow - 1; br >= defRow - blankCount; br--) {
-        rows.add(br);
-      }
-    }
-
-    return rows;
-  }
-
-  /**
-   * Extract class/module declaration line for context injection.
-   * Returns "class Foo < Bar" or "module Baz" or undefined.
-   */
-  private extractClassHeader(
-    node: Parser.SyntaxNode,
-    code: string,
-  ): string | undefined {
-    const lines = code.split("\n");
-    const firstLine = lines[node.startPosition.row];
-    if (firstLine && /^\s*(class|module)\s+/.test(firstLine)) {
-      return firstLine.trim();
-    }
-    return undefined;
   }
 
   /**

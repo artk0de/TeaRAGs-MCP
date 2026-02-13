@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { extractClassHeader } from "../../../src/code/chunker/hooks/ruby/class-body-chunker.js";
 import { TreeSitterChunker } from "../../../src/code/chunker/tree-sitter-chunker.js";
 import type { ChunkerConfig } from "../../../src/code/types.js";
 
@@ -112,13 +114,9 @@ def calculate_average(numbers):
       const chunks = await chunker.chunk(code, "test.py", "python");
       expect(chunks.length).toBeGreaterThanOrEqual(1);
       if (chunks.length > 0) {
-        expect(
-          chunks.some(
-            (c) =>
-              c.metadata.name === "calculate_sum" ||
-              c.metadata.name === "calculate_product",
-          ),
-        ).toBe(true);
+        expect(chunks.some((c) => c.metadata.name === "calculate_sum" || c.metadata.name === "calculate_product")).toBe(
+          true,
+        );
       }
     });
 
@@ -177,7 +175,7 @@ end
       const chunks = await chunker.chunk(code, "test.rb", "ruby");
 
       // Should extract individual methods, not keep class as one chunk
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(2);
 
       // Each method should have parentName and parentType
@@ -187,12 +185,13 @@ end
       }
 
       // Verify method names
-      const names = methodChunks.map(c => c.metadata.name).sort();
+      const names = methodChunks.map((c) => c.metadata.name).sort();
       expect(names).toEqual(["create_user", "find_user"]);
 
       // Verify symbolId format: ClassName.methodName
-      expect(methodChunks.find(c => c.metadata.name === "find_user")?.metadata.symbolId)
-        .toBe("UserService.find_user");
+      expect(methodChunks.find((c) => c.metadata.name === "find_user")?.metadata.symbolId).toBe(
+        "UserService.find_user",
+      );
     });
 
     it("should extract methods with parentName/parentType from classes of any size", async () => {
@@ -231,7 +230,7 @@ end
       const chunks = await chunker.chunk(code, "large_service.rb", "ruby");
 
       // Should have individual method chunks
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(4);
 
       // All methods should have parentName and parentType
@@ -277,7 +276,7 @@ end
       const chunks = await chunker.chunk(code, "large_module.rb", "ruby");
 
       // Should have individual method chunks
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(4);
 
       // All methods should have parentName = module name
@@ -325,7 +324,7 @@ end
       const chunks = await chunker.chunk(code, "config_manager.rb", "ruby");
 
       // Should extract individual methods
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(4);
 
       // Methods inside class << self should have class as parent
@@ -376,15 +375,15 @@ end
       const chunks = await chunker.chunk(code, "user.rb", "ruby");
 
       // Should have method chunks
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(3);
 
       // Should have multiple body chunks (semantic groups for Ruby)
-      const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
+      const bodyChunks = chunks.filter((c) => c.metadata.chunkType === "block");
       expect(bodyChunks.length).toBeGreaterThan(1);
 
       // All body chunks together should contain the declarations
-      const allBodyContent = bodyChunks.map(c => c.content).join("\n");
+      const allBodyContent = bodyChunks.map((c) => c.content).join("\n");
       expect(allBodyContent).toContain("has_many :posts");
       expect(allBodyContent).toContain("scope :active");
       expect(allBodyContent).toContain("validates :name");
@@ -427,28 +426,26 @@ end
       `;
 
       const chunks = await chunker.chunk(code, "payment.rb", "ruby");
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(2);
 
       // process_payment should include the 3 comment lines
-      const processChunk = methodChunks.find(c => c.metadata.name === "process_payment")!;
+      const processChunk = methodChunks.find((c) => c.metadata.name === "process_payment")!;
       expect(processChunk.content).toContain("# Process a payment through the gateway");
       expect(processChunk.content).toContain("# @param amount");
       expect(processChunk.content).toContain("# @return [Boolean]");
       // startLine should be the first comment line, not the def line
       expect(processChunk.startLine).toBeLessThan(
-        processChunk.content.indexOf("def process_payment")
-          ? processChunk.startLine + 3
-          : processChunk.startLine
+        processChunk.content.indexOf("def process_payment") ? processChunk.startLine + 3 : processChunk.startLine,
       );
 
       // refund should include its comment
-      const refundChunk = methodChunks.find(c => c.metadata.name === "refund")!;
+      const refundChunk = methodChunks.find((c) => c.metadata.name === "refund")!;
       expect(refundChunk.content).toContain("# Refund a previously processed payment");
 
       // Comments should NOT appear in body chunks
-      const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
-      const allBodyContent = bodyChunks.map(c => c.content).join("\n");
+      const bodyChunks = chunks.filter((c) => c.metadata.chunkType === "block");
+      const allBodyContent = bodyChunks.map((c) => c.content).join("\n");
       expect(allBodyContent).not.toContain("# Process a payment");
       expect(allBodyContent).not.toContain("# Refund a previously");
     });
@@ -470,8 +467,8 @@ end
       `;
 
       const chunks = await chunker.chunk(code, "user_service.rb", "ruby");
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
-      const findChunk = methodChunks.find(c => c.metadata.name === "find_by_email")!;
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const findChunk = methodChunks.find((c) => c.metadata.name === "find_by_email")!;
 
       // Comment with 1 blank line gap should still be captured
       expect(findChunk.content).toContain("# Finds user by email address");
@@ -501,8 +498,8 @@ end
       `;
 
       const chunks = await chunker.chunk(code, "processor.rb", "ruby");
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
-      const processChunk = methodChunks.find(c => c.metadata.name === "process")!;
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      const processChunk = methodChunks.find((c) => c.metadata.name === "process")!;
 
       // Comment with 2 blank lines gap should NOT be captured
       expect(processChunk.content).not.toContain("# This is an unrelated comment");
@@ -554,7 +551,7 @@ end
       const chunks = await chunker.chunk(code, "concerns.rb", "ruby");
 
       // Should have method chunks
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(2);
 
       for (const chunk of methodChunks) {
@@ -563,10 +560,10 @@ end
       }
 
       // Should have body chunks with module-level code (semantic groups for Ruby)
-      const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
+      const bodyChunks = chunks.filter((c) => c.metadata.chunkType === "block");
       expect(bodyChunks.length).toBeGreaterThanOrEqual(1);
 
-      const allBodyContent = bodyChunks.map(c => c.content).join("\n");
+      const allBodyContent = bodyChunks.map((c) => c.content).join("\n");
       expect(allBodyContent).toContain("extend ActiveSupport::Concern");
     });
 
@@ -592,7 +589,7 @@ end
 
       const chunks = await chunker.chunk(code, "config.rb", "ruby");
 
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(2);
 
       for (const chunk of methodChunks) {
@@ -627,12 +624,12 @@ end
       const chunks = await chunker.chunk(code, "calculator.rb", "ruby");
 
       // Should extract the method
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(1);
       expect(methodChunks[0].metadata.name).toBe("process");
 
       // Constants with lambdas should be in the class body chunk
-      const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
+      const bodyChunks = chunks.filter((c) => c.metadata.chunkType === "block");
       expect(bodyChunks.length).toBe(1);
       expect(bodyChunks[0].content).toContain("OPERATIONS");
       expect(bodyChunks[0].content).toContain("VALIDATORS");
@@ -666,7 +663,7 @@ end
       const chunks = await chunker.chunk(code, "api_client.rb", "ruby");
 
       // Methods should be extracted individually, rescue blocks stay inside
-      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.length).toBe(2);
       expect(methodChunks[0].content).toContain("rescue NetworkError");
     });
@@ -717,7 +714,7 @@ Use the library like this.
       expect(chunks.length).toBeGreaterThan(0);
 
       // Should have section chunks
-      const sectionChunks = chunks.filter(c => c.metadata.name);
+      const sectionChunks = chunks.filter((c) => c.metadata.name);
       expect(sectionChunks.length).toBeGreaterThan(0);
     });
 
@@ -745,10 +742,9 @@ def greet(name: str) -> str:
       expect(chunks.length).toBeGreaterThan(0);
 
       // Should have code block chunks with language metadata
-      const codeChunks = chunks.filter(c =>
-        c.metadata.name?.includes("Code") ||
-        c.metadata.language === "typescript" ||
-        c.metadata.language === "python"
+      const codeChunks = chunks.filter(
+        (c) =>
+          c.metadata.name?.includes("Code") || c.metadata.language === "typescript" || c.metadata.language === "python",
       );
       expect(codeChunks.length).toBeGreaterThan(0);
     });
@@ -807,11 +803,7 @@ function veryLargeFunction() {
 }
       `;
 
-      const chunks = await chunker.chunk(
-        largeFunction,
-        "test.js",
-        "javascript",
-      );
+      const chunks = await chunker.chunk(largeFunction, "test.js", "javascript");
       expect(chunks.length).toBeGreaterThan(0);
     });
 
@@ -839,13 +831,8 @@ function myFunction() {
     });
 
     it("should include file path and language", async () => {
-      const code =
-        "function test() {\n  console.log('Test function');\n  return true;\n}";
-      const chunks = await chunker.chunk(
-        code,
-        "/path/to/file.ts",
-        "typescript",
-      );
+      const code = "function test() {\n  console.log('Test function');\n  return true;\n}";
+      const chunks = await chunker.chunk(code, "/path/to/file.ts", "typescript");
 
       expect(chunks[0].metadata.filePath).toBe("/path/to/file.ts");
       expect(chunks[0].metadata.language).toBe("typescript");
@@ -1001,9 +988,7 @@ trait Printable {
       expect(chunks.length).toBeGreaterThanOrEqual(0);
       // Should classify as interface type due to trait pattern
       if (chunks.length > 0) {
-        expect(chunks.some((c) => c.metadata.chunkType === "interface")).toBe(
-          true,
-        );
+        expect(chunks.some((c) => c.metadata.chunkType === "interface")).toBe(true);
       }
     });
 
@@ -1057,8 +1042,8 @@ function calculateProduct(numbers: number[]): number {
       expect(chunks.length).toBeGreaterThanOrEqual(1);
 
       // Find function chunks by name
-      const functionChunks = chunks.filter(c =>
-        c.metadata.name === "calculateSum" || c.metadata.name === "calculateProduct"
+      const functionChunks = chunks.filter(
+        (c) => c.metadata.name === "calculateSum" || c.metadata.name === "calculateProduct",
       );
 
       // Verify symbolId is set for functions
@@ -1127,22 +1112,18 @@ end
       const chunks = await smallChunker.chunk(code, "user_service.rb", "ruby");
 
       // Find method chunks with parentName (indicates class was split)
-      const methodChunks = chunks.filter(
-        c => c.metadata.parentName && c.metadata.chunkType === "function"
-      );
+      const methodChunks = chunks.filter((c) => c.metadata.parentName && c.metadata.chunkType === "function");
 
       // If class was split, verify symbolId format
       if (methodChunks.length > 0) {
         for (const chunk of methodChunks) {
           if (chunk.metadata.name && chunk.metadata.parentName) {
-            expect(chunk.metadata.symbolId).toBe(
-              `${chunk.metadata.parentName}.${chunk.metadata.name}`
-            );
+            expect(chunk.metadata.symbolId).toBe(`${chunk.metadata.parentName}.${chunk.metadata.name}`);
           }
         }
 
         // Specific check for one method
-        const findMethod = methodChunks.find(c => c.metadata.name === "find_by_id");
+        const findMethod = methodChunks.find((c) => c.metadata.name === "find_by_id");
         if (findMethod) {
           expect(findMethod.metadata.symbolId).toBe("UserService.find_by_id");
         }
@@ -1180,7 +1161,7 @@ How to use the library.
       expect(chunks.length).toBeGreaterThan(0);
 
       // Find section chunks
-      const sectionChunks = chunks.filter(c => c.metadata.name && c.metadata.isDocumentation);
+      const sectionChunks = chunks.filter((c) => c.metadata.name && c.metadata.isDocumentation);
 
       expect(sectionChunks.length).toBeGreaterThan(0);
 
@@ -1190,7 +1171,7 @@ How to use the library.
       }
 
       // Check specific section
-      const installChunk = sectionChunks.find(c => c.metadata.name === "Installation");
+      const installChunk = sectionChunks.find((c) => c.metadata.name === "Installation");
       if (installChunk) {
         expect(installChunk.metadata.symbolId).toBe("Installation");
       }
@@ -1220,9 +1201,7 @@ def greet(name):
       expect(chunks.length).toBeGreaterThan(0);
 
       // Find code block chunks
-      const codeBlocks = chunks.filter(c =>
-        c.metadata.name?.includes("Code") && c.metadata.isDocumentation
-      );
+      const codeBlocks = chunks.filter((c) => c.metadata.name?.includes("Code") && c.metadata.isDocumentation);
 
       expect(codeBlocks.length).toBeGreaterThan(0);
 
@@ -1232,12 +1211,12 @@ def greet(name):
       }
 
       // Check specific code blocks
-      const tsCodeBlock = codeBlocks.find(c => c.metadata.name === "Code: typescript");
+      const tsCodeBlock = codeBlocks.find((c) => c.metadata.name === "Code: typescript");
       if (tsCodeBlock) {
         expect(tsCodeBlock.metadata.symbolId).toBe("Code: typescript");
       }
 
-      const pyCodeBlock = codeBlocks.find(c => c.metadata.name === "Code: python");
+      const pyCodeBlock = codeBlocks.find((c) => c.metadata.name === "Code: python");
       if (pyCodeBlock) {
         expect(pyCodeBlock.metadata.symbolId).toBe("Code: python");
       }
@@ -1321,19 +1300,17 @@ class DataProcessor {
 
       // Find method chunks with parent
       const methodChunks = chunks.filter(
-        c => c.metadata.parentName === "DataProcessor" && c.metadata.chunkType === "function"
+        (c) => c.metadata.parentName === "DataProcessor" && c.metadata.chunkType === "function",
       );
 
       if (methodChunks.length > 0) {
         // Verify symbolId format
         for (const chunk of methodChunks) {
-          expect(chunk.metadata.symbolId).toBe(
-            `DataProcessor.${chunk.metadata.name}`
-          );
+          expect(chunk.metadata.symbolId).toBe(`DataProcessor.${chunk.metadata.name}`);
         }
 
         // Check specific method
-        const processMethod = methodChunks.find(c => c.metadata.name === "processData");
+        const processMethod = methodChunks.find((c) => c.metadata.name === "processData");
         if (processMethod) {
           expect(processMethod.metadata.symbolId).toBe("DataProcessor.processData");
         }
@@ -1517,7 +1494,10 @@ class DataProcessor {
 
       // The oversized method should be split into sub-chunks with parentName
       const subChunks = chunks.filter(
-        (c) => c.metadata.parentName === "DataProcessor" && c.metadata.chunkType !== "function" && c.metadata.chunkType !== "block",
+        (c) =>
+          c.metadata.parentName === "DataProcessor" &&
+          c.metadata.chunkType !== "function" &&
+          c.metadata.chunkType !== "block",
       );
       // At minimum we should have chunks; the large method produces sub-chunks
       expect(chunks.length).toBeGreaterThan(1);
@@ -1647,12 +1627,12 @@ class DataProcessor {
       // Only has declarations, which are not in childChunkTypes
       const code = [
         "class LargeSerializer < ActiveModel::Serializer",
-        '  attributes :id, :name, :email, :role, :created_at, :updated_at, :status, :avatar_url',
+        "  attributes :id, :name, :email, :role, :created_at, :updated_at, :status, :avatar_url",
         "  has_many :posts, serializer: PostSerializer",
         "  has_many :comments, serializer: CommentSerializer",
         "  belongs_to :organization, serializer: OrgSerializer",
         "  belongs_to :department, serializer: DeptSerializer",
-        '  attribute :full_name do',
+        "  attribute :full_name do",
         '    object.first_name + " " + object.last_name',
         "  end",
         "end",
@@ -1969,15 +1949,11 @@ function funcB() {
     });
 
     it("should return undefined when first line does not start with class or module", async () => {
-      // Directly test extractClassHeader with a mock node
-      const freshChunker = new TreeSitterChunker(config);
-      const extractClassHeader = (freshChunker as any).extractClassHeader.bind(freshChunker);
-
       // Mock a node whose first line is not a class/module declaration
       const code = "  has_many :posts\n  belongs_to :user\nend";
       const mockNode = {
         startPosition: { row: 0 },
-      };
+      } as any;
 
       const header = extractClassHeader(mockNode, code);
       expect(header).toBeUndefined();

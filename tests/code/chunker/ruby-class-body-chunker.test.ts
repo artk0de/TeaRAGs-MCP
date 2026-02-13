@@ -1,12 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import {
-  RubyBodyGrouper,
+  RubyClassBodyChunker,
   type BodyGroup,
   type BodyLine,
-} from "../../../src/code/chunker/ruby-body-grouper.js";
+} from "../../../src/code/chunker/hooks/ruby/class-body-chunker.js";
 
-describe("RubyBodyGrouper", () => {
-  const grouper = new RubyBodyGrouper();
+describe("RubyClassBodyChunker", () => {
+  const grouper = new RubyClassBodyChunker();
 
   /** Helper: create BodyLine[] from text lines with sequential source lines */
   function makeLines(texts: string[], startSourceLine = 1): BodyLine[] {
@@ -47,11 +48,7 @@ describe("RubyBodyGrouper", () => {
   });
 
   it("should handle includes and extends", () => {
-    const lines = makeLines([
-      "  include AASM",
-      "  include Searchable",
-      "  extend ClassMethods",
-    ]);
+    const lines = makeLines(["  include AASM", "  include Searchable", "  extend ClassMethods"]);
     const groups = grouper.groupLines(lines);
     expect(groups).toHaveLength(1);
     expect(groups[0].type).toBe("includes");
@@ -76,11 +73,7 @@ describe("RubyBodyGrouper", () => {
   });
 
   it("should keep blank-line-separated same-type groups merged", () => {
-    const lines = makeLines([
-      "  has_many :posts",
-      "",
-      "  has_many :comments",
-    ]);
+    const lines = makeLines(["  has_many :posts", "", "  has_many :comments"]);
     const groups = grouper.groupLines(lines);
     expect(groups).toHaveLength(1);
     expect(groups[0].type).toBe("associations");
@@ -124,15 +117,7 @@ describe("RubyBodyGrouper", () => {
     ]);
     const groups = grouper.groupLines(lines);
     const types = groups.map((g) => g.type);
-    expect(types).toEqual([
-      "includes",
-      "associations",
-      "enums",
-      "validations",
-      "callbacks",
-      "scopes",
-      "delegates",
-    ]);
+    expect(types).toEqual(["includes", "associations", "enums", "validations", "callbacks", "scopes", "delegates"]);
   });
 
   it("should handle multiline declarations (scope with block)", () => {
@@ -151,14 +136,7 @@ describe("RubyBodyGrouper", () => {
   });
 
   it("should skip blank-only lines and preserve them as separators", () => {
-    const lines = makeLines([
-      "",
-      "  has_many :posts",
-      "",
-      "",
-      "  validates :email",
-      "",
-    ]);
+    const lines = makeLines(["", "  has_many :posts", "", "", "  validates :email", ""]);
     const groups = grouper.groupLines(lines);
     expect(groups).toHaveLength(2);
     expect(groups[0].type).toBe("associations");
@@ -166,12 +144,7 @@ describe("RubyBodyGrouper", () => {
   });
 
   it("should handle class/end lines gracefully", () => {
-    const lines = makeLines([
-      "class User < ApplicationRecord",
-      "  has_many :posts",
-      "  validates :email",
-      "end",
-    ]);
+    const lines = makeLines(["class User < ApplicationRecord", "  has_many :posts", "  validates :email", "end"]);
     const groups = grouper.groupLines(lines);
     // class...end is now tracked as a block — all content in one "other" group
     expect(groups).toHaveLength(1);
@@ -306,39 +279,27 @@ describe("RubyBodyGrouper", () => {
       expect(grouper.classifyLine("  has_many :posts")).toBe("associations");
       expect(grouper.classifyLine("  has_one :profile")).toBe("associations");
       expect(grouper.classifyLine("  belongs_to :user")).toBe("associations");
-      expect(grouper.classifyLine("  has_and_belongs_to_many :tags")).toBe(
-        "associations",
-      );
+      expect(grouper.classifyLine("  has_and_belongs_to_many :tags")).toBe("associations");
     });
 
     it("should classify validation keywords", () => {
       expect(grouper.classifyLine("  validates :email")).toBe("validations");
       expect(grouper.classifyLine("  validate :custom")).toBe("validations");
-      expect(grouper.classifyLine("  validates_presence_of :name")).toBe(
-        "validations",
-      );
-      expect(grouper.classifyLine("  validates_uniqueness_of :email")).toBe(
-        "validations",
-      );
+      expect(grouper.classifyLine("  validates_presence_of :name")).toBe("validations");
+      expect(grouper.classifyLine("  validates_uniqueness_of :email")).toBe("validations");
     });
 
     it("should classify scope keyword", () => {
-      expect(
-        grouper.classifyLine("  scope :active, -> { where(active: true) }"),
-      ).toBe("scopes");
+      expect(grouper.classifyLine("  scope :active, -> { where(active: true) }")).toBe("scopes");
     });
 
     it("should classify callback keywords", () => {
-      expect(grouper.classifyLine("  before_save :normalize")).toBe(
-        "callbacks",
-      );
+      expect(grouper.classifyLine("  before_save :normalize")).toBe("callbacks");
       expect(grouper.classifyLine("  after_create :notify")).toBe("callbacks");
       expect(grouper.classifyLine("  around_save :wrap")).toBe("callbacks");
       expect(grouper.classifyLine("  after_commit :sync")).toBe("callbacks");
       expect(grouper.classifyLine("  before_action :auth")).toBe("callbacks");
-      expect(grouper.classifyLine("  skip_before_action :auth")).toBe(
-        "callbacks",
-      );
+      expect(grouper.classifyLine("  skip_before_action :auth")).toBe("callbacks");
     });
 
     it("should classify include/extend/prepend keywords", () => {
@@ -351,33 +312,21 @@ describe("RubyBodyGrouper", () => {
       expect(grouper.classifyLine("  attr_accessor :name")).toBe("attributes");
       expect(grouper.classifyLine("  attr_reader :id")).toBe("attributes");
       expect(grouper.classifyLine("  attribute :status")).toBe("attributes");
-      expect(grouper.classifyLine("  has_one_attached :avatar")).toBe(
-        "attributes",
-      );
-      expect(grouper.classifyLine("  has_many_attached :photos")).toBe(
-        "attributes",
-      );
+      expect(grouper.classifyLine("  has_one_attached :avatar")).toBe("attributes");
+      expect(grouper.classifyLine("  has_many_attached :photos")).toBe("attributes");
     });
 
     it("should classify delegate keywords", () => {
-      expect(grouper.classifyLine("  delegate :name, to: :user")).toBe(
-        "delegates",
-      );
-      expect(grouper.classifyLine("  delegate_missing_to :base")).toBe(
-        "delegates",
-      );
+      expect(grouper.classifyLine("  delegate :name, to: :user")).toBe("delegates");
+      expect(grouper.classifyLine("  delegate_missing_to :base")).toBe("delegates");
     });
 
     it("should classify enum keyword", () => {
-      expect(grouper.classifyLine("  enum :status, { active: 0 }")).toBe(
-        "enums",
-      );
+      expect(grouper.classifyLine("  enum :status, { active: 0 }")).toBe("enums");
     });
 
     it("should classify nested attributes", () => {
-      expect(
-        grouper.classifyLine("  accepts_nested_attributes_for :addresses"),
-      ).toBe("nested_attrs");
+      expect(grouper.classifyLine("  accepts_nested_attributes_for :addresses")).toBe("nested_attrs");
     });
 
     it("should return undefined for blank lines", () => {
@@ -387,9 +336,7 @@ describe("RubyBodyGrouper", () => {
 
     it("should return 'other' for unrecognized identifiers", () => {
       expect(grouper.classifyLine("  CONSTANT = 42")).toBe("other");
-      expect(grouper.classifyLine("  self.table_name = 'users'")).toBe(
-        "other",
-      );
+      expect(grouper.classifyLine("  self.table_name = 'users'")).toBe("other");
     });
 
     it("should return undefined for non-identifier lines", () => {
@@ -398,31 +345,17 @@ describe("RubyBodyGrouper", () => {
     });
 
     it("should classify aasm as state_machine", () => {
-      expect(grouper.classifyLine("  aasm column: :status do")).toBe(
-        "state_machine",
-      );
+      expect(grouper.classifyLine("  aasm column: :status do")).toBe("state_machine");
     });
 
     it("should classify class_attribute and mattr_* as attributes", () => {
-      expect(grouper.classifyLine("  class_attribute :api_key")).toBe(
-        "attributes",
-      );
-      expect(
-        grouper.classifyLine("  mattr_accessor :default_timeout"),
-      ).toBe("attributes");
-      expect(grouper.classifyLine("  mattr_reader :config")).toBe(
-        "attributes",
-      );
-      expect(grouper.classifyLine("  mattr_writer :logger")).toBe(
-        "attributes",
-      );
-      expect(
-        grouper.classifyLine("  cattr_accessor :instance_count"),
-      ).toBe("attributes");
+      expect(grouper.classifyLine("  class_attribute :api_key")).toBe("attributes");
+      expect(grouper.classifyLine("  mattr_accessor :default_timeout")).toBe("attributes");
+      expect(grouper.classifyLine("  mattr_reader :config")).toBe("attributes");
+      expect(grouper.classifyLine("  mattr_writer :logger")).toBe("attributes");
+      expect(grouper.classifyLine("  cattr_accessor :instance_count")).toBe("attributes");
       expect(grouper.classifyLine("  cattr_reader :pool")).toBe("attributes");
-      expect(grouper.classifyLine("  cattr_writer :backend")).toBe(
-        "attributes",
-      );
+      expect(grouper.classifyLine("  cattr_writer :backend")).toBe("attributes");
     });
   });
 
@@ -474,11 +407,7 @@ describe("RubyBodyGrouper", () => {
 
     // Plan test case 4: `end` does NOT create separate "other" group
     it("should not create separate 'other' group for standalone end", () => {
-      const lines = makeLines([
-        "  scope :complex, ->(param) do",
-        "    where(field: param)",
-        "  end",
-      ]);
+      const lines = makeLines(["  scope :complex, ->(param) do", "    where(field: param)", "  end"]);
       const groups = grouper.groupLines(lines);
       // end should be absorbed into the scope group, not create a separate "other" group
       expect(groups).toHaveLength(1);
@@ -549,12 +478,7 @@ describe("RubyBodyGrouper", () => {
 
     // Plan test case 8: extended do...end is transparent
     it("should treat extended do...end as transparent — content groups normally", () => {
-      const lines = makeLines([
-        "  extended do",
-        "    has_many :items",
-        "    belongs_to :parent",
-        "  end",
-      ]);
+      const lines = makeLines(["  extended do", "    has_many :items", "    belongs_to :parent", "  end"]);
       const groups = grouper.groupLines(lines);
       const types = groups.map((g) => g.type);
       expect(types).toEqual(["associations"]);
@@ -575,12 +499,7 @@ describe("RubyBodyGrouper", () => {
 
     // Plan test case 10: unknown identifiers (where, presence) → continuation
     it("should treat unknown identifiers as continuation", () => {
-      const lines = makeLines([
-        "  scope :active, ->(x) do",
-        "    where(active: true)",
-        "    presence(true)",
-        "  end",
-      ]);
+      const lines = makeLines(["  scope :active, ->(x) do", "    where(active: true)", "    presence(true)", "  end"]);
       const groups = grouper.groupLines(lines);
       expect(groups).toHaveLength(1);
       expect(groups[0].type).toBe("scopes");
@@ -589,12 +508,7 @@ describe("RubyBodyGrouper", () => {
 
     // Plan test case 11: callback after_commit do...end → body captured
     it("should capture after_commit do...end body in callbacks group", () => {
-      const lines = makeLines([
-        "  after_commit do",
-        "    notify_subscribers",
-        "    update_search_index",
-        "  end",
-      ]);
+      const lines = makeLines(["  after_commit do", "    notify_subscribers", "    update_search_index", "  end"]);
       const groups = grouper.groupLines(lines);
       expect(groups).toHaveLength(1);
       expect(groups[0].type).toBe("callbacks");
@@ -718,13 +632,7 @@ describe("RubyBodyGrouper", () => {
     // The bug: without block-depth tracking, `end` is continuation and subsequent
     // "other" lines leak into the class << self group.
     it("should not leak lines after 'class << self...end' into same group", () => {
-      const lines = makeLines([
-        "  class << self",
-        "    CONST_A = 1",
-        "  end",
-        "",
-        "  private",
-      ]);
+      const lines = makeLines(["  class << self", "    CONST_A = 1", "  end", "", "  private"]);
       const groups = grouper.groupLines(lines);
       // Without fix: class << self, CONST_A, end, private → all one "other" group
       // With fix: class << self...end is scoped, then private is separate "other"
@@ -766,13 +674,7 @@ describe("RubyBodyGrouper", () => {
     });
 
     it("should handle module...end as block-scoped group", () => {
-      const lines = makeLines([
-        "  module Helpers",
-        "    LIMIT = 100",
-        "  end",
-        "",
-        "  OUTSIDE = 200",
-      ]);
+      const lines = makeLines(["  module Helpers", "    LIMIT = 100", "  end", "", "  OUTSIDE = 200"]);
       const groups = grouper.groupLines(lines);
       // module...end should be one "other" group, OUTSIDE is separate "other"
       expect(groups).toHaveLength(2);
@@ -817,11 +719,7 @@ describe("RubyBodyGrouper", () => {
     });
 
     it("should keep comments within same-type groups as continuations", () => {
-      const lines = makeLines([
-        "  has_many :posts",
-        "  # Another association",
-        "  has_many :comments",
-      ]);
+      const lines = makeLines(["  has_many :posts", "  # Another association", "  has_many :comments"]);
       const groups = grouper.groupLines(lines);
       // All in one associations group (comment is continuation of same type)
       expect(groups).toHaveLength(1);
