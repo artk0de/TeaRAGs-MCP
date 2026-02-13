@@ -297,8 +297,22 @@ export class TreeSitterChunker implements CodeChunker {
           );
 
           if (validChildren.length > 0) {
+            // For Ruby: collect preceding comment rows for each method
+            // so they can be included in method chunks and excluded from body lines
+            const codeLines = language === "ruby" ? code.split("\n") : [];
+            const commentRowsPerChild: Set<number>[] = [];
+
+            if (language === "ruby") {
+              for (const childNode of validChildren) {
+                commentRowsPerChild.push(
+                  this.collectPrecedingCommentRows(childNode, codeLines),
+                );
+              }
+            }
+
             // Extract each child (method) as individual chunk
-            for (const childNode of validChildren) {
+            for (let ci = 0; ci < validChildren.length; ci++) {
+              const childNode = validChildren[ci];
               const childContent = code.substring(childNode.startIndex, childNode.endIndex);
 
               // If child is also too large, use character fallback
@@ -308,7 +322,7 @@ export class TreeSitterChunker implements CodeChunker {
                   chunks.push({
                     ...subChunk,
                     startLine: childNode.startPosition.row + 1 + subChunk.startLine - 1,
-                    endLine: childNode.startPosition.row + 1 + subChunk.endLine - 1,
+                    endLine: childNode.endPosition.row + 1 + subChunk.endLine - 1,
                     metadata: {
                       ...subChunk.metadata,
                       chunkIndex: chunks.length,
@@ -320,10 +334,22 @@ export class TreeSitterChunker implements CodeChunker {
                 continue;
               }
 
+              // Prepend preceding comments for Ruby methods
+              const commentRows = commentRowsPerChild[ci];
+              let finalContent = childContent.trim();
+              let startLine = childNode.startPosition.row + 1;
+
+              if (commentRows && commentRows.size > 0) {
+                const sortedRows = [...commentRows].sort((a, b) => a - b);
+                const commentText = sortedRows.map((r) => codeLines[r]).join("\n");
+                finalContent = commentText + "\n" + finalContent;
+                startLine = sortedRows[0] + 1; // 1-based
+              }
+
               const childName = this.extractName(childNode, code);
               chunks.push({
-                content: childContent.trim(),
-                startLine: childNode.startPosition.row + 1,
+                content: finalContent,
+                startLine,
                 endLine: childNode.endPosition.row + 1,
                 metadata: {
                   filePath,
@@ -343,7 +369,14 @@ export class TreeSitterChunker implements CodeChunker {
             // For other languages: single body chunk (existing behavior)
             if (langConfig.alwaysExtractChildren) {
               if (language === "ruby") {
-                const bodyLines = this.extractContainerBodyLines(node, validChildren, code);
+                // Merge all comment rows into one set to exclude from body lines
+                const allCommentRows = new Set<number>();
+                for (const rows of commentRowsPerChild) {
+                  for (const r of rows) allCommentRows.add(r);
+                }
+                const bodyLines = this.extractContainerBodyLines(
+                  node, validChildren, code, allCommentRows,
+                );
                 const groups = this.rubyBodyGrouper.groupLines(bodyLines, this.config.maxChunkSize);
                 const classHeader = this.extractClassHeader(node, code);
 
@@ -805,6 +838,7 @@ export class TreeSitterChunker implements CodeChunker {
     containerNode: Parser.SyntaxNode,
     childNodes: Parser.SyntaxNode[],
     code: string,
+    extraExcludedRows?: Set<number>,
   ): BodyLine[] {
     const containerStartRow = containerNode.startPosition.row;
     const containerEndRow = containerNode.endPosition.row;
@@ -814,6 +848,12 @@ export class TreeSitterChunker implements CodeChunker {
     const methodLines = new Set<number>();
     for (const child of childNodes) {
       for (let row = child.startPosition.row; row <= child.endPosition.row; row++) {
+        methodLines.add(row);
+      }
+    }
+    // Also exclude rows claimed by method comments
+    if (extraExcludedRows) {
+      for (const row of extraExcludedRows) {
         methodLines.add(row);
       }
     }
@@ -831,6 +871,48 @@ export class TreeSitterChunker implements CodeChunker {
     }
 
     return bodyLines;
+  }
+
+  /**
+   * Scan lines backwards from a method node to collect preceding comment rows.
+   * Allows up to 1 blank line between comment block and def.
+   * Returns a Set of 0-based row numbers.
+   */
+  private collectPrecedingCommentRows(
+    methodNode: Parser.SyntaxNode,
+    codeLines: string[],
+  ): Set<number> {
+    const rows = new Set<number>();
+    const defRow = methodNode.startPosition.row;
+    let row = defRow - 1;
+    let blankCount = 0;
+
+    // Skip up to 1 blank line between def and comment block
+    while (row >= 0 && codeLines[row].trim().length === 0) {
+      blankCount++;
+      if (blankCount > 1) return rows; // 2+ blank lines → no comment capture
+      row--;
+    }
+
+    // Collect consecutive comment lines going upward
+    while (row >= 0) {
+      const trimmed = codeLines[row].trim();
+      if (trimmed.startsWith("#")) {
+        rows.add(row);
+        row--;
+      } else {
+        break;
+      }
+    }
+
+    // Also include blank line(s) between comments and def if comments were found
+    if (rows.size > 0 && blankCount > 0) {
+      for (let br = defRow - 1; br >= defRow - blankCount; br--) {
+        rows.add(br);
+      }
+    }
+
+    return rows;
   }
 
   /**

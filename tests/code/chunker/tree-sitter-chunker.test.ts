@@ -405,6 +405,109 @@ end
       }
     });
 
+    it("should include preceding comments in method chunks", async () => {
+      const code = `
+class PaymentProcessor
+  # Process a payment through the gateway
+  # @param amount [BigDecimal] payment amount
+  # @return [Boolean] whether the payment succeeded
+  def process_payment(amount)
+    gateway.charge(amount)
+    true
+  rescue GatewayError => e
+    handle_error(e)
+    false
+  end
+
+  # Refund a previously processed payment
+  def refund(transaction_id)
+    gateway.refund(transaction_id)
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "payment.rb", "ruby");
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(2);
+
+      // process_payment should include the 3 comment lines
+      const processChunk = methodChunks.find(c => c.metadata.name === "process_payment")!;
+      expect(processChunk.content).toContain("# Process a payment through the gateway");
+      expect(processChunk.content).toContain("# @param amount");
+      expect(processChunk.content).toContain("# @return [Boolean]");
+      // startLine should be the first comment line, not the def line
+      expect(processChunk.startLine).toBeLessThan(
+        processChunk.content.indexOf("def process_payment")
+          ? processChunk.startLine + 3
+          : processChunk.startLine
+      );
+
+      // refund should include its comment
+      const refundChunk = methodChunks.find(c => c.metadata.name === "refund")!;
+      expect(refundChunk.content).toContain("# Refund a previously processed payment");
+
+      // Comments should NOT appear in body chunks
+      const bodyChunks = chunks.filter(c => c.metadata.chunkType === "block");
+      const allBodyContent = bodyChunks.map(c => c.content).join("\n");
+      expect(allBodyContent).not.toContain("# Process a payment");
+      expect(allBodyContent).not.toContain("# Refund a previously");
+    });
+
+    it("should capture comments with one blank line between comment and def", async () => {
+      const code = `
+class UserService
+  # Finds user by email address
+  # Returns nil if not found
+
+  def find_by_email(email)
+    User.find_by(email: email.downcase)
+  end
+
+  def create_user(params)
+    User.create!(params)
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "user_service.rb", "ruby");
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const findChunk = methodChunks.find(c => c.metadata.name === "find_by_email")!;
+
+      // Comment with 1 blank line gap should still be captured
+      expect(findChunk.content).toContain("# Finds user by email address");
+      expect(findChunk.content).toContain("# Returns nil if not found");
+    });
+
+    it("should not capture comments separated by 2+ blank lines from def", async () => {
+      const code = `
+class Processor
+  # This is an unrelated comment about the class
+  # It describes the processor in general terms
+
+
+  def process(data)
+    # Process the incoming data through transformation pipeline
+    result = transform(data)
+    validate_result(result)
+    result
+  end
+
+  def cleanup(options)
+    # Clean up temporary files and cached data
+    remove_temp_files(options)
+    clear_cache(options)
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "processor.rb", "ruby");
+      const methodChunks = chunks.filter(c => c.metadata.chunkType === "function");
+      const processChunk = methodChunks.find(c => c.metadata.name === "process")!;
+
+      // Comment with 2 blank lines gap should NOT be captured
+      expect(processChunk.content).not.toContain("# This is an unrelated comment");
+    });
+
     it("should keep class as single chunk when it has no methods", async () => {
       // A class with only declarations (no methods) stays as one chunk
       const code = `
