@@ -13,9 +13,10 @@ import type { ChunkItem } from "../../../src/code/pipeline/types.js";
 import type { ChunkLookupEntry } from "../../../src/code/types.js";
 
 // Shared mock state — vi.hoisted runs before vi.mock factory
-const { mockBuildFileMetadataMap, mockBuildChunkChurnMap, mockComputeFileMetadata } = vi.hoisted(() => ({
+const { mockBuildFileMetadataMap, mockBuildChunkChurnMap, mockComputeFileMetadata, mockBuildFileMetadataForPaths } = vi.hoisted(() => ({
   mockBuildFileMetadataMap: vi.fn(),
   mockBuildChunkChurnMap: vi.fn(),
+  mockBuildFileMetadataForPaths: vi.fn(),
   mockComputeFileMetadata: vi.fn().mockReturnValue({
     dominantAuthor: "Alice",
     dominantAuthorEmail: "alice@test.com",
@@ -42,6 +43,7 @@ vi.mock("../../../src/code/git/git-log-reader.js", () => ({
   GitLogReader: class MockGitLogReader {
     buildFileMetadataMap = mockBuildFileMetadataMap;
     buildChunkChurnMap = mockBuildChunkChurnMap;
+    buildFileMetadataForPaths = mockBuildFileMetadataForPaths;
   },
   computeFileMetadata: mockComputeFileMetadata,
 }));
@@ -88,6 +90,9 @@ describe("EnrichmentModule streaming API", () => {
     vi.clearAllMocks();
     qdrant = createMockQdrant();
     enrichment = new EnrichmentModule(qdrant as any);
+
+    // Default: backfill returns empty map (safe for tests that don't care about backfill)
+    mockBuildFileMetadataForPaths.mockResolvedValue(new Map());
 
     // Create a temp dir with a fake .git so prefetchGitLog doesn't skip
     repoDir = join(tmpdir(), `enrichment-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -490,6 +495,602 @@ describe("EnrichmentModule streaming API", () => {
       // Should not throw even though first batch failed
       const metrics = await enrichment.awaitCompletion("test_collection");
       expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe("prefetchGitLog ignoreFilter", () => {
+    it("should filter git log results by ignore patterns", async () => {
+      // Git log returns files including ignored ones
+      const fileMap = new Map([
+        ["a.ts", { commits: [], linesAdded: 10, linesDeleted: 2 }],
+        ["node_modules/dep.js", { commits: [], linesAdded: 5, linesDeleted: 0 }],
+        ["b.ts", { commits: [], linesAdded: 3, linesDeleted: 1 }],
+      ]);
+      mockBuildFileMetadataMap.mockResolvedValue(fileMap);
+
+      const mockIgnoreFilter = {
+        ignores: vi.fn((path: string) => path.startsWith("node_modules/")),
+      };
+
+      enrichment.prefetchGitLog(repoDir, "test_collection", mockIgnoreFilter as any);
+
+      const metrics = await enrichment.awaitCompletion("test_collection");
+
+      // "node_modules/dep.js" should have been filtered out
+      expect(mockIgnoreFilter.ignores).toHaveBeenCalled();
+      expect(metrics.gitLogFileCount).toBe(2); // a.ts + b.ts remain
+    });
+
+    it("should not filter when no ignored files match", async () => {
+      const fileMap = new Map([
+        ["a.ts", { commits: [], linesAdded: 10, linesDeleted: 2 }],
+      ]);
+      mockBuildFileMetadataMap.mockResolvedValue(fileMap);
+
+      const mockIgnoreFilter = {
+        ignores: vi.fn().mockReturnValue(false),
+      };
+
+      enrichment.prefetchGitLog(repoDir, "test_collection", mockIgnoreFilter as any);
+
+      const metrics = await enrichment.awaitCompletion("test_collection");
+
+      expect(metrics.gitLogFileCount).toBe(1);
+    });
+  });
+
+  describe("GIT_CHUNK_ENABLED=false early return", () => {
+    it("should skip chunk churn when GIT_CHUNK_ENABLED is false", async () => {
+      const originalEnv = process.env.GIT_CHUNK_ENABLED;
+      process.env.GIT_CHUNK_ENABLED = "false";
+
+      try {
+        mockBuildFileMetadataMap.mockResolvedValue(new Map());
+        mockBuildChunkChurnMap.mockResolvedValue(new Map());
+
+        enrichment.prefetchGitLog(repoDir);
+        await new Promise((r) => setTimeout(r, 10));
+
+        const chunkMap = new Map<string, ChunkLookupEntry[]>([
+          [`${repoDir}/a.ts`, [{ chunkId: "chunk-0", startLine: 1, endLine: 10 }]],
+        ]);
+        enrichment.startChunkChurn("test_collection", repoDir, chunkMap);
+
+        // buildChunkChurnMap should NOT have been called
+        expect(mockBuildChunkChurnMap).not.toHaveBeenCalled();
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.GIT_CHUNK_ENABLED = originalEnv;
+        } else {
+          delete process.env.GIT_CHUNK_ENABLED;
+        }
+      }
+    });
+  });
+
+  describe("startChunkChurn ignoreFilter", () => {
+    it("should filter chunkMap by ignore patterns before processing", async () => {
+      const fileMap = new Map([
+        ["a.ts", { commits: [], linesAdded: 10, linesDeleted: 2 }],
+      ]);
+      mockBuildFileMetadataMap.mockResolvedValue(fileMap);
+
+      const chunkChurnResult = new Map();
+      mockBuildChunkChurnMap.mockResolvedValue(chunkChurnResult);
+
+      const mockIgnoreFilter = {
+        ignores: vi.fn((path: string) => path === "ignored.ts"),
+      };
+
+      enrichment.prefetchGitLog(repoDir, "test_collection", mockIgnoreFilter as any);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const chunkMap = new Map<string, ChunkLookupEntry[]>([
+        [`${repoDir}/a.ts`, [{ chunkId: "chunk-0", startLine: 1, endLine: 10 }]],
+        [`${repoDir}/ignored.ts`, [{ chunkId: "chunk-1", startLine: 1, endLine: 5 }]],
+      ]);
+      enrichment.startChunkChurn("test_collection", repoDir, chunkMap);
+
+      // Wait for async chunk churn to complete
+      await new Promise((r) => setTimeout(r, 50));
+
+      // buildChunkChurnMap should have been called with filtered map (only a.ts)
+      expect(mockBuildChunkChurnMap).toHaveBeenCalled();
+      const passedChunkMap = mockBuildChunkChurnMap.mock.calls[0][1] as Map<string, any>;
+      expect(passedChunkMap.has(`${repoDir}/a.ts`)).toBe(true);
+      expect(passedChunkMap.has(`${repoDir}/ignored.ts`)).toBe(false);
+    });
+
+    it("should not filter chunkMap when no files are ignored", async () => {
+      const fileMap = new Map();
+      mockBuildFileMetadataMap.mockResolvedValue(fileMap);
+      mockBuildChunkChurnMap.mockResolvedValue(new Map());
+
+      const mockIgnoreFilter = {
+        ignores: vi.fn().mockReturnValue(false),
+      };
+
+      enrichment.prefetchGitLog(repoDir, "test_collection", mockIgnoreFilter as any);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const chunkMap = new Map<string, ChunkLookupEntry[]>([
+        [`${repoDir}/a.ts`, [{ chunkId: "chunk-0", startLine: 1, endLine: 10 }]],
+      ]);
+      enrichment.startChunkChurn("test_collection", repoDir, chunkMap);
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(mockBuildChunkChurnMap).toHaveBeenCalled();
+      const passedChunkMap = mockBuildChunkChurnMap.mock.calls[0][1] as Map<string, any>;
+      expect(passedChunkMap.size).toBe(1);
+    });
+  });
+
+  describe("chunk overlay batch error handlers", () => {
+    it("should handle batchSetPayload error in chunk churn mid-batch", async () => {
+      mockBuildFileMetadataMap.mockResolvedValue(new Map());
+
+      // Create enough chunk overlays to trigger a mid-batch flush (BATCH_SIZE = 100)
+      const chunkOverlays = new Map<string, any>();
+      for (let i = 0; i < 105; i++) {
+        chunkOverlays.set(`chunk-${i}`, {
+          chunkCommitCount: 3,
+          chunkChurnRatio: 0.6,
+          chunkContributorCount: 2,
+          chunkBugFixRate: 33,
+          chunkLastModifiedAt: 1700000000,
+          chunkAgeDays: 5,
+        });
+      }
+      const chunkChurnResult = new Map([["a.ts", chunkOverlays]]);
+      mockBuildChunkChurnMap.mockResolvedValue(chunkChurnResult);
+
+      // Make batchSetPayload fail on first call (mid-batch) but succeed on remainder
+      qdrant.batchSetPayload
+        .mockRejectedValueOnce(new Error("Qdrant batch error"))
+        .mockResolvedValue(undefined);
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      enrichment.prefetchGitLog(repoDir, "test_collection");
+      await new Promise((r) => setTimeout(r, 10));
+
+      const chunkMap = new Map<string, ChunkLookupEntry[]>([
+        [`${repoDir}/a.ts`, [{ chunkId: "chunk-0", startLine: 1, endLine: 10 }]],
+      ]);
+      enrichment.startChunkChurn("test_collection", repoDir, chunkMap);
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Error should have been logged (DEBUG is "true" in test env)
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EnrichmentModule] Chunk churn batch failed:"),
+        expect.any(Error),
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should handle batchSetPayload error in chunk churn final batch", async () => {
+      mockBuildFileMetadataMap.mockResolvedValue(new Map());
+
+      // Create a small number of overlays (< BATCH_SIZE) to trigger only the final batch
+      const chunkChurnResult = new Map([
+        [
+          "a.ts",
+          new Map([
+            ["chunk-0", {
+              chunkCommitCount: 1,
+              chunkChurnRatio: 0.5,
+              chunkContributorCount: 1,
+              chunkBugFixRate: 0,
+              chunkLastModifiedAt: 1700000000,
+              chunkAgeDays: 3,
+            }],
+          ]),
+        ],
+      ]);
+      mockBuildChunkChurnMap.mockResolvedValue(chunkChurnResult);
+
+      // Make batchSetPayload fail (this will be the final batch flush)
+      qdrant.batchSetPayload.mockRejectedValueOnce(new Error("Final batch error"));
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      enrichment.prefetchGitLog(repoDir, "test_collection");
+      await new Promise((r) => setTimeout(r, 10));
+
+      const chunkMap = new Map<string, ChunkLookupEntry[]>([
+        [`${repoDir}/a.ts`, [{ chunkId: "chunk-0", startLine: 1, endLine: 10 }]],
+      ]);
+      enrichment.startChunkChurn("test_collection", repoDir, chunkMap);
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EnrichmentModule] Chunk churn final batch failed:"),
+        expect.any(Error),
+      );
+
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("chunk enrichment marker error", () => {
+    it("should handle setPayload error when writing chunk enrichment marker", async () => {
+      mockBuildFileMetadataMap.mockResolvedValue(new Map());
+
+      const chunkChurnResult = new Map([
+        [
+          "a.ts",
+          new Map([
+            ["chunk-0", {
+              chunkCommitCount: 2,
+              chunkChurnRatio: 0.4,
+              chunkContributorCount: 1,
+              chunkBugFixRate: 50,
+              chunkLastModifiedAt: 1700000000,
+              chunkAgeDays: 7,
+            }],
+          ]),
+        ],
+      ]);
+      mockBuildChunkChurnMap.mockResolvedValue(chunkChurnResult);
+
+      // batchSetPayload succeeds (for chunk overlay) but setPayload fails (for marker)
+      qdrant.batchSetPayload.mockResolvedValue(undefined);
+      qdrant.setPayload.mockRejectedValue(new Error("Marker write failed"));
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      enrichment.prefetchGitLog(repoDir);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const chunkMap = new Map<string, ChunkLookupEntry[]>([
+        [`${repoDir}/a.ts`, [{ chunkId: "chunk-0", startLine: 1, endLine: 10 }]],
+      ]);
+      enrichment.startChunkChurn("test_collection", repoDir, chunkMap);
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Should have logged the chunk enrichment marker error
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EnrichmentModule] Failed to update chunk enrichment marker:"),
+        expect.any(Error),
+      );
+
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("updateEnrichmentMarker", () => {
+    it("should compute percentage when totalFiles and processedFiles are provided", async () => {
+      await enrichment.updateEnrichmentMarker("test_collection", {
+        status: "in_progress",
+        totalFiles: 200,
+        processedFiles: 50,
+      });
+
+      expect(qdrant.setPayload).toHaveBeenCalledWith(
+        "test_collection",
+        {
+          enrichment: expect.objectContaining({
+            status: "in_progress",
+            totalFiles: 200,
+            processedFiles: 50,
+            percentage: 25,
+          }),
+        },
+        expect.any(Object),
+      );
+    });
+
+    it("should handle setPayload error gracefully in updateEnrichmentMarker", async () => {
+      qdrant.setPayload.mockRejectedValueOnce(new Error("Qdrant marker error"));
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // Should not throw
+      await enrichment.updateEnrichmentMarker("test_collection", {
+        status: "in_progress",
+      });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EnrichmentModule] Failed to update marker:"),
+        expect.any(Error),
+      );
+
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("applyFileMetadata early return when gitLogResult is null", () => {
+    it("should return early from onChunksStored when git log result is null (no prefetch)", async () => {
+      // Do NOT call prefetchGitLog — gitLogResult stays null
+      // But we need gitLogFailed to be false, so we simulate a scenario where
+      // the enrichment module is in a fresh state without any prefetch
+      const items = makeChunkItems([`${repoDir}/a.ts`], repoDir);
+
+      // onChunksStored checks gitLogFailed first (which is false by default),
+      // then checks gitLogResult (which is null) — so it queues the batch
+      enrichment.onChunksStored("test_collection", repoDir, items);
+
+      // batchSetPayload should NOT have been called
+      expect(qdrant.batchSetPayload).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("applyFileMetadata batchSetPayload error handler", () => {
+    it("should log error when batchSetPayload fails during file metadata apply", async () => {
+      const fileMap = new Map([
+        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+      ]);
+      mockBuildFileMetadataMap.mockResolvedValue(fileMap);
+
+      qdrant.batchSetPayload.mockRejectedValue(new Error("batchSetPayload connection error"));
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      enrichment.prefetchGitLog(repoDir);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const items = makeChunkItems([`${repoDir}/a.ts`], repoDir);
+      enrichment.onChunksStored("test_collection", repoDir, items);
+
+      await enrichment.awaitCompletion("test_collection");
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EnrichmentModule] batchSetPayload failed:"),
+        expect.any(Error),
+      );
+
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("prefetchGitLog error catch block", () => {
+    it("should set gitLogFailed, record durationMs, and discard pending batches on error", async () => {
+      mockBuildFileMetadataMap.mockRejectedValue(new Error("fatal: not a git repository"));
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      enrichment.prefetchGitLog(repoDir, "test_collection");
+
+      // Queue a batch BEFORE the error resolves
+      const items = makeChunkItems([`${repoDir}/a.ts`], repoDir);
+      enrichment.onChunksStored("test_collection", repoDir, items);
+
+      const metrics = await enrichment.awaitCompletion("test_collection");
+
+      // gitLogFailed should prevent any batch processing
+      expect(qdrant.batchSetPayload).not.toHaveBeenCalled();
+      expect(metrics.prefetchDurationMs).toBeGreaterThanOrEqual(0);
+
+      // Error should have been logged
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EnrichmentModule] Git log prefetch failed:"),
+        expect.stringContaining("fatal: not a git repository"),
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should handle non-Error objects in prefetch catch block", async () => {
+      mockBuildFileMetadataMap.mockRejectedValue("string error");
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      enrichment.prefetchGitLog(repoDir);
+
+      const metrics = await enrichment.awaitCompletion("test_collection");
+
+      expect(metrics.prefetchDurationMs).toBeGreaterThanOrEqual(0);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EnrichmentModule] Git log prefetch failed:"),
+        "string error",
+      );
+
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("startChunkChurn main error handler", () => {
+    it("should handle buildChunkChurnMap rejection gracefully", async () => {
+      mockBuildFileMetadataMap.mockResolvedValue(new Map());
+      mockBuildChunkChurnMap.mockRejectedValue(new Error("chunk churn explosion"));
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      enrichment.prefetchGitLog(repoDir);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const chunkMap = new Map<string, ChunkLookupEntry[]>([
+        [`${repoDir}/a.ts`, [{ chunkId: "chunk-0", startLine: 1, endLine: 10 }]],
+      ]);
+      enrichment.startChunkChurn("test_collection", repoDir, chunkMap);
+
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EnrichmentModule] Chunk churn failed:"),
+        expect.any(Error),
+      );
+
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe("backfillMissedFiles", () => {
+    it("should backfill metadata for files not in the main git log window", async () => {
+      // Git log returns only "a.ts" — "b.ts" will be missed
+      const fileMap = new Map([
+        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+      ]);
+      mockBuildFileMetadataMap.mockResolvedValue(fileMap);
+
+      // Backfill returns data for "b.ts"
+      const backfillData = new Map([
+        ["b.ts", { commits: [{ sha: "def", author: "Bob", authorEmail: "b@t.com", timestamp: 1690000000, body: "add b" }], linesAdded: 5, linesDeleted: 0 }],
+      ]);
+      mockBuildFileMetadataForPaths.mockResolvedValue(backfillData);
+
+      enrichment.prefetchGitLog(repoDir);
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Send chunks for both a.ts (matched) and b.ts (missed -> will be backfilled)
+      const items = makeChunkItems(
+        [`${repoDir}/a.ts`, `${repoDir}/b.ts`],
+        repoDir,
+      );
+      enrichment.onChunksStored("test_collection", repoDir, items);
+
+      const metrics = await enrichment.awaitCompletion("test_collection");
+
+      // buildFileMetadataForPaths should have been called with the missed path
+      expect(mockBuildFileMetadataForPaths).toHaveBeenCalledWith(
+        expect.any(String), // repoRoot
+        ["b.ts"],           // missed paths
+        expect.any(Number), // timeoutMs
+      );
+
+      // After backfill: b.ts was backfilled so matchedFiles increases, missedFiles decreases
+      expect(metrics.matchedFiles).toBe(2); // a.ts (original) + b.ts (backfilled)
+      expect(metrics.missedFiles).toBe(0);  // b.ts was backfilled
+
+      // batchSetPayload should have been called for backfill as well
+      expect(qdrant.batchSetPayload).toHaveBeenCalled();
+    });
+
+    it("should handle backfill failure gracefully", async () => {
+      // Git log returns nothing — all files miss
+      mockBuildFileMetadataMap.mockResolvedValue(new Map());
+
+      // Backfill itself fails
+      mockBuildFileMetadataForPaths.mockRejectedValue(new Error("backfill timeout"));
+
+      enrichment.prefetchGitLog(repoDir);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const items = makeChunkItems([`${repoDir}/a.ts`], repoDir);
+      enrichment.onChunksStored("test_collection", repoDir, items);
+
+      // Should not throw
+      const metrics = await enrichment.awaitCompletion("test_collection");
+
+      expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
+      // File still missed since backfill failed
+      expect(metrics.missedFiles).toBe(1);
+    });
+
+    it("should skip backfill when no files were missed", async () => {
+      // Git log has all files
+      const fileMap = new Map([
+        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+      ]);
+      mockBuildFileMetadataMap.mockResolvedValue(fileMap);
+
+      enrichment.prefetchGitLog(repoDir);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const items = makeChunkItems([`${repoDir}/a.ts`], repoDir);
+      enrichment.onChunksStored("test_collection", repoDir, items);
+
+      await enrichment.awaitCompletion("test_collection");
+
+      // buildFileMetadataForPaths should NOT have been called
+      expect(mockBuildFileMetadataForPaths).not.toHaveBeenCalled();
+    });
+
+    it("should handle partial backfill when some files still have no git data", async () => {
+      // Git log returns nothing
+      mockBuildFileMetadataMap.mockResolvedValue(new Map());
+
+      // Backfill returns data for only one of the two missed files
+      const backfillData = new Map([
+        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+      ]);
+      mockBuildFileMetadataForPaths.mockResolvedValue(backfillData);
+
+      enrichment.prefetchGitLog(repoDir);
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Both a.ts and b.ts are missed
+      const items = makeChunkItems(
+        [`${repoDir}/a.ts`, `${repoDir}/b.ts`],
+        repoDir,
+      );
+      enrichment.onChunksStored("test_collection", repoDir, items);
+
+      const metrics = await enrichment.awaitCompletion("test_collection");
+
+      // a.ts was backfilled, b.ts was not
+      expect(metrics.matchedFiles).toBe(1); // a.ts backfilled
+      expect(metrics.missedFiles).toBe(1);  // b.ts still missed
+    });
+
+    it("should handle batchSetPayload error during backfill", async () => {
+      // Git log returns nothing
+      mockBuildFileMetadataMap.mockResolvedValue(new Map());
+
+      // Backfill returns data
+      const backfillData = new Map([
+        ["a.ts", { commits: [{ sha: "abc", author: "Alice", authorEmail: "a@t.com", timestamp: 1700000000, body: "init" }], linesAdded: 10, linesDeleted: 2 }],
+      ]);
+      mockBuildFileMetadataForPaths.mockResolvedValue(backfillData);
+
+      // batchSetPayload fails during backfill
+      qdrant.batchSetPayload.mockRejectedValue(new Error("Qdrant backfill batch error"));
+
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      enrichment.prefetchGitLog(repoDir);
+      await new Promise((r) => setTimeout(r, 10));
+
+      const items = makeChunkItems([`${repoDir}/a.ts`], repoDir);
+      enrichment.onChunksStored("test_collection", repoDir, items);
+
+      // Should not throw
+      const metrics = await enrichment.awaitCompletion("test_collection");
+      expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
+
+      // Error should have been logged
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EnrichmentModule] backfill batchSetPayload failed:"),
+        expect.any(Error),
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should respect GIT_BACKFILL_TIMEOUT_MS env variable", async () => {
+      const originalEnv = process.env.GIT_BACKFILL_TIMEOUT_MS;
+      process.env.GIT_BACKFILL_TIMEOUT_MS = "5000";
+
+      try {
+        mockBuildFileMetadataMap.mockResolvedValue(new Map());
+        mockBuildFileMetadataForPaths.mockResolvedValue(new Map());
+
+        enrichment.prefetchGitLog(repoDir);
+        await new Promise((r) => setTimeout(r, 10));
+
+        const items = makeChunkItems([`${repoDir}/a.ts`], repoDir);
+        enrichment.onChunksStored("test_collection", repoDir, items);
+
+        await enrichment.awaitCompletion("test_collection");
+
+        // Should have passed 5000 as timeout
+        expect(mockBuildFileMetadataForPaths).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.any(Array),
+          5000,
+        );
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.GIT_BACKFILL_TIMEOUT_MS = originalEnv;
+        } else {
+          delete process.env.GIT_BACKFILL_TIMEOUT_MS;
+        }
+      }
     });
   });
 });

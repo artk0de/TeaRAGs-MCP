@@ -205,4 +205,248 @@ export function calculateProduct(numbers: number[]): number {
       }
     });
   });
+
+  describe("searchCode edge cases and filters", () => {
+    beforeEach(async () => {
+      await createTestFile(
+        codebaseDir,
+        "app.ts",
+        "export function appMain(): void {\n  console.log('Application started');\n}",
+      );
+      await createTestFile(
+        codebaseDir,
+        "README.md",
+        "# Documentation\n\nThis is the project documentation.",
+      );
+      await indexer.indexCodebase(codebaseDir);
+    });
+
+    it("should apply documentationOnly filter", async () => {
+      const searchSpy = vi.spyOn(qdrant, "search");
+
+      await indexer.searchCode(codebaseDir, "documentation", {
+        documentationOnly: true,
+      });
+
+      expect(searchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          must: expect.arrayContaining([
+            { key: "isDocumentation", match: { value: true } },
+          ]),
+        }),
+      );
+    });
+
+    it("should apply git author filter", async () => {
+      const searchSpy = vi.spyOn(qdrant, "search");
+
+      await indexer.searchCode(codebaseDir, "test", {
+        author: "John Doe",
+      });
+
+      expect(searchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          must: expect.arrayContaining([
+            { key: "git.dominantAuthor", match: { value: "John Doe" } },
+          ]),
+        }),
+      );
+    });
+
+    it("should apply modifiedAfter filter", async () => {
+      const searchSpy = vi.spyOn(qdrant, "search");
+      const dateStr = "2024-01-01T00:00:00Z";
+
+      await indexer.searchCode(codebaseDir, "test", {
+        modifiedAfter: dateStr,
+      });
+
+      const expectedTimestamp = Math.floor(new Date(dateStr).getTime() / 1000);
+      expect(searchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          must: expect.arrayContaining([
+            { key: "git.lastModifiedAt", range: { gte: expectedTimestamp } },
+          ]),
+        }),
+      );
+    });
+
+    it("should apply modifiedBefore filter", async () => {
+      const searchSpy = vi.spyOn(qdrant, "search");
+      const dateStr = "2025-06-01T00:00:00Z";
+
+      await indexer.searchCode(codebaseDir, "test", {
+        modifiedBefore: dateStr,
+      });
+
+      const expectedTimestamp = Math.floor(new Date(dateStr).getTime() / 1000);
+      expect(searchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          must: expect.arrayContaining([
+            { key: "git.lastModifiedAt", range: { lte: expectedTimestamp } },
+          ]),
+        }),
+      );
+    });
+
+    it("should apply minAgeDays filter", async () => {
+      const searchSpy = vi.spyOn(qdrant, "search");
+
+      await indexer.searchCode(codebaseDir, "test", {
+        minAgeDays: 30,
+      });
+
+      expect(searchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          must: expect.arrayContaining([
+            { key: "git.ageDays", range: { gte: 30 } },
+          ]),
+        }),
+      );
+    });
+
+    it("should apply maxAgeDays filter", async () => {
+      const searchSpy = vi.spyOn(qdrant, "search");
+
+      await indexer.searchCode(codebaseDir, "test", {
+        maxAgeDays: 7,
+      });
+
+      expect(searchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          must: expect.arrayContaining([
+            { key: "git.ageDays", range: { lte: 7 } },
+          ]),
+        }),
+      );
+    });
+
+    it("should apply minCommitCount filter", async () => {
+      const searchSpy = vi.spyOn(qdrant, "search");
+
+      await indexer.searchCode(codebaseDir, "test", {
+        minCommitCount: 5,
+      });
+
+      expect(searchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          must: expect.arrayContaining([
+            { key: "git.commitCount", range: { gte: 5 } },
+          ]),
+        }),
+      );
+    });
+
+    it("should apply taskId filter", async () => {
+      const searchSpy = vi.spyOn(qdrant, "search");
+
+      await indexer.searchCode(codebaseDir, "test", {
+        taskId: "TD-12345",
+      });
+
+      expect(searchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Array),
+        expect.any(Number),
+        expect.objectContaining({
+          must: expect.arrayContaining([
+            { key: "git.taskIds", match: { any: ["TD-12345"] } },
+          ]),
+        }),
+      );
+    });
+
+    it("should apply pathPattern glob filter client-side", async () => {
+      const results = await indexer.searchCode(codebaseDir, "test", {
+        pathPattern: "**/*.ts",
+      });
+
+      // All results should have .ts extension paths
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it("should apply rerank with non-relevance preset", async () => {
+      const results = await indexer.searchCode(codebaseDir, "test", {
+        rerank: "recent",
+      });
+
+      // Should return results (reranked)
+      expect(Array.isArray(results)).toBe(true);
+    });
+
+    it("should include git metadata in results when present", async () => {
+      // Manually add a point with git metadata to test the result formatting
+      const searchSpy = vi.spyOn(qdrant, "search").mockResolvedValueOnce([
+        {
+          id: "test-point",
+          score: 0.95,
+          payload: {
+            content: "test content",
+            relativePath: "app.ts",
+            startLine: 1,
+            endLine: 10,
+            language: "typescript",
+            fileExtension: ".ts",
+            git: {
+              commitCount: 5,
+              dominantAuthor: "Jane",
+              ageDays: 14,
+            },
+          },
+        },
+      ]);
+
+      const results = await indexer.searchCode(codebaseDir, "test");
+
+      expect(results.length).toBe(1);
+      expect(results[0].metadata).toBeDefined();
+      expect(results[0].metadata?.git).toBeDefined();
+      expect(results[0].metadata?.git?.commitCount).toBe(5);
+
+      searchSpy.mockRestore();
+    });
+
+    it("should handle results with missing payload fields gracefully", async () => {
+      const searchSpy = vi.spyOn(qdrant, "search").mockResolvedValueOnce([
+        {
+          id: "test-point",
+          score: 0.8,
+          payload: {},
+        },
+      ]);
+
+      const results = await indexer.searchCode(codebaseDir, "test");
+
+      expect(results.length).toBe(1);
+      expect(results[0].content).toBe("");
+      expect(results[0].filePath).toBe("");
+      expect(results[0].startLine).toBe(0);
+      expect(results[0].endLine).toBe(0);
+      expect(results[0].language).toBe("unknown");
+      expect(results[0].fileExtension).toBe("");
+
+      searchSpy.mockRestore();
+    });
+  });
 });

@@ -113,6 +113,11 @@ const DECLARATION_KEYWORDS: Record<string, string> = {
   // state machine
   aasm: "state_machine",
 
+  // concern hooks (transparent — wrapper lines removed by block-depth logic)
+  included: "concern_hooks",
+  extended: "concern_hooks",
+  class_methods: "concern_hooks",
+
   // serialization
   serialize: "other",
   store_accessor: "other",
