@@ -221,7 +221,11 @@ export class RubyBodyGrouper {
     /** True when inside a keyword block (class/module) that flushes on close */
     let keywordBlock = false;
 
-    const flushGroup = () => {
+    /**
+     * Flush current group and return non-blank pending lines (comments)
+     * that should attach to the next group rather than being dropped.
+     */
+    const flushGroup = (): BodyLine[] => {
       if (currentLines.length > 0 && currentType) {
         groups.push({
           type: currentType,
@@ -229,9 +233,14 @@ export class RubyBodyGrouper {
           lineRanges: computeLineRanges(currentLines),
         });
       }
+      // Preserve non-blank pending lines (comments) for the next group
+      const carryOver = pendingBlanks.filter(
+        (l) => l.text.trim().length > 0,
+      );
       currentLines = [];
       currentType = null;
       pendingBlanks = [];
+      return carryOver;
     };
 
     for (const line of lines) {
@@ -319,9 +328,9 @@ export class RubyBodyGrouper {
 
         if (opensDo || opensKeywordBlock) {
           // Unclassified line that opens a block → start new "other" group
-          flushGroup();
+          const carry = flushGroup();
           currentType = "other";
-          currentLines = [line];
+          currentLines = [...carry, line];
           blockDepth = 1;
           keywordBlock = opensKeywordBlock;
         } else if (currentType) {
@@ -340,10 +349,10 @@ export class RubyBodyGrouper {
         currentLines.push(...pendingBlanks, line);
         pendingBlanks = [];
       } else {
-        // Different type — flush current group and start new
-        flushGroup();
+        // Different type — flush current group, carry comments to new group
+        const carry = flushGroup();
         currentType = type;
-        currentLines = [line];
+        currentLines = [...carry, line];
       }
 
       // --- Check if this line opens a do...end block ---

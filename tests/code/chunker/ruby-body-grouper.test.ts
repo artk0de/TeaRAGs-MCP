@@ -780,6 +780,55 @@ describe("RubyBodyGrouper", () => {
       expect(groups[1].lines[0].text.trim()).toBe("OUTSIDE = 200");
     });
 
+    // Bug fix: comments between groups should attach to next group, not be dropped
+    it("should attach comments to the following group when type changes", () => {
+      const lines = makeLines([
+        "  has_many :posts",
+        "",
+        "  # Validation rules for user",
+        "  validates :email, presence: true",
+        "  validates :name, presence: true",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(2);
+      expect(groups[0].type).toBe("associations");
+      expect(groups[1].type).toBe("validations");
+      // Comment should be in the validations group, not dropped
+      const valLines = groups[1].lines.map((l) => l.text.trim());
+      expect(valLines).toContain("# Validation rules for user");
+    });
+
+    it("should attach multi-line comments to the following group", () => {
+      const lines = makeLines([
+        "  scope :active, -> { where(active: true) }",
+        "",
+        "  # Callbacks section",
+        "  # These run on save and create",
+        "  before_save :normalize_email",
+        "  after_create :send_welcome",
+      ]);
+      const groups = grouper.groupLines(lines);
+      const types = groups.map((g) => g.type);
+      expect(types).toEqual(["scopes", "callbacks"]);
+      // Both comment lines should be in the callbacks group
+      const cbLines = groups[1].lines.map((l) => l.text.trim());
+      expect(cbLines).toContain("# Callbacks section");
+      expect(cbLines).toContain("# These run on save and create");
+    });
+
+    it("should keep comments within same-type groups as continuations", () => {
+      const lines = makeLines([
+        "  has_many :posts",
+        "  # Another association",
+        "  has_many :comments",
+      ]);
+      const groups = grouper.groupLines(lines);
+      // All in one associations group (comment is continuation of same type)
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("associations");
+      expect(groups[0].lines).toHaveLength(3);
+    });
+
     // Plan test case 12: random DSL methods not in keywords → continuation
     it("should treat random DSL methods as continuation of current group", () => {
       const lines = makeLines([
