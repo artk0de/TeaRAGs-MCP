@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+
 import { CharacterChunker } from "../../../src/code/chunker/character-chunker.js";
 import type { ChunkerConfig } from "../../../src/code/types.js";
 
@@ -17,8 +18,7 @@ describe("CharacterChunker", () => {
 
   describe("chunk", () => {
     it("should chunk small code into single chunk", async () => {
-      const code =
-        "function hello() {\n  console.log('Starting hello function');\n  return 'world';\n}";
+      const code = "function hello() {\n  console.log('Starting hello function');\n  return 'world';\n}";
       const chunks = await chunker.chunk(code, "test.ts", "typescript");
 
       expect(chunks).toHaveLength(1);

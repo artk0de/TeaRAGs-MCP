@@ -46,10 +46,7 @@ export interface ResultWithPath {
  * const results = await qdrant.search(...);
  * const filtered = filterResultsByGlob(results, "**\/workflow/**");
  */
-export function filterResultsByGlob<T extends ResultWithPath>(
-  results: T[],
-  pattern: string,
-): T[] {
+export function filterResultsByGlob<T extends ResultWithPath>(results: T[], pattern: string): T[] {
   const isMatch = createGlobMatcher(pattern);
   return results.filter((item) => {
     const path = item.payload?.relativePath;
@@ -68,10 +65,6 @@ export function filterResultsByGlob<T extends ResultWithPath>(
  * @param multiplier - How many extra results to fetch (default: 3)
  * @returns The limit to use when querying Qdrant
  */
-export function calculateFetchLimit(
-  requestedLimit: number,
-  hasPattern: boolean,
-  multiplier: number = 3,
-): number {
+export function calculateFetchLimit(requestedLimit: number, hasPattern: boolean, multiplier: number = 3): number {
   return hasPattern ? requestedLimit * multiplier : requestedLimit;
 }

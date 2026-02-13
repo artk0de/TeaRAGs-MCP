@@ -11,10 +11,9 @@
  *
  * Run: npm run benchmark-embeddings
  */
-
 import { OllamaEmbeddings } from "../build/embeddings/ollama.js";
-import { config, MEDIAN_CODE_CHUNK_SIZE, AVG_LOC_PER_CHUNK } from "./lib/config.mjs";
 import { c, printBox } from "./lib/colors.mjs";
+import { AVG_LOC_PER_CHUNK, config, MEDIAN_CODE_CHUNK_SIZE } from "./lib/config.mjs";
 import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
 
 /**
@@ -39,10 +38,10 @@ async function checkOllama() {
     if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
 
     const { models } = await response.json();
-    const modelNames = (models || []).map(m => m.name.replace(/:latest$/, ""));
+    const modelNames = (models || []).map((m) => m.name.replace(/:latest$/, ""));
     const target = config.EMBEDDING_MODEL.replace(/:latest$/, "");
 
-    if (!modelNames.some(n => n === target || n === config.EMBEDDING_MODEL)) {
+    if (!modelNames.some((n) => n === target || n === config.EMBEDDING_MODEL)) {
       return { ok: false, error: `Model "${config.EMBEDDING_MODEL}" not found` };
     }
     return { ok: true };
@@ -84,16 +83,19 @@ async function main() {
   console.log();
 
   // Detect setup type
-  const isRemote = !config.EMBEDDING_BASE_URL.includes("localhost") &&
-                   !config.EMBEDDING_BASE_URL.includes("127.0.0.1");
+  const isRemote = !config.EMBEDDING_BASE_URL.includes("localhost") && !config.EMBEDDING_BASE_URL.includes("127.0.0.1");
   const setupIcon = isRemote ? "🌐" : "🏠";
   const setupName = isRemote ? "Remote GPU" : "Local GPU";
 
   printBox(`${setupIcon} ${setupName.toUpperCase()} - OPTIMAL CONFIGURATION`, "");
 
   // Main result
-  console.log(`  ${c.bold}EMBEDDING_BATCH_SIZE${c.reset}   = ${c.green}${c.bold}${result.EMBEDDING_BATCH_SIZE}${c.reset}`);
-  console.log(`  ${c.bold}EMBEDDING_CONCURRENCY${c.reset}  = ${c.green}${c.bold}${result.EMBEDDING_CONCURRENCY}${c.reset}`);
+  console.log(
+    `  ${c.bold}EMBEDDING_BATCH_SIZE${c.reset}   = ${c.green}${c.bold}${result.EMBEDDING_BATCH_SIZE}${c.reset}`,
+  );
+  console.log(
+    `  ${c.bold}EMBEDDING_CONCURRENCY${c.reset}  = ${c.green}${c.bold}${result.EMBEDDING_CONCURRENCY}${c.reset}`,
+  );
   console.log();
   console.log(`  ${c.bold}Throughput:${c.reset} ${c.cyan}${result.throughput_chunks_per_sec} chunks/s${c.reset}`);
   console.log();
@@ -105,7 +107,9 @@ async function main() {
     console.log(`  ${c.dim}•${c.reset} Lower batch + higher concurrency hides network latency`);
     console.log(`  ${c.dim}•${c.reset} While one batch transfers, GPU processes another`);
     if (result.EMBEDDING_CONCURRENCY > 1) {
-      console.log(`  ${c.dim}•${c.reset} CONCURRENCY=${result.EMBEDDING_CONCURRENCY} overlaps network I/O with GPU compute`);
+      console.log(
+        `  ${c.dim}•${c.reset} CONCURRENCY=${result.EMBEDDING_CONCURRENCY} overlaps network I/O with GPU compute`,
+      );
     }
   } else {
     console.log(`  ${c.dim}•${c.reset} Local GPU detected (minimal network latency)`);
@@ -140,11 +144,13 @@ async function main() {
 
   // Stats
   console.log(`${c.dim}────────────────────────────────────────${c.reset}`);
-  console.log(`${c.dim}Configs tested: ${result.stable_configs_count} stable, ${result.discarded_configs_count} discarded${c.reset}`);
+  console.log(
+    `${c.dim}Configs tested: ${result.stable_configs_count} stable, ${result.discarded_configs_count} discarded${c.reset}`,
+  );
   console.log(`${c.bold}Total benchmark time: ${formatTime(result.calibration_time_ms)}${c.reset}`);
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error(`${c.red}Fatal error:${c.reset}`, err.message);
   console.error(err.stack);
   process.exit(1);

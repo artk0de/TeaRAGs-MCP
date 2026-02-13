@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testRubyASTChunking(qdrant, embeddings) {
   section("8b. Ruby AST Chunking (Rails Patterns)");
@@ -15,7 +16,10 @@ export async function testRubyASTChunking(qdrant, embeddings) {
   await fs.mkdir(rubyTestDir, { recursive: true });
 
   // Rails-style Service object
-  await createTestFile(rubyTestDir, "user_service.rb", `
+  await createTestFile(
+    rubyTestDir,
+    "user_service.rb",
+    `
 # User service with typical Rails patterns
 class UserService
   def initialize(repository)
@@ -39,10 +43,14 @@ class UserService
     new(UserRepository.new).find_user(id)
   end
 end
-`);
+`,
+  );
 
   // Rails Concern / Module
-  await createTestFile(rubyTestDir, "authenticatable.rb", `
+  await createTestFile(
+    rubyTestDir,
+    "authenticatable.rb",
+    `
 module Authenticatable
   extend ActiveSupport::Concern
 
@@ -58,10 +66,14 @@ module Authenticatable
     @current_user ||= User.find_by(id: session[:user_id])
   end
 end
-`);
+`,
+  );
 
   // Ruby with lambdas and blocks
-  await createTestFile(rubyTestDir, "validator.rb", `
+  await createTestFile(
+    rubyTestDir,
+    "validator.rb",
+    `
 class Validator
   RULES = {
     email: ->(value) { value.match?(/\\A[^@]+@[^@]+\\z/) },
@@ -82,11 +94,16 @@ class Validator
          .group_by(&:category)
   end
 end
-`);
+`,
+  );
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
-    supportedExtensions: [".rb"],
-  }));
+  const indexer = new CodeIndexer(
+    qdrant,
+    embeddings,
+    getIndexerConfig({
+      supportedExtensions: [".rb"],
+    }),
+  );
 
   resources.trackIndexedPath(rubyTestDir);
   const stats = await indexer.indexCodebase(rubyTestDir, { forceReindex: true });

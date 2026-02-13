@@ -21,7 +21,7 @@
  * 5. Prefer stability and robustness over peak performance
  */
 
-import { benchmarkEmbeddingBatchSize, benchmarkConcurrency, generateTexts } from "./benchmarks.mjs";
+import { benchmarkConcurrency, benchmarkEmbeddingBatchSize, generateTexts } from "./benchmarks.mjs";
 import { c, formatRate } from "./colors.mjs";
 import { config } from "./config.mjs";
 
@@ -29,20 +29,20 @@ import { config } from "./config.mjs";
 const CALIBRATION_CONFIG = {
   // Phase 1: Batch plateau detection
   BATCH_SET: [256, 512, 1024, 2048, 3072, 4096],
-  PLATEAU_THRESHOLD: 0.03,  // 3% improvement threshold
+  PLATEAU_THRESHOLD: 0.03, // 3% improvement threshold
 
   // Phase 2: Concurrency testing
   CONCURRENCY_SET: [1, 2, 4, 6, 8],
 
   // Phase 3: Configuration selection
-  ACCEPTABLE_THRESHOLD: 0.02,  // Within 2% of max = acceptable
+  ACCEPTABLE_THRESHOLD: 0.02, // Within 2% of max = acceptable
 
   // Workload sizing
-  MAX_TOTAL_CHUNKS: 4096,  // Maximum chunks to test (replaces TUNE_SAMPLE_SIZE)
-  RUNS: 2,  // Number of runs for median
+  MAX_TOTAL_CHUNKS: 4096, // Maximum chunks to test (replaces TUNE_SAMPLE_SIZE)
+  RUNS: 2, // Number of runs for median
 
   // Stall detection
-  STALL_TIMEOUT_MS: 30000,  // 30s without progress = STALL
+  STALL_TIMEOUT_MS: 30000, // 30s without progress = STALL
 };
 
 /**
@@ -104,7 +104,9 @@ export async function findBatchPlateau(embeddings, texts, options = {}) {
 
     if (verbose) {
       const timeoutInfo = plateauTimeout ? ` ${c.dim}(max ${formatTime(plateauTimeout)})${c.reset}` : "";
-      process.stdout.write(`  ${chunkCount.toString().padStart(4)} chunks @ batch ${c.bold}${batchSize}${c.reset}${timeoutInfo}  `);
+      process.stdout.write(
+        `  ${chunkCount.toString().padStart(4)} chunks @ batch ${c.bold}${batchSize}${c.reset}${timeoutInfo}  `,
+      );
     }
 
     const testResult = await benchmarkEmbeddingBatchSize(embeddings, testTexts, batchSize, RUNS, { plateauTimeout });
@@ -135,8 +137,8 @@ export async function findBatchPlateau(embeddings, texts, options = {}) {
 
       console.log(
         `${formatRate(rate, "chunks/s")}  ` +
-        `${c.dim}(${formatTime(testResult.time)})${c.reset}  ` +
-        `${color}${sign}${improvementPct}%${c.reset}`
+          `${c.dim}(${formatTime(testResult.time)})${c.reset}  ` +
+          `${color}${sign}${improvementPct}%${c.reset}`,
       );
     }
 
@@ -152,8 +154,8 @@ export async function findBatchPlateau(embeddings, texts, options = {}) {
   }
 
   // Define plateau batches: last 2-3 valid results (exclude degraded and errors)
-  const validResults = results.filter(r => !r.error && !r.degraded);
-  const plateauBatches = validResults.slice(-Math.min(3, validResults.length)).map(r => r.batchSize);
+  const validResults = results.filter((r) => !r.error && !r.degraded);
+  const plateauBatches = validResults.slice(-Math.min(3, validResults.length)).map((r) => r.batchSize);
 
   if (verbose) {
     console.log(`  ${c.green}Plateau batches: [${plateauBatches.join(", ")}]${c.reset}`);
@@ -229,7 +231,9 @@ export async function testConcurrencyOnPlateau(embeddings, texts, plateauBatches
     });
 
     if (verbose) {
-      console.log(`    CONC=${c.bold}1${c.reset}  ${c.dim}(from Phase 1)${c.reset}  ${formatRate(baselineRate, "chunks/s")}`);
+      console.log(
+        `    CONC=${c.bold}1${c.reset}  ${c.dim}(from Phase 1)${c.reset}  ${formatRate(baselineRate, "chunks/s")}`,
+      );
     }
 
     // Track previous concurrency rate for plateau detection
@@ -249,7 +253,9 @@ export async function testConcurrencyOnPlateau(embeddings, texts, plateauBatches
       const plateauTimeout = Math.ceil((chunkCount / minAcceptableRate) * 1000 * 1.5);
 
       if (verbose) {
-        process.stdout.write(`    CONC=${c.bold}${conc}${c.reset} ${c.dim}(${chunkCount} chunks, max ${formatTime(plateauTimeout)})${c.reset}  `);
+        process.stdout.write(
+          `    CONC=${c.bold}${conc}${c.reset} ${c.dim}(${chunkCount} chunks, max ${formatTime(plateauTimeout)})${c.reset}  `,
+        );
       }
 
       const testResult = await benchmarkConcurrency(embeddings, testTexts, conc, batchSize, RUNS, { plateauTimeout });
@@ -275,7 +281,7 @@ export async function testConcurrencyOnPlateau(embeddings, texts, plateauBatches
         concurrency: conc,
         throughput: testResult.rate,
         wallTime: testResult.time,
-        status: "STABLE"
+        status: "STABLE",
       };
 
       stableConfigs.push(config);
@@ -288,9 +294,9 @@ export async function testConcurrencyOnPlateau(embeddings, texts, plateauBatches
         const sign = concImprovement >= 0 ? "+" : "";
         console.log(
           `${c.green}STABLE${c.reset}  ` +
-          `${formatRate(testResult.rate, "chunks/s")}  ` +
-          `${c.dim}(${formatTime(testResult.time)})${c.reset}  ` +
-          `${concImprovement < PLATEAU_THRESHOLD ? c.yellow : c.green}${sign}${improvementPct}%${c.reset}`
+            `${formatRate(testResult.rate, "chunks/s")}  ` +
+            `${c.dim}(${formatTime(testResult.time)})${c.reset}  ` +
+            `${concImprovement < PLATEAU_THRESHOLD ? c.yellow : c.green}${sign}${improvementPct}%${c.reset}`,
         );
       }
 
@@ -334,7 +340,9 @@ export function selectOptimalConfiguration(stableConfigs, options = {}) {
   if (verbose) {
     console.log();
     console.log(`${c.bold}Phase 3: Configuration Selection${c.reset}`);
-    console.log(`  ${c.dim}Acceptable threshold: within ${(ACCEPTABLE_THRESHOLD * 100).toFixed(0)}% of maximum${c.reset}`);
+    console.log(
+      `  ${c.dim}Acceptable threshold: within ${(ACCEPTABLE_THRESHOLD * 100).toFixed(0)}% of maximum${c.reset}`,
+    );
     console.log();
   }
 
@@ -343,11 +351,11 @@ export function selectOptimalConfiguration(stableConfigs, options = {}) {
   }
 
   // Find maximum throughput
-  const maxThroughput = Math.max(...stableConfigs.map(c => c.throughput));
+  const maxThroughput = Math.max(...stableConfigs.map((c) => c.throughput));
   const acceptableThreshold = maxThroughput * (1 - ACCEPTABLE_THRESHOLD);
 
   // Filter acceptable configurations
-  const acceptableConfigs = stableConfigs.filter(c => c.throughput >= acceptableThreshold);
+  const acceptableConfigs = stableConfigs.filter((c) => c.throughput >= acceptableThreshold);
 
   if (verbose) {
     console.log(`  ${c.dim}Max throughput: ${maxThroughput.toFixed(1)} chunks/s${c.reset}`);
@@ -359,8 +367,8 @@ export function selectOptimalConfiguration(stableConfigs, options = {}) {
       const pct = ((cfg.throughput / maxThroughput) * 100).toFixed(1);
       console.log(
         `    BATCH=${cfg.batchSize.toString().padStart(4)} CONC=${cfg.concurrency}  ` +
-        `${formatRate(cfg.throughput, "chunks/s")}  ` +
-        `${c.dim}(${pct}% of max)${c.reset}`
+          `${formatRate(cfg.throughput, "chunks/s")}  ` +
+          `${c.dim}(${pct}% of max)${c.reset}`,
       );
     }
     console.log();
@@ -394,7 +402,9 @@ export function selectOptimalConfiguration(stableConfigs, options = {}) {
     // Local recommendation
     const localPct = ((selectedLocal.throughput / maxThroughput) * 100).toFixed(1);
     console.log(`  ${c.green}🏠 Local GPU:${c.reset}`);
-    console.log(`    BATCH_SIZE=${c.bold}${selectedLocal.batchSize}${c.reset}  CONCURRENCY=${c.bold}${selectedLocal.concurrency}${c.reset}  ${formatRate(selectedLocal.throughput, "chunks/s")} ${c.dim}(${localPct}%)${c.reset}`);
+    console.log(
+      `    BATCH_SIZE=${c.bold}${selectedLocal.batchSize}${c.reset}  CONCURRENCY=${c.bold}${selectedLocal.concurrency}${c.reset}  ${formatRate(selectedLocal.throughput, "chunks/s")} ${c.dim}(${localPct}%)${c.reset}`,
+    );
     if (selectedLocal.concurrency === 1) {
       console.log(`    ${c.dim}→ GPU-bound: minimize overhead with larger batches${c.reset}`);
     } else {
@@ -403,10 +413,15 @@ export function selectOptimalConfiguration(stableConfigs, options = {}) {
     console.log();
 
     // Remote recommendation (only if different)
-    if (selectedRemote.batchSize !== selectedLocal.batchSize || selectedRemote.concurrency !== selectedLocal.concurrency) {
+    if (
+      selectedRemote.batchSize !== selectedLocal.batchSize ||
+      selectedRemote.concurrency !== selectedLocal.concurrency
+    ) {
       const remotePct = ((selectedRemote.throughput / maxThroughput) * 100).toFixed(1);
       console.log(`  ${c.cyan}🌐 Remote GPU:${c.reset}`);
-      console.log(`    BATCH_SIZE=${c.bold}${selectedRemote.batchSize}${c.reset}  CONCURRENCY=${c.bold}${selectedRemote.concurrency}${c.reset}  ${formatRate(selectedRemote.throughput, "chunks/s")} ${c.dim}(${remotePct}%)${c.reset}`);
+      console.log(
+        `    BATCH_SIZE=${c.bold}${selectedRemote.batchSize}${c.reset}  CONCURRENCY=${c.bold}${selectedRemote.concurrency}${c.reset}  ${formatRate(selectedRemote.throughput, "chunks/s")} ${c.dim}(${remotePct}%)${c.reset}`,
+      );
       console.log(`    ${c.dim}→ Concurrency hides network latency${c.reset}`);
       console.log();
     }
@@ -461,11 +476,16 @@ export async function calibrateEmbeddings(embeddings, options = {}) {
   const { plateauBatches, batchRates } = await findBatchPlateau(embeddings, texts, { verbose });
 
   // Phase 2: Test concurrency on plateau
-  const { stableConfigs, discardedConfigs } = await testConcurrencyOnPlateau(embeddings, texts, plateauBatches, batchRates, { verbose });
+  const { stableConfigs, discardedConfigs } = await testConcurrencyOnPlateau(
+    embeddings,
+    texts,
+    plateauBatches,
+    batchRates,
+    { verbose },
+  );
 
   // Detect if remote setup (not localhost)
-  const isRemote = !config.EMBEDDING_BASE_URL.includes("localhost") &&
-                   !config.EMBEDDING_BASE_URL.includes("127.0.0.1");
+  const isRemote = !config.EMBEDDING_BASE_URL.includes("localhost") && !config.EMBEDDING_BASE_URL.includes("127.0.0.1");
 
   // Phase 3: Select optimal configuration
   const selected = selectOptimalConfiguration(stableConfigs, { verbose, isRemote });

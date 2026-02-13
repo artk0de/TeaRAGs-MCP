@@ -3,19 +3,13 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import { CodeIndexer } from "../code/indexer.js";
-import {
-  rerankSemanticSearchResults,
-  type RerankMode,
-  type SemanticSearchRerankPreset,
-} from "../code/reranker.js";
+import { rerankSemanticSearchResults, type RerankMode, type SemanticSearchRerankPreset } from "../code/reranker.js";
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../embeddings/sparse.js";
 import type { QdrantManager } from "../qdrant/client.js";
-import {
-  filterResultsByGlob,
-  calculateFetchLimit,
-} from "../qdrant/filters/index.js";
+import { calculateFetchLimit, filterResultsByGlob } from "../qdrant/filters/index.js";
 import * as schemas from "./schemas.js";
 
 export interface SearchToolDependencies {
@@ -23,10 +17,7 @@ export interface SearchToolDependencies {
   embeddings: EmbeddingProvider;
 }
 
-export function registerSearchTools(
-  server: McpServer,
-  deps: SearchToolDependencies,
-): void {
+export function registerSearchTools(server: McpServer, deps: SearchToolDependencies): void {
   const { qdrant, embeddings } = deps;
 
   // semantic_search
@@ -76,17 +67,10 @@ export function registerSearchTools(
       const fetchLimit = calculateFetchLimit(requestedLimit, needsOverfetch);
 
       // Search
-      const results = await qdrant.search(
-        collectionName,
-        embedding,
-        fetchLimit,
-        filter,
-      );
+      const results = await qdrant.search(collectionName, embedding, fetchLimit, filter);
 
       // Apply glob pattern filter if specified
-      let filteredResults = pathPattern
-        ? filterResultsByGlob(results, pathPattern)
-        : results;
+      let filteredResults = pathPattern ? filterResultsByGlob(results, pathPattern) : results;
 
       // Apply reranking if specified
       if (rerank && rerank !== "relevance") {
@@ -113,16 +97,12 @@ export function registerSearchTools(
           git: r.payload?.git,
         }));
         return {
-          content: [
-            { type: "text", text: JSON.stringify(metaResults, null, 2) },
-          ],
+          content: [{ type: "text", text: JSON.stringify(metaResults, null, 2) }],
         };
       }
 
       return {
-        content: [
-          { type: "text", text: JSON.stringify(filteredResults, null, 2) },
-        ],
+        content: [{ type: "text", text: JSON.stringify(filteredResults, null, 2) }],
       };
     },
   );
@@ -192,18 +172,10 @@ export function registerSearchTools(
       const fetchLimit = calculateFetchLimit(requestedLimit, needsOverfetch);
 
       // Perform hybrid search
-      const results = await qdrant.hybridSearch(
-        collectionName,
-        embedding,
-        sparseVector,
-        fetchLimit,
-        filter,
-      );
+      const results = await qdrant.hybridSearch(collectionName, embedding, sparseVector, fetchLimit, filter);
 
       // Apply glob pattern filter if specified
-      let filteredResults = pathPattern
-        ? filterResultsByGlob(results, pathPattern)
-        : results;
+      let filteredResults = pathPattern ? filterResultsByGlob(results, pathPattern) : results;
 
       // Apply reranking if specified
       if (rerank && rerank !== "relevance") {
@@ -230,16 +202,12 @@ export function registerSearchTools(
           git: r.payload?.git,
         }));
         return {
-          content: [
-            { type: "text", text: JSON.stringify(metaResults, null, 2) },
-          ],
+          content: [{ type: "text", text: JSON.stringify(metaResults, null, 2) }],
         };
       }
 
       return {
-        content: [
-          { type: "text", text: JSON.stringify(filteredResults, null, 2) },
-        ],
+        content: [{ type: "text", text: JSON.stringify(filteredResults, null, 2) }],
       };
     },
   );

@@ -74,7 +74,6 @@ export class StoppingDecision {
   }
 
   getBest() {
-    return this.results.reduce((best, r) =>
-      (!r.error && r.rate > (best?.rate || 0)) ? r : best, null);
+    return this.results.reduce((best, r) => (!r.error && r.rate > (best?.rate || 0) ? r : best), null);
   }
 }

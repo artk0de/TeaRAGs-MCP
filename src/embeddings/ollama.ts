@@ -13,6 +13,7 @@
  */
 
 import Bottleneck from "bottleneck";
+
 import { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 
 interface OllamaError {
@@ -28,7 +29,7 @@ interface OllamaEmbedResponse {
 // New /api/embed response format (batch)
 interface OllamaEmbedBatchResponse {
   model: string;
-  embeddings: number[][];  // Array of embedding vectors
+  embeddings: number[][]; // Array of embedding vectors
 }
 
 export class OllamaEmbeddings implements EmbeddingProvider {
@@ -77,27 +78,19 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   private isOllamaError(e: unknown): e is OllamaError {
-    return (
-      typeof e === "object" && e !== null && ("status" in e || "message" in e)
-    );
+    return typeof e === "object" && e !== null && ("status" in e || "message" in e);
   }
 
-  private async retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    attempt: number = 0,
-  ): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt: number = 0): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {
       // Type guard for OllamaError
-      const apiError = this.isOllamaError(error)
-        ? error
-        : { status: 0, message: String(error) };
+      const apiError = this.isOllamaError(error) ? error : { status: 0, message: String(error) };
 
       const isRateLimitError =
         apiError.status === 429 ||
-        (typeof apiError.message === "string" &&
-          apiError.message.toLowerCase().includes("rate limit"));
+        (typeof apiError.message === "string" && apiError.message.toLowerCase().includes("rate limit"));
 
       if (isRateLimitError && attempt < this.retryAttempts) {
         const delayMs = this.retryDelayMs * Math.pow(2, attempt);
@@ -126,9 +119,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    */
   private async callBatchApi(texts: string[]): Promise<OllamaEmbedBatchResponse> {
     // Configurable GPU usage: 0 = CPU only, 999 = all layers on GPU
-    const numGpu = process.env.OLLAMA_NUM_GPU
-      ? parseInt(process.env.OLLAMA_NUM_GPU, 10)
-      : 999;
+    const numGpu = process.env.OLLAMA_NUM_GPU ? parseInt(process.env.OLLAMA_NUM_GPU, 10) : 999;
 
     const response = await fetch(`${this.baseUrl}/api/embed`, {
       method: "POST",
@@ -137,7 +128,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       },
       body: JSON.stringify({
         model: this.model,
-        input: texts,  // Array of texts!
+        input: texts, // Array of texts!
         options: {
           num_gpu: numGpu,
         },
@@ -161,9 +152,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    */
   private async callApi(text: string): Promise<OllamaEmbedResponse> {
     // Configurable GPU usage: 0 = CPU only, 999 = all layers on GPU
-    const numGpu = process.env.OLLAMA_NUM_GPU
-      ? parseInt(process.env.OLLAMA_NUM_GPU, 10)
-      : 999;
+    const numGpu = process.env.OLLAMA_NUM_GPU ? parseInt(process.env.OLLAMA_NUM_GPU, 10) : 999;
 
     try {
       const response = await fetch(`${this.baseUrl}/api/embeddings`, {
@@ -182,8 +171,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
       if (!response.ok) {
         const errorBody = await response.text();
-        const textPreview =
-          text.length > 100 ? text.substring(0, 100) + "..." : text;
+        const textPreview = text.length > 100 ? text.substring(0, 100) + "..." : text;
         const error: OllamaError = {
           status: response.status,
           message: `Ollama API error (${response.status}) for model "${this.model}": ${errorBody}. Text preview: "${textPreview}"`,
@@ -200,8 +188,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
       // For Error instances (like network errors), enhance the message
       if (error instanceof Error) {
-        const textPreview =
-          text.length > 100 ? text.substring(0, 100) + "..." : text;
+        const textPreview = text.length > 100 ? text.substring(0, 100) + "..." : text;
         throw new Error(
           `Failed to call Ollama API at ${this.baseUrl} with model ${this.model}: ${error.message}. Text preview: "${textPreview}"`,
         );
@@ -214,8 +201,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       }
 
       // For other types, create a descriptive error message
-      const textPreview =
-        text.length > 100 ? text.substring(0, 100) + "..." : text;
+      const textPreview = text.length > 100 ? text.substring(0, 100) + "..." : text;
       const errorMessage = JSON.stringify(error);
 
       throw new Error(
@@ -284,20 +270,13 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       return this.limiter.schedule(() =>
         this.retryWithBackoff(async () => {
           if (process.env.DEBUG) {
-            console.error(
-              `[Ollama] Native batch: ${texts.length} texts in 1 request`,
-            );
+            console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request`);
           }
 
           const response = await this.callBatchApi(texts);
 
-          if (
-            !response.embeddings ||
-            response.embeddings.length !== texts.length
-          ) {
-            throw new Error(
-              `Ollama returned ${response.embeddings?.length || 0} embeddings for ${texts.length} texts`,
-            );
+          if (!response.embeddings || response.embeddings.length !== texts.length) {
+            throw new Error(`Ollama returned ${response.embeddings?.length || 0} embeddings for ${texts.length} texts`);
           }
 
           return response.embeddings.map((embedding: number[]) => ({

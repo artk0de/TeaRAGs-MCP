@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import {
+  calculateFetchLimit,
   createGlobMatcher,
   filterResultsByGlob,
-  calculateFetchLimit,
   type ResultWithPath,
 } from "../../../src/qdrant/filters/glob.js";
 
@@ -14,7 +15,6 @@ describe("createGlobMatcher", () => {
     // With bash mode, * can match across directories
     expect(isMatch("dir/file.ts")).toBe(true);
   });
-
 
   it("should match double wildcard pattern", () => {
     const isMatch = createGlobMatcher("**/*.ts");
@@ -109,10 +109,7 @@ describe("filterResultsByGlob", () => {
   });
 
   it("should handle results without payload", () => {
-    const results: ResultWithPath[] = [
-      { id: "1", score: 0.9 },
-      createResult("models/workflow/task.ts"),
-    ];
+    const results: ResultWithPath[] = [{ id: "1", score: 0.9 }, createResult("models/workflow/task.ts")];
     const filtered = filterResultsByGlob(results, "**/workflow/**");
     expect(filtered).toHaveLength(1);
   });
@@ -145,10 +142,7 @@ describe("filterResultsByGlob", () => {
   });
 
   it("should filter with brace expansion", () => {
-    const filtered = filterResultsByGlob(
-      mockResults,
-      "{models,services}/**/*.ts",
-    );
+    const filtered = filterResultsByGlob(mockResults, "{models,services}/**/*.ts");
     expect(filtered).toHaveLength(2);
     expect(filtered.map((r) => r.payload?.relativePath)).toEqual([
       "models/workflow/task.ts",

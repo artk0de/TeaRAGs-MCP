@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { ChunkPipeline } from "../../../src/code/pipeline/chunk-pipeline.js";
 import type { ChunkItem } from "../../../src/code/pipeline/types.js";
 
@@ -15,9 +16,11 @@ function createMockEmbeddings(dimensions = 384) {
     getDimensions: () => dimensions,
     getModel: () => "mock",
     embed: vi.fn().mockResolvedValue({ embedding: new Array(dimensions).fill(0.1), dimensions }),
-    embedBatch: vi.fn().mockImplementation((texts: string[]) =>
-      Promise.resolve(texts.map(() => ({ embedding: new Array(dimensions).fill(0.1), dimensions }))),
-    ),
+    embedBatch: vi
+      .fn()
+      .mockImplementation((texts: string[]) =>
+        Promise.resolve(texts.map(() => ({ embedding: new Array(dimensions).fill(0.1), dimensions }))),
+      ),
   };
 }
 
@@ -30,7 +33,11 @@ function createMockQdrant() {
   };
 }
 
-function makeChunkItem(id: string, filePath: string, content: string): {
+function makeChunkItem(
+  id: string,
+  filePath: string,
+  content: string,
+): {
   chunk: ChunkItem["chunk"];
   chunkId: string;
   codebasePath: string;
@@ -66,16 +73,11 @@ describe("ChunkPipeline onBatchUpserted callback", () => {
 
   it("should fire callback after successful upsert with correct items", async () => {
     const callback = vi.fn();
-    const pipeline = new ChunkPipeline(
-      qdrant as any,
-      embeddings as any,
-      "test_collection",
-      {
-        workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
-        accumulator: { batchSize: 2, flushTimeoutMs: 100, maxQueueSize: 10 },
-        enableHybrid: false,
-      },
-    );
+    const pipeline = new ChunkPipeline(qdrant as any, embeddings as any, "test_collection", {
+      workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+      accumulator: { batchSize: 2, flushTimeoutMs: 100, maxQueueSize: 10 },
+      enableHybrid: false,
+    });
 
     pipeline.setOnBatchUpserted(callback);
     pipeline.start();
@@ -97,16 +99,11 @@ describe("ChunkPipeline onBatchUpserted callback", () => {
   });
 
   it("should not call callback if no setter was called", async () => {
-    const pipeline = new ChunkPipeline(
-      qdrant as any,
-      embeddings as any,
-      "test_collection",
-      {
-        workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
-        accumulator: { batchSize: 1, flushTimeoutMs: 100, maxQueueSize: 10 },
-        enableHybrid: false,
-      },
-    );
+    const pipeline = new ChunkPipeline(qdrant as any, embeddings as any, "test_collection", {
+      workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+      accumulator: { batchSize: 1, flushTimeoutMs: 100, maxQueueSize: 10 },
+      enableHybrid: false,
+    });
 
     // No setOnBatchUpserted call
     pipeline.start();
@@ -128,16 +125,11 @@ describe("ChunkPipeline onBatchUpserted callback", () => {
     const failingQdrant = createMockQdrant();
     failingQdrant.addPointsOptimized.mockRejectedValue(new Error("Qdrant down"));
 
-    const pipeline = new ChunkPipeline(
-      failingQdrant as any,
-      embeddings as any,
-      "test_collection",
-      {
-        workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
-        accumulator: { batchSize: 1, flushTimeoutMs: 100, maxQueueSize: 10 },
-        enableHybrid: false,
-      },
-    );
+    const pipeline = new ChunkPipeline(failingQdrant as any, embeddings as any, "test_collection", {
+      workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+      accumulator: { batchSize: 1, flushTimeoutMs: 100, maxQueueSize: 10 },
+      enableHybrid: false,
+    });
 
     pipeline.setOnBatchUpserted(callback);
     pipeline.start();
@@ -153,16 +145,11 @@ describe("ChunkPipeline onBatchUpserted callback", () => {
 
   it("should fire callback for each batch separately", async () => {
     const callback = vi.fn();
-    const pipeline = new ChunkPipeline(
-      qdrant as any,
-      embeddings as any,
-      "test_collection",
-      {
-        workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
-        accumulator: { batchSize: 1, flushTimeoutMs: 100, maxQueueSize: 10 },
-        enableHybrid: false,
-      },
-    );
+    const pipeline = new ChunkPipeline(qdrant as any, embeddings as any, "test_collection", {
+      workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+      accumulator: { batchSize: 1, flushTimeoutMs: 100, maxQueueSize: 10 },
+      enableHybrid: false,
+    });
 
     pipeline.setOnBatchUpserted(callback);
     pipeline.start();

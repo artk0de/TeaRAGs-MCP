@@ -8,7 +8,8 @@
  * - NO commit message parsing (explicitly forbidden)
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+
 import { GitMetadataService } from "../../../src/code/git/git-metadata-service.js";
 import type { GitChunkMetadata } from "../../../src/code/git/types.js";
 
@@ -49,11 +50,7 @@ describe("GitMetadataService", () => {
 
   describe("getChunkMetadata", () => {
     it("should return null for files outside git repos", async () => {
-      const metadata = await service.getChunkMetadata(
-        "/tmp/non-existent-file.ts",
-        1,
-        10,
-      );
+      const metadata = await service.getChunkMetadata("/tmp/non-existent-file.ts", 1, 10);
 
       expect(metadata).toBeNull();
     });
@@ -79,9 +76,7 @@ describe("GitMetadataService", () => {
         // Timestamps should be valid Unix timestamps
         expect(metadata.lastModifiedAt).toBeGreaterThan(0);
         expect(metadata.firstCreatedAt).toBeGreaterThan(0);
-        expect(metadata.firstCreatedAt).toBeLessThanOrEqual(
-          metadata.lastModifiedAt,
-        );
+        expect(metadata.firstCreatedAt).toBeLessThanOrEqual(metadata.lastModifiedAt);
 
         // Commit hash should be 40 hex chars
         expect(metadata.lastCommitHash).toMatch(/^[a-f0-9]{40}$/);
@@ -249,10 +244,7 @@ describe("GitMetadataService", () => {
     });
 
     it("should extract mixed task IDs from complex messages", () => {
-      const taskIds = extractTaskIds(
-        service,
-        "feat(core): implement TD-1234 feature, fixes #567, ref AB#890"
-      );
+      const taskIds = extractTaskIds(service, "feat(core): implement TD-1234 feature, fixes #567, ref AB#890");
 
       expect(taskIds).toContain("TD-1234");
       expect(taskIds).toContain("#567");
@@ -274,12 +266,9 @@ describe("GitMetadataService", () => {
     });
 
     it("should deduplicate repeated task IDs", () => {
-      const taskIds = extractTaskIds(
-        service,
-        "fix: TD-1234 part 1, continue TD-1234 part 2"
-      );
+      const taskIds = extractTaskIds(service, "fix: TD-1234 part 1, continue TD-1234 part 2");
 
-      expect(taskIds.filter(id => id === "TD-1234").length).toBe(1);
+      expect(taskIds.filter((id) => id === "TD-1234").length).toBe(1);
     });
 
     it("should handle empty summary", () => {
@@ -296,10 +285,7 @@ describe("GitMetadataService", () => {
     });
 
     it("should extract task IDs from merge commit branch names", () => {
-      const taskIds = extractTaskIds(
-        service,
-        "Merge branch 'feature/TD-74777-add-backend-validation' into 'master'"
-      );
+      const taskIds = extractTaskIds(service, "Merge branch 'feature/TD-74777-add-backend-validation' into 'master'");
 
       expect(taskIds).toContain("TD-74777");
     });
@@ -327,7 +313,8 @@ See merge request taxdome/service/taxdome!47685`;
     };
 
     it("should parse git log output with NULL separators", () => {
-      const output = "a".repeat(40) + "\0First commit body\0" + "b".repeat(40) + "\0Second commit\n\nWith multiple lines\0";
+      const output =
+        "a".repeat(40) + "\0First commit body\0" + "b".repeat(40) + "\0Second commit\n\nWith multiple lines\0";
 
       const bodies = parseLogOutput(service, output);
 
@@ -348,7 +335,7 @@ See merge request taxdome/service/taxdome!47685`;
     const enrichTaskIdsFromBodies = (
       svc: GitMetadataService,
       blameData: Map<number, any>,
-      commitBodies: Map<string, string>
+      commitBodies: Map<string, string>,
     ): void => {
       return (svc as any).enrichTaskIdsFromBodies(blameData, commitBodies);
     };
@@ -360,9 +347,7 @@ See merge request taxdome/service/taxdome!47685`;
         [2, { commit: commitSha, author: "Test", authorEmail: "test@test.com", authorTime: 123, taskIds: undefined }],
       ]);
 
-      const commitBodies = new Map([
-        [commitSha, "Merge branch 'feature'\n\n[TD-1234] [TD-5678] Implementation"],
-      ]);
+      const commitBodies = new Map([[commitSha, "Merge branch 'feature'\n\n[TD-1234] [TD-5678] Implementation"]]);
 
       enrichTaskIdsFromBodies(service, blameData, commitBodies);
 
@@ -377,9 +362,7 @@ See merge request taxdome/service/taxdome!47685`;
         [1, { commit: commitSha, author: "Test", authorEmail: "test@test.com", authorTime: 123, taskIds: ["TD-1111"] }],
       ]);
 
-      const commitBodies = new Map([
-        [commitSha, "[TD-2222] Different task in body"],
-      ]);
+      const commitBodies = new Map([[commitSha, "[TD-2222] Different task in body"]]);
 
       enrichTaskIdsFromBodies(service, blameData, commitBodies);
 
@@ -408,10 +391,7 @@ See merge request taxdome/service/taxdome!47685`;
       const repoInfo = await service.getRepoInfo(import.meta.url.replace("file://", ""));
       if (!repoInfo.isGitRepo) return;
 
-      const filePaths = [
-        `${repoInfo.repoRoot}/package.json`,
-        `${repoInfo.repoRoot}/tsconfig.json`,
-      ];
+      const filePaths = [`${repoInfo.repoRoot}/package.json`, `${repoInfo.repoRoot}/tsconfig.json`];
 
       const result = await service.prefetchBlame(filePaths);
 

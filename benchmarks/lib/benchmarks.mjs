@@ -5,14 +5,15 @@
  */
 
 import { randomUUID } from "crypto";
-import { config, CRITERIA, MEDIAN_CODE_CHUNK_SIZE, EMBEDDING_CALIBRATION } from "./config.mjs";
+
+import { config, CRITERIA, EMBEDDING_CALIBRATION, MEDIAN_CODE_CHUNK_SIZE } from "./config.mjs";
 
 // Track all created collections for cleanup
 export const createdCollections = new Set();
 
 export async function withTimeout(promise, ms, label) {
   const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms)
+    setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms),
   );
   return Promise.race([promise, timeout]);
 }
@@ -97,7 +98,13 @@ export class DataProcessor_${i} {
  * @param {number} options.plateauTimeout - Max time before degradation (ms)
  * @returns {Promise<{batchSize, time, rate, times[], batches, error, degraded}>}
  */
-export async function benchmarkEmbeddingBatchSize(embeddings, texts, batchSize, runs = EMBEDDING_CALIBRATION.RUNS, options = {}) {
+export async function benchmarkEmbeddingBatchSize(
+  embeddings,
+  texts,
+  batchSize,
+  runs = EMBEDDING_CALIBRATION.RUNS,
+  options = {},
+) {
   // EMBEDDING_BATCH_SIZE now controls pipeline accumulator, not Ollama splitting.
   // Benchmark simulates accumulator behavior by splitting texts into batches.
   process.env.EMBEDDING_BATCH_SIZE = String(batchSize);
@@ -122,15 +129,15 @@ export async function benchmarkEmbeddingBatchSize(embeddings, texts, batchSize, 
         batches.push(texts.slice(j, j + batchSize));
       }
       await withTimeout(
-        Promise.all(batches.map(batch => embeddings.embedBatch(batch))),
+        Promise.all(batches.map((batch) => embeddings.embedBatch(batch))),
         timeout,
-        `batch size ${batchSize} run ${i + 1}`
+        `batch size ${batchSize} run ${i + 1}`,
       );
       times.push(Date.now() - start);
     }
 
     const medianTime = median(times);
-    const rate = Math.round(texts.length * 1000 / medianTime);
+    const rate = Math.round((texts.length * 1000) / medianTime);
 
     return {
       batchSize,
@@ -139,7 +146,7 @@ export async function benchmarkEmbeddingBatchSize(embeddings, texts, batchSize, 
       times,
       batches: expectedBatches,
       error: null,
-      degraded: false
+      degraded: false,
     };
   } catch (error) {
     // Check if timeout was due to plateau degradation
@@ -151,7 +158,7 @@ export async function benchmarkEmbeddingBatchSize(embeddings, texts, batchSize, 
       times: [],
       batches: expectedBatches,
       error: isDegradation ? "degradation" : error.message,
-      degraded: isDegradation
+      degraded: isDegradation,
     };
   }
 }
@@ -172,11 +179,11 @@ export async function benchmarkCodeBatchSize(qdrant, points, batchSize) {
           ordering: "weak",
         }),
         CRITERIA.TEST_TIMEOUT_MS,
-        `code batch ${batchSize}`
+        `code batch ${batchSize}`,
       );
     }
     const time = Date.now() - start;
-    const rate = Math.round(points.length * 1000 / time);
+    const rate = Math.round((points.length * 1000) / time);
 
     return { batchSize, time, rate, error: null };
   } catch (error) {
@@ -207,7 +214,14 @@ export async function benchmarkCodeBatchSize(qdrant, points, batchSize) {
  * @param {number} options.plateauTimeout - Max time before degradation (ms)
  * @returns {Promise<{concurrency, time, rate, times[], batches, error, degraded}>}
  */
-export async function benchmarkConcurrency(embeddings, texts, concurrency, batchSize, runs = EMBEDDING_CALIBRATION.RUNS, options = {}) {
+export async function benchmarkConcurrency(
+  embeddings,
+  texts,
+  concurrency,
+  batchSize,
+  runs = EMBEDDING_CALIBRATION.RUNS,
+  options = {},
+) {
   // EMBEDDING_BATCH_SIZE now controls pipeline accumulator, not Ollama splitting.
   // Benchmark simulates accumulator: split texts, then process with concurrency.
   process.env.EMBEDDING_BATCH_SIZE = String(batchSize);
@@ -236,16 +250,16 @@ export async function benchmarkConcurrency(embeddings, texts, concurrency, batch
       for (let g = 0; g < batches.length; g += concurrency) {
         const group = batches.slice(g, g + concurrency);
         await withTimeout(
-          Promise.all(group.map(batch => embeddings.embedBatch(batch))),
+          Promise.all(group.map((batch) => embeddings.embedBatch(batch))),
           timeout,
-          `concurrency ${concurrency} run ${i + 1}`
+          `concurrency ${concurrency} run ${i + 1}`,
         );
       }
       times.push(Date.now() - start);
     }
 
     const medianTime = median(times);
-    const rate = Math.round(texts.length * 1000 / medianTime);
+    const rate = Math.round((texts.length * 1000) / medianTime);
 
     return {
       concurrency,
@@ -255,7 +269,7 @@ export async function benchmarkConcurrency(embeddings, texts, concurrency, batch
       batches: expectedBatches,
       groups: expectedGroups,
       error: null,
-      degraded: false
+      degraded: false,
     };
   } catch (error) {
     const isDegradation = plateauTimeout && error.message.includes("Timeout");
@@ -267,7 +281,7 @@ export async function benchmarkConcurrency(embeddings, texts, concurrency, batch
       batches: expectedBatches,
       groups: expectedGroups,
       error: isDegradation ? "degradation" : error.message,
-      degraded: isDegradation
+      degraded: isDegradation,
     };
   }
 }
@@ -289,11 +303,11 @@ export async function benchmarkOrdering(qdrant, points, ordering) {
           ordering,
         }),
         CRITERIA.TEST_TIMEOUT_MS,
-        `ordering ${ordering}`
+        `ordering ${ordering}`,
       );
     }
     const time = Date.now() - start;
-    const rate = Math.round(points.length * 1000 / time);
+    const rate = Math.round((points.length * 1000) / time);
 
     return { ordering, time, rate, error: null };
   } catch (error) {
@@ -325,11 +339,11 @@ export async function benchmarkFlushInterval(qdrant, points, interval, optimalBa
           ordering: optimalOrdering,
         }),
         CRITERIA.TEST_TIMEOUT_MS,
-        `flush interval ${interval}ms`
+        `flush interval ${interval}ms`,
       );
     }
     const time = Date.now() - start;
-    const rate = Math.round(points.length * 1000 / time);
+    const rate = Math.round((points.length * 1000) / time);
 
     return { interval, time, rate, error: null };
   } catch (error) {
@@ -364,11 +378,11 @@ export async function benchmarkBatchFormationTimeout(qdrant, points, timeoutMs, 
           ordering: optimalOrdering,
         }),
         CRITERIA.TEST_TIMEOUT_MS,
-        `batch formation timeout ${timeoutMs}ms`
+        `batch formation timeout ${timeoutMs}ms`,
       );
     }
     const time = Date.now() - start;
-    const rate = Math.round(points.length * 1000 / time);
+    const rate = Math.round((points.length * 1000) / time);
 
     return { timeoutMs, time, rate, effectiveBatchSize, fillRate, error: null };
   } catch (error) {
@@ -398,7 +412,7 @@ export async function benchmarkDeleteBatchSize(qdrant, points, deleteBatchSize, 
     }
 
     // Now test deletion speed
-    const pointIds = points.map(p => p.id);
+    const pointIds = points.map((p) => p.id);
     const start = Date.now();
 
     for (let i = 0; i < pointIds.length; i += deleteBatchSize) {
@@ -406,11 +420,11 @@ export async function benchmarkDeleteBatchSize(qdrant, points, deleteBatchSize, 
       await withTimeout(
         qdrant.client.delete(collection, { points: batch, wait: true }),
         CRITERIA.TEST_TIMEOUT_MS,
-        `delete batch ${deleteBatchSize}`
+        `delete batch ${deleteBatchSize}`,
       );
     }
     const time = Date.now() - start;
-    const rate = Math.round(pointIds.length * 1000 / time);
+    const rate = Math.round((pointIds.length * 1000) / time);
 
     return { batchSize: deleteBatchSize, time, rate, error: null };
   } catch (error) {
@@ -423,7 +437,14 @@ export async function benchmarkDeleteBatchSize(qdrant, points, deleteBatchSize, 
   }
 }
 
-export async function benchmarkDeleteConcurrency(qdrant, points, concurrency, optimalBatchSize, optimalOrdering, optimalDeleteBatch) {
+export async function benchmarkDeleteConcurrency(
+  qdrant,
+  points,
+  concurrency,
+  optimalBatchSize,
+  optimalOrdering,
+  optimalDeleteBatch,
+) {
   const collection = `tune_delc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   createdCollections.add(collection);
 
@@ -440,7 +461,7 @@ export async function benchmarkDeleteConcurrency(qdrant, points, concurrency, op
     }
 
     // Create batches for deletion
-    const pointIds = points.map(p => p.id);
+    const pointIds = points.map((p) => p.id);
     const batches = [];
     for (let i = 0; i < pointIds.length; i += optimalDeleteBatch) {
       batches.push(pointIds.slice(i, i + optimalDeleteBatch));
@@ -466,7 +487,7 @@ export async function benchmarkDeleteConcurrency(qdrant, points, concurrency, op
     await Promise.all(running);
 
     const time = Date.now() - start;
-    const rate = Math.round(pointIds.length * 1000 / time);
+    const rate = Math.round((pointIds.length * 1000) / time);
 
     return { concurrency, time, rate, error: null };
   } catch (error) {

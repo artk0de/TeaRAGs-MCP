@@ -14,9 +14,11 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
+
 import type { Ignore } from "ignore";
+
 import type { QdrantManager } from "../../qdrant/client.js";
-import { GitLogReader, computeFileMetadata } from "../git/git-log-reader.js";
+import { computeFileMetadata, GitLogReader } from "../git/git-log-reader.js";
 import { pipelineLog } from "../pipeline/debug-logger.js";
 import type { ChunkItem } from "../pipeline/types.js";
 import type { ChunkLookupEntry, EnrichmentInfo, EnrichmentMetrics } from "../types.js";
@@ -182,11 +184,7 @@ export class EnrichmentModule {
    * Called per-batch by pipeline callback after chunks are stored in Qdrant.
    * Applies file-level git metadata to the newly stored chunks.
    */
-  onChunksStored(
-    collectionName: string,
-    absolutePath: string,
-    items: ChunkItem[],
-  ): void {
+  onChunksStored(collectionName: string, absolutePath: string, items: ChunkItem[]): void {
     this.pipelineFlushTime = Date.now();
 
     if (this.gitLogFailed) {
@@ -212,11 +210,7 @@ export class EnrichmentModule {
    * Start chunk churn (Phase 2b). Fire-and-forget, tracked internally.
    * Call this after pipeline flush.
    */
-  startChunkChurn(
-    collectionName: string,
-    absolutePath: string,
-    chunkMap: Map<string, ChunkLookupEntry[]>,
-  ): void {
+  startChunkChurn(collectionName: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
     if (!this.logReader || this.gitLogFailed) return;
 
     const chunkConcurrency = parseInt(process.env.GIT_CHUNK_CONCURRENCY ?? "10", 10);
@@ -321,7 +315,9 @@ export class EnrichmentModule {
         try {
           await this.qdrant.setPayload(
             collectionName,
-            { chunkEnrichment: { status: "completed", overlaysApplied, durationMs: this.metrics.chunkChurnDurationMs } },
+            {
+              chunkEnrichment: { status: "completed", overlaysApplied, durationMs: this.metrics.chunkChurnDurationMs },
+            },
             { points: [INDEXING_METADATA_ID] },
           );
         } catch (error) {
@@ -375,9 +371,7 @@ export class EnrichmentModule {
       const overlapEnd = Math.min(this.prefetchEndTime, this.pipelineFlushTime);
       this.metrics.overlapMs = Math.max(0, overlapEnd - this.prefetchStartTime);
       this.metrics.overlapRatio =
-        this.metrics.prefetchDurationMs > 0
-          ? Math.min(1, this.metrics.overlapMs / this.metrics.prefetchDurationMs)
-          : 0;
+        this.metrics.prefetchDurationMs > 0 ? Math.min(1, this.metrics.overlapMs / this.metrics.prefetchDurationMs) : 0;
     }
 
     this.metrics.totalDurationMs = Date.now() - (this.startTime || Date.now());
@@ -414,20 +408,13 @@ export class EnrichmentModule {
   /**
    * Update enrichment progress marker in Qdrant (merge into __indexing_metadata__ point).
    */
-  async updateEnrichmentMarker(
-    collectionName: string,
-    info: Partial<EnrichmentInfo>,
-  ): Promise<void> {
+  async updateEnrichmentMarker(collectionName: string, info: Partial<EnrichmentInfo>): Promise<void> {
     try {
       const enrichment: Record<string, any> = { ...info };
       if (info.totalFiles && info.processedFiles !== undefined) {
         enrichment.percentage = Math.round((info.processedFiles / info.totalFiles) * 100);
       }
-      await this.qdrant.setPayload(
-        collectionName,
-        { enrichment },
-        { points: [INDEXING_METADATA_ID] },
-      );
+      await this.qdrant.setPayload(collectionName, { enrichment }, { points: [INDEXING_METADATA_ID] });
     } catch (error) {
       if (process.env.DEBUG) {
         console.error("[EnrichmentModule] Failed to update marker:", error);
@@ -454,11 +441,7 @@ export class EnrichmentModule {
     let backfillData: Map<string, any>;
     try {
       const timeoutMs = parseInt(process.env.GIT_BACKFILL_TIMEOUT_MS ?? "30000", 10);
-      backfillData = await this.logReader.buildFileMetadataForPaths(
-        repoRoot,
-        missedPaths,
-        timeoutMs,
-      );
+      backfillData = await this.logReader.buildFileMetadataForPaths(repoRoot, missedPaths, timeoutMs);
     } catch (error) {
       pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
         error: error instanceof Error ? error.message : String(error),
@@ -528,11 +511,7 @@ export class EnrichmentModule {
     });
 
     for (const batch of batches) {
-      const work = this.applyFileMetadata(
-        batch.collectionName,
-        batch.absolutePath,
-        batch.items,
-      );
+      const work = this.applyFileMetadata(batch.collectionName, batch.absolutePath, batch.items);
       this.inFlightWork.push(work);
       this.metrics.flushApplies++;
     }
@@ -541,11 +520,7 @@ export class EnrichmentModule {
   /**
    * Apply file-level git metadata to a batch of chunks via batchSetPayload.
    */
-  private async applyFileMetadata(
-    collectionName: string,
-    absolutePath: string,
-    items: ChunkItem[],
-  ): Promise<void> {
+  private async applyFileMetadata(collectionName: string, absolutePath: string, items: ChunkItem[]): Promise<void> {
     if (!this.gitLogResult) return;
 
     const applyStart = Date.now();
@@ -585,10 +560,7 @@ export class EnrichmentModule {
       }
       this.matchedFiles++;
 
-      const maxEndLine = fileItems.reduce(
-        (max, item) => Math.max(max, item.chunk.endLine),
-        0,
-      );
+      const maxEndLine = fileItems.reduce((max, item) => Math.max(max, item.chunk.endLine), 0);
       const metadata = computeFileMetadata(churnData, maxEndLine);
       const gitPayload = { git: metadata };
 

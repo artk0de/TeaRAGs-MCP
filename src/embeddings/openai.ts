@@ -1,11 +1,7 @@
-import OpenAI from "openai";
 import Bottleneck from "bottleneck";
-import {
-  EmbeddingProvider,
-  EmbeddingResult,
-  RateLimitConfig,
-  ProviderConfig,
-} from "./base.js";
+import OpenAI from "openai";
+
+import { EmbeddingProvider, EmbeddingResult, ProviderConfig, RateLimitConfig } from "./base.js";
 
 interface OpenAIError {
   status?: number;
@@ -62,10 +58,7 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
     });
   }
 
-  private async retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    attempt: number = 0,
-  ): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt: number = 0): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {
@@ -77,18 +70,13 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
 
       if (isRateLimitError && attempt < this.retryAttempts) {
         // Check for Retry-After header (different HTTP clients may nest differently)
-        const retryAfter =
-          apiError?.response?.headers?.["retry-after"] ||
-          apiError?.headers?.["retry-after"];
+        const retryAfter = apiError?.response?.headers?.["retry-after"] || apiError?.headers?.["retry-after"];
         let delayMs: number;
 
         if (retryAfter) {
           // Use Retry-After header if available (in seconds)
           const parsed = parseInt(retryAfter, 10);
-          delayMs =
-            !isNaN(parsed) && parsed > 0
-              ? parsed * 1000
-              : this.retryDelayMs * Math.pow(2, attempt);
+          delayMs = !isNaN(parsed) && parsed > 0 ? parsed * 1000 : this.retryDelayMs * Math.pow(2, attempt);
         } else {
           // Exponential backoff: 1s, 2s, 4s, 8s...
           delayMs = this.retryDelayMs * Math.pow(2, attempt);

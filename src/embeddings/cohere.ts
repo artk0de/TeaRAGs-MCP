@@ -1,5 +1,6 @@
-import { CohereClient } from "cohere-ai";
 import Bottleneck from "bottleneck";
+import { CohereClient } from "cohere-ai";
+
 import { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 
 interface CohereError {
@@ -15,22 +16,14 @@ export class CohereEmbeddings implements EmbeddingProvider {
   private limiter: Bottleneck;
   private retryAttempts: number;
   private retryDelayMs: number;
-  private inputType:
-    | "search_document"
-    | "search_query"
-    | "classification"
-    | "clustering";
+  private inputType: "search_document" | "search_query" | "classification" | "clustering";
 
   constructor(
     apiKey: string,
     model: string = "embed-english-v3.0",
     dimensions?: number,
     rateLimitConfig?: RateLimitConfig,
-    inputType:
-      | "search_document"
-      | "search_query"
-      | "classification"
-      | "clustering" = "search_document",
+    inputType: "search_document" | "search_query" | "classification" | "clustering" = "search_document",
   ) {
     this.client = new CohereClient({ token: apiKey });
     this.model = model;
@@ -60,10 +53,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
     });
   }
 
-  private async retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    attempt: number = 0,
-  ): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt: number = 0): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {

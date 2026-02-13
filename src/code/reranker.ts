@@ -303,10 +303,7 @@ function getBlockPenaltySignal(result: RerankableResult): number {
 /**
  * Calculate scoring signals from result
  */
-function calculateSignals(
-  result: RerankableResult,
-  bounds: NormalizationBounds,
-): Record<string, number> {
+function calculateSignals(result: RerankableResult, bounds: NormalizationBounds): Record<string, number> {
   const git = result.payload?.git;
   const ageDays = git?.ageDays ?? 0;
   const commitCount = git?.commitCount ?? 0;
@@ -345,10 +342,7 @@ function calculateSignals(
 /**
  * Calculate final score based on weights and signals
  */
-function calculateScore(
-  signals: Record<string, number>,
-  weights: ScoringWeights,
-): number {
+function calculateScore(signals: Record<string, number>, weights: ScoringWeights): number {
   let score = 0;
   let totalWeight = 0;
 
@@ -430,9 +424,7 @@ export function rerankSearchCodeResults<T extends RerankableResult>(
 /**
  * Get available presets for a tool
  */
-export function getAvailablePresets(
-  tool: "semantic_search" | "search_code",
-): string[] {
+export function getAvailablePresets(tool: "semantic_search" | "search_code"): string[] {
   if (tool === "semantic_search") {
     return Object.keys(SEMANTIC_SEARCH_PRESETS);
   }

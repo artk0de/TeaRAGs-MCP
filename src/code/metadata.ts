@@ -4,6 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
+
 import { LANGUAGE_MAP } from "./config.js";
 import type { CodeChunk } from "./types.js";
 
@@ -97,7 +98,7 @@ export class MetadataExtractor {
    */
   extractImportsExports(
     code: string,
-    language: string
+    language: string,
   ): {
     imports: string[];
     exports: string[];

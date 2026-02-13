@@ -177,23 +177,15 @@ export class PointsAccumulator {
 
     try {
       if (this.isHybrid) {
-        await this.qdrant.addPointsWithSparseOptimized(
-          this.collectionName,
-          batch as HybridPoint[],
-          {
-            wait: waitForResult,
-            ordering: this.config.ordering,
-          },
-        );
+        await this.qdrant.addPointsWithSparseOptimized(this.collectionName, batch as HybridPoint[], {
+          wait: waitForResult,
+          ordering: this.config.ordering,
+        });
       } else {
-        await this.qdrant.addPointsOptimized(
-          this.collectionName,
-          batch as DensePoint[],
-          {
-            wait: waitForResult,
-            ordering: this.config.ordering,
-          },
-        );
+        await this.qdrant.addPointsOptimized(this.collectionName, batch as DensePoint[], {
+          wait: waitForResult,
+          ordering: this.config.ordering,
+        });
       }
 
       this.stats.totalPointsFlushed += batch.length;
@@ -224,14 +216,8 @@ export function createAccumulator(
 ): PointsAccumulator {
   const config: Partial<AccumulatorConfig> = {
     // QDRANT_UPSERT_BATCH_SIZE is canonical, CODE_BATCH_SIZE is deprecated fallback
-    bufferSize: parseInt(
-      process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "100",
-      10,
-    ),
-    flushIntervalMs: parseInt(
-      process.env.QDRANT_FLUSH_INTERVAL_MS || "500",
-      10,
-    ),
+    bufferSize: parseInt(process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "100", 10),
+    flushIntervalMs: parseInt(process.env.QDRANT_FLUSH_INTERVAL_MS || "500", 10),
     ordering: (process.env.QDRANT_BATCH_ORDERING as AccumulatorConfig["ordering"]) || "weak",
   };
 

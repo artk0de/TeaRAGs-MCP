@@ -1,8 +1,8 @@
 import { EmbeddingProvider, ProviderConfig } from "./base.js";
-import { OpenAIEmbeddings } from "./openai.js";
 import { CohereEmbeddings } from "./cohere.js";
-import { VoyageEmbeddings } from "./voyage.js";
 import { OllamaEmbeddings } from "./ollama.js";
+import { OpenAIEmbeddings } from "./openai.js";
+import { VoyageEmbeddings } from "./voyage.js";
 
 export type EmbeddingProviderType = "openai" | "cohere" | "voyage" | "ollama";
 
@@ -12,31 +12,20 @@ export interface FactoryConfig extends ProviderConfig {
 
 export class EmbeddingProviderFactory {
   static create(config: FactoryConfig): EmbeddingProvider {
-    const { provider, model, dimensions, rateLimitConfig, apiKey, baseUrl } =
-      config;
+    const { provider, model, dimensions, rateLimitConfig, apiKey, baseUrl } = config;
 
     switch (provider) {
       case "openai":
         if (!apiKey) {
           throw new Error("API key is required for OpenAI provider");
         }
-        return new OpenAIEmbeddings(
-          apiKey,
-          model || "text-embedding-3-small",
-          dimensions,
-          rateLimitConfig,
-        );
+        return new OpenAIEmbeddings(apiKey, model || "text-embedding-3-small", dimensions, rateLimitConfig);
 
       case "cohere":
         if (!apiKey) {
           throw new Error("API key is required for Cohere provider");
         }
-        return new CohereEmbeddings(
-          apiKey,
-          model || "embed-english-v3.0",
-          dimensions,
-          rateLimitConfig,
-        );
+        return new CohereEmbeddings(apiKey, model || "embed-english-v3.0", dimensions, rateLimitConfig);
 
       case "voyage":
         if (!apiKey) {
@@ -59,16 +48,12 @@ export class EmbeddingProviderFactory {
         );
 
       default:
-        throw new Error(
-          `Unknown embedding provider: ${provider}. Supported providers: openai, cohere, voyage, ollama`,
-        );
+        throw new Error(`Unknown embedding provider: ${provider}. Supported providers: openai, cohere, voyage, ollama`);
     }
   }
 
   static createFromEnv(): EmbeddingProvider {
-    const provider = (
-      process.env.EMBEDDING_PROVIDER || "ollama"
-    ).toLowerCase() as EmbeddingProviderType;
+    const provider = (process.env.EMBEDDING_PROVIDER || "ollama").toLowerCase() as EmbeddingProviderType;
 
     // Select API key based on provider
     let apiKey: string | undefined;
@@ -89,9 +74,7 @@ export class EmbeddingProviderFactory {
 
     // Common configuration
     const model = process.env.EMBEDDING_MODEL;
-    const dimensions = process.env.EMBEDDING_DIMENSIONS
-      ? parseInt(process.env.EMBEDDING_DIMENSIONS, 10)
-      : undefined;
+    const dimensions = process.env.EMBEDDING_DIMENSIONS ? parseInt(process.env.EMBEDDING_DIMENSIONS, 10) : undefined;
 
     // Validate dimensions
     if (dimensions !== undefined && (isNaN(dimensions) || dimensions <= 0)) {
@@ -108,10 +91,7 @@ export class EmbeddingProviderFactory {
       : undefined;
 
     // Validate maxRequestsPerMinute
-    if (
-      maxRequestsPerMinute !== undefined &&
-      (isNaN(maxRequestsPerMinute) || maxRequestsPerMinute <= 0)
-    ) {
+    if (maxRequestsPerMinute !== undefined && (isNaN(maxRequestsPerMinute) || maxRequestsPerMinute <= 0)) {
       throw new Error(
         `Invalid EMBEDDING_MAX_REQUESTS_PER_MINUTE: must be a positive integer, got "${process.env.EMBEDDING_MAX_REQUESTS_PER_MINUTE}"`,
       );
@@ -122,10 +102,7 @@ export class EmbeddingProviderFactory {
       : undefined;
 
     // Validate retryAttempts
-    if (
-      retryAttempts !== undefined &&
-      (isNaN(retryAttempts) || retryAttempts < 0)
-    ) {
+    if (retryAttempts !== undefined && (isNaN(retryAttempts) || retryAttempts < 0)) {
       throw new Error(
         `Invalid EMBEDDING_RETRY_ATTEMPTS: must be a non-negative integer, got "${process.env.EMBEDDING_RETRY_ATTEMPTS}"`,
       );
@@ -136,10 +113,7 @@ export class EmbeddingProviderFactory {
       : undefined;
 
     // Validate retryDelayMs
-    if (
-      retryDelayMs !== undefined &&
-      (isNaN(retryDelayMs) || retryDelayMs < 0)
-    ) {
+    if (retryDelayMs !== undefined && (isNaN(retryDelayMs) || retryDelayMs < 0)) {
       throw new Error(
         `Invalid EMBEDDING_RETRY_DELAY: must be a non-negative integer, got "${process.env.EMBEDDING_RETRY_DELAY}"`,
       );

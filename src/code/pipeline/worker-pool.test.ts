@@ -10,13 +10,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { Batch, BatchResult, UpsertItem, WorkerPoolConfig } from "./types.js";
 import { WorkerPool } from "./worker-pool.js";
-import type {
-  Batch,
-  BatchResult,
-  UpsertItem,
-  WorkerPoolConfig,
-} from "./types.js";
 
 describe("WorkerPool", () => {
   let pool: WorkerPool;
@@ -77,11 +73,9 @@ describe("WorkerPool", () => {
       const singleWorkerPool = new WorkerPool({ ...config, concurrency: 1 });
 
       const execOrder: string[] = [];
-      const handler = vi
-        .fn()
-        .mockImplementation(async (b: Batch<UpsertItem>) => {
-          execOrder.push(b.id);
-        });
+      const handler = vi.fn().mockImplementation(async (b: Batch<UpsertItem>) => {
+        execOrder.push(b.id);
+      });
 
       const p1 = singleWorkerPool.submit(createBatch("batch-1"), handler);
       const p2 = singleWorkerPool.submit(createBatch("batch-2"), handler);
@@ -153,9 +147,7 @@ describe("WorkerPool", () => {
 
     it("should notify on queue changes", async () => {
       const queueChanges: number[] = [];
-      const notifyingPool = new WorkerPool(config, undefined, (size) =>
-        queueChanges.push(size),
-      );
+      const notifyingPool = new WorkerPool(config, undefined, (size) => queueChanges.push(size));
 
       const handler = vi.fn().mockResolvedValue(undefined);
 
@@ -267,10 +259,7 @@ describe("WorkerPool", () => {
 
       const handler = vi.fn().mockRejectedValue(new Error("Test error"));
 
-      const resultPromise = callbackPool.submit(
-        createBatch("batch-1"),
-        handler,
-      );
+      const resultPromise = callbackPool.submit(createBatch("batch-1"), handler);
 
       for (let i = 0; i < 5; i++) {
         await vi.advanceTimersByTimeAsync(1000);
@@ -340,9 +329,7 @@ describe("WorkerPool", () => {
 
       const shutdownPromise = pool.shutdown();
 
-      await expect(
-        pool.submit(createBatch("batch-2"), handler),
-      ).rejects.toThrow("WorkerPool is shutting down");
+      await expect(pool.submit(createBatch("batch-2"), handler)).rejects.toThrow("WorkerPool is shutting down");
 
       await vi.runAllTimersAsync();
       await shutdownPromise;

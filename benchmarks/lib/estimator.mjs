@@ -5,7 +5,7 @@
  */
 
 import { c } from "./colors.mjs";
-import { PROJECT_SIZES, AVG_LOC_PER_CHUNK } from "./config.mjs";
+import { AVG_LOC_PER_CHUNK, PROJECT_SIZES } from "./config.mjs";
 
 /**
  * Format time duration in human-readable form
@@ -57,16 +57,16 @@ export function printTimeEstimates(embeddingRate, storageRate) {
     const totalTime = embeddingTime + storageTime;
 
     // Determine row color based on total time
-    const rowColor = totalTime < 60 ? c.green :
-                    totalTime < 600 ? c.yellow :
-                    totalTime < 3600 ? c.dim : c.red;
+    const rowColor = totalTime < 60 ? c.green : totalTime < 600 ? c.yellow : totalTime < 3600 ? c.dim : c.red;
 
     const row = `  ${project.name.padEnd(20)} ${formatNumber(project.loc).padStart(8)} ${formatNumber(chunks).padStart(10)} ${formatDuration(embeddingTime).padStart(12)} ${formatDuration(storageTime).padStart(10)} ${formatDuration(totalTime).padStart(10)}`;
     console.log(`${rowColor}${row}${c.reset}`);
   }
 
   console.log();
-  console.log(`${c.dim}  Note: Estimates based on ${embeddingRate} chunks/s (embedding) and ${storageRate} chunks/s (storage)${c.reset}`);
+  console.log(
+    `${c.dim}  Note: Estimates based on ${embeddingRate} chunks/s (embedding) and ${storageRate} chunks/s (storage)${c.reset}`,
+  );
   console.log(`${c.dim}  Actual times may vary based on code complexity and file sizes${c.reset}`);
   console.log();
 }
@@ -75,7 +75,7 @@ export function printTimeEstimates(embeddingRate, storageRate) {
  * Get estimates as data (for env file)
  */
 export function getTimeEstimatesData(embeddingRate, storageRate) {
-  return PROJECT_SIZES.map(project => {
+  return PROJECT_SIZES.map((project) => {
     const chunks = Math.ceil(project.loc / AVG_LOC_PER_CHUNK);
     const embeddingTime = embeddingRate > 0 ? chunks / embeddingRate : 0;
     const storageTime = storageRate > 0 ? chunks / storageRate : 0;

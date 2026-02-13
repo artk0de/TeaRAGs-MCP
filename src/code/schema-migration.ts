@@ -50,10 +50,7 @@ export class SchemaManager {
    */
   async getSchemaVersion(collectionName: string): Promise<number> {
     try {
-      const point = await this.qdrant.getPoint(
-        collectionName,
-        SCHEMA_METADATA_ID,
-      );
+      const point = await this.qdrant.getPoint(collectionName, SCHEMA_METADATA_ID);
 
       if (point?.payload?._type === "schema_metadata") {
         return (point.payload as unknown as SchemaMetadata).schemaVersion || 0;
@@ -61,10 +58,7 @@ export class SchemaManager {
 
       // No metadata point - check if collection has relativePath index
       // If yes, it was manually migrated; treat as current version
-      const hasIndex = await this.qdrant.hasPayloadIndex(
-        collectionName,
-        "relativePath",
-      );
+      const hasIndex = await this.qdrant.hasPayloadIndex(collectionName, "relativePath");
       if (hasIndex) {
         return CURRENT_SCHEMA_VERSION;
       }
@@ -78,11 +72,7 @@ export class SchemaManager {
   /**
    * Store schema metadata in collection
    */
-  private async storeSchemaMetadata(
-    collectionName: string,
-    version: number,
-    indexes: string[],
-  ): Promise<void> {
+  private async storeSchemaMetadata(collectionName: string, version: number, indexes: string[]): Promise<void> {
     try {
       // Get collection info to create appropriate zero vector
       const info = await this.qdrant.getCollectionInfo(collectionName);
@@ -123,9 +113,7 @@ export class SchemaManager {
    * Ensure collection schema is at current version
    * Applies migrations if needed
    */
-  async ensureCurrentSchema(
-    collectionName: string,
-  ): Promise<SchemaMigrationResult> {
+  async ensureCurrentSchema(collectionName: string): Promise<SchemaMigrationResult> {
     const currentVersion = await this.getSchemaVersion(collectionName);
     const migrationsApplied: string[] = [];
 
@@ -144,11 +132,7 @@ export class SchemaManager {
 
       // v4: Add relativePath keyword index
       if (currentVersion < 4) {
-        const created = await this.qdrant.ensurePayloadIndex(
-          collectionName,
-          "relativePath",
-          "keyword",
-        );
+        const created = await this.qdrant.ensurePayloadIndex(collectionName, "relativePath", "keyword");
         if (created) {
           migrationsApplied.push("v4: Created keyword index on relativePath");
           indexes.push("relativePath");
@@ -162,11 +146,7 @@ export class SchemaManager {
       // if (currentVersion < 5) { ... }
 
       // Store updated schema metadata
-      await this.storeSchemaMetadata(
-        collectionName,
-        CURRENT_SCHEMA_VERSION,
-        indexes,
-      );
+      await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);
 
       return {
         success: true,
@@ -193,18 +173,10 @@ export class SchemaManager {
     const indexes: string[] = [];
 
     // Create relativePath keyword index for fast filter-based operations
-    await this.qdrant.createPayloadIndex(
-      collectionName,
-      "relativePath",
-      "keyword",
-    );
+    await this.qdrant.createPayloadIndex(collectionName, "relativePath", "keyword");
     indexes.push("relativePath");
 
     // Store schema metadata
-    await this.storeSchemaMetadata(
-      collectionName,
-      CURRENT_SCHEMA_VERSION,
-      indexes,
-    );
+    await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);
   }
 }

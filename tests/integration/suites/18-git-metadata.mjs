@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testGitMetadata(qdrant, embeddings) {
   section("17. Git Metadata Integration");
@@ -33,35 +34,46 @@ export async function testGitMetadata(qdrant, embeddings) {
   log("info", "Creating test files with git history...");
 
   // File 1 - with JIRA-style task ID
-  await createTestFile(gitTestDir, "auth-service.ts", `
+  await createTestFile(
+    gitTestDir,
+    "auth-service.ts",
+    `
 export class AuthService {
   login(username: string, password: string): boolean {
     // TD-1234: Implement login logic
     return username === "admin" && password === "secret";
   }
 }
-`);
+`,
+  );
   await execGit("add auth-service.ts");
   await execGit('commit -m "TD-1234 Add authentication service"');
 
   await sleep(100);
 
   // File 2 - with GitHub-style task ID
-  await createTestFile(gitTestDir, "user-service.ts", `
+  await createTestFile(
+    gitTestDir,
+    "user-service.ts",
+    `
 export class UserService {
   getUser(id: number): { id: number; name: string } {
     // Fixes #567 - user lookup
     return { id, name: "John" };
   }
 }
-`);
+`,
+  );
   await execGit("add user-service.ts");
   await execGit('commit -m "Fixes #567 - Add user service"');
 
   await sleep(100);
 
   // File 3 - modify first file (adds second commit to it)
-  await createTestFile(gitTestDir, "auth-service.ts", `
+  await createTestFile(
+    gitTestDir,
+    "auth-service.ts",
+    `
 export class AuthService {
   login(username: string, password: string): boolean {
     // TD-1234: Implement login logic
@@ -73,20 +85,25 @@ export class AuthService {
     console.log("Logged out");
   }
 }
-`);
+`,
+  );
   await execGit("add auth-service.ts");
   await execGit('commit -m "TD-5678 Add logout functionality"');
 
   // === TEST 2: Index with git metadata enabled ===
   log("info", "Indexing with git metadata enabled...");
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
-    enableGitMetadata: true,
-  }));
+  const indexer = new CodeIndexer(
+    qdrant,
+    embeddings,
+    getIndexerConfig({
+      enableGitMetadata: true,
+    }),
+  );
 
   resources.trackIndexedPath(gitTestDir);
   const stats = await indexer.indexCodebase(gitTestDir);
-  
+
   assert(stats.status === "completed", `Indexing completed: ${stats.status}`);
   assert(stats.filesIndexed === 2, `Files indexed: ${stats.filesIndexed}`);
   assert(stats.chunksCreated > 0, `Chunks created: ${stats.chunksCreated}`);
@@ -104,10 +121,16 @@ export class AuthService {
   assert(typeof gitMeta?.lastModifiedAt === "number", `lastModifiedAt is number: ${gitMeta?.lastModifiedAt}`);
   assert(typeof gitMeta?.firstCreatedAt === "number", `firstCreatedAt is number: ${gitMeta?.firstCreatedAt}`);
   assert(typeof gitMeta?.dominantAuthor === "string", `dominantAuthor is string: ${gitMeta?.dominantAuthor}`);
-  assert(typeof gitMeta?.dominantAuthorEmail === "string", `dominantAuthorEmail is string: ${gitMeta?.dominantAuthorEmail}`);
+  assert(
+    typeof gitMeta?.dominantAuthorEmail === "string",
+    `dominantAuthorEmail is string: ${gitMeta?.dominantAuthorEmail}`,
+  );
   assert(Array.isArray(gitMeta?.authors), `authors is array: ${JSON.stringify(gitMeta?.authors)}`);
   assert(typeof gitMeta?.commitCount === "number", `commitCount is number: ${gitMeta?.commitCount}`);
-  assert(typeof gitMeta?.lastCommitHash === "string", `lastCommitHash is string: ${gitMeta?.lastCommitHash?.slice(0, 8)}...`);
+  assert(
+    typeof gitMeta?.lastCommitHash === "string",
+    `lastCommitHash is string: ${gitMeta?.lastCommitHash?.slice(0, 8)}...`,
+  );
   assert(typeof gitMeta?.ageDays === "number", `ageDays is number: ${gitMeta?.ageDays}`);
   assert(Array.isArray(gitMeta?.taskIds), `taskIds is array: ${JSON.stringify(gitMeta?.taskIds)}`);
 
@@ -121,10 +144,13 @@ export class AuthService {
   const allTaskIds = new Set();
   for (const result of allResults) {
     const taskIds = result.metadata?.git?.taskIds || [];
-    taskIds.forEach(id => allTaskIds.add(id));
+    taskIds.forEach((id) => allTaskIds.add(id));
   }
 
-  assert(allTaskIds.has("TD-1234") || allTaskIds.has("TD-5678"), `JIRA-style task IDs extracted: ${[...allTaskIds].join(", ")}`);
+  assert(
+    allTaskIds.has("TD-1234") || allTaskIds.has("TD-5678"),
+    `JIRA-style task IDs extracted: ${[...allTaskIds].join(", ")}`,
+  );
   assert(allTaskIds.has("#567"), `GitHub-style task ID extracted: ${[...allTaskIds].join(", ")}`);
 
   // === TEST 5: Search filter by author ===
@@ -135,8 +161,8 @@ export class AuthService {
   });
   assert(authorResults.length > 0, `Author filter returns results: ${authorResults.length}`);
   assert(
-    authorResults.every(r => r.metadata?.git?.dominantAuthor === "Test User"),
-    "All results match author filter"
+    authorResults.every((r) => r.metadata?.git?.dominantAuthor === "Test User"),
+    "All results match author filter",
   );
 
   // === TEST 6: Search filter by task ID ===
@@ -147,8 +173,8 @@ export class AuthService {
   });
   assert(taskResults.length > 0, `Task ID filter returns results: ${taskResults.length}`);
   assert(
-    taskResults.every(r => r.metadata?.git?.taskIds?.includes("TD-1234")),
-    "All results contain requested task ID"
+    taskResults.every((r) => r.metadata?.git?.taskIds?.includes("TD-1234")),
+    "All results contain requested task ID",
   );
 
   // === TEST 7: Search filter by age ===
@@ -187,18 +213,22 @@ export class AuthService {
   const churnResults = await indexer.searchCode(gitTestDir, "service", {
     minCommitCount: 2,
   });
-  const highChurnCount = churnResults.filter(r => r.metadata?.git?.commitCount >= 2).length;
+  const highChurnCount = churnResults.filter((r) => r.metadata?.git?.commitCount >= 2).length;
   log("info", `High churn chunks (commitCount >= 2): ${highChurnCount}`);
 
   // === TEST 10: Git metadata with reindex ===
   log("info", "Testing git metadata survives reindex...");
 
-  await createTestFile(gitTestDir, "new-service.ts", `
+  await createTestFile(
+    gitTestDir,
+    "new-service.ts",
+    `
 export class NewService {
   // AB#890: Azure DevOps style task
   process(): void {}
 }
-`);
+`,
+  );
   await execGit("add new-service.ts");
   await execGit('commit -m "AB#890 Add new service"');
 

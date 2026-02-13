@@ -119,9 +119,7 @@ export function createMockQdrantClient(storage: MockQdrantStorage) {
         // Handle "should" filter (OR condition for multiple paths)
         if (filter.should) {
           const pathsToDelete = new Set(
-            filter.should
-              .filter((c: any) => c.key === "relativePath")
-              .map((c: any) => c.match?.value),
+            filter.should.filter((c: any) => c.key === "relativePath").map((c: any) => c.match?.value),
           );
           filtered = existing.filter((p) => !pathsToDelete.has(p.payload?.relativePath));
         }
@@ -130,9 +128,7 @@ export function createMockQdrantClient(storage: MockQdrantStorage) {
         if (filter.must) {
           for (const condition of filter.must) {
             if (condition.key === "relativePath") {
-              filtered = filtered.filter(
-                (p) => p.payload?.relativePath !== condition.match?.value,
-              );
+              filtered = filtered.filter((p) => p.payload?.relativePath !== condition.match?.value);
             }
           }
         }
@@ -150,13 +146,9 @@ export function createMockQdrantClient(storage: MockQdrantStorage) {
       if (filter?.must) {
         for (const condition of filter.must) {
           if (condition.key && condition.match?.any) {
-            points = points.filter((p) =>
-              condition.match.any.includes(p.payload?.[condition.key]),
-            );
+            points = points.filter((p) => condition.match.any.includes(p.payload?.[condition.key]));
           } else if (condition.key && condition.match?.value) {
-            points = points.filter(
-              (p) => p.payload?.[condition.key] === condition.match.value,
-            );
+            points = points.filter((p) => p.payload?.[condition.key] === condition.match.value);
           }
         }
       }

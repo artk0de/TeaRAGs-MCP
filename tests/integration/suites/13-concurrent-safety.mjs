@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testConcurrentSafety(qdrant, embeddings) {
   section("12. Concurrent Operations");
@@ -33,7 +34,10 @@ export async function testConcurrentSafety(qdrant, embeddings) {
     indexer.searchCode(concTestDir, "FILE_4"),
   ]);
 
-  assert(searches.every(s => s.length > 0), `All concurrent searches returned results`);
+  assert(
+    searches.every((s) => s.length > 0),
+    `All concurrent searches returned results`,
+  );
 
   // Concurrent status checks
   const statuses = await Promise.all([
@@ -43,7 +47,7 @@ export async function testConcurrentSafety(qdrant, embeddings) {
   ]);
 
   assert(
-    statuses.every(s => s.status === "indexed" || s.isIndexed),
-    "Concurrent status checks consistent"
+    statuses.every((s) => s.status === "indexed" || s.isIndexed),
+    "Concurrent status checks consistent",
   );
 }

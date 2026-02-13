@@ -11,6 +11,12 @@
 
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import type { QdrantManager } from "../qdrant/client.js";
+import { EnrichmentModule } from "./indexer/enrichment-module.js";
+import { IndexingModule } from "./indexer/indexing-module.js";
+import { ReindexModule } from "./indexer/reindex-module.js";
+import { SearchModule } from "./indexer/search-module.js";
+import { resolveCollectionName } from "./indexer/shared.js";
+import { StatusModule } from "./indexer/status-module.js";
 import type {
   ChangeStats,
   CodeConfig,
@@ -21,12 +27,6 @@ import type {
   ProgressCallback,
   SearchOptions,
 } from "./types.js";
-import { resolveCollectionName } from "./indexer/shared.js";
-import { EnrichmentModule } from "./indexer/enrichment-module.js";
-import { IndexingModule } from "./indexer/indexing-module.js";
-import { SearchModule } from "./indexer/search-module.js";
-import { StatusModule } from "./indexer/status-module.js";
-import { ReindexModule } from "./indexer/reindex-module.js";
 
 export class CodeIndexer {
   private enrichment: EnrichmentModule;
@@ -50,22 +50,14 @@ export class CodeIndexer {
   /**
    * Index a codebase from scratch or force re-index
    */
-  async indexCodebase(
-    path: string,
-    options?: IndexOptions,
-    progressCallback?: ProgressCallback,
-  ): Promise<IndexStats> {
+  async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
     return this.indexing.indexCodebase(path, options, progressCallback);
   }
 
   /**
    * Search code semantically
    */
-  async searchCode(
-    path: string,
-    query: string,
-    options?: SearchOptions,
-  ): Promise<CodeSearchResult[]> {
+  async searchCode(path: string, query: string, options?: SearchOptions): Promise<CodeSearchResult[]> {
     return this.search.searchCode(path, query, options);
   }
 
@@ -79,10 +71,7 @@ export class CodeIndexer {
   /**
    * Incrementally re-index only changed files
    */
-  async reindexChanges(
-    path: string,
-    progressCallback?: ProgressCallback,
-  ): Promise<ChangeStats> {
+  async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
     return this.reindex.reindexChanges(path, progressCallback);
   }
 

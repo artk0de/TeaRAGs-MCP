@@ -4,8 +4,8 @@
  * Functions for cleaning up test collections after benchmarking.
  */
 
-import { c } from "./colors.mjs";
 import { createdCollections } from "./benchmarks.mjs";
+import { c } from "./colors.mjs";
 
 /**
  * Remove all test collections from Qdrant
@@ -24,8 +24,7 @@ export async function cleanupAllCollections(qdrant) {
   // Also clean up any orphaned tune_* collections
   try {
     const collections = await qdrant.client.getCollections();
-    const tuneCollections = collections.collections
-      .filter(col => col.name.startsWith("tune_"));
+    const tuneCollections = collections.collections.filter((col) => col.name.startsWith("tune_"));
 
     if (tuneCollections.length > 0) {
       console.log(`${c.dim}Cleaning ${tuneCollections.length} orphaned tune_* collections...${c.reset}`);

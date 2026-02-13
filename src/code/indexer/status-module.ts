@@ -6,10 +6,11 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+
 import type { QdrantManager } from "../../qdrant/client.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../types.js";
-import { INDEXING_METADATA_ID, validatePath, resolveCollectionName } from "./shared.js";
+import { INDEXING_METADATA_ID, resolveCollectionName, validatePath } from "./shared.js";
 
 export class StatusModule {
   constructor(private qdrant: QdrantManager) {}
@@ -27,10 +28,7 @@ export class StatusModule {
     }
 
     // Check for indexing marker in Qdrant (persisted across instances)
-    const indexingMarker = await this.qdrant.getPoint(
-      collectionName,
-      INDEXING_METADATA_ID,
-    );
+    const indexingMarker = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID);
     const info = await this.qdrant.getCollectionInfo(collectionName);
 
     // Check marker status
@@ -38,15 +36,11 @@ export class StatusModule {
     const isInProgress = indexingMarker?.payload?.indexingComplete === false;
 
     // Subtract 1 from points count if marker exists (metadata point doesn't count as a chunk)
-    const actualChunksCount = indexingMarker
-      ? Math.max(0, info.pointsCount - 1)
-      : info.pointsCount;
+    const actualChunksCount = indexingMarker ? Math.max(0, info.pointsCount - 1) : info.pointsCount;
 
     // Read enrichment info from marker (if present)
     const enrichmentPayload = indexingMarker?.payload?.enrichment as EnrichmentInfo | undefined;
-    const enrichment: EnrichmentInfo | undefined = enrichmentPayload?.status
-      ? enrichmentPayload
-      : undefined;
+    const enrichment: EnrichmentInfo | undefined = enrichmentPayload?.status ? enrichmentPayload : undefined;
 
     // Read chunk-level enrichment info (separate key, written by chunk churn)
     const chunkEnrichmentPayload = indexingMarker?.payload?.chunkEnrichment as ChunkEnrichmentInfo | undefined;
@@ -71,9 +65,7 @@ export class StatusModule {
         status: "indexed",
         collectionName,
         chunksCount: actualChunksCount,
-        lastUpdated: indexingMarker.payload?.completedAt
-          ? new Date(indexingMarker.payload.completedAt)
-          : undefined,
+        lastUpdated: indexingMarker.payload?.completedAt ? new Date(indexingMarker.payload.completedAt) : undefined,
         enrichment,
         chunkEnrichment,
       };

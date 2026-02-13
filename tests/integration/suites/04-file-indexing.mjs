@@ -3,18 +3,23 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testFileIndexing(qdrant, embeddings) {
   section("4. File Indexing Lifecycle");
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
-    supportedExtensions: [".ts", ".js", ".py"],
-    ignorePatterns: ["node_modules", ".git"],
-  }));
+  const indexer = new CodeIndexer(
+    qdrant,
+    embeddings,
+    getIndexerConfig({
+      supportedExtensions: [".ts", ".js", ".py"],
+      ignorePatterns: ["node_modules", ".git"],
+    }),
+  );
 
   // Create test directory with files
   await fs.mkdir(TEST_DIR, { recursive: true });
@@ -56,8 +61,11 @@ export class ProductService {
   const userResults = await indexer.searchCode(TEST_DIR, "UserService getUser");
   assert(userResults.length > 0, `Search finds UserService: ${userResults.length} results`);
   // At least one result should have content (payload was retrieved)
-  const hasAnyContent = userResults.some(r => r.content && r.content.length > 0);
-  assert(hasAnyContent, `Search result has content (got ${userResults.length} results with content lengths: ${userResults.map(r => r.content?.length || 0).join(', ')})`);
+  const hasAnyContent = userResults.some((r) => r.content && r.content.length > 0);
+  assert(
+    hasAnyContent,
+    `Search result has content (got ${userResults.length} results with content lengths: ${userResults.map((r) => r.content?.length || 0).join(", ")})`,
+  );
 
   const productResults = await indexer.searchCode(TEST_DIR, "ProductService price");
   assert(productResults.length > 0, `Search finds ProductService: ${productResults.length} results`);
@@ -85,7 +93,9 @@ export class OrderService {
   assert(orderResults.length > 0, `New file searchable: ${orderResults.length} results`);
 
   // === MODIFY EXISTING FILE ===
-  const file1Modified = file1Content + `
+  const file1Modified =
+    file1Content +
+    `
   // Added method
   deleteUser(id: string) {
     return { deleted: true, id };

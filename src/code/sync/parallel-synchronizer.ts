@@ -13,7 +13,8 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
-import { relative, join } from "node:path";
+import { join, relative } from "node:path";
+
 import type { FileChanges } from "../types.js";
 import { ConsistentHash } from "./consistent-hash.js";
 import { MerkleTree } from "./merkle.js";
@@ -34,7 +35,7 @@ const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 export async function parallelLimit<T, R>(
   items: T[],
   fn: (item: T) => Promise<R>,
-  concurrency: number = MAX_IO_CONCURRENCY
+  concurrency: number = MAX_IO_CONCURRENCY,
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let index = 0;
@@ -59,10 +60,10 @@ export async function parallelLimit<T, R>(
  * Checkpoint data for resumable indexing
  */
 export interface Checkpoint {
-  processedFiles: string[];  // Relative paths of files already indexed
-  totalFiles: number;        // Total files to process
-  timestamp: number;         // When checkpoint was created
-  phase: "deleting" | "indexing";  // Current phase
+  processedFiles: string[]; // Relative paths of files already indexed
+  totalFiles: number; // Total files to process
+  timestamp: number; // When checkpoint was created
+  phase: "deleting" | "indexing"; // Current phase
 }
 
 /**
@@ -86,26 +87,16 @@ export class ParallelFileSynchronizer {
   /** Cached hashes from last detectChanges call for reuse in updateSnapshot */
   private lastComputedHashes: Map<string, FileMetadata> | null = null;
 
-  constructor(
-    codebasePath: string,
-    collectionName: string,
-    snapshotDir: string,
-    concurrency?: number
-  ) {
+  constructor(codebasePath: string, collectionName: string, snapshotDir: string, concurrency?: number) {
     this.codebasePath = codebasePath;
     this.collectionName = collectionName;
     this.snapshotDir = snapshotDir;
 
     // Get concurrency from param, env, or default
-    this.concurrency = concurrency
-      ?? parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
+    this.concurrency = concurrency ?? parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
 
     this.hashRing = new ConsistentHash(this.concurrency);
-    this.snapshotManager = new ShardedSnapshotManager(
-      snapshotDir,
-      collectionName,
-      this.concurrency
-    );
+    this.snapshotManager = new ShardedSnapshotManager(snapshotDir, collectionName, this.concurrency);
     this.checkpointPath = join(snapshotDir, `${collectionName}.checkpoint.json`);
   }
 
@@ -144,10 +135,7 @@ export class ParallelFileSynchronizer {
    * Update snapshot with current files
    * OPTIMIZED: Reuses hashes from detectChanges if available
    */
-  async updateSnapshot(
-    files: string[],
-    precomputedHashes?: Map<string, FileMetadata>
-  ): Promise<void> {
+  async updateSnapshot(files: string[], precomputedHashes?: Map<string, FileMetadata>): Promise<void> {
     const startTime = Date.now();
 
     let fileMetadata: Map<string, FileMetadata>;
@@ -198,9 +186,7 @@ export class ParallelFileSynchronizer {
     // Process all shards in parallel (each shard uses bounded concurrency internally)
     const processStart = Date.now();
     const shardResults = await Promise.all(
-      Array.from(filesByShards.entries()).map(([shardIndex, files]) =>
-        this.processShardFiles(shardIndex, files)
-      )
+      Array.from(filesByShards.entries()).map(([shardIndex, files]) => this.processShardFiles(shardIndex, files)),
     );
     timings.processing = Date.now() - processStart;
 
@@ -226,12 +212,12 @@ export class ParallelFileSynchronizer {
       const total = Date.now() - startTime;
       console.error(
         `[Sync] detectChanges: ${currentFiles.length} files in ${total}ms ` +
-        `(group: ${timings.grouping}ms, process: ${timings.processing}ms, ` +
-        `merge: ${timings.merging}ms, cache: ${timings.caching}ms)`
+          `(group: ${timings.grouping}ms, process: ${timings.processing}ms, ` +
+          `merge: ${timings.merging}ms, cache: ${timings.caching}ms)`,
       );
       console.error(
         `[Sync] detectChanges result: ${changes.added.length} added, ` +
-        `${changes.modified.length} modified, ${changes.deleted.length} deleted`
+          `${changes.modified.length} modified, ${changes.deleted.length} deleted`,
       );
     }
 
@@ -298,7 +284,7 @@ export class ParallelFileSynchronizer {
   async saveCheckpoint(
     processedFiles: string[],
     totalFiles: number,
-    phase: "deleting" | "indexing" = "indexing"
+    phase: "deleting" | "indexing" = "indexing",
   ): Promise<void> {
     const checkpoint: Checkpoint = {
       processedFiles,
@@ -397,10 +383,7 @@ export class ParallelFileSynchronizer {
    * Process files in a single shard
    * OPTIMIZED: Uses bounded concurrency instead of unlimited Promise.all
    */
-  private async processShardFiles(
-    shardIndex: number,
-    files: string[]
-  ): Promise<ShardResult> {
+  private async processShardFiles(shardIndex: number, files: string[]): Promise<ShardResult> {
     const startTime = Date.now();
 
     const added: string[] = [];
@@ -409,11 +392,7 @@ export class ParallelFileSynchronizer {
     const currentMetadata = new Map<string, FileMetadata>();
 
     // OPTIMIZATION: Use bounded concurrency instead of unbounded Promise.all
-    const results = await parallelLimit(
-      files,
-      file => this.checkSingleFile(file),
-      MAX_IO_CONCURRENCY
-    );
+    const results = await parallelLimit(files, (file) => this.checkSingleFile(file), MAX_IO_CONCURRENCY);
 
     for (const result of results) {
       if (!result) continue;
@@ -433,9 +412,7 @@ export class ParallelFileSynchronizer {
     }
 
     if (DEBUG) {
-      console.error(
-        `[Sync] shard-${shardIndex}: processed ${files.length} files in ${Date.now() - startTime}ms`
-      );
+      console.error(`[Sync] shard-${shardIndex}: processed ${files.length} files in ${Date.now() - startTime}ms`);
     }
 
     return { added, modified, currentHashes, currentMetadata };
@@ -498,10 +475,7 @@ export class ParallelFileSynchronizer {
   /**
    * Merge results from all shards
    */
-  private mergeShardResults(
-    shardResults: ShardResult[],
-    currentFiles: string[]
-  ): FileChanges {
+  private mergeShardResults(shardResults: ShardResult[], currentFiles: string[]): FileChanges {
     const added: string[] = [];
     const modified: string[] = [];
     const deleted: string[] = [];
@@ -514,9 +488,7 @@ export class ParallelFileSynchronizer {
 
     // Find deleted files (in previous snapshot but not in current files)
     if (this.previousSnapshot) {
-      const currentRelativePaths = new Set(
-        currentFiles.map(f => this.toRelativePath(f))
-      );
+      const currentRelativePaths = new Set(currentFiles.map((f) => this.toRelativePath(f)));
 
       for (const [path] of this.previousSnapshot.files) {
         if (!currentRelativePaths.has(path)) {
@@ -532,14 +504,12 @@ export class ParallelFileSynchronizer {
    * Compute metadata for all files (parallel with bounded concurrency)
    * OPTIMIZED: Uses bounded concurrency instead of unlimited Promise.all
    */
-  private async computeAllFileMetadata(
-    files: string[]
-  ): Promise<Map<string, FileMetadata>> {
+  private async computeAllFileMetadata(files: string[]): Promise<Map<string, FileMetadata>> {
     const startTime = Date.now();
 
     const results = await parallelLimit(
       files,
-      async file => {
+      async (file) => {
         const relativePath = this.toRelativePath(file);
         const meta = await this.getFileMetadata(file);
 
@@ -552,7 +522,7 @@ export class ParallelFileSynchronizer {
           metadata: { mtime: meta.mtime, size: meta.size, hash },
         };
       },
-      MAX_IO_CONCURRENCY
+      MAX_IO_CONCURRENCY,
     );
 
     const metadata = new Map<string, FileMetadata>();
@@ -563,9 +533,7 @@ export class ParallelFileSynchronizer {
     }
 
     if (DEBUG) {
-      console.error(
-        `[Sync] computeAllFileMetadata: ${files.length} files in ${Date.now() - startTime}ms`
-      );
+      console.error(`[Sync] computeAllFileMetadata: ${files.length} files in ${Date.now() - startTime}ms`);
     }
 
     return metadata;
@@ -574,13 +542,9 @@ export class ParallelFileSynchronizer {
   /**
    * Get file metadata (mtime + size)
    */
-  private async getFileMetadata(
-    filePath: string
-  ): Promise<{ mtime: number; size: number } | null> {
+  private async getFileMetadata(filePath: string): Promise<{ mtime: number; size: number } | null> {
     try {
-      const absolutePath = filePath.startsWith(this.codebasePath)
-        ? filePath
-        : join(this.codebasePath, filePath);
+      const absolutePath = filePath.startsWith(this.codebasePath) ? filePath : join(this.codebasePath, filePath);
 
       const stats = await fs.stat(absolutePath);
       return {
@@ -597,9 +561,7 @@ export class ParallelFileSynchronizer {
    */
   private async hashFile(filePath: string): Promise<string> {
     try {
-      const absolutePath = filePath.startsWith(this.codebasePath)
-        ? filePath
-        : join(this.codebasePath, filePath);
+      const absolutePath = filePath.startsWith(this.codebasePath) ? filePath : join(this.codebasePath, filePath);
 
       const content = await fs.readFile(absolutePath, "utf-8");
       return createHash("sha256").update(content).digest("hex");

@@ -31,8 +31,8 @@ export async function smartSteppingSearch({
   max = 8192,
   testFn,
   onResult,
-  onStop,  // Callback when stopping: (reason) => void
-  disablePlateau = false,  // TEMP: disable plateau detection for testing
+  onStop, // Callback when stopping: (reason) => void
+  disablePlateau = false, // TEMP: disable plateau detection for testing
 }) {
   const results = [];
   let bestValue = start;
@@ -101,9 +101,9 @@ export async function smartSteppingSearch({
 
     // Check for plateau (3 values with <15% variance) - UNLESS disabled
     if (!disablePlateau && results.length >= 3) {
-      const last3 = results.slice(-3).filter(r => !r.error && !r.isMidpoint);
+      const last3 = results.slice(-3).filter((r) => !r.error && !r.isMidpoint);
       if (last3.length >= 3) {
-        const rates = last3.map(r => r.rate);
+        const rates = last3.map((r) => r.rate);
         const maxRate = Math.max(...rates);
         const minRate = Math.min(...rates);
         const variance = (maxRate - minRate) / maxRate;
@@ -170,7 +170,7 @@ export async function linearSteppingSearch({ values, testFn, onResult }) {
 
     // Check for plateau
     if (results.length >= 3) {
-      const recentResults = results.slice(-3).filter(r => !r.error);
+      const recentResults = results.slice(-3).filter((r) => !r.error);
       if (recentResults.length >= 3) {
         const prev = recentResults[recentResults.length - 2];
         const curr = recentResults[recentResults.length - 1];

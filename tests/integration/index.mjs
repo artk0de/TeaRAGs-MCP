@@ -6,7 +6,7 @@
  * Requires: Qdrant server, Ollama with embedding model
  *
  * Run: npm run test-integration
- * 
+ *
  * Environment variables:
  *   QDRANT_URL        - Qdrant server URL (default: http://192.168.1.71:6333)
  *   EMBEDDING_BASE_URL - Ollama URL (default: http://192.168.1.71:11434)
@@ -14,16 +14,14 @@
  *   TEST_SUITE        - Run specific suite only (e.g., TEST_SUITE=embeddings)
  *   SKIP_CLEANUP      - Skip cleanup for debugging (SKIP_CLEANUP=1)
  */
-
 import { promises as fs } from "node:fs";
-import { c, counters, printSummary, section, log, resources, timing } from "./helpers.mjs";
-import { config, TEST_DIR, getIndexerConfig } from "./config.mjs";
 
+import { CodeIndexer } from "../../build/code/indexer.js";
 // Import from build
 import { OllamaEmbeddings } from "../../build/embeddings/ollama.js";
 import { QdrantManager } from "../../build/qdrant/client.js";
-import { CodeIndexer } from "../../build/code/indexer.js";
-
+import { config, getIndexerConfig, TEST_DIR } from "./config.mjs";
+import { c, counters, log, printSummary, resources, section, timing } from "./helpers.mjs";
 // Import all test suites
 import { testEmbeddings } from "./suites/01-embeddings.mjs";
 import { testQdrantOperations } from "./suites/02-qdrant-operations.mjs";
@@ -71,7 +69,7 @@ const suites = [
  */
 async function cleanup(qdrant, embeddings) {
   section("Cleanup");
-  
+
   const summary = resources.getSummary();
   log("info", `Resources to clean: ${JSON.stringify(summary)}`);
 
@@ -182,9 +180,7 @@ async function main() {
   resources.trackTempDir(TEST_DIR);
 
   // Initialize clients
-  const embeddings = new OllamaEmbeddings(
-    config.EMBEDDING_MODEL, 768, undefined, config.EMBEDDING_BASE_URL
-  );
+  const embeddings = new OllamaEmbeddings(config.EMBEDDING_MODEL, 768, undefined, config.EMBEDDING_BASE_URL);
   const qdrant = new QdrantManager(config.QDRANT_URL);
 
   // Build args map
@@ -198,7 +194,7 @@ async function main() {
       if (!isNaN(suiteNum) && suiteNum >= 1 && suiteNum <= suites.length) {
         suite = suites[suiteNum - 1];
       } else {
-        suite = suites.find(s => s.name === targetSuite);
+        suite = suites.find((s) => s.name === targetSuite);
       }
       if (!suite) {
         console.error(c.red + "Unknown test suite: " + targetSuite + c.reset);
@@ -206,13 +202,13 @@ async function main() {
         suites.forEach((s, i) => console.log(`  ${i + 1}. ${s.name}`));
         process.exit(1);
       }
-      const args = suite.args.map(a => argsMap[a]);
+      const args = suite.args.map((a) => argsMap[a]);
       await suite.fn(...args);
     } else {
       // Run all suites in order
       for (const suite of suites) {
         try {
-          const args = suite.args.map(a => argsMap[a]);
+          const args = suite.args.map((a) => argsMap[a]);
           await suite.fn(...args);
         } catch (error) {
           console.error(c.red + "Suite " + suite.name + " failed:" + c.reset, error.message);
@@ -228,18 +224,17 @@ async function main() {
     } else {
       log("warn", "Cleanup skipped (SKIP_CLEANUP=1)");
     }
-
   } catch (error) {
     console.error("\n" + c.red + "Fatal error:" + c.reset, error.message);
     console.error(error.stack);
-    
+
     // Try to cleanup anyway
     try {
       await cleanup(qdrant, embeddings);
     } catch (cleanupError) {
       console.error("Cleanup also failed:", cleanupError.message);
     }
-    
+
     process.exit(1);
   }
 

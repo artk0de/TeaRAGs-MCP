@@ -2,12 +2,13 @@
  * Tests for ShardedSnapshotManager - sharded snapshot storage with atomic writes
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ShardedSnapshotManager } from "../../../src/code/sync/sharded-snapshot.js";
-import type { FileMetadata } from "../../../src/code/sync/sharded-snapshot.js";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { ShardedSnapshotManager, type FileMetadata } from "../../../src/code/sync/sharded-snapshot.js";
 
 describe("ShardedSnapshotManager", () => {
   let testDir: string;
@@ -85,15 +86,13 @@ describe("ShardedSnapshotManager", () => {
 
   describe("atomic writes", () => {
     it("should use temp directory during write", async () => {
-      const files = new Map<string, FileMetadata>([
-        ["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }],
-      ]);
+      const files = new Map<string, FileMetadata>([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }]]);
 
       // After save, no temp directories should remain
       await manager.save("/test/codebase", files);
 
       const entries = await fs.readdir(testDir);
-      const tempDirs = entries.filter(e => e.includes(".tmp."));
+      const tempDirs = entries.filter((e) => e.includes(".tmp."));
       expect(tempDirs).toHaveLength(0);
     });
 
@@ -103,9 +102,7 @@ describe("ShardedSnapshotManager", () => {
       await fs.mkdir(staleTempDir, { recursive: true });
       await fs.writeFile(join(staleTempDir, "meta.json"), "{}");
 
-      const files = new Map<string, FileMetadata>([
-        ["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }],
-      ]);
+      const files = new Map<string, FileMetadata>([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }]]);
 
       await manager.save("/test/codebase", files);
 
@@ -117,9 +114,7 @@ describe("ShardedSnapshotManager", () => {
 
   describe("checksum validation", () => {
     it("should detect corrupted shard via checksum", async () => {
-      const files = new Map<string, FileMetadata>([
-        ["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }],
-      ]);
+      const files = new Map<string, FileMetadata>([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }]]);
 
       await manager.save("/test/codebase", files);
 
@@ -132,7 +127,7 @@ describe("ShardedSnapshotManager", () => {
       } else {
         // Find the shard that has the file
         const entries = await fs.readdir(snapshotDir);
-        const shardFile = entries.find(e => e.startsWith("shard-") && e.endsWith(".json"));
+        const shardFile = entries.find((e) => e.startsWith("shard-") && e.endsWith(".json"));
         if (shardFile) {
           await fs.appendFile(join(snapshotDir, shardFile), "corruption");
         }
@@ -142,9 +137,7 @@ describe("ShardedSnapshotManager", () => {
     });
 
     it("should validate meta.json integrity", async () => {
-      const files = new Map<string, FileMetadata>([
-        ["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }],
-      ]);
+      const files = new Map<string, FileMetadata>([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }]]);
 
       await manager.save("/test/codebase", files);
 
@@ -172,16 +165,12 @@ describe("ShardedSnapshotManager", () => {
     });
 
     it("should detect changes via meta root hash", async () => {
-      const files1 = new Map<string, FileMetadata>([
-        ["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }],
-      ]);
+      const files1 = new Map<string, FileMetadata>([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }]]);
 
       await manager.save("/test/codebase", files1);
       const loaded1 = await manager.load();
 
-      const files2 = new Map<string, FileMetadata>([
-        ["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a-modified" }],
-      ]);
+      const files2 = new Map<string, FileMetadata>([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a-modified" }]]);
 
       await manager.save("/test/codebase", files2);
       const loaded2 = await manager.load();
@@ -203,7 +192,7 @@ describe("ShardedSnapshotManager", () => {
       // Check multiple shards exist
       const snapshotDir = join(testDir, "test-collection");
       const entries = await fs.readdir(snapshotDir);
-      const shardFiles = entries.filter(e => e.startsWith("shard-") && e.endsWith(".json"));
+      const shardFiles = entries.filter((e) => e.startsWith("shard-") && e.endsWith(".json"));
 
       // With 100 files and 4 shards, should have multiple shards
       expect(shardFiles.length).toBeGreaterThan(1);
@@ -214,18 +203,14 @@ describe("ShardedSnapshotManager", () => {
     it("should check if snapshot exists", async () => {
       expect(await manager.exists()).toBe(false);
 
-      const files = new Map<string, FileMetadata>([
-        ["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }],
-      ]);
+      const files = new Map<string, FileMetadata>([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }]]);
       await manager.save("/test/codebase", files);
 
       expect(await manager.exists()).toBe(true);
     });
 
     it("should delete snapshot", async () => {
-      const files = new Map<string, FileMetadata>([
-        ["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }],
-      ]);
+      const files = new Map<string, FileMetadata>([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }]]);
       await manager.save("/test/codebase", files);
 
       await manager.delete();

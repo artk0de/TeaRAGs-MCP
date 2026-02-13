@@ -7,13 +7,9 @@
  * 3. GitLogReader — integration with real git repo
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  GitLogReader,
-  computeFileMetadata,
-  extractTaskIds,
-  overlaps,
-} from "../../../src/code/git/git-log-reader.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { computeFileMetadata, extractTaskIds, GitLogReader, overlaps } from "../../../src/code/git/git-log-reader.js";
 import type { CommitInfo, FileChurnData } from "../../../src/code/git/types.js";
 
 // ─── extractTaskIds ──────────────────────────────────────────────────────────
@@ -43,9 +39,7 @@ describe("extractTaskIds", () => {
   });
 
   it("should extract mixed task IDs from complex messages", () => {
-    const ids = extractTaskIds(
-      "feat(core): implement TD-1234 feature, fixes #567, ref AB#890",
-    );
+    const ids = extractTaskIds("feat(core): implement TD-1234 feature, fixes #567, ref AB#890");
     expect(ids).toContain("TD-1234");
     expect(ids).toContain("#567");
     expect(ids).toContain("AB#890");
@@ -523,9 +517,7 @@ describe("buildChunkChurnMap", () => {
     if (!repoRoot) return;
     // Create a chunkMap with only single-entry files
     const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
-    chunkMap.set(`${repoRoot}/package.json`, [
-      { chunkId: "test-id-1", startLine: 1, endLine: 90 },
-    ]);
+    chunkMap.set(`${repoRoot}/package.json`, [{ chunkId: "test-id-1", startLine: 1, endLine: 90 }]);
     const result = await reader.buildChunkChurnMap(repoRoot, chunkMap);
     expect(result.size).toBe(0);
   });
@@ -599,7 +591,7 @@ describe("buildChunkChurnMap", () => {
     const fileChurnData = fileChurnMap.get(testFile);
     if (!fileChurnData || fileChurnData.commits.length === 0) return;
 
-    const fileContributors = new Set(fileChurnData.commits.map(c => c.author)).size;
+    const fileContributors = new Set(fileChurnData.commits.map((c) => c.author)).size;
 
     const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
     chunkMap.set(`${repoRoot}/${testFile}`, [
@@ -651,13 +643,19 @@ describe("buildChunkChurnMap", () => {
     // with methods in between (lines 6-199) belonging to other chunks.
     // Without lineRanges, the block chunk covers 1-210 and catches ALL changes.
     // With lineRanges, it only catches changes in lines 1-5 and 200-210.
-    const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number; lineRanges?: Array<{ start: number; end: number }> }>>();
+    const chunkMap = new Map<
+      string,
+      Array<{ chunkId: string; startLine: number; endLine: number; lineRanges?: Array<{ start: number; end: number }> }>
+    >();
     chunkMap.set(`${repoRoot}/src/code/indexer.ts`, [
       {
         chunkId: "block-chunk",
         startLine: 1,
         endLine: 210,
-        lineRanges: [{ start: 1, end: 5 }, { start: 200, end: 210 }], // non-contiguous
+        lineRanges: [
+          { start: 1, end: 5 },
+          { start: 200, end: 210 },
+        ], // non-contiguous
       },
       { chunkId: "method-chunk", startLine: 6, endLine: 199 },
     ]);
@@ -709,9 +707,9 @@ describe("buildChunkChurnMap", () => {
     if (!repoRoot) return;
 
     // Make CLI throw, forcing fallback to isomorphic-git
-    const cliSpy = vi.spyOn(reader as any, "buildViaCli")
-      .mockRejectedValue(new Error("git not found"));
-    const isoGitSpy = vi.spyOn(reader as any, "buildViaIsomorphicGit")
+    const cliSpy = vi.spyOn(reader as any, "buildViaCli").mockRejectedValue(new Error("git not found"));
+    const isoGitSpy = vi
+      .spyOn(reader as any, "buildViaIsomorphicGit")
       .mockResolvedValue(new Map([["test.ts", { commits: [], linesAdded: 1, linesDeleted: 0 }]]));
 
     const result = await reader.buildFileMetadataMap(repoRoot, 1);
@@ -824,9 +822,7 @@ describe("isBugFixCommit (via computeFileMetadata)", () => {
   });
 
   it("should skip 'Merge pull request' even if body mentions fix", () => {
-    const commits = [
-      makeCommit({ body: "Merge pull request #42 from user/fix-auth\n\nfixes auth bug" }),
-    ];
+    const commits = [makeCommit({ body: "Merge pull request #42 from user/fix-auth\n\nfixes auth bug" })];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileMetadata(data, 100);
     expect(meta.bugFixRate).toBe(0);
@@ -834,9 +830,7 @@ describe("isBugFixCommit (via computeFileMetadata)", () => {
 
   it("should detect fix even when body has fix keyword only on 2nd line", () => {
     // Subject line has no fix keyword, but body has 'fix'
-    const commits = [
-      makeCommit({ body: "chore: update auth\nfix: also resolve login bug" }),
-    ];
+    const commits = [makeCommit({ body: "chore: update auth\nfix: also resolve login bug" })];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileMetadata(data, 100);
     // BUG_FIX_PATTERN tests full body, not just subject line; but MERGE_SUBJECT only checks first line
@@ -900,15 +894,7 @@ describe("parsePathspecOutput (via private method)", () => {
   });
 
   it("should skip malformed SHA entries", () => {
-    const stdout = [
-      "",
-      "not-a-sha",
-      "Alice",
-      "alice@example.com",
-      "12345",
-      "feat: stuff",
-      "10\t5\tfile.ts",
-    ].join("\0");
+    const stdout = ["", "not-a-sha", "Alice", "alice@example.com", "12345", "feat: stuff", "10\t5\tfile.ts"].join("\0");
 
     const result = (reader as any).parsePathspecOutput(stdout);
     expect(result).toHaveLength(0);
@@ -974,9 +960,17 @@ describe("parseNumstatOutput (via private method)", () => {
     const ts = String(Math.floor(Date.now() / 1000));
     const stdout = [
       "",
-      sha1, "Alice", "alice@ex.com", ts, "fix: first",
+      sha1,
+      "Alice",
+      "alice@ex.com",
+      ts,
+      "fix: first",
       "10\t5\tshared.ts",
-      sha2, "Bob", "bob@ex.com", ts, "feat: second",
+      sha2,
+      "Bob",
+      "bob@ex.com",
+      ts,
+      "feat: second",
       "20\t15\tshared.ts",
     ].join("\0");
 
@@ -1078,11 +1072,7 @@ describe("_getCommitsViaIsomorphicGit error handling", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._getCommitsViaIsomorphicGit(
-      "/fake/repo",
-      new Date(),
-      chunkMap,
-    );
+    const result = await (reader as any)._getCommitsViaIsomorphicGit("/fake/repo", new Date(), chunkMap);
     expect(result).toEqual([]);
   });
 
@@ -1108,11 +1098,7 @@ describe("_getCommitsViaIsomorphicGit error handling", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._getCommitsViaIsomorphicGit(
-      "/fake/repo",
-      new Date(),
-      chunkMap,
-    );
+    const result = await (reader as any)._getCommitsViaIsomorphicGit("/fake/repo", new Date(), chunkMap);
     expect(result).toEqual([]);
   });
 
@@ -1141,11 +1127,7 @@ describe("_getCommitsViaIsomorphicGit error handling", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._getCommitsViaIsomorphicGit(
-      "/fake/repo",
-      new Date(),
-      chunkMap,
-    );
+    const result = await (reader as any)._getCommitsViaIsomorphicGit("/fake/repo", new Date(), chunkMap);
     expect(result).toEqual([]);
   });
 });
@@ -1203,9 +1185,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
         { chunkId: "c2", startLine: 51, endLine: 100 },
       ]);
 
-      const result = await (reader as any)._buildChunkChurnMapUncached(
-        "/fake/repo", chunkMap, 10, 6, undefined,
-      );
+      const result = await (reader as any)._buildChunkChurnMapUncached("/fake/repo", chunkMap, 10, 6, undefined);
 
       // File should be skipped due to maxFileLines=10, chunks endLine=50 and 100 both exceed it
       const overlay = result.get("big-file.ts");
@@ -1251,9 +1231,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._buildChunkChurnMapUncached(
-      "/fake/repo", chunkMap, 10, 6, undefined,
-    );
+    const result = await (reader as any)._buildChunkChurnMapUncached("/fake/repo", chunkMap, 10, 6, undefined);
 
     // Should not throw; chunks should have 0 commits
     const overlay = result.get("test.ts");
@@ -1300,9 +1278,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._buildChunkChurnMapUncached(
-      "/fake/repo", chunkMap, 10, 6, undefined,
-    );
+    const result = await (reader as any)._buildChunkChurnMapUncached("/fake/repo", chunkMap, 10, 6, undefined);
 
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
@@ -1351,9 +1327,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._buildChunkChurnMapUncached(
-      "/fake/repo", chunkMap, 10, 6, undefined,
-    );
+    const result = await (reader as any)._buildChunkChurnMapUncached("/fake/repo", chunkMap, 10, 6, undefined);
 
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
@@ -1406,9 +1380,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMap)", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._buildChunkChurnMapUncached(
-      "/fake/repo", chunkMap, 10, 6, undefined,
-    );
+    const result = await (reader as any)._buildChunkChurnMapUncached("/fake/repo", chunkMap, 10, 6, undefined);
 
     // With identical blobs, structuredPatch returns 0 hunks → skip
     const overlay = result.get("test.ts");
@@ -1456,7 +1428,24 @@ describe("buildChunkChurnMap cache error", () => {
 
     vi.spyOn(reader as any, "getHead").mockRejectedValue(new Error("not a repo"));
     vi.spyOn(reader as any, "_buildChunkChurnMapUncached").mockResolvedValue(
-      new Map([["test.ts", new Map([["c1", { chunkCommitCount: 1, chunkChurnRatio: 1, chunkContributorCount: 1, chunkBugFixRate: 0, chunkLastModifiedAt: 0, chunkAgeDays: 0 }]])]]),
+      new Map([
+        [
+          "test.ts",
+          new Map([
+            [
+              "c1",
+              {
+                chunkCommitCount: 1,
+                chunkChurnRatio: 1,
+                chunkContributorCount: 1,
+                chunkBugFixRate: 0,
+                chunkLastModifiedAt: 0,
+                chunkAgeDays: 0,
+              },
+            ],
+          ]),
+        ],
+      ]),
     );
 
     const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
@@ -1596,28 +1585,20 @@ describe("withTimeout", () => {
   });
 
   it("should resolve when promise completes before timeout", async () => {
-    const result = await (reader as any).withTimeout(
-      Promise.resolve("ok"),
-      5000,
-      "timeout",
-    );
+    const result = await (reader as any).withTimeout(Promise.resolve("ok"), 5000, "timeout");
     expect(result).toBe("ok");
   });
 
   it("should reject with timeout message when promise exceeds timeout", async () => {
     const slow = new Promise((resolve) => setTimeout(resolve, 10000));
 
-    await expect(
-      (reader as any).withTimeout(slow, 10, "test timeout message"),
-    ).rejects.toThrow("test timeout message");
+    await expect((reader as any).withTimeout(slow, 10, "test timeout message")).rejects.toThrow("test timeout message");
   });
 
   it("should propagate original rejection when promise fails before timeout", async () => {
     const failing = Promise.reject(new Error("original error"));
 
-    await expect(
-      (reader as any).withTimeout(failing, 5000, "timeout"),
-    ).rejects.toThrow("original error");
+    await expect((reader as any).withTimeout(failing, 5000, "timeout")).rejects.toThrow("original error");
   });
 });
 
@@ -1811,7 +1792,10 @@ describe("_buildChunkChurnMapUncached — fallback fileCommitCount", () => {
     // readBlob returns content so structuredPatch can work
     vi.spyOn(git.default, "readBlob")
       .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("old content\nline2") } as any)
-      .mockResolvedValueOnce({ oid: "y".repeat(40), blob: new TextEncoder().encode("new content\nline2\nline3") } as any);
+      .mockResolvedValueOnce({
+        oid: "y".repeat(40),
+        blob: new TextEncoder().encode("new content\nline2\nline3"),
+      } as any);
 
     const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
     chunkMap.set("test.ts", [
@@ -1821,7 +1805,11 @@ describe("_buildChunkChurnMapUncached — fallback fileCommitCount", () => {
 
     // Call WITHOUT fileChurnDataMap — should use fallback union calculation
     const result = await (reader as any)._buildChunkChurnMapUncached(
-      "/fake/repo", chunkMap, 10, 6, undefined, // no fileChurnDataMap
+      "/fake/repo",
+      chunkMap,
+      10,
+      6,
+      undefined, // no fileChurnDataMap
     );
 
     const overlay = result.get("test.ts");
@@ -1858,9 +1846,7 @@ describe("_buildChunkChurnMapUncached — CLI pathspec fallback", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._buildChunkChurnMapUncached(
-      "/fake/repo", chunkMap, 10, 6, undefined,
-    );
+    const result = await (reader as any)._buildChunkChurnMapUncached("/fake/repo", chunkMap, 10, 6, undefined);
 
     // Should not throw; should have fallen back to isomorphic-git
     expect(result).toBeInstanceOf(Map);
@@ -1886,18 +1872,25 @@ describe("buildChunkChurnMap — cache hit", () => {
     vi.spyOn(reader as any, "getHead").mockResolvedValue(headSha);
 
     const mockOverlay = new Map([
-      ["test.ts", new Map([["c1", {
-        chunkCommitCount: 5,
-        chunkChurnRatio: 0.5,
-        chunkContributorCount: 2,
-        chunkBugFixRate: 20,
-        chunkLastModifiedAt: 12345,
-        chunkAgeDays: 10,
-      }]])],
+      [
+        "test.ts",
+        new Map([
+          [
+            "c1",
+            {
+              chunkCommitCount: 5,
+              chunkChurnRatio: 0.5,
+              chunkContributorCount: 2,
+              chunkBugFixRate: 20,
+              chunkLastModifiedAt: 12345,
+              chunkAgeDays: 10,
+            },
+          ],
+        ]),
+      ],
     ]);
 
-    const buildSpy = vi.spyOn(reader as any, "_buildChunkChurnMapUncached")
-      .mockResolvedValue(mockOverlay);
+    const buildSpy = vi.spyOn(reader as any, "_buildChunkChurnMapUncached").mockResolvedValue(mockOverlay);
 
     const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
     chunkMap.set("test.ts", [
@@ -1961,7 +1954,22 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
     vi.spyOn(reader as any, "getCommitsByPathspecSingle").mockImplementation(async () => {
       callCount++;
       if (callCount === 1) {
-        return [{
+        return [
+          {
+            commit: {
+              sha,
+              author: "Alice",
+              authorEmail: "a@ex.com",
+              timestamp: 12345,
+              body: "feat: stuff",
+            },
+            changedFiles: ["file1.ts"],
+          },
+        ];
+      }
+      // Second batch returns same commit with different file
+      return [
+        {
           commit: {
             sha,
             author: "Alice",
@@ -1969,29 +1977,16 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
             timestamp: 12345,
             body: "feat: stuff",
           },
-          changedFiles: ["file1.ts"],
-        }];
-      }
-      // Second batch returns same commit with different file
-      return [{
-        commit: {
-          sha,
-          author: "Alice",
-          authorEmail: "a@ex.com",
-          timestamp: 12345,
-          body: "feat: stuff",
+          changedFiles: ["file2.ts"],
         },
-        changedFiles: ["file2.ts"],
-      }];
+      ];
     });
 
     // Generate >500 paths to trigger batching
     const filePaths: string[] = [];
     for (let i = 0; i < 600; i++) filePaths.push(`file${i}.ts`);
 
-    const result = await (reader as any).getCommitsByPathspec(
-      "/repo", new Date(), filePaths,
-    );
+    const result = await (reader as any).getCommitsByPathspec("/repo", new Date(), filePaths);
 
     // Should have merged the two batch results into one entry with both files
     expect(result).toHaveLength(1);
@@ -2006,16 +2001,18 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
     vi.spyOn(reader as any, "getCommitsByPathspecSingle").mockImplementation(async () => {
       callCount++;
       if (callCount === 1) throw new Error("batch 1 failed");
-      return [{
-        commit: {
-          sha: "b".repeat(40),
-          author: "Bob",
-          authorEmail: "b@ex.com",
-          timestamp: 12345,
-          body: "fix: something",
+      return [
+        {
+          commit: {
+            sha: "b".repeat(40),
+            author: "Bob",
+            authorEmail: "b@ex.com",
+            timestamp: 12345,
+            body: "fix: something",
+          },
+          changedFiles: ["surviving.ts"],
         },
-        changedFiles: ["surviving.ts"],
-      }];
+      ];
     });
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -2023,9 +2020,7 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
     const filePaths: string[] = [];
     for (let i = 0; i < 600; i++) filePaths.push(`file${i}.ts`);
 
-    const result = await (reader as any).getCommitsByPathspec(
-      "/repo", new Date(), filePaths,
-    );
+    const result = await (reader as any).getCommitsByPathspec("/repo", new Date(), filePaths);
 
     // Should have results from second batch
     expect(result).toHaveLength(1);
@@ -2128,11 +2123,7 @@ describe("getCommitsByPathspec — edge cases", () => {
   });
 
   it("should return empty array for empty file paths", async () => {
-    const result = await (reader as any).getCommitsByPathspec(
-      "/repo",
-      new Date(),
-      [],
-    );
+    const result = await (reader as any).getCommitsByPathspec("/repo", new Date(), []);
     expect(result).toEqual([]);
   });
 });
@@ -2173,11 +2164,7 @@ describe("_getCommitsViaIsomorphicGit — relevant files found", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._getCommitsViaIsomorphicGit(
-      "/fake/repo",
-      new Date("2020-01-01"),
-      chunkMap,
-    );
+    const result = await (reader as any)._getCommitsViaIsomorphicGit("/fake/repo", new Date("2020-01-01"), chunkMap);
 
     expect(result).toHaveLength(1);
     expect(result[0].commit.sha).toBe("a".repeat(40));
@@ -2214,11 +2201,7 @@ describe("_getCommitsViaIsomorphicGit — relevant files found", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._getCommitsViaIsomorphicGit(
-      "/fake/repo",
-      new Date("2020-01-01"),
-      chunkMap,
-    );
+    const result = await (reader as any)._getCommitsViaIsomorphicGit("/fake/repo", new Date("2020-01-01"), chunkMap);
 
     expect(result).toEqual([]);
   });
@@ -2239,9 +2222,7 @@ describe("buildFileMetadataForPaths — DEBUG batch error logging", () => {
     // Force the git command to fail by using a non-git directory
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const result = await reader.buildFileMetadataForPaths("/tmp/not-a-git-repo", [
-      "nonexistent.ts",
-    ]);
+    const result = await reader.buildFileMetadataForPaths("/tmp/not-a-git-repo", ["nonexistent.ts"]);
 
     // Should not throw, return empty map
     expect(result.size).toBe(0);
@@ -2285,9 +2266,7 @@ describe("processCommitEntry — no relevant files", () => {
       { chunkId: "c2", startLine: 51, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._buildChunkChurnMapUncached(
-      "/fake/repo", chunkMap, 10, 6, undefined,
-    );
+    const result = await (reader as any)._buildChunkChurnMapUncached("/fake/repo", chunkMap, 10, 6, undefined);
 
     // Chunks should have 0 commits since the changed file doesn't match
     const overlay = result.get("target.ts");
@@ -2342,7 +2321,10 @@ describe("processCommitEntry — bug fix accumulation", () => {
     // Return different content so structuredPatch produces hunks
     vi.spyOn(git.default, "readBlob")
       .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("old line 1\nold line 2") } as any)
-      .mockResolvedValueOnce({ oid: "y".repeat(40), blob: new TextEncoder().encode("new line 1\nnew line 2\nnew line 3") } as any);
+      .mockResolvedValueOnce({
+        oid: "y".repeat(40),
+        blob: new TextEncoder().encode("new line 1\nnew line 2\nnew line 3"),
+      } as any);
 
     const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
     chunkMap.set("auth.ts", [
@@ -2350,9 +2332,7 @@ describe("processCommitEntry — bug fix accumulation", () => {
       { chunkId: "c2", startLine: 6, endLine: 100 },
     ]);
 
-    const result = await (reader as any)._buildChunkChurnMapUncached(
-      "/fake/repo", chunkMap, 10, 6, undefined,
-    );
+    const result = await (reader as any)._buildChunkChurnMapUncached("/fake/repo", chunkMap, 10, 6, undefined);
 
     const overlay = result.get("auth.ts");
     expect(overlay).toBeDefined();
@@ -2438,10 +2418,22 @@ describe("_buildChunkChurnMapUncached — concurrency control", () => {
 
     // Alternate old/new content for two commits
     vi.spyOn(git.default, "readBlob")
-      .mockResolvedValueOnce({ oid: "x1".padEnd(40, "0"), blob: new TextEncoder().encode("v1 line 1\nv1 line 2") } as any)
-      .mockResolvedValueOnce({ oid: "x2".padEnd(40, "0"), blob: new TextEncoder().encode("v2 line 1\nv2 line 2\nv2 line 3") } as any)
-      .mockResolvedValueOnce({ oid: "x3".padEnd(40, "0"), blob: new TextEncoder().encode("v2 line 1\nv2 line 2\nv2 line 3") } as any)
-      .mockResolvedValueOnce({ oid: "x4".padEnd(40, "0"), blob: new TextEncoder().encode("v3 line 1\nv3 line 2") } as any);
+      .mockResolvedValueOnce({
+        oid: "x1".padEnd(40, "0"),
+        blob: new TextEncoder().encode("v1 line 1\nv1 line 2"),
+      } as any)
+      .mockResolvedValueOnce({
+        oid: "x2".padEnd(40, "0"),
+        blob: new TextEncoder().encode("v2 line 1\nv2 line 2\nv2 line 3"),
+      } as any)
+      .mockResolvedValueOnce({
+        oid: "x3".padEnd(40, "0"),
+        blob: new TextEncoder().encode("v2 line 1\nv2 line 2\nv2 line 3"),
+      } as any)
+      .mockResolvedValueOnce({
+        oid: "x4".padEnd(40, "0"),
+        blob: new TextEncoder().encode("v3 line 1\nv3 line 2"),
+      } as any);
 
     const chunkMap = new Map<string, Array<{ chunkId: string; startLine: number; endLine: number }>>();
     chunkMap.set("test.ts", [
@@ -2450,9 +2442,7 @@ describe("_buildChunkChurnMapUncached — concurrency control", () => {
     ]);
 
     // Use concurrency=1 to exercise the queue mechanism
-    const result = await (reader as any)._buildChunkChurnMapUncached(
-      "/fake/repo", chunkMap, 1, 6, undefined,
-    );
+    const result = await (reader as any)._buildChunkChurnMapUncached("/fake/repo", chunkMap, 1, 6, undefined);
 
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
@@ -2551,7 +2541,11 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
       "garbage-not-a-sha", // invalid
       "more garbage",
       "", // empty
-      validSha, "Alice", "alice@ex.com", ts, "feat: valid",
+      validSha,
+      "Alice",
+      "alice@ex.com",
+      ts,
+      "feat: valid",
       "10\t5\tfile.ts",
     ].join("\0");
 

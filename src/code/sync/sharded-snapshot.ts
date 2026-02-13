@@ -10,7 +10,8 @@
 
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
+
 import { ConsistentHash } from "./consistent-hash.js";
 import { MerkleTree } from "./merkle.js";
 
@@ -18,9 +19,9 @@ import { MerkleTree } from "./merkle.js";
  * File metadata for fast change detection
  */
 export interface FileMetadata {
-  mtime: number;   // Modification timestamp (ms)
-  size: number;    // File size (bytes)
-  hash: string;    // SHA256 content hash
+  mtime: number; // Modification timestamp (ms)
+  size: number; // File size (bytes)
+  hash: string; // SHA256 content hash
 }
 
 /**
@@ -69,12 +70,7 @@ export class ShardedSnapshotManager {
   private readonly shardCount: number;
   private readonly virtualNodesPerShard: number;
 
-  constructor(
-    baseDir: string,
-    collectionName: string,
-    shardCount: number = 4,
-    virtualNodesPerShard: number = 150
-  ) {
+  constructor(baseDir: string, collectionName: string, shardCount: number = 4, virtualNodesPerShard: number = 150) {
     this.snapshotDir = join(baseDir, collectionName);
     this.shardCount = shardCount;
     this.virtualNodesPerShard = virtualNodesPerShard;
@@ -212,10 +208,7 @@ export class ShardedSnapshotManager {
 
     // OPTIMIZATION: Read all shards concurrently instead of sequentially
     const shardLoadPromises = meta.shards.map(async (shardInfo) => {
-      const shardPath = join(
-        this.snapshotDir,
-        `shard-${shardInfo.index.toString().padStart(2, "0")}.json`
-      );
+      const shardPath = join(this.snapshotDir, `shard-${shardInfo.index.toString().padStart(2, "0")}.json`);
 
       // Read shard content
       const shardContent = await fs.readFile(shardPath, "utf-8");
@@ -224,8 +217,7 @@ export class ShardedSnapshotManager {
       const actualChecksum = createHash("sha256").update(shardContent).digest("hex");
       if (actualChecksum !== shardInfo.checksum) {
         throw new Error(
-          `Checksum mismatch for shard ${shardInfo.index}: ` +
-          `expected ${shardInfo.checksum}, got ${actualChecksum}`
+          `Checksum mismatch for shard ${shardInfo.index}: ` + `expected ${shardInfo.checksum}, got ${actualChecksum}`,
         );
       }
 

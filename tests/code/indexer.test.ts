@@ -1,10 +1,20 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // Mock tree-sitter modules to prevent native binding crashes
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
-import { vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { CodeIndexer } from "../../src/code/indexer.js";
+import type { CodeConfig } from "../../src/code/types.js";
+import {
+  cleanupTempDir,
+  createTempTestDir,
+  createTestFile,
+  defaultTestConfig,
+  MockEmbeddingProvider,
+  MockQdrantManager,
+} from "./indexer/test-helpers.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
@@ -32,17 +42,6 @@ vi.mock("tree-sitter-rust", () => ({ default: {} }));
 vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
-
-import { CodeIndexer } from "../../src/code/indexer.js";
-import type { CodeConfig } from "../../src/code/types.js";
-import {
-  MockQdrantManager,
-  MockEmbeddingProvider,
-  createTestFile,
-  defaultTestConfig,
-  createTempTestDir,
-  cleanupTempDir,
-} from "./indexer/test-helpers.js";
 
 describe("CodeIndexer", () => {
   let indexer: CodeIndexer;
@@ -108,11 +107,7 @@ describe("CodeIndexer", () => {
     });
 
     it("should handle files with unicode content", async () => {
-      await createTestFile(
-        codebaseDir,
-        "test.ts",
-        "const greeting = '你好世界';",
-      );
+      await createTestFile(codebaseDir, "test.ts", "const greeting = '你好世界';");
 
       const stats = await indexer.indexCodebase(codebaseDir);
 

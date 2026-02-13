@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { EmbeddingProviderFactory, type FactoryConfig } from "./factory.js";
-import { OpenAIEmbeddings } from "./openai.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { CohereEmbeddings } from "./cohere.js";
-import { VoyageEmbeddings } from "./voyage.js";
+import { EmbeddingProviderFactory, type FactoryConfig } from "./factory.js";
 import { OllamaEmbeddings } from "./ollama.js";
+import { OpenAIEmbeddings } from "./openai.js";
+import { VoyageEmbeddings } from "./voyage.js";
 
 describe("EmbeddingProviderFactory", () => {
   let originalEnv: NodeJS.ProcessEnv;

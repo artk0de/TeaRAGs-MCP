@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { renderTemplate, validateArguments } from "./template.js";
 import type { PromptArgument } from "./types.js";
 
@@ -84,7 +85,7 @@ describe("renderTemplate", () => {
     const result = renderTemplate(template, args, definitions);
 
     expect(result.text).toBe(
-      "Search the 'papers' collection for documents similar to: 'neural networks'. Return the top 5 most relevant results."
+      "Search the 'papers' collection for documents similar to: 'neural networks'. Return the top 5 most relevant results.",
     );
   });
 
@@ -161,9 +162,7 @@ describe("validateArguments", () => {
       { name: "filter", description: "Filter", required: true },
     ];
 
-    expect(() => validateArguments(args, definitions)).toThrow(
-      "Missing required arguments: collection, query, filter"
-    );
+    expect(() => validateArguments(args, definitions)).toThrow("Missing required arguments: collection, query, filter");
   });
 
   it("should not throw for missing optional arguments", () => {
@@ -192,9 +191,7 @@ describe("validateArguments", () => {
 
   it("should not require arguments that are not defined", () => {
     const args = { collection: "papers", extra: "data" };
-    const definitions: PromptArgument[] = [
-      { name: "collection", description: "Collection name", required: true },
-    ];
+    const definitions: PromptArgument[] = [{ name: "collection", description: "Collection name", required: true }];
 
     expect(() => validateArguments(args, definitions)).not.toThrow();
   });

@@ -9,7 +9,7 @@ export class MerkleNode {
   constructor(
     public hash: string,
     public left?: MerkleNode,
-    public right?: MerkleNode
+    public right?: MerkleNode,
   ) {}
 }
 
@@ -65,7 +65,7 @@ export class MerkleTree {
    */
   static compare(
     oldHashes: Map<string, string>,
-    newHashes: Map<string, string>
+    newHashes: Map<string, string>,
   ): { added: string[]; modified: string[]; deleted: string[] } {
     const added: string[] = [];
     const modified: string[] = [];
@@ -127,10 +127,6 @@ export class MerkleTree {
 
   private deserializeNode(obj: any): MerkleNode | undefined {
     if (!obj) return undefined;
-    return new MerkleNode(
-      obj.hash,
-      this.deserializeNode(obj.left),
-      this.deserializeNode(obj.right)
-    );
+    return new MerkleNode(obj.hash, this.deserializeNode(obj.left), this.deserializeNode(obj.right));
   }
 }

@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testForceReindexBehavior(qdrant, embeddings) {
   section("16. ForceReindex Early Return & Parallel Indexing");
@@ -15,20 +16,28 @@ export async function testForceReindexBehavior(qdrant, embeddings) {
   await fs.mkdir(forceTestDir, { recursive: true });
 
   // Create test files
-  await createTestFile(forceTestDir, "service1.ts", `
+  await createTestFile(
+    forceTestDir,
+    "service1.ts",
+    `
 export class Service1 {
   process(data: string): string {
     return data.toUpperCase();
   }
 }
-`);
-  await createTestFile(forceTestDir, "service2.ts", `
+`,
+  );
+  await createTestFile(
+    forceTestDir,
+    "service2.ts",
+    `
 export class Service2 {
   calculate(x: number): number {
     return x * 2;
   }
 }
-`);
+`,
+  );
 
   const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
 
@@ -47,8 +56,8 @@ export class Service2 {
   assert(reindexStats.filesIndexed === 0, `No files indexed on re-run without force: ${reindexStats.filesIndexed}`);
   assert(reindexStats.chunksCreated === 0, `No chunks created on re-run without force: ${reindexStats.chunksCreated}`);
   assert(
-    reindexStats.errors?.some(e => e.includes("Collection already exists")),
-    "Error message mentions collection exists"
+    reindexStats.errors?.some((e) => e.includes("Collection already exists")),
+    "Error message mentions collection exists",
   );
 
   // === TEST 3: Re-indexing with forceReindex should work ===
@@ -71,7 +80,10 @@ export class Service2 {
   await fs.mkdir(parallelDir, { recursive: true });
 
   for (let i = 0; i < 30; i++) {
-    await createTestFile(parallelDir, `module${i}.ts`, `
+    await createTestFile(
+      parallelDir,
+      `module${i}.ts`,
+      `
 // Module ${i} - Test file for parallel processing
 export class Module${i} {
   private id: number = ${i};
@@ -85,7 +97,8 @@ export class Module${i} {
     return 'Module${i}';
   }
 }
-`);
+`,
+    );
   }
 
   resources.trackIndexedPath(parallelDir);
@@ -106,7 +119,9 @@ export class Module${i} {
   assert(sampleResults2.length > 0, `Module15 searchable: ${sampleResults2.length}`);
   assert(sampleResults3.length > 0, `Module25 searchable: ${sampleResults3.length}`);
 
-  console.log(`    30 files indexed in ${(duration / 1000).toFixed(2)}s (${(30 / (duration / 1000)).toFixed(1)} files/s)`);
+  console.log(
+    `    30 files indexed in ${(duration / 1000).toFixed(2)}s (${(30 / (duration / 1000)).toFixed(1)} files/s)`,
+  );
 
   log("pass", "ForceReindex behavior and parallel indexing verified");
 }

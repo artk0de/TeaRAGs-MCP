@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testHashConsistency(qdrant, embeddings) {
   section("5. Hash & Snapshot Consistency");
@@ -34,13 +35,16 @@ export async function testHashConsistency(qdrant, embeddings) {
   const noChangeStats = await indexer.reindexChanges(hashTestDir);
   assert(
     noChangeStats.filesAdded === 0 && noChangeStats.filesModified === 0,
-    `No changes detected for unchanged file: +${noChangeStats.filesAdded} ~${noChangeStats.filesModified}`
+    `No changes detected for unchanged file: +${noChangeStats.filesAdded} ~${noChangeStats.filesModified}`,
   );
 
   // Modify file (content2 has different size to trigger hash recomputation)
   await fs.writeFile(join(hashTestDir, "version.ts"), content2);
   const expectedHash2 = hashContent(content2);
-  assert(expectedHash1 !== expectedHash2, `Hash changes with content: ${expectedHash1.slice(0,8)} → ${expectedHash2.slice(0,8)}`);
+  assert(
+    expectedHash1 !== expectedHash2,
+    `Hash changes with content: ${expectedHash1.slice(0, 8)} → ${expectedHash2.slice(0, 8)}`,
+  );
 
   // Reindex should detect change
   const changeStats = await indexer.reindexChanges(hashTestDir);

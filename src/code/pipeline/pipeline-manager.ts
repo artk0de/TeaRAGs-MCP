@@ -21,16 +21,16 @@
 
 import type { QdrantManager } from "../../qdrant/client.js";
 import { BatchAccumulator } from "./batch-accumulator.js";
-import type {
-  Batch,
-  BatchResult,
-  DeleteItem,
-  PipelineConfig,
-  PipelineStats,
-  UpsertItem,
-  WorkItem,
+import {
+  DEFAULT_CONFIG,
+  type Batch,
+  type BatchResult,
+  type DeleteItem,
+  type PipelineConfig,
+  type PipelineStats,
+  type UpsertItem,
+  type WorkItem,
 } from "./types.js";
-import { DEFAULT_CONFIG } from "./types.js";
 import { WorkerPool } from "./worker-pool.js";
 
 /** Enable debug logging */
@@ -87,16 +87,12 @@ export class PipelineManager {
     );
 
     // Initialize accumulators
-    this.upsertAccumulator = new BatchAccumulator(
-      this.config.upsertAccumulator,
-      "upsert",
-      (batch) => this.submitBatch(batch, this.handlers.handleUpsertBatch),
+    this.upsertAccumulator = new BatchAccumulator(this.config.upsertAccumulator, "upsert", (batch) =>
+      this.submitBatch(batch, this.handlers.handleUpsertBatch),
     );
 
-    this.deleteAccumulator = new BatchAccumulator(
-      this.config.deleteAccumulator,
-      "delete",
-      (batch) => this.submitBatch(batch, this.handlers.handleDeleteBatch),
+    this.deleteAccumulator = new BatchAccumulator(this.config.deleteAccumulator, "delete", (batch) =>
+      this.submitBatch(batch, this.handlers.handleDeleteBatch),
     );
   }
 
@@ -238,8 +234,7 @@ export class PipelineManager {
    */
   getStats(): PipelineStats {
     const poolStats = this.workerPool.getStats();
-    const uptimeMs =
-      this.stats.startTime > 0 ? Date.now() - this.stats.startTime : 0;
+    const uptimeMs = this.stats.startTime > 0 ? Date.now() - this.stats.startTime : 0;
 
     return {
       itemsProcessed: this.stats.itemsProcessed,
@@ -247,8 +242,7 @@ export class PipelineManager {
       errors: this.stats.errors,
       queueDepth: poolStats.queueDepth,
       avgBatchTimeMs: poolStats.avgTimeMs,
-      throughput:
-        uptimeMs > 0 ? (this.stats.itemsProcessed / uptimeMs) * 1000 : 0,
+      throughput: uptimeMs > 0 ? (this.stats.itemsProcessed / uptimeMs) * 1000 : 0,
       uptimeMs,
     };
   }
@@ -285,18 +279,13 @@ export class PipelineManager {
     return true;
   }
 
-  private submitBatch<T extends WorkItem>(
-    batch: Batch<T>,
-    handler: (batch: Batch<T>) => Promise<void>,
-  ): void {
+  private submitBatch<T extends WorkItem>(batch: Batch<T>, handler: (batch: Batch<T>) => Promise<void>): void {
     const promise = this.workerPool.submit(batch, handler);
     this.pendingBatches.push(promise);
 
     // Cleanup completed promises periodically
     if (this.pendingBatches.length > 100) {
-      this.pendingBatches = this.pendingBatches.filter(
-        (p) => !this.isPromiseResolved(p),
-      );
+      this.pendingBatches = this.pendingBatches.filter((p) => !this.isPromiseResolved(p));
     }
   }
 
@@ -326,10 +315,7 @@ export class PipelineManager {
   private isPromiseResolved(promise: Promise<any>): boolean {
     // Check if promise is resolved by racing with a known resolved promise
     let resolved = false;
-    Promise.race([
-      promise.then(() => (resolved = true)),
-      Promise.resolve(),
-    ]).catch(() => {});
+    Promise.race([promise.then(() => (resolved = true)), Promise.resolve()]).catch(() => {});
     return resolved;
   }
 }

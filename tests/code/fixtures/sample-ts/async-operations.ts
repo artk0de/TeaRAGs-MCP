@@ -49,7 +49,7 @@ export class AsyncOperations {
   async processWithConcurrency<T, R>(
     items: T[],
     processor: (item: T) => Promise<R>,
-    concurrency: number
+    concurrency: number,
   ): Promise<R[]> {
     const results: R[] = [];
     const executing: Promise<void>[] = [];
@@ -108,10 +108,7 @@ export async function parallelMap<T, R>(items: T[], mapper: (item: T) => Promise
   return Promise.all(items.map(mapper));
 }
 
-export async function sequentialMap<T, R>(
-  items: T[],
-  mapper: (item: T) => Promise<R>
-): Promise<R[]> {
+export async function sequentialMap<T, R>(items: T[], mapper: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = [];
   for (const item of items) {
     results.push(await mapper(item));

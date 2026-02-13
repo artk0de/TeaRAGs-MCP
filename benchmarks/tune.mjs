@@ -15,31 +15,29 @@
  * Run: npm run tune
  * Output: tuned_environment_variables.env
  */
-
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 import { OllamaEmbeddings } from "../build/embeddings/ollama.js";
 import { QdrantManager } from "../build/qdrant/client.js";
-
-import { config, CRITERIA, TEST_VALUES, SMART_STEPPING, SAMPLE_SIZE, isFullMode } from "./lib/config.mjs";
-import { c, bar, formatRate, printHeader, printBox } from "./lib/colors.mjs";
-import { StoppingDecision } from "./lib/stopping.mjs";
-import { smartSteppingSearch, linearSteppingSearch } from "./lib/smart-stepping.mjs";
 import {
-  generateTexts,
-  generatePoints,
-  benchmarkCodeBatchSize,
-  benchmarkOrdering,
-  benchmarkFlushInterval,
   benchmarkBatchFormationTimeout,
+  benchmarkCodeBatchSize,
   benchmarkDeleteBatchSize,
   benchmarkDeleteConcurrency,
+  benchmarkFlushInterval,
+  benchmarkOrdering,
+  generatePoints,
+  generateTexts,
 } from "./lib/benchmarks.mjs";
-import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
 import { cleanupAllCollections } from "./lib/cleanup.mjs";
+import { bar, c, formatRate, printBox, printHeader } from "./lib/colors.mjs";
+import { config, CRITERIA, isFullMode, SAMPLE_SIZE, SMART_STEPPING, TEST_VALUES } from "./lib/config.mjs";
+import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
 import { printTimeEstimates } from "./lib/estimator.mjs";
-import { writeEnvFile, printSummary, printUsage } from "./lib/output.mjs";
+import { printSummary, printUsage, writeEnvFile } from "./lib/output.mjs";
+import { linearSteppingSearch, smartSteppingSearch } from "./lib/smart-stepping.mjs";
+import { StoppingDecision } from "./lib/stopping.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
@@ -91,18 +89,17 @@ async function checkConnectivity() {
       // Check if the model exists
       const tags = await tagsResponse.json();
       const models = tags.models || [];
-      const modelNames = models.map(m => m.name.replace(/:latest$/, ""));
+      const modelNames = models.map((m) => m.name.replace(/:latest$/, ""));
 
       // Check both with and without :latest suffix
       const targetModel = config.EMBEDDING_MODEL.replace(/:latest$/, "");
-      const modelExists = modelNames.some(name =>
-        name === targetModel || name === config.EMBEDDING_MODEL
-      );
+      const modelExists = modelNames.some((name) => name === targetModel || name === config.EMBEDDING_MODEL);
 
       if (!modelExists) {
-        const availableModels = modelNames.length > 0
-          ? `\n    Available models: ${modelNames.slice(0, 5).join(", ")}${modelNames.length > 5 ? "..." : ""}`
-          : "\n    No models found. Run: ollama pull " + config.EMBEDDING_MODEL;
+        const availableModels =
+          modelNames.length > 0
+            ? `\n    Available models: ${modelNames.slice(0, 5).join(", ")}${modelNames.length > 5 ? "..." : ""}`
+            : "\n    No models found. Run: ollama pull " + config.EMBEDDING_MODEL;
         return `Model "${config.EMBEDDING_MODEL}" not found on Ollama${availableModels}`;
       }
 
@@ -134,7 +131,10 @@ process.on("SIGINT", async () => {
 
 async function main() {
   console.clear();
-  printBox("TEA RAGS MCP — PERFORMANCE TUNING", `Automatic parameter optimization (${isFullMode ? "full" : "quick"} mode)`);
+  printBox(
+    "TEA RAGS MCP — PERFORMANCE TUNING",
+    `Automatic parameter optimization (${isFullMode ? "full" : "quick"} mode)`,
+  );
 
   // Print configuration (dimension will be shown after initialization)
   console.log(`${c.bold}Configuration:${c.reset}`);
@@ -168,9 +168,15 @@ async function main() {
     }
     console.log();
     console.log(`${c.bold}Configuration:${c.reset}`);
-    console.log(`  ${c.dim}QDRANT_URL${c.reset}=${config.QDRANT_URL} ${c.dim}(default: http://localhost:6333)${c.reset}`);
-    console.log(`  ${c.dim}EMBEDDING_BASE_URL${c.reset}=${config.EMBEDDING_BASE_URL} ${c.dim}(default: http://localhost:11434)${c.reset}`);
-    console.log(`  ${c.dim}EMBEDDING_MODEL${c.reset}=${config.EMBEDDING_MODEL} ${c.dim}(default: jina-embeddings-v2-base-code)${c.reset}`);
+    console.log(
+      `  ${c.dim}QDRANT_URL${c.reset}=${config.QDRANT_URL} ${c.dim}(default: http://localhost:6333)${c.reset}`,
+    );
+    console.log(
+      `  ${c.dim}EMBEDDING_BASE_URL${c.reset}=${config.EMBEDDING_BASE_URL} ${c.dim}(default: http://localhost:11434)${c.reset}`,
+    );
+    console.log(
+      `  ${c.dim}EMBEDDING_MODEL${c.reset}=${config.EMBEDDING_MODEL} ${c.dim}(default: jina-embeddings-v2-base-code)${c.reset}`,
+    );
     console.log();
     console.log(`${c.bold}To fix:${c.reset}`);
     console.log(`  1. Start Qdrant:  ${c.cyan}docker compose up -d qdrant${c.reset}`);
@@ -188,7 +194,7 @@ async function main() {
     config.EMBEDDING_MODEL,
     config.EMBEDDING_DIMENSION, // undefined = auto-detect
     undefined,
-    config.EMBEDDING_BASE_URL
+    config.EMBEDDING_BASE_URL,
   );
 
   // Get actual dimension (auto-detected if not specified)
@@ -196,7 +202,9 @@ async function main() {
   if (!config.EMBEDDING_DIMENSION) {
     config.EMBEDDING_DIMENSION = actualDimension;
   }
-  console.log(`  ${c.green}✓${c.reset} Vector dimension: ${actualDimension}${!process.env.EMBEDDING_DIMENSION ? ` ${c.dim}(auto-detected)${c.reset}` : ""}`);
+  console.log(
+    `  ${c.green}✓${c.reset} Vector dimension: ${actualDimension}${!process.env.EMBEDDING_DIMENSION ? ` ${c.dim}(auto-detected)${c.reset}` : ""}`,
+  );
   console.log();
 
   const qdrant = new QdrantManager(config.QDRANT_URL);
@@ -218,11 +226,17 @@ async function main() {
   optimal.EMBEDDING_BATCH_SIZE = embeddingResult.EMBEDDING_BATCH_SIZE;
   optimal.EMBEDDING_CONCURRENCY = embeddingResult.EMBEDDING_CONCURRENCY;
 
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE}${c.reset}`);
-  console.log(`  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY}${c.reset}`);
+  console.log(
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_BATCH_SIZE=${optimal.EMBEDDING_BATCH_SIZE}${c.reset}`,
+  );
+  console.log(
+    `  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_CONCURRENCY=${optimal.EMBEDDING_CONCURRENCY}${c.reset}`,
+  );
   console.log(`    ${c.dim}Throughput: ${embeddingResult.throughput_chunks_per_sec.toFixed(1)} chunks/sec${c.reset}`);
   console.log(`    ${c.dim}Plateau detected: ${embeddingResult.plateau_detected ? "yes" : "no"}${c.reset}`);
-  console.log(`    ${c.dim}Configurations tested: ${embeddingResult.stable_configs_count} stable, ${embeddingResult.discarded_configs_count} discarded${c.reset}`);
+  console.log(
+    `    ${c.dim}Configurations tested: ${embeddingResult.stable_configs_count} stable, ${embeddingResult.discarded_configs_count} discarded${c.reset}`,
+  );
 
   process.env.EMBEDDING_BATCH_SIZE = String(optimal.EMBEDDING_BATCH_SIZE);
   process.env.EMBEDDING_CONCURRENCY = String(optimal.EMBEDDING_CONCURRENCY);
@@ -251,13 +265,17 @@ async function main() {
         console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
       } else {
         if (result.rate > codeBestRate) codeBestRate = result.rate;
-        console.log(`${bar(result.rate, codeBestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms)${c.reset}`);
+        console.log(
+          `${bar(result.rate, codeBestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms)${c.reset}`,
+        );
       }
     },
   });
 
   optimal.QDRANT_UPSERT_BATCH_SIZE = codeResult.bestValue;
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_UPSERT_BATCH_SIZE=${optimal.QDRANT_UPSERT_BATCH_SIZE}${c.reset}`);
+  console.log(
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_UPSERT_BATCH_SIZE=${optimal.QDRANT_UPSERT_BATCH_SIZE}${c.reset}`,
+  );
   console.log(`    ${c.dim}Speed: ${codeResult.bestRate} chunks/sec${c.reset}`);
 
   // ============ PHASE 4: QDRANT_BATCH_ORDERING ============
@@ -272,19 +290,22 @@ async function main() {
     const result = await benchmarkOrdering(qdrant, points, ordering);
     orderResults.push(result);
 
-    const bestOrderRate = Math.max(...orderResults.filter(r => !r.error).map(r => r.rate), 1);
+    const bestOrderRate = Math.max(...orderResults.filter((r) => !r.error).map((r) => r.rate), 1);
 
     if (result.error) {
       console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
     } else {
-      console.log(`${bar(result.rate, bestOrderRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms)${c.reset}`);
+      console.log(
+        `${bar(result.rate, bestOrderRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms)${c.reset}`,
+      );
     }
   }
 
-  const bestOrder = orderResults.reduce((best, r) =>
-    (!r.error && r.rate > (best?.rate || 0)) ? r : best, null);
+  const bestOrder = orderResults.reduce((best, r) => (!r.error && r.rate > (best?.rate || 0) ? r : best), null);
   optimal.QDRANT_BATCH_ORDERING = bestOrder?.ordering || "weak";
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING}${c.reset}`);
+  console.log(
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_BATCH_ORDERING=${optimal.QDRANT_BATCH_ORDERING}${c.reset}`,
+  );
   if (bestOrder) console.log(`    ${c.dim}Speed: ${bestOrder.rate} chunks/sec${c.reset}`);
 
   // ============ PHASE 5: QDRANT_FLUSH_INTERVAL_MS ============
@@ -296,13 +317,21 @@ async function main() {
   for (const interval of TEST_VALUES.QDRANT_FLUSH_INTERVAL_MS) {
     process.stdout.write(`  Testing QDRANT_FLUSH_INTERVAL_MS=${c.bold}${interval.toString().padStart(4)}${c.reset} `);
 
-    const result = await benchmarkFlushInterval(qdrant, points, interval, optimal.QDRANT_UPSERT_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
+    const result = await benchmarkFlushInterval(
+      qdrant,
+      points,
+      interval,
+      optimal.QDRANT_UPSERT_BATCH_SIZE,
+      optimal.QDRANT_BATCH_ORDERING,
+    );
     const decision = flushDecision.addResult(result);
 
     if (result.error) {
       console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
     } else {
-      console.log(`${bar(result.rate, flushDecision.bestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms)${c.reset}`);
+      console.log(
+        `${bar(result.rate, flushDecision.bestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms)${c.reset}`,
+      );
     }
 
     if (decision.stop) {
@@ -313,26 +342,41 @@ async function main() {
 
   const bestFlush = flushDecision.getBest();
   optimal.QDRANT_FLUSH_INTERVAL_MS = bestFlush?.interval || 500;
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS}${c.reset}`);
+  console.log(
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_FLUSH_INTERVAL_MS=${optimal.QDRANT_FLUSH_INTERVAL_MS}${c.reset}`,
+  );
   if (bestFlush) console.log(`    ${c.dim}Speed: ${bestFlush.rate} chunks/sec${c.reset}`);
 
   // ============ PHASE 6: BATCH_FORMATION_TIMEOUT_MS ============
 
-  printHeader("Phase 6: Batch Formation Timeout", "Finding optimal BATCH_FORMATION_TIMEOUT_MS (partial batch simulation)");
+  printHeader(
+    "Phase 6: Batch Formation Timeout",
+    "Finding optimal BATCH_FORMATION_TIMEOUT_MS (partial batch simulation)",
+  );
 
   const bftDecision = new StoppingDecision();
 
   for (const timeoutMs of TEST_VALUES.BATCH_FORMATION_TIMEOUT_MS) {
-    process.stdout.write(`  Testing BATCH_FORMATION_TIMEOUT_MS=${c.bold}${timeoutMs.toString().padStart(4)}${c.reset} `);
+    process.stdout.write(
+      `  Testing BATCH_FORMATION_TIMEOUT_MS=${c.bold}${timeoutMs.toString().padStart(4)}${c.reset} `,
+    );
 
-    const result = await benchmarkBatchFormationTimeout(qdrant, points, timeoutMs, optimal.QDRANT_UPSERT_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
+    const result = await benchmarkBatchFormationTimeout(
+      qdrant,
+      points,
+      timeoutMs,
+      optimal.QDRANT_UPSERT_BATCH_SIZE,
+      optimal.QDRANT_BATCH_ORDERING,
+    );
     const decision = bftDecision.addResult(result);
 
     if (result.error) {
       console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
     } else {
       const fillInfo = `fill=${Math.round(result.fillRate * 100)}%`;
-      console.log(`${bar(result.rate, bftDecision.bestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms, ${fillInfo})${c.reset}`);
+      console.log(
+        `${bar(result.rate, bftDecision.bestRate)} ${formatRate(result.rate, "chunks/s")} ${c.dim}(${result.time}ms, ${fillInfo})${c.reset}`,
+      );
     }
 
     if (decision.stop) {
@@ -343,8 +387,13 @@ async function main() {
 
   const bestBft = bftDecision.getBest();
   optimal.BATCH_FORMATION_TIMEOUT_MS = bestBft?.timeoutMs || 2000;
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS}${c.reset}`);
-  if (bestBft) console.log(`    ${c.dim}Speed: ${bestBft.rate} chunks/sec (fill rate: ${Math.round(bestBft.fillRate * 100)}%)${c.reset}`);
+  console.log(
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS}${c.reset}`,
+  );
+  if (bestBft)
+    console.log(
+      `    ${c.dim}Speed: ${bestBft.rate} chunks/sec (fill rate: ${Math.round(bestBft.fillRate * 100)}%)${c.reset}`,
+    );
 
   // ============ PHASE 7: QDRANT_DELETE_BATCH_SIZE ============
 
@@ -355,13 +404,21 @@ async function main() {
   for (const size of TEST_VALUES.QDRANT_DELETE_BATCH_SIZE) {
     process.stdout.write(`  Testing QDRANT_DELETE_BATCH_SIZE=${c.bold}${size.toString().padStart(4)}${c.reset} `);
 
-    const result = await benchmarkDeleteBatchSize(qdrant, points, size, optimal.QDRANT_UPSERT_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING);
+    const result = await benchmarkDeleteBatchSize(
+      qdrant,
+      points,
+      size,
+      optimal.QDRANT_UPSERT_BATCH_SIZE,
+      optimal.QDRANT_BATCH_ORDERING,
+    );
     const decision = delDecision.addResult(result);
 
     if (result.error) {
       console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
     } else {
-      console.log(`${bar(result.rate, delDecision.bestRate)} ${formatRate(result.rate, "del/s")} ${c.dim}(${result.time}ms)${c.reset}`);
+      console.log(
+        `${bar(result.rate, delDecision.bestRate)} ${formatRate(result.rate, "del/s")} ${c.dim}(${result.time}ms)${c.reset}`,
+      );
     }
 
     if (decision.stop) {
@@ -372,7 +429,9 @@ async function main() {
 
   const bestDel = delDecision.getBest();
   optimal.QDRANT_DELETE_BATCH_SIZE = bestDel?.batchSize || 500;
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE}${c.reset}`);
+  console.log(
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE}${c.reset}`,
+  );
   if (bestDel) console.log(`    ${c.dim}Speed: ${bestDel.rate} deletions/sec${c.reset}`);
 
   // ============ PHASE 8: QDRANT_DELETE_CONCURRENCY ============
@@ -384,13 +443,22 @@ async function main() {
   for (const conc of TEST_VALUES.QDRANT_DELETE_CONCURRENCY) {
     process.stdout.write(`  Testing QDRANT_DELETE_CONCURRENCY=${c.bold}${conc.toString().padStart(2)}${c.reset} `);
 
-    const result = await benchmarkDeleteConcurrency(qdrant, points, conc, optimal.QDRANT_UPSERT_BATCH_SIZE, optimal.QDRANT_BATCH_ORDERING, optimal.QDRANT_DELETE_BATCH_SIZE);
+    const result = await benchmarkDeleteConcurrency(
+      qdrant,
+      points,
+      conc,
+      optimal.QDRANT_UPSERT_BATCH_SIZE,
+      optimal.QDRANT_BATCH_ORDERING,
+      optimal.QDRANT_DELETE_BATCH_SIZE,
+    );
     const decision = delConcDecision.addResult(result);
 
     if (result.error) {
       console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
     } else {
-      console.log(`${bar(result.rate, delConcDecision.bestRate)} ${formatRate(result.rate, "del/s")} ${c.dim}(${result.time}ms)${c.reset}`);
+      console.log(
+        `${bar(result.rate, delConcDecision.bestRate)} ${formatRate(result.rate, "del/s")} ${c.dim}(${result.time}ms)${c.reset}`,
+      );
     }
 
     if (decision.stop) {
@@ -401,7 +469,9 @@ async function main() {
 
   const bestDelConc = delConcDecision.getBest();
   optimal.QDRANT_DELETE_CONCURRENCY = bestDelConc?.concurrency || 8;
-  console.log(`\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}${c.reset}`);
+  console.log(
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}${c.reset}`,
+  );
   if (bestDelConc) console.log(`    ${c.dim}Speed: ${bestDelConc.rate} deletions/sec${c.reset}`);
 
   // ============ CLEANUP ============

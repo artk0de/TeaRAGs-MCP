@@ -3,6 +3,7 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import type { QdrantManager } from "../qdrant/client.js";
 import * as schemas from "./schemas.js";
@@ -12,10 +13,7 @@ export interface CollectionToolDependencies {
   embeddings: EmbeddingProvider;
 }
 
-export function registerCollectionTools(
-  server: McpServer,
-  deps: CollectionToolDependencies,
-): void {
+export function registerCollectionTools(server: McpServer, deps: CollectionToolDependencies): void {
   const { qdrant, embeddings } = deps;
 
   // create_collection
@@ -29,12 +27,7 @@ export function registerCollectionTools(
     },
     async ({ name, distance, enableHybrid }) => {
       const vectorSize = embeddings.getDimensions();
-      await qdrant.createCollection(
-        name,
-        vectorSize,
-        distance,
-        enableHybrid || false,
-      );
+      await qdrant.createCollection(name, vectorSize, distance, enableHybrid || false);
 
       let message = `Collection "${name}" created successfully with ${vectorSize} dimensions and ${distance || "Cosine"} distance metric.`;
       if (enableHybrid) {
@@ -91,9 +84,7 @@ export function registerCollectionTools(
     async ({ name }) => {
       await qdrant.deleteCollection(name);
       return {
-        content: [
-          { type: "text", text: `Collection "${name}" deleted successfully.` },
-        ],
+        content: [{ type: "text", text: `Collection "${name}" deleted successfully.` }],
       };
     },
   );

@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testBatchPipeline(qdrant, embeddings) {
   section("11. Batch Pipeline in CodeIndexer");
@@ -14,16 +15,23 @@ export async function testBatchPipeline(qdrant, embeddings) {
   const batchTestDir = join(TEST_DIR, "batch_pipeline_test");
   await fs.mkdir(batchTestDir, { recursive: true });
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
-    batchSize: 50, // Small batch to test multiple flushes
-  }));
+  const indexer = new CodeIndexer(
+    qdrant,
+    embeddings,
+    getIndexerConfig({
+      batchSize: 50, // Small batch to test multiple flushes
+    }),
+  );
 
   // === TEST: indexCodebase uses optimized batch upsert ===
   log("info", "Testing indexCodebase batch upsert...");
 
   // Create multiple files to generate enough chunks for batching
   for (let i = 0; i < 5; i++) {
-    await createTestFile(batchTestDir, `service${i}.ts`, `
+    await createTestFile(
+      batchTestDir,
+      `service${i}.ts`,
+      `
 // Service ${i}: Business logic component
 export class Service${i} {
   private cache: Map<string, any> = new Map();
@@ -46,7 +54,8 @@ export class Service${i} {
     this.cache.clear();
   }
 }
-`);
+`,
+    );
   }
 
   resources.trackIndexedPath(batchTestDir);
@@ -90,14 +99,18 @@ export class Service${i} {
 
   // Add multiple new files - should use optimized addPointsOptimized
   for (let i = 5; i < 8; i++) {
-    await createTestFile(batchTestDir, `handler${i}.ts`, `
+    await createTestFile(
+      batchTestDir,
+      `handler${i}.ts`,
+      `
 // Handler ${i}: Request handler
 export async function handle${i}(req: Request): Promise<Response> {
   const { id, action } = req.params;
   console.log('Handler ${i} processing:', action);
   return new Response(JSON.stringify({ handler: ${i}, action }));
 }
-`);
+`,
+    );
   }
   await sleep(100);
 
@@ -114,21 +127,29 @@ export async function handle${i}(req: Request): Promise<Response> {
   log("info", "Testing mixed batch operations...");
 
   // Simultaneously: modify service0, delete service2, add new file
-  await createTestFile(batchTestDir, "service0.ts", `
+  await createTestFile(
+    batchTestDir,
+    "service0.ts",
+    `
 // Modified Service 0
 export class Service0Modified {
   async newMethod(): Promise<string> {
     return "modified_content_for_testing_batch_pipeline";
   }
 }
-`);
+`,
+  );
   await fs.unlink(join(batchTestDir, "service2.ts"));
-  await createTestFile(batchTestDir, "utility.ts", `
+  await createTestFile(
+    batchTestDir,
+    "utility.ts",
+    `
 // New utility file
 export function utilityFunction(): number {
   return 42;
 }
-`);
+`,
+  );
   await sleep(100);
 
   const mixedStats = await indexer.reindexChanges(batchTestDir);

@@ -25,22 +25,14 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     return indexes?.has(fieldName) ?? false;
   }
 
-  async createPayloadIndex(
-    collectionName: string,
-    fieldName: string,
-    _fieldSchema: string,
-  ): Promise<void> {
+  async createPayloadIndex(collectionName: string, fieldName: string, _fieldSchema: string): Promise<void> {
     if (!this.payloadIndexes.has(collectionName)) {
       this.payloadIndexes.set(collectionName, new Set());
     }
     this.payloadIndexes.get(collectionName)!.add(fieldName);
   }
 
-  async ensurePayloadIndex(
-    collectionName: string,
-    fieldName: string,
-    fieldSchema: string,
-  ): Promise<boolean> {
+  async ensurePayloadIndex(collectionName: string, fieldName: string, fieldSchema: string): Promise<boolean> {
     const exists = await this.hasPayloadIndex(collectionName, fieldName);
     if (!exists) {
       await this.createPayloadIndex(collectionName, fieldName, fieldSchema);
@@ -112,20 +104,13 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     await this.addPoints(collectionName, points);
   }
 
-  async search(
-    collectionName: string,
-    _vector: number[],
-    limit: number,
-    filter?: any,
-  ): Promise<any[]> {
+  async search(collectionName: string, _vector: number[], limit: number, filter?: any): Promise<any[]> {
     let points = this.points.get(collectionName) || [];
 
     if (filter?.must) {
       for (const condition of filter.must) {
         if (condition.key && condition.match?.any) {
-          points = points.filter((p) =>
-            condition.match.any.includes(p.payload?.[condition.key]),
-          );
+          points = points.filter((p) => condition.match.any.includes(p.payload?.[condition.key]));
         }
       }
     }
@@ -159,7 +144,10 @@ export class MockQdrantManager implements Partial<QdrantManager> {
   async deletePoints(collectionName: string, ids: (string | number)[]): Promise<void> {
     const points = this.points.get(collectionName) || [];
     const idsSet = new Set(ids);
-    this.points.set(collectionName, points.filter((p) => !idsSet.has(p.id)));
+    this.points.set(
+      collectionName,
+      points.filter((p) => !idsSet.has(p.id)),
+    );
   }
 
   async deletePointsByFilter(collectionName: string, filter: Record<string, any>): Promise<void> {
@@ -195,11 +183,7 @@ export class MockQdrantManager implements Partial<QdrantManager> {
 
   batchSetPayloadCalls: Array<{ collectionName: string; operations: any[] }> = [];
 
-  async setPayload(
-    collectionName: string,
-    payload: Record<string, any>,
-    options: any,
-  ): Promise<void> {
+  async setPayload(collectionName: string, payload: Record<string, any>, options: any): Promise<void> {
     const points = this.points.get(collectionName);
     if (!points || !options?.points) return;
     for (const id of options.points) {
@@ -233,15 +217,11 @@ export class MockEmbeddingProvider implements EmbeddingProvider {
     return "mock-model";
   }
 
-  async embed(
-    _text: string,
-  ): Promise<{ embedding: number[]; dimensions: number }> {
+  async embed(_text: string): Promise<{ embedding: number[]; dimensions: number }> {
     return { embedding: new Array(384).fill(0.1), dimensions: 384 };
   }
 
-  async embedBatch(
-    texts: string[],
-  ): Promise<Array<{ embedding: number[]; dimensions: number }>> {
+  async embedBatch(texts: string[]): Promise<Array<{ embedding: number[]; dimensions: number }>> {
     return texts.map(() => ({
       embedding: new Array(384).fill(0.1),
       dimensions: 384,
@@ -250,11 +230,7 @@ export class MockEmbeddingProvider implements EmbeddingProvider {
 }
 
 /** Helper to create test files in a temp directory */
-export async function createTestFile(
-  baseDir: string,
-  relativePath: string,
-  content: string,
-): Promise<void> {
+export async function createTestFile(baseDir: string, relativePath: string, content: string): Promise<void> {
   const fullPath = join(baseDir, relativePath);
   const dir = join(fullPath, "..");
   await fs.mkdir(dir, { recursive: true });
@@ -277,10 +253,7 @@ export function defaultTestConfig(): CodeConfig {
 
 /** Create a temp directory for tests and return paths */
 export async function createTempTestDir(): Promise<{ tempDir: string; codebaseDir: string }> {
-  const tempDir = join(
-    tmpdir(),
-    `qdrant-mcp-test-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-  );
+  const tempDir = join(tmpdir(), `qdrant-mcp-test-${Date.now()}-${Math.random().toString(36).substring(7)}`);
   const codebaseDir = join(tempDir, "codebase");
   await fs.mkdir(codebaseDir, { recursive: true });
   return { tempDir, codebaseDir };

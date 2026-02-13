@@ -3,6 +3,7 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import type { CodeIndexer } from "../code/indexer.js";
 import * as schemas from "./schemas.js";
 
@@ -10,10 +11,7 @@ export interface CodeToolDependencies {
   codeIndexer: CodeIndexer;
 }
 
-export function registerCodeTools(
-  server: McpServer,
-  deps: CodeToolDependencies,
-): void {
+export function registerCodeTools(server: McpServer, deps: CodeToolDependencies): void {
   const { codeIndexer } = deps;
 
   // index_codebase
@@ -32,16 +30,10 @@ export function registerCodeTools(
       inputSchema: schemas.IndexCodebaseSchema,
     },
     async ({ path, forceReindex, extensions, ignorePatterns }) => {
-      const stats = await codeIndexer.indexCodebase(
-        path,
-        { forceReindex, extensions, ignorePatterns },
-        (progress) => {
-          // Progress callback - could send progress updates via SSE in future
-          console.error(
-            `[${progress.phase}] ${progress.percentage}% - ${progress.message}`,
-          );
-        },
-      );
+      const stats = await codeIndexer.indexCodebase(path, { forceReindex, extensions, ignorePatterns }, (progress) => {
+        // Progress callback - could send progress updates via SSE in future
+        console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
+      });
 
       let statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
 
@@ -150,9 +142,7 @@ export function registerCodeTools(
 
       if (results.length === 0) {
         return {
-          content: [
-            { type: "text", text: `No results found for query: "${query}"` },
-          ],
+          content: [{ type: "text", text: `No results found for query: "${query}"` }],
         };
       }
 
@@ -189,9 +179,7 @@ export function registerCodeTools(
     },
     async ({ path }) => {
       const stats = await codeIndexer.reindexChanges(path, (progress) => {
-        console.error(
-          `[${progress.phase}] ${progress.percentage}% - ${progress.message}`,
-        );
+        console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
       });
 
       let message = `Incremental re-index complete:\n`;
@@ -236,11 +224,7 @@ export function registerCodeTools(
         }
       }
 
-      if (
-        stats.filesAdded === 0 &&
-        stats.filesModified === 0 &&
-        stats.filesDeleted === 0
-      ) {
+      if (stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0) {
         message = `No changes detected. Codebase is up to date.`;
       }
 
@@ -322,11 +306,8 @@ export function registerCodeTools(
     async ({ path }) => {
       await codeIndexer.clearIndex(path);
       return {
-        content: [
-          { type: "text", text: `Index cleared for codebase at "${path}".` },
-        ],
+        content: [{ type: "text", text: `Index cleared for codebase at "${path}".` }],
       };
     },
   );
-
 }

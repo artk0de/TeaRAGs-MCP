@@ -45,23 +45,13 @@ const SemanticSearchRerankPresetSchema = z.enum([
 ]);
 
 // Rerank presets for search_code (practical development)
-const SearchCodeRerankPresetSchema = z.enum([
-  "relevance",
-  "recent",
-  "stable",
-]);
+const SearchCodeRerankPresetSchema = z.enum(["relevance", "recent", "stable"]);
 
 // Collection management schemas
 export const CreateCollectionSchema = {
   name: z.string().describe("Name of the collection"),
-  distance: z
-    .enum(["Cosine", "Euclid", "Dot"])
-    .optional()
-    .describe("Distance metric (default: Cosine)"),
-  enableHybrid: z
-    .boolean()
-    .optional()
-    .describe("Enable hybrid search with sparse vectors (default: false)"),
+  distance: z.enum(["Cosine", "Euclid", "Dot"]).optional().describe("Distance metric (default: Cosine)"),
+  enableHybrid: z.boolean().optional().describe("Enable hybrid search with sparse vectors (default: false)"),
 };
 
 export const DeleteCollectionSchema = {
@@ -78,14 +68,9 @@ export const AddDocumentsSchema = {
   documents: z
     .array(
       z.object({
-        id: z
-          .union([z.string(), z.number()])
-          .describe("Unique identifier for the document"),
+        id: z.union([z.string(), z.number()]).describe("Unique identifier for the document"),
         text: z.string().describe("Text content to embed and store"),
-        metadata: z
-          .record(z.any())
-          .optional()
-          .describe("Optional metadata to store with the document"),
+        metadata: z.record(z.any()).optional().describe("Optional metadata to store with the document"),
       }),
     )
     .describe("Array of documents to add"),
@@ -93,19 +78,12 @@ export const AddDocumentsSchema = {
 
 export const DeleteDocumentsSchema = {
   collection: z.string().describe("Name of the collection"),
-  ids: z
-    .array(z.union([z.string(), z.number()]))
-    .describe("Array of document IDs to delete"),
+  ids: z.array(z.union([z.string(), z.number()])).describe("Array of document IDs to delete"),
 };
 
 // Search schemas
 export const SemanticSearchSchema = {
-  collection: z
-    .string()
-    .optional()
-    .describe(
-      "Name of the collection to search. Required if 'path' not provided.",
-    ),
+  collection: z.string().optional().describe("Name of the collection to search. Required if 'path' not provided."),
   path: z
     .string()
     .optional()
@@ -114,10 +92,7 @@ export const SemanticSearchSchema = {
         "Collection name is auto-resolved from path. Required if 'collection' not provided.",
     ),
   query: z.string().describe("Search query text"),
-  limit: z
-    .number()
-    .optional()
-    .describe("Maximum number of results (default: 5)"),
+  limit: z.number().optional().describe("Maximum number of results (default: 5)"),
   filter: z
     .record(z.any())
     .optional()
@@ -142,10 +117,7 @@ export const SemanticSearchSchema = {
         "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
     ),
   rerank: z
-    .union([
-      SemanticSearchRerankPresetSchema,
-      z.object({ custom: ScoringWeightsSchema }),
-    ])
+    .union([SemanticSearchRerankPresetSchema, z.object({ custom: ScoringWeightsSchema })])
     .optional()
     .describe(
       "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
@@ -165,12 +137,7 @@ export const SemanticSearchSchema = {
 };
 
 export const HybridSearchSchema = {
-  collection: z
-    .string()
-    .optional()
-    .describe(
-      "Name of the collection to search. Required if 'path' not provided.",
-    ),
+  collection: z.string().optional().describe("Name of the collection to search. Required if 'path' not provided."),
   path: z
     .string()
     .optional()
@@ -179,10 +146,7 @@ export const HybridSearchSchema = {
         "Collection name is auto-resolved from path. Required if 'collection' not provided.",
     ),
   query: z.string().describe("Search query text"),
-  limit: z
-    .number()
-    .optional()
-    .describe("Maximum number of results (default: 5)"),
+  limit: z.number().optional().describe("Maximum number of results (default: 5)"),
   filter: z
     .record(z.any())
     .optional()
@@ -207,10 +171,7 @@ export const HybridSearchSchema = {
         "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
     ),
   rerank: z
-    .union([
-      SemanticSearchRerankPresetSchema,
-      z.object({ custom: ScoringWeightsSchema }),
-    ])
+    .union([SemanticSearchRerankPresetSchema, z.object({ custom: ScoringWeightsSchema })])
     .optional()
     .describe(
       "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
@@ -231,38 +192,20 @@ export const HybridSearchSchema = {
 
 // Code indexing schemas
 export const IndexCodebaseSchema = {
-  path: z
-    .string()
-    .describe("Absolute or relative path to codebase root directory"),
-  forceReindex: z
-    .boolean()
-    .optional()
-    .describe("Force full re-index even if already indexed (default: false)"),
-  extensions: z
-    .array(z.string())
-    .optional()
-    .describe("Custom file extensions to index (e.g., ['.proto', '.graphql'])"),
+  path: z.string().describe("Absolute or relative path to codebase root directory"),
+  forceReindex: z.boolean().optional().describe("Force full re-index even if already indexed (default: false)"),
+  extensions: z.array(z.string()).optional().describe("Custom file extensions to index (e.g., ['.proto', '.graphql'])"),
   ignorePatterns: z
     .array(z.string())
     .optional()
-    .describe(
-      "Additional patterns to ignore (e.g., ['**/test/**', '**/*.test.ts'])",
-    ),
+    .describe("Additional patterns to ignore (e.g., ['**/test/**', '**/*.test.ts'])"),
 };
 
 export const SearchCodeSchema = {
   path: z.string().describe("Path to codebase (must be indexed first)"),
-  query: z
-    .string()
-    .describe("Natural language search query (e.g., 'authentication logic')"),
-  limit: z
-    .number()
-    .optional()
-    .describe("Maximum number of results (default: 5, max: 100)"),
-  fileTypes: z
-    .array(z.string())
-    .optional()
-    .describe("Filter by file extensions (e.g., ['.ts', '.py'])"),
+  query: z.string().describe("Natural language search query (e.g., 'authentication logic')"),
+  limit: z.number().optional().describe("Maximum number of results (default: 5, max: 100)"),
+  fileTypes: z.array(z.string()).optional().describe("Filter by file extensions (e.g., ['.ts', '.py'])"),
   pathPattern: z
     .string()
     .optional()
@@ -331,10 +274,7 @@ export const SearchCodeSchema = {
         "Use for: requirements tracing, impact analysis, audit, compliance, 'what code was written for this ticket?'",
     ),
   rerank: z
-    .union([
-      SearchCodeRerankPresetSchema,
-      z.object({ custom: ScoringWeightsSchema }),
-    ])
+    .union([SearchCodeRerankPresetSchema, z.object({ custom: ScoringWeightsSchema })])
     .optional()
     .describe(
       "Reranking mode. Enum: 'relevance' | 'recent' | 'stable' | {custom: weights}. " +

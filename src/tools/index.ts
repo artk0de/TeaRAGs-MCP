@@ -3,6 +3,7 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import type { CodeIndexer } from "../code/indexer.js";
 import type { EmbeddingProvider } from "../embeddings/base.js";
 import type { QdrantManager } from "../qdrant/client.js";
@@ -20,10 +21,7 @@ export interface ToolDependencies {
 /**
  * Register all MCP tools on the server
  */
-export function registerAllTools(
-  server: McpServer,
-  deps: ToolDependencies,
-): void {
+export function registerAllTools(server: McpServer, deps: ToolDependencies): void {
   registerCollectionTools(server, {
     qdrant: deps.qdrant,
     embeddings: deps.embeddings,

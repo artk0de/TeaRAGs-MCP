@@ -3,10 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { join, basename } from "node:path";
-import { section, assert, log, skip, sleep, createTestFile, hashContent, randomUUID, resources } from "../helpers.mjs";
+import { basename, join } from "node:path";
+
 import { CodeIndexer } from "../../../build/code/indexer.js";
-import { TEST_DIR, getIndexerConfig } from "../config.mjs";
+import { getIndexerConfig, TEST_DIR } from "../config.mjs";
+import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testSearchAccuracy(qdrant, embeddings) {
   section("9. Search Accuracy");
@@ -15,7 +16,10 @@ export async function testSearchAccuracy(qdrant, embeddings) {
   await fs.mkdir(searchTestDir, { recursive: true });
 
   // Create distinct files with specific purposes
-  await createTestFile(searchTestDir, "auth.ts", `
+  await createTestFile(
+    searchTestDir,
+    "auth.ts",
+    `
 // Authentication module
 export class AuthService {
   login(username: string, password: string) {
@@ -30,9 +34,13 @@ export class AuthService {
     return token.startsWith("jwt-");
   }
 }
-`);
+`,
+  );
 
-  await createTestFile(searchTestDir, "database.ts", `
+  await createTestFile(
+    searchTestDir,
+    "database.ts",
+    `
 // Database connection
 export class DatabaseService {
   connect(connectionString: string) {
@@ -47,9 +55,13 @@ export class DatabaseService {
     return { disconnected: true };
   }
 }
-`);
+`,
+  );
 
-  await createTestFile(searchTestDir, "cache.ts", `
+  await createTestFile(
+    searchTestDir,
+    "cache.ts",
+    `
 // Cache layer
 export class CacheService {
   set(key: string, value: any, ttl: number) {
@@ -64,27 +76,32 @@ export class CacheService {
     return { cleared: true };
   }
 }
-`);
+`,
+  );
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig({
-    chunkSize: 1000,
-    chunkOverlap: 100,
-  }));
+  const indexer = new CodeIndexer(
+    qdrant,
+    embeddings,
+    getIndexerConfig({
+      chunkSize: 1000,
+      chunkOverlap: 100,
+    }),
+  );
 
   resources.trackIndexedPath(searchTestDir);
   await indexer.indexCodebase(searchTestDir, { forceReindex: true });
 
   // Semantic search tests - verify that search returns meaningful content
   const authQuery = await indexer.searchCode(searchTestDir, "user authentication login password", { limit: 5 });
-  const authHasContent = authQuery.some(r => r.content && r.content.length > 0);
+  const authHasContent = authQuery.some((r) => r.content && r.content.length > 0);
   assert(authHasContent, `Auth query returns results with content: ${authQuery.length} results`);
 
   const dbQuery = await indexer.searchCode(searchTestDir, "database connection SQL query", { limit: 5 });
-  const dbHasContent = dbQuery.some(r => r.content && r.content.length > 0);
+  const dbHasContent = dbQuery.some((r) => r.content && r.content.length > 0);
   assert(dbHasContent, `DB query returns results with content: ${dbQuery.length} results`);
 
   const cacheQuery = await indexer.searchCode(searchTestDir, "cache key value TTL", { limit: 5 });
-  const cacheHasContent = cacheQuery.some(r => r.content && r.content.length > 0);
+  const cacheHasContent = cacheQuery.some((r) => r.content && r.content.length > 0);
   assert(cacheHasContent, `Cache query returns results with content: ${cacheQuery.length} results`);
 
   // Limit parameter

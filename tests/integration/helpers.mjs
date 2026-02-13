@@ -3,9 +3,9 @@
  * Shared utilities for all test suites
  */
 
+import { createHash, randomUUID as cryptoRandomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
-import { createHash, randomUUID as cryptoRandomUUID } from "node:crypto";
 
 // ANSI colors
 export const c = {
@@ -90,16 +90,16 @@ export const counters = {
 export const resources = {
   // Paths indexed in Qdrant (for clearIndex)
   indexedPaths: new Set(),
-  
+
   // Qdrant collections created directly (for deleteCollection)
   collections: new Set(),
-  
+
   // Temporary directories created (for rm -rf)
   tempDirs: new Set(),
-  
+
   // Snapshot directories (for cleanup)
   snapshotDirs: new Set(),
-  
+
   // Cache directories (for cleanup)
   cacheDirs: new Set(),
 
@@ -190,9 +190,10 @@ export function skip(message) {
  */
 export function section(title) {
   // Show previous section duration if not first section
-  const sectionDuration = timing.sectionStart && timing.sectionStart !== timing.globalStart
-    ? ` ${c.dim}(${timing.getSectionDuration()})${c.reset}`
-    : "";
+  const sectionDuration =
+    timing.sectionStart && timing.sectionStart !== timing.globalStart
+      ? ` ${c.dim}(${timing.getSectionDuration()})${c.reset}`
+      : "";
 
   // Start timing for new section
   timing.startSection();
@@ -217,7 +218,7 @@ export async function createTestFile(dir, name, content) {
  * Sleep helper
  */
 export function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 /**

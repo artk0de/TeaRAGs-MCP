@@ -2,19 +2,14 @@
  * Resource registration module
  */
 
-import {
-  McpServer,
-  ResourceTemplate,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 import type { QdrantManager } from "../qdrant/client.js";
 
 /**
  * Register all MCP resources on the server
  */
-export function registerAllResources(
-  server: McpServer,
-  qdrant: QdrantManager,
-): void {
+export function registerAllResources(server: McpServer, qdrant: QdrantManager): void {
   // Static resource: list all collections
   server.registerResource(
     "collections",
