@@ -18,7 +18,9 @@
     "test-integration": "node tests/integration/index.mjs",
     "tune": "node benchmarks/tune.mjs",
     "benchmark-embeddings": "node benchmarks/benchmark-embeddings.mjs",
-    "benchmark-cpu": "node benchmarks/benchmark-cpu.mjs"
+    "benchmark-cpu": "node benchmarks/benchmark-cpu.mjs",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint --fix src/ tests/"
   },
   "keywords": [
     "mcp",
@@ -82,6 +84,8 @@
     "@types/picomatch": "^4.0.2",
     "@vitest/coverage-v8": "^4.0.17",
     "@vitest/ui": "^4.0.17",
+    "@eslint/js": "^9.39.2",
+    "eslint": "^9.39.2",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
     "lint-staged": "^16.2.7",
@@ -89,9 +93,13 @@
     "semantic-release": "^25.0.2",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.55.0",
     "vitest": "^4.0.17"
   },
   "lint-staged": {
-    "*.{ts,js,mts,mjs}": "prettier --write"
+    "*.{ts,js,mts,mjs}": [
+      "eslint --no-warn-ignored --fix",
+      "prettier --write"
+    ]
   }
 }

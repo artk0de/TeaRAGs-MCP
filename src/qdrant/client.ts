@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import { QdrantClient } from "@qdrant/js-client-rest";
 
+type QdrantPayload = Record<string, unknown>;
+
 export interface CollectionInfo {
   name: string;
   vectorSize: number;
@@ -13,7 +15,7 @@ export interface CollectionInfo {
 export interface SearchResult {
   id: string | number;
   score: number;
-  payload?: Record<string, any>;
+  payload?: QdrantPayload;
 }
 
 export interface SparseVector {
@@ -22,9 +24,9 @@ export interface SparseVector {
 }
 
 export class QdrantManager {
-  private client: QdrantClient;
+  private readonly client: QdrantClient;
 
-  constructor(url: string = "http://localhost:6333", apiKey?: string) {
+  constructor(url = "http://localhost:6333", apiKey?: string) {
     this.client = new QdrantClient({ url, apiKey });
   }
 
@@ -52,30 +54,50 @@ export class QdrantManager {
     name: string,
     vectorSize: number,
     distance: "Cosine" | "Euclid" | "Dot" = "Cosine",
-    enableSparse: boolean = false,
+    enableSparse = false,
   ): Promise<void> {
-    const config: any = {};
+    type DistanceType = "Cosine" | "Euclid" | "Dot" | "Manhattan";
+    type VectorConfig =
+      | {
+          size: number;
+          distance: DistanceType;
+        }
+      | {
+          dense: {
+            size: number;
+            distance: DistanceType;
+          };
+        };
 
-    // When hybrid search is enabled, use named vectors
-    if (enableSparse) {
-      config.vectors = {
-        dense: {
-          size: vectorSize,
-          distance,
-        },
-      };
-      config.sparse_vectors = {
+    interface CollectionConfig {
+      vectors: VectorConfig;
+      sparse_vectors?: {
         text: {
-          modifier: "idf",
-        },
-      };
-    } else {
-      // Standard unnamed vector configuration
-      config.vectors = {
-        size: vectorSize,
-        distance,
+          modifier: "idf" | "none";
+        };
       };
     }
+
+    const config: CollectionConfig = enableSparse
+      ? {
+          vectors: {
+            dense: {
+              size: vectorSize,
+              distance,
+            },
+          },
+          sparse_vectors: {
+            text: {
+              modifier: "idf",
+            },
+          },
+        }
+      : {
+          vectors: {
+            size: vectorSize,
+            distance,
+          },
+        };
 
     await this.client.createCollection(name, config);
   }
@@ -164,7 +186,7 @@ export class QdrantManager {
         distance = vectorConfig.distance as "Cosine" | "Euclid" | "Dot";
       } else if ("dense" in vectorConfig) {
         // Named vector config for hybrid search
-        const denseConfig = vectorConfig.dense as any;
+        const denseConfig = vectorConfig.dense as { size: unknown; distance: unknown };
         size = typeof denseConfig.size === "number" ? denseConfig.size : 0;
         distance = denseConfig.distance as "Cosine" | "Euclid" | "Dot";
       }
@@ -185,11 +207,11 @@ export class QdrantManager {
 
   async addPoints(
     collectionName: string,
-    points: Array<{
+    points: {
       id: string | number;
       vector: number[];
-      payload?: Record<string, any>;
-    }>,
+      payload?: Record<string, unknown>;
+    }[],
   ): Promise<void> {
     // Guard against empty arrays - Qdrant throws "Empty update request"
     if (points.length === 0) {
@@ -207,8 +229,9 @@ export class QdrantManager {
         wait: true,
         points: normalizedPoints,
       });
-    } catch (error: any) {
-      const errorMessage = error?.data?.status?.error || error?.message || String(error);
+    } catch (error: unknown) {
+      const errorData = error as { data?: { status?: { error?: string } }; message?: string };
+      const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new Error(`Failed to add points to collection "${collectionName}": ${errorMessage}`);
     }
   }
@@ -223,11 +246,11 @@ export class QdrantManager {
    */
   async addPointsOptimized(
     collectionName: string,
-    points: Array<{
+    points: {
       id: string | number;
       vector: number[];
-      payload?: Record<string, any>;
-    }>,
+      payload?: Record<string, unknown>;
+    }[],
     options: {
       wait?: boolean;
       ordering?: "weak" | "medium" | "strong";
@@ -251,8 +274,9 @@ export class QdrantManager {
         ordering,
         points: normalizedPoints,
       });
-    } catch (error: any) {
-      const errorMessage = error?.data?.status?.error || error?.message || String(error);
+    } catch (error: unknown) {
+      const errorData = error as { data?: { status?: { error?: string } }; message?: string };
+      const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new Error(`Failed to add points (optimized) to collection "${collectionName}": ${errorMessage}`);
     }
   }
@@ -273,7 +297,7 @@ export class QdrantManager {
    * Re-enable indexing after bulk upload.
    * @param threshold - Default 20000 (Qdrant default)
    */
-  async enableIndexing(collectionName: string, threshold: number = 20000): Promise<void> {
+  async enableIndexing(collectionName: string, threshold = 20000): Promise<void> {
     await this.client.updateCollection(collectionName, {
       optimizers_config: {
         indexing_threshold: threshold,
@@ -284,8 +308,8 @@ export class QdrantManager {
   async search(
     collectionName: string,
     vector: number[],
-    limit: number = 5,
-    filter?: Record<string, any>,
+    limit = 5,
+    filter?: Record<string, unknown>,
   ): Promise<SearchResult[]> {
     // Convert simple key-value filter to Qdrant filter format
     // Accepts either:
@@ -327,7 +351,7 @@ export class QdrantManager {
   async getPoint(
     collectionName: string,
     id: string | number,
-  ): Promise<{ id: string | number; payload?: Record<string, any> } | null> {
+  ): Promise<{ id: string | number; payload?: Record<string, unknown> } | null> {
     try {
       const normalizedId = this.normalizeId(id);
       const points = await this.client.retrieve(collectionName, {
@@ -361,10 +385,10 @@ export class QdrantManager {
    * Deletes points matching a filter condition.
    * Useful for deleting all chunks associated with a specific file path.
    */
-  async deletePointsByFilter(collectionName: string, filter: Record<string, any>): Promise<void> {
+  async deletePointsByFilter(collectionName: string, filter: Record<string, unknown>): Promise<void> {
     await this.client.delete(collectionName, {
       wait: true,
-      filter: filter,
+      filter,
     });
   }
 
@@ -497,10 +521,10 @@ export class QdrantManager {
    */
   async setPayload(
     collectionName: string,
-    payload: Record<string, any>,
+    payload: Record<string, unknown>,
     options: {
       points?: (string | number)[];
-      filter?: Record<string, any>;
+      filter?: Record<string, unknown>;
       wait?: boolean;
       ordering?: "weak" | "medium" | "strong";
     },
@@ -522,11 +546,11 @@ export class QdrantManager {
    */
   async batchSetPayload(
     collectionName: string,
-    operations: Array<{
-      payload: Record<string, any>;
+    operations: {
+      payload: Record<string, unknown>;
       points: (string | number)[];
       key?: string;
-    }>,
+    }[],
     options: {
       wait?: boolean;
       ordering?: "weak" | "medium" | "strong";
@@ -566,9 +590,9 @@ export class QdrantManager {
     collectionName: string,
     denseVector: number[],
     sparseVector: SparseVector,
-    limit: number = 5,
-    filter?: Record<string, any>,
-    _semanticWeight: number = 0.7,
+    limit = 5,
+    filter?: Record<string, unknown>,
+    _semanticWeight = 0.7,
   ): Promise<SearchResult[]> {
     // Convert simple key-value filter to Qdrant filter format
     let qdrantFilter;
@@ -608,17 +632,18 @@ export class QdrantManager {
         query: {
           fusion: "rrf",
         },
-        limit: limit,
+        limit,
         with_payload: true,
       });
 
-      return results.points.map((result: any) => ({
+      return results.points.map((result) => ({
         id: result.id,
         score: result.score,
-        payload: result.payload || undefined,
+        payload: (result.payload as Record<string, unknown> | null | undefined) ?? undefined,
       }));
-    } catch (error: any) {
-      const errorMessage = error?.data?.status?.error || error?.message || String(error);
+    } catch (error: unknown) {
+      const errorData = error as { data?: { status?: { error?: string } }; message?: string };
+      const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new Error(`Hybrid search failed on collection "${collectionName}": ${errorMessage}`);
     }
   }
@@ -628,12 +653,12 @@ export class QdrantManager {
    */
   async addPointsWithSparse(
     collectionName: string,
-    points: Array<{
+    points: {
       id: string | number;
       vector: number[];
       sparseVector: SparseVector;
-      payload?: Record<string, any>;
-    }>,
+      payload?: Record<string, unknown>;
+    }[],
   ): Promise<void> {
     // Guard against empty arrays - Qdrant throws "Empty update request"
     if (points.length === 0) {
@@ -655,8 +680,9 @@ export class QdrantManager {
         wait: true,
         points: normalizedPoints,
       });
-    } catch (error: any) {
-      const errorMessage = error?.data?.status?.error || error?.message || String(error);
+    } catch (error: unknown) {
+      const errorData = error as { data?: { status?: { error?: string } }; message?: string };
+      const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new Error(`Failed to add points with sparse vectors to collection "${collectionName}": ${errorMessage}`);
     }
   }
@@ -671,12 +697,12 @@ export class QdrantManager {
    */
   async addPointsWithSparseOptimized(
     collectionName: string,
-    points: Array<{
+    points: {
       id: string | number;
       vector: number[];
       sparseVector: SparseVector;
-      payload?: Record<string, any>;
-    }>,
+      payload?: Record<string, unknown>;
+    }[],
     options: {
       wait?: boolean;
       ordering?: "weak" | "medium" | "strong";
@@ -704,8 +730,9 @@ export class QdrantManager {
         ordering,
         points: normalizedPoints,
       });
-    } catch (error: any) {
-      const errorMessage = error?.data?.status?.error || error?.message || String(error);
+    } catch (error: unknown) {
+      const errorData = error as { data?: { status?: { error?: string } }; message?: string };
+      const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new Error(
         `Failed to add points with sparse vectors (optimized) to collection "${collectionName}": ${errorMessage}`,
       );

@@ -4,7 +4,7 @@ export interface BodyChunkResult {
   content: string;
   startLine: number;
   endLine: number;
-  lineRanges?: Array<{ start: number; end: number }>;
+  lineRanges?: { start: number; end: number }[];
 }
 
 /** Shared mutable context passed through the hook chain */
@@ -26,7 +26,7 @@ export interface HookContext {
 /** Single hook in the chain */
 export interface ChunkingHook {
   name: string;
-  process(ctx: HookContext): void;
+  process: (ctx: HookContext) => void;
 }
 
 export function createHookContext(

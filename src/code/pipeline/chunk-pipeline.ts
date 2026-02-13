@@ -49,13 +49,13 @@ export class ChunkPipeline {
   private readonly collectionName: string;
   private readonly sparseGenerator: BM25SparseVectorGenerator | null;
 
-  private workerPool: WorkerPool;
-  private accumulator: BatchAccumulator<ChunkItem>;
+  private readonly workerPool: WorkerPool;
+  private readonly accumulator: BatchAccumulator<ChunkItem>;
   private pendingBatches: Promise<BatchResult>[] = [];
 
   private onBatchUpsertedCb?: (items: ChunkItem[]) => void;
   private isRunning = false;
-  private stats = {
+  private readonly stats = {
     chunksProcessed: 0,
     batchesProcessed: 0,
     errors: 0,
@@ -83,12 +83,18 @@ export class ChunkPipeline {
     // Initialize worker pool
     this.workerPool = new WorkerPool(
       this.config.workerPool,
-      (result) => this.onBatchComplete(result),
-      (queueSize) => this.onQueueChange(queueSize),
+      (result) => {
+        this.onBatchComplete(result);
+      },
+      (queueSize) => {
+        this.onQueueChange(queueSize);
+      },
     );
 
     // Initialize accumulator
-    this.accumulator = new BatchAccumulator(this.config.accumulator, "upsert", (batch) => this.submitBatch(batch));
+    this.accumulator = new BatchAccumulator(this.config.accumulator, "upsert", (batch) => {
+      this.submitBatch(batch);
+    });
   }
 
   /**
@@ -151,11 +157,11 @@ export class ChunkPipeline {
    * @returns number of items accepted
    */
   addChunks(
-    chunks: Array<{
+    chunks: {
       chunk: ChunkItem["chunk"];
       chunkId: string;
       codebasePath: string;
-    }>,
+    }[],
   ): number {
     let accepted = 0;
     for (const { chunk, chunkId, codebasePath } of chunks) {
@@ -359,7 +365,7 @@ export class ChunkPipeline {
       if (this.sparseGenerator) {
         const hybridPoints = points.map((point, idx) => ({
           ...point,
-          sparseVector: this.sparseGenerator!.generate(batch.items[idx].chunk.content),
+          sparseVector: this.sparseGenerator?.generate(batch.items[idx].chunk.content) ?? { indices: [], values: [] },
         }));
         await this.qdrant.addPointsWithSparse(this.collectionName, hybridPoints);
         const qdrantDurationHybrid = Date.now() - qdrantStart;
@@ -402,7 +408,7 @@ export class ChunkPipeline {
       pipelineLog.batchComplete(ctx, result.batchId, result.itemCount, result.durationMs, result.retryCount || 0);
       if (DEBUG) {
         console.error(
-          `[ChunkPipeline] Batch ${result.batchId} complete: ` + `${result.itemCount} chunks in ${result.durationMs}ms`,
+          `[ChunkPipeline] Batch ${result.batchId} complete: ${result.itemCount} chunks in ${result.durationMs}ms`,
         );
       }
     }
@@ -426,7 +432,7 @@ export class ChunkPipeline {
     }
   }
 
-  private isPromiseResolved(promise: Promise<any>): boolean {
+  private isPromiseResolved(promise: Promise<unknown>): boolean {
     let resolved = false;
     Promise.race([promise.then(() => (resolved = true)), Promise.resolve()]).catch(() => {});
     return resolved;

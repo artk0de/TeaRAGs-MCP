@@ -146,7 +146,7 @@ export interface BlameCacheFile {
   version: 4;
   contentHash: string;
   cachedAt: number;
-  lines: Array<[number, string, string, string, number, string[]]>;
+  lines: [number, string, string, string, number, string[]][];
 }
 
 /**

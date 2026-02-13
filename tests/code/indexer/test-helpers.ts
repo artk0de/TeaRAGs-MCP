@@ -181,7 +181,7 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     return { deletedCount: relativePaths.length, batchesProcessed: 1 };
   }
 
-  batchSetPayloadCalls: Array<{ collectionName: string; operations: any[] }> = [];
+  batchSetPayloadCalls: { collectionName: string; operations: any[] }[] = [];
 
   async setPayload(collectionName: string, payload: Record<string, any>, options: any): Promise<void> {
     const points = this.points.get(collectionName);
@@ -196,7 +196,7 @@ export class MockQdrantManager implements Partial<QdrantManager> {
 
   async batchSetPayload(
     collectionName: string,
-    operations: Array<{ payload: Record<string, any>; points: (string | number)[] }>,
+    operations: { payload: Record<string, any>; points: (string | number)[] }[],
     _options?: any,
   ): Promise<void> {
     this.batchSetPayloadCalls.push({ collectionName, operations });
@@ -221,7 +221,7 @@ export class MockEmbeddingProvider implements EmbeddingProvider {
     return { embedding: new Array(384).fill(0.1), dimensions: 384 };
   }
 
-  async embedBatch(texts: string[]): Promise<Array<{ embedding: number[]; dimensions: number }>> {
+  async embedBatch(texts: string[]): Promise<{ embedding: number[]; dimensions: number }[]> {
     return texts.map(() => ({
       embedding: new Array(384).fill(0.1),
       dimensions: 384,

@@ -42,7 +42,18 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
           isError: true,
         };
       }
-      const collectionName = collection || CodeIndexer.resolveCollectionName(path!);
+      if (!path && !collection) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error: Either 'collection' or 'path' parameter is required.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const collectionName = collection || CodeIndexer.resolveCollectionName(path ?? "");
 
       // Check if collection exists
       const exists = await qdrant.collectionExists(collectionName);
@@ -129,7 +140,18 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
           isError: true,
         };
       }
-      const collectionName = collection || CodeIndexer.resolveCollectionName(path!);
+      if (!path && !collection) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error: Either 'collection' or 'path' parameter is required.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const collectionName = collection || CodeIndexer.resolveCollectionName(path ?? "");
 
       // Check if collection exists
       const exists = await qdrant.collectionExists(collectionName);

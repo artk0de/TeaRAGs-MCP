@@ -10,10 +10,10 @@ export interface RateLimitConfig {
 }
 
 export interface EmbeddingProvider {
-  embed(text: string): Promise<EmbeddingResult>;
-  embedBatch(texts: string[]): Promise<EmbeddingResult[]>;
-  getDimensions(): number;
-  getModel(): string;
+  embed: (text: string) => Promise<EmbeddingResult>;
+  embedBatch: (texts: string[]) => Promise<EmbeddingResult[]>;
+  getDimensions: () => number;
+  getModel: () => string;
 }
 
 export interface ProviderConfig {

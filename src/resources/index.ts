@@ -2,7 +2,7 @@
  * Resource registration module
  */
 
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { QdrantManager } from "../qdrant/client.js";
 
@@ -55,7 +55,7 @@ export function registerAllResources(server: McpServer, qdrant: QdrantManager): 
       mimeType: "application/json",
     },
     async (uri, params) => {
-      const name = params.name;
+      const { name } = params;
       if (typeof name !== "string" || !name) {
         throw new Error("Invalid collection name parameter");
       }

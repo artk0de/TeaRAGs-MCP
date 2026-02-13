@@ -24,7 +24,7 @@ export interface BodyGroup {
   type: string;
   lines: BodyLine[];
   /** Source line ranges for this group (may be non-contiguous) */
-  lineRanges: Array<{ start: number; end: number }>;
+  lineRanges: { start: number; end: number }[];
 }
 
 // ── Declaration keyword maps ───────────────────────────────────────
@@ -433,8 +433,8 @@ export class RubyClassBodyChunker {
       let subLines: BodyLine[] = [];
       let subSize = 0;
 
-      for (let i = 0; i < group.lines.length; i++) {
-        const lineLen = group.lines[i].text.length + 1; // +1 for newline
+      for (const groupLine of group.lines) {
+        const lineLen = groupLine.text.length + 1; // +1 for newline
         if (subSize + lineLen > maxChunkSize && subLines.length > 0) {
           result.push({
             type: group.type,
@@ -444,7 +444,7 @@ export class RubyClassBodyChunker {
           subLines = [];
           subSize = 0;
         }
-        subLines.push(group.lines[i]);
+        subLines.push(groupLine);
         subSize += lineLen;
       }
 
@@ -494,7 +494,7 @@ function extractContainerBodyLines(
   // Build a set of line numbers occupied by child nodes (methods)
   const methodLines = new Set<number>();
   for (const child of childNodes) {
-    for (let row = child.startPosition.row; row <= child.endPosition.row; row++) {
+    for (let { row } = child.startPosition; row <= child.endPosition.row; row++) {
       methodLines.add(row);
     }
   }
@@ -576,10 +576,10 @@ export const rubyBodyChunkingHook: ChunkingHook = {
  * Compute non-contiguous line ranges from BodyLine source lines.
  * Consecutive source lines form one range; gaps create new ranges.
  */
-function computeLineRanges(lines: BodyLine[]): Array<{ start: number; end: number }> {
+function computeLineRanges(lines: BodyLine[]): { start: number; end: number }[] {
   if (lines.length === 0) return [];
 
-  const ranges: Array<{ start: number; end: number }> = [];
+  const ranges: { start: number; end: number }[] = [];
   let rangeStart = lines[0].sourceLine;
   let rangeEnd = lines[0].sourceLine;
 

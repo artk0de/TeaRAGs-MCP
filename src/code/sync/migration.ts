@@ -47,7 +47,7 @@ export class SnapshotMigrator {
   private readonly newSnapshotDir: string;
   private readonly backupPath: string;
 
-  constructor(snapshotDir: string, collectionName: string, codebasePath: string, shardCount: number = 4) {
+  constructor(snapshotDir: string, collectionName: string, codebasePath: string, shardCount = 4) {
     this.snapshotDir = snapshotDir;
     this.collectionName = collectionName;
     this.codebasePath = codebasePath;
@@ -96,7 +96,7 @@ export class SnapshotMigrator {
     try {
       // Read old snapshot
       const oldContent = await fs.readFile(this.oldSnapshotPath, "utf-8");
-      const oldSnapshot: OldSnapshot = JSON.parse(oldContent);
+      const oldSnapshot = JSON.parse(oldContent) as OldSnapshot;
 
       // Create backup
       await fs.copyFile(this.oldSnapshotPath, this.backupPath);

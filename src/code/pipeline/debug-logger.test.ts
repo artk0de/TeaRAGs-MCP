@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LogContext, PipelineStage } from "./debug-logger.js";
+import type { LogContext } from "./debug-logger.js";
 
 // Mock fs module before importing the module under test
 vi.mock("node:fs", () => ({
@@ -90,7 +90,7 @@ describe("DebugLogger", () => {
 
     it("should increment batch counter", () => {
       const ctx: LogContext = { component: "BatchProcessor" };
-      const initialCalls = consoleErrorSpy.mock.calls.length;
+      const _initialCalls = consoleErrorSpy.mock.calls.length;
 
       pipelineLog.batchFormed(ctx, "batch-counter-1", 10, "size");
       const firstCall = consoleErrorSpy.mock.calls[consoleErrorSpy.mock.calls.length - 1][0];
@@ -674,8 +674,8 @@ describe("DebugLogger - DEBUG environment variable", () => {
     const originalDebug = process.env.DEBUG;
     delete process.env.DEBUG;
 
-    // Import module with DEBUG unset
-    const { pipelineLog: noDebugLogger } = await import("./debug-logger.js?t=" + Date.now());
+    // Import module with DEBUG unset (vi.resetModules() already cleared cache)
+    const { pipelineLog: noDebugLogger } = await import("./debug-logger.js");
     const fsModule = await import("node:fs");
 
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});

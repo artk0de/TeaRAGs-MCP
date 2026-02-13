@@ -42,7 +42,7 @@ export interface SchemaMigrationResult {
  * SchemaManager - Handles collection schema versioning and migrations
  */
 export class SchemaManager {
-  constructor(private qdrant: QdrantManager) {}
+  constructor(private readonly qdrant: QdrantManager) {}
 
   /**
    * Get current schema version from collection metadata
@@ -76,7 +76,7 @@ export class SchemaManager {
     try {
       // Get collection info to create appropriate zero vector
       const info = await this.qdrant.getCollectionInfo(collectionName);
-      const zeroVector = new Array(info.vectorSize).fill(0);
+      const zeroVector: number[] = new Array<number>(info.vectorSize).fill(0);
 
       const payload: SchemaMetadata = {
         _type: "schema_metadata",

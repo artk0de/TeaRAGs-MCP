@@ -233,10 +233,12 @@ describe("StatusModule", () => {
 
         let statusDuringIndexing: any = null;
 
-        const indexingPromise = indexer.indexCodebase(codebaseDir, undefined, async (progress) => {
-          if (progress.phase === "embedding" && statusDuringIndexing === null) {
-            statusDuringIndexing = await indexer.getIndexStatus(codebaseDir);
-          }
+        const indexingPromise = indexer.indexCodebase(codebaseDir, undefined, (progress) => {
+          void (async () => {
+            if (progress.phase === "embedding" && statusDuringIndexing === null) {
+              statusDuringIndexing = await indexer.getIndexStatus(codebaseDir);
+            }
+          })();
         });
 
         await indexingPromise;
@@ -263,11 +265,13 @@ describe("StatusModule", () => {
 
         let chunksCountDuringIndexing: number | undefined;
 
-        await indexer.indexCodebase(codebaseDir, undefined, async (progress) => {
-          if (progress.phase === "storing" && chunksCountDuringIndexing === undefined) {
-            const status = await indexer.getIndexStatus(codebaseDir);
-            chunksCountDuringIndexing = status.chunksCount;
-          }
+        await indexer.indexCodebase(codebaseDir, undefined, (progress) => {
+          void (async () => {
+            if (progress.phase === "storing" && chunksCountDuringIndexing === undefined) {
+              const status = await indexer.getIndexStatus(codebaseDir);
+              chunksCountDuringIndexing = status.chunksCount;
+            }
+          })();
         });
 
         if (chunksCountDuringIndexing !== undefined) {

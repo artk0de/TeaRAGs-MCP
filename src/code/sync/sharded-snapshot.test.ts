@@ -15,7 +15,7 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { ShardedSnapshotManager, type FileMetadata } from "./sharded-snapshot.js";
 
@@ -153,7 +153,7 @@ describe("ShardedSnapshotManager", () => {
       const concurrentLoads = 10;
       const loadPromises = Array(concurrentLoads)
         .fill(null)
-        .map(() => manager.load());
+        .map(async () => manager.load());
 
       const results = await Promise.all(loadPromises);
 
@@ -188,7 +188,7 @@ describe("ShardedSnapshotManager", () => {
       // Corrupt the last shard (to verify all shards are validated)
       const shardPath = join(testDir, "test-collection", "shard-03.json");
       const content = await fs.readFile(shardPath, "utf-8");
-      await fs.writeFile(shardPath, content + "corruption", "utf-8");
+      await fs.writeFile(shardPath, `${content}corruption`, "utf-8");
 
       await expect(manager.load()).rejects.toThrow(/Checksum mismatch.*shard 3/);
     });

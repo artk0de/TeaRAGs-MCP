@@ -14,7 +14,7 @@
 
 import Bottleneck from "bottleneck";
 
-import { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 
 interface OllamaError {
   status?: number;
@@ -33,19 +33,19 @@ interface OllamaEmbedBatchResponse {
 }
 
 export class OllamaEmbeddings implements EmbeddingProvider {
-  private model: string;
-  private dimensions: number;
-  private limiter: Bottleneck;
-  private retryAttempts: number;
-  private retryDelayMs: number;
-  private baseUrl: string;
+  private readonly model: string;
+  private readonly dimensions: number;
+  private readonly limiter: Bottleneck;
+  private readonly retryAttempts: number;
+  private readonly retryDelayMs: number;
+  private readonly baseUrl: string;
   private useNativeBatch: boolean;
 
   constructor(
-    model: string = "unclemusclez/jina-embeddings-v2-base-code:latest",
+    model = "unclemusclez/jina-embeddings-v2-base-code:latest",
     dimensions?: number,
     rateLimitConfig?: RateLimitConfig,
-    baseUrl: string = "http://localhost:11434",
+    baseUrl = "http://localhost:11434",
   ) {
     this.model = model;
     this.baseUrl = baseUrl;
@@ -81,7 +81,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     return typeof e === "object" && e !== null && ("status" in e || "message" in e);
   }
 
-  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt: number = 0): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {
@@ -137,13 +137,14 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw {
+      const error: OllamaError = {
         status: response.status,
         message: `Ollama batch API error (${response.status}): ${errorBody}`,
-      } as OllamaError;
+      };
+      throw new Error(JSON.stringify(error));
     }
 
-    return response.json();
+    return response.json() as Promise<OllamaEmbedBatchResponse>;
   }
 
   /**
@@ -171,15 +172,13 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
       if (!response.ok) {
         const errorBody = await response.text();
-        const textPreview = text.length > 100 ? text.substring(0, 100) + "..." : text;
-        const error: OllamaError = {
-          status: response.status,
-          message: `Ollama API error (${response.status}) for model "${this.model}": ${errorBody}. Text preview: "${textPreview}"`,
-        };
-        throw error;
+        const textPreview = text.length > 100 ? `${text.substring(0, 100)}...` : text;
+        throw new Error(
+          `Ollama API error (${response.status}) for model "${this.model}": ${errorBody}. Text preview: "${textPreview}"`,
+        );
       }
 
-      return response.json();
+      return response.json() as Promise<OllamaEmbedResponse>;
     } catch (error) {
       // Re-throw if it's already an OllamaError from the !response.ok block
       if (error && typeof error === "object" && "status" in error) {
@@ -188,7 +187,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
       // For Error instances (like network errors), enhance the message
       if (error instanceof Error) {
-        const textPreview = text.length > 100 ? text.substring(0, 100) + "..." : text;
+        const textPreview = text.length > 100 ? `${text.substring(0, 100)}...` : text;
         throw new Error(
           `Failed to call Ollama API at ${this.baseUrl} with model ${this.model}: ${error.message}. Text preview: "${textPreview}"`,
         );
@@ -197,11 +196,12 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       // Handle objects with 'message' property - preserve the original error structure
       // This ensures objects with 'message' property work correctly in tests
       if (this.isOllamaError(error)) {
-        throw error;
+        const ollamaErrMsg = error.message ? String(error.message) : "Unknown error";
+        throw new Error(ollamaErrMsg);
       }
 
       // For other types, create a descriptive error message
-      const textPreview = text.length > 100 ? text.substring(0, 100) + "..." : text;
+      const textPreview = text.length > 100 ? `${text.substring(0, 100)}...` : text;
       const errorMessage = JSON.stringify(error);
 
       throw new Error(
@@ -211,7 +211,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
-    return this.limiter.schedule(() =>
+    return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
         // Use batch API even for single text (more efficient API path)
         if (this.useNativeBatch) {
@@ -267,7 +267,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
     // Use native batch API - ONE request for ALL texts
     if (this.useNativeBatch) {
-      return this.limiter.schedule(() =>
+      return this.limiter.schedule(async () =>
         this.retryWithBackoff(async () => {
           if (process.env.DEBUG) {
             console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request`);
@@ -275,7 +275,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
           const response = await this.callBatchApi(texts);
 
-          if (!response.embeddings || response.embeddings.length !== texts.length) {
+          if (response.embeddings?.length !== texts.length) {
             throw new Error(`Ollama returned ${response.embeddings?.length || 0} embeddings for ${texts.length} texts`);
           }
 

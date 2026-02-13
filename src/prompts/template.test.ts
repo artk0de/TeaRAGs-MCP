@@ -131,7 +131,9 @@ describe("validateArguments", () => {
       { name: "query", description: "Search query", required: true },
     ];
 
-    expect(() => validateArguments(args, definitions)).not.toThrow();
+    expect(() => {
+      validateArguments(args, definitions);
+    }).not.toThrow();
   });
 
   it("should throw error when required argument is missing", () => {
@@ -141,7 +143,9 @@ describe("validateArguments", () => {
       { name: "query", description: "Search query", required: true },
     ];
 
-    expect(() => validateArguments(args, definitions)).toThrow("Missing required arguments: query");
+    expect(() => {
+      validateArguments(args, definitions);
+    }).toThrow("Missing required arguments: query");
   });
 
   it("should throw error when required argument is empty string", () => {
@@ -151,7 +155,9 @@ describe("validateArguments", () => {
       { name: "query", description: "Search query", required: true },
     ];
 
-    expect(() => validateArguments(args, definitions)).toThrow("Missing required arguments: query");
+    expect(() => {
+      validateArguments(args, definitions);
+    }).toThrow("Missing required arguments: query");
   });
 
   it("should throw error listing multiple missing arguments", () => {
@@ -162,7 +168,9 @@ describe("validateArguments", () => {
       { name: "filter", description: "Filter", required: true },
     ];
 
-    expect(() => validateArguments(args, definitions)).toThrow("Missing required arguments: collection, query, filter");
+    expect(() => {
+      validateArguments(args, definitions);
+    }).toThrow("Missing required arguments: collection, query, filter");
   });
 
   it("should not throw for missing optional arguments", () => {
@@ -173,27 +181,35 @@ describe("validateArguments", () => {
       { name: "limit", description: "Limit", required: false, default: "5" },
     ];
 
-    expect(() => validateArguments(args, definitions)).not.toThrow();
+    expect(() => {
+      validateArguments(args, definitions);
+    }).not.toThrow();
   });
 
   it("should pass validation with empty definitions", () => {
     const args = { foo: "bar" };
     const definitions: PromptArgument[] = [];
 
-    expect(() => validateArguments(args, definitions)).not.toThrow();
+    expect(() => {
+      validateArguments(args, definitions);
+    }).not.toThrow();
   });
 
   it("should pass validation with no definitions", () => {
     const args = { foo: "bar" };
 
-    expect(() => validateArguments(args, [])).not.toThrow();
+    expect(() => {
+      validateArguments(args, []);
+    }).not.toThrow();
   });
 
   it("should not require arguments that are not defined", () => {
     const args = { collection: "papers", extra: "data" };
     const definitions: PromptArgument[] = [{ name: "collection", description: "Collection name", required: true }];
 
-    expect(() => validateArguments(args, definitions)).not.toThrow();
+    expect(() => {
+      validateArguments(args, definitions);
+    }).not.toThrow();
   });
 
   it("should handle mixed required and optional arguments", () => {
@@ -204,6 +220,8 @@ describe("validateArguments", () => {
       { name: "filter", description: "Filter", required: false },
     ];
 
-    expect(() => validateArguments(args, definitions)).not.toThrow();
+    expect(() => {
+      validateArguments(args, definitions);
+    }).not.toThrow();
   });
 });

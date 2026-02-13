@@ -13,7 +13,7 @@ import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../types.
 import { INDEXING_METADATA_ID, resolveCollectionName, validatePath } from "./shared.js";
 
 export class StatusModule {
-  constructor(private qdrant: QdrantManager) {}
+  constructor(private readonly qdrant: QdrantManager) {}
 
   /**
    * Get indexing status for a codebase
@@ -65,7 +65,14 @@ export class StatusModule {
         status: "indexed",
         collectionName,
         chunksCount: actualChunksCount,
-        lastUpdated: indexingMarker.payload?.completedAt ? new Date(indexingMarker.payload.completedAt) : undefined,
+        lastUpdated: indexingMarker.payload?.completedAt
+          ? new Date(
+              typeof indexingMarker.payload.completedAt === "string" ||
+                typeof indexingMarker.payload.completedAt === "number"
+                ? indexingMarker.payload.completedAt
+                : new Date(indexingMarker.payload.completedAt as Date).toISOString(),
+            )
+          : undefined,
         enrichment,
         chunkEnrichment,
       };

@@ -136,7 +136,7 @@ describe("ConsistentHash", () => {
 
     it("should handle very long paths", () => {
       const ring = new ConsistentHash(4);
-      const longPath = "a/".repeat(1000) + "file.ts";
+      const longPath = `${"a/".repeat(1000)}file.ts`;
       const shard = ring.getShard(longPath);
 
       expect(shard).toBeGreaterThanOrEqual(0);

@@ -6,17 +6,36 @@
 
 import type { EmbeddingProvider } from "../../embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../../embeddings/sparse.js";
-import type { QdrantManager } from "../../qdrant/client.js";
+import type { QdrantManager, SearchResult } from "../../qdrant/client.js";
 import { calculateFetchLimit, filterResultsByGlob } from "../../qdrant/filters/index.js";
 import { rerankSearchCodeResults, type RerankMode, type SearchCodeRerankPreset } from "../reranker.js";
 import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
 import { resolveCollectionName, validatePath } from "./shared.js";
 
+// Qdrant filter type definitions
+interface QdrantMatchFilter {
+  key: string;
+  match: { value: unknown } | { any: unknown[] };
+}
+
+interface QdrantRangeFilter {
+  key: string;
+  range: { gte?: number; lte?: number };
+}
+
+type QdrantFilterCondition = QdrantMatchFilter | QdrantRangeFilter;
+
+interface QdrantFilter {
+  must?: QdrantFilterCondition[];
+  should?: QdrantFilterCondition[];
+  must_not?: QdrantFilterCondition[];
+}
+
 export class SearchModule {
   constructor(
-    private qdrant: QdrantManager,
-    private embeddings: EmbeddingProvider,
-    private config: CodeConfig,
+    private readonly qdrant: QdrantManager,
+    private readonly embeddings: EmbeddingProvider,
+    private readonly config: CodeConfig,
   ) {}
 
   /**
@@ -40,7 +59,7 @@ export class SearchModule {
     const { embedding } = await this.embeddings.embed(query);
 
     // Build filter
-    let filter: any;
+    let filter: QdrantFilter | undefined;
     // Note: pathPattern is handled via client-side filtering, not Qdrant filter
     const hasBasicFilters = options?.fileTypes || options?.documentationOnly;
     // Git filters per canonical algorithm (aggregated signals only)
@@ -54,11 +73,12 @@ export class SearchModule {
       options?.taskId;
 
     if (hasBasicFilters || hasGitFilters) {
-      filter = { must: [] };
+      const mustConditions: QdrantFilterCondition[] = [];
+      filter = { must: mustConditions };
 
       // Basic filters
       if (options?.fileTypes && options.fileTypes.length > 0) {
-        filter.must.push({
+        mustConditions.push({
           key: "fileExtension",
           match: { any: options.fileTypes },
         });
@@ -66,7 +86,7 @@ export class SearchModule {
 
       // Filter to documentation only (markdown, READMEs, etc.)
       if (options?.documentationOnly) {
-        filter.must.push({
+        mustConditions.push({
           key: "isDocumentation",
           match: { value: true },
         });
@@ -74,7 +94,7 @@ export class SearchModule {
 
       // Git metadata filters (canonical algorithm: nested git.* keys)
       if (options?.author) {
-        filter.must.push({
+        mustConditions.push({
           key: "git.dominantAuthor",
           match: { value: options.author },
         });
@@ -82,7 +102,7 @@ export class SearchModule {
 
       if (options?.modifiedAfter) {
         const timestamp = Math.floor(new Date(options.modifiedAfter).getTime() / 1000);
-        filter.must.push({
+        mustConditions.push({
           key: "git.lastModifiedAt",
           range: { gte: timestamp },
         });
@@ -90,35 +110,35 @@ export class SearchModule {
 
       if (options?.modifiedBefore) {
         const timestamp = Math.floor(new Date(options.modifiedBefore).getTime() / 1000);
-        filter.must.push({
+        mustConditions.push({
           key: "git.lastModifiedAt",
           range: { lte: timestamp },
         });
       }
 
       if (options?.minAgeDays !== undefined) {
-        filter.must.push({
+        mustConditions.push({
           key: "git.ageDays",
           range: { gte: options.minAgeDays },
         });
       }
 
       if (options?.maxAgeDays !== undefined) {
-        filter.must.push({
+        mustConditions.push({
           key: "git.ageDays",
           range: { lte: options.maxAgeDays },
         });
       }
 
       if (options?.minCommitCount !== undefined) {
-        filter.must.push({
+        mustConditions.push({
           key: "git.commitCount",
           range: { gte: options.minCommitCount },
         });
       }
 
       if (options?.taskId) {
-        filter.must.push({
+        mustConditions.push({
           key: "git.taskIds",
           match: { any: [options.taskId] },
         });
@@ -131,13 +151,19 @@ export class SearchModule {
     const fetchLimit = calculateFetchLimit(requestedLimit, needsOverfetch);
 
     // Search with hybrid or standard search
-    let results;
+    let results: SearchResult[];
     if (useHybrid) {
       const sparseGenerator = new BM25SparseVectorGenerator();
       const sparseVector = sparseGenerator.generate(query);
-      results = await this.qdrant.hybridSearch(collectionName, embedding, sparseVector, fetchLimit, filter);
+      results = await this.qdrant.hybridSearch(
+        collectionName,
+        embedding,
+        sparseVector,
+        fetchLimit,
+        filter as Record<string, unknown>,
+      );
     } else {
-      results = await this.qdrant.search(collectionName, embedding, fetchLimit, filter);
+      results = await this.qdrant.search(collectionName, embedding, fetchLimit, filter as Record<string, unknown>);
     }
 
     // Apply glob pattern filter if specified (client-side filtering)
@@ -155,20 +181,27 @@ export class SearchModule {
 
     // Format results (include git metadata if present)
     // Limit to requested count after all filtering
-    return filteredResults.slice(0, requestedLimit).map((r) => ({
-      content: r.payload?.content || "",
-      filePath: r.payload?.relativePath || "",
-      startLine: r.payload?.startLine || 0,
-      endLine: r.payload?.endLine || 0,
-      language: r.payload?.language || "unknown",
-      score: r.score,
-      fileExtension: r.payload?.fileExtension || "",
-      // Include git metadata if it exists (file-level churn metrics)
-      ...(r.payload?.git && {
-        metadata: {
-          git: r.payload.git,
-        },
-      }),
-    }));
+    return filteredResults.slice(0, requestedLimit).map((r) => {
+      const payload = r.payload as Record<string, unknown> | undefined;
+      const content = payload?.content;
+      const relativePath = payload?.relativePath;
+      const startLine = payload?.startLine;
+      const endLine = payload?.endLine;
+      const language = payload?.language;
+      const fileExtension = payload?.fileExtension;
+      const git = payload?.git;
+
+      return {
+        content: typeof content === "string" ? content : "",
+        filePath: typeof relativePath === "string" ? relativePath : "",
+        startLine: typeof startLine === "number" ? startLine : 0,
+        endLine: typeof endLine === "number" ? endLine : 0,
+        language: typeof language === "string" ? language : "unknown",
+        score: r.score,
+        fileExtension: typeof fileExtension === "string" ? fileExtension : "",
+        // Include git metadata if it exists (file-level churn metrics)
+        ...(git !== null && git !== undefined && typeof git === "object" ? { metadata: { git } } : {}),
+      } as CodeSearchResult;
+    });
   }
 }

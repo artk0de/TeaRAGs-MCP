@@ -45,12 +45,12 @@ const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
 export class ChunkerPool {
   private workers: PoolWorker[] = [];
-  private queue: Array<{ request: WorkerRequest; pending: PendingRequest }> = [];
+  private queue: { request: WorkerRequest; pending: PendingRequest }[] = [];
   private isShutdown = false;
 
   constructor(
-    private poolSize: number,
-    private config: ChunkerConfig,
+    private readonly poolSize: number,
+    private readonly config: ChunkerConfig,
   ) {
     this.initWorkers();
   }
@@ -143,7 +143,7 @@ export class ChunkerPool {
     this.queue = [];
 
     // Terminate all workers
-    await Promise.all(this.workers.map((pw) => pw.worker.terminate()));
+    await Promise.all(this.workers.map(async (pw) => pw.worker.terminate()));
     this.workers = [];
 
     if (DEBUG) {
@@ -163,7 +163,8 @@ export class ChunkerPool {
     const freeWorker = this.workers.find((w) => !w.busy);
     if (!freeWorker) return;
 
-    const next = this.queue.shift()!;
+    const next = this.queue.shift();
+    if (!next) return;
     this.dispatch(freeWorker, next.request, next.pending);
   }
 }

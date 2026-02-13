@@ -29,7 +29,7 @@ export function createGlobMatcher(pattern: string): (path: string) => boolean {
 export interface ResultWithPath {
   id?: string | number;
   score?: number;
-  payload?: Record<string, any>;
+  payload?: Record<string, unknown>;
 }
 
 /**
@@ -65,6 +65,6 @@ export function filterResultsByGlob<T extends ResultWithPath>(results: T[], patt
  * @param multiplier - How many extra results to fetch (default: 3)
  * @returns The limit to use when querying Qdrant
  */
-export function calculateFetchLimit(requestedLimit: number, hasPattern: boolean, multiplier: number = 3): number {
+export function calculateFetchLimit(requestedLimit: number, hasPattern: boolean, multiplier = 3): number {
   return hasPattern ? requestedLimit * multiplier : requestedLimit;
 }

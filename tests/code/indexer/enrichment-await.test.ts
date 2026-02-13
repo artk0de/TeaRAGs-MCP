@@ -87,6 +87,7 @@ describe("Enrichment status detection", () => {
     await createTestFile(
       codebaseDir,
       "test.ts",
+      // eslint-disable-next-line no-template-curly-in-string
       'export function hello(name: string): string {\n  console.log("Greeting user");\n  return `Hello, ${name}!`;\n}',
     );
 
@@ -122,6 +123,7 @@ describe("Enrichment status detection", () => {
     await createTestFile(
       codebaseDir,
       "test.ts",
+      // eslint-disable-next-line no-template-curly-in-string
       'export function hello(name: string): string {\n  console.log("Greeting user");\n  return `Hello, ${name}!`;\n}',
     );
 

@@ -46,7 +46,7 @@ interface StageData {
 }
 
 class StageProfiler {
-  private stages: Map<PipelineStage, StageData> = new Map();
+  private readonly stages: Map<PipelineStage, StageData> = new Map();
 
   private getOrCreate(stage: PipelineStage): StageData {
     let data = this.stages.get(stage);
@@ -161,9 +161,9 @@ function formatDuration(ms: number, width?: number): string {
 
 class DebugLogger {
   private logFile: string | null = null;
-  private sessionStart: number;
-  private profiler = new StageProfiler();
-  private counters = {
+  private readonly sessionStart: number;
+  private readonly profiler = new StageProfiler();
+  private readonly counters = {
     batches: 0,
     chunks: 0,
     embedCalls: 0,
@@ -189,11 +189,14 @@ class DebugLogger {
       this.logFile = join(LOG_DIR, `pipeline-${timestamp}.log`);
 
       const env = (key: string, fallback: string) =>
-        process.env[key] != null ? process.env[key] : `${fallback} (default)`;
+        process.env[key] !== null && process.env[key] !== undefined ? process.env[key] : `${fallback} (default)`;
 
       const batchSize = parseInt(process.env.EMBEDDING_BATCH_SIZE || "1024", 10);
       const minBatchRaw = process.env.MIN_BATCH_SIZE;
-      const minBatchEffective = minBatchRaw != null ? parseInt(minBatchRaw, 10) || 0 : Math.floor(batchSize * 0.5);
+      const minBatchEffective =
+        minBatchRaw !== null && minBatchRaw !== undefined
+          ? parseInt(minBatchRaw, 10) || 0
+          : Math.floor(batchSize * 0.5);
       const concurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
 
       this.writeRaw(`
@@ -205,7 +208,7 @@ ENV:
   EMBEDDING_MODEL             = ${env("EMBEDDING_MODEL", "nomic-embed-text")}
   EMBEDDING_CONCURRENCY       = ${env("EMBEDDING_CONCURRENCY", "1")}
   EMBEDDING_BATCH_SIZE        = ${env("EMBEDDING_BATCH_SIZE", "1024")}
-  MIN_BATCH_SIZE              = ${minBatchRaw != null ? minBatchRaw : "unset"} → effective: ${minBatchEffective}
+  MIN_BATCH_SIZE              = ${minBatchRaw !== null && minBatchRaw !== undefined ? minBatchRaw : "unset"} → effective: ${minBatchEffective}
   BATCH_FORMATION_TIMEOUT_MS  = ${env("BATCH_FORMATION_TIMEOUT_MS", "2000")}
   CHUNKER_POOL_SIZE           = ${env("CHUNKER_POOL_SIZE", "4")}
   FILE_PROCESSING_CONCURRENCY = ${env("FILE_PROCESSING_CONCURRENCY", "50")}
@@ -234,7 +237,7 @@ DERIVED:
   private writeRaw(message: string): void {
     if (this.logFile) {
       try {
-        appendFileSync(this.logFile, message + "\n");
+        appendFileSync(this.logFile, `${message}\n`);
       } catch {
         // Ignore write errors
       }
@@ -458,10 +461,10 @@ DERIVED:
       ] as PipelineStage[]) {
         const data = stageSummary[stage];
         if (data) {
-          const cpuPercent = (data.percentage.toFixed(1) + "%").padStart(W.cpu);
+          const cpuPercent = `${data.percentage.toFixed(1)}%`.padStart(W.cpu);
           const wallPercent =
             pipelineWallMs > 0
-              ? (((data.wallMs / pipelineWallMs) * 100).toFixed(1) + "%").padStart(W.wallP)
+              ? `${((data.wallMs / pipelineWallMs) * 100).toFixed(1)}%`.padStart(W.wallP)
               : "-".padStart(W.wallP);
           // Estimated incremental time = cumulative / concurrency
           const addedMs = Math.round(data.totalMs / concurrency[stage]);

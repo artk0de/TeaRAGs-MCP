@@ -1,5 +1,4 @@
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -66,6 +65,7 @@ describe("IndexingModule", () => {
       await createTestFile(
         codebaseDir,
         "hello.ts",
+        // eslint-disable-next-line no-template-curly-in-string
         'export function hello(name: string): string {\n  console.log("Greeting user");\n  return `Hello, ${name}!`;\n}',
       );
 
@@ -298,7 +298,7 @@ function third() {
       fs.readFile = async (path: any, encoding: any) => {
         callCount++;
         if (callCount === 1 && typeof path === "string" && path.endsWith("test.ts")) {
-          throw "String error";
+          throw new Error("String error");
         }
         return originalReadFile(path, encoding);
       };

@@ -83,7 +83,7 @@ export function extractTaskIds(text: string): string[] {
  */
 export function computeFileMetadata(churnData: FileChurnData, currentLineCount: number): GitFileMetadata {
   const nowSec = Date.now() / 1000;
-  const commits = churnData.commits;
+  const { commits } = churnData;
 
   if (commits.length === 0) {
     return {
@@ -197,11 +197,14 @@ export function computeFileMetadata(churnData: FileChurnData, currentLineCount: 
 
 export class GitLogReader {
   // isomorphic-git pack file cache (shared across calls for performance)
-  private cache: Record<string, any> = {};
+  private readonly cache: Record<string, unknown> = {};
 
   // HEAD-based result caches — invalidated when HEAD changes
-  private fileMetadataCache = new Map<string, { headSha: string; data: Map<string, FileChurnData> }>();
-  private chunkChurnCache = new Map<string, { headSha: string; data: Map<string, Map<string, ChunkChurnOverlay>> }>();
+  private readonly fileMetadataCache = new Map<string, { headSha: string; data: Map<string, FileChurnData> }>();
+  private readonly chunkChurnCache = new Map<
+    string,
+    { headSha: string; data: Map<string, Map<string, ChunkChurnOverlay>> }
+  >();
 
   /**
    * Build per-file FileChurnData from git history.
@@ -223,7 +226,7 @@ export class GitLogReader {
     try {
       headSha = await this.getHead(repoRoot);
       const cached = this.fileMetadataCache.get(cacheKey);
-      if (cached && cached.headSha === headSha) {
+      if (cached?.headSha === headSha) {
         return cached.data;
       }
     } catch {
@@ -255,9 +258,11 @@ export class GitLogReader {
   /**
    * Race a promise against a timeout. Rejects with Error(message) on expiry.
    */
-  private withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  private async withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(message)), ms);
+      const timer = setTimeout(() => {
+        reject(new Error(message));
+      }, ms);
       promise.then(
         (val) => {
           clearTimeout(timer);
@@ -265,7 +270,7 @@ export class GitLogReader {
         },
         (err) => {
           clearTimeout(timer);
-          reject(err);
+          reject(err instanceof Error ? err : new Error(String(err)));
         },
       );
     });
@@ -373,7 +378,7 @@ export class GitLogReader {
       trees: [git.TREE({ ref: commitOid })],
       cache: this.cache,
       map: async (filepath, entries) => {
-        if (!entries || !entries[0]) return;
+        if (!entries?.[0]) return;
         const entry = entries[0];
         const type = await entry.type();
         if (type === "blob" && filepath !== ".") {
@@ -526,7 +531,7 @@ export class GitLogReader {
       }
 
       const sha = sections[i]?.trim();
-      if (!sha || sha.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
+      if (sha?.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
         i++;
         continue;
       }
@@ -609,7 +614,7 @@ export class GitLogReader {
     try {
       const headSha = await this.getHead(repoRoot);
       const cached = this.chunkChurnCache.get(repoRoot);
-      if (cached && cached.headSha === headSha) {
+      if (cached?.headSha === headSha) {
         return cached.data;
       }
     } catch {
@@ -653,7 +658,7 @@ export class GitLogReader {
     sinceDate: Date,
     filePaths: string[],
     timeoutMs?: number,
-  ): Promise<Array<{ commit: CommitInfo; changedFiles: string[] }>> {
+  ): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
     if (filePaths.length === 0) return [];
 
     // Batch large file lists to avoid exceeding OS ARG_MAX
@@ -669,7 +674,7 @@ export class GitLogReader {
     sinceDate: Date,
     filePaths: string[],
     timeoutMs?: number,
-  ): Promise<Array<{ commit: CommitInfo; changedFiles: string[] }>> {
+  ): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
     const effectiveTimeoutMs = timeoutMs ?? parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "30000", 10);
     const args = [
       "log",
@@ -698,7 +703,7 @@ export class GitLogReader {
     sinceDate: Date,
     filePaths: string[],
     timeoutMs?: number,
-  ): Promise<Array<{ commit: CommitInfo; changedFiles: string[] }>> {
+  ): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
     const batchSize = GitLogReader.PATHSPEC_BATCH_SIZE;
     const batches: string[][] = [];
     for (let i = 0; i < filePaths.length; i += batchSize) {
@@ -746,8 +751,8 @@ export class GitLogReader {
     }));
   }
 
-  private parsePathspecOutput(stdout: string): Array<{ commit: CommitInfo; changedFiles: string[] }> {
-    const result: Array<{ commit: CommitInfo; changedFiles: string[] }> = [];
+  private parsePathspecOutput(stdout: string): { commit: CommitInfo; changedFiles: string[] }[] {
+    const result: { commit: CommitInfo; changedFiles: string[] }[] = [];
     const sections = stdout.split("\0");
     let i = 0;
 
@@ -758,7 +763,7 @@ export class GitLogReader {
       }
 
       const sha = sections[i]?.trim();
-      if (!sha || sha.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
+      if (sha?.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
         i++;
         continue;
       }
@@ -847,7 +852,7 @@ export class GitLogReader {
     const t0 = Date.now();
 
     // Use CLI pathspec filtering — only fetches commits touching our files
-    let commitEntries: Array<{ commit: CommitInfo; changedFiles: string[] }>;
+    let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
     let usedCli = true;
     try {
       const chunkTimeoutMs = parseInt(process.env.GIT_CHUNK_TIMEOUT_MS ?? "120000", 10);
@@ -881,8 +886,8 @@ export class GitLogReader {
 
     // Process commits with bounded concurrency
     let activeCount = 0;
-    const queue: Array<() => void> = [];
-    const acquire = (): Promise<void> => {
+    const queue: (() => void)[] = [];
+    const acquire = async (): Promise<void> => {
       if (activeCount < concurrency) {
         activeCount++;
         return Promise.resolve();
@@ -923,7 +928,8 @@ export class GitLogReader {
 
         await Promise.all(
           relevantFiles.map(async (filePath) => {
-            const entries = relativeChunkMap.get(filePath)!;
+            const entries = relativeChunkMap.get(filePath);
+            if (!entries) return;
 
             const maxLine = entries.reduce((max, e) => Math.max(max, e.endLine), 0);
             if (maxLine > maxFileLines) {
@@ -942,10 +948,10 @@ export class GitLogReader {
               return;
             }
 
-            let hunks: Array<{ newStart: number; newLines: number }>;
+            let hunks: { newStart: number; newLines: number }[];
             try {
               const patch = structuredPatch(filePath, filePath, oldContent, newContent, "", "");
-              hunks = patch.hunks;
+              ({ hunks } = patch);
               patchCalls++;
             } catch {
               return;
@@ -966,7 +972,8 @@ export class GitLogReader {
             }
 
             for (const chunkId of affectedChunkIds) {
-              const acc = accumulators.get(chunkId)!;
+              const acc = accumulators.get(chunkId);
+              if (!acc) continue;
               acc.commitShas.add(commit.sha);
               acc.authors.add(commit.author);
               if (isBugFix) acc.bugFixCount++;
@@ -1012,7 +1019,8 @@ export class GitLogReader {
         // Fallback: union of chunk commit SHAs (original behavior)
         const fileCommitShas = new Set<string>();
         for (const entry of entries) {
-          const acc = accumulators.get(entry.chunkId)!;
+          const acc = accumulators.get(entry.chunkId);
+          if (!acc) continue;
           for (const sha of acc.commitShas) {
             fileCommitShas.add(sha);
           }
@@ -1023,7 +1031,8 @@ export class GitLogReader {
       const overlayMap = new Map<string, ChunkChurnOverlay>();
 
       for (const entry of entries) {
-        const acc = accumulators.get(entry.chunkId)!;
+        const acc = accumulators.get(entry.chunkId);
+        if (!acc) continue;
         const chunkCommitCount = acc.commitShas.size;
         const totalCommitsForChunk = chunkCommitCount || 1;
 
@@ -1066,8 +1075,8 @@ export class GitLogReader {
     repoRoot: string,
     sinceDate: Date,
     relativeChunkMap: Map<string, ChunkLookupEntry[]>,
-  ): Promise<Array<{ commit: CommitInfo; changedFiles: string[] }>> {
-    const result: Array<{ commit: CommitInfo; changedFiles: string[] }> = [];
+  ): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+    const result: { commit: CommitInfo; changedFiles: string[] }[] = [];
 
     let commits: Awaited<ReturnType<typeof git.log>>;
     try {

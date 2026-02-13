@@ -18,7 +18,7 @@ function createMockEmbeddings(dimensions = 384) {
     embed: vi.fn().mockResolvedValue({ embedding: new Array(dimensions).fill(0.1), dimensions }),
     embedBatch: vi
       .fn()
-      .mockImplementation((texts: string[]) =>
+      .mockImplementation(async (texts: string[]) =>
         Promise.resolve(texts.map(() => ({ embedding: new Array(dimensions).fill(0.1), dimensions }))),
       ),
   };

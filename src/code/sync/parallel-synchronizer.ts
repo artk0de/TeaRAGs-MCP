@@ -12,7 +12,6 @@
 
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
 import type { FileChanges } from "../types.js";
@@ -37,20 +36,23 @@ export async function parallelLimit<T, R>(
   fn: (item: T) => Promise<R>,
   concurrency: number = MAX_IO_CONCURRENCY,
 ): Promise<R[]> {
-  const results: R[] = new Array(items.length);
+  const results: R[] = [];
   let index = 0;
 
   async function worker(): Promise<void> {
     while (index < items.length) {
       const currentIndex = index++;
-      results[currentIndex] = await fn(items[currentIndex]);
+      const item = items[currentIndex];
+      if (item !== undefined) {
+        results[currentIndex] = await fn(item);
+      }
     }
   }
 
   // Start `concurrency` workers
   const workers = Array(Math.min(concurrency, items.length))
     .fill(null)
-    .map(() => worker());
+    .map(async () => worker());
 
   await Promise.all(workers);
   return results;
@@ -186,7 +188,7 @@ export class ParallelFileSynchronizer {
     // Process all shards in parallel (each shard uses bounded concurrency internally)
     const processStart = Date.now();
     const shardResults = await Promise.all(
-      Array.from(filesByShards.entries()).map(([shardIndex, files]) => this.processShardFiles(shardIndex, files)),
+      Array.from(filesByShards.entries()).map(async ([shardIndex, files]) => this.processShardFiles(shardIndex, files)),
     );
     timings.processing = Date.now() - processStart;
 
@@ -199,7 +201,7 @@ export class ParallelFileSynchronizer {
     const cacheStart = Date.now();
     this.lastComputedHashes = new Map<string, FileMetadata>();
     for (const result of shardResults) {
-      for (const [path, hash] of result.currentHashes) {
+      for (const [path, _hash] of result.currentHashes) {
         const meta = result.currentMetadata?.get(path);
         if (meta) {
           this.lastComputedHashes.set(path, meta);
@@ -309,7 +311,7 @@ export class ParallelFileSynchronizer {
   async loadCheckpoint(): Promise<Checkpoint | null> {
     try {
       const data = await fs.readFile(this.checkpointPath, "utf-8");
-      const checkpoint: Checkpoint = JSON.parse(data);
+      const checkpoint = JSON.parse(data) as Checkpoint;
 
       if (!checkpoint.processedFiles || !checkpoint.totalFiles) {
         return null;
@@ -373,7 +375,10 @@ export class ParallelFileSynchronizer {
     for (const file of files) {
       const relativePath = this.toRelativePath(file);
       const shardIndex = this.hashRing.getShard(relativePath);
-      result.get(shardIndex)!.push(file);
+      const shard = result.get(shardIndex);
+      if (shard) {
+        shard.push(file);
+      }
     }
 
     return result;
@@ -392,7 +397,7 @@ export class ParallelFileSynchronizer {
     const currentMetadata = new Map<string, FileMetadata>();
 
     // OPTIMIZATION: Use bounded concurrency instead of unbounded Promise.all
-    const results = await parallelLimit(files, (file) => this.checkSingleFile(file), MAX_IO_CONCURRENCY);
+    const results = await parallelLimit(files, async (file) => this.checkSingleFile(file), MAX_IO_CONCURRENCY);
 
     for (const result of results) {
       if (!result) continue;
@@ -436,7 +441,7 @@ export class ParallelFileSynchronizer {
 
     // Compute hash (with mtime+size fast path)
     let hash: string;
-    let usedFastPath = false;
+    let _usedFastPath = false;
 
     if (
       previousMeta &&
@@ -444,8 +449,8 @@ export class ParallelFileSynchronizer {
       previousMeta.size === currentMeta.size
     ) {
       // Fast path: mtime and size match, use cached hash
-      hash = previousMeta.hash;
-      usedFastPath = true;
+      ({ hash } = previousMeta);
+      _usedFastPath = true;
     } else {
       // Slow path: compute hash
       hash = await this.hashFile(filePath);

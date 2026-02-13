@@ -37,7 +37,7 @@ export class ConfigManager {
   private config: Partial<AppConfig> = {};
 
   get<K extends keyof AppConfig>(key: K): AppConfig[K] {
-    return (this.config[key] || CONFIG[key]) as AppConfig[K];
+    return this.config[key] || CONFIG[key];
   }
 
   set<K extends keyof AppConfig>(key: K, value: AppConfig[K]): void {

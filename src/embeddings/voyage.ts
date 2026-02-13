@@ -1,6 +1,6 @@
 import Bottleneck from "bottleneck";
 
-import { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 
 interface VoyageError {
   status?: number;
@@ -8,7 +8,7 @@ interface VoyageError {
 }
 
 interface VoyageEmbedResponse {
-  data: Array<{ embedding: number[] }>;
+  data: { embedding: number[] }[];
   model: string;
   usage: {
     total_tokens: number;
@@ -16,21 +16,21 @@ interface VoyageEmbedResponse {
 }
 
 export class VoyageEmbeddings implements EmbeddingProvider {
-  private apiKey: string;
-  private model: string;
-  private dimensions: number;
-  private limiter: Bottleneck;
-  private retryAttempts: number;
-  private retryDelayMs: number;
-  private baseUrl: string;
-  private inputType?: "query" | "document";
+  private readonly apiKey: string;
+  private readonly model: string;
+  private readonly dimensions: number;
+  private readonly limiter: Bottleneck;
+  private readonly retryAttempts: number;
+  private readonly retryDelayMs: number;
+  private readonly baseUrl: string;
+  private readonly inputType?: "query" | "document";
 
   constructor(
     apiKey: string,
-    model: string = "voyage-2",
+    model = "voyage-2",
     dimensions?: number,
     rateLimitConfig?: RateLimitConfig,
-    baseUrl: string = "https://api.voyageai.com/v1",
+    baseUrl = "https://api.voyageai.com/v1",
     inputType?: "query" | "document",
   ) {
     this.apiKey = apiKey;
@@ -62,7 +62,7 @@ export class VoyageEmbeddings implements EmbeddingProvider {
     });
   }
 
-  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt: number = 0): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {
@@ -91,7 +91,7 @@ export class VoyageEmbeddings implements EmbeddingProvider {
   }
 
   private async callApi(texts: string[]): Promise<VoyageEmbedResponse> {
-    const body: any = {
+    const body: Record<string, unknown> = {
       input: texts,
       model: this.model,
     };
@@ -110,18 +110,15 @@ export class VoyageEmbeddings implements EmbeddingProvider {
     });
 
     if (!response.ok) {
-      const error: VoyageError = {
-        status: response.status,
-        message: await response.text(),
-      };
-      throw error;
+      const errorText = await response.text();
+      throw new Error(`Voyage AI API error (${response.status}): ${errorText}`);
     }
 
-    return response.json();
+    return response.json() as Promise<VoyageEmbedResponse>;
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
-    return this.limiter.schedule(() =>
+    return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
         const response = await this.callApi([text]);
 
@@ -138,7 +135,7 @@ export class VoyageEmbeddings implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
-    return this.limiter.schedule(() =>
+    return this.limiter.schedule(async () =>
       this.retryWithBackoff(async () => {
         const response = await this.callApi(texts);
 

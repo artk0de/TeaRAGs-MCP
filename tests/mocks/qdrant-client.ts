@@ -52,7 +52,7 @@ export function createMockQdrantClient(storage: MockQdrantStorage) {
     getCollection: vi.fn().mockImplementation(async (name: string) => {
       const collection = storage.collections.get(name);
       if (!collection) {
-        throw { status: 404, data: { status: { error: "Collection not found" } } };
+        throw new Error(`Collection not found: ${name}`);
       }
       const points = storage.points.get(name) || [];
       return {
@@ -68,19 +68,19 @@ export function createMockQdrantClient(storage: MockQdrantStorage) {
       };
     }),
 
-    createCollection: vi.fn().mockImplementation(async (name: string, config: any) => {
-      const vectorConfig = config.vectors;
+    createCollection: vi.fn().mockImplementation(async (name: string, config: Record<string, unknown>) => {
+      const vectorConfig = config.vectors as
+        | { dense?: { size: number; distance: string }; size?: number; distance?: string }
+        | undefined;
       let vectorSize = 0;
       let distance = "Cosine";
       let hybridEnabled = false;
 
       if (vectorConfig?.dense) {
-        vectorSize = vectorConfig.dense.size;
-        distance = vectorConfig.dense.distance;
+        ({ size: vectorSize, distance } = vectorConfig.dense);
         hybridEnabled = true;
       } else if (vectorConfig?.size) {
-        vectorSize = vectorConfig.size;
-        distance = vectorConfig.distance;
+        ({ size: vectorSize, distance = "Cosine" } = vectorConfig);
       }
 
       storage.collections.set(name, { vectorSize, distance, hybridEnabled });

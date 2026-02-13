@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { CohereEmbeddings } from "./cohere.js";
-import { EmbeddingProviderFactory, type FactoryConfig } from "./factory.js";
+import { EmbeddingProviderFactory } from "./factory.js";
 import { OllamaEmbeddings } from "./ollama.js";
 import { OpenAIEmbeddings } from "./openai.js";
 import { VoyageEmbeddings } from "./voyage.js";

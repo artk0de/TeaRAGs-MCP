@@ -18,7 +18,7 @@ import type { QdrantManager, SparseVector } from "./client.js";
 export interface DensePoint {
   id: string | number;
   vector: number[];
-  payload?: Record<string, any>;
+  payload?: Record<string, unknown>;
 }
 
 export interface HybridPoint extends DensePoint {
@@ -53,7 +53,7 @@ export class PointsAccumulator {
   private readonly config: AccumulatorConfig;
   private readonly isHybrid: boolean;
 
-  private buffer: (DensePoint | HybridPoint)[] = [];
+  private readonly buffer: (DensePoint | HybridPoint)[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private stats: AccumulatorStats = {
     totalPointsFlushed: 0,
@@ -68,7 +68,7 @@ export class PointsAccumulator {
   constructor(
     qdrant: QdrantManager,
     collectionName: string,
-    isHybrid: boolean = false,
+    isHybrid = false,
     config: Partial<AccumulatorConfig> = {},
   ) {
     this.qdrant = qdrant;
@@ -143,15 +143,15 @@ export class PointsAccumulator {
   private startFlushTimer(): void {
     if (this.flushTimer) return;
 
-    this.flushTimer = setTimeout(async () => {
+    this.flushTimer = setTimeout(() => {
       this.flushTimer = null;
       if (this.buffer.length > 0) {
         // Timer-triggered flush uses wait=false (non-blocking)
         const flushPromise = this.flushBatch(false);
         this.pendingFlushes.push(flushPromise);
-        flushPromise.finally(() => {
+        void flushPromise.finally(() => {
           const idx = this.pendingFlushes.indexOf(flushPromise);
-          if (idx >= 0) this.pendingFlushes.splice(idx, 1);
+          if (idx >= 0) void this.pendingFlushes.splice(idx, 1);
         });
       }
       // Restart timer if buffer still has items
@@ -209,11 +209,7 @@ export class PointsAccumulator {
  * - QDRANT_FLUSH_INTERVAL_MS: Auto-flush interval (default: 500, 0 to disable)
  * - QDRANT_BATCH_ORDERING: Ordering mode "weak"|"medium"|"strong" (default: "weak")
  */
-export function createAccumulator(
-  qdrant: QdrantManager,
-  collectionName: string,
-  isHybrid: boolean = false,
-): PointsAccumulator {
+export function createAccumulator(qdrant: QdrantManager, collectionName: string, isHybrid = false): PointsAccumulator {
   const config: Partial<AccumulatorConfig> = {
     // QDRANT_UPSERT_BATCH_SIZE is canonical, CODE_BATCH_SIZE is deprecated fallback
     bufferSize: parseInt(process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "100", 10),

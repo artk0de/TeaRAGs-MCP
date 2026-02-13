@@ -63,6 +63,7 @@ describe("SearchModule", () => {
       await createTestFile(
         codebaseDir,
         "test.ts",
+        // eslint-disable-next-line no-template-curly-in-string
         "export function hello(name: string): string {\n  const greeting = `Hello, ${name}!`;\n  return greeting;\n}",
       );
       await indexer.indexCodebase(codebaseDir);

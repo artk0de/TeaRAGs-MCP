@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { QdrantManager } from "../../qdrant/client.js";
 import { createQdrantPipeline, PipelineManager } from "./pipeline-manager.js";
-import type { Batch, DeleteItem, PipelineConfig, UpsertItem } from "./types.js";
+import type { Batch, DeleteItem, UpsertItem } from "./types.js";
 
 describe("PipelineManager", () => {
   let pipeline: PipelineManager;
@@ -283,11 +283,11 @@ describe("PipelineManager", () => {
 
   describe("Error handling", () => {
     it("should track errors", async () => {
-      let callCount = 0;
+      let _callCount = 0;
       const errorPipeline = new PipelineManager(
         {
           handleUpsertBatch: async () => {
-            callCount++;
+            _callCount++;
             throw new Error("Test error");
           },
           handleDeleteBatch: vi.fn(),

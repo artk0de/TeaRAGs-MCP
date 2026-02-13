@@ -27,15 +27,17 @@ export function renderTemplate(
   }
 
   // Replace all {{variable}} placeholders
-  rendered = rendered.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
+  rendered = rendered.replace(/\{\{(\w+)\}\}/g, (match, varName: string) => {
     // Check if value is provided in args
-    if (args[varName] !== undefined) {
-      return args[varName];
+    const argValue = args[varName];
+    if (argValue !== undefined) {
+      return argValue;
     }
 
     // Check if there's a default value
-    if (defaults.has(varName)) {
-      return defaults.get(varName)!;
+    const defaultValue = defaults.get(varName);
+    if (defaultValue !== undefined) {
+      return defaultValue;
     }
 
     // If no value and no default, keep the placeholder

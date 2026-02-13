@@ -275,7 +275,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       }
 
       // Include enrichment info in the response
-      const response: Record<string, any> = { ...status };
+      const response: Record<string, unknown> = { ...status };
       if (status.enrichment) {
         response.enrichment = status.enrichment;
       }
@@ -283,7 +283,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       let text = JSON.stringify(response, null, 2);
 
       // Add visible enrichment status line so agents notice it
-      if (status.enrichment && status.enrichment.status === "in_progress") {
+      if (status.enrichment?.status === "in_progress") {
         const pct = status.enrichment.percentage ?? 0;
         text += `\n\n⏳ Git enrichment is still running (${pct}% — ${status.enrichment.processedFiles ?? 0}/${status.enrichment.totalFiles ?? "?"} files). Git-based filters and rerank presets will not work until enrichment completes.`;
       }
