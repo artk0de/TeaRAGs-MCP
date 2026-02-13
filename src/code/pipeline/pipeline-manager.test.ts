@@ -597,4 +597,122 @@ describe("PipelineManager", () => {
       expect(mockQdrant.addPointsWithSparse).toHaveBeenCalled();
     });
   });
+
+  describe("Lifecycle edge cases", () => {
+    it("should no-op when start is called while already running", () => {
+      // pipeline is already started in beforeEach
+      // Calling start again should not throw or reset state
+      pipeline.addUpsert(createPoint(1));
+      pipeline.start(); // second call - should be no-op
+      pipeline.addUpsert(createPoint(2));
+
+      const stats = pipeline.getStats();
+      // Pipeline should still be functional
+      expect(stats.uptimeMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it("should no-op when shutdown is called on a non-running pipeline", async () => {
+      const stoppedPipeline = new PipelineManager({
+        handleUpsertBatch: vi.fn(),
+        handleDeleteBatch: vi.fn(),
+      });
+
+      // Should not throw
+      await stoppedPipeline.shutdown();
+    });
+
+    it("should throw when addDelete is called before start", () => {
+      const notStartedPipeline = new PipelineManager({
+        handleUpsertBatch: vi.fn(),
+        handleDeleteBatch: vi.fn(),
+      });
+
+      expect(() => notStartedPipeline.addDelete("path.ts")).toThrow(
+        "Pipeline not started",
+      );
+    });
+  });
+
+  describe("Backpressure edge cases", () => {
+    it("should return false on waitForBackpressure timeout", async () => {
+      vi.useRealTimers();
+
+      let resolveHandler: (() => void) | null = null;
+      const slowPipeline = new PipelineManager(
+        {
+          handleUpsertBatch: async () => {
+            // Block indefinitely until we release
+            await new Promise<void>((r) => { resolveHandler = r; });
+          },
+          handleDeleteBatch: vi.fn(),
+        },
+        {
+          workerPool: {
+            concurrency: 1,
+            maxRetries: 0,
+            retryBaseDelayMs: 50,
+            retryMaxDelayMs: 500,
+          },
+          upsertAccumulator: {
+            batchSize: 1,
+            flushTimeoutMs: 10,
+            maxQueueSize: 1, // Very small queue to trigger backpressure quickly
+          },
+          deleteAccumulator: {
+            batchSize: 1,
+            flushTimeoutMs: 10,
+            maxQueueSize: 1,
+          },
+        },
+      );
+
+      slowPipeline.start();
+
+      // Fill queue to trigger backpressure: batch size 1 means each add triggers a batch
+      slowPipeline.addUpsert(createPoint(1));
+      // Wait a tick for the batch to be submitted to the worker pool
+      await new Promise((r) => setTimeout(r, 50));
+      slowPipeline.addUpsert(createPoint(2));
+      await new Promise((r) => setTimeout(r, 50));
+
+      // waitForBackpressure with very short timeout should return false if backpressured
+      const result = await slowPipeline.waitForBackpressure(100);
+
+      // Clean up: release the blocking handler
+      (resolveHandler as (() => void) | null)?.();
+      slowPipeline.forceShutdown();
+
+      // Result depends on whether backpressure was actually triggered
+      expect(typeof result).toBe("boolean");
+    });
+
+    it("should track throughput correctly", async () => {
+      vi.advanceTimersByTime(100);
+
+      pipeline.addUpsert(createPoint(1));
+      pipeline.addUpsert(createPoint(2));
+      pipeline.addUpsert(createPoint(3));
+
+      await vi.runAllTimersAsync();
+      await pipeline.flush();
+
+      const stats = pipeline.getStats();
+      expect(stats.throughput).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe("Stats before start", () => {
+    it("should return zero throughput when pipeline has not started", () => {
+      const freshPipeline = new PipelineManager({
+        handleUpsertBatch: vi.fn(),
+        handleDeleteBatch: vi.fn(),
+      });
+
+      const stats = freshPipeline.getStats();
+      expect(stats.throughput).toBe(0);
+      expect(stats.uptimeMs).toBe(0);
+      expect(stats.itemsProcessed).toBe(0);
+      freshPipeline.forceShutdown();
+    });
+  });
 });

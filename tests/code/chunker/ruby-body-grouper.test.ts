@@ -599,6 +599,65 @@ describe("RubyBodyGrouper", () => {
       expect(groups[0].lines).toHaveLength(4);
     });
 
+    // Transparent block with nested do...end inside included do...end
+    it("should handle nested do...end inside included do...end transparently", () => {
+      const lines = makeLines([
+        "  included do",
+        "    aasm column: :status do",
+        "      state :pending, initial: true",
+        "      event :process do",
+        "        transitions from: :pending, to: :processing",
+        "      end",
+        "    end",
+        "    validates :name, presence: true",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      const types = groups.map((g) => g.type);
+      // aasm → state_machine (with nested event), validates → validations
+      expect(types).toEqual(["state_machine", "validations"]);
+    });
+
+    // class_methods do...end is transparent
+    it("should treat class_methods do...end as transparent", () => {
+      const lines = makeLines([
+        "  class_methods do",
+        "    scope :active, -> { where(active: true) }",
+        "    scope :recent, -> { order(created_at: :desc) }",
+        "  end",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("scopes");
+      expect(groups[0].lines).toHaveLength(2);
+    });
+
+    // splitOversizedGroups with mixed small and large groups
+    it("should preserve small groups and split large ones with maxChunkSize", () => {
+      const lines = makeLines([
+        "  has_many :posts",
+        "  has_many :comments",
+        "",
+        "  scope :s0, -> { where(field_0: true) }",
+        "  scope :s1, -> { where(field_1: true) }",
+        "  scope :s2, -> { where(field_2: true) }",
+        "  scope :s3, -> { where(field_3: true) }",
+        "  scope :s4, -> { where(field_4: true) }",
+        "  scope :s5, -> { where(field_5: true) }",
+        "  scope :s6, -> { where(field_6: true) }",
+        "  scope :s7, -> { where(field_7: true) }",
+        "  scope :s8, -> { where(field_8: true) }",
+        "  scope :s9, -> { where(field_9: true) }",
+      ]);
+      // associations (~50 chars) should stay intact; scopes (~450 chars) may split
+      const groups = grouper.groupLines(lines, 200);
+      expect(groups[0].type).toBe("associations");
+      expect(groups[0].lines).toHaveLength(2);
+      // remaining groups are split scopes
+      const scopeGroups = groups.filter((g) => g.type === "scopes");
+      expect(scopeGroups.length).toBeGreaterThan(1);
+    });
+
     // Plan test case 12: random DSL methods not in keywords → continuation
     it("should treat random DSL methods as continuation of current group", () => {
       const lines = makeLines([

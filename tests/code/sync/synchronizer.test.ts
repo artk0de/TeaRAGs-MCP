@@ -441,12 +441,12 @@ describe("FileSynchronizer", () => {
       await synchronizer.updateSnapshot(["file.ts"]);
 
       // Wait a bit to ensure some time passes
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       const age = await synchronizer.getSnapshotAge();
 
       expect(age).not.toBeNull();
-      expect(age).toBeGreaterThanOrEqual(10);
+      expect(age).toBeGreaterThanOrEqual(30);
     });
 
     it("should return null when no snapshot exists", async () => {

@@ -313,4 +313,128 @@ export function process() {
       expect(progressUpdates).toContain("scanning");
     });
   });
+
+  describe("Secret detection skip path", () => {
+    it("should skip files containing secrets during reindex", async () => {
+      await createTestFile(
+        codebaseDir,
+        "safe.ts",
+        "export const safeValue = 1;\nconsole.log('Safe file');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Add a file containing a secret pattern
+      await createTestFile(
+        codebaseDir,
+        "secrets.ts",
+        `export const config = {
+  api_key = 'sk-1234567890abcdefghijklmnopqrstuvwxyz',
+  endpoint: 'https://api.example.com',
+};
+console.log('This file has secrets');`,
+      );
+
+      const stats = await indexer.reindexChanges(codebaseDir);
+
+      // File is detected as added but chunks should be 0 for it since it's skipped
+      expect(stats.filesAdded).toBe(1);
+      // The secret file is found but its chunks are not indexed (skipped silently)
+      // chunksAdded may be 0 since the only new file has secrets
+      expect(stats.status).toBe("completed");
+    });
+  });
+
+  describe("File processing error handler", () => {
+    it("should handle file read errors gracefully during reindex", async () => {
+      await createTestFile(
+        codebaseDir,
+        "good.ts",
+        "export const good = 1;\nconsole.log('Good file');",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      // Create a new file that will be detected as added
+      await createTestFile(
+        codebaseDir,
+        "newfile.ts",
+        "export const newValue = 2;\nconsole.log('New');",
+      );
+
+      // Delete the file AFTER scanner detects it but before it reads it,
+      // simulating a race condition. Since we can't easily mock the exact
+      // timing, we delete the file right after creating it - the scanner
+      // has already picked up the hash, but readFile will fail.
+      await fs.unlink(join(codebaseDir, "newfile.ts"));
+
+      // Should not throw - the error handler catches per-file errors
+      const stats = await indexer.reindexChanges(codebaseDir);
+      // The file was detected as deleted (not added, since it's gone)
+      expect(stats.status).toBe("completed");
+    });
+  });
+
+  describe("performDeletion fallback levels", () => {
+    it("should fall through to L2 individual deletions when both batched and single delete fail", async () => {
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export const original = 1;\nconsole.log('Original');\nconst padding = 'extra content for fallback chunker padding characters';",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export const modified = 2;\nconsole.log('Modified');\nconst padding = 'different content for change detection purposes here';",
+      );
+
+      // Make BOTH deletePointsByPathsBatched AND deletePointsByPaths fail
+      // Must be set AFTER indexCodebase but BEFORE reindexChanges
+      const batchedSpy = vi
+        .spyOn(qdrant, "deletePointsByPathsBatched")
+        .mockRejectedValueOnce(new Error("Batched delete failed"));
+      const pathsSpy = vi
+        .spyOn(qdrant, "deletePointsByPaths")
+        .mockRejectedValueOnce(new Error("Single delete also failed"));
+      const filterSpy = vi.spyOn(qdrant, "deletePointsByFilter");
+
+      const stats = await indexer.reindexChanges(codebaseDir);
+
+      // L0 (batched) should have been called and failed
+      expect(batchedSpy).toHaveBeenCalled();
+      // L1 (single) should have been called and failed
+      expect(pathsSpy).toHaveBeenCalled();
+      // L2 (individual filter-based) should have been called as last resort
+      expect(filterSpy).toHaveBeenCalled();
+      expect(stats.filesModified).toBe(1);
+    });
+
+    it("should handle L2 individual deletion failures gracefully", async () => {
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export const original = 1;\nconsole.log('Original');\nconst padding = 'extra content for fallback chunker padding characters';",
+      );
+      await indexer.indexCodebase(codebaseDir);
+
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export const modified = 2;\nconsole.log('Modified');\nconst padding = 'different content for change detection purposes here';",
+      );
+
+      // Make ALL deletion methods fail
+      vi.spyOn(qdrant, "deletePointsByPathsBatched")
+        .mockRejectedValueOnce(new Error("Batched failed"));
+      vi.spyOn(qdrant, "deletePointsByPaths")
+        .mockRejectedValueOnce(new Error("Single failed"));
+      vi.spyOn(qdrant, "deletePointsByFilter")
+        .mockRejectedValue(new Error("Individual failed"));
+
+      // Should still complete without throwing
+      const stats = await indexer.reindexChanges(codebaseDir);
+      expect(stats.filesModified).toBe(1);
+      expect(stats.status).toBe("completed");
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TreeSitterChunker } from "../../../src/code/chunker/tree-sitter-chunker.js";
 import type { ChunkerConfig } from "../../../src/code/types.js";
 
@@ -1235,6 +1235,805 @@ class DataProcessor {
           expect(processMethod.metadata.symbolId).toBe("DataProcessor.processData");
         }
       }
+    });
+  });
+
+  describe("markdown preamble handling", () => {
+    it("should create a Preamble chunk for content before the first heading", async () => {
+      const code = [
+        "This is introductory text that appears before any heading in the document.",
+        "It should be captured as a preamble chunk with proper metadata.",
+        "",
+        "# First Heading",
+        "",
+        "Content under the first heading goes here with additional details.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      // Should have a preamble chunk
+      const preamble = chunks.find((c) => c.metadata.name === "Preamble");
+      expect(preamble).toBeDefined();
+      expect(preamble!.content).toContain("introductory text");
+      expect(preamble!.metadata.symbolId).toBe("Preamble");
+      expect(preamble!.metadata.isDocumentation).toBe(true);
+      expect(preamble!.metadata.chunkType).toBe("block");
+      expect(preamble!.startLine).toBe(1);
+
+      // Preamble should be the first chunk (unshifted to index 0)
+      expect(chunks[0].metadata.name).toBe("Preamble");
+      expect(chunks[0].metadata.chunkIndex).toBe(0);
+    });
+
+    it("should re-index all chunks after inserting preamble", async () => {
+      const code = [
+        "This preamble text is long enough to exceed the 50-character minimum threshold.",
+        "",
+        "# Section One",
+        "",
+        "Content for section one that is also long enough to exceed the minimum threshold.",
+        "",
+        "# Section Two",
+        "",
+        "Content for section two that is also long enough to exceed the minimum threshold.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      // Verify sequential chunk indices after re-indexing
+      for (let i = 0; i < chunks.length; i++) {
+        expect(chunks[i].metadata.chunkIndex).toBe(i);
+      }
+
+      // First chunk should be the preamble
+      expect(chunks[0].metadata.name).toBe("Preamble");
+    });
+
+    it("should skip preamble when content before first heading is too short", async () => {
+      const code = [
+        "Short.",
+        "",
+        "# Heading",
+        "",
+        "Content under the heading that is long enough to exceed the minimum threshold for chunking.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      // No preamble chunk because it's too short (< 50 chars)
+      const preamble = chunks.find((c) => c.metadata.name === "Preamble");
+      expect(preamble).toBeUndefined();
+    });
+  });
+
+  describe("markdown without headings", () => {
+    it("should treat whole document as one chunk when there are no headings", async () => {
+      const code = [
+        "This is a markdown document that has no headings at all.",
+        "It contains multiple lines of plain text content that should be",
+        "treated as a single chunk since there is no heading-based structure.",
+        "The content needs to exceed the 50-character minimum threshold.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "notes.md", "markdown");
+
+      expect(chunks.length).toBe(1);
+      expect(chunks[0].metadata.chunkType).toBe("block");
+      expect(chunks[0].metadata.isDocumentation).toBe(true);
+      expect(chunks[0].startLine).toBe(1);
+      expect(chunks[0].metadata.chunkIndex).toBe(0);
+      // No name or symbolId for headingless documents
+      expect(chunks[0].metadata.name).toBeUndefined();
+    });
+
+    it("should return empty array for headingless markdown under 50 chars", async () => {
+      const code = "Short text.";
+
+      const chunks = await chunker.chunk(code, "tiny.md", "markdown");
+      expect(chunks.length).toBe(0);
+    });
+  });
+
+  describe("oversized markdown sections", () => {
+    it("should split oversized sections using character fallback", async () => {
+      // Use a small config so sections easily exceed maxChunkSize * 2
+      const smallConfig: ChunkerConfig = {
+        chunkSize: 100,
+        chunkOverlap: 10,
+        maxChunkSize: 100,
+      };
+      const smallChunker = new TreeSitterChunker(smallConfig);
+
+      // Generate a section with content that exceeds 100 * 2 = 200 chars
+      const longContent = Array(30)
+        .fill("This line of content is used to inflate the section size beyond the limit.")
+        .join("\n");
+
+      const code = [
+        "# Oversized Section",
+        "",
+        longContent,
+        "",
+        "# Normal Section",
+        "",
+        "This is a normal-sized section with enough content to pass minimum threshold checks.",
+      ].join("\n");
+
+      const chunks = await smallChunker.chunk(code, "big.md", "markdown");
+
+      // The oversized section should have been split into multiple sub-chunks
+      const oversizedChunks = chunks.filter(
+        (c) => c.metadata.name === "Oversized Section" || c.metadata.parentName === "Oversized Section",
+      );
+      expect(oversizedChunks.length).toBeGreaterThan(1);
+
+      // Sub-chunks should have isDocumentation flag
+      for (const chunk of oversizedChunks) {
+        expect(chunk.metadata.isDocumentation).toBe(true);
+      }
+
+      // Sub-chunks should have parentType reflecting heading depth
+      for (const chunk of oversizedChunks) {
+        if (chunk.metadata.parentType) {
+          expect(chunk.metadata.parentType).toBe("h1");
+        }
+      }
+    });
+  });
+
+  describe("oversized child chunks", () => {
+    it("should fall back to character chunking for oversized methods", async () => {
+      // Use a small config so methods easily exceed maxChunkSize * 2
+      const smallConfig: ChunkerConfig = {
+        chunkSize: 100,
+        chunkOverlap: 10,
+        maxChunkSize: 100,
+      };
+      const smallChunker = new TreeSitterChunker(smallConfig);
+
+      // Create a Ruby class with one very large method (> 200 chars)
+      const longBody = Array(25)
+        .fill('    puts "Processing data transformation step with logging and validation"')
+        .join("\n");
+
+      const code = [
+        "class DataProcessor",
+        "  def very_large_method(input)",
+        longBody,
+        "  end",
+        "",
+        "  def small_method(x)",
+        "    # A small method for comparison",
+        "    puts x",
+        "    return x + 1",
+        "  end",
+        "end",
+      ].join("\n");
+
+      const chunks = await smallChunker.chunk(code, "processor.rb", "ruby");
+
+      // The oversized method should be split into sub-chunks with parentName
+      const subChunks = chunks.filter(
+        (c) => c.metadata.parentName === "DataProcessor" && c.metadata.chunkType !== "function" && c.metadata.chunkType !== "block",
+      );
+      // At minimum we should have chunks; the large method produces sub-chunks
+      expect(chunks.length).toBeGreaterThan(1);
+
+      // All chunks from this class should reference DataProcessor as parent
+      const processorChunks = chunks.filter((c) => c.metadata.parentName === "DataProcessor");
+      expect(processorChunks.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("empty code fallback", () => {
+    it("should fall back to character chunker when no AST chunks but code > 100 chars", async () => {
+      // Code that produces no chunkable AST nodes but is long enough to trigger fallback
+      // Using a series of simple statements that tree-sitter won't chunk as functions/classes
+      const code = [
+        'const a = "value1";',
+        'const b = "value2";',
+        'const c = "value3";',
+        'const d = "value4";',
+        'const e = "value5";',
+        'const f = "value6";',
+        'const g = "value7";',
+        'const h = "value8";',
+      ].join("\n");
+
+      // Ensure the code is > 100 chars
+      expect(code.length).toBeGreaterThan(100);
+
+      const chunks = await chunker.chunk(code, "constants.ts", "typescript");
+
+      // The fallback chunker should produce at least one chunk
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("markdown text extraction edge cases", () => {
+    it("should extract text from headings with emphasis", async () => {
+      const code = [
+        "# Getting *Started* with the Project",
+        "",
+        "This section explains how to begin working with the project and its dependencies.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      // The heading text should include the emphasized word
+      const section = chunks.find((c) => c.metadata.name?.includes("Started"));
+      expect(section).toBeDefined();
+      expect(section!.metadata.name).toBe("Getting Started with the Project");
+    });
+
+    it("should extract text from headings with links", async () => {
+      const code = [
+        "# Install [Node.js](https://nodejs.org) First",
+        "",
+        "You must install Node.js before proceeding with the rest of the setup process.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      // The heading text should include the link text but not the URL
+      const section = chunks.find((c) => c.metadata.name?.includes("Node.js"));
+      expect(section).toBeDefined();
+      expect(section!.metadata.name).toBe("Install Node.js First");
+    });
+
+    it("should handle headings with inline code (inline code value is not extracted)", async () => {
+      const code = [
+        "# Using the `chunk` Method",
+        "",
+        "The chunk method is the primary API for splitting code into manageable pieces.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      // inlineCode nodes have value but no children and type != "text",
+      // so extractTextFromMdastNode returns "" for them.
+      // The heading name will contain the surrounding text but not the code value.
+      expect(chunks.length).toBeGreaterThan(0);
+      const section = chunks.find((c) => c.metadata.name?.includes("Using the"));
+      expect(section).toBeDefined();
+      expect(section!.metadata.name).toBe("Using the  Method");
+    });
+
+    it("should extract text from headings with strong emphasis", async () => {
+      const code = [
+        "# The **Important** Configuration Guide",
+        "",
+        "This guide covers the essential configuration settings you need to know about.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      const section = chunks.find((c) => c.metadata.name?.includes("Important"));
+      expect(section).toBeDefined();
+      expect(section!.metadata.name).toBe("The Important Configuration Guide");
+    });
+
+    it("should return empty string for nodes without text or children", async () => {
+      // A heading with an image (which has no text children, only alt text)
+      const code = [
+        "# Logo ![alt text](image.png) Brand",
+        "",
+        "This section describes the brand identity and logo usage across the platform.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      // Should still produce a chunk with the text portions extracted
+      expect(chunks.length).toBeGreaterThan(0);
+      const section = chunks.find((c) => c.metadata.name?.includes("Brand"));
+      expect(section).toBeDefined();
+    });
+  });
+
+  describe("no valid children fallback", () => {
+    it("should fall back to character chunking for oversized nodes with no valid children", async () => {
+      // Use a very small config so the class is "too large"
+      const tinyConfig: ChunkerConfig = {
+        chunkSize: 50,
+        chunkOverlap: 5,
+        maxChunkSize: 50,
+      };
+      const tinyChunker = new TreeSitterChunker(tinyConfig);
+
+      // A Ruby class that is large (> 50 * 2 = 100 chars) but has NO methods inside
+      // Only has declarations, which are not in childChunkTypes
+      const code = [
+        "class LargeSerializer < ActiveModel::Serializer",
+        '  attributes :id, :name, :email, :role, :created_at, :updated_at, :status, :avatar_url',
+        "  has_many :posts, serializer: PostSerializer",
+        "  has_many :comments, serializer: CommentSerializer",
+        "  belongs_to :organization, serializer: OrgSerializer",
+        "  belongs_to :department, serializer: DeptSerializer",
+        '  attribute :full_name do',
+        '    object.first_name + " " + object.last_name',
+        "  end",
+        "end",
+      ].join("\n");
+
+      // Ensure code is > 100 chars (maxChunkSize * 2)
+      expect(code.length).toBeGreaterThan(100);
+
+      const chunks = await tinyChunker.chunk(code, "serializer.rb", "ruby");
+
+      // Should produce chunks via character fallback since no valid child methods found
+      expect(chunks.length).toBeGreaterThan(0);
+
+      // Sub-chunks should have parentName from the class
+      const withParent = chunks.filter((c) => c.metadata.parentName === "LargeSerializer");
+      expect(withParent.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("non-Ruby body extraction for large classes", () => {
+    it("should extract body chunk for non-Ruby languages with alwaysExtractChildren", async () => {
+      // We need a language with childChunkTypes AND alwaysExtractChildren
+      // Currently only Ruby has alwaysExtractChildren, but we can test the non-Ruby
+      // body extraction path by using a class large enough to trigger shouldExtractChildren
+      // via isTooLarge in a non-Ruby language that has childChunkTypes
+
+      // For TypeScript, there are no childChunkTypes defined, so we test with Ruby
+      // but verify the non-Ruby branch (lines 382-402) is unreachable without modification.
+      // Instead, test that Ruby correctly uses the Ruby path (lines 345-381).
+      // The non-Ruby path requires alwaysExtractChildren on a non-Ruby language,
+      // which isn't in the default config. This is tested indirectly.
+
+      // Test that large TypeScript classes are handled via the isTooLarge path
+      // (which doesn't have childChunkTypes, so goes through the single-chunk path)
+      const tinyConfig: ChunkerConfig = {
+        chunkSize: 100,
+        chunkOverlap: 10,
+        maxChunkSize: 100,
+      };
+      const tinyChunker = new TreeSitterChunker(tinyConfig);
+
+      const longBody = Array(15)
+        .fill("    console.log('Processing step with detailed logging and validation');")
+        .join("\n");
+
+      const code = [
+        "class LargeProcessor {",
+        "  processData(data: string[]): void {",
+        longBody,
+        "  }",
+        "",
+        "  validateData(data: string[]): boolean {",
+        longBody,
+        "  }",
+        "}",
+      ].join("\n");
+
+      const chunks = await tinyChunker.chunk(code, "processor.ts", "typescript");
+
+      // Should produce chunks (class is split due to being oversized)
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("chunk - Java", () => {
+    it("should chunk Java class with methods", async () => {
+      const code = `
+public class Calculator {
+    public int add(int a, int b) {
+        // Add two integers together and return result
+        return a + b;
+    }
+
+    public int multiply(int a, int b) {
+        // Multiply two integers together and return result
+        return a * b;
+    }
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "Calculator.java", "java");
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks.some((c) => c.metadata.language === "java")).toBe(true);
+    });
+  });
+
+  describe("chunk - Bash", () => {
+    it("should chunk Bash functions", async () => {
+      const code = `
+function setup_environment() {
+    echo "Setting up the development environment"
+    export PATH="$HOME/bin:$PATH"
+    export NODE_ENV="development"
+    mkdir -p "$HOME/logs"
+}
+
+function cleanup_environment() {
+    echo "Cleaning up the development environment"
+    unset NODE_ENV
+    rm -rf "$HOME/logs/tmp"
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "setup.sh", "bash");
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks.some((c) => c.metadata.language === "bash")).toBe(true);
+    });
+  });
+
+  describe("parser cache behavior", () => {
+    it("should use cached parser on second call with same language", async () => {
+      const freshChunker = new TreeSitterChunker(config);
+
+      // First call: loads the parser
+      const code1 = `
+function first() {
+  console.log('First function call');
+  return 1;
+}
+      `;
+      await freshChunker.chunk(code1, "a.ts", "typescript");
+
+      // Verify parser is now cached
+      const stats = freshChunker.getLoadedParsers();
+      expect(stats.loaded).toContain("typescript");
+
+      // Second call: should use cached parser (hits parserCache.get branch)
+      const code2 = `
+function second() {
+  console.log('Second function call');
+  return 2;
+}
+      `;
+      const chunks = await freshChunker.chunk(code2, "b.ts", "typescript");
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks[0].metadata.name).toBe("second");
+    });
+
+    it("should deduplicate concurrent parser loading for same language", async () => {
+      const freshChunker = new TreeSitterChunker(config);
+
+      const code1 = `
+function funcA() {
+  console.log('Function A implementation');
+  return 'a';
+}
+      `;
+      const code2 = `
+function funcB() {
+  console.log('Function B implementation');
+  return 'b';
+}
+      `;
+
+      // Launch two chunks concurrently for the same language
+      // The second call should hit the loadingPromises dedup path
+      const [chunks1, chunks2] = await Promise.all([
+        freshChunker.chunk(code1, "a.ts", "typescript"),
+        freshChunker.chunk(code2, "b.ts", "typescript"),
+      ]);
+
+      expect(chunks1.length).toBeGreaterThan(0);
+      expect(chunks2.length).toBeGreaterThan(0);
+
+      // Parser should only be loaded once
+      const stats = freshChunker.getLoadedParsers();
+      expect(stats.loaded).toContain("typescript");
+    });
+  });
+
+  describe("markdown code blocks edge cases", () => {
+    it("should skip very small code blocks under 30 chars", async () => {
+      const code = [
+        "# Examples",
+        "",
+        "A tiny code block:",
+        "",
+        "```js",
+        "x = 1;",
+        "```",
+        "",
+        "A larger code block that meets the minimum size:",
+        "",
+        "```python",
+        "def calculate_fibonacci(n):",
+        "    if n <= 1:",
+        "        return n",
+        "    return calculate_fibonacci(n-1) + calculate_fibonacci(n-2)",
+        "```",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "examples.md", "markdown");
+
+      // The tiny js code block should be skipped (< 30 chars)
+      const jsBlocks = chunks.filter((c) => c.metadata.language === "js");
+      expect(jsBlocks.length).toBe(0);
+
+      // The larger python block should be included
+      const pyBlocks = chunks.filter((c) => c.metadata.language === "python");
+      expect(pyBlocks.length).toBe(1);
+    });
+
+    it("should handle code blocks without language as 'Code block'", async () => {
+      const code = [
+        "# Setup",
+        "",
+        "Run the following commands to set up your environment:",
+        "",
+        "```",
+        "npm install",
+        "npm run build",
+        "npm run test",
+        "npm run lint",
+        "```",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "setup.md", "markdown");
+
+      // Code block without language should use "Code block" as name
+      const codeBlock = chunks.find((c) => c.metadata.name === "Code block");
+      expect(codeBlock).toBeDefined();
+      expect(codeBlock!.metadata.language).toBe("code");
+    });
+
+    it("should produce chunks from code blocks even when no headings exist", async () => {
+      // Markdown without headings but with a code block
+      const code = [
+        "Here is a useful snippet that demonstrates the pattern:",
+        "",
+        "```typescript",
+        "async function fetchData(url: string): Promise<Response> {",
+        "  const response = await fetch(url);",
+        "  if (!response.ok) {",
+        "    throw new Error(`HTTP error! Status: ${response.status}`);",
+        "  }",
+        "  return response;",
+        "}",
+        "```",
+        "",
+        "Use this pattern for all API calls in the application.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "snippet.md", "markdown");
+
+      // Should produce chunks: whole-document chunk + code block chunk
+      expect(chunks.length).toBeGreaterThanOrEqual(1);
+
+      // Should have a code block chunk
+      const codeBlock = chunks.find((c) => c.metadata.name === "Code: typescript");
+      expect(codeBlock).toBeDefined();
+    });
+  });
+
+  describe("markdown section with very small content", () => {
+    it("should skip sections with content under 50 chars", async () => {
+      const code = [
+        "# Short",
+        "",
+        "Tiny.",
+        "",
+        "# Detailed Section",
+        "",
+        "This section contains enough content to exceed the fifty character minimum threshold for chunking.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      // The "Short" section has < 50 chars total, should be skipped
+      const shortSection = chunks.find((c) => c.metadata.name === "Short");
+      expect(shortSection).toBeUndefined();
+
+      // The "Detailed Section" should be included
+      const detailedSection = chunks.find((c) => c.metadata.name === "Detailed Section");
+      expect(detailedSection).toBeDefined();
+    });
+  });
+
+  describe("extractClassHeader returning undefined", () => {
+    it("should handle singleton_class (class << self) at top level where header does not match class pattern", async () => {
+      // A class << self block as a top-level chunkable node has "class << self"
+      // which does match /class\s+/, but let's test the fallback when extractClassHeader
+      // encounters a non-class/module first line in a container
+      const tinyConfig: ChunkerConfig = {
+        chunkSize: 50,
+        chunkOverlap: 5,
+        maxChunkSize: 80,
+      };
+      const tinyChunker = new TreeSitterChunker(tinyConfig);
+
+      // class << self at the top-level of a class, with methods inside
+      // This tests the body extraction where header may or may not match
+      const code = [
+        "class Config",
+        "  class << self",
+        "    def load_defaults",
+        "      # Loading the default configuration settings from file",
+        "      puts 'Loading defaults from configuration'",
+        "      YAML.load_file('config/defaults.yml')",
+        "    end",
+        "",
+        "    def save_defaults(data)",
+        "      # Saving configuration defaults to persistent storage",
+        "      puts 'Saving defaults to configuration file'",
+        "      File.write('config/defaults.yml', data.to_yaml)",
+        "    end",
+        "  end",
+        "end",
+      ].join("\n");
+
+      const chunks = await tinyChunker.chunk(code, "config.rb", "ruby");
+
+      // Should produce method chunks extracted from the class
+      expect(chunks.length).toBeGreaterThan(0);
+    });
+
+    it("should return undefined when first line does not start with class or module", async () => {
+      // Directly test extractClassHeader with a mock node
+      const freshChunker = new TreeSitterChunker(config);
+      const extractClassHeader = (freshChunker as any).extractClassHeader.bind(freshChunker);
+
+      // Mock a node whose first line is not a class/module declaration
+      const code = "  has_many :posts\n  belongs_to :user\nend";
+      const mockNode = {
+        startPosition: { row: 0 },
+      };
+
+      const header = extractClassHeader(mockNode, code);
+      expect(header).toBeUndefined();
+    });
+  });
+
+  describe("parser initialization error recovery", () => {
+    it("should return null and log error when parser module fails to load", async () => {
+      const freshChunker = new TreeSitterChunker(config);
+
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // Temporarily inject a broken language definition to simulate load failure
+      // Access the private initializeParser method through any cast
+      const result = await (freshChunker as any).initializeParser("broken", {
+        loadModule: () => Promise.reject(new Error("Module not found")),
+        chunkableTypes: [],
+      });
+
+      expect(result).toBeNull();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to load parser for broken"),
+        expect.any(Error),
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe("parser parse error recovery", () => {
+    it("should catch parse errors and fall back to character chunker", async () => {
+      const freshChunker = new TreeSitterChunker(config);
+
+      // First, load the TypeScript parser normally
+      const code1 = `
+function setup() {
+  console.log('Loading the parser');
+  return true;
+}
+      `;
+      await freshChunker.chunk(code1, "setup.ts", "typescript");
+
+      // Now replace the parser's parse method with one that throws
+      const cache = (freshChunker as any).parserCache;
+      const tsConfig = cache.get("typescript");
+      const originalParse = tsConfig.parser.parse.bind(tsConfig.parser);
+      tsConfig.parser.parse = () => {
+        throw new Error("Simulated parse failure");
+      };
+
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // This should hit the catch block and fall back
+      const code2 = `
+function broken() {
+  console.log('This will trigger the catch block because parse throws');
+  return false;
+}
+      `;
+      const chunks = await freshChunker.chunk(code2, "broken.ts", "typescript");
+
+      // Should fall back to character-based chunking
+      expect(chunks.length).toBeGreaterThan(0);
+
+      // Verify error was logged
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Tree-sitter parsing failed"),
+        expect.any(Error),
+      );
+
+      consoleErrorSpy.mockRestore();
+
+      // Restore original parse
+      tsConfig.parser.parse = originalParse;
+    });
+  });
+
+  describe("name extraction fallback", () => {
+    it("should extract name from type_identifier child in Go type declarations", async () => {
+      // Go type declarations have nested type_spec with identifier children,
+      // exercising the fallback path in extractName that searches child nodes
+      const code = `
+type UserRequest struct {
+  Name    string
+  Email   string
+  Age     int
+  Address string
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "types.go", "go");
+
+      // Go type_declaration should produce at least one chunk
+      expect(chunks.length).toBeGreaterThanOrEqual(1);
+
+      // Verify chunks exist with metadata (the name extraction path is exercised
+      // regardless of whether the result has a specific chunkType)
+      expect(chunks[0].metadata.language).toBe("go");
+    });
+
+    it("should use fallback name extraction for Rust enum items", async () => {
+      // Rust enum_item may exercise the identifier child fallback
+      const code = `
+enum Direction {
+    North,
+    South,
+    East,
+    West,
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "dir.rs", "rust");
+      expect(chunks.length).toBeGreaterThanOrEqual(1);
+
+      // Check that chunks were produced (name extraction path exercised)
+      if (chunks.length > 0) {
+        // At least some chunks should have names extracted
+        const hasName = chunks.some((c) => c.metadata.name !== undefined);
+        expect(hasName).toBe(true);
+      }
+    });
+
+    it("should extract name via identifier child when childForFieldName returns null", async () => {
+      // Use a mock node to directly exercise the extractName fallback path
+      const freshChunker = new TreeSitterChunker(config);
+      const extractName = (freshChunker as any).extractName.bind(freshChunker);
+
+      // Create a mock node that has no "name" field but has an identifier child
+      const mockCode = "const myVariable = 42;";
+      const mockNode = {
+        childForFieldName: () => null,
+        children: [
+          {
+            type: "identifier",
+            startIndex: 6,
+            endIndex: 16,
+          },
+        ],
+      };
+
+      const name = extractName(mockNode, mockCode);
+      expect(name).toBe("myVariable");
+    });
+
+    it("should return undefined when no name field and no identifier children", async () => {
+      const freshChunker = new TreeSitterChunker(config);
+      const extractName = (freshChunker as any).extractName.bind(freshChunker);
+
+      // Mock node with no name field and no identifier children
+      const mockNode = {
+        childForFieldName: () => null,
+        children: [
+          { type: "keyword", startIndex: 0, endIndex: 5 },
+          { type: "string", startIndex: 6, endIndex: 12 },
+        ],
+      };
+
+      const name = extractName(mockNode, "const 'hello'");
+      expect(name).toBeUndefined();
     });
   });
 });

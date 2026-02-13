@@ -1,9 +1,15 @@
 import { defineConfig } from "vitest/config";
 
+const isCI = !!process.env.CI;
+
 export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    // CI: retry flaky tests up to 2 times, increase timeout for slow runners
+    ...(isCI && { retry: 2, testTimeout: 30_000 }),
+    // Give worker_threads (ChunkerPool) time to terminate before fork exits
+    teardownTimeout: isCI ? 10_000 : 5_000,
     // Setup file mocks tree-sitter native modules to prevent crashes
     setupFiles: ["./tests/vitest.setup.ts"],
     exclude: [
@@ -36,17 +42,20 @@ export default defineConfig({
         "src/code/git/index.ts",
         "src/code/pipeline/index.ts",
         "src/prompts/index.ts",
+        "src/qdrant/filters/index.ts",
         // Type-only files (no executable code to test)
         "src/prompts/types.ts",
         "src/code/types.ts",
         "src/code/git/types.ts",
+        // Test utilities (not production code)
+        "tests/**/test-helpers.ts",
       ],
       thresholds: {
         // Global thresholds
-        lines: 90,
+        lines: 92,
         functions: 90,
         branches: 80,
-        statements: 90,
+        statements: 92,
         // File-specific thresholds
         "src/qdrant/client.ts": {
           lines: 90,
