@@ -455,6 +455,89 @@ describe("reranker", () => {
     });
   });
 
+  describe("confidence dampening for small sample sizes", () => {
+    it("should dampen bugFixRate=100% on commitCount=1 vs reliable commitCount=10", () => {
+      // Without dampening: bugFix signal = 100/100=1.0 vs 50/100=0.5 → first wins
+      // With dampening: 1.0*0.2=0.2 vs 0.5*1.0=0.5 → second wins
+      const results = [
+        createResult(0.8, 30, 1, false, { bugFixRate: 100 }),
+        createResult(0.8, 30, 10, false, { bugFixRate: 50 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { bugFix: 1.0 },
+      });
+      expect(reranked[0].payload?.git?.commitCount).toBe(10);
+    });
+
+    it("should not dampen when commitCount >= 5", () => {
+      const results = [
+        createResult(0.8, 30, 10, false, { bugFixRate: 30 }),
+        createResult(0.8, 30, 10, false, { bugFixRate: 80 }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { bugFix: 1.0 },
+      });
+      expect(reranked[0].payload?.git?.bugFixRate).toBe(80);
+    });
+
+    it("should zero statistical signals when commitCount=0", () => {
+      const results: RerankableResult[] = [
+        {
+          score: 0.7,
+          payload: { relativePath: "a.ts", startLine: 1, endLine: 50, git: { commitCount: 0, bugFixRate: 100 } },
+        },
+        {
+          score: 0.9,
+          payload: { relativePath: "b.ts", startLine: 1, endLine: 50, git: { commitCount: 0, bugFixRate: 0 } },
+        },
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { similarity: 0.5, bugFix: 0.5 },
+      });
+      // bugFix zeroed by confidence=0, similarity decides
+      expect(reranked[0].payload?.relativePath).toBe("b.ts");
+    });
+
+    it("should NOT dampen recency (factual signal)", () => {
+      // Both have commitCount=1. Recency is factual — should NOT be dampened.
+      // If recency were dampened, both would have ~0 recency and similarity would decide (tie).
+      // If recency is NOT dampened, the recent file (ageDays=5) should win.
+      const results = [
+        createResult(0.8, 200, 1), // old, 1 commit
+        createResult(0.8, 5, 1), // recent, 1 commit
+      ];
+      const reranked = rerankSemanticSearchResults(results, {
+        custom: { recency: 1.0 },
+      });
+      // Recent file must rank first — recency not dampened
+      expect(reranked[0].payload?.git?.ageDays).toBe(5);
+    });
+
+    it("should dampen ownership for single-commit chunks in hotspots", () => {
+      // commitCount=1: inflated bugFixRate=100%, ownership trivially 100%
+      // commitCount=10: moderate bugFixRate=40%, real ownership=80%
+      // Hotspots uses bugFix and volatility which should be dampened
+      const results = [
+        createResult(0.8, 10, 1, false, {
+          chunkCommitCount: 1,
+          chunkChurnRatio: 1.0,
+          recencyWeightedFreq: 1.0,
+          bugFixRate: 100,
+          churnVolatility: 30,
+        }),
+        createResult(0.8, 10, 10, false, {
+          chunkCommitCount: 8,
+          chunkChurnRatio: 0.8,
+          recencyWeightedFreq: 5.0,
+          bugFixRate: 40,
+          churnVolatility: 20,
+        }),
+      ];
+      const reranked = rerankSemanticSearchResults(results, "hotspots");
+      expect(reranked[0].payload?.git?.commitCount).toBe(10);
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty results", () => {
       const result = rerankSemanticSearchResults([], "techDebt");
