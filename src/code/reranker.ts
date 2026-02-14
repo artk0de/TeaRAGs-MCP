@@ -119,6 +119,9 @@ interface NormalizationBounds {
   maxChunkChurnRatio: number;
 }
 
+/** Minimum commits for full confidence in statistical git signals */
+const MIN_CONFIDENT_COMMITS = 5;
+
 const DEFAULT_BOUNDS: NormalizationBounds = {
   maxAgeDays: 365, // 1 year
   maxCommitCount: 50,
@@ -316,24 +319,28 @@ function calculateSignals(result: RerankableResult, bounds: NormalizationBounds)
   const effectiveBugFixRate = git?.chunkBugFixRate ?? git?.bugFixRate ?? 0;
   const effectiveContributorCount = git?.chunkContributorCount ?? git?.contributorCount;
 
+  // Dampen statistical signals that are unreliable with small sample sizes.
+  // Factual signals (recency, age, churn counts) are not affected.
+  const confidence = Math.min(1, effectiveCommitCount / MIN_CONFIDENT_COMMITS);
+
   return {
     similarity: result.score,
     recency: 1 - normalize(effectiveAgeDays, bounds.maxAgeDays),
     stability: 1 - normalize(effectiveCommitCount, bounds.maxCommitCount),
     churn: normalize(effectiveCommitCount, bounds.maxCommitCount),
     age: normalize(effectiveAgeDays, bounds.maxAgeDays),
-    ownership: getOwnershipScore(result),
+    ownership: getOwnershipScore(result) * confidence,
     chunkSize: normalize(chunkSize, bounds.maxChunkSize),
     documentation: result.payload?.isDocumentation ? 1 : 0,
     imports: normalize(imports, bounds.maxImports),
     pathRisk: getPathRiskScore(result),
-    bugFix: normalize(effectiveBugFixRate, bounds.maxBugFixRate),
-    volatility: normalize(git?.churnVolatility ?? 0, bounds.maxVolatility),
-    density: normalize(git?.changeDensity ?? 0, bounds.maxChangeDensity),
+    bugFix: normalize(effectiveBugFixRate, bounds.maxBugFixRate) * confidence,
+    volatility: normalize(git?.churnVolatility ?? 0, bounds.maxVolatility) * confidence,
+    density: normalize(git?.changeDensity ?? 0, bounds.maxChangeDensity) * confidence,
     chunkChurn: normalize(git?.chunkCommitCount ?? 0, bounds.maxChunkCommitCount),
-    relativeChurnNorm: normalize(git?.relativeChurn ?? 0, bounds.maxRelativeChurn),
+    relativeChurnNorm: normalize(git?.relativeChurn ?? 0, bounds.maxRelativeChurn) * confidence,
     burstActivity: normalize(git?.recencyWeightedFreq ?? 0, bounds.maxBurstActivity),
-    knowledgeSilo: getKnowledgeSiloScore(result, effectiveContributorCount),
+    knowledgeSilo: getKnowledgeSiloScore(result, effectiveContributorCount) * confidence,
     chunkRelativeChurn: normalize(git?.chunkChurnRatio ?? 0, bounds.maxChunkChurnRatio),
     blockPenalty: getBlockPenaltySignal(result),
   };
