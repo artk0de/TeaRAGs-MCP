@@ -52,7 +52,7 @@ const config: Config = {
           sidebarPath: "./sidebars.ts",
           routeBasePath: "/",
           editUrl:
-            "https://github.com/artk0de/tea-rags/tree/main/website/",
+            "https://github.com/artk0de/TeaRAGs-MCP/tree/main/website/",
         },
         blog: false,
         theme: {
@@ -91,7 +91,7 @@ const config: Config = {
           label: "Changelog",
         },
         {
-          href: "https://github.com/artk0de/tea-rags",
+          href: "https://github.com/artk0de/TeaRAGs-MCP",
           label: "GitHub",
           position: "right",
         },
@@ -118,7 +118,7 @@ const config: Config = {
           items: [
             {
               label: "GitHub",
-              href: "https://github.com/artk0de/tea-rags",
+              href: "https://github.com/artk0de/TeaRAGs-MCP",
             },
             {
               label: "npm",

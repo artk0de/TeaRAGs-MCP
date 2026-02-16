@@ -27,8 +27,8 @@ Before you start, make sure you have:
 ## Step 1: Clone and Build {#step-1}
 
 ```bash
-git clone https://github.com/mhalder/qdrant-mcp-server.git
-cd qdrant-mcp-server
+git clone https://github.com/artk0de/TeaRAGs-MCP.git
+cd TeaRAGs-MCP
 npm install && npm run build
 ```
 

@@ -37,8 +37,8 @@ Opt-in via `CODE_ENABLE_GIT_METADATA=true`. Without it — standard semantic sea
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/mhalder/qdrant-mcp-server.git
-cd qdrant-mcp-server
+git clone https://github.com/artk0de/TeaRAGs-MCP.git
+cd TeaRAGs-MCP
 npm install && npm run build
 
 # Start Qdrant + Ollama
