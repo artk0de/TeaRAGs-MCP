@@ -1,5 +1,7 @@
 <p align="center">
-  <img src="public/logo.png">
+  <a href="https://artk0de.github.io/TeaRAGs-MCP/">
+    <img src="public/logo.png">
+  </a>
 </p>
 
 <h1 align="center">TeaRAGs</h1>
