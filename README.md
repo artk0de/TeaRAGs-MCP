@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/logo.png" width="200">
+  <img src="public/logo.png">
 </p>
 
 <h1 align="center">TeaRAGs</h1>
