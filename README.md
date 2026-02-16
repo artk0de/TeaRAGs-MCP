@@ -9,60 +9,32 @@
 </p>
 
 ![MCP compatible](https://img.shields.io/badge/MCP-compatible-%234f46e5)
-[![quickstart < 5 min](https://img.shields.io/badge/quickstart-%3C%2015%20min-f59e0b)](#quick-start)
-[![local-first](https://img.shields.io/badge/deployment-local--first-15803d)](#installation)
-[![reproducible: docker](https://img.shields.io/badge/reproducible-docker-0f172a)](#installation)
-[![provider agnostic](https://img.shields.io/badge/provider-agnostic-0891b2)](#prov)
-![embeddings](https://img.shields.io/badge/embeddings-supported-%230d9488)
-![reranking](https://img.shields.io/badge/retrieval-reranking-%2303734f)
+[![quickstart < 15 min](https://img.shields.io/badge/quickstart-%3C%2015%20min-f59e0b)](#-quick-start)
+[![local-first](https://img.shields.io/badge/deployment-local--first-15803d)](#-quick-start)
+[![reproducible: docker](https://img.shields.io/badge/reproducible-docker-0f172a)](#-quick-start)
+[![provider agnostic](https://img.shields.io/badge/provider-agnostic-0891b2)](#-quick-start)
 
 [![CI](https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/artk0de/TeaRAGs-MCP/graph/badge.svg?token=BU255N03YF)](https://codecov.io/gh/artk0de/TeaRAGs-MCP)
 
 ---
 
-> **Built on a fork of
-> [mcp-server-qdrant](https://github.com/mhalder/qdrant-mcp-server)**
+**MCP server** for semantic code search with **git trajectory reranking**. AST-aware chunking, incremental indexing, millions of LOC. Reranks results using authorship, churn, bug-fix rates, and 19 other signals — not just embedding similarity. Built on Qdrant. Works with Ollama (local) or cloud providers (OpenAI, Cohere, Voyage).
 
-A high-performance **trajectory enrichment-aware** code **RAG system** exposed as an **MCP**
-server. Built for large monorepos and actively growing codebases in
-enterprise/team environments. Combines semantic retrieval with development
-history signals — authorship, churn patterns, change volatility, bug-fix rates —
-to rerank results beyond pure similarity. AST-aware chunking, incremental
-indexing, handles millions of LOC. Topological layer (symbol graphs, coupling
-analysis) planned. Built on Qdrant. Works with Ollama (local, private) or cloud
-providers (OpenAI, Cohere, Voyage).
+> 📖 **[Full documentation](https://artk0de.github.io/TeaRAGs-MCP/)** — 15-minute quickstart, agent workflows, architecture deep dives.
 
-> **[Check out our awesome wiki](https://artk0de.github.io/TeaRAGs-MCP/)** — full documentation, 15-minute quickstart, agent workflow guides, and architecture deep dives.
+## 🧬 Trajectory Enrichment
 
-## What Is Trajectory Enrichment?
+Standard code RAG retrieves by similarity alone. **Trajectory enrichment** augments each chunk with signals about how code *evolves* — at the function level, not just file level.
 
-Standard code RAG embeds source code and retrieves by similarity alone. **Trajectory enrichment** augments each chunk with signals about how code evolves and how it connects — at the **function/method level**, not just the file level.
+- 🔀 **Git trajectory** — churn, authorship, volatility, bug-fix rates, task traceability. **19 signals** feed composable rerank presets (`hotspots`, `ownership`, `techDebt`, `securityAudit`...)
+- 🕸️ **Topological trajectory** *(planned)* — symbol graphs, cross-file coupling, blast radius
 
-TeaRAGs implements two enrichment layers:
+Opt-in via `CODE_ENABLE_GIT_METADATA=true`. Without it — standard semantic search with AST-aware chunking.
 
-- **Git trajectory** (implemented) — churn, authorship, volatility, bug-fix rates, task traceability. **19 scoring signals** feed a reranking layer with composable presets (`hotspots`, `ownership`, `techDebt`, `securityAudit`, etc.)
-- **Topological trajectory** (planned) — symbol dependency graphs, cross-file coupling, blast radius analysis. Enables queries like "find high-impact code with many dependents"
+> 💡 An agent can **find stable templates**, **avoid anti-patterns**, **match domain owner's style**, and **assess modification risk** — all backed by empirical data. [Read more →](https://artk0de.github.io/TeaRAGs-MCP/introduction/core-concepts)
 
-The git trajectory layer is **opt-in** (`CODE_ENABLE_GIT_METADATA=true`). Without it, the system operates as standard semantic code search with AST-aware chunking and hybrid retrieval.
-
-### Agentic Data-Driven Engineering
-
-Trajectory enrichment opens the path to **agentic data-driven engineering** — where AI agents make code generation decisions backed by empirical evidence, not pattern matching intuition.
-
-Instead of "find similar code and copy it", an agent can:
-
-1. **Find stable templates** (`rerank: "stable"`) — 0% bug rate, low churn, battle-tested
-2. **Avoid anti-patterns** (`rerank: "hotspots"`) — high bug-fix rate, volatile code
-3. **Match domain owner's style** (`rerank: "ownership"`) — consistent with existing conventions
-4. **Understand feature context** via `taskIds` — why the code exists, not just what it does
-5. **Assess modification risk** (`rerank: "techDebt"`) — apply defensive patterns for legacy code
-
-> *"This transforms code generation from artistic guesswork into data-driven engineering."*
-
-👉 **[Full explanation in the docs](https://artk0de.github.io/TeaRAGs-MCP/introduction/core-concepts)** · **[Agentic Data-Driven Engineering](https://artk0de.github.io/TeaRAGs-MCP/advanced/agentic-data-driven-engineering)**
-
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
 git clone https://github.com/mhalder/qdrant-mcp-server.git
@@ -81,50 +53,27 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
 
 Then ask your agent: *"Index this codebase for semantic search"*
 
-## Documentation
+## 📚 Documentation
 
-Full documentation: **[artk0de.github.io/TeaRAGs-MCP](https://artk0de.github.io/TeaRAGs-MCP/)**
+**[artk0de.github.io/TeaRAGs-MCP](https://artk0de.github.io/TeaRAGs-MCP/)**
 
-| Section | Description |
-|---------|-------------|
-| [Introduction](https://artk0de.github.io/TeaRAGs-MCP/introduction/what-is-tearags) | What TeaRAGs is, core concepts, trajectory enrichment |
-| [Quickstart](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation) | Installation, setup, first index and query |
-| [Configuration](https://artk0de.github.io/TeaRAGs-MCP/usage/configuration) | Environment variables, providers, tuning |
-| [Tools Schema](https://artk0de.github.io/TeaRAGs-MCP/api/tools) | MCP tools, search parameters, reranking presets |
-| [Architecture](https://artk0de.github.io/TeaRAGs-MCP/architecture/overview) | System design, pipeline stages, data model |
-| [Operations](https://artk0de.github.io/TeaRAGs-MCP/operations/troubleshooting) | Troubleshooting, FAQ, recovery |
+| | Section | What's inside |
+|---|---------|---------------|
+| 🏁 | [Quickstart](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation) | Installation, first index & query |
+| ⚙️ | [Configuration](https://artk0de.github.io/TeaRAGs-MCP/usage/configuration) | Env vars, providers, tuning |
+| 🤖 | [Agent Integration](https://artk0de.github.io/TeaRAGs-MCP/agent-integration/search-strategies) | Prompt strategies, generation modes, deep analysis |
+| 🏗️ | [Architecture](https://artk0de.github.io/TeaRAGs-MCP/architecture/overview) | Pipeline, data model, reranker internals |
 
-## Contributing
+## 🤝 Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and conventions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and conventions.
 
-## Branding
+## 🙏 Acknowledgments
 
-TeaRAGs name and logo are covered by the brand policy. See [BRAND.md](BRAND.md).
-
-## Acknowledgments
-
-The author of Tea Rags MCP proudly continues the noble tradition of forking. 🍴
-
-Huge thanks to
-**[mhalder/qdrant-mcp-server](https://github.com/mhalder/qdrant-mcp-server)** —
-this fork wouldn't exist without your solid foundation:
-
-- 💎 Clean and extensible architecture
-- 📚 Excellent documentation and examples
-- 🧪 Solid test coverage
-- 🤝 Open-source spirit and MIT license
-
-And in the spirit of paying it forward, we also thank the ancestor of all forks
-— **[qdrant/mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)**.
-The circle of open source is complete. 🙏
-
-The code vectorization feature is inspired by concepts from the excellent
-**[claude-context](https://github.com/zilliztech/claude-context)** project (MIT
-License, Zilliz).
+Built on a fork of **[mhalder/qdrant-mcp-server](https://github.com/mhalder/qdrant-mcp-server)** — clean architecture, solid tests, open-source spirit. And its ancestor **[qdrant/mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)**. Code vectorization inspired by **[claude-context](https://github.com/zilliztech/claude-context)** (Zilliz).
 
 _Feel free to fork this fork. It's forks all the way down._ 🐢
 
-## License
+## ⚖️ License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Brand policy in [BRAND.md](BRAND.md).
