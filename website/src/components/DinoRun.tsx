@@ -9,6 +9,7 @@ import {
   loadNextAt,
   loadSeenHashes,
   pickUniquePhrase,
+  resetSeenHashes,
   saveBag,
   saveNextAt,
   saveSeenHash,
@@ -26,7 +27,11 @@ const MIN_DISPLAY_MS = 10000; // 10s total display time for any phrase
 function getPhrase(outcome: Outcome): { phrase: string; hash: string } {
   const phrases = { catch: catchPhrases, pit: pitPhrases, egg: eggPhrases, robot: robotPhrases }[outcome];
   const seen = loadSeenHashes();
-  const phrase = pickUniquePhrase(phrases, seen[outcome]);
+  const seenHashes = seen[outcome];
+  // If all phrases have been seen, reset this category in localStorage
+  const allSeen = seenHashes.length >= phrases.length;
+  if (allSeen) resetSeenHashes(outcome);
+  const phrase = pickUniquePhrase(phrases, allSeen ? [] : seenHashes);
   const hash = djb2(phrase);
   return { phrase, hash };
 }
@@ -214,6 +219,7 @@ export default function DinoRun() {
   const runningRef = useRef(false);
   const rafRef = useRef<number>(0);
   const dismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resultStartRef = useRef<number>(0);
 
   const scheduleNext = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -229,83 +235,78 @@ export default function DinoRun() {
     scheduleNext();
   }, [scheduleNext]);
 
-  const startRun = useCallback(
-    (forcedOutcome?: Outcome) => {
-      // Animation is non-cancellable — ignore all triggers while running
-      if (runningRef.current) return;
-      runningRef.current = true;
+  const startRun = useCallback((forcedOutcome?: Outcome) => {
+    // Animation is non-cancellable — ignore all triggers while running
+    if (runningRef.current) return;
+    runningRef.current = true;
 
-      // Hide chicken button if showing
-      setChickenReady(false);
+    // Hide chicken button if showing
+    setChickenReady(false);
 
-      // Cancel pending schedule timer
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
+    // Cancel pending schedule timer
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
 
-      let outcome: Outcome;
-      if (forcedOutcome) {
-        outcome = forcedOutcome;
-      } else {
-        const bag = loadBag();
-        const draw = drawFromBag(bag);
-        outcome = draw.outcome;
-        saveBag(draw.remaining);
-      }
-      const { phrase, hash } = getPhrase(outcome);
-      saveSeenHash(outcome, hash);
-      const sentences = splitSentences(phrase);
+    let outcome: Outcome;
+    if (forcedOutcome) {
+      outcome = forcedOutcome;
+    } else {
+      const bag = loadBag();
+      const draw = drawFromBag(bag);
+      outcome = draw.outcome;
+      saveBag(draw.remaining);
+    }
+    const { phrase, hash } = getPhrase(outcome);
+    saveSeenHash(outcome, hash);
+    const sentences = splitSentences(phrase);
 
-      // Small delay to reset state, then start animation
-      requestAnimationFrame(() => {
-        setState({ phase: "running", outcome, phrase, sentences, progress: 0 });
+    // Small delay to reset state, then start animation
+    requestAnimationFrame(() => {
+      setState({ phase: "running", outcome, phrase, sentences, progress: 0 });
 
-        const t0 = Date.now(); // Start timing AFTER state reset
-        const baseDuration = outcome === "robot" ? 6000 : RUN_DURATION_MS;
-        let robotExitTime = 0;
+      const t0 = Date.now(); // Start timing AFTER state reset
+      const baseDuration = outcome === "robot" ? 6000 : RUN_DURATION_MS;
+      let robotExitTime = 0;
 
-        const tick = () => {
-          const elapsed = Date.now() - t0;
-          let p: number;
+      const tick = () => {
+        const elapsed = Date.now() - t0;
+        let p: number;
 
+        if (outcome === "robot") {
+          // After the dino turns, progress runs at 3x slower (watchable chase)
+          const turnTime = DINO_TURN_P * baseDuration;
+          if (elapsed <= turnTime) {
+            p = elapsed / baseDuration;
+          } else {
+            const postDuration = (1 - DINO_TURN_P) * baseDuration * 5;
+            p = DINO_TURN_P + (1 - DINO_TURN_P) * Math.min(1, (elapsed - turnTime) / postDuration);
+          }
+        } else {
+          p = Math.min(1, elapsed / baseDuration);
+        }
+
+        setState((prev) => (prev ? { ...prev, progress: p } : null));
+
+        if (p >= 1) {
+          // Robot: wait 1s after exit before showing bubble
           if (outcome === "robot") {
-            // After the dino turns, progress runs at 3x slower (watchable chase)
-            const turnTime = DINO_TURN_P * baseDuration;
-            if (elapsed <= turnTime) {
-              p = elapsed / baseDuration;
-            } else {
-              const postDuration = (1 - DINO_TURN_P) * baseDuration * 5;
-              p = DINO_TURN_P + (1 - DINO_TURN_P) * Math.min(1, (elapsed - turnTime) / postDuration);
+            if (!robotExitTime) robotExitTime = Date.now();
+            if (Date.now() - robotExitTime < 1000) {
+              rafRef.current = requestAnimationFrame(tick);
+              return;
             }
-          } else {
-            p = Math.min(1, elapsed / baseDuration);
           }
-
-          setState((prev) => (prev ? { ...prev, progress: p } : null));
-
-          if (p >= 1) {
-            // Robot: wait 1s after exit before showing bubble
-            if (outcome === "robot") {
-              if (!robotExitTime) robotExitTime = Date.now();
-              if (Date.now() - robotExitTime < 1000) {
-                rafRef.current = requestAnimationFrame(tick);
-                return;
-              }
-            }
-            resultStartRef.current = Date.now();
-            setState((prev) => (prev ? { ...prev, phase: "result" } : null));
-          } else {
-            rafRef.current = requestAnimationFrame(tick);
-          }
-        };
-        rafRef.current = requestAnimationFrame(tick);
-      });
-    },
-    [scheduleNext],
-  );
-
-  const resultStartRef = useRef<number>(0);
+          resultStartRef.current = Date.now();
+          setState((prev) => (prev ? { ...prev, phase: "result" } : null));
+        } else {
+          rafRef.current = requestAnimationFrame(tick);
+        }
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    });
+  }, []);
 
   const handleAllRevealed = useCallback(() => {
     if (dismissRef.current) clearTimeout(dismissRef.current);
