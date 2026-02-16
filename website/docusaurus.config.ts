@@ -13,10 +13,10 @@ const config: Config = {
   },
 
   url: "https://artk0de.github.io",
-  baseUrl: "/tea-rags/",
+  baseUrl: "/TeaRAGs-MCP/",
 
   organizationName: "artk0de",
-  projectName: "tea-rags",
+  projectName: "TeaRAGs-MCP",
 
   onBrokenLinks: "throw",
 
