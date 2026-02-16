@@ -158,6 +158,7 @@ export default tseslint.config(
       "eslint.config.js", // Root JS config — not in tsconfig
       "tests/code/fixtures/",
       "tests/integration/", // Plain .mjs — run separately via npm run test-integration
+      "website/", // Docusaurus — own tsconfig, own build pipeline
     ],
   },
 );
