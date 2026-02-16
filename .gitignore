@@ -1,3 +1,6 @@
+# Claude Code project config
+.mcp.json
+
 # Dependencies
 node_modules/
 
@@ -48,3 +51,8 @@ tuned_environment_variables.env
 
 # Local Agent plans
 docs/plans/**
+
+# Docusaurus
+website/node_modules/
+website/build/
+website/.docusaurus/

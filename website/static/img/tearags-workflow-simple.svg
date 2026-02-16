@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420">
+  <defs>
+    <style>
+      .sketch-box {
+        fill: white;
+        stroke: #333;
+        stroke-width: 2.5;
+        rx: 20;
+      }
+      .container-box {
+        fill: none;
+        stroke: #333;
+        stroke-width: 2.5;
+        rx: 25;
+      }
+      .agent-fill {
+        fill: url(#greenPattern);
+      }
+      .tools-fill {
+        fill: url(#orangePattern);
+      }
+      .external-fill {
+        fill: url(#grayPattern);
+      }
+      .handwritten {
+        font-family: 'Comic Sans MS', 'Brush Script MT', cursive;
+        font-size: 18px;
+        text-anchor: middle;
+      }
+      .label {
+        font-family: 'Comic Sans MS', 'Brush Script MT', cursive;
+        font-size: 16px;
+        text-anchor: middle;
+      }
+      .small-label {
+        font-family: 'Comic Sans MS', 'Brush Script MT', cursive;
+        font-size: 13px;
+        text-anchor: middle;
+      }
+      .title {
+        font-family: 'Comic Sans MS', 'Brush Script MT', cursive;
+        font-size: 20px;
+        font-style: italic;
+      }
+      .arrow {
+        stroke: #666;
+        stroke-width: 2.5;
+        fill: none;
+        marker-end: url(#arrowhead);
+      }
+      .bi-arrow {
+        stroke: #666;
+        stroke-width: 2.5;
+        fill: none;
+        marker-start: url(#arrowhead-back);
+        marker-end: url(#arrowhead);
+      }
+    </style>
+
+    <!-- Green crosshatch pattern for agent -->
+    <pattern id="greenPattern" patternUnits="userSpaceOnUse" width="8" height="8">
+      <rect width="8" height="8" fill="#e8f5e9"/>
+      <path d="M0,8 l8,-8 M-2,2 l4,-4 M6,10 l4,-4" stroke="#4caf50" stroke-width="1" opacity="0.3"/>
+    </pattern>
+
+    <!-- Orange crosshatch pattern for TeaRAGs -->
+    <pattern id="orangePattern" patternUnits="userSpaceOnUse" width="8" height="8">
+      <rect width="8" height="8" fill="#fff3e0"/>
+      <path d="M0,8 l8,-8 M-2,2 l4,-4 M6,10 l4,-4" stroke="#ff9800" stroke-width="1" opacity="0.3"/>
+    </pattern>
+
+    <!-- Gray diagonal lines for external services -->
+    <pattern id="grayPattern" patternUnits="userSpaceOnUse" width="6" height="6">
+      <rect width="6" height="6" fill="#f5f5f5"/>
+      <path d="M0,6 l6,-6 M-1.5,1.5 l3,-3 M4.5,7.5 l3,-3" stroke="#999" stroke-width="1" opacity="0.4"/>
+    </pattern>
+
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#666"/>
+    </marker>
+
+    <marker id="arrowhead-back" markerWidth="10" markerHeight="10" refX="1" refY="3" orient="auto">
+      <polygon points="10 0, 0 3, 10 6" fill="#666"/>
+    </marker>
+  </defs>
+
+  <!-- User icon -->
+  <g transform="translate(50, 150)">
+    <!-- Head -->
+    <circle cx="0" cy="-20" r="20" fill="white" stroke="#333" stroke-width="2.5"/>
+    <!-- Body -->
+    <path d="M -25,30 Q -25,0 0,-5 Q 25,0 25,30" fill="white" stroke="#333" stroke-width="2.5"/>
+    <!-- Crosshatch inside body -->
+    <clipPath id="bodyClip">
+      <path d="M -25,30 Q -25,0 0,-5 Q 25,0 25,30"/>
+    </clipPath>
+    <g clip-path="url(#bodyClip)">
+      <path d="M -30,-10 L 30,35 M -25,-10 L 35,30 M -20,-10 L 40,25" stroke="#333" stroke-width="1" opacity="0.2"/>
+    </g>
+    <text y="60" class="label">User</text>
+  </g>
+
+  <!-- MCP Workflow Container -->
+  <rect x="220" y="30" width="380" height="360" class="container-box"/>
+  <text x="410" y="60" class="title">TeaRAGs MCP Workflow</text>
+
+  <!-- Agent box -->
+  <rect x="270" y="100" width="280" height="80" class="sketch-box agent-fill"/>
+  <text x="410" y="135" class="handwritten">agent</text>
+  <text x="410" y="160" class="small-label">(orchestrates decisions)</text>
+
+  <!-- TeaRAGs tools box -->
+  <rect x="270" y="250" width="280" height="80" class="sketch-box tools-fill"/>
+  <text x="410" y="280" class="handwritten">TeaRAGs</text>
+  <text x="410" y="300" class="small-label">(search · enrich · rerank)</text>
+
+  <!-- External Services -->
+
+  <!-- Qdrant -->
+  <g transform="translate(720, 120)">
+    <rect x="-80" y="-40" width="160" height="80" class="sketch-box external-fill"/>
+    <text x="0" y="-5" class="handwritten">Qdrant</text>
+    <text x="0" y="15" class="small-label">(vector DB)</text>
+  </g>
+
+  <!-- Embedding Service -->
+  <g transform="translate(720, 250)">
+    <rect x="-80" y="-40" width="160" height="80" class="sketch-box external-fill"/>
+    <text x="0" y="-5" class="handwritten">Embeddings</text>
+    <text x="0" y="15" class="small-label">(Ollama/OpenAI)</text>
+  </g>
+
+  <!-- Codebase icon -->
+  <g transform="translate(720, 360)">
+    <!-- Globe/folder icon simplified -->
+    <circle cx="0" cy="0" r="35" fill="white" stroke="#333" stroke-width="2.5"/>
+    <path d="M -25,0 Q 0,-35 25,0 Q 0,35 -25,0" stroke="#333" stroke-width="2" fill="none"/>
+    <line x1="-35" y1="0" x2="35" y2="0" stroke="#333" stroke-width="2"/>
+    <line x1="0" y1="-35" x2="0" y2="35" stroke="#333" stroke-width="2"/>
+    <text y="60" class="label">Codebase</text>
+  </g>
+
+  <!-- Arrows -->
+
+  <!-- User <-> Agent -->
+  <path d="M 100 170 L 220 140" class="bi-arrow"/>
+
+  <!-- Agent <-> TeaRAGs (vertical) -->
+  <path d="M 380 180 L 380 250" class="bi-arrow"/>
+  <path d="M 440 180 L 440 250" class="bi-arrow"/>
+
+  <!-- Agent <-> Qdrant -->
+  <path d="M 550 130 L 640 110" class="bi-arrow"/>
+
+  <!-- TeaRAGs <-> Embeddings -->
+  <path d="M 550 280 L 640 240" class="bi-arrow"/>
+
+  <!-- TeaRAGs <-> Codebase -->
+  <path d="M 520 330 L 640 350" class="bi-arrow"/>
+
+  <!-- Bottom note -->
+  <text x="500" y="410" class="small-label" text-anchor="middle" style="fill: #666;">Agent calls TeaRAGs tools → TeaRAGs queries Qdrant + enriches results → Agent makes decisions</text>
+</svg>

@@ -20,7 +20,10 @@
     "benchmark-embeddings": "node benchmarks/benchmark-embeddings.mjs",
     "benchmark-cpu": "node benchmarks/benchmark-cpu.mjs",
     "lint": "eslint src/ tests/",
-    "lint:fix": "eslint --fix src/ tests/"
+    "lint:fix": "eslint --fix src/ tests/",
+    "docs:dev": "cd website && npm start",
+    "docs:build": "cd website && npm run build",
+    "docs:deploy": "cd website && npm run deploy"
   },
   "keywords": [
     "mcp",
