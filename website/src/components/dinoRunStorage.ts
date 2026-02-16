@@ -49,11 +49,11 @@ export function createBag(): Outcome[] {
 }
 
 /** Draw one outcome from the bag. If empty -> create new bag first. */
-export function drawFromBag(bag: Outcome[]): {
+export function drawFromBag(inputBag: Outcome[]): {
   outcome: Outcome;
   remaining: Outcome[];
 } {
-  if (bag.length === 0) bag = createBag();
+  const bag = inputBag.length === 0 ? createBag() : inputBag;
   const outcome = bag[0];
   return { outcome, remaining: bag.slice(1) };
 }
@@ -94,11 +94,15 @@ export function resetSeenHashes(outcome: Outcome, storage: Storage = localStorag
   storage.setItem(KEY_SEEN, JSON.stringify(seen));
 }
 
+const VALID_OUTCOMES = new Set<string>(["catch", "pit", "egg", "robot"]);
+
 export function loadBag(storage: Storage = localStorage): Outcome[] {
   try {
     const raw = storage.getItem(KEY_BAG);
     if (!raw) return [];
-    return JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((v): v is Outcome => typeof v === "string" && VALID_OUTCOMES.has(v));
   } catch {
     return [];
   }
