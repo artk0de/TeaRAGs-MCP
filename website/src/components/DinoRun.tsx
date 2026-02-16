@@ -1005,13 +1005,10 @@ const DINO_TURN_POS = (() => {
 })(); // ≈50%
 
 /* Catch outcome constants */
+const CATCH_ACCEL_START = 0.70; // dino starts closing the gap early
 const CATCH_BANG_P = 0.92; // bang when dino catches chicken
-// Where dino stops after catching (computed from dinoLeft formula at CATCH_BANG_P)
-const CATCH_DINO_STOP = (() => {
-  const base = -10 + CATCH_BANG_P * 92;
-  const chicken = -6 + CATCH_BANG_P * 90;
-  return base + (chicken - base) * ((CATCH_BANG_P - 0.85) / 0.15) * 0.85;
-})(); // ≈75.5%
+// Quadratic ease-in means dino reaches chicken exactly at bang point
+const CATCH_DINO_STOP = -6 + CATCH_BANG_P * 90; // = chickenLeft at bang ≈76.8%
 
 /* Pit outcome constants — chicken jump is centered so peak is directly above pit */
 const CHICKEN_JUMP_START = 0.674; // chicken starts jumping before pit
@@ -1024,9 +1021,10 @@ function dinoLeft(outcome: Outcome, p: number): number {
   const base = -10 + p * 92;
   if (outcome === "catch") {
     if (p > CATCH_BANG_P) return CATCH_DINO_STOP; // freeze at catch point
-    if (p > 0.85) {
+    if (p > CATCH_ACCEL_START) {
       const chickenPos = chickenLeft(outcome, p);
-      return base + (chickenPos - base) * ((p - 0.85) / 0.15) * 0.85;
+      const t = (p - CATCH_ACCEL_START) / (CATCH_BANG_P - CATCH_ACCEL_START);
+      return base + (chickenPos - base) * t * t; // quadratic ease-in — lunge
     }
   }
   if (outcome === "pit") {
