@@ -12,8 +12,8 @@ sidebar_position: 1
 
 ```bash
 # Clone and install
-git clone https://github.com/mhalder/qdrant-mcp-server.git
-cd qdrant-mcp-server
+git clone https://github.com/artk0de/TeaRAGs-MCP.git
+cd TeaRAGs-MCP
 npm install
 
 # Start services (choose one)
