@@ -1,0 +1,210 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
+  <!-- White background -->
+  <rect width="1200" height="800" fill="#ffffff"/>
+
+  <defs>
+    <style>
+      .box { fill: #ffffff; stroke: #333; stroke-width: 2; }
+      .agent-box { fill: #e3f2fd; stroke: #1976d2; stroke-width: 2; }
+      .tearags-box { fill: #fff3e0; stroke: #f57c00; stroke-width: 2; }
+      .external-box { fill: #f3e5f5; stroke: #7b1fa2; stroke-width: 2; }
+      .data-box { fill: #e8f5e9; stroke: #388e3c; stroke-width: 2; }
+      .title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; text-anchor: middle; }
+      .subtitle { font-family: Arial, sans-serif; font-size: 13px; text-anchor: middle; fill: #555; }
+      .label { font-family: Arial, sans-serif; font-size: 12px; text-anchor: middle; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .arrow-label { font-family: Arial, sans-serif; font-size: 11px; fill: #555; }
+      .section-title { font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; fill: #333; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="600" y="30" class="title" style="font-size: 20px;">TeaRAGs Architecture: Component Interaction</text>
+
+  <!-- Agent Layer -->
+  <text x="150" y="70" class="section-title">Agent Layer</text>
+  <rect x="50" y="80" width="200" height="120" class="agent-box" rx="5"/>
+  <text x="150" y="110" class="title">AI Agent</text>
+  <text x="150" y="130" class="subtitle">Claude Code / Roo</text>
+  <text x="150" y="150" class="label">Cursor / Custom</text>
+  <text x="150" y="175" class="label" style="font-size: 11px;">Orchestrates workflow</text>
+  <text x="150" y="190" class="label" style="font-size: 11px;">Makes decisions</text>
+
+  <!-- MCP Protocol -->
+  <rect x="280" y="120" width="140" height="40" class="box" rx="5" fill="#fffde7" stroke="#f9a825"/>
+  <text x="350" y="135" class="label" font-weight="bold">MCP Protocol</text>
+  <text x="350" y="150" class="label" style="font-size: 10px;">stdio / HTTP</text>
+
+  <!-- TeaRAGs MCP Server -->
+  <text x="600" y="70" class="section-title">TeaRAGs MCP Server</text>
+  <rect x="450" y="80" width="300" height="280" class="tearags-box" rx="5"/>
+  <text x="600" y="110" class="title">TeaRAGs</text>
+  <text x="600" y="128" class="subtitle">Orchestration Engine</text>
+
+  <!-- TeaRAGs Internal Components -->
+  <rect x="470" y="145" width="120" height="40" class="box" rx="3" fill="#fff9c4"/>
+  <text x="530" y="160" class="label" font-weight="bold">Code Indexer</text>
+  <text x="530" y="175" class="label" style="font-size: 10px;">AST · Chunker</text>
+
+  <rect x="610" y="145" width="120" height="40" class="box" rx="3" fill="#fff9c4"/>
+  <text x="670" y="160" class="label" font-weight="bold">Git Enricher</text>
+  <text x="670" y="175" class="label" style="font-size: 10px;">Blame · Log</text>
+
+  <rect x="470" y="200" width="120" height="40" class="box" rx="3" fill="#fff9c4"/>
+  <text x="530" y="215" class="label" font-weight="bold">Search Engine</text>
+  <text x="530" y="230" class="label" style="font-size: 10px;">Query · Filter</text>
+
+  <rect x="610" y="200" width="120" height="40" class="box" rx="3" fill="#fff9c4"/>
+  <text x="670" y="215" class="label" font-weight="bold">Reranker</text>
+  <text x="670" y="230" class="label" style="font-size: 10px;">19 signals</text>
+
+  <rect x="470" y="255" width="260" height="40" class="box" rx="3" fill="#fff9c4"/>
+  <text x="600" y="270" class="label" font-weight="bold">Embedding Pipeline</text>
+  <text x="600" y="285" class="label" style="font-size: 10px;">Batch · Concurrency · Retry</text>
+
+  <rect x="470" y="310" width="260" height="40" class="box" rx="3" fill="#fff9c4"/>
+  <text x="600" y="325" class="label" font-weight="bold">MCP Tools Handler</text>
+  <text x="600" y="340" class="label" style="font-size: 10px;">index_codebase · search_code · semantic_search</text>
+
+  <!-- External Services -->
+  <text x="950" y="70" class="section-title">External Services</text>
+
+  <!-- Qdrant -->
+  <rect x="850" y="120" width="200" height="100" class="external-box" rx="5"/>
+  <text x="950" y="145" class="title">Qdrant</text>
+  <text x="950" y="163" class="subtitle">Vector Database</text>
+  <text x="950" y="185" class="label" style="font-size: 11px;">Dense vectors (768-3072d)</text>
+  <text x="950" y="200" class="label" style="font-size: 11px;">Sparse vectors (BM25)</text>
+  <text x="950" y="215" class="label" style="font-size: 11px;">Payload (19 git signals)</text>
+
+  <!-- Embedding Service -->
+  <rect x="850" y="240" width="200" height="100" class="external-box" rx="5"/>
+  <text x="950" y="265" class="title">Embedding Service</text>
+  <text x="950" y="285" class="label">Ollama (local)</text>
+  <text x="950" y="300" class="label">OpenAI / Cohere</text>
+  <text x="950" y="315" class="label">Voyage AI</text>
+  <text x="950" y="330" class="label" style="font-size: 10px;">text → [0.23, -0.41, ...]</text>
+
+  <!-- Data Sources -->
+  <text x="600" y="400" class="section-title">Data Sources</text>
+
+  <rect x="200" y="420" width="180" height="80" class="data-box" rx="5"/>
+  <text x="290" y="445" class="title">Codebase</text>
+  <text x="290" y="465" class="label">Source files</text>
+  <text x="290" y="480" class="label">Documentation</text>
+  <text x="290" y="495" class="label">.gitignore rules</text>
+
+  <rect x="420" y="420" width="180" height="80" class="data-box" rx="5"/>
+  <text x="510" y="445" class="title">Git Repository</text>
+  <text x="510" y="465" class="label">Commit history</text>
+  <text x="510" y="480" class="label">Author metadata</text>
+  <text x="510" y="495" class="label">Task IDs</text>
+
+  <rect x="640" y="420" width="180" height="80" class="data-box" rx="5"/>
+  <text x="730" y="445" class="title">Cache Storage</text>
+  <text x="730" y="465" class="label">~/.tea-rags-mcp/</text>
+  <text x="730" y="480" class="label">Snapshots</text>
+  <text x="730" y="495" class="label">Git cache</text>
+
+  <!-- Arrows and Flow -->
+
+  <!-- Agent → MCP Protocol -->
+  <path d="M 250 140 L 280 140" class="arrow"/>
+  <text x="265" y="135" class="arrow-label">MCP</text>
+
+  <!-- MCP Protocol → TeaRAGs -->
+  <path d="M 420 140 L 450 140" class="arrow"/>
+
+  <!-- TeaRAGs → Qdrant (upsert) -->
+  <path d="M 750 165 L 850 165" class="arrow"/>
+  <text x="800" y="160" class="arrow-label">Upsert vectors</text>
+  <text x="800" y="172" class="arrow-label" style="font-size: 10px;">+payload</text>
+
+  <!-- Qdrant → TeaRAGs (search results) -->
+  <path d="M 850 185 L 750 200" class="arrow"/>
+  <text x="800" y="195" class="arrow-label">Search results</text>
+
+  <!-- TeaRAGs → Embedding Service -->
+  <path d="M 750 275 L 850 280" class="arrow"/>
+  <text x="800" y="270" class="arrow-label">Embed batch</text>
+
+  <!-- Embedding Service → TeaRAGs -->
+  <path d="M 850 300 L 750 295" class="arrow"/>
+  <text x="800" y="310" class="arrow-label">Vectors</text>
+
+  <!-- Codebase → TeaRAGs -->
+  <path d="M 290 420 L 530 360" class="arrow"/>
+  <text x="380" y="385" class="arrow-label">Scan files</text>
+
+  <!-- Git Repo → TeaRAGs -->
+  <path d="M 510 420 L 600 360" class="arrow"/>
+  <text x="540" y="385" class="arrow-label">git log</text>
+  <text x="540" y="397" class="arrow-label" style="font-size: 10px;">git blame</text>
+
+  <!-- Cache → TeaRAGs -->
+  <path d="M 730 420 L 670 360" class="arrow"/>
+  <text x="720" y="385" class="arrow-label">Load cache</text>
+
+  <!-- TeaRAGs → Cache -->
+  <path d="M 650 360 L 700 420" class="arrow"/>
+  <text x="660" y="395" class="arrow-label">Save cache</text>
+
+  <!-- Workflow Steps (moved left to avoid overlap) -->
+  <text x="50" y="550" class="section-title">Request Flow</text>
+
+  <g transform="translate(20, 570)">
+    <circle cx="15" cy="10" r="12" fill="#1976d2" stroke="none"/>
+    <text x="15" y="15" class="label" fill="white" font-weight="bold">1</text>
+    <text x="35" y="15" class="label" text-anchor="start">Agent calls: <tspan font-family="monospace">search_code "authentication logic"</tspan></text>
+  </g>
+
+  <g transform="translate(20, 600)">
+    <circle cx="15" cy="10" r="12" fill="#f57c00" stroke="none"/>
+    <text x="15" y="15" class="label" fill="white" font-weight="bold">2</text>
+    <text x="35" y="15" class="label" text-anchor="start">TeaRAGs: Embed query → [0.23, -0.41, ...] via Embedding Service</text>
+  </g>
+
+  <g transform="translate(20, 630)">
+    <circle cx="15" cy="10" r="12" fill="#f57c00" stroke="none"/>
+    <text x="15" y="15" class="label" fill="white" font-weight="bold">3</text>
+    <text x="35" y="15" class="label" text-anchor="start">TeaRAGs: Query Qdrant with vector + filters</text>
+  </g>
+
+  <g transform="translate(20, 660)">
+    <circle cx="15" cy="10" r="12" fill="#7b1fa2" stroke="none"/>
+    <text x="15" y="15" class="label" fill="white" font-weight="bold">4</text>
+    <text x="35" y="15" class="label" text-anchor="start">Qdrant: Cosine similarity search → Top 50 chunks (with git metadata)</text>
+  </g>
+
+  <g transform="translate(20, 690)">
+    <circle cx="15" cy="10" r="12" fill="#f57c00" stroke="none"/>
+    <text x="15" y="15" class="label" fill="white" font-weight="bold">5</text>
+    <text x="35" y="15" class="label" text-anchor="start">TeaRAGs: Rerank using trajectory signals → Top 5 stable chunks</text>
+  </g>
+
+  <g transform="translate(20, 720)">
+    <circle cx="15" cy="10" r="12" fill="#1976d2" stroke="none"/>
+    <text x="15" y="15" class="label" fill="white" font-weight="bold">6</text>
+    <text x="35" y="15" class="label" text-anchor="start">Agent: Receives results → Reads files → grep verification → Uses code</text>
+  </g>
+
+  <!-- Legend (moved right to avoid overlap) -->
+  <text x="950" y="550" class="section-title">Legend</text>
+  <rect x="920" y="565" width="20" height="15" class="agent-box"/>
+  <text x="950" y="577" class="label" text-anchor="start">Agent</text>
+
+  <rect x="920" y="590" width="20" height="15" class="tearags-box"/>
+  <text x="950" y="602" class="label" text-anchor="start">TeaRAGs</text>
+
+  <rect x="920" y="615" width="20" height="15" class="external-box"/>
+  <text x="950" y="627" class="label" text-anchor="start">External</text>
+
+  <rect x="920" y="640" width="20" height="15" class="data-box"/>
+  <text x="950" y="652" class="label" text-anchor="start">Data</text>
+
+  <!-- Bottom note -->
+  <text x="600" y="780" class="label" style="font-size: 11px; fill: #888;">TeaRAGs acts as orchestrator between agent and vector DB, managing embedding, enrichment, and reranking</text>
+</svg>
