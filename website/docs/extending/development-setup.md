@@ -30,7 +30,7 @@ SKIP_CLEANUP=1 npm run test-integration # Debug mode
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](https://github.com/artk0de/tea-rags/blob/main/CONTRIBUTING.md) for:
+Contributions welcome! See [CONTRIBUTING.md](https://github.com/artk0de/TeaRAGs-MCP/blob/main/CONTRIBUTING.md) for:
 
 - Development workflow
 - Conventional commit format (`feat:`, `fix:`, `BREAKING CHANGE:`)

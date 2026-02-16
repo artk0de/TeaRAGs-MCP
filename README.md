@@ -60,7 +60,7 @@ Instead of "find similar code and copy it", an agent can:
 
 > *"This transforms code generation from artistic guesswork into data-driven engineering."*
 
-👉 **[Full explanation in the docs](https://artk0de.github.io/tea-rags/introduction/core-concepts)** · **[Agentic Data-Driven Engineering](https://artk0de.github.io/tea-rags/advanced/agentic-data-driven-engineering)**
+👉 **[Full explanation in the docs](https://artk0de.github.io/TeaRAGs-MCP/introduction/core-concepts)** · **[Agentic Data-Driven Engineering](https://artk0de.github.io/TeaRAGs-MCP/advanced/agentic-data-driven-engineering)**
 
 ## Quick Start
 
@@ -83,16 +83,16 @@ Then ask your agent: *"Index this codebase for semantic search"*
 
 ## Documentation
 
-Full documentation: **[artk0de.github.io/tea-rags](https://artk0de.github.io/tea-rags/)**
+Full documentation: **[artk0de.github.io/TeaRAGs-MCP](https://artk0de.github.io/TeaRAGs-MCP/)**
 
 | Section | Description |
 |---------|-------------|
-| [Introduction](https://artk0de.github.io/tea-rags/introduction/what-is-tearags) | What TeaRAGs is, core concepts, trajectory enrichment |
-| [Quickstart](https://artk0de.github.io/tea-rags/quickstart/installation) | Installation, setup, first index and query |
-| [Configuration](https://artk0de.github.io/tea-rags/usage/configuration) | Environment variables, providers, tuning |
-| [Tools Schema](https://artk0de.github.io/tea-rags/api/tools) | MCP tools, search parameters, reranking presets |
-| [Architecture](https://artk0de.github.io/tea-rags/architecture/overview) | System design, pipeline stages, data model |
-| [Operations](https://artk0de.github.io/tea-rags/operations/troubleshooting) | Troubleshooting, FAQ, recovery |
+| [Introduction](https://artk0de.github.io/TeaRAGs-MCP/introduction/what-is-tearags) | What TeaRAGs is, core concepts, trajectory enrichment |
+| [Quickstart](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation) | Installation, setup, first index and query |
+| [Configuration](https://artk0de.github.io/TeaRAGs-MCP/usage/configuration) | Environment variables, providers, tuning |
+| [Tools Schema](https://artk0de.github.io/TeaRAGs-MCP/api/tools) | MCP tools, search parameters, reranking presets |
+| [Architecture](https://artk0de.github.io/TeaRAGs-MCP/architecture/overview) | System design, pipeline stages, data model |
+| [Operations](https://artk0de.github.io/TeaRAGs-MCP/operations/troubleshooting) | Troubleshooting, FAQ, recovery |
 
 ## Contributing
 
