@@ -9,8 +9,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { computeFileMetadata, extractTaskIds, GitLogReader, overlaps } from "../../../src/code/git/git-log-reader.js";
-import type { CommitInfo, FileChurnData } from "../../../src/code/git/types.js";
+import { computeFileMetadata, extractTaskIds, GitLogReader, overlaps } from "../../../src/core/code/git/git-log-reader.js";
+import type { CommitInfo, FileChurnData } from "../../../src/core/code/git/types.js";
 
 // ─── extractTaskIds ──────────────────────────────────────────────────────────
 
@@ -525,9 +525,9 @@ describe("buildChunkChurnMap", () => {
   it("should produce valid overlays for multi-chunk files", async () => {
     if (!repoRoot) return;
 
-    // Use src/code/indexer.ts which is a large file with multiple potential chunks
+    // Use src/core/code/indexer.ts which is a large file with multiple potential chunks
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-    chunkMap.set(`${repoRoot}/src/code/indexer.ts`, [
+    chunkMap.set(`${repoRoot}/src/core/code/indexer.ts`, [
       { chunkId: "chunk-top", startLine: 1, endLine: 50 },
       { chunkId: "chunk-mid", startLine: 51, endLine: 200 },
       { chunkId: "chunk-bot", startLine: 201, endLine: 500 },
@@ -537,7 +537,7 @@ describe("buildChunkChurnMap", () => {
 
     // May or may not have results depending on commit history touching indexer.ts
     if (result.size > 0) {
-      const overlayMap = result.get("src/code/indexer.ts");
+      const overlayMap = result.get("src/core/code/indexer.ts");
       if (overlayMap) {
         for (const [, overlay] of overlayMap) {
           // Validate all fields
@@ -558,7 +558,7 @@ describe("buildChunkChurnMap", () => {
 
     // First, get actual file churn data for a known file
     const fileChurnMap = await reader.buildFileMetadataMap(repoRoot, 6);
-    const testFile = "src/code/indexer.ts";
+    const testFile = "src/core/code/indexer.ts";
     const fileChurnData = fileChurnMap.get(testFile);
     if (!fileChurnData || fileChurnData.commits.length === 0) return;
 
@@ -587,7 +587,7 @@ describe("buildChunkChurnMap", () => {
     if (!repoRoot) return;
 
     const fileChurnMap = await reader.buildFileMetadataMap(repoRoot, 6);
-    const testFile = "src/code/indexer.ts";
+    const testFile = "src/core/code/indexer.ts";
     const fileChurnData = fileChurnMap.get(testFile);
     if (!fileChurnData || fileChurnData.commits.length === 0) return;
 
@@ -613,7 +613,7 @@ describe("buildChunkChurnMap", () => {
 
     // Use a file that we know has had changes in different sections
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-    chunkMap.set(`${repoRoot}/src/code/indexer.ts`, [
+    chunkMap.set(`${repoRoot}/src/core/code/indexer.ts`, [
       { chunkId: "chunk-imports", startLine: 1, endLine: 30 },
       { chunkId: "chunk-middle", startLine: 100, endLine: 300 },
       { chunkId: "chunk-search", startLine: 570, endLine: 750 },
@@ -622,7 +622,7 @@ describe("buildChunkChurnMap", () => {
     const result = await reader.buildChunkChurnMap(repoRoot, chunkMap);
 
     if (result.size > 0) {
-      const overlayMap = result.get("src/code/indexer.ts");
+      const overlayMap = result.get("src/core/code/indexer.ts");
       if (overlayMap && overlayMap.size >= 2) {
         const overlays = Array.from(overlayMap.values());
         // At least some chunks should have different commit counts
@@ -647,7 +647,7 @@ describe("buildChunkChurnMap", () => {
       string,
       { chunkId: string; startLine: number; endLine: number; lineRanges?: { start: number; end: number }[] }[]
     >();
-    chunkMap.set(`${repoRoot}/src/code/indexer.ts`, [
+    chunkMap.set(`${repoRoot}/src/core/code/indexer.ts`, [
       {
         chunkId: "block-chunk",
         startLine: 1,
@@ -664,7 +664,7 @@ describe("buildChunkChurnMap", () => {
 
     // Now compare: same file without lineRanges (block covers full 1-210)
     const chunkMapNoRanges = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-    chunkMapNoRanges.set(`${repoRoot}/src/code/indexer.ts`, [
+    chunkMapNoRanges.set(`${repoRoot}/src/core/code/indexer.ts`, [
       { chunkId: "block-chunk", startLine: 1, endLine: 210 },
       { chunkId: "method-chunk", startLine: 6, endLine: 199 },
     ]);
@@ -673,8 +673,8 @@ describe("buildChunkChurnMap", () => {
 
     // With lineRanges, block-chunk should have <= churn compared to without lineRanges
     // because it no longer catches changes in lines 6-199
-    const blockWithRanges = withRanges.get("src/code/indexer.ts")?.get("block-chunk");
-    const blockWithoutRanges = withoutRanges.get("src/code/indexer.ts")?.get("block-chunk");
+    const blockWithRanges = withRanges.get("src/core/code/indexer.ts")?.get("block-chunk");
+    const blockWithoutRanges = withoutRanges.get("src/core/code/indexer.ts")?.get("block-chunk");
 
     if (blockWithRanges && blockWithoutRanges) {
       expect(blockWithRanges.chunkCommitCount).toBeLessThanOrEqual(blockWithoutRanges.chunkCommitCount);

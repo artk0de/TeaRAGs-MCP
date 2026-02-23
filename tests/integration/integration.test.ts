@@ -4,10 +4,10 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CodeIndexer } from "../../src/code/indexer.js";
-import type { CodeConfig } from "../../src/code/types.js";
-import type { EmbeddingProvider } from "../../src/embeddings/base.js";
-import type { QdrantManager } from "../../src/qdrant/client.js";
+import { CodeIndexer } from "../../src/core/code/indexer.js";
+import type { CodeConfig } from "../../src/core/code/types.js";
+import type { EmbeddingProvider } from "../../src/core/embeddings/base.js";
+import type { QdrantManager } from "../../src/core/qdrant/client.js";
 
 // Mock tree-sitter modules to prevent native binding crashes in integration tests
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)

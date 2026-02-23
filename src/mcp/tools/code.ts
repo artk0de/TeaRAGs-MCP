@@ -4,7 +4,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { CodeIndexer } from "../code/indexer.js";
+import type { CodeIndexer } from "../../core/code/indexer.js";
+import { formatEnrichmentStatus } from "./formatters/enrichment.js";
 import * as schemas from "./schemas.js";
 
 export interface CodeToolDependencies {
@@ -37,40 +38,13 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
 
       let statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
 
-      if (stats.enrichmentStatus === "background") {
-        // Fetch current enrichment progress from Qdrant
-        try {
-          const currentStatus = await codeIndexer.getIndexStatus(path);
-          if (currentStatus.enrichment) {
-            const e = currentStatus.enrichment;
-            statusMessage += `\n\nGit enrichment: ${e.status}`;
-            if (e.percentage !== undefined) statusMessage += ` (${e.percentage}%)`;
-            if (e.matchedFiles !== undefined && e.missedFiles !== undefined) {
-              const total = e.matchedFiles + e.missedFiles;
-              const rate = total > 0 ? Math.round((e.matchedFiles / total) * 100) : 0;
-              statusMessage += `\nGit metadata coverage: ${rate}% (${e.matchedFiles}/${total} indexed files)`;
-              if (e.gitLogFileCount !== undefined) {
-                statusMessage += `\nGit log contains ${e.gitLogFileCount} files (GIT_LOG_MAX_AGE_MONTHS window)`;
-              }
-              if (rate < 80 && e.missedFiles > 0) {
-                statusMessage += `\nHint: Low coverage is normal for mature codebases. Increase GIT_LOG_MAX_AGE_MONTHS for broader coverage.`;
-              }
-            }
-            if (e.status !== "completed") {
-              statusMessage += `\n[Use get_index_status to track progress.]`;
-            }
-          } else {
-            statusMessage += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
-          }
-        } catch {
-          statusMessage += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
-        }
-      } else if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
-        statusMessage += `\nGit enrichment: ${stats.enrichmentStatus}`;
-        if (stats.enrichmentDurationMs) {
-          statusMessage += ` (${(stats.enrichmentDurationMs / 1000).toFixed(1)}s)`;
-        }
-      }
+      const enrichmentMessage = await formatEnrichmentStatus(
+        stats.enrichmentStatus,
+        stats.enrichmentDurationMs,
+        (p) => codeIndexer.getIndexStatus(p),
+        path,
+      );
+      statusMessage += enrichmentMessage;
 
       if (stats.status === "partial") {
         statusMessage += `\n\nWarnings:\n${stats.errors?.join("\n")}`;
@@ -189,40 +163,13 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       message += `- Chunks added: ${stats.chunksAdded}\n`;
       message += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
 
-      if (stats.enrichmentStatus === "background") {
-        // Fetch current enrichment progress from Qdrant
-        try {
-          const currentStatus = await codeIndexer.getIndexStatus(path);
-          if (currentStatus.enrichment) {
-            const e = currentStatus.enrichment;
-            message += `\n\nGit enrichment: ${e.status}`;
-            if (e.percentage !== undefined) message += ` (${e.percentage}%)`;
-            if (e.matchedFiles !== undefined && e.missedFiles !== undefined) {
-              const total = e.matchedFiles + e.missedFiles;
-              const rate = total > 0 ? Math.round((e.matchedFiles / total) * 100) : 0;
-              message += `\nGit metadata coverage: ${rate}% (${e.matchedFiles}/${total} indexed files)`;
-              if (e.gitLogFileCount !== undefined) {
-                message += `\nGit log contains ${e.gitLogFileCount} files (GIT_LOG_MAX_AGE_MONTHS window)`;
-              }
-              if (rate < 80 && e.missedFiles > 0) {
-                message += `\nHint: Low coverage is normal for mature codebases. Increase GIT_LOG_MAX_AGE_MONTHS for broader coverage.`;
-              }
-            }
-            if (e.status !== "completed") {
-              message += `\n[Use get_index_status to track progress.]`;
-            }
-          } else {
-            message += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
-          }
-        } catch {
-          message += `\n\n[Git enrichment is running in background. Use get_index_status to track progress.]`;
-        }
-      } else if (stats.enrichmentStatus && stats.enrichmentStatus !== "skipped") {
-        message += `\n- Git enrichment: ${stats.enrichmentStatus}`;
-        if (stats.enrichmentDurationMs) {
-          message += ` (${(stats.enrichmentDurationMs / 1000).toFixed(1)}s)`;
-        }
-      }
+      const enrichmentMessage = await formatEnrichmentStatus(
+        stats.enrichmentStatus,
+        stats.enrichmentDurationMs,
+        (p) => codeIndexer.getIndexStatus(p),
+        path,
+      );
+      message += enrichmentMessage;
 
       if (stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0) {
         message = `No changes detected. Codebase is up to date.`;

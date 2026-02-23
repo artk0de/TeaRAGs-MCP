@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateFetchLimit, filterResultsByGlob } from "../qdrant/filters/index.js";
+import { calculateFetchLimit, filterResultsByGlob } from "../../core/qdrant/filters/index.js";
 
 // Test the glob filtering integration
 describe("Search tools glob filtering", () => {

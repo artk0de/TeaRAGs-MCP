@@ -10,7 +10,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { GitMetadataService } from "../../../src/code/git/git-metadata-service.js";
+import { GitMetadataService } from "../../../src/core/code/git/git-metadata-service.js";
 
 describe("GitMetadataService", () => {
   let service: GitMetadataService;

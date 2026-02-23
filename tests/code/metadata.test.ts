@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { MetadataExtractor } from "../../src/code/metadata.js";
-import type { CodeChunk } from "../../src/code/types.js";
+import { MetadataExtractor } from "../../src/core/code/metadata.js";
+import type { CodeChunk } from "../../src/core/code/types.js";
 
 describe("MetadataExtractor", () => {
   let extractor: MetadataExtractor;

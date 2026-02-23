@@ -6,9 +6,9 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { CodeConfig } from "../../../src/code/types.js";
-import type { EmbeddingProvider } from "../../../src/embeddings/base.js";
-import type { QdrantManager } from "../../../src/qdrant/client.js";
+import type { CodeConfig } from "../../../src/core/code/types.js";
+import type { EmbeddingProvider } from "../../../src/core/embeddings/base.js";
+import type { QdrantManager } from "../../../src/core/qdrant/client.js";
 
 /** Mock QdrantManager — mirrors all public methods */
 export class MockQdrantManager implements Partial<QdrantManager> {

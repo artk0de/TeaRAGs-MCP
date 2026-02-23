@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CodeIndexer } from "../../../src/code/indexer.js";
-import type { CodeConfig } from "../../../src/code/types.js";
+import { CodeIndexer } from "../../../src/core/code/indexer.js";
+import type { CodeConfig } from "../../../src/core/code/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,

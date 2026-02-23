@@ -4,8 +4,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { EmbeddingProvider } from "../embeddings/base.js";
-import type { QdrantManager } from "../qdrant/client.js";
+import type { EmbeddingProvider } from "../../core/embeddings/base.js";
+import type { QdrantManager } from "../../core/qdrant/client.js";
 import * as schemas from "./schemas.js";
 
 export interface CollectionToolDependencies {

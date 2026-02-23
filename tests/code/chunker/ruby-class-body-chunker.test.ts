@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { RubyClassBodyChunker, type BodyLine } from "../../../src/code/chunker/hooks/ruby/class-body-chunker.js";
+import { RubyClassBodyChunker, type BodyLine } from "../../../src/core/code/chunker/hooks/ruby/class-body-chunker.js";
 
 describe("RubyClassBodyChunker", () => {
   const grouper = new RubyClassBodyChunker();
