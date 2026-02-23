@@ -12,10 +12,10 @@ import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import Parser from "tree-sitter";
 
-import type { ChunkerConfig, CodeChunk } from "../../types.js";
+import type { ChunkerConfig, CodeChunk } from "../../../types.js";
 import type { CodeChunker } from "./base.js";
-import { CharacterChunker } from "./character-chunker.js";
-import { LANGUAGE_DEFINITIONS, type LanguageConfig, type LanguageDefinition } from "./chunker-config.js";
+import { CharacterChunker } from "./character.js";
+import { LANGUAGE_DEFINITIONS, type LanguageConfig, type LanguageDefinition } from "./config.js";
 import { createHookContext } from "./hooks/types.js";
 
 export class TreeSitterChunker implements CodeChunker {

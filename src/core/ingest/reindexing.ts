@@ -8,14 +8,14 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { SchemaManager } from "../../adapters/qdrant/schema-migration.js";
-import { resolveCollectionName, validatePath } from "../../api/shared.js";
-import type { ChangeStats, ChunkLookupEntry, ProgressCallback } from "../../types.js";
-import { BaseIndexingPipeline } from "./base.js";
-import { pipelineLog } from "./debug-logger.js";
-import { processFiles } from "./file-processor.js";
-import { SnapshotMigrator } from "../sync/migration.js";
-import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
+import { SchemaManager } from "../adapters/qdrant/schema-migration.js";
+import { resolveCollectionName, validatePath } from "../api/shared.js";
+import type { ChangeStats, ChunkLookupEntry, ProgressCallback } from "../types.js";
+import { BaseIndexingPipeline } from "./pipeline/base.js";
+import { pipelineLog } from "./pipeline/debug-logger.js";
+import { processFiles } from "./pipeline/file-processor.js";
+import { SnapshotMigrator } from "./sync/migration.js";
+import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
 export class ReindexPipeline extends BaseIndexingPipeline {
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {

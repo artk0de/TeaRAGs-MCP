@@ -7,7 +7,7 @@
 
 import { promises as fs } from "node:fs";
 
-import type { ChunkerPool } from "../chunker/chunker-pool.js";
+import type { ChunkerPool } from "./chunker/utils/pool.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../types.js";
 import { generateChunkId } from "./chunk-id.js";
 import { containsSecrets } from "./secrets-detector.js";

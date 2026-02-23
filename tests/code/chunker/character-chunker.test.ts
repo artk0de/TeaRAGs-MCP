@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { CharacterChunker } from "../../../src/core/ingest/chunker/character-chunker.js";
+import { CharacterChunker } from "../../../src/core/ingest/pipeline/chunker/character.js";
 import type { ChunkerConfig } from "../../../src/core/types.js";
 
 describe("CharacterChunker", () => {

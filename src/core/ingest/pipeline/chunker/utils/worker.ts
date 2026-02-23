@@ -11,8 +11,8 @@
 
 import { parentPort, workerData } from "node:worker_threads";
 
-import type { ChunkerConfig, CodeChunk } from "../../types.js";
-import { TreeSitterChunker } from "./tree-sitter-chunker.js";
+import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
+import { TreeSitterChunker } from "../tree-sitter.js";
 
 export interface WorkerRequest {
   filePath: string;

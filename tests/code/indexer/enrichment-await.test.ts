@@ -113,7 +113,7 @@ describe("Enrichment status detection", () => {
     // Inject slow enrichment into the ingest facade
     ingest = new IngestFacade(qdrant as any, embeddings, config);
     (ingest as any).enrichment = slowEnrichment;
-    (ingest as any).indexing = new (await import("../../../src/core/ingest/pipeline/indexing.js")).IndexPipeline(
+    (ingest as any).indexing = new (await import("../../../src/core/ingest/indexing.js")).IndexPipeline(
       qdrant,
       embeddings,
       config,
@@ -162,7 +162,7 @@ describe("Enrichment status detection", () => {
 
     ingest = new IngestFacade(qdrant as any, embeddings, config);
     (ingest as any).enrichment = deferredEnrichment;
-    (ingest as any).indexing = new (await import("../../../src/core/ingest/pipeline/indexing.js")).IndexPipeline(
+    (ingest as any).indexing = new (await import("../../../src/core/ingest/indexing.js")).IndexPipeline(
       qdrant,
       embeddings,
       config,

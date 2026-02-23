@@ -8,7 +8,7 @@
 
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import { ChunkerPool } from "../chunker/chunker-pool.js";
+import { ChunkerPool } from "./chunker/utils/pool.js";
 import { pipelineLog } from "./debug-logger.js";
 import { ChunkPipeline, DEFAULT_CONFIG } from "./index.js";
 import { FileScanner } from "./scanner.js";

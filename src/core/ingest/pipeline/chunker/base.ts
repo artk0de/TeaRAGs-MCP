@@ -2,7 +2,7 @@
  * Base interface for code chunkers
  */
 
-import type { CodeChunk } from "../../types.js";
+import type { CodeChunk } from "../../../types.js";
 
 export interface CodeChunker {
   /**
