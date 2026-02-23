@@ -11,8 +11,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CodeIndexer } from "../../../src/core/code/indexer.js";
-import type { CodeConfig } from "../../../src/core/code/types.js";
+import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import type { CodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
@@ -52,7 +52,7 @@ vi.mock("tree-sitter-typescript", () => ({
 
 // --- EnrichmentModule mock ---
 // Fast enrichment: awaitCompletion resolves immediately (simulates small repo)
-vi.mock("../../../src/core/code/indexer/enrichment-module.js", () => ({
+vi.mock("../../../src/core/ingest/enrichment-module.js", () => ({
   EnrichmentModule: class MockEnrichmentModule {
     prefetchGitLog = vi.fn();
     onChunksStored = vi.fn();
@@ -62,7 +62,7 @@ vi.mock("../../../src/core/code/indexer/enrichment-module.js", () => ({
 }));
 
 describe("Enrichment status detection", () => {
-  let indexer: CodeIndexer;
+  let ingest: IngestFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
   let config: CodeConfig;
@@ -82,7 +82,7 @@ describe("Enrichment status detection", () => {
 
   it("should report 'completed' when enrichment finishes before return", async () => {
     config.enableGitMetadata = true;
-    indexer = new CodeIndexer(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config);
 
     await createTestFile(
       codebaseDir,
@@ -91,7 +91,7 @@ describe("Enrichment status detection", () => {
       'export function hello(name: string): string {\n  console.log("Greeting user");\n  return `Hello, ${name}!`;\n}',
     );
 
-    const stats = await indexer.indexCodebase(codebaseDir);
+    const stats = await ingest.indexCodebase(codebaseDir);
 
     // awaitCompletion resolves immediately (mock), so enrichment completes
     // before the snapshot save and indexing marker finish.
@@ -103,17 +103,17 @@ describe("Enrichment status detection", () => {
     config.enableGitMetadata = true;
 
     // Replace mock with slow enrichment that never resolves before return
-    const { EnrichmentModule } = await import("../../../src/core/code/indexer/enrichment-module.js");
+    const { EnrichmentModule } = await import("../../../src/core/ingest/enrichment-module.js");
     const slowEnrichment = new EnrichmentModule(qdrant as any);
     slowEnrichment.awaitCompletion = vi.fn().mockReturnValue(new Promise(() => {})); // never resolves
     slowEnrichment.prefetchGitLog = vi.fn();
     slowEnrichment.onChunksStored = vi.fn();
     slowEnrichment.startChunkChurn = vi.fn();
 
-    // Inject slow enrichment into the indexer
-    indexer = new CodeIndexer(qdrant as any, embeddings, config);
-    (indexer as any).enrichment = slowEnrichment;
-    (indexer as any).indexing = new (await import("../../../src/core/code/indexer/indexing-module.js")).IndexingModule(
+    // Inject slow enrichment into the ingest facade
+    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    (ingest as any).enrichment = slowEnrichment;
+    (ingest as any).indexing = new (await import("../../../src/core/ingest/pipeline/indexing.js")).IndexPipeline(
       qdrant,
       embeddings,
       config,
@@ -127,7 +127,7 @@ describe("Enrichment status detection", () => {
       'export function hello(name: string): string {\n  console.log("Greeting user");\n  return `Hello, ${name}!`;\n}',
     );
 
-    const stats = await indexer.indexCodebase(codebaseDir);
+    const stats = await ingest.indexCodebase(codebaseDir);
 
     // awaitCompletion never resolves, so enrichment is still running
     expect(stats.enrichmentStatus).toBe("background");
@@ -153,16 +153,16 @@ describe("Enrichment status detection", () => {
       resolveEnrichment = resolve;
     });
 
-    const { EnrichmentModule } = await import("../../../src/core/code/indexer/enrichment-module.js");
+    const { EnrichmentModule } = await import("../../../src/core/ingest/enrichment-module.js");
     const deferredEnrichment = new EnrichmentModule(qdrant as any);
     deferredEnrichment.awaitCompletion = vi.fn().mockReturnValue(enrichmentPromise);
     deferredEnrichment.prefetchGitLog = vi.fn();
     deferredEnrichment.onChunksStored = vi.fn();
     deferredEnrichment.startChunkChurn = vi.fn();
 
-    indexer = new CodeIndexer(qdrant as any, embeddings, config);
-    (indexer as any).enrichment = deferredEnrichment;
-    (indexer as any).indexing = new (await import("../../../src/core/code/indexer/indexing-module.js")).IndexingModule(
+    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    (ingest as any).enrichment = deferredEnrichment;
+    (ingest as any).indexing = new (await import("../../../src/core/ingest/pipeline/indexing.js")).IndexPipeline(
       qdrant,
       embeddings,
       config,
@@ -173,7 +173,7 @@ describe("Enrichment status detection", () => {
 
     // indexCodebase MUST return even though enrichment hasn't resolved.
     // If someone adds `await` to awaitCompletion, this will hang and timeout.
-    const stats = await indexer.indexCodebase(codebaseDir);
+    const stats = await ingest.indexCodebase(codebaseDir);
 
     // Enrichment is still pending → status is "background"
     expect(stats.enrichmentStatus).toBe("background");

@@ -7,8 +7,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ChunkPipeline } from "../../../src/core/code/pipeline/chunk-pipeline.js";
-import type { ChunkItem } from "../../../src/core/code/pipeline/types.js";
+import { ChunkPipeline } from "../../../src/core/ingest/pipeline/chunk-pipeline.js";
+import type { ChunkItem } from "../../../src/core/ingest/pipeline/types.js";
 
 // Minimal mock EmbeddingProvider
 function createMockEmbeddings(dimensions = 384) {

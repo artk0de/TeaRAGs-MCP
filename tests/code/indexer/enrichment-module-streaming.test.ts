@@ -12,9 +12,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Import AFTER mock setup
-import { EnrichmentModule } from "../../../src/core/code/indexer/enrichment-module.js";
-import type { ChunkItem } from "../../../src/core/code/pipeline/types.js";
-import type { ChunkLookupEntry } from "../../../src/core/code/types.js";
+import { EnrichmentModule } from "../../../src/core/ingest/enrichment-module.js";
+import type { ChunkItem } from "../../../src/core/ingest/pipeline/types.js";
+import type { ChunkLookupEntry } from "../../../src/core/types.js";
 
 // Shared mock state — vi.hoisted runs before vi.mock factory
 const { mockBuildFileMetadataMap, mockBuildChunkChurnMap, mockComputeFileMetadata, mockBuildFileMetadataForPaths } =
@@ -44,7 +44,7 @@ const { mockBuildFileMetadataMap, mockBuildChunkChurnMap, mockComputeFileMetadat
     }),
   }));
 
-vi.mock("../../../src/core/code/git/git-log-reader.js", () => ({
+vi.mock("../../../src/core/ingest/git/git-log-reader.js", () => ({
   GitLogReader: class MockGitLogReader {
     buildFileMetadataMap = mockBuildFileMetadataMap;
     buildChunkChurnMap = mockBuildChunkChurnMap;

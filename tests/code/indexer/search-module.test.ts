@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CodeIndexer } from "../../../src/core/code/indexer.js";
-import type { CodeConfig } from "../../../src/core/code/types.js";
+import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import { SearchFacade } from "../../../src/core/api/search-facade.js";
+import type { CodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
@@ -39,7 +40,8 @@ vi.mock("tree-sitter-typescript", () => ({
 }));
 
 describe("SearchModule", () => {
-  let indexer: CodeIndexer;
+  let ingest: IngestFacade;
+  let search: SearchFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
   let config: CodeConfig;
@@ -51,7 +53,8 @@ describe("SearchModule", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    indexer = new CodeIndexer(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    search = new SearchFacade(qdrant as any, embeddings, config);
   });
 
   afterEach(async () => {
@@ -66,11 +69,11 @@ describe("SearchModule", () => {
         // eslint-disable-next-line no-template-curly-in-string
         "export function hello(name: string): string {\n  const greeting = `Hello, ${name}!`;\n  return greeting;\n}",
       );
-      await indexer.indexCodebase(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
     });
 
     it("should search indexed codebase", async () => {
-      const results = await indexer.searchCode(codebaseDir, "hello function");
+      const results = await search.searchCode(codebaseDir, "hello function");
 
       expect(Array.isArray(results)).toBe(true);
       expect(results.length).toBeGreaterThan(0);
@@ -82,11 +85,11 @@ describe("SearchModule", () => {
       const nonIndexedDir = join(tempDir, "non-indexed");
       await fs.mkdir(nonIndexedDir, { recursive: true });
 
-      await expect(indexer.searchCode(nonIndexedDir, "test")).rejects.toThrow("not indexed");
+      await expect(search.searchCode(nonIndexedDir, "test")).rejects.toThrow("not indexed");
     });
 
     it("should respect limit option", async () => {
-      const results = await indexer.searchCode(codebaseDir, "test", {
+      const results = await search.searchCode(codebaseDir, "test", {
         limit: 2,
       });
 
@@ -94,7 +97,7 @@ describe("SearchModule", () => {
     });
 
     it("should apply score threshold", async () => {
-      const results = await indexer.searchCode(codebaseDir, "test", {
+      const results = await search.searchCode(codebaseDir, "test", {
         scoreThreshold: 0.95,
       });
 
@@ -105,9 +108,9 @@ describe("SearchModule", () => {
 
     it("should filter by file types", async () => {
       await createTestFile(codebaseDir, "test.py", "def test(): pass");
-      await indexer.indexCodebase(codebaseDir, { forceReindex: true });
+      await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
-      const results = await indexer.searchCode(codebaseDir, "test", {
+      const results = await search.searchCode(codebaseDir, "test", {
         fileTypes: [".py"],
       });
 
@@ -116,7 +119,8 @@ describe("SearchModule", () => {
 
     it("should use hybrid search when enabled", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIndexer = new CodeIndexer(qdrant as any, embeddings, hybridConfig);
+      const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig);
+      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridConfig);
 
       await createTestFile(
         codebaseDir,
@@ -135,17 +139,17 @@ function checkStatus(): boolean {
   return true;
 }`,
       );
-      await hybridIndexer.indexCodebase(codebaseDir, { forceReindex: true });
+      await hybridIngest.indexCodebase(codebaseDir, { forceReindex: true });
 
       const hybridSearchSpy = vi.spyOn(qdrant, "hybridSearch");
 
-      await hybridIndexer.searchCode(codebaseDir, "test");
+      await hybridSearch.searchCode(codebaseDir, "test");
 
       expect(hybridSearchSpy).toHaveBeenCalled();
     });
 
     it("should format results correctly", async () => {
-      const results = await indexer.searchCode(codebaseDir, "hello");
+      const results = await search.searchCode(codebaseDir, "hello");
 
       results.forEach((result) => {
         expect(result).toHaveProperty("content");
@@ -180,9 +184,9 @@ export function calculateProduct(numbers: number[]): number {
 }`,
       );
 
-      await indexer.indexCodebase(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
 
-      const results = await indexer.searchCode(codebaseDir, "calculate sum");
+      const results = await search.searchCode(codebaseDir, "calculate sum");
 
       expect(results.length).toBeGreaterThan(0);
 
@@ -207,13 +211,13 @@ export function calculateProduct(numbers: number[]): number {
         "export function appMain(): void {\n  console.log('Application started');\n}",
       );
       await createTestFile(codebaseDir, "README.md", "# Documentation\n\nThis is the project documentation.");
-      await indexer.indexCodebase(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
     });
 
     it("should apply documentationOnly filter", async () => {
       const searchSpy = vi.spyOn(qdrant, "search");
 
-      await indexer.searchCode(codebaseDir, "documentation", {
+      await search.searchCode(codebaseDir, "documentation", {
         documentationOnly: true,
       });
 
@@ -230,7 +234,7 @@ export function calculateProduct(numbers: number[]): number {
     it("should apply git author filter", async () => {
       const searchSpy = vi.spyOn(qdrant, "search");
 
-      await indexer.searchCode(codebaseDir, "test", {
+      await search.searchCode(codebaseDir, "test", {
         author: "John Doe",
       });
 
@@ -248,7 +252,7 @@ export function calculateProduct(numbers: number[]): number {
       const searchSpy = vi.spyOn(qdrant, "search");
       const dateStr = "2024-01-01T00:00:00Z";
 
-      await indexer.searchCode(codebaseDir, "test", {
+      await search.searchCode(codebaseDir, "test", {
         modifiedAfter: dateStr,
       });
 
@@ -267,7 +271,7 @@ export function calculateProduct(numbers: number[]): number {
       const searchSpy = vi.spyOn(qdrant, "search");
       const dateStr = "2025-06-01T00:00:00Z";
 
-      await indexer.searchCode(codebaseDir, "test", {
+      await search.searchCode(codebaseDir, "test", {
         modifiedBefore: dateStr,
       });
 
@@ -285,7 +289,7 @@ export function calculateProduct(numbers: number[]): number {
     it("should apply minAgeDays filter", async () => {
       const searchSpy = vi.spyOn(qdrant, "search");
 
-      await indexer.searchCode(codebaseDir, "test", {
+      await search.searchCode(codebaseDir, "test", {
         minAgeDays: 30,
       });
 
@@ -302,7 +306,7 @@ export function calculateProduct(numbers: number[]): number {
     it("should apply maxAgeDays filter", async () => {
       const searchSpy = vi.spyOn(qdrant, "search");
 
-      await indexer.searchCode(codebaseDir, "test", {
+      await search.searchCode(codebaseDir, "test", {
         maxAgeDays: 7,
       });
 
@@ -319,7 +323,7 @@ export function calculateProduct(numbers: number[]): number {
     it("should apply minCommitCount filter", async () => {
       const searchSpy = vi.spyOn(qdrant, "search");
 
-      await indexer.searchCode(codebaseDir, "test", {
+      await search.searchCode(codebaseDir, "test", {
         minCommitCount: 5,
       });
 
@@ -336,7 +340,7 @@ export function calculateProduct(numbers: number[]): number {
     it("should apply taskId filter", async () => {
       const searchSpy = vi.spyOn(qdrant, "search");
 
-      await indexer.searchCode(codebaseDir, "test", {
+      await search.searchCode(codebaseDir, "test", {
         taskId: "TD-12345",
       });
 
@@ -351,7 +355,7 @@ export function calculateProduct(numbers: number[]): number {
     });
 
     it("should apply pathPattern glob filter client-side", async () => {
-      const results = await indexer.searchCode(codebaseDir, "test", {
+      const results = await search.searchCode(codebaseDir, "test", {
         pathPattern: "**/*.ts",
       });
 
@@ -360,7 +364,7 @@ export function calculateProduct(numbers: number[]): number {
     });
 
     it("should apply rerank with non-relevance preset", async () => {
-      const results = await indexer.searchCode(codebaseDir, "test", {
+      const results = await search.searchCode(codebaseDir, "test", {
         rerank: "recent",
       });
 
@@ -390,7 +394,7 @@ export function calculateProduct(numbers: number[]): number {
         },
       ]);
 
-      const results = await indexer.searchCode(codebaseDir, "test");
+      const results = await search.searchCode(codebaseDir, "test");
 
       expect(results.length).toBe(1);
       expect(results[0].metadata).toBeDefined();
@@ -409,7 +413,7 @@ export function calculateProduct(numbers: number[]): number {
         },
       ]);
 
-      const results = await indexer.searchCode(codebaseDir, "test");
+      const results = await search.searchCode(codebaseDir, "test");
 
       expect(results.length).toBe(1);
       expect(results[0].content).toBe("");

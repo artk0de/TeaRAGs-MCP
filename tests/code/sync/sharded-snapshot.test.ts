@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ShardedSnapshotManager, type FileMetadata } from "../../../src/core/code/sync/sharded-snapshot.js";
+import { ShardedSnapshotManager, type FileMetadata } from "../../../src/core/ingest/sync/sharded-snapshot.js";
 
 describe("ShardedSnapshotManager", () => {
   let testDir: string;

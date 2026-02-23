@@ -1,14 +1,14 @@
 /**
- * Shared test utilities for CodeIndexer module tests.
+ * Shared test utilities for IngestFacade/SearchFacade module tests.
  */
 
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { CodeConfig } from "../../../src/core/code/types.js";
-import type { EmbeddingProvider } from "../../../src/core/embeddings/base.js";
-import type { QdrantManager } from "../../../src/core/qdrant/client.js";
+import type { CodeConfig } from "../../../src/core/types.js";
+import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
+import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
 
 /** Mock QdrantManager — mirrors all public methods */
 export class MockQdrantManager implements Partial<QdrantManager> {

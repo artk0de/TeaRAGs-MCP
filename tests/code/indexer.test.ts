@@ -5,8 +5,9 @@ import { join } from "node:path";
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CodeIndexer } from "../../src/core/code/indexer.js";
-import type { CodeConfig } from "../../src/core/code/types.js";
+import { IngestFacade } from "../../src/core/api/ingest-facade.js";
+import { SearchFacade } from "../../src/core/api/search-facade.js";
+import type { CodeConfig } from "../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
@@ -43,8 +44,9 @@ vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
 
-describe("CodeIndexer", () => {
-  let indexer: CodeIndexer;
+describe("IngestFacade + SearchFacade", () => {
+  let ingest: IngestFacade;
+  let search: SearchFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
   let config: CodeConfig;
@@ -56,7 +58,8 @@ describe("CodeIndexer", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    indexer = new CodeIndexer(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    search = new SearchFacade(qdrant as any, embeddings, config);
   });
 
   afterEach(async () => {
@@ -70,7 +73,7 @@ describe("CodeIndexer", () => {
 
       // Should not throw error, validatePath falls back to absolute path
       // and scanner finds 0 files
-      const stats = await indexer.indexCodebase(nonExistentDir);
+      const stats = await ingest.indexCodebase(nonExistentDir);
       expect(stats.filesScanned).toBe(0);
       expect(stats.status).toBe("completed");
     });
@@ -79,7 +82,7 @@ describe("CodeIndexer", () => {
       await createTestFile(codebaseDir, "test.ts", "export const test = true;");
 
       // Should successfully index with real path
-      const stats = await indexer.indexCodebase(codebaseDir);
+      const stats = await ingest.indexCodebase(codebaseDir);
       expect(stats.filesScanned).toBeGreaterThan(0);
     });
   });
@@ -101,7 +104,7 @@ describe("CodeIndexer", () => {
 }`,
       );
 
-      const stats = await indexer.indexCodebase(codebaseDir);
+      const stats = await ingest.indexCodebase(codebaseDir);
 
       expect(stats.filesIndexed).toBe(1);
     });
@@ -109,7 +112,7 @@ describe("CodeIndexer", () => {
     it("should handle files with unicode content", async () => {
       await createTestFile(codebaseDir, "test.ts", "const greeting = '你好世界';");
 
-      const stats = await indexer.indexCodebase(codebaseDir);
+      const stats = await ingest.indexCodebase(codebaseDir);
 
       expect(stats.status).toBe("completed");
     });
@@ -118,7 +121,7 @@ describe("CodeIndexer", () => {
       const largeContent = "function test() {}\n".repeat(1000);
       await createTestFile(codebaseDir, "large.ts", largeContent);
 
-      const stats = await indexer.indexCodebase(codebaseDir);
+      const stats = await ingest.indexCodebase(codebaseDir);
 
       expect(stats.chunksCreated).toBeGreaterThan(1);
     });
@@ -126,13 +129,13 @@ describe("CodeIndexer", () => {
     it("should generate consistent collection names", async () => {
       await createTestFile(codebaseDir, "test.ts", "const x = 1;");
 
-      await indexer.indexCodebase(codebaseDir);
-      const status1 = await indexer.getIndexStatus(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
+      const status1 = await ingest.getIndexStatus(codebaseDir);
 
-      await indexer.clearIndex(codebaseDir);
+      await ingest.clearIndex(codebaseDir);
 
-      await indexer.indexCodebase(codebaseDir);
-      const status2 = await indexer.getIndexStatus(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
+      const status2 = await ingest.getIndexStatus(codebaseDir);
 
       expect(status1.collectionName).toBe(status2.collectionName);
     });
@@ -140,12 +143,12 @@ describe("CodeIndexer", () => {
     it("should handle concurrent operations gracefully", async () => {
       await createTestFile(codebaseDir, "test.ts", "const x = 1;");
 
-      await indexer.indexCodebase(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
 
       const searchPromises = [
-        indexer.searchCode(codebaseDir, "test"),
-        indexer.searchCode(codebaseDir, "const"),
-        indexer.getIndexStatus(codebaseDir),
+        search.searchCode(codebaseDir, "test"),
+        search.searchCode(codebaseDir, "const"),
+        ingest.getIndexStatus(codebaseDir),
       ];
 
       const results = await Promise.all(searchPromises);
