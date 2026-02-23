@@ -8,20 +8,17 @@
  * - EnrichmentModule: background git metadata enrichment
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
 import { EnrichmentModule } from "../ingest/enrichment-module.js";
+import { createIngestDependencies } from "../ingest/factory.js";
 import { IndexPipeline } from "../ingest/indexing.js";
 import { ReindexPipeline } from "../ingest/reindexing.js";
 import { StatusModule } from "../ingest/status-module.js";
-import type {
-  ChangeStats,
-  CodeConfig,
-  IndexOptions,
-  IndexStats,
-  IndexStatus,
-  ProgressCallback,
-} from "../types.js";
+import type { ChangeStats, CodeConfig, IndexOptions, IndexStats, IndexStatus, ProgressCallback } from "../types.js";
 
 export class IngestFacade {
   private readonly enrichment: EnrichmentModule;
@@ -29,15 +26,14 @@ export class IngestFacade {
   private readonly status: StatusModule;
   private readonly reindex: ReindexPipeline;
 
-  constructor(
-    qdrant: QdrantManager,
-    embeddings: EmbeddingProvider,
-    config: CodeConfig,
-  ) {
+  constructor(qdrant: QdrantManager, embeddings: EmbeddingProvider, config: CodeConfig) {
+    const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
+    const deps = createIngestDependencies(qdrant, snapshotDir);
+
     this.enrichment = new EnrichmentModule(qdrant);
-    this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment);
+    this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment, deps);
     this.status = new StatusModule(qdrant);
-    this.reindex = new ReindexPipeline(qdrant, embeddings, config, this.enrichment);
+    this.reindex = new ReindexPipeline(qdrant, embeddings, config, this.enrichment, deps);
   }
 
   /** Index a codebase from scratch or force re-index */

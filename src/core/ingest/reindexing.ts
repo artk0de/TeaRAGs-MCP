@@ -5,14 +5,11 @@
  * File processing logic is delegated to FileProcessor.
  */
 
-import { SchemaManager } from "../adapters/qdrant/schema-migration.js";
 import type { ChangeStats, ChunkLookupEntry, ProgressCallback } from "../types.js";
 import { BaseIndexingPipeline } from "./pipeline/base.js";
 import { pipelineLog } from "./pipeline/debug-logger.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
 import { performDeletion } from "./sync/deletion-strategy.js";
-import { SnapshotMigrator } from "./sync/migration.js";
-import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
 export class ReindexPipeline extends BaseIndexingPipeline {
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
@@ -37,10 +34,10 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       // AUTO-MIGRATE: snapshots and schema
-      const migrator = new SnapshotMigrator(this.snapshotDir, collectionName, absolutePath);
+      const migrator = this.deps.createMigrator(collectionName, absolutePath);
       await migrator.ensureMigrated();
 
-      const schemaManager = new SchemaManager(this.qdrant);
+      const schemaManager = this.deps.createSchemaManager();
       const schemaMigration = await schemaManager.ensureCurrentSchema(collectionName);
       if (schemaMigration.migrationsApplied.length > 0) {
         pipelineLog.reindexPhase("schema_migration", {
@@ -51,7 +48,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       // Initialize synchronizer
-      const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, this.snapshotDir);
+      const synchronizer = this.deps.createSynchronizer(absolutePath, collectionName);
       const hasSnapshot = await synchronizer.initialize();
 
       if (!hasSnapshot) {
