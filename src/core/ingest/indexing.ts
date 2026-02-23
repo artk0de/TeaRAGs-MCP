@@ -5,11 +5,7 @@
  * File processing logic is delegated to FileProcessor.
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import { SchemaManager } from "../adapters/qdrant/schema-migration.js";
-import { resolveCollectionName, validatePath } from "../api/shared.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../types.js";
 import { BaseIndexingPipeline } from "./pipeline/base.js";
 import { INDEXING_METADATA_ID } from "./constants.js";
@@ -28,8 +24,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       errors: [],
     };
 
-    const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
+    const { absolutePath, collectionName } = await this.resolveContext(path);
 
     try {
       // 1. Scan files
@@ -78,10 +73,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       await this.storeIndexingMarker(collectionName, false);
 
       // 3. Initialize processing components
-      const chunkerPool = this.createChunkerPool();
-      const chunkPipeline = this.createChunkPipeline(collectionName);
-      this.setupEnrichmentHooks(chunkPipeline, absolutePath, collectionName, scanner.getIgnoreFilter());
-      chunkPipeline.start();
+      const ctx = this.initProcessing(collectionName, absolutePath, scanner);
 
       // 4. Process files via shared FileProcessor
       let filesProcessed = 0;
@@ -89,8 +81,8 @@ export class IndexPipeline extends BaseIndexingPipeline {
       const result = await processFiles(
         files,
         absolutePath,
-        chunkerPool,
-        chunkPipeline,
+        ctx.chunkerPool,
+        ctx.chunkPipeline,
         {
           enableGitMetadata: this.config.enableGitMetadata === true,
           maxChunksPerFile: this.config.maxChunksPerFile,
@@ -101,7 +93,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
             filesProcessed++;
             chunksQueued += chunksCount;
             if (filesProcessed === 1 || filesProcessed % 10 === 0) {
-              const pipelineStats = chunkPipeline.getStats();
+              const pipelineStats = ctx.chunkPipeline.getStats();
               progressCallback?.({
                 phase: "chunking",
                 current: filesProcessed,
@@ -129,9 +121,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
         message: "Finalizing embeddings and storage...",
       });
 
-      await this.flushAndShutdown(chunkPipeline, chunkerPool);
+      const getEnrichmentStatus = await this.finalizeProcessing(ctx, result.chunkMap, collectionName, absolutePath);
 
-      const finalPipelineStats = chunkPipeline.getStats();
+      const finalPipelineStats = ctx.chunkPipeline.getStats();
       if (process.env.DEBUG) {
         console.error(
           `[Index] Pipeline completed: ${finalPipelineStats.itemsProcessed} chunks in ${finalPipelineStats.batchesProcessed} batches, ` +
@@ -139,13 +131,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
         );
       }
 
-      // 6. Enrichment completion
-      const getEnrichmentStatus = this.startEnrichment(result.chunkMap, collectionName, absolutePath);
-
       // 7. Save snapshot
       try {
-        const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
-        const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
+        const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, this.snapshotDir);
         await synchronizer.updateSnapshot(files);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

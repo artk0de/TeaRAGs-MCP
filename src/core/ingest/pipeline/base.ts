@@ -6,15 +6,24 @@
  * Subclasses compose these building blocks in their own orchestration flow.
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import { resolveCollectionName, validatePath } from "../../api/shared.js";
+import type { ChunkLookupEntry, CodeConfig } from "../../types.js";
+import type { EnrichmentModule } from "../enrichment-module.js";
 import { ChunkerPool } from "./chunker/utils/pool.js";
 import { pipelineLog } from "./debug-logger.js";
 import { ChunkPipeline, DEFAULT_CONFIG } from "./index.js";
 import { FileScanner } from "./scanner.js";
 import type { Ignore } from "ignore";
-import type { ChunkLookupEntry, CodeConfig } from "../../types.js";
-import type { EnrichmentModule } from "../enrichment-module.js";
+
+export interface ProcessingContext {
+  chunkerPool: ChunkerPool;
+  chunkPipeline: ChunkPipeline;
+}
 
 export abstract class BaseIndexingPipeline {
   constructor(
@@ -23,6 +32,21 @@ export abstract class BaseIndexingPipeline {
     protected readonly config: CodeConfig,
     protected readonly enrichment: EnrichmentModule,
   ) {}
+
+  // ── Shared context ─────────────────────────────────────────
+
+  protected get snapshotDir(): string {
+    return join(homedir(), ".tea-rags-mcp", "snapshots");
+  }
+
+  protected async resolveContext(path: string): Promise<{
+    absolutePath: string;
+    collectionName: string;
+  }> {
+    const absolutePath = await validatePath(path);
+    const collectionName = resolveCollectionName(absolutePath);
+    return { absolutePath, collectionName };
+  }
 
   // ── Scanner ──────────────────────────────────────────────
 
@@ -46,9 +70,33 @@ export abstract class BaseIndexingPipeline {
     return files;
   }
 
-  // ── Processing components ────────────────────────────────
+  // ── Processing lifecycle ─────────────────────────────────
 
-  protected createChunkerPool(): ChunkerPool {
+  protected initProcessing(
+    collectionName: string,
+    absolutePath: string,
+    scanner: FileScanner,
+  ): ProcessingContext {
+    const chunkerPool = this.createChunkerPool();
+    const chunkPipeline = this.createChunkPipeline(collectionName);
+    this.setupEnrichmentHooks(chunkPipeline, absolutePath, collectionName, scanner.getIgnoreFilter());
+    chunkPipeline.start();
+    return { chunkerPool, chunkPipeline };
+  }
+
+  protected async finalizeProcessing(
+    ctx: ProcessingContext,
+    chunkMap: Map<string, ChunkLookupEntry[]>,
+    collectionName: string,
+    absolutePath: string,
+  ): Promise<() => "completed" | "background" | "skipped"> {
+    await this.flushAndShutdown(ctx.chunkPipeline, ctx.chunkerPool);
+    return this.startEnrichment(chunkMap, collectionName, absolutePath);
+  }
+
+  // ── Processing components (private) ────────────────────
+
+  private createChunkerPool(): ChunkerPool {
     return new ChunkerPool(
       parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10),
       {
@@ -59,7 +107,7 @@ export abstract class BaseIndexingPipeline {
     );
   }
 
-  protected createChunkPipeline(collectionName: string): ChunkPipeline {
+  private createChunkPipeline(collectionName: string): ChunkPipeline {
     return new ChunkPipeline(this.qdrant, this.embeddings, collectionName, {
       workerPool: DEFAULT_CONFIG.workerPool,
       accumulator: DEFAULT_CONFIG.upsertAccumulator,
@@ -67,7 +115,7 @@ export abstract class BaseIndexingPipeline {
     });
   }
 
-  protected setupEnrichmentHooks(
+  private setupEnrichmentHooks(
     chunkPipeline: ChunkPipeline,
     absolutePath: string,
     collectionName: string,
@@ -83,7 +131,7 @@ export abstract class BaseIndexingPipeline {
 
   // ── Teardown ─────────────────────────────────────────────
 
-  protected async flushAndShutdown(chunkPipeline: ChunkPipeline, chunkerPool: ChunkerPool): Promise<void> {
+  private async flushAndShutdown(chunkPipeline: ChunkPipeline, chunkerPool: ChunkerPool): Promise<void> {
     await chunkPipeline.flush();
     await Promise.all([chunkPipeline.shutdown(), chunkerPool.shutdown()]);
   }
@@ -92,7 +140,7 @@ export abstract class BaseIndexingPipeline {
    * Starts background enrichment and returns a status getter.
    * Call the returned function after snapshot/finalization to get current status.
    */
-  protected startEnrichment(
+  private startEnrichment(
     chunkMap: Map<string, ChunkLookupEntry[]>,
     collectionName: string,
     absolutePath: string,
