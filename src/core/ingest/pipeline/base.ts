@@ -9,16 +9,18 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { Ignore } from "ignore";
+
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../api/shared.js";
 import type { ChunkLookupEntry, CodeConfig } from "../../types.js";
 import type { EnrichmentModule } from "../enrichment-module.js";
+import type { IngestDependencies } from "../factory.js";
 import { ChunkerPool } from "./chunker/utils/pool.js";
 import { pipelineLog } from "./debug-logger.js";
 import { ChunkPipeline, DEFAULT_CONFIG } from "./index.js";
 import { FileScanner } from "./scanner.js";
-import type { Ignore } from "ignore";
 
 export interface ProcessingContext {
   chunkerPool: ChunkerPool;
@@ -31,6 +33,7 @@ export abstract class BaseIndexingPipeline {
     protected readonly embeddings: EmbeddingProvider,
     protected readonly config: CodeConfig,
     protected readonly enrichment: EnrichmentModule,
+    protected readonly deps: IngestDependencies,
   ) {}
 
   // ── Shared context ─────────────────────────────────────────
@@ -50,10 +53,7 @@ export abstract class BaseIndexingPipeline {
 
   // ── Scanner ──────────────────────────────────────────────
 
-  protected createScanner(overrides?: {
-    extensions?: string[];
-    customIgnorePatterns?: string[];
-  }): FileScanner {
+  protected createScanner(overrides?: { extensions?: string[]; customIgnorePatterns?: string[] }): FileScanner {
     return new FileScanner({
       supportedExtensions: overrides?.extensions || this.config.supportedExtensions,
       ignorePatterns: this.config.ignorePatterns,
@@ -72,11 +72,7 @@ export abstract class BaseIndexingPipeline {
 
   // ── Processing lifecycle ─────────────────────────────────
 
-  protected initProcessing(
-    collectionName: string,
-    absolutePath: string,
-    scanner: FileScanner,
-  ): ProcessingContext {
+  protected initProcessing(collectionName: string, absolutePath: string, scanner: FileScanner): ProcessingContext {
     const chunkerPool = this.createChunkerPool();
     const chunkPipeline = this.createChunkPipeline(collectionName);
     this.setupEnrichmentHooks(chunkPipeline, absolutePath, collectionName, scanner.getIgnoreFilter());
@@ -97,14 +93,11 @@ export abstract class BaseIndexingPipeline {
   // ── Processing components (private) ────────────────────
 
   private createChunkerPool(): ChunkerPool {
-    return new ChunkerPool(
-      parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10),
-      {
-        chunkSize: this.config.chunkSize,
-        chunkOverlap: this.config.chunkOverlap,
-        maxChunkSize: this.config.chunkSize * 2,
-      },
-    );
+    return new ChunkerPool(parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10), {
+      chunkSize: this.config.chunkSize,
+      chunkOverlap: this.config.chunkOverlap,
+      maxChunkSize: this.config.chunkSize * 2,
+    });
   }
 
   private createChunkPipeline(collectionName: string): ChunkPipeline {

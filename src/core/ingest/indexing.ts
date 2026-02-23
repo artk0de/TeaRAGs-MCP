@@ -5,12 +5,10 @@
  * File processing logic is delegated to FileProcessor.
  */
 
-import { SchemaManager } from "../adapters/qdrant/schema-migration.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../types.js";
 import { storeIndexingMarker } from "./indexing-marker.js";
 import { BaseIndexingPipeline } from "./pipeline/base.js";
 import { processFiles } from "./pipeline/file-processor.js";
-import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
 export class IndexPipeline extends BaseIndexingPipeline {
   async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
@@ -67,7 +65,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       const vectorSize = this.embeddings.getDimensions();
       await this.qdrant.createCollection(collectionName, vectorSize, "Cosine", this.config.enableHybridSearch);
 
-      const schemaManager = new SchemaManager(this.qdrant);
+      const schemaManager = this.deps.createSchemaManager();
       await schemaManager.initializeSchema(collectionName);
 
       await storeIndexingMarker(this.qdrant, this.embeddings, collectionName, false);
@@ -133,7 +131,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
 
       // 7. Save snapshot
       try {
-        const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, this.snapshotDir);
+        const synchronizer = this.deps.createSynchronizer(absolutePath, collectionName);
         await synchronizer.updateSnapshot(files);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

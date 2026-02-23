@@ -12,6 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import { createIngestDependencies } from "../../../src/core/ingest/factory.js";
 import type { CodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
@@ -113,11 +114,13 @@ describe("Enrichment status detection", () => {
     // Inject slow enrichment into the ingest facade
     ingest = new IngestFacade(qdrant as any, embeddings, config);
     (ingest as any).enrichment = slowEnrichment;
+    const deps = createIngestDependencies(qdrant as any, tempDir);
     (ingest as any).indexing = new (await import("../../../src/core/ingest/indexing.js")).IndexPipeline(
       qdrant,
       embeddings,
       config,
       slowEnrichment,
+      deps,
     );
 
     await createTestFile(
@@ -160,6 +163,7 @@ describe("Enrichment status detection", () => {
     deferredEnrichment.onChunksStored = vi.fn();
     deferredEnrichment.startChunkChurn = vi.fn();
 
+    const deps = createIngestDependencies(qdrant as any, tempDir);
     ingest = new IngestFacade(qdrant as any, embeddings, config);
     (ingest as any).enrichment = deferredEnrichment;
     (ingest as any).indexing = new (await import("../../../src/core/ingest/indexing.js")).IndexPipeline(
@@ -167,6 +171,7 @@ describe("Enrichment status detection", () => {
       embeddings,
       config,
       deferredEnrichment,
+      deps,
     );
 
     await createTestFile(codebaseDir, "test.ts", "export function compute(x: number): number {\n  return x * 2;\n}");
