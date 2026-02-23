@@ -5,11 +5,9 @@
  * File processing logic is delegated to FileProcessor.
  */
 
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { SchemaManager } from "../adapters/qdrant/schema-migration.js";
-import { resolveCollectionName, validatePath } from "../api/shared.js";
 import type { ChangeStats, ChunkLookupEntry, ProgressCallback } from "../types.js";
 import { BaseIndexingPipeline } from "./pipeline/base.js";
 import { pipelineLog } from "./pipeline/debug-logger.js";
@@ -31,8 +29,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     };
 
     try {
-      const absolutePath = await validatePath(path);
-      const collectionName = resolveCollectionName(absolutePath);
+      const { absolutePath, collectionName } = await this.resolveContext(path);
 
       // Check if collection exists
       const exists = await this.qdrant.collectionExists(collectionName);
@@ -41,8 +38,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       // AUTO-MIGRATE: snapshots and schema
-      const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
-      const migrator = new SnapshotMigrator(snapshotDir, collectionName, absolutePath);
+      const migrator = new SnapshotMigrator(this.snapshotDir, collectionName, absolutePath);
       await migrator.ensureMigrated();
 
       const schemaManager = new SchemaManager(this.qdrant);
@@ -56,7 +52,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       // Initialize synchronizer
-      const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
+      const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, this.snapshotDir);
       const hasSnapshot = await synchronizer.initialize();
 
       if (!hasSnapshot) {
@@ -101,10 +97,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       // Initialize processing components
-      const chunkerPool = this.createChunkerPool();
-      const chunkPipeline = this.createChunkPipeline(collectionName);
-      this.setupEnrichmentHooks(chunkPipeline, absolutePath, collectionName, scanner.getIgnoreFilter());
-      chunkPipeline.start();
+      const ctx = this.initProcessing(collectionName, absolutePath, scanner);
 
       const chunkMap = new Map<string, ChunkLookupEntry[]>();
       const filesToDelete = [...changes.modified, ...changes.deleted];
@@ -124,8 +117,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         const result = await processFiles(
           absolutePaths,
           absolutePath,
-          chunkerPool,
-          chunkPipeline,
+          ctx.chunkerPool,
+          ctx.chunkPipeline,
           { enableGitMetadata: this.config.enableGitMetadata === true },
         );
 
@@ -195,20 +188,20 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         modifiedDurationMs: Date.now() - modifiedStartTime,
       });
 
-      // Flush and shutdown
+      // Flush, shutdown, and enrichment
       if (process.env.DEBUG) {
-        const pipelineStats = chunkPipeline.getStats();
+        const pipelineStats = ctx.chunkPipeline.getStats();
         console.error(
           `[Reindex] ChunkPipeline before flush: ` +
-            `pending=${chunkPipeline.getPendingCount()}, ` +
+            `pending=${ctx.chunkPipeline.getPendingCount()}, ` +
             `processed=${pipelineStats.itemsProcessed}, ` +
             `batches=${pipelineStats.batchesProcessed}`,
         );
       }
 
-      await this.flushAndShutdown(chunkPipeline, chunkerPool);
+      const getEnrichmentStatus = await this.finalizeProcessing(ctx, chunkMap, collectionName, absolutePath);
 
-      const pipelineStats = chunkPipeline.getStats();
+      const pipelineStats = ctx.chunkPipeline.getStats();
       if (process.env.DEBUG) {
         console.error(
           `[Reindex] Parallel pipelines completed in ${Date.now() - parallelStart}ms ` +
@@ -218,9 +211,6 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       stats.chunksAdded = addedChunks + modifiedChunks;
-
-      // Enrichment completion
-      const getEnrichmentStatus = this.startEnrichment(chunkMap, collectionName, absolutePath);
 
       // Update snapshot
       await synchronizer.updateSnapshot(currentFiles);
