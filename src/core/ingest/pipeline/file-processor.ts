@@ -6,16 +6,17 @@
  */
 
 import { promises as fs } from "node:fs";
+import { join } from "node:path";
 
-import type { ChunkerPool } from "./chunker/utils/pool.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../types.js";
-import { generateChunkId } from "./chunk-id.js";
-import { containsSecrets } from "./secrets-detector.js";
-import { detectLanguage } from "./language-detector.js";
-import { extractImportsExports } from "./import-extractor.js";
-import { pipelineLog } from "./debug-logger.js";
-import type { ChunkPipeline } from "./chunk-pipeline.js";
 import { parallelLimit } from "../../utils/parallel.js";
+import { generateChunkId } from "./chunk-id.js";
+import type { ChunkPipeline } from "./chunk-pipeline.js";
+import type { ChunkerPool } from "./chunker/utils/pool.js";
+import { pipelineLog } from "./debug-logger.js";
+import { extractImportsExports } from "./import-extractor.js";
+import { detectLanguage } from "./language-detector.js";
+import { containsSecrets } from "./secrets-detector.js";
 
 export interface FileProcessorOptions {
   enableGitMetadata: boolean;
@@ -140,4 +141,51 @@ export async function processFiles(
   );
 
   return result;
+}
+
+/**
+ * Process files given as relative paths, resolving them to absolute paths.
+ * Merges resulting chunkMap entries into a provided shared map.
+ *
+ * Convenience wrapper for reindex workflows where file lists are relative to basePath.
+ *
+ * @param relativePaths - File paths relative to basePath
+ * @param basePath - Base path of the codebase
+ * @param chunkerPool - Pool for AST-aware chunking
+ * @param chunkPipeline - Pipeline for embedding and storage
+ * @param options - Processing options
+ * @param chunkMap - Shared chunkMap to merge results into
+ * @param label - Label for debug logging
+ * @returns Number of chunks created
+ */
+export async function processRelativeFiles(
+  relativePaths: string[],
+  basePath: string,
+  chunkerPool: ChunkerPool,
+  chunkPipeline: ChunkPipeline,
+  options: FileProcessorOptions,
+  chunkMap: Map<string, ChunkLookupEntry[]>,
+  label: string,
+): Promise<number> {
+  if (relativePaths.length === 0) return 0;
+
+  const absolutePaths = relativePaths.map((f) => join(basePath, f));
+
+  if (process.env.DEBUG) {
+    console.error(`[Reindex] ${label}: starting ${relativePaths.length} files`);
+  }
+
+  const result = await processFiles(absolutePaths, basePath, chunkerPool, chunkPipeline, options);
+
+  // Merge chunkMap entries
+  for (const [key, entries] of result.chunkMap) {
+    const existing = chunkMap.get(key) || [];
+    chunkMap.set(key, [...existing, ...entries]);
+  }
+
+  if (process.env.DEBUG) {
+    console.error(`[Reindex] ${label}: completed ${relativePaths.length} files, ${result.chunksCreated} chunks queued`);
+  }
+
+  return result.chunksCreated;
 }

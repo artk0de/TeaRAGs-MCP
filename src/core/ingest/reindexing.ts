@@ -5,13 +5,12 @@
  * File processing logic is delegated to FileProcessor.
  */
 
-import { join } from "node:path";
-
 import { SchemaManager } from "../adapters/qdrant/schema-migration.js";
 import type { ChangeStats, ChunkLookupEntry, ProgressCallback } from "../types.js";
 import { BaseIndexingPipeline } from "./pipeline/base.js";
 import { pipelineLog } from "./pipeline/debug-logger.js";
-import { processFiles } from "./pipeline/file-processor.js";
+import { processRelativeFiles } from "./pipeline/file-processor.js";
+import { performDeletion } from "./sync/deletion-strategy.js";
 import { SnapshotMigrator } from "./sync/migration.js";
 import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
@@ -104,36 +103,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       const addedFiles = [...changes.added];
       const modifiedFiles = [...changes.modified];
 
-      // Helper: index files via shared FileProcessor (resolves relative → absolute)
-      const indexFiles = async (files: string[], label: string): Promise<number> => {
-        if (files.length === 0) return 0;
-
-        const absolutePaths = files.map((f) => join(absolutePath, f));
-
-        if (process.env.DEBUG) {
-          console.error(`[Reindex] ${label}: starting ${files.length} files`);
-        }
-
-        const result = await processFiles(
-          absolutePaths,
-          absolutePath,
-          ctx.chunkerPool,
-          ctx.chunkPipeline,
-          { enableGitMetadata: this.config.enableGitMetadata === true },
-        );
-
-        // Merge chunkMap entries
-        for (const [key, entries] of result.chunkMap) {
-          const existing = chunkMap.get(key) || [];
-          chunkMap.set(key, [...existing, ...entries]);
-        }
-
-        if (process.env.DEBUG) {
-          console.error(`[Reindex] ${label}: completed ${files.length} files, ${result.chunksCreated} chunks queued`);
-        }
-
-        return result.chunksCreated;
-      };
+      const processOpts = { enableGitMetadata: this.config.enableGitMetadata === true };
 
       // PARALLEL PIPELINES: delete + add simultaneously, then modified after delete
       const parallelStart = Date.now();
@@ -152,8 +122,16 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       const deleteStartTime = Date.now();
-      const deletePromise = this.performDeletion(collectionName, filesToDelete, progressCallback);
-      const addPromise = indexFiles(addedFiles, "added");
+      const deletePromise = performDeletion(this.qdrant, collectionName, filesToDelete, progressCallback);
+      const addPromise = processRelativeFiles(
+        addedFiles,
+        absolutePath,
+        ctx.chunkerPool,
+        ctx.chunkPipeline,
+        processOpts,
+        chunkMap,
+        "added",
+      );
 
       pipelineLog.reindexPhase("DELETE_AND_ADD_STARTED", {
         deleteFiles: filesToDelete.length,
@@ -172,7 +150,15 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       const modifiedStartTime = Date.now();
-      const modifiedPromise = indexFiles(modifiedFiles, "modified");
+      const modifiedPromise = processRelativeFiles(
+        modifiedFiles,
+        absolutePath,
+        ctx.chunkerPool,
+        ctx.chunkPipeline,
+        processOpts,
+        chunkMap,
+        "modified",
+      );
 
       pipelineLog.reindexPhase("MODIFIED_STARTED", {
         modifiedFiles: modifiedFiles.length,
@@ -231,100 +217,6 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Incremental re-indexing failed: ${errorMessage}`);
-    }
-  }
-
-  private async performDeletion(
-    collectionName: string,
-    filesToDelete: string[],
-    progressCallback?: ProgressCallback,
-  ): Promise<void> {
-    if (filesToDelete.length === 0) return;
-
-    progressCallback?.({
-      phase: "scanning",
-      current: 0,
-      total: filesToDelete.length,
-      percentage: 5,
-      message: `Deleting old chunks for ${filesToDelete.length} files...`,
-    });
-
-    try {
-      const deleteResult = await this.qdrant.deletePointsByPathsBatched(collectionName, filesToDelete, {
-        batchSize: 100,
-        concurrency: 4,
-        onProgress: (deleted, total) => {
-          progressCallback?.({
-            phase: "scanning",
-            current: deleted,
-            total,
-            percentage: 5 + Math.floor((deleted / total) * 5),
-            message: `Deleting old chunks: ${deleted}/${total} files...`,
-          });
-        },
-      });
-
-      if (process.env.DEBUG) {
-        console.error(
-          `[Reindex] Deleted ${deleteResult.deletedPaths} paths in ${deleteResult.batchCount} batches (${deleteResult.durationMs}ms)`,
-        );
-      }
-    } catch (error) {
-      // FALLBACK LEVEL 1
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      pipelineLog.fallback({ component: "Reindex" }, 1, `deletePointsByPathsBatched failed: ${errorMsg}`);
-      console.error(
-        `[Reindex] FALLBACK L1: deletePointsByPathsBatched failed for ${filesToDelete.length} paths:`,
-        errorMsg,
-      );
-
-      try {
-        const fallbackStart = Date.now();
-        await this.qdrant.deletePointsByPaths(collectionName, filesToDelete);
-        pipelineLog.step({ component: "Reindex" }, "FALLBACK_L1_SUCCESS", {
-          durationMs: Date.now() - fallbackStart,
-          paths: filesToDelete.length,
-        });
-        console.error(
-          `[Reindex] FALLBACK L1 SUCCESS: deletePointsByPaths completed in ${Date.now() - fallbackStart}ms`,
-        );
-      } catch (fallbackError) {
-        // FALLBACK LEVEL 2
-        const fallbackErrorMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-        pipelineLog.fallback({ component: "Reindex" }, 2, `deletePointsByPaths failed: ${fallbackErrorMsg}`);
-        console.error(`[Reindex] FALLBACK L2: deletePointsByPaths also failed:`, fallbackErrorMsg);
-        console.error(
-          `[Reindex] FALLBACK L2: Starting INDIVIDUAL deletions for ${filesToDelete.length} paths (SLOW!)`,
-        );
-
-        let deleted = 0;
-        let failed = 0;
-        const individualStart = Date.now();
-
-        for (const relativePath of filesToDelete) {
-          try {
-            const filter = {
-              must: [{ key: "relativePath", match: { value: relativePath } }],
-            };
-            await this.qdrant.deletePointsByFilter(collectionName, filter);
-            deleted++;
-          } catch (innerError) {
-            failed++;
-            if (process.env.DEBUG) {
-              console.error(`[Reindex] FALLBACK L2: Failed to delete ${relativePath}:`, innerError);
-            }
-          }
-        }
-
-        pipelineLog.step({ component: "Reindex" }, "FALLBACK_L2_COMPLETE", {
-          deleted,
-          failed,
-          durationMs: Date.now() - individualStart,
-        });
-        console.error(
-          `[Reindex] FALLBACK L2 COMPLETE: ${deleted} deleted, ${failed} failed in ${Date.now() - individualStart}ms`,
-        );
-      }
     }
   }
 }
