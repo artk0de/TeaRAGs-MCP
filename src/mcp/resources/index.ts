@@ -4,7 +4,7 @@
 
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { QdrantManager } from "../../core/qdrant/client.js";
+import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
 
 /**
  * Register all MCP resources on the server

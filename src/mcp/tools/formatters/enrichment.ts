@@ -1,5 +1,5 @@
 // src/mcp/tools/formatters/enrichment.ts
-import type { EnrichmentInfo, IndexStatus } from "../../../core/code/types.js";
+import type { EnrichmentInfo, IndexStatus } from "../../../core/types.js";
 
 type GetIndexStatusFn = (path: string) => Promise<IndexStatus>;
 

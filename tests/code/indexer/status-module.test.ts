@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CodeIndexer } from "../../../src/core/code/indexer.js";
-import type { CodeConfig } from "../../../src/core/code/types.js";
+import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import type { CodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
@@ -42,7 +42,7 @@ vi.mock("tree-sitter-typescript", () => ({
 }));
 
 describe("StatusModule", () => {
-  let indexer: CodeIndexer;
+  let ingest: IngestFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
   let config: CodeConfig;
@@ -54,7 +54,7 @@ describe("StatusModule", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    indexer = new CodeIndexer(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config);
   });
 
   afterEach(async () => {
@@ -64,7 +64,7 @@ describe("StatusModule", () => {
   describe("getIndexStatus", () => {
     describe("not_indexed status", () => {
       it("should return not_indexed for new codebase with no collection", async () => {
-        const status = await indexer.getIndexStatus(codebaseDir);
+        const status = await ingest.getIndexStatus(codebaseDir);
 
         expect(status.isIndexed).toBe(false);
         expect(status.status).toBe("not_indexed");
@@ -77,11 +77,11 @@ describe("StatusModule", () => {
         await fs.mkdir(emptyDir, { recursive: true });
         await fs.writeFile(join(emptyDir, "readme.md"), "# README");
 
-        const stats = await indexer.indexCodebase(emptyDir);
+        const stats = await ingest.indexCodebase(emptyDir);
 
         expect(stats.filesScanned).toBe(0);
 
-        const status = await indexer.getIndexStatus(emptyDir);
+        const status = await ingest.getIndexStatus(emptyDir);
         expect(status.status).toBe("not_indexed");
         expect(status.isIndexed).toBe(false);
       });
@@ -94,9 +94,9 @@ describe("StatusModule", () => {
           "test.ts",
           "export const APP_CONFIG = {\n  port: 3000,\n  host: 'localhost',\n  debug: true,\n  apiUrl: 'https://api.example.com',\n  timeout: 5000\n};\nconsole.log('Config loaded');",
         );
-        await indexer.indexCodebase(codebaseDir);
+        await ingest.indexCodebase(codebaseDir);
 
-        const status = await indexer.getIndexStatus(codebaseDir);
+        const status = await ingest.getIndexStatus(codebaseDir);
 
         expect(status.isIndexed).toBe(true);
         expect(status.status).toBe("indexed");
@@ -112,10 +112,10 @@ describe("StatusModule", () => {
         );
 
         const beforeIndexing = new Date();
-        await indexer.indexCodebase(codebaseDir);
+        await ingest.indexCodebase(codebaseDir);
         const afterIndexing = new Date();
 
-        const status = await indexer.getIndexStatus(codebaseDir);
+        const status = await ingest.getIndexStatus(codebaseDir);
 
         expect(status.status).toBe("indexed");
         expect(status.lastUpdated).toBeDefined();
@@ -130,9 +130,9 @@ describe("StatusModule", () => {
           "test.ts",
           "export const a = 1;\nexport const b = 2;\nconsole.log('File with content');\nfunction helper() { return a + b; }",
         );
-        await indexer.indexCodebase(codebaseDir);
+        await ingest.indexCodebase(codebaseDir);
 
-        const status = await indexer.getIndexStatus(codebaseDir);
+        const status = await ingest.getIndexStatus(codebaseDir);
 
         expect(status.chunksCount).toBeGreaterThanOrEqual(0);
         expect(typeof status.chunksCount).toBe("number");
@@ -146,9 +146,9 @@ describe("StatusModule", () => {
           "test.ts",
           "export const data = { key: 'value' };\nconsole.log('Completion marker test');\nfunction process() { return data; }",
         );
-        await indexer.indexCodebase(codebaseDir);
+        await ingest.indexCodebase(codebaseDir);
 
-        const status = await indexer.getIndexStatus(codebaseDir);
+        const status = await ingest.getIndexStatus(codebaseDir);
         expect(status.status).toBe("indexed");
         expect(status.isIndexed).toBe(true);
       });
@@ -156,9 +156,9 @@ describe("StatusModule", () => {
       it("should store completion marker even when no chunks are created", async () => {
         await createTestFile(codebaseDir, "tiny.ts", "const x = 1;");
 
-        await indexer.indexCodebase(codebaseDir);
+        await ingest.indexCodebase(codebaseDir);
 
-        const status = await indexer.getIndexStatus(codebaseDir);
+        const status = await ingest.getIndexStatus(codebaseDir);
 
         expect(status.status).toBe("indexed");
         expect(status.isIndexed).toBe(true);
@@ -171,13 +171,13 @@ describe("StatusModule", () => {
           "export const v1 = 'first';\nconsole.log('First indexing');\nfunction init() { return v1; }",
         );
 
-        await indexer.indexCodebase(codebaseDir);
-        const status1 = await indexer.getIndexStatus(codebaseDir);
+        await ingest.indexCodebase(codebaseDir);
+        const status1 = await ingest.getIndexStatus(codebaseDir);
 
         await new Promise((resolve) => setTimeout(resolve, 10));
 
-        await indexer.indexCodebase(codebaseDir, { forceReindex: true });
-        const status2 = await indexer.getIndexStatus(codebaseDir);
+        await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+        const status2 = await ingest.getIndexStatus(codebaseDir);
 
         expect(status2.status).toBe("indexed");
         expect(status1.lastUpdated).toBeDefined();
@@ -187,7 +187,7 @@ describe("StatusModule", () => {
 
     describe("backwards compatibility", () => {
       it("should always return isIndexed boolean for backwards compatibility", async () => {
-        let status = await indexer.getIndexStatus(codebaseDir);
+        let status = await ingest.getIndexStatus(codebaseDir);
         expect(typeof status.isIndexed).toBe("boolean");
         expect(status.isIndexed).toBe(false);
 
@@ -196,9 +196,9 @@ describe("StatusModule", () => {
           "test.ts",
           "export const test = true;\nconsole.log('Backwards compat test');\nfunction run() { return test; }",
         );
-        await indexer.indexCodebase(codebaseDir);
+        await ingest.indexCodebase(codebaseDir);
 
-        status = await indexer.getIndexStatus(codebaseDir);
+        status = await ingest.getIndexStatus(codebaseDir);
         expect(typeof status.isIndexed).toBe("boolean");
         expect(status.isIndexed).toBe(true);
       });
@@ -209,9 +209,9 @@ describe("StatusModule", () => {
           "test.ts",
           "export const consistency = 1;\nconsole.log('Consistency check');\nfunction check() { return consistency; }",
         );
-        await indexer.indexCodebase(codebaseDir);
+        await ingest.indexCodebase(codebaseDir);
 
-        const status = await indexer.getIndexStatus(codebaseDir);
+        const status = await ingest.getIndexStatus(codebaseDir);
 
         if (status.status === "indexed") {
           expect(status.isIndexed).toBe(true);
@@ -233,10 +233,10 @@ describe("StatusModule", () => {
 
         let statusDuringIndexing: any = null;
 
-        const indexingPromise = indexer.indexCodebase(codebaseDir, undefined, (progress) => {
+        const indexingPromise = ingest.indexCodebase(codebaseDir, undefined, (progress) => {
           void (async () => {
             if (progress.phase === "embedding" && statusDuringIndexing === null) {
-              statusDuringIndexing = await indexer.getIndexStatus(codebaseDir);
+              statusDuringIndexing = await ingest.getIndexStatus(codebaseDir);
             }
           })();
         });
@@ -249,7 +249,7 @@ describe("StatusModule", () => {
           expect(statusDuringIndexing.collectionName).toBeDefined();
         }
 
-        const statusAfter = await indexer.getIndexStatus(codebaseDir);
+        const statusAfter = await ingest.getIndexStatus(codebaseDir);
         expect(statusAfter.status).toBe("indexed");
         expect(statusAfter.isIndexed).toBe(true);
       });
@@ -265,10 +265,10 @@ describe("StatusModule", () => {
 
         let chunksCountDuringIndexing: number | undefined;
 
-        await indexer.indexCodebase(codebaseDir, undefined, (progress) => {
+        await ingest.indexCodebase(codebaseDir, undefined, (progress) => {
           void (async () => {
             if (progress.phase === "storing" && chunksCountDuringIndexing === undefined) {
-              const status = await indexer.getIndexStatus(codebaseDir);
+              const status = await ingest.getIndexStatus(codebaseDir);
               chunksCountDuringIndexing = status.chunksCount;
             }
           })();
@@ -288,9 +288,9 @@ describe("StatusModule", () => {
           "legacy.ts",
           "export const legacy = true;\nconsole.log('Legacy test');\nfunction legacyFn() { return legacy; }",
         );
-        await indexer.indexCodebase(codebaseDir);
+        await ingest.indexCodebase(codebaseDir);
 
-        const initialStatus = await indexer.getIndexStatus(codebaseDir);
+        const initialStatus = await ingest.getIndexStatus(codebaseDir);
         expect(initialStatus.status).toBe("indexed");
 
         expect(initialStatus.chunksCount).toBeGreaterThanOrEqual(0);
@@ -301,25 +301,25 @@ describe("StatusModule", () => {
   describe("clearIndex", () => {
     it("should clear indexed codebase", async () => {
       await createTestFile(codebaseDir, "test.ts", "export const configValue = 1;\nconsole.log('Config loaded');");
-      await indexer.indexCodebase(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
 
-      await indexer.clearIndex(codebaseDir);
+      await ingest.clearIndex(codebaseDir);
 
-      const status = await indexer.getIndexStatus(codebaseDir);
+      const status = await ingest.getIndexStatus(codebaseDir);
       expect(status.isIndexed).toBe(false);
     });
 
     it("should handle clearing non-indexed codebase", async () => {
-      await expect(indexer.clearIndex(codebaseDir)).resolves.not.toThrow();
+      await expect(ingest.clearIndex(codebaseDir)).resolves.not.toThrow();
     });
 
     it("should allow re-indexing after clearing", async () => {
       await createTestFile(codebaseDir, "test.ts", "export const reindexValue = 1;\nconsole.log('Reindexing');");
-      await indexer.indexCodebase(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
 
-      await indexer.clearIndex(codebaseDir);
+      await ingest.clearIndex(codebaseDir);
 
-      const stats = await indexer.indexCodebase(codebaseDir);
+      const stats = await ingest.indexCodebase(codebaseDir);
       expect(stats.status).toBe("completed");
     });
   });

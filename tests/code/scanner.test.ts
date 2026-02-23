@@ -3,8 +3,8 @@ import { fileURLToPath } from "node:url";
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { FileScanner } from "../../src/core/code/scanner.js";
-import type { ScannerConfig } from "../../src/core/code/types.js";
+import { FileScanner } from "../../src/core/ingest/pipeline/scanner.js";
+import type { ScannerConfig } from "../../src/core/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(__dirname, "fixtures");

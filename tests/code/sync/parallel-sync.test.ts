@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ParallelFileSynchronizer } from "../../../src/core/code/sync/parallel-synchronizer.js";
+import { ParallelFileSynchronizer } from "../../../src/core/ingest/sync/parallel-synchronizer.js";
 
 describe("ParallelFileSynchronizer", () => {
   let testDir: string;

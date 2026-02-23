@@ -8,8 +8,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { SnapshotMigrator } from "../../../src/core/code/sync/migration.js";
-import { ShardedSnapshotManager } from "../../../src/core/code/sync/sharded-snapshot.js";
+import { SnapshotMigrator } from "../../../src/core/ingest/sync/migration.js";
+import { ShardedSnapshotManager } from "../../../src/core/ingest/sync/sharded-snapshot.js";
 
 describe("SnapshotMigrator", () => {
   let testDir: string;

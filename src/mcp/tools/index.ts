@@ -4,9 +4,10 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { CodeIndexer } from "../../core/code/indexer.js";
-import type { EmbeddingProvider } from "../../core/embeddings/base.js";
-import type { QdrantManager } from "../../core/qdrant/client.js";
+import type { IngestFacade } from "../../core/api/ingest-facade.js";
+import type { SearchFacade } from "../../core/api/search-facade.js";
+import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
+import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
 import { registerCodeTools } from "./code.js";
 import { registerCollectionTools } from "./collection.js";
 import { registerDocumentTools } from "./document.js";
@@ -15,7 +16,8 @@ import { registerSearchTools } from "./search.js";
 export interface ToolDependencies {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
-  codeIndexer: CodeIndexer;
+  ingest: IngestFacade;
+  search: SearchFacade;
 }
 
 /**
@@ -38,7 +40,8 @@ export function registerAllTools(server: McpServer, deps: ToolDependencies): voi
   });
 
   registerCodeTools(server, {
-    codeIndexer: deps.codeIndexer,
+    ingest: deps.ingest,
+    search: deps.search,
   });
 }
 

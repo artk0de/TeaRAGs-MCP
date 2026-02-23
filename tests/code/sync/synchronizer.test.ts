@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { FileSynchronizer } from "../../../src/core/code/sync/synchronizer.js";
+import { FileSynchronizer } from "../../../src/core/ingest/sync/synchronizer.js";
 
 describe("FileSynchronizer", () => {
   let tempDir: string;

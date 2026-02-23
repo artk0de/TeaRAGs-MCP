@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { extractClassHeader } from "../../../src/core/code/chunker/hooks/ruby/class-body-chunker.js";
-import { TreeSitterChunker } from "../../../src/core/code/chunker/tree-sitter-chunker.js";
-import type { ChunkerConfig } from "../../../src/core/code/types.js";
+import { extractClassHeader } from "../../../src/core/ingest/chunker/hooks/ruby/class-body-chunker.js";
+import { TreeSitterChunker } from "../../../src/core/ingest/chunker/tree-sitter-chunker.js";
+import type { ChunkerConfig } from "../../../src/core/types.js";
 
 describe("TreeSitterChunker", () => {
   let chunker: TreeSitterChunker;

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CodeIndexer } from "../../../src/core/code/indexer.js";
-import type { CodeConfig } from "../../../src/core/code/types.js";
+import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import type { CodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
@@ -39,7 +39,7 @@ vi.mock("tree-sitter-typescript", () => ({
 }));
 
 describe("EnrichmentModule", () => {
-  let indexer: CodeIndexer;
+  let ingest: IngestFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
   let config: CodeConfig;
@@ -51,7 +51,7 @@ describe("EnrichmentModule", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    indexer = new CodeIndexer(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config);
   });
 
   afterEach(async () => {
@@ -62,7 +62,7 @@ describe("EnrichmentModule", () => {
     it("should set enrichmentStatus to skipped when enableGitMetadata is false", async () => {
       await createTestFile(codebaseDir, "test.ts", "export function hello(): string { return 'hello'; }");
 
-      const stats = await indexer.indexCodebase(codebaseDir);
+      const stats = await ingest.indexCodebase(codebaseDir);
 
       expect(stats.status).toBe("completed");
       expect(stats.enrichmentStatus).toBe("skipped");
@@ -72,7 +72,7 @@ describe("EnrichmentModule", () => {
 
     it("should complete streaming enrichment when enableGitMetadata is true", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
-      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+      const gitIndexer = new IngestFacade(qdrant as any, embeddings, gitConfig);
 
       await createTestFile(
         codebaseDir,
@@ -89,7 +89,7 @@ describe("EnrichmentModule", () => {
 
     it("should not include git metadata in Phase 1 chunks", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
-      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+      const gitIndexer = new IngestFacade(qdrant as any, embeddings, gitConfig);
 
       await createTestFile(
         codebaseDir,
@@ -116,7 +116,7 @@ describe("EnrichmentModule", () => {
 
     it("should set enrichmentStatus to skipped in reindexChanges when enableGitMetadata is false", async () => {
       await createTestFile(codebaseDir, "initial.ts", "export const initialValue = 1;\nconsole.log('Initial');");
-      await indexer.indexCodebase(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
 
       await createTestFile(
         codebaseDir,
@@ -124,14 +124,14 @@ describe("EnrichmentModule", () => {
         "export function newFeature(): boolean {\n  console.log('New feature added');\n  return true;\n}",
       );
 
-      const stats = await indexer.reindexChanges(codebaseDir);
+      const stats = await ingest.reindexChanges(codebaseDir);
 
       expect(stats.enrichmentStatus).toBe("skipped");
     });
 
     it("should complete streaming enrichment in reindexChanges when enableGitMetadata is true", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
-      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+      const gitIndexer = new IngestFacade(qdrant as any, embeddings, gitConfig);
 
       await createTestFile(
         codebaseDir,
@@ -153,7 +153,7 @@ describe("EnrichmentModule", () => {
 
     it("should not call enriching progress callback (enrichment is streaming, not via progress)", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
-      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+      const gitIndexer = new IngestFacade(qdrant as any, embeddings, gitConfig);
 
       await createTestFile(codebaseDir, "test.ts", "export function hello(): string {\n  return 'hello world';\n}");
 
@@ -166,7 +166,7 @@ describe("EnrichmentModule", () => {
 
     it("should complete streaming enrichment for multiple files in indexCodebase", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
-      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+      const gitIndexer = new IngestFacade(qdrant as any, embeddings, gitConfig);
 
       await createTestFile(codebaseDir, "a.ts", "export function funcA(x: number): number {\n  return x + 1;\n}");
       await createTestFile(codebaseDir, "b.ts", "export function funcB(y: string): string {\n  return y.trim();\n}");
@@ -179,7 +179,7 @@ describe("EnrichmentModule", () => {
 
     it("should complete streaming enrichment in reindexChanges for new files", async () => {
       const gitConfig = { ...config, enableGitMetadata: true };
-      const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+      const gitIndexer = new IngestFacade(qdrant as any, embeddings, gitConfig);
 
       await createTestFile(codebaseDir, "existing.ts", "export const x = 1;\nconsole.log('Existing file');");
       await gitIndexer.indexCodebase(codebaseDir);
@@ -197,7 +197,7 @@ describe("EnrichmentModule", () => {
 
       try {
         const gitConfig = { ...config, enableGitMetadata: true };
-        const gitIndexer = new CodeIndexer(qdrant as any, embeddings, gitConfig);
+        const gitIndexer = new IngestFacade(qdrant as any, embeddings, gitConfig);
 
         await createTestFile(
           codebaseDir,

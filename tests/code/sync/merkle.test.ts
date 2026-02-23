@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MerkleNode, MerkleTree } from "../../../src/core/code/sync/merkle.js";
+import { MerkleNode, MerkleTree } from "../../../src/core/ingest/sync/merkle.js";
 
 describe("MerkleNode", () => {
   it("should create a node with a hash", () => {
