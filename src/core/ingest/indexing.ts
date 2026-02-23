@@ -7,8 +7,8 @@
 
 import { SchemaManager } from "../adapters/qdrant/schema-migration.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../types.js";
+import { storeIndexingMarker } from "./indexing-marker.js";
 import { BaseIndexingPipeline } from "./pipeline/base.js";
-import { INDEXING_METADATA_ID } from "./constants.js";
 import { processFiles } from "./pipeline/file-processor.js";
 import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
@@ -70,7 +70,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       const schemaManager = new SchemaManager(this.qdrant);
       await schemaManager.initializeSchema(collectionName);
 
-      await this.storeIndexingMarker(collectionName, false);
+      await storeIndexingMarker(this.qdrant, this.embeddings, collectionName, false);
 
       // 3. Initialize processing components
       const ctx = this.initProcessing(collectionName, absolutePath, scanner);
@@ -141,7 +141,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         stats.errors?.push(`Snapshot save failed: ${errorMessage}`);
       }
 
-      await this.storeIndexingMarker(collectionName, true);
+      await storeIndexingMarker(this.qdrant, this.embeddings, collectionName, true);
 
       stats.enrichmentStatus = getEnrichmentStatus();
       stats.durationMs = Date.now() - startTime;
@@ -152,67 +152,6 @@ export class IndexPipeline extends BaseIndexingPipeline {
       stats.errors?.push(`Indexing failed: ${errorMessage}`);
       stats.durationMs = Date.now() - startTime;
       return stats;
-    }
-  }
-
-  private async storeIndexingMarker(collectionName: string, complete: boolean): Promise<void> {
-    try {
-      if (complete) {
-        try {
-          await this.qdrant.setPayload(
-            collectionName,
-            { indexingComplete: true, completedAt: new Date().toISOString() },
-            { points: [INDEXING_METADATA_ID], wait: true },
-          );
-        } catch (error) {
-          console.error("[IndexingMarker] Failed to set completion marker via setPayload:", error);
-          const vectorSize = this.embeddings.getDimensions();
-          const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
-          await this.qdrant.addPoints(collectionName, [
-            {
-              id: INDEXING_METADATA_ID,
-              vector: zeroVector,
-              payload: {
-                _type: "indexing_metadata",
-                indexingComplete: true,
-                completedAt: new Date().toISOString(),
-              },
-            },
-          ]);
-        }
-        return;
-      }
-
-      const vectorSize = this.embeddings.getDimensions();
-      const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
-      const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
-
-      const payload = {
-        _type: "indexing_metadata",
-        indexingComplete: false,
-        startedAt: new Date().toISOString(),
-      };
-
-      if (collectionInfo.hybridEnabled) {
-        await this.qdrant.addPointsWithSparse(collectionName, [
-          {
-            id: INDEXING_METADATA_ID,
-            vector: zeroVector,
-            sparseVector: { indices: [], values: [] },
-            payload,
-          },
-        ]);
-      } else {
-        await this.qdrant.addPoints(collectionName, [
-          {
-            id: INDEXING_METADATA_ID,
-            vector: zeroVector,
-            payload,
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error("Failed to store indexing marker:", error);
     }
   }
 }
