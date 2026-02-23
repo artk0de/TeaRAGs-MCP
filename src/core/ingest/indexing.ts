@@ -8,13 +8,13 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { SchemaManager } from "../../adapters/qdrant/schema-migration.js";
-import { resolveCollectionName, validatePath } from "../../api/shared.js";
-import type { IndexOptions, IndexStats, ProgressCallback } from "../../types.js";
-import { BaseIndexingPipeline } from "./base.js";
-import { INDEXING_METADATA_ID } from "../constants.js";
-import { processFiles } from "./file-processor.js";
-import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
+import { SchemaManager } from "../adapters/qdrant/schema-migration.js";
+import { resolveCollectionName, validatePath } from "../api/shared.js";
+import type { IndexOptions, IndexStats, ProgressCallback } from "../types.js";
+import { BaseIndexingPipeline } from "./pipeline/base.js";
+import { INDEXING_METADATA_ID } from "./constants.js";
+import { processFiles } from "./pipeline/file-processor.js";
+import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
 export class IndexPipeline extends BaseIndexingPipeline {
   async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {

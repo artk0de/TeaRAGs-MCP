@@ -3,7 +3,7 @@
  * Used as fallback when AST parsing is not available
  */
 
-import type { ChunkerConfig, CodeChunk } from "../../types.js";
+import type { ChunkerConfig, CodeChunk } from "../../../types.js";
 import type { CodeChunker } from "./base.js";
 
 export class CharacterChunker implements CodeChunker {

@@ -10,19 +10,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
-import type { ChunkerConfig, CodeChunk } from "../../types.js";
-import type { WorkerRequest, WorkerResponse } from "./chunker-worker.js";
+import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
+import type { WorkerRequest, WorkerResponse } from "./worker.js";
 
 /**
  * Worker script path — always points to compiled JS in build/.
  *
  * worker_threads require compiled JS. import.meta.url resolves to:
- *   production: .../build/core/chunker/chunker-pool.js  (sibling .js exists)
- *   vitest:     .../src/core/chunker/chunker-pool.ts    (no .js — remap to build/)
+ *   production: .../build/core/ingest/pipeline/chunker/utils/pool.js
+ *   vitest:     .../src/core/ingest/pipeline/chunker/utils/pool.ts (remap to build/)
  */
 const WORKER_PATH = path.join(
   path.dirname(fileURLToPath(import.meta.url)).replace("/src/", "/build/"),
-  "chunker-worker.js",
+  "worker.js",
 );
 
 export interface FileChunkResult {
