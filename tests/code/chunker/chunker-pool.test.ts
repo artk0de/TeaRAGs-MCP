@@ -6,9 +6,9 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ChunkerPool } from "../../../src/code/chunker/chunker-pool.js";
-import { TreeSitterChunker } from "../../../src/code/chunker/tree-sitter-chunker.js";
-import type { ChunkerConfig } from "../../../src/code/types.js";
+import { ChunkerPool } from "../../../src/core/code/chunker/chunker-pool.js";
+import { TreeSitterChunker } from "../../../src/core/code/chunker/tree-sitter-chunker.js";
+import type { ChunkerConfig } from "../../../src/core/code/types.js";
 
 const CHUNKER_CONFIG: ChunkerConfig = {
   chunkSize: 500,

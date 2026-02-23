@@ -41,14 +41,14 @@ export default defineConfig({
         "tests/**/fixtures/**",
         "tests/integration/**",
         // Re-export files (no executable code to test)
-        "src/code/git/index.ts",
-        "src/code/pipeline/index.ts",
+        "src/core/code/git/index.ts",
+        "src/core/code/pipeline/index.ts",
         "src/prompts/index.ts",
-        "src/qdrant/filters/index.ts",
+        "src/core/qdrant/filters/index.ts",
         // Type-only files (no executable code to test)
         "src/prompts/types.ts",
-        "src/code/types.ts",
-        "src/code/git/types.ts",
+        "src/core/code/types.ts",
+        "src/core/code/git/types.ts",
         // Test utilities (not production code)
         "tests/**/test-helpers.ts",
       ],
@@ -59,13 +59,13 @@ export default defineConfig({
         branches: 80,
         statements: 92,
         // File-specific thresholds
-        "src/qdrant/client.ts": {
+        "src/core/qdrant/client.ts": {
           lines: 90,
           functions: 100,
           branches: 80,
           statements: 90,
         },
-        "src/embeddings/openai.ts": {
+        "src/core/embeddings/openai.ts": {
           lines: 100,
           functions: 100,
           branches: 90,

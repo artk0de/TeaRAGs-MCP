@@ -5,7 +5,7 @@ import {
   createGlobMatcher,
   filterResultsByGlob,
   type ResultWithPath,
-} from "../../../src/qdrant/filters/glob.js";
+} from "../../../src/core/qdrant/filters/glob.js";
 
 describe("createGlobMatcher", () => {
   it("should match simple wildcard pattern", () => {

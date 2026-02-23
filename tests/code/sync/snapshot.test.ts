@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { MerkleTree } from "../../../src/code/sync/merkle.js";
-import { SnapshotManager } from "../../../src/code/sync/snapshot.js";
+import { MerkleTree } from "../../../src/core/code/sync/merkle.js";
+import { SnapshotManager } from "../../../src/core/code/sync/snapshot.js";
 
 describe("SnapshotManager", () => {
   let tempDir: string;

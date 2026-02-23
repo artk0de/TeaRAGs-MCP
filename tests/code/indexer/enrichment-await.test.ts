@@ -11,8 +11,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CodeIndexer } from "../../../src/code/indexer.js";
-import type { CodeConfig } from "../../../src/code/types.js";
+import { CodeIndexer } from "../../../src/core/code/indexer.js";
+import type { CodeConfig } from "../../../src/core/code/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
@@ -52,7 +52,7 @@ vi.mock("tree-sitter-typescript", () => ({
 
 // --- EnrichmentModule mock ---
 // Fast enrichment: awaitCompletion resolves immediately (simulates small repo)
-vi.mock("../../../src/code/indexer/enrichment-module.js", () => ({
+vi.mock("../../../src/core/code/indexer/enrichment-module.js", () => ({
   EnrichmentModule: class MockEnrichmentModule {
     prefetchGitLog = vi.fn();
     onChunksStored = vi.fn();
@@ -103,7 +103,7 @@ describe("Enrichment status detection", () => {
     config.enableGitMetadata = true;
 
     // Replace mock with slow enrichment that never resolves before return
-    const { EnrichmentModule } = await import("../../../src/code/indexer/enrichment-module.js");
+    const { EnrichmentModule } = await import("../../../src/core/code/indexer/enrichment-module.js");
     const slowEnrichment = new EnrichmentModule(qdrant as any);
     slowEnrichment.awaitCompletion = vi.fn().mockReturnValue(new Promise(() => {})); // never resolves
     slowEnrichment.prefetchGitLog = vi.fn();
@@ -113,7 +113,7 @@ describe("Enrichment status detection", () => {
     // Inject slow enrichment into the indexer
     indexer = new CodeIndexer(qdrant as any, embeddings, config);
     (indexer as any).enrichment = slowEnrichment;
-    (indexer as any).indexing = new (await import("../../../src/code/indexer/indexing-module.js")).IndexingModule(
+    (indexer as any).indexing = new (await import("../../../src/core/code/indexer/indexing-module.js")).IndexingModule(
       qdrant,
       embeddings,
       config,
@@ -153,7 +153,7 @@ describe("Enrichment status detection", () => {
       resolveEnrichment = resolve;
     });
 
-    const { EnrichmentModule } = await import("../../../src/code/indexer/enrichment-module.js");
+    const { EnrichmentModule } = await import("../../../src/core/code/indexer/enrichment-module.js");
     const deferredEnrichment = new EnrichmentModule(qdrant as any);
     deferredEnrichment.awaitCompletion = vi.fn().mockReturnValue(enrichmentPromise);
     deferredEnrichment.prefetchGitLog = vi.fn();
@@ -162,7 +162,7 @@ describe("Enrichment status detection", () => {
 
     indexer = new CodeIndexer(qdrant as any, embeddings, config);
     (indexer as any).enrichment = deferredEnrichment;
-    (indexer as any).indexing = new (await import("../../../src/code/indexer/indexing-module.js")).IndexingModule(
+    (indexer as any).indexing = new (await import("../../../src/core/code/indexer/indexing-module.js")).IndexingModule(
       qdrant,
       embeddings,
       config,
