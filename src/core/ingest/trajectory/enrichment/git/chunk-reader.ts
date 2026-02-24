@@ -88,6 +88,8 @@ export async function buildChunkChurnMapUncached(
         authors: new Set(),
         bugFixCount: 0,
         lastModifiedAt: 0,
+        linesAdded: 0,
+        linesDeleted: 0,
       });
     }
   }
@@ -192,7 +194,7 @@ export async function buildChunkChurnMapUncached(
             return;
           }
 
-          let hunks: { newStart: number; newLines: number }[];
+          let hunks: { oldStart: number; oldLines: number; newStart: number; newLines: number }[];
           try {
             const patch = structuredPatch(filePath, filePath, oldContent, newContent, "", "");
             ({ hunks } = patch);
@@ -209,8 +211,20 @@ export async function buildChunkChurnMapUncached(
             const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
             for (const e of entries) {
               const ranges = e.lineRanges || [{ start: e.startLine, end: e.endLine }];
-              if (ranges.some((r) => overlaps(hunkStart, hunkEnd, r.start, r.end))) {
-                affectedChunkIds.add(e.chunkId);
+              for (const r of ranges) {
+                if (overlaps(hunkStart, hunkEnd, r.start, r.end)) {
+                  affectedChunkIds.add(e.chunkId);
+                  // Track hunk overlap for relativeChurn
+                  const acc = accumulators.get(e.chunkId);
+                  if (acc) {
+                    const overlapLines = Math.min(hunkEnd, r.end) - Math.max(hunkStart, r.start) + 1;
+                    acc.linesAdded += overlapLines;
+                    if (hunk.newLines > 0) {
+                      acc.linesDeleted += Math.round((hunk.oldLines * overlapLines) / hunk.newLines);
+                    }
+                  }
+                  break;
+                }
               }
             }
           }
@@ -248,8 +262,8 @@ export async function buildChunkChurnMapUncached(
 
   for (const [relPath, entries] of relativeChunkMap) {
     // Use file-level commit count from buildFileMetadataMap when available.
-    // This fixes chunkChurnRatio always being ~1.0 (the old denominator was
-    // recomputed as the union of chunk SHAs, which ≈ max(chunkCommitCount)
+    // This fixes churnRatio always being ~1.0 (the old denominator was
+    // recomputed as the union of chunk SHAs, which ≈ max(commitCount)
     // for tightly-coupled files).
     const fileChurnData = fileChurnDataMap?.get(relPath);
     let fileCommitCount: number;
@@ -277,7 +291,8 @@ export async function buildChunkChurnMapUncached(
     for (const entry of entries) {
       const acc = accumulators.get(entry.chunkId);
       if (!acc) continue;
-      overlayMap.set(entry.chunkId, computeChunkOverlay(acc, fileCommitCount, fileContributorCount));
+      const chunkLineCount = entry.endLine - entry.startLine + 1;
+      overlayMap.set(entry.chunkId, computeChunkOverlay(acc, fileCommitCount, fileContributorCount, chunkLineCount));
     }
 
     if (overlayMap.size > 0) {

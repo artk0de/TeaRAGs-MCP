@@ -51,13 +51,13 @@ vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
 
-// --- EnrichmentModule mock ---
+// --- EnrichmentCoordinator mock ---
 // Fast enrichment: awaitCompletion resolves immediately (simulates small repo)
-vi.mock("../../../src/core/ingest/trajectory/enrichment-module.js", () => ({
-  EnrichmentModule: class MockEnrichmentModule {
-    prefetchGitLog = vi.fn();
+vi.mock("../../../src/core/ingest/trajectory/enrichment/coordinator.js", () => ({
+  EnrichmentCoordinator: class MockEnrichmentCoordinator {
+    prefetch = vi.fn();
     onChunksStored = vi.fn();
-    startChunkChurn = vi.fn();
+    startChunkEnrichment = vi.fn();
     awaitCompletion = vi.fn().mockResolvedValue({});
   },
 }));
@@ -104,12 +104,12 @@ describe("Enrichment status detection", () => {
     config.enableGitMetadata = true;
 
     // Replace mock with slow enrichment that never resolves before return
-    const { EnrichmentModule } = await import("../../../src/core/ingest/trajectory/enrichment-module.js");
-    const slowEnrichment = new EnrichmentModule(qdrant as any);
+    const { EnrichmentCoordinator } = await import("../../../src/core/ingest/trajectory/enrichment/coordinator.js");
+    const slowEnrichment = new EnrichmentCoordinator(qdrant as any, {} as any);
     slowEnrichment.awaitCompletion = vi.fn().mockReturnValue(new Promise(() => {})); // never resolves
-    slowEnrichment.prefetchGitLog = vi.fn();
+    slowEnrichment.prefetch = vi.fn();
     slowEnrichment.onChunksStored = vi.fn();
-    slowEnrichment.startChunkChurn = vi.fn();
+    slowEnrichment.startChunkEnrichment = vi.fn();
 
     // Inject slow enrichment into the ingest facade
     ingest = new IngestFacade(qdrant as any, embeddings, config);
@@ -156,12 +156,12 @@ describe("Enrichment status detection", () => {
       resolveEnrichment = resolve;
     });
 
-    const { EnrichmentModule } = await import("../../../src/core/ingest/trajectory/enrichment-module.js");
-    const deferredEnrichment = new EnrichmentModule(qdrant as any);
+    const { EnrichmentCoordinator } = await import("../../../src/core/ingest/trajectory/enrichment/coordinator.js");
+    const deferredEnrichment = new EnrichmentCoordinator(qdrant as any, {} as any);
     deferredEnrichment.awaitCompletion = vi.fn().mockReturnValue(enrichmentPromise);
-    deferredEnrichment.prefetchGitLog = vi.fn();
+    deferredEnrichment.prefetch = vi.fn();
     deferredEnrichment.onChunksStored = vi.fn();
-    deferredEnrichment.startChunkChurn = vi.fn();
+    deferredEnrichment.startChunkEnrichment = vi.fn();
 
     const deps = createIngestDependencies(qdrant as any, tempDir);
     ingest = new IngestFacade(qdrant as any, embeddings, config);

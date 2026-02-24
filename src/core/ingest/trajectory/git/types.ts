@@ -89,17 +89,19 @@ export interface GitFileMetadata {
  */
 export interface ChunkChurnOverlay {
   /** Commits that touched lines of this specific chunk */
-  chunkCommitCount: number;
-  /** chunkCommitCount / file.commitCount (0-1) */
-  chunkChurnRatio: number;
+  commitCount: number;
+  /** commitCount / file.commitCount (0-1) */
+  churnRatio: number;
   /** Unique authors who modified this specific chunk */
-  chunkContributorCount: number;
+  contributorCount: number;
   /** Percentage of bug-fix commits for this chunk (0-100) */
-  chunkBugFixRate: number;
+  bugFixRate: number;
   /** Unix timestamp of last modification to this chunk */
-  chunkLastModifiedAt: number;
+  lastModifiedAt: number;
   /** Days since last modification to this chunk */
-  chunkAgeDays: number;
+  ageDays: number;
+  /** (linesAdded + linesDeleted) / chunkLineCount — relative churn within chunk */
+  relativeChurn: number;
 }
 
 /**

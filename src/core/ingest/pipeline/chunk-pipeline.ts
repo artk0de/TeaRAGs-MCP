@@ -342,18 +342,20 @@ export class ChunkPipeline {
             ...(item.chunk.metadata.imports?.length && {
               imports: item.chunk.metadata.imports,
             }),
-            // Git metadata (canonical algorithm: nested git object with aggregated signals)
+            // Git metadata: nested under git.file for level-based filtering
             ...(item.chunk.metadata.git && {
               git: {
-                lastModifiedAt: item.chunk.metadata.git.lastModifiedAt,
-                firstCreatedAt: item.chunk.metadata.git.firstCreatedAt,
-                dominantAuthor: item.chunk.metadata.git.dominantAuthor,
-                dominantAuthorEmail: item.chunk.metadata.git.dominantAuthorEmail,
-                authors: item.chunk.metadata.git.authors,
-                commitCount: item.chunk.metadata.git.commitCount,
-                lastCommitHash: item.chunk.metadata.git.lastCommitHash,
-                ageDays: item.chunk.metadata.git.ageDays,
-                taskIds: item.chunk.metadata.git.taskIds,
+                file: {
+                  lastModifiedAt: item.chunk.metadata.git.lastModifiedAt,
+                  firstCreatedAt: item.chunk.metadata.git.firstCreatedAt,
+                  dominantAuthor: item.chunk.metadata.git.dominantAuthor,
+                  dominantAuthorEmail: item.chunk.metadata.git.dominantAuthorEmail,
+                  authors: item.chunk.metadata.git.authors,
+                  commitCount: item.chunk.metadata.git.commitCount,
+                  lastCommitHash: item.chunk.metadata.git.lastCommitHash,
+                  ageDays: item.chunk.metadata.git.ageDays,
+                  taskIds: item.chunk.metadata.git.taskIds,
+                },
               },
             }),
           },

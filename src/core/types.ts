@@ -81,26 +81,56 @@ export interface CodeSearchResult {
   /** Metadata including git information (if enableGitMetadata was true during indexing) */
   metadata?: {
     git?: {
-      lastModifiedAt: number;
-      firstCreatedAt: number;
-      dominantAuthor: string;
-      dominantAuthorEmail: string;
-      authors: string[];
-      dominantAuthorPct: number;
-      commitCount: number;
-      lastCommitHash: string;
-      ageDays: number;
-      linesAdded: number;
-      linesDeleted: number;
-      relativeChurn: number;
-      recencyWeightedFreq: number;
-      changeDensity: number;
-      churnVolatility: number;
-      bugFixRate: number;
-      contributorCount: number;
-      taskIds: string[];
+      // Nested structure (new format from EnrichmentApplier)
+      file?: {
+        lastModifiedAt: number;
+        firstCreatedAt: number;
+        dominantAuthor: string;
+        dominantAuthorEmail: string;
+        authors: string[];
+        dominantAuthorPct: number;
+        commitCount: number;
+        lastCommitHash: string;
+        ageDays: number;
+        linesAdded: number;
+        linesDeleted: number;
+        relativeChurn: number;
+        recencyWeightedFreq: number;
+        changeDensity: number;
+        churnVolatility: number;
+        bugFixRate: number;
+        contributorCount: number;
+        taskIds: string[];
+      };
+      chunk?: {
+        commitCount?: number;
+        churnRatio?: number;
+        contributorCount?: number;
+        bugFixRate?: number;
+        lastModifiedAt?: number;
+        ageDays?: number;
+        relativeChurn?: number;
+      };
 
-      // Chunk-level churn overlay (optional)
+      // Legacy flat fields (backward compat for old indexes)
+      lastModifiedAt?: number;
+      firstCreatedAt?: number;
+      dominantAuthor?: string;
+      dominantAuthorEmail?: string;
+      authors?: string[];
+      dominantAuthorPct?: number;
+      commitCount?: number;
+      lastCommitHash?: string;
+      ageDays?: number;
+      linesAdded?: number;
+      linesDeleted?: number;
+      relativeChurn?: number;
+      recencyWeightedFreq?: number;
+      changeDensity?: number;
+      churnVolatility?: number;
+      bugFixRate?: number;
+      contributorCount?: number;
+      taskIds?: string[];
       chunkCommitCount?: number;
       chunkChurnRatio?: number;
       chunkContributorCount?: number;

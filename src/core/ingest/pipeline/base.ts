@@ -16,7 +16,7 @@ import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../api/shared.js";
 import type { ChunkLookupEntry, CodeConfig } from "../../types.js";
 import type { IngestDependencies } from "../factory.js";
-import type { EnrichmentModule } from "../trajectory/enrichment-module.js";
+import type { EnrichmentCoordinator } from "../trajectory/enrichment/coordinator.js";
 import { ChunkerPool } from "./chunker/utils/pool.js";
 import { pipelineLog } from "./debug-logger.js";
 import { ChunkPipeline, DEFAULT_CONFIG } from "./index.js";
@@ -32,7 +32,7 @@ export abstract class BaseIndexingPipeline {
     protected readonly qdrant: QdrantManager,
     protected readonly embeddings: EmbeddingProvider,
     protected readonly config: CodeConfig,
-    protected readonly enrichment: EnrichmentModule,
+    protected readonly enrichment: EnrichmentCoordinator,
     protected readonly deps: IngestDependencies,
   ) {}
 
@@ -115,7 +115,7 @@ export abstract class BaseIndexingPipeline {
     ignoreFilter: Ignore,
   ): void {
     if (this.config.enableGitMetadata) {
-      this.enrichment.prefetchGitLog(absolutePath, collectionName, ignoreFilter);
+      this.enrichment.prefetch(absolutePath, collectionName, ignoreFilter);
       chunkPipeline.setOnBatchUpserted((items) => {
         this.enrichment.onChunksStored(collectionName, absolutePath, items);
       });
@@ -142,7 +142,7 @@ export abstract class BaseIndexingPipeline {
     if (chunkMap.size === 0) return () => "skipped";
 
     let done = false;
-    this.enrichment.startChunkChurn(collectionName, absolutePath, chunkMap);
+    this.enrichment.startChunkEnrichment(collectionName, absolutePath, chunkMap);
     this.enrichment
       .awaitCompletion(collectionName)
       .then(() => {
