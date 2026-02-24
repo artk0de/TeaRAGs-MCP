@@ -54,19 +54,6 @@ export interface ChunkItem extends WorkItem {
       isDocumentation?: boolean;
       /** File-level imports (inherited by all chunks from the file) */
       imports?: string[];
-
-      // Git metadata (canonical algorithm: aggregated signals only)
-      git?: {
-        lastModifiedAt: number;
-        firstCreatedAt: number;
-        dominantAuthor: string;
-        dominantAuthorEmail: string;
-        authors: string[];
-        commitCount: number;
-        lastCommitHash: string;
-        ageDays: number;
-        taskIds: string[];
-      };
     };
   };
   /** Pre-computed chunk ID */
