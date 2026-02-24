@@ -11,8 +11,8 @@
 import { relative } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { pipelineLog } from "../../pipeline/infra/debug-logger.js";
-import type { ChunkItem } from "../../pipeline/types.js";
+import { pipelineLog } from "../infra/debug-logger.js";
+import type { ChunkItem } from "../types.js";
 
 const BATCH_SIZE = 100;
 

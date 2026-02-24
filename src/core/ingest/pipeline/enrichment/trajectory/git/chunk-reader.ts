@@ -9,9 +9,9 @@ import * as fs from "node:fs";
 import { structuredPatch } from "diff";
 import git from "isomorphic-git";
 
-import { getCommitsByPathspec, readBlobAsString } from "../../../../adapters/git/client.js";
-import type { CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
-import type { ChunkLookupEntry } from "../../../../types.js";
+import { getCommitsByPathspec, readBlobAsString } from "../../../../../adapters/git/client.js";
+import type { CommitInfo, FileChurnData } from "../../../../../adapters/git/types.js";
+import type { ChunkLookupEntry } from "../../../../../types.js";
 import type { GitEnrichmentCache } from "./cache.js";
 import { computeChunkOverlay, isBugFixCommit, overlaps, type ChunkAccumulator } from "./metrics.js";
 import type { ChunkChurnOverlay } from "./types.js";

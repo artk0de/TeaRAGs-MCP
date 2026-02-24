@@ -5,10 +5,10 @@
  * and delegates to file-reader, chunk-reader, and metrics modules.
  */
 
-import { getHead } from "../../../../adapters/git/client.js";
-import type { FileChurnData } from "../../../../adapters/git/types.js";
-import type { ChunkLookupEntry } from "../../../../types.js";
-import { extractTaskIds } from "../utils.js";
+import { getHead } from "../../../../../adapters/git/client.js";
+import type { FileChurnData } from "../../../../../adapters/git/types.js";
+import type { ChunkLookupEntry } from "../../../../../types.js";
+import { extractTaskIds } from "../../utils.js";
 import { GitEnrichmentCache } from "./cache.js";
 import { buildChunkChurnMap as buildChunkChurnMapImpl } from "./chunk-reader.js";
 import { buildFileMetadataForPaths, buildFileMetadataMap as buildFileMetadataMapImpl } from "./file-reader.js";

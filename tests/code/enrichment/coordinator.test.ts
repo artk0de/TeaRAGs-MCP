@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EnrichmentCoordinator } from "../../../src/core/ingest/trajectory/enrichment/coordinator.js";
-import type { EnrichmentProvider } from "../../../src/core/ingest/trajectory/enrichment/types.js";
+import { EnrichmentCoordinator } from "../../../src/core/ingest/pipeline/enrichment/coordinator.js";
+import type { EnrichmentProvider } from "../../../src/core/ingest/pipeline/enrichment/types.js";
 
 describe("EnrichmentCoordinator", () => {
   let mockQdrant: any;

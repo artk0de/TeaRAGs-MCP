@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { GitEnrichmentProvider } from "../../../src/core/ingest/trajectory/enrichment/git/provider.js";
+import { GitEnrichmentProvider } from "../../../src/core/ingest/pipeline/enrichment/trajectory/git/provider.js";
 
 describe("GitEnrichmentProvider", () => {
   it("has key 'git'", () => {
