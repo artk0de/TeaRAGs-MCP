@@ -6,7 +6,7 @@
  * This script verifies that all embedding providers can be instantiated
  * correctly and that the factory pattern works as expected.
  */
-import { EmbeddingProviderFactory } from "../build/embeddings/factory.js";
+import { EmbeddingProviderFactory } from "../build/core/adapters/embeddings/factory.js";
 
 console.log("=".repeat(60));
 console.log("QDRANT MCP SERVER - PROVIDER VERIFICATION");
