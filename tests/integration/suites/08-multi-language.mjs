@@ -3,11 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
+import { assert, createTestFile, resources, section } from "../helpers.mjs";
 
 export async function testMultiLanguage(qdrant, embeddings) {
   section("8. Multi-Language Support");

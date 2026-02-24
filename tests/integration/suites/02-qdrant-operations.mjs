@@ -2,10 +2,8 @@
  * Integration Test Suite
  * Auto-migrated from test-business-logic.mjs
  */
-import { promises as fs } from "node:fs";
-import { basename, join } from "node:path";
 
-import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
+import { assert, log, randomUUID, resources, section } from "../helpers.mjs";
 
 export async function testQdrantOperations(qdrant) {
   const TEST_COLLECTION = `test_${Date.now()}`;
@@ -92,7 +90,7 @@ export async function testQdrantOperations(qdrant) {
   const batchResult = await qdrant.deletePointsByPathsBatched(TEST_COLLECTION, pathsToDelete, {
     batchSize: 10,
     concurrency: 2,
-    onProgress: (deleted, total) => {
+    onProgress: (_deleted, _total) => {
       progressCalls++;
     },
   });

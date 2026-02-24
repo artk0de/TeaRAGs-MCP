@@ -3,11 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
+import { assert, createTestFile, log, resources, section, skip, sleep } from "../helpers.mjs";
 
 export async function testGitMetadata(qdrant, embeddings) {
   section("17. Git Metadata Integration");
@@ -25,7 +25,7 @@ export async function testGitMetadata(qdrant, embeddings) {
     await execGit("init");
     await execGit('config user.email "test@example.com"');
     await execGit('config user.name "Test User"');
-  } catch (e) {
+  } catch (_e) {
     skip("Git not available, skipping git metadata tests");
     return;
   }

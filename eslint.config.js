@@ -1,4 +1,5 @@
 import eslint from "@eslint/js";
+import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
@@ -142,10 +143,17 @@ export default tseslint.config(
     },
   },
 
-  // ── Benchmark/script files: minimal rules ────────────────────────
+  // ── Benchmark/script/integration files: minimal rules ───────────
   {
-    files: ["benchmarks/**/*.mjs", "scripts/**/*.js"],
-    ...tseslint.configs.disableTypeChecked,
+    files: ["benchmarks/**/*.mjs", "scripts/**/*.js", "tests/integration/**/*.mjs"],
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      globals: globals.node,
+    },
+    rules: {
+      ...tseslint.configs.disableTypeChecked.rules,
+      "no-empty": ["error", { allowEmptyCatch: true }],
+    },
   },
 
   // ── Ignore patterns ──────────────────────────────────────────────
@@ -156,8 +164,7 @@ export default tseslint.config(
       "node_modules/",
       "*.d.ts",
       "eslint.config.js", // Root JS config — not in tsconfig
-      "tests/code/fixtures/",
-      "tests/integration/", // Plain .mjs — run separately via npm run test-integration
+      "commitlint.config.js", // Root JS config — not in tsconfig
       "website/", // Docusaurus — own tsconfig, own build pipeline
     ],
   },

@@ -1,12 +1,11 @@
 // src/bootstrap/transport/http.ts
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import Bottleneck from "bottleneck";
 import express from "express";
 
-import type { AppConfig } from "../config.js";
 import type { PromptsConfig } from "../../mcp/prompts/index.js";
-import { type AppContext, createConfiguredServer, pkg } from "../factory.js";
+import type { AppConfig } from "../config.js";
+import { createConfiguredServer, pkg, type AppContext } from "../factory.js";
 
 export interface HttpServerDeps {
   config: AppConfig;

@@ -86,8 +86,7 @@ export async function findBatchPlateau(embeddings, texts, options = {}) {
   const results = [];
   let prevRate = 0;
 
-  for (let i = 0; i < BATCH_SET.length; i++) {
-    const batchSize = BATCH_SET[i];
+  for (const batchSize of BATCH_SET) {
     // Use min(batch×2, MAX_TOTAL_CHUNKS) chunks for this batch size
     const chunkCount = Math.min(batchSize * 2, texts.length);
     const testTexts = texts.slice(0, chunkCount);
