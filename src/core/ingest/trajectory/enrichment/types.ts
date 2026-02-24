@@ -1,4 +1,5 @@
 import type { ChunkLookupEntry } from "../../../types.js";
+import type { FileTransform } from "./applier.js";
 
 /**
  * EnrichmentProvider — interface for trajectory enrichment providers.
@@ -12,6 +13,16 @@ import type { ChunkLookupEntry } from "../../../types.js";
 export interface EnrichmentProvider {
   /** Namespace key for Qdrant payload: { [key].file: ..., [key].chunk: ... } */
   readonly key: string; // "git", "codegraph", "complexity"
+
+  /** Resolve the effective root for this provider (e.g. git repo root). */
+  resolveRoot: (absolutePath: string) => string;
+
+  /**
+   * Optional per-file transform applied at write time.
+   * Called with (rawData, maxEndLine) when applying file-level metadata.
+   * Git uses this for computeFileMetadata(churnData, maxEndLine).
+   */
+  readonly fileTransform?: FileTransform;
 
   /** File-level enrichment (prefetch at T=0, or backfill for specific paths) */
   buildFileMetadata: (root: string, options?: { paths?: string[] }) => Promise<Map<string, Record<string, unknown>>>;

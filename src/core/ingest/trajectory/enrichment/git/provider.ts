@@ -6,21 +6,39 @@
  * and the HEAD-based enrichment result cache.
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
+import { resolveRepoRoot } from "../../../../adapters/git/client.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { FileChurnData } from "../../git/types.js";
+import type { FileTransform } from "../applier.js";
 import type { EnrichmentProvider } from "../types.js";
 import { GitEnrichmentCache } from "./cache.js";
 import { buildChunkChurnMap } from "./chunk-reader.js";
 import { buildFileMetadataForPaths, buildFileMetadataMap } from "./file-reader.js";
+import { computeFileMetadata } from "./metrics.js";
 
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
+
+  resolveRoot(absolutePath: string): string {
+    return resolveRepoRoot(absolutePath);
+  }
+
+  readonly fileTransform: FileTransform = (data, maxEndLine) =>
+    computeFileMetadata(data as unknown as FileChurnData, maxEndLine) as unknown as Record<string, unknown>;
 
   private readonly enrichmentCache = new GitEnrichmentCache();
   private readonly isoGitCache: Record<string, unknown> = {};
   private lastFileResult: Map<string, FileChurnData> | null = null;
 
   async buildFileMetadata(root: string, options?: { paths?: string[] }): Promise<Map<string, Record<string, unknown>>> {
+    // Fast check: skip if not a git repo
+    if (!existsSync(join(root, ".git"))) {
+      return new Map();
+    }
+
     let rawData: Map<string, FileChurnData>;
 
     if (options?.paths) {

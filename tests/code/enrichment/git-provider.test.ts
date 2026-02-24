@@ -12,5 +12,11 @@ describe("GitEnrichmentProvider", () => {
     const provider = new GitEnrichmentProvider();
     expect(typeof provider.buildFileMetadata).toBe("function");
     expect(typeof provider.buildChunkMetadata).toBe("function");
+    expect(typeof provider.resolveRoot).toBe("function");
+  });
+
+  it("has fileTransform for computeFileMetadata", () => {
+    const provider = new GitEnrichmentProvider();
+    expect(typeof provider.fileTransform).toBe("function");
   });
 });
