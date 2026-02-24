@@ -18,15 +18,15 @@ import { join } from "node:path";
 
 import type { Ignore } from "ignore";
 
-import type { QdrantManager } from "../adapters/qdrant/client.js";
-import type { ChunkLookupEntry, EnrichmentInfo, EnrichmentMetrics } from "../types.js";
-import { INDEXING_METADATA_ID } from "./constants.js";
+import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import type { ChunkLookupEntry, EnrichmentInfo, EnrichmentMetrics } from "../../types.js";
+import { INDEXING_METADATA_ID } from "../constants.js";
+import { pipelineLog } from "../pipeline/debug-logger.js";
+import type { ChunkItem } from "../pipeline/types.js";
 import { runChunkChurn } from "./enrichment/chunk-churn.js";
 import { MetadataApplier } from "./enrichment/metadata-applier.js";
 import { GitLogReader } from "./git/git-log-reader.js";
 import type { FileChurnData } from "./git/types.js";
-import { pipelineLog } from "./pipeline/debug-logger.js";
-import type { ChunkItem } from "./pipeline/types.js";
 
 interface PendingBatch {
   collectionName: string;

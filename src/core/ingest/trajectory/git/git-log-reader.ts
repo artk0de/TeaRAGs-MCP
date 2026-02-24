@@ -13,7 +13,7 @@ import { promisify } from "node:util";
 import { structuredPatch } from "diff";
 import git from "isomorphic-git";
 
-import type { ChunkLookupEntry } from "../../types.js";
+import type { ChunkLookupEntry } from "../../../types.js";
 import type { ChunkChurnOverlay, CommitInfo, FileChurnData, GitFileMetadata } from "./types.js";
 
 const execFileAsync = promisify(execFile);

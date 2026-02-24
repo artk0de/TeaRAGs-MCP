@@ -53,7 +53,7 @@ vi.mock("tree-sitter-typescript", () => ({
 
 // --- EnrichmentModule mock ---
 // Fast enrichment: awaitCompletion resolves immediately (simulates small repo)
-vi.mock("../../../src/core/ingest/enrichment-module.js", () => ({
+vi.mock("../../../src/core/ingest/trajectory/enrichment-module.js", () => ({
   EnrichmentModule: class MockEnrichmentModule {
     prefetchGitLog = vi.fn();
     onChunksStored = vi.fn();
@@ -104,7 +104,7 @@ describe("Enrichment status detection", () => {
     config.enableGitMetadata = true;
 
     // Replace mock with slow enrichment that never resolves before return
-    const { EnrichmentModule } = await import("../../../src/core/ingest/enrichment-module.js");
+    const { EnrichmentModule } = await import("../../../src/core/ingest/trajectory/enrichment-module.js");
     const slowEnrichment = new EnrichmentModule(qdrant as any);
     slowEnrichment.awaitCompletion = vi.fn().mockReturnValue(new Promise(() => {})); // never resolves
     slowEnrichment.prefetchGitLog = vi.fn();
@@ -156,7 +156,7 @@ describe("Enrichment status detection", () => {
       resolveEnrichment = resolve;
     });
 
-    const { EnrichmentModule } = await import("../../../src/core/ingest/enrichment-module.js");
+    const { EnrichmentModule } = await import("../../../src/core/ingest/trajectory/enrichment-module.js");
     const deferredEnrichment = new EnrichmentModule(qdrant as any);
     deferredEnrichment.awaitCompletion = vi.fn().mockReturnValue(enrichmentPromise);
     deferredEnrichment.prefetchGitLog = vi.fn();
