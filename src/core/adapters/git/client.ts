@@ -1,9 +1,10 @@
 /**
- * Low-level git operations — CLI + isomorphic-git primitives.
+ * Low-level git operations — CLI primary, isomorphic-git for individual object reads.
  * No enrichment concepts, no caching logic.
  *
- * All isomorphic-git functions accept an explicit `cache` parameter
- * so callers can share a single pack cache across calls.
+ * Heavy operations (log walking, tree diffing) use CLI exclusively to avoid OOM
+ * on large repos. isomorphic-git is used only for individual object reads
+ * (readBlob, readCommit, resolveRef) where pack cache growth is bounded.
  */
 
 import { execFile, execFileSync } from "node:child_process";
@@ -88,104 +89,9 @@ export async function buildViaCli(repoRoot: string, sinceDate?: Date): Promise<M
   return parseNumstatOutput(stdout);
 }
 
-// ── isomorphic-git primitives ────────────────────────────────────
-
-/** List all files in a commit's tree (for root commits with no parent). */
-export async function listAllFiles(
-  repoRoot: string,
-  commitOid: string,
-  cache: Record<string, unknown>,
-): Promise<string[]> {
-  const files: string[] = [];
-
-  await git.walk({
-    fs,
-    dir: repoRoot,
-    trees: [git.TREE({ ref: commitOid })],
-    cache,
-    map: async (filepath, entries) => {
-      if (!entries?.[0]) return;
-      const entry = entries[0];
-      const type = await entry.type();
-      if (type === "blob" && filepath !== ".") {
-        files.push(filepath);
-      }
-    },
-  });
-
-  return files;
-}
-
-/** Diff two commit trees to find changed files. */
-export async function diffTrees(
-  repoRoot: string,
-  parentOid: string,
-  commitOid: string,
-  cache: Record<string, unknown>,
-): Promise<string[]> {
-  const changedFiles: string[] = [];
-
-  await git.walk({
-    fs,
-    dir: repoRoot,
-    trees: [git.TREE({ ref: parentOid }), git.TREE({ ref: commitOid })],
-    cache,
-    map: async (filepath, entries) => {
-      if (!entries || filepath === ".") return;
-      const [parentEntry, commitEntry] = entries;
-
-      const parentOidFile = parentEntry ? await parentEntry.oid() : undefined;
-      const commitOidFile = commitEntry ? await commitEntry.oid() : undefined;
-
-      if (parentOidFile !== commitOidFile) {
-        const type = commitEntry ? await commitEntry.type() : parentEntry ? await parentEntry.type() : undefined;
-        if (type === "blob") {
-          changedFiles.push(filepath);
-        }
-      }
-    },
-  });
-
-  return changedFiles;
-}
-
-/**
- * Enrich fileMap with line stats from a single CLI git log call.
- * Non-fatal: if it fails, churn metrics show 0 for linesAdded/linesDeleted.
- */
-export async function enrichLineStats(
-  repoRoot: string,
-  fileMap: Map<string, FileChurnData>,
-  sinceDate?: Date,
-): Promise<void> {
-  try {
-    const args = ["log", "HEAD", "--numstat", "--format="];
-    if (sinceDate) {
-      args.push(`--since=${sinceDate.toISOString()}`);
-    }
-    const { stdout } = await execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity });
-
-    for (const line of stdout.split("\n")) {
-      if (!line.trim()) continue;
-      const parts = line.split("\t");
-      if (parts.length < 3) continue;
-
-      const added = parseInt(parts[0], 10);
-      const deleted = parseInt(parts[1], 10);
-      const filePath = parts[2];
-
-      if (isNaN(added) || isNaN(deleted)) continue;
-
-      const entry = fileMap.get(filePath);
-      if (entry) {
-        entry.linesAdded += added;
-        entry.linesDeleted += deleted;
-      }
-    }
-  } catch (error) {
-    console.error("[git/client] numstat enrichment failed:", error instanceof Error ? error.message : error);
-  }
-}
+// ── isomorphic-git object reads ──────────────────────────────────
+// Only used for individual object reads (readBlob, readCommit, resolveRef).
+// Heavy operations (log walking, tree diffing) use CLI to avoid OOM.
 
 /** Read a blob at a specific commit as a UTF-8 string. Returns "" if missing. */
 export async function readBlobAsString(
@@ -206,65 +112,6 @@ export async function readBlobAsString(
   } catch {
     return "";
   }
-}
-
-/**
- * Build file metadata via isomorphic-git — walks commits, diffs trees.
- * Used as fallback when CLI git log fails.
- */
-export async function buildViaIsomorphicGit(
-  repoRoot: string,
-  cache: Record<string, unknown>,
-  sinceDate?: Date,
-): Promise<Map<string, FileChurnData>> {
-  const fileMap = new Map<string, FileChurnData>();
-
-  const commits = await git.log({
-    fs,
-    dir: repoRoot,
-    ref: "HEAD",
-    since: sinceDate,
-    cache,
-  });
-
-  if (commits.length === 0) return fileMap;
-
-  for (let i = commits.length - 1; i >= 0; i--) {
-    const commit = commits[i];
-    const commitInfo: CommitInfo = {
-      sha: commit.oid,
-      author: commit.commit.author.name,
-      authorEmail: commit.commit.author.email,
-      timestamp: commit.commit.author.timestamp,
-      body: commit.commit.message,
-    };
-
-    const parentOids = commit.commit.parent;
-
-    let changedFiles: string[];
-    try {
-      if (parentOids.length === 0) {
-        changedFiles = await listAllFiles(repoRoot, commit.oid, cache);
-      } else {
-        changedFiles = await diffTrees(repoRoot, parentOids[0], commit.oid, cache);
-      }
-    } catch {
-      continue;
-    }
-
-    for (const filePath of changedFiles) {
-      let entry = fileMap.get(filePath);
-      if (!entry) {
-        entry = { commits: [], linesAdded: 0, linesDeleted: 0 };
-        fileMap.set(filePath, entry);
-      }
-      entry.commits.push(commitInfo);
-    }
-  }
-
-  await enrichLineStats(repoRoot, fileMap, sinceDate);
-
-  return fileMap;
 }
 
 // ── Pathspec CLI operations ──────────────────────────────────────

@@ -1,9 +1,8 @@
 /**
- * GitLogReader — reads git history via CLI `git log` (primary)
- * with isomorphic-git fallback.
+ * GitLogReader — reads git history via CLI `git log`.
  *
  * Builds per-file FileChurnData from git log in a single pass.
- * Falls back to isomorphic-git if CLI git log fails or times out.
+ * isomorphic-git used only for individual object reads (readBlob, readCommit).
  */
 
 import { getHead } from "../../../adapters/git/client.js";
@@ -27,7 +26,8 @@ import type { ChunkChurnOverlay, FileChurnData } from "./types.js";
 export { type ChunkAccumulator, computeChunkOverlay, computeFileMetadata, extractTaskIds, overlaps };
 
 export class GitLogReader {
-  // isomorphic-git pack file cache (shared across calls for performance)
+  // isomorphic-git pack file cache — used only for individual object reads
+  // (readBlob, readCommit) in chunk-churn analysis
   private readonly cache: Record<string, unknown> = {};
 
   // HEAD-based result cache — invalidated when HEAD changes
@@ -35,10 +35,10 @@ export class GitLogReader {
 
   /**
    * Build per-file FileChurnData from git history.
-   * Delegates to enrichment/git/file-reader.
+   * Delegates to enrichment/git/file-reader (CLI only).
    */
   async buildFileMetadataMap(repoRoot: string, maxAgeMonths?: number): Promise<Map<string, FileChurnData>> {
-    return buildFileMetadataMapImpl(repoRoot, this.enrichmentCache, this.cache, maxAgeMonths);
+    return buildFileMetadataMapImpl(repoRoot, this.enrichmentCache, maxAgeMonths);
   }
 
   /** @deprecated Use getHead from adapters/git/client.js */

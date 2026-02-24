@@ -1,6 +1,7 @@
 /**
  * Chunk-level churn analysis from git history.
- * Diffs commit trees and maps hunks to chunk line ranges.
+ * Uses CLI for commit discovery, isomorphic-git only for individual object reads
+ * (readCommit for parent OID, readBlob for file content).
  */
 
 import * as fs from "node:fs";
@@ -8,7 +9,7 @@ import * as fs from "node:fs";
 import { structuredPatch } from "diff";
 import git from "isomorphic-git";
 
-import { diffTrees, getCommitsByPathspec, readBlobAsString } from "../../../../adapters/git/client.js";
+import { getCommitsByPathspec, readBlobAsString } from "../../../../adapters/git/client.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay, CommitInfo, FileChurnData } from "../../git/types.js";
 import type { GitEnrichmentCache } from "./cache.js";
@@ -17,14 +18,12 @@ import { computeChunkOverlay, isBugFixCommit, overlaps, type ChunkAccumulator } 
 const MAX_FILE_LINES_DEFAULT = 10000;
 
 /**
- * Build chunk-level churn overlays by diffing commit trees and mapping hunks to chunk line ranges.
+ * Build chunk-level churn overlays by mapping git hunks to chunk line ranges.
  *
  * Algorithm:
- * 1. Walk commits within `maxAgeMonths` window via isomorphic-git
- * 2. For each commit with a parent: diffTrees → changed files
- * 3. Filter to files in chunkMap that have >1 chunk
- * 4. readBlob(parent) + readBlob(commit) → structuredPatch → hunks
- * 5. Map each hunk to overlapping chunks and accumulate per-chunk stats
+ * 1. Get commits within `maxAgeMonths` window via CLI pathspec filtering
+ * 2. For each commit: readCommit → parent OID, readBlob × 2 → structuredPatch → hunks
+ * 3. Map each hunk to overlapping chunks and accumulate per-chunk stats
  *
  * @returns Map<relativePath, Map<chunkId, ChunkChurnOverlay>>
  */
@@ -52,60 +51,6 @@ export async function buildChunkChurnMap(
 
   // Store in cache (non-fatal if HEAD unresolvable)
   await enrichmentCache.setChunkChurn(repoRoot, result);
-
-  return result;
-}
-
-/**
- * Fallback: get commits via isomorphic-git when CLI pathspec fails.
- * Reads all commits then filters via diffTrees (slower but more portable).
- */
-export async function getCommitsViaIsomorphicGit(
-  repoRoot: string,
-  sinceDate: Date,
-  relativeChunkMap: Map<string, ChunkLookupEntry[]>,
-  isoGitCache: Record<string, unknown>,
-): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
-  const result: { commit: CommitInfo; changedFiles: string[] }[] = [];
-
-  let commits: Awaited<ReturnType<typeof git.log>>;
-  try {
-    commits = await git.log({
-      fs,
-      dir: repoRoot,
-      ref: "HEAD",
-      since: sinceDate,
-      cache: isoGitCache,
-    });
-  } catch {
-    return result;
-  }
-
-  for (const commit of commits) {
-    const parentOids = commit.commit.parent;
-    if (parentOids.length === 0) continue;
-
-    let changedFiles: string[];
-    try {
-      changedFiles = await diffTrees(repoRoot, parentOids[0], commit.oid, isoGitCache);
-    } catch {
-      continue;
-    }
-
-    const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f));
-    if (relevantFiles.length === 0) continue;
-
-    result.push({
-      commit: {
-        sha: commit.oid,
-        author: commit.commit.author.name,
-        authorEmail: commit.commit.author.email,
-        timestamp: commit.commit.author.timestamp,
-        body: commit.commit.message,
-      },
-      changedFiles: relevantFiles,
-    });
-  }
 
   return result;
 }
@@ -157,28 +102,25 @@ export async function buildChunkChurnMapUncached(
 
   // Use CLI pathspec filtering — only fetches commits touching our files
   let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
-  let usedCli = true;
   try {
     const chunkTimeoutMs = parseInt(process.env.GIT_CHUNK_TIMEOUT_MS ?? "120000", 10);
     commitEntries = await getCommitsByPathspec(repoRoot, sinceDate, filePaths, chunkTimeoutMs);
   } catch (error) {
-    // Fallback: isomorphic-git full log + diffTrees
-    usedCli = false;
+    // CLI pathspec failed — no fallback (isomorphic-git git.log causes OOM on large repos)
     if (debug) {
       console.error(
-        `[ChunkChurn] CLI pathspec failed, falling back to isomorphic-git:`,
+        `[ChunkChurn] CLI pathspec failed, skipping chunk churn:`,
         error instanceof Error ? error.message : error,
       );
     }
-    commitEntries = await getCommitsViaIsomorphicGit(repoRoot, sinceDate, relativeChunkMap, isoGitCache);
+    commitEntries = [];
   }
 
   const t1 = Date.now();
 
   if (debug) {
     console.error(
-      `[ChunkChurn] ${usedCli ? "CLI pathspec" : "isomorphic-git fallback"}: ` +
-        `${commitEntries.length} commits for ${filePaths.length} files in ${t1 - t0}ms`,
+      `[ChunkChurn] CLI pathspec: ${commitEntries.length} commits for ${filePaths.length} files in ${t1 - t0}ms`,
     );
   }
 
@@ -218,9 +160,7 @@ export async function buildChunkChurnMapUncached(
 
       const isBugFix = isBugFixCommit(commit.body);
 
-      // For hunk mapping, we need parent SHA. CLI doesn't give us parent directly,
-      // so we use `commit.sha~1` syntax via isomorphic-git readBlob.
-      // We need to resolve parent OID for blob reads.
+      // Resolve parent OID via isomorphic-git readCommit (single object read, not a walk)
       let parentOid: string;
       try {
         const commitObj = await git.readCommit({ fs, dir: repoRoot, oid: commit.sha, cache: isoGitCache });

@@ -3,9 +3,8 @@
  *
  * Design principles:
  * - File-level git metadata (no per-line blame)
- * - All metrics derived from git log via isomorphic-git
+ * - All metrics derived from git log (CLI primary, isomorphic-git for object reads)
  * - Research-backed churn metrics (Nagappan & Ball 2005)
- * - 0 process spawns — direct .git reading
  */
 
 /**

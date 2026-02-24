@@ -1,12 +1,12 @@
 /**
  * File-level metadata building from git history.
- * CLI `git log` primary, isomorphic-git fallback.
+ * CLI `git log` only — no isomorphic-git fallback (avoids OOM on large repos).
  */
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { buildViaCli, buildViaIsomorphicGit, withTimeout } from "../../../../adapters/git/client.js";
+import { buildViaCli, withTimeout } from "../../../../adapters/git/client.js";
 import { parseNumstatOutput } from "../../../../adapters/git/parsers.js";
 import type { FileChurnData } from "../../git/types.js";
 import type { GitEnrichmentCache } from "./cache.js";
@@ -15,17 +15,14 @@ const execFileAsync = promisify(execFile);
 
 /**
  * Build per-file FileChurnData from git history.
- * Primary: CLI `git log HEAD --numstat` (single process spawn).
- * Falls back to isomorphic-git if CLI fails or times out.
+ * Uses CLI `git log HEAD --numstat` (single process spawn).
  *
- * @param isoGitCache - isomorphic-git pack cache (shared across calls)
  * @param maxAgeMonths - limit commits to last N months (default: GIT_LOG_MAX_AGE_MONTHS env, default 12).
  *   Set to 0 to disable (read all commits).
  */
 export async function buildFileMetadataMap(
   repoRoot: string,
   enrichmentCache: GitEnrichmentCache,
-  isoGitCache: Record<string, unknown>,
   maxAgeMonths?: number,
 ): Promise<Map<string, FileChurnData>> {
   const effectiveMaxAge = maxAgeMonths ?? parseFloat(process.env.GIT_LOG_MAX_AGE_MONTHS ?? "12");
@@ -41,16 +38,7 @@ export async function buildFileMetadataMap(
 
   const timeoutMs = parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "60000", 10);
 
-  let result: Map<string, FileChurnData>;
-  try {
-    result = await withTimeout(buildViaCli(repoRoot, sinceDate), timeoutMs, "CLI git log timed out");
-  } catch (error) {
-    console.error(
-      `[GitLogReader] CLI failed, falling back to isomorphic-git:`,
-      error instanceof Error ? error.message : error,
-    );
-    result = await buildViaIsomorphicGit(repoRoot, isoGitCache, sinceDate);
-  }
+  const result = await withTimeout(buildViaCli(repoRoot, sinceDate), timeoutMs, "CLI git log timed out");
 
   // Store in cache (non-fatal if HEAD unresolvable)
   await enrichmentCache.setFileMetadata(cacheKey, repoRoot, result);
