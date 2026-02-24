@@ -11,8 +11,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { WorkerPool } from "../../../../src/core/ingest/pipeline/infra/worker-pool.js";
 import type { Batch, UpsertItem, WorkerPoolConfig } from "../../../../src/core/ingest/pipeline/types.js";
-import { WorkerPool } from "../../../../src/core/ingest/pipeline/worker-pool.js";
 
 describe("WorkerPool", () => {
   let pool: WorkerPool;

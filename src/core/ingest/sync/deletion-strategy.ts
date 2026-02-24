@@ -8,7 +8,7 @@
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { ProgressCallback } from "../../types.js";
-import { pipelineLog } from "../pipeline/debug-logger.js";
+import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 
 /**
  * Delete chunks for a list of relative file paths using a 3-level fallback cascade.

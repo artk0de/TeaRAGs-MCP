@@ -15,11 +15,10 @@ import { promises as fs } from "node:fs";
 import { join, relative } from "node:path";
 
 import type { FileChanges } from "../../types.js";
+import { parallelLimit } from "../pipeline/infra/parallel.js";
 import { ConsistentHash } from "./consistent-hash.js";
 import { MerkleTree } from "./merkle.js";
 import { ShardedSnapshotManager, type FileMetadata, type LoadedSnapshot } from "./sharded-snapshot.js";
-
-import { parallelLimit } from "../../utils/parallel.js";
 
 export { parallelLimit };
 

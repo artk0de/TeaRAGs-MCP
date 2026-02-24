@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BatchAccumulator } from "../../../../src/core/ingest/pipeline/batch-accumulator.js";
+import { BatchAccumulator } from "../../../../src/core/ingest/pipeline/infra/batch-accumulator.js";
 import type { Batch, BatchAccumulatorConfig, UpsertItem } from "../../../../src/core/ingest/pipeline/types.js";
 
 describe("BatchAccumulator", () => {

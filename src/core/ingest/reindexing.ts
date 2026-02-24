@@ -7,8 +7,8 @@
 
 import type { ChangeStats, ChunkLookupEntry, ProgressCallback } from "../types.js";
 import { BaseIndexingPipeline } from "./pipeline/base.js";
-import { pipelineLog } from "./pipeline/debug-logger.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
+import { pipelineLog } from "./pipeline/infra/debug-logger.js";
 import { performDeletion } from "./sync/deletion-strategy.js";
 
 export class ReindexPipeline extends BaseIndexingPipeline {

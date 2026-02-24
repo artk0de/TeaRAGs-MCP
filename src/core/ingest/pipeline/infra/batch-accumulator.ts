@@ -10,7 +10,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { BackpressureCallback, Batch, BatchAccumulatorConfig, OperationType, WorkItem } from "./types.js";
+import type { BackpressureCallback, Batch, BatchAccumulatorConfig, OperationType, WorkItem } from "../types.js";
 
 /** Enable debug logging */
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";

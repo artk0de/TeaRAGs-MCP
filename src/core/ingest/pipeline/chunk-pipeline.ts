@@ -17,8 +17,9 @@ import { extname, relative } from "node:path";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../../adapters/embeddings/sparse.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import { BatchAccumulator } from "./batch-accumulator.js";
-import { pipelineLog } from "./debug-logger.js";
+import { BatchAccumulator } from "./infra/batch-accumulator.js";
+import { pipelineLog } from "./infra/debug-logger.js";
+import { WorkerPool } from "./infra/worker-pool.js";
 import {
   DEFAULT_CONFIG,
   type Batch,
@@ -28,7 +29,6 @@ import {
   type PipelineStats,
   type WorkerPoolConfig,
 } from "./types.js";
-import { WorkerPool } from "./worker-pool.js";
 
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 const LOG_CTX = { component: "ChunkPipeline" };

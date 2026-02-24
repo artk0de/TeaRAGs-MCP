@@ -17,9 +17,9 @@ import { resolveCollectionName, validatePath } from "../../api/shared.js";
 import type { ChunkLookupEntry, CodeConfig } from "../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import type { EnrichmentCoordinator } from "../trajectory/enrichment/coordinator.js";
-import { ChunkerPool } from "./chunker/utils/pool.js";
-import { pipelineLog } from "./debug-logger.js";
+import { ChunkerPool } from "./chunker/infra/pool.js";
 import { ChunkPipeline, DEFAULT_CONFIG } from "./index.js";
+import { pipelineLog } from "./infra/debug-logger.js";
 import { FileScanner } from "./scanner.js";
 
 export interface ProcessingContext {

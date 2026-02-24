@@ -20,7 +20,8 @@
  */
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import { BatchAccumulator } from "./batch-accumulator.js";
+import { BatchAccumulator } from "./infra/batch-accumulator.js";
+import { WorkerPool } from "./infra/worker-pool.js";
 import {
   DEFAULT_CONFIG,
   type Batch,
@@ -31,7 +32,6 @@ import {
   type UpsertItem,
   type WorkItem,
 } from "./types.js";
-import { WorkerPool } from "./worker-pool.js";
 
 /** Enable debug logging */
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";

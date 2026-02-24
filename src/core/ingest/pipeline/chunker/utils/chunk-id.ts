@@ -4,7 +4,7 @@
 
 import { createHash } from "node:crypto";
 
-import type { CodeChunk } from "../../types.js";
+import type { CodeChunk } from "../../../../types.js";
 
 /**
  * Generate deterministic chunk ID.

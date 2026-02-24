@@ -8,7 +8,14 @@
  * - Graceful shutdown
  */
 
-import type { Batch, BatchCompletionCallback, BatchHandler, BatchResult, WorkerPoolConfig, WorkItem } from "./types.js";
+import type {
+  Batch,
+  BatchCompletionCallback,
+  BatchHandler,
+  BatchResult,
+  WorkerPoolConfig,
+  WorkItem,
+} from "../types.js";
 
 /** Enable debug logging */
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
