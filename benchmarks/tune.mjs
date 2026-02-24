@@ -36,7 +36,7 @@ import { config, CRITERIA, isFullMode, SAMPLE_SIZE, SMART_STEPPING, TEST_VALUES 
 import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
 import { printTimeEstimates } from "./lib/estimator.mjs";
 import { printSummary, printUsage, writeEnvFile } from "./lib/output.mjs";
-import { linearSteppingSearch, smartSteppingSearch } from "./lib/smart-stepping.mjs";
+import { smartSteppingSearch } from "./lib/smart-stepping.mjs";
 import { StoppingDecision } from "./lib/stopping.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -99,7 +99,7 @@ async function checkConnectivity() {
         const availableModels =
           modelNames.length > 0
             ? `\n    Available models: ${modelNames.slice(0, 5).join(", ")}${modelNames.length > 5 ? "..." : ""}`
-            : "\n    No models found. Run: ollama pull " + config.EMBEDDING_MODEL;
+            : `\n    No models found. Run: ollama pull ${config.EMBEDDING_MODEL}`;
         return `Model "${config.EMBEDDING_MODEL}" not found on Ollama${availableModels}`;
       }
 
@@ -390,10 +390,11 @@ async function main() {
   console.log(
     `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS}${c.reset}`,
   );
-  if (bestBft)
+  if (bestBft) {
     console.log(
       `    ${c.dim}Speed: ${bestBft.rate} chunks/sec (fill rate: ${Math.round(bestBft.fillRate * 100)}%)${c.reset}`,
     );
+  }
 
   // ============ PHASE 7: QDRANT_DELETE_BATCH_SIZE ============
 

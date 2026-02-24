@@ -4,11 +4,11 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { EmbeddingProvider } from "../../src/core/adapters/embeddings/base.js";
+import type { QdrantManager } from "../../src/core/adapters/qdrant/client.js";
 import { IngestFacade } from "../../src/core/api/ingest-facade.js";
 import { SearchFacade } from "../../src/core/api/search-facade.js";
 import type { CodeConfig } from "../../src/core/types.js";
-import type { EmbeddingProvider } from "../../src/core/adapters/embeddings/base.js";
-import type { QdrantManager } from "../../src/core/adapters/qdrant/client.js";
 
 // Mock tree-sitter modules to prevent native binding crashes in integration tests
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
@@ -230,8 +230,8 @@ class MockEmbeddingProvider implements EmbeddingProvider {
     return { embedding: new Array(384).fill(base), dimensions: 384 };
   }
 
-  async embedBatch(texts: string[]): Promise<Array<{ embedding: number[]; dimensions: number }>> {
-    return Promise.all(texts.map((text) => this.embed(text)));
+  async embedBatch(texts: string[]): Promise<{ embedding: number[]; dimensions: number }[]> {
+    return Promise.all(texts.map(async (text) => this.embed(text)));
   }
 }
 
@@ -1066,12 +1066,13 @@ function validate(): boolean {
 
       // Track status during indexing
       let sawIndexingStatus = false;
-      await ingest.indexCodebase(codebaseDir, undefined, async (progress) => {
+      await ingest.indexCodebase(codebaseDir, undefined, (progress) => {
         if (progress.phase === "embedding" && !sawIndexingStatus) {
-          const midStatus = await ingest.getIndexStatus(codebaseDir);
-          if (midStatus.status === "indexing") {
-            sawIndexingStatus = true;
-          }
+          void ingest.getIndexStatus(codebaseDir).then((midStatus) => {
+            if (midStatus.status === "indexing") {
+              sawIndexingStatus = true;
+            }
+          });
         }
       });
 
@@ -1113,7 +1114,7 @@ function validate(): boolean {
         );
       }
 
-      const stats = await ingest.indexCodebase(codebaseDir);
+      await ingest.indexCodebase(codebaseDir);
       const status = await ingest.getIndexStatus(codebaseDir);
 
       // The chunks count in status should match what was indexed

@@ -3,14 +3,14 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 import { ConsistentHash } from "../../../build/code/sync/consistent-hash.js";
 import { SnapshotMigrator } from "../../../build/code/sync/migration.js";
 import { ParallelFileSynchronizer } from "../../../build/code/sync/parallel-synchronizer.js";
 import { ShardedSnapshotManager } from "../../../build/code/sync/sharded-snapshot.js";
 import { TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
+import { assert, createTestFile, log, section } from "../helpers.mjs";
 
 export async function testParallelSync() {
   section("13. Parallel File Synchronization & Sharded Snapshots");

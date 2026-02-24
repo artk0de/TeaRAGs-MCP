@@ -1,6 +1,7 @@
 // src/bootstrap/config.test.ts — merged from config/env.test.ts + config/validate.test.ts
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type AppConfig, parseAppConfig, validateConfig } from "../../src/bootstrap/config.js";
+
+import { parseAppConfig, validateConfig, type AppConfig } from "../../src/bootstrap/config.js";
 
 // --- parseAppConfig tests (was config/env.test.ts) ---
 
@@ -107,34 +108,54 @@ describe("validateConfig", () => {
   });
 
   it("should pass for valid stdio config", () => {
-    expect(() => validateConfig(makeConfig())).not.toThrow();
+    expect(() => {
+      validateConfig(makeConfig());
+    }).not.toThrow();
   });
 
   it("should pass for valid http config", () => {
-    expect(() => validateConfig(makeConfig({ transportMode: "http" }))).not.toThrow();
+    expect(() => {
+      validateConfig(makeConfig({ transportMode: "http" }));
+    }).not.toThrow();
   });
 
   it("should throw for invalid transport mode", () => {
-    expect(() => validateConfig(makeConfig({ transportMode: "grpc" as any }))).toThrow(/transport/i);
+    expect(() => {
+      validateConfig(makeConfig({ transportMode: "grpc" as any }));
+    }).toThrow(/transport/i);
   });
 
   it("should throw for invalid HTTP port in http mode", () => {
-    expect(() => validateConfig(makeConfig({ transportMode: "http", httpPort: 0 }))).toThrow(/port/i);
-    expect(() => validateConfig(makeConfig({ transportMode: "http", httpPort: 70000 }))).toThrow(/port/i);
-    expect(() => validateConfig(makeConfig({ transportMode: "http", httpPort: NaN }))).toThrow(/port/i);
+    expect(() => {
+      validateConfig(makeConfig({ transportMode: "http", httpPort: 0 }));
+    }).toThrow(/port/i);
+    expect(() => {
+      validateConfig(makeConfig({ transportMode: "http", httpPort: 70000 }));
+    }).toThrow(/port/i);
+    expect(() => {
+      validateConfig(makeConfig({ transportMode: "http", httpPort: NaN }));
+    }).toThrow(/port/i);
   });
 
   it("should not validate port for stdio mode", () => {
-    expect(() => validateConfig(makeConfig({ transportMode: "stdio", httpPort: 0 }))).not.toThrow();
+    expect(() => {
+      validateConfig(makeConfig({ transportMode: "stdio", httpPort: 0 }));
+    }).not.toThrow();
   });
 
   it("should throw for invalid requestTimeoutMs in http mode", () => {
-    expect(() => validateConfig(makeConfig({ transportMode: "http", requestTimeoutMs: -1 }))).toThrow(/timeout/i);
-    expect(() => validateConfig(makeConfig({ transportMode: "http", requestTimeoutMs: NaN }))).toThrow(/timeout/i);
+    expect(() => {
+      validateConfig(makeConfig({ transportMode: "http", requestTimeoutMs: -1 }));
+    }).toThrow(/timeout/i);
+    expect(() => {
+      validateConfig(makeConfig({ transportMode: "http", requestTimeoutMs: NaN }));
+    }).toThrow(/timeout/i);
   });
 
   it("should throw for unknown embedding provider", () => {
-    expect(() => validateConfig(makeConfig({ embeddingProvider: "unknown" }))).toThrow(/provider/i);
+    expect(() => {
+      validateConfig(makeConfig({ embeddingProvider: "unknown" }));
+    }).toThrow(/provider/i);
   });
 
   it("should accept all known providers", () => {
@@ -143,12 +164,16 @@ describe("validateConfig", () => {
       process.env.OPENAI_API_KEY = "test";
       process.env.COHERE_API_KEY = "test";
       process.env.VOYAGE_API_KEY = "test";
-      expect(() => validateConfig(makeConfig({ embeddingProvider: provider }))).not.toThrow();
+      expect(() => {
+        validateConfig(makeConfig({ embeddingProvider: provider }));
+      }).not.toThrow();
     }
   });
 
   it("should throw when non-ollama provider has no API key in env", () => {
     delete process.env.OPENAI_API_KEY;
-    expect(() => validateConfig(makeConfig({ embeddingProvider: "openai" }))).toThrow(/OPENAI_API_KEY/);
+    expect(() => {
+      validateConfig(makeConfig({ embeddingProvider: "openai" }));
+    }).toThrow(/OPENAI_API_KEY/);
   });
 });

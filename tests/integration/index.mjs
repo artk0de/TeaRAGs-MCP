@@ -85,7 +85,7 @@ async function cleanup(qdrant, embeddings) {
         await cleanupIndexer.clearIndex(indexPath);
         log("pass", `Cleared index + Qdrant collection: ${indexPath}`);
         cleanedCount++;
-      } catch (e) {
+      } catch (_e) {
         // Index might not exist, that's ok
       }
     }
@@ -99,8 +99,8 @@ async function cleanup(qdrant, embeddings) {
         log("pass", `Deleted collection: ${collection}`);
         cleanedCount++;
       }
-    } catch (e) {
-      log("warn", `Failed to delete collection ${collection}: ${e.message}`);
+    } catch (_e) {
+      log("warn", `Failed to delete collection ${collection}: ${_e instanceof Error ? _e.message : String(_e)}`);
       errorCount++;
     }
   }
@@ -111,7 +111,7 @@ async function cleanup(qdrant, embeddings) {
       await fs.rm(tempDir, { recursive: true, force: true });
       log("pass", `Removed temp dir: ${tempDir}`);
       cleanedCount++;
-    } catch (e) {
+    } catch (_e) {
       // Directory might not exist
     }
   }
@@ -122,7 +122,7 @@ async function cleanup(qdrant, embeddings) {
       await fs.rm(snapshotDir, { recursive: true, force: true });
       log("pass", `Removed snapshot dir: ${snapshotDir}`);
       cleanedCount++;
-    } catch (e) {
+    } catch (_e) {
       // Directory might not exist
     }
   }
@@ -133,7 +133,7 @@ async function cleanup(qdrant, embeddings) {
       await fs.rm(cacheDir, { recursive: true, force: true });
       log("pass", `Removed cache dir: ${cacheDir}`);
       cleanedCount++;
-    } catch (e) {
+    } catch (_e) {
       // Directory might not exist
     }
   }
@@ -143,7 +143,7 @@ async function cleanup(qdrant, embeddings) {
     await fs.rm(TEST_DIR, { recursive: true, force: true });
     log("pass", `Removed TEST_DIR: ${TEST_DIR}`);
     cleanedCount++;
-  } catch (e) {
+  } catch (_e) {
     // Might not exist
   }
 
@@ -158,21 +158,21 @@ async function main() {
   timing.start();
 
   console.log();
-  console.log(c.bold + "╔═══════════════════════════════════════════════════════╗" + c.reset);
-  console.log(c.bold + "║   QDRANT MCP SERVER - INTEGRATION TESTS               ║" + c.reset);
-  console.log(c.bold + "╚═══════════════════════════════════════════════════════╝" + c.reset);
+  console.log(`${c.bold}╔═══════════════════════════════════════════════════════╗${c.reset}`);
+  console.log(`${c.bold}║   QDRANT MCP SERVER - INTEGRATION TESTS               ║${c.reset}`);
+  console.log(`${c.bold}╚═══════════════════════════════════════════════════════╝${c.reset}`);
   console.log();
 
-  console.log(c.dim + "Configuration:" + c.reset);
-  console.log("  Qdrant:  " + config.QDRANT_URL);
-  console.log("  Ollama:  " + config.EMBEDDING_BASE_URL);
-  console.log("  Model:   " + config.EMBEDDING_MODEL);
-  console.log("  TestDir: " + TEST_DIR);
+  console.log(`${c.dim}Configuration:${c.reset}`);
+  console.log(`  Qdrant:  ${config.QDRANT_URL}`);
+  console.log(`  Ollama:  ${config.EMBEDDING_BASE_URL}`);
+  console.log(`  Model:   ${config.EMBEDDING_MODEL}`);
+  console.log(`  TestDir: ${TEST_DIR}`);
 
   // Check for specific suite
   const targetSuite = process.env.TEST_SUITE;
   if (targetSuite) {
-    console.log(c.cyan + "  Suite:   " + targetSuite + c.reset);
+    console.log(`${c.cyan}  Suite:   ${targetSuite}${c.reset}`);
   }
   console.log();
 
@@ -197,8 +197,8 @@ async function main() {
         suite = suites.find((s) => s.name === targetSuite);
       }
       if (!suite) {
-        console.error(c.red + "Unknown test suite: " + targetSuite + c.reset);
-        console.log("Available suites (by name or number 1-" + suites.length + "):");
+        console.error(`${c.red}Unknown test suite: ${targetSuite}${c.reset}`);
+        console.log(`Available suites (by name or number 1-${suites.length}):`);
         suites.forEach((s, i) => console.log(`  ${i + 1}. ${s.name}`));
         process.exit(1);
       }
@@ -211,7 +211,7 @@ async function main() {
           const args = suite.args.map((a) => argsMap[a]);
           await suite.fn(...args);
         } catch (error) {
-          console.error(c.red + "Suite " + suite.name + " failed:" + c.reset, error.message);
+          console.error(`${c.red}Suite ${suite.name} failed:${c.reset}`, error.message);
           console.error(error.stack);
           counters.failed++;
         }
@@ -225,7 +225,7 @@ async function main() {
       log("warn", "Cleanup skipped (SKIP_CLEANUP=1)");
     }
   } catch (error) {
-    console.error("\n" + c.red + "Fatal error:" + c.reset, error.message);
+    console.error(`\n${c.red}Fatal error:${c.reset}`, error.message);
     console.error(error.stack);
 
     // Try to cleanup anyway

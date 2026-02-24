@@ -43,7 +43,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       const enrichmentMessage = await formatEnrichmentStatus(
         stats.enrichmentStatus,
         stats.enrichmentDurationMs,
-        (p) => ingest.getIndexStatus(p),
+        async (p) => ingest.getIndexStatus(p),
         path,
       );
       statusMessage += enrichmentMessage;
@@ -168,7 +168,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       const enrichmentMessage = await formatEnrichmentStatus(
         stats.enrichmentStatus,
         stats.enrichmentDurationMs,
-        (p) => ingest.getIndexStatus(p),
+        async (p) => ingest.getIndexStatus(p),
         path,
       );
       message += enrichmentMessage;

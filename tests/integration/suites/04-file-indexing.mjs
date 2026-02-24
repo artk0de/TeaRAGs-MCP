@@ -3,11 +3,11 @@
  * Auto-migrated from test-business-logic.mjs
  */
 import { promises as fs } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
+import { assert, createTestFile, resources, section, sleep } from "../helpers.mjs";
 
 export async function testFileIndexing(qdrant, embeddings) {
   section("4. File Indexing Lifecycle");
@@ -93,9 +93,7 @@ export class OrderService {
   assert(orderResults.length > 0, `New file searchable: ${orderResults.length} results`);
 
   // === MODIFY EXISTING FILE ===
-  const file1Modified =
-    file1Content +
-    `
+  const file1Modified = `${file1Content}
   // Added method
   deleteUser(id: string) {
     return { deleted: true, id };
@@ -118,7 +116,7 @@ export class OrderService {
   assert(deleteStats.filesDeleted >= 1, `Deleted file detected: ${deleteStats.filesDeleted} deleted`);
 
   // Deleted content should not be found
-  const deletedResults = await indexer.searchCode(TEST_DIR, "ProductService getProduct");
+  const _deletedResults = await indexer.searchCode(TEST_DIR, "ProductService getProduct");
   // Note: This might still return results if chunks overlap or weren't cleaned up
   // The key test is that the file count decreased
 }

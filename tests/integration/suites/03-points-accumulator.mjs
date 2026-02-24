@@ -2,11 +2,9 @@
  * Integration Test Suite
  * Auto-migrated from test-business-logic.mjs
  */
-import { promises as fs } from "node:fs";
-import { basename, join } from "node:path";
 
 import { createAccumulator, PointsAccumulator } from "../../../build/qdrant/accumulator.js";
-import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
+import { assert, log, randomUUID, section, sleep } from "../helpers.mjs";
 
 export async function testPointsAccumulator(qdrant) {
   section("3. PointsAccumulator (Batch Pipeline)");
@@ -16,7 +14,7 @@ export async function testPointsAccumulator(qdrant) {
 
   try {
     await qdrant.deleteCollection(testCollection);
-  } catch (e) {}
+  } catch (_e) {}
   await qdrant.createCollection(testCollection, 768, "Cosine");
 
   // === TEST: Basic accumulation and flush ===

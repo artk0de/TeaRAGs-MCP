@@ -42,14 +42,14 @@ export const timing = {
   getElapsed() {
     if (!this.globalStart) return "0.0s";
     const elapsed = (Date.now() - this.globalStart) / 1000;
-    return elapsed.toFixed(1) + "s";
+    return `${elapsed.toFixed(1)}s`;
   },
 
   // Get section duration
   getSectionDuration() {
     if (!this.sectionStart) return "0.0s";
     const duration = (Date.now() - this.sectionStart) / 1000;
-    return duration.toFixed(1) + "s";
+    return `${duration.toFixed(1)}s`;
   },
 
   // Get total duration
@@ -61,7 +61,7 @@ export const timing = {
       const secs = (duration % 60).toFixed(1);
       return `${mins}m ${secs}s`;
     }
-    return duration.toFixed(1) + "s";
+    return `${duration.toFixed(1)}s`;
   },
 };
 

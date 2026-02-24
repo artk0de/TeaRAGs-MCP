@@ -2,12 +2,10 @@
  * Integration Test Suite
  * Auto-migrated from test-business-logic.mjs
  */
-import { promises as fs } from "node:fs";
-import { basename, join } from "node:path";
 
 import { DEFAULT_CONFIG } from "../../../build/code/pipeline/index.js";
 import { CURRENT_SCHEMA_VERSION, SchemaManager } from "../../../build/code/schema-migration.js";
-import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
+import { assert, log, section } from "../helpers.mjs";
 
 export async function testSchemaAndDeleteOptimization(qdrant) {
   section("15. Schema Migration & Delete Optimization");

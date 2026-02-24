@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { checkOllamaAvailability } from "../../src/bootstrap/ollama.js";
 
 describe("checkOllamaAvailability", () => {
@@ -21,7 +22,7 @@ describe("checkOllamaAvailability", () => {
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ models: [{ name: "jina-embeddings-v2-base-code:latest" }] }),
+        json: async () => Promise.resolve({ models: [{ name: "jina-embeddings-v2-base-code:latest" }] }),
       });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -40,7 +41,7 @@ describe("checkOllamaAvailability", () => {
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ models: [{ name: "other-model" }] }),
+        json: async () => Promise.resolve({ models: [{ name: "other-model" }] }),
       });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -53,13 +54,11 @@ describe("checkOllamaAvailability", () => {
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ models: [{ name: "custom-model:latest" }] }),
+        json: async () => Promise.resolve({ models: [{ name: "custom-model:latest" }] }),
       });
     vi.stubGlobal("fetch", mockFetch);
 
-    await expect(
-      checkOllamaAvailability("ollama", "http://custom:11434", "custom-model"),
-    ).resolves.toBeUndefined();
+    await expect(checkOllamaAvailability("ollama", "http://custom:11434", "custom-model")).resolves.toBeUndefined();
     expect(mockFetch).toHaveBeenCalledWith("http://custom:11434/api/version");
   });
 });
