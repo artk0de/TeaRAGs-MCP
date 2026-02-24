@@ -703,38 +703,25 @@ describe("buildChunkChurnMap", () => {
   it("buildFileMetadataMap should try CLI first, not isomorphic-git", async () => {
     if (!repoRoot) return;
 
-    // Spy on private methods to verify CLI is tried first
     const cliSpy = vi.spyOn(gitClient, "buildViaCli");
-    const isoGitSpy = vi.spyOn(gitClient, "buildViaIsomorphicGit");
 
     await reader.buildFileMetadataMap(repoRoot, 1); // 1 month window
 
-    // CLI should be called (primary)
+    // CLI should be called (primary path)
     expect(cliSpy).toHaveBeenCalled();
-    // isomorphic-git should NOT be called when CLI succeeds
-    expect(isoGitSpy).not.toHaveBeenCalled();
 
     cliSpy.mockRestore();
-    isoGitSpy.mockRestore();
   });
 
-  it("should fall back to isomorphic-git when CLI fails", async () => {
+  it("should throw when CLI fails (no isomorphic-git fallback)", async () => {
     if (!repoRoot) return;
 
-    // Make CLI throw, forcing fallback to isomorphic-git
+    // Make CLI throw — no fallback, error propagates
     const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockRejectedValue(new Error("git not found"));
-    const isoGitSpy = vi
-      .spyOn(gitClient, "buildViaIsomorphicGit")
-      .mockResolvedValue(new Map([["test.ts", { commits: [], linesAdded: 1, linesDeleted: 0 }]]));
 
-    const result = await reader.buildFileMetadataMap(repoRoot, 1);
-
-    expect(cliSpy).toHaveBeenCalled();
-    expect(isoGitSpy).toHaveBeenCalled();
-    expect(result.size).toBe(1);
+    await expect(reader.buildFileMetadataMap(repoRoot, 1)).rejects.toThrow("git not found");
 
     cliSpy.mockRestore();
-    isoGitSpy.mockRestore();
   });
 
   it("buildViaCli should NOT use --all flag and should NOT use --max-count", async () => {
@@ -986,28 +973,6 @@ describe("parseNumstatOutput (via private method)", () => {
   });
 });
 
-// ─── enrichLineStats — error path ────────────────────────────────────────────
-
-describe("enrichLineStats (error path)", () => {
-  it("should not throw when git numstat command fails (non-fatal)", async () => {
-    const fileMap = new Map<string, FileChurnData>();
-    fileMap.set("test.ts", { commits: [], linesAdded: 0, linesDeleted: 0 });
-
-    // Call enrichLineStats on a non-git directory — the git command will fail
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    await gitClient.enrichLineStats("/tmp/not-a-git-repo", fileMap);
-
-    // Should not throw, and linesAdded/linesDeleted stay 0
-    expect(fileMap.get("test.ts")!.linesAdded).toBe(0);
-    expect(fileMap.get("test.ts")!.linesDeleted).toBe(0);
-    // Should log the error
-    expect(consoleSpy).toHaveBeenCalled();
-
-    consoleSpy.mockRestore();
-  });
-});
-
 // ─── getHead — isomorphic-git fallback to CLI ────────────────────────────────
 
 describe("getHead fallback", () => {
@@ -1043,83 +1008,6 @@ describe("getHead fallback", () => {
 
     const head = await reader.getHead(repoRoot);
     expect(head).toMatch(/^[a-f0-9]{40}$/);
-  });
-});
-
-// ─── getCommitsViaIsomorphicGit — error path ─────────────────────────────────
-
-describe("getCommitsViaIsomorphicGit error handling", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("should return empty array when git.log throws", async () => {
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "log").mockRejectedValue(new Error("git log failure"));
-
-    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-    chunkMap.set("test.ts", [
-      { chunkId: "c1", startLine: 1, endLine: 50 },
-      { chunkId: "c2", startLine: 51, endLine: 100 },
-    ]);
-
-    const result = await chunkReader.getCommitsViaIsomorphicGit("/fake/repo", new Date(), chunkMap, {});
-    expect(result).toEqual([]);
-  });
-
-  it("should skip commits with no parents (root commits)", async () => {
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "log").mockResolvedValue([
-      {
-        oid: "a".repeat(40),
-        commit: {
-          message: "initial commit",
-          tree: "t".repeat(40),
-          parent: [], // root commit
-          author: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-          committer: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-        },
-        payload: "",
-      },
-    ] as any);
-
-    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-    chunkMap.set("test.ts", [
-      { chunkId: "c1", startLine: 1, endLine: 50 },
-      { chunkId: "c2", startLine: 51, endLine: 100 },
-    ]);
-
-    const result = await chunkReader.getCommitsViaIsomorphicGit("/fake/repo", new Date(), chunkMap, {});
-    expect(result).toEqual([]);
-  });
-
-  it("should skip commits where diffTrees throws", async () => {
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "log").mockResolvedValue([
-      {
-        oid: "a".repeat(40),
-        commit: {
-          message: "fix: something",
-          tree: "t".repeat(40),
-          parent: ["p".repeat(40)],
-          author: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-          committer: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-        },
-        payload: "",
-      },
-    ] as any);
-
-    // Mock diffTrees (called via walk) to throw
-    vi.spyOn(git.default, "walk").mockRejectedValue(new Error("walk failed"));
-
-    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-    chunkMap.set("test.ts", [
-      { chunkId: "c1", startLine: 1, endLine: 50 },
-      { chunkId: "c2", startLine: 51, endLine: 100 },
-    ]);
-
-    const result = await chunkReader.getCommitsViaIsomorphicGit("/fake/repo", new Date(), chunkMap, {});
-    expect(result).toEqual([]);
   });
 });
 
@@ -1436,14 +1324,13 @@ describe("buildFileMetadataMap — timeout and cache", () => {
     vi.restoreAllMocks();
   });
 
-  it("should fall back to isomorphic-git on timeout", async () => {
+  it("should throw on timeout (no isomorphic-git fallback)", async () => {
     reader = new GitLogReader();
 
     const originalEnv = process.env.GIT_LOG_TIMEOUT_MS;
     process.env.GIT_LOG_TIMEOUT_MS = "1"; // 1ms timeout — will always expire
 
     try {
-      // Mock getHead (used by buildFileMetadataMap via imported adapter function)
       vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
 
       // Make CLI hang (never resolve)
@@ -1451,20 +1338,7 @@ describe("buildFileMetadataMap — timeout and cache", () => {
         new Promise(() => {}), // never resolves
       );
 
-      // Mock isomorphic-git fallback
-      const mockData = new Map<string, FileChurnData>();
-      mockData.set("fallback.ts", { commits: [], linesAdded: 1, linesDeleted: 0 });
-      vi.spyOn(gitClient, "buildViaIsomorphicGit").mockResolvedValue(mockData);
-
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      const result = await reader.buildFileMetadataMap("/fake/repo");
-
-      expect(result.size).toBe(1);
-      expect(result.has("fallback.ts")).toBe(true);
-      expect(consoleSpy).toHaveBeenCalled();
-
-      consoleSpy.mockRestore();
+      await expect(reader.buildFileMetadataMap("/fake/repo")).rejects.toThrow("CLI git log timed out");
     } finally {
       if (originalEnv === undefined) {
         delete process.env.GIT_LOG_TIMEOUT_MS;
@@ -1561,89 +1435,6 @@ describe("withTimeout", () => {
     const failing = Promise.reject(new Error("original error"));
 
     await expect(gitClient.withTimeout(failing, 5000, "timeout")).rejects.toThrow("original error");
-  });
-});
-
-// ─── buildViaIsomorphicGit — root commit and error paths ─────────────────────
-
-describe("buildViaIsomorphicGit edge cases", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("should return empty map when no commits found", async () => {
-    const git = await import("isomorphic-git");
-    vi.spyOn(git.default, "log").mockResolvedValue([]);
-
-    const result = await gitClient.buildViaIsomorphicGit("/fake/repo", {});
-    expect(result.size).toBe(0);
-  });
-
-  it("should handle root commit (no parent) by listing all files", async () => {
-    const git = await import("isomorphic-git");
-
-    vi.spyOn(git.default, "log").mockResolvedValue([
-      {
-        oid: "a".repeat(40),
-        commit: {
-          message: "initial",
-          tree: "t".repeat(40),
-          parent: [],
-          author: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-          committer: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-        },
-        payload: "",
-      },
-    ] as any);
-
-    // Mock git.walk to simulate listAllFiles returning files for root commit
-    vi.spyOn(git.default, "walk").mockImplementation(async ({ map }: any) => {
-      const blobEntry = { type: async () => "blob", oid: async () => "x".repeat(40) };
-      await map?.("file1.ts", [blobEntry]);
-      await map?.("file2.ts", [blobEntry]);
-    });
-
-    const result = await gitClient.buildViaIsomorphicGit("/fake/repo", {});
-    expect(result.size).toBe(2);
-    expect(result.has("file1.ts")).toBe(true);
-    expect(result.has("file2.ts")).toBe(true);
-    expect(result.get("file1.ts")!.commits).toHaveLength(1);
-    expect(result.get("file1.ts")!.commits[0].sha).toBe("a".repeat(40));
-  });
-
-  it("should skip commit when tree diff fails", async () => {
-    const git = await import("isomorphic-git");
-
-    vi.spyOn(git.default, "log").mockResolvedValue([
-      {
-        oid: "a".repeat(40),
-        commit: {
-          message: "first commit",
-          tree: "t".repeat(40),
-          parent: ["p".repeat(40)],
-          author: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-          committer: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-        },
-        payload: "",
-      },
-    ] as any);
-
-    // diffTrees throws
-    vi.spyOn(gitClient, "diffTrees").mockRejectedValue(new Error("tree walk failed"));
-    vi.spyOn(gitClient, "enrichLineStats").mockResolvedValue(undefined);
-
-    const result = await gitClient.buildViaIsomorphicGit("/fake/repo", {});
-    expect(result.size).toBe(0); // commit was skipped
-  });
-
-  it("should forward sinceDate to git.log", async () => {
-    const git = await import("isomorphic-git");
-    const sinceDate = new Date("2024-01-01");
-
-    const logSpy = vi.spyOn(git.default, "log").mockResolvedValue([]);
-
-    await gitClient.buildViaIsomorphicGit("/fake/repo", {}, sinceDate);
-    expect(logSpy).toHaveBeenCalledWith(expect.objectContaining({ since: sinceDate }));
   });
 });
 
@@ -1757,16 +1548,15 @@ describe("buildChunkChurnMapUncached — fallback fileCommitCount", () => {
   });
 });
 
-// ─── buildChunkChurnMapUncached — isomorphic-git fallback when CLI fails ─────
+// ─── buildChunkChurnMapUncached — CLI pathspec failure ────────────────────────
 
-describe("buildChunkChurnMapUncached — CLI pathspec fallback", () => {
+describe("buildChunkChurnMapUncached — CLI pathspec failure", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("should fall back to isomorphic-git when getCommitsByPathspec throws", async () => {
+  it("should return empty overlays when getCommitsByPathspec throws (no fallback)", async () => {
     vi.spyOn(gitClient, "getCommitsByPathspec").mockRejectedValue(new Error("CLI failed"));
-    vi.spyOn(chunkReader, "getCommitsViaIsomorphicGit").mockResolvedValue([]);
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -1778,7 +1568,7 @@ describe("buildChunkChurnMapUncached — CLI pathspec fallback", () => {
 
     const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
 
-    // Should not throw; should have fallen back to isomorphic-git
+    // Should not throw; returns empty overlays since no commits were processed
     expect(result).toBeInstanceOf(Map);
     expect(consoleSpy).toHaveBeenCalled();
 
@@ -1918,131 +1708,6 @@ describe("readBlobAsString", () => {
 
     const result = await gitClient.readBlobAsString("/repo", "abc123", "file.ts", {});
     expect(result).toBe("hello world");
-  });
-});
-
-// ─── enrichLineStats — sinceDate parameter ──────────────────────────────────
-
-describe("enrichLineStats — with sinceDate", () => {
-  let repoRoot: string;
-
-  beforeEach(async () => {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execAsync = promisify(execFile);
-    try {
-      const { stdout } = await execAsync("git", ["rev-parse", "--show-toplevel"], {
-        cwd: import.meta.url.replace("file://", "").replace(/\/[^/]+$/, ""),
-      });
-      repoRoot = stdout.trim();
-    } catch {
-      repoRoot = "";
-    }
-  });
-
-  it("should add --since flag when sinceDate is provided", async () => {
-    if (!repoRoot) return;
-
-    const fileMap = new Map<string, FileChurnData>();
-    fileMap.set("package.json", { commits: [], linesAdded: 0, linesDeleted: 0 });
-
-    // Enrich with a very old since date — should include most history
-    await gitClient.enrichLineStats(repoRoot, fileMap, new Date("2020-01-01"));
-
-    const entry = fileMap.get("package.json");
-    // Should have accumulated some line stats
-    expect(entry!.linesAdded + entry!.linesDeleted).toBeGreaterThan(0);
-  });
-
-  it("should still work (0 stats) with recent sinceDate", async () => {
-    if (!repoRoot) return;
-
-    const fileMap = new Map<string, FileChurnData>();
-    fileMap.set("package.json", { commits: [], linesAdded: 0, linesDeleted: 0 });
-
-    // Very recent date — may have 0 changes
-    const futureDate = new Date(Date.now() + 86400000);
-    await gitClient.enrichLineStats(repoRoot, fileMap, futureDate);
-
-    const entry = fileMap.get("package.json");
-    // With a future date, no commits should match
-    expect(entry!.linesAdded).toBe(0);
-    expect(entry!.linesDeleted).toBe(0);
-  });
-});
-
-// ─── _getCommitsViaIsomorphicGit — successful path with relevant files ───────
-
-describe("getCommitsViaIsomorphicGit — relevant files found", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("should return commit entries with only relevant changed files", async () => {
-    const git = await import("isomorphic-git");
-
-    vi.spyOn(git.default, "log").mockResolvedValue([
-      {
-        oid: "a".repeat(40),
-        commit: {
-          message: "feat: add auth",
-          tree: "t".repeat(40),
-          parent: ["p".repeat(40)],
-          author: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-          committer: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-        },
-        payload: "",
-      },
-    ] as any);
-
-    // diffTrees returns files, some in chunkMap and some not
-    vi.spyOn(gitClient, "diffTrees").mockResolvedValue(["auth.ts", "unrelated.ts", "config.ts"]);
-
-    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-    chunkMap.set("auth.ts", [
-      { chunkId: "c1", startLine: 1, endLine: 50 },
-      { chunkId: "c2", startLine: 51, endLine: 100 },
-    ]);
-
-    const result = await chunkReader.getCommitsViaIsomorphicGit("/fake/repo", new Date("2020-01-01"), chunkMap, {});
-
-    expect(result).toHaveLength(1);
-    expect(result[0].commit.sha).toBe("a".repeat(40));
-    expect(result[0].commit.author).toBe("Alice");
-    expect(result[0].changedFiles).toEqual(["auth.ts"]);
-    // "unrelated.ts" and "config.ts" should be filtered out
-    expect(result[0].changedFiles).not.toContain("unrelated.ts");
-  });
-
-  it("should skip commit when no changed files match chunkMap (relevantFiles empty)", async () => {
-    const git = await import("isomorphic-git");
-
-    vi.spyOn(git.default, "log").mockResolvedValue([
-      {
-        oid: "a".repeat(40),
-        commit: {
-          message: "feat: something else",
-          tree: "t".repeat(40),
-          parent: ["p".repeat(40)],
-          author: { name: "Bob", email: "b@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-          committer: { name: "Bob", email: "b@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-        },
-        payload: "",
-      },
-    ] as any);
-
-    // Changed files that are NOT in the chunkMap
-    vi.spyOn(gitClient, "diffTrees").mockResolvedValue(["other.ts", "readme.md"]);
-
-    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
-    chunkMap.set("auth.ts", [
-      { chunkId: "c1", startLine: 1, endLine: 50 },
-      { chunkId: "c2", startLine: 51, endLine: 100 },
-    ]);
-
-    const result = await chunkReader.getCommitsViaIsomorphicGit("/fake/repo", new Date("2020-01-01"), chunkMap, {});
-
-    expect(result).toEqual([]);
   });
 });
 
@@ -2279,41 +1944,6 @@ describe("buildChunkChurnMapUncached — concurrency control", () => {
   });
 });
 
-// ─── enrichLineStats — binary files in numstat ───────────────────────────────
-
-describe("enrichLineStats — binary file handling", () => {
-  let repoRoot: string;
-
-  beforeEach(async () => {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execAsync = promisify(execFile);
-    try {
-      const { stdout } = await execAsync("git", ["rev-parse", "--show-toplevel"], {
-        cwd: import.meta.url.replace("file://", "").replace(/\/[^/]+$/, ""),
-      });
-      repoRoot = stdout.trim();
-    } catch {
-      repoRoot = "";
-    }
-  });
-
-  it("should not crash on binary files in numstat output (NaN check)", async () => {
-    if (!repoRoot) return;
-
-    const fileMap = new Map<string, FileChurnData>();
-    // Even if binary files show up in numstat ("-\t-\tfile"), they should be skipped
-    fileMap.set("package.json", { commits: [], linesAdded: 0, linesDeleted: 0 });
-
-    await gitClient.enrichLineStats(repoRoot, fileMap);
-
-    // The test verifies no crash; package.json should have valid stats
-    const entry = fileMap.get("package.json");
-    expect(entry).toBeDefined();
-    expect(entry!.linesAdded).toBeGreaterThanOrEqual(0);
-  });
-});
-
 // ─── parseNumstatOutput — non-hex SHA entries ────────────────────────────────
 
 describe("parseNumstatOutput — SHA validation edge cases", () => {
@@ -2369,89 +1999,4 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     expect(result.has("file.ts")).toBe(true);
     expect(result.get("file.ts")!.commits).toHaveLength(1);
   });
-});
-
-// ─── listAllFiles and diffTrees — real repo integration tests ────────────────
-
-describe("listAllFiles and diffTrees (private methods via real repo)", () => {
-  let reader: GitLogReader;
-  let repoRoot: string;
-
-  beforeEach(async () => {
-    reader = new GitLogReader();
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execAsync = promisify(execFile);
-    try {
-      const { stdout } = await execAsync("git", ["rev-parse", "--show-toplevel"], {
-        cwd: import.meta.url.replace("file://", "").replace(/\/[^/]+$/, ""),
-      });
-      repoRoot = stdout.trim();
-    } catch {
-      repoRoot = "";
-    }
-  });
-
-  it("listAllFiles should list files from a real commit tree", async () => {
-    if (!repoRoot) return;
-
-    // Get HEAD commit
-    const headSha = await reader.getHead(repoRoot);
-
-    const files: string[] = await gitClient.listAllFiles(repoRoot, headSha, {});
-    expect(files.length).toBeGreaterThan(0);
-    expect(files).toContain("package.json");
-  });
-
-  it("diffTrees should find changed files between two commits", async () => {
-    if (!repoRoot) return;
-
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execAsync = promisify(execFile);
-
-    // Get last 2 commits
-    const { stdout } = await execAsync("git", ["log", "--format=%H", "-2"], { cwd: repoRoot });
-    const shas = stdout.trim().split("\n");
-    if (shas.length < 2) return;
-
-    const [newerSha, olderSha] = shas;
-    const changedFiles: string[] = await gitClient.diffTrees(repoRoot, olderSha, newerSha, {});
-
-    // Should return at least some changed files (last commit changed something)
-    expect(changedFiles).toBeInstanceOf(Array);
-    // At least one file was changed in the commit
-    expect(changedFiles.length).toBeGreaterThanOrEqual(0);
-  });
-});
-
-// ─── buildViaIsomorphicGit — real repo test (exercises walk callbacks) ────────
-
-describe("buildViaIsomorphicGit — real repo integration", () => {
-  let repoRoot: string;
-
-  beforeEach(async () => {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execAsync = promisify(execFile);
-    try {
-      const { stdout } = await execAsync("git", ["rev-parse", "--show-toplevel"], {
-        cwd: import.meta.url.replace("file://", "").replace(/\/[^/]+$/, ""),
-      });
-      repoRoot = stdout.trim();
-    } catch {
-      repoRoot = "";
-    }
-  });
-
-  it("should build file metadata via isomorphic-git for a real repo (tiny window)", async () => {
-    if (!repoRoot) return;
-
-    // Use a very short window to limit scope
-    const sinceDate = new Date(Date.now() - 7 * 86400 * 1000); // 7 days ago
-    const result = await gitClient.buildViaIsomorphicGit(repoRoot, {}, sinceDate);
-
-    // Should return a Map (may be empty if no recent commits)
-    expect(result).toBeInstanceOf(Map);
-  }, 15_000);
 });
