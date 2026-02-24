@@ -346,6 +346,61 @@ describe("ChunkPipeline", () => {
         ]),
       );
     });
+
+    it("should not call callback if setOnBatchUpserted was never called", async () => {
+      // No setOnBatchUpserted call
+      pipeline.addChunk(createChunk(1), "chunk-1", "/test/path");
+      await vi.runAllTimersAsync();
+      await pipeline.flush();
+      // Should complete without error — qdrant was still called
+      expect(mockQdrant.addPointsOptimized).toHaveBeenCalled();
+    });
+
+    it("should not call callback on batch failure", async () => {
+      const callback = vi.fn();
+      mockEmbeddings.embedBatch.mockRejectedValue(new Error("embed fail"));
+      pipeline.setOnBatchUpserted(callback);
+
+      pipeline.addChunk(createChunk(1), "chunk-1", "/test/path");
+
+      for (let i = 0; i < 10; i++) {
+        await vi.advanceTimersByTimeAsync(600);
+      }
+      await vi.runAllTimersAsync();
+      await pipeline.flush();
+
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it("should fire callback once per batch when batchSize=1", async () => {
+      vi.useRealTimers();
+      const realQdrant = {
+        addPointsOptimized: vi.fn().mockResolvedValue(undefined),
+        addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
+      };
+      const realEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(async (texts: string[]) => texts.map(() => ({ embedding: [1, 2, 3] }))),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 3),
+      };
+      const batchPipeline = new ChunkPipeline(realQdrant as any, realEmbeddings as any, testCollectionName, {
+        workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+        accumulator: { batchSize: 1, flushTimeoutMs: 100, maxQueueSize: 10 },
+        enableHybrid: false,
+      });
+      const callback = vi.fn();
+      batchPipeline.setOnBatchUpserted(callback);
+      batchPipeline.start();
+
+      for (let i = 0; i < 3; i++) {
+        batchPipeline.addChunk(createChunk(i), `c${i}`, "/test/path");
+      }
+      await batchPipeline.flush();
+      await batchPipeline.shutdown();
+
+      expect(callback).toHaveBeenCalledTimes(3);
+      vi.useFakeTimers();
+    });
   });
 
   describe("Error tracking in onBatchComplete", () => {
