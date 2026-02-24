@@ -59,9 +59,9 @@ export type SearchCodeRerankPreset =
 export type RerankMode<T extends string> = T | { custom: ScoringWeights };
 
 /**
- * Git metadata from search result payload
+ * File-level git fields (shared between flat and nested formats)
  */
-export interface GitMetadata {
+export interface GitFileFields {
   ageDays?: number;
   commitCount?: number;
   dominantAuthor?: string;
@@ -75,7 +75,32 @@ export interface GitMetadata {
   bugFixRate?: number;
   contributorCount?: number;
   taskIds?: string[];
-  // Chunk-level (Phase B):
+}
+
+/**
+ * Chunk-level git overlay fields
+ */
+export interface GitChunkFields {
+  commitCount?: number;
+  churnRatio?: number;
+  contributorCount?: number;
+  bugFixRate?: number;
+  lastModifiedAt?: number;
+  ageDays?: number;
+  relativeChurn?: number;
+}
+
+/**
+ * Git metadata from search result payload.
+ *
+ * Supports both nested format (new: { file: {...}, chunk: {...} })
+ * and flat format (old: all fields at root level) for backward compatibility.
+ */
+export interface GitMetadata extends GitFileFields {
+  // Nested structure (new payload format from EnrichmentApplier)
+  file?: GitFileFields;
+  chunk?: GitChunkFields;
+  // Old flat chunk-level fields (backward compat for pre-nesting indexes)
   chunkCommitCount?: number;
   chunkChurnRatio?: number;
   chunkContributorCount?: number;
@@ -226,6 +251,41 @@ const SEARCH_CODE_PRESETS: Record<SearchCodeRerankPreset, ScoringWeights> = {
 };
 
 /**
+ * Resolve file-level git metadata.
+ * Supports both nested { file: {...} } and flat { ageDays, commitCount, ... } formats.
+ */
+function resolveFileMeta(git: GitMetadata | undefined): GitFileFields | undefined {
+  if (!git) return undefined;
+  return git.file ?? git;
+}
+
+/**
+ * Resolve chunk-level git metadata.
+ * Supports both nested { chunk: {...} } and old flat { chunkCommitCount, ... } format.
+ */
+function resolveChunkMeta(git: GitMetadata | undefined): GitChunkFields | undefined {
+  if (!git) return undefined;
+  if (git.chunk) return git.chunk;
+  // Flat fallback for old indexes — check if any old chunk field exists
+  if (
+    git.chunkCommitCount !== undefined ||
+    git.chunkChurnRatio !== undefined ||
+    git.chunkContributorCount !== undefined ||
+    git.chunkBugFixRate !== undefined ||
+    git.chunkAgeDays !== undefined
+  ) {
+    return {
+      commitCount: git.chunkCommitCount,
+      churnRatio: git.chunkChurnRatio,
+      contributorCount: git.chunkContributorCount,
+      bugFixRate: git.chunkBugFixRate,
+      ageDays: git.chunkAgeDays,
+    };
+  }
+  return undefined;
+}
+
+/**
  * Normalize a value to 0-1 range
  */
 function normalize(value: number, max: number): number {
@@ -247,12 +307,12 @@ function getChunkSize(result: RerankableResult): number {
  * Higher value = more concentrated ownership
  */
 function getOwnershipScore(result: RerankableResult): number {
-  const git = result.payload?.git;
+  const file = resolveFileMeta(result.payload?.git);
   // Use dominantAuthorPct (0-100) when available for precise ownership
-  if (git?.dominantAuthorPct !== undefined && git.dominantAuthorPct > 0) {
-    return git.dominantAuthorPct / 100;
+  if (file?.dominantAuthorPct !== undefined && file.dominantAuthorPct > 0) {
+    return file.dominantAuthorPct / 100;
   }
-  const authors = git?.authors;
+  const authors = file?.authors;
   if (!authors || authors.length === 0) return 0;
   if (authors.length === 1) return 1;
   // More authors = less concentrated ownership
@@ -299,7 +359,8 @@ function getBlockPenaltySignal(result: RerankableResult): number {
   const chunkType = result.payload?.chunkType;
   if (chunkType !== "block") return 0;
   // Block with chunk-level data is fine — the data is specific to this chunk
-  if (result.payload?.git?.chunkCommitCount !== undefined) return 0;
+  const chunk = resolveChunkMeta(result.payload?.git);
+  if (chunk?.commitCount !== undefined) return 0;
   return 1.0;
 }
 
@@ -308,16 +369,19 @@ function getBlockPenaltySignal(result: RerankableResult): number {
  */
 function calculateSignals(result: RerankableResult, bounds: NormalizationBounds): Record<string, number> {
   const git = result.payload?.git;
-  const ageDays = git?.ageDays ?? 0;
-  const commitCount = git?.commitCount ?? 0;
+  const file = resolveFileMeta(git);
+  const chunk = resolveChunkMeta(git);
+
+  const ageDays = file?.ageDays ?? 0;
+  const commitCount = file?.commitCount ?? 0;
   const chunkSize = getChunkSize(result);
   const imports = result.payload?.imports?.length ?? 0;
 
   // Prefer chunk-level data when available
-  const effectiveCommitCount = git?.chunkCommitCount ?? commitCount;
-  const effectiveAgeDays = git?.chunkAgeDays ?? ageDays;
-  const effectiveBugFixRate = git?.chunkBugFixRate ?? git?.bugFixRate ?? 0;
-  const effectiveContributorCount = git?.chunkContributorCount ?? git?.contributorCount;
+  const effectiveCommitCount = chunk?.commitCount ?? commitCount;
+  const effectiveAgeDays = chunk?.ageDays ?? ageDays;
+  const effectiveBugFixRate = chunk?.bugFixRate ?? file?.bugFixRate ?? 0;
+  const effectiveContributorCount = chunk?.contributorCount ?? file?.contributorCount;
 
   // Dampen statistical signals that are unreliable with small sample sizes.
   // Factual signals (recency, age, churn counts) are not affected.
@@ -335,13 +399,13 @@ function calculateSignals(result: RerankableResult, bounds: NormalizationBounds)
     imports: normalize(imports, bounds.maxImports),
     pathRisk: getPathRiskScore(result),
     bugFix: normalize(effectiveBugFixRate, bounds.maxBugFixRate) * confidence,
-    volatility: normalize(git?.churnVolatility ?? 0, bounds.maxVolatility) * confidence,
-    density: normalize(git?.changeDensity ?? 0, bounds.maxChangeDensity) * confidence,
-    chunkChurn: normalize(git?.chunkCommitCount ?? 0, bounds.maxChunkCommitCount),
-    relativeChurnNorm: normalize(git?.relativeChurn ?? 0, bounds.maxRelativeChurn) * confidence,
-    burstActivity: normalize(git?.recencyWeightedFreq ?? 0, bounds.maxBurstActivity),
+    volatility: normalize(file?.churnVolatility ?? 0, bounds.maxVolatility) * confidence,
+    density: normalize(file?.changeDensity ?? 0, bounds.maxChangeDensity) * confidence,
+    chunkChurn: normalize(chunk?.commitCount ?? 0, bounds.maxChunkCommitCount),
+    relativeChurnNorm: normalize(file?.relativeChurn ?? 0, bounds.maxRelativeChurn) * confidence,
+    burstActivity: normalize(file?.recencyWeightedFreq ?? 0, bounds.maxBurstActivity),
     knowledgeSilo: getKnowledgeSiloScore(result, effectiveContributorCount) * confidence,
-    chunkRelativeChurn: normalize(git?.chunkChurnRatio ?? 0, bounds.maxChunkChurnRatio),
+    chunkRelativeChurn: normalize(chunk?.churnRatio ?? 0, bounds.maxChunkChurnRatio),
     blockPenalty: getBlockPenaltySignal(result),
   };
 }

@@ -17,6 +17,8 @@ export interface ChunkAccumulator {
   authors: Set<string>;
   bugFixCount: number;
   lastModifiedAt: number;
+  linesAdded: number;
+  linesDeleted: number;
 }
 
 const BUG_FIX_PATTERN = /\b(fix|bug|hotfix|patch|resolve[sd]?|defect)\b/i;
@@ -169,18 +171,22 @@ export function computeChunkOverlay(
   acc: ChunkAccumulator,
   fileCommitCount: number,
   fileContributorCount?: number,
+  chunkLineCount?: number,
 ): ChunkChurnOverlay {
   const nowSec = Date.now() / 1000;
-  const chunkCommitCount = acc.commitShas.size;
-  const totalCommitsForChunk = chunkCommitCount || 1;
+  const commitCount = acc.commitShas.size;
+  const totalCommitsForChunk = commitCount || 1;
+  const totalChurn = acc.linesAdded + acc.linesDeleted;
+  const lineCount = Math.max(chunkLineCount ?? 1, 1);
 
   return {
-    chunkCommitCount,
-    chunkChurnRatio: Math.round((chunkCommitCount / Math.max(fileCommitCount, 1)) * 100) / 100,
-    chunkContributorCount:
+    commitCount,
+    churnRatio: Math.round((commitCount / Math.max(fileCommitCount, 1)) * 100) / 100,
+    contributorCount:
       fileContributorCount !== undefined ? Math.min(acc.authors.size, fileContributorCount) : acc.authors.size,
-    chunkBugFixRate: chunkCommitCount > 0 ? Math.round((acc.bugFixCount / totalCommitsForChunk) * 100) : 0,
-    chunkLastModifiedAt: acc.lastModifiedAt,
-    chunkAgeDays: acc.lastModifiedAt > 0 ? Math.max(0, Math.floor((nowSec - acc.lastModifiedAt) / 86400)) : 0,
+    bugFixRate: commitCount > 0 ? Math.round((acc.bugFixCount / totalCommitsForChunk) * 100) : 0,
+    lastModifiedAt: acc.lastModifiedAt,
+    ageDays: acc.lastModifiedAt > 0 ? Math.max(0, Math.floor((nowSec - acc.lastModifiedAt) / 86400)) : 0,
+    relativeChurn: Math.round((totalChurn / lineCount) * 100) / 100,
   };
 }

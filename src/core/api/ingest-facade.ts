@@ -5,7 +5,7 @@
  * - IndexPipeline: full codebase indexing from scratch
  * - ReindexPipeline: incremental re-indexing of changed files
  * - StatusModule: index status queries and cleanup
- * - EnrichmentModule: background git metadata enrichment
+ * - EnrichmentCoordinator: background trajectory metadata enrichment
  */
 
 import { homedir } from "node:os";
@@ -17,11 +17,12 @@ import { createIngestDependencies } from "../ingest/factory.js";
 import { IndexPipeline } from "../ingest/indexing.js";
 import { ReindexPipeline } from "../ingest/reindexing.js";
 import { StatusModule } from "../ingest/status-module.js";
-import { EnrichmentModule } from "../ingest/trajectory/enrichment-module.js";
+import { EnrichmentCoordinator } from "../ingest/trajectory/enrichment/coordinator.js";
+import { GitEnrichmentProvider } from "../ingest/trajectory/enrichment/git/provider.js";
 import type { ChangeStats, CodeConfig, IndexOptions, IndexStats, IndexStatus, ProgressCallback } from "../types.js";
 
 export class IngestFacade {
-  private readonly enrichment: EnrichmentModule;
+  private readonly enrichment: EnrichmentCoordinator;
   private readonly indexing: IndexPipeline;
   private readonly status: StatusModule;
   private readonly reindex: ReindexPipeline;
@@ -30,7 +31,7 @@ export class IngestFacade {
     const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
     const deps = createIngestDependencies(qdrant, snapshotDir);
 
-    this.enrichment = new EnrichmentModule(qdrant);
+    this.enrichment = new EnrichmentCoordinator(qdrant, new GitEnrichmentProvider());
     this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment, deps);
     this.status = new StatusModule(qdrant);
     this.reindex = new ReindexPipeline(qdrant, embeddings, config, this.enrichment, deps);

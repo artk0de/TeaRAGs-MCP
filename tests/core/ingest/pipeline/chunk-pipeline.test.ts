@@ -463,10 +463,12 @@ describe("ChunkPipeline", () => {
           expect.objectContaining({
             payload: expect.objectContaining({
               git: expect.objectContaining({
-                commitCount: 8,
-                dominantAuthor: "Jane Doe",
-                ageDays: 30,
-                taskIds: ["TD-100", "TD-200"],
+                file: expect.objectContaining({
+                  commitCount: 8,
+                  dominantAuthor: "Jane Doe",
+                  ageDays: 30,
+                  taskIds: ["TD-100", "TD-200"],
+                }),
               }),
             }),
           }),

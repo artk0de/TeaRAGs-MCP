@@ -556,13 +556,13 @@ describe("buildChunkChurnMap", () => {
       if (overlayMap) {
         for (const [, overlay] of overlayMap) {
           // Validate all fields
-          expect(overlay.chunkCommitCount).toBeGreaterThanOrEqual(0);
-          expect(overlay.chunkChurnRatio).toBeGreaterThanOrEqual(0);
-          expect(overlay.chunkChurnRatio).toBeLessThanOrEqual(1);
-          expect(overlay.chunkContributorCount).toBeGreaterThanOrEqual(0);
-          expect(overlay.chunkBugFixRate).toBeGreaterThanOrEqual(0);
-          expect(overlay.chunkBugFixRate).toBeLessThanOrEqual(100);
-          expect(overlay.chunkAgeDays).toBeGreaterThanOrEqual(0);
+          expect(overlay.commitCount).toBeGreaterThanOrEqual(0);
+          expect(overlay.churnRatio).toBeGreaterThanOrEqual(0);
+          expect(overlay.churnRatio).toBeLessThanOrEqual(1);
+          expect(overlay.contributorCount).toBeGreaterThanOrEqual(0);
+          expect(overlay.bugFixRate).toBeGreaterThanOrEqual(0);
+          expect(overlay.bugFixRate).toBeLessThanOrEqual(100);
+          expect(overlay.ageDays).toBeGreaterThanOrEqual(0);
         }
       }
     }
@@ -590,15 +590,15 @@ describe("buildChunkChurnMap", () => {
     if (!overlayMap) return;
 
     for (const [, overlay] of overlayMap) {
-      // chunkChurnRatio must be <= 1.0 since file-level commits (12mo) >= chunk-level (6mo)
-      expect(overlay.chunkChurnRatio).toBeLessThanOrEqual(1.0);
-      expect(overlay.chunkChurnRatio).toBeGreaterThanOrEqual(0);
-      // chunkCommitCount should not exceed file commit count
-      expect(overlay.chunkCommitCount).toBeLessThanOrEqual(fileChurnData.commits.length);
+      // churnRatio must be <= 1.0 since file-level commits (12mo) >= chunk-level (6mo)
+      expect(overlay.churnRatio).toBeLessThanOrEqual(1.0);
+      expect(overlay.churnRatio).toBeGreaterThanOrEqual(0);
+      // commitCount should not exceed file commit count
+      expect(overlay.commitCount).toBeLessThanOrEqual(fileChurnData.commits.length);
     }
   });
 
-  it("should cap chunkContributorCount at file-level contributor count", async () => {
+  it("should cap contributorCount at file-level contributor count", async () => {
     if (!repoRoot) return;
 
     const fileChurnMap = await reader.buildFileMetadataMap(repoRoot, 6);
@@ -619,7 +619,7 @@ describe("buildChunkChurnMap", () => {
     if (!overlayMap) return;
 
     for (const [, overlay] of overlayMap) {
-      expect(overlay.chunkContributorCount).toBeLessThanOrEqual(fileContributors);
+      expect(overlay.contributorCount).toBeLessThanOrEqual(fileContributors);
     }
   });
 
@@ -642,7 +642,7 @@ describe("buildChunkChurnMap", () => {
         const overlays = Array.from(overlayMap.values());
         // At least some chunks should have different commit counts
         // (imports section changes less frequently than middle/search sections)
-        const commitCounts = overlays.map((o) => o.chunkCommitCount);
+        const commitCounts = overlays.map((o) => o.commitCount);
         // We can't guarantee they're different, but at least they should be valid
         for (const count of commitCounts) {
           expect(count).toBeGreaterThanOrEqual(0);
@@ -692,11 +692,11 @@ describe("buildChunkChurnMap", () => {
     const blockWithoutRanges = withoutRanges.get("src/core/api/indexer.ts")?.get("block-chunk");
 
     if (blockWithRanges && blockWithoutRanges) {
-      expect(blockWithRanges.chunkCommitCount).toBeLessThanOrEqual(blockWithoutRanges.chunkCommitCount);
+      expect(blockWithRanges.commitCount).toBeLessThanOrEqual(blockWithoutRanges.commitCount);
     }
     // At minimum, both should produce valid results
     if (blockWithRanges) {
-      expect(blockWithRanges.chunkCommitCount).toBeGreaterThanOrEqual(0);
+      expect(blockWithRanges.commitCount).toBeGreaterThanOrEqual(0);
     }
   });
 
@@ -1064,7 +1064,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
       if (overlay) {
         // If overlay exists, chunk commit counts should be 0 (skipped)
         for (const [, o] of overlay) {
-          expect(o.chunkCommitCount).toBe(0);
+          expect(o.commitCount).toBe(0);
         }
       }
     } finally {
@@ -1105,7 +1105,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
     for (const [, o] of overlay!) {
-      expect(o.chunkCommitCount).toBe(0);
+      expect(o.commitCount).toBe(0);
     }
   });
 
@@ -1147,7 +1147,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
     for (const [, o] of overlay!) {
-      expect(o.chunkCommitCount).toBe(0);
+      expect(o.commitCount).toBe(0);
     }
   });
 
@@ -1192,7 +1192,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
     for (const [, o] of overlay!) {
-      expect(o.chunkCommitCount).toBe(0);
+      expect(o.commitCount).toBe(0);
     }
   });
 
@@ -1242,7 +1242,7 @@ describe("processCommitEntry edge cases (via buildChunkChurnMapUncached)", () =>
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
     for (const [, o] of overlay!) {
-      expect(o.chunkCommitCount).toBe(0);
+      expect(o.commitCount).toBe(0);
     }
   });
 });
@@ -1291,12 +1291,12 @@ describe("buildChunkChurnMap cache error", () => {
             [
               "c1",
               {
-                chunkCommitCount: 1,
-                chunkChurnRatio: 1,
-                chunkContributorCount: 1,
-                chunkBugFixRate: 0,
-                chunkLastModifiedAt: 0,
-                chunkAgeDays: 0,
+                commitCount: 1,
+                churnRatio: 1,
+                contributorCount: 1,
+                bugFixRate: 0,
+                lastModifiedAt: 0,
+                ageDays: 0,
               },
             ],
           ]),
@@ -1540,10 +1540,10 @@ describe("buildChunkChurnMapUncached — fallback fileCommitCount", () => {
 
     const overlay = result.get("test.ts");
     expect(overlay).toBeDefined();
-    // Verify chunkChurnRatio is computed (may be 0 or 1 depending on patch output)
+    // Verify churnRatio is computed (may be 0 or 1 depending on patch output)
     for (const [, o] of overlay!) {
-      expect(o.chunkChurnRatio).toBeGreaterThanOrEqual(0);
-      expect(o.chunkChurnRatio).toBeLessThanOrEqual(1);
+      expect(o.churnRatio).toBeGreaterThanOrEqual(0);
+      expect(o.churnRatio).toBeLessThanOrEqual(1);
     }
   });
 });
@@ -1770,7 +1770,7 @@ describe("processCommitEntry — no relevant files", () => {
     const overlay = result.get("target.ts");
     expect(overlay).toBeDefined();
     for (const [, o] of overlay!) {
-      expect(o.chunkCommitCount).toBe(0);
+      expect(o.commitCount).toBe(0);
     }
   });
 });
@@ -1782,7 +1782,7 @@ describe("processCommitEntry — bug fix accumulation", () => {
     vi.restoreAllMocks();
   });
 
-  it("should count bug fix commits and update chunkBugFixRate", async () => {
+  it("should count bug fix commits and update bugFixRate", async () => {
     const commitSha = "a".repeat(40);
 
     // Mock getCommitsByPathspec (cross-module from chunk-reader → gitClient)
@@ -1834,11 +1834,11 @@ describe("processCommitEntry — bug fix accumulation", () => {
     // At least one chunk should have been affected by the bug fix
     let anyBugFix = false;
     for (const [, o] of overlay!) {
-      if (o.chunkBugFixRate > 0) anyBugFix = true;
-      if (o.chunkCommitCount > 0) {
-        expect(o.chunkBugFixRate).toBe(100); // 1 fix commit / 1 total = 100%
-        expect(o.chunkAgeDays).toBeGreaterThanOrEqual(0);
-        expect(o.chunkContributorCount).toBe(1);
+      if (o.bugFixRate > 0) anyBugFix = true;
+      if (o.commitCount > 0) {
+        expect(o.bugFixRate).toBe(100); // 1 fix commit / 1 total = 100%
+        expect(o.ageDays).toBeGreaterThanOrEqual(0);
+        expect(o.contributorCount).toBe(1);
       }
     }
     expect(anyBugFix).toBe(true);
@@ -1938,7 +1938,7 @@ describe("buildChunkChurnMapUncached — concurrency control", () => {
     // We should have processed both commits without deadlock
     let totalCommits = 0;
     for (const [, o] of overlay!) {
-      totalCommits += o.chunkCommitCount;
+      totalCommits += o.commitCount;
     }
     expect(totalCommits).toBeGreaterThan(0);
   });
