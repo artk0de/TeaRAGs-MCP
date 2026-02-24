@@ -9,14 +9,14 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
 import type { ChunkLookupEntry, CodeChunk } from "../../types.js";
-import { parallelLimit } from "../../utils/parallel.js";
-import { generateChunkId } from "./chunk-id.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
-import type { ChunkerPool } from "./chunker/utils/pool.js";
-import { pipelineLog } from "./debug-logger.js";
-import { extractImportsExports } from "./import-extractor.js";
-import { detectLanguage } from "./language-detector.js";
-import { containsSecrets } from "./secrets-detector.js";
+import type { ChunkerPool } from "./chunker/infra/pool.js";
+import { generateChunkId } from "./chunker/utils/chunk-id.js";
+import { extractImportsExports } from "./chunker/utils/import-extractor.js";
+import { detectLanguage } from "./chunker/utils/language-detector.js";
+import { containsSecrets } from "./chunker/utils/secrets-detector.js";
+import { pipelineLog } from "./infra/debug-logger.js";
+import { parallelLimit } from "./infra/parallel.js";
 
 export interface FileProcessorOptions {
   enableGitMetadata: boolean;

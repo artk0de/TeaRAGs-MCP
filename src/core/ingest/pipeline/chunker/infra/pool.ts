@@ -20,10 +20,7 @@ import type { WorkerRequest, WorkerResponse } from "./worker.js";
  *   production: .../build/core/ingest/pipeline/chunker/utils/pool.js
  *   vitest:     .../src/core/ingest/pipeline/chunker/utils/pool.ts (remap to build/)
  */
-const WORKER_PATH = path.join(
-  path.dirname(fileURLToPath(import.meta.url)).replace("/src/", "/build/"),
-  "worker.js",
-);
+const WORKER_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)).replace("/src/", "/build/"), "worker.js");
 
 export interface FileChunkResult {
   filePath: string;

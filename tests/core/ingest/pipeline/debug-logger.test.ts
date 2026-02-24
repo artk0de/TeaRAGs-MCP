@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LogContext } from "../../../../src/core/ingest/pipeline/debug-logger.js";
+import type { LogContext } from "../../../../src/core/ingest/pipeline/infra/debug-logger.js";
 
 // Mock fs module before importing the module under test
 vi.mock("node:fs", () => ({
@@ -13,7 +13,7 @@ vi.mock("node:fs", () => ({
 process.env.DEBUG = "true";
 
 // Import after setting DEBUG
-const { pipelineLog } = await import("../../../../src/core/ingest/pipeline/debug-logger.js");
+const { pipelineLog } = await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
 const fs = await import("node:fs");
 
 describe("DebugLogger", () => {
@@ -675,7 +675,7 @@ describe("DebugLogger - DEBUG environment variable", () => {
     delete process.env.DEBUG;
 
     // Import module with DEBUG unset (vi.resetModules() already cleared cache)
-    const { pipelineLog: noDebugLogger } = await import("../../../../src/core/ingest/pipeline/debug-logger.js");
+    const { pipelineLog: noDebugLogger } = await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
     const fsModule = await import("node:fs");
 
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});

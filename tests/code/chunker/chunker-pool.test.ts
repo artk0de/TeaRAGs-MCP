@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ChunkerPool } from "../../../src/core/ingest/pipeline/chunker/utils/pool.js";
+import { ChunkerPool } from "../../../src/core/ingest/pipeline/chunker/infra/pool.js";
 import { TreeSitterChunker } from "../../../src/core/ingest/pipeline/chunker/tree-sitter.js";
 import type { ChunkerConfig } from "../../../src/core/types.js";
 

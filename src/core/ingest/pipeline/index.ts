@@ -6,13 +6,13 @@
  */
 
 // Core components
-export { BatchAccumulator } from "./batch-accumulator.js";
 export { ChunkPipeline } from "./chunk-pipeline.js";
 export type { ChunkPipelineConfig } from "./chunk-pipeline.js";
-export { pipelineLog } from "./debug-logger.js";
+export { BatchAccumulator } from "./infra/batch-accumulator.js";
+export { pipelineLog } from "./infra/debug-logger.js";
+export { WorkerPool } from "./infra/worker-pool.js";
 export { PipelineManager, createQdrantPipeline } from "./pipeline-manager.js";
 export type { PipelineHandlers } from "./pipeline-manager.js";
-export { WorkerPool } from "./worker-pool.js";
 
 // Types
 export type {
