@@ -16,7 +16,7 @@ import type { QdrantManager } from "../adapters/qdrant/client.js";
 import { createIngestDependencies } from "../ingest/factory.js";
 import { IndexPipeline } from "../ingest/indexing.js";
 import { EnrichmentCoordinator } from "../ingest/pipeline/enrichment/coordinator.js";
-import { GitEnrichmentProvider } from "../ingest/pipeline/enrichment/trajectory/git/provider.js";
+import { createEnrichmentProviders } from "../ingest/pipeline/enrichment/trajectory/registry.js";
 import { StatusModule } from "../ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../ingest/reindexing.js";
 import type { ChangeStats, CodeConfig, IndexOptions, IndexStats, IndexStatus, ProgressCallback } from "../types.js";
@@ -31,7 +31,7 @@ export class IngestFacade {
     const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
     const deps = createIngestDependencies(qdrant, snapshotDir);
 
-    this.enrichment = new EnrichmentCoordinator(qdrant, new GitEnrichmentProvider());
+    this.enrichment = new EnrichmentCoordinator(qdrant, createEnrichmentProviders(config));
     this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment, deps);
     this.status = new StatusModule(qdrant);
     this.reindex = new ReindexPipeline(qdrant, embeddings, config, this.enrichment, deps);

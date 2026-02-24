@@ -114,12 +114,10 @@ export abstract class BaseIndexingPipeline {
     collectionName: string,
     ignoreFilter: Ignore,
   ): void {
-    if (this.config.enableGitMetadata) {
-      this.enrichment.prefetch(absolutePath, collectionName, ignoreFilter);
-      chunkPipeline.setOnBatchUpserted((items) => {
-        this.enrichment.onChunksStored(collectionName, absolutePath, items);
-      });
-    }
+    this.enrichment.prefetch(absolutePath, collectionName, ignoreFilter);
+    chunkPipeline.setOnBatchUpserted((items) => {
+      this.enrichment.onChunksStored(collectionName, absolutePath, items);
+    });
   }
 
   // ── Teardown ─────────────────────────────────────────────
@@ -138,7 +136,6 @@ export abstract class BaseIndexingPipeline {
     collectionName: string,
     absolutePath: string,
   ): () => "completed" | "background" | "skipped" {
-    if (!this.config.enableGitMetadata) return () => "skipped";
     if (chunkMap.size === 0) return () => "skipped";
 
     let done = false;
