@@ -8,11 +8,11 @@
 
 import { relative } from "node:path";
 
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { pipelineLog } from "../../pipeline/debug-logger.js";
+import type { ChunkItem } from "../../pipeline/types.js";
 import { computeFileMetadata, type GitLogReader } from "../git/git-log-reader.js";
 import type { FileChurnData } from "../git/types.js";
-import { pipelineLog } from "../pipeline/debug-logger.js";
-import type { ChunkItem } from "../pipeline/types.js";
 
 const BATCH_SIZE = 100;
 

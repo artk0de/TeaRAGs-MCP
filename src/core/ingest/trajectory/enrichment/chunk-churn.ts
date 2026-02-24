@@ -9,12 +9,12 @@ import { relative } from "node:path";
 
 import type { Ignore } from "ignore";
 
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import type { ChunkLookupEntry } from "../../types.js";
-import { INDEXING_METADATA_ID } from "../constants.js";
+import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { ChunkLookupEntry } from "../../../types.js";
+import { INDEXING_METADATA_ID } from "../../constants.js";
+import { pipelineLog } from "../../pipeline/debug-logger.js";
 import type { GitLogReader } from "../git/git-log-reader.js";
 import type { FileChurnData } from "../git/types.js";
-import { pipelineLog } from "../pipeline/debug-logger.js";
 
 const BATCH_SIZE = 100;
 

@@ -9,8 +9,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { computeFileMetadata, extractTaskIds, GitLogReader, overlaps } from "../../../src/core/ingest/git/git-log-reader.js";
-import type { CommitInfo, FileChurnData } from "../../../src/core/ingest/git/types.js";
+import {
+  computeFileMetadata,
+  extractTaskIds,
+  GitLogReader,
+  overlaps,
+} from "../../../src/core/ingest/trajectory/git/git-log-reader.js";
+import type { CommitInfo, FileChurnData } from "../../../src/core/ingest/trajectory/git/types.js";
 
 // ─── extractTaskIds ──────────────────────────────────────────────────────────
 

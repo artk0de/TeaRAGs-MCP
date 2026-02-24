@@ -13,11 +13,11 @@ import { join } from "node:path";
 
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
-import { EnrichmentModule } from "../ingest/enrichment-module.js";
 import { createIngestDependencies } from "../ingest/factory.js";
 import { IndexPipeline } from "../ingest/indexing.js";
 import { ReindexPipeline } from "../ingest/reindexing.js";
 import { StatusModule } from "../ingest/status-module.js";
+import { EnrichmentModule } from "../ingest/trajectory/enrichment-module.js";
 import type { ChangeStats, CodeConfig, IndexOptions, IndexStats, IndexStatus, ProgressCallback } from "../types.js";
 
 export class IngestFacade {
