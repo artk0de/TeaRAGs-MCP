@@ -13,8 +13,8 @@ import { promisify } from "node:util";
 
 import git from "isomorphic-git";
 
-import type { CommitInfo, FileChurnData } from "../../ingest/trajectory/git/types.js";
 import { parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
+import type { CommitInfo, FileChurnData } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
