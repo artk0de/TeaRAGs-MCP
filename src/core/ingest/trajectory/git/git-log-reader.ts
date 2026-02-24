@@ -13,6 +13,15 @@ import { promisify } from "node:util";
 import { structuredPatch } from "diff";
 import git from "isomorphic-git";
 
+import {
+  buildViaCli,
+  buildViaIsomorphicGit,
+  diffTrees,
+  getHead,
+  readBlobAsString,
+  withTimeout,
+} from "../../../adapters/git/client.js";
+import { parseNumstatOutput, parsePathspecOutput } from "../../../adapters/git/parsers.js";
 import type { ChunkLookupEntry } from "../../../types.js";
 import {
   computeChunkOverlay,
@@ -60,7 +69,7 @@ export class GitLogReader {
     // Check HEAD-based cache (non-fatal if HEAD resolution fails)
     let headSha: string | null = null;
     try {
-      headSha = await this.getHead(repoRoot);
+      headSha = await getHead(repoRoot);
       const cached = this.fileMetadataCache.get(cacheKey);
       if (cached?.headSha === headSha) {
         return cached.data;
@@ -75,13 +84,13 @@ export class GitLogReader {
 
     let result: Map<string, FileChurnData>;
     try {
-      result = await this.withTimeout(this.buildViaCli(repoRoot, sinceDate), timeoutMs, "CLI git log timed out");
+      result = await withTimeout(buildViaCli(repoRoot, sinceDate), timeoutMs, "CLI git log timed out");
     } catch (error) {
       console.error(
         `[GitLogReader] CLI failed, falling back to isomorphic-git:`,
         error instanceof Error ? error.message : error,
       );
-      result = await this.buildViaIsomorphicGit(repoRoot, sinceDate);
+      result = await buildViaIsomorphicGit(repoRoot, this.cache, sinceDate);
     }
 
     // Store in cache if we got a valid HEAD
@@ -91,217 +100,11 @@ export class GitLogReader {
     return result;
   }
 
-  /**
-   * Race a promise against a timeout. Rejects with Error(message) on expiry.
-   */
-  private async withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(message));
-      }, ms);
-      promise.then(
-        (val) => {
-          clearTimeout(timer);
-          resolve(val);
-        },
-        (err) => {
-          clearTimeout(timer);
-          reject(err instanceof Error ? err : new Error(String(err)));
-        },
-      );
-    });
-  }
-
-  /** HEAD SHA */
+  /** @deprecated Use getHead from adapters/git/client.js */
   async getHead(repoRoot: string): Promise<string> {
-    try {
-      return await git.resolveRef({ fs, dir: repoRoot, ref: "HEAD" });
-    } catch {
-      const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repoRoot });
-      return stdout.trim();
-    }
+    return getHead(repoRoot);
   }
 
-  /**
-   * Build the CLI args array for `git log`.
-   * Uses HEAD (not --all) and no --max-count.
-   */
-  private buildCliArgs(sinceDate?: Date): string[] {
-    const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00"];
-    if (sinceDate) {
-      args.push(`--since=${sinceDate.toISOString()}`);
-    }
-    return args;
-  }
-
-  /**
-   * Primary path: isomorphic-git reads .git directly.
-   *
-   * Algorithm:
-   * 1. Walk all commits via git.log
-   * 2. For each pair of consecutive commits, diff the trees
-   * 3. Build per-file commit list and numstat via TREE walk
-   */
-  private async buildViaIsomorphicGit(repoRoot: string, sinceDate?: Date): Promise<Map<string, FileChurnData>> {
-    const fileMap = new Map<string, FileChurnData>();
-
-    // Get commits (ordered newest-first), bounded by since date
-    const commits = await git.log({
-      fs,
-      dir: repoRoot,
-      ref: "HEAD",
-      since: sinceDate,
-      cache: this.cache,
-    });
-
-    if (commits.length === 0) return fileMap;
-
-    // Process commits oldest-first so we can build up the file map chronologically
-    // For each commit, diff its tree against parent to find changed files
-    for (let i = commits.length - 1; i >= 0; i--) {
-      const commit = commits[i];
-      const commitInfo: CommitInfo = {
-        sha: commit.oid,
-        author: commit.commit.author.name,
-        authorEmail: commit.commit.author.email,
-        timestamp: commit.commit.author.timestamp,
-        body: commit.commit.message,
-      };
-
-      const parentOids = commit.commit.parent;
-
-      // Get changed files by diffing trees
-      let changedFiles: string[];
-      try {
-        if (parentOids.length === 0) {
-          // Root commit — all files in this tree are "added"
-          changedFiles = await this.listAllFiles(repoRoot, commit.oid);
-        } else {
-          // Diff against first parent
-          changedFiles = await this.diffTrees(repoRoot, parentOids[0], commit.oid);
-        }
-      } catch {
-        // If tree diff fails for this commit, skip it
-        continue;
-      }
-
-      for (const filePath of changedFiles) {
-        let entry = fileMap.get(filePath);
-        if (!entry) {
-          entry = { commits: [], linesAdded: 0, linesDeleted: 0 };
-          fileMap.set(filePath, entry);
-        }
-        entry.commits.push(commitInfo);
-      }
-    }
-
-    // isomorphic-git doesn't support --numstat natively,
-    // so we collect line stats via a single CLI call (fast — one process only)
-    await this.enrichLineStats(repoRoot, fileMap, sinceDate);
-
-    return fileMap;
-  }
-
-  /**
-   * List all files in a commit's tree (for root commits with no parent)
-   */
-  private async listAllFiles(repoRoot: string, commitOid: string): Promise<string[]> {
-    const files: string[] = [];
-
-    await git.walk({
-      fs,
-      dir: repoRoot,
-      trees: [git.TREE({ ref: commitOid })],
-      cache: this.cache,
-      map: async (filepath, entries) => {
-        if (!entries?.[0]) return;
-        const entry = entries[0];
-        const type = await entry.type();
-        if (type === "blob" && filepath !== ".") {
-          files.push(filepath);
-        }
-      },
-    });
-
-    return files;
-  }
-
-  /**
-   * Diff two commit trees to find changed files
-   */
-  private async diffTrees(repoRoot: string, parentOid: string, commitOid: string): Promise<string[]> {
-    const changedFiles: string[] = [];
-
-    await git.walk({
-      fs,
-      dir: repoRoot,
-      trees: [git.TREE({ ref: parentOid }), git.TREE({ ref: commitOid })],
-      cache: this.cache,
-      map: async (filepath, entries) => {
-        if (!entries || filepath === ".") return;
-        const [parentEntry, commitEntry] = entries;
-
-        // Get OIDs — changed if different
-        const parentOidFile = parentEntry ? await parentEntry.oid() : undefined;
-        const commitOidFile = commitEntry ? await commitEntry.oid() : undefined;
-
-        if (parentOidFile !== commitOidFile) {
-          // Only include blobs, not trees
-          const type = commitEntry ? await commitEntry.type() : parentEntry ? await parentEntry.type() : undefined;
-          if (type === "blob") {
-            changedFiles.push(filepath);
-          }
-        }
-      },
-    });
-
-    return changedFiles;
-  }
-
-  /**
-   * Enrich fileMap with line stats from a single CLI git log call.
-   * This is the only process spawn — one call for the entire repo.
-   */
-  private async enrichLineStats(
-    repoRoot: string,
-    fileMap: Map<string, FileChurnData>,
-    sinceDate?: Date,
-  ): Promise<void> {
-    try {
-      const args = ["log", "HEAD", "--numstat", "--format="];
-      if (sinceDate) {
-        args.push(`--since=${sinceDate.toISOString()}`);
-      }
-      const { stdout } = await execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity });
-
-      // Parse numstat output: "added\tdeleted\tfilepath" per line
-      for (const line of stdout.split("\n")) {
-        if (!line.trim()) continue;
-        const parts = line.split("\t");
-        if (parts.length < 3) continue;
-
-        const added = parseInt(parts[0], 10);
-        const deleted = parseInt(parts[1], 10);
-        const filePath = parts[2];
-
-        if (isNaN(added) || isNaN(deleted)) continue; // binary files show "-"
-
-        const entry = fileMap.get(filePath);
-        if (entry) {
-          entry.linesAdded += added;
-          entry.linesDeleted += deleted;
-        }
-      }
-    } catch (error) {
-      // Non-fatal: churn metrics will show 0 for linesAdded/linesDeleted
-      console.error("[GitLogReader] numstat enrichment failed:", error instanceof Error ? error.message : error);
-    }
-  }
-
-  /**
-   * Fallback: CLI git log with --numstat and custom format.
-   * Single process spawn for the entire repo.
-   */
   /**
    * Fetch file-level metadata for specific files (no --since filter).
    * Used as a backfill for files that weren't in the main git log window.
@@ -322,9 +125,9 @@ export class GitLogReader {
       const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
 
       try {
-        const batchResult = await this.withTimeout(
+        const batchResult = await withTimeout(
           execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity }).then(({ stdout }) =>
-            this.parseNumstatOutput(stdout),
+            parseNumstatOutput(stdout),
           ),
           timeoutMs,
           "git log backfill timed out",
@@ -340,91 +143,6 @@ export class GitLogReader {
     }
 
     return result;
-  }
-
-  private async buildViaCli(repoRoot: string, sinceDate?: Date): Promise<Map<string, FileChurnData>> {
-    const args = this.buildCliArgs(sinceDate);
-
-    const { stdout } = await execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity });
-
-    return this.parseNumstatOutput(stdout);
-  }
-
-  /**
-   * Parse git log --numstat output into a FileChurnData map.
-   * Shared by buildViaCli and buildFileMetadataForPaths.
-   */
-  private parseNumstatOutput(stdout: string): Map<string, FileChurnData> {
-    const fileMap = new Map<string, FileChurnData>();
-
-    const sections = stdout.split("\0");
-    let i = 0;
-
-    while (i < sections.length) {
-      if (!sections[i]?.trim()) {
-        i++;
-        continue;
-      }
-
-      const sha = sections[i]?.trim();
-      if (sha?.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
-        i++;
-        continue;
-      }
-
-      const author = sections[i + 1] || "";
-      const email = sections[i + 2] || "";
-      const timestamp = parseInt(sections[i + 3] || "0", 10);
-      const body = sections[i + 4] || "";
-      i += 5;
-
-      const commitInfo: CommitInfo = { sha, author, authorEmail: email, timestamp, body };
-
-      const numstatSection = sections[i] || "";
-      i++;
-
-      for (const line of numstatSection.split("\n")) {
-        if (!line.trim()) continue;
-        const parts = line.split("\t");
-        if (parts.length < 3) continue;
-
-        const added = parseInt(parts[0], 10);
-        const deleted = parseInt(parts[1], 10);
-        const filePath = parts[2];
-
-        if (isNaN(added) || isNaN(deleted)) continue;
-
-        let entry = fileMap.get(filePath);
-        if (!entry) {
-          entry = { commits: [], linesAdded: 0, linesDeleted: 0 };
-          fileMap.set(filePath, entry);
-        }
-        entry.commits.push(commitInfo);
-        entry.linesAdded += added;
-        entry.linesDeleted += deleted;
-      }
-    }
-
-    return fileMap;
-  }
-
-  /**
-   * Read a blob at a specific commit as a UTF-8 string.
-   * Returns "" if the file didn't exist at that commit.
-   */
-  private async readBlobAsString(repoRoot: string, commitOid: string, filepath: string): Promise<string> {
-    try {
-      const { blob } = await git.readBlob({
-        fs,
-        dir: repoRoot,
-        oid: commitOid,
-        filepath,
-        cache: this.cache,
-      });
-      return new TextDecoder().decode(blob);
-    } catch {
-      return ""; // file didn't exist at this commit
-    }
   }
 
   /**
@@ -527,7 +245,7 @@ export class GitLogReader {
       timeout: effectiveTimeoutMs,
     });
 
-    return this.parsePathspecOutput(stdout);
+    return parsePathspecOutput(stdout);
   }
 
   /**
@@ -585,53 +303,6 @@ export class GitLogReader {
       commit,
       changedFiles: Array.from(changedFiles),
     }));
-  }
-
-  private parsePathspecOutput(stdout: string): { commit: CommitInfo; changedFiles: string[] }[] {
-    const result: { commit: CommitInfo; changedFiles: string[] }[] = [];
-    const sections = stdout.split("\0");
-    let i = 0;
-
-    while (i < sections.length) {
-      if (!sections[i]?.trim()) {
-        i++;
-        continue;
-      }
-
-      const sha = sections[i]?.trim();
-      if (sha?.length !== 40 || !/^[a-f0-9]+$/.test(sha)) {
-        i++;
-        continue;
-      }
-
-      const author = sections[i + 1] || "";
-      const email = sections[i + 2] || "";
-      const timestamp = parseInt(sections[i + 3] || "0", 10);
-      const body = sections[i + 4] || "";
-      i += 5;
-
-      const commit: CommitInfo = { sha, author, authorEmail: email, timestamp, body };
-      const changedFiles: string[] = [];
-
-      // Parse numstat section
-      const numstatSection = sections[i] || "";
-      i++;
-
-      for (const line of numstatSection.split("\n")) {
-        if (!line.trim()) continue;
-        const parts = line.split("\t");
-        if (parts.length < 3) continue;
-        // Binary files show "-\t-" — skip them
-        if (parts[0] === "-" && parts[1] === "-") continue;
-        changedFiles.push(parts[2]);
-      }
-
-      if (changedFiles.length > 0) {
-        result.push({ commit, changedFiles });
-      }
-    }
-
-    return result;
   }
 
   private async _buildChunkChurnMapUncached(
@@ -765,8 +436,8 @@ export class GitLogReader {
             }
 
             const [oldContent, newContent] = await Promise.all([
-              this.readBlobAsString(repoRoot, parentOid, filePath),
-              this.readBlobAsString(repoRoot, commit.sha, filePath),
+              readBlobAsString(repoRoot, parentOid, filePath, this.cache),
+              readBlobAsString(repoRoot, commit.sha, filePath, this.cache),
             ]);
             blobReads += 2;
 
@@ -911,7 +582,7 @@ export class GitLogReader {
 
       let changedFiles: string[];
       try {
-        changedFiles = await this.diffTrees(repoRoot, parentOids[0], commit.oid);
+        changedFiles = await diffTrees(repoRoot, parentOids[0], commit.oid, this.cache);
       } catch {
         continue;
       }
