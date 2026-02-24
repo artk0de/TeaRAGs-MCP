@@ -23,7 +23,7 @@ export type PipelineStage =
   | "git"
   | "embed"
   | "qdrant"
-  | "gitLog"
+  | "enrichment_prefetch"
   | "enrichGit"
   | "enrichApply"
   | "chunkChurn";
@@ -107,7 +107,7 @@ class StageProfiler {
       "git",
       "embed",
       "qdrant",
-      "gitLog",
+      "enrichment_prefetch",
       "enrichGit",
       "enrichApply",
       "chunkChurn",
@@ -434,7 +434,7 @@ DERIVED:
         git: parseInt(process.env.FILE_PROCESSING_CONCURRENCY || "50", 10),
         embed: embeddingConcurrency,
         qdrant: embeddingConcurrency,
-        gitLog: 1, // Single-threaded isomorphic-git
+        enrichment_prefetch: 1, // Parallel per-provider prefetch
         enrichGit: 1, // Background, single-threaded
         enrichApply: 1, // Streaming setPayload calls
         chunkChurn: parseInt(process.env.GIT_CHUNK_CONCURRENCY || "10", 10),
@@ -454,7 +454,7 @@ DERIVED:
         "git",
         "embed",
         "qdrant",
-        "gitLog",
+        "enrichment_prefetch",
         "enrichGit",
         "enrichApply",
         "chunkChurn",

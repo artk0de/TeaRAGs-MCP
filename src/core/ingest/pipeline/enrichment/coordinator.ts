@@ -1,13 +1,13 @@
 /**
  * EnrichmentCoordinator — generic timing orchestrator for enrichment providers.
  *
- * Coordinates three phases:
+ * Coordinates three phases per provider:
  * 1. Prefetch: provider.buildFileMetadata (fire-and-forget at T=0)
  * 2. Per-batch: apply file metadata as chunks arrive
  * 3. Post-flush: provider.buildChunkMetadata overlays
  *
+ * Supports multiple providers in parallel — each with independent state.
  * Provider-agnostic — works with any EnrichmentProvider implementation.
- * Replaces the git-specific EnrichmentModule.
  */
 
 import { relative } from "node:path";
@@ -28,57 +28,82 @@ interface PendingBatch {
   items: ChunkItem[];
 }
 
+interface ProviderState {
+  provider: EnrichmentProvider;
+  prefetchPromise: Promise<Map<string, Record<string, unknown>>> | null;
+  fileMetadata: Map<string, Record<string, unknown>> | null;
+  prefetchFailed: boolean;
+  effectiveRoot: string | null;
+  pendingBatches: PendingBatch[];
+  inFlightWork: Promise<void>[];
+  chunkEnrichmentDurationMs: number;
+  ignoreFilter: Ignore | null;
+  fileMetadataCount: number;
+  prefetchStartTime: number;
+  prefetchEndTime: number;
+  pipelineFlushTime: number;
+  streamingApplies: number;
+  flushApplies: number;
+  prefetchDurationMs: number;
+}
+
+function createProviderState(provider: EnrichmentProvider): ProviderState {
+  return {
+    provider,
+    prefetchPromise: null,
+    fileMetadata: null,
+    prefetchFailed: false,
+    effectiveRoot: null,
+    pendingBatches: [],
+    inFlightWork: [],
+    chunkEnrichmentDurationMs: 0,
+    ignoreFilter: null,
+    fileMetadataCount: 0,
+    prefetchStartTime: 0,
+    prefetchEndTime: 0,
+    pipelineFlushTime: 0,
+    streamingApplies: 0,
+    flushApplies: 0,
+    prefetchDurationMs: 0,
+  };
+}
+
 export class EnrichmentCoordinator {
-  // File metadata state
-  private prefetchPromise: Promise<Map<string, Record<string, unknown>>> | null = null;
-  private fileMetadata: Map<string, Record<string, unknown>> | null = null;
-  private prefetchFailed = false;
-  private effectiveRoot: string | null = null;
-
-  // Pending queue (batches waiting for prefetch)
-  private pendingBatches: PendingBatch[] = [];
-
-  // In-flight work tracking
-  private inFlightWork: Promise<void>[] = [];
-  private chunkEnrichmentDurationMs = 0;
-
-  // Ignore filter
-  private ignoreFilter: Ignore | null = null;
-  private fileMetadataCount = 0;
+  private readonly states: Map<string, ProviderState>;
+  private startTime = 0;
 
   // Delegates
   private readonly applier: EnrichmentApplier;
 
-  // Timing metrics
-  private startTime = 0;
-  private prefetchStartTime = 0;
-  private prefetchEndTime = 0;
-  private pipelineFlushTime = 0;
-  private streamingApplies = 0;
-  private flushApplies = 0;
-  private prefetchDurationMs = 0;
+  /** All provider keys managed by this coordinator. */
+  get providerKeys(): string[] {
+    return [...this.states.keys()];
+  }
 
+  /** @deprecated Use providerKeys instead. Returns the first provider key for backward compat. */
   get providerKey(): string {
-    return this.provider.key;
+    const first = this.states.keys().next();
+    return first.done ? "" : first.value;
   }
 
   constructor(
     private readonly qdrant: QdrantManager,
-    private readonly provider: EnrichmentProvider,
+    providers: EnrichmentProvider | EnrichmentProvider[],
   ) {
     this.applier = new EnrichmentApplier(qdrant);
+    const list = Array.isArray(providers) ? providers : [providers];
+    this.states = new Map(list.map((p) => [p.key, createProviderState(p)]));
   }
 
   /**
    * Start file-level metadata prefetch at T=0. Non-blocking.
    * Call before pipeline.start() to maximize overlap.
+   * All providers prefetch in parallel.
    */
   prefetch(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore): void {
     this.startTime = Date.now();
-    this.prefetchStartTime = Date.now();
-    this.ignoreFilter = ignoreFilter ?? null;
 
-    // Set enrichment marker to "in_progress"
+    // Set enrichment marker to "in_progress" (once for all providers)
     if (collectionName) {
       this.updateEnrichmentMarker(collectionName, {
         status: "in_progress",
@@ -86,213 +111,287 @@ export class EnrichmentCoordinator {
       }).catch(() => {});
     }
 
-    this.effectiveRoot = this.provider.resolveRoot(absolutePath);
-    const root = this.effectiveRoot;
+    for (const state of this.states.values()) {
+      state.prefetchStartTime = Date.now();
+      state.ignoreFilter = ignoreFilter ?? null;
 
-    if (root !== absolutePath) {
-      pipelineLog.enrichmentPhase("REPO_ROOT_DIFFERS", { absolutePath, effectiveRoot: root });
-    }
+      state.effectiveRoot = state.provider.resolveRoot(absolutePath);
+      const root = state.effectiveRoot;
 
-    pipelineLog.enrichmentPhase("PREFETCH_START", { path: root });
+      if (root !== absolutePath) {
+        pipelineLog.enrichmentPhase("REPO_ROOT_DIFFERS", {
+          provider: state.provider.key,
+          absolutePath,
+          effectiveRoot: root,
+        });
+      }
 
-    this.prefetchPromise = this.provider
-      .buildFileMetadata(root)
-      .then((result) => {
-        this.prefetchEndTime = Date.now();
-        this.fileMetadata = result;
-        this.prefetchDurationMs = this.prefetchEndTime - this.prefetchStartTime;
+      pipelineLog.enrichmentPhase("PREFETCH_START", { provider: state.provider.key, path: root });
 
-        // Filter by ignore patterns
-        if (this.ignoreFilter) {
-          let filtered = 0;
-          for (const [path] of result) {
-            if (this.ignoreFilter.ignores(path)) {
-              result.delete(path);
-              filtered++;
+      state.prefetchPromise = state.provider
+        .buildFileMetadata(root)
+        .then((result) => {
+          state.prefetchEndTime = Date.now();
+          state.fileMetadata = result;
+          state.prefetchDurationMs = state.prefetchEndTime - state.prefetchStartTime;
+
+          // Filter by ignore patterns
+          if (state.ignoreFilter) {
+            let filtered = 0;
+            for (const [path] of result) {
+              if (state.ignoreFilter.ignores(path)) {
+                result.delete(path);
+                filtered++;
+              }
+            }
+            if (filtered > 0) {
+              pipelineLog.enrichmentPhase("PREFETCH_FILTERED", {
+                provider: state.provider.key,
+                filtered,
+                remainingFiles: result.size,
+              });
             }
           }
-          if (filtered > 0) {
-            pipelineLog.enrichmentPhase("PREFETCH_FILTERED", { filtered, remainingFiles: result.size });
-          }
-        }
 
-        this.fileMetadataCount = result.size;
+          state.fileMetadataCount = result.size;
 
-        pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", {
-          filesInLog: result.size,
-          durationMs: this.prefetchDurationMs,
+          pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", {
+            provider: state.provider.key,
+            filesInLog: result.size,
+            durationMs: state.prefetchDurationMs,
+          });
+          pipelineLog.addStageTime("enrichment_prefetch", state.prefetchDurationMs);
+
+          this.flushPendingBatches(state);
+          return result;
+        })
+        .catch((error) => {
+          state.prefetchFailed = true;
+          state.prefetchEndTime = Date.now();
+          state.prefetchDurationMs = state.prefetchEndTime - state.prefetchStartTime;
+          console.error(
+            `[Enrichment:${state.provider.key}] Prefetch failed:`,
+            error instanceof Error ? error.message : error,
+          );
+          pipelineLog.enrichmentPhase("PREFETCH_FAILED", {
+            provider: state.provider.key,
+            error: error instanceof Error ? error.message : String(error),
+            durationMs: state.prefetchDurationMs,
+          });
+          state.pendingBatches = [];
+          return new Map();
         });
-        pipelineLog.addStageTime("gitLog", this.prefetchDurationMs);
-
-        this.flushPendingBatches();
-        return result;
-      })
-      .catch((error) => {
-        this.prefetchFailed = true;
-        this.prefetchEndTime = Date.now();
-        this.prefetchDurationMs = this.prefetchEndTime - this.prefetchStartTime;
-        console.error("[Enrichment] Prefetch failed:", error instanceof Error ? error.message : error);
-        pipelineLog.enrichmentPhase("PREFETCH_FAILED", {
-          error: error instanceof Error ? error.message : String(error),
-          durationMs: this.prefetchDurationMs,
-        });
-        this.pendingBatches = [];
-        return new Map();
-      });
+    }
   }
 
   /**
    * Called per-batch by pipeline callback after chunks are stored in Qdrant.
    */
   onChunksStored(collectionName: string, absolutePath: string, items: ChunkItem[]): void {
-    this.pipelineFlushTime = Date.now();
+    for (const state of this.states.values()) {
+      state.pipelineFlushTime = Date.now();
 
-    if (this.prefetchFailed) return;
+      if (state.prefetchFailed) continue;
 
-    if (this.fileMetadata) {
-      const pathBase = this.effectiveRoot || absolutePath;
-      const work = this.applier.applyFileMetadata(
-        collectionName,
-        this.provider.key,
-        this.fileMetadata,
-        pathBase,
-        items,
-        this.provider.fileTransform,
-      );
-      this.inFlightWork.push(work);
-      this.streamingApplies++;
-      pipelineLog.enrichmentPhase("STREAMING_APPLY", { chunks: items.length });
-    } else {
-      this.pendingBatches.push({ collectionName, absolutePath, items });
+      if (state.fileMetadata) {
+        const pathBase = state.effectiveRoot || absolutePath;
+        const work = this.applier.applyFileMetadata(
+          collectionName,
+          state.provider.key,
+          state.fileMetadata,
+          pathBase,
+          items,
+          state.provider.fileTransform,
+        );
+        state.inFlightWork.push(work);
+        state.streamingApplies++;
+        pipelineLog.enrichmentPhase("STREAMING_APPLY", {
+          provider: state.provider.key,
+          chunks: items.length,
+        });
+      } else {
+        state.pendingBatches.push({ collectionName, absolutePath, items });
+      }
     }
   }
 
   /**
    * Start chunk-level enrichment (Phase 2b). Fire-and-forget, tracked internally.
+   * Each provider runs independently.
    */
   startChunkEnrichment(collectionName: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
-    if (this.prefetchFailed) return;
+    for (const state of this.states.values()) {
+      if (state.prefetchFailed) continue;
 
-    const root = this.effectiveRoot || absolutePath;
+      const root = state.effectiveRoot || absolutePath;
 
-    // Filter chunkMap by ignore patterns
-    let effectiveChunkMap = chunkMap;
-    if (this.ignoreFilter) {
-      effectiveChunkMap = new Map();
-      let filtered = 0;
-      for (const [filePath, entries] of chunkMap) {
-        const relPath = relative(root, filePath);
-        if (this.ignoreFilter.ignores(relPath)) {
-          filtered++;
-        } else {
-          effectiveChunkMap.set(filePath, entries);
+      // Filter chunkMap by ignore patterns
+      let effectiveChunkMap = chunkMap;
+      if (state.ignoreFilter) {
+        effectiveChunkMap = new Map();
+        let filtered = 0;
+        for (const [filePath, entries] of chunkMap) {
+          const relPath = relative(root, filePath);
+          if (state.ignoreFilter.ignores(relPath)) {
+            filtered++;
+          } else {
+            effectiveChunkMap.set(filePath, entries);
+          }
+        }
+        if (filtered > 0) {
+          pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_FILTERED", {
+            provider: state.provider.key,
+            filtered,
+            remaining: effectiveChunkMap.size,
+          });
         }
       }
-      if (filtered > 0) {
-        pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_FILTERED", {
-          filtered,
-          remaining: effectiveChunkMap.size,
-        });
-      }
-    }
 
-    pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_START", {
-      files: effectiveChunkMap.size,
-    });
-
-    const chunkStart = Date.now();
-
-    this.provider
-      .buildChunkMetadata(root, effectiveChunkMap)
-      .then(async (chunkMetadata) => {
-        const applied = await this.applier.applyChunkMetadata(collectionName, this.provider.key, chunkMetadata);
-        this.chunkEnrichmentDurationMs = Date.now() - chunkStart;
-
-        // Write chunk enrichment status to Qdrant
-        try {
-          await this.qdrant.setPayload(
-            collectionName,
-            {
-              chunkEnrichment: {
-                status: "completed",
-                overlaysApplied: applied,
-                durationMs: this.chunkEnrichmentDurationMs,
-              },
-            },
-            { points: [INDEXING_METADATA_ID] },
-          );
-        } catch {
-          // non-fatal
-        }
-
-        pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_COMPLETE", {
-          overlaysApplied: applied,
-          durationMs: this.chunkEnrichmentDurationMs,
-        });
-      })
-      .catch((error) => {
-        this.chunkEnrichmentDurationMs = Date.now() - chunkStart;
-        console.error("[Enrichment] Chunk enrichment failed:", error);
-        pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_FAILED", {
-          error: error instanceof Error ? error.message : String(error),
-        });
+      pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_START", {
+        provider: state.provider.key,
+        files: effectiveChunkMap.size,
       });
+
+      const chunkStart = Date.now();
+
+      state.provider
+        .buildChunkMetadata(root, effectiveChunkMap)
+        .then(async (chunkMetadata) => {
+          const applied = await this.applier.applyChunkMetadata(collectionName, state.provider.key, chunkMetadata);
+          state.chunkEnrichmentDurationMs = Date.now() - chunkStart;
+
+          // Write chunk enrichment status to Qdrant
+          try {
+            await this.qdrant.setPayload(
+              collectionName,
+              {
+                chunkEnrichment: {
+                  status: "completed",
+                  provider: state.provider.key,
+                  overlaysApplied: applied,
+                  durationMs: state.chunkEnrichmentDurationMs,
+                },
+              },
+              { points: [INDEXING_METADATA_ID] },
+            );
+          } catch {
+            // non-fatal
+          }
+
+          pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_COMPLETE", {
+            provider: state.provider.key,
+            overlaysApplied: applied,
+            durationMs: state.chunkEnrichmentDurationMs,
+          });
+        })
+        .catch((error) => {
+          state.chunkEnrichmentDurationMs = Date.now() - chunkStart;
+          console.error(`[Enrichment:${state.provider.key}] Chunk enrichment failed:`, error);
+          pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_FAILED", {
+            provider: state.provider.key,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+    }
   }
 
   /**
-   * Wait for all in-flight enrichment work to complete.
+   * Wait for all in-flight enrichment work to complete across all providers.
    */
   async awaitCompletion(collectionName: string): Promise<EnrichmentMetrics> {
-    // 1. Wait for prefetch
-    if (this.prefetchPromise) {
-      await this.prefetchPromise.catch(() => {});
+    if (this.states.size === 0) {
+      return {
+        prefetchDurationMs: 0,
+        overlapMs: 0,
+        overlapRatio: 0,
+        streamingApplies: 0,
+        flushApplies: 0,
+        chunkChurnDurationMs: 0,
+        totalDurationMs: 0,
+        matchedFiles: 0,
+        missedFiles: 0,
+        missedPathSamples: [],
+        gitLogFileCount: 0,
+        estimatedSavedMs: 0,
+      };
     }
 
-    // 2. Wait for all streaming applies
-    if (this.inFlightWork.length > 0) {
-      await Promise.allSettled(this.inFlightWork);
-      this.inFlightWork = [];
+    // 1. Wait for all prefetch promises
+    const prefetchPromises = [...this.states.values()]
+      .map(async (s) => s.prefetchPromise)
+      .filter((p): p is Promise<Map<string, Record<string, unknown>>> => p !== null);
+    if (prefetchPromises.length > 0) {
+      await Promise.allSettled(prefetchPromises);
     }
 
-    // 3. Backfill file-level metadata for missed files
-    if (this.applier.missedFileChunks.size > 0 && this.effectiveRoot) {
-      await this.backfillMissedFiles(collectionName);
+    // 2. Wait for all in-flight streaming applies across all states
+    const allInFlight = [...this.states.values()].flatMap((s) => s.inFlightWork);
+    if (allInFlight.length > 0) {
+      await Promise.allSettled(allInFlight);
+      for (const state of this.states.values()) {
+        state.inFlightWork = [];
+      }
+    }
+
+    // 3. Backfill file-level metadata for missed files (per provider)
+    if (this.applier.missedFileChunks.size > 0) {
+      for (const state of this.states.values()) {
+        if (state.effectiveRoot && !state.prefetchFailed) {
+          await this.backfillMissedFiles(collectionName, state);
+        }
+      }
     }
 
     // 4. Chunk enrichment runs in background — do NOT await here.
 
-    // Compute overlap metrics
+    // 5. Aggregate metrics across all providers
+    let totalStreamingApplies = 0;
+    let totalFlushApplies = 0;
+    let totalChunkEnrichmentDurationMs = 0;
+    let maxPrefetchDurationMs = 0;
+    let totalFileMetadataCount = 0;
+
+    for (const state of this.states.values()) {
+      totalStreamingApplies += state.streamingApplies;
+      totalFlushApplies += state.flushApplies;
+      totalChunkEnrichmentDurationMs += state.chunkEnrichmentDurationMs;
+      maxPrefetchDurationMs = Math.max(maxPrefetchDurationMs, state.prefetchDurationMs);
+      totalFileMetadataCount += state.fileMetadataCount;
+    }
+
     const metrics: EnrichmentMetrics = {
-      prefetchDurationMs: this.prefetchDurationMs,
+      prefetchDurationMs: maxPrefetchDurationMs,
       overlapMs: 0,
       overlapRatio: 0,
-      streamingApplies: this.streamingApplies,
-      flushApplies: this.flushApplies,
-      chunkChurnDurationMs: this.chunkEnrichmentDurationMs,
+      streamingApplies: totalStreamingApplies,
+      flushApplies: totalFlushApplies,
+      chunkChurnDurationMs: totalChunkEnrichmentDurationMs,
       totalDurationMs: Date.now() - (this.startTime || Date.now()),
       matchedFiles: this.applier.matchedFiles,
       missedFiles: this.applier.missedFiles,
       missedPathSamples: [...this.applier.missedPathSamples],
-      gitLogFileCount: this.fileMetadataCount,
+      gitLogFileCount: totalFileMetadataCount,
       estimatedSavedMs: 0,
     };
 
-    if (this.prefetchEndTime > 0 && this.pipelineFlushTime > 0) {
-      const overlapEnd = Math.min(this.prefetchEndTime, this.pipelineFlushTime);
-      metrics.overlapMs = Math.max(0, overlapEnd - this.prefetchStartTime);
+    // Use the first state for overlap timing calculation (backward compat)
+    const firstState = this.states.values().next().value;
+    if (firstState && firstState.prefetchEndTime > 0 && firstState.pipelineFlushTime > 0) {
+      const overlapEnd = Math.min(firstState.prefetchEndTime, firstState.pipelineFlushTime);
+      metrics.overlapMs = Math.max(0, overlapEnd - firstState.prefetchStartTime);
       metrics.overlapRatio =
         metrics.prefetchDurationMs > 0 ? Math.min(1, metrics.overlapMs / metrics.prefetchDurationMs) : 0;
     }
     metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
 
-    // Update enrichment marker
+    // 6. Update enrichment marker (once for all providers)
     await this.updateEnrichmentMarker(collectionName, {
       status: "completed",
       completedAt: new Date().toISOString(),
       durationMs: metrics.totalDurationMs,
       matchedFiles: metrics.matchedFiles,
       missedFiles: metrics.missedFiles,
-      gitLogFileCount: this.fileMetadataCount,
+      gitLogFileCount: totalFileMetadataCount,
     });
 
     pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
@@ -319,43 +418,48 @@ export class EnrichmentCoordinator {
 
   // ── Private ─────────────────────────────────────────────────
 
-  private flushPendingBatches(): void {
-    if (this.pendingBatches.length === 0) return;
+  private flushPendingBatches(state: ProviderState): void {
+    if (state.pendingBatches.length === 0) return;
 
-    const batches = this.pendingBatches;
-    this.pendingBatches = [];
+    const batches = state.pendingBatches;
+    state.pendingBatches = [];
 
     pipelineLog.enrichmentPhase("FLUSH_APPLY", {
+      provider: state.provider.key,
       batches: batches.length,
       chunks: batches.reduce((sum, b) => sum + b.items.length, 0),
     });
 
     for (const batch of batches) {
-      if (!this.fileMetadata) continue;
-      const pathBase = this.effectiveRoot || batch.absolutePath;
+      if (!state.fileMetadata) continue;
+      const pathBase = state.effectiveRoot || batch.absolutePath;
       const work = this.applier.applyFileMetadata(
         batch.collectionName,
-        this.provider.key,
-        this.fileMetadata,
+        state.provider.key,
+        state.fileMetadata,
         pathBase,
         batch.items,
-        this.provider.fileTransform,
+        state.provider.fileTransform,
       );
-      this.inFlightWork.push(work);
-      this.flushApplies++;
+      state.inFlightWork.push(work);
+      state.flushApplies++;
     }
   }
 
-  private async backfillMissedFiles(collectionName: string): Promise<void> {
+  private async backfillMissedFiles(collectionName: string, state: ProviderState): Promise<void> {
     const missedPaths = Array.from(this.applier.missedFileChunks.keys());
-    pipelineLog.enrichmentPhase("BACKFILL_START", { missedFiles: missedPaths.length });
+    pipelineLog.enrichmentPhase("BACKFILL_START", {
+      provider: state.provider.key,
+      missedFiles: missedPaths.length,
+    });
 
     const backfillStart = Date.now();
     let backfillData: Map<string, Record<string, unknown>>;
     try {
-      backfillData = await this.provider.buildFileMetadata(this.effectiveRoot!, { paths: missedPaths });
+      backfillData = await state.provider.buildFileMetadata(state.effectiveRoot!, { paths: missedPaths });
     } catch (error) {
       pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
+        provider: state.provider.key,
         error: error instanceof Error ? error.message : String(error),
       });
       return;
@@ -372,8 +476,8 @@ export class EnrichmentCoordinator {
       if (!data) continue;
 
       const maxEndLine = chunks.reduce((max, c) => Math.max(max, c.endLine), 0);
-      const finalData = this.provider.fileTransform ? this.provider.fileTransform(data, maxEndLine) : data;
-      const payload = { [this.provider.key]: { file: finalData } };
+      const finalData = state.provider.fileTransform ? state.provider.fileTransform(data, maxEndLine) : data;
+      const payload = { [state.provider.key]: { file: finalData } };
 
       for (const chunk of chunks) {
         operations.push({ payload, points: [chunk.chunkId] });
@@ -389,7 +493,7 @@ export class EnrichmentCoordinator {
           await this.qdrant.batchSetPayload(collectionName, batch);
         } catch (error) {
           if (process.env.DEBUG) {
-            console.error("[Enrichment] backfill batch failed:", error);
+            console.error(`[Enrichment:${state.provider.key}] backfill batch failed:`, error);
           }
         }
       }
@@ -400,6 +504,7 @@ export class EnrichmentCoordinator {
     this.applier.missedFiles -= backfilledFiles;
 
     pipelineLog.enrichmentPhase("BACKFILL_COMPLETE", {
+      provider: state.provider.key,
       missedFiles: missedPaths.length,
       backfilledFiles,
       backfilledChunks: operations.length,
