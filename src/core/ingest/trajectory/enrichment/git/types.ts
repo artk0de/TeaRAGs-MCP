@@ -1,5 +1,5 @@
 /**
- * Git Metadata Types
+ * Git enrichment output types — computed from git history.
  *
  * Design principles:
  * - File-level git metadata (no per-line blame)
@@ -8,29 +8,8 @@
  */
 
 /**
- * Commit info extracted from git log (used by GitLogReader)
- */
-export interface CommitInfo {
-  sha: string;
-  author: string;
-  authorEmail: string;
-  timestamp: number; // unix seconds
-  body: string; // full commit message (for taskId extraction)
-}
-
-/**
- * Per-file churn data aggregated from git log
- */
-export interface FileChurnData {
-  commits: CommitInfo[];
-  linesAdded: number;
-  linesDeleted: number;
-}
-
-/**
  * File-level git metadata (stored in vector DB for all chunks of a file)
  *
- * Replaces per-chunk blame-based GitChunkMetadata.
  * All chunks of a file share the same GitFileMetadata.
  */
 export interface GitFileMetadata {
@@ -102,12 +81,4 @@ export interface ChunkChurnOverlay {
   ageDays: number;
   /** (linesAdded + linesDeleted) / chunkLineCount — relative churn within chunk */
   relativeChurn: number;
-}
-
-/**
- * Git repository information
- */
-export interface GitRepoInfo {
-  repoRoot: string;
-  isGitRepo: boolean;
 }

@@ -1,28 +1,21 @@
 /**
- * GitLogReader — reads git history via CLI `git log`.
+ * GitLogReader — stateful facade over git enrichment modules.
  *
- * Builds per-file FileChurnData from git log in a single pass.
- * isomorphic-git used only for individual object reads (readBlob, readCommit).
+ * Holds cache state (HEAD-based result cache + isomorphic-git pack cache)
+ * and delegates to file-reader, chunk-reader, and metrics modules.
  */
 
-import { getHead } from "../../../adapters/git/client.js";
-import type { ChunkLookupEntry } from "../../../types.js";
-import { GitEnrichmentCache } from "../enrichment/git/cache.js";
-import { buildChunkChurnMap as buildChunkChurnMapImpl } from "../enrichment/git/chunk-reader.js";
-import {
-  buildFileMetadataForPaths,
-  buildFileMetadataMap as buildFileMetadataMapImpl,
-} from "../enrichment/git/file-reader.js";
-import {
-  computeChunkOverlay,
-  computeFileMetadata,
-  overlaps,
-  type ChunkAccumulator,
-} from "../enrichment/git/metrics.js";
-import { extractTaskIds } from "../enrichment/utils.js";
-import type { ChunkChurnOverlay, FileChurnData } from "./types.js";
+import { getHead } from "../../../../adapters/git/client.js";
+import type { FileChurnData } from "../../../../adapters/git/types.js";
+import type { ChunkLookupEntry } from "../../../../types.js";
+import { extractTaskIds } from "../utils.js";
+import { GitEnrichmentCache } from "./cache.js";
+import { buildChunkChurnMap as buildChunkChurnMapImpl } from "./chunk-reader.js";
+import { buildFileMetadataForPaths, buildFileMetadataMap as buildFileMetadataMapImpl } from "./file-reader.js";
+import { computeChunkOverlay, computeFileMetadata, overlaps, type ChunkAccumulator } from "./metrics.js";
+import type { ChunkChurnOverlay } from "./types.js";
 
-// Re-exports from canonical locations (backward compat for consumers)
+// Re-exports from canonical locations (backward compat for test consumers)
 export { type ChunkAccumulator, computeChunkOverlay, computeFileMetadata, extractTaskIds, overlaps };
 
 export class GitLogReader {
@@ -35,7 +28,7 @@ export class GitLogReader {
 
   /**
    * Build per-file FileChurnData from git history.
-   * Delegates to enrichment/git/file-reader (CLI only).
+   * Delegates to file-reader (CLI only).
    */
   async buildFileMetadataMap(repoRoot: string, maxAgeMonths?: number): Promise<Map<string, FileChurnData>> {
     return buildFileMetadataMapImpl(repoRoot, this.enrichmentCache, maxAgeMonths);
@@ -48,7 +41,7 @@ export class GitLogReader {
 
   /**
    * Fetch file-level metadata for specific files (no --since filter).
-   * Delegates to enrichment/git/file-reader.
+   * Delegates to file-reader.
    */
   async buildFileMetadataForPaths(
     repoRoot: string,
@@ -60,7 +53,7 @@ export class GitLogReader {
 
   /**
    * Build chunk-level churn overlays.
-   * Delegates to enrichment/git/chunk-reader.
+   * Delegates to chunk-reader.
    */
   async buildChunkChurnMap(
     repoRoot: string,

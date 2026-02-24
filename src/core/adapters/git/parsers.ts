@@ -3,7 +3,7 @@
  * No I/O, no state — string → structured data.
  */
 
-import type { CommitInfo, FileChurnData } from "../../ingest/trajectory/git/types.js";
+import type { CommitInfo, FileChurnData } from "./types.js";
 
 /**
  * Parse `git log --numstat --format=%x00%H%x00%an%x00%ae%x00%at%x00%B` output

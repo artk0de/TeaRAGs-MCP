@@ -4,7 +4,8 @@
  */
 
 import { getHead } from "../../../../adapters/git/client.js";
-import type { ChunkChurnOverlay, FileChurnData } from "../../git/types.js";
+import type { FileChurnData } from "../../../../adapters/git/types.js";
+import type { ChunkChurnOverlay } from "./types.js";
 
 export class GitEnrichmentCache {
   private readonly fileMetadataCache = new Map<string, { headSha: string; data: Map<string, FileChurnData> }>();

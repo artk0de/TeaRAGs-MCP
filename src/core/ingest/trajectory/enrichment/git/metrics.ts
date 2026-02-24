@@ -5,8 +5,9 @@
  * Extracted from git-log-reader.ts for SRP.
  */
 
-import type { ChunkChurnOverlay, FileChurnData, GitFileMetadata } from "../../git/types.js";
+import type { FileChurnData } from "../../../../adapters/git/types.js";
 import { extractTaskIds } from "../utils.js";
+import type { ChunkChurnOverlay, GitFileMetadata } from "./types.js";
 
 /**
  * Accumulated raw data for a single chunk, collected during hunk mapping.

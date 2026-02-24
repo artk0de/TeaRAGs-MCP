@@ -10,10 +10,11 @@ import { structuredPatch } from "diff";
 import git from "isomorphic-git";
 
 import { getCommitsByPathspec, readBlobAsString } from "../../../../adapters/git/client.js";
+import type { CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
-import type { ChunkChurnOverlay, CommitInfo, FileChurnData } from "../../git/types.js";
 import type { GitEnrichmentCache } from "./cache.js";
 import { computeChunkOverlay, isBugFixCommit, overlaps, type ChunkAccumulator } from "./metrics.js";
+import type { ChunkChurnOverlay } from "./types.js";
 
 const MAX_FILE_LINES_DEFAULT = 10000;
 

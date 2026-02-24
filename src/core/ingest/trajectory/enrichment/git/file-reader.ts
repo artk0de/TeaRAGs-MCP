@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 
 import { buildViaCli, withTimeout } from "../../../../adapters/git/client.js";
 import { parseNumstatOutput } from "../../../../adapters/git/parsers.js";
-import type { FileChurnData } from "../../git/types.js";
+import type { FileChurnData } from "../../../../adapters/git/types.js";
 import type { GitEnrichmentCache } from "./cache.js";
 
 const execFileAsync = promisify(execFile);
