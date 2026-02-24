@@ -1,3 +1,8 @@
+## <small>0.5.1 (2026-02-24)</small>
+
+* refactor: remove dead git field from ChunkItem, fix CI coverage ([267a0ab](https://github.com/artk0de/TeaRAGs-MCP/commit/267a0ab))
+* ci: merge docs deployment into release pipeline ([1ac3905](https://github.com/artk0de/TeaRAGs-MCP/commit/1ac3905))
+
 ## 0.5.0 (2026-02-24)
 
 * build: reset versioning to 0.4.0 and add dual changelog output ([464e7e3](https://github.com/artk0de/TeaRAGs-MCP/commit/464e7e3))
