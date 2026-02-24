@@ -618,24 +618,24 @@ describe("Stage Profiling", () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("GitEnrich"));
   });
 
-  it("should track gitLog stage with addStageTime", () => {
-    pipelineLog.addStageTime("gitLog", 1000);
-    pipelineLog.addStageTime("gitLog", 2000);
+  it("should track enrichment_prefetch stage with addStageTime", () => {
+    pipelineLog.addStageTime("enrichment_prefetch", 1000);
+    pipelineLog.addStageTime("enrichment_prefetch", 2000);
 
     const summary = pipelineLog.getStageSummary();
-    expect(summary.gitLog).toBeDefined();
-    expect(summary.gitLog.totalMs).toBe(3000);
-    expect(summary.gitLog.count).toBe(2);
+    expect(summary.enrichment_prefetch).toBeDefined();
+    expect(summary.enrichment_prefetch.totalMs).toBe(3000);
+    expect(summary.enrichment_prefetch.count).toBe(2);
   });
 
-  it("should include gitLog stage in summary output", () => {
+  it("should include enrichment_prefetch stage in summary output", () => {
     pipelineLog.addStageTime("embed", 1000);
-    pipelineLog.addStageTime("gitLog", 2000);
+    pipelineLog.addStageTime("enrichment_prefetch", 2000);
 
     const ctx: LogContext = { component: "ChunkPipeline" };
     pipelineLog.summary(ctx, { uptimeMs: 5000 });
 
-    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("gitLog"));
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("enrichment_prefetch"));
   });
 
   it("should log enrichmentPhase PREFETCH_START and PREFETCH_COMPLETE", () => {
