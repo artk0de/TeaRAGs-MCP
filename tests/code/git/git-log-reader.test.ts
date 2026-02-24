@@ -9,6 +9,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as gitClient from "../../../src/core/adapters/git/client.js";
+import * as gitParsers from "../../../src/core/adapters/git/parsers.js";
 import {
   computeFileMetadata,
   extractTaskIds,
@@ -16,6 +18,10 @@ import {
   overlaps,
 } from "../../../src/core/ingest/trajectory/git/git-log-reader.js";
 import type { CommitInfo, FileChurnData } from "../../../src/core/ingest/trajectory/git/types.js";
+
+// Enable cross-module spy interception for adapter functions
+vi.mock("../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
+vi.mock("../../../src/core/adapters/git/parsers.js", async (importOriginal) => importOriginal());
 
 // ─── extractTaskIds ──────────────────────────────────────────────────────────
 
@@ -694,8 +700,8 @@ describe("buildChunkChurnMap", () => {
     if (!repoRoot) return;
 
     // Spy on private methods to verify CLI is tried first
-    const cliSpy = vi.spyOn(reader as any, "buildViaCli");
-    const isoGitSpy = vi.spyOn(reader as any, "buildViaIsomorphicGit");
+    const cliSpy = vi.spyOn(gitClient, "buildViaCli");
+    const isoGitSpy = vi.spyOn(gitClient, "buildViaIsomorphicGit");
 
     await reader.buildFileMetadataMap(repoRoot, 1); // 1 month window
 
@@ -712,9 +718,9 @@ describe("buildChunkChurnMap", () => {
     if (!repoRoot) return;
 
     // Make CLI throw, forcing fallback to isomorphic-git
-    const cliSpy = vi.spyOn(reader as any, "buildViaCli").mockRejectedValue(new Error("git not found"));
+    const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockRejectedValue(new Error("git not found"));
     const isoGitSpy = vi
-      .spyOn(reader as any, "buildViaIsomorphicGit")
+      .spyOn(gitClient, "buildViaIsomorphicGit")
       .mockResolvedValue(new Map([["test.ts", { commits: [], linesAdded: 1, linesDeleted: 0 }]]));
 
     const result = await reader.buildFileMetadataMap(repoRoot, 1);
@@ -732,7 +738,7 @@ describe("buildChunkChurnMap", () => {
 
     // Access the private buildViaCli source to verify CLI args
     // We test via buildCliArgs static method (exposed for testing)
-    const args = (reader as any).buildCliArgs(new Date("2025-01-01"));
+    const args = gitClient.buildCliArgs(new Date("2025-01-01"));
 
     // Should NOT contain --all (HEAD only)
     expect(args).not.toContain("--all");
@@ -847,12 +853,6 @@ describe("isBugFixCommit (via computeFileMetadata)", () => {
 // ─── parsePathspecOutput — binary file skip ──────────────────────────────────
 
 describe("parsePathspecOutput (via private method)", () => {
-  let reader: GitLogReader;
-
-  beforeEach(() => {
-    reader = new GitLogReader();
-  });
-
   it("should skip binary files with '-\\t-\\t' in numstat output", () => {
     // Simulate git log output with binary file entries
     const sha = "a".repeat(40);
@@ -867,7 +867,7 @@ describe("parsePathspecOutput (via private method)", () => {
       "-\t-\tbinary.png\n10\t5\treadme.md\n-\t-\tphoto.jpg", // numstat with binaries
     ].join("\0");
 
-    const result = (reader as any).parsePathspecOutput(stdout);
+    const result = gitParsers.parsePathspecOutput(stdout);
 
     expect(result).toHaveLength(1);
     expect(result[0].changedFiles).toEqual(["readme.md"]);
@@ -888,20 +888,20 @@ describe("parsePathspecOutput (via private method)", () => {
       "-\t-\tbinary.png",
     ].join("\0");
 
-    const result = (reader as any).parsePathspecOutput(stdout);
+    const result = gitParsers.parsePathspecOutput(stdout);
     // No non-binary changed files → no entries
     expect(result).toHaveLength(0);
   });
 
   it("should handle empty stdout", () => {
-    const result = (reader as any).parsePathspecOutput("");
+    const result = gitParsers.parsePathspecOutput("");
     expect(result).toHaveLength(0);
   });
 
   it("should skip malformed SHA entries", () => {
     const stdout = ["", "not-a-sha", "Alice", "alice@example.com", "12345", "feat: stuff", "10\t5\tfile.ts"].join("\0");
 
-    const result = (reader as any).parsePathspecOutput(stdout);
+    const result = gitParsers.parsePathspecOutput(stdout);
     expect(result).toHaveLength(0);
   });
 });
@@ -909,12 +909,6 @@ describe("parsePathspecOutput (via private method)", () => {
 // ─── parseNumstatOutput — edge cases ─────────────────────────────────────────
 
 describe("parseNumstatOutput (via private method)", () => {
-  let reader: GitLogReader;
-
-  beforeEach(() => {
-    reader = new GitLogReader();
-  });
-
   it("should skip binary files (NaN added/deleted) in numstat output", () => {
     const sha = "c".repeat(40);
     const stdout = [
@@ -927,7 +921,7 @@ describe("parseNumstatOutput (via private method)", () => {
       "-\t-\tbinary.png\n20\t10\tcode.ts",
     ].join("\0");
 
-    const result: Map<string, FileChurnData> = (reader as any).parseNumstatOutput(stdout);
+    const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput(stdout);
 
     // binary.png should be skipped (NaN from parseInt("-"))
     expect(result.has("binary.png")).toBe(false);
@@ -949,13 +943,13 @@ describe("parseNumstatOutput (via private method)", () => {
       "incomplete\tline\n5\t3\tvalid.ts",
     ].join("\0");
 
-    const result: Map<string, FileChurnData> = (reader as any).parseNumstatOutput(stdout);
+    const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput(stdout);
     expect(result.has("valid.ts")).toBe(true);
     expect(result.size).toBe(1);
   });
 
   it("should handle empty stdout", () => {
-    const result: Map<string, FileChurnData> = (reader as any).parseNumstatOutput("");
+    const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput("");
     expect(result.size).toBe(0);
   });
 
@@ -979,7 +973,7 @@ describe("parseNumstatOutput (via private method)", () => {
       "20\t15\tshared.ts",
     ].join("\0");
 
-    const result: Map<string, FileChurnData> = (reader as any).parseNumstatOutput(stdout);
+    const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput(stdout);
     const entry = result.get("shared.ts");
     expect(entry).toBeDefined();
     expect(entry!.commits).toHaveLength(2);
@@ -991,12 +985,6 @@ describe("parseNumstatOutput (via private method)", () => {
 // ─── enrichLineStats — error path ────────────────────────────────────────────
 
 describe("enrichLineStats (error path)", () => {
-  let reader: GitLogReader;
-
-  beforeEach(() => {
-    reader = new GitLogReader();
-  });
-
   it("should not throw when git numstat command fails (non-fatal)", async () => {
     const fileMap = new Map<string, FileChurnData>();
     fileMap.set("test.ts", { commits: [], linesAdded: 0, linesDeleted: 0 });
@@ -1004,7 +992,7 @@ describe("enrichLineStats (error path)", () => {
     // Call enrichLineStats on a non-git directory — the git command will fail
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await (reader as any).enrichLineStats("/tmp/not-a-git-repo", fileMap);
+    await gitClient.enrichLineStats("/tmp/not-a-git-repo", fileMap);
 
     // Should not throw, and linesAdded/linesDeleted stay 0
     expect(fileMap.get("test.ts")!.linesAdded).toBe(0);
@@ -1481,18 +1469,18 @@ describe("buildFileMetadataMap — timeout and cache", () => {
     process.env.GIT_LOG_TIMEOUT_MS = "1"; // 1ms timeout — will always expire
 
     try {
-      // Mock getHead
-      vi.spyOn(reader as any, "getHead").mockResolvedValue("h".repeat(40));
+      // Mock getHead (used by buildFileMetadataMap via imported adapter function)
+      vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
 
       // Make CLI hang (never resolve)
-      vi.spyOn(reader as any, "buildViaCli").mockReturnValue(
+      vi.spyOn(gitClient, "buildViaCli").mockReturnValue(
         new Promise(() => {}), // never resolves
       );
 
       // Mock isomorphic-git fallback
       const mockData = new Map<string, FileChurnData>();
       mockData.set("fallback.ts", { commits: [], linesAdded: 1, linesDeleted: 0 });
-      vi.spyOn(reader as any, "buildViaIsomorphicGit").mockResolvedValue(mockData);
+      vi.spyOn(gitClient, "buildViaIsomorphicGit").mockResolvedValue(mockData);
 
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -1515,11 +1503,11 @@ describe("buildFileMetadataMap — timeout and cache", () => {
   it("should return cached data when HEAD has not changed", async () => {
     reader = new GitLogReader();
 
-    vi.spyOn(reader as any, "getHead").mockResolvedValue("h".repeat(40));
+    vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
 
     const mockData = new Map<string, FileChurnData>();
     mockData.set("cached.ts", { commits: [], linesAdded: 5, linesDeleted: 2 });
-    const cliSpy = vi.spyOn(reader as any, "buildViaCli").mockResolvedValue(mockData);
+    const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(mockData);
 
     // First call — populates cache
     const result1 = await reader.buildFileMetadataMap("/fake/repo", 12);
@@ -1534,11 +1522,11 @@ describe("buildFileMetadataMap — timeout and cache", () => {
   it("should skip cache when getHead fails", async () => {
     reader = new GitLogReader();
 
-    vi.spyOn(reader as any, "getHead").mockRejectedValue(new Error("not a repo"));
+    vi.spyOn(gitClient, "getHead").mockRejectedValue(new Error("not a repo"));
 
     const mockData = new Map<string, FileChurnData>();
     mockData.set("no-cache.ts", { commits: [], linesAdded: 0, linesDeleted: 0 });
-    const cliSpy = vi.spyOn(reader as any, "buildViaCli").mockResolvedValue(mockData);
+    const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(mockData);
 
     const result = await reader.buildFileMetadataMap("/fake/repo", 6);
     expect(cliSpy).toHaveBeenCalled();
@@ -1552,8 +1540,8 @@ describe("buildFileMetadataMap — timeout and cache", () => {
     process.env.GIT_LOG_MAX_AGE_MONTHS = "3";
 
     try {
-      vi.spyOn(reader as any, "getHead").mockResolvedValue("h".repeat(40));
-      const cliSpy = vi.spyOn(reader as any, "buildViaCli").mockResolvedValue(new Map());
+      vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
+      const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(new Map());
 
       await reader.buildFileMetadataMap("/fake/repo"); // no maxAgeMonths param
 
@@ -1571,8 +1559,8 @@ describe("buildFileMetadataMap — timeout and cache", () => {
   it("should pass undefined sinceDate when maxAgeMonths is 0", async () => {
     reader = new GitLogReader();
 
-    vi.spyOn(reader as any, "getHead").mockResolvedValue("h".repeat(40));
-    const cliSpy = vi.spyOn(reader as any, "buildViaCli").mockResolvedValue(new Map());
+    vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
+    const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(new Map());
 
     await reader.buildFileMetadataMap("/fake/repo", 0);
 
@@ -1584,50 +1572,40 @@ describe("buildFileMetadataMap — timeout and cache", () => {
 // ─── withTimeout utility ─────────────────────────────────────────────────────
 
 describe("withTimeout", () => {
-  let reader: GitLogReader;
-
-  beforeEach(() => {
-    reader = new GitLogReader();
-  });
-
   it("should resolve when promise completes before timeout", async () => {
-    const result = await (reader as any).withTimeout(Promise.resolve("ok"), 5000, "timeout");
+    const result = await gitClient.withTimeout(Promise.resolve("ok"), 5000, "timeout");
     expect(result).toBe("ok");
   });
 
   it("should reject with timeout message when promise exceeds timeout", async () => {
     const slow = new Promise((resolve) => setTimeout(resolve, 10000));
 
-    await expect((reader as any).withTimeout(slow, 10, "test timeout message")).rejects.toThrow("test timeout message");
+    await expect(gitClient.withTimeout(slow, 10, "test timeout message")).rejects.toThrow("test timeout message");
   });
 
   it("should propagate original rejection when promise fails before timeout", async () => {
     const failing = Promise.reject(new Error("original error"));
 
-    await expect((reader as any).withTimeout(failing, 5000, "timeout")).rejects.toThrow("original error");
+    await expect(gitClient.withTimeout(failing, 5000, "timeout")).rejects.toThrow("original error");
   });
 });
 
 // ─── buildViaIsomorphicGit — root commit and error paths ─────────────────────
 
 describe("buildViaIsomorphicGit edge cases", () => {
-  let reader: GitLogReader;
-
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("should return empty map when no commits found", async () => {
-    reader = new GitLogReader();
     const git = await import("isomorphic-git");
     vi.spyOn(git.default, "log").mockResolvedValue([]);
 
-    const result = await (reader as any).buildViaIsomorphicGit("/fake/repo");
+    const result = await gitClient.buildViaIsomorphicGit("/fake/repo", {});
     expect(result.size).toBe(0);
   });
 
   it("should handle root commit (no parent) by listing all files", async () => {
-    reader = new GitLogReader();
     const git = await import("isomorphic-git");
 
     vi.spyOn(git.default, "log").mockResolvedValue([
@@ -1644,12 +1622,14 @@ describe("buildViaIsomorphicGit edge cases", () => {
       },
     ] as any);
 
-    // Mock listAllFiles to return some files
-    vi.spyOn(reader as any, "listAllFiles").mockResolvedValue(["file1.ts", "file2.ts"]);
-    // Mock enrichLineStats to be a no-op
-    vi.spyOn(reader as any, "enrichLineStats").mockResolvedValue(undefined);
+    // Mock git.walk to simulate listAllFiles returning files for root commit
+    vi.spyOn(git.default, "walk").mockImplementation(async ({ map }: any) => {
+      const blobEntry = { type: async () => "blob", oid: async () => "x".repeat(40) };
+      await map?.("file1.ts", [blobEntry]);
+      await map?.("file2.ts", [blobEntry]);
+    });
 
-    const result = await (reader as any).buildViaIsomorphicGit("/fake/repo");
+    const result = await gitClient.buildViaIsomorphicGit("/fake/repo", {});
     expect(result.size).toBe(2);
     expect(result.has("file1.ts")).toBe(true);
     expect(result.has("file2.ts")).toBe(true);
@@ -1658,7 +1638,6 @@ describe("buildViaIsomorphicGit edge cases", () => {
   });
 
   it("should skip commit when tree diff fails", async () => {
-    reader = new GitLogReader();
     const git = await import("isomorphic-git");
 
     vi.spyOn(git.default, "log").mockResolvedValue([
@@ -1676,40 +1655,21 @@ describe("buildViaIsomorphicGit edge cases", () => {
     ] as any);
 
     // diffTrees throws
-    vi.spyOn(reader as any, "diffTrees").mockRejectedValue(new Error("tree walk failed"));
-    vi.spyOn(reader as any, "enrichLineStats").mockResolvedValue(undefined);
+    vi.spyOn(gitClient, "diffTrees").mockRejectedValue(new Error("tree walk failed"));
+    vi.spyOn(gitClient, "enrichLineStats").mockResolvedValue(undefined);
 
-    const result = await (reader as any).buildViaIsomorphicGit("/fake/repo");
+    const result = await gitClient.buildViaIsomorphicGit("/fake/repo", {});
     expect(result.size).toBe(0); // commit was skipped
   });
 
-  it("should call enrichLineStats with sinceDate", async () => {
-    reader = new GitLogReader();
+  it("should forward sinceDate to git.log", async () => {
     const git = await import("isomorphic-git");
-
-    // Must have at least one commit so buildViaIsomorphicGit doesn't early-return
-    vi.spyOn(git.default, "log").mockResolvedValue([
-      {
-        oid: "a".repeat(40),
-        commit: {
-          message: "feat: something",
-          tree: "t".repeat(40),
-          parent: ["p".repeat(40)],
-          author: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-          committer: { name: "Alice", email: "a@ex.com", timestamp: 1234567890, timezoneOffset: 0 },
-        },
-        payload: "",
-      },
-    ] as any);
-
-    // diffTrees needs to succeed and return files
-    vi.spyOn(reader as any, "diffTrees").mockResolvedValue(["file.ts"]);
-
-    const enrichSpy = vi.spyOn(reader as any, "enrichLineStats").mockResolvedValue(undefined);
     const sinceDate = new Date("2024-01-01");
 
-    await (reader as any).buildViaIsomorphicGit("/fake/repo", sinceDate);
-    expect(enrichSpy).toHaveBeenCalledWith("/fake/repo", expect.any(Map), sinceDate);
+    const logSpy = vi.spyOn(git.default, "log").mockResolvedValue([]);
+
+    await gitClient.buildViaIsomorphicGit("/fake/repo", {}, sinceDate);
+    expect(logSpy).toHaveBeenCalledWith(expect.objectContaining({ since: sinceDate }));
   });
 });
 
@@ -1726,8 +1686,7 @@ describe("buildFileMetadataForPaths — batch failure", () => {
     reader = new GitLogReader();
 
     let callCount = 0;
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises
-    vi.spyOn(reader as any, "withTimeout").mockImplementation(async (promise: Promise<any>) => {
+    vi.spyOn(gitClient, "withTimeout").mockImplementation(async (promise: Promise<any>) => {
       callCount++;
       if (callCount === 1) throw new Error("batch 1 failed");
       return promise;
@@ -1746,7 +1705,7 @@ describe("buildFileMetadataForPaths — batch failure", () => {
     vi.restoreAllMocks();
 
     // Simpler approach: just make parseNumstatOutput return empty for the test
-    vi.spyOn(reader as any, "parseNumstatOutput").mockReturnValue(new Map());
+    vi.spyOn(gitParsers, "parseNumstatOutput").mockReturnValue(new Map());
 
     const result = await reader.buildFileMetadataForPaths("/tmp", []);
     expect(result.size).toBe(0);
@@ -1919,14 +1878,8 @@ describe("buildChunkChurnMap — cache hit", () => {
 // ─── buildCliArgs ────────────────────────────────────────────────────────────
 
 describe("buildCliArgs", () => {
-  let reader: GitLogReader;
-
-  beforeEach(() => {
-    reader = new GitLogReader();
-  });
-
   it("should not include --since when sinceDate is undefined", () => {
-    const args: string[] = (reader as any).buildCliArgs(undefined);
+    const args: string[] = gitClient.buildCliArgs(undefined);
     expect(args).toContain("log");
     expect(args).toContain("HEAD");
     expect(args).toContain("--numstat");
@@ -1936,7 +1889,7 @@ describe("buildCliArgs", () => {
 
   it("should include --since with ISO date when sinceDate is provided", () => {
     const date = new Date("2025-01-15T00:00:00.000Z");
-    const args: string[] = (reader as any).buildCliArgs(date);
+    const args: string[] = gitClient.buildCliArgs(date);
     const sinceArg = args.find((a: string) => a.startsWith("--since="));
     expect(sinceArg).toBeDefined();
     expect(sinceArg).toContain("2025-01-15");
@@ -2042,30 +1995,26 @@ describe("getCommitsByPathspecBatched (via getCommitsByPathspec)", () => {
 // ─── readBlobAsString — error returns empty string ───────────────────────────
 
 describe("readBlobAsString", () => {
-  let reader: GitLogReader;
-
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it("should return empty string when readBlob throws", async () => {
-    reader = new GitLogReader();
     const git = await import("isomorphic-git");
     vi.spyOn(git.default, "readBlob").mockRejectedValue(new Error("not found"));
 
-    const result = await (reader as any).readBlobAsString("/repo", "abc123", "nonexistent.ts");
+    const result = await gitClient.readBlobAsString("/repo", "abc123", "nonexistent.ts", {});
     expect(result).toBe("");
   });
 
   it("should decode blob content as UTF-8", async () => {
-    reader = new GitLogReader();
     const git = await import("isomorphic-git");
     vi.spyOn(git.default, "readBlob").mockResolvedValue({
       oid: "x".repeat(40),
       blob: new TextEncoder().encode("hello world"),
     } as any);
 
-    const result = await (reader as any).readBlobAsString("/repo", "abc123", "file.ts");
+    const result = await gitClient.readBlobAsString("/repo", "abc123", "file.ts", {});
     expect(result).toBe("hello world");
   });
 });
@@ -2073,11 +2022,9 @@ describe("readBlobAsString", () => {
 // ─── enrichLineStats — sinceDate parameter ──────────────────────────────────
 
 describe("enrichLineStats — with sinceDate", () => {
-  let reader: GitLogReader;
   let repoRoot: string;
 
   beforeEach(async () => {
-    reader = new GitLogReader();
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const execAsync = promisify(execFile);
@@ -2098,7 +2045,7 @@ describe("enrichLineStats — with sinceDate", () => {
     fileMap.set("package.json", { commits: [], linesAdded: 0, linesDeleted: 0 });
 
     // Enrich with a very old since date — should include most history
-    await (reader as any).enrichLineStats(repoRoot, fileMap, new Date("2020-01-01"));
+    await gitClient.enrichLineStats(repoRoot, fileMap, new Date("2020-01-01"));
 
     const entry = fileMap.get("package.json");
     // Should have accumulated some line stats
@@ -2113,7 +2060,7 @@ describe("enrichLineStats — with sinceDate", () => {
 
     // Very recent date — may have 0 changes
     const futureDate = new Date(Date.now() + 86400000);
-    await (reader as any).enrichLineStats(repoRoot, fileMap, futureDate);
+    await gitClient.enrichLineStats(repoRoot, fileMap, futureDate);
 
     const entry = fileMap.get("package.json");
     // With a future date, no commits should match
@@ -2165,7 +2112,7 @@ describe("_getCommitsViaIsomorphicGit — relevant files found", () => {
     ] as any);
 
     // diffTrees returns files, some in chunkMap and some not
-    vi.spyOn(reader as any, "diffTrees").mockResolvedValue(["auth.ts", "unrelated.ts", "config.ts"]);
+    vi.spyOn(gitClient, "diffTrees").mockResolvedValue(["auth.ts", "unrelated.ts", "config.ts"]);
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("auth.ts", [
@@ -2202,7 +2149,7 @@ describe("_getCommitsViaIsomorphicGit — relevant files found", () => {
     ] as any);
 
     // Changed files that are NOT in the chunkMap
-    vi.spyOn(reader as any, "diffTrees").mockResolvedValue(["other.ts", "readme.md"]);
+    vi.spyOn(gitClient, "diffTrees").mockResolvedValue(["other.ts", "readme.md"]);
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("auth.ts", [
@@ -2467,11 +2414,9 @@ describe("_buildChunkChurnMapUncached — concurrency control", () => {
 // ─── enrichLineStats — binary files in numstat ───────────────────────────────
 
 describe("enrichLineStats — binary file handling", () => {
-  let reader: GitLogReader;
   let repoRoot: string;
 
   beforeEach(async () => {
-    reader = new GitLogReader();
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const execAsync = promisify(execFile);
@@ -2492,7 +2437,7 @@ describe("enrichLineStats — binary file handling", () => {
     // Even if binary files show up in numstat ("-\t-\tfile"), they should be skipped
     fileMap.set("package.json", { commits: [], linesAdded: 0, linesDeleted: 0 });
 
-    await (reader as any).enrichLineStats(repoRoot, fileMap);
+    await gitClient.enrichLineStats(repoRoot, fileMap);
 
     // The test verifies no crash; package.json should have valid stats
     const entry = fileMap.get("package.json");
@@ -2504,12 +2449,6 @@ describe("enrichLineStats — binary file handling", () => {
 // ─── parseNumstatOutput — non-hex SHA entries ────────────────────────────────
 
 describe("parseNumstatOutput — SHA validation edge cases", () => {
-  let reader: GitLogReader;
-
-  beforeEach(() => {
-    reader = new GitLogReader();
-  });
-
   it("should skip sections with too-short SHA", () => {
     // SHA is only 10 chars instead of 40
     const stdout = [
@@ -2522,7 +2461,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
       "10\t5\tfile.ts",
     ].join("\0");
 
-    const result: Map<string, FileChurnData> = (reader as any).parseNumstatOutput(stdout);
+    const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput(stdout);
     expect(result.size).toBe(0);
   });
 
@@ -2538,7 +2477,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
       "10\t5\tfile.ts",
     ].join("\0");
 
-    const result: Map<string, FileChurnData> = (reader as any).parseNumstatOutput(stdout);
+    const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput(stdout);
     expect(result.size).toBe(0);
   });
 
@@ -2558,7 +2497,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
       "10\t5\tfile.ts",
     ].join("\0");
 
-    const result: Map<string, FileChurnData> = (reader as any).parseNumstatOutput(stdout);
+    const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput(stdout);
     expect(result.has("file.ts")).toBe(true);
     expect(result.get("file.ts")!.commits).toHaveLength(1);
   });
@@ -2591,7 +2530,7 @@ describe("listAllFiles and diffTrees (private methods via real repo)", () => {
     // Get HEAD commit
     const headSha = await reader.getHead(repoRoot);
 
-    const files: string[] = await (reader as any).listAllFiles(repoRoot, headSha);
+    const files: string[] = await gitClient.listAllFiles(repoRoot, headSha, {});
     expect(files.length).toBeGreaterThan(0);
     expect(files).toContain("package.json");
   });
@@ -2609,7 +2548,7 @@ describe("listAllFiles and diffTrees (private methods via real repo)", () => {
     if (shas.length < 2) return;
 
     const [newerSha, olderSha] = shas;
-    const changedFiles: string[] = await (reader as any).diffTrees(repoRoot, olderSha, newerSha);
+    const changedFiles: string[] = await gitClient.diffTrees(repoRoot, olderSha, newerSha, {});
 
     // Should return at least some changed files (last commit changed something)
     expect(changedFiles).toBeInstanceOf(Array);
@@ -2621,11 +2560,9 @@ describe("listAllFiles and diffTrees (private methods via real repo)", () => {
 // ─── buildViaIsomorphicGit — real repo test (exercises walk callbacks) ────────
 
 describe("buildViaIsomorphicGit — real repo integration", () => {
-  let reader: GitLogReader;
   let repoRoot: string;
 
   beforeEach(async () => {
-    reader = new GitLogReader();
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const execAsync = promisify(execFile);
@@ -2644,7 +2581,7 @@ describe("buildViaIsomorphicGit — real repo integration", () => {
 
     // Use a very short window to limit scope
     const sinceDate = new Date(Date.now() - 7 * 86400 * 1000); // 7 days ago
-    const result = await (reader as any).buildViaIsomorphicGit(repoRoot, sinceDate);
+    const result = await gitClient.buildViaIsomorphicGit(repoRoot, {}, sinceDate);
 
     // Should return a Map (may be empty if no recent commits)
     expect(result).toBeInstanceOf(Map);
