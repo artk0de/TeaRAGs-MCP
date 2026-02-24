@@ -40,7 +40,7 @@ export class StoppingDecision {
     return this.checkStop();
   }
 
-  checkStop(reason = null) {
+  checkStop(_reason = null) {
     // Error rate too high
     if (this.errors / this.totalTests > CRITERIA.ERROR_RATE_THRESHOLD && this.totalTests >= 3) {
       return { stop: true, reason: `Error rate exceeded ${CRITERIA.ERROR_RATE_THRESHOLD * 100}%` };

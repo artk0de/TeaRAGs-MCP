@@ -8,7 +8,7 @@ export const config = {
   EMBEDDING_MODEL: process.env.EMBEDDING_MODEL || "unclemusclez/jina-embeddings-v2-base-code:latest",
 };
 
-export const TEST_DIR = "/tmp/qdrant_integration_test_" + Date.now();
+export const TEST_DIR = `/tmp/qdrant_integration_test_${Date.now()}`;
 
 // Track all indexed paths for cleanup
 export const indexedPaths = new Set();

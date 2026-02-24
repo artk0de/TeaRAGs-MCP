@@ -456,7 +456,9 @@ export class EnrichmentCoordinator {
     const backfillStart = Date.now();
     let backfillData: Map<string, Record<string, unknown>>;
     try {
-      backfillData = await state.provider.buildFileMetadata(state.effectiveRoot!, { paths: missedPaths });
+      const root = state.effectiveRoot;
+      if (!root) return;
+      backfillData = await state.provider.buildFileMetadata(root, { paths: missedPaths });
     } catch (error) {
       pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
         provider: state.provider.key,
