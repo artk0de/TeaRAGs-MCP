@@ -47,6 +47,12 @@
       }
     ],
     [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "printf '%s\\n\\n%s' '---\ntitle: Changelog\nsidebar_position: 99\n---' \"$(cat CHANGELOG.md)\" > website/docs/changelog.md"
+      }
+    ],
+    [
       "@semantic-release/npm",
       {
         "npmPublish": true,
@@ -57,7 +63,7 @@
     [
       "@semantic-release/git",
       {
-        "assets": ["package.json", "package-lock.json", "CHANGELOG.md"],
+        "assets": ["package.json", "package-lock.json", "CHANGELOG.md", "website/docs/changelog.md"],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
     ],
