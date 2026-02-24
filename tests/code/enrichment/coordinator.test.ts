@@ -22,8 +22,8 @@ describe("EnrichmentCoordinator", () => {
     coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
   });
 
-  it("has provider key accessible", () => {
-    expect(coordinator.providerKey).toBe("git");
+  it("has provider keys accessible", () => {
+    expect(coordinator.providerKeys).toEqual(["git"]);
   });
 
   it("calls provider.resolveRoot and buildFileMetadata on prefetch", () => {
@@ -100,5 +100,42 @@ describe("EnrichmentCoordinator", () => {
     expect(metrics).toHaveProperty("totalDurationMs");
     expect(metrics).toHaveProperty("matchedFiles");
     expect(metrics).toHaveProperty("missedFiles");
+  });
+
+  it("handles multiple providers in parallel", async () => {
+    const providerA: EnrichmentProvider = {
+      key: "alpha",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileMetadata: vi.fn().mockResolvedValue(new Map([["src/a.ts", { a: 1 }]])),
+      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+    };
+    const providerB: EnrichmentProvider = {
+      key: "beta",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileMetadata: vi.fn().mockResolvedValue(new Map([["src/a.ts", { b: 2 }]])),
+      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const multi = new EnrichmentCoordinator(mockQdrant, [providerA, providerB]);
+
+    multi.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(providerA.buildFileMetadata).toHaveBeenCalledWith("/repo");
+    expect(providerB.buildFileMetadata).toHaveBeenCalledWith("/repo");
+    expect(multi.providerKeys).toEqual(["alpha", "beta"]);
+  });
+
+  it("is a no-op when no providers are registered", async () => {
+    const empty = new EnrichmentCoordinator(mockQdrant, []);
+
+    empty.prefetch("/repo", "test-col");
+    empty.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+
+    const metrics = await empty.awaitCompletion("test-col");
+    expect(metrics).toHaveProperty("totalDurationMs");
+    expect(mockQdrant.batchSetPayload).not.toHaveBeenCalled();
   });
 });
