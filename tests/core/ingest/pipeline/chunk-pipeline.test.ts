@@ -427,54 +427,5 @@ describe("ChunkPipeline", () => {
         expect.any(Object),
       );
     });
-
-    it("should propagate git metadata to Qdrant payload", async () => {
-      const chunkWithGit: ChunkItem["chunk"] = {
-        content: "test git metadata",
-        startLine: 1,
-        endLine: 10,
-        metadata: {
-          filePath: "/test/path/gitfile.ts",
-          language: "typescript",
-          chunkIndex: 0,
-          git: {
-            lastModifiedAt: 1700000000,
-            firstCreatedAt: 1690000000,
-            dominantAuthor: "Jane Doe",
-            dominantAuthorEmail: "jane@example.com",
-            authors: ["Jane Doe", "John Smith"],
-            commitCount: 8,
-            lastCommitHash: "abc123",
-            ageDays: 30,
-            taskIds: ["TD-100", "TD-200"],
-          },
-        },
-      };
-
-      pipeline.addChunk(chunkWithGit, "git-chunk-1", "/test/path");
-
-      const flushPromise = pipeline.flush();
-      await vi.runAllTimersAsync();
-      await flushPromise;
-
-      expect(mockQdrant.addPointsOptimized).toHaveBeenCalledWith(
-        testCollectionName,
-        expect.arrayContaining([
-          expect.objectContaining({
-            payload: expect.objectContaining({
-              git: expect.objectContaining({
-                file: expect.objectContaining({
-                  commitCount: 8,
-                  dominantAuthor: "Jane Doe",
-                  ageDays: 30,
-                  taskIds: ["TD-100", "TD-200"],
-                }),
-              }),
-            }),
-          }),
-        ]),
-        expect.any(Object),
-      );
-    });
   });
 });

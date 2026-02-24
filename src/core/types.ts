@@ -279,61 +279,6 @@ export interface CodeChunk {
      * Used for impactAnalysis reranking
      */
     imports?: string[];
-
-    // Git metadata (populated when enableGitMetadata is true)
-    // File-level metrics from git log via isomorphic-git (all chunks of a file share the same)
-    git?: {
-      /** Unix timestamp of most recent commit */
-      lastModifiedAt: number;
-      /** Unix timestamp of first commit */
-      firstCreatedAt: number;
-      /** Author with most commits to this file */
-      dominantAuthor: string;
-      /** Email of dominant author */
-      dominantAuthorEmail: string;
-      /** All unique authors who touched this file */
-      authors: string[];
-      /** Percentage of commits by dominant author */
-      dominantAuthorPct: number;
-      /** Total commits touching this file */
-      commitCount: number;
-      /** Commit hash of the most recent change */
-      lastCommitHash: string;
-      /** Days since last modification */
-      ageDays: number;
-      /** Total lines added across all commits */
-      linesAdded: number;
-      /** Total lines deleted across all commits */
-      linesDeleted: number;
-      /** (linesAdded + linesDeleted) / currentLines */
-      relativeChurn: number;
-      /** Recency-weighted commit frequency */
-      recencyWeightedFreq: number;
-      /** commits / months */
-      changeDensity: number;
-      /** stddev(days between commits) */
-      churnVolatility: number;
-      /** Percentage of commits with fix/bug/hotfix/patch keywords (0-100) */
-      bugFixRate: number;
-      /** Number of unique contributors */
-      contributorCount: number;
-      /** Task IDs from commit messages (e.g., ["TD-1234", "#567"]) */
-      taskIds: string[];
-
-      // Chunk-level churn overlay (Phase B, optional — only when chunk-level analysis is enabled)
-      /** Commits that touched lines of this specific chunk */
-      chunkCommitCount?: number;
-      /** chunkCommitCount / file.commitCount (0-1) */
-      chunkChurnRatio?: number;
-      /** Unique authors who modified this specific chunk */
-      chunkContributorCount?: number;
-      /** Percentage of bug-fix commits for this chunk (0-100) */
-      chunkBugFixRate?: number;
-      /** Unix timestamp of last modification to this chunk */
-      chunkLastModifiedAt?: number;
-      /** Days since last modification to this chunk */
-      chunkAgeDays?: number;
-    };
   };
 }
 
