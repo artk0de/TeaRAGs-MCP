@@ -2,19 +2,11 @@
  * Integration Test Suite
  * Auto-migrated from test-business-logic.mjs
  */
-import { promises as fs } from "node:fs";
-import { basename, join } from "node:path";
 
-import {
-  BatchAccumulator,
-  ChunkPipeline,
-  DEFAULT_CONFIG,
-  PipelineManager,
-  WorkerPool,
-} from "../../../build/code/pipeline/index.js";
-import { assert, createTestFile, hashContent, log, randomUUID, resources, section, skip, sleep } from "../helpers.mjs";
+import { BatchAccumulator, ChunkPipeline, PipelineManager, WorkerPool } from "../../../build/code/pipeline/index.js";
+import { assert, log, section } from "../helpers.mjs";
 
-export async function testPipelineWorkerpool(qdrant) {
+export async function testPipelineWorkerpool(_qdrant) {
   section("13. Pipeline & WorkerPool Tests");
 
   // Test 1: WorkerPool bounded concurrency
@@ -68,7 +60,7 @@ export async function testPipelineWorkerpool(qdrant) {
     retryMaxDelayMs: 200,
   });
 
-  const failingHandler = async (batch) => {
+  const failingHandler = async (_batch) => {
     retryAttempts++;
     if (retryAttempts < 3) {
       throw new Error(`Simulated failure ${retryAttempts}`);
@@ -141,11 +133,11 @@ export async function testPipelineWorkerpool(qdrant) {
 
   const pipeline = new PipelineManager(
     {
-      handleUpsertBatch: async (batch) => {
+      handleUpsertBatch: async (_batch) => {
         upsertBatchCount++;
         await new Promise((r) => setTimeout(r, 20));
       },
-      handleDeleteBatch: async (batch) => {
+      handleDeleteBatch: async (_batch) => {
         deleteBatchCount++;
         await new Promise((r) => setTimeout(r, 10));
       },
@@ -188,7 +180,7 @@ export async function testPipelineWorkerpool(qdrant) {
   });
   const neverHandler = () => new Promise(() => {}); // Never resolves
 
-  const p1 = neverResolvingPool.submit(
+  const _p1 = neverResolvingPool.submit(
     { id: "never-1", type: "upsert", items: [], createdAt: Date.now() },
     neverHandler,
   );
@@ -205,7 +197,7 @@ export async function testPipelineWorkerpool(qdrant) {
   neverResolvingPool.forceShutdown();
 
   // Queued items should be cancelled (resolved with error)
-  const [r2, r3] = await Promise.all([p2, p3]);
+  const [r2, _r3] = await Promise.all([p2, p3]);
   assert(r2.success === false && r2.error === "WorkerPool force shutdown", "Force shutdown cancels queued batch");
   assert(neverResolvingPool.getQueueDepth() === 0, "Queue empty after force shutdown");
 
@@ -229,7 +221,7 @@ export async function testPipelineWorkerpool(qdrant) {
   let qdrantUpsertCalls = 0;
   let totalPointsUpserted = 0;
   const mockQdrant = {
-    addPointsOptimized: async (collection, points, options) => {
+    addPointsOptimized: async (collection, points, _options) => {
       qdrantUpsertCalls++;
       totalPointsUpserted += points.length;
     },
@@ -325,7 +317,7 @@ export async function testPipelineWorkerpool(qdrant) {
   // Analyze timeline
   const events = timeline.map((t) => ({ ...t, relativeTime: t.time - timeline[0].time }));
   const deleteEnd = events.find((e) => e.event === "delete_end").relativeTime;
-  const addEnd = events.find((e) => e.event === "add_end").relativeTime;
+  const _addEnd = events.find((e) => e.event === "add_end").relativeTime;
   const modifiedStart = events.find((e) => e.event === "modified_start").relativeTime;
 
   // Verify parallelism

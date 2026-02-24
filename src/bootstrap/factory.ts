@@ -5,13 +5,14 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { CodeIndexer } from "../core/code/indexer.js";
+import { IngestFacade } from "../core/api/ingest-facade.js";
+import { SearchFacade } from "../core/api/search-facade.js";
 import type { AppConfig } from "./config.js";
-import type { EmbeddingProvider } from "../core/embeddings/base.js";
-import { EmbeddingProviderFactory } from "../core/embeddings/factory.js";
+import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
+import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
-import { QdrantManager } from "../core/qdrant/client.js";
+import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 
@@ -26,14 +27,16 @@ export { pkg };
 export interface AppContext {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
-  codeIndexer: CodeIndexer;
+  ingest: IngestFacade;
+  search: SearchFacade;
 }
 
 export function createAppContext(config: AppConfig): AppContext {
   const qdrant = new QdrantManager(config.qdrantUrl, config.qdrantApiKey);
   const embeddings = EmbeddingProviderFactory.createFromEnv();
-  const codeIndexer = new CodeIndexer(qdrant, embeddings, config.code);
-  return { qdrant, embeddings, codeIndexer };
+  const ingest = new IngestFacade(qdrant, embeddings, config.code);
+  const search = new SearchFacade(qdrant, embeddings, config.code);
+  return { qdrant, embeddings, ingest, search };
 }
 
 export function loadPrompts(config: AppConfig): PromptsConfig | null {
@@ -57,7 +60,8 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
   registerAllTools(server, {
     qdrant: ctx.qdrant,
     embeddings: ctx.embeddings,
-    codeIndexer: ctx.codeIndexer,
+    ingest: ctx.ingest,
+    search: ctx.search,
   });
 
   registerAllResources(server, ctx.qdrant);

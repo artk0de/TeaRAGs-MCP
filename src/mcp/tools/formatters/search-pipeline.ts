@@ -1,7 +1,11 @@
 // src/mcp/tools/formatters/search-pipeline.ts
-import { CodeIndexer } from "../../../core/code/indexer.js";
-import { rerankSemanticSearchResults, type RerankMode, type SemanticSearchRerankPreset } from "../../../core/code/reranker.js";
-import { calculateFetchLimit, filterResultsByGlob } from "../../../core/qdrant/filters/index.js";
+import { calculateFetchLimit, filterResultsByGlob } from "../../../core/adapters/qdrant/filters/index.js";
+import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/api/shared.js";
+import {
+  rerankSemanticSearchResults,
+  type RerankMode,
+  type SemanticSearchRerankPreset,
+} from "../../../core/search/reranker.js";
 
 interface SearchResult {
   id: string | number;
@@ -10,7 +14,7 @@ interface SearchResult {
 }
 
 interface ToolResult {
-  content: Array<{ type: "text"; text: string }>;
+  content: { type: "text"; text: string }[];
   isError?: boolean;
   [key: string]: unknown;
 }
@@ -27,7 +31,7 @@ export function resolveCollectionName(
       },
     };
   }
-  return { collectionName: collection || CodeIndexer.resolveCollectionName(path ?? "") };
+  return { collectionName: collection || resolveCollectionNameFromPath(path ?? "") };
 }
 
 export function getSearchFetchLimit(
@@ -47,10 +51,7 @@ export function applyPostProcessing(
   let filtered = options.pathPattern ? filterResultsByGlob(results, options.pathPattern) : results;
 
   if (options.rerank && options.rerank !== "relevance") {
-    filtered = rerankSemanticSearchResults(
-      filtered,
-      options.rerank as RerankMode<SemanticSearchRerankPreset>,
-    );
+    filtered = rerankSemanticSearchResults(filtered, options.rerank as RerankMode<SemanticSearchRerankPreset>);
   }
 
   return filtered.slice(0, options.limit);

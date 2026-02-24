@@ -4,16 +4,18 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { CodeIndexer } from "../../core/code/indexer.js";
+import type { IngestFacade } from "../../core/api/ingest-facade.js";
+import type { SearchFacade } from "../../core/api/search-facade.js";
 import { formatEnrichmentStatus } from "./formatters/enrichment.js";
 import * as schemas from "./schemas.js";
 
 export interface CodeToolDependencies {
-  codeIndexer: CodeIndexer;
+  ingest: IngestFacade;
+  search: SearchFacade;
 }
 
 export function registerCodeTools(server: McpServer, deps: CodeToolDependencies): void {
-  const { codeIndexer } = deps;
+  const { ingest, search } = deps;
 
   // index_codebase
   server.registerTool(
@@ -31,7 +33,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       inputSchema: schemas.IndexCodebaseSchema,
     },
     async ({ path, forceReindex, extensions, ignorePatterns }) => {
-      const stats = await codeIndexer.indexCodebase(path, { forceReindex, extensions, ignorePatterns }, (progress) => {
+      const stats = await ingest.indexCodebase(path, { forceReindex, extensions, ignorePatterns }, (progress) => {
         // Progress callback - could send progress updates via SSE in future
         console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
       });
@@ -41,7 +43,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       const enrichmentMessage = await formatEnrichmentStatus(
         stats.enrichmentStatus,
         stats.enrichmentDurationMs,
-        (p) => codeIndexer.getIndexStatus(p),
+        async (p) => ingest.getIndexStatus(p),
         path,
       );
       statusMessage += enrichmentMessage;
@@ -99,7 +101,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       taskId,
       rerank,
     }) => {
-      const results = await codeIndexer.searchCode(path, query, {
+      const results = await search.searchCode(path, query, {
         limit,
         fileTypes,
         pathPattern,
@@ -152,7 +154,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       inputSchema: schemas.ReindexChangesSchema,
     },
     async ({ path }) => {
-      const stats = await codeIndexer.reindexChanges(path, (progress) => {
+      const stats = await ingest.reindexChanges(path, (progress) => {
         console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
       });
 
@@ -166,7 +168,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       const enrichmentMessage = await formatEnrichmentStatus(
         stats.enrichmentStatus,
         stats.enrichmentDurationMs,
-        (p) => codeIndexer.getIndexStatus(p),
+        async (p) => ingest.getIndexStatus(p),
         path,
       );
       message += enrichmentMessage;
@@ -195,7 +197,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       inputSchema: schemas.GetIndexStatusSchema,
     },
     async ({ path }) => {
-      const status = await codeIndexer.getIndexStatus(path);
+      const status = await ingest.getIndexStatus(path);
 
       if (status.status === "not_indexed") {
         return {
@@ -251,7 +253,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       inputSchema: schemas.ClearIndexSchema,
     },
     async ({ path }) => {
-      await codeIndexer.clearIndex(path);
+      await ingest.clearIndex(path);
       return {
         content: [{ type: "text", text: `Index cleared for codebase at "${path}".` }],
       };

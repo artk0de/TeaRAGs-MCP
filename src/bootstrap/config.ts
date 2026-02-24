@@ -8,9 +8,9 @@ import {
   DEFAULT_CHUNK_SIZE,
   DEFAULT_CODE_EXTENSIONS,
   DEFAULT_IGNORE_PATTERNS,
-  DEFAULT_SEARCH_LIMIT,
-} from "../core/code/config.js";
-import type { CodeConfig } from "../core/code/types.js";
+} from "../core/ingest/config.js";
+import { DEFAULT_SEARCH_LIMIT } from "../core/search/config.js";
+import type { CodeConfig } from "../core/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
