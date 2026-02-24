@@ -3,6 +3,11 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>0.5.2 (2026-02-24)</small>
+
+* fix(ci): relaunch ci ([2c821b6](https://github.com/artk0de/TeaRAGs-MCP/commit/2c821b6))
+* fix(ci): remove [skip ci] from semantic-release to fix Codecov coverage tracking ([1cab357](https://github.com/artk0de/TeaRAGs-MCP/commit/1cab357))
+
 ## <small>0.5.1 (2026-02-24)</small>
 
 * refactor: remove dead git field from ChunkItem, fix CI coverage ([267a0ab](https://github.com/artk0de/TeaRAGs-MCP/commit/267a0ab))
