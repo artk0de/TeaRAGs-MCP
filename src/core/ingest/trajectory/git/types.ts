@@ -104,65 +104,9 @@ export interface ChunkChurnOverlay {
 }
 
 /**
- * @deprecated Use GitFileMetadata instead. Kept for backward compatibility with existing tests.
- * Aggregated git metadata for a chunk (was stored in vector DB)
- */
-export interface GitChunkMetadata {
-  lastModifiedAt: number;
-  firstCreatedAt: number;
-  dominantAuthor: string;
-  dominantAuthorEmail: string;
-  authors: string[];
-  commitCount: number;
-  lastCommitHash: string;
-  ageDays: number;
-  taskIds: string[];
-}
-
-/**
- * @deprecated Blame-based caching is no longer used. Kept for type compatibility.
- */
-export interface BlameLineData {
-  commit: string;
-  author: string;
-  authorEmail: string;
-  authorTime: number;
-  taskIds?: string[];
-}
-
-/**
- * @deprecated Blame-based caching is no longer used. Kept for type compatibility.
- */
-export interface BlameCache {
-  contentHash: string;
-  lines: Map<number, BlameLineData>;
-  cachedAt: number;
-}
-
-/**
- * @deprecated Blame-based caching is no longer used. Kept for type compatibility.
- */
-export interface BlameCacheFile {
-  version: 4;
-  contentHash: string;
-  cachedAt: number;
-  lines: [number, string, string, string, number, string[]][];
-}
-
-/**
  * Git repository information
  */
 export interface GitRepoInfo {
   repoRoot: string;
   isGitRepo: boolean;
-}
-
-/**
- * Options for git metadata service
- */
-export interface GitMetadataOptions {
-  /** Cache directory (default: ~/.tea-rags-mcp/git-cache) */
-  cacheDir?: string;
-  /** Enable debug logging */
-  debug?: boolean;
 }
