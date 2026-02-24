@@ -1835,7 +1835,7 @@ describe("buildChunkChurnMap — cache hit", () => {
     reader = new GitLogReader();
 
     const headSha = "h".repeat(40);
-    vi.spyOn(reader as any, "getHead").mockResolvedValue(headSha);
+    vi.spyOn(gitClient, "getHead").mockResolvedValue(headSha);
 
     const mockOverlay = new Map([
       [

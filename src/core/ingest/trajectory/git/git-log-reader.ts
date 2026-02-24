@@ -23,6 +23,7 @@ import {
 } from "../../../adapters/git/client.js";
 import { parseNumstatOutput, parsePathspecOutput } from "../../../adapters/git/parsers.js";
 import type { ChunkLookupEntry } from "../../../types.js";
+import { GitEnrichmentCache } from "../enrichment/git/cache.js";
 import {
   computeChunkOverlay,
   computeFileMetadata,
@@ -44,12 +45,8 @@ export class GitLogReader {
   // isomorphic-git pack file cache (shared across calls for performance)
   private readonly cache: Record<string, unknown> = {};
 
-  // HEAD-based result caches — invalidated when HEAD changes
-  private readonly fileMetadataCache = new Map<string, { headSha: string; data: Map<string, FileChurnData> }>();
-  private readonly chunkChurnCache = new Map<
-    string,
-    { headSha: string; data: Map<string, Map<string, ChunkChurnOverlay>> }
-  >();
+  // HEAD-based result cache — invalidated when HEAD changes
+  private readonly enrichmentCache = new GitEnrichmentCache();
 
   /**
    * Build per-file FileChurnData from git history.
@@ -67,16 +64,8 @@ export class GitLogReader {
     const cacheKey = `${repoRoot}:${effectiveMaxAge}`;
 
     // Check HEAD-based cache (non-fatal if HEAD resolution fails)
-    let headSha: string | null = null;
-    try {
-      headSha = await getHead(repoRoot);
-      const cached = this.fileMetadataCache.get(cacheKey);
-      if (cached?.headSha === headSha) {
-        return cached.data;
-      }
-    } catch {
-      // Not a git repo or HEAD unresolvable — skip caching, proceed to build
-    }
+    const cached = await this.enrichmentCache.getFileMetadata(cacheKey, repoRoot);
+    if (cached) return cached;
 
     const sinceDate = effectiveMaxAge > 0 ? new Date(Date.now() - effectiveMaxAge * 30 * 86400 * 1000) : undefined;
 
@@ -93,10 +82,8 @@ export class GitLogReader {
       result = await buildViaIsomorphicGit(repoRoot, this.cache, sinceDate);
     }
 
-    // Store in cache if we got a valid HEAD
-    if (headSha) {
-      this.fileMetadataCache.set(cacheKey, { headSha, data: result });
-    }
+    // Store in cache (non-fatal if HEAD unresolvable)
+    await this.enrichmentCache.setFileMetadata(cacheKey, repoRoot, result);
     return result;
   }
 
@@ -165,15 +152,8 @@ export class GitLogReader {
     fileChurnDataMap?: Map<string, FileChurnData>,
   ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
     // Check HEAD-based cache
-    try {
-      const headSha = await this.getHead(repoRoot);
-      const cached = this.chunkChurnCache.get(repoRoot);
-      if (cached?.headSha === headSha) {
-        return cached.data;
-      }
-    } catch {
-      // If HEAD resolution fails, skip caching and proceed
-    }
+    const cached = await this.enrichmentCache.getChunkChurn(repoRoot);
+    if (cached) return cached;
 
     const result = await this._buildChunkChurnMapUncached(
       repoRoot,
@@ -183,13 +163,8 @@ export class GitLogReader {
       fileChurnDataMap,
     );
 
-    // Store in cache
-    try {
-      const headSha = await this.getHead(repoRoot);
-      this.chunkChurnCache.set(repoRoot, { headSha, data: result });
-    } catch {
-      // Non-fatal
-    }
+    // Store in cache (non-fatal if HEAD unresolvable)
+    await this.enrichmentCache.setChunkChurn(repoRoot, result);
 
     return result;
   }
