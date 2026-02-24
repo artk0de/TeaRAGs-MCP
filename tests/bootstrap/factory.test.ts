@@ -1,5 +1,11 @@
 // src/bootstrap/factory.test.ts
+import * as nodeFs from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
+
+import type { AppConfig } from "../../src/bootstrap/config.js";
+import { createAppContext, createConfiguredServer, loadPrompts } from "../../src/bootstrap/factory.js";
+import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
 
 // Mock heavy dependencies — use function() (not =>) so `new` works
 vi.mock("../../src/core/adapters/qdrant/client.js", () => ({
@@ -25,9 +31,13 @@ vi.mock("../../src/mcp/resources/index.js", () => ({
 vi.mock("../../src/mcp/prompts/register.js", () => ({
   registerAllPrompts: vi.fn(),
 }));
-
-import type { AppConfig } from "../../src/bootstrap/config.js";
-import { createAppContext, createConfiguredServer } from "../../src/bootstrap/factory.js";
+vi.mock("../../src/mcp/prompts/index.js", () => ({
+  loadPromptsConfig: vi.fn(),
+}));
+vi.mock("node:fs", async () => {
+  const actual = await import("node:fs");
+  return { ...actual, existsSync: vi.fn() };
+});
 
 function makeConfig(): AppConfig {
   return {
@@ -67,5 +77,38 @@ describe("createConfiguredServer", () => {
     expect(server).toBeDefined();
     // Verify it has connect method (MCP server interface)
     expect(typeof server.connect).toBe("function");
+  });
+});
+
+describe("loadPrompts", () => {
+  it("returns null when prompts config file does not exist", () => {
+    vi.mocked(nodeFs.existsSync).mockReturnValue(false);
+    const result = loadPrompts(makeConfig());
+    expect(result).toBeNull();
+  });
+
+  it("returns parsed prompts config when file exists", () => {
+    vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+    const fakeConfig = { prompts: [{ name: "test", description: "t", template: "t" }] };
+    vi.mocked(loadPromptsConfig).mockReturnValue(fakeConfig as any);
+
+    const result = loadPrompts(makeConfig());
+    expect(result).toEqual(fakeConfig);
+  });
+
+  it("calls process.exit(1) when loadPromptsConfig throws", () => {
+    vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+    vi.mocked(loadPromptsConfig).mockImplementation(() => {
+      throw new Error("parse error");
+    });
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: string | number) => {
+      throw new Error("process.exit called");
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(() => loadPrompts(makeConfig())).toThrow("process.exit called");
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    exitSpy.mockRestore();
   });
 });

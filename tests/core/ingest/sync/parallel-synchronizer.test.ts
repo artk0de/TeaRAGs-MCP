@@ -358,6 +358,87 @@ describe("ParallelFileSynchronizer", () => {
   });
 });
 
+describe("Environment Configuration", () => {
+  let testDir: string;
+  let codebaseDir: string;
+  let snapshotDir: string;
+
+  beforeEach(async () => {
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    testDir = join(tmpdir(), `env-config-test-${uniqueId}`);
+    codebaseDir = join(testDir, "codebase");
+    snapshotDir = join(testDir, "snapshots");
+    await fs.mkdir(codebaseDir, { recursive: true });
+    await fs.mkdir(snapshotDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    try {
+      await fs.rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  });
+
+  it("should use EMBEDDING_CONCURRENCY env if no concurrency arg given", () => {
+    const originalEnv = process.env.EMBEDDING_CONCURRENCY;
+    process.env.EMBEDDING_CONCURRENCY = "8";
+
+    const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir);
+    expect(sync.getConcurrency()).toBe(8);
+
+    process.env.EMBEDDING_CONCURRENCY = originalEnv;
+  });
+
+  it("should default to 1 if EMBEDDING_CONCURRENCY not set", () => {
+    const originalEnv = process.env.EMBEDDING_CONCURRENCY;
+    delete process.env.EMBEDDING_CONCURRENCY;
+
+    const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir);
+    expect(sync.getConcurrency()).toBe(1);
+
+    process.env.EMBEDDING_CONCURRENCY = originalEnv;
+  });
+});
+
+describe("Quick Check (needsReindex)", () => {
+  let testDir: string;
+  let codebaseDir: string;
+  let snapshotDir: string;
+
+  beforeEach(async () => {
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    testDir = join(tmpdir(), `needs-reindex-test-${uniqueId}`);
+    codebaseDir = join(testDir, "codebase");
+    snapshotDir = join(testDir, "snapshots");
+    await fs.mkdir(codebaseDir, { recursive: true });
+    await fs.mkdir(snapshotDir, { recursive: true });
+    await fs.mkdir(join(codebaseDir, "src"), { recursive: true });
+    await fs.writeFile(join(codebaseDir, "src", "a.ts"), "const a = 1;");
+    await fs.writeFile(join(codebaseDir, "src", "b.ts"), "const b = 2;");
+  });
+
+  afterEach(async () => {
+    try {
+      await fs.rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  });
+
+  it("should return false when no changes, true when file modified", async () => {
+    const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
+    const files = [join(codebaseDir, "src", "a.ts"), join(codebaseDir, "src", "b.ts")];
+    await sync.updateSnapshot(files);
+    await sync.initialize();
+
+    expect(await sync.needsReindex(files)).toBe(false);
+
+    await fs.writeFile(join(codebaseDir, "src", "a.ts"), "modified content");
+    expect(await sync.needsReindex(files)).toBe(true);
+  });
+});
+
 describe("parallelLimit utility", () => {
   // Test the bounded concurrency behavior indirectly through the synchronizer
   it("should process large file lists without overwhelming the system", async () => {

@@ -38,26 +38,27 @@ export default defineConfig({
         "commitlint.config.js",
         "src/index.ts",
         "scripts/**",
-        "tests/**/fixtures/**",
+        "tests/**/__fixtures__/**",
         "tests/integration/**",
         // Re-export files (no executable code to test)
-        "src/core/ingest/git/index.ts",
         "src/core/ingest/pipeline/index.ts",
-        "src/prompts/index.ts",
         "src/core/adapters/qdrant/filters/index.ts",
+        "src/mcp/prompts/index.ts",
         // Type-only files (no executable code to test)
-        "src/prompts/types.ts",
         "src/core/types.ts",
-        "src/core/ingest/git/types.ts",
+        "src/core/ingest/pipeline/enrichment/types.ts",
+        "src/core/ingest/pipeline/enrichment/trajectory/git/types.ts",
+        "src/core/ingest/pipeline/types.ts",
+        "src/core/ingest/pipeline/chunker/hooks/types.ts",
         // Test utilities (not production code)
         "tests/**/test-helpers.ts",
       ],
       thresholds: {
         // Global thresholds
-        lines: 92,
-        functions: 90,
-        branches: 80,
-        statements: 92,
+        lines: 95,
+        functions: 93,
+        branches: 85,
+        statements: 95,
         // File-specific thresholds
         "src/core/adapters/qdrant/client.ts": {
           lines: 90,
