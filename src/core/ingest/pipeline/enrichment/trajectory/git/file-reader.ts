@@ -6,9 +6,9 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { buildViaCli, withTimeout } from "../../../../adapters/git/client.js";
-import { parseNumstatOutput } from "../../../../adapters/git/parsers.js";
-import type { FileChurnData } from "../../../../adapters/git/types.js";
+import { buildViaCli, withTimeout } from "../../../../../adapters/git/client.js";
+import { parseNumstatOutput } from "../../../../../adapters/git/parsers.js";
+import type { FileChurnData } from "../../../../../adapters/git/types.js";
 import type { GitEnrichmentCache } from "./cache.js";
 
 const execFileAsync = promisify(execFile);

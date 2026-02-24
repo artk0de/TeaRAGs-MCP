@@ -15,10 +15,10 @@ import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
 import { createIngestDependencies } from "../ingest/factory.js";
 import { IndexPipeline } from "../ingest/indexing.js";
+import { EnrichmentCoordinator } from "../ingest/pipeline/enrichment/coordinator.js";
+import { GitEnrichmentProvider } from "../ingest/pipeline/enrichment/trajectory/git/provider.js";
 import { StatusModule } from "../ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../ingest/reindexing.js";
-import { EnrichmentCoordinator } from "../ingest/trajectory/enrichment/coordinator.js";
-import { GitEnrichmentProvider } from "../ingest/trajectory/enrichment/git/provider.js";
 import type { ChangeStats, CodeConfig, IndexOptions, IndexStats, IndexStatus, ProgressCallback } from "../types.js";
 
 export class IngestFacade {

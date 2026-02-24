@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EnrichmentApplier } from "../../../src/core/ingest/trajectory/enrichment/applier.js";
+import { EnrichmentApplier } from "../../../src/core/ingest/pipeline/enrichment/applier.js";
 
 describe("EnrichmentApplier", () => {
   let mockQdrant: any;

@@ -12,18 +12,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as gitClient from "../../../src/core/adapters/git/client.js";
 import * as gitParsers from "../../../src/core/adapters/git/parsers.js";
 import type { CommitInfo, FileChurnData } from "../../../src/core/adapters/git/types.js";
-import * as chunkReader from "../../../src/core/ingest/trajectory/enrichment/git/chunk-reader.js";
+import * as chunkReader from "../../../src/core/ingest/pipeline/enrichment/trajectory/git/chunk-reader.js";
 import {
   computeFileMetadata,
   extractTaskIds,
   GitLogReader,
   overlaps,
-} from "../../../src/core/ingest/trajectory/enrichment/git/git-log-reader.js";
+} from "../../../src/core/ingest/pipeline/enrichment/trajectory/git/git-log-reader.js";
 
 // Enable cross-module spy interception for adapter functions
 vi.mock("../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
 vi.mock("../../../src/core/adapters/git/parsers.js", async (importOriginal) => importOriginal());
-vi.mock("../../../src/core/ingest/trajectory/enrichment/git/chunk-reader.js", async (importOriginal) =>
+vi.mock("../../../src/core/ingest/pipeline/enrichment/trajectory/git/chunk-reader.js", async (importOriginal) =>
   importOriginal(),
 );
 

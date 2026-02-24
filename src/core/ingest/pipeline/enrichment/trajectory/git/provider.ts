@@ -9,11 +9,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { resolveRepoRoot } from "../../../../adapters/git/client.js";
-import type { FileChurnData } from "../../../../adapters/git/types.js";
-import type { ChunkLookupEntry } from "../../../../types.js";
-import type { FileTransform } from "../applier.js";
-import type { EnrichmentProvider } from "../types.js";
+import { resolveRepoRoot } from "../../../../../adapters/git/client.js";
+import type { FileChurnData } from "../../../../../adapters/git/types.js";
+import type { ChunkLookupEntry } from "../../../../../types.js";
+import type { FileTransform } from "../../applier.js";
+import type { EnrichmentProvider } from "../../types.js";
 import { GitEnrichmentCache } from "./cache.js";
 import { buildChunkChurnMap } from "./chunk-reader.js";
 import { buildFileMetadataForPaths, buildFileMetadataMap } from "./file-reader.js";

@@ -17,8 +17,8 @@ import type { Ignore } from "ignore";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { ChunkLookupEntry, EnrichmentInfo, EnrichmentMetrics } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../../constants.js";
-import { pipelineLog } from "../../pipeline/infra/debug-logger.js";
-import type { ChunkItem } from "../../pipeline/types.js";
+import { pipelineLog } from "../infra/debug-logger.js";
+import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
 import type { EnrichmentProvider } from "./types.js";
 
