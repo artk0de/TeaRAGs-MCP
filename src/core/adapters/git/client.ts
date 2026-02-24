@@ -13,7 +13,7 @@ import { promisify } from "node:util";
 import git from "isomorphic-git";
 
 import type { CommitInfo, FileChurnData } from "../../ingest/trajectory/git/types.js";
-import { parseNumstatOutput } from "./parsers.js";
+import { parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,6 +39,16 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, message: s
 }
 
 // ── CLI primitives ───────────────────────────────────────────────
+
+/** Run `git log` with pathspec filtering, return raw stdout. */
+export async function execFileForPathspec(repoRoot: string, args: string[], timeoutMs: number): Promise<string> {
+  const { stdout } = await execFileAsync("git", args, {
+    cwd: repoRoot,
+    maxBuffer: Infinity,
+    timeout: timeoutMs,
+  });
+  return stdout;
+}
 
 /** Build CLI args for `git log --numstat`. Uses HEAD (not --all), no --max-count. */
 export function buildCliArgs(sinceDate?: Date): string[] {
@@ -255,4 +265,103 @@ export async function buildViaIsomorphicGit(
   await enrichLineStats(repoRoot, fileMap, sinceDate);
 
   return fileMap;
+}
+
+// ── Pathspec CLI operations ──────────────────────────────────────
+
+const PATHSPEC_BATCH_SIZE = 500;
+
+/** Run a single pathspec-filtered git log and parse the output. */
+export async function getCommitsByPathspecSingle(
+  repoRoot: string,
+  sinceDate: Date,
+  filePaths: string[],
+  timeoutMs?: number,
+): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+  const effectiveTimeoutMs = timeoutMs ?? parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "30000", 10);
+  const args = [
+    "log",
+    `--since=${sinceDate.toISOString()}`,
+    "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
+    "--numstat",
+    "--",
+    ...filePaths,
+  ];
+
+  const stdout = await execFileForPathspec(repoRoot, args, effectiveTimeoutMs);
+  return parsePathspecOutput(stdout);
+}
+
+/**
+ * Run multiple pathspec CLI calls in batches, merge results by commit SHA.
+ * Same commit may appear in multiple batches (touched files in different batches).
+ */
+export async function getCommitsByPathspecBatched(
+  repoRoot: string,
+  sinceDate: Date,
+  filePaths: string[],
+  timeoutMs?: number,
+): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+  const batchSize = PATHSPEC_BATCH_SIZE;
+  const batches: string[][] = [];
+  for (let i = 0; i < filePaths.length; i += batchSize) {
+    batches.push(filePaths.slice(i, i + batchSize));
+  }
+
+  const debug = process.env.DEBUG === "true" || process.env.DEBUG === "1";
+  if (debug) {
+    console.error(
+      `[ChunkChurn] Pathspec batching: ${filePaths.length} files → ${batches.length} batches of ≤${batchSize}`,
+    );
+  }
+
+  const merged = new Map<string, { commit: CommitInfo; changedFiles: Set<string> }>();
+
+  for (const batch of batches) {
+    try {
+      const batchResult = await getCommitsByPathspecSingle(repoRoot, sinceDate, batch, timeoutMs);
+      for (const entry of batchResult) {
+        const existing = merged.get(entry.commit.sha);
+        if (existing) {
+          for (const f of entry.changedFiles) existing.changedFiles.add(f);
+        } else {
+          merged.set(entry.commit.sha, {
+            commit: entry.commit,
+            changedFiles: new Set(entry.changedFiles),
+          });
+        }
+      }
+    } catch (error) {
+      if (debug) {
+        console.error(
+          `[ChunkChurn] Pathspec batch failed (${batch.length} files):`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+  }
+
+  return Array.from(merged.values()).map(({ commit, changedFiles }) => ({
+    commit,
+    changedFiles: Array.from(changedFiles),
+  }));
+}
+
+/**
+ * Get commits touching specific files via CLI pathspec filtering.
+ * Dispatches to single or batched depending on count.
+ */
+export async function getCommitsByPathspec(
+  repoRoot: string,
+  sinceDate: Date,
+  filePaths: string[],
+  timeoutMs?: number,
+): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
+  if (filePaths.length === 0) return [];
+
+  if (filePaths.length > PATHSPEC_BATCH_SIZE) {
+    return getCommitsByPathspecBatched(repoRoot, sinceDate, filePaths, timeoutMs);
+  }
+
+  return getCommitsByPathspecSingle(repoRoot, sinceDate, filePaths, timeoutMs);
 }
