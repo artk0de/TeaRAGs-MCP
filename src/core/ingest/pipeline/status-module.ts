@@ -7,11 +7,11 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { QdrantManager } from "../adapters/qdrant/client.js";
-import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
-import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../types.js";
-import { resolveCollectionName, validatePath } from "../api/shared.js";
-import { INDEXING_METADATA_ID } from "./constants.js";
+import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import { resolveCollectionName, validatePath } from "../../api/shared.js";
+import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../../types.js";
+import { INDEXING_METADATA_ID } from "../constants.js";
+import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 
 export class StatusModule {
   constructor(private readonly qdrant: QdrantManager) {}

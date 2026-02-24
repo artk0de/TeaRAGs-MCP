@@ -5,9 +5,9 @@
  * Handles both dense-only and hybrid (dense+sparse) collections.
  */
 
-import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
-import type { QdrantManager } from "../adapters/qdrant/client.js";
-import { INDEXING_METADATA_ID } from "./constants.js";
+import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
+import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import { INDEXING_METADATA_ID } from "../constants.js";
 
 /**
  * Store or update the indexing metadata marker in a collection.
