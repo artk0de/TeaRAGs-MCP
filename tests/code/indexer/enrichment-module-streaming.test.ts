@@ -700,10 +700,7 @@ describe("EnrichmentModule streaming API", () => {
       await new Promise((r) => setTimeout(r, 100));
 
       // Error should have been logged (DEBUG is "true" in test env)
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[EnrichmentModule] Chunk churn batch failed:"),
-        expect.any(Error),
-      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("[ChunkChurn] batch failed:"), expect.any(Error));
 
       consoleSpy.mockRestore();
     });
@@ -748,7 +745,7 @@ describe("EnrichmentModule streaming API", () => {
       await new Promise((r) => setTimeout(r, 100));
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[EnrichmentModule] Chunk churn final batch failed:"),
+        expect.stringContaining("[ChunkChurn] final batch failed:"),
         expect.any(Error),
       );
 
@@ -798,7 +795,7 @@ describe("EnrichmentModule streaming API", () => {
 
       // Should have logged the chunk enrichment marker error
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[EnrichmentModule] Failed to update chunk enrichment marker:"),
+        expect.stringContaining("[ChunkChurn] Failed to update marker:"),
         expect.any(Error),
       );
 
@@ -839,7 +836,7 @@ describe("EnrichmentModule streaming API", () => {
       });
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[EnrichmentModule] Failed to update marker:"),
+        expect.stringContaining("[Enrichment] Failed to update marker:"),
         expect.any(Error),
       );
 
@@ -890,7 +887,7 @@ describe("EnrichmentModule streaming API", () => {
       await enrichment.awaitCompletion("test_collection");
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[EnrichmentModule] batchSetPayload failed:"),
+        expect.stringContaining("[MetadataApplier] batchSetPayload failed:"),
         expect.any(Error),
       );
 
@@ -918,7 +915,7 @@ describe("EnrichmentModule streaming API", () => {
 
       // Error should have been logged
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[EnrichmentModule] Git log prefetch failed:"),
+        expect.stringContaining("[Enrichment] Git log prefetch failed:"),
         expect.stringContaining("fatal: not a git repository"),
       );
 
@@ -936,7 +933,7 @@ describe("EnrichmentModule streaming API", () => {
 
       expect(metrics.prefetchDurationMs).toBeGreaterThanOrEqual(0);
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[EnrichmentModule] Git log prefetch failed:"),
+        expect.stringContaining("[Enrichment] Git log prefetch failed:"),
         "string error",
       );
 
@@ -961,10 +958,7 @@ describe("EnrichmentModule streaming API", () => {
 
       await new Promise((r) => setTimeout(r, 100));
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[EnrichmentModule] Chunk churn failed:"),
-        expect.any(Error),
-      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("[ChunkChurn] failed:"), expect.any(Error));
 
       consoleSpy.mockRestore();
     });
@@ -1134,7 +1128,7 @@ describe("EnrichmentModule streaming API", () => {
 
       // Error should have been logged
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[EnrichmentModule] backfill batchSetPayload failed:"),
+        expect.stringContaining("[MetadataApplier] backfill batchSetPayload failed:"),
         expect.any(Error),
       );
 
