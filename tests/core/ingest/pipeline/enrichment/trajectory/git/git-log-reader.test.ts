@@ -19,6 +19,10 @@ import {
   GitLogReader,
   overlaps,
 } from "../../../../../../../src/core/ingest/pipeline/enrichment/trajectory/git/git-log-reader.js";
+import {
+  computeChunkOverlay,
+  type ChunkAccumulator,
+} from "../../../../../../../src/core/ingest/pipeline/enrichment/trajectory/git/metrics.js";
 
 // Enable cross-module spy interception for adapter functions
 vi.mock("../../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
@@ -206,7 +210,7 @@ describe("computeFileMetadata", () => {
     expect(meta.bugFixRate).toBe(50);
   });
 
-  it("should compute bugFixRate 0 when no fix commits", () => {
+  it("should compute Laplace-smoothed bugFixRate when no fix commits (0/3 → 13%)", () => {
     const commits = [
       makeCommit({ body: "feat: add feature" }),
       makeCommit({ body: "chore: update deps" }),
@@ -215,7 +219,8 @@ describe("computeFileMetadata", () => {
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileMetadata(data, 100);
 
-    expect(meta.bugFixRate).toBe(0);
+    // Laplace: (0 + 0.5) / (3 + 1) * 100 = 12.5 → rounds to 13
+    expect(meta.bugFixRate).toBe(13);
   });
 
   it("should compute bugFixRate 0 for empty commits", () => {
@@ -226,7 +231,7 @@ describe("computeFileMetadata", () => {
     expect(meta.contributorCount).toBe(0);
   });
 
-  it("should detect various bug fix patterns", () => {
+  it("should detect various bug fix patterns (all-fix converges toward 100%)", () => {
     const commits = [
       makeCommit({ body: "resolved: issue with auth" }),
       makeCommit({ body: "defect: handle null pointer" }),
@@ -236,7 +241,8 @@ describe("computeFileMetadata", () => {
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileMetadata(data, 100);
 
-    expect(meta.bugFixRate).toBe(100);
+    // Laplace: (4 + 0.5) / (4 + 1) * 100 = 90
+    expect(meta.bugFixRate).toBe(90);
   });
 
   it("should NOT count merge commits as bug fixes", () => {
@@ -250,7 +256,8 @@ describe("computeFileMetadata", () => {
     const meta = computeFileMetadata(data, 100);
 
     // Only the actual fix commit counts, not the 2 merge commits
-    expect(meta.bugFixRate).toBe(25); // 1 fix / 4 commits = 25%
+    // Laplace: (1 + 0.5) / (4 + 1) * 100 = 30
+    expect(meta.bugFixRate).toBe(30);
   });
 
   it("should compute contributorCount = 3 (Alice, Bob, Charlie)", () => {
@@ -325,6 +332,32 @@ describe("computeFileMetadata", () => {
 
     // exp(-0.1 * 1) ≈ 0.905 vs exp(-0.1 * 100) ≈ 0.0000454
     expect(recentMeta.recencyWeightedFreq).toBeGreaterThan(oldMeta.recencyWeightedFreq);
+  });
+
+  it("should apply Laplace smoothing to bugFixRate (1 fix / 1 commit → 75%)", () => {
+    const commits = [makeCommit({ body: "fix: resolve crash" })];
+    const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
+    const meta = computeFileMetadata(data, 100);
+    // Laplace: (1 + 0.5) / (1 + 1) * 100 = 75
+    expect(meta.bugFixRate).toBe(75);
+  });
+
+  it("should apply Laplace smoothing (0 fixes / 1 commit → 25%)", () => {
+    const commits = [makeCommit({ body: "feat: add feature" })];
+    const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
+    const meta = computeFileMetadata(data, 100);
+    // Laplace: (0 + 0.5) / (1 + 1) * 100 = 25
+    expect(meta.bugFixRate).toBe(25);
+  });
+
+  it("should converge to observed rate at large n", () => {
+    // 50 fixes / 100 commits → (50.5/101)*100 = 50
+    const fixes = Array.from({ length: 50 }, () => makeCommit({ body: "fix: bug" }));
+    const feats = Array.from({ length: 50 }, () => makeCommit({ body: "feat: feature" }));
+    const commits = [...fixes, ...feats];
+    const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
+    const meta = computeFileMetadata(data, 100);
+    expect(meta.bugFixRate).toBe(50);
   });
 
   it("should set timestamps from first and last commits", () => {
@@ -821,14 +854,16 @@ describe("isBugFixCommit (via computeFileMetadata)", () => {
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileMetadata(data, 100);
-    expect(meta.bugFixRate).toBe(0);
+    // Laplace: (0 + 0.5) / (2 + 1) * 100 = 16.67 → rounds to 17
+    expect(meta.bugFixRate).toBe(17);
   });
 
   it("should skip 'Merge pull request' even if body mentions fix", () => {
     const commits = [makeCommit({ body: "Merge pull request #42 from user/fix-auth\n\nfixes auth bug" })];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileMetadata(data, 100);
-    expect(meta.bugFixRate).toBe(0);
+    // Laplace: (0 + 0.5) / (1 + 1) * 100 = 25
+    expect(meta.bugFixRate).toBe(25);
   });
 
   it("should detect fix even when body has fix keyword only on 2nd line", () => {
@@ -838,7 +873,8 @@ describe("isBugFixCommit (via computeFileMetadata)", () => {
     const meta = computeFileMetadata(data, 100);
     // BUG_FIX_PATTERN tests full body, not just subject line; but MERGE_SUBJECT only checks first line
     // "fix" appears on the second line → should detect it
-    expect(meta.bugFixRate).toBe(100);
+    // Laplace: (1 + 0.5) / (1 + 1) * 100 = 75
+    expect(meta.bugFixRate).toBe(75);
   });
 });
 
@@ -1837,7 +1873,7 @@ describe("processCommitEntry — bug fix accumulation", () => {
     for (const [, o] of overlay!) {
       if (o.bugFixRate > 0) anyBugFix = true;
       if (o.commitCount > 0) {
-        expect(o.bugFixRate).toBe(100); // 1 fix commit / 1 total = 100%
+        expect(o.bugFixRate).toBe(75); // Laplace: (1 + 0.5) / (1 + 1) * 100 = 75%
         expect(o.ageDays).toBeGreaterThanOrEqual(0);
         expect(o.contributorCount).toBe(1);
       }
@@ -1999,5 +2035,105 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput(stdout);
     expect(result.has("file.ts")).toBe(true);
     expect(result.get("file.ts")!.commits).toHaveLength(1);
+  });
+});
+
+// ─── size-dampened relativeChurn ─────────────────────────────────────────────
+
+describe("size-dampened relativeChurn", () => {
+  it("should suppress relativeChurn for small chunks (5 lines)", () => {
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a"]),
+      authors: new Set(["A"]),
+      bugFixCount: 0,
+      lastModifiedAt: Date.now() / 1000,
+      linesAdded: 3,
+      linesDeleted: 1,
+      commitTimestamps: [],
+    };
+    const overlay = computeChunkOverlay(acc, 10, undefined, 5);
+    // Raw: (3+1)/5 = 0.8. Damping: 0.154. Result: 0.12
+    expect(overlay.relativeChurn).toBeLessThan(0.2);
+  });
+
+  it("should barely suppress relativeChurn for large chunks (200 lines)", () => {
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a"]),
+      authors: new Set(["A"]),
+      bugFixCount: 0,
+      lastModifiedAt: Date.now() / 1000,
+      linesAdded: 20,
+      linesDeleted: 0,
+      commitTimestamps: [],
+    };
+    const overlay = computeChunkOverlay(acc, 10, undefined, 200);
+    // Raw: 20/200 = 0.1. Damping: 0.999. Result: ~0.1
+    expect(overlay.relativeChurn).toBeCloseTo(0.1, 1);
+  });
+
+  it("should produce zero relativeChurn when no churn", () => {
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a"]),
+      authors: new Set(["A"]),
+      bugFixCount: 0,
+      lastModifiedAt: Date.now() / 1000,
+      linesAdded: 0,
+      linesDeleted: 0,
+      commitTimestamps: [],
+    };
+    const overlay = computeChunkOverlay(acc, 10, undefined, 50);
+    expect(overlay.relativeChurn).toBe(0);
+  });
+});
+
+// ─── chunk-level temporal signals ───────────────────────────────────────────────
+
+describe("chunk-level temporal signals", () => {
+  it("should compute recencyWeightedFreq from commitTimestamps", () => {
+    const now = Date.now() / 1000;
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a", "b"]),
+      authors: new Set(["A"]),
+      bugFixCount: 0,
+      lastModifiedAt: now,
+      linesAdded: 5,
+      linesDeleted: 2,
+      commitTimestamps: [now - 86400, now - 86400 * 7],
+    };
+    const overlay = computeChunkOverlay(acc, 10, undefined, 50);
+    // exp(-0.1 * 1) + exp(-0.1 * 7) ≈ 0.905 + 0.497 = 1.40
+    expect(overlay.recencyWeightedFreq).toBeGreaterThan(1);
+    expect(overlay.recencyWeightedFreq).toBeLessThan(2);
+  });
+
+  it("should compute changeDensity from commitTimestamps", () => {
+    const now = Date.now() / 1000;
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a", "b", "c"]),
+      authors: new Set(["A"]),
+      bugFixCount: 0,
+      lastModifiedAt: now,
+      linesAdded: 10,
+      linesDeleted: 5,
+      commitTimestamps: [now - 86400 * 60, now - 86400 * 30, now],
+    };
+    const overlay = computeChunkOverlay(acc, 10, undefined, 50);
+    // span = 60 days = 2 months. density = 3 / 2 = 1.5
+    expect(overlay.changeDensity).toBeCloseTo(1.5, 0);
+  });
+
+  it("should return 0 for temporal signals when no timestamps", () => {
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a"]),
+      authors: new Set(["A"]),
+      bugFixCount: 0,
+      lastModifiedAt: Date.now() / 1000,
+      linesAdded: 1,
+      linesDeleted: 0,
+      commitTimestamps: [],
+    };
+    const overlay = computeChunkOverlay(acc, 10, undefined, 50);
+    expect(overlay.recencyWeightedFreq).toBe(0);
+    expect(overlay.changeDensity).toBe(0);
   });
 });

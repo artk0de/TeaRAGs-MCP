@@ -91,6 +91,7 @@ export async function buildChunkChurnMapUncached(
         lastModifiedAt: 0,
         linesAdded: 0,
         linesDeleted: 0,
+        commitTimestamps: [],
       });
     }
   }
@@ -234,6 +235,7 @@ export async function buildChunkChurnMapUncached(
             const acc = accumulators.get(chunkId);
             if (!acc) continue;
             acc.commitShas.add(commit.sha);
+            acc.commitTimestamps.push(commit.timestamp);
             acc.authors.add(commit.author);
             if (isBugFix) acc.bugFixCount++;
             if (commit.timestamp > acc.lastModifiedAt) {
