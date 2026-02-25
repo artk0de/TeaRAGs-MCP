@@ -3,6 +3,11 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>0.5.3 (2026-02-25)</small>
+
+* docs: add chunk metrics and interaction model research documents ([8c71159](https://github.com/artk0de/TeaRAGs-MCP/commit/8c71159))
+* ci: use RELEASE_TOKEN PAT for semantic-release to trigger CI on release commits ([7707697](https://github.com/artk0de/TeaRAGs-MCP/commit/7707697))
+
 ## <small>0.5.2 (2026-02-24)</small>
 
 * fix(ci): relaunch ci ([2c821b6](https://github.com/artk0de/TeaRAGs-MCP/commit/2c821b6))
