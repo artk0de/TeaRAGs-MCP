@@ -81,4 +81,8 @@ export interface ChunkChurnOverlay {
   ageDays: number;
   /** (linesAdded + linesDeleted) / chunkLineCount — relative churn within chunk */
   relativeChurn: number;
+  /** Σ exp(-0.1 × daysAgo) — recency-weighted commit frequency at chunk level */
+  recencyWeightedFreq: number;
+  /** commits / months — average change density at chunk level */
+  changeDensity: number;
 }

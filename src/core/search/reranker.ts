@@ -88,6 +88,8 @@ export interface GitChunkFields {
   lastModifiedAt?: number;
   ageDays?: number;
   relativeChurn?: number;
+  recencyWeightedFreq?: number;
+  changeDensity?: number;
 }
 
 /**
@@ -144,8 +146,32 @@ interface NormalizationBounds {
   maxChunkChurnRatio: number;
 }
 
-/** Minimum commits for full confidence in statistical git signals */
-const MIN_CONFIDENT_COMMITS = 5;
+/**
+ * Per-signal confidence thresholds.
+ * Signals derived from binary proportions (bugFixRate, churnVolatility)
+ * need more samples to be statistically meaningful than simple counts.
+ */
+const CONFIDENCE_THRESHOLDS: Partial<Record<keyof ScoringWeights, number>> = {
+  bugFix: 8,
+  volatility: 8,
+  ownership: 5,
+  knowledgeSilo: 5,
+  density: 5,
+  relativeChurnNorm: 5,
+};
+const DEFAULT_CONFIDENCE_THRESHOLD = 5;
+const CONFIDENCE_POWER = 2;
+
+/**
+ * Quadratic confidence dampening for a given signal.
+ * Returns 1 when effectiveCommitCount >= threshold, otherwise (n/k)^2.
+ * Exported for use by L3 blending (Task 5).
+ */
+export function signalConfidence(effectiveCommitCount: number, signal: keyof ScoringWeights): number {
+  const k = CONFIDENCE_THRESHOLDS[signal] ?? DEFAULT_CONFIDENCE_THRESHOLD;
+  if (effectiveCommitCount >= k) return 1;
+  return Math.pow(effectiveCommitCount / k, CONFIDENCE_POWER);
+}
 
 const DEFAULT_BOUNDS: NormalizationBounds = {
   maxAgeDays: 365, // 1 year
@@ -162,18 +188,72 @@ const DEFAULT_BOUNDS: NormalizationBounds = {
 };
 
 /**
+ * Calculate the 95th percentile of a numeric array.
+ * Returns 1 for empty arrays to avoid division by zero downstream.
+ */
+function p95(arr: number[]): number {
+  if (arr.length === 0) return 1;
+  const sorted = [...arr].sort((a, b) => a - b);
+  return sorted[Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1)] || 1;
+}
+
+/**
+ * Compute normalization bounds from the current result batch.
+ * Each bound is max(p95(values), floor) so we never shrink below DEFAULT_BOUNDS,
+ * but expand when the data distribution exceeds static limits (e.g., monorepos).
+ */
+function computeAdaptiveBounds(results: RerankableResult[], floor: NormalizationBounds): NormalizationBounds {
+  const v: Record<string, number[]> = {};
+  const push = (key: string, val: number | undefined) => {
+    if (val !== undefined && val > 0) (v[key] ??= []).push(val);
+  };
+
+  for (const r of results) {
+    const file = resolveFileMeta(r.payload?.git);
+    const chunk = resolveChunkMeta(r.payload?.git);
+    push("ageDays", file?.ageDays);
+    push("commitCount", file?.commitCount);
+    push("chunkSize", getChunkSize(r) || undefined);
+    push("imports", r.payload?.imports?.length);
+    push("bugFixRate", file?.bugFixRate);
+    push("volatility", file?.churnVolatility);
+    push("changeDensity", file?.changeDensity);
+    push("chunkCommitCount", chunk?.commitCount);
+    push("relativeChurn", file?.relativeChurn);
+    push("burstActivity", file?.recencyWeightedFreq);
+    push("chunkChurnRatio", chunk?.churnRatio);
+  }
+
+  return {
+    maxAgeDays: Math.max(p95(v.ageDays ?? []), floor.maxAgeDays),
+    maxCommitCount: Math.max(p95(v.commitCount ?? []), floor.maxCommitCount),
+    maxChunkSize: Math.max(p95(v.chunkSize ?? []), floor.maxChunkSize),
+    maxImports: Math.max(p95(v.imports ?? []), floor.maxImports),
+    maxBugFixRate: Math.max(p95(v.bugFixRate ?? []), floor.maxBugFixRate),
+    maxVolatility: Math.max(p95(v.volatility ?? []), floor.maxVolatility),
+    maxChangeDensity: Math.max(p95(v.changeDensity ?? []), floor.maxChangeDensity),
+    maxChunkCommitCount: Math.max(p95(v.chunkCommitCount ?? []), floor.maxChunkCommitCount),
+    maxRelativeChurn: Math.max(p95(v.relativeChurn ?? []), floor.maxRelativeChurn),
+    maxBurstActivity: Math.max(p95(v.burstActivity ?? []), floor.maxBurstActivity),
+    maxChunkChurnRatio: Math.max(p95(v.chunkChurnRatio ?? []), floor.maxChunkChurnRatio),
+  };
+}
+
+/**
  * Preset weight configurations for semantic_search
  */
 const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights> = {
   relevance: { similarity: 1.0 },
 
   techDebt: {
-    similarity: 0.25,
-    age: 0.2,
-    churn: 0.2,
+    similarity: 0.2,
+    age: 0.15,
+    churn: 0.15,
     bugFix: 0.15,
-    volatility: 0.2,
-    blockPenalty: -0.15,
+    volatility: 0.1,
+    knowledgeSilo: 0.1,
+    density: 0.1,
+    blockPenalty: -0.05,
   },
 
   hotspots: {
@@ -350,18 +430,28 @@ function getPathRiskScore(result: RerankableResult): number {
   return riskyPatterns.some((p) => path.includes(p)) ? 1 : 0;
 }
 
-/**
- * Detect block chunks that only have file-level churn data.
- * Returns 1.0 for block chunks without chunk-level git data (penalty target),
- * 0.0 otherwise (no penalty).
- */
-function getBlockPenaltySignal(result: RerankableResult): number {
-  const chunkType = result.payload?.chunkType;
-  if (chunkType !== "block") return 0;
-  // Block with chunk-level data is fine — the data is specific to this chunk
-  const chunk = resolveChunkMeta(result.payload?.git);
-  if (chunk?.commitCount !== undefined) return 0;
-  return 1.0;
+/** Minimum chunk commits for full maturity in alpha computation */
+const CHUNK_MATURITY_THRESHOLD = 3;
+
+/** Compute alpha: confidence weight for chunk vs file data */
+function computeAlpha(chunkCommitCount: number | undefined, fileCommitCount: number): number {
+  if (chunkCommitCount === undefined || chunkCommitCount === 0) return 0;
+  if (fileCommitCount === 0) return 0;
+  const coverageRatio = chunkCommitCount / fileCommitCount;
+  const maturity = Math.min(1, chunkCommitCount / CHUNK_MATURITY_THRESHOLD);
+  return Math.min(1, coverageRatio * maturity);
+}
+
+/** Blend chunk and file signal values using alpha */
+function effectiveSignal(chunkValue: number | undefined, fileValue: number, alpha: number): number {
+  if (chunkValue === undefined) return fileValue;
+  return alpha * chunkValue + (1 - alpha) * fileValue;
+}
+
+/** Continuous data-quality discount replacing binary blockPenalty */
+function getDataQualityDiscount(result: RerankableResult, alpha: number): number {
+  if (result.payload?.chunkType !== "block") return 0;
+  return 1.0 - alpha;
 }
 
 /**
@@ -372,20 +462,22 @@ function calculateSignals(result: RerankableResult, bounds: NormalizationBounds)
   const file = resolveFileMeta(git);
   const chunk = resolveChunkMeta(git);
 
-  const ageDays = file?.ageDays ?? 0;
-  const commitCount = file?.commitCount ?? 0;
+  const fileCommitCount = file?.commitCount ?? 0;
+  const fileAgeDays = file?.ageDays ?? 0;
   const chunkSize = getChunkSize(result);
   const imports = result.payload?.imports?.length ?? 0;
 
-  // Prefer chunk-level data when available
-  const effectiveCommitCount = chunk?.commitCount ?? commitCount;
-  const effectiveAgeDays = chunk?.ageDays ?? ageDays;
-  const effectiveBugFixRate = chunk?.bugFixRate ?? file?.bugFixRate ?? 0;
-  const effectiveContributorCount = chunk?.contributorCount ?? file?.contributorCount;
+  // L3 alpha-blending: confidence weight for chunk vs file data
+  const alpha = computeAlpha(chunk?.commitCount, fileCommitCount);
 
-  // Dampen statistical signals that are unreliable with small sample sizes.
+  const effectiveCommitCount = effectiveSignal(chunk?.commitCount, fileCommitCount, alpha);
+  const effectiveAgeDays = effectiveSignal(chunk?.ageDays, fileAgeDays, alpha);
+  const effectiveBugFixRate = effectiveSignal(chunk?.bugFixRate, file?.bugFixRate ?? 0, alpha);
+  const effectiveContributorCount = effectiveSignal(chunk?.contributorCount, file?.contributorCount ?? 0, alpha);
+  const effectiveRelativeChurn = effectiveSignal(chunk?.relativeChurn, file?.relativeChurn ?? 0, alpha);
+
+  // Per-signal quadratic confidence dampening for statistical signals.
   // Factual signals (recency, age, churn counts) are not affected.
-  const confidence = Math.min(1, effectiveCommitCount / MIN_CONFIDENT_COMMITS);
 
   return {
     similarity: result.score,
@@ -393,20 +485,33 @@ function calculateSignals(result: RerankableResult, bounds: NormalizationBounds)
     stability: 1 - normalize(effectiveCommitCount, bounds.maxCommitCount),
     churn: normalize(effectiveCommitCount, bounds.maxCommitCount),
     age: normalize(effectiveAgeDays, bounds.maxAgeDays),
-    ownership: getOwnershipScore(result) * confidence,
+    ownership: getOwnershipScore(result) * signalConfidence(effectiveCommitCount, "ownership"),
     chunkSize: normalize(chunkSize, bounds.maxChunkSize),
     documentation: result.payload?.isDocumentation ? 1 : 0,
     imports: normalize(imports, bounds.maxImports),
     pathRisk: getPathRiskScore(result),
-    bugFix: normalize(effectiveBugFixRate, bounds.maxBugFixRate) * confidence,
-    volatility: normalize(file?.churnVolatility ?? 0, bounds.maxVolatility) * confidence,
-    density: normalize(file?.changeDensity ?? 0, bounds.maxChangeDensity) * confidence,
-    chunkChurn: normalize(chunk?.commitCount ?? 0, bounds.maxChunkCommitCount),
-    relativeChurnNorm: normalize(file?.relativeChurn ?? 0, bounds.maxRelativeChurn) * confidence,
-    burstActivity: normalize(file?.recencyWeightedFreq ?? 0, bounds.maxBurstActivity),
-    knowledgeSilo: getKnowledgeSiloScore(result, effectiveContributorCount) * confidence,
-    chunkRelativeChurn: normalize(chunk?.churnRatio ?? 0, bounds.maxChunkChurnRatio),
-    blockPenalty: getBlockPenaltySignal(result),
+    bugFix: normalize(effectiveBugFixRate, bounds.maxBugFixRate) * signalConfidence(effectiveCommitCount, "bugFix"),
+    volatility:
+      normalize(file?.churnVolatility ?? 0, bounds.maxVolatility) *
+      signalConfidence(effectiveCommitCount, "volatility"),
+    density:
+      normalize(effectiveSignal(chunk?.changeDensity, file?.changeDensity ?? 0, alpha), bounds.maxChangeDensity) *
+      signalConfidence(effectiveCommitCount, "density"),
+    // Chunk-native signals dampened by alpha instead of raw
+    chunkChurn: normalize(chunk?.commitCount ?? 0, bounds.maxChunkCommitCount) * alpha,
+    relativeChurnNorm:
+      normalize(effectiveRelativeChurn, bounds.maxRelativeChurn) *
+      signalConfidence(effectiveCommitCount, "relativeChurnNorm"),
+    burstActivity: normalize(
+      effectiveSignal(chunk?.recencyWeightedFreq, file?.recencyWeightedFreq ?? 0, alpha),
+      bounds.maxBurstActivity,
+    ),
+    knowledgeSilo:
+      getKnowledgeSiloScore(result, effectiveContributorCount) *
+      signalConfidence(effectiveCommitCount, "knowledgeSilo"),
+    // Chunk-native signal dampened by alpha
+    chunkRelativeChurn: normalize(chunk?.churnRatio ?? 0, bounds.maxChunkChurnRatio) * alpha,
+    blockPenalty: getDataQualityDiscount(result, alpha),
   };
 }
 
@@ -444,7 +549,7 @@ export function rerankResults<T extends RerankableResult>(
   results: T[],
   mode: RerankMode<string>,
   presets: Record<string, ScoringWeights>,
-  bounds: NormalizationBounds = DEFAULT_BOUNDS,
+  bounds?: NormalizationBounds,
 ): T[] {
   // Determine weights
   let weights: ScoringWeights;
@@ -463,9 +568,14 @@ export function rerankResults<T extends RerankableResult>(
     return results;
   }
 
+  // Use caller-provided bounds, or compute adaptive bounds from the result batch.
+  // Adaptive bounds expand beyond DEFAULT_BOUNDS when the data distribution requires it
+  // (e.g., monorepo with commitCount=300 vs DEFAULT max of 50), but never shrink below.
+  const effectiveBounds = bounds ?? computeAdaptiveBounds(results, DEFAULT_BOUNDS);
+
   // Calculate new scores and sort
   const scored = results.map((result) => {
-    const signals = calculateSignals(result, bounds);
+    const signals = calculateSignals(result, effectiveBounds);
     const newScore = calculateScore(signals, weights);
     return { ...result, score: newScore };
   });

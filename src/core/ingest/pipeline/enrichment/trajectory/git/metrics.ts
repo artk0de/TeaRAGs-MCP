@@ -20,7 +20,11 @@ export interface ChunkAccumulator {
   lastModifiedAt: number;
   linesAdded: number;
   linesDeleted: number;
+  commitTimestamps: number[];
 }
+
+/** Jeffreys prior for Laplace smoothing of bugFixRate (alpha = 0.5). */
+const SMOOTHING_ALPHA = 0.5;
 
 const BUG_FIX_PATTERN = /\b(fix|bug|hotfix|patch|resolve[sd]?|defect)\b/i;
 const MERGE_SUBJECT = /^Merge\b/i;
@@ -135,8 +139,9 @@ export function computeFileMetadata(churnData: FileChurnData, currentLineCount: 
     churnVolatility = Math.sqrt(variance);
   }
 
-  // Bug fix rate: percentage of commits with fix/bug/hotfix/patch keywords
-  const bugFixRate = Math.round((commits.filter((c) => isBugFixCommit(c.body)).length / commits.length) * 100);
+  // Bug fix rate: Laplace-smoothed (Jeffreys prior) percentage of fix commits
+  const bugFixCount = commits.filter((c) => isBugFixCommit(c.body)).length;
+  const bugFixRate = Math.round(((bugFixCount + SMOOTHING_ALPHA) / (commits.length + 2 * SMOOTHING_ALPHA)) * 100);
   const contributorCount = authorCounts.size;
 
   return {
@@ -176,18 +181,42 @@ export function computeChunkOverlay(
 ): ChunkChurnOverlay {
   const nowSec = Date.now() / 1000;
   const commitCount = acc.commitShas.size;
-  const totalCommitsForChunk = commitCount || 1;
   const totalChurn = acc.linesAdded + acc.linesDeleted;
   const lineCount = Math.max(chunkLineCount ?? 1, 1);
+
+  // Chunk-level recencyWeightedFreq: Σ exp(-0.1 × daysAgo)
+  const recencyWeightedFreq =
+    acc.commitTimestamps.length > 0
+      ? Math.round(
+          acc.commitTimestamps.reduce((sum, ts) => {
+            const daysAgo = (nowSec - ts) / 86400;
+            return sum + Math.exp(-0.1 * daysAgo);
+          }, 0) * 100,
+        ) / 100
+      : 0;
+
+  // Chunk-level changeDensity: commits / months
+  let changeDensity = 0;
+  if (acc.commitTimestamps.length > 0) {
+    const minTs = Math.min(...acc.commitTimestamps);
+    const maxTs = Math.max(...acc.commitTimestamps);
+    const spanMonths = Math.max((maxTs - minTs) / (86400 * 30), 1);
+    changeDensity = Math.round((acc.commitTimestamps.length / spanMonths) * 100) / 100;
+  }
 
   return {
     commitCount,
     churnRatio: Math.round((commitCount / Math.max(fileCommitCount, 1)) * 100) / 100,
     contributorCount:
       fileContributorCount !== undefined ? Math.min(acc.authors.size, fileContributorCount) : acc.authors.size,
-    bugFixRate: commitCount > 0 ? Math.round((acc.bugFixCount / totalCommitsForChunk) * 100) : 0,
+    bugFixRate:
+      commitCount > 0
+        ? Math.round(((acc.bugFixCount + SMOOTHING_ALPHA) / (commitCount + 2 * SMOOTHING_ALPHA)) * 100)
+        : 0,
     lastModifiedAt: acc.lastModifiedAt,
     ageDays: acc.lastModifiedAt > 0 ? Math.max(0, Math.floor((nowSec - acc.lastModifiedAt) / 86400)) : 0,
-    relativeChurn: Math.round((totalChurn / lineCount) * 100) / 100,
+    relativeChurn: Math.round((totalChurn / lineCount) * (1 - Math.exp(-lineCount / 30)) * 100) / 100,
+    recencyWeightedFreq,
+    changeDensity,
   };
 }
