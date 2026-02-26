@@ -1,14 +1,14 @@
 /**
- * Chunk-level overlay assembler.
+ * Chunk-level signal assembler.
  *
- * Replaces computeChunkOverlay() monolith with assembler pattern.
+ * Replaces computeChunkSignals() monolith with assembler pattern.
  * Computes ChunkChurnOverlay from a ChunkAccumulator.
  */
 
 import type { ChunkChurnOverlay } from "../../types.js";
 import { SMOOTHING_ALPHA, type ChunkAccumulator } from "../metrics.js";
 
-export function assembleChunkOverlay(
+export function assembleChunkSignals(
   acc: ChunkAccumulator,
   fileCommitCount: number,
   fileContributorCount?: number,

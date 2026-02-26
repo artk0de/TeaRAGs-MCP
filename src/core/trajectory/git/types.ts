@@ -7,14 +7,14 @@
  * - Research-backed churn metrics (Nagappan & Ball 2005)
  */
 
-import type { ChunkMetadataOverlay, FileMetadataOverlay } from "../types.js";
+import type { ChunkSignalOverlay, FileSignalOverlay } from "../types.js";
 
 /**
- * File-level git metadata (stored in vector DB for all chunks of a file)
+ * File-level git signals (stored in vector DB for all chunks of a file)
  *
- * All chunks of a file share the same GitFileMetadata.
+ * All chunks of a file share the same GitFileSignals.
  */
-export interface GitFileMetadata extends FileMetadataOverlay {
+export interface GitFileSignals extends FileSignalOverlay {
   // Authorship (file-level):
   /** Author with most commits to this file */
   dominantAuthor: string;
@@ -66,9 +66,9 @@ export interface GitFileMetadata extends FileMetadataOverlay {
  * Chunk-level churn overlay — computed by diffing commit trees and
  * mapping hunks to chunk line ranges.
  *
- * Applied on top of file-level GitFileMetadata to provide per-chunk granularity.
+ * Applied on top of file-level GitFileSignals to provide per-chunk granularity.
  */
-export interface ChunkChurnOverlay extends ChunkMetadataOverlay {
+export interface ChunkChurnOverlay extends ChunkSignalOverlay {
   /** Commits that touched lines of this specific chunk */
   commitCount: number;
   /** commitCount / file.commitCount (0-1) */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createEnrichmentProviders } from "../../../../../src/core/ingest/pipeline/enrichment/registry.js";
+import { createEnrichmentProviders } from "../../../../../src/core/ingest/pipeline/enrichment/trajectory/registry.js";
 import type { CodeConfig } from "../../../../../src/core/types.js";
 
 describe("createEnrichmentProviders", () => {

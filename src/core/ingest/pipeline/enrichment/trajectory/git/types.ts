@@ -10,9 +10,9 @@
 /**
  * File-level git metadata (stored in vector DB for all chunks of a file)
  *
- * All chunks of a file share the same GitFileMetadata.
+ * All chunks of a file share the same GitFileSignals.
  */
-export interface GitFileMetadata {
+export interface GitFileSignals {
   // Authorship (file-level):
   /** Author with most commits to this file */
   dominantAuthor: string;
@@ -64,7 +64,7 @@ export interface GitFileMetadata {
  * Chunk-level churn overlay — computed by diffing commit trees and
  * mapping hunks to chunk line ranges.
  *
- * Applied on top of file-level GitFileMetadata to provide per-chunk granularity.
+ * Applied on top of file-level GitFileSignals to provide per-chunk granularity.
  */
 export interface ChunkChurnOverlay {
   /** Commits that touched lines of this specific chunk */

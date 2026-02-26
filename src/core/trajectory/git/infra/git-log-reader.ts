@@ -11,12 +11,12 @@ import type { ChunkLookupEntry } from "../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import { GitEnrichmentCache } from "./cache.js";
 import { buildChunkChurnMap as buildChunkChurnMapImpl } from "./chunk-reader.js";
-import { buildFileMetadataForPaths, buildFileMetadataMap as buildFileMetadataMapImpl } from "./file-reader.js";
-import { computeChunkOverlay, computeFileMetadata, overlaps, type ChunkAccumulator } from "./metrics.js";
+import { buildFileSignalMap as buildFileSignalMapImpl, buildFileSignalsForPaths } from "./file-reader.js";
+import { computeChunkSignals, computeFileSignals, overlaps, type ChunkAccumulator } from "./metrics.js";
 import { extractTaskIds } from "./utils.js";
 
 // Re-exports from canonical locations (backward compat for test consumers)
-export { type ChunkAccumulator, computeChunkOverlay, computeFileMetadata, extractTaskIds, overlaps };
+export { type ChunkAccumulator, computeChunkSignals, computeFileSignals, extractTaskIds, overlaps };
 
 export class GitLogReader {
   // isomorphic-git pack file cache — used only for individual object reads
@@ -30,8 +30,8 @@ export class GitLogReader {
    * Build per-file FileChurnData from git history.
    * Delegates to file-reader (CLI only).
    */
-  async buildFileMetadataMap(repoRoot: string, maxAgeMonths?: number): Promise<Map<string, FileChurnData>> {
-    return buildFileMetadataMapImpl(repoRoot, this.enrichmentCache, maxAgeMonths);
+  async buildFileSignalMap(repoRoot: string, maxAgeMonths?: number): Promise<Map<string, FileChurnData>> {
+    return buildFileSignalMapImpl(repoRoot, this.enrichmentCache, maxAgeMonths);
   }
 
   /** @deprecated Use getHead from adapters/git/client.js */
@@ -43,12 +43,12 @@ export class GitLogReader {
    * Fetch file-level metadata for specific files (no --since filter).
    * Delegates to file-reader.
    */
-  async buildFileMetadataForPaths(
+  async buildFileSignalsForPaths(
     repoRoot: string,
     paths: string[],
     timeoutMs = 30000,
   ): Promise<Map<string, FileChurnData>> {
-    return buildFileMetadataForPaths(repoRoot, paths, timeoutMs);
+    return buildFileSignalsForPaths(repoRoot, paths, timeoutMs);
   }
 
   /**

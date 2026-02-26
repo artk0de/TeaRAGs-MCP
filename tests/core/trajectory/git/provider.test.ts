@@ -3,10 +3,7 @@ import * as nodeFs from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildChunkChurnMap } from "../../../../src/core/trajectory/git/infra/chunk-reader.js";
-import {
-  buildFileMetadataForPaths,
-  buildFileMetadataMap,
-} from "../../../../src/core/trajectory/git/infra/file-reader.js";
+import { buildFileSignalMap, buildFileSignalsForPaths } from "../../../../src/core/trajectory/git/infra/file-reader.js";
 import { GitEnrichmentProvider } from "../../../../src/core/trajectory/git/provider.js";
 
 vi.mock("node:fs", async () => {
@@ -19,8 +16,8 @@ vi.mock("../../../../src/core/adapters/git/client.js", () => ({
 }));
 
 vi.mock("../../../../src/core/trajectory/git/infra/file-reader.js", () => ({
-  buildFileMetadataMap: vi.fn().mockResolvedValue(new Map()),
-  buildFileMetadataForPaths: vi.fn().mockResolvedValue(new Map()),
+  buildFileSignalMap: vi.fn().mockResolvedValue(new Map()),
+  buildFileSignalsForPaths: vi.fn().mockResolvedValue(new Map()),
 }));
 
 vi.mock("../../../../src/core/trajectory/git/infra/chunk-reader.js", () => ({
@@ -40,46 +37,46 @@ describe("GitEnrichmentProvider", () => {
   });
 
   it("implements EnrichmentProvider interface", () => {
-    expect(typeof provider.buildFileMetadata).toBe("function");
-    expect(typeof provider.buildChunkMetadata).toBe("function");
+    expect(typeof provider.buildFileSignals).toBe("function");
+    expect(typeof provider.buildChunkSignals).toBe("function");
     expect(typeof provider.resolveRoot).toBe("function");
   });
 
-  it("has fileTransform that calls computeFileMetadata", () => {
-    expect(typeof provider.fileTransform).toBe("function");
+  it("has fileSignalTransform that calls computeFileSignals", () => {
+    expect(typeof provider.fileSignalTransform).toBe("function");
     // Call with minimal FileChurnData shape to exercise the arrow function
-    const result = provider.fileTransform({ commits: [], authors: [] } as any, 10);
+    const result = provider.fileSignalTransform({ commits: [], authors: [] } as any, 10);
     expect(result).toBeDefined();
   });
 
-  describe("buildFileMetadata", () => {
+  describe("buildFileSignals", () => {
     it("returns empty map when .git directory does not exist", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(false);
-      const result = await provider.buildFileMetadata("/no-git-repo");
+      const result = await provider.buildFileSignals("/no-git-repo");
       expect(result).toEqual(new Map());
-      expect(buildFileMetadataMap).not.toHaveBeenCalled();
+      expect(buildFileSignalMap).not.toHaveBeenCalled();
     });
 
-    it("calls buildFileMetadataMap when .git exists (no options.paths)", async () => {
+    it("calls buildFileSignalMap when .git exists (no options.paths)", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
       const fakeData = new Map([["src/a.ts", { commits: [], authors: [] }]]);
-      vi.mocked(buildFileMetadataMap).mockResolvedValue(fakeData as any);
+      vi.mocked(buildFileSignalMap).mockResolvedValue(fakeData as any);
 
-      const result = await provider.buildFileMetadata("/repo");
+      const result = await provider.buildFileSignals("/repo");
 
-      expect(buildFileMetadataMap).toHaveBeenCalledWith("/repo", expect.anything());
+      expect(buildFileSignalMap).toHaveBeenCalledWith("/repo", expect.anything());
       expect(result.size).toBe(1);
       expect(result.has("src/a.ts")).toBe(true);
     });
 
-    it("calls buildFileMetadataForPaths when options.paths is provided", async () => {
+    it("calls buildFileSignalsForPaths when options.paths is provided", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
       const fakeData = new Map([["src/b.ts", { commits: [], authors: [] }]]);
-      vi.mocked(buildFileMetadataForPaths).mockResolvedValue(fakeData as any);
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValue(fakeData as any);
 
-      const result = await provider.buildFileMetadata("/repo", { paths: ["src/b.ts"] });
+      const result = await provider.buildFileSignals("/repo", { paths: ["src/b.ts"] });
 
-      expect(buildFileMetadataForPaths).toHaveBeenCalledWith("/repo", ["src/b.ts"]);
+      expect(buildFileSignalsForPaths).toHaveBeenCalledWith("/repo", ["src/b.ts"]);
       expect(result.size).toBe(1);
       expect(result.has("src/b.ts")).toBe(true);
     });
@@ -87,13 +84,13 @@ describe("GitEnrichmentProvider", () => {
     it("stores raw data for later chunk enrichment correlation", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
       const fakeData = new Map([["src/a.ts", { commits: [{ hash: "abc" }], authors: ["dev"] }]]);
-      vi.mocked(buildFileMetadataMap).mockResolvedValue(fakeData as any);
+      vi.mocked(buildFileSignalMap).mockResolvedValue(fakeData as any);
 
-      await provider.buildFileMetadata("/repo");
-      // After buildFileMetadata, lastFileResult is cached internally
-      // — confirmed by the fact that buildChunkMetadata uses it
+      await provider.buildFileSignals("/repo");
+      // After buildFileSignals, lastFileResult is cached internally
+      // — confirmed by the fact that buildChunkSignals uses it
       const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
-      await provider.buildChunkMetadata("/repo", chunkMap as any);
+      await provider.buildChunkSignals("/repo", chunkMap as any);
 
       expect(buildChunkChurnMap).toHaveBeenCalledWith(
         "/repo",
@@ -107,14 +104,14 @@ describe("GitEnrichmentProvider", () => {
     });
   });
 
-  describe("buildChunkMetadata", () => {
+  describe("buildChunkSignals", () => {
     it("maps chunk churn result to the expected nested Map structure", async () => {
       const fakeOverlay = new Map([["c1", { commitCount: 5 }]]);
       const fakeResult = new Map([["src/a.ts", fakeOverlay]]);
       vi.mocked(buildChunkChurnMap).mockResolvedValue(fakeResult as any);
 
       const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
-      const result = await provider.buildChunkMetadata("/repo", chunkMap as any);
+      const result = await provider.buildChunkSignals("/repo", chunkMap as any);
 
       expect(result.size).toBe(1);
       expect(result.has("src/a.ts")).toBe(true);
@@ -126,7 +123,7 @@ describe("GitEnrichmentProvider", () => {
     it("returns empty map when no chunks have churn data", async () => {
       vi.mocked(buildChunkChurnMap).mockResolvedValue(new Map());
 
-      const result = await provider.buildChunkMetadata("/repo", new Map() as any);
+      const result = await provider.buildChunkSignals("/repo", new Map() as any);
       expect(result.size).toBe(0);
     });
   });

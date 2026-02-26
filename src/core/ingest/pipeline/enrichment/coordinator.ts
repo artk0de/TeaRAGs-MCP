@@ -2,9 +2,9 @@
  * EnrichmentCoordinator — generic timing orchestrator for enrichment providers.
  *
  * Coordinates three phases per provider:
- * 1. Prefetch: provider.buildFileMetadata (fire-and-forget at T=0)
- * 2. Per-batch: apply file metadata as chunks arrive
- * 3. Post-flush: provider.buildChunkMetadata overlays
+ * 1. Prefetch: provider.buildFileSignals (fire-and-forget at T=0)
+ * 2. Per-batch: apply file signals as chunks arrive
+ * 3. Post-flush: provider.buildChunkSignals overlays
  *
  * Supports multiple providers in parallel — each with independent state.
  * Provider-agnostic — works with any EnrichmentProvider implementation.
@@ -129,7 +129,7 @@ export class EnrichmentCoordinator {
       pipelineLog.enrichmentPhase("PREFETCH_START", { provider: state.provider.key, path: root });
 
       state.prefetchPromise = state.provider
-        .buildFileMetadata(root)
+        .buildFileSignals(root)
         .then((result) => {
           state.prefetchEndTime = Date.now();
           state.fileMetadata = result;
@@ -195,13 +195,13 @@ export class EnrichmentCoordinator {
 
       if (state.fileMetadata) {
         const pathBase = state.effectiveRoot || absolutePath;
-        const work = this.applier.applyFileMetadata(
+        const work = this.applier.applyFileSignals(
           collectionName,
           state.provider.key,
           state.fileMetadata,
           pathBase,
           items,
-          state.provider.fileTransform,
+          state.provider.fileSignalTransform,
         );
         state.inFlightWork.push(work);
         state.streamingApplies++;
@@ -255,9 +255,9 @@ export class EnrichmentCoordinator {
       const chunkStart = Date.now();
 
       state.provider
-        .buildChunkMetadata(root, effectiveChunkMap)
+        .buildChunkSignals(root, effectiveChunkMap)
         .then(async (chunkMetadata) => {
-          const applied = await this.applier.applyChunkMetadata(collectionName, state.provider.key, chunkMetadata);
+          const applied = await this.applier.applyChunkSignals(collectionName, state.provider.key, chunkMetadata);
           state.chunkEnrichmentDurationMs = Date.now() - chunkStart;
 
           // Write chunk enrichment status to Qdrant
@@ -433,13 +433,13 @@ export class EnrichmentCoordinator {
     for (const batch of batches) {
       if (!state.fileMetadata) continue;
       const pathBase = state.effectiveRoot || batch.absolutePath;
-      const work = this.applier.applyFileMetadata(
+      const work = this.applier.applyFileSignals(
         batch.collectionName,
         state.provider.key,
         state.fileMetadata,
         pathBase,
         batch.items,
-        state.provider.fileTransform,
+        state.provider.fileSignalTransform,
       );
       state.inFlightWork.push(work);
       state.flushApplies++;
@@ -458,7 +458,7 @@ export class EnrichmentCoordinator {
     try {
       const root = state.effectiveRoot;
       if (!root) return;
-      backfillData = await state.provider.buildFileMetadata(root, { paths: missedPaths });
+      backfillData = await state.provider.buildFileSignals(root, { paths: missedPaths });
     } catch (error) {
       pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
         provider: state.provider.key,
@@ -478,7 +478,9 @@ export class EnrichmentCoordinator {
       if (!data) continue;
 
       const maxEndLine = chunks.reduce((max, c) => Math.max(max, c.endLine), 0);
-      const finalData = state.provider.fileTransform ? state.provider.fileTransform(data, maxEndLine) : data;
+      const finalData = state.provider.fileSignalTransform
+        ? state.provider.fileSignalTransform(data, maxEndLine)
+        : data;
       const payload = { [state.provider.key]: { file: finalData } };
 
       for (const chunk of chunks) {

@@ -4,7 +4,7 @@
  * Each function computes one metric family from commit data.
  * Stateless, no I/O -- Strategy pattern for metric computation.
  *
- * Extracted from the monolithic computeFileMetadata() in metrics.ts.
+ * Extracted from the monolithic computeFileSignals() in metrics.ts.
  */
 
 import type { CommitInfo } from "../../../../adapters/git/types.js";

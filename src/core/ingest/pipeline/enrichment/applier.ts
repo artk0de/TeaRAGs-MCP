@@ -16,7 +16,7 @@ import type { ChunkItem } from "../types.js";
 
 const BATCH_SIZE = 100;
 
-export type FileTransform = (data: Record<string, unknown>, maxEndLine: number) => Record<string, unknown>;
+export type FileSignalTransform = (data: Record<string, unknown>, maxEndLine: number) => Record<string, unknown>;
 
 export class EnrichmentApplier {
   matchedFiles = 0;
@@ -27,19 +27,19 @@ export class EnrichmentApplier {
   constructor(private readonly qdrant: QdrantManager) {}
 
   /**
-   * Apply file-level metadata to a batch of chunks.
+   * Apply file-level signals to a batch of chunks.
    * Payload written as { [providerKey]: { file: data } }.
    *
    * @param transform Optional per-file transform called with (rawData, maxEndLine).
-   *   Git uses this for computeFileMetadata(churnData, maxEndLine).
+   *   Git uses this for computeFileSignals(churnData, maxEndLine).
    */
-  async applyFileMetadata(
+  async applyFileSignals(
     collectionName: string,
     providerKey: string,
     fileMetadata: Map<string, Record<string, unknown>>,
     pathBase: string,
     items: ChunkItem[],
-    transform?: FileTransform,
+    transform?: FileSignalTransform,
   ): Promise<void> {
     const applyStart = Date.now();
 
@@ -100,10 +100,10 @@ export class EnrichmentApplier {
   }
 
   /**
-   * Apply chunk-level metadata overlays.
+   * Apply chunk-level signal overlays.
    * Payload written as { [providerKey]: { chunk: overlay } }.
    */
-  async applyChunkMetadata(
+  async applyChunkSignals(
     collectionName: string,
     providerKey: string,
     chunkMetadata: Map<string, Map<string, Record<string, unknown>>>,

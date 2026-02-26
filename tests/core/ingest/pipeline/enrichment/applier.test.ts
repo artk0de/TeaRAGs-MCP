@@ -13,9 +13,9 @@ describe("EnrichmentApplier", () => {
     applier = new EnrichmentApplier(mockQdrant);
   });
 
-  describe("applyFileMetadata", () => {
+  describe("applyFileSignals", () => {
     it("writes payload under { [key]: { file: data } } structure", async () => {
-      await applier.applyFileMetadata(
+      await applier.applyFileSignals(
         "test-collection",
         "git",
         new Map([["src/index.ts", { commitCount: 5 }]]),
@@ -45,7 +45,7 @@ describe("EnrichmentApplier", () => {
         lines: maxEndLine,
       }));
 
-      await applier.applyFileMetadata(
+      await applier.applyFileSignals(
         "test-collection",
         "git",
         new Map([["src/index.ts", { raw: true }]]),
@@ -72,7 +72,7 @@ describe("EnrichmentApplier", () => {
     });
 
     it("tracks missed files for backfill", async () => {
-      await applier.applyFileMetadata(
+      await applier.applyFileSignals(
         "test-collection",
         "git",
         new Map(), // empty — no file metadata
@@ -91,7 +91,7 @@ describe("EnrichmentApplier", () => {
     });
 
     it("groups chunks by file and batches Qdrant writes", async () => {
-      await applier.applyFileMetadata("test-collection", "git", new Map([["src/a.ts", { x: 1 }]]), "/repo", [
+      await applier.applyFileSignals("test-collection", "git", new Map([["src/a.ts", { x: 1 }]]), "/repo", [
         { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
         { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 20 } } as any,
       ]);
@@ -104,11 +104,11 @@ describe("EnrichmentApplier", () => {
     });
   });
 
-  describe("applyChunkMetadata", () => {
+  describe("applyChunkSignals", () => {
     it("writes payload under { [key]: { chunk: overlay } } structure", async () => {
       const chunkMetadata = new Map([["src/index.ts", new Map([["chunk-1", { commitCount: 3, churnRatio: 0.5 }]])]]);
 
-      const applied = await applier.applyChunkMetadata("test-collection", "git", chunkMetadata);
+      const applied = await applier.applyChunkSignals("test-collection", "git", chunkMetadata);
 
       expect(applied).toBe(1);
       expect(mockQdrant.batchSetPayload).toHaveBeenCalledWith(
@@ -123,7 +123,7 @@ describe("EnrichmentApplier", () => {
     });
 
     it("returns 0 when no overlays", async () => {
-      const applied = await applier.applyChunkMetadata("test-collection", "git", new Map());
+      const applied = await applier.applyChunkSignals("test-collection", "git", new Map());
       expect(applied).toBe(0);
       expect(mockQdrant.batchSetPayload).not.toHaveBeenCalled();
     });
