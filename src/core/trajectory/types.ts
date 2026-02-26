@@ -60,6 +60,11 @@ export interface SignalDescriptor {
   confidenceField?: string;
 }
 
+// --- Filter level ---
+
+/** Payload level for level-aware filters ("file" or "chunk"). */
+export type FilterLevel = "file" | "chunk";
+
 // --- Filter descriptor ---
 
 export interface FilterDescriptor {
@@ -70,7 +75,7 @@ export interface FilterDescriptor {
   /** Parameter type for schema generation */
   type: "string" | "number" | "boolean" | "string[]";
   /** Convert user param value to Qdrant filter condition(s) */
-  toCondition: (value: unknown) => QdrantFilterCondition[];
+  toCondition: (value: unknown, level?: FilterLevel) => QdrantFilterCondition[];
 }
 
 // --- Payload field doc ---

@@ -165,6 +165,7 @@ export default tseslint.config(
       "*.d.ts",
       "eslint.config.js", // Root JS config — not in tsconfig
       "commitlint.config.js", // Root JS config — not in tsconfig
+      ".claude/worktrees/", // Agent worktrees — isolated copies
       "website/", // Docusaurus — own tsconfig, own build pipeline
     ],
   },
