@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   getAvailablePresets,
+  Reranker,
   rerankSearchCodeResults,
   rerankSemanticSearchResults,
   signalConfidence,
   type RerankableResult,
   type ScoringWeights,
 } from "../../../src/core/search/reranker.js";
+import { structuralSignals } from "../../../src/core/search/structural-signals.js";
+import { gitDerivedSignals } from "../../../src/core/trajectory/git/signals.js";
 
 describe("reranker", () => {
   // Create mock results with git metadata
@@ -1230,5 +1233,130 @@ describe("reranker", () => {
       // Should fall back to relevance
       expect(result).toHaveLength(1);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reranker v2 class tests
+// ---------------------------------------------------------------------------
+
+describe("Reranker (v2 class)", () => {
+  const reranker = new Reranker(gitDerivedSignals, structuralSignals);
+
+  const makeResult = (
+    score: number,
+    git?: Record<string, unknown>,
+    extra?: Partial<RerankableResult["payload"]>,
+  ): RerankableResult => ({
+    score,
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git },
+  });
+
+  it("returns results for relevance preset (no overlay)", () => {
+    const results = [makeResult(0.9), makeResult(0.7)];
+    const ranked = reranker.rerank(results, "relevance", "semantic_search");
+    expect(ranked).toHaveLength(2);
+    // relevance = similarity-only -> no reranking, no overlay
+    expect(ranked[0].rankingOverlay).toBeUndefined();
+  });
+
+  it("reranks by techDebt preset with overlay", () => {
+    const results = [
+      makeResult(0.9, { file: { ageDays: 5, commitCount: 1 } }),
+      makeResult(0.7, { file: { ageDays: 300, commitCount: 40 } }),
+    ];
+    const ranked = reranker.rerank(results, "techDebt", "semantic_search");
+    // techDebt boosts old + high churn -> second result should rank higher
+    expect(ranked[0].payload?.git).toBeDefined();
+    // Overlay present
+    expect(ranked[0].rankingOverlay).toBeDefined();
+    expect(ranked[0].rankingOverlay!.preset).toBe("techDebt");
+  });
+
+  it("overlay contains derived signals used by preset", () => {
+    const results = [makeResult(0.9, { file: { ageDays: 200, commitCount: 30, bugFixRate: 10 } })];
+    const ranked = reranker.rerank(results, "techDebt", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+    // techDebt uses: similarity, age, churn, bugFix, volatility, knowledgeSilo, density, blockPenalty
+    expect(overlay.derived).toHaveProperty("age");
+    expect(overlay.derived).toHaveProperty("churn");
+    expect(overlay.derived).toHaveProperty("bugFix");
+    expect(overlay.derived).toHaveProperty("similarity");
+    // Values should be numbers in 0-1 range
+    expect(overlay.derived.age).toBeGreaterThanOrEqual(0);
+    expect(overlay.derived.age).toBeLessThanOrEqual(1);
+  });
+
+  it("overlay contains raw file-level signals from descriptor sources", () => {
+    const results = [makeResult(0.9, { file: { ageDays: 200, commitCount: 30 } })];
+    const ranked = reranker.rerank(results, "techDebt", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+    // techDebt uses age (source: ageDays) and churn (source: commitCount)
+    expect(overlay.raw.file).toBeDefined();
+    expect(overlay.raw.file!.ageDays).toBe(200);
+    expect(overlay.raw.file!.commitCount).toBe(30);
+  });
+
+  it("overlay includes chunk-level raw signals when chunk data exists", () => {
+    const results = [makeResult(0.8, { file: { commitCount: 20 }, chunk: { commitCount: 8, churnRatio: 0.4 } })];
+    // hotspots uses chunkChurn (source: chunk.commitCount) and chunkRelativeChurn (source: chunk.churnRatio)
+    const ranked = reranker.rerank(results, "hotspots", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+    expect(overlay.raw.chunk).toBeDefined();
+    expect(overlay.raw.chunk!.commitCount).toBe(8);
+    expect(overlay.raw.chunk!.churnRatio).toBe(0.4);
+  });
+
+  it("overlay only includes signals used by preset (impactAnalysis = similarity+imports only)", () => {
+    const results = [makeResult(0.9, { file: { ageDays: 100, commitCount: 20, bugFixRate: 10 } })];
+    const ranked = reranker.rerank(results, "impactAnalysis", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+    // impactAnalysis uses only similarity + imports -- no git raw signals in overlay
+    expect(overlay.derived).toHaveProperty("similarity");
+    expect(overlay.derived).toHaveProperty("imports");
+    expect(overlay.derived).not.toHaveProperty("age");
+    expect(overlay.derived).not.toHaveProperty("churn");
+    // No raw file signals because similarity and imports have sources: []
+    expect(overlay.raw.file).toBeUndefined();
+  });
+
+  it("supports custom weights with overlay", () => {
+    const results = [
+      makeResult(0.5, undefined, { isDocumentation: true }),
+      makeResult(0.9, undefined, { isDocumentation: false }),
+    ];
+    const ranked = reranker.rerank(results, { custom: { documentation: 1.0 } }, "semantic_search");
+    expect(ranked[0].payload?.isDocumentation).toBe(true);
+    expect(ranked[0].rankingOverlay!.preset).toBe("custom");
+    expect(ranked[0].rankingOverlay!.derived).toHaveProperty("documentation");
+  });
+
+  it("handles empty results", () => {
+    const ranked = reranker.rerank([], "techDebt", "semantic_search");
+    expect(ranked).toHaveLength(0);
+  });
+
+  it("handles single result", () => {
+    const ranked = reranker.rerank([makeResult(0.8)], "techDebt", "semantic_search");
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0].rankingOverlay).toBeDefined();
+  });
+
+  it("getPreset returns preset weights", () => {
+    expect(reranker.getPreset("techDebt", "semantic_search")).toBeDefined();
+    expect(reranker.getPreset("recent", "search_code")).toBeDefined();
+    expect(reranker.getPreset("nonexistent", "semantic_search")).toBeUndefined();
+  });
+
+  it("getAvailablePresets returns preset names", () => {
+    expect(reranker.getAvailablePresets("semantic_search")).toContain("techDebt");
+    expect(reranker.getAvailablePresets("search_code")).toContain("recent");
+  });
+
+  it("search_code presets work", () => {
+    const results = [makeResult(0.8, { file: { ageDays: 200 } }), makeResult(0.8, { file: { ageDays: 5 } })];
+    const ranked = reranker.rerank(results, "recent", "search_code");
+    expect(ranked[0].rankingOverlay!.preset).toBe("recent");
+    expect(ranked[0].rankingOverlay!.derived).toHaveProperty("recency");
   });
 });

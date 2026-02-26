@@ -6,6 +6,8 @@
  * and custom weight configurations.
  */
 
+import type { DerivedSignalDescriptor, RankingOverlay, RerankedResult } from "../contracts/types/reranker.js";
+
 /**
  * Custom scoring weights configuration
  */
@@ -535,6 +537,166 @@ function calculateScore(signals: Record<string, number>, weights: ScoringWeights
   // Normalize by total weight to keep score in 0-1 range
   return totalWeight > 0 ? score / totalWeight : signals.similarity || 0;
 }
+
+// ---------------------------------------------------------------------------
+// Reranker v2 — descriptor-aware class with ranking overlay
+// ---------------------------------------------------------------------------
+
+/**
+ * Reranker v2 — descriptor-aware reranker with ranking overlay.
+ *
+ * Wraps existing scoring logic (calculateSignals, calculateScore) and
+ * adds ranking overlay to explain WHY each result scored the way it did.
+ * Uses descriptors from providers for overlay metadata only — scoring
+ * behavior is preserved exactly from the monolith.
+ */
+export class Reranker {
+  private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
+
+  constructor(
+    private readonly providerDescriptors: DerivedSignalDescriptor[],
+    private readonly structuralDescriptors: DerivedSignalDescriptor[],
+  ) {
+    this.descriptorMap = new Map();
+    for (const d of [...providerDescriptors, ...structuralDescriptors]) {
+      this.descriptorMap.set(d.name, d);
+    }
+  }
+
+  /**
+   * Rerank results with ranking overlay.
+   */
+  rerank<T extends RerankableResult>(
+    results: T[],
+    mode: RerankMode<string>,
+    presetSet: "semantic_search" | "search_code",
+  ): RerankedResult[] {
+    const presets = presetSet === "semantic_search" ? SEMANTIC_SEARCH_PRESETS : SEARCH_CODE_PRESETS;
+
+    // Resolve weights
+    let weights: ScoringWeights;
+    let presetName: string;
+    if (typeof mode === "string") {
+      presetName = mode;
+      weights = (presets as Record<string, ScoringWeights>)[mode] || presets.relevance || { similarity: 1.0 };
+    } else {
+      presetName = "custom";
+      weights = mode.custom;
+    }
+
+    // Fast path: similarity-only → no reranking, no overlay
+    const activeKeys = Object.keys(weights).filter((k) => {
+      const w = weights[k as keyof ScoringWeights];
+      return w !== undefined && w !== 0;
+    });
+    if (activeKeys.length === 1 && activeKeys[0] === "similarity") {
+      return results.map((r) => ({ ...r }) as RerankedResult);
+    }
+
+    // Compute adaptive bounds
+    const bounds = computeAdaptiveBounds(results, DEFAULT_BOUNDS);
+
+    // Score each result and attach overlay
+    const scored = results.map((result) => {
+      const signals = calculateSignals(result, bounds);
+      const score = calculateScore(signals, weights);
+      const overlay = this.buildOverlay(result, presetName, weights, signals);
+      return { ...result, score, rankingOverlay: overlay } as RerankedResult;
+    });
+
+    return scored.sort((a, b) => b.score - a.score);
+  }
+
+  /**
+   * Get preset weights for a specific preset name and tool.
+   */
+  getPreset(name: string, tool: "semantic_search" | "search_code"): ScoringWeights | undefined {
+    const presets = tool === "semantic_search" ? SEMANTIC_SEARCH_PRESETS : SEARCH_CODE_PRESETS;
+    return (presets as Record<string, ScoringWeights>)[name];
+  }
+
+  /**
+   * Get available preset names for a tool.
+   */
+  getAvailablePresets(tool: "semantic_search" | "search_code"): string[] {
+    return tool === "semantic_search" ? Object.keys(SEMANTIC_SEARCH_PRESETS) : Object.keys(SEARCH_CODE_PRESETS);
+  }
+
+  /**
+   * Build ranking overlay for a single result.
+   * Includes derived signal values used by the preset and their raw sources.
+   */
+  private buildOverlay(
+    result: RerankableResult,
+    presetName: string,
+    weights: ScoringWeights,
+    derivedValues: Record<string, number>,
+  ): RankingOverlay {
+    const derived: Record<string, number> = {};
+    const rawFile: Record<string, unknown> = {};
+    const rawChunk: Record<string, unknown> = {};
+
+    for (const key of Object.keys(weights)) {
+      const w = weights[key as keyof ScoringWeights];
+      if (w === undefined || w === 0) continue;
+
+      // Add derived value
+      if (key in derivedValues) {
+        derived[key] = derivedValues[key];
+      }
+
+      // Find descriptor and extract raw source values
+      const descriptor = this.descriptorMap.get(key);
+      if (descriptor) {
+        for (const source of descriptor.sources) {
+          this.extractRawSource(result, source, rawFile, rawChunk);
+        }
+      }
+    }
+
+    return {
+      preset: presetName,
+      derived,
+      raw: {
+        ...(Object.keys(rawFile).length > 0 ? { file: rawFile } : {}),
+        ...(Object.keys(rawChunk).length > 0 ? { chunk: rawChunk } : {}),
+      },
+    };
+  }
+
+  /**
+   * Extract a raw source value from payload into the correct level (file/chunk).
+   */
+  private extractRawSource(
+    result: RerankableResult,
+    source: string,
+    rawFile: Record<string, unknown>,
+    rawChunk: Record<string, unknown>,
+  ): void {
+    const git = result.payload?.git as Record<string, unknown> | undefined;
+    if (!git) return;
+
+    if (source.startsWith("chunk.")) {
+      const field = source.slice(6); // Remove "chunk." prefix
+      const chunk = git.chunk as Record<string, unknown> | undefined;
+      if (chunk && field in chunk) {
+        rawChunk[field] = chunk[field];
+      }
+    } else {
+      // File-level: check nested first, then flat
+      const file = git.file as Record<string, unknown> | undefined;
+      if (file && source in file) {
+        rawFile[source] = file[source];
+      } else if (source in git) {
+        rawFile[source] = git[source];
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Facade functions (backward-compatible functional API)
+// ---------------------------------------------------------------------------
 
 /**
  * Rerank search results using specified mode
