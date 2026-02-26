@@ -9,7 +9,7 @@ import { BM25SparseVectorGenerator } from "../adapters/embeddings/sparse.js";
 import type { QdrantManager, SearchResult } from "../adapters/qdrant/client.js";
 import { calculateFetchLimit, filterResultsByGlob } from "../adapters/qdrant/filters/index.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
-import { resolveCollectionName, validatePath } from "../api/shared.js";
+import { resolveCollectionName, validatePath } from "../contracts/collection.js";
 import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
 import { rerankSearchCodeResults, type RerankMode, type SearchCodeRerankPreset } from "./reranker.js";
 

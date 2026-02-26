@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import { resolveCollectionName, validatePath } from "../../api/shared.js";
+import { resolveCollectionName, validatePath } from "../../contracts/collection.js";
 import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";

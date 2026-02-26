@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { TrajectoryRegistry } from "../../../src/core/api/trajectory-registry.js";
 import type { TrajectoryQueryContract } from "../../../src/core/contracts/index.js";
+import { TrajectoryRegistry } from "../../../src/core/contracts/trajectory-registry.js";
 
 describe("TrajectoryRegistry", () => {
   const mockContract: TrajectoryQueryContract = {
