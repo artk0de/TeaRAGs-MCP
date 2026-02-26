@@ -7,33 +7,35 @@ import type {
   FilterDescriptor,
   QdrantFilterCondition,
   ScoringWeights,
-  SignalDescriptor,
+  Signal,
   TrajectoryQueryContract,
 } from "../../../src/core/trajectory/types.js";
 
-describe("trajectory types", () => {
-  it("SignalDescriptor satisfies contract", () => {
-    const signal: SignalDescriptor = {
-      name: "testSignal",
-      description: "Test signal",
-      extract: (payload) => (payload?.value as number) ?? 0,
+describe("trajectory types (re-export layer)", () => {
+  it("Signal satisfies contract", () => {
+    const signal: Signal = {
+      key: "git.file.ageDays",
+      name: "recency",
+      type: "number",
+      description: "Days since last modification",
+      defaultBound: 365,
     };
-    expect(signal.extract({ value: 0.5 })).toBe(0.5);
-    expect(signal.extract({})).toBe(0);
+    expect(signal.name).toBe("recency");
+    expect(signal.key).toBe("git.file.ageDays");
+    expect(signal.defaultBound).toBe(365);
   });
 
-  it("SignalDescriptor supports optional confidence config", () => {
-    const signal: SignalDescriptor = {
-      name: "bugFix",
-      description: "Bug fix rate",
-      extract: () => 0.5,
-      defaultBound: 100,
-      needsConfidence: true,
-      confidenceField: "git.file.commitCount",
+  it("FieldDoc is a deprecated alias for Signal", () => {
+    // FieldDoc = Signal, so it must have the same required fields
+    const field: FieldDoc = {
+      key: "git.file.commitCount",
+      name: "commitCount",
+      type: "number",
+      description: "Total number of commits modifying this file",
     };
-    expect(signal.needsConfidence).toBe(true);
-    expect(signal.defaultBound).toBe(100);
-    expect(signal.confidenceField).toBe("git.file.commitCount");
+    expect(field.key).toBe("git.file.commitCount");
+    expect(field.name).toBe("commitCount");
+    expect(field.type).toBe("number");
   });
 
   it("FilterDescriptor satisfies contract", () => {
@@ -48,16 +50,6 @@ describe("trajectory types", () => {
     expect(conditions[0]).toEqual({ key: "ageDays", range: { gte: 30 } });
   });
 
-  it("FieldDoc satisfies contract", () => {
-    const field: FieldDoc = {
-      key: "git.file.commitCount",
-      type: "number",
-      description: "Total number of commits modifying this file",
-    };
-    expect(field.key).toBe("git.file.commitCount");
-    expect(field.type).toBe("number");
-  });
-
   it("FileMetadataOverlay and ChunkMetadataOverlay are extensible index types", () => {
     const file: FileMetadataOverlay = { commitCount: 10, authors: ["a"] };
     const chunk: ChunkMetadataOverlay = { churnRatio: 0.5 };
@@ -65,17 +57,15 @@ describe("trajectory types", () => {
     expect(chunk.churnRatio).toBe(0.5);
   });
 
-  it("TrajectoryQueryContract bundles signals, filters, presets, fields", () => {
+  it("TrajectoryQueryContract bundles signals, filters, presets", () => {
     const contract: TrajectoryQueryContract = {
-      signals: [{ name: "s", description: "d", extract: () => 0 }],
+      signals: [{ key: "test.field", name: "s", type: "number", description: "d" }],
       filters: [{ param: "p", description: "d", type: "string", toCondition: () => [] }],
       presets: { myPreset: { s: 1.0 } },
-      payloadFields: [{ key: "k", type: "number", description: "d" }],
     };
     expect(contract.signals).toHaveLength(1);
     expect(contract.filters).toHaveLength(1);
     expect(contract.presets.myPreset).toBeDefined();
-    expect(contract.payloadFields).toHaveLength(1);
   });
 
   it("ScoringWeights accepts arbitrary signal names", () => {

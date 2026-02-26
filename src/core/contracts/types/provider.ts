@@ -3,8 +3,7 @@
  * Lives in contracts/ for DIP: trajectory, ingest, search all import from here.
  */
 
-// TODO(task-2): Update import to ../../adapters/qdrant/types.js after Qdrant type migration
-import type { QdrantFilterCondition } from "../../trajectory/types.js";
+import type { QdrantFilterCondition } from "../../adapters/qdrant/types.js";
 import type { ChunkLookupEntry } from "../../types.js";
 
 // --- Overlay base types ---
