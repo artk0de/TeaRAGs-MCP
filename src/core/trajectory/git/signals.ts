@@ -2,22 +2,11 @@
  * Git signal descriptors for reranking
  *
  * Extracts all 14 git-specific signals from search result payloads
- * into self-contained SignalDescriptor objects. Each descriptor knows
+ * into self-contained DerivedSignalDescriptor objects. Each descriptor knows
  * how to read from both nested (git.file.*) and flat (git.*) formats.
  */
 
-/**
- * Reranker-level signal descriptor — extract + normalize from payload.
- * Will move to core/search/ during reranker decomposition (Plan B).
- */
-interface SignalDescriptor {
-  name: string;
-  description: string;
-  extract: (payload: Record<string, unknown>) => number;
-  defaultBound?: number;
-  needsConfidence?: boolean;
-  confidenceField?: string;
-}
+import type { DerivedSignalDescriptor } from "../../contracts/types/reranker.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -116,11 +105,12 @@ function hasChunkData(payload: Record<string, unknown>): boolean {
 // Signal descriptors (14 total)
 // ---------------------------------------------------------------------------
 
-export const gitSignals: SignalDescriptor[] = [
+export const gitDerivedSignals: DerivedSignalDescriptor[] = [
   // 1. recency — recent code scores high
   {
     name: "recency",
     description: "Inverse of age: recently modified code scores higher (1 - ageDays/365)",
+    sources: ["ageDays"],
     defaultBound: 365,
     extract(payload) {
       return 1 - normalize(fileNum(payload, "ageDays"), 365);
@@ -131,6 +121,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "stability",
     description: "Inverse of churn: stable code with few commits scores higher (1 - commitCount/50)",
+    sources: ["commitCount"],
     defaultBound: 50,
     extract(payload) {
       return 1 - normalize(fileNum(payload, "commitCount"), 50);
@@ -141,6 +132,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "churn",
     description: "Direct commit count: frequently changed code scores higher (commitCount/50)",
+    sources: ["commitCount"],
     defaultBound: 50,
     extract(payload) {
       return normalize(fileNum(payload, "commitCount"), 50);
@@ -151,6 +143,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "age",
     description: "Direct age: older code scores higher (ageDays/365)",
+    sources: ["ageDays"],
     defaultBound: 365,
     extract(payload) {
       return normalize(fileNum(payload, "ageDays"), 365);
@@ -161,6 +154,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "ownership",
     description: "Author concentration: single-owner code scores higher (dominantAuthorPct or 1/authors)",
+    sources: ["dominantAuthorPct", "authors"],
     needsConfidence: true,
     confidenceField: "commitCount",
     extract(payload) {
@@ -181,6 +175,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "bugFix",
     description: "Bug fix rate: code with more fix commits scores higher (bugFixRate/100)",
+    sources: ["bugFixRate"],
     defaultBound: 100,
     needsConfidence: true,
     confidenceField: "commitCount",
@@ -193,6 +188,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "volatility",
     description: "Churn volatility: code with erratic commit timing scores higher (churnVolatility/60)",
+    sources: ["churnVolatility"],
     defaultBound: 60,
     needsConfidence: true,
     confidenceField: "commitCount",
@@ -205,6 +201,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "density",
     description: "Change density: code with more commits per month scores higher (changeDensity/20)",
+    sources: ["changeDensity"],
     defaultBound: 20,
     needsConfidence: true,
     confidenceField: "commitCount",
@@ -217,6 +214,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "chunkChurn",
     description: "Chunk-level commit count normalized (chunk.commitCount/30)",
+    sources: ["chunk.commitCount"],
     defaultBound: 30,
     extract(payload) {
       return normalize(chunkNum(payload, "commitCount"), 30);
@@ -227,6 +225,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "relativeChurnNorm",
     description: "Relative churn: total changes relative to file size (relativeChurn/5.0)",
+    sources: ["relativeChurn"],
     defaultBound: 5.0,
     needsConfidence: true,
     confidenceField: "commitCount",
@@ -239,6 +238,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "burstActivity",
     description: "Recency-weighted commit frequency: recent bursts of activity (recencyWeightedFreq/10)",
+    sources: ["recencyWeightedFreq"],
     defaultBound: 10.0,
     extract(payload) {
       return normalize(fileNum(payload, "recencyWeightedFreq"), 10.0);
@@ -249,6 +249,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "knowledgeSilo",
     description: "Knowledge silo risk: 1 contributor=1.0, 2=0.5, 3+=0 (categorical)",
+    sources: ["contributorCount"],
     needsConfidence: true,
     confidenceField: "commitCount",
     extract(payload) {
@@ -264,6 +265,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "chunkRelativeChurn",
     description: "Chunk churn ratio: chunk's share of file-level churn (chunk.churnRatio/1.0)",
+    sources: ["chunk.churnRatio"],
     defaultBound: 1.0,
     extract(payload) {
       return normalize(chunkNum(payload, "churnRatio"), 1.0);
@@ -274,6 +276,7 @@ export const gitSignals: SignalDescriptor[] = [
   {
     name: "blockPenalty",
     description: "Data quality discount for block chunks: 1.0 if block without chunk data (alpha=0), 0 otherwise",
+    sources: ["chunk.commitCount", "commitCount"],
     extract(payload) {
       const { chunkType } = payload;
       if (chunkType !== "block") return 0;

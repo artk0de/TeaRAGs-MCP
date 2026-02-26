@@ -4,6 +4,27 @@
 
 import type { ScoringWeights } from "./provider.js";
 
+/**
+ * Derived signal descriptor — defines how to compute a normalized signal
+ * from raw payload data. Used by reranker for scoring and ranking overlay.
+ */
+export interface DerivedSignalDescriptor {
+  /** Derived signal name (weight key in presets) */
+  name: string;
+  /** Human-readable description */
+  description: string;
+  /** Raw signal names this derived signal reads from (enables ranking overlay) */
+  sources: string[];
+  /** Extract normalized value (0-1) from search result payload */
+  extract: (payload: Record<string, unknown>) => number;
+  /** Default upper bound for normalization */
+  defaultBound?: number;
+  /** Whether to apply confidence dampening */
+  needsConfidence?: boolean;
+  /** Which raw signal field for confidence threshold (default: "commitCount") */
+  confidenceField?: string;
+}
+
 export interface RerankableResult {
   score: number;
   payload?: {
