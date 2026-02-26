@@ -35,10 +35,11 @@ export const structuralSignals: DerivedSignalDescriptor[] = [
     description: "Normalized chunk size (endLine - startLine)",
     sources: [],
     defaultBound: 500,
-    extract(payload) {
+    extract(payload, bound) {
+      const b = bound ?? 500;
       const start = (payload.startLine as number) || 0;
       const end = (payload.endLine as number) || 0;
-      return normalize(Math.max(0, end - start), 500);
+      return normalize(Math.max(0, end - start), b);
     },
   },
   {
@@ -54,9 +55,10 @@ export const structuralSignals: DerivedSignalDescriptor[] = [
     description: "Normalized import/dependency count",
     sources: [],
     defaultBound: 20,
-    extract(payload) {
+    extract(payload, bound) {
+      const b = bound ?? 20;
       const arr = payload.imports;
-      return normalize(Array.isArray(arr) ? arr.length : 0, 20);
+      return normalize(Array.isArray(arr) ? arr.length : 0, b);
     },
   },
   {

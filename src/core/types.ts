@@ -131,12 +131,6 @@ export interface CodeSearchResult {
       bugFixRate?: number;
       contributorCount?: number;
       taskIds?: string[];
-      chunkCommitCount?: number;
-      chunkChurnRatio?: number;
-      chunkContributorCount?: number;
-      chunkBugFixRate?: number;
-      chunkLastModifiedAt?: number;
-      chunkAgeDays?: number;
     };
   };
 }
