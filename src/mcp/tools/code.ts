@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { IngestFacade } from "../../core/api/ingest-facade.js";
 import type { SearchFacade } from "../../core/api/search-facade.js";
+import type { SearchOptions } from "../../core/types.js";
 import { formatEnrichmentStatus } from "./formatters/enrichment.js";
 import * as schemas from "./schemas.js";
 
@@ -113,7 +114,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
         maxAgeDays,
         minCommitCount,
         taskId,
-        rerank,
+        rerank: rerank as SearchOptions["rerank"],
       });
 
       if (results.length === 0) {

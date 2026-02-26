@@ -9,27 +9,24 @@
 
 import { z } from "zod";
 
-// Custom scoring weights schema (shared)
-const ScoringWeightsSchema = z.object({
-  similarity: z.number().optional(),
-  recency: z.number().optional(),
-  stability: z.number().optional(),
-  churn: z.number().optional(),
-  age: z.number().optional(),
-  ownership: z.number().optional(),
-  chunkSize: z.number().optional(),
-  documentation: z.number().optional(),
-  imports: z.number().optional(),
-  bugFix: z.number().optional(),
-  volatility: z.number().optional(),
-  density: z.number().optional(),
-  chunkChurn: z.number().optional(),
-  relativeChurnNorm: z.number().optional(),
-  burstActivity: z.number().optional(),
-  pathRisk: z.number().optional(),
-  knowledgeSilo: z.number().optional(),
-  chunkRelativeChurn: z.number().optional(),
-});
+import type { DerivedSignalDescriptor } from "../../core/contracts/types/reranker.js";
+import { structuralSignals } from "../../core/search/structural-signals.js";
+import { gitDerivedSignals } from "../../core/trajectory/git/signals.js";
+
+/**
+ * Build ScoringWeightsSchema from signal descriptors.
+ * Adding a new derived signal automatically updates the MCP API schema.
+ */
+function buildScoringWeightsSchema(descriptors: DerivedSignalDescriptor[]) {
+  const shape: Record<string, z.ZodOptional<z.ZodNumber>> = {};
+  for (const d of descriptors) {
+    shape[d.name] = z.number().optional().describe(d.description);
+  }
+  return z.object(shape);
+}
+
+// Custom scoring weights schema (shared) — auto-generated from signal descriptors
+const ScoringWeightsSchema = buildScoringWeightsSchema([...structuralSignals, ...gitDerivedSignals]);
 
 // Rerank presets for semantic_search (analytics)
 const SemanticSearchRerankPresetSchema = z.enum([
