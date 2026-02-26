@@ -14,7 +14,7 @@ import type { CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
 import type { ChunkLookupEntry } from "../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import type { GitEnrichmentCache } from "./cache.js";
-import { computeChunkOverlay, isBugFixCommit, overlaps, type ChunkAccumulator } from "./metrics.js";
+import { computeChunkSignals, isBugFixCommit, overlaps, type ChunkAccumulator } from "./metrics.js";
 
 const MAX_FILE_LINES_DEFAULT = 10000;
 
@@ -264,7 +264,7 @@ export async function buildChunkChurnMapUncached(
   const result = new Map<string, Map<string, ChunkChurnOverlay>>();
 
   for (const [relPath, entries] of relativeChunkMap) {
-    // Use file-level commit count from buildFileMetadataMap when available.
+    // Use file-level commit count from buildFileSignalMap when available.
     // This fixes churnRatio always being ~1.0 (the old denominator was
     // recomputed as the union of chunk SHAs, which ≈ max(commitCount)
     // for tightly-coupled files).
@@ -295,7 +295,7 @@ export async function buildChunkChurnMapUncached(
       const acc = accumulators.get(entry.chunkId);
       if (!acc) continue;
       const chunkLineCount = entry.endLine - entry.startLine + 1;
-      overlayMap.set(entry.chunkId, computeChunkOverlay(acc, fileCommitCount, fileContributorCount, chunkLineCount));
+      overlayMap.set(entry.chunkId, computeChunkSignals(acc, fileCommitCount, fileContributorCount, chunkLineCount));
     }
 
     if (overlayMap.size > 0) {

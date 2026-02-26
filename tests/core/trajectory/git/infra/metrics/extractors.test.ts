@@ -2,7 +2,7 @@
  * Tests for pure metric extractor functions.
  *
  * Each extractor computes one metric family from commit data.
- * Extracted from the monolithic computeFileMetadata() in metrics.ts.
+ * Extracted from the monolithic computeFileSignals() in metrics.ts.
  */
 
 import { describe, expect, it } from "vitest";

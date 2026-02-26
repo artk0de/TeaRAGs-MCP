@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-  ChunkMetadataOverlay,
+  ChunkSignalOverlay,
   FieldDoc,
-  FileMetadataOverlay,
+  FileSignalOverlay,
   FilterDescriptor,
   QdrantFilterCondition,
   ScoringWeights,
@@ -50,9 +50,9 @@ describe("trajectory types (re-export layer)", () => {
     expect(conditions[0]).toEqual({ key: "ageDays", range: { gte: 30 } });
   });
 
-  it("FileMetadataOverlay and ChunkMetadataOverlay are extensible index types", () => {
-    const file: FileMetadataOverlay = { commitCount: 10, authors: ["a"] };
-    const chunk: ChunkMetadataOverlay = { churnRatio: 0.5 };
+  it("FileSignalOverlay and ChunkSignalOverlay are extensible index types", () => {
+    const file: FileSignalOverlay = { commitCount: 10, authors: ["a"] };
+    const chunk: ChunkSignalOverlay = { churnRatio: 0.5 };
     expect(file.commitCount).toBe(10);
     expect(chunk.churnRatio).toBe(0.5);
   });

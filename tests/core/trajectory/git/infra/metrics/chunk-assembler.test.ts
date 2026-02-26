@@ -2,15 +2,15 @@
  * Tests for chunk-level overlay assembler.
  *
  * The assembler computes ChunkChurnOverlay from a ChunkAccumulator,
- * mirroring the original computeChunkOverlay() behavior.
+ * mirroring the original computeChunkSignals() behavior.
  */
 
 import { describe, expect, it } from "vitest";
 
 import type { ChunkAccumulator } from "../../../../../../src/core/trajectory/git/infra/metrics.js";
-import { assembleChunkOverlay } from "../../../../../../src/core/trajectory/git/infra/metrics/chunk-assembler.js";
+import { assembleChunkSignals } from "../../../../../../src/core/trajectory/git/infra/metrics/chunk-assembler.js";
 
-describe("assembleChunkOverlay", () => {
+describe("assembleChunkSignals", () => {
   it("computes overlay from accumulator", () => {
     const acc: ChunkAccumulator = {
       commitShas: new Set(["a", "b"]),
@@ -21,7 +21,7 @@ describe("assembleChunkOverlay", () => {
       linesDeleted: 5,
       commitTimestamps: [Date.now() / 1000 - 86400, Date.now() / 1000],
     };
-    const result = assembleChunkOverlay(acc, 10, undefined, 50);
+    const result = assembleChunkSignals(acc, 10, undefined, 50);
     expect(result.commitCount).toBe(2);
     expect(result.churnRatio).toBeCloseTo(0.2, 1);
     expect(result.contributorCount).toBe(1);
@@ -43,7 +43,7 @@ describe("assembleChunkOverlay", () => {
       linesDeleted: 0,
       commitTimestamps: [],
     };
-    const result = assembleChunkOverlay(acc, 10, undefined, 50);
+    const result = assembleChunkSignals(acc, 10, undefined, 50);
     expect(result.commitCount).toBe(0);
     expect(result.churnRatio).toBe(0);
     expect(result.bugFixRate).toBe(0);
@@ -62,7 +62,7 @@ describe("assembleChunkOverlay", () => {
       linesDeleted: 2,
       commitTimestamps: [Date.now() / 1000],
     };
-    const result = assembleChunkOverlay(acc, 5, 2, 10);
+    const result = assembleChunkSignals(acc, 5, 2, 10);
     expect(result.contributorCount).toBe(2); // capped at fileContributorCount
   });
 
@@ -76,7 +76,7 @@ describe("assembleChunkOverlay", () => {
       linesDeleted: 2,
       commitTimestamps: [Date.now() / 1000],
     };
-    const result = assembleChunkOverlay(acc, 5, undefined, 10);
+    const result = assembleChunkSignals(acc, 5, undefined, 10);
     expect(result.contributorCount).toBe(2);
   });
 
@@ -91,7 +91,7 @@ describe("assembleChunkOverlay", () => {
       linesDeleted: 0,
       commitTimestamps: [now], // 0 days ago
     };
-    const result = assembleChunkOverlay(acc, 1, undefined, 10);
+    const result = assembleChunkSignals(acc, 1, undefined, 10);
     expect(result.recencyWeightedFreq).toBeCloseTo(1.0, 1);
   });
 });

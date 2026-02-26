@@ -17,8 +17,8 @@ describe("EnrichmentCoordinator", () => {
     mockProvider = {
       key: "git",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map()),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
     coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
   });
@@ -27,24 +27,24 @@ describe("EnrichmentCoordinator", () => {
     expect(coordinator.providerKeys).toEqual(["git"]);
   });
 
-  it("calls provider.resolveRoot and buildFileMetadata on prefetch", () => {
+  it("calls provider.resolveRoot and buildFileSignals on prefetch", () => {
     coordinator.prefetch("/repo", "test-col");
     expect(mockProvider.resolveRoot).toHaveBeenCalledWith("/repo");
-    expect(mockProvider.buildFileMetadata).toHaveBeenCalledWith("/repo");
+    expect(mockProvider.buildFileSignals).toHaveBeenCalledWith("/repo");
   });
 
   it("delegates .git check to provider (coordinator is generic)", () => {
     // Provider returns empty map for non-git paths
-    (mockProvider.buildFileMetadata as any).mockResolvedValue(new Map());
+    (mockProvider.buildFileSignals as any).mockResolvedValue(new Map());
     coordinator.prefetch("/some-path", "test-col");
     expect(mockProvider.resolveRoot).toHaveBeenCalled();
-    expect(mockProvider.buildFileMetadata).toHaveBeenCalled();
+    expect(mockProvider.buildFileSignals).toHaveBeenCalled();
   });
 
   it("queues batches when prefetch is pending, flushes when ready", async () => {
-    // Make buildFileMetadata slow
+    // Make buildFileSignals slow
     let resolvePrefetch: (v: Map<string, Record<string, unknown>>) => void;
-    (mockProvider.buildFileMetadata as any).mockReturnValue(
+    (mockProvider.buildFileSignals as any).mockReturnValue(
       new Promise((resolve) => {
         resolvePrefetch = resolve;
       }),
@@ -72,7 +72,7 @@ describe("EnrichmentCoordinator", () => {
 
   it("applies immediately when prefetch is already done", async () => {
     // Fast prefetch
-    (mockProvider.buildFileMetadata as any).mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
+    (mockProvider.buildFileSignals as any).mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
 
     coordinator.prefetch("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
@@ -85,11 +85,11 @@ describe("EnrichmentCoordinator", () => {
     expect(mockQdrant.batchSetPayload).toHaveBeenCalled();
   });
 
-  it("startChunkEnrichment calls provider.buildChunkMetadata", () => {
+  it("startChunkEnrichment calls provider.buildChunkSignals", () => {
     coordinator.prefetch("/repo", "test-col");
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
     coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
-    expect(mockProvider.buildChunkMetadata).toHaveBeenCalledWith("/repo", chunkMap);
+    expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith("/repo", chunkMap);
   });
 
   it("awaitCompletion returns metrics", async () => {
@@ -107,14 +107,14 @@ describe("EnrichmentCoordinator", () => {
     const providerA: EnrichmentProvider = {
       key: "alpha",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map([["src/a.ts", { a: 1 }]])),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { a: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
     const providerB: EnrichmentProvider = {
       key: "beta",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map([["src/a.ts", { b: 2 }]])),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { b: 2 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
 
     const multi = new EnrichmentCoordinator(mockQdrant, [providerA, providerB]);
@@ -122,8 +122,8 @@ describe("EnrichmentCoordinator", () => {
     multi.prefetch("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(providerA.buildFileMetadata).toHaveBeenCalledWith("/repo");
-    expect(providerB.buildFileMetadata).toHaveBeenCalledWith("/repo");
+    expect(providerA.buildFileSignals).toHaveBeenCalledWith("/repo");
+    expect(providerB.buildFileSignals).toHaveBeenCalledWith("/repo");
     expect(multi.providerKeys).toEqual(["alpha", "beta"]);
   });
 
@@ -153,8 +153,8 @@ describe("EnrichmentCoordinator — prefetch with ignoreFilter", () => {
     mockProvider = {
       key: "git",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn(),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn(),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
   });
 
@@ -165,7 +165,7 @@ describe("EnrichmentCoordinator — prefetch with ignoreFilter", () => {
       ["src/a.ts", { data: 1 }],
       ["README.md", { data: 2 }],
     ]);
-    mockProvider.buildFileMetadata.mockResolvedValue(fileMetaMap);
+    mockProvider.buildFileSignals.mockResolvedValue(fileMetaMap);
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
     coordinator.prefetch("/repo", "test-col", ignoreFilter);
@@ -182,7 +182,7 @@ describe("EnrichmentCoordinator — prefetch with ignoreFilter", () => {
   });
 
   it("sets prefetchFailed=true and clears pending batches on error", async () => {
-    mockProvider.buildFileMetadata.mockRejectedValue(new Error("git fail"));
+    mockProvider.buildFileSignals.mockRejectedValue(new Error("git fail"));
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
     coordinator.prefetch("/repo", "test-col");
@@ -205,7 +205,7 @@ describe("EnrichmentCoordinator — prefetch with ignoreFilter", () => {
   });
 
   it("skips onChunksStored processing when prefetchFailed", async () => {
-    mockProvider.buildFileMetadata.mockRejectedValue(new Error("fail"));
+    mockProvider.buildFileSignals.mockRejectedValue(new Error("fail"));
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
     coordinator.prefetch("/repo");
     await new Promise((r) => setTimeout(r, 10));
@@ -230,12 +230,12 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
     mockProvider = {
       key: "git",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map()),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map([["c1", { commitCount: 5 }]])),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map([["c1", { commitCount: 5 }]])),
     };
   });
 
-  it("calls buildChunkMetadata and applies overlays", async () => {
+  it("calls buildChunkSignals and applies overlays", async () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
     coordinator.prefetch("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
@@ -244,11 +244,11 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
     coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
 
     await new Promise((r) => setTimeout(r, 20));
-    expect(mockProvider.buildChunkMetadata).toHaveBeenCalledWith("/repo", chunkMap);
+    expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith("/repo", chunkMap);
   });
 
   it("skips chunk enrichment when prefetchFailed", async () => {
-    mockProvider.buildFileMetadata.mockRejectedValue(new Error("fail"));
+    mockProvider.buildFileSignals.mockRejectedValue(new Error("fail"));
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
     coordinator.prefetch("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
@@ -257,7 +257,7 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
     coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
 
     await new Promise((r) => setTimeout(r, 20));
-    expect(mockProvider.buildChunkMetadata).not.toHaveBeenCalled();
+    expect(mockProvider.buildChunkSignals).not.toHaveBeenCalled();
   });
 });
 
@@ -270,8 +270,8 @@ describe("EnrichmentCoordinator — updateEnrichmentMarker", () => {
     const mockProvider: any = {
       key: "git",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map()),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
 
@@ -291,8 +291,8 @@ describe("EnrichmentCoordinator — updateEnrichmentMarker", () => {
     const mockProvider: any = {
       key: "git",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map()),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
 
@@ -312,8 +312,8 @@ describe("EnrichmentCoordinator — updateEnrichmentMarker", () => {
     const mockProvider: any = {
       key: "git",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map()),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
 
@@ -331,14 +331,14 @@ describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
     const providerA: any = {
       key: "provA",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map([["f1.ts", { x: 1 }]])),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["f1.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
     const providerB: any = {
       key: "provB",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map([["f2.ts", { y: 2 }]])),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["f2.ts", { y: 2 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, [providerA, providerB]);
@@ -359,8 +359,8 @@ describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
     const mockProvider: any = {
       key: "git",
       resolveRoot: vi.fn((p: string) => p),
-      buildFileMetadata: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
-      buildChunkMetadata: vi.fn().mockResolvedValue(new Map()),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
     coordinator.prefetch("/repo", "test-col");

@@ -1,10 +1,10 @@
 import type { ChunkLookupEntry } from "../../../types.js";
-import type { FileTransform } from "./applier.js";
+import type { FileSignalTransform } from "./applier.js";
 
 /**
  * EnrichmentProvider — interface for trajectory enrichment providers.
  *
- * Each provider computes metadata at two levels:
+ * Each provider computes signals at two levels:
  * - file-level: prefetched at T=0, applied as chunks arrive
  * - chunk-level: computed post-flush, applied as overlays
  *
@@ -19,16 +19,16 @@ export interface EnrichmentProvider {
 
   /**
    * Optional per-file transform applied at write time.
-   * Called with (rawData, maxEndLine) when applying file-level metadata.
-   * Git uses this for computeFileMetadata(churnData, maxEndLine).
+   * Called with (rawData, maxEndLine) when applying file-level signals.
+   * Git uses this for computeFileSignals(churnData, maxEndLine).
    */
-  readonly fileTransform?: FileTransform;
+  readonly fileSignalTransform?: FileSignalTransform;
 
-  /** File-level enrichment (prefetch at T=0, or backfill for specific paths) */
-  buildFileMetadata: (root: string, options?: { paths?: string[] }) => Promise<Map<string, Record<string, unknown>>>;
+  /** File-level signal enrichment (prefetch at T=0, or backfill for specific paths) */
+  buildFileSignals: (root: string, options?: { paths?: string[] }) => Promise<Map<string, Record<string, unknown>>>;
 
-  /** Chunk-level enrichment (post-flush) */
-  buildChunkMetadata: (
+  /** Chunk-level signal enrichment (post-flush) */
+  buildChunkSignals: (
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
   ) => Promise<Map<string, Map<string, Record<string, unknown>>>>;

@@ -1,12 +1,12 @@
 /**
- * File-level metadata assembler.
+ * File-level signal assembler.
  *
- * Composes pure metric extractors into a complete GitFileMetadata object.
- * Replaces the monolithic computeFileMetadata() function.
+ * Composes pure metric extractors into a complete GitFileSignals object.
+ * Replaces the monolithic computeFileSignals() function.
  */
 
 import type { FileChurnData } from "../../../../adapters/git/types.js";
-import type { GitFileMetadata } from "../../types.js";
+import type { GitFileSignals } from "../../types.js";
 import {
   computeBugFixRate,
   computeChangeDensity,
@@ -18,7 +18,7 @@ import {
   extractAllTaskIds,
 } from "./extractors.js";
 
-export function assembleFileMetadata(churnData: FileChurnData, currentLineCount: number): GitFileMetadata {
+export function assembleFileSignals(churnData: FileChurnData, currentLineCount: number): GitFileSignals {
   const { commits } = churnData;
 
   if (commits.length === 0) {

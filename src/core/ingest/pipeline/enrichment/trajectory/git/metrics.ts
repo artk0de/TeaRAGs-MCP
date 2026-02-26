@@ -7,11 +7,11 @@
 
 import type { FileChurnData } from "../../../../../adapters/git/types.js";
 import { extractTaskIds } from "../../utils.js";
-import type { ChunkChurnOverlay, GitFileMetadata } from "./types.js";
+import type { ChunkChurnOverlay, GitFileSignals } from "./types.js";
 
 /**
  * Accumulated raw data for a single chunk, collected during hunk mapping.
- * Pure input for computeChunkOverlay — no I/O dependency.
+ * Pure input for computeChunkSignals — no I/O dependency.
  */
 export interface ChunkAccumulator {
   commitShas: Set<string>;
@@ -51,7 +51,7 @@ export function overlaps(hunkStart: number, hunkEnd: number, chunkStart: number,
 /**
  * Compute churn metrics for a single file from its commit history.
  */
-export function computeFileMetadata(churnData: FileChurnData, currentLineCount: number): GitFileMetadata {
+export function computeFileSignals(churnData: FileChurnData, currentLineCount: number): GitFileSignals {
   const nowSec = Date.now() / 1000;
   const { commits } = churnData;
 
@@ -173,7 +173,7 @@ export function computeFileMetadata(churnData: FileChurnData, currentLineCount: 
  * @param fileCommitCount - File-level commit count (for ratio normalization)
  * @param fileContributorCount - File-level contributor count (cap, optional)
  */
-export function computeChunkOverlay(
+export function computeChunkSignals(
   acc: ChunkAccumulator,
   fileCommitCount: number,
   fileContributorCount?: number,

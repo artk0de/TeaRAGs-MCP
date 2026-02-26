@@ -11,13 +11,11 @@ import { join } from "node:path";
 
 import { resolveRepoRoot } from "../../adapters/git/client.js";
 import type { FileChurnData } from "../../adapters/git/types.js";
-import type { FileTransform } from "../../ingest/pipeline/enrichment/applier.js";
-import type { EnrichmentProvider } from "../../ingest/pipeline/enrichment/types.js";
-import type { ChunkLookupEntry } from "../../types.js";
+import type { ChunkLookupEntry, EnrichmentProvider, FileSignalTransform } from "../../contracts/types/provider.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
-import { buildFileMetadataForPaths, buildFileMetadataMap } from "./infra/file-reader.js";
-import { computeFileMetadata } from "./infra/metrics.js";
+import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reader.js";
+import { computeFileSignals } from "./infra/metrics.js";
 
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
@@ -26,14 +24,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     return resolveRepoRoot(absolutePath);
   }
 
-  readonly fileTransform: FileTransform = (data, maxEndLine) =>
-    computeFileMetadata(data as unknown as FileChurnData, maxEndLine) as unknown as Record<string, unknown>;
+  readonly fileSignalTransform: FileSignalTransform = (data, maxEndLine) =>
+    computeFileSignals(data as unknown as FileChurnData, maxEndLine) as unknown as Record<string, unknown>;
 
   private readonly enrichmentCache = new GitEnrichmentCache();
   private readonly isoGitCache: Record<string, unknown> = {};
   private lastFileResult: Map<string, FileChurnData> | null = null;
 
-  async buildFileMetadata(root: string, options?: { paths?: string[] }): Promise<Map<string, Record<string, unknown>>> {
+  async buildFileSignals(root: string, options?: { paths?: string[] }): Promise<Map<string, Record<string, unknown>>> {
     // Fast check: skip if not a git repo
     if (!existsSync(join(root, ".git"))) {
       return new Map();
@@ -42,14 +40,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     let rawData: Map<string, FileChurnData>;
 
     if (options?.paths) {
-      rawData = await buildFileMetadataForPaths(root, options.paths);
+      rawData = await buildFileSignalsForPaths(root, options.paths);
     } else {
-      rawData = await buildFileMetadataMap(root, this.enrichmentCache);
+      rawData = await buildFileSignalMap(root, this.enrichmentCache);
     }
 
     this.lastFileResult = rawData;
 
-    // Return raw FileChurnData — coordinator/applier will call computeFileMetadata
+    // Return raw FileChurnData — coordinator/applier will call computeFileSignals
     // with actual line count when applying per-file
     const result = new Map<string, Record<string, unknown>>();
     for (const [path, churnData] of rawData) {
@@ -58,7 +56,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     return result;
   }
 
-  async buildChunkMetadata(
+  async buildChunkSignals(
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
   ): Promise<Map<string, Map<string, Record<string, unknown>>>> {

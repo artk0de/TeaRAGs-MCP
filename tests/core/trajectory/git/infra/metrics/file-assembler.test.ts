@@ -2,16 +2,16 @@
  * Tests for file-level metadata assembler.
  *
  * The assembler composes pure metric extractors into a complete
- * GitFileMetadata object.
+ * GitFileSignals object.
  */
 
 import { describe, expect, it } from "vitest";
 
 import type { FileChurnData } from "../../../../../../src/core/adapters/git/types.js";
-import { assembleFileMetadata } from "../../../../../../src/core/trajectory/git/infra/metrics/file-assembler.js";
+import { assembleFileSignals } from "../../../../../../src/core/trajectory/git/infra/metrics/file-assembler.js";
 
-describe("assembleFileMetadata", () => {
-  it("composes all extractors into GitFileMetadata", () => {
+describe("assembleFileSignals", () => {
+  it("composes all extractors into GitFileSignals", () => {
     const now = Date.now() / 1000;
     const churnData: FileChurnData = {
       commits: [
@@ -22,7 +22,7 @@ describe("assembleFileMetadata", () => {
       linesAdded: 200,
       linesDeleted: 50,
     };
-    const result = assembleFileMetadata(churnData, 300);
+    const result = assembleFileSignals(churnData, 300);
 
     expect(result.dominantAuthor).toBe("alice");
     expect(result.dominantAuthorEmail).toBe("a@x.com");
@@ -41,7 +41,7 @@ describe("assembleFileMetadata", () => {
 
   it("returns zero-value metadata for empty commits", () => {
     const churnData: FileChurnData = { commits: [], linesAdded: 0, linesDeleted: 0 };
-    const result = assembleFileMetadata(churnData, 100);
+    const result = assembleFileSignals(churnData, 100);
     expect(result.dominantAuthor).toBe("unknown");
     expect(result.commitCount).toBe(0);
     expect(result.bugFixRate).toBe(0);
@@ -59,7 +59,7 @@ describe("assembleFileMetadata", () => {
       linesAdded: 42,
       linesDeleted: 7,
     };
-    const result = assembleFileMetadata(churnData, 50);
+    const result = assembleFileSignals(churnData, 50);
     expect(result.linesAdded).toBe(42);
     expect(result.linesDeleted).toBe(7);
   });
@@ -73,7 +73,7 @@ describe("assembleFileMetadata", () => {
       linesAdded: 10,
       linesDeleted: 5,
     };
-    const result = assembleFileMetadata(churnData, 100);
+    const result = assembleFileSignals(churnData, 100);
     expect(result.taskIds).toContain("TD-123");
     expect(result.taskIds).toContain("TD-456");
     expect(result.taskIds).toHaveLength(2);

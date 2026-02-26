@@ -20,7 +20,7 @@ const execFileAsync = promisify(execFile);
  * @param maxAgeMonths - limit commits to last N months (default: GIT_LOG_MAX_AGE_MONTHS env, default 12).
  *   Set to 0 to disable (read all commits).
  */
-export async function buildFileMetadataMap(
+export async function buildFileSignalMap(
   repoRoot: string,
   enrichmentCache: GitEnrichmentCache,
   maxAgeMonths?: number,
@@ -50,7 +50,7 @@ export async function buildFileMetadataMap(
  * Used as a backfill for files that weren't in the main git log window.
  * Batches file paths to stay within OS ARG_MAX limits.
  */
-export async function buildFileMetadataForPaths(
+export async function buildFileSignalsForPaths(
   repoRoot: string,
   paths: string[],
   timeoutMs = 30000,

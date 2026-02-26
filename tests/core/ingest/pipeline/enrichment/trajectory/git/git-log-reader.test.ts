@@ -1,9 +1,9 @@
 /**
- * Tests for GitLogReader, computeFileMetadata, extractTaskIds
+ * Tests for GitLogReader, computeFileSignals, extractTaskIds
  *
  * Coverage:
  * 1. extractTaskIds — all ticket formats, edge cases
- * 2. computeFileMetadata — churn metric calculations
+ * 2. computeFileSignals — churn metric calculations
  * 3. GitLogReader — integration with real git repo
  */
 
@@ -14,13 +14,13 @@ import * as gitParsers from "../../../../../../../src/core/adapters/git/parsers.
 import type { CommitInfo, FileChurnData } from "../../../../../../../src/core/adapters/git/types.js";
 import * as chunkReader from "../../../../../../../src/core/ingest/pipeline/enrichment/trajectory/git/chunk-reader.js";
 import {
-  computeFileMetadata,
+  computeFileSignals,
   extractTaskIds,
   GitLogReader,
   overlaps,
 } from "../../../../../../../src/core/ingest/pipeline/enrichment/trajectory/git/git-log-reader.js";
 import {
-  computeChunkOverlay,
+  computeChunkSignals,
   type ChunkAccumulator,
 } from "../../../../../../../src/core/ingest/pipeline/enrichment/trajectory/git/metrics.js";
 
@@ -103,9 +103,9 @@ See merge request taxdome/service/taxdome!47685`;
   });
 });
 
-// ─── computeFileMetadata ─────────────────────────────────────────────────────
+// ─── computeFileSignals ─────────────────────────────────────────────────────
 
-describe("computeFileMetadata", () => {
+describe("computeFileSignals", () => {
   const nowSec = Math.floor(Date.now() / 1000);
 
   function makeCommit(overrides: Partial<CommitInfo> = {}): CommitInfo {
@@ -121,7 +121,7 @@ describe("computeFileMetadata", () => {
 
   it("should return zero metrics for empty commits", () => {
     const data: FileChurnData = { commits: [], linesAdded: 10, linesDeleted: 5 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     expect(meta.commitCount).toBe(0);
     expect(meta.dominantAuthor).toBe("unknown");
@@ -139,7 +139,7 @@ describe("computeFileMetadata", () => {
     const commit = makeCommit({ sha: "a".repeat(40), timestamp: nowSec - 86400 });
     const data: FileChurnData = { commits: [commit], linesAdded: 50, linesDeleted: 10 };
 
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     expect(meta.commitCount).toBe(1);
     expect(meta.dominantAuthor).toBe("Alice");
@@ -171,7 +171,7 @@ describe("computeFileMetadata", () => {
     ];
 
     const data: FileChurnData = { commits, linesAdded: 100, linesDeleted: 20 };
-    const meta = computeFileMetadata(data, 200);
+    const meta = computeFileSignals(data, 200);
 
     expect(meta.dominantAuthor).toBe("Alice");
     expect(meta.dominantAuthorPct).toBe(60); // 3/5 = 60%
@@ -190,7 +190,7 @@ describe("computeFileMetadata", () => {
     ];
 
     const data: FileChurnData = { commits, linesAdded: 50, linesDeleted: 10 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     expect(meta.taskIds).toContain("TD-1234");
     expect(meta.taskIds).toContain("#567");
@@ -205,7 +205,7 @@ describe("computeFileMetadata", () => {
       makeCommit({ body: "chore: update dependencies" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     expect(meta.bugFixRate).toBe(50);
   });
@@ -217,7 +217,7 @@ describe("computeFileMetadata", () => {
       makeCommit({ body: "refactor: simplify logic" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     // Laplace: (0 + 0.5) / (3 + 1) * 100 = 12.5 → rounds to 13
     expect(meta.bugFixRate).toBe(13);
@@ -225,7 +225,7 @@ describe("computeFileMetadata", () => {
 
   it("should compute bugFixRate 0 for empty commits", () => {
     const data: FileChurnData = { commits: [], linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     expect(meta.bugFixRate).toBe(0);
     expect(meta.contributorCount).toBe(0);
@@ -239,7 +239,7 @@ describe("computeFileMetadata", () => {
       makeCommit({ body: "patch: security vulnerability" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     // Laplace: (4 + 0.5) / (4 + 1) * 100 = 90
     expect(meta.bugFixRate).toBe(90);
@@ -253,7 +253,7 @@ describe("computeFileMetadata", () => {
       makeCommit({ body: "feat: add new feature" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     // Only the actual fix commit counts, not the 2 merge commits
     // Laplace: (1 + 0.5) / (4 + 1) * 100 = 30
@@ -268,7 +268,7 @@ describe("computeFileMetadata", () => {
       makeCommit({ author: "Charlie", authorEmail: "charlie@ex.com" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     expect(meta.contributorCount).toBe(3);
   });
@@ -278,7 +278,7 @@ describe("computeFileMetadata", () => {
     // 500 added + 300 deleted = 800 total churn, currentLines = 200
     // relativeChurn = 800 / 200 = 4.0
     const data: FileChurnData = { commits: [commit], linesAdded: 500, linesDeleted: 300 };
-    const meta = computeFileMetadata(data, 200);
+    const meta = computeFileSignals(data, 200);
 
     expect(meta.relativeChurn).toBe(4);
   });
@@ -287,7 +287,7 @@ describe("computeFileMetadata", () => {
     const commit = makeCommit();
     const data: FileChurnData = { commits: [commit], linesAdded: 10, linesDeleted: 5 };
     // currentLineCount = 0 → denominator clamped to 1
-    const meta = computeFileMetadata(data, 0);
+    const meta = computeFileSignals(data, 0);
 
     expect(meta.relativeChurn).toBe(15); // (10+5)/1
   });
@@ -301,7 +301,7 @@ describe("computeFileMetadata", () => {
     ];
 
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     expect(meta.churnVolatility).toBe(0); // all gaps are 10 days
   });
@@ -315,7 +315,7 @@ describe("computeFileMetadata", () => {
     ];
 
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     expect(meta.churnVolatility).toBe(14); // stddev([1, 29]) = 14
   });
@@ -327,8 +327,8 @@ describe("computeFileMetadata", () => {
     const recentData: FileChurnData = { commits: [recentCommit], linesAdded: 0, linesDeleted: 0 };
     const oldData: FileChurnData = { commits: [oldCommit], linesAdded: 0, linesDeleted: 0 };
 
-    const recentMeta = computeFileMetadata(recentData, 100);
-    const oldMeta = computeFileMetadata(oldData, 100);
+    const recentMeta = computeFileSignals(recentData, 100);
+    const oldMeta = computeFileSignals(oldData, 100);
 
     // exp(-0.1 * 1) ≈ 0.905 vs exp(-0.1 * 100) ≈ 0.0000454
     expect(recentMeta.recencyWeightedFreq).toBeGreaterThan(oldMeta.recencyWeightedFreq);
@@ -337,7 +337,7 @@ describe("computeFileMetadata", () => {
   it("should apply Laplace smoothing to bugFixRate (1 fix / 1 commit → 75%)", () => {
     const commits = [makeCommit({ body: "fix: resolve crash" })];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
     // Laplace: (1 + 0.5) / (1 + 1) * 100 = 75
     expect(meta.bugFixRate).toBe(75);
   });
@@ -345,7 +345,7 @@ describe("computeFileMetadata", () => {
   it("should apply Laplace smoothing (0 fixes / 1 commit → 25%)", () => {
     const commits = [makeCommit({ body: "feat: add feature" })];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
     // Laplace: (0 + 0.5) / (1 + 1) * 100 = 25
     expect(meta.bugFixRate).toBe(25);
   });
@@ -356,7 +356,7 @@ describe("computeFileMetadata", () => {
     const feats = Array.from({ length: 50 }, () => makeCommit({ body: "feat: feature" }));
     const commits = [...fixes, ...feats];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
     expect(meta.bugFixRate).toBe(50);
   });
 
@@ -368,7 +368,7 @@ describe("computeFileMetadata", () => {
     ];
 
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
 
     expect(meta.firstCreatedAt).toBe(nowSec - 86400 * 30);
     expect(meta.lastModifiedAt).toBe(nowSec - 86400);
@@ -408,7 +408,7 @@ describe("GitLogReader", () => {
   it("should build non-empty file metadata map for a real repo", async () => {
     if (!repoRoot) return;
 
-    const fileMap = await reader.buildFileMetadataMap(repoRoot);
+    const fileMap = await reader.buildFileSignalMap(repoRoot);
 
     expect(fileMap.size).toBeGreaterThan(0);
 
@@ -421,7 +421,7 @@ describe("GitLogReader", () => {
   it("should include valid commit info in file entries", async () => {
     if (!repoRoot) return;
 
-    const fileMap = await reader.buildFileMetadataMap(repoRoot);
+    const fileMap = await reader.buildFileSignalMap(repoRoot);
     const pkgEntry = fileMap.get("package.json");
     if (!pkgEntry) return;
 
@@ -433,14 +433,14 @@ describe("GitLogReader", () => {
     expect(typeof commit.body).toBe("string");
   });
 
-  it("should produce valid GitFileMetadata when combined with computeFileMetadata", async () => {
+  it("should produce valid GitFileSignals when combined with computeFileSignals", async () => {
     if (!repoRoot) return;
 
-    const fileMap = await reader.buildFileMetadataMap(repoRoot);
+    const fileMap = await reader.buildFileSignalMap(repoRoot);
     const pkgEntry = fileMap.get("package.json");
     if (!pkgEntry) return;
 
-    const meta = computeFileMetadata(pkgEntry, 90);
+    const meta = computeFileSignals(pkgEntry, 90);
 
     // Structure validation
     expect(meta.commitCount).toBeGreaterThan(0);
@@ -464,16 +464,16 @@ describe("GitLogReader", () => {
 
   it("should handle non-git directory gracefully (falls back to CLI, which also fails)", async () => {
     // Non-git dir → isomorphic-git fails → CLI fallback also fails → throws
-    await expect(reader.buildFileMetadataMap("/tmp")).rejects.toThrow();
+    await expect(reader.buildFileSignalMap("/tmp")).rejects.toThrow();
   });
 
   it("should accept maxAgeMonths parameter and limit commits by date", async () => {
     if (!repoRoot) return;
 
     // Full history (no age limit)
-    const fullMap = await reader.buildFileMetadataMap(repoRoot, 0);
+    const fullMap = await reader.buildFileSignalMap(repoRoot, 0);
     // Tiny window (~43 minutes) — should return fewer files
-    const tinyMap = await reader.buildFileMetadataMap(repoRoot, 0.001);
+    const tinyMap = await reader.buildFileSignalMap(repoRoot, 0.001);
 
     expect(fullMap.size).toBeGreaterThan(0);
     expect(tinyMap.size).toBeLessThanOrEqual(fullMap.size);
@@ -483,7 +483,7 @@ describe("GitLogReader", () => {
     if (!repoRoot) return;
 
     // 0.001 months ≈ 43 minutes — only very recent commits
-    const map = await reader.buildFileMetadataMap(repoRoot, 0.001);
+    const map = await reader.buildFileSignalMap(repoRoot, 0.001);
     const cutoffSec = Date.now() / 1000 - 2 * 3600; // 2 hours ago
 
     for (const [, entry] of map) {
@@ -606,7 +606,7 @@ describe("buildChunkChurnMap", () => {
     if (!repoRoot) return;
 
     // First, get actual file churn data for a known file
-    const fileChurnMap = await reader.buildFileMetadataMap(repoRoot, 6);
+    const fileChurnMap = await reader.buildFileSignalMap(repoRoot, 6);
     const testFile = "src/core/api/indexer.ts";
     const fileChurnData = fileChurnMap.get(testFile);
     if (!fileChurnData || fileChurnData.commits.length === 0) return;
@@ -635,7 +635,7 @@ describe("buildChunkChurnMap", () => {
   it("should cap contributorCount at file-level contributor count", async () => {
     if (!repoRoot) return;
 
-    const fileChurnMap = await reader.buildFileMetadataMap(repoRoot, 6);
+    const fileChurnMap = await reader.buildFileSignalMap(repoRoot, 6);
     const testFile = "src/core/api/indexer.ts";
     const fileChurnData = fileChurnMap.get(testFile);
     if (!fileChurnData || fileChurnData.commits.length === 0) return;
@@ -734,12 +734,12 @@ describe("buildChunkChurnMap", () => {
     }
   });
 
-  it("buildFileMetadataMap should try CLI first, not isomorphic-git", async () => {
+  it("buildFileSignalMap should try CLI first, not isomorphic-git", async () => {
     if (!repoRoot) return;
 
     const cliSpy = vi.spyOn(gitClient, "buildViaCli");
 
-    await reader.buildFileMetadataMap(repoRoot, 1); // 1 month window
+    await reader.buildFileSignalMap(repoRoot, 1); // 1 month window
 
     // CLI should be called (primary path)
     expect(cliSpy).toHaveBeenCalled();
@@ -753,7 +753,7 @@ describe("buildChunkChurnMap", () => {
     // Make CLI throw — no fallback, error propagates
     const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockRejectedValue(new Error("git not found"));
 
-    await expect(reader.buildFileMetadataMap(repoRoot, 1)).rejects.toThrow("git not found");
+    await expect(reader.buildFileSignalMap(repoRoot, 1)).rejects.toThrow("git not found");
 
     cliSpy.mockRestore();
   });
@@ -777,11 +777,11 @@ describe("buildChunkChurnMap", () => {
     expect(hasSince).toBe(true);
   });
 
-  it("buildFileMetadataForPaths should fetch metadata for specific files without --since", async () => {
+  it("buildFileSignalsForPaths should fetch metadata for specific files without --since", async () => {
     if (!repoRoot) return;
 
     // Fetch metadata for a known file that definitely has git history
-    const result = await reader.buildFileMetadataForPaths(repoRoot, ["package.json"]);
+    const result = await reader.buildFileSignalsForPaths(repoRoot, ["package.json"]);
 
     // package.json definitely has commits in this repo
     expect(result.size).toBeGreaterThan(0);
@@ -794,10 +794,10 @@ describe("buildChunkChurnMap", () => {
     }
   });
 
-  it("buildFileMetadataForPaths should return empty map for non-existent files", async () => {
+  it("buildFileSignalsForPaths should return empty map for non-existent files", async () => {
     if (!repoRoot) return;
 
-    const result = await reader.buildFileMetadataForPaths(repoRoot, [
+    const result = await reader.buildFileSignalsForPaths(repoRoot, [
       "this-file-does-not-exist.txt",
       "neither-does-this.rb",
     ]);
@@ -805,8 +805,8 @@ describe("buildChunkChurnMap", () => {
     expect(result.size).toBe(0);
   });
 
-  it("buildFileMetadataForPaths should return empty map for empty paths", async () => {
-    const result = await reader.buildFileMetadataForPaths(repoRoot || "/tmp", []);
+  it("buildFileSignalsForPaths should return empty map for empty paths", async () => {
+    const result = await reader.buildFileSignalsForPaths(repoRoot || "/tmp", []);
     expect(result.size).toBe(0);
   });
 
@@ -833,7 +833,7 @@ describe("buildChunkChurnMap", () => {
 
 // ─── isBugFixCommit edge cases ────────────────────────────────────────────────
 
-describe("isBugFixCommit (via computeFileMetadata)", () => {
+describe("isBugFixCommit (via computeFileSignals)", () => {
   const nowSec = Math.floor(Date.now() / 1000);
 
   function makeCommit(overrides: Partial<CommitInfo> = {}): CommitInfo {
@@ -853,7 +853,7 @@ describe("isBugFixCommit (via computeFileMetadata)", () => {
       makeCommit({ body: "feat: add unrelated feature" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
     // Laplace: (0 + 0.5) / (2 + 1) * 100 = 16.67 → rounds to 17
     expect(meta.bugFixRate).toBe(17);
   });
@@ -861,7 +861,7 @@ describe("isBugFixCommit (via computeFileMetadata)", () => {
   it("should skip 'Merge pull request' even if body mentions fix", () => {
     const commits = [makeCommit({ body: "Merge pull request #42 from user/fix-auth\n\nfixes auth bug" })];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
     // Laplace: (0 + 0.5) / (1 + 1) * 100 = 25
     expect(meta.bugFixRate).toBe(25);
   });
@@ -870,7 +870,7 @@ describe("isBugFixCommit (via computeFileMetadata)", () => {
     // Subject line has no fix keyword, but body has 'fix'
     const commits = [makeCommit({ body: "chore: update auth\nfix: also resolve login bug" })];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileMetadata(data, 100);
+    const meta = computeFileSignals(data, 100);
     // BUG_FIX_PATTERN tests full body, not just subject line; but MERGE_SUBJECT only checks first line
     // "fix" appears on the second line → should detect it
     // Laplace: (1 + 0.5) / (1 + 1) * 100 = 75
@@ -1352,9 +1352,9 @@ describe("buildChunkChurnMap cache error", () => {
   });
 });
 
-// ─── buildFileMetadataMap — timeout and cache paths ─────────────────────────
+// ─── buildFileSignalMap — timeout and cache paths ─────────────────────────
 
-describe("buildFileMetadataMap — timeout and cache", () => {
+describe("buildFileSignalMap — timeout and cache", () => {
   let reader: GitLogReader;
 
   afterEach(() => {
@@ -1375,7 +1375,7 @@ describe("buildFileMetadataMap — timeout and cache", () => {
         new Promise(() => {}), // never resolves
       );
 
-      await expect(reader.buildFileMetadataMap("/fake/repo")).rejects.toThrow("CLI git log timed out");
+      await expect(reader.buildFileSignalMap("/fake/repo")).rejects.toThrow("CLI git log timed out");
     } finally {
       if (originalEnv === undefined) {
         delete process.env.GIT_LOG_TIMEOUT_MS;
@@ -1395,11 +1395,11 @@ describe("buildFileMetadataMap — timeout and cache", () => {
     const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(mockData);
 
     // First call — populates cache
-    const result1 = await reader.buildFileMetadataMap("/fake/repo", 12);
+    const result1 = await reader.buildFileSignalMap("/fake/repo", 12);
     expect(cliSpy).toHaveBeenCalledTimes(1);
 
     // Second call — same HEAD → should return cached
-    const result2 = await reader.buildFileMetadataMap("/fake/repo", 12);
+    const result2 = await reader.buildFileSignalMap("/fake/repo", 12);
     expect(cliSpy).toHaveBeenCalledTimes(1); // NOT called again
     expect(result2).toBe(result1); // Same reference
   });
@@ -1413,7 +1413,7 @@ describe("buildFileMetadataMap — timeout and cache", () => {
     mockData.set("no-cache.ts", { commits: [], linesAdded: 0, linesDeleted: 0 });
     const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(mockData);
 
-    const result = await reader.buildFileMetadataMap("/fake/repo", 6);
+    const result = await reader.buildFileSignalMap("/fake/repo", 6);
     expect(cliSpy).toHaveBeenCalled();
     expect(result.size).toBe(1);
   });
@@ -1428,7 +1428,7 @@ describe("buildFileMetadataMap — timeout and cache", () => {
       vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
       const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(new Map());
 
-      await reader.buildFileMetadataMap("/fake/repo"); // no maxAgeMonths param
+      await reader.buildFileSignalMap("/fake/repo"); // no maxAgeMonths param
 
       // buildViaCli should be called; the sinceDate should be ~3 months ago
       expect(cliSpy).toHaveBeenCalled();
@@ -1447,7 +1447,7 @@ describe("buildFileMetadataMap — timeout and cache", () => {
     vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
     const cliSpy = vi.spyOn(gitClient, "buildViaCli").mockResolvedValue(new Map());
 
-    await reader.buildFileMetadataMap("/fake/repo", 0);
+    await reader.buildFileSignalMap("/fake/repo", 0);
 
     // buildViaCli is called with undefined sinceDate (maxAge=0 means no filter)
     expect(cliSpy).toHaveBeenCalled();
@@ -1475,9 +1475,9 @@ describe("withTimeout", () => {
   });
 });
 
-// ─── buildFileMetadataForPaths — batch error path ────────────────────────────
+// ─── buildFileSignalsForPaths — batch error path ────────────────────────────
 
-describe("buildFileMetadataForPaths — batch failure", () => {
+describe("buildFileSignalsForPaths — batch failure", () => {
   let reader: GitLogReader;
 
   afterEach(() => {
@@ -1509,7 +1509,7 @@ describe("buildFileMetadataForPaths — batch failure", () => {
     // Simpler approach: just make parseNumstatOutput return empty for the test
     vi.spyOn(gitParsers, "parseNumstatOutput").mockReturnValue(new Map());
 
-    const result = await reader.buildFileMetadataForPaths("/tmp", []);
+    const result = await reader.buildFileSignalsForPaths("/tmp", []);
     expect(result.size).toBe(0);
 
     consoleSpy.mockRestore();
@@ -1748,9 +1748,9 @@ describe("readBlobAsString", () => {
   });
 });
 
-// ─── buildFileMetadataForPaths — batch error with DEBUG logging ──────────────
+// ─── buildFileSignalsForPaths — batch error with DEBUG logging ──────────────
 
-describe("buildFileMetadataForPaths — DEBUG batch error logging", () => {
+describe("buildFileSignalsForPaths — DEBUG batch error logging", () => {
   let reader: GitLogReader;
 
   afterEach(() => {
@@ -1763,7 +1763,7 @@ describe("buildFileMetadataForPaths — DEBUG batch error logging", () => {
     // Force the git command to fail by using a non-git directory
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const result = await reader.buildFileMetadataForPaths("/tmp/not-a-git-repo", ["nonexistent.ts"]);
+    const result = await reader.buildFileSignalsForPaths("/tmp/not-a-git-repo", ["nonexistent.ts"]);
 
     // Should not throw, return empty map
     expect(result.size).toBe(0);
@@ -2051,7 +2051,7 @@ describe("size-dampened relativeChurn", () => {
       linesDeleted: 1,
       commitTimestamps: [],
     };
-    const overlay = computeChunkOverlay(acc, 10, undefined, 5);
+    const overlay = computeChunkSignals(acc, 10, undefined, 5);
     // Raw: (3+1)/5 = 0.8. Damping: 0.154. Result: 0.12
     expect(overlay.relativeChurn).toBeLessThan(0.2);
   });
@@ -2066,7 +2066,7 @@ describe("size-dampened relativeChurn", () => {
       linesDeleted: 0,
       commitTimestamps: [],
     };
-    const overlay = computeChunkOverlay(acc, 10, undefined, 200);
+    const overlay = computeChunkSignals(acc, 10, undefined, 200);
     // Raw: 20/200 = 0.1. Damping: 0.999. Result: ~0.1
     expect(overlay.relativeChurn).toBeCloseTo(0.1, 1);
   });
@@ -2081,7 +2081,7 @@ describe("size-dampened relativeChurn", () => {
       linesDeleted: 0,
       commitTimestamps: [],
     };
-    const overlay = computeChunkOverlay(acc, 10, undefined, 50);
+    const overlay = computeChunkSignals(acc, 10, undefined, 50);
     expect(overlay.relativeChurn).toBe(0);
   });
 });
@@ -2100,7 +2100,7 @@ describe("chunk-level temporal signals", () => {
       linesDeleted: 2,
       commitTimestamps: [now - 86400, now - 86400 * 7],
     };
-    const overlay = computeChunkOverlay(acc, 10, undefined, 50);
+    const overlay = computeChunkSignals(acc, 10, undefined, 50);
     // exp(-0.1 * 1) + exp(-0.1 * 7) ≈ 0.905 + 0.497 = 1.40
     expect(overlay.recencyWeightedFreq).toBeGreaterThan(1);
     expect(overlay.recencyWeightedFreq).toBeLessThan(2);
@@ -2117,7 +2117,7 @@ describe("chunk-level temporal signals", () => {
       linesDeleted: 5,
       commitTimestamps: [now - 86400 * 60, now - 86400 * 30, now],
     };
-    const overlay = computeChunkOverlay(acc, 10, undefined, 50);
+    const overlay = computeChunkSignals(acc, 10, undefined, 50);
     // span = 60 days = 2 months. density = 3 / 2 = 1.5
     expect(overlay.changeDensity).toBeCloseTo(1.5, 0);
   });
@@ -2132,7 +2132,7 @@ describe("chunk-level temporal signals", () => {
       linesDeleted: 0,
       commitTimestamps: [],
     };
-    const overlay = computeChunkOverlay(acc, 10, undefined, 50);
+    const overlay = computeChunkSignals(acc, 10, undefined, 50);
     expect(overlay.recencyWeightedFreq).toBe(0);
     expect(overlay.changeDensity).toBe(0);
   });
