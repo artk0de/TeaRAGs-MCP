@@ -7,22 +7,15 @@
 
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
+import type { Reranker } from "../search/reranker.js";
 import { SearchModule } from "../search/search-module.js";
-import type {
-  CodeConfig,
-  CodeSearchResult,
-  SearchOptions,
-} from "../types.js";
+import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
 
 export class SearchFacade {
   private readonly search: SearchModule;
 
-  constructor(
-    qdrant: QdrantManager,
-    embeddings: EmbeddingProvider,
-    config: CodeConfig,
-  ) {
-    this.search = new SearchModule(qdrant, embeddings, config);
+  constructor(qdrant: QdrantManager, embeddings: EmbeddingProvider, config: CodeConfig, reranker?: Reranker) {
+    this.search = new SearchModule(qdrant, embeddings, config, reranker);
   }
 
   /** Search code semantically */
