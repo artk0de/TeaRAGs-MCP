@@ -7,7 +7,7 @@
  * - Research-backed churn metrics (Nagappan & Ball 2005)
  */
 
-import type { ChunkSignalOverlay, FileSignalOverlay } from "../types.js";
+import type { ChunkSignalOverlay, FileSignalOverlay } from "../../contracts/index.js";
 
 /**
  * File-level git signals (stored in vector DB for all chunks of a file)
