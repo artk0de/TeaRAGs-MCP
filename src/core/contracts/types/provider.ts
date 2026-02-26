@@ -9,6 +9,7 @@
 
 import type { QdrantFilterCondition } from "../../adapters/qdrant/types.js";
 import type { ChunkLookupEntry } from "../../types.js";
+import type { DerivedSignalDescriptor } from "./reranker.js";
 
 // --- Signal overlay base types ---
 
@@ -75,6 +76,8 @@ export interface EnrichmentProvider {
 
   /** Signal definitions (raw payload fields) */
   readonly signals: Signal[];
+  /** Derived signal descriptors for reranking (normalized transforms of raw signals) */
+  readonly derivedSignals: DerivedSignalDescriptor[];
   /** Typed filter parameters → Qdrant conditions */
   readonly filters: FilterDescriptor[];
   /** Trajectory-owned presets (weight configurations) */

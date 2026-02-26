@@ -27,12 +27,14 @@ import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reader.js";
 import { computeFileSignals } from "./infra/metrics.js";
 import { gitPayloadFields } from "./payload-fields.js";
+import { gitDerivedSignals } from "./signals.js";
 
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
 
   // ── Query-side contract ──
   readonly signals: Signal[] = gitPayloadFields;
+  readonly derivedSignals = gitDerivedSignals;
   readonly filters: FilterDescriptor[] = gitFilters;
   readonly presets: Record<string, ScoringWeights> = {};
 
