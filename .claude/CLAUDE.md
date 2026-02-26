@@ -44,9 +44,9 @@ of domain modules — api/ never imports from foundation directly.
 - Imports ONLY from domain modules, never from foundation directly
 
 **core/search/** — Query-time reranking (domain module)
-- GitReranker (trajectory-level: normalization, alpha-blending, confidence)
-- GenericReranker (structural signals: similarity, chunkSize, docs, imports, pathRisk)
-- CompositeReranker (orchestrator: providers[] -> adaptive bounds -> weighted score)
+- Reranker (orchestrator: derived signals → adaptive bounds → scoring → ranking overlay)
+- Derived signal descriptors from providers (via registry) + structural signals (built-in)
+- Presets: weight configurations over derived signal names
 
 **core/trajectory/** — Trajectory implementations (domain module)
 - Signal definitions (Signal[])
@@ -88,13 +88,26 @@ Example flow:
 
 ## Terminology (MANDATORY)
 
+### Signal Taxonomy
+
+| Term | Definition | Example | Where |
+|------|-----------|---------|-------|
+| **Signal** (raw) | Value stored in Qdrant payload. Defined by Provider. Not normalized. | `ageDays=142`, `commitCount=23`, `bugFixRate=35` | `payload.git.file.*`, `payload.git.chunk.*` |
+| **Derived Signal** | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets. | `recency` (from ageDays), `ownership` (from dominantAuthorPct+authors) | `DerivedSignalDescriptor` in provider |
+| **Structural Signal** | Derived signal from payload structure, not from any trajectory provider. | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk` | Reranker built-in |
+| **Preset** | Named weight configuration over derived signal names. Defines a reranking strategy. | `techDebt: { age: 0.15, churn: 0.15, bugFix: 0.15 }` | search/ or provider |
+| **Ranking Overlay** | Subset of raw + derived signals relevant to the active preset, attached to each reranked result. Includes both file and chunk levels. | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }` | Reranker response |
+
+### Domain Terms
+
 | Term | Meaning |
 |------|---------|
-| Signal | Raw payload field in Qdrant (no normalization). Defined by Provider. |
+| Provider | Trajectory that defines signals, derived signals, filters, and builds signal data. |
 | Filter | Qdrant filter condition builder. Defined by Provider. |
-| Provider | Trajectory that defines signals, filters, and builds signal data. |
-| Reranker | Normalizes signals, applies alpha-blending/confidence, owns presets. |
-| CompositeReranker | Orchestrates trajectory rerankers + structural signals. |
+| Reranker | Orchestrates derived signal extraction, adaptive bounds, scoring, and ranking overlay. |
+| Alpha-blending | L3 confidence-weighted blending of file vs chunk signals: `effective = alpha * chunk + (1-alpha) * file`. |
+| Confidence dampening | Quadratic per-signal dampening for unreliable statistical signals: `(n/k)^2` where k is signal-specific threshold. |
+| Adaptive bounds | Per-query normalization bounds computed from result set (p95), floored with defaults. |
 
 ### Naming Conventions
 
@@ -116,7 +129,9 @@ core/
     shared.ts                          # resolveCollectionName, validatePath
 
   search/                              # Domain module: query-time reranking
-    reranker.ts                        # Current monolith (→ decompose in Plan B)
+    reranker.ts                        # Reranker: scoring, overlay, adaptive bounds
+    structural-signals.ts              # Structural derived signal descriptors
+    presets/                           # Preset definitions (weight configs)
     search-module.ts                   # Search orchestration
 
   trajectory/                          # Domain module: provider implementations
