@@ -16,7 +16,7 @@ import type {
   ScoringWeights,
   Signal,
   TrajectoryQueryContract,
-} from "../contracts/index.js";
+} from "./index.js";
 
 export class TrajectoryRegistry {
   private readonly contracts: Map<string, TrajectoryQueryContract> = new Map();

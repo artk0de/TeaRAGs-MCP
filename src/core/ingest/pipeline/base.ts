@@ -13,7 +13,7 @@ import type { Ignore } from "ignore";
 
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import { resolveCollectionName, validatePath } from "../../api/shared.js";
+import { resolveCollectionName, validatePath } from "../../contracts/collection.js";
 import type { ChunkLookupEntry, CodeConfig } from "../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";

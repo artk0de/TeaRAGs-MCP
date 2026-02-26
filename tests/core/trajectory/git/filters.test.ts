@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { gitFilters, gitPayloadFields } from "../../../../src/core/trajectory/git/filters.js";
+import { gitFilters } from "../../../../src/core/trajectory/git/filters.js";
+import { gitPayloadFields } from "../../../../src/core/trajectory/git/payload-fields.js";
 
 describe("git filter descriptors", () => {
   it("exports 7 filter descriptors", () => {
