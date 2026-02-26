@@ -1,12 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import type { EnrichmentProvider } from "../../../src/core/contracts/index.js";
+import type { DerivedSignalDescriptor, EnrichmentProvider } from "../../../src/core/contracts/index.js";
 import { TrajectoryRegistry } from "../../../src/core/contracts/trajectory-registry.js";
+
+/** Helper: minimal derived signal descriptor for tests */
+function mockDerived(name: string): DerivedSignalDescriptor {
+  return {
+    name,
+    description: `Derived signal: ${name}`,
+    sources: [`raw.${name}`],
+    extract: () => 0.5,
+  };
+}
 
 /** Minimal mock provider with only the fields TrajectoryRegistry cares about. */
 function mockProvider(overrides: Partial<EnrichmentProvider> & { key: string }): EnrichmentProvider {
   return {
     signals: [],
+    derivedSignals: [],
     filters: [],
     presets: {},
     resolveRoot: (p: string) => p,
@@ -154,5 +165,60 @@ describe("TrajectoryRegistry", () => {
     expect(registry.getAll()).toHaveLength(1);
     expect(registry.getAllSignals()).toHaveLength(1);
     expect(registry.getAllSignals()[0].name).toBe("v2");
+  });
+
+  // --- getAllDerivedSignals ---
+
+  it("should return empty array from getAllDerivedSignals when no providers registered", () => {
+    const registry = new TrajectoryRegistry();
+    expect(registry.getAllDerivedSignals()).toEqual([]);
+  });
+
+  it("should return derived signals from a single provider", () => {
+    const registry = new TrajectoryRegistry();
+    const recency = mockDerived("recency");
+    const churn = mockDerived("churn");
+    registry.register(mockProvider({ key: "git", derivedSignals: [recency, churn] }));
+
+    const result = registry.getAllDerivedSignals();
+    expect(result).toHaveLength(2);
+    expect(result[0].name).toBe("recency");
+    expect(result[1].name).toBe("churn");
+  });
+
+  it("should aggregate derived signals from multiple providers", () => {
+    const registry = new TrajectoryRegistry();
+    registry.register(mockProvider({ key: "git", derivedSignals: [mockDerived("recency")] }));
+    registry.register(mockProvider({ key: "graph", derivedSignals: [mockDerived("complexity")] }));
+
+    const result = registry.getAllDerivedSignals();
+    expect(result).toHaveLength(2);
+    expect(result.map((d) => d.name)).toEqual(["recency", "complexity"]);
+  });
+
+  // --- register() duplicate derived signal validation ---
+
+  it("should throw on duplicate derived signal name from different provider", () => {
+    const registry = new TrajectoryRegistry();
+    registry.register(mockProvider({ key: "git", derivedSignals: [mockDerived("recency")] }));
+
+    expect(() => {
+      registry.register(mockProvider({ key: "graph", derivedSignals: [mockDerived("recency")] }));
+    }).toThrow(/Derived signal name conflict: "recency"/);
+  });
+
+  it("should allow overriding same provider key without conflict", () => {
+    const registry = new TrajectoryRegistry();
+    registry.register(mockProvider({ key: "git", derivedSignals: [mockDerived("recency")] }));
+
+    // Re-register same key with same derived signal name — should NOT throw
+    const gitV2 = mockProvider({ key: "git", derivedSignals: [mockDerived("recency"), mockDerived("churn")] });
+    expect(() => {
+      registry.register(gitV2);
+    }).not.toThrow();
+
+    const result = registry.getAllDerivedSignals();
+    expect(result).toHaveLength(2);
+    expect(result.map((d) => d.name)).toEqual(["recency", "churn"]);
   });
 });
