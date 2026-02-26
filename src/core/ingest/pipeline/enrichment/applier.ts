@@ -11,12 +11,11 @@
 import { relative } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { ChunkSignalOverlay, FileSignalOverlay, FileSignalTransform } from "../../../contracts/types/provider.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 
 const BATCH_SIZE = 100;
-
-export type FileSignalTransform = (data: Record<string, unknown>, maxEndLine: number) => Record<string, unknown>;
 
 export class EnrichmentApplier {
   matchedFiles = 0;
@@ -36,7 +35,7 @@ export class EnrichmentApplier {
   async applyFileSignals(
     collectionName: string,
     providerKey: string,
-    fileMetadata: Map<string, Record<string, unknown>>,
+    fileMetadata: Map<string, FileSignalOverlay>,
     pathBase: string,
     items: ChunkItem[],
     transform?: FileSignalTransform,
@@ -106,7 +105,7 @@ export class EnrichmentApplier {
   async applyChunkSignals(
     collectionName: string,
     providerKey: string,
-    chunkMetadata: Map<string, Map<string, Record<string, unknown>>>,
+    chunkMetadata: Map<string, Map<string, ChunkSignalOverlay>>,
   ): Promise<number> {
     let batch: {
       payload: Record<string, unknown>;

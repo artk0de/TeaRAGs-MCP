@@ -3,7 +3,6 @@ export type * from "./types/reranker.js";
 export * from "./signal-utils.js";
 export { resolveCollectionName, validatePath } from "./collection.js";
 export { TrajectoryRegistry } from "./trajectory-registry.js";
-export { EnrichmentRegistry } from "./enrichment-registry.js";
 
 // Re-export Qdrant filter primitives from canonical source
 export type {

@@ -1,49 +1,56 @@
 /**
- * TrajectoryRegistry — API facade that collects signals, filters,
- * presets, and field docs from registered trajectory providers.
+ * TrajectoryRegistry — single registry for enrichment providers.
  *
- * The query layer (search facade, MCP tools) uses this registry
- * to build Qdrant filters, resolve rerank presets, and generate
- * dynamic tool schemas — all without knowing which specific
- * trajectory providers are active.
+ * Collects signals, filters, presets, and field docs from registered
+ * EnrichmentProvider instances. The query layer (search facade, MCP tools)
+ * uses this registry to build Qdrant filters, resolve rerank presets,
+ * and generate dynamic tool schemas — all without knowing which
+ * specific trajectory providers are active.
+ *
+ * The ingest layer uses getAll() to obtain providers for enrichment.
  */
 
 import type {
+  EnrichmentProvider,
   FilterDescriptor,
   FilterLevel,
   QdrantFilter,
   QdrantFilterCondition,
   ScoringWeights,
   Signal,
-  TrajectoryQueryContract,
 } from "./index.js";
 
 export class TrajectoryRegistry {
-  private readonly contracts: Map<string, TrajectoryQueryContract> = new Map();
+  private readonly providers: Map<string, EnrichmentProvider> = new Map();
 
   /**
-   * Register a trajectory's query contract by provider key.
+   * Register an enrichment provider by its key.
    *
-   * Later registrations override earlier ones for same-named presets.
+   * Later registrations override earlier ones for the same key.
    */
-  register(key: string, contract: TrajectoryQueryContract): void {
-    this.contracts.set(key, contract);
+  register(provider: EnrichmentProvider): void {
+    this.providers.set(provider.key, provider);
   }
 
-  /** All signals from all registered trajectories (no deduplication) */
+  /** All registered providers (for ingest layer). */
+  getAll(): EnrichmentProvider[] {
+    return [...this.providers.values()];
+  }
+
+  /** All signals from all registered providers (no deduplication) */
   getAllSignals(): Signal[] {
     const signals: Signal[] = [];
-    for (const contract of this.contracts.values()) {
-      signals.push(...contract.signals);
+    for (const provider of this.providers.values()) {
+      signals.push(...provider.signals);
     }
     return signals;
   }
 
-  /** All filters from all registered trajectories */
+  /** All filters from all registered providers */
   getAllFilters(): FilterDescriptor[] {
     const filters: FilterDescriptor[] = [];
-    for (const contract of this.contracts.values()) {
-      filters.push(...contract.filters);
+    for (const provider of this.providers.values()) {
+      filters.push(...provider.filters);
     }
     return filters;
   }
@@ -51,13 +58,13 @@ export class TrajectoryRegistry {
   /**
    * Merged presets across all providers.
    *
-   * If two trajectories define a preset with the same name,
+   * If two providers define a preset with the same name,
    * the later registration wins (Map iteration order = insertion order).
    */
   getAllPresets(): Record<string, ScoringWeights> {
     const merged: Record<string, ScoringWeights> = {};
-    for (const contract of this.contracts.values()) {
-      Object.assign(merged, contract.presets);
+    for (const provider of this.providers.values()) {
+      Object.assign(merged, provider.presets);
     }
     return merged;
   }
@@ -89,11 +96,11 @@ export class TrajectoryRegistry {
 
   /** Get registered provider keys */
   getRegisteredKeys(): string[] {
-    return [...this.contracts.keys()];
+    return [...this.providers.keys()];
   }
 
-  /** Check if a specific trajectory is registered */
+  /** Check if a specific provider is registered */
   has(key: string): boolean {
-    return this.contracts.has(key);
+    return this.providers.has(key);
   }
 }
