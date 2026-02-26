@@ -81,9 +81,10 @@ describe("git payload field docs", () => {
     expect(chunkFields.length).toBeGreaterThanOrEqual(8);
   });
 
-  it("each field has required properties", () => {
+  it("each field has required Signal properties", () => {
     for (const f of gitPayloadFields) {
       expect(f.key).toBeTruthy();
+      expect(f.name).toBeTruthy();
       expect(f.description).toBeTruthy();
       expect(["string", "number", "boolean", "string[]", "timestamp"]).toContain(f.type);
     }

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { gitSignals } from "../../../../src/core/trajectory/git/signals.js";
 
 describe("git signal descriptors", () => {
-  it("exports array of SignalDescriptors", () => {
+  it("exports array of signal descriptors", () => {
     expect(Array.isArray(gitSignals)).toBe(true);
     expect(gitSignals.length).toBe(14);
   });

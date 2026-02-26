@@ -9,15 +9,14 @@
  */
 
 import type {
-  FieldDoc,
   FilterDescriptor,
   FilterLevel,
   QdrantFilter,
   QdrantFilterCondition,
   ScoringWeights,
-  SignalDescriptor,
+  Signal,
   TrajectoryQueryContract,
-} from "../trajectory/types.js";
+} from "../contracts/index.js";
 
 export class TrajectoryRegistry {
   private readonly contracts: Map<string, TrajectoryQueryContract> = new Map();
@@ -32,8 +31,8 @@ export class TrajectoryRegistry {
   }
 
   /** All signals from all registered trajectories (no deduplication) */
-  getAllSignals(): SignalDescriptor[] {
-    const signals: SignalDescriptor[] = [];
+  getAllSignals(): Signal[] {
+    const signals: Signal[] = [];
     for (const contract of this.contracts.values()) {
       signals.push(...contract.signals);
     }
@@ -61,15 +60,6 @@ export class TrajectoryRegistry {
       Object.assign(merged, contract.presets);
     }
     return merged;
-  }
-
-  /** All payload field docs for dynamic MCP schema */
-  getAllPayloadFields(): FieldDoc[] {
-    const fields: FieldDoc[] = [];
-    for (const contract of this.contracts.values()) {
-      fields.push(...contract.payloadFields);
-    }
-    return fields;
   }
 
   /**

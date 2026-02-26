@@ -8,28 +8,10 @@ import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../adapters/embeddings/sparse.js";
 import type { QdrantManager, SearchResult } from "../adapters/qdrant/client.js";
 import { calculateFetchLimit, filterResultsByGlob } from "../adapters/qdrant/filters/index.js";
-import { rerankSearchCodeResults, type RerankMode, type SearchCodeRerankPreset } from "./reranker.js";
-import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
+import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
 import { resolveCollectionName, validatePath } from "../api/shared.js";
-
-// Qdrant filter type definitions
-interface QdrantMatchFilter {
-  key: string;
-  match: { value: unknown } | { any: unknown[] };
-}
-
-interface QdrantRangeFilter {
-  key: string;
-  range: { gte?: number; lte?: number };
-}
-
-type QdrantFilterCondition = QdrantMatchFilter | QdrantRangeFilter;
-
-interface QdrantFilter {
-  must?: QdrantFilterCondition[];
-  should?: QdrantFilterCondition[];
-  must_not?: QdrantFilterCondition[];
-}
+import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
+import { rerankSearchCodeResults, type RerankMode, type SearchCodeRerankPreset } from "./reranker.js";
 
 export class SearchModule {
   constructor(

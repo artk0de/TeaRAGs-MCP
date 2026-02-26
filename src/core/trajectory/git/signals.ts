@@ -6,7 +6,18 @@
  * how to read from both nested (git.file.*) and flat (git.*) formats.
  */
 
-import type { SignalDescriptor } from "../types.js";
+/**
+ * Reranker-level signal descriptor — extract + normalize from payload.
+ * Will move to core/search/ during reranker decomposition (Plan B).
+ */
+interface SignalDescriptor {
+  name: string;
+  description: string;
+  extract: (payload: Record<string, unknown>) => number;
+  defaultBound?: number;
+  needsConfidence?: boolean;
+  confidenceField?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
