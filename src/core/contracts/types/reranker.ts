@@ -69,3 +69,21 @@ export type SemanticSearchRerankPreset =
 export type SearchCodeRerankPreset = "relevance" | "recent" | "stable";
 
 export type RerankMode<T extends string> = T | { custom: ScoringWeights };
+
+/** Raw signal values relevant to the active preset, at file and chunk levels. */
+export interface RankingOverlayRaw {
+  file?: Record<string, unknown>;
+  chunk?: Record<string, unknown>;
+}
+
+/** Ranking overlay attached to each reranked result — explains WHY it scored this way. */
+export interface RankingOverlay {
+  preset: string;
+  derived: Record<string, number>;
+  raw: RankingOverlayRaw;
+}
+
+/** Search result with ranking overlay from reranker. */
+export interface RerankedResult extends RerankableResult {
+  rankingOverlay?: RankingOverlay;
+}
