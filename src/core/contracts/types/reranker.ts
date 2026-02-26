@@ -15,8 +15,9 @@ export interface DerivedSignalDescriptor {
   description: string;
   /** Raw signal names this derived signal reads from (enables ranking overlay) */
   sources: string[];
-  /** Extract normalized value (0-1) from search result payload */
-  extract: (payload: Record<string, unknown>) => number;
+  /** Extract normalized value (0-1) from search result payload.
+   *  Optional `bound` overrides defaultBound for adaptive normalization. */
+  extract: (payload: Record<string, unknown>, bound?: number) => number;
   /** Default upper bound for normalization */
   defaultBound?: number;
   /** Whether to apply confidence dampening */
@@ -39,20 +40,6 @@ export interface RerankableResult {
     git?: Record<string, unknown>;
     [key: string]: unknown;
   };
-}
-
-export interface NormalizationBounds {
-  maxAgeDays: number;
-  maxCommitCount: number;
-  maxChunkSize: number;
-  maxImports: number;
-  maxBugFixRate: number;
-  maxVolatility: number;
-  maxChangeDensity: number;
-  maxChunkCommitCount: number;
-  maxRelativeChurn: number;
-  maxBurstActivity: number;
-  maxChunkChurnRatio: number;
 }
 
 export type SemanticSearchRerankPreset =

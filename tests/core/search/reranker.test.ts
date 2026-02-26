@@ -182,14 +182,14 @@ describe("reranker", () => {
 
     it("should prefer chunk-level churn over file-level in hotspots", () => {
       const results = [
-        // File has high churn (20), but this chunk is cold (chunkCommitCount=1)
-        createResult(0.8, 10, 20, false, { chunkCommitCount: 1 }),
-        // File has low churn (3), but this chunk is hot (chunkCommitCount=15)
-        createResult(0.8, 10, 3, false, { chunkCommitCount: 15 }),
+        // File has high churn (20), but this chunk is cold (chunk.commitCount=1)
+        createResult(0.8, 10, 20, false, { chunk: { commitCount: 1 } }),
+        // File has low churn (3), but this chunk is hot (chunk.commitCount=15)
+        createResult(0.8, 10, 3, false, { chunk: { commitCount: 15 } }),
       ];
       const reranked = rerankSemanticSearchResults(results, "hotspots");
-      // Chunk with high chunkCommitCount should rank higher
-      expect(reranked[0].payload?.git?.chunkCommitCount).toBe(15);
+      // Chunk with high chunk.commitCount should rank higher
+      expect(reranked[0].payload?.git?.chunk?.commitCount).toBe(15);
     });
 
     it("should boost high bugFixRate + old code in techDebt preset", () => {
@@ -204,7 +204,7 @@ describe("reranker", () => {
 
     it("should not crash when mixing chunk-level and file-level results", () => {
       const results = [
-        createResult(0.9, 10, 5, false, { chunkCommitCount: 8 }),
+        createResult(0.9, 10, 5, false, { chunk: { commitCount: 8 } }),
         createResult(0.8, 20, 3, false), // no chunk-level data
       ];
       const reranked = rerankSemanticSearchResults(results, "hotspots");
@@ -307,53 +307,53 @@ describe("reranker", () => {
     });
 
     it("should normalize chunkChurnRatio via chunkRelativeChurn signal", () => {
-      // Same chunkCommitCount — only ratio differs. LOW ratio first.
+      // Same chunk.commitCount — only ratio differs. LOW ratio first.
       const results = [
-        createResult(0.8, 10, 10, false, { chunkCommitCount: 5, chunkChurnRatio: 0.1 }),
-        createResult(0.8, 10, 10, false, { chunkCommitCount: 5, chunkChurnRatio: 0.9 }),
+        createResult(0.8, 10, 10, false, { chunk: { commitCount: 5, churnRatio: 0.1 } }),
+        createResult(0.8, 10, 10, false, { chunk: { commitCount: 5, churnRatio: 0.9 } }),
       ];
       const reranked = rerankSemanticSearchResults(results, {
         custom: { similarity: 0.1, chunkRelativeChurn: 0.9 },
       });
-      // High chunkChurnRatio must be reordered to first
-      expect(reranked[0].payload?.git?.chunkChurnRatio).toBe(0.9);
+      // High chunk.churnRatio must be reordered to first
+      expect(reranked[0].payload?.git?.chunk?.churnRatio).toBe(0.9);
     });
   });
 
   describe("chunk-level preference for bugFix and knowledgeSilo", () => {
-    it("should prefer chunkBugFixRate over file-level bugFixRate", () => {
-      // With alpha-blending, chunk data needs sufficient chunkCommitCount for alpha > 0.
-      // chunkCommitCount=8 with file commitCount=10 → alpha=0.8 (chunk dominates).
-      // File has low bugFixRate (10%), but chunk has high chunkBugFixRate (80%)
-      // vs file with high bugFixRate (80%) but chunk has low chunkBugFixRate (10%)
+    it("should prefer chunk bugFixRate over file-level bugFixRate", () => {
+      // With alpha-blending, chunk data needs sufficient chunk.commitCount for alpha > 0.
+      // chunk.commitCount=8 with file commitCount=10 → alpha=0.8 (chunk dominates).
+      // File has low bugFixRate (10%), but chunk has high bugFixRate (80%)
+      // vs file with high bugFixRate (80%) but chunk has low bugFixRate (10%)
       // LOW chunk bugfix first — must be reordered if chunk-level preferred
       const results = [
-        createResult(0.8, 30, 10, false, { bugFixRate: 80, chunkBugFixRate: 10, chunkCommitCount: 8 }),
-        createResult(0.8, 30, 10, false, { bugFixRate: 10, chunkBugFixRate: 80, chunkCommitCount: 8 }),
+        createResult(0.8, 30, 10, false, { bugFixRate: 80, chunk: { bugFixRate: 10, commitCount: 8 } }),
+        createResult(0.8, 30, 10, false, { bugFixRate: 10, chunk: { bugFixRate: 80, commitCount: 8 } }),
       ];
       const reranked = rerankSemanticSearchResults(results, {
         custom: { similarity: 0.1, bugFix: 0.9 },
       });
-      // Chunk with high chunkBugFixRate should rank first (alpha=0.8 makes chunk dominate)
-      expect(reranked[0].payload?.git?.chunkBugFixRate).toBe(80);
+      // Chunk with high chunk.bugFixRate should rank first (alpha=0.8 makes chunk dominate)
+      expect(reranked[0].payload?.git?.chunk?.bugFixRate).toBe(80);
     });
 
-    it("should prefer chunkContributorCount over file-level contributorCount for knowledgeSilo", () => {
-      // With alpha-blending, chunk data needs sufficient chunkCommitCount for alpha=1.0.
-      // chunkCommitCount=10 with file commitCount=10 → alpha=1.0 (pure chunk values).
+    it("should prefer chunk contributorCount over file-level contributorCount for knowledgeSilo", () => {
+      // With alpha-blending, chunk data needs sufficient chunk.commitCount for alpha=1.0.
+      // chunk.commitCount=10 with file commitCount=10 → alpha=1.0 (pure chunk values).
       // knowledgeSilo uses categorical thresholds (1→1.0, 2→0.5, 3+→0) so needs exact integers.
       // File has 5 contributors, but this chunk only has 1
       // vs file with 1 contributor but chunk has 3
       // Multi-contributor chunk first — must be reordered if chunk-level preferred
       const results = [
-        createResult(0.8, 30, 10, false, { contributorCount: 1, chunkContributorCount: 3, chunkCommitCount: 10 }),
-        createResult(0.8, 30, 10, false, { contributorCount: 5, chunkContributorCount: 1, chunkCommitCount: 10 }),
+        createResult(0.8, 30, 10, false, { contributorCount: 1, chunk: { contributorCount: 3, commitCount: 10 } }),
+        createResult(0.8, 30, 10, false, { contributorCount: 5, chunk: { contributorCount: 1, commitCount: 10 } }),
       ];
       const reranked = rerankSemanticSearchResults(results, {
         custom: { similarity: 0.1, knowledgeSilo: 0.9 },
       });
-      // Chunk with chunkContributorCount=1 (silo) should rank first (alpha=1.0 → pure chunk value)
-      expect(reranked[0].payload?.git?.chunkContributorCount).toBe(1);
+      // Chunk with chunk.contributorCount=1 (silo) should rank first (alpha=1.0 → pure chunk value)
+      expect(reranked[0].payload?.git?.chunk?.contributorCount).toBe(1);
     });
   });
 
@@ -400,12 +400,12 @@ describe("reranker", () => {
     it("should NOT penalize block chunks that have chunk-level data", () => {
       const results = [
         // Block with chunk-level data — should NOT be penalized
-        createResultWithChunkType(0.8, "block", { chunkCommitCount: 15, chunkChurnRatio: 0.8 }),
+        createResultWithChunkType(0.8, "block", { chunk: { commitCount: 15, churnRatio: 0.8 } }),
         // Function without chunk-level data — no penalty either
         createResultWithChunkType(0.8, "function", {}),
       ];
       const reranked = rerankSemanticSearchResults(results, "hotspots");
-      // Block with chunk data should rank at least as high (it has high chunkCommitCount)
+      // Block with chunk data should rank at least as high (it has high chunk.commitCount)
       expect(reranked[0].payload?.chunkType).toBe("block");
     });
 
@@ -540,15 +540,13 @@ describe("reranker", () => {
       // Hotspots uses bugFix and volatility which should be dampened
       const results = [
         createResult(0.8, 10, 1, false, {
-          chunkCommitCount: 1,
-          chunkChurnRatio: 1.0,
+          chunk: { commitCount: 1, churnRatio: 1.0 },
           recencyWeightedFreq: 1.0,
           bugFixRate: 100,
           churnVolatility: 30,
         }),
         createResult(0.8, 10, 10, false, {
-          chunkCommitCount: 8,
-          chunkChurnRatio: 0.8,
+          chunk: { commitCount: 8, churnRatio: 0.8 },
           recencyWeightedFreq: 5.0,
           bugFixRate: 40,
           churnVolatility: 20,
@@ -1358,5 +1356,65 @@ describe("Reranker (v2 class)", () => {
     const ranked = reranker.rerank(results, "recent", "search_code");
     expect(ranked[0].rankingOverlay!.preset).toBe("recent");
     expect(ranked[0].rankingOverlay!.derived).toHaveProperty("recency");
+  });
+
+  describe("confidence dampening via descriptors", () => {
+    it("dampens bugFix for low commit counts (needsConfidence=true)", () => {
+      // bugFix descriptor has needsConfidence=true, confidenceField="commitCount"
+      // With commitCount=2, confidence = (2/8)^2 = 0.0625
+      // bugFix raw = normalize(bugFixRate=100, 100) = 1.0
+      // bugFix dampened = 1.0 * 0.0625 = 0.0625
+      const results = [makeResult(0.5, { file: { commitCount: 2, bugFixRate: 100, ageDays: 100 } })];
+      const ranked = reranker.rerank(results, "techDebt", "semantic_search");
+      const { bugFix } = ranked[0].rankingOverlay!.derived;
+      expect(bugFix).toBeDefined();
+      // Should be dampened: ~0.0625 not 1.0
+      expect(bugFix).toBeLessThan(0.15);
+    });
+
+    it("does not dampen signals without needsConfidence (recency)", () => {
+      // recency has needsConfidence=undefined — no dampening
+      const results = [makeResult(0.5, { file: { ageDays: 182.5, commitCount: 1 } })];
+      const ranked = reranker.rerank(results, "codeReview", "semantic_search");
+      const { recency } = ranked[0].rankingOverlay!.derived;
+      // recency = 1 - 182.5/365 = 0.5 (no dampening regardless of commitCount)
+      expect(recency).toBeCloseTo(0.5, 1);
+    });
+
+    it("full confidence when commitCount exceeds threshold", () => {
+      // bugFix: k=8, commitCount=10 → confidence=(10/8)^2 capped at 1
+      const results = [makeResult(0.5, { file: { commitCount: 10, bugFixRate: 50, ageDays: 100 } })];
+      const ranked = reranker.rerank(results, "techDebt", "semantic_search");
+      const { bugFix } = ranked[0].rankingOverlay!.derived;
+      // bugFix = normalize(50, 100) * confidence(10, k=8) = 0.5 * 1.0 = 0.5
+      expect(bugFix).toBeCloseTo(0.5, 1);
+    });
+  });
+
+  describe("adaptive bounds", () => {
+    it("expands bounds when p95 exceeds default (prevents saturation)", () => {
+      // Create results where ageDays >> defaultBound (365)
+      // Without adaptive bounds: all would saturate at 1.0
+      // With adaptive bounds: spread based on p95
+      const results = [
+        makeResult(0.5, { file: { ageDays: 1000, commitCount: 5 } }),
+        makeResult(0.5, { file: { ageDays: 800, commitCount: 5 } }),
+        makeResult(0.5, { file: { ageDays: 600, commitCount: 5 } }),
+        makeResult(0.5, { file: { ageDays: 100, commitCount: 5 } }),
+      ];
+      const ranked = reranker.rerank(results, { custom: { age: 1.0 } }, "semantic_search");
+      // With adaptive bounds, age=100 should NOT be ~0.27 (100/365) but ~0.1 (100/1000)
+      // Find the result with ageDays=100
+      const low = ranked.find((r) => r.payload?.git?.file?.ageDays === 100);
+      const high = ranked.find((r) => r.payload?.git?.file?.ageDays === 1000);
+      expect(low).toBeDefined();
+      expect(high).toBeDefined();
+      // High should rank higher (more age = higher score)
+      expect(high!.score).toBeGreaterThan(low!.score);
+      // Low age result should have meaningfully lower score than high
+      // With static bounds: both 1000 and 800 saturate at 1.0
+      // With adaptive: differentiation preserved
+      expect(high!.score - low!.score).toBeGreaterThan(0.3);
+    });
   });
 });
