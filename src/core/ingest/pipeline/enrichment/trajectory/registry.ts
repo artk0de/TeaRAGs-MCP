@@ -5,9 +5,9 @@
  * New providers: add a config check + import here.
  */
 
+import { GitEnrichmentProvider } from "../../../../trajectory/git/provider.js";
 import type { CodeConfig } from "../../../../types.js";
 import type { EnrichmentProvider } from "../types.js";
-import { GitEnrichmentProvider } from "./git/provider.js";
 
 export function createEnrichmentProviders(config: CodeConfig): EnrichmentProvider[] {
   const providers: EnrichmentProvider[] = [];
