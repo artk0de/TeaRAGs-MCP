@@ -6,7 +6,7 @@
  * and custom weight configurations.
  */
 
-import type { DerivedSignalDescriptor, RankingOverlay, RerankedResult } from "../contracts/types/reranker.js";
+import type { DerivedSignalDescriptor, RankingOverlay } from "../contracts/types/reranker.js";
 
 /**
  * Custom scoring weights configuration
@@ -570,7 +570,7 @@ export class Reranker {
     results: T[],
     mode: RerankMode<string>,
     presetSet: "semantic_search" | "search_code",
-  ): RerankedResult[] {
+  ): (T & { rankingOverlay?: RankingOverlay })[] {
     const presets = presetSet === "semantic_search" ? SEMANTIC_SEARCH_PRESETS : SEARCH_CODE_PRESETS;
 
     // Resolve weights
@@ -590,7 +590,7 @@ export class Reranker {
       return w !== undefined && w !== 0;
     });
     if (activeKeys.length === 1 && activeKeys[0] === "similarity") {
-      return results.map((r) => ({ ...r }) as RerankedResult);
+      return results.map((r) => ({ ...r }));
     }
 
     // Compute adaptive bounds
@@ -601,7 +601,7 @@ export class Reranker {
       const signals = calculateSignals(result, bounds);
       const score = calculateScore(signals, weights);
       const overlay = this.buildOverlay(result, presetName, weights, signals);
-      return { ...result, score, rankingOverlay: overlay } as RerankedResult;
+      return { ...result, score, rankingOverlay: overlay };
     });
 
     return scored.sort((a, b) => b.score - a.score);

@@ -3,6 +3,7 @@ import { calculateFetchLimit, filterResultsByGlob } from "../../../core/adapters
 import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/api/shared.js";
 import {
   rerankSemanticSearchResults,
+  type Reranker,
   type RerankMode,
   type SemanticSearchRerankPreset,
 } from "../../../core/search/reranker.js";
@@ -46,12 +47,16 @@ export function getSearchFetchLimit(
 
 export function applyPostProcessing(
   results: SearchResult[],
-  options: { pathPattern?: string; rerank?: unknown; limit: number },
+  options: { pathPattern?: string; rerank?: unknown; limit: number; reranker?: Reranker },
 ): SearchResult[] {
   let filtered = options.pathPattern ? filterResultsByGlob(results, options.pathPattern) : results;
 
   if (options.rerank && options.rerank !== "relevance") {
-    filtered = rerankSemanticSearchResults(filtered, options.rerank as RerankMode<SemanticSearchRerankPreset>);
+    if (options.reranker) {
+      filtered = options.reranker.rerank(filtered, options.rerank as RerankMode<string>, "semantic_search");
+    } else {
+      filtered = rerankSemanticSearchResults(filtered, options.rerank as RerankMode<SemanticSearchRerankPreset>);
+    }
   }
 
   return filtered.slice(0, options.limit);
@@ -69,6 +74,9 @@ export function formatSearchResults(results: SearchResult[], metaOnly?: boolean)
       name: r.payload?.name,
       imports: r.payload?.imports,
       git: r.payload?.git,
+      ...((r as SearchResult & { rankingOverlay?: unknown }).rankingOverlay
+        ? { rankingOverlay: (r as SearchResult & { rankingOverlay?: unknown }).rankingOverlay }
+        : {}),
     }));
     return { content: [{ type: "text", text: JSON.stringify(metaResults, null, 2) }] };
   }
