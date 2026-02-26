@@ -1,17 +1,23 @@
 /**
  * Shared provider contracts — domain interfaces for trajectory system.
  * Lives in contracts/ for DIP: trajectory, ingest, search all import from here.
+ *
+ * EnrichmentProvider is the single interface that every trajectory provider
+ * must implement. It covers both the ingest side (buildFileSignals,
+ * buildChunkSignals) and the query side (signals, filters, presets).
  */
 
 import type { QdrantFilterCondition } from "../../adapters/qdrant/types.js";
 import type { ChunkLookupEntry } from "../../types.js";
 
-// --- Overlay base types ---
+// --- Signal overlay base types ---
 
+/** Base type for file-level signal payload. All providers extend this. */
 export interface FileSignalOverlay {
   [key: string]: unknown;
 }
 
+/** Base type for chunk-level signal payload. All providers extend this. */
 export interface ChunkSignalOverlay {
   [key: string]: unknown;
 }
@@ -57,35 +63,36 @@ export interface FilterDescriptor {
 
 // --- File signal transform ---
 
-export type FileSignalTransform = (data: Record<string, unknown>, maxEndLine: number) => Record<string, unknown>;
+export type FileSignalTransform = (data: FileSignalOverlay, maxEndLine: number) => FileSignalOverlay;
 
 // --- Enrichment provider ---
 
 export interface EnrichmentProvider {
   /** Namespace key for Qdrant payload: { [key].file: ..., [key].chunk: ... } */
   readonly key: string;
-  /** Resolve the effective root for this provider (e.g. git repo root). */
-  resolveRoot: (absolutePath: string) => string;
-  /** Optional per-file transform applied at write time. */
-  readonly fileSignalTransform?: FileSignalTransform;
-  /** File-level signal enrichment (prefetch at T=0, or backfill for specific paths) */
-  buildFileSignals: (root: string, options?: { paths?: string[] }) => Promise<Map<string, Record<string, unknown>>>;
-  /** Chunk-level signal enrichment (post-flush) */
-  buildChunkSignals: (
-    root: string,
-    chunkMap: Map<string, ChunkLookupEntry[]>,
-  ) => Promise<Map<string, Map<string, Record<string, unknown>>>>;
-}
 
-// --- Trajectory query contract ---
+  // ── Query-side contract ──
 
-export interface TrajectoryQueryContract {
   /** Signal definitions (raw payload fields) */
   readonly signals: Signal[];
   /** Typed filter parameters → Qdrant conditions */
   readonly filters: FilterDescriptor[];
   /** Trajectory-owned presets (weight configurations) */
   readonly presets: Record<string, ScoringWeights>;
+
+  // ── Ingest-side contract ──
+
+  /** Resolve the effective root for this provider (e.g. git repo root). */
+  resolveRoot: (absolutePath: string) => string;
+  /** Optional per-file transform applied at write time. */
+  readonly fileSignalTransform?: FileSignalTransform;
+  /** File-level signal enrichment (prefetch at T=0, or backfill for specific paths) */
+  buildFileSignals: (root: string, options?: { paths?: string[] }) => Promise<Map<string, FileSignalOverlay>>;
+  /** Chunk-level signal enrichment (post-flush) */
+  buildChunkSignals: (
+    root: string,
+    chunkMap: Map<string, ChunkLookupEntry[]>,
+  ) => Promise<Map<string, Map<string, ChunkSignalOverlay>>>;
 }
 
 // Re-export for convenience

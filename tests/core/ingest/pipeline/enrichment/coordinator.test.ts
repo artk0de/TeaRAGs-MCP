@@ -1,8 +1,8 @@
 import ignore from "ignore";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { EnrichmentProvider } from "../../../../../src/core/contracts/types/provider.js";
 import { EnrichmentCoordinator } from "../../../../../src/core/ingest/pipeline/enrichment/coordinator.js";
-import type { EnrichmentProvider } from "../../../../../src/core/ingest/pipeline/enrichment/types.js";
 
 describe("EnrichmentCoordinator", () => {
   let mockQdrant: any;
@@ -16,6 +16,9 @@ describe("EnrichmentCoordinator", () => {
     };
     mockProvider = {
       key: "git",
+      signals: [],
+      filters: [],
+      presets: {},
       resolveRoot: vi.fn((p: string) => p),
       buildFileSignals: vi.fn().mockResolvedValue(new Map()),
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
@@ -106,12 +109,18 @@ describe("EnrichmentCoordinator", () => {
   it("handles multiple providers in parallel", async () => {
     const providerA: EnrichmentProvider = {
       key: "alpha",
+      signals: [],
+      filters: [],
+      presets: {},
       resolveRoot: vi.fn((p: string) => p),
       buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { a: 1 }]])),
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
     const providerB: EnrichmentProvider = {
       key: "beta",
+      signals: [],
+      filters: [],
+      presets: {},
       resolveRoot: vi.fn((p: string) => p),
       buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { b: 2 }]])),
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),

@@ -15,6 +15,7 @@ import { relative } from "node:path";
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { FileSignalOverlay } from "../../../contracts/types/provider.js";
 import type { ChunkLookupEntry, EnrichmentInfo, EnrichmentMetrics } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../../constants.js";
 import { pipelineLog } from "../infra/debug-logger.js";
@@ -30,8 +31,8 @@ interface PendingBatch {
 
 interface ProviderState {
   provider: EnrichmentProvider;
-  prefetchPromise: Promise<Map<string, Record<string, unknown>>> | null;
-  fileMetadata: Map<string, Record<string, unknown>> | null;
+  prefetchPromise: Promise<Map<string, FileSignalOverlay>> | null;
+  fileMetadata: Map<string, FileSignalOverlay> | null;
   prefetchFailed: boolean;
   effectiveRoot: string | null;
   pendingBatches: PendingBatch[];
@@ -319,7 +320,7 @@ export class EnrichmentCoordinator {
     // 1. Wait for all prefetch promises
     const prefetchPromises = [...this.states.values()]
       .map(async (s) => s.prefetchPromise)
-      .filter((p): p is Promise<Map<string, Record<string, unknown>>> => p !== null);
+      .filter((p): p is Promise<Map<string, FileSignalOverlay>> => p !== null);
     if (prefetchPromises.length > 0) {
       await Promise.allSettled(prefetchPromises);
     }
@@ -454,7 +455,7 @@ export class EnrichmentCoordinator {
     });
 
     const backfillStart = Date.now();
-    let backfillData: Map<string, Record<string, unknown>>;
+    let backfillData: Map<string, FileSignalOverlay>;
     try {
       const root = state.effectiveRoot;
       if (!root) return;
