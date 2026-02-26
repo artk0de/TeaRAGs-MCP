@@ -11,6 +11,7 @@
  */
 
 import type {
+  DerivedSignalDescriptor,
   EnrichmentProvider,
   FilterDescriptor,
   FilterLevel,
@@ -27,8 +28,25 @@ export class TrajectoryRegistry {
    * Register an enrichment provider by its key.
    *
    * Later registrations override earlier ones for the same key.
+   * Throws if a derived signal name conflicts with another provider.
    */
   register(provider: EnrichmentProvider): void {
+    // Check for derived signal name conflicts with existing providers
+    const existingNames = new Set<string>();
+    for (const [key, existing] of this.providers) {
+      if (key === provider.key) continue; // Skip self (override allowed)
+      for (const d of existing.derivedSignals) {
+        existingNames.add(d.name);
+      }
+    }
+    for (const d of provider.derivedSignals) {
+      if (existingNames.has(d.name)) {
+        throw new Error(
+          `Derived signal name conflict: "${d.name}" is already registered by another provider. ` +
+            `Provider "${provider.key}" cannot register a duplicate.`,
+        );
+      }
+    }
     this.providers.set(provider.key, provider);
   }
 
@@ -67,6 +85,18 @@ export class TrajectoryRegistry {
       Object.assign(merged, provider.presets);
     }
     return merged;
+  }
+
+  /**
+   * All derived signal descriptors from all registered providers.
+   * Uniqueness is enforced at registration time (fail-fast on duplicate names).
+   */
+  getAllDerivedSignals(): DerivedSignalDescriptor[] {
+    const signals: DerivedSignalDescriptor[] = [];
+    for (const provider of this.providers.values()) {
+      signals.push(...provider.derivedSignals);
+    }
+    return signals;
   }
 
   /**
