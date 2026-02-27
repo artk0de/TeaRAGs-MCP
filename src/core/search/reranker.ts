@@ -10,7 +10,14 @@
  * 5. Attaches ranking overlay (raw + derived signals for transparency)
  */
 
-import type { DerivedSignalDescriptor, RankingOverlay, RerankPreset } from "../contracts/types/reranker.js";
+import type { ScoringWeights } from "../contracts/types/provider.js";
+import type {
+  DerivedSignalDescriptor,
+  RankingOverlay,
+  RerankableResult,
+  RerankMode,
+  RerankPreset,
+} from "../contracts/types/reranker.js";
 import { gitDerivedSignals } from "../trajectory/git/signals.js";
 // ---------------------------------------------------------------------------
 // Facade functions (backward-compatible functional API)
@@ -21,30 +28,9 @@ import { gitDerivedSignals } from "../trajectory/git/signals.js";
 // needing full provider descriptors should use the Reranker class directly.
 import { structuralSignals } from "./structural-signals.js";
 
-/**
- * Custom scoring weights configuration
- */
-export interface ScoringWeights {
-  similarity?: number; // default 1.0
-  recency?: number; // inverse ageDays (0-1)
-  stability?: number; // inverse commitCount (0-1)
-  churn?: number; // direct commitCount (0-1)
-  age?: number; // direct ageDays (0-1)
-  ownership?: number; // author concentration (0-1)
-  chunkSize?: number; // lines of code (0-1)
-  documentation?: number; // isDocumentation boost
-  imports?: number; // import/dependency count
-  bugFix?: number; // bugFixRate — higher = more fixes (0-1)
-  volatility?: number; // churnVolatility — erratic changes (0-1)
-  density?: number; // changeDensity — commits/month (0-1)
-  chunkChurn?: number; // chunk-level commit count (0-1)
-  relativeChurnNorm?: number; // relativeChurn normalized (churn relative to file size)
-  burstActivity?: number; // recencyWeightedFreq — recent burst of changes (0-1)
-  pathRisk?: number; // security-sensitive path pattern match (0 or 1)
-  knowledgeSilo?: number; // single-contributor flag (1.0 / 0.5 / 0)
-  chunkRelativeChurn?: number; // chunkChurnRatio — chunk's share of file churn (0-1)
-  blockPenalty?: number; // negative weight: penalize block chunks with only file-level churn data
-}
+// Re-export types from contracts for backward compatibility
+export type { ScoringWeights } from "../contracts/types/provider.js";
+export type { RerankableResult, RerankMode } from "../contracts/types/reranker.js";
 
 /**
  * Rerank presets for semantic_search (analytics use cases)
@@ -67,76 +53,6 @@ export type SearchCodeRerankPreset =
   | "relevance" // default: similarity only
   | "recent" // boost recently modified code
   | "stable"; // boost stable/low-churn code
-
-/**
- * Rerank mode type - preset string or custom weights
- */
-export type RerankMode<T extends string> = T | { custom: ScoringWeights };
-
-/**
- * File-level git fields (shared between flat and nested formats)
- */
-export interface GitFileFields {
-  ageDays?: number;
-  commitCount?: number;
-  dominantAuthor?: string;
-  dominantAuthorEmail?: string;
-  authors?: string[];
-  dominantAuthorPct?: number;
-  relativeChurn?: number;
-  recencyWeightedFreq?: number;
-  changeDensity?: number;
-  churnVolatility?: number;
-  bugFixRate?: number;
-  contributorCount?: number;
-  taskIds?: string[];
-}
-
-/**
- * Chunk-level git overlay fields
- */
-export interface GitChunkFields {
-  commitCount?: number;
-  churnRatio?: number;
-  contributorCount?: number;
-  bugFixRate?: number;
-  lastModifiedAt?: number;
-  ageDays?: number;
-  relativeChurn?: number;
-  recencyWeightedFreq?: number;
-  changeDensity?: number;
-}
-
-/**
- * Git metadata from search result payload.
- *
- * Supports both nested format (new: { file: {...}, chunk: {...} })
- * and flat format (all fields at root level) for backward compatibility.
- */
-export interface GitMetadata extends GitFileFields {
-  // Nested structure (payload format from EnrichmentApplier)
-  file?: GitFileFields;
-  chunk?: GitChunkFields;
-}
-
-/**
- * Search result with payload for reranking
- */
-export interface RerankableResult {
-  score: number;
-  payload?: {
-    relativePath?: string;
-    startLine?: number;
-    endLine?: number;
-    language?: string;
-    isDocumentation?: boolean;
-    chunkType?: string;
-    imports?: string[];
-    exports?: string[];
-    git?: GitMetadata;
-    [key: string]: unknown;
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Preset weight configurations
@@ -495,7 +411,7 @@ export class Reranker {
    * Read a raw source value from the payload for adaptive bounds computation.
    */
   private readRawSource(result: RerankableResult, source: string): number | undefined {
-    const git = result.payload?.git as Record<string, unknown> | undefined;
+    const git = result.payload?.git;
     if (!git) return undefined;
 
     if (source.startsWith("chunk.")) {
@@ -566,7 +482,7 @@ export class Reranker {
     rawFile: Record<string, unknown>,
     rawChunk: Record<string, unknown>,
   ): void {
-    const git = result.payload?.git as Record<string, unknown> | undefined;
+    const git = result.payload?.git;
     if (!git) return;
 
     if (source.startsWith("chunk.")) {
