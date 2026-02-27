@@ -10,7 +10,7 @@
  * 5. Attaches ranking overlay (raw + derived signals for transparency)
  */
 
-import type { DerivedSignalDescriptor, RankingOverlay } from "../contracts/types/reranker.js";
+import type { DerivedSignalDescriptor, RankingOverlay, RerankPreset } from "../contracts/types/reranker.js";
 import { gitDerivedSignals } from "../trajectory/git/signals.js";
 // ---------------------------------------------------------------------------
 // Facade functions (backward-compatible functional API)
@@ -286,6 +286,7 @@ export class Reranker {
   constructor(
     private readonly providerDescriptors: DerivedSignalDescriptor[],
     private readonly structuralDescriptors: DerivedSignalDescriptor[],
+    private readonly resolvedPresets?: RerankPreset[],
   ) {
     this.allDescriptors = [...providerDescriptors, ...structuralDescriptors];
     this.descriptorMap = new Map();
@@ -302,14 +303,12 @@ export class Reranker {
     mode: RerankMode<string>,
     presetSet: "semantic_search" | "search_code",
   ): (T & { rankingOverlay?: RankingOverlay })[] {
-    const presets = presetSet === "semantic_search" ? SEMANTIC_SEARCH_PRESETS : SEARCH_CODE_PRESETS;
-
     // Resolve weights
     let weights: ScoringWeights;
     let presetName: string;
     if (typeof mode === "string") {
       presetName = mode;
-      weights = (presets as Record<string, ScoringWeights>)[mode] || presets.relevance || { similarity: 1.0 };
+      weights = this.getWeights(mode, presetSet) ?? { similarity: 1.0 };
     } else {
       presetName = "custom";
       weights = mode.custom;
@@ -343,6 +342,10 @@ export class Reranker {
    * Get preset weights for a specific preset name and tool.
    */
   getPreset(name: string, tool: "semantic_search" | "search_code"): ScoringWeights | undefined {
+    if (this.resolvedPresets) {
+      return this.resolvedPresets.find((p) => p.name === name && p.tool === tool)?.weights;
+    }
+    // Fallback to hardcoded (removed in Task 7)
     const presets = tool === "semantic_search" ? SEMANTIC_SEARCH_PRESETS : SEARCH_CODE_PRESETS;
     return (presets as Record<string, ScoringWeights>)[name];
   }
@@ -351,10 +354,44 @@ export class Reranker {
    * Get available preset names for a tool.
    */
   getAvailablePresets(tool: "semantic_search" | "search_code"): string[] {
+    if (this.resolvedPresets) {
+      return this.resolvedPresets.filter((p) => p.tool === tool).map((p) => p.name);
+    }
     return tool === "semantic_search" ? Object.keys(SEMANTIC_SEARCH_PRESETS) : Object.keys(SEARCH_CODE_PRESETS);
   }
 
+  /** Descriptor info for MCP schema generation. */
+  getDescriptorInfo(): { name: string; description: string }[] {
+    return [...this.providerDescriptors, ...this.structuralDescriptors].map((d) => ({
+      name: d.name,
+      description: d.description,
+    }));
+  }
+
+  /** Preset names for a specific tool — uses resolvedPresets if available. */
+  getPresetNames(tool: string): string[] {
+    if (this.resolvedPresets) {
+      return this.resolvedPresets.filter((p) => p.tool === tool).map((p) => p.name);
+    }
+    // Fallback (removed in Task 7)
+    if (tool === "semantic_search") return Object.keys(SEMANTIC_SEARCH_PRESETS);
+    return Object.keys(SEARCH_CODE_PRESETS);
+  }
+
   // ── Private methods ──
+
+  /**
+   * Resolve weights for a named preset — resolvedPresets first, hardcoded fallback.
+   */
+  private getWeights(mode: string, tool: string): ScoringWeights | undefined {
+    if (this.resolvedPresets) {
+      const preset = this.resolvedPresets.find((p) => p.name === mode && p.tool === tool);
+      if (preset) return preset.weights;
+    }
+    // Fallback to hardcoded (will be removed in Task 7)
+    if (tool === "semantic_search") return SEMANTIC_SEARCH_PRESETS[mode as SemanticSearchRerankPreset];
+    return SEARCH_CODE_PRESETS[mode as SearchCodeRerankPreset];
+  }
 
   /**
    * Build the payload Record<string, unknown> used by descriptor extract().

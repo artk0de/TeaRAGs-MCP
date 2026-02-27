@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { RerankPreset } from "../../../src/core/contracts/types/reranker.js";
 import {
   getAvailablePresets,
   Reranker,
@@ -1416,5 +1417,83 @@ describe("Reranker (v2 class)", () => {
       // With adaptive: differentiation preserved
       expect(high!.score - low!.score).toBeGreaterThan(0.3);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reranker with resolvedPresets (DI)
+// ---------------------------------------------------------------------------
+
+describe("Reranker with resolvedPresets", () => {
+  const customPreset: RerankPreset = {
+    name: "myPreset",
+    description: "Custom preset",
+    tool: "semantic_search",
+    weights: { similarity: 0.5, recency: 0.5 },
+  };
+
+  const searchCodePreset: RerankPreset = {
+    name: "fastFind",
+    description: "Fast find preset",
+    tool: "search_code",
+    weights: { similarity: 0.8, recency: 0.2 },
+  };
+
+  it("uses resolved presets when provided via getPreset()", () => {
+    const reranker = new Reranker(gitDerivedSignals, structuralSignals, [customPreset]);
+    expect(reranker.getPreset("myPreset", "semantic_search")).toEqual({ similarity: 0.5, recency: 0.5 });
+  });
+
+  it("getAvailablePresets returns resolved preset names", () => {
+    const reranker = new Reranker(gitDerivedSignals, structuralSignals, [customPreset, searchCodePreset]);
+    expect(reranker.getAvailablePresets("semantic_search")).toContain("myPreset");
+    expect(reranker.getAvailablePresets("search_code")).toContain("fastFind");
+  });
+
+  it("getPresetNames returns resolved preset names", () => {
+    const reranker = new Reranker(gitDerivedSignals, structuralSignals, [customPreset, searchCodePreset]);
+    expect(reranker.getPresetNames("semantic_search")).toContain("myPreset");
+    expect(reranker.getPresetNames("search_code")).toContain("fastFind");
+  });
+
+  it("getDescriptorInfo returns all descriptor info", () => {
+    const reranker = new Reranker(gitDerivedSignals, structuralSignals);
+    const info = reranker.getDescriptorInfo();
+    expect(info.length).toBeGreaterThan(0);
+    expect(info[0]).toHaveProperty("name");
+    expect(info[0]).toHaveProperty("description");
+  });
+
+  it("falls back to hardcoded when no resolvedPresets", () => {
+    const reranker = new Reranker(gitDerivedSignals, structuralSignals);
+    expect(reranker.getPreset("techDebt", "semantic_search")).toBeDefined();
+  });
+
+  it("getPreset returns undefined for unknown preset when resolvedPresets provided", () => {
+    const reranker = new Reranker(gitDerivedSignals, structuralSignals, [customPreset]);
+    expect(reranker.getPreset("nonexistent", "semantic_search")).toBeUndefined();
+  });
+
+  it("rerank uses resolved preset weights", () => {
+    const heavyRecency: RerankPreset = {
+      name: "heavyRecency",
+      description: "Heavy recency",
+      tool: "semantic_search",
+      weights: { similarity: 0.1, recency: 0.9 },
+    };
+    const reranker = new Reranker(gitDerivedSignals, structuralSignals, [heavyRecency]);
+    const results: RerankableResult[] = [
+      {
+        score: 0.9,
+        payload: { relativePath: "old.ts", startLine: 1, endLine: 50, git: { file: { ageDays: 300, commitCount: 5 } } },
+      },
+      {
+        score: 0.5,
+        payload: { relativePath: "new.ts", startLine: 1, endLine: 50, git: { file: { ageDays: 5, commitCount: 5 } } },
+      },
+    ];
+    const ranked = reranker.rerank(results, "heavyRecency", "semantic_search");
+    // With 90% recency weight, recent file should rank first despite lower similarity
+    expect(ranked[0].payload?.relativePath).toBe("new.ts");
   });
 });
