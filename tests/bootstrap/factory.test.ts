@@ -22,6 +22,22 @@ vi.mock("../../src/core/api/ingest-facade.js", () => ({
 vi.mock("../../src/core/api/search-facade.js", () => ({
   SearchFacade: vi.fn().mockImplementation(function () {}),
 }));
+vi.mock("../../src/core/search/reranker.js", () => ({
+  Reranker: vi.fn().mockImplementation(function () {}),
+}));
+vi.mock("../../src/core/search/structural-signals.js", () => ({
+  structuralSignals: [],
+}));
+vi.mock("../../src/core/search/presets/index.js", () => ({
+  RELEVANCE_PRESETS: [],
+  resolvePresets: vi.fn().mockReturnValue([]),
+}));
+vi.mock("../../src/core/trajectory/git/signals.js", () => ({
+  gitDerivedSignals: [],
+}));
+vi.mock("../../src/core/trajectory/git/presets.js", () => ({
+  GIT_PRESETS: [],
+}));
 vi.mock("../../src/mcp/tools/index.js", () => ({
   registerAllTools: vi.fn(),
 }));
@@ -61,12 +77,13 @@ function makeConfig(): AppConfig {
 }
 
 describe("createAppContext", () => {
-  it("should create qdrant, embeddings, ingest, and search facades", () => {
+  it("should create qdrant, embeddings, ingest, search, and reranker", () => {
     const ctx = createAppContext(makeConfig());
     expect(ctx.qdrant).toBeDefined();
     expect(ctx.embeddings).toBeDefined();
     expect(ctx.ingest).toBeDefined();
     expect(ctx.search).toBeDefined();
+    expect(ctx.reranker).toBeDefined();
   });
 });
 

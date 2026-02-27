@@ -5,16 +5,21 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { IngestFacade } from "../core/api/ingest-facade.js";
-import { SearchFacade } from "../core/api/search-facade.js";
-import type { AppConfig } from "./config.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
+import { QdrantManager } from "../core/adapters/qdrant/client.js";
+import { IngestFacade } from "../core/api/ingest-facade.js";
+import { SearchFacade } from "../core/api/search-facade.js";
+import { RELEVANCE_PRESETS, resolvePresets } from "../core/search/presets/index.js";
+import { Reranker } from "../core/search/reranker.js";
+import { structuralSignals } from "../core/search/structural-signals.js";
+import { GIT_PRESETS } from "../core/trajectory/git/presets.js";
+import { gitDerivedSignals } from "../core/trajectory/git/signals.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
-import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
+import type { AppConfig } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -29,14 +34,17 @@ export interface AppContext {
   embeddings: EmbeddingProvider;
   ingest: IngestFacade;
   search: SearchFacade;
+  reranker: Reranker;
 }
 
 export function createAppContext(config: AppConfig): AppContext {
   const qdrant = new QdrantManager(config.qdrantUrl, config.qdrantApiKey);
   const embeddings = EmbeddingProviderFactory.createFromEnv();
+  const resolvedPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
+  const reranker = new Reranker(gitDerivedSignals, structuralSignals, resolvedPresets);
   const ingest = new IngestFacade(qdrant, embeddings, config.code);
-  const search = new SearchFacade(qdrant, embeddings, config.code);
-  return { qdrant, embeddings, ingest, search };
+  const search = new SearchFacade(qdrant, embeddings, config.code, reranker);
+  return { qdrant, embeddings, ingest, search, reranker };
 }
 
 export function loadPrompts(config: AppConfig): PromptsConfig | null {
@@ -62,6 +70,7 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
     embeddings: ctx.embeddings,
     ingest: ctx.ingest,
     search: ctx.search,
+    reranker: ctx.reranker,
   });
 
   registerAllResources(server, ctx.qdrant);

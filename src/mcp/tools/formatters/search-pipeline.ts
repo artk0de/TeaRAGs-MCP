@@ -1,12 +1,7 @@
 // src/mcp/tools/formatters/search-pipeline.ts
 import { calculateFetchLimit, filterResultsByGlob } from "../../../core/adapters/qdrant/filters/index.js";
 import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/api/shared.js";
-import {
-  rerankSemanticSearchResults,
-  type Reranker,
-  type RerankMode,
-  type SemanticSearchRerankPreset,
-} from "../../../core/search/reranker.js";
+import type { Reranker, RerankMode } from "../../../core/search/reranker.js";
 
 interface SearchResult {
   id: string | number;
@@ -47,16 +42,12 @@ export function getSearchFetchLimit(
 
 export function applyPostProcessing(
   results: SearchResult[],
-  options: { pathPattern?: string; rerank?: unknown; limit: number; reranker?: Reranker },
+  options: { pathPattern?: string; rerank?: unknown; limit: number; reranker: Reranker },
 ): SearchResult[] {
   let filtered = options.pathPattern ? filterResultsByGlob(results, options.pathPattern) : results;
 
   if (options.rerank && options.rerank !== "relevance") {
-    if (options.reranker) {
-      filtered = options.reranker.rerank(filtered, options.rerank as RerankMode<string>, "semantic_search");
-    } else {
-      filtered = rerankSemanticSearchResults(filtered, options.rerank as RerankMode<SemanticSearchRerankPreset>);
-    }
+    filtered = options.reranker.rerank(filtered, options.rerank as RerankMode<string>, "semantic_search");
   }
 
   return filtered.slice(0, options.limit);

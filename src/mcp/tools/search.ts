@@ -7,6 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../../core/adapters/embeddings/sparse.js";
 import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
+import type { Reranker } from "../../core/search/reranker.js";
 import {
   applyPostProcessing,
   formatSearchResults,
@@ -19,6 +20,7 @@ import * as schemas from "./schemas.js";
 export interface SearchToolDependencies {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
+  reranker: Reranker;
 }
 
 export function registerSearchTools(server: McpServer, deps: SearchToolDependencies): void {
@@ -43,7 +45,12 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
       const { embedding } = await embeddings.embed(query);
       const limits = getSearchFetchLimit(limit, pathPattern, rerank);
       const results = await qdrant.search(resolved.collectionName, embedding, limits.fetchLimit, filter);
-      const processed = applyPostProcessing(results, { pathPattern, rerank, limit: limits.requestedLimit });
+      const processed = applyPostProcessing(results, {
+        pathPattern,
+        rerank,
+        limit: limits.requestedLimit,
+        reranker: deps.reranker,
+      });
 
       return formatSearchResults(processed, metaOnly);
     },
@@ -84,9 +91,18 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
       const sparseVector = sparseGenerator.generate(query);
       const limits = getSearchFetchLimit(limit, pathPattern, rerank);
       const results = await qdrant.hybridSearch(
-        resolved.collectionName, embedding, sparseVector, limits.fetchLimit, filter,
+        resolved.collectionName,
+        embedding,
+        sparseVector,
+        limits.fetchLimit,
+        filter,
       );
-      const processed = applyPostProcessing(results, { pathPattern, rerank, limit: limits.requestedLimit });
+      const processed = applyPostProcessing(results, {
+        pathPattern,
+        rerank,
+        limit: limits.requestedLimit,
+        reranker: deps.reranker,
+      });
 
       return formatSearchResults(processed, metaOnly);
     },

@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
 import { SearchFacade } from "../../../src/core/api/search-facade.js";
+import { Reranker } from "../../../src/core/search/reranker.js";
+import { structuralSignals } from "../../../src/core/search/structural-signals.js";
+import { gitDerivedSignals } from "../../../src/core/trajectory/git/signals.js";
 import type { CodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
@@ -59,7 +62,8 @@ describe("IngestFacade + SearchFacade", () => {
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
     ingest = new IngestFacade(qdrant as any, embeddings, config);
-    search = new SearchFacade(qdrant as any, embeddings, config);
+    const reranker = new Reranker(gitDerivedSignals, structuralSignals);
+    search = new SearchFacade(qdrant as any, embeddings, config, reranker);
   });
 
   afterEach(async () => {

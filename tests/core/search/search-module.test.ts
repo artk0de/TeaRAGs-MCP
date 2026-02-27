@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
 import { SearchFacade } from "../../../src/core/api/search-facade.js";
+import { Reranker } from "../../../src/core/search/reranker.js";
+import { structuralSignals } from "../../../src/core/search/structural-signals.js";
+import { gitDerivedSignals } from "../../../src/core/trajectory/git/signals.js";
 import type { CodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
@@ -44,6 +47,7 @@ describe("SearchModule", () => {
   let search: SearchFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
+  let reranker: Reranker;
   let config: CodeConfig;
   let tempDir: string;
   let codebaseDir: string;
@@ -53,8 +57,9 @@ describe("SearchModule", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
+    reranker = new Reranker(gitDerivedSignals, structuralSignals);
     ingest = new IngestFacade(qdrant as any, embeddings, config);
-    search = new SearchFacade(qdrant as any, embeddings, config);
+    search = new SearchFacade(qdrant as any, embeddings, config, reranker);
   });
 
   afterEach(async () => {
@@ -120,7 +125,7 @@ describe("SearchModule", () => {
     it("should use hybrid search when enabled", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
       const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig);
-      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridConfig);
+      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridConfig, reranker);
 
       await createTestFile(
         codebaseDir,
