@@ -1,5 +1,7 @@
 // src/tools/formatters/search-pipeline.test.ts
 import { describe, expect, it, vi } from "vitest";
+
+import type { Reranker } from "../../../../src/core/search/reranker.js";
 import {
   applyPostProcessing,
   formatSearchResults,
@@ -7,6 +9,9 @@ import {
   resolveCollectionName,
   validateCollectionExists,
 } from "../../../../src/mcp/tools/formatters/search-pipeline.js";
+
+// Stub reranker — tests don't exercise reranking, so a no-op is sufficient
+const stubReranker = { rerank: vi.fn((results: unknown[]) => results) } as unknown as Reranker;
 
 describe("resolveCollectionName", () => {
   it("should return collection if provided", () => {
@@ -67,18 +72,18 @@ describe("applyPostProcessing", () => {
   ];
 
   it("should trim to limit", () => {
-    const result = applyPostProcessing(mockResults, { limit: 2 });
+    const result = applyPostProcessing(mockResults, { limit: 2, reranker: stubReranker });
     expect(result).toHaveLength(2);
   });
 
   it("should apply pathPattern filter", () => {
-    const result = applyPostProcessing(mockResults, { pathPattern: "src/**", limit: 10 });
+    const result = applyPostProcessing(mockResults, { pathPattern: "src/**", limit: 10, reranker: stubReranker });
     expect(result).toHaveLength(2);
     expect(result.every((r) => r.payload?.relativePath?.toString().startsWith("src/"))).toBe(true);
   });
 
   it("should return all when no filters", () => {
-    const result = applyPostProcessing(mockResults, { limit: 10 });
+    const result = applyPostProcessing(mockResults, { limit: 10, reranker: stubReranker });
     expect(result).toHaveLength(3);
   });
 });

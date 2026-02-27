@@ -11,14 +11,14 @@ import { calculateFetchLimit, filterResultsByGlob } from "../adapters/qdrant/fil
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
 import { resolveCollectionName, validatePath } from "../contracts/collection.js";
 import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
-import { rerankSearchCodeResults, type Reranker, type RerankMode, type SearchCodeRerankPreset } from "./reranker.js";
+import type { Reranker, RerankMode } from "./reranker.js";
 
 export class SearchModule {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
     private readonly config: CodeConfig,
-    private readonly reranker?: Reranker,
+    private readonly reranker: Reranker,
   ) {}
 
   /**
@@ -154,14 +154,7 @@ export class SearchModule {
 
     // Apply reranking if specified
     if (options?.rerank && options.rerank !== "relevance") {
-      if (this.reranker) {
-        filteredResults = this.reranker.rerank(filteredResults, options.rerank as RerankMode<string>, "search_code");
-      } else {
-        filteredResults = rerankSearchCodeResults(
-          filteredResults,
-          options.rerank as RerankMode<SearchCodeRerankPreset>,
-        );
-      }
+      filteredResults = this.reranker.rerank(filteredResults, options.rerank as RerankMode<string>, "search_code");
     }
 
     // Apply score threshold if specified

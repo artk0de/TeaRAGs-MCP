@@ -14,7 +14,7 @@ import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
 export class SearchFacade {
   private readonly search: SearchModule;
 
-  constructor(qdrant: QdrantManager, embeddings: EmbeddingProvider, config: CodeConfig, reranker?: Reranker) {
+  constructor(qdrant: QdrantManager, embeddings: EmbeddingProvider, config: CodeConfig, reranker: Reranker) {
     this.search = new SearchModule(qdrant, embeddings, config, reranker);
   }
 
