@@ -18,9 +18,9 @@ import type {
   FileSignalOverlay,
   FileSignalTransform,
   FilterDescriptor,
-  ScoringWeights,
   Signal,
 } from "../../contracts/types/provider.js";
+import type { RerankPreset } from "../../contracts/types/reranker.js";
 import { gitFilters } from "./filters.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
@@ -36,7 +36,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly signals: Signal[] = gitPayloadFields;
   readonly derivedSignals = gitDerivedSignals;
   readonly filters: FilterDescriptor[] = gitFilters;
-  readonly presets: Record<string, ScoringWeights> = {};
+  readonly presets: RerankPreset[] = [];
 
   resolveRoot(absolutePath: string): string {
     return resolveRepoRoot(absolutePath);

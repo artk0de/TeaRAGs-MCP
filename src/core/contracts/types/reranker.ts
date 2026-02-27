@@ -42,18 +42,13 @@ export interface RerankableResult {
   };
 }
 
-export type SemanticSearchRerankPreset =
-  | "relevance"
-  | "techDebt"
-  | "hotspots"
-  | "codeReview"
-  | "onboarding"
-  | "securityAudit"
-  | "refactoring"
-  | "ownership"
-  | "impactAnalysis";
-
-export type SearchCodeRerankPreset = "relevance" | "recent" | "stable";
+/** Typed preset definition with description for schema generation and DI. */
+export interface RerankPreset {
+  readonly name: string;
+  readonly description: string;
+  readonly tool: "semantic_search" | "search_code";
+  readonly weights: ScoringWeights;
+}
 
 export type RerankMode<T extends string> = T | { custom: ScoringWeights };
 

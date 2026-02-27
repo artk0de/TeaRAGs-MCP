@@ -17,7 +17,7 @@ import type {
   FilterLevel,
   QdrantFilter,
   QdrantFilterCondition,
-  ScoringWeights,
+  RerankPreset,
   Signal,
 } from "./index.js";
 
@@ -73,18 +73,13 @@ export class TrajectoryRegistry {
     return filters;
   }
 
-  /**
-   * Merged presets across all providers.
-   *
-   * If two providers define a preset with the same name,
-   * the later registration wins (Map iteration order = insertion order).
-   */
-  getAllPresets(): Record<string, ScoringWeights> {
-    const merged: Record<string, ScoringWeights> = {};
+  /** All presets from all registered providers. */
+  getAllPresets(): RerankPreset[] {
+    const all: RerankPreset[] = [];
     for (const provider of this.providers.values()) {
-      Object.assign(merged, provider.presets);
+      all.push(...provider.presets);
     }
-    return merged;
+    return all;
   }
 
   /**

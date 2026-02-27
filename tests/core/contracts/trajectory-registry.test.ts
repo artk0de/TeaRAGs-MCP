@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { DerivedSignalDescriptor, EnrichmentProvider } from "../../../src/core/contracts/index.js";
+import type { DerivedSignalDescriptor, EnrichmentProvider, RerankPreset } from "../../../src/core/contracts/index.js";
 import { TrajectoryRegistry } from "../../../src/core/contracts/trajectory-registry.js";
 
 /** Helper: minimal derived signal descriptor for tests */
@@ -13,13 +13,18 @@ function mockDerived(name: string): DerivedSignalDescriptor {
   };
 }
 
+/** Helper: minimal RerankPreset for tests */
+function mockPreset(name: string, tool: RerankPreset["tool"], weights: Record<string, number>): RerankPreset {
+  return { name, description: `Preset: ${name}`, tool, weights };
+}
+
 /** Minimal mock provider with only the fields TrajectoryRegistry cares about. */
 function mockProvider(overrides: Partial<EnrichmentProvider> & { key: string }): EnrichmentProvider {
   return {
     signals: [],
     derivedSignals: [],
     filters: [],
-    presets: {},
+    presets: [],
     resolveRoot: (p: string) => p,
     buildFileSignals: async () => new Map(),
     buildChunkSignals: async () => new Map(),
@@ -48,10 +53,10 @@ describe("TrajectoryRegistry", () => {
         toCondition: (v, level) => [{ key: `git.${level}.ageDays`, range: { gte: v as number } }],
       },
     ],
-    presets: {
-      techDebt: { recency: 0.3, churn: 0.7 },
-      hotspots: { churn: 1.0 },
-    },
+    presets: [
+      mockPreset("techDebt", "semantic_search", { recency: 0.3, churn: 0.7 }),
+      mockPreset("hotspots", "semantic_search", { churn: 1.0 }),
+    ],
   });
 
   it("should register and retrieve signals", () => {
@@ -68,20 +73,23 @@ describe("TrajectoryRegistry", () => {
     expect(registry.getAllFilters()).toHaveLength(2);
   });
 
-  it("should merge presets from multiple providers", () => {
+  it("should aggregate presets from multiple providers", () => {
     const registry = new TrajectoryRegistry();
     registry.register(gitProvider);
     registry.register(
       mockProvider({
         key: "graph",
         signals: [{ key: "graph.complexity", name: "complexity", type: "number", description: "Code complexity" }],
-        presets: { techDebt: { complexity: 0.5 }, codeGraph: { complexity: 1.0 } },
+        presets: [
+          mockPreset("graphDebt", "semantic_search", { complexity: 0.5 }),
+          mockPreset("codeGraph", "semantic_search", { complexity: 1.0 }),
+        ],
       }),
     );
     const presets = registry.getAllPresets();
-    expect(presets.techDebt).toEqual({ complexity: 0.5 });
-    expect(presets.codeGraph).toEqual({ complexity: 1.0 });
-    expect(presets.hotspots).toEqual({ churn: 1.0 });
+    expect(presets).toHaveLength(4);
+    expect(presets.map((p) => p.name)).toEqual(["techDebt", "hotspots", "graphDebt", "codeGraph"]);
+    expect(presets.find((p) => p.name === "codeGraph")!.weights).toEqual({ complexity: 1.0 });
   });
 
   it("should collect signals from all providers without dedup", () => {
@@ -139,7 +147,7 @@ describe("TrajectoryRegistry", () => {
     const registry = new TrajectoryRegistry();
     expect(registry.getAllSignals()).toEqual([]);
     expect(registry.getAllFilters()).toEqual([]);
-    expect(registry.getAllPresets()).toEqual({});
+    expect(registry.getAllPresets()).toEqual([]);
     expect(registry.buildFilter({ author: "alice" })).toBeUndefined();
   });
 
