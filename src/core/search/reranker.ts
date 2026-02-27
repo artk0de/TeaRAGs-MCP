@@ -18,130 +18,10 @@ import type {
   RerankMode,
   RerankPreset,
 } from "../contracts/types/reranker.js";
-import { gitDerivedSignals } from "../trajectory/git/signals.js";
-// ---------------------------------------------------------------------------
-// Facade functions (backward-compatible functional API)
-// ---------------------------------------------------------------------------
-
-// Lazy singleton for facade functions (avoids circular import issues).
-// The facade creates its own Reranker without provider descriptors — consumers
-// needing full provider descriptors should use the Reranker class directly.
-import { structuralSignals } from "./structural-signals.js";
 
 // Re-export types from contracts for backward compatibility
 export type { ScoringWeights } from "../contracts/types/provider.js";
 export type { RerankableResult, RerankMode } from "../contracts/types/reranker.js";
-
-/**
- * Rerank presets for semantic_search (analytics use cases)
- */
-export type SemanticSearchRerankPreset =
-  | "relevance" // default: similarity only
-  | "techDebt" // old code + high churn
-  | "hotspots" // bug hunting: high churn + recent
-  | "codeReview" // recent changes
-  | "onboarding" // entry points, documentation, stable code
-  | "securityAudit" // old code in critical paths
-  | "refactoring" // refactoring candidates
-  | "ownership" // knowledge transfer: who is expert
-  | "impactAnalysis"; // what will be affected by change
-
-/**
- * Rerank presets for search_code (practical development)
- */
-export type SearchCodeRerankPreset =
-  | "relevance" // default: similarity only
-  | "recent" // boost recently modified code
-  | "stable"; // boost stable/low-churn code
-
-// ---------------------------------------------------------------------------
-// Preset weight configurations
-// ---------------------------------------------------------------------------
-
-const SEMANTIC_SEARCH_PRESETS: Record<SemanticSearchRerankPreset, ScoringWeights> = {
-  relevance: { similarity: 1.0 },
-
-  techDebt: {
-    similarity: 0.2,
-    age: 0.15,
-    churn: 0.15,
-    bugFix: 0.15,
-    volatility: 0.1,
-    knowledgeSilo: 0.1,
-    density: 0.1,
-    blockPenalty: -0.05,
-  },
-
-  hotspots: {
-    similarity: 0.25,
-    chunkChurn: 0.15,
-    chunkRelativeChurn: 0.15,
-    burstActivity: 0.15,
-    bugFix: 0.15,
-    volatility: 0.15,
-    blockPenalty: -0.15,
-  },
-
-  codeReview: {
-    similarity: 0.35,
-    recency: 0.15,
-    burstActivity: 0.15,
-    density: 0.15,
-    chunkChurn: 0.2,
-    blockPenalty: -0.1,
-  },
-
-  onboarding: {
-    similarity: 0.4,
-    documentation: 0.3,
-    stability: 0.3,
-  },
-
-  securityAudit: {
-    similarity: 0.3,
-    age: 0.15,
-    ownership: 0.1,
-    bugFix: 0.15,
-    pathRisk: 0.15,
-    volatility: 0.15,
-  },
-
-  refactoring: {
-    similarity: 0.2,
-    chunkChurn: 0.15,
-    relativeChurnNorm: 0.15,
-    chunkSize: 0.15,
-    volatility: 0.15,
-    bugFix: 0.1,
-    age: 0.1,
-    blockPenalty: -0.1,
-  },
-
-  ownership: {
-    similarity: 0.4,
-    ownership: 0.35,
-    knowledgeSilo: 0.25,
-  },
-
-  impactAnalysis: {
-    similarity: 0.5,
-    imports: 0.5,
-  },
-};
-
-const SEARCH_CODE_PRESETS: Record<SearchCodeRerankPreset, ScoringWeights> = {
-  relevance: { similarity: 1.0 },
-
-  recent: {
-    similarity: 0.7,
-    recency: 0.3,
-  },
-
-  stable: {
-    similarity: 0.7,
-    stability: 0.3,
-  },
-};
 
 // ---------------------------------------------------------------------------
 // Scoring utilities
@@ -197,16 +77,13 @@ export function signalConfidence(effectiveCommitCount: number, signal: string): 
  */
 export class Reranker {
   private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
-  private readonly allDescriptors: DerivedSignalDescriptor[];
 
   constructor(
-    private readonly providerDescriptors: DerivedSignalDescriptor[],
-    private readonly structuralDescriptors: DerivedSignalDescriptor[],
-    private readonly resolvedPresets?: RerankPreset[],
+    private readonly descriptors: DerivedSignalDescriptor[],
+    private readonly resolvedPresets: RerankPreset[],
   ) {
-    this.allDescriptors = [...providerDescriptors, ...structuralDescriptors];
     this.descriptorMap = new Map();
-    for (const d of this.allDescriptors) {
+    for (const d of this.descriptors) {
       this.descriptorMap.set(d.name, d);
     }
   }
@@ -230,7 +107,7 @@ export class Reranker {
       weights = mode.custom;
     }
 
-    // Fast path: similarity-only → no reranking, no overlay
+    // Fast path: similarity-only -> no reranking, no overlay
     const activeKeys = Object.keys(weights).filter((k) => {
       const w = weights[k as keyof ScoringWeights];
       return w !== undefined && w !== 0;
@@ -258,55 +135,33 @@ export class Reranker {
    * Get preset weights for a specific preset name and tool.
    */
   getPreset(name: string, tool: "semantic_search" | "search_code"): ScoringWeights | undefined {
-    if (this.resolvedPresets) {
-      return this.resolvedPresets.find((p) => p.name === name && p.tool === tool)?.weights;
-    }
-    // Fallback to hardcoded (removed in Task 7)
-    const presets = tool === "semantic_search" ? SEMANTIC_SEARCH_PRESETS : SEARCH_CODE_PRESETS;
-    return (presets as Record<string, ScoringWeights>)[name];
+    return this.resolvedPresets.find((p) => p.name === name && p.tool === tool)?.weights;
   }
 
   /**
    * Get available preset names for a tool.
    */
   getAvailablePresets(tool: "semantic_search" | "search_code"): string[] {
-    if (this.resolvedPresets) {
-      return this.resolvedPresets.filter((p) => p.tool === tool).map((p) => p.name);
-    }
-    return tool === "semantic_search" ? Object.keys(SEMANTIC_SEARCH_PRESETS) : Object.keys(SEARCH_CODE_PRESETS);
+    return this.resolvedPresets.filter((p) => p.tool === tool).map((p) => p.name);
   }
 
   /** Descriptor info for MCP schema generation. */
   getDescriptorInfo(): { name: string; description: string }[] {
-    return [...this.providerDescriptors, ...this.structuralDescriptors].map((d) => ({
-      name: d.name,
-      description: d.description,
-    }));
+    return this.descriptors.map((d) => ({ name: d.name, description: d.description }));
   }
 
-  /** Preset names for a specific tool — uses resolvedPresets if available. */
+  /** Preset names for a specific tool. */
   getPresetNames(tool: string): string[] {
-    if (this.resolvedPresets) {
-      return this.resolvedPresets.filter((p) => p.tool === tool).map((p) => p.name);
-    }
-    // Fallback (removed in Task 7)
-    if (tool === "semantic_search") return Object.keys(SEMANTIC_SEARCH_PRESETS);
-    return Object.keys(SEARCH_CODE_PRESETS);
+    return this.resolvedPresets.filter((p) => p.tool === tool).map((p) => p.name);
   }
 
-  // ── Private methods ──
+  // -- Private methods --
 
   /**
-   * Resolve weights for a named preset — resolvedPresets first, hardcoded fallback.
+   * Resolve weights for a named preset.
    */
   private getWeights(mode: string, tool: string): ScoringWeights | undefined {
-    if (this.resolvedPresets) {
-      const preset = this.resolvedPresets.find((p) => p.name === mode && p.tool === tool);
-      if (preset) return preset.weights;
-    }
-    // Fallback to hardcoded (will be removed in Task 7)
-    if (tool === "semantic_search") return SEMANTIC_SEARCH_PRESETS[mode as SemanticSearchRerankPreset];
-    return SEARCH_CODE_PRESETS[mode as SearchCodeRerankPreset];
+    return this.resolvedPresets.find((p) => p.name === mode && p.tool === tool)?.weights;
   }
 
   /**
@@ -328,7 +183,7 @@ export class Reranker {
     const rawValues = new Map<string, number[]>();
 
     for (const result of results) {
-      for (const d of this.allDescriptors) {
+      for (const d of this.descriptors) {
         if (d.defaultBound === undefined) continue;
         if (d.sources.length === 0) continue; // Structural signals use static bounds
 
@@ -363,7 +218,7 @@ export class Reranker {
   private extractAllDerived(payload: Record<string, unknown>, bounds: Map<string, number>): Record<string, number> {
     const signals: Record<string, number> = {};
 
-    for (const d of this.allDescriptors) {
+    for (const d of this.descriptors) {
       const bound = bounds.get(d.name);
       let value = d.extract(payload, bound);
 
@@ -526,83 +381,4 @@ function calculateScore(signals: Record<string, number>, weights: ScoringWeights
 
   // Normalize by total weight to keep score in 0-1 range
   return totalWeight > 0 ? score / totalWeight : signals.similarity || 0;
-}
-
-let _facadeReranker: Reranker | undefined;
-function getFacadeReranker(): Reranker {
-  if (!_facadeReranker) {
-    _facadeReranker = new Reranker(gitDerivedSignals, structuralSignals);
-  }
-  return _facadeReranker;
-}
-
-/**
- * Rerank search results using specified mode (backward-compatible facade)
- */
-export function rerankResults<T extends RerankableResult>(
-  results: T[],
-  mode: RerankMode<string>,
-  presets: Record<string, ScoringWeights>,
-): T[] {
-  // Resolve weights from the provided presets
-  let weights: ScoringWeights;
-  if (typeof mode === "string") {
-    weights = presets[mode] || presets.relevance || { similarity: 1.0 };
-  } else {
-    weights = mode.custom;
-  }
-
-  // If only similarity weight, skip reranking
-  const weightKeys = Object.keys(weights).filter((k) => {
-    const w = weights[k as keyof ScoringWeights];
-    return w !== undefined && w !== 0;
-  });
-  if (weightKeys.length === 1 && weightKeys[0] === "similarity") {
-    return results;
-  }
-
-  // Delegate to Reranker for scoring
-  const reranker = getFacadeReranker();
-  const ranked = reranker.rerank(results, mode, "semantic_search");
-  // Strip rankingOverlay to match old return type
-  return ranked.map(({ rankingOverlay: _, ...rest }) => rest as unknown as T);
-}
-
-/**
- * Rerank semantic_search results
- */
-export function rerankSemanticSearchResults<T extends RerankableResult>(
-  results: T[],
-  mode: RerankMode<SemanticSearchRerankPreset> = "relevance",
-): T[] {
-  // For similarity-only, short-circuit
-  if (mode === "relevance") return results;
-
-  const reranker = getFacadeReranker();
-  const ranked = reranker.rerank(results, mode, "semantic_search");
-  return ranked.map(({ rankingOverlay: _, ...rest }) => rest as unknown as T);
-}
-
-/**
- * Rerank search_code results
- */
-export function rerankSearchCodeResults<T extends RerankableResult>(
-  results: T[],
-  mode: RerankMode<SearchCodeRerankPreset> = "relevance",
-): T[] {
-  if (mode === "relevance") return results;
-
-  const reranker = getFacadeReranker();
-  const ranked = reranker.rerank(results, mode, "search_code");
-  return ranked.map(({ rankingOverlay: _, ...rest }) => rest as unknown as T);
-}
-
-/**
- * Get available presets for a tool
- */
-export function getAvailablePresets(tool: "semantic_search" | "search_code"): string[] {
-  if (tool === "semantic_search") {
-    return Object.keys(SEMANTIC_SEARCH_PRESETS);
-  }
-  return Object.keys(SEARCH_CODE_PRESETS);
 }

@@ -41,7 +41,8 @@ export function createAppContext(config: AppConfig): AppContext {
   const qdrant = new QdrantManager(config.qdrantUrl, config.qdrantApiKey);
   const embeddings = EmbeddingProviderFactory.createFromEnv();
   const resolvedPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
-  const reranker = new Reranker(gitDerivedSignals, structuralSignals, resolvedPresets);
+  const allDescriptors = [...gitDerivedSignals, ...structuralSignals];
+  const reranker = new Reranker(allDescriptors, resolvedPresets);
   const ingest = new IngestFacade(qdrant, embeddings, config.code);
   const search = new SearchFacade(qdrant, embeddings, config.code, reranker);
   return { qdrant, embeddings, ingest, search, reranker };

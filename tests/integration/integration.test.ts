@@ -8,8 +8,10 @@ import type { EmbeddingProvider } from "../../src/core/adapters/embeddings/base.
 import type { QdrantManager } from "../../src/core/adapters/qdrant/client.js";
 import { IngestFacade } from "../../src/core/api/ingest-facade.js";
 import { SearchFacade } from "../../src/core/api/search-facade.js";
+import { RELEVANCE_PRESETS, resolvePresets } from "../../src/core/search/presets/index.js";
 import { Reranker } from "../../src/core/search/reranker.js";
 import { structuralSignals } from "../../src/core/search/structural-signals.js";
+import { GIT_PRESETS } from "../../src/core/trajectory/git/presets.js";
 import { gitDerivedSignals } from "../../src/core/trajectory/git/signals.js";
 import type { CodeConfig } from "../../src/core/types.js";
 
@@ -255,7 +257,8 @@ describe("IngestFacade + SearchFacade Integration Tests", () => {
 
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
-    reranker = new Reranker(gitDerivedSignals, structuralSignals);
+    const resolvedPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
+    reranker = new Reranker([...gitDerivedSignals, ...structuralSignals], resolvedPresets);
     config = {
       chunkSize: 500,
       chunkOverlap: 50,
