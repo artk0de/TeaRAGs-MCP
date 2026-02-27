@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
 import { SearchFacade } from "../../../src/core/api/search-facade.js";
+import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/presets/index.js";
 import { Reranker } from "../../../src/core/search/reranker.js";
 import { structuralSignals } from "../../../src/core/search/structural-signals.js";
+import { GIT_PRESETS } from "../../../src/core/trajectory/git/presets.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/signals.js";
 import type { CodeConfig } from "../../../src/core/types.js";
 import {
@@ -57,7 +59,8 @@ describe("SearchModule", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    reranker = new Reranker(gitDerivedSignals, structuralSignals);
+    const resolvedPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
+    reranker = new Reranker([...gitDerivedSignals, ...structuralSignals], resolvedPresets);
     ingest = new IngestFacade(qdrant as any, embeddings, config);
     search = new SearchFacade(qdrant as any, embeddings, config, reranker);
   });
