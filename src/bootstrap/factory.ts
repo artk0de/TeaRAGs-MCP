@@ -9,6 +9,7 @@ import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { IngestFacade } from "../core/api/ingest-facade.js";
+import { SchemaBuilder } from "../core/api/schema-builder.js";
 import { SearchFacade } from "../core/api/search-facade.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../core/search/presets/index.js";
 import { Reranker } from "../core/search/reranker.js";
@@ -35,6 +36,7 @@ export interface AppContext {
   ingest: IngestFacade;
   search: SearchFacade;
   reranker: Reranker;
+  schemaBuilder: SchemaBuilder;
 }
 
 export function createAppContext(config: AppConfig): AppContext {
@@ -43,9 +45,10 @@ export function createAppContext(config: AppConfig): AppContext {
   const resolvedPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
   const allDescriptors = [...gitDerivedSignals, ...structuralSignals];
   const reranker = new Reranker(allDescriptors, resolvedPresets);
+  const schemaBuilder = new SchemaBuilder(reranker);
   const ingest = new IngestFacade(qdrant, embeddings, config.code);
   const search = new SearchFacade(qdrant, embeddings, config.code, reranker);
-  return { qdrant, embeddings, ingest, search, reranker };
+  return { qdrant, embeddings, ingest, search, reranker, schemaBuilder };
 }
 
 export function loadPrompts(config: AppConfig): PromptsConfig | null {
@@ -72,6 +75,7 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
     ingest: ctx.ingest,
     search: ctx.search,
     reranker: ctx.reranker,
+    schemaBuilder: ctx.schemaBuilder,
   });
 
   registerAllResources(server, ctx.qdrant);

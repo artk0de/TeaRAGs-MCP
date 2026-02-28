@@ -5,18 +5,22 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { IngestFacade } from "../../core/api/ingest-facade.js";
+import type { SchemaBuilder } from "../../core/api/schema-builder.js";
 import type { SearchFacade } from "../../core/api/search-facade.js";
 import type { SearchOptions } from "../../core/types.js";
 import { formatEnrichmentStatus } from "./formatters/enrichment.js";
+import { createSearchSchemas } from "./schemas.js";
 import * as schemas from "./schemas.js";
 
 export interface CodeToolDependencies {
   ingest: IngestFacade;
   search: SearchFacade;
+  schemaBuilder: SchemaBuilder;
 }
 
 export function registerCodeTools(server: McpServer, deps: CodeToolDependencies): void {
   const { ingest, search } = deps;
+  const searchSchemas = createSearchSchemas(deps.schemaBuilder);
 
   // index_codebase
   server.registerTool(
@@ -84,7 +88,7 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
         "- 'High-churn authentication code' → query='authentication', minCommitCount=5\n" +
         "- 'Code related to ticket TD-1234' → taskId='TD-1234'\n" +
         "- 'Legacy code that might need documentation' → query='service', minAgeDays=60",
-      inputSchema: schemas.SearchCodeSchema,
+      inputSchema: searchSchemas.SearchCodeSchema,
     },
     async ({
       path,
