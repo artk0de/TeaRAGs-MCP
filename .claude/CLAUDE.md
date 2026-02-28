@@ -45,8 +45,9 @@ of domain modules — api/ never imports from foundation directly.
 
 **core/search/** — Query-time reranking (domain module)
 - Reranker (orchestrator: derived signals → adaptive bounds → scoring → ranking overlay)
+- Receives descriptors + resolved presets via DI (constructor), never imports from trajectory/
 - Derived signal descriptors from providers (via registry) + structural signals (built-in)
-- Presets: weight configurations over derived signal names
+- Presets: 3-level hierarchy (generic → trajectory → composite), resolved at composition root
 
 **core/trajectory/** — Trajectory implementations (domain module)
 - Signal definitions (Signal[])
@@ -95,7 +96,7 @@ Example flow:
 | **Signal** (raw) | Value stored in Qdrant payload. Defined by Provider. Not normalized. | `ageDays=142`, `commitCount=23`, `bugFixRate=35` | `payload.git.file.*`, `payload.git.chunk.*` |
 | **Derived Signal** | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets. | `recency` (from ageDays), `ownership` (from dominantAuthorPct+authors) | `DerivedSignalDescriptor` in provider |
 | **Structural Signal** | Derived signal from payload structure, not from any trajectory provider. | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk` | Reranker built-in |
-| **Preset** | Named weight configuration over derived signal names. Defines a reranking strategy. | `techDebt: { age: 0.15, churn: 0.15, bugFix: 0.15 }` | search/ or provider |
+| **Preset** (`RerankPreset`) | Typed object with name, description, tool, weights. 3-level hierarchy: Generic → Trajectory → Composite. | `{ name: "techDebt", description: "...", tool: "semantic_search", weights: {...} }` | contracts/types/reranker.ts |
 | **Ranking Overlay** | Subset of raw + derived signals relevant to the active preset, attached to each reranked result. Includes both file and chunk levels. | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }` | Reranker response |
 
 ### Domain Terms
@@ -104,7 +105,8 @@ Example flow:
 |------|---------|
 | Provider | Trajectory that defines signals, derived signals, filters, and builds signal data. |
 | Filter | Qdrant filter condition builder. Defined by Provider. |
-| Reranker | Orchestrates derived signal extraction, adaptive bounds, scoring, and ranking overlay. |
+| Reranker | Orchestrates derived signal extraction, adaptive bounds, scoring, and ranking overlay. Receives descriptors + resolved presets via DI. |
+| SchemaBuilder | Generates Zod schemas for MCP tools from Reranker's public API (DIP). Lives in api/. |
 | Alpha-blending | L3 confidence-weighted blending of file vs chunk signals: `effective = alpha * chunk + (1-alpha) * file`. |
 | Confidence dampening | Quadratic per-signal dampening for unreliable statistical signals: `(n/k)^2` where k is signal-specific threshold. |
 | Adaptive bounds | Per-query normalization bounds computed from result set (p95), floored with defaults. |
@@ -125,18 +127,20 @@ core/
   api/                                 # Composition root
     ingest-facade.ts                   # IngestFacade (MCP entry)
     search-facade.ts                   # SearchFacade (MCP entry)
-    schema-builder.ts                  # Dynamic MCP schema from registry
+    schema-builder.ts                  # SchemaBuilder: dynamic MCP schemas via Reranker API (DIP)
     shared.ts                          # resolveCollectionName, validatePath
 
   search/                              # Domain module: query-time reranking
-    reranker.ts                        # Reranker: scoring, overlay, adaptive bounds
+    reranker.ts                        # Reranker: scoring, overlay, adaptive bounds (375 lines)
     structural-signals.ts              # Structural derived signal descriptors
-    presets/                           # Preset definitions (weight configs)
+    presets/
+      index.ts                         # RelevancePreset + resolvePresets() + getPresetNames/Weights
     search-module.ts                   # Search orchestration
 
   trajectory/                          # Domain module: provider implementations
     git/
       signals.ts                       # gitSignals: Signal[]
+      presets.ts                       # GIT_PRESETS: RerankPreset[] (10 presets)
       filters.ts                       # gitFilters: FilterDescriptor[]
       provider.ts                      # GitEnrichmentProvider
       infra/                           # readers, metrics, caches
@@ -153,8 +157,9 @@ core/
                                        # ScoringWeights, TrajectoryQueryContract,
                                        # EnrichmentProvider, FileSignalTransform,
                                        # FileSignalOverlay, ChunkSignalOverlay
-      reranker.ts                      # RerankableResult, NormalizationBounds,
-                                       # RerankMode, preset type unions
+      reranker.ts                      # RerankableResult, RerankPreset,
+                                       # RerankMode, DerivedSignalDescriptor,
+                                       # RankingOverlay, RerankedResult
     index.ts                           # barrel re-export
 
   adapters/                            # Foundation: external system types
