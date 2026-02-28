@@ -10,19 +10,12 @@
  * Confidence dampening is NOT in descriptors — applied externally by Reranker.
  */
 
+import { normalize } from "../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../contracts/types/reranker.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Normalize a value to 0-1 range, clamped.
- */
-function normalize(value: number, max: number): number {
-  if (max <= 0) return 0;
-  return Math.min(1, Math.max(0, value / max));
-}
 
 /** Minimum chunk commits for full maturity in alpha computation */
 const CHUNK_MATURITY_THRESHOLD = 3;

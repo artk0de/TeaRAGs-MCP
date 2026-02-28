@@ -10,6 +10,7 @@
  * 5. Attaches ranking overlay (raw + derived signals for transparency)
  */
 
+import { p95 } from "../contracts/signal-utils.js";
 import type { ScoringWeights } from "../contracts/types/provider.js";
 import type {
   DerivedSignalDescriptor,
@@ -26,16 +27,6 @@ export type { RerankableResult, RerankMode } from "../contracts/types/reranker.j
 // ---------------------------------------------------------------------------
 // Scoring utilities
 // ---------------------------------------------------------------------------
-
-/**
- * Calculate the 95th percentile of a numeric array.
- * Returns 1 for empty arrays to avoid division by zero downstream.
- */
-function p95(arr: number[]): number {
-  if (arr.length === 0) return 1;
-  const sorted = [...arr].sort((a, b) => a - b);
-  return sorted[Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1)] || 1;
-}
 
 /**
  * Per-signal confidence thresholds.
