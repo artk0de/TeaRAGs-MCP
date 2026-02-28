@@ -7,6 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../../core/adapters/embeddings/sparse.js";
 import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
+import type { SchemaBuilder } from "../../core/api/schema-builder.js";
 import type { Reranker } from "../../core/search/reranker.js";
 import {
   applyPostProcessing,
@@ -15,16 +16,18 @@ import {
   resolveCollectionName,
   validateCollectionExists,
 } from "./formatters/search-pipeline.js";
-import * as schemas from "./schemas.js";
+import { createSearchSchemas } from "./schemas.js";
 
 export interface SearchToolDependencies {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
   reranker: Reranker;
+  schemaBuilder: SchemaBuilder;
 }
 
 export function registerSearchTools(server: McpServer, deps: SearchToolDependencies): void {
   const { qdrant, embeddings } = deps;
+  const searchSchemas = createSearchSchemas(deps.schemaBuilder);
 
   // semantic_search
   server.registerTool(
@@ -33,7 +36,7 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
       title: "Semantic Search",
       description:
         "Search for documents using natural language queries. Returns the most semantically similar documents.",
-      inputSchema: schemas.SemanticSearchSchema,
+      inputSchema: searchSchemas.SemanticSearchSchema,
     },
     async ({ collection, path, query, limit, filter, pathPattern, rerank, metaOnly }) => {
       const resolved = resolveCollectionName(collection, path);
@@ -63,7 +66,7 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
       title: "Hybrid Search",
       description:
         "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid set to true.",
-      inputSchema: schemas.HybridSearchSchema,
+      inputSchema: searchSchemas.HybridSearchSchema,
     },
     async ({ collection, path, query, limit, filter, pathPattern, rerank, metaOnly }) => {
       const resolved = resolveCollectionName(collection, path);
