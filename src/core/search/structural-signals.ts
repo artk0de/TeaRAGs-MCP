@@ -2,12 +2,8 @@
  * Structural derived signal descriptors -- signals derived from payload
  * structure, not from any trajectory provider. Built-in to the Reranker.
  */
+import { normalize } from "../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../contracts/types/reranker.js";
-
-function normalize(value: number, max: number): number {
-  if (max <= 0) return 0;
-  return Math.min(1, Math.max(0, value / max));
-}
 
 const RISKY_PATH_PATTERNS = [
   "auth",
