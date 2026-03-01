@@ -15,7 +15,7 @@ import { structuralSignals } from "../core/search/derived-signals/index.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../core/search/presets/index.js";
 import { Reranker } from "../core/search/reranker.js";
 import { gitDerivedSignals } from "../core/trajectory/git/derived-signals/index.js";
-import { GIT_PRESETS } from "../core/trajectory/git/presets.js";
+import { GIT_PRESETS } from "../core/trajectory/git/presets/index.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
