@@ -96,7 +96,7 @@ Example flow:
 | **Signal** (raw) | Value stored in Qdrant payload. Defined by Provider. Not normalized. | `ageDays=142`, `commitCount=23`, `bugFixRate=35` | `payload.git.file.*`, `payload.git.chunk.*` |
 | **Derived Signal** | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets. | `recency` (from ageDays), `ownership` (from dominantAuthorPct+authors) | `DerivedSignalDescriptor` in provider |
 | **Structural Signal** | Derived signal from payload structure, not from any trajectory provider. | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk` | Reranker built-in |
-| **Preset** (`RerankPreset`) | Class with name, description, tools[], weights, overlayMask. 3-level hierarchy: Generic → Trajectory → Composite. Each preset is a class file. | `class TechDebtPreset { tools: ["semantic_search"], weights: {...}, overlayMask: {...} }` | `trajectory/git/presets/`, `search/presets/` |
+| **Preset** (`RerankPreset`) | Class with name, description, tools[], weights, overlayMask. 3-level hierarchy: Generic → Trajectory → Composite. Each preset is a class file. | `class TechDebtPreset { tools: ["semantic_search"], weights: {...}, overlayMask: {...} }` | `trajectory/git/rerank/presets/`, `search/rerank/presets/` |
 | **Overlay Mask** (`OverlayMask`) | Curates which signals appear in ranking overlay for a preset. `derived: string[]` + optional `raw: { file?, chunk? }`. | `{ derived: ["age", "churn"], raw: { file: ["ageDays"] } }` | Each preset class |
 | **Ranking Overlay** | Subset of raw + derived signals filtered by OverlayMask (or weight keys for custom), attached to each reranked result. | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }` | Reranker response |
 
@@ -133,30 +133,52 @@ core/
 
   search/                              # Domain module: query-time reranking
     reranker.ts                        # Reranker: scoring, overlay mask, adaptive bounds
-    derived-signals/
-      index.ts                         # structuralSignals: DerivedSignalDescriptor[]
-    presets/
-      relevance.ts                     # class RelevancePreset (multi-tool: semantic_search + search_code)
-      index.ts                         # RELEVANCE_PRESETS + resolvePresets() + getPresetNames/Weights
+    rerank/
+      derived-signals/                 # Structural signal classes (1 per file)
+        similarity.ts                  # class SimilaritySignal
+        chunk-size.ts                  # class ChunkSizeSignal
+        documentation.ts               # class DocumentationSignal
+        imports.ts                     # class ImportsSignal
+        path-risk.ts                   # class PathRiskSignal
+        index.ts                       # structuralSignals: DerivedSignalDescriptor[]
+      presets/
+        relevance.ts                   # class RelevancePreset (multi-tool: semantic_search + search_code)
+        index.ts                       # RELEVANCE_PRESETS + resolvePresets() + getPresetNames/Weights
     search-module.ts                   # Search orchestration
 
   trajectory/                          # Domain module: provider implementations
     git/
       signals.ts                       # gitSignals: Signal[] (raw payload field docs)
-      derived-signals/
-        index.ts                       # gitDerivedSignals: DerivedSignalDescriptor[]
-      presets/                         # Preset classes (1 per file)
-        tech-debt.ts                   # class TechDebtPreset
-        hotspots.ts                    # class HotspotsPreset
-        code-review.ts                 # class CodeReviewPreset
-        onboarding.ts                  # class OnboardingPreset
-        security-audit.ts              # class SecurityAuditPreset
-        refactoring.ts                 # class RefactoringPreset
-        ownership.ts                   # class OwnershipPreset
-        impact-analysis.ts             # class ImpactAnalysisPreset
-        recent.ts                      # class RecentPreset
-        stable.ts                      # class StablePreset
-        index.ts                       # barrel + GIT_PRESETS array
+      rerank/
+        derived-signals/               # Git signal classes (1 per file) + shared helpers
+          helpers.ts                   # computeAlpha, blend, payload accessors
+          recency.ts                   # class RecencySignal
+          stability.ts                 # class StabilitySignal
+          churn.ts                     # class ChurnSignal
+          age.ts                       # class AgeSignal
+          ownership.ts                 # class OwnershipSignal
+          bug-fix.ts                   # class BugFixSignal
+          volatility.ts                # class VolatilitySignal
+          density.ts                   # class DensitySignal
+          chunk-churn.ts               # class ChunkChurnSignal
+          relative-churn-norm.ts       # class RelativeChurnNormSignal
+          burst-activity.ts            # class BurstActivitySignal
+          knowledge-silo.ts            # class KnowledgeSiloSignal
+          chunk-relative-churn.ts      # class ChunkRelativeChurnSignal
+          block-penalty.ts             # class BlockPenaltySignal
+          index.ts                     # gitDerivedSignals: DerivedSignalDescriptor[]
+        presets/                       # Preset classes (1 per file)
+          tech-debt.ts                 # class TechDebtPreset
+          hotspots.ts                  # class HotspotsPreset
+          code-review.ts               # class CodeReviewPreset
+          onboarding.ts                # class OnboardingPreset
+          security-audit.ts            # class SecurityAuditPreset
+          refactoring.ts               # class RefactoringPreset
+          ownership.ts                 # class OwnershipPreset
+          impact-analysis.ts           # class ImpactAnalysisPreset
+          recent.ts                    # class RecentPreset
+          stable.ts                    # class StablePreset
+          index.ts                     # barrel + GIT_PRESETS array
       filters.ts                       # gitFilters: FilterDescriptor[]
       provider.ts                      # GitEnrichmentProvider
       infra/                           # readers, metrics, caches

@@ -25,17 +25,17 @@ vi.mock("../../src/core/api/search-facade.js", () => ({
 vi.mock("../../src/core/search/reranker.js", () => ({
   Reranker: vi.fn().mockImplementation(function () {}),
 }));
-vi.mock("../../src/core/search/derived-signals/index.js", () => ({
+vi.mock("../../src/core/search/rerank/derived-signals/index.js", () => ({
   structuralSignals: [],
 }));
-vi.mock("../../src/core/search/presets/index.js", () => ({
+vi.mock("../../src/core/search/rerank/presets/index.js", () => ({
   RELEVANCE_PRESETS: [],
   resolvePresets: vi.fn().mockReturnValue([]),
 }));
-vi.mock("../../src/core/trajectory/git/derived-signals/index.js", () => ({
+vi.mock("../../src/core/trajectory/git/rerank/derived-signals/index.js", () => ({
   gitDerivedSignals: [],
 }));
-vi.mock("../../src/core/trajectory/git/presets/index.js", () => ({
+vi.mock("../../src/core/trajectory/git/rerank/presets/index.js", () => ({
   GIT_PRESETS: [],
 }));
 vi.mock("../../src/mcp/tools/index.js", () => ({
