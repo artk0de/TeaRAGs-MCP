@@ -7,12 +7,12 @@
  * Resolution rule: later levels override earlier by (name, tool) key.
  */
 
-import type { ScoringWeights } from "../../contracts/types/provider.js";
-import type { RerankPreset } from "../../contracts/types/reranker.js";
+import type { ScoringWeights } from "../../../contracts/types/provider.js";
+import type { RerankPreset } from "../../../contracts/types/reranker.js";
 import { RelevancePreset } from "./relevance.js";
 
 // Re-export for consumers
-export type { RerankPreset } from "../../contracts/types/reranker.js";
+export type { RerankPreset } from "../../../contracts/types/reranker.js";
 export { RelevancePreset } from "./relevance.js";
 
 /** Generic relevance presets — always available regardless of registered trajectories. */
