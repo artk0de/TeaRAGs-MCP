@@ -21,20 +21,20 @@ import type {
   Signal,
 } from "../../contracts/types/provider.js";
 import type { RerankPreset } from "../../contracts/types/reranker.js";
+import { gitDerivedSignals } from "./derived-signals/index.js";
 import { gitFilters } from "./filters.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reader.js";
 import { computeFileSignals } from "./infra/metrics.js";
-import { gitPayloadFields } from "./payload-fields.js";
 import { GIT_PRESETS } from "./presets.js";
-import { gitDerivedSignals } from "./signals.js";
+import { gitSignals } from "./signals.js";
 
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
 
   // ── Query-side contract ──
-  readonly signals: Signal[] = gitPayloadFields;
+  readonly signals: Signal[] = gitSignals;
   readonly derivedSignals = gitDerivedSignals;
   readonly filters: FilterDescriptor[] = gitFilters;
   readonly presets: RerankPreset[] = GIT_PRESETS;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { gitFilters } from "../../../../src/core/trajectory/git/filters.js";
-import { gitPayloadFields } from "../../../../src/core/trajectory/git/payload-fields.js";
+import { gitSignals } from "../../../../src/core/trajectory/git/signals.js";
 
 describe("git filter descriptors", () => {
   it("exports 7 filter descriptors", () => {
@@ -75,15 +75,15 @@ describe("git filter descriptors", () => {
 
 describe("git payload field docs", () => {
   it("exports file-level and chunk-level fields", () => {
-    expect(gitPayloadFields.length).toBeGreaterThan(15);
-    const fileFields = gitPayloadFields.filter((f) => f.key.startsWith("git.file."));
-    const chunkFields = gitPayloadFields.filter((f) => f.key.startsWith("git.chunk."));
+    expect(gitSignals.length).toBeGreaterThan(15);
+    const fileFields = gitSignals.filter((f) => f.key.startsWith("git.file."));
+    const chunkFields = gitSignals.filter((f) => f.key.startsWith("git.chunk."));
     expect(fileFields.length).toBeGreaterThanOrEqual(12);
     expect(chunkFields.length).toBeGreaterThanOrEqual(8);
   });
 
   it("each field has required Signal properties", () => {
-    for (const f of gitPayloadFields) {
+    for (const f of gitSignals) {
       expect(f.key).toBeTruthy();
       expect(f.name).toBeTruthy();
       expect(f.description).toBeTruthy();
