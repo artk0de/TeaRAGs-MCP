@@ -1095,19 +1095,13 @@ describe("Reranker (v2 class)", () => {
     expect(ranked[0].rankingOverlay!.preset).toBe("techDebt");
   });
 
-  it("overlay contains derived signals used by preset", () => {
+  it("overlay contains only raw signals (no derived)", () => {
     const results = [makeResult(0.9, { file: { ageDays: 200, commitCount: 30, bugFixRate: 10 } })];
     const ranked = reranker.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
-    // techDebt overlayMask.derived: age, churn, bugFix, volatility, density
-    // similarity is omitted from mask (available from base score)
-    expect(overlay.derived).toHaveProperty("age");
-    expect(overlay.derived).toHaveProperty("churn");
-    expect(overlay.derived).toHaveProperty("bugFix");
-    expect(overlay.derived).not.toHaveProperty("similarity");
-    // Values should be numbers in 0-1 range
-    expect(overlay.derived.age).toBeGreaterThanOrEqual(0);
-    expect(overlay.derived.age).toBeLessThanOrEqual(1);
+    // techDebt overlayMask has raw.file only — no derived
+    expect(overlay).not.toHaveProperty("derived");
+    expect(overlay.file).toBeDefined();
   });
 
   it("overlay contains raw file-level signals from descriptor sources", () => {
@@ -1115,9 +1109,9 @@ describe("Reranker (v2 class)", () => {
     const ranked = reranker.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
     // techDebt uses age (source: ageDays) and churn (source: commitCount)
-    expect(overlay.raw.file).toBeDefined();
-    expect(overlay.raw.file!.ageDays).toBe(200);
-    expect(overlay.raw.file!.commitCount).toBe(30);
+    expect(overlay.file).toBeDefined();
+    expect(overlay.file!.ageDays).toBe(200);
+    expect(overlay.file!.commitCount).toBe(30);
   });
 
   it("overlay includes chunk-level raw signals when chunk data exists", () => {
@@ -1125,22 +1119,18 @@ describe("Reranker (v2 class)", () => {
     // hotspots uses chunkChurn (source: chunk.commitCount) and chunkRelativeChurn (source: chunk.churnRatio)
     const ranked = reranker.rerank(results, "hotspots", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
-    expect(overlay.raw.chunk).toBeDefined();
-    expect(overlay.raw.chunk!.commitCount).toBe(8);
-    expect(overlay.raw.chunk!.churnRatio).toBe(0.4);
+    expect(overlay.chunk).toBeDefined();
+    expect(overlay.chunk!.commitCount).toBe(8);
+    expect(overlay.chunk!.churnRatio).toBe(0.4);
   });
 
-  it("overlay only includes signals used by preset (impactAnalysis = imports only in mask)", () => {
+  it("overlay is empty raw when preset has no raw mask (impactAnalysis)", () => {
     const results = [makeResult(0.9, { file: { ageDays: 100, commitCount: 20, bugFixRate: 10 } })];
     const ranked = reranker.rerank(results, "impactAnalysis", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
-    // impactAnalysis overlayMask.derived: ["imports"] — similarity omitted (available from base score)
-    expect(overlay.derived).toHaveProperty("imports");
-    expect(overlay.derived).not.toHaveProperty("similarity");
-    expect(overlay.derived).not.toHaveProperty("age");
-    expect(overlay.derived).not.toHaveProperty("churn");
-    // No raw file signals because imports has sources: [] and mask.raw is undefined
-    expect(overlay.raw.file).toBeUndefined();
+    // impactAnalysis has empty overlayMask — no raw signals exposed
+    expect(overlay.file).toBeUndefined();
+    expect(overlay.chunk).toBeUndefined();
   });
 
   it("supports custom weights with overlay", () => {
@@ -1151,7 +1141,9 @@ describe("Reranker (v2 class)", () => {
     const ranked = reranker.rerank(results, { custom: { documentation: 1.0 } }, "semantic_search");
     expect(ranked[0].payload?.isDocumentation).toBe(true);
     expect(ranked[0].rankingOverlay!.preset).toBe("custom");
-    expect(ranked[0].rankingOverlay!.derived).toHaveProperty("documentation");
+    // custom weights use fallback: extract raw sources for each active weight
+    // documentation has sources: [] so no raw signals
+    expect(ranked[0].rankingOverlay!).not.toHaveProperty("derived");
   });
 
   it("handles empty results", () => {
@@ -1180,7 +1172,8 @@ describe("Reranker (v2 class)", () => {
     const results = [makeResult(0.8, { file: { ageDays: 200 } }), makeResult(0.8, { file: { ageDays: 5 } })];
     const ranked = reranker.rerank(results, "recent", "search_code");
     expect(ranked[0].rankingOverlay!.preset).toBe("recent");
-    expect(ranked[0].rankingOverlay!.derived).toHaveProperty("recency");
+    expect(ranked[0].rankingOverlay!.file).toBeDefined();
+    expect(ranked[0].rankingOverlay!.file!.ageDays).toBeDefined();
   });
 
   describe("confidence dampening via descriptors", () => {
@@ -1189,30 +1182,35 @@ describe("Reranker (v2 class)", () => {
       // With commitCount=2, confidence = (2/8)^2 = 0.0625
       // bugFix raw = normalize(bugFixRate=100, 100) = 1.0
       // bugFix dampened = 1.0 * 0.0625 = 0.0625
-      const results = [makeResult(0.5, { file: { commitCount: 2, bugFixRate: 100, ageDays: 100 } })];
-      const ranked = reranker.rerank(results, "techDebt", "semantic_search");
-      const { bugFix } = ranked[0].rankingOverlay!.derived;
-      expect(bugFix).toBeDefined();
-      // Should be dampened: ~0.0625 not 1.0
-      expect(bugFix).toBeLessThan(0.15);
+      // Compare: same bugFixRate with low vs high commitCount
+      const lowCC = [makeResult(0.5, { file: { commitCount: 2, bugFixRate: 100, ageDays: 100 } })];
+      const highCC = [makeResult(0.5, { file: { commitCount: 20, bugFixRate: 100, ageDays: 100 } })];
+      const rankedLow = reranker.rerank(lowCC, "techDebt", "semantic_search");
+      const rankedHigh = reranker.rerank(highCC, "techDebt", "semantic_search");
+      // Low commitCount should produce lower score due to dampening
+      expect(rankedLow[0].score).toBeLessThan(rankedHigh[0].score);
     });
 
     it("does not dampen signals without needsConfidence (recency)", () => {
       // recency has needsConfidence=undefined -- no dampening
-      const results = [makeResult(0.5, { file: { ageDays: 182.5, commitCount: 1 } })];
-      const ranked = reranker.rerank(results, "codeReview", "semantic_search");
-      const { recency } = ranked[0].rankingOverlay!.derived;
-      // recency = 1 - 182.5/365 = 0.5 (no dampening regardless of commitCount)
-      expect(recency).toBeCloseTo(0.5, 1);
+      // Same ageDays, different commitCount should yield same recency contribution
+      const lowCC = [makeResult(0.5, { file: { ageDays: 182.5, commitCount: 1 } })];
+      const highCC = [makeResult(0.5, { file: { ageDays: 182.5, commitCount: 20 } })];
+      const rankedLow = reranker.rerank(lowCC, { custom: { recency: 1.0 } }, "semantic_search");
+      const rankedHigh = reranker.rerank(highCC, { custom: { recency: 1.0 } }, "semantic_search");
+      // recency = 1 - 182.5/365 = 0.5 regardless of commitCount
+      expect(rankedLow[0].score).toBeCloseTo(rankedHigh[0].score, 2);
     });
 
     it("full confidence when commitCount exceeds threshold", () => {
       // bugFix: k=8, commitCount=10 -> confidence=(10/8)^2 capped at 1
-      const results = [makeResult(0.5, { file: { commitCount: 10, bugFixRate: 50, ageDays: 100 } })];
-      const ranked = reranker.rerank(results, "techDebt", "semantic_search");
-      const { bugFix } = ranked[0].rankingOverlay!.derived;
-      // bugFix = normalize(50, 100) * confidence(10, k=8) = 0.5 * 1.0 = 0.5
-      expect(bugFix).toBeCloseTo(0.5, 1);
+      // vs commitCount=20 -> confidence also 1. Both should score the same.
+      const cc10 = [makeResult(0.5, { file: { commitCount: 10, bugFixRate: 50, ageDays: 100 } })];
+      const cc20 = [makeResult(0.5, { file: { commitCount: 20, bugFixRate: 50, ageDays: 100 } })];
+      const ranked10 = reranker.rerank(cc10, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const ranked20 = reranker.rerank(cc20, { custom: { bugFix: 1.0 } }, "semantic_search");
+      // Both above threshold -> same score
+      expect(ranked10[0].score).toBeCloseTo(ranked20[0].score, 2);
     });
   });
 
@@ -1254,7 +1252,7 @@ describe("Reranker with resolvedPresets", () => {
     description: "Custom preset",
     tools: ["semantic_search"],
     weights: { similarity: 0.5, recency: 0.5 },
-    overlayMask: { derived: ["recency"] },
+    overlayMask: { raw: { file: ["ageDays"] } },
   };
 
   const searchCodePreset: RerankPreset = {
@@ -1262,7 +1260,7 @@ describe("Reranker with resolvedPresets", () => {
     description: "Fast find preset",
     tools: ["search_code"],
     weights: { similarity: 0.8, recency: 0.2 },
-    overlayMask: { derived: ["recency"] },
+    overlayMask: { raw: { file: ["ageDays"] } },
   };
 
   it("uses resolved presets when provided via getPreset()", () => {
@@ -1301,7 +1299,7 @@ describe("Reranker with resolvedPresets", () => {
       description: "Heavy recency",
       tools: ["semantic_search"],
       weights: { similarity: 0.1, recency: 0.9 },
-      overlayMask: { derived: ["recency"] },
+      overlayMask: { raw: { file: ["ageDays"] } },
     };
     const reranker = new Reranker(allDescriptors, [heavyRecency]);
     const results: RerankableResult[] = [

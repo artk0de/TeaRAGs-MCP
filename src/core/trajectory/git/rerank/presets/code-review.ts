@@ -14,10 +14,7 @@ export class CodeReviewPreset implements RerankPreset {
     blockPenalty: -0.1,
   };
   readonly overlayMask: OverlayMask = {
-    derived: ["recency", "burstActivity", "chunkChurn", "density"],
-    raw: {
-      file: ["ageDays", "recencyWeightedFreq", "changeDensity"],
-      chunk: ["commitCount"],
-    },
+    file: ["ageDays", "recencyWeightedFreq", "changeDensity"],
+    chunk: ["commitCount"],
   };
 }

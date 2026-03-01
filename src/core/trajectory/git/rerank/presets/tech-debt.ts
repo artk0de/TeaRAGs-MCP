@@ -16,7 +16,6 @@ export class TechDebtPreset implements RerankPreset {
     blockPenalty: -0.05,
   };
   readonly overlayMask: OverlayMask = {
-    derived: ["age", "churn", "bugFix", "volatility", "density"],
-    raw: { file: ["ageDays", "commitCount", "bugFixRate", "churnVolatility", "changeDensity"] },
+    file: ["ageDays", "commitCount", "bugFixRate", "churnVolatility", "changeDensity"],
   };
 }

@@ -8,7 +8,7 @@ import {
   resolvePresets,
 } from "../../../../src/core/search/rerank/presets/index.js";
 
-const EMPTY_MASK = { derived: [] } as const;
+const EMPTY_MASK = {} as const;
 
 describe("RELEVANCE_PRESETS", () => {
   it("provides relevance for semantic_search", () => {

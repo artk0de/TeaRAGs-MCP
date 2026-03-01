@@ -7,6 +7,6 @@ export class OnboardingPreset implements RerankPreset {
   readonly tools = ["semantic_search"];
   readonly weights: ScoringWeights = { similarity: 0.4, documentation: 0.3, stability: 0.3 };
   readonly overlayMask: OverlayMask = {
-    derived: ["documentation", "stability"],
+    file: ["commitCount"],
   };
 }

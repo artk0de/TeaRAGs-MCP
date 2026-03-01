@@ -15,10 +15,7 @@ export class HotspotsPreset implements RerankPreset {
     blockPenalty: -0.15,
   };
   readonly overlayMask: OverlayMask = {
-    derived: ["chunkChurn", "chunkRelativeChurn", "burstActivity", "bugFix", "volatility"],
-    raw: {
-      file: ["bugFixRate", "churnVolatility", "recencyWeightedFreq"],
-      chunk: ["commitCount", "churnRatio"],
-    },
+    file: ["bugFixRate", "churnVolatility", "recencyWeightedFreq"],
+    chunk: ["commitCount", "churnRatio"],
   };
 }
