@@ -6,7 +6,7 @@ import {
   getPresetWeights,
   RELEVANCE_PRESETS,
   resolvePresets,
-} from "../../../../src/core/search/presets/index.js";
+} from "../../../../src/core/search/rerank/presets/index.js";
 
 const EMPTY_MASK = { derived: [] } as const;
 

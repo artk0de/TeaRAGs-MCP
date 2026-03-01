@@ -4,7 +4,7 @@
  * Each preset is a class implementing RerankPreset with overlay mask.
  */
 
-import type { RerankPreset } from "../../../contracts/types/reranker.js";
+import type { RerankPreset } from "../../../../contracts/types/reranker.js";
 import { CodeReviewPreset } from "./code-review.js";
 import { HotspotsPreset } from "./hotspots.js";
 import { ImpactAnalysisPreset } from "./impact-analysis.js";

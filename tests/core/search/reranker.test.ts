@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { RerankPreset } from "../../../src/core/contracts/types/reranker.js";
 import { structuralSignals } from "../../../src/core/search/derived-signals/index.js";
-import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/presets/index.js";
+import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
 import {
   Reranker,
   signalConfidence,
@@ -10,7 +10,7 @@ import {
   type ScoringWeights,
 } from "../../../src/core/search/reranker.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/derived-signals/index.js";
-import { GIT_PRESETS } from "../../../src/core/trajectory/git/presets/index.js";
+import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";
 
 const testPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
 const allDescriptors = [...gitDerivedSignals, ...structuralSignals];

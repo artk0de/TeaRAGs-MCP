@@ -1,5 +1,5 @@
-import type { ScoringWeights } from "../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset } from "../../../contracts/types/reranker.js";
+import type { ScoringWeights } from "../../../../contracts/types/provider.js";
+import type { OverlayMask, RerankPreset } from "../../../../contracts/types/reranker.js";
 
 export class RecentPreset implements RerankPreset {
   readonly name = "recent";
