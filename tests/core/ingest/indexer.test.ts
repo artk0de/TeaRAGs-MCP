@@ -11,7 +11,7 @@ import { structuralSignals } from "../../../src/core/search/derived-signals/inde
 import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/presets/index.js";
 import { Reranker } from "../../../src/core/search/reranker.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/derived-signals/index.js";
-import { GIT_PRESETS } from "../../../src/core/trajectory/git/presets.js";
+import { GIT_PRESETS } from "../../../src/core/trajectory/git/presets/index.js";
 import type { CodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,

@@ -1,0 +1,21 @@
+import type { ScoringWeights } from "../../../contracts/types/provider.js";
+import type { OverlayMask, RerankPreset } from "../../../contracts/types/reranker.js";
+
+export class SecurityAuditPreset implements RerankPreset {
+  readonly name = "securityAudit";
+  readonly description = "Old code in security-critical paths needing review";
+  readonly tool = "semantic_search" as const;
+  readonly tools = ["semantic_search"];
+  readonly weights: ScoringWeights = {
+    similarity: 0.3,
+    age: 0.15,
+    ownership: 0.1,
+    bugFix: 0.15,
+    pathRisk: 0.15,
+    volatility: 0.15,
+  };
+  readonly overlayMask: OverlayMask = {
+    derived: ["age", "ownership", "bugFix", "pathRisk", "volatility"],
+    raw: { file: ["ageDays", "dominantAuthorPct", "bugFixRate", "churnVolatility"] },
+  };
+}

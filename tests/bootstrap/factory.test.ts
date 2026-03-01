@@ -35,7 +35,7 @@ vi.mock("../../src/core/search/presets/index.js", () => ({
 vi.mock("../../src/core/trajectory/git/derived-signals/index.js", () => ({
   gitDerivedSignals: [],
 }));
-vi.mock("../../src/core/trajectory/git/presets.js", () => ({
+vi.mock("../../src/core/trajectory/git/presets/index.js", () => ({
   GIT_PRESETS: [],
 }));
 vi.mock("../../src/mcp/tools/index.js", () => ({

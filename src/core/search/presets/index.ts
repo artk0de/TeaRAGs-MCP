@@ -9,29 +9,19 @@
 
 import type { ScoringWeights } from "../../contracts/types/provider.js";
 import type { RerankPreset } from "../../contracts/types/reranker.js";
+import { RelevancePreset } from "./relevance.js";
 
 // Re-export for consumers
 export type { RerankPreset } from "../../contracts/types/reranker.js";
+export { RelevancePreset } from "./relevance.js";
 
 /** Generic relevance presets — always available regardless of registered trajectories. */
-export const RELEVANCE_PRESETS: RerankPreset[] = [
-  {
-    name: "relevance",
-    description: "Pure semantic similarity ranking",
-    tool: "semantic_search",
-    weights: { similarity: 1.0 },
-  },
-  {
-    name: "relevance",
-    description: "Pure semantic similarity ranking",
-    tool: "search_code",
-    weights: { similarity: 1.0 },
-  },
-];
+export const RELEVANCE_PRESETS: RerankPreset[] = [new RelevancePreset()];
 
 /**
  * Resolve presets by 3-level hierarchy: generic -> trajectory -> composite.
  * Later levels override earlier by (name, tool) key.
+ * Multi-tool presets are indexed for each tool they support.
  */
 export function resolvePresets(
   generic: RerankPreset[],
@@ -40,17 +30,20 @@ export function resolvePresets(
 ): RerankPreset[] {
   const map = new Map<string, RerankPreset>();
   for (const preset of [...generic, ...trajectory, ...composite]) {
-    map.set(`${preset.tool}:${preset.name}`, preset);
+    const toolList = preset.tools ?? [preset.tool];
+    for (const t of toolList) {
+      map.set(`${t}:${preset.name}`, preset);
+    }
   }
-  return [...map.values()];
+  return [...new Set(map.values())];
 }
 
 /** Get preset names for a specific tool. */
 export function getPresetNames(presets: RerankPreset[], tool: string): string[] {
-  return presets.filter((p) => p.tool === tool).map((p) => p.name);
+  return presets.filter((p) => (p.tools ?? [p.tool]).includes(tool)).map((p) => p.name);
 }
 
 /** Get preset weights by name + tool. */
 export function getPresetWeights(presets: RerankPreset[], name: string, tool: string): ScoringWeights | undefined {
-  return presets.find((p) => p.name === name && p.tool === tool)?.weights;
+  return presets.find((p) => p.name === name && (p.tools ?? [p.tool]).includes(tool))?.weights;
 }

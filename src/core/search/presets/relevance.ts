@@ -1,0 +1,13 @@
+import type { ScoringWeights } from "../../contracts/types/provider.js";
+import type { OverlayMask, RerankPreset } from "../../contracts/types/reranker.js";
+
+export class RelevancePreset implements RerankPreset {
+  readonly name = "relevance";
+  readonly description = "Pure semantic similarity ranking";
+  readonly tool = "semantic_search" as const;
+  readonly tools = ["semantic_search", "search_code"];
+  readonly weights: ScoringWeights = { similarity: 1.0 };
+  readonly overlayMask: OverlayMask = {
+    derived: ["similarity"],
+  };
+}
