@@ -14,6 +14,7 @@ import { p95 } from "../contracts/signal-utils.js";
 import type { ScoringWeights } from "../contracts/types/provider.js";
 import type {
   DerivedSignalDescriptor,
+  OverlayMask,
   RankingOverlay,
   RerankableResult,
   RerankMode,
@@ -87,12 +88,15 @@ export class Reranker {
     mode: RerankMode<string>,
     presetSet: "semantic_search" | "search_code",
   ): (T & { rankingOverlay?: RankingOverlay })[] {
-    // Resolve weights
+    // Resolve weights and overlay mask
     let weights: ScoringWeights;
     let presetName: string;
+    let mask: OverlayMask | undefined;
     if (typeof mode === "string") {
       presetName = mode;
-      weights = this.getWeights(mode, presetSet) ?? { similarity: 1.0 };
+      const fullPreset = this.resolvedPresets.find((p) => p.name === mode && this.matchesTool(p, presetSet));
+      weights = fullPreset?.weights ?? { similarity: 1.0 };
+      mask = fullPreset?.overlayMask;
     } else {
       presetName = "custom";
       weights = mode.custom;
@@ -115,7 +119,7 @@ export class Reranker {
       const payload = this.buildExtractPayload(result);
       const signals = this.extractAllDerived(payload, bounds);
       const score = calculateScore(signals, weights);
-      const overlay = this.buildOverlay(result, presetName, weights, signals);
+      const overlay = this.buildOverlay(result, presetName, weights, signals, mask);
       return { ...result, score, rankingOverlay: overlay };
     });
 
@@ -126,14 +130,14 @@ export class Reranker {
    * Get preset weights for a specific preset name and tool.
    */
   getPreset(name: string, tool: "semantic_search" | "search_code"): ScoringWeights | undefined {
-    return this.resolvedPresets.find((p) => p.name === name && p.tool === tool)?.weights;
+    return this.resolvedPresets.find((p) => p.name === name && this.matchesTool(p, tool))?.weights;
   }
 
   /**
    * Get available preset names for a tool.
    */
   getAvailablePresets(tool: "semantic_search" | "search_code"): string[] {
-    return this.resolvedPresets.filter((p) => p.tool === tool).map((p) => p.name);
+    return this.resolvedPresets.filter((p) => this.matchesTool(p, tool)).map((p) => p.name);
   }
 
   /** Descriptor info for MCP schema generation. */
@@ -143,16 +147,14 @@ export class Reranker {
 
   /** Preset names for a specific tool. */
   getPresetNames(tool: string): string[] {
-    return this.resolvedPresets.filter((p) => p.tool === tool).map((p) => p.name);
+    return this.resolvedPresets.filter((p) => this.matchesTool(p, tool)).map((p) => p.name);
   }
 
   // -- Private methods --
 
-  /**
-   * Resolve weights for a named preset.
-   */
-  private getWeights(mode: string, tool: string): ScoringWeights | undefined {
-    return this.resolvedPresets.find((p) => p.name === mode && p.tool === tool)?.weights;
+  /** Check if a preset serves the given tool (supports tools[] and legacy tool). */
+  private matchesTool(preset: RerankPreset, tool: string): boolean {
+    return (preset.tools ?? [preset.tool]).includes(tool);
   }
 
   /**
@@ -279,32 +281,52 @@ export class Reranker {
 
   /**
    * Build ranking overlay for a single result.
-   * Includes derived signal values used by the preset and their raw sources.
+   * When mask is present, only include signals listed in the mask.
+   * When mask is absent (custom weights), include all non-zero weight keys + descriptor sources.
    */
   private buildOverlay(
     result: RerankableResult,
     presetName: string,
     weights: ScoringWeights,
     derivedValues: Record<string, number>,
+    mask?: OverlayMask,
   ): RankingOverlay {
     const derived: Record<string, number> = {};
     const rawFile: Record<string, unknown> = {};
     const rawChunk: Record<string, unknown> = {};
 
-    for (const key of Object.keys(weights)) {
-      const w = weights[key as keyof ScoringWeights];
-      if (w === undefined || w === 0) continue;
-
-      // Add derived value
-      if (key in derivedValues) {
-        derived[key] = derivedValues[key];
+    if (mask) {
+      // Mask-based: only include signals listed in the mask
+      for (const key of mask.derived) {
+        if (key in derivedValues) {
+          derived[key] = derivedValues[key];
+        }
       }
+      if (mask.raw?.file) {
+        for (const field of mask.raw.file) {
+          this.extractRawSource(result, field, rawFile, rawChunk);
+        }
+      }
+      if (mask.raw?.chunk) {
+        for (const field of mask.raw.chunk) {
+          this.extractRawSource(result, `chunk.${field}`, rawFile, rawChunk);
+        }
+      }
+    } else {
+      // Fallback: weight-based (custom weights or legacy presets without mask)
+      for (const key of Object.keys(weights)) {
+        const w = weights[key as keyof ScoringWeights];
+        if (w === undefined || w === 0) continue;
 
-      // Find descriptor and extract raw source values
-      const descriptor = this.descriptorMap.get(key);
-      if (descriptor) {
-        for (const source of descriptor.sources) {
-          this.extractRawSource(result, source, rawFile, rawChunk);
+        if (key in derivedValues) {
+          derived[key] = derivedValues[key];
+        }
+
+        const descriptor = this.descriptorMap.get(key);
+        if (descriptor) {
+          for (const source of descriptor.sources) {
+            this.extractRawSource(result, source, rawFile, rawChunk);
+          }
         }
       }
     }
