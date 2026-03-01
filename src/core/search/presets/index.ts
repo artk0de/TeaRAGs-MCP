@@ -30,7 +30,7 @@ export function resolvePresets(
 ): RerankPreset[] {
   const map = new Map<string, RerankPreset>();
   for (const preset of [...generic, ...trajectory, ...composite]) {
-    const toolList = preset.tools ?? [preset.tool];
+    const toolList = preset.tools;
     for (const t of toolList) {
       map.set(`${t}:${preset.name}`, preset);
     }
@@ -40,10 +40,10 @@ export function resolvePresets(
 
 /** Get preset names for a specific tool. */
 export function getPresetNames(presets: RerankPreset[], tool: string): string[] {
-  return presets.filter((p) => (p.tools ?? [p.tool]).includes(tool)).map((p) => p.name);
+  return presets.filter((p) => p.tools.includes(tool)).map((p) => p.name);
 }
 
 /** Get preset weights by name + tool. */
 export function getPresetWeights(presets: RerankPreset[], name: string, tool: string): ScoringWeights | undefined {
-  return presets.find((p) => p.name === name && (p.tools ?? [p.tool]).includes(tool))?.weights;
+  return presets.find((p) => p.name === name && p.tools.includes(tool))?.weights;
 }

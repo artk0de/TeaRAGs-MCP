@@ -55,10 +55,9 @@ export interface OverlayMask {
 export interface RerankPreset {
   readonly name: string;
   readonly description: string;
-  readonly tool: "semantic_search" | "search_code";
-  readonly tools?: string[];
+  readonly tools: string[];
   readonly weights: ScoringWeights;
-  readonly overlayMask?: OverlayMask;
+  readonly overlayMask: OverlayMask;
 }
 
 export type RerankMode<T extends string> = T | { custom: ScoringWeights };

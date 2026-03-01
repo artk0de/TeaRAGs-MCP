@@ -8,6 +8,8 @@ import {
   resolvePresets,
 } from "../../../../src/core/search/presets/index.js";
 
+const EMPTY_MASK = { derived: [] } as const;
+
 describe("RELEVANCE_PRESETS", () => {
   it("provides relevance for semantic_search", () => {
     expect(getPresetNames(RELEVANCE_PRESETS, "semantic_search")).toContain("relevance");
@@ -30,10 +32,22 @@ describe("RELEVANCE_PRESETS", () => {
 
 describe("resolvePresets", () => {
   const generic: RerankPreset[] = [
-    { name: "relevance", description: "default", tool: "semantic_search", weights: { similarity: 1.0 } },
+    {
+      name: "relevance",
+      description: "default",
+      tools: ["semantic_search"],
+      weights: { similarity: 1.0 },
+      overlayMask: EMPTY_MASK,
+    },
   ];
   const trajectory: RerankPreset[] = [
-    { name: "techDebt", description: "debt", tool: "semantic_search", weights: { similarity: 0.2, age: 0.15 } },
+    {
+      name: "techDebt",
+      description: "debt",
+      tools: ["semantic_search"],
+      weights: { similarity: 0.2, age: 0.15 },
+      overlayMask: EMPTY_MASK,
+    },
   ];
 
   it("merges generic + trajectory", () => {
@@ -44,7 +58,13 @@ describe("resolvePresets", () => {
 
   it("composite overrides trajectory by name+tool", () => {
     const composite: RerankPreset[] = [
-      { name: "techDebt", description: "overridden", tool: "semantic_search", weights: { similarity: 0.5 } },
+      {
+        name: "techDebt",
+        description: "overridden",
+        tools: ["semantic_search"],
+        weights: { similarity: 0.5 },
+        overlayMask: EMPTY_MASK,
+      },
     ];
     const resolved = resolvePresets(generic, trajectory, composite);
     expect(getPresetWeights(resolved, "techDebt", "semantic_search")).toEqual({ similarity: 0.5 });
@@ -65,9 +85,9 @@ describe("resolvePresets", () => {
       {
         name: "relevance",
         description: "multi",
-        tool: "semantic_search",
         tools: ["semantic_search", "search_code"],
         weights: { similarity: 1.0 },
+        overlayMask: EMPTY_MASK,
       },
     ];
     const resolved = resolvePresets(multiTool, trajectory, []);
@@ -80,13 +100,12 @@ describe("resolvePresets", () => {
       {
         name: "relevance",
         description: "multi",
-        tool: "semantic_search",
         tools: ["semantic_search", "search_code"],
         weights: { similarity: 1.0 },
+        overlayMask: EMPTY_MASK,
       },
     ];
     const resolved = resolvePresets(multiTool, [], []);
-    // Only 1 preset instance, even though it covers 2 tools
     expect(resolved).toHaveLength(1);
   });
 });

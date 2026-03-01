@@ -152,9 +152,9 @@ export class Reranker {
 
   // -- Private methods --
 
-  /** Check if a preset serves the given tool (supports tools[] and legacy tool). */
+  /** Check if a preset serves the given tool. */
   private matchesTool(preset: RerankPreset, tool: string): boolean {
-    return (preset.tools ?? [preset.tool]).includes(tool);
+    return preset.tools.includes(tool);
   }
 
   /**

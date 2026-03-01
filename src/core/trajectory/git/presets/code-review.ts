@@ -4,7 +4,6 @@ import type { OverlayMask, RerankPreset } from "../../../contracts/types/reranke
 export class CodeReviewPreset implements RerankPreset {
   readonly name = "codeReview";
   readonly description = "Surface recent high-activity code for review";
-  readonly tool = "semantic_search" as const;
   readonly tools = ["semantic_search"];
   readonly weights: ScoringWeights = {
     similarity: 0.35,
