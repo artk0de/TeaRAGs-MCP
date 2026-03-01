@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RerankPreset } from "../../../src/core/contracts/types/reranker.js";
-import { structuralSignals } from "../../../src/core/search/derived-signals/index.js";
+import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
 import {
   Reranker,

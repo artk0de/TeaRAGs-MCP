@@ -1,0 +1,27 @@
+/**
+ * Structural derived signal descriptors — barrel export.
+ *
+ * Signals derived from payload structure, not from any trajectory provider.
+ * Built-in to the Reranker and always available.
+ */
+
+import type { DerivedSignalDescriptor } from "../../../contracts/types/reranker.js";
+import { ChunkSizeSignal } from "./chunk-size.js";
+import { DocumentationSignal } from "./documentation.js";
+import { ImportsSignal } from "./imports.js";
+import { PathRiskSignal } from "./path-risk.js";
+import { SimilaritySignal } from "./similarity.js";
+
+export { ChunkSizeSignal } from "./chunk-size.js";
+export { DocumentationSignal } from "./documentation.js";
+export { ImportsSignal } from "./imports.js";
+export { PathRiskSignal } from "./path-risk.js";
+export { SimilaritySignal } from "./similarity.js";
+
+export const structuralSignals: DerivedSignalDescriptor[] = [
+  new SimilaritySignal(),
+  new ChunkSizeSignal(),
+  new DocumentationSignal(),
+  new ImportsSignal(),
+  new PathRiskSignal(),
+];
