@@ -1099,11 +1099,12 @@ describe("Reranker (v2 class)", () => {
     const results = [makeResult(0.9, { file: { ageDays: 200, commitCount: 30, bugFixRate: 10 } })];
     const ranked = reranker.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
-    // techDebt uses: similarity, age, churn, bugFix, volatility, knowledgeSilo, density, blockPenalty
+    // techDebt overlayMask.derived: age, churn, bugFix, volatility, density
+    // similarity is omitted from mask (available from base score)
     expect(overlay.derived).toHaveProperty("age");
     expect(overlay.derived).toHaveProperty("churn");
     expect(overlay.derived).toHaveProperty("bugFix");
-    expect(overlay.derived).toHaveProperty("similarity");
+    expect(overlay.derived).not.toHaveProperty("similarity");
     // Values should be numbers in 0-1 range
     expect(overlay.derived.age).toBeGreaterThanOrEqual(0);
     expect(overlay.derived.age).toBeLessThanOrEqual(1);
@@ -1129,16 +1130,16 @@ describe("Reranker (v2 class)", () => {
     expect(overlay.raw.chunk!.churnRatio).toBe(0.4);
   });
 
-  it("overlay only includes signals used by preset (impactAnalysis = similarity+imports only)", () => {
+  it("overlay only includes signals used by preset (impactAnalysis = imports only in mask)", () => {
     const results = [makeResult(0.9, { file: { ageDays: 100, commitCount: 20, bugFixRate: 10 } })];
     const ranked = reranker.rerank(results, "impactAnalysis", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
-    // impactAnalysis uses only similarity + imports -- no git raw signals in overlay
-    expect(overlay.derived).toHaveProperty("similarity");
+    // impactAnalysis overlayMask.derived: ["imports"] — similarity omitted (available from base score)
     expect(overlay.derived).toHaveProperty("imports");
+    expect(overlay.derived).not.toHaveProperty("similarity");
     expect(overlay.derived).not.toHaveProperty("age");
     expect(overlay.derived).not.toHaveProperty("churn");
-    // No raw file signals because similarity and imports have sources: []
+    // No raw file signals because imports has sources: [] and mask.raw is undefined
     expect(overlay.raw.file).toBeUndefined();
   });
 
