@@ -4,7 +4,6 @@ import type { OverlayMask, RerankPreset } from "../../../contracts/types/reranke
 export class StablePreset implements RerankPreset {
   readonly name = "stable";
   readonly description = "Boost low-churn stable code";
-  readonly tool = "search_code" as const;
   readonly tools = ["search_code"];
   readonly weights: ScoringWeights = { similarity: 0.7, stability: 0.3 };
   readonly overlayMask: OverlayMask = {

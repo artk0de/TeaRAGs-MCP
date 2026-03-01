@@ -4,7 +4,6 @@ import type { OverlayMask, RerankPreset } from "../../../contracts/types/reranke
 export class ImpactAnalysisPreset implements RerankPreset {
   readonly name = "impactAnalysis";
   readonly description = "Highly-imported modules — changes affect many dependents";
-  readonly tool = "semantic_search" as const;
   readonly tools = ["semantic_search"];
   readonly weights: ScoringWeights = { similarity: 0.5, imports: 0.5 };
   readonly overlayMask: OverlayMask = {

@@ -1252,15 +1252,17 @@ describe("Reranker with resolvedPresets", () => {
   const customPreset: RerankPreset = {
     name: "myPreset",
     description: "Custom preset",
-    tool: "semantic_search",
+    tools: ["semantic_search"],
     weights: { similarity: 0.5, recency: 0.5 },
+    overlayMask: { derived: ["recency"] },
   };
 
   const searchCodePreset: RerankPreset = {
     name: "fastFind",
     description: "Fast find preset",
-    tool: "search_code",
+    tools: ["search_code"],
     weights: { similarity: 0.8, recency: 0.2 },
+    overlayMask: { derived: ["recency"] },
   };
 
   it("uses resolved presets when provided via getPreset()", () => {
@@ -1297,8 +1299,9 @@ describe("Reranker with resolvedPresets", () => {
     const heavyRecency: RerankPreset = {
       name: "heavyRecency",
       description: "Heavy recency",
-      tool: "semantic_search",
+      tools: ["semantic_search"],
       weights: { similarity: 0.1, recency: 0.9 },
+      overlayMask: { derived: ["recency"] },
     };
     const reranker = new Reranker(allDescriptors, [heavyRecency]);
     const results: RerankableResult[] = [
