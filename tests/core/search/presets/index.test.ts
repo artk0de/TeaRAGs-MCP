@@ -21,6 +21,11 @@ describe("RELEVANCE_PRESETS", () => {
     const weights = getPresetWeights(RELEVANCE_PRESETS, "relevance", "semantic_search");
     expect(weights).toEqual({ similarity: 1.0 });
   });
+
+  it("is a single RelevancePreset instance with tools[]", () => {
+    expect(RELEVANCE_PRESETS).toHaveLength(1);
+    expect(RELEVANCE_PRESETS[0].tools).toEqual(["semantic_search", "search_code"]);
+  });
 });
 
 describe("resolvePresets", () => {
@@ -53,5 +58,35 @@ describe("resolvePresets", () => {
   it("preserves generic when trajectory has different names", () => {
     const resolved = resolvePresets(generic, trajectory, []);
     expect(getPresetWeights(resolved, "relevance", "semantic_search")).toEqual({ similarity: 1.0 });
+  });
+
+  it("multi-tool preset appears for both tools", () => {
+    const multiTool: RerankPreset[] = [
+      {
+        name: "relevance",
+        description: "multi",
+        tool: "semantic_search",
+        tools: ["semantic_search", "search_code"],
+        weights: { similarity: 1.0 },
+      },
+    ];
+    const resolved = resolvePresets(multiTool, trajectory, []);
+    expect(getPresetNames(resolved, "semantic_search")).toContain("relevance");
+    expect(getPresetNames(resolved, "search_code")).toContain("relevance");
+  });
+
+  it("deduplicates multi-tool preset in resolved array", () => {
+    const multiTool: RerankPreset[] = [
+      {
+        name: "relevance",
+        description: "multi",
+        tool: "semantic_search",
+        tools: ["semantic_search", "search_code"],
+        weights: { similarity: 1.0 },
+      },
+    ];
+    const resolved = resolvePresets(multiTool, [], []);
+    // Only 1 preset instance, even though it covers 2 tools
+    expect(resolved).toHaveLength(1);
   });
 });
