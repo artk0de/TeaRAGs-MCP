@@ -42,12 +42,23 @@ export interface RerankableResult {
   };
 }
 
+/** Curates which signals appear in the ranking overlay for a preset. */
+export interface OverlayMask {
+  readonly derived: string[];
+  readonly raw?: {
+    readonly file?: string[];
+    readonly chunk?: string[];
+  };
+}
+
 /** Typed preset definition with description for schema generation and DI. */
 export interface RerankPreset {
   readonly name: string;
   readonly description: string;
   readonly tool: "semantic_search" | "search_code";
+  readonly tools?: string[];
   readonly weights: ScoringWeights;
+  readonly overlayMask?: OverlayMask;
 }
 
 export type RerankMode<T extends string> = T | { custom: ScoringWeights };
