@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { structuralSignals } from "../../../src/core/search/structural-signals.js";
+import { structuralSignals } from "../../../src/core/search/derived-signals/index.js";
 
 describe("structuralSignals", () => {
   it("has 5 descriptors", () => {

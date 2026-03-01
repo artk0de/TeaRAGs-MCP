@@ -8,11 +8,11 @@ import type { EmbeddingProvider } from "../../src/core/adapters/embeddings/base.
 import type { QdrantManager } from "../../src/core/adapters/qdrant/client.js";
 import { IngestFacade } from "../../src/core/api/ingest-facade.js";
 import { SearchFacade } from "../../src/core/api/search-facade.js";
+import { structuralSignals } from "../../src/core/search/derived-signals/index.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../../src/core/search/presets/index.js";
 import { Reranker } from "../../src/core/search/reranker.js";
-import { structuralSignals } from "../../src/core/search/structural-signals.js";
+import { gitDerivedSignals } from "../../src/core/trajectory/git/derived-signals/index.js";
 import { GIT_PRESETS } from "../../src/core/trajectory/git/presets.js";
-import { gitDerivedSignals } from "../../src/core/trajectory/git/signals.js";
 import type { CodeConfig } from "../../src/core/types.js";
 
 // Mock tree-sitter modules to prevent native binding crashes in integration tests
