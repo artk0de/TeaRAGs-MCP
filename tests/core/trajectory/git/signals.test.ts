@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { gitDerivedSignals } from "../../../../src/core/trajectory/git/derived-signals/index.js";
+import { gitDerivedSignals } from "../../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 
 describe("gitDerivedSignals", () => {
   const fakePayload = (git?: Record<string, unknown>) =>

@@ -21,12 +21,12 @@ import type {
   Signal,
 } from "../../contracts/types/provider.js";
 import type { RerankPreset } from "../../contracts/types/reranker.js";
-import { gitDerivedSignals } from "./derived-signals/index.js";
 import { gitFilters } from "./filters.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reader.js";
 import { computeFileSignals } from "./infra/metrics.js";
+import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
 import { gitSignals } from "./signals.js";
 
