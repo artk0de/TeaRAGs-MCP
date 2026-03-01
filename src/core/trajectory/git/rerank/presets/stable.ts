@@ -7,7 +7,6 @@ export class StablePreset implements RerankPreset {
   readonly tools = ["search_code"];
   readonly weights: ScoringWeights = { similarity: 0.7, stability: 0.3 };
   readonly overlayMask: OverlayMask = {
-    derived: ["stability"],
-    raw: { file: ["commitCount"] },
+    file: ["commitCount"],
   };
 }

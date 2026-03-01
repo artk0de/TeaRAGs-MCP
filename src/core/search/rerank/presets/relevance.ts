@@ -6,7 +6,5 @@ export class RelevancePreset implements RerankPreset {
   readonly description = "Pure semantic similarity ranking";
   readonly tools = ["semantic_search", "search_code"];
   readonly weights: ScoringWeights = { similarity: 1.0 };
-  readonly overlayMask: OverlayMask = {
-    derived: ["similarity"],
-  };
+  readonly overlayMask: OverlayMask = {};
 }

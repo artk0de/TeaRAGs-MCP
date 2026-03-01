@@ -7,7 +7,6 @@ export class RecentPreset implements RerankPreset {
   readonly tools = ["search_code"];
   readonly weights: ScoringWeights = { similarity: 0.7, recency: 0.3 };
   readonly overlayMask: OverlayMask = {
-    derived: ["recency"],
-    raw: { file: ["ageDays"] },
+    file: ["ageDays"],
   };
 }

@@ -42,13 +42,10 @@ export interface RerankableResult {
   };
 }
 
-/** Curates which signals appear in the ranking overlay for a preset. */
+/** Curates which raw signals appear in the ranking overlay for a preset. */
 export interface OverlayMask {
-  readonly derived: string[];
-  readonly raw?: {
-    readonly file?: string[];
-    readonly chunk?: string[];
-  };
+  readonly file?: string[];
+  readonly chunk?: string[];
 }
 
 /** Typed preset definition with description for schema generation and DI. */
@@ -62,17 +59,11 @@ export interface RerankPreset {
 
 export type RerankMode<T extends string> = T | { custom: ScoringWeights };
 
-/** Raw signal values relevant to the active preset, at file and chunk levels. */
-export interface RankingOverlayRaw {
-  file?: Record<string, unknown>;
-  chunk?: Record<string, unknown>;
-}
-
 /** Ranking overlay attached to each reranked result — explains WHY it scored this way. */
 export interface RankingOverlay {
   preset: string;
-  derived: Record<string, number>;
-  raw: RankingOverlayRaw;
+  file?: Record<string, unknown>;
+  chunk?: Record<string, unknown>;
 }
 
 /** Search result with ranking overlay from reranker. */

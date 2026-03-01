@@ -7,7 +7,7 @@
  * 2. Calls descriptor.extract(payload, adaptiveBound) for each signal
  * 3. Applies confidence dampening (needsConfidence + confidenceField)
  * 4. Computes weighted sum score
- * 5. Attaches ranking overlay (raw + derived signals for transparency)
+ * 5. Attaches ranking overlay (raw file/chunk signals for transparency)
  */
 
 import { p95 } from "../contracts/signal-utils.js";
@@ -195,7 +195,8 @@ export class Reranker {
     }
 
     for (const [name, values] of rawValues) {
-      const d = this.descriptorMap.get(name)!;
+      const d = this.descriptorMap.get(name);
+      if (!d) continue;
       const p95Val = p95(values);
       bounds.set(name, Math.max(p95Val, d.defaultBound ?? 1));
     }
@@ -281,46 +282,35 @@ export class Reranker {
 
   /**
    * Build ranking overlay for a single result.
-   * When mask is present, only include signals listed in the mask.
-   * When mask is absent (custom weights), include all non-zero weight keys + descriptor sources.
+   * When mask is present, only include raw signals listed in the mask.
+   * When mask is absent (custom weights), include raw sources for all active weight keys.
    */
   private buildOverlay(
     result: RerankableResult,
     presetName: string,
     weights: ScoringWeights,
-    derivedValues: Record<string, number>,
+    _derivedValues: Record<string, number>,
     mask?: OverlayMask,
   ): RankingOverlay {
-    const derived: Record<string, number> = {};
     const rawFile: Record<string, unknown> = {};
     const rawChunk: Record<string, unknown> = {};
 
     if (mask) {
-      // Mask-based: only include signals listed in the mask
-      for (const key of mask.derived) {
-        if (key in derivedValues) {
-          derived[key] = derivedValues[key];
-        }
-      }
-      if (mask.raw?.file) {
-        for (const field of mask.raw.file) {
+      if (mask.file) {
+        for (const field of mask.file) {
           this.extractRawSource(result, field, rawFile, rawChunk);
         }
       }
-      if (mask.raw?.chunk) {
-        for (const field of mask.raw.chunk) {
+      if (mask.chunk) {
+        for (const field of mask.chunk) {
           this.extractRawSource(result, `chunk.${field}`, rawFile, rawChunk);
         }
       }
     } else {
-      // Fallback: weight-based (custom weights or legacy presets without mask)
+      // Fallback: weight-based (custom weights) — extract raw sources for each active weight
       for (const key of Object.keys(weights)) {
         const w = weights[key as keyof ScoringWeights];
         if (w === undefined || w === 0) continue;
-
-        if (key in derivedValues) {
-          derived[key] = derivedValues[key];
-        }
 
         const descriptor = this.descriptorMap.get(key);
         if (descriptor) {
@@ -333,11 +323,8 @@ export class Reranker {
 
     return {
       preset: presetName,
-      derived,
-      raw: {
-        ...(Object.keys(rawFile).length > 0 ? { file: rawFile } : {}),
-        ...(Object.keys(rawChunk).length > 0 ? { chunk: rawChunk } : {}),
-      },
+      ...(Object.keys(rawFile).length > 0 ? { file: rawFile } : {}),
+      ...(Object.keys(rawChunk).length > 0 ? { chunk: rawChunk } : {}),
     };
   }
 

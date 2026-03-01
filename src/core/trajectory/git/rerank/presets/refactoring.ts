@@ -16,10 +16,7 @@ export class RefactoringPreset implements RerankPreset {
     blockPenalty: -0.1,
   };
   readonly overlayMask: OverlayMask = {
-    derived: ["chunkChurn", "relativeChurnNorm", "chunkSize", "volatility", "bugFix", "age"],
-    raw: {
-      file: ["ageDays", "commitCount", "relativeChurn", "bugFixRate", "churnVolatility"],
-      chunk: ["commitCount", "churnRatio"],
-    },
+    file: ["ageDays", "commitCount", "relativeChurn", "bugFixRate", "churnVolatility"],
+    chunk: ["commitCount", "churnRatio"],
   };
 }
