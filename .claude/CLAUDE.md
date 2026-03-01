@@ -96,8 +96,9 @@ Example flow:
 | **Signal** (raw) | Value stored in Qdrant payload. Defined by Provider. Not normalized. | `ageDays=142`, `commitCount=23`, `bugFixRate=35` | `payload.git.file.*`, `payload.git.chunk.*` |
 | **Derived Signal** | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets. | `recency` (from ageDays), `ownership` (from dominantAuthorPct+authors) | `DerivedSignalDescriptor` in provider |
 | **Structural Signal** | Derived signal from payload structure, not from any trajectory provider. | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk` | Reranker built-in |
-| **Preset** (`RerankPreset`) | Typed object with name, description, tool, weights. 3-level hierarchy: Generic → Trajectory → Composite. | `{ name: "techDebt", description: "...", tool: "semantic_search", weights: {...} }` | contracts/types/reranker.ts |
-| **Ranking Overlay** | Subset of raw + derived signals relevant to the active preset, attached to each reranked result. Includes both file and chunk levels. | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }` | Reranker response |
+| **Preset** (`RerankPreset`) | Class with name, description, tools[], weights, overlayMask. 3-level hierarchy: Generic → Trajectory → Composite. Each preset is a class file. | `class TechDebtPreset { tools: ["semantic_search"], weights: {...}, overlayMask: {...} }` | `trajectory/git/presets/`, `search/presets/` |
+| **Overlay Mask** (`OverlayMask`) | Curates which signals appear in ranking overlay for a preset. `derived: string[]` + optional `raw: { file?, chunk? }`. | `{ derived: ["age", "churn"], raw: { file: ["ageDays"] } }` | Each preset class |
+| **Ranking Overlay** | Subset of raw + derived signals filtered by OverlayMask (or weight keys for custom), attached to each reranked result. | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }` | Reranker response |
 
 ### Domain Terms
 
@@ -131,16 +132,31 @@ core/
     shared.ts                          # resolveCollectionName, validatePath
 
   search/                              # Domain module: query-time reranking
-    reranker.ts                        # Reranker: scoring, overlay, adaptive bounds (375 lines)
-    structural-signals.ts              # Structural derived signal descriptors
+    reranker.ts                        # Reranker: scoring, overlay mask, adaptive bounds
+    derived-signals/
+      index.ts                         # structuralSignals: DerivedSignalDescriptor[]
     presets/
-      index.ts                         # RelevancePreset + resolvePresets() + getPresetNames/Weights
+      relevance.ts                     # class RelevancePreset (multi-tool: semantic_search + search_code)
+      index.ts                         # RELEVANCE_PRESETS + resolvePresets() + getPresetNames/Weights
     search-module.ts                   # Search orchestration
 
   trajectory/                          # Domain module: provider implementations
     git/
-      signals.ts                       # gitSignals: Signal[]
-      presets.ts                       # GIT_PRESETS: RerankPreset[] (10 presets)
+      signals.ts                       # gitSignals: Signal[] (raw payload field docs)
+      derived-signals/
+        index.ts                       # gitDerivedSignals: DerivedSignalDescriptor[]
+      presets/                         # Preset classes (1 per file)
+        tech-debt.ts                   # class TechDebtPreset
+        hotspots.ts                    # class HotspotsPreset
+        code-review.ts                 # class CodeReviewPreset
+        onboarding.ts                  # class OnboardingPreset
+        security-audit.ts              # class SecurityAuditPreset
+        refactoring.ts                 # class RefactoringPreset
+        ownership.ts                   # class OwnershipPreset
+        impact-analysis.ts             # class ImpactAnalysisPreset
+        recent.ts                      # class RecentPreset
+        stable.ts                      # class StablePreset
+        index.ts                       # barrel + GIT_PRESETS array
       filters.ts                       # gitFilters: FilterDescriptor[]
       provider.ts                      # GitEnrichmentProvider
       infra/                           # readers, metrics, caches
@@ -158,7 +174,8 @@ core/
                                        # EnrichmentProvider, FileSignalTransform,
                                        # FileSignalOverlay, ChunkSignalOverlay
       reranker.ts                      # RerankableResult, RerankPreset,
-                                       # RerankMode, DerivedSignalDescriptor,
+                                       # OverlayMask, RerankMode,
+                                       # DerivedSignalDescriptor,
                                        # RankingOverlay, RerankedResult
     index.ts                           # barrel re-export
 
