@@ -19,7 +19,7 @@ import type {
   RerankMode,
   RerankPreset,
 } from "../contracts/types/reranker.js";
-import type { CollectionSignalStats } from "../contracts/types/trajectory.js";
+import type { CollectionSignalStats, PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
 
 // Re-export types from contracts for backward compatibility
 export type { ScoringWeights } from "../contracts/types/provider.js";
@@ -39,16 +39,19 @@ export type { RerankableResult, RerankMode } from "../contracts/types/reranker.j
  */
 export class Reranker {
   private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
+  private readonly signalKeyMap: Map<string, string>;
   private collectionStats?: CollectionSignalStats;
 
   constructor(
     private readonly descriptors: DerivedSignalDescriptor[],
     private readonly resolvedPresets: RerankPreset[],
+    payloadSignals: PayloadSignalDescriptor[] = [],
   ) {
     this.descriptorMap = new Map();
     for (const d of this.descriptors) {
       this.descriptorMap.set(d.name, d);
     }
+    this.signalKeyMap = buildSignalKeyMap(payloadSignals);
   }
 
   /** Set collection-wide signal stats (computed after indexing). */
@@ -203,26 +206,27 @@ export class Reranker {
 
   /**
    * Read a raw source value from the payload for adaptive bounds computation.
+   * Uses signalKeyMap to resolve short source names (e.g. "ageDays") to full
+   * payload paths (e.g. "git.file.ageDays"). Falls back to treating source as
+   * a dotted path if no mapping exists.
    */
   private readRawSource(result: RerankableResult, source: string): number | undefined {
-    const git = result.payload?.git;
-    if (!git) return undefined;
+    const payload = result.payload ?? {};
 
-    if (source.startsWith("chunk.")) {
-      const field = source.slice(6);
-      const chunk = git.chunk as Record<string, unknown> | undefined;
-      const val = chunk?.[field];
+    // 1. Try signalKeyMap: shortName -> full dotted path
+    const fullPath = this.signalKeyMap.get(source);
+    if (fullPath) {
+      const val = readPayloadPath(payload, fullPath);
       return typeof val === "number" ? val : undefined;
     }
 
-    // File-level: check nested first, then flat
-    const file = git.file as Record<string, unknown> | undefined;
-    if (file) {
-      const val = file[source];
-      if (typeof val === "number") return val;
+    // 2. Fallback: source is itself a dotted path
+    if (source.includes(".")) {
+      const val = readPayloadPath(payload, source);
+      return typeof val === "number" ? val : undefined;
     }
-    const val = git[source];
-    return typeof val === "number" ? val : undefined;
+
+    return undefined;
   }
 
   /**
@@ -275,6 +279,9 @@ export class Reranker {
 
   /**
    * Extract a raw source value from payload into the correct level (file/chunk).
+   * Uses signalKeyMap to resolve short source names to full payload paths.
+   * Determines file vs chunk level from the resolved path (paths containing
+   * ".chunk." go to rawChunk, everything else to rawFile).
    */
   private extractRawSource(
     result: RerankableResult,
@@ -282,23 +289,18 @@ export class Reranker {
     rawFile: Record<string, unknown>,
     rawChunk: Record<string, unknown>,
   ): void {
-    const git = result.payload?.git;
-    if (!git) return;
+    const payload = result.payload ?? {};
 
-    if (source.startsWith("chunk.")) {
-      const field = source.slice(6);
-      const chunk = git.chunk as Record<string, unknown> | undefined;
-      if (chunk && field in chunk) {
-        rawChunk[field] = chunk[field];
-      }
+    // Resolve full path via signalKeyMap or use source as-is
+    const fullPath = this.signalKeyMap.get(source) ?? source;
+    const val = readPayloadPath(payload, fullPath);
+    if (val === undefined) return;
+
+    const field = fullPath.split(".").pop()!;
+    if (fullPath.includes(".chunk.")) {
+      rawChunk[field] = val;
     } else {
-      // File-level: check nested first, then flat
-      const file = git.file as Record<string, unknown> | undefined;
-      if (file && source in file) {
-        rawFile[source] = file[source];
-      } else if (source in git) {
-        rawFile[source] = git[source];
-      }
+      rawFile[field] = val;
     }
   }
 }
@@ -326,4 +328,60 @@ function calculateScore(signals: Record<string, number>, weights: ScoringWeights
 
   // Normalize by total weight to keep score in 0-1 range
   return totalWeight > 0 ? score / totalWeight : signals.similarity || 0;
+}
+
+// ---------------------------------------------------------------------------
+// Payload path utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Traverse a nested payload using dot-notation path.
+ * E.g. readPayloadPath(payload, "git.file.ageDays") walks payload.git.file.ageDays.
+ */
+function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
+  const parts = path.split(".");
+  let current: unknown = payload;
+  for (const part of parts) {
+    if (current === null || current === undefined || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+/**
+ * Build a mapping from short source names (as used in DerivedSignalDescriptor.sources
+ * and OverlayMask) to full payload dot-notation paths.
+ *
+ * For each PayloadSignalDescriptor with key "git.file.ageDays", generates suffix keys:
+ *   - "ageDays"       -> "git.file.ageDays"  (1-segment suffix, set only if not already taken)
+ *   - "file.ageDays"  -> "git.file.ageDays"  (2-segment suffix, always set)
+ *
+ * For "git.chunk.commitCount":
+ *   - "commitCount"         -> "git.chunk.commitCount" (only if not already taken by file-level)
+ *   - "chunk.commitCount"   -> "git.chunk.commitCount" (always set, this is the canonical form)
+ *
+ * This ensures that descriptor sources like "ageDays" resolve to file-level and
+ * "chunk.commitCount" resolves to chunk-level, matching the existing convention.
+ */
+function buildSignalKeyMap(payloadSignals: PayloadSignalDescriptor[]): Map<string, string> {
+  const map = new Map<string, string>();
+
+  for (const ps of payloadSignals) {
+    const segments = ps.key.split(".");
+    // Generate suffix keys from longest (N-1 segments) to shortest (1 segment)
+    for (let len = segments.length - 1; len >= 1; len--) {
+      const suffix = segments.slice(segments.length - len).join(".");
+      if (len === 1) {
+        // 1-segment suffix: only set if not already taken (avoids file/chunk collision)
+        if (!map.has(suffix)) {
+          map.set(suffix, ps.key);
+        }
+      } else {
+        // Multi-segment suffix: always set (canonical form like "chunk.commitCount")
+        map.set(suffix, ps.key);
+      }
+    }
+  }
+
+  return map;
 }
