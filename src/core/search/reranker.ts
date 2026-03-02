@@ -54,6 +54,11 @@ export class Reranker {
     this.signalKeyMap = buildSignalKeyMap(payloadSignals);
   }
 
+  /** Whether collection-level stats are currently loaded. */
+  get hasCollectionStats(): boolean {
+    return this.collectionStats !== undefined;
+  }
+
   /** Set collection-wide signal stats (computed after indexing). */
   setCollectionStats(stats: CollectionSignalStats): void {
     this.collectionStats = stats;
@@ -296,7 +301,8 @@ export class Reranker {
     const val = readPayloadPath(payload, fullPath);
     if (val === undefined) return;
 
-    const field = fullPath.split(".").pop()!;
+    const segments = fullPath.split(".");
+    const field = segments[segments.length - 1];
     if (fullPath.includes(".chunk.")) {
       rawChunk[field] = val;
     } else {

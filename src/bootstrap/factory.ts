@@ -1,5 +1,6 @@
 // src/bootstrap/factory.ts
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,6 +13,7 @@ import { createComposition, type CompositionResult } from "../core/api/compositi
 import { IngestFacade } from "../core/api/ingest-facade.js";
 import { SchemaBuilder } from "../core/api/schema-builder.js";
 import { SearchFacade } from "../core/api/search-facade.js";
+import { StatsCache } from "../core/api/stats-cache.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
@@ -38,10 +40,12 @@ export interface AppContext {
 export function createAppContext(config: AppConfig): AppContext {
   const qdrant = new QdrantManager(config.qdrantUrl, config.qdrantApiKey);
   const embeddings = EmbeddingProviderFactory.createFromEnv();
-  const { registry, reranker } = createComposition();
+  const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
   const schemaBuilder = new SchemaBuilder(reranker);
-  const ingest = new IngestFacade(qdrant, embeddings, config.code);
-  const search = new SearchFacade(qdrant, embeddings, config.code, reranker, registry);
+  const snapshotsDir = join(homedir(), ".tea-rags-mcp", "snapshots");
+  const statsCache = new StatsCache(snapshotsDir);
+  const ingest = new IngestFacade(qdrant, embeddings, config.code, statsCache, allPayloadSignalDescriptors, reranker);
+  const search = new SearchFacade(qdrant, embeddings, config.code, reranker, registry, statsCache);
   return { qdrant, embeddings, ingest, search, reranker, schemaBuilder };
 }
 
