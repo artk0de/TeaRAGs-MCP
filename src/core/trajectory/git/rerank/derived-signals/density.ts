@@ -1,5 +1,6 @@
 import { normalize } from "../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../contracts/types/reranker.js";
+import type { ExtractContext } from "../../../../contracts/types/trajectory.js";
 import { blendSignal } from "./helpers.js";
 
 export class DensitySignal implements DerivedSignalDescriptor {
@@ -9,9 +10,9 @@ export class DensitySignal implements DerivedSignalDescriptor {
   readonly defaultBound = 20;
   readonly needsConfidence = true;
   readonly confidenceField = "commitCount";
-  extract(payload: Record<string, unknown>, bound?: number): number {
-    const b = bound ?? 20;
-    const effectiveDensity = blendSignal(payload, "changeDensity");
+  extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
+    const b = ctx?.bound ?? 20;
+    const effectiveDensity = blendSignal(rawSignals, "changeDensity");
     return normalize(effectiveDensity, b);
   }
 }

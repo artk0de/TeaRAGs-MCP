@@ -2,10 +2,10 @@
  * Reranker module for search result scoring
  *
  * Descriptor-based scoring: each DerivedSignalDescriptor knows how to
- * extract its normalized value from the payload. The Reranker:
+ * extract its normalized value from the raw signals. The Reranker:
  * 1. Computes adaptive bounds (p95 from batch, floored with descriptor.defaultBound)
- * 2. Calls descriptor.extract(payload, adaptiveBound) for each signal
- * 3. Applies confidence dampening (needsConfidence + confidenceField)
+ * 2. Calls descriptor.extract(rawSignals, { bound }) for each signal
+ * 3. Applies confidence dampening (needsConfidence + confidenceField, read via type assertion)
  * 4. Computes weighted sum score
  * 5. Attaches ranking overlay (raw file/chunk signals for transparency)
  */
@@ -62,9 +62,9 @@ export function signalConfidence(effectiveCommitCount: number, signal: string): 
 /**
  * Reranker — descriptor-based scoring with ranking overlay.
  *
- * Uses DerivedSignalDescriptor.extract() for all signal extraction.
+ * Uses DerivedSignalDescriptor.extract(rawSignals, ctx) for all signal extraction.
  * Applies adaptive bounds (p95 from result batch, floored with defaultBound).
- * Applies confidence dampening for signals with needsConfidence=true.
+ * Applies confidence dampening for signals with needsConfidence=true (via type assertion).
  * Attaches RankingOverlay to explain WHY each result scored the way it did.
  */
 export class Reranker {
@@ -206,19 +206,21 @@ export class Reranker {
 
   /**
    * Extract all derived signal values from a payload.
-   * Calls descriptor.extract(payload, adaptiveBound) for each signal.
-   * Applies confidence dampening for signals with needsConfidence.
+   * Calls descriptor.extract(rawSignals, { bound }) for each signal.
+   * Applies confidence dampening for signals with needsConfidence (via type assertion).
    */
   private extractAllDerived(payload: Record<string, unknown>, bounds: Map<string, number>): Record<string, number> {
     const signals: Record<string, number> = {};
 
     for (const d of this.descriptors) {
       const bound = bounds.get(d.name);
-      let value = d.extract(payload, bound);
+      let value = d.extract(payload, { bound });
 
       // Confidence dampening: quadratic per-signal
-      if (d.needsConfidence) {
-        const confidenceValue = this.getEffectiveConfidenceValue(payload, d.confidenceField ?? "commitCount");
+      // needsConfidence/confidenceField are class properties not in the interface,
+      // accessed via type assertion until Task 3 moves dampening into descriptors.
+      if ((d as any).needsConfidence) {
+        const confidenceValue = this.getEffectiveConfidenceValue(payload, (d as any).confidenceField ?? "commitCount");
         value *= signalConfidence(confidenceValue, d.name);
       }
 
