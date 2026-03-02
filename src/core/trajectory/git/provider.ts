@@ -28,13 +28,14 @@ import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reade
 import { computeFileSignals } from "./infra/metrics.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
-import { gitSignals } from "./signals.js";
+import { gitPayloadSignalDescriptors } from "./signals.js";
 
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
 
   // ── Query-side contract ──
-  readonly signals: Signal[] = gitSignals;
+  // TODO: update EnrichmentProvider.signals type to PayloadSignalDescriptor[] (Task 6)
+  readonly signals: Signal[] = gitPayloadSignalDescriptors as unknown as Signal[];
   readonly derivedSignals = gitDerivedSignals;
   readonly filters: FilterDescriptor[] = gitFilters;
   readonly presets: RerankPreset[] = GIT_PRESETS;

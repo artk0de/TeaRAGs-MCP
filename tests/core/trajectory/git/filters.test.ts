@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/types/trajectory.js";
 import { gitFilters } from "../../../../src/core/trajectory/git/filters.js";
-import { gitSignals } from "../../../../src/core/trajectory/git/signals.js";
+import { gitPayloadSignalDescriptors } from "../../../../src/core/trajectory/git/signals.js";
 
 const findFilter = (param: string) => gitFilters.find((f) => f.param === param)!;
 
@@ -90,21 +91,29 @@ describe("level-aware filters", () => {
   });
 });
 
-describe("git payload field docs", () => {
+describe("git payload signal descriptors", () => {
   it("exports file-level and chunk-level fields", () => {
-    expect(gitSignals.length).toBeGreaterThan(15);
-    const fileFields = gitSignals.filter((f) => f.key.startsWith("git.file."));
-    const chunkFields = gitSignals.filter((f) => f.key.startsWith("git.chunk."));
+    expect(gitPayloadSignalDescriptors.length).toBeGreaterThan(15);
+    const fileFields = gitPayloadSignalDescriptors.filter((f) => f.key.startsWith("git.file."));
+    const chunkFields = gitPayloadSignalDescriptors.filter((f) => f.key.startsWith("git.chunk."));
     expect(fileFields.length).toBeGreaterThanOrEqual(12);
     expect(chunkFields.length).toBeGreaterThanOrEqual(8);
   });
 
-  it("each field has required Signal properties", () => {
-    for (const f of gitSignals) {
+  it("each entry has only PayloadSignalDescriptor properties (key, type, description)", () => {
+    for (const f of gitPayloadSignalDescriptors) {
       expect(f.key).toBeTruthy();
-      expect(f.name).toBeTruthy();
       expect(f.description).toBeTruthy();
       expect(["string", "number", "boolean", "string[]", "timestamp"]).toContain(f.type);
+      // PayloadSignalDescriptor must NOT have `name` or `defaultBound`
+      expect(f).not.toHaveProperty("name");
+      expect(f).not.toHaveProperty("defaultBound");
     }
+  });
+
+  it("satisfies PayloadSignalDescriptor type", () => {
+    // Type-level check: ensure array is assignable to PayloadSignalDescriptor[]
+    const descriptors: PayloadSignalDescriptor[] = gitPayloadSignalDescriptors;
+    expect(descriptors).toBe(gitPayloadSignalDescriptors);
   });
 });
