@@ -8,11 +8,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
-import { createComposition } from "../core/api/composition.js";
+import { createComposition, type CompositionResult } from "../core/api/composition.js";
 import { IngestFacade } from "../core/api/ingest-facade.js";
 import { SchemaBuilder } from "../core/api/schema-builder.js";
 import { SearchFacade } from "../core/api/search-facade.js";
-import type { Reranker } from "../core/search/reranker.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
@@ -32,7 +31,7 @@ export interface AppContext {
   embeddings: EmbeddingProvider;
   ingest: IngestFacade;
   search: SearchFacade;
-  reranker: Reranker;
+  reranker: CompositionResult["reranker"];
   schemaBuilder: SchemaBuilder;
 }
 
