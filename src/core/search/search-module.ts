@@ -75,10 +75,10 @@ export class SearchModule {
         });
       }
 
-      // Git metadata filters (canonical algorithm: nested git.* keys)
+      // Git metadata filters (nested git.file.* / git.chunk.* keys)
       if (options?.author) {
         mustConditions.push({
-          key: "git.dominantAuthor",
+          key: "git.file.dominantAuthor",
           match: { value: options.author },
         });
       }
@@ -86,7 +86,7 @@ export class SearchModule {
       if (options?.modifiedAfter) {
         const timestamp = Math.floor(new Date(options.modifiedAfter).getTime() / 1000);
         mustConditions.push({
-          key: "git.lastModifiedAt",
+          key: "git.file.lastModifiedAt",
           range: { gte: timestamp },
         });
       }
@@ -94,35 +94,35 @@ export class SearchModule {
       if (options?.modifiedBefore) {
         const timestamp = Math.floor(new Date(options.modifiedBefore).getTime() / 1000);
         mustConditions.push({
-          key: "git.lastModifiedAt",
+          key: "git.file.lastModifiedAt",
           range: { lte: timestamp },
         });
       }
 
       if (options?.minAgeDays !== undefined) {
         mustConditions.push({
-          key: "git.ageDays",
+          key: "git.chunk.ageDays",
           range: { gte: options.minAgeDays },
         });
       }
 
       if (options?.maxAgeDays !== undefined) {
         mustConditions.push({
-          key: "git.ageDays",
+          key: "git.chunk.ageDays",
           range: { lte: options.maxAgeDays },
         });
       }
 
       if (options?.minCommitCount !== undefined) {
         mustConditions.push({
-          key: "git.commitCount",
+          key: "git.chunk.commitCount",
           range: { gte: options.minCommitCount },
         });
       }
 
       if (options?.taskId) {
         mustConditions.push({
-          key: "git.taskIds",
+          key: "git.file.taskIds",
           match: { any: [options.taskId] },
         });
       }

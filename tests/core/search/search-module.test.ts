@@ -251,7 +251,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([{ key: "git.dominantAuthor", match: { value: "John Doe" } }]),
+          must: expect.arrayContaining([{ key: "git.file.dominantAuthor", match: { value: "John Doe" } }]),
         }),
       );
     });
@@ -270,7 +270,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([{ key: "git.lastModifiedAt", range: { gte: expectedTimestamp } }]),
+          must: expect.arrayContaining([{ key: "git.file.lastModifiedAt", range: { gte: expectedTimestamp } }]),
         }),
       );
     });
@@ -289,7 +289,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([{ key: "git.lastModifiedAt", range: { lte: expectedTimestamp } }]),
+          must: expect.arrayContaining([{ key: "git.file.lastModifiedAt", range: { lte: expectedTimestamp } }]),
         }),
       );
     });
@@ -306,7 +306,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([{ key: "git.ageDays", range: { gte: 30 } }]),
+          must: expect.arrayContaining([{ key: "git.chunk.ageDays", range: { gte: 30 } }]),
         }),
       );
     });
@@ -323,7 +323,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([{ key: "git.ageDays", range: { lte: 7 } }]),
+          must: expect.arrayContaining([{ key: "git.chunk.ageDays", range: { lte: 7 } }]),
         }),
       );
     });
@@ -340,7 +340,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([{ key: "git.commitCount", range: { gte: 5 } }]),
+          must: expect.arrayContaining([{ key: "git.chunk.commitCount", range: { gte: 5 } }]),
         }),
       );
     });
@@ -357,7 +357,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([{ key: "git.taskIds", match: { any: ["TD-12345"] } }]),
+          must: expect.arrayContaining([{ key: "git.file.taskIds", match: { any: ["TD-12345"] } }]),
         }),
       );
     });
