@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { gitFilters } from "../../../../src/core/trajectory/git/filters.js";
 import { gitSignals } from "../../../../src/core/trajectory/git/signals.js";
 
+const findFilter = (param: string) => gitFilters.find((f) => f.param === param)!;
+
 describe("git filter descriptors", () => {
   it("exports 7 filter descriptors", () => {
     expect(gitFilters).toHaveLength(7);
@@ -17,59 +19,74 @@ describe("git filter descriptors", () => {
     }
   });
 
-  it("author filter produces match condition", () => {
-    const author = gitFilters.find((f) => f.param === "author")!;
-    const conditions = author.toCondition("alice");
+  it("author filter uses git.file.dominantAuthor (file-only)", () => {
+    const conditions = findFilter("author").toCondition("alice");
     expect(conditions).toHaveLength(1);
     expect(conditions[0]).toEqual({
-      key: "git.dominantAuthor",
+      key: "git.file.dominantAuthor",
       match: { value: "alice" },
     });
   });
 
-  it("minAgeDays filter produces range.gte condition", () => {
-    const filter = gitFilters.find((f) => f.param === "minAgeDays")!;
-    const conditions = filter.toCondition(30);
+  it("modifiedAfter uses git.file.lastModifiedAt (file-only)", () => {
+    const conditions = findFilter("modifiedAfter").toCondition("2024-01-01");
+    expect(conditions).toHaveLength(1);
+    expect(conditions[0].key).toBe("git.file.lastModifiedAt");
+    expect((conditions[0] as any).range.gte).toBeGreaterThan(0);
+  });
+
+  it("modifiedBefore uses git.file.lastModifiedAt (file-only)", () => {
+    const conditions = findFilter("modifiedBefore").toCondition("2025-12-31");
+    expect(conditions[0].key).toBe("git.file.lastModifiedAt");
+  });
+
+  it("taskId uses git.file.taskIds (file-only)", () => {
+    const conditions = findFilter("taskId").toCondition("JIRA-123");
     expect(conditions[0]).toEqual({
-      key: "git.ageDays",
+      key: "git.file.taskIds",
+      match: { any: ["JIRA-123"] },
+    });
+  });
+});
+
+describe("level-aware filters", () => {
+  it("minAgeDays defaults to chunk level", () => {
+    const conditions = findFilter("minAgeDays").toCondition(30);
+    expect(conditions[0]).toEqual({
+      key: "git.chunk.ageDays",
       range: { gte: 30 },
     });
   });
 
-  it("maxAgeDays filter produces range.lte condition", () => {
-    const filter = gitFilters.find((f) => f.param === "maxAgeDays")!;
-    const conditions = filter.toCondition(90);
+  it("minAgeDays respects file level param", () => {
+    const conditions = findFilter("minAgeDays").toCondition(30, "file");
+    expect(conditions[0].key).toBe("git.file.ageDays");
+  });
+
+  it("maxAgeDays defaults to chunk level", () => {
+    const conditions = findFilter("maxAgeDays").toCondition(90);
     expect(conditions[0]).toEqual({
-      key: "git.ageDays",
+      key: "git.chunk.ageDays",
       range: { lte: 90 },
     });
   });
 
-  it("modifiedAfter converts ISO date to timestamp", () => {
-    const filter = gitFilters.find((f) => f.param === "modifiedAfter")!;
-    const conditions = filter.toCondition("2024-01-01");
-    expect(conditions).toHaveLength(1);
-    const cond = conditions[0] as any;
-    expect(cond.key).toBe("git.lastModifiedAt");
-    expect(cond.range.gte).toBeGreaterThan(0);
+  it("maxAgeDays respects file level param", () => {
+    const conditions = findFilter("maxAgeDays").toCondition(7, "file");
+    expect(conditions[0].key).toBe("git.file.ageDays");
   });
 
-  it("taskId filter produces match.any condition", () => {
-    const filter = gitFilters.find((f) => f.param === "taskId")!;
-    const conditions = filter.toCondition("JIRA-123");
+  it("minCommitCount defaults to chunk level", () => {
+    const conditions = findFilter("minCommitCount").toCondition(5);
     expect(conditions[0]).toEqual({
-      key: "git.taskIds",
-      match: { any: ["JIRA-123"] },
-    });
-  });
-
-  it("minCommitCount filter produces range.gte", () => {
-    const filter = gitFilters.find((f) => f.param === "minCommitCount")!;
-    const conditions = filter.toCondition(5);
-    expect(conditions[0]).toEqual({
-      key: "git.commitCount",
+      key: "git.chunk.commitCount",
       range: { gte: 5 },
     });
+  });
+
+  it("minCommitCount respects file level param", () => {
+    const conditions = findFilter("minCommitCount").toCondition(5, "file");
+    expect(conditions[0].key).toBe("git.file.commitCount");
   });
 });
 
