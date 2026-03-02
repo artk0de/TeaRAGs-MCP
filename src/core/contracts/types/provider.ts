@@ -10,6 +10,7 @@
 import type { QdrantFilterCondition } from "../../adapters/qdrant/types.js";
 import type { ChunkLookupEntry } from "../../types.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
+import type { PayloadSignalDescriptor } from "./trajectory.js";
 
 // --- Signal overlay base types ---
 
@@ -27,21 +28,6 @@ export interface ChunkSignalOverlay {
 
 export interface ScoringWeights {
   [signal: string]: number | undefined;
-}
-
-// --- Signal (raw payload field, no normalization) ---
-
-export interface Signal {
-  /** Qdrant payload path (e.g. "git.file.commitCount") */
-  key: string;
-  /** Signal name for reranker/preset reference (e.g. "commitCount") */
-  name: string;
-  /** Data type */
-  type: "string" | "number" | "boolean" | "string[]" | "timestamp";
-  /** Human-readable description for MCP schema */
-  description: string;
-  /** Hint for Reranker: default normalization upper bound */
-  defaultBound?: number;
 }
 
 // --- Filter level ---
@@ -74,8 +60,8 @@ export interface EnrichmentProvider {
 
   // ── Query-side contract ──
 
-  /** Signal definitions (raw payload fields) */
-  readonly signals: Signal[];
+  /** Payload signal descriptors (raw payload field docs for MCP schema generation) */
+  readonly signals: PayloadSignalDescriptor[];
   /** Derived signal descriptors for reranking (normalized transforms of raw signals) */
   readonly derivedSignals: DerivedSignalDescriptor[];
   /** Typed filter parameters → Qdrant conditions */
