@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RerankPreset } from "../../../src/core/contracts/types/reranker.js";
-import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
+import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
 import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
 import { Reranker, type RerankableResult } from "../../../src/core/search/reranker.js";
@@ -1402,5 +1402,82 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
     expect(ranked[0].rankingOverlay!.file).toBeDefined();
     expect(ranked[0].rankingOverlay!.file!.responseTime).toBeDefined();
     expect(typeof ranked[0].rankingOverlay!.file!.responseTime).toBe("number");
+  });
+});
+
+describe("Reranker — collection-level p95 fallback for adaptive bounds", () => {
+  const payloadSignals: PayloadSignalDescriptor[] = [
+    { key: "git.file.ageDays", type: "number", description: "Age", stats: { percentiles: [95] } },
+    { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+  ];
+
+  // Minimal descriptor: only age signal, no dampening complexity
+  const ageOnlyDescriptor = allDescriptors.filter((d) => d.name === "age" || d.name === "similarity");
+  // Preset that only uses age (weight=1.0) to isolate bound effects
+  const ageOnlyPreset: RerankPreset = {
+    name: "ageOnly",
+    description: "test",
+    tools: ["semantic_search"],
+    weights: { age: 1.0 },
+  };
+
+  const makeResult = (score: number, git: Record<string, unknown>): RerankableResult => ({
+    score,
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
+  });
+
+  it("uses collection-level p95 as floor instead of static defaultBound", () => {
+    const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
+
+    // Collection p95=2000 (much larger than defaultBound=365)
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map([["git.file.ageDays", { count: 1000, percentiles: { 95: 2000 } }]]),
+      computedAt: Date.now(),
+    };
+    reranker.setCollectionStats(collectionStats);
+
+    // Batch: ageDays=[100, 200] → batchP95≈200
+    // Without collection stats: bound = max(200, 365) = 365 → age=200/365 ≈ 0.548
+    // With collection stats:    bound = max(200, 2000) = 2000 → age=200/2000 = 0.10
+    const results = [makeResult(0.9, { file: { ageDays: 200 } })];
+    const ranked = reranker.rerank(results, "ageOnly", "semantic_search");
+
+    // Score should be ~0.10 (collection p95=2000 as bound), not ~0.55 (defaultBound=365)
+    expect(ranked[0].score).toBeLessThan(0.2);
+  });
+
+  it("falls back to defaultBound when no collection stats exist", () => {
+    const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
+    // No setCollectionStats
+
+    // Batch: ageDays=[100, 200] → batchP95≈200
+    // Bound = max(200, 365) = 365 → age=200/365 ≈ 0.548
+    const results = [makeResult(0.9, { file: { ageDays: 200 } })];
+    const ranked = reranker.rerank(results, "ageOnly", "semantic_search");
+
+    // Score should be ~0.55 (defaultBound=365 as floor)
+    expect(ranked[0].score).toBeGreaterThan(0.4);
+    expect(ranked[0].score).toBeLessThan(0.7);
+  });
+
+  it("uses max(batchP95, collectionP95) — batch wins when larger", () => {
+    const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
+
+    // Collection p95=50 (small codebase)
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map([["git.file.ageDays", { count: 100, percentiles: { 95: 50 } }]]),
+      computedAt: Date.now(),
+    };
+    reranker.setCollectionStats(collectionStats);
+
+    // Batch: ageDays=[100, 800] → batchP95≈800
+    // bound = max(800, 50) = 800 (batch wins over collection p95=50)
+    // But also max(800, defaultBound=365) = 800 anyway
+    // age=800/800 = 1.0
+    const results = [makeResult(0.9, { file: { ageDays: 800 } })];
+    const ranked = reranker.rerank(results, "ageOnly", "semantic_search");
+
+    // Score should be ~1.0 (batch p95 dominates)
+    expect(ranked[0].score).toBeGreaterThan(0.8);
   });
 });
