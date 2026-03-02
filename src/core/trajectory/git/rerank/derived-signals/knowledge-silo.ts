@@ -15,7 +15,7 @@ export class KnowledgeSiloSignal implements DerivedSignalDescriptor {
     else if (effectiveCount === 2) value = 0.5;
     else return 0;
     const stats = ctx?.collectionStats?.perSignal.get("git.file.commitCount");
-    const k = stats?.p25 ?? KnowledgeSiloSignal.FALLBACK_THRESHOLD;
+    const k = stats?.percentiles?.[25] ?? KnowledgeSiloSignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
     return value;
   }

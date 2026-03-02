@@ -2,7 +2,7 @@
  * Generic collection-wide signal statistics computation.
  *
  * Receives already-fetched Qdrant points and PayloadSignalDescriptors,
- * computes percentile distributions for all numeric signals.
+ * computes statistics only for signals that declare a `stats` field.
  * Qdrant scrolling is handled at the API layer — this function is pure.
  */
 
@@ -38,26 +38,27 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /**
- * Compute collection-wide percentile stats for all numeric PayloadSignalDescriptors.
+ * Compute collection-wide stats for PayloadSignalDescriptors that declare a `stats` field.
  *
- * - Filters to `type: "number"` signals only (skips string, boolean, etc.)
+ * - Filters to signals WITH `stats` request (not just numeric type)
  * - Resolves dot-notation paths against each point's payload
  * - Skips missing/non-numeric/zero-or-negative values
+ * - Computes only what's declared: percentiles, mean, stddev
  * - Returns empty perSignal map for signals with no valid values
  */
 export function computeCollectionStats(
   points: { payload: Record<string, unknown> }[],
   signals: PayloadSignalDescriptor[],
 ): CollectionSignalStats {
-  const numericSignals = signals.filter((s) => s.type === "number");
+  const statsSignals = signals.filter((s) => s.stats !== undefined);
   const valueArrays = new Map<string, number[]>();
 
-  for (const signal of numericSignals) {
+  for (const signal of statsSignals) {
     valueArrays.set(signal.key, []);
   }
 
   for (const point of points) {
-    for (const signal of numericSignals) {
+    for (const signal of statsSignals) {
       const val = readPayloadPath(point.payload, signal.key);
       if (typeof val === "number" && val > 0) {
         valueArrays.get(signal.key)!.push(val);
@@ -66,16 +67,34 @@ export function computeCollectionStats(
   }
 
   const perSignal = new Map<string, SignalStats>();
-  for (const [key, values] of valueArrays) {
+  for (const signal of statsSignals) {
+    const values = valueArrays.get(signal.key)!;
     if (values.length === 0) continue;
     values.sort((a, b) => a - b);
-    perSignal.set(key, {
-      p25: percentile(values, 25),
-      p50: percentile(values, 50),
-      p75: percentile(values, 75),
-      p95: percentile(values, 95),
-      count: values.length,
-    });
+
+    const result: SignalStats = { count: values.length };
+    const req = signal.stats!;
+
+    if (req.percentiles && req.percentiles.length > 0) {
+      result.percentiles = {};
+      for (const p of req.percentiles) {
+        result.percentiles[p] = percentile(values, p);
+      }
+    }
+
+    if (req.mean) {
+      const sum = values.reduce((a, b) => a + b, 0);
+      result.mean = sum / values.length;
+    }
+
+    if (req.stddev) {
+      const sum = values.reduce((a, b) => a + b, 0);
+      const mean = sum / values.length;
+      const variance = values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / values.length;
+      result.stddev = Math.sqrt(variance);
+    }
+
+    perSignal.set(signal.key, result);
   }
 
   return { perSignal, computedAt: Date.now() };
