@@ -1,5 +1,6 @@
 import { normalize } from "../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../contracts/types/reranker.js";
+import type { ExtractContext } from "../../../../contracts/types/trajectory.js";
 import { chunkNum, payloadAlpha } from "./helpers.js";
 
 export class ChunkChurnSignal implements DerivedSignalDescriptor {
@@ -7,10 +8,10 @@ export class ChunkChurnSignal implements DerivedSignalDescriptor {
   readonly description = "Chunk-level commit count, dampened by alpha (coverage confidence).";
   readonly sources = ["chunk.commitCount"];
   readonly defaultBound = 30;
-  extract(payload: Record<string, unknown>, bound?: number): number {
-    const b = bound ?? 30;
-    const chunkCC = chunkNum(payload, "commitCount");
-    const alpha = payloadAlpha(payload);
+  extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
+    const b = ctx?.bound ?? 30;
+    const chunkCC = chunkNum(rawSignals, "commitCount");
+    const alpha = payloadAlpha(rawSignals);
     return normalize(chunkCC, b) * alpha;
   }
 }

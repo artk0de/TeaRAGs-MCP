@@ -1,15 +1,16 @@
 import { normalize } from "../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../contracts/types/reranker.js";
+import type { ExtractContext } from "../../../contracts/types/trajectory.js";
 
 export class ChunkSizeSignal implements DerivedSignalDescriptor {
   readonly name = "chunkSize";
   readonly description = "Normalized chunk size (endLine - startLine)";
   readonly sources: string[] = [];
   readonly defaultBound = 500;
-  extract(payload: Record<string, unknown>, bound?: number): number {
-    const b = bound ?? 500;
-    const start = (payload.startLine as number) || 0;
-    const end = (payload.endLine as number) || 0;
+  extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
+    const b = ctx?.bound ?? 500;
+    const start = (rawSignals.startLine as number) || 0;
+    const end = (rawSignals.endLine as number) || 0;
     return normalize(Math.max(0, end - start), b);
   }
 }

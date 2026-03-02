@@ -1,5 +1,6 @@
 import { normalize } from "../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../contracts/types/reranker.js";
+import type { ExtractContext } from "../../../../contracts/types/trajectory.js";
 import { fileNum } from "./helpers.js";
 
 export class VolatilitySignal implements DerivedSignalDescriptor {
@@ -9,8 +10,8 @@ export class VolatilitySignal implements DerivedSignalDescriptor {
   readonly defaultBound = 60;
   readonly needsConfidence = true;
   readonly confidenceField = "commitCount";
-  extract(payload: Record<string, unknown>, bound?: number): number {
-    const b = bound ?? 60;
-    return normalize(fileNum(payload, "churnVolatility"), b);
+  extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
+    const b = ctx?.bound ?? 60;
+    return normalize(fileNum(rawSignals, "churnVolatility"), b);
   }
 }

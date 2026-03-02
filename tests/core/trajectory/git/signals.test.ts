@@ -244,19 +244,19 @@ describe("gitDerivedSignals", () => {
     it("recency uses custom bound when provided", () => {
       // ageDays=200, bound=1000 → 1 - 200/1000 = 0.8
       const payload = fakePayload({ file: { ageDays: 200 } });
-      expect(byName("recency").extract(payload, 1000)).toBeCloseTo(0.8, 2);
+      expect(byName("recency").extract(payload, { bound: 1000 })).toBeCloseTo(0.8, 2);
     });
 
     it("churn uses custom bound when provided", () => {
       // commitCount=25, bound=100 → 25/100 = 0.25
       const payload = fakePayload({ file: { commitCount: 25 } });
-      expect(byName("churn").extract(payload, 100)).toBeCloseTo(0.25, 2);
+      expect(byName("churn").extract(payload, { bound: 100 })).toBeCloseTo(0.25, 2);
     });
 
     it("bugFix uses custom bound when provided", () => {
       // bugFixRate=50, bound=200 → 50/200 = 0.25
       const payload = fakePayload({ file: { bugFixRate: 50 } });
-      expect(byName("bugFix").extract(payload, 200)).toBeCloseTo(0.25, 2);
+      expect(byName("bugFix").extract(payload, { bound: 200 })).toBeCloseTo(0.25, 2);
     });
 
     it("falls back to defaultBound when bound not provided", () => {

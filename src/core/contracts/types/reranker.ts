@@ -3,6 +3,7 @@
  */
 
 import type { ScoringWeights } from "./provider.js";
+import type { ExtractContext } from "./trajectory.js";
 
 /**
  * Derived signal descriptor — defines how to compute a normalized signal
@@ -15,15 +16,11 @@ export interface DerivedSignalDescriptor {
   description: string;
   /** Raw signal names this derived signal reads from (enables ranking overlay) */
   sources: string[];
-  /** Extract normalized value (0-1) from search result payload.
-   *  Optional `bound` overrides defaultBound for adaptive normalization. */
-  extract: (payload: Record<string, unknown>, bound?: number) => number;
+  /** Extract normalized value (0-1) from raw signal data.
+   *  Optional `ctx.bound` overrides defaultBound for adaptive normalization. */
+  extract: (rawSignals: Record<string, unknown>, ctx?: ExtractContext) => number;
   /** Default upper bound for normalization */
   defaultBound?: number;
-  /** Whether to apply confidence dampening */
-  needsConfidence?: boolean;
-  /** Which raw signal field for confidence threshold (default: "commitCount") */
-  confidenceField?: string;
 }
 
 export interface RerankableResult {
