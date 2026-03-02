@@ -68,20 +68,22 @@ describe("gitDerivedSignals", () => {
       const d = gitDerivedSignals.find((s) => s.name === "ownership")!;
       expect(d.sources).toContain("dominantAuthorPct");
       expect(d.sources).toContain("authors");
-      const val = d.extract(fakePayload({ file: { dominantAuthorPct: 80 } }));
+      // commitCount >= fallback threshold (5) so confidence dampening = 1
+      const val = d.extract(fakePayload({ file: { dominantAuthorPct: 80, commitCount: 10 } }));
       expect(val).toBeCloseTo(0.8, 2);
     });
 
     it("ownership: from authors array when no dominantAuthorPct", () => {
       const d = gitDerivedSignals.find((s) => s.name === "ownership")!;
-      expect(d.extract(fakePayload({ file: { authors: ["a", "b"] } }))).toBeCloseTo(0.5, 2);
+      expect(d.extract(fakePayload({ file: { authors: ["a", "b"], commitCount: 10 } }))).toBeCloseTo(0.5, 2);
     });
 
     it("knowledgeSilo: categorical from contributorCount", () => {
       const d = gitDerivedSignals.find((s) => s.name === "knowledgeSilo")!;
-      expect(d.extract(fakePayload({ file: { contributorCount: 1 } }))).toBeCloseTo(1.0);
-      expect(d.extract(fakePayload({ file: { contributorCount: 2 } }))).toBeCloseTo(0.5);
-      expect(d.extract(fakePayload({ file: { contributorCount: 5 } }))).toBe(0);
+      // commitCount >= fallback threshold (5) so confidence dampening = 1
+      expect(d.extract(fakePayload({ file: { contributorCount: 1, commitCount: 10 } }))).toBeCloseTo(1.0);
+      expect(d.extract(fakePayload({ file: { contributorCount: 2, commitCount: 10 } }))).toBeCloseTo(0.5);
+      expect(d.extract(fakePayload({ file: { contributorCount: 5, commitCount: 10 } }))).toBe(0);
     });
 
     it("blockPenalty: 1 for block without chunk data, 0 for non-block", () => {
@@ -254,8 +256,8 @@ describe("gitDerivedSignals", () => {
     });
 
     it("bugFix uses custom bound when provided", () => {
-      // bugFixRate=50, bound=200 → 50/200 = 0.25
-      const payload = fakePayload({ file: { bugFixRate: 50 } });
+      // bugFixRate=50, bound=200 → 50/200 = 0.25 (commitCount >= threshold so dampening = 1)
+      const payload = fakePayload({ file: { bugFixRate: 50, commitCount: 10 } });
       expect(byName("bugFix").extract(payload, { bound: 200 })).toBeCloseTo(0.25, 2);
     });
 

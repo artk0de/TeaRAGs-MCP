@@ -3,12 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { RerankPreset } from "../../../src/core/contracts/types/reranker.js";
 import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
-import {
-  Reranker,
-  signalConfidence,
-  type RerankableResult,
-  type ScoringWeights,
-} from "../../../src/core/search/reranker.js";
+import { Reranker, type RerankableResult } from "../../../src/core/search/reranker.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";
 
@@ -419,54 +414,6 @@ describe("reranker", () => {
       ];
       const reranked = reranker.rerank(results, "hotspots", "semantic_search");
       expect(reranked[0].payload?.git?.commitCount).toBe(10);
-    });
-
-    describe("per-signal quadratic confidence", () => {
-      it("should dampen bugFix more aggressively than ownership (quadratic k=8 vs k=5)", () => {
-        // At commitCount=4:
-        //   bugFix confidence = (4/8)^2 = 0.25
-        //   ownership confidence = (4/5)^2 = 0.64
-        // So bugFix is dampened ~2.5x more than ownership at same sample size
-        const bugFixConfidence = signalConfidence(4, "bugFix");
-        const ownershipConfidence = signalConfidence(4, "ownership");
-        expect(bugFixConfidence).toBeCloseTo(0.25, 2);
-        expect(ownershipConfidence).toBeCloseTo(0.64, 2);
-        expect(bugFixConfidence).toBeLessThan(ownershipConfidence);
-      });
-
-      it("should use k=5 for ownership (not k=8)", () => {
-        // At commitCount=5, ownership should be fully confident
-        expect(signalConfidence(5, "ownership")).toBe(1);
-        // At commitCount=5, bugFix should NOT be fully confident (needs k=8)
-        expect(signalConfidence(5, "bugFix")).toBeLessThan(1);
-        expect(signalConfidence(5, "bugFix")).toBeCloseTo((5 / 8) ** 2, 5);
-      });
-
-      it("should make bugFix at commitCount=1 effectively zero with quadratic k=8", () => {
-        // (1/8)^2 = 0.015625 -- effectively zero
-        const conf = signalConfidence(1, "bugFix");
-        expect(conf).toBeCloseTo(0.015625, 4);
-        expect(conf).toBeLessThan(0.02);
-      });
-
-      it("should return 1 when effectiveCommitCount >= threshold", () => {
-        expect(signalConfidence(8, "bugFix")).toBe(1);
-        expect(signalConfidence(10, "bugFix")).toBe(1);
-        expect(signalConfidence(5, "ownership")).toBe(1);
-        expect(signalConfidence(100, "volatility")).toBe(1);
-      });
-
-      it("should return 0 when effectiveCommitCount is 0", () => {
-        expect(signalConfidence(0, "bugFix")).toBe(0);
-        expect(signalConfidence(0, "ownership")).toBe(0);
-      });
-
-      it("should use DEFAULT_CONFIDENCE_THRESHOLD for signals without explicit threshold", () => {
-        // 'similarity' has no explicit threshold, should use default k=5
-        // At n=3: (3/5)^2 = 0.36
-        const conf = signalConfidence(3, "similarity" as keyof ScoringWeights);
-        expect(conf).toBeCloseTo(0.36, 2);
-      });
     });
   });
 

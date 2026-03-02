@@ -125,3 +125,19 @@ export function blendSignal(payload: Record<string, unknown>, field: string): nu
   const chunkVal = chunkField(payload, field);
   return blend(chunkVal, fileVal, alpha);
 }
+
+// ---------------------------------------------------------------------------
+// Confidence dampening
+// ---------------------------------------------------------------------------
+
+const CONFIDENCE_POWER = 2;
+
+/**
+ * Quadratic confidence dampening.
+ * Returns 1 when effectiveCommitCount >= threshold, otherwise (n/k)^2.
+ */
+export function confidenceDampening(effectiveCommitCount: number, threshold: number): number {
+  if (threshold <= 0) return 1;
+  if (effectiveCommitCount >= threshold) return 1;
+  return Math.pow(effectiveCommitCount / threshold, CONFIDENCE_POWER);
+}
