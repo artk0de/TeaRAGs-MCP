@@ -18,7 +18,6 @@ import type {
   FileSignalOverlay,
   FileSignalTransform,
   FilterDescriptor,
-  Signal,
 } from "../../contracts/types/provider.js";
 import type { RerankPreset } from "../../contracts/types/reranker.js";
 import { gitFilters } from "./filters.js";
@@ -34,8 +33,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
 
   // ── Query-side contract ──
-  // TODO: update EnrichmentProvider.signals type to PayloadSignalDescriptor[] (Task 6)
-  readonly signals: Signal[] = gitPayloadSignalDescriptors as unknown as Signal[];
+  readonly signals = gitPayloadSignalDescriptors;
   readonly derivedSignals = gitDerivedSignals;
   readonly filters: FilterDescriptor[] = gitFilters;
   readonly presets: RerankPreset[] = GIT_PRESETS;
