@@ -10,6 +10,7 @@ import type { QdrantManager, SearchResult } from "../adapters/qdrant/client.js";
 import { calculateFetchLimit, filterResultsByGlob } from "../adapters/qdrant/filters/index.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
 import { resolveCollectionName, validatePath } from "../contracts/collection.js";
+import type { TrajectoryRegistry } from "../trajectory/index.js";
 import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
 import type { Reranker, RerankMode } from "./reranker.js";
 
@@ -19,6 +20,7 @@ export class SearchModule {
     private readonly embeddings: EmbeddingProvider,
     private readonly config: CodeConfig,
     private readonly reranker: Reranker,
+    private readonly registry?: TrajectoryRegistry,
   ) {}
 
   /**
@@ -45,17 +47,23 @@ export class SearchModule {
     let filter: QdrantFilter | undefined;
     // Note: pathPattern is handled via client-side filtering, not Qdrant filter
     const hasBasicFilters = options?.fileTypes || options?.documentationOnly;
-    // Git filters per canonical algorithm (aggregated signals only)
-    const hasGitFilters =
-      options?.author ||
-      options?.modifiedAfter ||
-      options?.modifiedBefore ||
-      options?.minAgeDays !== undefined ||
-      options?.maxAgeDays !== undefined ||
-      options?.minCommitCount !== undefined ||
-      options?.taskId;
 
-    if (hasBasicFilters || hasGitFilters) {
+    // Build trajectory filters via registry (git params etc.)
+    const trajectoryFilter = this.registry?.buildFilter(
+      {
+        author: options?.author,
+        modifiedAfter: options?.modifiedAfter,
+        modifiedBefore: options?.modifiedBefore,
+        minAgeDays: options?.minAgeDays,
+        maxAgeDays: options?.maxAgeDays,
+        minCommitCount: options?.minCommitCount,
+        taskId: options?.taskId,
+      },
+      "chunk",
+    );
+    const hasTrajectoryFilters = trajectoryFilter?.must && trajectoryFilter.must.length > 0;
+
+    if (hasBasicFilters || hasTrajectoryFilters) {
       const mustConditions: QdrantFilterCondition[] = [];
       filter = { must: mustConditions };
 
@@ -75,56 +83,9 @@ export class SearchModule {
         });
       }
 
-      // Git metadata filters (nested git.file.* / git.chunk.* keys)
-      if (options?.author) {
-        mustConditions.push({
-          key: "git.file.dominantAuthor",
-          match: { value: options.author },
-        });
-      }
-
-      if (options?.modifiedAfter) {
-        const timestamp = Math.floor(new Date(options.modifiedAfter).getTime() / 1000);
-        mustConditions.push({
-          key: "git.file.lastModifiedAt",
-          range: { gte: timestamp },
-        });
-      }
-
-      if (options?.modifiedBefore) {
-        const timestamp = Math.floor(new Date(options.modifiedBefore).getTime() / 1000);
-        mustConditions.push({
-          key: "git.file.lastModifiedAt",
-          range: { lte: timestamp },
-        });
-      }
-
-      if (options?.minAgeDays !== undefined) {
-        mustConditions.push({
-          key: "git.chunk.ageDays",
-          range: { gte: options.minAgeDays },
-        });
-      }
-
-      if (options?.maxAgeDays !== undefined) {
-        mustConditions.push({
-          key: "git.chunk.ageDays",
-          range: { lte: options.maxAgeDays },
-        });
-      }
-
-      if (options?.minCommitCount !== undefined) {
-        mustConditions.push({
-          key: "git.chunk.commitCount",
-          range: { gte: options.minCommitCount },
-        });
-      }
-
-      if (options?.taskId) {
-        mustConditions.push({
-          key: "git.file.taskIds",
-          match: { any: [options.taskId] },
-        });
+      // Trajectory filters (git metadata etc.) via registry
+      if (trajectoryFilter?.must) {
+        mustConditions.push(...trajectoryFilter.must);
       }
     }
 

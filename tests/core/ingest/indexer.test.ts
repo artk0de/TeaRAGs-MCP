@@ -10,8 +10,10 @@ import { SearchFacade } from "../../../src/core/api/search-facade.js";
 import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
 import { Reranker } from "../../../src/core/search/reranker.js";
+import { GitTrajectory } from "../../../src/core/trajectory/git.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";
+import { TrajectoryRegistry } from "../../../src/core/trajectory/index.js";
 import type { CodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
@@ -66,7 +68,9 @@ describe("IngestFacade + SearchFacade", () => {
     ingest = new IngestFacade(qdrant as any, embeddings, config);
     const resolvedPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
     const reranker = new Reranker([...gitDerivedSignals, ...structuralSignals], resolvedPresets);
-    search = new SearchFacade(qdrant as any, embeddings, config, reranker);
+    const registry = new TrajectoryRegistry();
+    registry.register(new GitTrajectory());
+    search = new SearchFacade(qdrant as any, embeddings, config, reranker, registry);
   });
 
   afterEach(async () => {
