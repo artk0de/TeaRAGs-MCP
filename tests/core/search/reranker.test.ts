@@ -5,9 +5,9 @@ import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../../sr
 import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
 import { Reranker, type RerankableResult } from "../../../src/core/search/reranker.js";
+import { gitPayloadSignalDescriptors } from "../../../src/core/trajectory/git/payload-signals.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";
-import { gitPayloadSignalDescriptors } from "../../../src/core/trajectory/git/signals.js";
 
 const testPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
 const allDescriptors = [...gitDerivedSignals, ...structuralSignals];
