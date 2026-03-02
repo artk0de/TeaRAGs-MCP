@@ -157,7 +157,7 @@ export class Reranker {
   /**
    * Compute adaptive bounds from the result batch.
    * For each descriptor with defaultBound, read raw source values from the payload,
-   * compute p95, and floor with defaultBound.
+   * compute p95, and floor with collection-level p95 (if available) or defaultBound.
    * Returns Map<descriptorName, adaptiveBound>.
    */
   private computeAdaptiveBounds(results: RerankableResult[]): Map<string, number> {
@@ -186,8 +186,10 @@ export class Reranker {
     for (const [name, values] of rawValues) {
       const d = this.descriptorMap.get(name);
       if (!d) continue;
-      const p95Val = p95(values);
-      bounds.set(name, Math.max(p95Val, d.defaultBound ?? 1));
+      const batchP95 = p95(values);
+      const collectionP95 = this.getCollectionP95(d.sources[0]);
+      const floor = collectionP95 ?? d.defaultBound ?? 1;
+      bounds.set(name, Math.max(batchP95, floor));
     }
 
     return bounds;
@@ -207,6 +209,16 @@ export class Reranker {
     }
 
     return signals;
+  }
+
+  /**
+   * Look up collection-level p95 for a source key.
+   * Resolves short name → full path via signalKeyMap, then reads from collectionStats.
+   */
+  private getCollectionP95(source: string): number | undefined {
+    if (!this.collectionStats) return undefined;
+    const fullPath = this.signalKeyMap.get(source) ?? source;
+    return this.collectionStats.perSignal.get(fullPath)?.percentiles?.[95];
   }
 
   /**
