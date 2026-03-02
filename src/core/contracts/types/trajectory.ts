@@ -2,6 +2,9 @@
  * Trajectory type system — payload signal descriptors, stats, and extraction context.
  */
 
+import type { EnrichmentProvider, FilterDescriptor } from "./provider.js";
+import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
+
 /** Raw Qdrant payload field descriptor — key + type + description. */
 export interface PayloadSignalDescriptor {
   /** Full Qdrant payload path (e.g. "git.file.commitCount") */
@@ -33,4 +36,23 @@ export interface ExtractContext {
   bound?: number;
   /** Collection-wide signal stats (cached until reindex) */
   collectionStats?: CollectionSignalStats;
+}
+
+/**
+ * Trajectory — unified entry point for a trajectory module.
+ *
+ * Aggregates all query-side (signals, reranking, filters, presets)
+ * and ingest-side (enrichment provider) capabilities under a single key.
+ */
+export interface Trajectory {
+  readonly key: string;
+  readonly name: string;
+  readonly description: string;
+  // Query-side
+  readonly payloadSignals: PayloadSignalDescriptor[];
+  readonly derivedSignals: DerivedSignalDescriptor[];
+  readonly filters: FilterDescriptor[];
+  readonly presets: RerankPreset[];
+  // Ingest-side (ISP)
+  readonly enrichment: EnrichmentProvider;
 }
