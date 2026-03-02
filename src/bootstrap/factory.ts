@@ -15,9 +15,11 @@ import { BASE_PAYLOAD_SIGNALS } from "../core/contracts/payload-signals.js";
 import { structuralSignals } from "../core/search/rerank/derived-signals/index.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../core/search/rerank/presets/index.js";
 import { Reranker } from "../core/search/reranker.js";
+import { GitTrajectory } from "../core/trajectory/git.js";
 import { gitDerivedSignals } from "../core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../core/trajectory/git/rerank/presets/index.js";
 import { gitPayloadSignalDescriptors } from "../core/trajectory/git/signals.js";
+import { TrajectoryRegistry } from "../core/trajectory/index.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
@@ -49,8 +51,10 @@ export function createAppContext(config: AppConfig): AppContext {
   const allPayloadSignals = [...BASE_PAYLOAD_SIGNALS, ...gitPayloadSignalDescriptors];
   const reranker = new Reranker(allDescriptors, resolvedPresets, allPayloadSignals);
   const schemaBuilder = new SchemaBuilder(reranker);
+  const registry = new TrajectoryRegistry();
+  registry.register(new GitTrajectory());
   const ingest = new IngestFacade(qdrant, embeddings, config.code);
-  const search = new SearchFacade(qdrant, embeddings, config.code, reranker);
+  const search = new SearchFacade(qdrant, embeddings, config.code, reranker, registry);
   return { qdrant, embeddings, ingest, search, reranker, schemaBuilder };
 }
 
