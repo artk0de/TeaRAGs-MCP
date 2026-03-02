@@ -53,21 +53,21 @@ describe("gitDerivedSignals", () => {
   describe("individual signals (file-only, no blending)", () => {
     it("recency: 1 - ageDays/365", () => {
       const d = gitDerivedSignals.find((s) => s.name === "recency")!;
-      expect(d.sources).toContain("ageDays");
+      expect(d.sources).toContain("file.ageDays");
       const val = d.extract(fakePayload({ file: { ageDays: 182.5 } }));
       expect(val).toBeCloseTo(0.5, 2);
     });
 
     it("churn: commitCount/50", () => {
       const d = gitDerivedSignals.find((s) => s.name === "churn")!;
-      expect(d.sources).toContain("commitCount");
+      expect(d.sources).toContain("file.commitCount");
       expect(d.extract(fakePayload({ file: { commitCount: 25 } }))).toBeCloseTo(0.5, 2);
     });
 
     it("ownership: from dominantAuthorPct", () => {
       const d = gitDerivedSignals.find((s) => s.name === "ownership")!;
-      expect(d.sources).toContain("dominantAuthorPct");
-      expect(d.sources).toContain("authors");
+      expect(d.sources).toContain("file.dominantAuthorPct");
+      expect(d.sources).toContain("file.authors");
       // commitCount >= fallback threshold (5) so confidence dampening = 1
       const val = d.extract(fakePayload({ file: { dominantAuthorPct: 80, commitCount: 10 } }));
       expect(val).toBeCloseTo(0.8, 2);

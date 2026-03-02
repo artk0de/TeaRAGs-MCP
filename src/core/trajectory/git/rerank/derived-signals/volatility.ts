@@ -6,7 +6,7 @@ import { confidenceDampening, fileNum } from "./helpers.js";
 export class VolatilitySignal implements DerivedSignalDescriptor {
   readonly name = "volatility";
   readonly description = "Churn volatility: code with erratic commit timing scores higher (churnVolatility/60)";
-  readonly sources = ["churnVolatility"];
+  readonly sources = ["file.churnVolatility"];
   readonly defaultBound = 60;
   private static readonly FALLBACK_THRESHOLD = 8;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {

@@ -6,7 +6,7 @@ import { blendSignal } from "./helpers.js";
 export class BurstActivitySignal implements DerivedSignalDescriptor {
   readonly name = "burstActivity";
   readonly description = "Recency-weighted commit frequency. L3 blends chunk+file recencyWeightedFreq.";
-  readonly sources = ["recencyWeightedFreq"];
+  readonly sources = ["file.recencyWeightedFreq"];
   readonly defaultBound = 10.0;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const b = ctx?.bound ?? 10.0;

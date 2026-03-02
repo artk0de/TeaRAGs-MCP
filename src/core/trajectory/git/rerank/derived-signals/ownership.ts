@@ -5,7 +5,7 @@ import { confidenceDampening, fileField, fileNum } from "./helpers.js";
 export class OwnershipSignal implements DerivedSignalDescriptor {
   readonly name = "ownership";
   readonly description = "Author concentration: single-owner code scores higher (dominantAuthorPct or 1/authors)";
-  readonly sources = ["dominantAuthorPct", "authors"];
+  readonly sources = ["file.dominantAuthorPct", "file.authors"];
   private static readonly FALLBACK_THRESHOLD = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     let value: number;

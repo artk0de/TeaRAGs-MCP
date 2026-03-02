@@ -7,7 +7,7 @@ export class ChurnSignal implements DerivedSignalDescriptor {
   readonly name = "churn";
   readonly description =
     "Direct commit count: frequently changed code scores higher. L3 blends chunk+file commitCount.";
-  readonly sources = ["commitCount"];
+  readonly sources = ["file.commitCount"];
   readonly defaultBound = 50;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const b = ctx?.bound ?? 50;

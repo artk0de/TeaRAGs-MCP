@@ -7,7 +7,7 @@ export class StabilitySignal implements DerivedSignalDescriptor {
   readonly name = "stability";
   readonly description =
     "Inverse of churn: stable code with few commits scores higher. L3 blends chunk+file commitCount.";
-  readonly sources = ["commitCount"];
+  readonly sources = ["file.commitCount"];
   readonly defaultBound = 50;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const b = ctx?.bound ?? 50;
