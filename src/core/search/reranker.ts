@@ -4,10 +4,9 @@
  * Descriptor-based scoring: each DerivedSignalDescriptor knows how to
  * extract its normalized value from the raw signals. The Reranker:
  * 1. Computes adaptive bounds (p95 from batch, floored with descriptor.defaultBound)
- * 2. Calls descriptor.extract(rawSignals, { bound }) for each signal
- * 3. Applies confidence dampening (needsConfidence + confidenceField, read via type assertion)
- * 4. Computes weighted sum score
- * 5. Attaches ranking overlay (raw file/chunk signals for transparency)
+ * 2. Calls descriptor.extract(rawSignals, { bound, collectionStats }) for each signal
+ * 3. Computes weighted sum score
+ * 4. Attaches ranking overlay (raw file/chunk signals for transparency)
  */
 
 import { p95 } from "../contracts/signal-utils.js";
@@ -20,40 +19,11 @@ import type {
   RerankMode,
   RerankPreset,
 } from "../contracts/types/reranker.js";
+import type { CollectionSignalStats } from "../contracts/types/trajectory.js";
 
 // Re-export types from contracts for backward compatibility
 export type { ScoringWeights } from "../contracts/types/provider.js";
 export type { RerankableResult, RerankMode } from "../contracts/types/reranker.js";
-
-// ---------------------------------------------------------------------------
-// Scoring utilities
-// ---------------------------------------------------------------------------
-
-/**
- * Per-signal confidence thresholds.
- * Signals derived from binary proportions (bugFixRate, churnVolatility)
- * need more samples to be statistically meaningful than simple counts.
- */
-const CONFIDENCE_THRESHOLDS: Partial<Record<string, number>> = {
-  bugFix: 8,
-  volatility: 8,
-  ownership: 5,
-  knowledgeSilo: 5,
-  density: 5,
-  relativeChurnNorm: 5,
-};
-const DEFAULT_CONFIDENCE_THRESHOLD = 5;
-const CONFIDENCE_POWER = 2;
-
-/**
- * Quadratic confidence dampening for a given signal.
- * Returns 1 when effectiveCommitCount >= threshold, otherwise (n/k)^p.
- */
-export function signalConfidence(effectiveCommitCount: number, signal: string): number {
-  const k = CONFIDENCE_THRESHOLDS[signal] ?? DEFAULT_CONFIDENCE_THRESHOLD;
-  if (effectiveCommitCount >= k) return 1;
-  return Math.pow(effectiveCommitCount / k, CONFIDENCE_POWER);
-}
 
 // ---------------------------------------------------------------------------
 // Reranker — descriptor-based scoring with ranking overlay
@@ -64,11 +34,12 @@ export function signalConfidence(effectiveCommitCount: number, signal: string): 
  *
  * Uses DerivedSignalDescriptor.extract(rawSignals, ctx) for all signal extraction.
  * Applies adaptive bounds (p95 from result batch, floored with defaultBound).
- * Applies confidence dampening for signals with needsConfidence=true (via type assertion).
+ * Confidence dampening is handled by each descriptor internally.
  * Attaches RankingOverlay to explain WHY each result scored the way it did.
  */
 export class Reranker {
   private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
+  private collectionStats?: CollectionSignalStats;
 
   constructor(
     private readonly descriptors: DerivedSignalDescriptor[],
@@ -78,6 +49,16 @@ export class Reranker {
     for (const d of this.descriptors) {
       this.descriptorMap.set(d.name, d);
     }
+  }
+
+  /** Set collection-wide signal stats (computed after indexing). */
+  setCollectionStats(stats: CollectionSignalStats): void {
+    this.collectionStats = stats;
+  }
+
+  /** Invalidate stats (called when reindex starts). */
+  invalidateStats(): void {
+    this.collectionStats = undefined;
   }
 
   /**
@@ -206,56 +187,18 @@ export class Reranker {
 
   /**
    * Extract all derived signal values from a payload.
-   * Calls descriptor.extract(rawSignals, { bound }) for each signal.
-   * Applies confidence dampening for signals with needsConfidence (via type assertion).
+   * Calls descriptor.extract(rawSignals, ctx) for each signal.
+   * Confidence dampening is handled internally by each descriptor.
    */
   private extractAllDerived(payload: Record<string, unknown>, bounds: Map<string, number>): Record<string, number> {
     const signals: Record<string, number> = {};
 
     for (const d of this.descriptors) {
       const bound = bounds.get(d.name);
-      let value = d.extract(payload, { bound });
-
-      // Confidence dampening: quadratic per-signal
-      // needsConfidence/confidenceField are class properties not in the interface,
-      // accessed via type assertion until Task 3 moves dampening into descriptors.
-      if ((d as any).needsConfidence) {
-        const confidenceValue = this.getEffectiveConfidenceValue(payload, (d as any).confidenceField ?? "commitCount");
-        value *= signalConfidence(confidenceValue, d.name);
-      }
-
-      signals[d.name] = value;
+      signals[d.name] = d.extract(payload, { bound, collectionStats: this.collectionStats });
     }
 
     return signals;
-  }
-
-  /**
-   * Get the effective confidence value (blended file+chunk commit count).
-   * Matches monolith's effectiveCommitCount = effectiveSignal(chunk.commitCount, file.commitCount, alpha).
-   */
-  private getEffectiveConfidenceValue(payload: Record<string, unknown>, field: string): number {
-    const git = payload.git as Record<string, unknown> | undefined;
-    if (!git) return 0;
-
-    // File-level value (nested then flat)
-    const file = git.file as Record<string, unknown> | undefined;
-    const fileVal = (file?.[field] as number) ?? (git[field] as number) ?? 0;
-
-    // Chunk-level for blending
-    const chunk = git.chunk as Record<string, unknown> | undefined;
-    const chunkVal = chunk?.[field] as number | undefined;
-    if (chunkVal === undefined || chunkVal <= 0) return fileVal;
-
-    // Compute alpha for blending
-    const fileCC = (file?.commitCount as number) ?? (git.commitCount as number) ?? 0;
-    const chunkCC = (chunk?.commitCount as number) ?? 0;
-    if (fileCC <= 0 || chunkCC <= 0) return fileVal;
-
-    const maturity = Math.min(1, chunkCC / 3);
-    const alpha = Math.min(1, (chunkCC / fileCC) * maturity);
-
-    return alpha * chunkVal + (1 - alpha) * fileVal;
   }
 
   /**

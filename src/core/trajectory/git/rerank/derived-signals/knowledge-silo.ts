@@ -1,18 +1,22 @@
 import type { DerivedSignalDescriptor } from "../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../contracts/types/trajectory.js";
-import { blendSignal } from "./helpers.js";
+import { blendSignal, confidenceDampening, fileNum } from "./helpers.js";
 
 export class KnowledgeSiloSignal implements DerivedSignalDescriptor {
   readonly name = "knowledgeSilo";
   readonly description = "Knowledge silo risk: 1 contributor=1.0, 2=0.5, 3+=0. L3 blends effective contributorCount.";
   readonly sources = ["contributorCount"];
-  readonly needsConfidence = true;
-  readonly confidenceField = "commitCount";
-  extract(rawSignals: Record<string, unknown>, _ctx?: ExtractContext): number {
+  private static readonly FALLBACK_THRESHOLD = 5;
+  extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const effectiveCount = blendSignal(rawSignals, "contributorCount");
+    let value: number;
     if (effectiveCount <= 0) return 0;
-    if (effectiveCount === 1) return 1.0;
-    if (effectiveCount === 2) return 0.5;
-    return 0;
+    if (effectiveCount === 1) value = 1.0;
+    else if (effectiveCount === 2) value = 0.5;
+    else return 0;
+    const stats = ctx?.collectionStats?.perSignal.get("git.file.commitCount");
+    const k = stats?.p25 ?? KnowledgeSiloSignal.FALLBACK_THRESHOLD;
+    value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
+    return value;
   }
 }
