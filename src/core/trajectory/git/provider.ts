@@ -25,9 +25,9 @@ import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reader.js";
 import { computeFileSignals } from "./infra/metrics.js";
+import { gitPayloadSignalDescriptors } from "./payload-signals.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
-import { gitPayloadSignalDescriptors } from "./signals.js";
 
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";

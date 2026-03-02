@@ -11,10 +11,10 @@
 
 import type { Trajectory } from "../contracts/types/trajectory.js";
 import { gitFilters } from "./git/filters.js";
+import { gitPayloadSignalDescriptors } from "./git/payload-signals.js";
 import { GitEnrichmentProvider } from "./git/provider.js";
 import { gitDerivedSignals } from "./git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./git/rerank/presets/index.js";
-import { gitPayloadSignalDescriptors } from "./git/signals.js";
 
 export class GitTrajectory implements Trajectory {
   readonly key = "git";

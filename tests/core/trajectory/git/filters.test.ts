@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/types/trajectory.js";
 import { gitFilters } from "../../../../src/core/trajectory/git/filters.js";
-import { gitPayloadSignalDescriptors } from "../../../../src/core/trajectory/git/signals.js";
+import { gitPayloadSignalDescriptors } from "../../../../src/core/trajectory/git/payload-signals.js";
 
 const findFilter = (param: string) => gitFilters.find((f) => f.param === param)!;
 
