@@ -15,11 +15,13 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.commitCount",
     type: "number",
     description: "Total commits modifying this file",
+    stats: { percentiles: [25, 50, 75, 95] },
   },
   {
     key: "git.file.ageDays",
     type: "number",
     description: "Days since last modification",
+    stats: { percentiles: [95] },
   },
   {
     key: "git.file.dominantAuthor",

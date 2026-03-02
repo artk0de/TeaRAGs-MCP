@@ -13,7 +13,7 @@ export class VolatilitySignal implements DerivedSignalDescriptor {
     const b = ctx?.bound ?? 60;
     let value = normalize(fileNum(rawSignals, "churnVolatility"), b);
     const stats = ctx?.collectionStats?.perSignal.get("git.file.commitCount");
-    const k = stats?.p25 ?? VolatilitySignal.FALLBACK_THRESHOLD;
+    const k = stats?.percentiles?.[25] ?? VolatilitySignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
     return value;
   }
