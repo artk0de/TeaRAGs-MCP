@@ -83,52 +83,30 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
   },
 
   // ── Chunk-level signals ──
-  {
-    key: "git.chunk.commitCount",
-    type: "number",
-    description: "Commits touching this specific chunk",
-    stats: { percentiles: [95] },
-  },
+  // Unique chunk signal (no file-level equivalent)
   {
     key: "git.chunk.churnRatio",
     type: "number",
     description: "Chunk's share of file churn (0-1)",
     stats: { percentiles: [95] },
   },
-  {
-    key: "git.chunk.contributorCount",
-    type: "number",
-    description: "Distinct contributors to this chunk",
-    stats: { percentiles: [95] },
-  },
-  {
-    key: "git.chunk.bugFixRate",
-    type: "number",
-    description: "Bug-fix rate for this chunk (0-100)",
-    stats: { percentiles: [95] },
-  },
-  {
-    key: "git.chunk.ageDays",
-    type: "number",
-    description: "Days since last modification to this chunk",
-    stats: { percentiles: [95] },
-  },
-  {
-    key: "git.chunk.relativeChurn",
-    type: "number",
-    description: "Churn relative to chunk size",
-    stats: { percentiles: [95] },
-  },
-  {
-    key: "git.chunk.recencyWeightedFreq",
-    type: "number",
-    description: "Chunk-level recency-weighted commit frequency",
-    stats: { percentiles: [95] },
-  },
-  {
-    key: "git.chunk.changeDensity",
-    type: "number",
-    description: "Chunk-level change density (commits per month)",
-    stats: { percentiles: [95] },
-  },
+  // Mirrored from file-level (same suffix, chunk-scoped descriptions)
+  ...(
+    [
+      ["commitCount", "Commits touching this specific chunk"],
+      ["ageDays", "Days since last modification to this chunk"],
+      ["contributorCount", "Distinct contributors to this chunk"],
+      ["bugFixRate", "Bug-fix rate for this chunk (0-100)"],
+      ["relativeChurn", "Churn relative to chunk size"],
+      ["recencyWeightedFreq", "Chunk-level recency-weighted commit frequency"],
+      ["changeDensity", "Chunk-level change density (commits per month)"],
+    ] as const
+  ).map(
+    ([suffix, description]): PayloadSignalDescriptor => ({
+      key: `git.chunk.${suffix}`,
+      type: "number",
+      description,
+      stats: { percentiles: [95] },
+    }),
+  ),
 ];

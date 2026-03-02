@@ -6,7 +6,7 @@ import { blendSignal } from "./helpers.js";
 export class RecencySignal implements DerivedSignalDescriptor {
   readonly name = "recency";
   readonly description = "Inverse of age: recently modified code scores higher. L3 blends chunk+file ageDays.";
-  readonly sources = ["ageDays"];
+  readonly sources = ["file.ageDays"];
   readonly defaultBound = 365;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const b = ctx?.bound ?? 365;

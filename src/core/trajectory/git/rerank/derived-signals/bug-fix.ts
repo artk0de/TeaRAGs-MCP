@@ -6,7 +6,7 @@ import { blendSignal, confidenceDampening, fileNum } from "./helpers.js";
 export class BugFixSignal implements DerivedSignalDescriptor {
   readonly name = "bugFix";
   readonly description = "Bug fix rate: code with more fix commits scores higher. L3 blends chunk+file bugFixRate.";
-  readonly sources = ["bugFixRate"];
+  readonly sources = ["file.bugFixRate"];
   readonly defaultBound = 100;
   private static readonly FALLBACK_THRESHOLD = 8;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {

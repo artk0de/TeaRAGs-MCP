@@ -6,7 +6,7 @@ import { blendSignal, confidenceDampening, fileNum } from "./helpers.js";
 export class DensitySignal implements DerivedSignalDescriptor {
   readonly name = "density";
   readonly description = "Change density: commits per month. L3 blends chunk+file changeDensity.";
-  readonly sources = ["changeDensity"];
+  readonly sources = ["file.changeDensity"];
   readonly defaultBound = 20;
   private static readonly FALLBACK_THRESHOLD = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
