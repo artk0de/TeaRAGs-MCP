@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import type { RerankPreset } from "../../../src/core/contracts/types/reranker.js";
+import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
 import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
 import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
 import { Reranker, type RerankableResult } from "../../../src/core/search/reranker.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";
+import { gitPayloadSignalDescriptors } from "../../../src/core/trajectory/git/signals.js";
 
 const testPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
 const allDescriptors = [...gitDerivedSignals, ...structuralSignals];
+const testPayloadSignals: PayloadSignalDescriptor[] = gitPayloadSignalDescriptors;
 
 describe("reranker", () => {
-  const reranker = new Reranker(allDescriptors, testPresets);
+  const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
 
   // Create mock results with git metadata
   const createResult = (
@@ -1010,7 +1013,7 @@ describe("reranker", () => {
 // ---------------------------------------------------------------------------
 
 describe("Reranker (v2 class)", () => {
-  const reranker = new Reranker(allDescriptors, testPresets);
+  const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
 
   const makeResult = (
     score: number,
@@ -1262,5 +1265,142 @@ describe("Reranker with resolvedPresets", () => {
     const ranked = reranker.rerank(results, "heavyRecency", "semantic_search");
     // With 90% recency weight, recent file should rank first despite lower similarity
     expect(ranked[0].payload?.relativePath).toBe("new.ts");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PayloadSignalDescriptor-based Reranker (generic dot-notation traversal)
+// ---------------------------------------------------------------------------
+
+describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () => {
+  const testPayloadSignals = [
+    { key: "git.file.ageDays", type: "number" as const, description: "Days since last modification" },
+    { key: "git.file.commitCount", type: "number" as const, description: "Total commits" },
+    { key: "git.file.bugFixRate", type: "number" as const, description: "Bug fix rate" },
+    { key: "git.file.churnVolatility", type: "number" as const, description: "Churn volatility" },
+    { key: "git.file.changeDensity", type: "number" as const, description: "Change density" },
+    { key: "git.file.dominantAuthorPct", type: "number" as const, description: "Dominant author pct" },
+    { key: "git.file.contributorCount", type: "number" as const, description: "Contributors" },
+    { key: "git.file.relativeChurn", type: "number" as const, description: "Relative churn" },
+    { key: "git.file.recencyWeightedFreq", type: "number" as const, description: "Recency freq" },
+    { key: "git.chunk.commitCount", type: "number" as const, description: "Chunk commits" },
+    { key: "git.chunk.churnRatio", type: "number" as const, description: "Chunk churn ratio" },
+  ];
+
+  const rerankerWithPayload = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+
+  const makeResult = (
+    score: number,
+    git?: Record<string, unknown>,
+    extra?: Partial<RerankableResult["payload"]>,
+  ): RerankableResult => ({
+    score,
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git },
+  });
+
+  it("reads file-level raw signals via signalKeyMap for adaptive bounds", () => {
+    const results = [
+      makeResult(0.9, { file: { ageDays: 200, commitCount: 30 } }),
+      makeResult(0.7, { file: { ageDays: 5, commitCount: 2 } }),
+    ];
+    // techDebt uses age + churn which need adaptive bounds from readRawSource
+    const ranked = rerankerWithPayload.rerank(results, "techDebt", "semantic_search");
+    expect(ranked[0].rankingOverlay).toBeDefined();
+    expect(ranked[0].rankingOverlay!.preset).toBe("techDebt");
+    // Overlay should contain raw file signals
+    expect(ranked[0].rankingOverlay!.file).toBeDefined();
+    expect(ranked[0].rankingOverlay!.file!.ageDays).toBeDefined();
+    expect(ranked[0].rankingOverlay!.file!.commitCount).toBeDefined();
+  });
+
+  it("reads chunk-level raw signals via signalKeyMap for overlay", () => {
+    const results = [makeResult(0.8, { file: { commitCount: 20 }, chunk: { commitCount: 8, churnRatio: 0.4 } })];
+    const ranked = rerankerWithPayload.rerank(results, "hotspots", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+    expect(overlay.chunk).toBeDefined();
+    expect(overlay.chunk!.commitCount).toBe(8);
+    expect(overlay.chunk!.churnRatio).toBe(0.4);
+  });
+
+  it("resolves short name to full path for adaptive bounds", () => {
+    // ageDays -> git.file.ageDays, commitCount -> git.file.commitCount
+    // readRawSource("ageDays") should find value via signalKeyMap
+    const results = [
+      makeResult(0.9, { file: { ageDays: 100, commitCount: 10 } }),
+      makeResult(0.8, { file: { ageDays: 300, commitCount: 50 } }),
+    ];
+    const ranked = rerankerWithPayload.rerank(results, "techDebt", "semantic_search");
+    // Both should have overlays with actual raw values
+    const firstOverlay = ranked[0].rankingOverlay!;
+    expect(firstOverlay.file!.ageDays).toBeDefined();
+    expect(typeof firstOverlay.file!.ageDays).toBe("number");
+  });
+
+  it("chunk.commitCount maps to git.chunk.commitCount (2-segment suffix)", () => {
+    const results = [
+      makeResult(0.8, {
+        file: { commitCount: 20, bugFixRate: 10, churnVolatility: 5, recencyWeightedFreq: 3 },
+        chunk: { commitCount: 15, churnRatio: 0.9 },
+      }),
+    ];
+    const ranked = rerankerWithPayload.rerank(results, "hotspots", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+    expect(overlay.chunk!.commitCount).toBe(15);
+  });
+
+  it("falls back gracefully without payloadSignals (default empty)", () => {
+    const rerankerNoPayload = new Reranker(allDescriptors, testPresets);
+    const results = [makeResult(0.9, { file: { ageDays: 200 } })];
+    // Should not crash, but readRawSource returns undefined for short names
+    const ranked = rerankerNoPayload.rerank(results, "techDebt", "semantic_search");
+    expect(ranked).toHaveLength(1);
+  });
+
+  it("supports non-git payload namespace via PayloadSignalDescriptor", () => {
+    // Create a custom descriptor that reads from "metrics.file.responseTime"
+    const customPayloadSignals = [
+      { key: "metrics.file.responseTime", type: "number" as const, description: "Response time" },
+    ];
+    // Custom derived signal that uses "responseTime" as source
+    const responseTimeSignal = {
+      name: "responseTime",
+      description: "Response time signal",
+      sources: ["responseTime"],
+      defaultBound: 5000,
+      extract: (rawSignals: Record<string, unknown>) => {
+        // Read from metrics.file.responseTime via payload
+        const metrics = rawSignals.metrics as Record<string, unknown> | undefined;
+        const file = metrics?.file as Record<string, unknown> | undefined;
+        const val = file?.responseTime;
+        return typeof val === "number" ? Math.min(val / 5000, 1) : 0;
+      },
+    };
+    const customPreset: RerankPreset = {
+      name: "slowEndpoints",
+      description: "Slow endpoints",
+      tools: ["semantic_search"],
+      weights: { similarity: 0.3, responseTime: 0.7 },
+      overlayMask: { file: ["responseTime"] },
+    };
+    const customReranker = new Reranker(
+      [...allDescriptors, responseTimeSignal],
+      [...testPresets, customPreset],
+      customPayloadSignals,
+    );
+    const results: RerankableResult[] = [
+      {
+        score: 0.9,
+        payload: { relativePath: "a.ts", startLine: 1, endLine: 10, metrics: { file: { responseTime: 100 } } },
+      },
+      {
+        score: 0.7,
+        payload: { relativePath: "b.ts", startLine: 1, endLine: 10, metrics: { file: { responseTime: 4000 } } },
+      },
+    ];
+    const ranked = customReranker.rerank(results, "slowEndpoints", "semantic_search");
+    // Overlay should contain the raw signal from non-git namespace
+    expect(ranked[0].rankingOverlay!.file).toBeDefined();
+    expect(ranked[0].rankingOverlay!.file!.responseTime).toBeDefined();
+    expect(typeof ranked[0].rankingOverlay!.file!.responseTime).toBe("number");
   });
 });
