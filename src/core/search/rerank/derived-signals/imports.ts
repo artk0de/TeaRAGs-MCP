@@ -7,9 +7,8 @@ export class ImportsSignal implements DerivedSignalDescriptor {
   readonly description = "Normalized import/dependency count";
   readonly sources: string[] = [];
   readonly defaultBound = 20;
-  extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const b = ctx?.bound ?? 20;
+  extract(rawSignals: Record<string, unknown>, _ctx?: ExtractContext): number {
     const arr = rawSignals.imports;
-    return normalize(Array.isArray(arr) ? arr.length : 0, b);
+    return normalize(Array.isArray(arr) ? arr.length : 0, this.defaultBound);
   }
 }

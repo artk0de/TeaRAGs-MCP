@@ -17,7 +17,7 @@ export interface DerivedSignalDescriptor {
   /** Raw signal names this derived signal reads from (enables ranking overlay) */
   sources: string[];
   /** Extract normalized value (0-1) from raw signal data.
-   *  Optional `ctx.bound` overrides defaultBound for adaptive normalization. */
+   *  Optional `ctx.bounds` provides per-source adaptive bounds for normalization. */
   extract: (rawSignals: Record<string, unknown>, ctx?: ExtractContext) => number;
   /** Default upper bound for normalization */
   defaultBound?: number;

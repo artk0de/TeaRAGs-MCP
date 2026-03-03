@@ -120,15 +120,17 @@ describe("gitDerivedSignals", () => {
     });
   });
 
-  describe("L3 alpha-blending", () => {
+  describe("L3 alpha-blending (per-source normalization)", () => {
     const byName = (n: string) => gitDerivedSignals.find((s) => s.name === n)!;
 
-    it("recency blends chunk+file ageDays when chunk data exists", () => {
+    it("recency normalizes per-source then blends", () => {
       // file: ageDays=200, commitCount=20
       // chunk: ageDays=50, commitCount=10
-      // alpha = min(1, (10/20) * min(1, 10/3)) = min(1, 0.5 * 1) = 0.5
-      // effectiveAge = 0.5 * 50 + 0.5 * 200 = 125
-      // recency = 1 - 125/365 = 0.6575
+      // alpha = min(1, (10/20) * min(1, 10/3)) = 0.5
+      // normalizedFile = 200/365 = 0.5479
+      // normalizedChunk = 50/365 = 0.1370
+      // blended = 0.5 * 0.1370 + 0.5 * 0.5479 = 0.3425
+      // recency = 1 - 0.3425 = 0.6575
       const payload = fakePayload({
         file: { ageDays: 200, commitCount: 20 },
         chunk: { ageDays: 50, commitCount: 10 },
@@ -136,11 +138,13 @@ describe("gitDerivedSignals", () => {
       expect(byName("recency").extract(payload)).toBeCloseTo(0.6575, 2);
     });
 
-    it("stability blends chunk+file commitCount", () => {
+    it("stability normalizes per-source then blends", () => {
       // file: commitCount=40, chunk: commitCount=10
-      // alpha = min(1, (10/40) * min(1, 10/3)) = min(1, 0.25 * 1) = 0.25
-      // effectiveCC = 0.25 * 10 + 0.75 * 40 = 32.5
-      // stability = 1 - 32.5/50 = 0.35
+      // alpha = min(1, (10/40) * min(1, 10/3)) = 0.25
+      // normalizedFile = 40/50 = 0.8
+      // normalizedChunk = 10/50 = 0.2
+      // blended = 0.25 * 0.2 + 0.75 * 0.8 = 0.65
+      // stability = 1 - 0.65 = 0.35
       const payload = fakePayload({
         file: { commitCount: 40 },
         chunk: { commitCount: 10 },
@@ -150,14 +154,15 @@ describe("gitDerivedSignals", () => {
 
     it("maturity factor reduces alpha for low chunk commits", () => {
       // file: commitCount=20, chunk: commitCount=2 (below CHUNK_MATURITY_THRESHOLD=3)
-      // alpha = min(1, (2/20) * min(1, 2/3)) = min(1, 0.1 * 0.667) = 0.0667
-      // vs without maturity: alpha = min(1, 2/20) = 0.1
+      // alpha = min(1, (2/20) * min(1, 2/3)) = 0.0667
+      // normalizedFile = 100/365 = 0.2740
+      // normalizedChunk = 10/365 = 0.0274
+      // blended = 0.0667 * 0.0274 + 0.9333 * 0.2740 = 0.2575
+      // recency = 1 - 0.2575 = 0.7425
       const payload = fakePayload({
         file: { ageDays: 100, commitCount: 20 },
         chunk: { ageDays: 10, commitCount: 2 },
       });
-      // effectiveAge = 0.0667 * 10 + 0.9333 * 100 = 94.0
-      // recency = 1 - 94.0/365 = 0.7425
       expect(byName("recency").extract(payload)).toBeCloseTo(0.7425, 2);
     });
 
@@ -170,12 +175,12 @@ describe("gitDerivedSignals", () => {
       expect(byName("recency").extract(payload)).toBeCloseTo(0.4521, 2);
     });
 
-    it("bugFix blends file+chunk bugFixRate", () => {
-      // file: bugFixRate=80, commitCount=20
-      // chunk: bugFixRate=40, commitCount=10
-      // alpha = min(1, (10/20) * min(1, 10/3)) = 0.5
-      // effectiveBFR = 0.5 * 40 + 0.5 * 80 = 60
-      // bugFix = 60/100 = 0.6
+    it("bugFix normalizes per-source then blends", () => {
+      // file: bugFixRate=80, commitCount=20, chunk: bugFixRate=40, commitCount=10
+      // alpha = 0.5
+      // normalizedFile = 80/100 = 0.8
+      // normalizedChunk = 40/100 = 0.4
+      // blended = 0.5 * 0.4 + 0.5 * 0.8 = 0.6
       const payload = fakePayload({
         file: { bugFixRate: 80, commitCount: 20 },
         chunk: { bugFixRate: 40, commitCount: 10 },
@@ -183,12 +188,12 @@ describe("gitDerivedSignals", () => {
       expect(byName("bugFix").extract(payload)).toBeCloseTo(0.6, 2);
     });
 
-    it("density blends file+chunk changeDensity", () => {
-      // file: changeDensity=10, commitCount=20
-      // chunk: changeDensity=4, commitCount=10
+    it("density normalizes per-source then blends", () => {
+      // file: changeDensity=10, commitCount=20, chunk: changeDensity=4, commitCount=10
       // alpha = 0.5
-      // effectiveDensity = 0.5 * 4 + 0.5 * 10 = 7
-      // density = 7/20 = 0.35
+      // normalizedFile = 10/20 = 0.5
+      // normalizedChunk = 4/20 = 0.2
+      // blended = 0.5 * 0.2 + 0.5 * 0.5 = 0.35
       const payload = fakePayload({
         file: { changeDensity: 10, commitCount: 20 },
         chunk: { changeDensity: 4, commitCount: 10 },
@@ -196,12 +201,12 @@ describe("gitDerivedSignals", () => {
       expect(byName("density").extract(payload)).toBeCloseTo(0.35, 2);
     });
 
-    it("burstActivity blends file+chunk recencyWeightedFreq", () => {
-      // file: recencyWeightedFreq=8, commitCount=20
-      // chunk: recencyWeightedFreq=2, commitCount=10
+    it("burstActivity normalizes per-source then blends", () => {
+      // file: recencyWeightedFreq=8, commitCount=20, chunk: rwf=2, commitCount=10
       // alpha = 0.5
-      // effective = 0.5 * 2 + 0.5 * 8 = 5
-      // burstActivity = 5/10 = 0.5
+      // normalizedFile = 8/10 = 0.8
+      // normalizedChunk = 2/10 = 0.2
+      // blended = 0.5 * 0.2 + 0.5 * 0.8 = 0.5
       const payload = fakePayload({
         file: { recencyWeightedFreq: 8, commitCount: 20 },
         chunk: { recencyWeightedFreq: 2, commitCount: 10 },
@@ -220,23 +225,15 @@ describe("gitDerivedSignals", () => {
       expect(byName("chunkRelativeChurn").extract(payload)).toBeCloseTo(0.25, 2);
     });
 
-    it("knowledgeSilo blends effective contributorCount", () => {
-      // file: contributorCount=1, commitCount=20
-      // chunk: contributorCount=2, commitCount=10
+    it("knowledgeSilo blends effective contributorCount (raw, not normalized)", () => {
+      // file: contributorCount=1, commitCount=20, chunk: contributorCount=2, commitCount=10
       // alpha = 0.5
       // effectiveContributorCount = 0.5 * 2 + 0.5 * 1 = 1.5
-      // 1.5 rounds to... actually it's continuous: 1 → 1.0, 2 → 0.5, so 1.5 → 0.5 (if >=2, count check)
-      // Actually the monolith uses getKnowledgeSiloScore(result, effectiveContributorCount):
-      //   if count <= 0: 0; if count === 1: 1.0; if count === 2: 0.5; else 0
-      //   count=1.5 → not 1, not 2, count > 0 → actually falls to else → 0
-      // Wait, the monolith checks `count === 1` and `count === 2` with strict equality.
-      // 1.5 is not 1 and not 2, so it returns 0.
-      // Hmm, that's weird. But that's how the monolith works.
+      // 1.5 is not exactly 1 or 2 → returns 0 (strict equality check)
       const payload = fakePayload({
         file: { contributorCount: 1, commitCount: 20 },
         chunk: { contributorCount: 2, commitCount: 10 },
       });
-      // effectiveContributorCount = 1.5 → not 1, not 2, not <=0 → returns 0
       expect(byName("knowledgeSilo").extract(payload)).toBe(0);
     });
   });
@@ -265,36 +262,43 @@ describe("gitDerivedSignals", () => {
     });
 
     it("does not accept collectionStats in ExtractContext", () => {
-      // Type-level check: collectionStats should NOT be in ExtractContext
-      const ctx: ExtractContext = { bound: 100 };
+      // ExtractContext should have bounds (Record) not bound (number)
+      const ctx: ExtractContext = { bounds: { "file.ageDays": 365 } };
       expect(ctx).not.toHaveProperty("collectionStats");
+      expect(ctx).not.toHaveProperty("bound");
     });
   });
 
-  describe("adaptive bounds via bound parameter", () => {
+  describe("adaptive bounds via per-source bounds", () => {
     const byName = (n: string) => gitDerivedSignals.find((s) => s.name === n)!;
 
-    it("recency uses custom bound when provided", () => {
-      // ageDays=200, bound=1000 → 1 - 200/1000 = 0.8
+    it("recency uses custom per-source bounds when provided", () => {
+      // ageDays=200, file bound=1000 → 1 - 200/1000 = 0.8
       const payload = fakePayload({ file: { ageDays: 200 } });
-      expect(byName("recency").extract(payload, { bound: 1000 })).toBeCloseTo(0.8, 2);
+      expect(
+        byName("recency").extract(payload, { bounds: { "file.ageDays": 1000, "chunk.ageDays": 1000 } }),
+      ).toBeCloseTo(0.8, 2);
     });
 
-    it("churn uses custom bound when provided", () => {
-      // commitCount=25, bound=100 → 25/100 = 0.25
+    it("churn uses custom per-source bounds when provided", () => {
+      // commitCount=25, file bound=100 → 25/100 = 0.25
       const payload = fakePayload({ file: { commitCount: 25 } });
-      expect(byName("churn").extract(payload, { bound: 100 })).toBeCloseTo(0.25, 2);
+      expect(
+        byName("churn").extract(payload, { bounds: { "file.commitCount": 100, "chunk.commitCount": 100 } }),
+      ).toBeCloseTo(0.25, 2);
     });
 
-    it("bugFix uses custom bound when provided", () => {
-      // bugFixRate=50, bound=200 → 50/200 = 0.25 (commitCount >= threshold so dampening = 1)
+    it("bugFix uses custom per-source bounds when provided", () => {
+      // bugFixRate=50, file bound=200 → 50/200 = 0.25 (commitCount >= threshold so dampening = 1)
       const payload = fakePayload({ file: { bugFixRate: 50, commitCount: 10 } });
-      expect(byName("bugFix").extract(payload, { bound: 200 })).toBeCloseTo(0.25, 2);
+      expect(
+        byName("bugFix").extract(payload, { bounds: { "file.bugFixRate": 200, "chunk.bugFixRate": 200 } }),
+      ).toBeCloseTo(0.25, 2);
     });
 
-    it("falls back to defaultBound when bound not provided", () => {
+    it("falls back to defaultBound when bounds not provided", () => {
       const payload = fakePayload({ file: { ageDays: 182.5 } });
-      // Without bound: 1 - 182.5/365 = 0.5
+      // Without bounds: 1 - 182.5/365 = 0.5
       expect(byName("recency").extract(payload)).toBeCloseTo(0.5, 2);
     });
   });
