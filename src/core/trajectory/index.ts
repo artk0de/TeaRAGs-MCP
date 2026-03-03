@@ -13,7 +13,7 @@
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../contracts/types/reranker.js";
-import type { DampeningConfig, PayloadSignalDescriptor, Trajectory } from "../contracts/types/trajectory.js";
+import type { PayloadSignalDescriptor, Trajectory } from "../contracts/types/trajectory.js";
 
 export class TrajectoryRegistry {
   private readonly trajectories: Map<string, Trajectory> = new Map();
@@ -88,17 +88,6 @@ export class TrajectoryRegistry {
       all.push(...trajectory.presets);
     }
     return all;
-  }
-
-  /** All dampening configs from registered trajectories (for Reranker DI). */
-  getAllDampeningConfigs(): DampeningConfig[] {
-    const configs: DampeningConfig[] = [];
-    for (const trajectory of this.trajectories.values()) {
-      if (trajectory.dampeningConfig) {
-        configs.push(trajectory.dampeningConfig);
-      }
-    }
-    return configs;
   }
 
   /** All enrichment providers from all registered trajectories (for ingest layer). */

@@ -1,11 +1,12 @@
 import type { DerivedSignalDescriptor } from "../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../contracts/types/trajectory.js";
-import { confidenceDampening, fileField, fileNum } from "./helpers.js";
+import { confidenceDampening, fileField, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
 
 export class OwnershipSignal implements DerivedSignalDescriptor {
   readonly name = "ownership";
   readonly description = "Author concentration: single-owner code scores higher (dominantAuthorPct or 1/authors)";
   readonly sources = ["file.dominantAuthorPct", "file.authors"];
+  readonly dampeningSource = GIT_FILE_DAMPENING;
   private static readonly FALLBACK_THRESHOLD = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     let value: number;

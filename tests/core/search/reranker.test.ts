@@ -1405,13 +1405,13 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
   });
 });
 
-describe("Reranker — dampening threshold via DampeningConfig DI", () => {
+describe("Reranker — per-signal dampeningSource", () => {
   const payloadSignals: PayloadSignalDescriptor[] = [
     { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
     { key: "git.file.bugFixRate", type: "number", description: "Bug fix rate", stats: { percentiles: [95] } },
   ];
 
-  // bugFix signal uses dampening (FALLBACK_THRESHOLD=8)
+  // bugFix signal uses dampening (FALLBACK_THRESHOLD=8) and has dampeningSource
   const bugFixDescriptor = allDescriptors.filter((d) => d.name === "bugFix" || d.name === "similarity");
   const bugFixPreset: RerankPreset = {
     name: "bugFixOnly",
@@ -1426,9 +1426,8 @@ describe("Reranker — dampening threshold via DampeningConfig DI", () => {
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
   });
 
-  it("resolves dampeningThreshold from DampeningConfig + collectionStats", () => {
-    const dampeningConfigs = [{ key: "git.file.commitCount", percentile: 25 as const }];
-    const reranker = new Reranker(bugFixDescriptor, [bugFixPreset], payloadSignals, dampeningConfigs);
+  it("resolves dampeningThreshold per-signal from descriptor.dampeningSource", () => {
+    const reranker = new Reranker(bugFixDescriptor, [bugFixPreset], payloadSignals);
 
     // Collection: commitCount p25=20
     const collectionStats: CollectionSignalStats = {
@@ -1437,57 +1436,36 @@ describe("Reranker — dampening threshold via DampeningConfig DI", () => {
     };
     reranker.setCollectionStats(collectionStats);
 
+    // bugFix.dampeningSource = { key: "git.file.commitCount", percentile: 25 }
     // commitCount=4, dampeningThreshold=20 → dampening=(4/20)^2=0.04
-    // bugFixRate=100, bound=100 → normalized=1.0, damped=1.0*0.04=0.04
+    // bugFixRate=100, bound=100 → normalized=1.0, damped=0.04
     const results = [makeResult(0.9, { file: { bugFixRate: 100, commitCount: 4 } })];
     const ranked = reranker.rerank(results, "bugFixOnly", "semantic_search");
 
-    // Heavily dampened — score should be very low
     expect(ranked[0].score).toBeLessThan(0.1);
   });
 
-  it("falls back to per-signal FALLBACK_THRESHOLD when no dampeningConfigs provided", () => {
-    // No dampeningConfigs — Reranker has no dampening knowledge
+  it("falls back to per-signal FALLBACK_THRESHOLD when no collectionStats", () => {
     const reranker = new Reranker(bugFixDescriptor, [bugFixPreset], payloadSignals);
+    // No setCollectionStats
 
     // commitCount=4, FALLBACK_THRESHOLD=8 → dampening=(4/8)^2=0.25
-    // bugFixRate=100 → normalized=1.0, damped=0.25
     const results = [makeResult(0.9, { file: { bugFixRate: 100, commitCount: 4 } })];
     const ranked = reranker.rerank(results, "bugFixOnly", "semantic_search");
 
-    // Less dampened than with collection stats (0.25 vs 0.04)
     expect(ranked[0].score).toBeGreaterThan(0.15);
     expect(ranked[0].score).toBeLessThan(0.4);
   });
 
-  it("does not leak trajectory-specific knowledge (no git.file.commitCount hardcode)", () => {
-    // Custom dampening config for hypothetical non-git trajectory
-    const customPayload: PayloadSignalDescriptor[] = [
-      { key: "test.file.runCount", type: "number", description: "Test runs", stats: { percentiles: [25] } },
-    ];
-    const customConfigs = [{ key: "test.file.runCount", percentile: 25 as const }];
-    const reranker = new Reranker(
-      bugFixDescriptor,
-      [bugFixPreset],
-      [...payloadSignals, ...customPayload],
-      customConfigs,
-    );
+  it("signals without dampeningSource get no threshold (always use fallback)", () => {
+    // similarity has no dampeningSource → always uses its own logic (no dampening)
+    const simDescriptor = allDescriptors.filter((d) => d.name === "similarity");
+    expect(simDescriptor[0].dampeningSource).toBeUndefined();
+  });
 
-    const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([
-        ["test.file.runCount", { count: 200, percentiles: { 25: 15 } }],
-        // No git.file.commitCount — should NOT find dampening from git
-      ]),
-      computedAt: Date.now(),
-    };
-    reranker.setCollectionStats(collectionStats);
-
-    // dampeningThreshold resolved from test.file.runCount p25=15 (not git hardcode)
-    // commitCount=4, threshold=15 → dampening=(4/15)^2≈0.071
-    const results = [makeResult(0.9, { file: { bugFixRate: 100, commitCount: 4 } })];
-    const ranked = reranker.rerank(results, "bugFixOnly", "semantic_search");
-
-    expect(ranked[0].score).toBeLessThan(0.15);
+  it("bugFix descriptor declares dampeningSource", () => {
+    const bf = allDescriptors.find((d) => d.name === "bugFix")!;
+    expect(bf.dampeningSource).toEqual({ key: "git.file.commitCount", percentile: 25 });
   });
 });
 

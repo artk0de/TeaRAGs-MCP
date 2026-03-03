@@ -3,7 +3,7 @@
  */
 
 import type { ScoringWeights } from "./provider.js";
-import type { ExtractContext } from "./trajectory.js";
+import type { DampeningConfig, ExtractContext } from "./trajectory.js";
 
 /**
  * Derived signal descriptor — defines how to compute a normalized signal
@@ -21,6 +21,8 @@ export interface DerivedSignalDescriptor {
   extract: (rawSignals: Record<string, unknown>, ctx?: ExtractContext) => number;
   /** Default upper bound for normalization */
   defaultBound?: number;
+  /** Dampening source: which collection stat to use as confidence threshold. */
+  dampeningSource?: DampeningConfig;
 }
 
 export interface RerankableResult {

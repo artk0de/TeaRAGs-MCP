@@ -1,13 +1,14 @@
 import { normalize } from "../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../contracts/types/trajectory.js";
-import { blendSignal, confidenceDampening, fileNum } from "./helpers.js";
+import { blendSignal, confidenceDampening, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
 
 export class BugFixSignal implements DerivedSignalDescriptor {
   readonly name = "bugFix";
   readonly description = "Bug fix rate: code with more fix commits scores higher. L3 blends chunk+file bugFixRate.";
   readonly sources = ["file.bugFixRate"];
   readonly defaultBound = 100;
+  readonly dampeningSource = GIT_FILE_DAMPENING;
   private static readonly FALLBACK_THRESHOLD = 8;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const b = ctx?.bound ?? 100;

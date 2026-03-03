@@ -76,8 +76,6 @@ export interface Trajectory {
   readonly derivedSignals: DerivedSignalDescriptor[];
   readonly filters: FilterDescriptor[];
   readonly presets: RerankPreset[];
-  /** Confidence dampening config — which signal/percentile measures statistical reliability. */
-  readonly dampeningConfig?: DampeningConfig;
   // Ingest-side (ISP)
   readonly enrichment: EnrichmentProvider;
 }

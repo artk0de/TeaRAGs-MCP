@@ -6,6 +6,11 @@
  * chunk + file values weighted by alpha (coverage x maturity).
  */
 
+import type { DampeningConfig } from "../../../../contracts/types/trajectory.js";
+
+/** Shared dampening config for all file-level git derived signals. */
+export const GIT_FILE_DAMPENING: DampeningConfig = { key: "git.file.commitCount", percentile: 25 };
+
 /** Minimum chunk commits for full maturity in alpha computation */
 export const CHUNK_MATURITY_THRESHOLD = 3;
 
