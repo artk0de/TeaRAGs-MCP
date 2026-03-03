@@ -1,5 +1,8 @@
-import type { Config } from "@docusaurus/types";
 import type * as Preset from "@docusaurus/preset-classic";
+import type { Config } from "@docusaurus/types";
+import rehypeKatex from "rehype-katex";
+import remarkMath from "remark-math";
+
 import prismDark from "./src/theme/prism-tearags-dark";
 import prismLight from "./src/theme/prism-tearags-light";
 
@@ -39,6 +42,13 @@ const config: Config = {
     ],
   ],
 
+  stylesheets: [
+    {
+      href: "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css",
+      type: "text/css",
+    },
+  ],
+
   i18n: {
     defaultLocale: "en",
     locales: ["en"],
@@ -51,8 +61,9 @@ const config: Config = {
         docs: {
           sidebarPath: "./sidebars.ts",
           routeBasePath: "/",
-          editUrl:
-            "https://github.com/artk0de/TeaRAGs-MCP/tree/main/website/",
+          editUrl: "https://github.com/artk0de/TeaRAGs-MCP/tree/main/website/",
+          remarkPlugins: [remarkMath],
+          rehypePlugins: [rehypeKatex],
         },
         blog: false,
         theme: {
