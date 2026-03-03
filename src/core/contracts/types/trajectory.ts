@@ -46,8 +46,19 @@ export interface CollectionSignalStats {
 export interface ExtractContext {
   /** Adaptive bound from result batch (p95, floored with defaultBound) */
   bound?: number;
-  /** Collection-wide signal stats (cached until reindex) */
-  collectionStats?: CollectionSignalStats;
+  /** Confidence dampening threshold resolved by Reranker from collection stats (commitCount p25). */
+  dampeningThreshold?: number;
+}
+
+/**
+ * Declares which collection-level statistic to use as confidence dampening threshold.
+ * Each trajectory provides its own dampening config (e.g., git uses commitCount p25).
+ */
+export interface DampeningConfig {
+  /** Full Qdrant payload key (e.g. "git.file.commitCount") */
+  readonly key: string;
+  /** Which percentile to use as threshold (e.g. 25) */
+  readonly percentile: number;
 }
 
 /**
@@ -65,6 +76,8 @@ export interface Trajectory {
   readonly derivedSignals: DerivedSignalDescriptor[];
   readonly filters: FilterDescriptor[];
   readonly presets: RerankPreset[];
+  /** Confidence dampening config — which signal/percentile measures statistical reliability. */
+  readonly dampeningConfig?: DampeningConfig;
   // Ingest-side (ISP)
   readonly enrichment: EnrichmentProvider;
 }

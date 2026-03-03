@@ -13,8 +13,7 @@ export class DensitySignal implements DerivedSignalDescriptor {
     const b = ctx?.bound ?? 20;
     const effectiveDensity = blendSignal(rawSignals, "changeDensity");
     let value = normalize(effectiveDensity, b);
-    const stats = ctx?.collectionStats?.perSignal.get("git.file.commitCount");
-    const k = stats?.percentiles?.[25] ?? DensitySignal.FALLBACK_THRESHOLD;
+    const k = ctx?.dampeningThreshold ?? DensitySignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
     return value;
   }

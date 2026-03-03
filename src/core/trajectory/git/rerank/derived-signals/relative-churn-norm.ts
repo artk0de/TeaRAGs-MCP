@@ -13,8 +13,7 @@ export class RelativeChurnNormSignal implements DerivedSignalDescriptor {
     const b = ctx?.bound ?? 5.0;
     const effectiveRC = blendSignal(rawSignals, "relativeChurn");
     let value = normalize(effectiveRC, b);
-    const stats = ctx?.collectionStats?.perSignal.get("git.file.commitCount");
-    const k = stats?.percentiles?.[25] ?? RelativeChurnNormSignal.FALLBACK_THRESHOLD;
+    const k = ctx?.dampeningThreshold ?? RelativeChurnNormSignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
     return value;
   }

@@ -9,7 +9,7 @@
  * - Enrichment provider (file + chunk signal builders)
  */
 
-import type { Trajectory } from "../contracts/types/trajectory.js";
+import type { DampeningConfig, Trajectory } from "../contracts/types/trajectory.js";
 import { gitFilters } from "./git/filters.js";
 import { gitPayloadSignalDescriptors } from "./git/payload-signals.js";
 import { GitEnrichmentProvider } from "./git/provider.js";
@@ -24,5 +24,6 @@ export class GitTrajectory implements Trajectory {
   readonly derivedSignals = gitDerivedSignals;
   readonly filters = gitFilters;
   readonly presets = GIT_PRESETS;
+  readonly dampeningConfig: DampeningConfig = { key: "git.file.commitCount", percentile: 25 };
   readonly enrichment = new GitEnrichmentProvider();
 }
