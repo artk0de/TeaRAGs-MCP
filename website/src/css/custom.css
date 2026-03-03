@@ -102,20 +102,35 @@ button,
    Navbar — glassmorphism
    ═══════════════════════════════════════════ */
 
+/* backdrop-filter on .navbar directly creates a containing block
+   for position:fixed descendants, trapping .navbar-sidebar inside
+   the navbar's height.  Use a pseudo-element instead so the glass
+   effect doesn't affect the containing block hierarchy. */
 .navbar {
-  background: rgba(27, 27, 29, 0.75);
-  backdrop-filter: blur(16px) saturate(1.5);
-  -webkit-backdrop-filter: blur(16px) saturate(1.5);
   border-bottom: 1px solid var(--tea-border-subtle);
   box-shadow: 0 1px 12px rgba(0, 0, 0, 0.15);
   height: var(--ifm-navbar-height);
   display: flex;
   align-items: center;
+  position: relative;
+}
+
+.navbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(27, 27, 29, 0.75);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  z-index: -1;
 }
 
 [data-theme="light"] .navbar {
-  background: rgba(255, 255, 255, 0.75);
   box-shadow: 0 1px 12px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .navbar::before {
+  background: rgba(255, 255, 255, 0.75);
 }
 
 .navbar__inner {
@@ -508,6 +523,16 @@ table tr:nth-child(even) {
 /* ═══════════════════════════════════════════
    TOC — minimal active states
    ═══════════════════════════════════════════ */
+
+/* Fix: Docusaurus CSS layers (future.v4) strip the media query
+   from the module CSS, leaving .tocMobile with display:none on
+   all viewports.  Re-add the responsive rule using the stable
+   semantic class name. */
+@media (max-width: 996px) {
+  .theme-doc-toc-mobile {
+    display: block;
+  }
+}
 
 .table-of-contents__link {
   font-size: 0.825rem;
