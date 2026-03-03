@@ -21,7 +21,7 @@ import type {
 } from "../contracts/types/reranker.js";
 import type { CollectionSignalStats, PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
 
-// Re-export types from contracts for backward compatibility
+// Re-export types as part of search module's public API
 export type { ScoringWeights } from "../contracts/types/provider.js";
 export type { RerankableResult, RerankMode } from "../contracts/types/reranker.js";
 
