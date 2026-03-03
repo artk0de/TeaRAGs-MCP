@@ -3,8 +3,8 @@
  *
  * Descriptor-based scoring: each DerivedSignalDescriptor knows how to
  * extract its normalized value from the raw signals. The Reranker:
- * 1. Computes adaptive bounds (p95 from batch, floored with descriptor.defaultBound)
- * 2. Calls descriptor.extract(rawSignals, { bound, dampeningThreshold }) for each signal
+ * 1. Computes per-source adaptive bounds (p95 from batch, floored with defaultBound per-descriptor)
+ * 2. Calls descriptor.extract(rawSignals, { bounds, dampeningThreshold }) for each signal
  * 3. Computes weighted sum score
  * 4. Attaches ranking overlay (raw file/chunk signals for transparency)
  */
@@ -155,58 +155,60 @@ export class Reranker {
   }
 
   /**
-   * Compute adaptive bounds from the result batch.
-   * For each descriptor with defaultBound, read raw source values from the payload,
-   * compute p95, and floor with collection-level p95 (if available) or defaultBound.
-   * Returns Map<descriptorName, adaptiveBound>.
+   * Compute adaptive bounds from the result batch — per-source.
+   * For each unique source across all descriptors, read raw values from every payload,
+   * compute p95, and floor with collection-level p95.
+   * Returns Map<sourceKey, adaptiveBound>.
    */
   private computeAdaptiveBounds(results: RerankableResult[]): Map<string, number> {
-    const bounds = new Map<string, number>();
     const rawValues = new Map<string, number[]>();
 
     for (const result of results) {
       for (const d of this.descriptors) {
         if (d.defaultBound === undefined) continue;
-        if (d.sources.length === 0) continue; // Structural signals use static bounds
-
-        // Read raw values from the first source (each bounded descriptor has one primary source)
-        const source = d.sources[0];
-        const raw = this.readRawSource(result, source);
-        if (raw !== undefined && raw > 0) {
-          let arr = rawValues.get(d.name);
-          if (!arr) {
-            arr = [];
-            rawValues.set(d.name, arr);
+        for (const source of d.sources) {
+          const raw = this.readRawSource(result, source);
+          if (raw !== undefined && raw > 0) {
+            let arr = rawValues.get(source);
+            if (!arr) {
+              arr = [];
+              rawValues.set(source, arr);
+            }
+            arr.push(raw);
           }
-          arr.push(raw);
         }
       }
     }
 
-    for (const [name, values] of rawValues) {
-      const d = this.descriptorMap.get(name);
-      if (!d) continue;
+    const sourceBounds = new Map<string, number>();
+    for (const [source, values] of rawValues) {
       const batchP95 = p95(values);
-      const collectionP95 = this.getCollectionP95(d.sources[0]);
-      const floor = collectionP95 ?? d.defaultBound ?? 1;
-      bounds.set(name, Math.max(batchP95, floor));
+      const collectionP95 = this.getCollectionP95(source);
+      sourceBounds.set(source, Math.max(batchP95, collectionP95 ?? 0));
     }
 
-    return bounds;
+    return sourceBounds;
   }
 
   /**
    * Extract all derived signal values from a payload.
-   * Calls descriptor.extract(rawSignals, ctx) for each signal.
-   * Confidence dampening threshold is resolved per-signal from descriptor.dampeningSource.
+   * Builds per-descriptor bounds record from source-level bounds,
+   * applying defaultBound as floor per-source.
    */
-  private extractAllDerived(payload: Record<string, unknown>, bounds: Map<string, number>): Record<string, number> {
+  private extractAllDerived(
+    payload: Record<string, unknown>,
+    sourceBounds: Map<string, number>,
+  ): Record<string, number> {
     const signals: Record<string, number> = {};
 
     for (const d of this.descriptors) {
-      const bound = bounds.get(d.name);
+      const bounds: Record<string, number> = {};
+      for (const source of d.sources) {
+        const sourceBound = sourceBounds.get(source) ?? 0;
+        bounds[source] = Math.max(sourceBound, d.defaultBound ?? 1);
+      }
       const dampeningThreshold = this.resolveDampeningThreshold(d);
-      signals[d.name] = d.extract(payload, { bound, dampeningThreshold });
+      signals[d.name] = d.extract(payload, { bounds, dampeningThreshold });
     }
 
     return signals;

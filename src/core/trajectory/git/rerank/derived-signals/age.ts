@@ -1,16 +1,15 @@
-import { normalize } from "../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../contracts/types/trajectory.js";
-import { blendSignal } from "./helpers.js";
+import { blendNormalized } from "./helpers.js";
 
 export class AgeSignal implements DerivedSignalDescriptor {
   readonly name = "age";
   readonly description = "Direct age: older code scores higher. L3 blends chunk+file ageDays.";
-  readonly sources = ["file.ageDays"];
+  readonly sources = ["file.ageDays", "chunk.ageDays"];
   readonly defaultBound = 365;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const b = ctx?.bound ?? 365;
-    const effectiveAge = blendSignal(rawSignals, "ageDays");
-    return normalize(effectiveAge, b);
+    const fb = ctx?.bounds?.["file.ageDays"] ?? 365;
+    const cb = ctx?.bounds?.["chunk.ageDays"] ?? 365;
+    return blendNormalized(rawSignals, "ageDays", fb, cb);
   }
 }

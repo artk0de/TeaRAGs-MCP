@@ -6,6 +6,11 @@
  * chunk + file values weighted by alpha (coverage x maturity).
  */
 
+// ---------------------------------------------------------------------------
+// Per-source normalization + blending
+// ---------------------------------------------------------------------------
+
+import { normalize } from "../../../../contracts/signal-utils.js";
 import type { DampeningConfig } from "../../../../contracts/types/trajectory.js";
 
 /** Shared dampening config for all file-level git derived signals. */
@@ -129,6 +134,24 @@ export function blendSignal(payload: Record<string, unknown>, field: string): nu
   if (alpha === 0) return fileVal;
   const chunkVal = chunkField(payload, field);
   return blend(chunkVal, fileVal, alpha);
+}
+
+/**
+ * Normalize file and chunk values with per-source bounds, then alpha-blend.
+ * Each source is normalized to its own distribution before blending.
+ */
+export function blendNormalized(
+  payload: Record<string, unknown>,
+  field: string,
+  fileBound: number,
+  chunkBound: number,
+): number {
+  const fileVal = normalize(fileNum(payload, field), fileBound);
+  const alpha = payloadAlpha(payload);
+  if (alpha === 0) return fileVal;
+  const chunkVal = chunkField(payload, field);
+  const normalizedChunk = chunkVal !== undefined ? normalize(chunkVal, chunkBound) : fileVal;
+  return blend(normalizedChunk, fileVal, alpha);
 }
 
 // ---------------------------------------------------------------------------

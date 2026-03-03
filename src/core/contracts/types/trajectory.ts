@@ -44,9 +44,9 @@ export interface CollectionSignalStats {
 
 /** Context passed to DerivedSignalDescriptor.extract() for adaptive normalization. */
 export interface ExtractContext {
-  /** Adaptive bound from result batch (p95, floored with defaultBound) */
-  bound?: number;
-  /** Confidence dampening threshold resolved by Reranker from collection stats (commitCount p25). */
+  /** Per-source adaptive bounds keyed by source name (e.g. "file.ageDays" → 365) */
+  bounds?: Record<string, number>;
+  /** Confidence dampening threshold resolved by Reranker from collection stats. */
   dampeningThreshold?: number;
 }
 
