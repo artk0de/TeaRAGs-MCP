@@ -1,6 +1,6 @@
 // src/mcp/tools/formatters/search-pipeline.ts
 import { calculateFetchLimit, filterResultsByGlob } from "../../../core/adapters/qdrant/filters/index.js";
-import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/api/shared.js";
+import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/contracts/collection.js";
 import type { Reranker, RerankMode } from "../../../core/search/reranker.js";
 
 interface SearchResult {
