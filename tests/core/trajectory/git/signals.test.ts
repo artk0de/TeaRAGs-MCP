@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { ExtractContext } from "../../../../src/core/contracts/types/trajectory.js";
 import { gitDerivedSignals } from "../../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 
 describe("gitDerivedSignals", () => {
@@ -237,6 +238,36 @@ describe("gitDerivedSignals", () => {
       });
       // effectiveContributorCount = 1.5 → not 1, not 2, not <=0 → returns 0
       expect(byName("knowledgeSilo").extract(payload)).toBe(0);
+    });
+  });
+
+  describe("dampening threshold via ctx.dampeningThreshold", () => {
+    const byName = (n: string) => gitDerivedSignals.find((s) => s.name === n)!;
+
+    it("ownership uses dampeningThreshold from ctx instead of collectionStats", () => {
+      // commitCount=3, dampeningThreshold=10 → dampening = (3/10)^2 = 0.09
+      // dominantAuthorPct=80 → value=0.8 * 0.09 = 0.072
+      const payload = fakePayload({ file: { dominantAuthorPct: 80, commitCount: 3 } });
+      expect(byName("ownership").extract(payload, { dampeningThreshold: 10 })).toBeCloseTo(0.072, 2);
+    });
+
+    it("bugFix uses dampeningThreshold from ctx", () => {
+      // commitCount=4, dampeningThreshold=20 → dampening = (4/20)^2 = 0.04
+      // bugFixRate=50, bound=100 → normalized=0.5, damped=0.5*0.04 = 0.02
+      const payload = fakePayload({ file: { bugFixRate: 50, commitCount: 4 } });
+      expect(byName("bugFix").extract(payload, { dampeningThreshold: 20 })).toBeCloseTo(0.02, 2);
+    });
+
+    it("falls back to per-signal FALLBACK_THRESHOLD when dampeningThreshold not in ctx", () => {
+      // ownership FALLBACK_THRESHOLD=5, commitCount=5 → dampening=(5/5)^2=1
+      const payload = fakePayload({ file: { dominantAuthorPct: 80, commitCount: 5 } });
+      expect(byName("ownership").extract(payload)).toBeCloseTo(0.8, 2);
+    });
+
+    it("does not accept collectionStats in ExtractContext", () => {
+      // Type-level check: collectionStats should NOT be in ExtractContext
+      const ctx: ExtractContext = { bound: 100 };
+      expect(ctx).not.toHaveProperty("collectionStats");
     });
   });
 

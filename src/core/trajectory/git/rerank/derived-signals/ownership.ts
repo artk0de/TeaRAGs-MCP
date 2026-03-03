@@ -20,8 +20,7 @@ export class OwnershipSignal implements DerivedSignalDescriptor {
         return 0;
       }
     }
-    const stats = ctx?.collectionStats?.perSignal.get("git.file.commitCount");
-    const k = stats?.percentiles?.[25] ?? OwnershipSignal.FALLBACK_THRESHOLD;
+    const k = ctx?.dampeningThreshold ?? OwnershipSignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
     return value;
   }

@@ -4,7 +4,7 @@
  * Descriptor-based scoring: each DerivedSignalDescriptor knows how to
  * extract its normalized value from the raw signals. The Reranker:
  * 1. Computes adaptive bounds (p95 from batch, floored with descriptor.defaultBound)
- * 2. Calls descriptor.extract(rawSignals, { bound, collectionStats }) for each signal
+ * 2. Calls descriptor.extract(rawSignals, { bound, dampeningThreshold }) for each signal
  * 3. Computes weighted sum score
  * 4. Attaches ranking overlay (raw file/chunk signals for transparency)
  */
@@ -19,7 +19,7 @@ import type {
   RerankMode,
   RerankPreset,
 } from "../contracts/types/reranker.js";
-import type { CollectionSignalStats, PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
+import type { CollectionSignalStats, DampeningConfig, PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
 
 // Re-export types from contracts for backward compatibility
 export type { ScoringWeights } from "../contracts/types/provider.js";
@@ -40,18 +40,21 @@ export type { RerankableResult, RerankMode } from "../contracts/types/reranker.j
 export class Reranker {
   private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
   private readonly signalKeyMap: Map<string, string>;
+  private readonly dampeningConfigs: DampeningConfig[];
   private collectionStats?: CollectionSignalStats;
 
   constructor(
     private readonly descriptors: DerivedSignalDescriptor[],
     private readonly resolvedPresets: RerankPreset[],
     payloadSignals: PayloadSignalDescriptor[] = [],
+    dampeningConfigs: DampeningConfig[] = [],
   ) {
     this.descriptorMap = new Map();
     for (const d of this.descriptors) {
       this.descriptorMap.set(d.name, d);
     }
     this.signalKeyMap = buildSignalKeyMap(payloadSignals);
+    this.dampeningConfigs = dampeningConfigs;
   }
 
   /** Whether collection-level stats are currently loaded. */
@@ -198,17 +201,34 @@ export class Reranker {
   /**
    * Extract all derived signal values from a payload.
    * Calls descriptor.extract(rawSignals, ctx) for each signal.
-   * Confidence dampening is handled internally by each descriptor.
+   * Confidence dampening threshold is resolved here from collectionStats and passed via ctx.
    */
   private extractAllDerived(payload: Record<string, unknown>, bounds: Map<string, number>): Record<string, number> {
     const signals: Record<string, number> = {};
+    const dampeningThreshold = this.getDampeningThreshold();
 
     for (const d of this.descriptors) {
       const bound = bounds.get(d.name);
-      signals[d.name] = d.extract(payload, { bound, collectionStats: this.collectionStats });
+      signals[d.name] = d.extract(payload, { bound, dampeningThreshold });
     }
 
     return signals;
+  }
+
+  /**
+   * Resolve dampening threshold from registered DampeningConfigs + collectionStats.
+   * Picks the first config that resolves to a value. Returns undefined if no
+   * configs are registered or collectionStats is not loaded — derived signals
+   * fall back to their per-signal FALLBACK_THRESHOLD.
+   */
+  private getDampeningThreshold(): number | undefined {
+    if (!this.collectionStats || this.dampeningConfigs.length === 0) return undefined;
+    for (const config of this.dampeningConfigs) {
+      const stats = this.collectionStats.perSignal.get(config.key);
+      const value = stats?.percentiles?.[config.percentile];
+      if (value !== undefined) return value;
+    }
+    return undefined;
   }
 
   /**

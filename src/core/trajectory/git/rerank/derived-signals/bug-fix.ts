@@ -13,8 +13,7 @@ export class BugFixSignal implements DerivedSignalDescriptor {
     const b = ctx?.bound ?? 100;
     const effectiveBFR = blendSignal(rawSignals, "bugFixRate");
     let value = normalize(effectiveBFR, b);
-    const stats = ctx?.collectionStats?.perSignal.get("git.file.commitCount");
-    const k = stats?.percentiles?.[25] ?? BugFixSignal.FALLBACK_THRESHOLD;
+    const k = ctx?.dampeningThreshold ?? BugFixSignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
     return value;
   }
