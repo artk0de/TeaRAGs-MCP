@@ -175,7 +175,6 @@ core/
           security-audit.ts            # class SecurityAuditPreset
           refactoring.ts               # class RefactoringPreset
           ownership.ts                 # class OwnershipPreset
-          impact-analysis.ts           # class ImpactAnalysisPreset
           recent.ts                    # class RecentPreset
           stable.ts                    # class StablePreset
           index.ts                     # barrel + GIT_PRESETS array

@@ -1074,13 +1074,11 @@ describe("Reranker (v2 class)", () => {
     expect(overlay.chunk!.churnRatio).toBe(0.4);
   });
 
-  it("overlay is empty raw when preset has no raw mask (impactAnalysis)", () => {
+  it("overlay is undefined when preset has no non-similarity weights (relevance)", () => {
     const results = [makeResult(0.9, { file: { ageDays: 100, commitCount: 20, bugFixRate: 10 } })];
-    const ranked = reranker.rerank(results, "impactAnalysis", "semantic_search");
-    const overlay = ranked[0].rankingOverlay!;
-    // impactAnalysis has empty overlayMask — no raw signals exposed
-    expect(overlay.file).toBeUndefined();
-    expect(overlay.chunk).toBeUndefined();
+    const ranked = reranker.rerank(results, "relevance", "semantic_search");
+    // relevance has similarity:1.0 only — no reranking, no overlay
+    expect(ranked[0].rankingOverlay).toBeUndefined();
   });
 
   it("supports custom weights with overlay", () => {

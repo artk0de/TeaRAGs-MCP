@@ -8,8 +8,8 @@ export class BurstActivitySignal implements DerivedSignalDescriptor {
   readonly sources = ["file.recencyWeightedFreq", "chunk.recencyWeightedFreq"];
   readonly defaultBound = 10.0;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const fb = ctx?.bounds?.["file.recencyWeightedFreq"] ?? 10.0;
-    const cb = ctx?.bounds?.["chunk.recencyWeightedFreq"] ?? 10.0;
+    const fb = ctx?.bounds?.["file.recencyWeightedFreq"] ?? this.defaultBound;
+    const cb = ctx?.bounds?.["chunk.recencyWeightedFreq"] ?? this.defaultBound;
     return blendNormalized(rawSignals, "recencyWeightedFreq", fb, cb);
   }
 }

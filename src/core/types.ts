@@ -270,7 +270,7 @@ export interface CodeChunk {
 
     /**
      * Imports extracted from the file (file-level, inherited by all chunks)
-     * Used for impactAnalysis reranking
+     * Used for imports structural signal in reranking
      */
     imports?: string[];
   };
