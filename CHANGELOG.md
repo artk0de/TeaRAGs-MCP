@@ -1,3 +1,10 @@
+## 0.7.0 (2026-03-04)
+
+* Merge branch 'main' of github.com:artk0de/TeaRAGs-MCP ([63a2531](https://github.com/artk0de/TeaRAGs-MCP/commit/63a2531))
+* feat(presets): enrich onboarding with age, ownership penalty, volatility ([bb40e25](https://github.com/artk0de/TeaRAGs-MCP/commit/bb40e25))
+* feat(presets): enrich stable and recent with multi-signal weights ([66f00e7](https://github.com/artk0de/TeaRAGs-MCP/commit/66f00e7))
+* ci(release): verify npm token before semantic-release ([ec07642](https://github.com/artk0de/TeaRAGs-MCP/commit/ec07642))
+
 ## 0.6.0 (2026-03-04)
 
 * feat: wire signal stats lifecycle — cold start + post-index refresh ([3d9160d](https://github.com/artk0de/TeaRAGs-MCP/commit/3d9160d))
