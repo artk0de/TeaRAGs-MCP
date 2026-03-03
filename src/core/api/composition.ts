@@ -30,8 +30,7 @@ export function createComposition(): CompositionResult {
   const allPayloadSignalDescriptors = [...BASE_PAYLOAD_SIGNALS, ...registry.getAllPayloadSignalDescriptors()];
   const allDerivedSignals = [...registry.getAllDerivedSignals(), ...structuralSignals];
   const resolvedPresets = resolvePresets(RELEVANCE_PRESETS, registry.getAllPresets(), []);
-  const dampeningConfigs = registry.getAllDampeningConfigs();
-  const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors, dampeningConfigs);
+  const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors);
 
   return { registry, reranker, allPayloadSignalDescriptors, allDerivedSignals, resolvedPresets };
 }
