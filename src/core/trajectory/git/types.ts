@@ -87,4 +87,6 @@ export interface ChunkChurnOverlay extends ChunkSignalOverlay {
   recencyWeightedFreq: number;
   /** Chunk-level change density (commits per month) */
   changeDensity: number;
+  /** Standard deviation of commit intervals for this chunk (days) */
+  churnVolatility: number;
 }
