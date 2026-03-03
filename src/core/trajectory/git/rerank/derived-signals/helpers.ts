@@ -1,49 +1,17 @@
 /**
- * Shared helpers for git derived signal extraction.
+ * Git-specific payload accessors and blending helpers for derived signals.
  *
  * Supports both nested (git.file.*, git.chunk.*) and flat (git.*) payload formats.
- * Provides L3 alpha-blending: when chunk-level data exists, signals blend
- * chunk + file values weighted by alpha (coverage x maturity).
+ * Generic algorithms (computeAlpha, blend, normalize, confidenceDampening)
+ * live in contracts/signal-utils.
  */
 
-// ---------------------------------------------------------------------------
-// Per-source normalization + blending
-// ---------------------------------------------------------------------------
+import { blend, computeAlpha, normalize } from "../../../../contracts/signal-utils.js";
 
-import { normalize } from "../../../../contracts/signal-utils.js";
-import type { DampeningConfig } from "../../../../contracts/types/trajectory.js";
-
-/** Shared dampening config for all file-level git derived signals. */
-export const GIT_FILE_DAMPENING: DampeningConfig = { key: "git.file.commitCount", percentile: 25 };
-
-/** Minimum chunk commits for full maturity in alpha computation */
-export const CHUNK_MATURITY_THRESHOLD = 3;
-
-/**
- * Compute alpha blending factor for chunk-vs-file data quality.
- * alpha = coverageRatio x maturity, clamped to [0, 1].
- *   coverageRatio = chunkCommitCount / fileCommitCount
- *   maturity = min(1, chunkCommitCount / CHUNK_MATURITY_THRESHOLD)
- *
- * Maturity prevents low-commit chunks (1-2 commits) from overriding
- * reliable file-level statistics.
- */
-export function computeAlpha(chunkCommitCount: number | undefined, fileCommitCount: number | undefined): number {
-  if (chunkCommitCount === undefined || chunkCommitCount <= 0) return 0;
-  if (fileCommitCount === undefined || fileCommitCount <= 0) return 0;
-  const coverageRatio = chunkCommitCount / fileCommitCount;
-  const maturity = Math.min(1, chunkCommitCount / CHUNK_MATURITY_THRESHOLD);
-  return Math.min(1, coverageRatio * maturity);
-}
-
-/**
- * Blend chunk and file signal values using alpha.
- * When chunkValue is undefined, falls back to fileValue (monolith effectiveSignal semantics).
- */
-export function blend(chunkValue: number | undefined, fileValue: number, alpha: number): number {
-  if (chunkValue === undefined) return fileValue;
-  return alpha * chunkValue + (1 - alpha) * fileValue;
-}
+// Re-export generic functions used directly by signal classes
+export { blend, computeAlpha, confidenceDampening, normalize } from "../../../../contracts/signal-utils.js";
+// Re-export git constants
+export { GIT_FILE_DAMPENING } from "../constants.js";
 
 // ---------------------------------------------------------------------------
 // Payload accessors (support nested and flat formats)
@@ -152,20 +120,4 @@ export function blendNormalized(
   const chunkVal = chunkField(payload, field);
   const normalizedChunk = chunkVal !== undefined ? normalize(chunkVal, chunkBound) : fileVal;
   return blend(normalizedChunk, fileVal, alpha);
-}
-
-// ---------------------------------------------------------------------------
-// Confidence dampening
-// ---------------------------------------------------------------------------
-
-const CONFIDENCE_POWER = 2;
-
-/**
- * Quadratic confidence dampening.
- * Returns 1 when effectiveCommitCount >= threshold, otherwise (n/k)^2.
- */
-export function confidenceDampening(effectiveCommitCount: number, threshold: number): number {
-  if (threshold <= 0) return 1;
-  if (effectiveCommitCount >= threshold) return 1;
-  return Math.pow(effectiveCommitCount / threshold, CONFIDENCE_POWER);
 }
