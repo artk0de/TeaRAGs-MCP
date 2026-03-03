@@ -61,19 +61,21 @@ export function computeCollectionStats(
     for (const signal of statsSignals) {
       const val = readPayloadPath(point.payload, signal.key);
       if (typeof val === "number" && val > 0) {
-        valueArrays.get(signal.key)!.push(val);
+        const arr = valueArrays.get(signal.key);
+        if (arr) arr.push(val);
       }
     }
   }
 
   const perSignal = new Map<string, SignalStats>();
   for (const signal of statsSignals) {
-    const values = valueArrays.get(signal.key)!;
-    if (values.length === 0) continue;
+    const values = valueArrays.get(signal.key);
+    if (!values || values.length === 0) continue;
     values.sort((a, b) => a - b);
 
     const result: SignalStats = { count: values.length };
-    const req = signal.stats!;
+    const req = signal.stats;
+    if (!req) continue;
 
     if (req.percentiles && req.percentiles.length > 0) {
       result.percentiles = {};
