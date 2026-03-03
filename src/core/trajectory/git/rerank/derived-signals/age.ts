@@ -8,8 +8,8 @@ export class AgeSignal implements DerivedSignalDescriptor {
   readonly sources = ["file.ageDays", "chunk.ageDays"];
   readonly defaultBound = 365;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const fb = ctx?.bounds?.["file.ageDays"] ?? 365;
-    const cb = ctx?.bounds?.["chunk.ageDays"] ?? 365;
+    const fb = ctx?.bounds?.["file.ageDays"] ?? this.defaultBound;
+    const cb = ctx?.bounds?.["chunk.ageDays"] ?? this.defaultBound;
     return blendNormalized(rawSignals, "ageDays", fb, cb);
   }
 }

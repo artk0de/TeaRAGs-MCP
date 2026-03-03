@@ -121,7 +121,7 @@ function searchCommonFields() {
           "git.dominantAuthor (string), git.authors (string[]), " +
           "git.lastModifiedAt (unix timestamp), git.firstCreatedAt (unix timestamp), " +
           "git.commitCount (number), git.ageDays (number), git.taskIds (string[]), " +
-          "imports (string[] - file-level imports for impactAnalysis). " +
+          "imports (string[] - file-level imports for structural signal). " +
           "For generic documents (add_documents): user-defined metadata fields.",
       ),
     pathPattern: z
@@ -149,10 +149,10 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .optional()
       .describe(
         "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
-          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'impactAnalysis' | {custom: weights}. " +
+          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'recent' | 'stable' | {custom: weights}. " +
           "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
           "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
-          "refactoring=large+churn, ownership=single author, impactAnalysis=imports.",
+          "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
       ),
     metaOnly: z
       .boolean()
@@ -171,10 +171,10 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .optional()
       .describe(
         "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
-          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'impactAnalysis' | {custom: weights}. " +
+          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'recent' | 'stable' | {custom: weights}. " +
           "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
           "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
-          "refactoring=large+churn, ownership=single author, impactAnalysis=imports.",
+          "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
       ),
     metaOnly: z
       .boolean()

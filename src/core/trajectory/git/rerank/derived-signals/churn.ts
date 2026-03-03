@@ -9,8 +9,8 @@ export class ChurnSignal implements DerivedSignalDescriptor {
   readonly sources = ["file.commitCount", "chunk.commitCount"];
   readonly defaultBound = 50;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const fb = ctx?.bounds?.["file.commitCount"] ?? 50;
-    const cb = ctx?.bounds?.["chunk.commitCount"] ?? 50;
+    const fb = ctx?.bounds?.["file.commitCount"] ?? this.defaultBound;
+    const cb = ctx?.bounds?.["chunk.commitCount"] ?? this.defaultBound;
     return blendNormalized(rawSignals, "commitCount", fb, cb);
   }
 }

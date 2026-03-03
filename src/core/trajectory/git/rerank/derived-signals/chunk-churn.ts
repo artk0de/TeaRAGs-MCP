@@ -9,7 +9,7 @@ export class ChunkChurnSignal implements DerivedSignalDescriptor {
   readonly sources = ["chunk.commitCount", "file.commitCount"];
   readonly defaultBound = 30;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const b = ctx?.bounds?.["chunk.commitCount"] ?? 30;
+    const b = ctx?.bounds?.["chunk.commitCount"] ?? this.defaultBound;
     const chunkCC = chunkNum(rawSignals, "commitCount");
     const alpha = payloadAlpha(rawSignals);
     return normalize(chunkCC, b) * alpha;

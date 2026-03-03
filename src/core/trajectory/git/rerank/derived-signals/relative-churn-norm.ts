@@ -10,8 +10,8 @@ export class RelativeChurnNormSignal implements DerivedSignalDescriptor {
   readonly dampeningSource = GIT_FILE_DAMPENING;
   private static readonly FALLBACK_THRESHOLD = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const fb = ctx?.bounds?.["file.relativeChurn"] ?? 5.0;
-    const cb = ctx?.bounds?.["chunk.relativeChurn"] ?? 5.0;
+    const fb = ctx?.bounds?.["file.relativeChurn"] ?? this.defaultBound;
+    const cb = ctx?.bounds?.["chunk.relativeChurn"] ?? this.defaultBound;
     let value = blendNormalized(rawSignals, "relativeChurn", fb, cb);
     const k = ctx?.dampeningThreshold ?? RelativeChurnNormSignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);

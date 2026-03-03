@@ -4,9 +4,10 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
 export class StablePreset implements RerankPreset {
   readonly name = "stable";
   readonly description = "Boost low-churn stable code";
-  readonly tools = ["search_code"];
+  readonly tools = ["search_code", "semantic_search"];
   readonly weights: ScoringWeights = { similarity: 0.7, stability: 0.3 };
   readonly overlayMask: OverlayMask = {
     file: ["commitCount"],
+    chunk: ["commitCount"],
   };
 }

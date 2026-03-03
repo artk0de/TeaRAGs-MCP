@@ -8,7 +8,7 @@ export class RefactoringPreset implements RerankPreset {
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     chunkChurn: 0.15,
-    relativeChurnNorm: 0.15,
+    chunkRelativeChurn: 0.15,
     chunkSize: 0.15,
     volatility: 0.15,
     bugFix: 0.1,
