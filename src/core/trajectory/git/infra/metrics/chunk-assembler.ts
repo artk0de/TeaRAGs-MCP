@@ -39,6 +39,19 @@ export function assembleChunkSignals(
     changeDensity = Math.round((acc.commitTimestamps.length / spanMonths) * 100) / 100;
   }
 
+  // Churn volatility: stddev of days between consecutive commits
+  let churnVolatility = 0;
+  const sortedTs = [...acc.commitTimestamps].sort((a, b) => a - b);
+  if (sortedTs.length > 1) {
+    const gaps: number[] = [];
+    for (let i = 1; i < sortedTs.length; i++) {
+      gaps.push((sortedTs[i] - sortedTs[i - 1]) / 86400);
+    }
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    const variance = gaps.reduce((sum, g) => sum + (g - mean) ** 2, 0) / gaps.length;
+    churnVolatility = Math.sqrt(variance);
+  }
+
   return {
     commitCount,
     churnRatio: Math.round((commitCount / Math.max(fileCommitCount, 1)) * 100) / 100,
@@ -53,5 +66,6 @@ export function assembleChunkSignals(
     relativeChurn: Math.round((totalChurn / lineCount) * (1 - Math.exp(-lineCount / 30)) * 100) / 100,
     recencyWeightedFreq,
     changeDensity,
+    churnVolatility: Math.round(churnVolatility * 100) / 100,
   };
 }
