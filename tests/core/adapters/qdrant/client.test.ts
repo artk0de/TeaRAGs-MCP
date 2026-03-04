@@ -790,194 +790,179 @@ describe("QdrantManager", () => {
   });
 
   describe("hybridSearch", () => {
-    beforeEach(() => {
-      mockClient.query = vi.fn();
-    });
+    const denseVector = [0.1, 0.2, 0.3];
+    const sparseVector = { indices: [1, 5, 10], values: [0.5, 0.3, 0.2] };
 
-    it("should perform hybrid search with dense and sparse vectors", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1, 5, 10], values: [0.5, 0.3, 0.2] };
-
-      mockClient.query.mockResolvedValue({
-        points: [
-          { id: 1, score: 0.95, payload: { text: "result1" } },
-          { id: 2, score: 0.85, payload: { text: "result2" } },
-        ],
+    function mockParallelSearch(denseHits: any[], sparseHits: any[]) {
+      let callCount = 0;
+      mockClient.search.mockImplementation(async () => {
+        const hits = callCount === 0 ? denseHits : sparseHits;
+        callCount++;
+        return Promise.resolve(hits);
       });
+    }
+
+    it("should run dense and sparse searches in parallel", async () => {
+      mockParallelSearch(
+        [
+          { id: "a", score: 0.9, payload: { text: "result1" } },
+          { id: "b", score: 0.7, payload: { text: "result2" } },
+        ],
+        [
+          { id: "a", score: 0.8, payload: { text: "result1" } },
+          { id: "c", score: 0.6, payload: { text: "result3" } },
+        ],
+      );
 
       const results = await manager.hybridSearch("test-collection", denseVector, sparseVector);
 
-      expect(results).toEqual([
-        { id: 1, score: 0.95, payload: { text: "result1" } },
-        { id: 2, score: 0.85, payload: { text: "result2" } },
-      ]);
-
-      expect(mockClient.query).toHaveBeenCalledWith("test-collection", {
-        prefetch: [
-          {
-            query: denseVector,
-            using: "dense",
-            limit: 20,
-            filter: undefined,
-          },
-          {
-            query: sparseVector,
-            using: "text",
-            limit: 20,
-            filter: undefined,
-          },
-        ],
-        query: {
-          fusion: "rrf",
-        },
-        limit: 5,
-        with_payload: true,
-      });
+      // Two client.search calls (dense + sparse)
+      expect(mockClient.search).toHaveBeenCalledTimes(2);
+      // Dense call uses named vector
+      expect(mockClient.search).toHaveBeenCalledWith(
+        "test-collection",
+        expect.objectContaining({
+          vector: { name: "dense", vector: denseVector },
+        }),
+      );
+      // Sparse call uses named vector
+      expect(mockClient.search).toHaveBeenCalledWith(
+        "test-collection",
+        expect.objectContaining({
+          vector: { name: "text", vector: sparseVector },
+        }),
+      );
+      // Results are merged and sorted
+      expect(results.length).toBe(3);
+      expect(results[0].id).toBe("a"); // appears in both, highest combined
     });
 
-    it("should use custom limit with appropriate prefetch limit", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1, 5], values: [0.5, 0.3] };
+    it("should apply semanticWeight to score blending (default 0.7)", async () => {
+      mockParallelSearch(
+        [{ id: "a", score: 1.0, payload: { text: "dense-only" } }],
+        [{ id: "b", score: 1.0, payload: { text: "sparse-only" } }],
+      );
 
-      mockClient.query.mockResolvedValue({ points: [] });
+      const results = await manager.hybridSearch("test-collection", denseVector, sparseVector);
+
+      // Dense-only: 0.7 * 1.0 + 0.3 * 0 = 0.7
+      // Sparse-only: 0.7 * 0 + 0.3 * 1.0 = 0.3
+      const denseResult = results.find((r) => r.id === "a")!;
+      const sparseResult = results.find((r) => r.id === "b")!;
+      expect(denseResult.score).toBeCloseTo(0.7, 5);
+      expect(sparseResult.score).toBeCloseTo(0.3, 5);
+    });
+
+    it("should respect custom semanticWeight", async () => {
+      mockParallelSearch([{ id: "a", score: 1.0, payload: {} }], [{ id: "b", score: 1.0, payload: {} }]);
+
+      const results = await manager.hybridSearch("test-collection", denseVector, sparseVector, 5, undefined, 0.5);
+
+      const denseResult = results.find((r) => r.id === "a")!;
+      const sparseResult = results.find((r) => r.id === "b")!;
+      expect(denseResult.score).toBeCloseTo(0.5, 5);
+      expect(sparseResult.score).toBeCloseTo(0.5, 5);
+    });
+
+    it("should use custom limit with appropriate fetch limit", async () => {
+      mockParallelSearch([], []);
 
       await manager.hybridSearch("test-collection", denseVector, sparseVector, 10);
 
-      expect(mockClient.query).toHaveBeenCalledWith(
-        "test-collection",
-        expect.objectContaining({
-          prefetch: expect.arrayContaining([
-            expect.objectContaining({ limit: 40 }), // 10 * 4
-          ]),
-          limit: 10,
-        }),
-      );
+      // fetchLimit = max(20, 10 * 4) = 40
+      expect(mockClient.search).toHaveBeenCalledWith("test-collection", expect.objectContaining({ limit: 40 }));
     });
 
     it("should convert simple filter to Qdrant format", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1], values: [0.5] };
+      mockParallelSearch([], []);
       const filter = { category: "test", type: "doc" };
-
-      mockClient.query.mockResolvedValue({ points: [] });
 
       await manager.hybridSearch("test-collection", denseVector, sparseVector, 5, filter);
 
-      expect(mockClient.query).toHaveBeenCalledWith("test-collection", {
-        prefetch: [
-          {
-            query: denseVector,
-            using: "dense",
-            limit: 20,
-            filter: {
-              must: [
-                { key: "category", match: { value: "test" } },
-                { key: "type", match: { value: "doc" } },
-              ],
-            },
-          },
-          {
-            query: sparseVector,
-            using: "text",
-            limit: 20,
-            filter: {
-              must: [
-                { key: "category", match: { value: "test" } },
-                { key: "type", match: { value: "doc" } },
-              ],
-            },
-          },
+      const expectedFilter = {
+        must: [
+          { key: "category", match: { value: "test" } },
+          { key: "type", match: { value: "doc" } },
         ],
-        query: {
-          fusion: "rrf",
-        },
-        limit: 5,
-        with_payload: true,
-      });
+      };
+      // Both calls should have the converted filter
+      for (const call of mockClient.search.mock.calls) {
+        expect(call[1].filter).toEqual(expectedFilter);
+      }
     });
 
     it("should handle Qdrant format filter (must)", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1], values: [0.5] };
+      mockParallelSearch([], []);
       const filter = { must: [{ key: "status", match: { value: "active" } }] };
-
-      mockClient.query.mockResolvedValue({ points: [] });
 
       await manager.hybridSearch("test-collection", denseVector, sparseVector, 5, filter);
 
-      const call = mockClient.query.mock.calls[0][1];
-      expect(call.prefetch[0].filter).toEqual(filter);
-      expect(call.prefetch[1].filter).toEqual(filter);
+      for (const call of mockClient.search.mock.calls) {
+        expect(call[1].filter).toEqual(filter);
+      }
     });
 
     it("should handle Qdrant format filter (should)", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1], values: [0.5] };
-      const filter = {
-        should: [{ key: "tag", match: { value: "important" } }],
-      };
-
-      mockClient.query.mockResolvedValue({ points: [] });
+      mockParallelSearch([], []);
+      const filter = { should: [{ key: "tag", match: { value: "important" } }] };
 
       await manager.hybridSearch("test-collection", denseVector, sparseVector, 5, filter);
 
-      const call = mockClient.query.mock.calls[0][1];
-      expect(call.prefetch[0].filter).toEqual(filter);
-      expect(call.prefetch[1].filter).toEqual(filter);
+      for (const call of mockClient.search.mock.calls) {
+        expect(call[1].filter).toEqual(filter);
+      }
     });
 
     it("should handle Qdrant format filter (must_not)", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1], values: [0.5] };
-      const filter = {
-        must_not: [{ key: "status", match: { value: "deleted" } }],
-      };
-
-      mockClient.query.mockResolvedValue({ points: [] });
+      mockParallelSearch([], []);
+      const filter = { must_not: [{ key: "status", match: { value: "deleted" } }] };
 
       await manager.hybridSearch("test-collection", denseVector, sparseVector, 5, filter);
 
-      const call = mockClient.query.mock.calls[0][1];
-      expect(call.prefetch[0].filter).toEqual(filter);
-      expect(call.prefetch[1].filter).toEqual(filter);
+      for (const call of mockClient.search.mock.calls) {
+        expect(call[1].filter).toEqual(filter);
+      }
     });
 
     it("should handle empty filter object", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1], values: [0.5] };
-
-      mockClient.query.mockResolvedValue({ points: [] });
+      mockParallelSearch([], []);
 
       await manager.hybridSearch("test-collection", denseVector, sparseVector, 5, {});
 
-      const call = mockClient.query.mock.calls[0][1];
-      expect(call.prefetch[0].filter).toBeUndefined();
-      expect(call.prefetch[1].filter).toBeUndefined();
+      for (const call of mockClient.search.mock.calls) {
+        expect(call[1].filter).toBeUndefined();
+      }
     });
 
     it("should handle null payload in results", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1], values: [0.5] };
-
-      mockClient.query.mockResolvedValue({
-        points: [{ id: 1, score: 0.95, payload: null }],
-      });
+      mockParallelSearch([{ id: "a", score: 0.9, payload: null }], []);
 
       const results = await manager.hybridSearch("test-collection", denseVector, sparseVector);
 
-      expect(results).toEqual([{ id: 1, score: 0.95, payload: undefined }]);
+      expect(results[0].payload).toBeUndefined();
+    });
+
+    it("should min-max normalize scores before blending", async () => {
+      mockParallelSearch(
+        [
+          { id: "a", score: 0.9, payload: {} },
+          { id: "b", score: 0.5, payload: {} },
+        ],
+        [],
+      );
+
+      const results = await manager.hybridSearch("test-collection", denseVector, sparseVector);
+
+      // After min-max: a=1.0, b=0.0. With 0.7 weight: a=0.7, b=0.0
+      const a = results.find((r) => r.id === "a")!;
+      const b = results.find((r) => r.id === "b")!;
+      expect(a.score).toBeCloseTo(0.7, 5);
+      expect(b.score).toBeCloseTo(0.0, 5);
     });
 
     it("should throw error with error.data.status.error message", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1], values: [0.5] };
-
-      mockClient.query.mockRejectedValue({
-        data: {
-          status: {
-            error: "Named vector not found",
-          },
-        },
+      mockClient.search.mockRejectedValue({
+        data: { status: { error: "Named vector not found" } },
       });
 
       await expect(manager.hybridSearch("test-collection", denseVector, sparseVector)).rejects.toThrow(
@@ -986,10 +971,7 @@ describe("QdrantManager", () => {
     });
 
     it("should throw error with error.message fallback", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1], values: [0.5] };
-
-      mockClient.query.mockRejectedValue(new Error("Network timeout"));
+      mockClient.search.mockRejectedValue(new Error("Network timeout"));
 
       await expect(manager.hybridSearch("test-collection", denseVector, sparseVector)).rejects.toThrow(
         'Hybrid search failed on collection "test-collection": Network timeout',
@@ -997,10 +979,7 @@ describe("QdrantManager", () => {
     });
 
     it("should throw error with String(error) fallback", async () => {
-      const denseVector = [0.1, 0.2, 0.3];
-      const sparseVector = { indices: [1], values: [0.5] };
-
-      mockClient.query.mockRejectedValue("Unknown error");
+      mockClient.search.mockRejectedValue("Unknown error");
 
       await expect(manager.hybridSearch("test-collection", denseVector, sparseVector)).rejects.toThrow(
         'Hybrid search failed on collection "test-collection": Unknown error',

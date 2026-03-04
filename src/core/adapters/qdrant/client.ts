@@ -644,10 +644,12 @@ export class QdrantManager {
       }
 
       // Merge: union of all IDs, weighted combination
-      const allIds = new Set([...denseScores.keys(), ...sparseScores.keys()]);
+      const allIds = new Map<string, true>();
+      denseScores.forEach((_, id) => allIds.set(id, true));
+      sparseScores.forEach((_, id) => allIds.set(id, true));
       const merged: SearchResult[] = [];
 
-      for (const id of allIds) {
+      allIds.forEach((_, id) => {
         const ds = denseScores.get(id) ?? 0;
         const ss = sparseScores.get(id) ?? 0;
         const score = semanticWeight * ds + sparseWeight * ss;
@@ -660,7 +662,7 @@ export class QdrantManager {
           score,
           payload: (point!.payload as Record<string, unknown> | null | undefined) ?? undefined,
         });
-      }
+      });
 
       // Sort by fused score descending, take top limit
       merged.sort((a, b) => b.score - a.score);
