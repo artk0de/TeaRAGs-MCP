@@ -2,6 +2,7 @@ import type Parser from "tree-sitter";
 
 import { rubyHooks } from "./hooks/ruby/index.js";
 import type { ChunkingHook } from "./hooks/types.js";
+import { typescriptHooks } from "./hooks/typescript/index.js";
 
 // Type for tree-sitter language modules
 interface TreeSitterLanguageModule {
@@ -66,6 +67,9 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
       "type_alias_declaration",
       "enum_declaration",
     ],
+    childChunkTypes: ["method_definition"],
+    alwaysExtractChildren: true,
+    hooks: typescriptHooks,
   },
   javascript: {
     loadModule: async () => import("tree-sitter-javascript") as Promise<TreeSitterLanguageModule>,
