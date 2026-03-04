@@ -25,6 +25,13 @@ export class TreeSitterChunker implements CodeChunker {
   /** Track loading promises to avoid duplicate loads */
   private readonly loadingPromises: Map<string, Promise<LanguageConfig | null>> = new Map();
 
+  /** Maximum lines for a chunk to be considered a merge candidate */
+  private static readonly MERGE_THRESHOLD = 5;
+  /** Maximum gap (in source lines) between mergeable chunks */
+  private static readonly MERGE_GAP = 2;
+  /** Chunk types eligible for merging */
+  private static readonly MERGEABLE_TYPES = new Set(["block", "interface"]);
+
   /**
    * Build symbolId from name and optional parentName
    * Format: "ParentName.childName" or just "name"
@@ -326,12 +333,82 @@ export class TreeSitterChunker implements CodeChunker {
         return this.fallbackChunker.chunk(code, filePath, language);
       }
 
-      return chunks;
+      return this.mergeSmallChunks(chunks);
     } catch (error) {
       // On parsing error, fallback to character-based chunking
       console.error(`Tree-sitter parsing failed for ${filePath}:`, error);
       return this.fallbackChunker.chunk(code, filePath, language);
     }
+  }
+
+  /**
+   * Merge adjacent small top-level chunks into combined block chunks.
+   * Language-agnostic post-processing step that reduces search noise from
+   * many tiny declarations (type aliases, small interfaces) per file.
+   */
+  private mergeSmallChunks(chunks: CodeChunk[]): CodeChunk[] {
+    if (chunks.length < 2) return chunks;
+
+    const result: CodeChunk[] = [];
+    let mergeGroup: CodeChunk[] = [];
+
+    const isMergeable = (chunk: CodeChunk): boolean => {
+      const lines = chunk.endLine - chunk.startLine;
+      return (
+        lines <= TreeSitterChunker.MERGE_THRESHOLD &&
+        !chunk.metadata.parentName &&
+        TreeSitterChunker.MERGEABLE_TYPES.has(chunk.metadata.chunkType ?? "")
+      );
+    };
+
+    const flushGroup = (): void => {
+      if (mergeGroup.length >= 2) {
+        const content = mergeGroup.map((c) => c.content).join("\n\n");
+        if (content.length <= this.config.maxChunkSize) {
+          result.push({
+            content,
+            startLine: mergeGroup[0].startLine,
+            endLine: mergeGroup[mergeGroup.length - 1].endLine,
+            metadata: {
+              filePath: mergeGroup[0].metadata.filePath,
+              language: mergeGroup[0].metadata.language,
+              chunkIndex: mergeGroup[0].metadata.chunkIndex,
+              chunkType: "block",
+              name: `${mergeGroup[0].metadata.name ?? "declarations"}...`,
+            },
+          });
+          mergeGroup = [];
+          return;
+        }
+      }
+      // Single chunk or oversized merge -> emit individually
+      result.push(...mergeGroup);
+      mergeGroup = [];
+    };
+
+    for (const chunk of chunks) {
+      if (isMergeable(chunk)) {
+        if (mergeGroup.length > 0) {
+          const lastEnd = mergeGroup[mergeGroup.length - 1].endLine;
+          const gap = chunk.startLine - lastEnd;
+          if (gap > TreeSitterChunker.MERGE_GAP) {
+            flushGroup();
+          }
+        }
+        mergeGroup.push(chunk);
+      } else {
+        flushGroup();
+        result.push(chunk);
+      }
+    }
+    flushGroup();
+
+    // Re-index chunkIndex
+    for (let i = 0; i < result.length; i++) {
+      result[i].metadata.chunkIndex = i;
+    }
+
+    return result;
   }
 
   supportsLanguage(language: string): boolean {
