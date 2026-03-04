@@ -1955,7 +1955,7 @@ function funcB() {
   });
 
   describe("markdown code blocks edge cases", () => {
-    it("should skip very small code blocks under 30 chars", async () => {
+    it("should skip very small code blocks under 50 chars", async () => {
       const code = [
         "# Examples",
         "",
@@ -1977,7 +1977,7 @@ function funcB() {
 
       const chunks = await chunker.chunk(code, "examples.md", "markdown");
 
-      // The tiny js code block should be skipped (< 30 chars)
+      // The tiny js code block should be skipped (< 50 chars)
       const jsBlocks = chunks.filter((c) => c.metadata.language === "js");
       expect(jsBlocks.length).toBe(0);
 
