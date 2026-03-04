@@ -54,7 +54,54 @@ export function applyPostProcessing(
   return filtered.slice(0, options.limit);
 }
 
-export function formatSearchResults(results: SearchResult[], metaOnly?: boolean): ToolResult {
+interface RankingOverlay {
+  preset: string;
+  file?: Record<string, unknown>;
+  chunk?: Record<string, unknown>;
+}
+
+function hasOverlayData(overlay: RankingOverlay): boolean {
+  return Boolean(
+    (overlay.file && Object.keys(overlay.file).length > 0) || (overlay.chunk && Object.keys(overlay.chunk).length > 0),
+  );
+}
+
+function buildGitFromOverlay(overlay: RankingOverlay): Record<string, unknown> {
+  const git: Record<string, unknown> = {};
+  if (overlay.file && Object.keys(overlay.file).length > 0) git.file = overlay.file;
+  if (overlay.chunk && Object.keys(overlay.chunk).length > 0) git.chunk = overlay.chunk;
+  return git;
+}
+
+function filterGitByEssential(
+  fullGit: Record<string, Record<string, unknown>>,
+  essentialKeys: string[],
+): Record<string, unknown> {
+  const git: Record<string, unknown> = {};
+  for (const level of ["file", "chunk"] as const) {
+    const levelData = fullGit[level];
+    if (!levelData) continue;
+    const filtered: Record<string, unknown> = {};
+    for (const key of essentialKeys) {
+      // key format: "git.file.ageDays" → extract level + field
+      const parts = key.split(".");
+      if (parts.length === 3 && parts[0] === "git" && parts[1] === level) {
+        const field = parts[2];
+        if (levelData[field] !== undefined) {
+          filtered[field] = levelData[field];
+        }
+      }
+    }
+    if (Object.keys(filtered).length > 0) git[level] = filtered;
+  }
+  return git;
+}
+
+export function formatSearchResults(
+  results: SearchResult[],
+  metaOnly?: boolean,
+  essentialTrajectoryFields?: string[],
+): ToolResult {
   if (metaOnly) {
     const metaResults = results.map((r) => {
       const meta: Record<string, unknown> = { score: r.score };
@@ -63,10 +110,21 @@ export function formatSearchResults(results: SearchResult[], metaOnly?: boolean)
           meta[signal.key] = r.payload[signal.key];
         }
       }
-      if (r.payload?.git) meta.git = r.payload.git;
-      if ((r as SearchResult & { rankingOverlay?: unknown }).rankingOverlay) {
-        meta.rankingOverlay = (r as SearchResult & { rankingOverlay?: unknown }).rankingOverlay;
+
+      const overlay = (r as SearchResult & { rankingOverlay?: RankingOverlay }).rankingOverlay;
+      const fullGit = r.payload?.git as Record<string, Record<string, unknown>> | undefined;
+
+      if (overlay && hasOverlayData(overlay)) {
+        // Rerank with mask: use overlay data as git
+        meta.git = buildGitFromOverlay(overlay);
+        meta.preset = overlay.preset;
+      } else if (fullGit) {
+        // No overlay or empty overlay: filter to essential fields
+        meta.git = filterGitByEssential(fullGit, essentialTrajectoryFields ?? []);
+        if (overlay?.preset) meta.preset = overlay.preset;
       }
+      // rankingOverlay intentionally excluded
+
       return meta;
     });
     return { content: [{ type: "text", text: JSON.stringify(metaResults, null, 2) }] };

@@ -56,7 +56,7 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
         reranker: deps.reranker,
       });
 
-      return formatSearchResults(processed, metaOnly);
+      return formatSearchResults(processed, metaOnly, deps.essentialTrajectoryFields);
     },
   );
 
@@ -108,7 +108,7 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
         reranker: deps.reranker,
       });
 
-      return formatSearchResults(processed, metaOnly);
+      return formatSearchResults(processed, metaOnly, deps.essentialTrajectoryFields);
     },
   );
 }
