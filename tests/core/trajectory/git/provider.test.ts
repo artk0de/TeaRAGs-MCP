@@ -100,6 +100,7 @@ describe("GitEnrichmentProvider", () => {
         expect.any(Number), // concurrency
         expect.any(Number), // maxAgeMonths
         fakeData, // lastFileResult passed through
+        undefined, // squashOpts
       );
     });
   });

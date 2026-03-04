@@ -24,7 +24,8 @@ import { gitFilters } from "./filters.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reader.js";
-import { computeFileSignals } from "./infra/metrics.js";
+import type { SquashOptions } from "./infra/metrics.js";
+import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
 import { gitPayloadSignalDescriptors } from "./payload-signals.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
@@ -38,12 +39,23 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly filters: FilterDescriptor[] = gitFilters;
   readonly presets: RerankPreset[] = GIT_PRESETS;
 
+  private readonly squashOpts?: SquashOptions;
+
+  constructor(squashOpts?: SquashOptions) {
+    this.squashOpts = squashOpts;
+    this.fileSignalTransform = (data, maxEndLine) =>
+      assembleFileSignals(
+        data as unknown as FileChurnData,
+        maxEndLine,
+        this.squashOpts,
+      ) as unknown as FileSignalOverlay;
+  }
+
   resolveRoot(absolutePath: string): string {
     return resolveRepoRoot(absolutePath);
   }
 
-  readonly fileSignalTransform: FileSignalTransform = (data, maxEndLine) =>
-    computeFileSignals(data as unknown as FileChurnData, maxEndLine) as unknown as FileSignalOverlay;
+  readonly fileSignalTransform: FileSignalTransform;
 
   private readonly enrichmentCache = new GitEnrichmentCache();
   private readonly isoGitCache: Record<string, unknown> = {};
@@ -89,6 +101,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       concurrency,
       maxAgeMonths,
       this.lastFileResult ?? undefined,
+      this.squashOpts,
     );
 
     const result = new Map<string, Map<string, ChunkSignalOverlay>>();

@@ -49,6 +49,8 @@ export function parseAppConfig(): AppConfig {
       defaultSearchLimit: parseInt(process.env.CODE_SEARCH_LIMIT || String(DEFAULT_SEARCH_LIMIT), 10),
       enableHybridSearch: process.env.CODE_ENABLE_HYBRID === "true",
       enableGitMetadata: process.env.CODE_ENABLE_GIT_METADATA === "true",
+      squashAwareSessions: process.env.TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS === "true",
+      sessionGapMinutes: parseInt(process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES || "30", 10),
     },
   };
 }
@@ -75,15 +77,11 @@ export function validateConfig(config: AppConfig): void {
   // Validate HTTP port (only when HTTP mode)
   if (config.transportMode === "http") {
     if (Number.isNaN(config.httpPort) || config.httpPort < 1 || config.httpPort > 65535) {
-      throw new Error(
-        `Invalid HTTP port "${config.httpPort}". Must be between 1 and 65535.`,
-      );
+      throw new Error(`Invalid HTTP port "${config.httpPort}". Must be between 1 and 65535.`);
     }
 
     if (Number.isNaN(config.requestTimeoutMs) || config.requestTimeoutMs <= 0) {
-      throw new Error(
-        `Invalid request timeout "${config.requestTimeoutMs}". Must be a positive number.`,
-      );
+      throw new Error(`Invalid request timeout "${config.requestTimeoutMs}". Must be a positive number.`);
     }
   }
 

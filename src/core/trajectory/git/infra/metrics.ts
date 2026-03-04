@@ -21,14 +21,22 @@ export interface ChunkAccumulator {
   linesAdded: number;
   linesDeleted: number;
   commitTimestamps: number[];
+  /** Per-timestamp author (parallel array with commitTimestamps) for session grouping */
+  commitAuthors: string[];
   taskIds: Set<string>;
+}
+
+/** Squash-aware session options passed through the call chain. */
+export interface SquashOptions {
+  squashAwareSessions?: boolean;
+  sessionGapMinutes?: number;
 }
 
 /** Jeffreys prior for Laplace smoothing of bugFixRate (alpha = 0.5). */
 export const SMOOTHING_ALPHA = 0.5;
 
 const BUG_FIX_PATTERN = /\b(fix|bug|hotfix|patch|resolve[sd]?|defect)\b/i;
-const MERGE_SUBJECT = /^Merge\b/i;
+export const MERGE_SUBJECT = /^Merge\b/i;
 
 /**
  * Check if a commit is a bug fix based on its message.

@@ -20,6 +20,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 20,
       linesDeleted: 5,
       commitTimestamps: [Date.now() / 1000 - 86400, Date.now() / 1000],
+      commitAuthors: ["alice", "alice"],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
@@ -43,6 +44,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 0,
       linesDeleted: 0,
       commitTimestamps: [],
+      commitAuthors: [],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
@@ -63,6 +65,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 5,
       linesDeleted: 2,
       commitTimestamps: [Date.now() / 1000],
+      commitAuthors: ["alice"],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 5, 2, 10);
@@ -78,6 +81,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 5,
       linesDeleted: 2,
       commitTimestamps: [Date.now() / 1000],
+      commitAuthors: ["alice"],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 5, undefined, 10);
@@ -95,6 +99,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 10,
       linesDeleted: 2,
       commitTimestamps: [now - 10 * 86400, now - 5 * 86400, now],
+      commitAuthors: ["alice", "alice", "alice"],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
@@ -114,6 +119,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 10,
       linesDeleted: 2,
       commitTimestamps: [now - 10 * 86400, now - 9 * 86400, now],
+      commitAuthors: ["alice", "alice", "alice"],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
@@ -130,6 +136,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 1,
       linesDeleted: 0,
       commitTimestamps: [now],
+      commitAuthors: ["alice"],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 1, undefined, 10);
@@ -145,6 +152,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 0,
       linesDeleted: 0,
       commitTimestamps: [],
+      commitAuthors: [],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
@@ -161,6 +169,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 1,
       linesDeleted: 0,
       commitTimestamps: [now], // 0 days ago
+      commitAuthors: ["alice"],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 1, undefined, 10);
@@ -177,6 +186,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 5,
       linesDeleted: 2,
       commitTimestamps: [now],
+      commitAuthors: ["alice"],
       taskIds: new Set(["TD-123", "#456", "PROJ-789"]),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
@@ -193,6 +203,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 0,
       linesDeleted: 0,
       commitTimestamps: [],
+      commitAuthors: [],
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);

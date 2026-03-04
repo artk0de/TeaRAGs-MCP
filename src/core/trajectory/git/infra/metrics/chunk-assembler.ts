@@ -6,42 +6,50 @@
  */
 
 import type { ChunkChurnOverlay } from "../../types.js";
-import { SMOOTHING_ALPHA, type ChunkAccumulator } from "../metrics.js";
+import { SMOOTHING_ALPHA, type ChunkAccumulator, type SquashOptions } from "../metrics.js";
+import { groupTimestampsIntoSessions } from "./sessions.js";
 
 export function assembleChunkSignals(
   acc: ChunkAccumulator,
   fileCommitCount: number,
   fileContributorCount?: number,
   chunkLineCount?: number,
+  squashOpts?: SquashOptions,
 ): ChunkChurnOverlay {
   const nowSec = Date.now() / 1000;
-  const commitCount = acc.commitShas.size;
   const totalChurn = acc.linesAdded + acc.linesDeleted;
   const lineCount = Math.max(chunkLineCount ?? 1, 1);
 
+  // Squash-aware: use session timestamps instead of raw commit timestamps
+  const useSquash = squashOpts?.squashAwareSessions === true;
+  const effectiveTimestamps = useSquash
+    ? groupTimestampsIntoSessions(acc.commitTimestamps, acc.commitAuthors, squashOpts?.sessionGapMinutes ?? 30)
+    : acc.commitTimestamps;
+  const commitCount = useSquash ? effectiveTimestamps.length : acc.commitShas.size;
+
   // Chunk-level recencyWeightedFreq: sum of exp(-0.1 * daysAgo)
   const recencyWeightedFreq =
-    acc.commitTimestamps.length > 0
+    effectiveTimestamps.length > 0
       ? Math.round(
-          acc.commitTimestamps.reduce((sum, ts) => {
+          effectiveTimestamps.reduce((sum, ts) => {
             const daysAgo = (nowSec - ts) / 86400;
             return sum + Math.exp(-0.1 * daysAgo);
           }, 0) * 100,
         ) / 100
       : 0;
 
-  // Chunk-level changeDensity: commits / months
+  // Chunk-level changeDensity: sessions (or commits) / months
   let changeDensity = 0;
-  if (acc.commitTimestamps.length > 0) {
-    const minTs = Math.min(...acc.commitTimestamps);
-    const maxTs = Math.max(...acc.commitTimestamps);
+  if (effectiveTimestamps.length > 0) {
+    const minTs = Math.min(...effectiveTimestamps);
+    const maxTs = Math.max(...effectiveTimestamps);
     const spanMonths = Math.max((maxTs - minTs) / (86400 * 30), 1);
-    changeDensity = Math.round((acc.commitTimestamps.length / spanMonths) * 100) / 100;
+    changeDensity = Math.round((effectiveTimestamps.length / spanMonths) * 100) / 100;
   }
 
-  // Churn volatility: stddev of days between consecutive commits
+  // Churn volatility: stddev of days between consecutive sessions (or commits)
   let churnVolatility = 0;
-  const sortedTs = [...acc.commitTimestamps].sort((a, b) => a - b);
+  const sortedTs = [...effectiveTimestamps].sort((a, b) => a - b);
   if (sortedTs.length > 1) {
     const gaps: number[] = [];
     for (let i = 1; i < sortedTs.length; i++) {

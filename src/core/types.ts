@@ -25,6 +25,10 @@ export interface CodeConfig {
 
   // Git metadata (optional, adds author/commit info to chunks)
   enableGitMetadata?: boolean;
+
+  // Squash-aware sessions: group burst commits into sessions for churn signals
+  squashAwareSessions?: boolean;
+  sessionGapMinutes?: number;
 }
 
 export interface ScannerConfig {

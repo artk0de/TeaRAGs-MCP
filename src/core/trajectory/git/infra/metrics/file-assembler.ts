@@ -5,8 +5,9 @@
  * Replaces the monolithic computeFileSignals() function.
  */
 
-import type { FileChurnData } from "../../../../adapters/git/types.js";
+import type { CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
 import type { GitFileSignals } from "../../types.js";
+import type { SquashOptions } from "../metrics.js";
 import {
   computeBugFixRate,
   computeChangeDensity,
@@ -17,8 +18,13 @@ import {
   computeTemporalMetrics,
   extractAllTaskIds,
 } from "./extractors.js";
+import { groupIntoSessions } from "./sessions.js";
 
-export function assembleFileSignals(churnData: FileChurnData, currentLineCount: number): GitFileSignals {
+export function assembleFileSignals(
+  churnData: FileChurnData,
+  currentLineCount: number,
+  squashOpts?: SquashOptions,
+): GitFileSignals {
   const { commits } = churnData;
 
   if (commits.length === 0) {
@@ -47,6 +53,21 @@ export function assembleFileSignals(churnData: FileChurnData, currentLineCount: 
   const authorship = computeDominantAuthor(commits);
   const temporal = computeTemporalMetrics(commits);
 
+  // Squash-aware: use session count for churn-dependent metrics
+  const useSquash = squashOpts?.squashAwareSessions === true;
+  const sessions = useSquash ? groupIntoSessions(commits, squashOpts?.sessionGapMinutes ?? 30) : null;
+
+  // Session-derived synthetic commits for count-dependent extractors
+  const countSource: CommitInfo[] | null = sessions
+    ? sessions.map((s) => ({
+        sha: "",
+        author: s.author,
+        authorEmail: "",
+        timestamp: s.timestamp,
+        body: s.isFix ? "fix: session" : "feat: session",
+      }))
+    : null;
+
   return {
     dominantAuthor: authorship.author,
     dominantAuthorEmail: authorship.email,
@@ -56,14 +77,14 @@ export function assembleFileSignals(churnData: FileChurnData, currentLineCount: 
     firstCreatedAt: temporal.firstCreatedAt,
     lastCommitHash: temporal.lastCommitHash,
     ageDays: temporal.ageDays,
-    commitCount: commits.length,
+    commitCount: countSource ? countSource.length : commits.length,
     linesAdded: churnData.linesAdded,
     linesDeleted: churnData.linesDeleted,
     relativeChurn: computeRelativeChurn(churnData.linesAdded, churnData.linesDeleted, currentLineCount),
-    recencyWeightedFreq: computeRecencyWeightedFreq(commits),
-    changeDensity: computeChangeDensity(commits),
-    churnVolatility: computeChurnVolatility(commits),
-    bugFixRate: computeBugFixRate(commits),
+    recencyWeightedFreq: computeRecencyWeightedFreq(countSource ?? commits),
+    changeDensity: computeChangeDensity(countSource ?? commits),
+    churnVolatility: computeChurnVolatility(countSource ?? commits),
+    bugFixRate: computeBugFixRate(countSource ?? commits),
     contributorCount: authorship.contributorCount,
     taskIds: extractAllTaskIds(commits),
   };
