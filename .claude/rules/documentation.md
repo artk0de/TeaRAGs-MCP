@@ -128,6 +128,7 @@ Use these in threshold/decision tables, generation mode conditions, and any cont
 | `chunkCommitCount` | Total commits that touched this chunk              |
 | `chunkAgeDays`     | Days since this chunk was last modified             |
 | `chunkChurnRatio`  | Fraction of file's churn this chunk absorbs (0–1)  |
+| `chunkTaskIds`     | Ticket IDs from commits touching this chunk        |
 
 ### File-level signals
 

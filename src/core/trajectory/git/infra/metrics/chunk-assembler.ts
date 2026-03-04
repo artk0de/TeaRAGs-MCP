@@ -67,5 +67,6 @@ export function assembleChunkSignals(
     recencyWeightedFreq,
     changeDensity,
     churnVolatility: Math.round(churnVolatility * 100) / 100,
+    taskIds: Array.from(acc.taskIds),
   };
 }

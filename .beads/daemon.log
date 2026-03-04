@@ -1719,3 +1719,55 @@ time=2026-02-11T19:23:17.021+03:00 level=INFO msg="Auto-import complete"
 time=2026-02-11T19:23:17.601+03:00 level=INFO msg="Import triggered by file change"
 time=2026-02-11T19:23:17.603+03:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
 time=2026-02-11T19:23:17.604+03:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-03-04T02:27:32.193+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-04T02:27:32.193+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-04T02:27:32.217+03:00 level=INFO msg="database opened" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db backend=sqlite freshness_checking=true
+time=2026-03-04T02:27:32.223+03:00 level=INFO msg="Repository fingerprint validated: %s" !BADKEY=b37463bd
+time=2026-03-04T02:27:32.224+03:00 level=INFO msg="starting RPC server" socket=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/bd.sock
+time=2026-03-04T02:27:32.224+03:00 level=INFO msg="RPC server ready (socket listening)"
+time=2026-03-04T02:27:32.231+03:00 level=INFO msg="registered in global registry"
+time=2026-03-04T02:27:32.231+03:00 level=INFO msg="Starting %s..." !BADKEY="sync cycle"
+time=2026-03-04T02:27:32.244+03:00 level=INFO msg="Exported to JSONL"
+time=2026-03-04T02:27:34.356+03:00 level=INFO msg="Pulled from remote"
+time=2026-03-04T02:27:34.385+03:00 level=INFO msg="Imported from JSONL"
+time=2026-03-04T02:27:34.402+03:00 level=INFO msg="Sync cycle complete"
+time=2026-03-04T02:27:34.402+03:00 level=INFO msg="monitoring parent process" pid=0
+time=2026-03-04T02:27:34.402+03:00 level=INFO msg="using event-driven mode"
+time=2026-03-04T02:27:34.403+03:00 level=INFO msg="Auto-pull disabled: use 'git pull' manually to sync remote changes"
+time=2026-03-04T02:27:51.521+03:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-03-04T02:27:51.572+03:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-03-04T02:27:51.572+03:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/issues.jsonl
+time=2026-03-04T02:27:52.574+03:00 level=INFO msg="Import triggered by file change"
+time=2026-03-04T02:27:52.575+03:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-03-04T02:27:52.575+03:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-03-04T02:27:52.698+03:00 level=INFO msg="File change detected: %s" !BADKEY=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/issues.jsonl
+time=2026-03-04T02:27:53.699+03:00 level=INFO msg="Import triggered by file change"
+time=2026-03-04T02:27:53.700+03:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-03-04T02:27:53.701+03:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-03-04T02:27:54.600+03:00 level=INFO msg="File change detected: %s" !BADKEY=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/issues.jsonl
+time=2026-03-04T02:27:55.602+03:00 level=INFO msg="Import triggered by file change"
+time=2026-03-04T02:27:55.603+03:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-03-04T02:27:55.603+03:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-03-04T02:27:58.966+03:00 level=INFO msg="Mutation detected: %s %s" status=tea-rags-mcp-thb
+time=2026-03-04T02:27:59.467+03:00 level=INFO msg="Export triggered by mutation events"
+time=2026-03-04T02:27:59.468+03:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-03-04T02:27:59.483+03:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-03-04T02:27:59.487+03:00 level=INFO msg="Exported to JSONL"
+time=2026-03-04T02:27:59.487+03:00 level=INFO msg="Export complete"
+time=2026-03-04T02:27:59.534+03:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-03-04T02:27:59.534+03:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/issues.jsonl
+time=2026-03-04T02:28:00.536+03:00 level=INFO msg="Import triggered by file change"
+time=2026-03-04T02:28:00.537+03:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-03-04T02:28:00.537+03:00 level=INFO msg="JSONL content changed, proceeding with %s..." !BADKEY=auto-import
+time=2026-03-04T02:28:00.547+03:00 level=INFO msg="⚠️  WARNING: Uncommitted local changes detected in %s" !BADKEY=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/issues.jsonl
+time=2026-03-04T02:28:00.547+03:00 level=INFO msg="   Pulling from remote may overwrite local unpushed changes."
+time=2026-03-04T02:28:00.547+03:00 level=INFO msg="   Consider running 'bd sync' to commit and push your changes first."
+time=2026-03-04T02:28:02.140+03:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-03-04T02:28:02.191+03:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-03-04T02:28:02.192+03:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/issues.jsonl
+time=2026-03-04T02:28:02.838+03:00 level=INFO msg="Pulled from remote"
+time=2026-03-04T02:28:02.846+03:00 level=INFO msg="Imported from JSONL"
+time=2026-03-04T02:28:02.848+03:00 level=INFO msg="Auto-import complete"
+time=2026-03-04T02:28:03.193+03:00 level=INFO msg="Import triggered by file change"
+time=2026-03-04T02:28:03.194+03:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-03-04T02:28:03.195+03:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import

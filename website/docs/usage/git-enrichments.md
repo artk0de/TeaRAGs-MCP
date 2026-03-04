@@ -7,7 +7,7 @@ import AiQuery from '@site/src/components/AiQuery';
 
 # Git Enrichments
 
-tea-rags enriches every indexed code chunk with **19 git-derived quality signals** — churn, stability, authorship, bug-fix rates, code age — at **function-level granularity**. These signals power filtering and reranking, so your AI agent finds not just relevant code, but code that is stable, well-owned, and battle-tested.
+tea-rags enriches every indexed code chunk with **20 git-derived quality signals** — churn, stability, authorship, bug-fix rates, code age — at **function-level granularity**. These signals power filtering and reranking, so your AI agent finds not just relevant code, but code that is stable, well-owned, and battle-tested.
 
 :::tip
 Git enrichment runs concurrently with embedding and does not increase indexing time.
@@ -51,6 +51,7 @@ For detailed metric definitions, formulas, and research context, see [Code Churn
 | `chunkContributorCount` | Chunk | Authors who touched this chunk |
 | `chunkBugFixRate` | Chunk | Bug-fix rate for this chunk specifically |
 | `chunkAgeDays` | Chunk | Days since this chunk was last modified |
+| `chunkTaskIds` | Chunk | Ticket IDs from commits touching this chunk |
 
 ### Bug-Fix Commit Detection {#bug-fix-detection}
 
@@ -116,7 +117,6 @@ All presets automatically prefer chunk-level data when available (e.g., `chunkCo
 | `ownership` | ownership + knowledgeSilo | Knowledge transfer, bus factor analysis |
 | `refactoring` | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age | Refactor candidates at chunk level |
 | `securityAudit` | age + ownership + bugFix + pathRisk + volatility | Old critical code in sensitive paths |
-| `impactAnalysis` | similarity + imports | Dependency analysis |
 | `onboarding` | documentation + stability | Entry points for new team members |
 
 ## Scoring Weights Reference

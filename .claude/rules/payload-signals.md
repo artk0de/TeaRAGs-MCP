@@ -35,13 +35,36 @@ export const myPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
 
 ## Adding a New Payload Signal
 
-### Checklist
+### Checklist (ALL steps mandatory)
 
 1. **Add type field** to the provider's file/chunk signal interface in `types.ts`
 2. **Add computation** in the provider's `computeFileSignals()` or `computeChunkSignals()`
 3. **Add descriptor** to the payload signal descriptors array
 4. **Add `stats` field** if numeric and consumed by derived signals or adaptive bounds
-5. **Add tests** for the computation
+5. **Add/update filter** in the provider's `filters.ts` if the signal is user-filterable
+6. **Update CLAUDE.md** — add to `tea-rags API SELECTION` filter fields table and search examples
+7. **Update website docs** — `website/docs/usage/git-enrichments.md`, `website/docs/architecture/data-model.md`, `website/docs/usage/filters.md` as applicable
+8. **Add tests** — computation tests, descriptor tests (`signals.test.ts`), filter tests (`filters.test.ts`)
+
+### Modifying an Existing Signal
+
+1. Update computation logic
+2. Update descriptor if `type`, `description`, or `stats` changed
+3. Update filters if key or semantics changed
+4. Update CLAUDE.md if user-facing behavior changed
+5. Update website docs if user-facing behavior changed
+6. Update all affected tests
+
+### Removing a Signal
+
+1. Remove type field from interface
+2. Remove computation
+3. Remove descriptor from payload signal descriptors array
+4. Remove related filter(s) from `filters.ts`
+5. Remove/update any derived signals that depend on it
+6. Update CLAUDE.md — remove from filter fields table and examples
+7. Update website docs — remove from `git-enrichments.md`, `data-model.md`, `filters.md`
+8. Remove/update all affected tests
 
 ### Stats Declaration
 

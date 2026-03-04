@@ -41,10 +41,18 @@ describe("git filter descriptors", () => {
     expect(conditions[0].key).toBe("git.file.lastModifiedAt");
   });
 
-  it("taskId uses git.file.taskIds (file-only)", () => {
+  it("taskId defaults to file level", () => {
     const conditions = findFilter("taskId").toCondition("JIRA-123");
     expect(conditions[0]).toEqual({
       key: "git.file.taskIds",
+      match: { any: ["JIRA-123"] },
+    });
+  });
+
+  it("taskId respects chunk level param", () => {
+    const conditions = findFilter("taskId").toCondition("JIRA-123", "chunk");
+    expect(conditions[0]).toEqual({
+      key: "git.chunk.taskIds",
       match: { any: ["JIRA-123"] },
     });
   });
@@ -97,7 +105,7 @@ describe("git payload signal descriptors", () => {
     const fileFields = gitPayloadSignalDescriptors.filter((f) => f.key.startsWith("git.file."));
     const chunkFields = gitPayloadSignalDescriptors.filter((f) => f.key.startsWith("git.chunk."));
     expect(fileFields.length).toBeGreaterThanOrEqual(12);
-    expect(chunkFields.length).toBeGreaterThanOrEqual(8);
+    expect(chunkFields.length).toBeGreaterThanOrEqual(9);
   });
 
   it("each entry has only PayloadSignalDescriptor properties (key, type, description)", () => {

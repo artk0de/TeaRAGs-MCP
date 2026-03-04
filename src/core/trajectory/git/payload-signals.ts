@@ -137,4 +137,9 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     description: "Standard deviation of commit intervals for this chunk (days)",
     stats: { percentiles: [95] },
   },
+  {
+    key: "git.chunk.taskIds",
+    type: "string[]",
+    description: "Task/ticket IDs extracted from commit messages touching this chunk",
+  },
 ];

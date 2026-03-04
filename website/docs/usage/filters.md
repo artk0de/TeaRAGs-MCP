@@ -313,6 +313,7 @@ Requires `CODE_ENABLE_GIT_METADATA=true` during indexing.
 | `git.chunkChurnRatio` | number | Chunk's share of file churn (0-1) | Hotspot within a file |
 | `git.chunkBugFixRate` | number | Chunk bug-fix rate (0-100) | Function-level quality |
 | `git.chunkAgeDays` | integer | Days since chunk was last modified | Function-level age |
+| `git.chunkTaskIds` | string[] | Ticket IDs from commits touching this chunk | Function-level ticket tracing |
 
 ## Filter + Rerank Combinations
 
