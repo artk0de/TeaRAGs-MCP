@@ -35,7 +35,7 @@ function multiply(a: number, b: number): number {
       expect(chunks.some((c) => c.metadata.name === "multiply")).toBe(true);
     });
 
-    it("should chunk TypeScript classes", async () => {
+    it("should chunk TypeScript classes into methods", async () => {
       const code = `
 class Calculator {
   add(a: number, b: number): number {
@@ -50,7 +50,11 @@ class Calculator {
 
       const chunks = await chunker.chunk(code, "test.ts", "typescript");
       expect(chunks.length).toBeGreaterThan(0);
-      expect(chunks.some((c) => c.metadata.chunkType === "class")).toBe(true);
+      // Methods should be extracted with class as parent
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.some((c) => c.metadata.name === "add")).toBe(true);
+      expect(methodChunks.some((c) => c.metadata.name === "subtract")).toBe(true);
+      expect(methodChunks.every((c) => c.metadata.parentName === "Calculator")).toBe(true);
     });
 
     it("should chunk TypeScript interfaces", async () => {
