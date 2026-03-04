@@ -22,6 +22,7 @@ export interface ToolDependencies {
   search: SearchFacade;
   reranker: Reranker;
   schemaBuilder: SchemaBuilder;
+  essentialTrajectoryFields: string[];
 }
 
 /**
@@ -43,6 +44,7 @@ export function registerAllTools(server: McpServer, deps: ToolDependencies): voi
     embeddings: deps.embeddings,
     reranker: deps.reranker,
     schemaBuilder: deps.schemaBuilder,
+    essentialTrajectoryFields: deps.essentialTrajectoryFields,
   });
 
   registerCodeTools(server, {

@@ -35,18 +35,20 @@ export interface AppContext {
   search: SearchFacade;
   reranker: CompositionResult["reranker"];
   schemaBuilder: SchemaBuilder;
+  essentialTrajectoryFields: string[];
 }
 
 export function createAppContext(config: AppConfig): AppContext {
   const qdrant = new QdrantManager(config.qdrantUrl, config.qdrantApiKey);
   const embeddings = EmbeddingProviderFactory.createFromEnv();
   const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
+  const essentialTrajectoryFields = registry.getEssentialPayloadKeys();
   const schemaBuilder = new SchemaBuilder(reranker);
   const snapshotsDir = join(homedir(), ".tea-rags-mcp", "snapshots");
   const statsCache = new StatsCache(snapshotsDir);
   const ingest = new IngestFacade(qdrant, embeddings, config.code, statsCache, allPayloadSignalDescriptors, reranker);
   const search = new SearchFacade(qdrant, embeddings, config.code, reranker, registry, statsCache);
-  return { qdrant, embeddings, ingest, search, reranker, schemaBuilder };
+  return { qdrant, embeddings, ingest, search, reranker, schemaBuilder, essentialTrajectoryFields };
 }
 
 export function loadPrompts(config: AppConfig): PromptsConfig | null {
@@ -74,6 +76,7 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
     search: ctx.search,
     reranker: ctx.reranker,
     schemaBuilder: ctx.schemaBuilder,
+    essentialTrajectoryFields: ctx.essentialTrajectoryFields,
   });
 
   registerAllResources(server, ctx.qdrant);
