@@ -20,6 +20,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 20,
       linesDeleted: 5,
       commitTimestamps: [Date.now() / 1000 - 86400, Date.now() / 1000],
+      taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
     expect(result.commitCount).toBe(2);
@@ -42,6 +43,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 0,
       linesDeleted: 0,
       commitTimestamps: [],
+      taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
     expect(result.commitCount).toBe(0);
@@ -61,6 +63,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 5,
       linesDeleted: 2,
       commitTimestamps: [Date.now() / 1000],
+      taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 5, 2, 10);
     expect(result.contributorCount).toBe(2); // capped at fileContributorCount
@@ -75,6 +78,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 5,
       linesDeleted: 2,
       commitTimestamps: [Date.now() / 1000],
+      taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 5, undefined, 10);
     expect(result.contributorCount).toBe(2);
@@ -91,6 +95,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 10,
       linesDeleted: 2,
       commitTimestamps: [now - 10 * 86400, now - 5 * 86400, now],
+      taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
     // gaps = [5, 5], mean=5, variance=0, stddev=0
@@ -109,6 +114,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 10,
       linesDeleted: 2,
       commitTimestamps: [now - 10 * 86400, now - 9 * 86400, now],
+      taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
     expect(result.churnVolatility).toBeCloseTo(4.0, 1);
@@ -124,6 +130,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 1,
       linesDeleted: 0,
       commitTimestamps: [now],
+      taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 1, undefined, 10);
     expect(result.churnVolatility).toBe(0);
@@ -138,6 +145,7 @@ describe("assembleChunkSignals", () => {
       linesAdded: 0,
       linesDeleted: 0,
       commitTimestamps: [],
+      taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 10, undefined, 50);
     expect(result.churnVolatility).toBe(0);
@@ -153,8 +161,41 @@ describe("assembleChunkSignals", () => {
       linesAdded: 1,
       linesDeleted: 0,
       commitTimestamps: [now], // 0 days ago
+      taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 1, undefined, 10);
     expect(result.recencyWeightedFreq).toBeCloseTo(1.0, 1);
+  });
+
+  it("passes through taskIds from accumulator", () => {
+    const now = Date.now() / 1000;
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a", "b"]),
+      authors: new Set(["alice"]),
+      bugFixCount: 0,
+      lastModifiedAt: now,
+      linesAdded: 5,
+      linesDeleted: 2,
+      commitTimestamps: [now],
+      taskIds: new Set(["TD-123", "#456", "PROJ-789"]),
+    };
+    const result = assembleChunkSignals(acc, 10, undefined, 50);
+    expect(result.taskIds).toEqual(expect.arrayContaining(["TD-123", "#456", "PROJ-789"]));
+    expect(result.taskIds).toHaveLength(3);
+  });
+
+  it("returns empty taskIds for empty accumulator", () => {
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(),
+      authors: new Set(),
+      bugFixCount: 0,
+      lastModifiedAt: 0,
+      linesAdded: 0,
+      linesDeleted: 0,
+      commitTimestamps: [],
+      taskIds: new Set(),
+    };
+    const result = assembleChunkSignals(acc, 10, undefined, 50);
+    expect(result.taskIds).toEqual([]);
   });
 });

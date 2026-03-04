@@ -15,6 +15,7 @@ import type { ChunkLookupEntry } from "../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import type { GitEnrichmentCache } from "./cache.js";
 import { computeChunkSignals, isBugFixCommit, overlaps, type ChunkAccumulator } from "./metrics.js";
+import { extractTaskIds } from "./utils.js";
 
 const MAX_FILE_LINES_DEFAULT = 10000;
 
@@ -92,6 +93,7 @@ export async function buildChunkChurnMapUncached(
         linesAdded: 0,
         linesDeleted: 0,
         commitTimestamps: [],
+        taskIds: new Set(),
       });
     }
   }
@@ -163,6 +165,7 @@ export async function buildChunkChurnMapUncached(
       if (relevantFiles.length === 0) return;
 
       const isBugFix = isBugFixCommit(commit.body);
+      const commitTaskIds = extractTaskIds(commit.body);
 
       // Resolve parent OID via isomorphic-git readCommit (single object read, not a walk)
       let parentOid: string;
@@ -238,6 +241,7 @@ export async function buildChunkChurnMapUncached(
             acc.authors.add(commit.author);
             acc.commitTimestamps.push(commit.timestamp);
             if (isBugFix) acc.bugFixCount++;
+            for (const tid of commitTaskIds) acc.taskIds.add(tid);
             if (commit.timestamp > acc.lastModifiedAt) {
               acc.lastModifiedAt = commit.timestamp;
             }

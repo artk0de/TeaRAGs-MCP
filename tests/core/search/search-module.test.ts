@@ -362,7 +362,7 @@ export function calculateProduct(numbers: number[]): number {
         expect.any(Array),
         expect.any(Number),
         expect.objectContaining({
-          must: expect.arrayContaining([{ key: "git.file.taskIds", match: { any: ["TD-12345"] } }]),
+          must: expect.arrayContaining([{ key: "git.chunk.taskIds", match: { any: ["TD-12345"] } }]),
         }),
       );
     });

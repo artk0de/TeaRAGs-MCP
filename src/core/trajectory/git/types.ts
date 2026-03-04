@@ -89,4 +89,6 @@ export interface ChunkChurnOverlay extends ChunkSignalOverlay {
   changeDensity: number;
   /** Standard deviation of commit intervals for this chunk (days) */
   churnVolatility: number;
+  /** Task IDs extracted from commit messages touching this chunk */
+  taskIds: string[];
 }

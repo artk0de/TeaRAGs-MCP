@@ -21,6 +21,7 @@ export interface ChunkAccumulator {
   linesAdded: number;
   linesDeleted: number;
   commitTimestamps: number[];
+  taskIds: Set<string>;
 }
 
 /** Jeffreys prior for Laplace smoothing of bugFixRate (alpha = 0.5). */
@@ -230,5 +231,6 @@ export function computeChunkSignals(
     recencyWeightedFreq,
     changeDensity,
     churnVolatility: Math.round(churnVolatility * 100) / 100,
+    taskIds: Array.from(acc.taskIds),
   };
 }

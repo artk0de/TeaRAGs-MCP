@@ -60,6 +60,8 @@ export const gitFilters: FilterDescriptor[] = [
     param: "taskId",
     description: "Filter by task/ticket ID from commit messages",
     type: "string",
-    toCondition: (value: unknown) => [{ key: "git.file.taskIds", match: { any: [value as string] } }],
+    toCondition: (value: unknown, level: FilterLevel = "file") => [
+      { key: `git.${level}.taskIds`, match: { any: [value as string] } },
+    ],
   },
 ];
