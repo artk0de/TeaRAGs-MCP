@@ -14,7 +14,8 @@ import type { CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
 import type { ChunkLookupEntry } from "../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import type { GitEnrichmentCache } from "./cache.js";
-import { computeChunkSignals, isBugFixCommit, overlaps, type ChunkAccumulator } from "./metrics.js";
+import { isBugFixCommit, overlaps, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
+import { assembleChunkSignals } from "./metrics/chunk-assembler.js";
 import { extractTaskIds } from "./utils.js";
 
 const MAX_FILE_LINES_DEFAULT = 10000;
@@ -37,6 +38,7 @@ export async function buildChunkChurnMap(
   concurrency = 10,
   maxAgeMonths = 6,
   fileChurnDataMap?: Map<string, FileChurnData>,
+  squashOpts?: SquashOptions,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Check HEAD-based cache
   const cached = await enrichmentCache.getChunkChurn(repoRoot);
@@ -49,6 +51,7 @@ export async function buildChunkChurnMap(
     concurrency,
     maxAgeMonths,
     fileChurnDataMap,
+    squashOpts,
   );
 
   // Store in cache (non-fatal if HEAD unresolvable)
@@ -64,6 +67,7 @@ export async function buildChunkChurnMapUncached(
   concurrency: number,
   maxAgeMonths: number,
   fileChurnDataMap?: Map<string, FileChurnData>,
+  squashOpts?: SquashOptions,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   const maxFileLines = parseInt(process.env.GIT_CHUNK_MAX_FILE_LINES ?? String(MAX_FILE_LINES_DEFAULT), 10);
 
@@ -93,6 +97,7 @@ export async function buildChunkChurnMapUncached(
         linesAdded: 0,
         linesDeleted: 0,
         commitTimestamps: [],
+        commitAuthors: [],
         taskIds: new Set(),
       });
     }
@@ -240,6 +245,7 @@ export async function buildChunkChurnMapUncached(
             acc.commitShas.add(commit.sha);
             acc.authors.add(commit.author);
             acc.commitTimestamps.push(commit.timestamp);
+            acc.commitAuthors.push(commit.author);
             if (isBugFix) acc.bugFixCount++;
             for (const tid of commitTaskIds) acc.taskIds.add(tid);
             if (commit.timestamp > acc.lastModifiedAt) {
@@ -299,7 +305,10 @@ export async function buildChunkChurnMapUncached(
       const acc = accumulators.get(entry.chunkId);
       if (!acc) continue;
       const chunkLineCount = entry.endLine - entry.startLine + 1;
-      overlayMap.set(entry.chunkId, computeChunkSignals(acc, fileCommitCount, fileContributorCount, chunkLineCount));
+      overlayMap.set(
+        entry.chunkId,
+        assembleChunkSignals(acc, fileCommitCount, fileContributorCount, chunkLineCount, squashOpts),
+      );
     }
 
     if (overlayMap.size > 0) {

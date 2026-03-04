@@ -46,7 +46,10 @@ export class IngestFacade {
     const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
     const deps = createIngestDependencies(qdrant, snapshotDir);
 
-    const providers = config.enableGitMetadata ? [new GitEnrichmentProvider()] : [];
+    const squashOpts = config.squashAwareSessions
+      ? { squashAwareSessions: true, sessionGapMinutes: config.sessionGapMinutes ?? 30 }
+      : undefined;
+    const providers = config.enableGitMetadata ? [new GitEnrichmentProvider(squashOpts)] : [];
     this.enrichment = new EnrichmentCoordinator(qdrant, providers);
     this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment, deps);
     this.status = new StatusModule(qdrant);
