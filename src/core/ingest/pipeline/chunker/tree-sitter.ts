@@ -25,6 +25,8 @@ export class TreeSitterChunker implements CodeChunker {
   /** Track loading promises to avoid duplicate loads */
   private readonly loadingPromises: Map<string, Promise<LanguageConfig | null>> = new Map();
 
+  /** Heading depth threshold for section boundaries — h1/h2 create chunks, h3+ are included in parent */
+  private static readonly SECTION_HEADING_DEPTH = 2;
   /** Maximum lines for a chunk to be considered a merge candidate */
   private static readonly MERGE_THRESHOLD = 5;
   /** Maximum gap (in source lines) between mergeable chunks */
@@ -520,15 +522,17 @@ export class TreeSitterChunker implements CodeChunker {
       collectCodeBlocks(child);
     }
 
-    // Create section chunks
-    for (let i = 0; i < headings.length; i++) {
-      const heading = headings[i];
+    // Filter to section-level headings (h1/h2) — h3+ content is included in parent section
+    const sectionHeadings = headings.filter((h) => h.depth <= TreeSitterChunker.SECTION_HEADING_DEPTH);
 
-      // Find end of section (next heading of ANY level, or end of document)
-      // This creates smaller, more focused chunks for semantic search
+    // Create section chunks
+    for (let i = 0; i < sectionHeadings.length; i++) {
+      const heading = sectionHeadings[i];
+
+      // Find end of section (next section-level heading, or end of document)
       let sectionEndLine = lines.length;
-      if (i + 1 < headings.length) {
-        sectionEndLine = headings[i + 1].startLine - 1;
+      if (i + 1 < sectionHeadings.length) {
+        sectionEndLine = sectionHeadings[i + 1].startLine - 1;
       }
 
       // Extract section content from original code
@@ -602,17 +606,17 @@ export class TreeSitterChunker implements CodeChunker {
       });
     }
 
-    // Handle preamble (content before first heading)
-    if (headings.length > 0 && headings[0].startLine > 1) {
+    // Handle preamble (content before first section heading)
+    if (sectionHeadings.length > 0 && sectionHeadings[0].startLine > 1) {
       const preamble = lines
-        .slice(0, headings[0].startLine - 1)
+        .slice(0, sectionHeadings[0].startLine - 1)
         .join("\n")
         .trim();
       if (preamble.length >= 50) {
         chunks.unshift({
           content: preamble,
           startLine: 1,
-          endLine: headings[0].startLine - 1,
+          endLine: sectionHeadings[0].startLine - 1,
           metadata: {
             filePath,
             language,
