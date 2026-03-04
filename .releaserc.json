@@ -5,6 +5,9 @@
       "@semantic-release/commit-analyzer",
       {
         "preset": "conventionalcommits",
+        "parserOpts": {
+          "mergePattern": "^Merge"
+        },
         "releaseRules": [
           { "type": "feat", "release": "minor" },
           { "type": "fix", "release": "patch" },
@@ -24,6 +27,9 @@
       "@semantic-release/release-notes-generator",
       {
         "preset": "conventionalcommits",
+        "parserOpts": {
+          "mergePattern": "^Merge"
+        },
         "presetConfig": {
           "types": [
             { "type": "feat", "section": "Features" },
