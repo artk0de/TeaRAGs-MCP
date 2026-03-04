@@ -181,6 +181,37 @@ describe("MarkdownChunker", () => {
       const chunks = await chunker.chunk("Short.", "tiny.md", "markdown");
       expect(chunks.length).toBe(0);
     });
+
+    it("should exclude frontmatter from whole-document fallback", async () => {
+      const code = [
+        "---",
+        "title: Software Evolution & Mining",
+        "sidebar_position: 3",
+        "---",
+        "",
+        "This is a document with no headings but real content after frontmatter that exceeds the minimum.",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+      expect(chunks.length).toBe(1);
+      expect(chunks[0].content).not.toContain("sidebar_position");
+      expect(chunks[0].content).not.toContain("title: Software");
+      expect(chunks[0].content).toContain("real content after frontmatter");
+    });
+
+    it("should return empty for frontmatter-only stub pages", async () => {
+      const code = [
+        "---",
+        "title: Open Questions",
+        "---",
+        "",
+        "<!-- TODO: Fill this section -->",
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "stub.md", "markdown");
+      // Frontmatter stripped, only a short HTML comment remains — under 50 chars
+      expect(chunks.length).toBe(0);
+    });
   });
 
   describe("code block deduplication", () => {

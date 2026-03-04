@@ -186,20 +186,29 @@ export class MarkdownChunker {
       }
     }
 
-    // Whole-document fallback
-    if (chunks.length === 0 && code.length >= MIN_SECTION_SIZE) {
-      chunks.push({
-        content: code.trim(),
-        startLine: 1,
-        endLine: lines.length,
-        metadata: {
-          filePath,
-          language,
-          chunkIndex: 0,
-          chunkType: "block",
-          isDocumentation: true,
-        },
-      });
+    // Whole-document fallback — strip frontmatter
+    if (chunks.length === 0) {
+      const firstContentLine = this.findFirstContentLine(tree.children);
+      const startLine = firstContentLine > 0 ? firstContentLine : 1;
+      const content = lines
+        .slice(startLine - 1)
+        .join("\n")
+        .trim();
+
+      if (content.length >= MIN_SECTION_SIZE) {
+        chunks.push({
+          content,
+          startLine,
+          endLine: lines.length,
+          metadata: {
+            filePath,
+            language,
+            chunkIndex: 0,
+            chunkType: "block",
+            isDocumentation: true,
+          },
+        });
+      }
     }
 
     return chunks;
