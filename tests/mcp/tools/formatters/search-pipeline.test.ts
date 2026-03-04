@@ -122,6 +122,54 @@ describe("formatSearchResults", () => {
     expect(parsed[0]).toHaveProperty("imports");
   });
 
+  it("should include all BASE_PAYLOAD_SIGNALS in metaOnly results", () => {
+    const results = [
+      {
+        id: "1",
+        score: 0.9,
+        payload: {
+          relativePath: "src/reranker.ts",
+          fileExtension: ".ts",
+          language: "typescript",
+          startLine: 45,
+          endLine: 120,
+          chunkIndex: 3,
+          isDocumentation: false,
+          chunkType: "function",
+          name: "rerank",
+          parentName: "Reranker",
+          parentType: "class",
+          symbolId: "Reranker.rerank",
+          imports: ["./types.js"],
+          git: { chunk: { commitCount: 5 } },
+          content: "should be excluded",
+        },
+      },
+    ];
+    const output = formatSearchResults(results, true);
+    const parsed = JSON.parse(output.content[0].text);
+    const meta = parsed[0];
+
+    // All BASE_PAYLOAD_SIGNALS must be present
+    expect(meta).toHaveProperty("relativePath", "src/reranker.ts");
+    expect(meta).toHaveProperty("fileExtension", ".ts");
+    expect(meta).toHaveProperty("language", "typescript");
+    expect(meta).toHaveProperty("startLine", 45);
+    expect(meta).toHaveProperty("endLine", 120);
+    expect(meta).toHaveProperty("chunkIndex", 3);
+    expect(meta).toHaveProperty("isDocumentation", false);
+    expect(meta).toHaveProperty("chunkType", "function");
+    expect(meta).toHaveProperty("name", "rerank");
+    expect(meta).toHaveProperty("parentName", "Reranker");
+    expect(meta).toHaveProperty("parentType", "class");
+    expect(meta).toHaveProperty("symbolId", "Reranker.rerank");
+    expect(meta).toHaveProperty("imports");
+
+    // Non-base fields excluded
+    expect(meta).not.toHaveProperty("content");
+    expect(meta).not.toHaveProperty("id");
+  });
+
   it("should handle empty results", () => {
     const output = formatSearchResults([], false);
     expect(output.content[0].text).toBe("[]");

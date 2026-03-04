@@ -90,14 +90,26 @@ describe("typescriptBodyChunkingHook", () => {
   it("should group static members separately from regular properties", () => {
     const code = [
       "export class Config {",
-      "  name: string;",
-      "  value: number;",
+      "  firstName: string;",
+      "  lastName: string;",
+      "  emailAddress: string;",
+      "  phoneNumber: string;",
+      "  homeAddress: string;",
+      "  postalCode: string;",
+      "  countryName: string;",
+      "  dateOfBirth: Date;",
       "",
-      "  static DEFAULT_NAME = 'config';",
-      "  static MAX_VALUE = 100;",
+      "  static DEFAULT_FIRST_NAME = 'John';",
+      "  static DEFAULT_LAST_NAME = 'Doe';",
+      "  static DEFAULT_EMAIL = 'john.doe@example.com';",
+      "  static DEFAULT_PHONE = '+1-555-0100';",
+      "  static DEFAULT_ADDRESS = '123 Main Street';",
+      "  static DEFAULT_POSTAL = '10001';",
+      "  static DEFAULT_COUNTRY = 'United States';",
+      "  static MAX_NAME_LENGTH = 100;",
       "",
       "  getValue() {",
-      "    return this.value;",
+      "    return this.firstName;",
       "  }",
       "}",
     ].join("\n");
@@ -108,9 +120,11 @@ describe("typescriptBodyChunkingHook", () => {
     // Should have at least 2 body chunks: properties and static_members
     expect(ctx.bodyChunks.length).toBeGreaterThanOrEqual(2);
 
-    const propsChunk = ctx.bodyChunks.find((c) => c.content.includes("name: string") && !c.content.includes("static"));
+    const propsChunk = ctx.bodyChunks.find(
+      (c) => c.content.includes("firstName: string") && !c.content.includes("static"),
+    );
     const staticChunk = ctx.bodyChunks.find(
-      (c) => c.content.includes("static DEFAULT_NAME") && c.content.includes("static MAX_VALUE"),
+      (c) => c.content.includes("static DEFAULT_FIRST_NAME") && c.content.includes("static MAX_NAME_LENGTH"),
     );
 
     expect(propsChunk).toBeDefined();
@@ -148,15 +162,29 @@ describe("typescriptBodyChunkingHook", () => {
   it("should group decorated members separately", () => {
     const code = [
       "export class Service {",
-      "  name: string;",
-      "  description: string;",
-      "  isActive: boolean;",
+      "  firstName: string;",
+      "  lastName: string;",
+      "  emailAddress: string;",
+      "  phoneNumber: string;",
+      "  homeAddress: string;",
+      "  postalCode: string;",
+      "  countryName: string;",
+      "  dateOfBirth: Date;",
       "",
       "  @Inject()",
-      "  private logger: Logger;",
+      "  private loggerService: LoggerService;",
       "",
       "  @Inject()",
-      "  private db: Database;",
+      "  private databaseConnection: DatabaseConnection;",
+      "",
+      "  @Inject()",
+      "  private configurationManager: ConfigurationManager;",
+      "",
+      "  @Inject()",
+      "  private authenticationService: AuthenticationService;",
+      "",
+      "  @Inject()",
+      "  private notificationService: NotificationService;",
       "",
       "  run() {",
       "    return true;",
@@ -170,11 +198,15 @@ describe("typescriptBodyChunkingHook", () => {
     // Should produce separate chunks for properties vs decorated members
     expect(ctx.bodyChunks.length).toBeGreaterThanOrEqual(2);
 
-    const decoratedChunk = ctx.bodyChunks.find((c) => c.content.includes("@Inject()") && c.content.includes("logger"));
+    const decoratedChunk = ctx.bodyChunks.find(
+      (c) => c.content.includes("@Inject()") && c.content.includes("loggerService"),
+    );
     expect(decoratedChunk).toBeDefined();
 
     // Plain property should not be in the decorated chunk
-    const propsChunk = ctx.bodyChunks.find((c) => c.content.includes("name: string") && !c.content.includes("@Inject"));
+    const propsChunk = ctx.bodyChunks.find(
+      (c) => c.content.includes("firstName: string") && !c.content.includes("@Inject"),
+    );
     expect(propsChunk).toBeDefined();
     expect(propsChunk).not.toBe(decoratedChunk);
   });
@@ -182,14 +214,24 @@ describe("typescriptBodyChunkingHook", () => {
   it("should group abstract members separately", () => {
     const code = [
       "export abstract class Shape {",
-      "  color: string;",
+      "  colorValue: string;",
       "  lineWidth: number;",
+      "  fillOpacity: number;",
+      "  strokeColor: string;",
+      "  strokeWidth: number;",
+      "  rotationAngle: number;",
+      "  scaleFactorX: number;",
+      "  scaleFactorY: number;",
       "",
-      "  abstract area(): number;",
-      "  abstract perimeter(): number;",
+      "  abstract calculateArea(): number;",
+      "  abstract calculatePerimeter(): number;",
+      "  abstract calculateBoundingBox(): { x: number; y: number; width: number; height: number };",
+      "  abstract calculateCentroid(): { x: number; y: number };",
+      "  abstract transformMatrix(): number[];",
+      "  abstract intersectsWith(other: Shape): boolean;",
       "",
       "  describe() {",
-      "    return `Shape: ${this.color}`;",
+      "    return `Shape: ${this.colorValue}`;",
       "  }",
       "}",
     ].join("\n");
@@ -200,12 +242,12 @@ describe("typescriptBodyChunkingHook", () => {
     expect(ctx.bodyChunks.length).toBeGreaterThanOrEqual(2);
 
     const abstractChunk = ctx.bodyChunks.find(
-      (c) => c.content.includes("abstract area") && c.content.includes("abstract perimeter"),
+      (c) => c.content.includes("abstract calculateArea") && c.content.includes("abstract calculatePerimeter"),
     );
     expect(abstractChunk).toBeDefined();
 
     const propsChunk = ctx.bodyChunks.find(
-      (c) => c.content.includes("color: string") && !c.content.includes("abstract area"),
+      (c) => c.content.includes("colorValue: string") && !c.content.includes("abstract calculateArea"),
     );
     expect(propsChunk).toBeDefined();
     expect(propsChunk).not.toBe(abstractChunk);
@@ -214,16 +256,33 @@ describe("typescriptBodyChunkingHook", () => {
   it("should produce 3 separate body chunks for mixed: properties + static + decorated", () => {
     const code = [
       "export class MixedService {",
-      "  name: string;",
-      "  value: number;",
+      "  firstName: string;",
+      "  lastName: string;",
+      "  emailAddress: string;",
+      "  phoneNumber: string;",
+      "  homeAddress: string;",
+      "  postalCode: string;",
+      "  countryName: string;",
+      "  dateOfBirth: Date;",
       "",
-      "  static VERSION = '1.0';",
-      "  static TIMEOUT = 3000;",
+      "  static VERSION_STRING = '1.0.0-beta.42';",
+      "  static TIMEOUT_MILLISECONDS = 3000;",
+      "  static MAX_RETRY_ATTEMPTS = 5;",
+      "  static DEFAULT_LOCALE = 'en-US';",
+      "  static CACHE_DURATION_SECONDS = 3600;",
+      "  static API_BASE_URL = 'https://api.example.com/v2';",
+      "  static CONNECTION_POOL_SIZE = 10;",
       "",
       "  @Inject()",
-      "  private logger: Logger;",
+      "  private loggerService: LoggerService;",
       "  @Inject()",
-      "  private config: Config;",
+      "  private configManager: ConfigurationManager;",
+      "  @Inject()",
+      "  private databaseService: DatabaseService;",
+      "  @Inject()",
+      "  private cacheProvider: CacheProvider;",
+      "  @Inject()",
+      "  private authService: AuthenticationService;",
       "",
       "  process() {",
       "    return true;",
@@ -234,11 +293,11 @@ describe("typescriptBodyChunkingHook", () => {
     const ctx = buildContext(code);
     typescriptBodyChunkingHook.process(ctx);
 
-    // 3 groups: properties, static_members, decorated_members
+    // 3 groups: properties, static_members, decorated_members — all large enough to stay separate
     expect(ctx.bodyChunks.length).toBe(3);
 
-    expect(ctx.bodyChunks[0].content).toContain("name: string");
-    expect(ctx.bodyChunks[1].content).toContain("static VERSION");
+    expect(ctx.bodyChunks[0].content).toContain("firstName: string");
+    expect(ctx.bodyChunks[1].content).toContain("static VERSION_STRING");
     expect(ctx.bodyChunks[2].content).toContain("@Inject()");
   });
 
@@ -360,14 +419,24 @@ describe("typescriptBodyChunkingHook", () => {
   it("should classify decorated static field as decorated_members, not static_members", () => {
     const code = [
       "export class Prioritized {",
-      "  name: string;",
-      "  value: number;",
+      "  firstName: string;",
+      "  lastName: string;",
+      "  emailAddress: string;",
+      "  phoneNumber: string;",
+      "  homeAddress: string;",
+      "  postalCode: string;",
+      "  countryName: string;",
+      "  dateOfBirth: Date;",
       "",
       "  @Inject()",
       "  static instance: Prioritized;",
       "",
-      "  static DEFAULT_CONFIG = 'default-configuration-value';",
-      "  static FALLBACK_CONFIG = 'fallback-configuration-value';",
+      "  static DEFAULT_CONFIG_VALUE = 'default-configuration-value-for-application';",
+      "  static FALLBACK_CONFIG_VALUE = 'fallback-configuration-value-for-application';",
+      "  static SECONDARY_FALLBACK = 'secondary-fallback-configuration-override';",
+      "  static TERTIARY_FALLBACK = 'tertiary-fallback-configuration-override';",
+      "  static QUATERNARY_FALLBACK = 'quaternary-fallback-configuration-value';",
+      "  static QUINARY_FALLBACK = 'quinary-fallback-configuration-value-final';",
       "",
       "  run() { return true; }",
       "}",
@@ -383,9 +452,75 @@ describe("typescriptBodyChunkingHook", () => {
 
     // The plain static fields should be in a separate chunk
     const staticChunk = ctx.bodyChunks.find(
-      (c) => c.content.includes("static DEFAULT_CONFIG") && !c.content.includes("@Inject"),
+      (c) => c.content.includes("static DEFAULT_CONFIG_VALUE") && !c.content.includes("@Inject"),
     );
     expect(staticChunk).toBeDefined();
+  });
+
+  it("should guarantee endLine > startLine for single-line groups", () => {
+    const code = [
+      "export class SingleProp {",
+      "  readonly id: string = 'default-value-to-make-it-long-enough-for-50-char-threshold';",
+      "",
+      "  run() { return this.id; }",
+      "}",
+    ].join("\n");
+
+    const ctx = buildContext(code);
+    typescriptBodyChunkingHook.process(ctx);
+
+    // Single property on one row → should still have endLine > startLine
+    for (const chunk of ctx.bodyChunks) {
+      expect(chunk.endLine).toBeGreaterThan(chunk.startLine);
+    }
+  });
+
+  it("should merge small adjacent body chunks into one", () => {
+    // 3 different group types, each >50 chars (above tiny threshold) but <200 chars (merge candidate)
+    const code = [
+      "export class SmallGroups {",
+      "  userName: string;",
+      "  userEmail: string;",
+      "",
+      "  static DEFAULT_TAG_VALUE = 'small-default-tag';",
+      "  static FALLBACK_TAG_VALUE = 'small-fallback-tag';",
+      "",
+      "  @Inject()",
+      "  private loggerService: LoggerService;",
+      "",
+      "  run() { return true; }",
+      "}",
+    ].join("\n");
+
+    const ctx = buildContext(code);
+    typescriptBodyChunkingHook.process(ctx);
+
+    // Without merge: 3 chunks (properties, static_members, decorated_members)
+    // With merge: all are small (<200 chars), should merge into 1
+    expect(ctx.bodyChunks).toHaveLength(1);
+
+    // Merged chunk should contain all groups
+    const merged = ctx.bodyChunks[0];
+    expect(merged.content).toContain("userName: string");
+    expect(merged.content).toContain("static DEFAULT_TAG_VALUE");
+    expect(merged.content).toContain("@Inject()");
+
+    // Should have class header
+    expect(merged.content).toMatch(/^export class SmallGroups/);
+  });
+
+  it("should not merge chunks that would exceed maxChunkSize", () => {
+    // Build properties and static members, each group large enough to not merge
+    const props = Array.from({ length: 8 }, (_, i) => `  property${i}: string;`);
+    const statics = Array.from({ length: 8 }, (_, i) => `  static CONST_${i} = 'value-${i}';`);
+    const code = ["export class BigGroups {", ...props, "", ...statics, "", "  run() { return true; }", "}"].join("\n");
+
+    // maxChunkSize small enough that combined would exceed
+    const ctx = buildContext(code, { maxChunkSize: 300 });
+    typescriptBodyChunkingHook.process(ctx);
+
+    // Should stay as separate chunks (may be split further)
+    expect(ctx.bodyChunks.length).toBeGreaterThan(1);
   });
 
   it("should set correct startLine and endLine on body chunks", () => {

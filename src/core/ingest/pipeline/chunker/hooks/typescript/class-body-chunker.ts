@@ -206,9 +206,9 @@ function extractGroupContent(
 
   if (allRows.length === 0) return null;
 
-  // Convert to 1-based line numbers
+  // Convert to 1-based line numbers, guarantee at least 1 line span
   const startLine = allRows[0] + 1;
-  const endLine = allRows[allRows.length - 1] + 1;
+  const endLine = Math.max(allRows[0] + 2, allRows[allRows.length - 1] + 1);
 
   // Compute line ranges (1-based, non-contiguous)
   const lineRanges = computeLineRanges(allRows.map((r) => r + 1));
@@ -293,6 +293,66 @@ function splitOversizedChunk(
   return results;
 }
 
+// ── Small body chunk merging ──────────────────────────────────────
+
+/** Content length below which a body chunk is a merge candidate. */
+const BODY_MERGE_THRESHOLD = 200;
+
+/**
+ * Merge adjacent small body chunks into larger ones.
+ * Prevents excessive fragmentation from fine-grained grouping.
+ */
+function mergeSmallBodyChunks(
+  chunks: BodyChunkResult[],
+  classHeader: string | undefined,
+  maxChunkSize: number,
+): BodyChunkResult[] {
+  if (chunks.length <= 1) return chunks;
+
+  const headerPrefix = classHeader ? `${classHeader}\n` : "";
+  const results: BodyChunkResult[] = [];
+  let pending: BodyChunkResult[] = [];
+
+  const flush = () => {
+    if (pending.length === 0) return;
+    if (pending.length === 1) {
+      results.push(pending[0]);
+    } else {
+      // Merge pending chunks: strip headers, join body lines, re-add single header
+      const bodyParts = pending.map((c) =>
+        classHeader && c.content.startsWith(headerPrefix) ? c.content.slice(headerPrefix.length) : c.content,
+      );
+      const mergedContent = `${headerPrefix}${bodyParts.join("\n")}`.trim();
+      const mergedRanges = pending.flatMap((c) => c.lineRanges ?? []);
+      results.push({
+        content: mergedContent,
+        startLine: Math.min(...pending.map((c) => c.startLine)),
+        endLine: Math.max(...pending.map((c) => c.endLine)),
+        lineRanges: mergedRanges,
+      });
+    }
+    pending = [];
+  };
+
+  for (const chunk of chunks) {
+    const isSmall = chunk.content.length < BODY_MERGE_THRESHOLD;
+    if (isSmall) {
+      // Check if adding to pending would exceed maxChunkSize
+      const pendingSize = pending.reduce((sum, c) => sum + c.content.length, 0);
+      if (pendingSize + chunk.content.length > maxChunkSize && pending.length > 0) {
+        flush();
+      }
+      pending.push(chunk);
+    } else {
+      flush();
+      results.push(chunk);
+    }
+  }
+  flush();
+
+  return results;
+}
+
 /**
  * Extract body chunks from a TypeScript class with AST-based semantic grouping.
  */
@@ -329,7 +389,7 @@ export function extractBodyChunks(ctx: HookContext): BodyChunkResult[] {
     }
   }
 
-  return results;
+  return mergeSmallBodyChunks(results, classHeader, ctx.config.maxChunkSize);
 }
 
 // ── ChunkingHook export ────────────────────────────────────────────

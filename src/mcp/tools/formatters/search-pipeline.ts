@@ -1,6 +1,7 @@
 // src/mcp/tools/formatters/search-pipeline.ts
 import { calculateFetchLimit, filterResultsByGlob } from "../../../core/adapters/qdrant/filters/index.js";
 import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/contracts/collection.js";
+import { BASE_PAYLOAD_SIGNALS } from "../../../core/contracts/payload-signals.js";
 import type { Reranker, RerankMode } from "../../../core/search/reranker.js";
 
 interface SearchResult {
@@ -55,20 +56,19 @@ export function applyPostProcessing(
 
 export function formatSearchResults(results: SearchResult[], metaOnly?: boolean): ToolResult {
   if (metaOnly) {
-    const metaResults = results.map((r) => ({
-      score: r.score,
-      relativePath: r.payload?.relativePath,
-      startLine: r.payload?.startLine,
-      endLine: r.payload?.endLine,
-      language: r.payload?.language,
-      chunkType: r.payload?.chunkType,
-      name: r.payload?.name,
-      imports: r.payload?.imports,
-      git: r.payload?.git,
-      ...((r as SearchResult & { rankingOverlay?: unknown }).rankingOverlay
-        ? { rankingOverlay: (r as SearchResult & { rankingOverlay?: unknown }).rankingOverlay }
-        : {}),
-    }));
+    const metaResults = results.map((r) => {
+      const meta: Record<string, unknown> = { score: r.score };
+      for (const signal of BASE_PAYLOAD_SIGNALS) {
+        if (r.payload?.[signal.key] !== undefined) {
+          meta[signal.key] = r.payload[signal.key];
+        }
+      }
+      if (r.payload?.git) meta.git = r.payload.git;
+      if ((r as SearchResult & { rankingOverlay?: unknown }).rankingOverlay) {
+        meta.rankingOverlay = (r as SearchResult & { rankingOverlay?: unknown }).rankingOverlay;
+      }
+      return meta;
+    });
     return { content: [{ type: "text", text: JSON.stringify(metaResults, null, 2) }] };
   }
 
