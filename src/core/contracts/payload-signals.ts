@@ -14,4 +14,5 @@ export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
   { key: "parentName", type: "string", description: "Parent symbol name" },
   { key: "parentType", type: "string", description: "Parent symbol type" },
   { key: "imports", type: "string[]", description: "File-level imports inherited by all chunks" },
+  { key: "symbolId", type: "string", description: "Unique symbol identifier (e.g. 'MyClass.processData')" },
 ];
