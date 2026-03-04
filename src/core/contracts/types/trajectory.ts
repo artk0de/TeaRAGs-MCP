@@ -25,6 +25,8 @@ export interface PayloadSignalDescriptor {
   description: string;
   /** Optional: declare what collection-level stats to compute for this signal */
   stats?: SignalStatsRequest;
+  /** Include in metaOnly results even without overlay mask. Default: false. */
+  essential?: boolean;
 }
 
 /** Computed statistics for a single signal across the collection. */
