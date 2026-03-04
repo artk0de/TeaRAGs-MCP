@@ -583,8 +583,8 @@ export class QdrantManager {
   }
 
   /**
-   * Performs hybrid search combining semantic vector search with sparse vector (keyword) search
-   * using Reciprocal Rank Fusion (RRF) to combine results
+   * Performs hybrid search combining semantic vector search with sparse vector (keyword) search.
+   * Runs both searches in parallel, normalizes scores via min-max, and blends with semanticWeight.
    */
   async hybridSearch(
     collectionName: string,
@@ -592,7 +592,7 @@ export class QdrantManager {
     sparseVector: SparseVector,
     limit = 5,
     filter?: Record<string, unknown>,
-    _semanticWeight = 0.7,
+    semanticWeight = 0.7,
   ): Promise<SearchResult[]> {
     // Convert simple key-value filter to Qdrant filter format
     let qdrantFilter;
@@ -609,38 +609,62 @@ export class QdrantManager {
       }
     }
 
-    // Calculate prefetch limits based on weights
-    // We fetch more results than needed to ensure good fusion results
-    const prefetchLimit = Math.max(20, limit * 4);
+    const fetchLimit = Math.max(20, limit * 4);
+    const sparseWeight = 1 - semanticWeight;
 
     try {
-      const results = await this.client.query(collectionName, {
-        prefetch: [
-          {
-            query: denseVector,
-            using: "dense",
-            limit: prefetchLimit,
-            filter: qdrantFilter,
-          },
-          {
-            query: sparseVector,
-            using: "text",
-            limit: prefetchLimit,
-            filter: qdrantFilter,
-          },
-        ],
-        query: {
-          fusion: "rrf",
-        },
-        limit,
-        with_payload: true,
-      });
+      // Run dense and sparse searches in parallel
+      const [denseResults, sparseResults] = await Promise.all([
+        this.client.search(collectionName, {
+          vector: { name: "dense", vector: denseVector },
+          limit: fetchLimit,
+          filter: qdrantFilter,
+          with_payload: true,
+        }),
+        this.client.search(collectionName, {
+          vector: { name: "text", vector: sparseVector },
+          limit: fetchLimit,
+          filter: qdrantFilter,
+          with_payload: true,
+        }),
+      ]);
 
-      return results.points.map((result) => ({
-        id: result.id,
-        score: result.score,
-        payload: (result.payload as Record<string, unknown> | null | undefined) ?? undefined,
-      }));
+      // Min-max normalize scores per source
+      const normDense = minMaxNorm(denseResults.map((r) => r.score));
+      const normSparse = minMaxNorm(sparseResults.map((r) => r.score));
+
+      // Build score maps: id -> normalized score
+      const denseScores = new Map<string, number>();
+      for (let i = 0; i < denseResults.length; i++) {
+        denseScores.set(String(denseResults[i].id), normDense[i]);
+      }
+      const sparseScores = new Map<string, number>();
+      for (let i = 0; i < sparseResults.length; i++) {
+        sparseScores.set(String(sparseResults[i].id), normSparse[i]);
+      }
+
+      // Merge: union of all IDs, weighted combination
+      const allIds = new Set([...denseScores.keys(), ...sparseScores.keys()]);
+      const merged: SearchResult[] = [];
+
+      for (const id of allIds) {
+        const ds = denseScores.get(id) ?? 0;
+        const ss = sparseScores.get(id) ?? 0;
+        const score = semanticWeight * ds + sparseWeight * ss;
+
+        // Get payload from whichever source has it
+        const point = denseResults.find((r) => String(r.id) === id) ?? sparseResults.find((r) => String(r.id) === id);
+
+        merged.push({
+          id: point!.id,
+          score,
+          payload: (point!.payload as Record<string, unknown> | null | undefined) ?? undefined,
+        });
+      }
+
+      // Sort by fused score descending, take top limit
+      merged.sort((a, b) => b.score - a.score);
+      return merged.slice(0, limit);
     } catch (error: unknown) {
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
@@ -738,4 +762,14 @@ export class QdrantManager {
       );
     }
   }
+}
+
+/** Min-max normalize an array of scores to [0, 1]. */
+function minMaxNorm(scores: number[]): number[] {
+  if (scores.length === 0) return [];
+  const min = Math.min(...scores);
+  const max = Math.max(...scores);
+  const range = max - min;
+  if (range === 0) return scores.map(() => 1);
+  return scores.map((s) => (s - min) / range);
 }
