@@ -198,6 +198,8 @@ export class TreeSitterChunker implements CodeChunker {
                 for (const subChunk of subChunks) {
                   chunks.push({
                     ...subChunk,
+                    // Offset arithmetic — not a direct endLine assignment, so computeEndLine not needed.
+                    // The fallback chunker produces its own relative line offsets within the sub-content.
                     startLine: childNode.startPosition.row + 1 + subChunk.startLine - 1,
                     endLine: childNode.endPosition.row + 1 + subChunk.endLine - 1,
                     metadata: {
@@ -297,6 +299,8 @@ export class TreeSitterChunker implements CodeChunker {
             for (const subChunk of subChunks) {
               chunks.push({
                 ...subChunk,
+                // Offset arithmetic — not a direct endLine assignment, so computeEndLine not needed.
+                // The fallback chunker produces its own relative line offsets within the sub-content.
                 startLine: node.startPosition.row + 1 + subChunk.startLine - 1,
                 endLine: node.startPosition.row + 1 + subChunk.endLine - 1,
                 metadata: {

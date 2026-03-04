@@ -8,17 +8,7 @@
 import type Parser from "tree-sitter";
 
 import type { ChunkingHook } from "../types.js";
-
-/**
- * Find the class_body node within a class_declaration container.
- */
-function findClassBody(containerNode: Parser.SyntaxNode): Parser.SyntaxNode | null {
-  for (let i = 0; i < containerNode.namedChildCount; i++) {
-    const child = containerNode.namedChild(i);
-    if (child?.type === "class_body") return child;
-  }
-  return null;
-}
+import { findClassBody } from "./utils.js";
 
 /**
  * Find the class_body child node matching a method node by row position.
