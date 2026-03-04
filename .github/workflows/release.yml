@@ -50,6 +50,14 @@ jobs:
       - name: Run provider verification tests
         run: npm run test:providers
 
+      - name: Verify npm token
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
+          npm whoami --registry https://registry.npmjs.org/
+          rm .npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
