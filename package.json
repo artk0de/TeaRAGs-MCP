@@ -60,6 +60,7 @@
     "openai": "^4.104.0",
     "picomatch": "^4.0.3",
     "remark": "^15.0.1",
+    "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
     "tree-sitter": "^0.25.0",
     "tree-sitter-bash": "^0.25.1",
