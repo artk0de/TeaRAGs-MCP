@@ -109,16 +109,16 @@ describe("formatSearchResults", () => {
           chunkType: "function",
           name: "foo",
           imports: ["bar"],
-          git: { dominantAuthor: "John" },
+          git: { file: { dominantAuthor: "John", ageDays: 10, commitCount: 5 } },
           content: "should not appear in metaOnly",
         },
       },
     ];
-    const output = formatSearchResults(results, true);
+    const output = formatSearchResults(results, true, ["git.file.ageDays", "git.file.commitCount"]);
     const parsed = JSON.parse(output.content[0].text);
     expect(parsed[0]).not.toHaveProperty("content");
     expect(parsed[0]).toHaveProperty("relativePath", "src/a.ts");
-    expect(parsed[0]).toHaveProperty("git");
+    expect(parsed[0].git).toEqual({ file: { ageDays: 10, commitCount: 5 } });
     expect(parsed[0]).toHaveProperty("imports");
   });
 

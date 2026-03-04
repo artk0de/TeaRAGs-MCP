@@ -2,6 +2,7 @@
 import { calculateFetchLimit, filterResultsByGlob } from "../../../core/adapters/qdrant/filters/index.js";
 import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/contracts/collection.js";
 import { BASE_PAYLOAD_SIGNALS } from "../../../core/contracts/payload-signals.js";
+import type { RankingOverlay } from "../../../core/contracts/types/reranker.js";
 import type { Reranker, RerankMode } from "../../../core/search/reranker.js";
 
 interface SearchResult {
@@ -52,12 +53,6 @@ export function applyPostProcessing(
   }
 
   return filtered.slice(0, options.limit);
-}
-
-interface RankingOverlay {
-  preset: string;
-  file?: Record<string, unknown>;
-  chunk?: Record<string, unknown>;
 }
 
 function hasOverlayData(overlay: RankingOverlay): boolean {
@@ -120,7 +115,8 @@ export function formatSearchResults(
         meta.preset = overlay.preset;
       } else if (fullGit) {
         // No overlay or empty overlay: filter to essential fields
-        meta.git = filterGitByEssential(fullGit, essentialTrajectoryFields ?? []);
+        const filtered = filterGitByEssential(fullGit, essentialTrajectoryFields ?? []);
+        if (Object.keys(filtered).length > 0) meta.git = filtered;
         if (overlay?.preset) meta.preset = overlay.preset;
       }
       // rankingOverlay intentionally excluded
