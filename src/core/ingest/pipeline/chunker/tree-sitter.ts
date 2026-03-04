@@ -34,6 +34,15 @@ export class TreeSitterChunker implements CodeChunker {
     return parentName ? `${parentName}.${name}` : name;
   }
 
+  /**
+   * Compute 1-based endLine from a tree-sitter node.
+   * tree-sitter endPosition.row is inclusive (same row for single-line nodes),
+   * so we ensure endLine > startLine for at least 1 line span.
+   */
+  private computeEndLine(node: Parser.SyntaxNode): number {
+    return Math.max(node.startPosition.row + 2, node.endPosition.row + 1);
+  }
+
   constructor(private readonly config: ChunkerConfig) {
     this.fallbackChunker = new CharacterChunker(config);
     // NO parser initialization here - lazy load on demand!
@@ -212,7 +221,7 @@ export class TreeSitterChunker implements CodeChunker {
               chunks.push({
                 content: finalContent,
                 startLine,
-                endLine: childNode.endPosition.row + 1,
+                endLine: this.computeEndLine(childNode),
                 metadata: {
                   filePath,
                   language,
@@ -256,7 +265,7 @@ export class TreeSitterChunker implements CodeChunker {
                   chunks.push({
                     content: bodyContent.trim(),
                     startLine: node.startPosition.row + 1,
-                    endLine: node.endPosition.row + 1,
+                    endLine: this.computeEndLine(node),
                     metadata: {
                       filePath,
                       language,
@@ -300,7 +309,7 @@ export class TreeSitterChunker implements CodeChunker {
         chunks.push({
           content: content.trim(),
           startLine: node.startPosition.row + 1,
-          endLine: node.endPosition.row + 1,
+          endLine: this.computeEndLine(node),
           metadata: {
             filePath,
             language,

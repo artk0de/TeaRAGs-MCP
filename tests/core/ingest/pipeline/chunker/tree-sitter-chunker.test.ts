@@ -85,6 +85,19 @@ interface Order {
       const chunks = await chunker.chunk(code, "test.ts", "typescript");
       expect(chunks.length).toBeGreaterThanOrEqual(1);
     });
+
+    it("should produce at least 1 line for single-line type aliases", async () => {
+      const code = `
+export type IndexingStatus = "not_indexed" | "indexing" | "indexed";
+
+export type EnrichmentStatusValue = "pending" | "in_progress" | "completed" | "partial" | "failed";
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+      for (const chunk of chunks) {
+        expect(chunk.endLine).toBeGreaterThan(chunk.startLine);
+      }
+    });
   });
 
   describe("chunk - Python", () => {
