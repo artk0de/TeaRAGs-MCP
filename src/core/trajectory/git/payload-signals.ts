@@ -17,12 +17,14 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     type: "number",
     description: "Total commits modifying this file",
     stats: { percentiles: [25, 50, 75, 95] },
+    essential: true,
   },
   {
     key: "git.file.ageDays",
     type: "number",
     description: "Days since last modification",
     stats: { percentiles: [95] },
+    essential: true,
   },
   {
     key: "git.file.dominantAuthor",
@@ -94,12 +96,14 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     type: "number",
     description: "Commits touching this specific chunk",
     stats: { percentiles: [95] },
+    essential: true,
   },
   {
     key: "git.chunk.ageDays",
     type: "number",
     description: "Days since last modification to this chunk",
     stats: { percentiles: [95] },
+    essential: true,
   },
   {
     key: "git.chunk.contributorCount",
