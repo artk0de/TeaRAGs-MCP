@@ -20,6 +20,7 @@
 import type Parser from "tree-sitter";
 
 import type { BodyChunkResult, ChunkingHook, HookContext } from "../types.js";
+import { findClassBody } from "./utils.js";
 
 // ── Classification ────────────────────────────────────────────────
 
@@ -141,17 +142,6 @@ function extractClassHeader(containerNode: Parser.SyntaxNode, codeLines: string[
 }
 
 // ── Body chunk extraction ─────────────────────────────────────────
-
-/**
- * Find the class_body node within a class_declaration container.
- */
-function findClassBody(containerNode: Parser.SyntaxNode): Parser.SyntaxNode | null {
-  for (let i = 0; i < containerNode.namedChildCount; i++) {
-    const child = containerNode.namedChild(i);
-    if (child?.type === "class_body") return child;
-  }
-  return null;
-}
 
 /**
  * Collect non-excluded comment nodes immediately preceding a given node.
