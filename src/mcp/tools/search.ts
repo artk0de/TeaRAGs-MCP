@@ -23,6 +23,7 @@ export interface SearchToolDependencies {
   embeddings: EmbeddingProvider;
   reranker: Reranker;
   schemaBuilder: SchemaBuilder;
+  essentialTrajectoryFields: string[];
 }
 
 export function registerSearchTools(server: McpServer, deps: SearchToolDependencies): void {

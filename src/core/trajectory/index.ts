@@ -63,6 +63,13 @@ export class TrajectoryRegistry {
     return signals;
   }
 
+  /** Payload signal keys marked as essential (always shown in metaOnly). */
+  getEssentialPayloadKeys(): string[] {
+    return this.getAllPayloadSignalDescriptors()
+      .filter((s) => s.essential)
+      .map((s) => s.key);
+  }
+
   /** All derived signal descriptors from all registered trajectories. */
   getAllDerivedSignals(): DerivedSignalDescriptor[] {
     const signals: DerivedSignalDescriptor[] = [];
