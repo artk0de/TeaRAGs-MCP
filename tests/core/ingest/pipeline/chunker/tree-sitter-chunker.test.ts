@@ -90,6 +90,79 @@ interface Order {
       expect(chunks.length).toBeGreaterThanOrEqual(1);
     });
 
+    it("should merge adjacent small type aliases and interfaces into a block", async () => {
+      const code = `
+export type IndexingStatus = "not_indexed" | "indexing" | "indexed";
+
+export type EnrichmentStatusValue = "pending" | "in_progress" | "completed" | "partial" | "failed";
+
+export type ProgressCallback = (progress: ProgressUpdate) => void;
+
+export interface WorkItem { path: string; content: string; language: string; }
+
+export interface DeleteItem { id: string; hash: string; }
+
+export interface LargeInterface {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  isActive: boolean;
+  metadata: Record<string, unknown>;
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+
+      // The 5 small declarations should be merged into 1 block
+      // LargeInterface (8+ lines) should remain separate
+      const blockChunks = chunks.filter((c) => c.metadata.chunkType === "block" && !c.metadata.parentName);
+      const interfaceChunks = chunks.filter((c) => c.metadata.chunkType === "interface");
+
+      // Small declarations merged into 1 block
+      expect(blockChunks.length).toBe(1);
+      expect(blockChunks[0].content).toContain("IndexingStatus");
+      expect(blockChunks[0].content).toContain("DeleteItem");
+
+      // Large interface stays separate
+      expect(interfaceChunks.some((c) => c.metadata.name === "LargeInterface")).toBe(true);
+    });
+
+    it("should not merge small chunks separated by large declarations", async () => {
+      const code = `
+export type SmallTypeA = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h";
+
+export interface LargeInterface {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  isActive: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export type SmallTypeB = "x" | "y" | "z" | "w" | "v" | "u" | "t" | "s";
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+
+      // SmallTypeA and SmallTypeB should NOT be merged (LargeInterface between them)
+      // Each small type stays individual (no merge partner)
+      // Merged blocks have "..." suffix in name; individual blocks do not
+      const mergedBlocks = chunks.filter(
+        (c) => c.metadata.chunkType === "block" && !c.metadata.parentName && c.metadata.name?.endsWith("..."),
+      );
+      expect(mergedBlocks.length).toBe(0); // No merged blocks
+
+      // Individual type aliases still exist as separate chunks
+      expect(chunks.some((c) => c.metadata.name === "SmallTypeA")).toBe(true);
+      expect(chunks.some((c) => c.metadata.name === "SmallTypeB")).toBe(true);
+    });
+
     it("should produce at least 1 line for single-line type aliases", async () => {
       const code = `
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed";
