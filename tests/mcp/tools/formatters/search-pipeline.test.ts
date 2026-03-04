@@ -174,6 +174,131 @@ describe("formatSearchResults", () => {
     const output = formatSearchResults([], false);
     expect(output.content[0].text).toBe("[]");
   });
+
+  it("should mask git by overlay when metaOnly + rankingOverlay has data", () => {
+    const results = [
+      {
+        id: "1",
+        score: 0.9,
+        payload: {
+          relativePath: "src/a.ts",
+          git: {
+            file: { ageDays: 42, commitCount: 18, bugFixRate: 33, churnVolatility: 0.65 },
+            chunk: { commitCount: 7, churnRatio: 0.39, ageDays: 5 },
+          },
+        },
+        rankingOverlay: {
+          preset: "hotspots",
+          file: { bugFixRate: 33, churnVolatility: 0.65 },
+          chunk: { commitCount: 7, churnRatio: 0.39 },
+        },
+      },
+    ] as any[];
+    const output = formatSearchResults(results, true, [
+      "git.file.ageDays",
+      "git.file.commitCount",
+      "git.chunk.ageDays",
+      "git.chunk.commitCount",
+    ]);
+    const parsed = JSON.parse(output.content[0].text);
+    const meta = parsed[0];
+
+    // git masked to overlay data only
+    expect(meta.git).toEqual({
+      file: { bugFixRate: 33, churnVolatility: 0.65 },
+      chunk: { commitCount: 7, churnRatio: 0.39 },
+    });
+    // preset promoted to top-level
+    expect(meta.preset).toBe("hotspots");
+    // rankingOverlay removed
+    expect(meta).not.toHaveProperty("rankingOverlay");
+  });
+
+  it("should use essential fields when metaOnly + no rankingOverlay", () => {
+    const results = [
+      {
+        id: "1",
+        score: 0.9,
+        payload: {
+          relativePath: "src/a.ts",
+          git: {
+            file: { ageDays: 42, commitCount: 18, bugFixRate: 33, churnVolatility: 0.65 },
+            chunk: { commitCount: 7, churnRatio: 0.39, ageDays: 5 },
+          },
+        },
+      },
+    ] as any[];
+    const output = formatSearchResults(results, true, [
+      "git.file.ageDays",
+      "git.file.commitCount",
+      "git.chunk.ageDays",
+      "git.chunk.commitCount",
+    ]);
+    const parsed = JSON.parse(output.content[0].text);
+    const meta = parsed[0];
+
+    // git filtered to essential fields only
+    expect(meta.git).toEqual({
+      file: { ageDays: 42, commitCount: 18 },
+      chunk: { ageDays: 5, commitCount: 7 },
+    });
+    expect(meta).not.toHaveProperty("preset");
+    expect(meta).not.toHaveProperty("rankingOverlay");
+  });
+
+  it("should use essential fields when metaOnly + empty overlay (relevance)", () => {
+    const results = [
+      {
+        id: "1",
+        score: 0.9,
+        payload: {
+          relativePath: "src/a.ts",
+          git: {
+            chunk: { commitCount: 7, churnRatio: 0.39, ageDays: 5 },
+          },
+        },
+        rankingOverlay: { preset: "relevance" },
+      },
+    ] as any[];
+    const output = formatSearchResults(results, true, [
+      "git.file.ageDays",
+      "git.file.commitCount",
+      "git.chunk.ageDays",
+      "git.chunk.commitCount",
+    ]);
+    const parsed = JSON.parse(output.content[0].text);
+    const meta = parsed[0];
+
+    // git filtered to essential fields
+    expect(meta.git).toEqual({ chunk: { ageDays: 5, commitCount: 7 } });
+    expect(meta.preset).toBe("relevance");
+    expect(meta).not.toHaveProperty("rankingOverlay");
+  });
+
+  it("should not mask git when metaOnly=false", () => {
+    const results = [
+      {
+        id: "1",
+        score: 0.9,
+        payload: {
+          relativePath: "src/a.ts",
+          git: { chunk: { commitCount: 7, churnRatio: 0.39 } },
+        },
+        rankingOverlay: { preset: "hotspots", chunk: { commitCount: 7 } },
+      },
+    ] as any[];
+    const output = formatSearchResults(results, false, [
+      "git.file.ageDays",
+      "git.file.commitCount",
+      "git.chunk.ageDays",
+      "git.chunk.commitCount",
+    ]);
+    const parsed = JSON.parse(output.content[0].text);
+
+    // Full results unchanged
+    expect(parsed[0].payload.git.chunk.churnRatio).toBe(0.39);
+    expect(parsed[0].rankingOverlay).toBeDefined();
+  });
 });
 
 describe("validateCollectionExists", () => {
