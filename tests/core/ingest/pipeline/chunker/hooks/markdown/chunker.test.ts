@@ -371,4 +371,25 @@ describe("MarkdownChunker", () => {
       expect(codeChunks.length).toBe(1);
     });
   });
+
+  describe("oversized sections", () => {
+    it("should split oversized sections using character fallback", async () => {
+      const smallChunker = new MarkdownChunker({ maxChunkSize: 100 });
+
+      const longContent = Array(30)
+        .fill("This line of content is used to exceed the maximum chunk size threshold.")
+        .join("\n");
+
+      const code = [`# Big Section`, "", longContent].join("\n");
+
+      const chunks = await smallChunker.chunk(code, "big.md", "markdown");
+
+      // Should produce multiple sub-chunks from the oversized section
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(chunk.metadata.isDocumentation).toBe(true);
+        expect(chunk.metadata.name).toBe("Big Section");
+      }
+    });
+  });
 });
