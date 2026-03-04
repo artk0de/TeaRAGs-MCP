@@ -1725,7 +1725,7 @@ class DataProcessor {
       const chunks = await chunker.chunk(code, "doc.md", "markdown");
 
       // inlineCode nodes have value but no children and type != "text",
-      // so extractTextFromMdastNode returns "" for them.
+      // so MarkdownChunker's extractText returns "" for them.
       // The heading name will contain the surrounding text but not the code value.
       expect(chunks.length).toBeGreaterThan(0);
       const section = chunks.find((c) => c.metadata.name?.includes("Using the"));
