@@ -781,31 +781,92 @@ end
   });
 
   describe("chunk - Markdown", () => {
-    it("should chunk markdown by sections", async () => {
-      const code = `
-# Introduction
+    it("should only split on h1/h2 boundaries, including h3+ in parent section", async () => {
+      const code = `# Introduction
 
-This is the introduction section with some content.
+This is the introduction section with some content that is long enough.
 
 ## Getting Started
 
-Here is how to get started with the project.
+Here is how to get started with the project and some extra text.
 
 ### Installation
 
-Run npm install to install dependencies.
+Run npm install to install dependencies. This is a subsection of Getting Started.
+
+### Configuration
+
+Configure the project by editing the config file. Also part of Getting Started.
 
 ## Usage
 
-Use the library like this.
-      `;
+Use the library like this. This is a separate top-level section.
+`;
 
       const chunks = await chunker.chunk(code, "README.md", "markdown");
-      expect(chunks.length).toBeGreaterThan(0);
+      const sectionChunks = chunks.filter((c) => c.metadata.chunkType === "block" && c.metadata.name);
 
-      // Should have section chunks
-      const sectionChunks = chunks.filter((c) => c.metadata.name);
-      expect(sectionChunks.length).toBeGreaterThan(0);
+      // Should have 3 section chunks: Introduction, Getting Started (with h3s), Usage
+      const sectionNames = sectionChunks.map((c) => c.metadata.name);
+      expect(sectionNames).toContain("Introduction");
+      expect(sectionNames).toContain("Getting Started");
+      expect(sectionNames).toContain("Usage");
+
+      // h3 headings should NOT create separate chunks
+      expect(sectionNames).not.toContain("Installation");
+      expect(sectionNames).not.toContain("Configuration");
+
+      // Getting Started chunk should include h3 content
+      const gettingStarted = sectionChunks.find((c) => c.metadata.name === "Getting Started");
+      expect(gettingStarted).toBeDefined();
+      expect(gettingStarted!.content).toContain("Installation");
+      expect(gettingStarted!.content).toContain("Configuration");
+      expect(gettingStarted!.content).toContain("npm install");
+      expect(gettingStarted!.content).toContain("config file");
+    });
+
+    it("should treat document with only h3+ headings as single chunk", async () => {
+      const code = `### Section One
+
+This is content under a h3 heading with enough text to meet minimum size.
+
+### Section Two
+
+This is more content under another h3 heading with enough text to meet minimum.
+
+### Section Three
+
+Even more content under a third h3 heading with plenty of text for the chunk.
+`;
+
+      const chunks = await chunker.chunk(code, "notes.md", "markdown");
+
+      // No h1/h2 → no section boundaries → single chunk
+      expect(chunks.length).toBe(1);
+      expect(chunks[0].content).toContain("Section One");
+      expect(chunks[0].content).toContain("Section Two");
+      expect(chunks[0].content).toContain("Section Three");
+    });
+
+    it("should include h3 before first h2 in preamble", async () => {
+      const code = `Some intro text that appears before any major heading in the document.
+
+### A Minor Heading
+
+Content under the minor heading that is part of the preamble section.
+
+## First Real Section
+
+This is the first real section with enough content for a valid chunk size.
+`;
+
+      const chunks = await chunker.chunk(code, "README.md", "markdown");
+
+      // Preamble should exist and include the h3 content
+      const preamble = chunks.find((c) => c.metadata.name === "Preamble");
+      expect(preamble).toBeDefined();
+      expect(preamble!.content).toContain("A Minor Heading");
+      expect(preamble!.content).toContain("minor heading that is part");
     });
 
     it("should extract code blocks from markdown", async () => {
