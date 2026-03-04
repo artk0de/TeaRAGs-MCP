@@ -8,5 +8,6 @@ export class OnboardingPreset implements RerankPreset {
   readonly weights: ScoringWeights = { similarity: 0.4, documentation: 0.3, stability: 0.3 };
   readonly overlayMask: OverlayMask = {
     file: ["commitCount"],
+    chunk: ["commitCount"],
   };
 }

@@ -7,6 +7,7 @@ import {
   RELEVANCE_PRESETS,
   resolvePresets,
 } from "../../../../src/core/search/rerank/presets/index.js";
+import { OnboardingPreset } from "../../../../src/core/trajectory/git/rerank/presets/onboarding.js";
 
 const EMPTY_MASK = {} as const;
 
@@ -27,6 +28,16 @@ describe("RELEVANCE_PRESETS", () => {
   it("is a single RelevancePreset instance with tools[]", () => {
     expect(RELEVANCE_PRESETS).toHaveLength(1);
     expect(RELEVANCE_PRESETS[0].tools).toEqual(["semantic_search", "search_code"]);
+  });
+});
+
+describe("OnboardingPreset overlay mask", () => {
+  it("includes chunk-level fields for chunk-only results", () => {
+    const preset = new OnboardingPreset();
+    // stability weight uses commitCount — overlay mask must include chunk.commitCount
+    // so chunk-only results still show raw signal data
+    expect(preset.overlayMask.chunk).toBeDefined();
+    expect(preset.overlayMask.chunk).toContain("commitCount");
   });
 });
 
