@@ -8,6 +8,8 @@ import {
   resolvePresets,
 } from "../../../../src/core/search/rerank/presets/index.js";
 import { OnboardingPreset } from "../../../../src/core/trajectory/git/rerank/presets/onboarding.js";
+import { RecentPreset } from "../../../../src/core/trajectory/git/rerank/presets/recent.js";
+import { StablePreset } from "../../../../src/core/trajectory/git/rerank/presets/stable.js";
 
 const EMPTY_MASK = {} as const;
 
@@ -38,6 +40,66 @@ describe("OnboardingPreset overlay mask", () => {
     // so chunk-only results still show raw signal data
     expect(preset.overlayMask.chunk).toBeDefined();
     expect(preset.overlayMask.chunk).toContain("commitCount");
+  });
+});
+
+describe("StablePreset — multi-signal stability ranking", () => {
+  const preset = new StablePreset();
+
+  it("uses multiple signals beyond just stability", () => {
+    const keys = Object.keys(preset.weights);
+    expect(keys).toContain("similarity");
+    expect(keys).toContain("stability");
+    expect(keys).toContain("age");
+    expect(keys.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("similarity remains dominant weight", () => {
+    expect(preset.weights.similarity).toBeGreaterThanOrEqual(0.4);
+    const nonSimilarity = Object.entries(preset.weights)
+      .filter(([k]) => k !== "similarity")
+      .reduce((sum, [, v]) => sum + (v ?? 0), 0);
+    expect(preset.weights.similarity).toBeGreaterThan(nonSimilarity);
+  });
+
+  it("overlay mask covers all signal sources", () => {
+    // file-level: commitCount (stability), ageDays (age), churnVolatility (volatility)
+    expect(preset.overlayMask.file).toContain("commitCount");
+    expect(preset.overlayMask.file).toContain("ageDays");
+    expect(preset.overlayMask.file).toContain("churnVolatility");
+    // chunk-level mirrors
+    expect(preset.overlayMask.chunk).toContain("commitCount");
+    expect(preset.overlayMask.chunk).toContain("ageDays");
+  });
+});
+
+describe("RecentPreset — multi-signal recency ranking", () => {
+  const preset = new RecentPreset();
+
+  it("uses multiple signals beyond just recency", () => {
+    const keys = Object.keys(preset.weights);
+    expect(keys).toContain("similarity");
+    expect(keys).toContain("recency");
+    expect(keys).toContain("burstActivity");
+    expect(keys.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("similarity remains dominant weight", () => {
+    expect(preset.weights.similarity).toBeGreaterThanOrEqual(0.4);
+    const nonSimilarity = Object.entries(preset.weights)
+      .filter(([k]) => k !== "similarity")
+      .reduce((sum, [, v]) => sum + (v ?? 0), 0);
+    expect(preset.weights.similarity).toBeGreaterThan(nonSimilarity);
+  });
+
+  it("overlay mask covers all signal sources", () => {
+    // file-level: ageDays (recency), recencyWeightedFreq (burst), changeDensity (density)
+    expect(preset.overlayMask.file).toContain("ageDays");
+    expect(preset.overlayMask.file).toContain("recencyWeightedFreq");
+    expect(preset.overlayMask.file).toContain("changeDensity");
+    // chunk-level mirrors
+    expect(preset.overlayMask.chunk).toContain("ageDays");
+    expect(preset.overlayMask.chunk).toContain("recencyWeightedFreq");
   });
 });
 
