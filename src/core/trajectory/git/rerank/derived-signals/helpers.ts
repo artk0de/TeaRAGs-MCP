@@ -88,7 +88,15 @@ export function hasChunkData(payload: Record<string, unknown>): boolean {
 /** Get alpha from payload's chunk and file commit counts. */
 export function payloadAlpha(payload: Record<string, unknown>): number {
   const chunkCC = chunkField(payload, "commitCount");
-  const fileCC = fileNum(payload, "commitCount");
+  if (chunkCC === undefined || chunkCC <= 0) return 0;
+
+  // Distinguish "file data absent" from "fileCount = 0":
+  // fileField returns undefined when git.file.commitCount doesn't exist,
+  // meaning chunk-only payload → trust chunk data fully (alpha = 1).
+  const rawFileCC = fileField(payload, "commitCount");
+  if (rawFileCC === undefined) return 1;
+
+  const fileCC = typeof rawFileCC === "number" ? rawFileCC : 0;
   return computeAlpha(chunkCC, fileCC);
 }
 

@@ -192,8 +192,10 @@ export class Reranker {
 
   /**
    * Extract all derived signal values from a payload.
-   * Builds per-descriptor bounds record from source-level bounds,
-   * applying defaultBound as floor per-source.
+   * Builds per-descriptor bounds record from source-level bounds.
+   * When collectionStats is loaded, sourceBounds already contains max(batchP95, collP95)
+   * which is fully adaptive — no static floor needed.
+   * Without collectionStats, defaultBound serves as a static fallback floor.
    */
   private extractAllDerived(
     payload: Record<string, unknown>,
@@ -205,7 +207,10 @@ export class Reranker {
       const bounds: Record<string, number> = {};
       for (const source of d.sources) {
         const sourceBound = sourceBounds.get(source) ?? 0;
-        bounds[source] = Math.max(sourceBound, d.defaultBound ?? 1);
+        // With collection stats: adaptive bounds only (minimal floor of 1 for safety).
+        // Without stats: defaultBound as static fallback floor.
+        const floor = this.collectionStats ? 1 : (d.defaultBound ?? 1);
+        bounds[source] = Math.max(sourceBound, floor);
       }
       const dampeningThreshold = this.resolveDampeningThreshold(d);
       signals[d.name] = d.extract(payload, { bounds, dampeningThreshold });

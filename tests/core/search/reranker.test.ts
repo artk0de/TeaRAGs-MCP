@@ -1508,6 +1508,26 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     expect(ranked[0].score).toBeLessThan(0.2);
   });
 
+  it("does NOT use defaultBound as floor when collectionStats loaded (collP95 < defaultBound)", () => {
+    const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
+
+    // Collection p95=15 (young codebase, much less than defaultBound=365)
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map([["git.file.ageDays", { count: 100, percentiles: { 95: 15 } }]]),
+      computedAt: Date.now(),
+    };
+    reranker.setCollectionStats(collectionStats);
+
+    // Batch: ageDays=10 → batchP95=10
+    // Current (defaultBound as floor): bound = max(10, 365) = 365 → age=10/365 = 0.027
+    // Expected (adaptive):             bound = max(10, 15)  = 15  → age=10/15  = 0.667
+    const results = [makeResult(0.9, { file: { ageDays: 10 } })];
+    const ranked = reranker.rerank(results, "ageOnly", "semantic_search");
+
+    // With adaptive bounds, age=10/15≈0.667. With static floor, age=10/365≈0.027.
+    expect(ranked[0].score).toBeGreaterThan(0.5);
+  });
+
   it("falls back to defaultBound when no collection stats exist", () => {
     const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
     // No setCollectionStats

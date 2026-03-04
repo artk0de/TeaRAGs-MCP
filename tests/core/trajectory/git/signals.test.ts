@@ -93,10 +93,10 @@ describe("gitDerivedSignals", () => {
       expect(d.extract({ ...fakePayload({ file: { commitCount: 10 } }), chunkType: "function" })).toBe(0);
     });
 
-    it("chunkChurn: 0 when no file commitCount (alpha=0)", () => {
+    it("chunkChurn: uses chunk data when file absent (alpha=1)", () => {
       const d = gitDerivedSignals.find((s) => s.name === "chunkChurn")!;
-      // chunkChurn is dampened by alpha. No file commitCount → alpha=0 → 0
-      expect(d.extract(fakePayload({ chunk: { commitCount: 15 } }))).toBe(0);
+      // chunk-only: alpha=1 → normalize(15, 30) * 1 = 0.5
+      expect(d.extract(fakePayload({ chunk: { commitCount: 15 } }))).toBeCloseTo(0.5, 2);
     });
 
     it("chunkChurn: normalized and alpha-dampened when both file+chunk exist", () => {
@@ -235,6 +235,52 @@ describe("gitDerivedSignals", () => {
         chunk: { contributorCount: 2, commitCount: 10 },
       });
       expect(byName("knowledgeSilo").extract(payload)).toBe(0);
+    });
+  });
+
+  describe("chunk-only payloads (no file-level data)", () => {
+    const byName = (n: string) => gitDerivedSignals.find((s) => s.name === n)!;
+    const chunkOnly = (chunk: Record<string, unknown>) => fakePayload({ chunk });
+
+    it("recency and stability produce DIFFERENT values for chunk-only payload", () => {
+      // chunk: ageDays=50 (young), commitCount=10 (moderate churn)
+      // recency should be HIGH (young code), stability should be LOW (many commits)
+      const payload = chunkOnly({ ageDays: 50, commitCount: 10 });
+      const recency = byName("recency").extract(payload);
+      const stability = byName("stability").extract(payload);
+      expect(recency).not.toBeCloseTo(stability, 2);
+    });
+
+    it("recency uses chunk ageDays when file data absent", () => {
+      // chunk: ageDays=100, commitCount=5
+      // Should compute: 1 - normalize(100, 365) = 1 - 0.274 = 0.726
+      const payload = chunkOnly({ ageDays: 100, commitCount: 5 });
+      const val = byName("recency").extract(payload);
+      expect(val).toBeCloseTo(0.726, 2);
+    });
+
+    it("stability uses chunk commitCount when file data absent", () => {
+      // chunk: commitCount=25
+      // Should compute: 1 - normalize(25, 50) = 1 - 0.5 = 0.5
+      const payload = chunkOnly({ commitCount: 25 });
+      const val = byName("stability").extract(payload);
+      expect(val).toBeCloseTo(0.5, 2);
+    });
+
+    it("churn uses chunk commitCount when file data absent", () => {
+      // chunk: commitCount=25
+      // Should compute: normalize(25, 50) = 0.5
+      const payload = chunkOnly({ commitCount: 25 });
+      const val = byName("churn").extract(payload);
+      expect(val).toBeCloseTo(0.5, 2);
+    });
+
+    it("age uses chunk ageDays when file data absent", () => {
+      // chunk: ageDays=182.5, commitCount=5
+      // Should compute: normalize(182.5, 365) = 0.5
+      const payload = chunkOnly({ ageDays: 182.5, commitCount: 5 });
+      const val = byName("age").extract(payload);
+      expect(val).toBeCloseTo(0.5, 2);
     });
   });
 
