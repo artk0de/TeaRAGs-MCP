@@ -33,13 +33,32 @@ describe("RELEVANCE_PRESETS", () => {
   });
 });
 
-describe("OnboardingPreset overlay mask", () => {
-  it("includes chunk-level fields for chunk-only results", () => {
-    const preset = new OnboardingPreset();
-    // stability weight uses commitCount — overlay mask must include chunk.commitCount
-    // so chunk-only results still show raw signal data
-    expect(preset.overlayMask.chunk).toBeDefined();
+describe("OnboardingPreset — multi-signal onboarding ranking", () => {
+  const preset = new OnboardingPreset();
+
+  it("uses multiple signals beyond just documentation and stability", () => {
+    const keys = Object.keys(preset.weights);
+    expect(keys).toContain("similarity");
+    expect(keys).toContain("documentation");
+    expect(keys).toContain("stability");
+    expect(keys).toContain("age");
+    expect(keys.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("similarity remains dominant weight", () => {
+    expect(preset.weights.similarity).toBeGreaterThanOrEqual(0.3);
+  });
+
+  it("penalizes single-owner code (knowledge silos are bad for onboarding)", () => {
+    expect(preset.weights.ownership).toBeDefined();
+    expect(preset.weights.ownership!).toBeLessThan(0);
+  });
+
+  it("overlay mask covers stability and age sources", () => {
+    expect(preset.overlayMask.file).toContain("commitCount");
+    expect(preset.overlayMask.file).toContain("ageDays");
     expect(preset.overlayMask.chunk).toContain("commitCount");
+    expect(preset.overlayMask.chunk).toContain("ageDays");
   });
 });
 
