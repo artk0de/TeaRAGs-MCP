@@ -4,7 +4,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createAccumulator, PointsAccumulator, type DensePoint, type HybridPoint } from "../../../../src/core/adapters/qdrant/accumulator.js";
+import type { QdrantTuneConfig } from "../../../../src/bootstrap/config.js";
+import {
+  createAccumulator,
+  PointsAccumulator,
+  type DensePoint,
+  type HybridPoint,
+} from "../../../../src/core/adapters/qdrant/accumulator.js";
 import type { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
 
 // Mock QdrantManager
@@ -263,46 +269,47 @@ describe("PointsAccumulator", () => {
 });
 
 describe("createAccumulator", () => {
-  const originalEnv = process.env;
+  const defaultTuneConfig: QdrantTuneConfig = {
+    upsertBatchSize: 100,
+    upsertFlushIntervalMs: 500,
+    upsertOrdering: "weak",
+    deleteBatchSize: 500,
+    deleteConcurrency: 8,
+    deleteFlushTimeoutMs: 1000,
+  };
 
-  beforeEach(() => {
-    process.env = { ...originalEnv };
-  });
-
-  afterEach(() => {
-    process.env = originalEnv;
-  });
-
-  it("should use default values", () => {
+  it("should create accumulator from tune config", () => {
     const mockQdrant = createMockQdrant();
-    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection");
+    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, defaultTuneConfig);
 
     expect(acc).toBeDefined();
   });
 
-  it("should read QDRANT_UPSERT_BATCH_SIZE from env (with CODE_BATCH_SIZE fallback)", () => {
-    process.env.QDRANT_UPSERT_BATCH_SIZE = "200";
+  it("should use custom upsert batch size from config", async () => {
     const mockQdrant = createMockQdrant();
-    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection");
+    const config = { ...defaultTuneConfig, upsertBatchSize: 50 };
+    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, config);
 
-    expect(acc).toBeDefined();
+    // Add 50 points — should auto-flush at bufferSize=50
+    await acc.add(createPoints(50));
+    expect(mockQdrant.addPointsOptimized).toHaveBeenCalledTimes(1);
   });
 
-  it("should read QDRANT_FLUSH_INTERVAL_MS from env", () => {
-    process.env.QDRANT_FLUSH_INTERVAL_MS = "1000";
+  it("should use custom ordering from config", async () => {
     const mockQdrant = createMockQdrant();
-    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection");
+    const config = { ...defaultTuneConfig, upsertOrdering: "strong" as const };
+    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, config);
 
-    expect(acc).toBeDefined();
+    await acc.add(createPoints(100));
+    expect(mockQdrant.addPointsOptimized).toHaveBeenCalledWith("test-collection", expect.any(Array), {
+      wait: false,
+      ordering: "strong",
+    });
   });
 
   it("should create hybrid accumulator", () => {
     const mockQdrant = createMockQdrant();
-    const acc = createAccumulator(
-      mockQdrant as unknown as QdrantManager,
-      "test-collection",
-      true, // hybrid
-    );
+    const acc = createAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", true, defaultTuneConfig);
 
     expect(acc).toBeDefined();
   });

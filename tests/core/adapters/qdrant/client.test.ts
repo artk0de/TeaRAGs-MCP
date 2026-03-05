@@ -1374,7 +1374,10 @@ describe("QdrantManager", () => {
     });
 
     it("should return immediately for empty paths", async () => {
-      const result = await manager.deletePointsByPathsBatched("test-collection", [], {});
+      const result = await manager.deletePointsByPathsBatched("test-collection", [], {
+        batchSize: 500,
+        concurrency: 8,
+      });
 
       expect(result.deletedPaths).toBe(0);
       expect(result.batchCount).toBe(0);
@@ -1446,7 +1449,9 @@ describe("QdrantManager", () => {
 
       const paths = ["file1.ts", "file2.ts"];
 
-      await expect(manager.deletePointsByPathsBatched("test-collection", paths, {})).rejects.toThrow("Delete failed");
+      await expect(
+        manager.deletePointsByPathsBatched("test-collection", paths, { batchSize: 500, concurrency: 8 }),
+      ).rejects.toThrow("Delete failed");
     });
 
     it("should calculate duration correctly", async () => {
@@ -1456,7 +1461,10 @@ describe("QdrantManager", () => {
       });
 
       const paths = ["file1.ts", "file2.ts"];
-      const result = await manager.deletePointsByPathsBatched("test-collection", paths, {});
+      const result = await manager.deletePointsByPathsBatched("test-collection", paths, {
+        batchSize: 500,
+        concurrency: 8,
+      });
 
       expect(result.durationMs).toBeGreaterThan(0);
     });

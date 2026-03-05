@@ -10,6 +10,11 @@ import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { ProgressCallback } from "../../types.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 
+export interface DeletionConfig {
+  batchSize: number;
+  concurrency: number;
+}
+
 /**
  * Delete chunks for a list of relative file paths using a 3-level fallback cascade.
  */
@@ -17,6 +22,7 @@ export async function performDeletion(
   qdrant: QdrantManager,
   collectionName: string,
   filesToDelete: string[],
+  deleteConfig: DeletionConfig,
   progressCallback?: ProgressCallback,
 ): Promise<void> {
   if (filesToDelete.length === 0) return;
@@ -31,8 +37,8 @@ export async function performDeletion(
 
   try {
     const deleteResult = await qdrant.deletePointsByPathsBatched(collectionName, filesToDelete, {
-      batchSize: 100,
-      concurrency: 4,
+      batchSize: deleteConfig.batchSize,
+      concurrency: deleteConfig.concurrency,
       onProgress: (deleted, total) => {
         progressCallback?.({
           phase: "scanning",

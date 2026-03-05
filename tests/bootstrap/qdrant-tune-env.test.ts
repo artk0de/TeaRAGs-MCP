@@ -253,19 +253,15 @@ describe("QDRANT_TUNE_* env var rename (backwards compat)", () => {
   });
 
   describe("accumulator.ts integration", () => {
-    it("createAccumulator reads QDRANT_TUNE_UPSERT_BATCH_SIZE", async () => {
+    it("createAccumulator accepts QdrantTuneConfig (no env reads)", async () => {
+      // createAccumulator no longer reads process.env —
+      // it receives QdrantTuneConfig via DI from bootstrap/config.ts.
+      // Verify config.ts parses the env var correctly.
       process.env.QDRANT_TUNE_UPSERT_BATCH_SIZE = "77";
-      // Need to re-import to pick up env at call time
-      const _mod = await import("../../src/core/adapters/qdrant/accumulator.js");
-      // createAccumulator reads env at call time, so we can test it
-      // We need a mock QdrantManager - just verify the config is read
-      // by checking the factory reads the env var (it's read inside the function)
-      const envValue =
-        process.env.QDRANT_TUNE_UPSERT_BATCH_SIZE ||
-        process.env.QDRANT_UPSERT_BATCH_SIZE ||
-        process.env.CODE_BATCH_SIZE ||
-        "100";
-      expect(envValue).toBe("77");
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.upsertBatchSize).toBe(77);
       cleanEnv();
     });
   });

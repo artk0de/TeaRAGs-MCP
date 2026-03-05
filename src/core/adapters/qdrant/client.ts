@@ -437,10 +437,10 @@ export class QdrantManager {
     collectionName: string,
     relativePaths: string[],
     options: {
-      batchSize?: number;
-      concurrency?: number;
+      batchSize: number;
+      concurrency: number;
       onProgress?: (deleted: number, total: number) => void;
-    } = {},
+    },
   ): Promise<{ deletedPaths: number; batchCount: number; durationMs: number }> {
     const startTime = Date.now();
 
@@ -448,25 +448,7 @@ export class QdrantManager {
       return { deletedPaths: 0, batchCount: 0, durationMs: 0 };
     }
 
-    // Default: 500 paths per batch, 8 concurrent (optimized for indexed relativePath)
-    // QDRANT_TUNE_DELETE_* are canonical names, QDRANT_DELETE_*/DELETE_* are deprecated but still supported
-    const {
-      batchSize = parseInt(
-        process.env.QDRANT_TUNE_DELETE_BATCH_SIZE ||
-          process.env.QDRANT_DELETE_BATCH_SIZE ||
-          process.env.DELETE_BATCH_SIZE ||
-          "500",
-        10,
-      ),
-      concurrency = parseInt(
-        process.env.QDRANT_TUNE_DELETE_CONCURRENCY ||
-          process.env.QDRANT_DELETE_CONCURRENCY ||
-          process.env.DELETE_CONCURRENCY ||
-          "8",
-        10,
-      ),
-      onProgress,
-    } = options;
+    const { batchSize, concurrency, onProgress } = options;
 
     // Split into batches
     const batches: string[][] = [];
