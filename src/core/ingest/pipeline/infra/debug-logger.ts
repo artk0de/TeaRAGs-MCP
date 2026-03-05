@@ -14,6 +14,7 @@ import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { getConfigDump, getZodConfig } from "../../../../bootstrap/config.js";
 import { isDebug } from "./runtime.js";
 
 const LOG_DIR = join(homedir(), ".tea-rags-mcp", "logs");
@@ -185,43 +186,33 @@ class DebugLogger {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       this.logFile = join(LOG_DIR, `pipeline-${timestamp}.log`);
 
-      const env = (key: string, fallback: string) =>
-        process.env[key] !== null && process.env[key] !== undefined ? process.env[key] : `${fallback} (default)`;
+      let dump: Record<string, unknown> = {};
+      try {
+        const zodConfig = getZodConfig();
+        // Exclude deprecations array from dump — not useful in log header
+        const { deprecations: _, ...configSections } = zodConfig;
+        dump = getConfigDump(configSections);
+      } catch {
+        // Config not yet parsed — fall back to empty dump
+      }
 
-      const batchSize = parseInt(process.env.EMBEDDING_BATCH_SIZE || "1024", 10);
-      const minBatchRaw = process.env.MIN_BATCH_SIZE;
-      const minBatchEffective =
-        minBatchRaw !== null && minBatchRaw !== undefined
-          ? parseInt(minBatchRaw, 10) || 0
-          : Math.floor(batchSize * 0.5);
-      const concurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
+      // Format config dump as aligned key=value pairs
+      const dumpEntries = Object.entries(dump);
+      const maxKeyLen = dumpEntries.length > 0 ? Math.max(...dumpEntries.map(([k]) => k.length)) : 0;
+      const configLines = dumpEntries.map(([k, v]) => `  ${k.padEnd(maxKeyLen)} = ${v}`).join("\n");
+
+      // Derive concurrency stats
+      const concurrency = (dump["embedding.tune.concurrency"] as number) ?? 1;
 
       this.writeRaw(`
 ================================================================================
 PIPELINE DEBUG LOG - Session started at ${new Date().toISOString()}
 ================================================================================
-ENV:
-  EMBEDDING_BASE_URL          = ${env("EMBEDDING_BASE_URL", "http://localhost:11434")}
-  EMBEDDING_MODEL             = ${env("EMBEDDING_MODEL", "nomic-embed-text")}
-  EMBEDDING_CONCURRENCY       = ${env("EMBEDDING_CONCURRENCY", "1")}
-  EMBEDDING_BATCH_SIZE        = ${env("EMBEDDING_BATCH_SIZE", "1024")}
-  MIN_BATCH_SIZE              = ${minBatchRaw !== null && minBatchRaw !== undefined ? minBatchRaw : "unset"} → effective: ${minBatchEffective}
-  BATCH_FORMATION_TIMEOUT_MS  = ${env("BATCH_FORMATION_TIMEOUT_MS", "2000")}
-  INGEST_TUNE_CHUNKER_POOL_SIZE = ${env("INGEST_TUNE_CHUNKER_POOL_SIZE", env("CHUNKER_POOL_SIZE", "4"))}
-  INGEST_TUNE_FILE_CONCURRENCY  = ${env("INGEST_TUNE_FILE_CONCURRENCY", env("FILE_PROCESSING_CONCURRENCY", "50"))}
-  INGEST_TUNE_IO_CONCURRENCY    = ${env("INGEST_TUNE_IO_CONCURRENCY", env("MAX_IO_CONCURRENCY", "50"))}
-  QDRANT_TUNE_UPSERT_BATCH_SIZE = ${env("QDRANT_TUNE_UPSERT_BATCH_SIZE", env("QDRANT_UPSERT_BATCH_SIZE", "100"))}
-  TRAJECTORY_GIT_ENABLED      = ${env("TRAJECTORY_GIT_ENABLED", env("CODE_ENABLE_GIT_METADATA", "false"))}
-  GIT_ENRICHMENT              = background (CLI primary, isomorphic-git fallback)
-  TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS  = ${env("TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS", env("GIT_LOG_MAX_AGE_MONTHS", "12"))}
-  TRAJECTORY_GIT_LOG_TIMEOUT_MS      = ${env("TRAJECTORY_GIT_LOG_TIMEOUT_MS", env("GIT_LOG_TIMEOUT_MS", "60000"))}
-  TRAJECTORY_GIT_CHUNK_TIMEOUT_MS    = ${env("TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", env("GIT_CHUNK_TIMEOUT_MS", "120000"))}
-  GIT_CHUNK_ENABLED           = ${env("GIT_CHUNK_ENABLED", "true")}
-  TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS = ${env("TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS", env("GIT_CHUNK_MAX_AGE_MONTHS", "6"))}
-  TRAJECTORY_GIT_CHUNK_CONCURRENCY   = ${env("TRAJECTORY_GIT_CHUNK_CONCURRENCY", env("GIT_CHUNK_CONCURRENCY", "10"))}
-  TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES = ${env("TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", env("GIT_CHUNK_MAX_FILE_LINES", "10000"))}
+CONFIG:
+${configLines}
+  GIT_ENRICHMENT${"".padEnd(Math.max(0, maxKeyLen - "GIT_ENRICHMENT".length))} = background (CLI primary, isomorphic-git fallback)
 DERIVED:
-  maxQueueSize                = ${concurrency * 2} (EMBEDDING_CONCURRENCY × 2)
+  maxQueueSize                = ${concurrency * 2} (embedding.tune.concurrency × 2)
   backpressure ON threshold   = ${concurrency * 2} batches
   backpressure OFF threshold  = ${Math.floor(concurrency * 2 * 0.5)} batches
 ================================================================================
@@ -428,20 +419,27 @@ DERIVED:
       const pipelineWallMs = (stats as { uptimeMs?: number }).uptimeMs || stageTotalMs;
 
       // Concurrency per stage (for estimating incremental time)
-      const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
+      let embeddingConcurrency = 1;
+      let chunkerPoolSize = 4;
+      let gitChunkConcurrency = 10;
+      try {
+        const zodConfig = getZodConfig();
+        embeddingConcurrency = zodConfig.embedding.tune.concurrency;
+        chunkerPoolSize = zodConfig.ingest.tune.chunkerPoolSize;
+        gitChunkConcurrency = zodConfig.trajectoryGit.chunkConcurrency;
+      } catch {
+        // Config not yet parsed — use defaults
+      }
       const concurrency: Record<PipelineStage, number> = {
         scan: 1, // Serial file scanning
-        parse: parseInt(process.env.INGEST_TUNE_CHUNKER_POOL_SIZE || process.env.CHUNKER_POOL_SIZE || "4", 10),
-        git: parseInt(process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY || process.env.GIT_CHUNK_CONCURRENCY || "10", 10),
+        parse: chunkerPoolSize,
+        git: gitChunkConcurrency,
         embed: embeddingConcurrency,
         qdrant: embeddingConcurrency,
         enrichment_prefetch: 1, // Parallel per-provider prefetch
         enrichGit: 1, // Background, single-threaded
         enrichApply: 1, // Streaming setPayload calls
-        chunkChurn: parseInt(
-          process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY || process.env.GIT_CHUNK_CONCURRENCY || "10",
-          10,
-        ),
+        chunkChurn: gitChunkConcurrency,
       };
 
       // Column widths
