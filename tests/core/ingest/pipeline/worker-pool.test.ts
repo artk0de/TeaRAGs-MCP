@@ -208,29 +208,36 @@ describe("WorkerPool", () => {
     });
 
     it("should use exponential backoff", async () => {
-      vi.useRealTimers();
       const retryPool = new WorkerPool({
         ...config,
-        retryBaseDelayMs: 50,
+        retryBaseDelayMs: 100,
         maxRetries: 2,
       });
 
-      const timestamps: number[] = [];
+      const delays: number[] = [];
+      let lastTime = Date.now();
       const handler = vi.fn().mockImplementation(async () => {
-        timestamps.push(Date.now());
-        if (timestamps.length < 3) {
+        const now = Date.now();
+        delays.push(now - lastTime);
+        lastTime = now;
+        if (delays.length < 3) {
           throw new Error("Fail");
         }
       });
 
-      await retryPool.submit(createBatch("batch-1"), handler);
+      const resultPromise = retryPool.submit(createBatch("batch-1"), handler);
 
-      // Check delays are increasing (with some tolerance for execution time)
-      const delay1 = timestamps[1] - timestamps[0];
-      const delay2 = timestamps[2] - timestamps[1];
+      // Advance past first retry delay (~100ms with jitter)
+      await vi.advanceTimersByTimeAsync(200);
+      // Advance past second retry delay (~200ms with jitter)
+      await vi.advanceTimersByTimeAsync(400);
+      await vi.runAllTimersAsync();
 
-      expect(delay1).toBeGreaterThanOrEqual(30); // ~50ms base (CI tolerance)
-      expect(delay2).toBeGreaterThan(delay1); // Second retry must be longer (exponential)
+      const result = await resultPromise;
+
+      expect(result.success).toBe(true);
+      expect(result.retryCount).toBe(2);
+      expect(handler).toHaveBeenCalledTimes(3);
       retryPool.forceShutdown();
     });
   });

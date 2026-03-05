@@ -1,9 +1,6 @@
-import { modelsDir } from "../../../bootstrap/config/paths.js";
 import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
 
 type Pipeline = (texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
-
-const DEFAULT_CACHE_DIR = modelsDir();
 
 export const DEFAULT_ONNX_MODEL = "jinaai/jina-embeddings-v2-base-code-q8";
 export const DEFAULT_ONNX_DIMENSIONS = 768;
@@ -25,16 +22,19 @@ function parseModelSpec(model: string): { baseModel: string; dtype: Dtype | unde
 }
 
 const MIN_BATCH_SIZE = 4;
+const INITIAL_BATCH_SIZE = 32;
 
 export class OnnxEmbeddings implements EmbeddingProvider {
   private readonly model: string;
   private readonly dimensions: number;
+  private readonly cacheDir: string | undefined;
   private extractor: Pipeline | null = null;
   private maxBatchSize: number | null = null;
 
-  constructor(model = DEFAULT_ONNX_MODEL, dimensions = DEFAULT_ONNX_DIMENSIONS) {
+  constructor(model = DEFAULT_ONNX_MODEL, dimensions = DEFAULT_ONNX_DIMENSIONS, cacheDir?: string) {
     this.model = model;
     this.dimensions = dimensions;
+    this.cacheDir = cacheDir;
   }
 
   private async ensureLoaded(): Promise<Pipeline> {
@@ -44,7 +44,10 @@ export class OnnxEmbeddings implements EmbeddingProvider {
 
     try {
       const { pipeline, env } = await import("@huggingface/transformers");
-      env.cacheDir = process.env.HF_CACHE_DIR || DEFAULT_CACHE_DIR;
+      const resolvedCacheDir = process.env.HF_CACHE_DIR ?? this.cacheDir;
+      if (resolvedCacheDir) {
+        env.cacheDir = resolvedCacheDir;
+      }
       const label = dtype ? `${baseModel} (${dtype})` : baseModel;
       console.error(`[ONNX] Loading model ${label}... (first time, may download ~70MB)`);
       console.error(`[ONNX] Cache dir: ${env.cacheDir}`);
@@ -93,7 +96,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     if (texts.length === 0) return [];
 
     const extractor = await this.ensureLoaded();
-    const batchSize = this.maxBatchSize ?? texts.length;
+    const batchSize = this.maxBatchSize ?? INITIAL_BATCH_SIZE;
     const results: EmbeddingResult[] = [];
     let i = 0;
 
