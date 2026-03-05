@@ -90,8 +90,13 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
-    const concurrency = parseInt(process.env.GIT_CHUNK_CONCURRENCY ?? "10", 10);
-    const maxAgeMonths = parseFloat(process.env.GIT_CHUNK_MAX_AGE_MONTHS ?? "6");
+    const concurrency = parseInt(
+      process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY ?? process.env.GIT_CHUNK_CONCURRENCY ?? "10",
+      10,
+    );
+    const maxAgeMonths = parseFloat(
+      process.env.TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS ?? process.env.GIT_CHUNK_MAX_AGE_MONTHS ?? "6",
+    );
 
     const rawResult = await buildChunkChurnMap(
       root,

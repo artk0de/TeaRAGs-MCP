@@ -48,7 +48,7 @@ export function parseAppConfig(): AppConfig {
       ),
       defaultSearchLimit: parseInt(process.env.CODE_SEARCH_LIMIT || String(DEFAULT_SEARCH_LIMIT), 10),
       enableHybridSearch: process.env.CODE_ENABLE_HYBRID === "true",
-      enableGitMetadata: process.env.CODE_ENABLE_GIT_METADATA === "true",
+      enableGitMetadata: (process.env.TRAJECTORY_GIT_ENABLED ?? process.env.CODE_ENABLE_GIT_METADATA) === "true",
       squashAwareSessions: process.env.TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS === "true",
       sessionGapMinutes: parseInt(process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES || "30", 10),
     },

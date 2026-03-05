@@ -69,7 +69,12 @@ export async function buildChunkChurnMapUncached(
   fileChurnDataMap?: Map<string, FileChurnData>,
   squashOpts?: SquashOptions,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
-  const maxFileLines = parseInt(process.env.GIT_CHUNK_MAX_FILE_LINES ?? String(MAX_FILE_LINES_DEFAULT), 10);
+  const maxFileLines = parseInt(
+    process.env.TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES ??
+      process.env.GIT_CHUNK_MAX_FILE_LINES ??
+      String(MAX_FILE_LINES_DEFAULT),
+    10,
+  );
 
   // Build relative path → entries lookup (chunkMap keys may be absolute paths)
   // Also filter: only files with >1 chunk benefit from chunk-level analysis
@@ -114,7 +119,10 @@ export async function buildChunkChurnMapUncached(
   // Use CLI pathspec filtering — only fetches commits touching our files
   let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
   try {
-    const chunkTimeoutMs = parseInt(process.env.GIT_CHUNK_TIMEOUT_MS ?? "120000", 10);
+    const chunkTimeoutMs = parseInt(
+      process.env.TRAJECTORY_GIT_CHUNK_TIMEOUT_MS ?? process.env.GIT_CHUNK_TIMEOUT_MS ?? "120000",
+      10,
+    );
     commitEntries = await getCommitsByPathspec(repoRoot, sinceDate, filePaths, chunkTimeoutMs);
   } catch (error) {
     // CLI pathspec failed — no fallback (isomorphic-git git.log causes OOM on large repos)
