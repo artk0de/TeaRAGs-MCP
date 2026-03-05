@@ -48,6 +48,55 @@ describe("parseAppConfigZod", () => {
       "EMBEDDING_RETRY_ATTEMPTS",
       "EMBEDDING_TUNE_RETRY_DELAY_MS",
       "EMBEDDING_RETRY_DELAY",
+      // ingest
+      "INGEST_CHUNK_SIZE",
+      "CODE_CHUNK_SIZE",
+      "INGEST_CHUNK_OVERLAP",
+      "CODE_CHUNK_OVERLAP",
+      "INGEST_ENABLE_AST",
+      "CODE_ENABLE_AST",
+      "INGEST_ENABLE_HYBRID",
+      "CODE_ENABLE_HYBRID",
+      "INGEST_DEFAULT_SEARCH_LIMIT",
+      "CODE_SEARCH_LIMIT",
+      "INGEST_TUNE_CHUNKER_POOL_SIZE",
+      "CHUNKER_POOL_SIZE",
+      "INGEST_TUNE_FILE_CONCURRENCY",
+      "FILE_PROCESSING_CONCURRENCY",
+      "INGEST_TUNE_IO_CONCURRENCY",
+      "MAX_IO_CONCURRENCY",
+      // trajectoryGit
+      "TRAJECTORY_GIT_ENABLED",
+      "CODE_ENABLE_GIT_METADATA",
+      "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS",
+      "GIT_LOG_MAX_AGE_MONTHS",
+      "TRAJECTORY_GIT_LOG_TIMEOUT_MS",
+      "GIT_LOG_TIMEOUT_MS",
+      "TRAJECTORY_GIT_CHUNK_CONCURRENCY",
+      "GIT_CHUNK_CONCURRENCY",
+      "TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS",
+      "GIT_CHUNK_MAX_AGE_MONTHS",
+      "TRAJECTORY_GIT_CHUNK_TIMEOUT_MS",
+      "GIT_CHUNK_TIMEOUT_MS",
+      "TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES",
+      "GIT_CHUNK_MAX_FILE_LINES",
+      "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS",
+      "TRAJECTORY_GIT_SESSION_GAP_MINUTES",
+      // qdrantTune
+      "QDRANT_TUNE_UPSERT_BATCH_SIZE",
+      "QDRANT_UPSERT_BATCH_SIZE",
+      "QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS",
+      "QDRANT_FLUSH_INTERVAL_MS",
+      "QDRANT_TUNE_UPSERT_ORDERING",
+      "QDRANT_BATCH_ORDERING",
+      "QDRANT_TUNE_DELETE_BATCH_SIZE",
+      "QDRANT_DELETE_BATCH_SIZE",
+      "DELETE_BATCH_SIZE",
+      "QDRANT_TUNE_DELETE_CONCURRENCY",
+      "QDRANT_DELETE_CONCURRENCY",
+      "DELETE_CONCURRENCY",
+      "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS",
+      "DELETE_FLUSH_TIMEOUT_MS",
     ];
     for (const key of keysToDelete) {
       delete process.env[key];
@@ -236,6 +285,322 @@ describe("parseAppConfigZod", () => {
       expect(embedding.baseUrl).toBe("https://api.openai.com");
       expect(embedding.openaiApiKey).toBe("sk-test");
     });
+  });
+});
+
+describe("parseAppConfigZod — ingest", () => {
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    for (const key of Object.keys(process.env)) {
+      if (
+        key.startsWith("INGEST_") ||
+        key.startsWith("CODE_") ||
+        key === "CHUNKER_POOL_SIZE" ||
+        key === "FILE_PROCESSING_CONCURRENCY" ||
+        key === "MAX_IO_CONCURRENCY"
+      ) {
+        delete process.env[key];
+      }
+    }
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("returns correct defaults", async () => {
+    const { parseAppConfigZod } = await freshImport();
+    const { ingest } = parseAppConfigZod();
+
+    expect(ingest.chunkSize).toBe(2500);
+    expect(ingest.chunkOverlap).toBe(300);
+    expect(ingest.enableAST).toBe(true);
+    expect(ingest.enableHybrid).toBe(false);
+    expect(ingest.defaultSearchLimit).toBe(5);
+    expect(ingest.tune.chunkerPoolSize).toBe(4);
+    expect(ingest.tune.fileConcurrency).toBe(50);
+    expect(ingest.tune.ioConcurrency).toBe(50);
+  });
+
+  it("INGEST_CHUNK_SIZE falls back from CODE_CHUNK_SIZE", async () => {
+    process.env.CODE_CHUNK_SIZE = "1500";
+    const { parseAppConfigZod } = await freshImport();
+    const { ingest, deprecations } = parseAppConfigZod();
+
+    expect(ingest.chunkSize).toBe(1500);
+    expect(deprecations).toContainEqual({
+      oldName: "CODE_CHUNK_SIZE",
+      newName: "INGEST_CHUNK_SIZE",
+    });
+  });
+
+  it("INGEST_ENABLE_AST falls back from CODE_ENABLE_AST", async () => {
+    process.env.CODE_ENABLE_AST = "false";
+    const { parseAppConfigZod } = await freshImport();
+    const { ingest, deprecations } = parseAppConfigZod();
+
+    expect(ingest.enableAST).toBe(false);
+    expect(deprecations).toContainEqual({
+      oldName: "CODE_ENABLE_AST",
+      newName: "INGEST_ENABLE_AST",
+    });
+  });
+
+  it("enableAST defaults to true (not false like other booleans)", async () => {
+    const { parseAppConfigZod } = await freshImport();
+    const { ingest } = parseAppConfigZod();
+    expect(ingest.enableAST).toBe(true);
+  });
+
+  it("INGEST_TUNE_CHUNKER_POOL_SIZE falls back from CHUNKER_POOL_SIZE", async () => {
+    process.env.CHUNKER_POOL_SIZE = "8";
+    const { parseAppConfigZod } = await freshImport();
+    const { ingest, deprecations } = parseAppConfigZod();
+
+    expect(ingest.tune.chunkerPoolSize).toBe(8);
+    expect(deprecations).toContainEqual({
+      oldName: "CHUNKER_POOL_SIZE",
+      newName: "INGEST_TUNE_CHUNKER_POOL_SIZE",
+    });
+  });
+
+  it("INGEST_TUNE_FILE_CONCURRENCY falls back from FILE_PROCESSING_CONCURRENCY", async () => {
+    process.env.FILE_PROCESSING_CONCURRENCY = "100";
+    const { parseAppConfigZod } = await freshImport();
+    const { ingest, deprecations } = parseAppConfigZod();
+
+    expect(ingest.tune.fileConcurrency).toBe(100);
+    expect(deprecations).toContainEqual({
+      oldName: "FILE_PROCESSING_CONCURRENCY",
+      newName: "INGEST_TUNE_FILE_CONCURRENCY",
+    });
+  });
+
+  it("INGEST_TUNE_IO_CONCURRENCY falls back from MAX_IO_CONCURRENCY", async () => {
+    process.env.MAX_IO_CONCURRENCY = "25";
+    const { parseAppConfigZod } = await freshImport();
+    const { ingest, deprecations } = parseAppConfigZod();
+
+    expect(ingest.tune.ioConcurrency).toBe(25);
+    expect(deprecations).toContainEqual({
+      oldName: "MAX_IO_CONCURRENCY",
+      newName: "INGEST_TUNE_IO_CONCURRENCY",
+    });
+  });
+
+  it("new name takes priority over old name", async () => {
+    process.env.INGEST_CHUNK_SIZE = "3000";
+    process.env.CODE_CHUNK_SIZE = "1500";
+    const { parseAppConfigZod } = await freshImport();
+    const { ingest, deprecations } = parseAppConfigZod();
+
+    expect(ingest.chunkSize).toBe(3000);
+    expect(deprecations.filter((d) => d.oldName === "CODE_CHUNK_SIZE")).toHaveLength(0);
+  });
+});
+
+describe("parseAppConfigZod — trajectoryGit", () => {
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith("TRAJECTORY_GIT_") || key.startsWith("GIT_") || key === "CODE_ENABLE_GIT_METADATA") {
+        delete process.env[key];
+      }
+    }
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("returns correct defaults", async () => {
+    const { parseAppConfigZod } = await freshImport();
+    const { trajectoryGit } = parseAppConfigZod();
+
+    expect(trajectoryGit.enabled).toBe(false);
+    expect(trajectoryGit.logMaxAgeMonths).toBe(12);
+    expect(trajectoryGit.logTimeoutMs).toBe(60000);
+    expect(trajectoryGit.chunkConcurrency).toBe(10);
+    expect(trajectoryGit.chunkMaxAgeMonths).toBe(6);
+    expect(trajectoryGit.chunkTimeoutMs).toBe(120000);
+    expect(trajectoryGit.chunkMaxFileLines).toBe(10000);
+    expect(trajectoryGit.squashAwareSessions).toBe(false);
+    expect(trajectoryGit.sessionGapMinutes).toBe(30);
+  });
+
+  it("TRAJECTORY_GIT_ENABLED falls back from CODE_ENABLE_GIT_METADATA", async () => {
+    process.env.CODE_ENABLE_GIT_METADATA = "true";
+    const { parseAppConfigZod } = await freshImport();
+    const { trajectoryGit, deprecations } = parseAppConfigZod();
+
+    expect(trajectoryGit.enabled).toBe(true);
+    expect(deprecations).toContainEqual({
+      oldName: "CODE_ENABLE_GIT_METADATA",
+      newName: "TRAJECTORY_GIT_ENABLED",
+    });
+  });
+
+  it("TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS falls back from GIT_LOG_MAX_AGE_MONTHS", async () => {
+    process.env.GIT_LOG_MAX_AGE_MONTHS = "24";
+    const { parseAppConfigZod } = await freshImport();
+    const { trajectoryGit, deprecations } = parseAppConfigZod();
+
+    expect(trajectoryGit.logMaxAgeMonths).toBe(24);
+    expect(deprecations).toContainEqual({
+      oldName: "GIT_LOG_MAX_AGE_MONTHS",
+      newName: "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS",
+    });
+  });
+
+  it("TRAJECTORY_GIT_CHUNK_CONCURRENCY falls back from GIT_CHUNK_CONCURRENCY", async () => {
+    process.env.GIT_CHUNK_CONCURRENCY = "20";
+    const { parseAppConfigZod } = await freshImport();
+    const { trajectoryGit, deprecations } = parseAppConfigZod();
+
+    expect(trajectoryGit.chunkConcurrency).toBe(20);
+    expect(deprecations).toContainEqual({
+      oldName: "GIT_CHUNK_CONCURRENCY",
+      newName: "TRAJECTORY_GIT_CHUNK_CONCURRENCY",
+    });
+  });
+
+  it("new name takes priority over old name", async () => {
+    process.env.TRAJECTORY_GIT_ENABLED = "true";
+    process.env.CODE_ENABLE_GIT_METADATA = "false";
+    const { parseAppConfigZod } = await freshImport();
+    const { trajectoryGit, deprecations } = parseAppConfigZod();
+
+    expect(trajectoryGit.enabled).toBe(true);
+    expect(deprecations.filter((d) => d.oldName === "CODE_ENABLE_GIT_METADATA")).toHaveLength(0);
+  });
+
+  it("logMaxAgeMonths accepts float values", async () => {
+    process.env.TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS = "6.5";
+    const { parseAppConfigZod } = await freshImport();
+    const { trajectoryGit } = parseAppConfigZod();
+
+    expect(trajectoryGit.logMaxAgeMonths).toBe(6.5);
+  });
+});
+
+describe("parseAppConfigZod — qdrantTune", () => {
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+    for (const key of Object.keys(process.env)) {
+      if (
+        key.startsWith("QDRANT_TUNE_") ||
+        key.startsWith("QDRANT_UPSERT_") ||
+        key.startsWith("QDRANT_DELETE_") ||
+        key.startsWith("QDRANT_BATCH_") ||
+        key.startsWith("QDRANT_FLUSH_") ||
+        key === "CODE_BATCH_SIZE" ||
+        key === "DELETE_BATCH_SIZE" ||
+        key === "DELETE_CONCURRENCY" ||
+        key === "DELETE_FLUSH_TIMEOUT_MS"
+      ) {
+        delete process.env[key];
+      }
+    }
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("returns correct defaults", async () => {
+    const { parseAppConfigZod } = await freshImport();
+    const { qdrantTune } = parseAppConfigZod();
+
+    expect(qdrantTune.upsertBatchSize).toBe(100);
+    expect(qdrantTune.upsertFlushIntervalMs).toBe(500);
+    expect(qdrantTune.upsertOrdering).toBe("weak");
+    expect(qdrantTune.deleteBatchSize).toBe(500);
+    expect(qdrantTune.deleteConcurrency).toBe(8);
+    expect(qdrantTune.deleteFlushTimeoutMs).toBe(1000);
+  });
+
+  it("QDRANT_TUNE_UPSERT_BATCH_SIZE falls back through QDRANT_UPSERT_BATCH_SIZE then CODE_BATCH_SIZE", async () => {
+    process.env.CODE_BATCH_SIZE = "200";
+    const { parseAppConfigZod } = await freshImport();
+    const { qdrantTune, deprecations } = parseAppConfigZod();
+
+    expect(qdrantTune.upsertBatchSize).toBe(200);
+    expect(deprecations).toContainEqual({
+      oldName: "CODE_BATCH_SIZE",
+      newName: "QDRANT_TUNE_UPSERT_BATCH_SIZE",
+    });
+  });
+
+  it("QDRANT_TUNE_UPSERT_BATCH_SIZE falls back through QDRANT_UPSERT_BATCH_SIZE", async () => {
+    process.env.QDRANT_UPSERT_BATCH_SIZE = "150";
+    process.env.CODE_BATCH_SIZE = "200";
+    const { parseAppConfigZod } = await freshImport();
+    const { qdrantTune, deprecations } = parseAppConfigZod();
+
+    expect(qdrantTune.upsertBatchSize).toBe(150);
+    expect(deprecations).toContainEqual({
+      oldName: "QDRANT_UPSERT_BATCH_SIZE",
+      newName: "QDRANT_TUNE_UPSERT_BATCH_SIZE",
+    });
+  });
+
+  it("QDRANT_TUNE_DELETE_BATCH_SIZE falls back through QDRANT_DELETE_BATCH_SIZE then DELETE_BATCH_SIZE", async () => {
+    process.env.DELETE_BATCH_SIZE = "1000";
+    const { parseAppConfigZod } = await freshImport();
+    const { qdrantTune, deprecations } = parseAppConfigZod();
+
+    expect(qdrantTune.deleteBatchSize).toBe(1000);
+    expect(deprecations).toContainEqual({
+      oldName: "DELETE_BATCH_SIZE",
+      newName: "QDRANT_TUNE_DELETE_BATCH_SIZE",
+    });
+  });
+
+  it("upsertOrdering validates enum values", async () => {
+    process.env.QDRANT_TUNE_UPSERT_ORDERING = "strong";
+    const { parseAppConfigZod } = await freshImport();
+    const { qdrantTune } = parseAppConfigZod();
+
+    expect(qdrantTune.upsertOrdering).toBe("strong");
+  });
+
+  it("upsertOrdering rejects invalid values", async () => {
+    process.env.QDRANT_TUNE_UPSERT_ORDERING = "invalid";
+    const { parseAppConfigZod } = await freshImport();
+
+    expect(() => parseAppConfigZod()).toThrow(/qdrantTune/i);
+  });
+
+  it("QDRANT_TUNE_DELETE_CONCURRENCY falls back through QDRANT_DELETE_CONCURRENCY then DELETE_CONCURRENCY", async () => {
+    process.env.DELETE_CONCURRENCY = "16";
+    const { parseAppConfigZod } = await freshImport();
+    const { qdrantTune, deprecations } = parseAppConfigZod();
+
+    expect(qdrantTune.deleteConcurrency).toBe(16);
+    expect(deprecations).toContainEqual({
+      oldName: "DELETE_CONCURRENCY",
+      newName: "QDRANT_TUNE_DELETE_CONCURRENCY",
+    });
+  });
+
+  it("new name takes priority over old names", async () => {
+    process.env.QDRANT_TUNE_UPSERT_BATCH_SIZE = "300";
+    process.env.QDRANT_UPSERT_BATCH_SIZE = "150";
+    process.env.CODE_BATCH_SIZE = "200";
+    const { parseAppConfigZod } = await freshImport();
+    const { qdrantTune, deprecations } = parseAppConfigZod();
+
+    expect(qdrantTune.upsertBatchSize).toBe(300);
+    expect(deprecations.filter((d) => d.oldName === "QDRANT_UPSERT_BATCH_SIZE")).toHaveLength(0);
+    expect(
+      deprecations.filter((d) => d.oldName === "CODE_BATCH_SIZE" && d.newName === "QDRANT_TUNE_UPSERT_BATCH_SIZE"),
+    ).toHaveLength(0);
   });
 });
 
