@@ -1,6 +1,5 @@
 // src/bootstrap/factory.ts
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,7 +20,7 @@ import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
-import { getZodConfig, type AppConfig } from "./config/index.js";
+import { getZodConfig, snapshotsDir, type AppConfig } from "./config/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -50,8 +49,7 @@ export function createAppContext(config: AppConfig): AppContext {
   const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
   const essentialTrajectoryFields = registry.getEssentialPayloadKeys();
   const schemaBuilder = new SchemaBuilder(reranker);
-  const snapshotsDir = join(homedir(), ".tea-rags-mcp", "snapshots");
-  const statsCache = new StatsCache(snapshotsDir);
+  const statsCache = new StatsCache(snapshotsDir());
   const deleteConfig = {
     batchSize: zodConfig.qdrantTune.deleteBatchSize,
     concurrency: zodConfig.qdrantTune.deleteConcurrency,

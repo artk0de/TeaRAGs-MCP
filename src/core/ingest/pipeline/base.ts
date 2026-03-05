@@ -6,11 +6,9 @@
  * Subclasses compose these building blocks in their own orchestration flow.
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-
 import type { Ignore } from "ignore";
 
+import { snapshotsDir } from "../../../bootstrap/config/paths.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../contracts/collection.js";
@@ -63,7 +61,7 @@ export abstract class BaseIndexingPipeline {
   // ── Shared context ─────────────────────────────────────────
 
   protected get snapshotDir(): string {
-    return join(homedir(), ".tea-rags-mcp", "snapshots");
+    return snapshotsDir();
   }
 
   protected async resolveContext(path: string): Promise<{

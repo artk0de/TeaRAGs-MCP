@@ -10,9 +10,7 @@
  * Post-index: recomputes collection stats and saves to cache.
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-
+import { snapshotsDir } from "../../bootstrap/config/paths.js";
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
 import { scrollAllPoints } from "../adapters/qdrant/scroll.js";
@@ -57,7 +55,7 @@ export class IngestFacade {
     pipelineTuning?: PipelineTuning,
     syncTuning?: SynchronizerTuning,
   ) {
-    const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
+    const snapshotDir = snapshotsDir();
     const deps = createIngestDependencies(qdrant, snapshotDir, syncTuning);
 
     const squashOpts = trajectoryConfig.squashAwareSessions
