@@ -6,7 +6,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { buildViaCli, withTimeout } from "../../../adapters/git/client.js";
+import { buildViaCli } from "../../../adapters/git/client.js";
 import { parseNumstatOutput } from "../../../adapters/git/parsers.js";
 import type { FileChurnData } from "../../../adapters/git/types.js";
 import { isDebug } from "../../../ingest/pipeline/infra/runtime.js";
@@ -37,7 +37,7 @@ export async function buildFileSignalMap(
 
   const sinceDate = maxAgeMonths > 0 ? new Date(Date.now() - maxAgeMonths * 30 * 86400 * 1000) : undefined;
 
-  const result = await withTimeout(buildViaCli(repoRoot, sinceDate), timeoutMs, "CLI git log timed out");
+  const result = await buildViaCli(repoRoot, sinceDate, timeoutMs);
 
   // Store in cache (non-fatal if HEAD unresolvable)
   await enrichmentCache.setFileMetadata(cacheKey, repoRoot, result);
@@ -64,13 +64,12 @@ export async function buildFileSignalsForPaths(
     const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
 
     try {
-      const batchResult = await withTimeout(
-        execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity }).then(({ stdout }) =>
-          parseNumstatOutput(stdout),
-        ),
-        timeoutMs,
-        "git log backfill timed out",
-      );
+      const { stdout } = await execFileAsync("git", args, {
+        cwd: repoRoot,
+        maxBuffer: Infinity,
+        timeout: timeoutMs,
+      });
+      const batchResult = parseNumstatOutput(stdout);
       for (const [path, data] of batchResult) {
         result.set(path, data);
       }
