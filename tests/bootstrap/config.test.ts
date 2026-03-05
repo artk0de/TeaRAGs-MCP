@@ -1,37 +1,62 @@
-// src/bootstrap/config.test.ts — merged from config/env.test.ts + config/validate.test.ts
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+// src/bootstrap/config.test.ts — parseAppConfig bridge tests
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { parseAppConfig, validateConfig, type AppConfig } from "../../src/bootstrap/config.js";
+// Helper: dynamic import with cache-busting to get fresh module state per test
+async function freshImport() {
+  vi.resetModules();
+  return await import("../../src/bootstrap/config.js");
+}
 
-// --- parseAppConfig tests (was config/env.test.ts) ---
-
-describe("parseAppConfig", () => {
+describe("parseAppConfig (Zod bridge)", () => {
   let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(() => {
     originalEnv = { ...process.env };
+    // Clear env vars that affect config to get deterministic defaults
+    const keysToDelete = [
+      "QDRANT_URL",
+      "QDRANT_API_KEY",
+      "EMBEDDING_PROVIDER",
+      "SERVER_TRANSPORT",
+      "TRANSPORT_MODE",
+      "SERVER_HTTP_PORT",
+      "HTTP_PORT",
+      "SERVER_HTTP_TIMEOUT_MS",
+      "HTTP_REQUEST_TIMEOUT_MS",
+      "SERVER_PROMPTS_FILE",
+      "PROMPTS_CONFIG_FILE",
+      "INGEST_CHUNK_SIZE",
+      "CODE_CHUNK_SIZE",
+      "INGEST_CHUNK_OVERLAP",
+      "CODE_CHUNK_OVERLAP",
+      "INGEST_ENABLE_AST",
+      "CODE_ENABLE_AST",
+      "QDRANT_TUNE_UPSERT_BATCH_SIZE",
+      "QDRANT_UPSERT_BATCH_SIZE",
+      "CODE_BATCH_SIZE",
+      "INGEST_DEFAULT_SEARCH_LIMIT",
+      "CODE_SEARCH_LIMIT",
+      "INGEST_ENABLE_HYBRID",
+      "CODE_ENABLE_HYBRID",
+      "TRAJECTORY_GIT_ENABLED",
+      "CODE_ENABLE_GIT_METADATA",
+      "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS",
+      "TRAJECTORY_GIT_SESSION_GAP_MINUTES",
+      "OPENAI_API_KEY",
+      "COHERE_API_KEY",
+      "VOYAGE_API_KEY",
+    ];
+    for (const key of keysToDelete) {
+      delete process.env[key];
+    }
   });
 
   afterEach(() => {
     process.env = originalEnv;
   });
 
-  it("should return defaults when no env vars set", () => {
-    delete process.env.QDRANT_URL;
-    delete process.env.EMBEDDING_PROVIDER;
-    delete process.env.TRANSPORT_MODE;
-    delete process.env.HTTP_PORT;
-    delete process.env.CODE_CHUNK_SIZE;
-    delete process.env.CODE_CHUNK_OVERLAP;
-    delete process.env.CODE_ENABLE_AST;
-    delete process.env.CODE_BATCH_SIZE;
-    delete process.env.QDRANT_UPSERT_BATCH_SIZE;
-    delete process.env.CODE_SEARCH_LIMIT;
-    delete process.env.CODE_ENABLE_HYBRID;
-    delete process.env.CODE_ENABLE_GIT_METADATA;
-    delete process.env.HTTP_REQUEST_TIMEOUT_MS;
-    delete process.env.PROMPTS_CONFIG_FILE;
-
+  it("should return defaults when no env vars set", async () => {
+    const { parseAppConfig } = await freshImport();
     const config = parseAppConfig();
 
     expect(config.qdrantUrl).toBe("http://localhost:6333");
@@ -46,18 +71,22 @@ describe("parseAppConfig", () => {
     expect(config.code.defaultSearchLimit).toBe(5);
     expect(config.code.enableHybridSearch).toBe(false);
     expect(config.code.enableGitMetadata).toBe(false);
+    expect(config.code.squashAwareSessions).toBe(false);
+    expect(config.code.sessionGapMinutes).toBe(30);
   });
 
-  it("should parse env vars when set", () => {
+  it("should parse env vars when set (via deprecated names)", async () => {
     process.env.QDRANT_URL = "http://custom:6333";
     process.env.QDRANT_API_KEY = "secret";
-    process.env.EMBEDDING_PROVIDER = "OpenAI";
-    process.env.TRANSPORT_MODE = "HTTP";
+    process.env.EMBEDDING_PROVIDER = "openai";
+    process.env.OPENAI_API_KEY = "sk-test";
+    process.env.TRANSPORT_MODE = "http";
     process.env.HTTP_PORT = "8080";
     process.env.CODE_CHUNK_SIZE = "5000";
     process.env.CODE_ENABLE_GIT_METADATA = "true";
     process.env.CODE_ENABLE_HYBRID = "true";
 
+    const { parseAppConfig } = await freshImport();
     const config = parseAppConfig();
 
     expect(config.qdrantUrl).toBe("http://custom:6333");
@@ -69,111 +98,58 @@ describe("parseAppConfig", () => {
     expect(config.code.enableGitMetadata).toBe(true);
     expect(config.code.enableHybridSearch).toBe(true);
   });
-});
 
-// --- validateConfig tests (was config/validate.test.ts) ---
+  it("should print deprecation warnings to stderr", async () => {
+    process.env.TRANSPORT_MODE = "stdio";
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
-  return {
-    qdrantUrl: "http://localhost:6333",
-    embeddingProvider: "ollama",
-    transportMode: "stdio",
-    httpPort: 3000,
-    requestTimeoutMs: 300000,
-    promptsConfigFile: "/tmp/prompts.json",
-    code: {
-      chunkSize: 2500,
-      chunkOverlap: 300,
-      enableASTChunking: true,
-      supportedExtensions: [".ts"],
-      ignorePatterns: ["node_modules/**"],
-      batchSize: 100,
-      defaultSearchLimit: 5,
-      enableHybridSearch: false,
-      enableGitMetadata: false,
-    },
-    ...overrides,
-  };
-}
+    const { parseAppConfig } = await freshImport();
+    parseAppConfig();
 
-describe("validateConfig", () => {
-  let originalEnv: NodeJS.ProcessEnv;
+    expect(stderrSpy).toHaveBeenCalled();
+    const output = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(output).toContain("TRANSPORT_MODE");
 
-  beforeEach(() => {
-    originalEnv = { ...process.env };
+    stderrSpy.mockRestore();
   });
 
-  afterEach(() => {
-    process.env = originalEnv;
+  it("should throw for invalid transport mode via Zod", async () => {
+    process.env.SERVER_TRANSPORT = "grpc";
+    const { parseAppConfig } = await freshImport();
+
+    expect(() => parseAppConfig()).toThrow(/transport/i);
   });
 
-  it("should pass for valid stdio config", () => {
-    expect(() => {
-      validateConfig(makeConfig());
-    }).not.toThrow();
+  it("should throw for unknown embedding provider via Zod", async () => {
+    process.env.EMBEDDING_PROVIDER = "unknown";
+    const { parseAppConfig } = await freshImport();
+
+    expect(() => parseAppConfig()).toThrow(/provider/i);
   });
 
-  it("should pass for valid http config", () => {
-    expect(() => {
-      validateConfig(makeConfig({ transportMode: "http" }));
-    }).not.toThrow();
-  });
-
-  it("should throw for invalid transport mode", () => {
-    expect(() => {
-      validateConfig(makeConfig({ transportMode: "grpc" as any }));
-    }).toThrow(/transport/i);
-  });
-
-  it("should throw for invalid HTTP port in http mode", () => {
-    expect(() => {
-      validateConfig(makeConfig({ transportMode: "http", httpPort: 0 }));
-    }).toThrow(/port/i);
-    expect(() => {
-      validateConfig(makeConfig({ transportMode: "http", httpPort: 70000 }));
-    }).toThrow(/port/i);
-    expect(() => {
-      validateConfig(makeConfig({ transportMode: "http", httpPort: NaN }));
-    }).toThrow(/port/i);
-  });
-
-  it("should not validate port for stdio mode", () => {
-    expect(() => {
-      validateConfig(makeConfig({ transportMode: "stdio", httpPort: 0 }));
-    }).not.toThrow();
-  });
-
-  it("should throw for invalid requestTimeoutMs in http mode", () => {
-    expect(() => {
-      validateConfig(makeConfig({ transportMode: "http", requestTimeoutMs: -1 }));
-    }).toThrow(/timeout/i);
-    expect(() => {
-      validateConfig(makeConfig({ transportMode: "http", requestTimeoutMs: NaN }));
-    }).toThrow(/timeout/i);
-  });
-
-  it("should throw for unknown embedding provider", () => {
-    expect(() => {
-      validateConfig(makeConfig({ embeddingProvider: "unknown" }));
-    }).toThrow(/provider/i);
-  });
-
-  it("should accept all known providers", () => {
-    for (const provider of ["ollama", "openai", "cohere", "voyage"]) {
-      // Set API keys for non-ollama providers
-      process.env.OPENAI_API_KEY = "test";
-      process.env.COHERE_API_KEY = "test";
-      process.env.VOYAGE_API_KEY = "test";
-      expect(() => {
-        validateConfig(makeConfig({ embeddingProvider: provider }));
-      }).not.toThrow();
-    }
-  });
-
-  it("should throw when non-ollama provider has no API key in env", () => {
+  it("should throw when non-ollama provider has no API key", async () => {
+    process.env.EMBEDDING_PROVIDER = "openai";
     delete process.env.OPENAI_API_KEY;
-    expect(() => {
-      validateConfig(makeConfig({ embeddingProvider: "openai" }));
-    }).toThrow(/OPENAI_API_KEY/);
+    const { parseAppConfig } = await freshImport();
+
+    expect(() => parseAppConfig()).toThrow(/OPENAI_API_KEY/);
+  });
+
+  it("should not throw when non-ollama provider has API key", async () => {
+    process.env.EMBEDDING_PROVIDER = "openai";
+    process.env.OPENAI_API_KEY = "sk-test";
+    const { parseAppConfig } = await freshImport();
+
+    expect(() => parseAppConfig()).not.toThrow();
+  });
+
+  it("bridges supportedExtensions and ignorePatterns from defaults", async () => {
+    const { parseAppConfig } = await freshImport();
+    const config = parseAppConfig();
+
+    expect(config.code.supportedExtensions).toBeDefined();
+    expect(config.code.supportedExtensions.length).toBeGreaterThan(0);
+    expect(config.code.ignorePatterns).toBeDefined();
+    expect(config.code.ignorePatterns.length).toBeGreaterThan(0);
   });
 });

@@ -28,95 +28,34 @@ export interface AppConfig {
 }
 
 export function parseAppConfig(): AppConfig {
-  const transportMode = (process.env.SERVER_TRANSPORT || process.env.TRANSPORT_MODE || "stdio").toLowerCase();
+  const zodConfig = parseAppConfigZod();
 
+  // Print deprecation warnings at parse time
+  printDeprecationWarnings(zodConfig.deprecations);
+
+  // Bridge to old AppConfig shape for consumers
   return {
-    qdrantUrl: process.env.QDRANT_URL || "http://localhost:6333",
-    qdrantApiKey: process.env.QDRANT_API_KEY,
-    embeddingProvider: (process.env.EMBEDDING_PROVIDER || "ollama").toLowerCase(),
-    transportMode: transportMode as "stdio" | "http",
-    httpPort: parseInt(process.env.SERVER_HTTP_PORT || process.env.HTTP_PORT || "3000", 10),
-    requestTimeoutMs: parseInt(
-      process.env.SERVER_HTTP_TIMEOUT_MS || process.env.HTTP_REQUEST_TIMEOUT_MS || "300000",
-      10,
-    ),
-    promptsConfigFile:
-      process.env.SERVER_PROMPTS_FILE || process.env.PROMPTS_CONFIG_FILE || join(__dirname, "../../prompts.json"),
+    qdrantUrl: zodConfig.core.qdrantUrl,
+    qdrantApiKey: zodConfig.core.qdrantApiKey,
+    embeddingProvider: zodConfig.embedding.provider,
+    transportMode: zodConfig.core.transportMode,
+    httpPort: zodConfig.core.httpPort,
+    requestTimeoutMs: zodConfig.core.requestTimeoutMs,
+    promptsConfigFile: zodConfig.core.promptsConfigFile,
     code: {
-      chunkSize: parseInt(
-        process.env.INGEST_CHUNK_SIZE || process.env.CODE_CHUNK_SIZE || String(DEFAULT_CHUNK_SIZE),
-        10,
-      ),
-      chunkOverlap: parseInt(
-        process.env.INGEST_CHUNK_OVERLAP || process.env.CODE_CHUNK_OVERLAP || String(DEFAULT_CHUNK_OVERLAP),
-        10,
-      ),
-      enableASTChunking: (process.env.INGEST_ENABLE_AST ?? process.env.CODE_ENABLE_AST) !== "false",
+      chunkSize: zodConfig.ingest.chunkSize,
+      chunkOverlap: zodConfig.ingest.chunkOverlap,
+      enableASTChunking: zodConfig.ingest.enableAST,
       supportedExtensions: DEFAULT_CODE_EXTENSIONS,
       ignorePatterns: DEFAULT_IGNORE_PATTERNS,
-      batchSize: parseInt(
-        process.env.QDRANT_TUNE_UPSERT_BATCH_SIZE ||
-          process.env.QDRANT_UPSERT_BATCH_SIZE ||
-          process.env.CODE_BATCH_SIZE ||
-          String(DEFAULT_BATCH_SIZE),
-        10,
-      ),
-      defaultSearchLimit: parseInt(
-        process.env.INGEST_DEFAULT_SEARCH_LIMIT || process.env.CODE_SEARCH_LIMIT || String(DEFAULT_SEARCH_LIMIT),
-        10,
-      ),
-      enableHybridSearch: (process.env.INGEST_ENABLE_HYBRID ?? process.env.CODE_ENABLE_HYBRID) === "true",
-      enableGitMetadata: (process.env.TRAJECTORY_GIT_ENABLED ?? process.env.CODE_ENABLE_GIT_METADATA) === "true",
-      squashAwareSessions: process.env.TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS === "true",
-      sessionGapMinutes: parseInt(process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES || "30", 10),
+      batchSize: zodConfig.qdrantTune.upsertBatchSize,
+      defaultSearchLimit: zodConfig.ingest.defaultSearchLimit,
+      enableHybridSearch: zodConfig.ingest.enableHybrid,
+      enableGitMetadata: zodConfig.trajectoryGit.enabled,
+      squashAwareSessions: zodConfig.trajectoryGit.squashAwareSessions,
+      sessionGapMinutes: zodConfig.trajectoryGit.sessionGapMinutes,
     },
   };
-}
-
-// --- validateConfig (was config/validate.ts) ---
-
-const VALID_PROVIDERS = ["ollama", "openai", "cohere", "voyage"];
-const VALID_TRANSPORT_MODES = ["stdio", "http"];
-
-const PROVIDER_API_KEY_MAP: Record<string, string> = {
-  openai: "OPENAI_API_KEY",
-  cohere: "COHERE_API_KEY",
-  voyage: "VOYAGE_API_KEY",
-};
-
-export function validateConfig(config: AppConfig): void {
-  // Validate transport mode
-  if (!VALID_TRANSPORT_MODES.includes(config.transportMode)) {
-    throw new Error(
-      `Invalid transport mode "${config.transportMode}". Supported: ${VALID_TRANSPORT_MODES.join(", ")}.`,
-    );
-  }
-
-  // Validate HTTP port (only when HTTP mode)
-  if (config.transportMode === "http") {
-    if (Number.isNaN(config.httpPort) || config.httpPort < 1 || config.httpPort > 65535) {
-      throw new Error(`Invalid HTTP port "${config.httpPort}". Must be between 1 and 65535.`);
-    }
-
-    if (Number.isNaN(config.requestTimeoutMs) || config.requestTimeoutMs <= 0) {
-      throw new Error(`Invalid request timeout "${config.requestTimeoutMs}". Must be a positive number.`);
-    }
-  }
-
-  // Validate embedding provider
-  if (!VALID_PROVIDERS.includes(config.embeddingProvider)) {
-    throw new Error(
-      `Unknown embedding provider "${config.embeddingProvider}". Supported: ${VALID_PROVIDERS.join(", ")}.`,
-    );
-  }
-
-  // Validate API keys for non-ollama providers
-  if (config.embeddingProvider !== "ollama") {
-    const requiredKeyName = PROVIDER_API_KEY_MAP[config.embeddingProvider];
-    if (requiredKeyName && !process.env[requiredKeyName]) {
-      throw new Error(`${requiredKeyName} is required for ${config.embeddingProvider} provider.`);
-    }
-  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -379,6 +318,25 @@ export function parseAppConfigZod(): {
   if (!qdrantTuneResult.success) {
     const issues = qdrantTuneResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     throw new Error(`Invalid config (qdrantTune): ${issues}`);
+  }
+
+  // Validate API keys for non-ollama providers
+  const embedding = embeddingResult.data;
+  if (embedding.provider !== "ollama") {
+    const keyMap: Record<string, keyof EmbeddingConfig> = {
+      openai: "openaiApiKey",
+      cohere: "cohereApiKey",
+      voyage: "voyageApiKey",
+    };
+    const envMap: Record<string, string> = {
+      openai: "OPENAI_API_KEY",
+      cohere: "COHERE_API_KEY",
+      voyage: "VOYAGE_API_KEY",
+    };
+    const keyField = keyMap[embedding.provider];
+    if (keyField && !embedding[keyField]) {
+      throw new Error(`${envMap[embedding.provider]} is required for ${embedding.provider} provider.`);
+    }
   }
 
   return {

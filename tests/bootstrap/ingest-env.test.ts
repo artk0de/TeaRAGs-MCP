@@ -2,7 +2,7 @@
  * Tests for INGEST_* env var naming convention.
  *
  * Verifies: new name works, old name works as fallback, new name takes priority, default when nothing set.
- * Special: INGEST_ENABLE_AST uses !== "false" check (enabled by default).
+ * Special: INGEST_ENABLE_AST uses Zod booleanFromEnvWithDefault(true) — "true"/"1" enables, default true.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -21,7 +21,7 @@ const CONFIG_MAPPINGS: [string, string, string, string][] = [
 const HYBRID_NEW = "INGEST_ENABLE_HYBRID";
 const HYBRID_OLD = "CODE_ENABLE_HYBRID";
 
-/** Boolean env var: CODE_ENABLE_AST → INGEST_ENABLE_AST (!== "false", enabled by default) */
+/** Boolean env var: CODE_ENABLE_AST → INGEST_ENABLE_AST (Zod: "true"/"1" → true, default true) */
 const AST_NEW = "INGEST_ENABLE_AST";
 const AST_OLD = "CODE_ENABLE_AST";
 
@@ -143,7 +143,7 @@ describe("INGEST env var naming", () => {
     });
   });
 
-  describe("parseAppConfig — INGEST_ENABLE_AST (enabled unless 'false')", () => {
+  describe("parseAppConfig — INGEST_ENABLE_AST (Zod: 'true'/'1' enables, default true)", () => {
     it("should read new name — 'false' disables", async () => {
       process.env[AST_NEW] = "false";
 
@@ -153,13 +153,22 @@ describe("INGEST env var naming", () => {
       expect(config.code.enableASTChunking).toBe(false);
     });
 
-    it("should read new name — anything else enables", async () => {
-      process.env[AST_NEW] = "whatever";
+    it("should read new name — 'true' enables", async () => {
+      process.env[AST_NEW] = "true";
 
       const { parseAppConfig } = await freshImport();
       const config = parseAppConfig();
 
       expect(config.code.enableASTChunking).toBe(true);
+    });
+
+    it("should read new name — unrecognized value disables (Zod strict)", async () => {
+      process.env[AST_NEW] = "whatever";
+
+      const { parseAppConfig } = await freshImport();
+      const config = parseAppConfig();
+
+      expect(config.code.enableASTChunking).toBe(false);
     });
 
     it("should fall back to old name — 'false' disables", async () => {

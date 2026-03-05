@@ -242,6 +242,47 @@ describe("parseAppConfigZod", () => {
     });
   });
 
+  describe("API key validation", () => {
+    it("throws when openai provider has no API key", async () => {
+      process.env.EMBEDDING_PROVIDER = "openai";
+      delete process.env.OPENAI_API_KEY;
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(() => parseAppConfigZod()).toThrow(/OPENAI_API_KEY.*required.*openai/i);
+    });
+
+    it("throws when cohere provider has no API key", async () => {
+      process.env.EMBEDDING_PROVIDER = "cohere";
+      delete process.env.COHERE_API_KEY;
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(() => parseAppConfigZod()).toThrow(/COHERE_API_KEY.*required.*cohere/i);
+    });
+
+    it("throws when voyage provider has no API key", async () => {
+      process.env.EMBEDDING_PROVIDER = "voyage";
+      delete process.env.VOYAGE_API_KEY;
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(() => parseAppConfigZod()).toThrow(/VOYAGE_API_KEY.*required.*voyage/i);
+    });
+
+    it("does not throw when openai provider has API key", async () => {
+      process.env.EMBEDDING_PROVIDER = "openai";
+      process.env.OPENAI_API_KEY = "sk-test";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(() => parseAppConfigZod()).not.toThrow();
+    });
+
+    it("does not throw for ollama (no key required)", async () => {
+      process.env.EMBEDDING_PROVIDER = "ollama";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(() => parseAppConfigZod()).not.toThrow();
+    });
+  });
+
   describe("debug parsing", () => {
     it('parses "true" as true', async () => {
       process.env.DEBUG = "true";
