@@ -18,7 +18,7 @@ import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
-import type { AppConfig } from "./config.js";
+import { getZodConfig, type AppConfig } from "./config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -40,7 +40,8 @@ export interface AppContext {
 
 export function createAppContext(config: AppConfig): AppContext {
   const qdrant = new QdrantManager(config.qdrantUrl, config.qdrantApiKey);
-  const embeddings = EmbeddingProviderFactory.createFromEnv();
+  const zodConfig = getZodConfig();
+  const embeddings = EmbeddingProviderFactory.create(zodConfig.embedding);
   const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
   const essentialTrajectoryFields = registry.getEssentialPayloadKeys();
   const schemaBuilder = new SchemaBuilder(reranker);

@@ -5,8 +5,8 @@ export async function checkOllamaAvailability(
 ): Promise<void> {
   if (embeddingProvider !== "ollama") return;
 
-  const url = baseUrl || process.env.EMBEDDING_BASE_URL || "http://localhost:11434";
-  const model = modelName || process.env.EMBEDDING_MODEL || "jina-embeddings-v2-base-code";
+  const url = baseUrl || "http://localhost:11434";
+  const model = modelName || "jina-embeddings-v2-base-code";
   const isLocalhost = url.includes("localhost") || url.includes("127.0.0.1");
 
   try {

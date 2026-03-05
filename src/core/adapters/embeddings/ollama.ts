@@ -39,6 +39,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly retryAttempts: number;
   private readonly retryDelayMs: number;
   private readonly baseUrl: string;
+  private readonly numGpu: number;
   private useNativeBatch: boolean;
 
   constructor(
@@ -46,11 +47,14 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     dimensions?: number,
     rateLimitConfig?: RateLimitConfig,
     baseUrl = "http://localhost:11434",
+    legacyApi = false,
+    numGpu = 999,
   ) {
     this.model = model;
     this.baseUrl = baseUrl;
-    // Enable native batch by default unless OLLAMA_LEGACY_API=true (for tests)
-    this.useNativeBatch = process.env.OLLAMA_LEGACY_API !== "true";
+    this.numGpu = numGpu;
+    // Enable native batch by default unless legacyApi is true
+    this.useNativeBatch = !legacyApi;
 
     // Default dimensions for different models
     const defaultDimensions: Record<string, number> = {
@@ -118,9 +122,6 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * Sends all texts in ONE request instead of N separate requests
    */
   private async callBatchApi(texts: string[]): Promise<OllamaEmbedBatchResponse> {
-    // Configurable GPU usage: 0 = CPU only, 999 = all layers on GPU
-    const numGpu = process.env.OLLAMA_NUM_GPU ? parseInt(process.env.OLLAMA_NUM_GPU, 10) : 999;
-
     const response = await fetch(`${this.baseUrl}/api/embed`, {
       method: "POST",
       headers: {
@@ -130,7 +131,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         model: this.model,
         input: texts, // Array of texts!
         options: {
-          num_gpu: numGpu,
+          num_gpu: this.numGpu,
         },
       }),
     });
@@ -152,9 +153,6 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * Fallback for older Ollama versions
    */
   private async callApi(text: string): Promise<OllamaEmbedResponse> {
-    // Configurable GPU usage: 0 = CPU only, 999 = all layers on GPU
-    const numGpu = process.env.OLLAMA_NUM_GPU ? parseInt(process.env.OLLAMA_NUM_GPU, 10) : 999;
-
     try {
       const response = await fetch(`${this.baseUrl}/api/embeddings`, {
         method: "POST",
@@ -165,7 +163,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
           model: this.model,
           prompt: text,
           options: {
-            num_gpu: numGpu,
+            num_gpu: this.numGpu,
           },
         }),
       });

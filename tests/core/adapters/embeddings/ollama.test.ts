@@ -27,14 +27,8 @@ describe("OllamaEmbeddings", () => {
     mockFetch = global.fetch as any;
     mockFetch.mockReset();
 
-    // Use legacy API for tests (old /api/embeddings endpoint)
-    process.env.OLLAMA_LEGACY_API = "true";
-    // Use explicit model for tests to avoid dependency on default
-    embeddings = new OllamaEmbeddings("nomic-embed-text");
-  });
-
-  afterEach(() => {
-    delete process.env.OLLAMA_LEGACY_API;
+    // Use legacy API for tests (old /api/embeddings endpoint) via constructor param
+    embeddings = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, undefined, true);
   });
 
   describe("constructor", () => {
@@ -124,7 +118,13 @@ describe("OllamaEmbeddings", () => {
     });
 
     it("should use custom base URL", async () => {
-      const customEmbeddings = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, "http://custom:11434");
+      const customEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://custom:11434",
+        true,
+      );
 
       const mockEmbedding = Array(768).fill(0.1);
       mockFetch.mockResolvedValue({
@@ -377,10 +377,16 @@ describe("OllamaEmbeddings", () => {
     });
 
     it("should use exponential backoff with faster default delay", async () => {
-      const rateLimitEmbeddings = new OllamaEmbeddings("nomic-embed-text", undefined, {
-        retryAttempts: 3,
-        retryDelayMs: 100,
-      });
+      const rateLimitEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        {
+          retryAttempts: 3,
+          retryDelayMs: 100,
+        },
+        undefined,
+        true,
+      );
 
       const mockEmbedding = Array(768).fill(0.5);
 
@@ -411,10 +417,16 @@ describe("OllamaEmbeddings", () => {
     });
 
     it("should throw error after max retries exceeded", async () => {
-      const rateLimitEmbeddings = new OllamaEmbeddings("nomic-embed-text", undefined, {
-        retryAttempts: 2,
-        retryDelayMs: 100,
-      });
+      const rateLimitEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        {
+          retryAttempts: 2,
+          retryDelayMs: 100,
+        },
+        undefined,
+        true,
+      );
 
       mockFetch.mockResolvedValue({
         ok: false,
@@ -544,8 +556,7 @@ describe("OllamaEmbeddings", () => {
     let batchEmbeddings: OllamaEmbeddings;
 
     beforeEach(() => {
-      // Disable legacy API for batch tests
-      delete process.env.OLLAMA_LEGACY_API;
+      // Use native batch API (legacyApi=false, which is the default)
       batchEmbeddings = new OllamaEmbeddings("nomic-embed-text");
     });
 
@@ -649,9 +660,8 @@ describe("OllamaEmbeddings", () => {
       expect(results).toHaveLength(4);
     });
 
-    it("should respect OLLAMA_NUM_GPU env variable in batch mode", async () => {
-      process.env.OLLAMA_NUM_GPU = "0";
-      const cpuEmbeddings = new OllamaEmbeddings("nomic-embed-text");
+    it("should respect numGpu constructor parameter in batch mode", async () => {
+      const cpuEmbeddings = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, undefined, false, 0);
 
       const mockEmbedding = Array(768).fill(0.5);
       mockFetch.mockResolvedValue({
@@ -674,11 +684,9 @@ describe("OllamaEmbeddings", () => {
           }),
         }),
       );
-
-      delete process.env.OLLAMA_NUM_GPU;
     });
 
-    it("should default to num_gpu=999 when OLLAMA_NUM_GPU not set", async () => {
+    it("should default to num_gpu=999 when numGpu not specified", async () => {
       const gpuEmbeddings = new OllamaEmbeddings("nomic-embed-text");
 
       const mockEmbedding = Array(768).fill(0.5);

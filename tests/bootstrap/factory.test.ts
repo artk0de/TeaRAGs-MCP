@@ -13,7 +13,7 @@ vi.mock("../../src/core/adapters/qdrant/client.js", () => ({
 }));
 vi.mock("../../src/core/adapters/embeddings/factory.js", () => ({
   EmbeddingProviderFactory: {
-    createFromEnv: vi.fn().mockReturnValue({ getDimensions: () => 768 }),
+    create: vi.fn().mockReturnValue({ getDimensions: () => 768 }),
   },
 }));
 vi.mock("../../src/core/api/ingest-facade.js", () => ({
@@ -53,6 +53,40 @@ vi.mock("../../src/mcp/prompts/index.js", () => ({
 vi.mock("node:fs", async () => {
   const actual = await import("node:fs");
   return { ...actual, existsSync: vi.fn() };
+});
+
+// Mock getZodConfig to return a valid embedding config slice
+vi.mock("../../src/bootstrap/config.js", async () => {
+  const actual = await import("../../src/bootstrap/config.js");
+  return {
+    ...actual,
+    getZodConfig: vi.fn().mockReturnValue({
+      core: {
+        debug: false,
+        qdrantUrl: "http://localhost:6333",
+        transportMode: "stdio",
+        httpPort: 3000,
+        requestTimeoutMs: 300000,
+        promptsConfigFile: "/nonexistent/prompts.json",
+      },
+      embedding: {
+        provider: "ollama",
+        ollamaLegacyApi: false,
+        ollamaNumGpu: 999,
+        tune: {
+          concurrency: 1,
+          batchSize: 1024,
+          batchTimeoutMs: 2000,
+          retryAttempts: 3,
+          retryDelayMs: 1000,
+        },
+      },
+      ingest: {},
+      trajectoryGit: {},
+      qdrantTune: {},
+      deprecations: [],
+    }),
+  };
 });
 
 function makeConfig(): AppConfig {
