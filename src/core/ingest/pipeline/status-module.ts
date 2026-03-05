@@ -4,9 +4,7 @@
  * Extracted from CodeIndexer to isolate status queries and index clearing.
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
-
+import { snapshotsDir } from "../../../bootstrap/config/paths.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../contracts/collection.js";
 import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../../types.js";
@@ -111,7 +109,7 @@ export class StatusModule {
 
     // Also delete snapshot
     try {
-      const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
+      const snapshotDir = snapshotsDir();
       const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
       await synchronizer.deleteSnapshot();
     } catch (_error) {

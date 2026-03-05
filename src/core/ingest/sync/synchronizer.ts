@@ -10,9 +10,9 @@
 
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
+import { snapshotsDir } from "../../../bootstrap/config/paths.js";
 import type { FileChanges } from "../../types.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
 import { MerkleTree } from "./merkle.js";
@@ -50,8 +50,7 @@ export class FileSynchronizer {
     collectionName: string,
   ) {
     this.collectionName = collectionName;
-    // Store snapshots in ~/.tea-rags-mcp/snapshots/
-    const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
+    const snapshotDir = snapshotsDir();
     const snapshotPath = join(snapshotDir, `${collectionName}.json`);
     this.checkpointPath = join(snapshotDir, `${collectionName}.checkpoint.json`);
     this.snapshotManager = new SnapshotManager(snapshotPath);
@@ -336,8 +335,7 @@ export class FileSynchronizer {
     };
 
     try {
-      // Ensure directory exists
-      const dir = join(homedir(), ".tea-rags-mcp", "snapshots");
+      const dir = snapshotsDir();
       await fs.mkdir(dir, { recursive: true });
 
       // Write checkpoint atomically (write to temp, then rename)

@@ -3,6 +3,7 @@ import { DEFAULT_CODE_EXTENSIONS, DEFAULT_IGNORE_PATTERNS } from "./defaults.js"
 import { parseAppConfigZod } from "./parse.js";
 
 export * from "./defaults.js";
+export * from "./paths.js";
 export * from "./utils.js";
 export * from "./schemas.js";
 export * from "./parse.js";
