@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { IngestFacade } from "../../core/api/ingest-facade.js";
 import type { SchemaBuilder } from "../../core/api/schema-builder.js";
+import type { SchemaDriftMonitor } from "../../core/api/schema-drift-monitor.js";
 import type { SearchFacade } from "../../core/api/search-facade.js";
 import type { SearchOptions } from "../../core/types.js";
 import { formatEnrichmentStatus } from "./formatters/enrichment.js";
@@ -16,10 +17,11 @@ export interface CodeToolDependencies {
   ingest: IngestFacade;
   search: SearchFacade;
   schemaBuilder: SchemaBuilder;
+  schemaDriftMonitor: SchemaDriftMonitor;
 }
 
 export function registerCodeTools(server: McpServer, deps: CodeToolDependencies): void {
-  const { ingest, search } = deps;
+  const { ingest, search, schemaDriftMonitor } = deps;
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);
 
   // index_codebase
@@ -138,13 +140,16 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
         )
         .join("\n");
 
+      let text = `Found ${results.length} result(s):\n${formattedResults}`;
+
+      // Schema drift check (once per session across all tools)
+      const driftWarning = await schemaDriftMonitor.checkAndConsume(path);
+      if (driftWarning) {
+        text += `\n\n${driftWarning}`;
+      }
+
       return {
-        content: [
-          {
-            type: "text",
-            text: `Found ${results.length} result(s):\n${formattedResults}`,
-          },
-        ],
+        content: [{ type: "text", text }],
       };
     },
   );
@@ -180,6 +185,11 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
 
       if (stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0) {
         message = `No changes detected. Codebase is up to date.`;
+      }
+
+      const driftWarning = await schemaDriftMonitor.checkAndConsume(path);
+      if (driftWarning) {
+        message += `\n\n${driftWarning}`;
       }
 
       return {
@@ -240,6 +250,11 @@ export function registerCodeTools(server: McpServer, deps: CodeToolDependencies)
       if (status.enrichment?.status === "in_progress") {
         const pct = status.enrichment.percentage ?? 0;
         text += `\n\n⏳ Git enrichment is still running (${pct}% — ${status.enrichment.processedFiles ?? 0}/${status.enrichment.totalFiles ?? "?"} files). Git-based filters and rerank presets will not work until enrichment completes.`;
+      }
+
+      const driftWarning = await schemaDriftMonitor.checkAndConsume(path);
+      if (driftWarning) {
+        text += `\n\n${driftWarning}`;
       }
 
       return {

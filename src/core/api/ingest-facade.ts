@@ -112,7 +112,8 @@ export class IngestFacade {
       const collectionName = resolveCollectionName(absolutePath);
       const points = await scrollAllPoints(this.qdrant, collectionName);
       const stats = computeCollectionStats(points, this.allPayloadSignals);
-      this.statsCache.save(collectionName, stats);
+      const payloadFieldKeys = this.allPayloadSignals.map((d) => d.key);
+      this.statsCache.save(collectionName, stats, payloadFieldKeys);
       this.reranker?.invalidateStats();
     } catch (error) {
       // Stats refresh failure should not fail the indexing operation

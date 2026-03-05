@@ -8,6 +8,7 @@ import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../../core/adapters/embeddings/sparse.js";
 import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
 import type { SchemaBuilder } from "../../core/api/schema-builder.js";
+import type { SchemaDriftMonitor } from "../../core/api/schema-drift-monitor.js";
 import type { Reranker } from "../../core/search/reranker.js";
 import {
   applyPostProcessing,
@@ -24,10 +25,21 @@ export interface SearchToolDependencies {
   reranker: Reranker;
   schemaBuilder: SchemaBuilder;
   essentialTrajectoryFields: string[];
+  schemaDriftMonitor: SchemaDriftMonitor;
+}
+
+function appendDriftWarning(
+  result: { content: { type: "text"; text: string }[]; [key: string]: unknown },
+  driftWarning: string | null,
+): typeof result {
+  if (!driftWarning || result.content.length === 0) return result;
+  const last = result.content[result.content.length - 1];
+  last.text += `\n\n${driftWarning}`;
+  return result;
 }
 
 export function registerSearchTools(server: McpServer, deps: SearchToolDependencies): void {
-  const { qdrant, embeddings } = deps;
+  const { qdrant, embeddings, schemaDriftMonitor } = deps;
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);
 
   // semantic_search
@@ -56,7 +68,11 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
         reranker: deps.reranker,
       });
 
-      return formatSearchResults(processed, metaOnly, deps.essentialTrajectoryFields);
+      const result = formatSearchResults(processed, metaOnly, deps.essentialTrajectoryFields);
+      const driftWarning = path
+        ? await schemaDriftMonitor.checkAndConsume(path)
+        : schemaDriftMonitor.checkByCollectionName(resolved.collectionName);
+      return appendDriftWarning(result, driftWarning);
     },
   );
 
@@ -108,7 +124,11 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
         reranker: deps.reranker,
       });
 
-      return formatSearchResults(processed, metaOnly, deps.essentialTrajectoryFields);
+      const result = formatSearchResults(processed, metaOnly, deps.essentialTrajectoryFields);
+      const driftWarning = path
+        ? await schemaDriftMonitor.checkAndConsume(path)
+        : schemaDriftMonitor.checkByCollectionName(resolved.collectionName);
+      return appendDriftWarning(result, driftWarning);
     },
   );
 }
