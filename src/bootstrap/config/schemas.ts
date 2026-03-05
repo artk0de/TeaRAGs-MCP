@@ -35,7 +35,7 @@ export const embeddingTuneSchema = z.object({
 });
 
 export const embeddingSchema = z.object({
-  provider: z.enum(["ollama", "openai", "cohere", "voyage"]).default("ollama"),
+  provider: z.enum(["ollama", "openai", "cohere", "voyage", "onnx"]).default("ollama"),
   model: z.string().optional(),
   dimensions: optionalPositiveInt,
   baseUrl: z.string().optional(),
