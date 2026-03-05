@@ -2,6 +2,8 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { z } from "zod";
+
 import {
   DEFAULT_BATCH_SIZE,
   DEFAULT_CHUNK_OVERLAP,
@@ -115,4 +117,180 @@ export function validateConfig(config: AppConfig): void {
       throw new Error(`${requiredKeyName} is required for ${config.embeddingProvider} provider.`);
     }
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// NEW Zod-based config (Task 1 of centralized config)
+// ───────────────────────────────────────────────────────────────────────────────
+
+export interface DeprecationNotice {
+  oldName: string;
+  newName: string;
+}
+
+function envWithFallback(
+  deprecations: DeprecationNotice[],
+  newName: string,
+  ...oldNames: string[]
+): string | undefined {
+  const newVal = process.env[newName];
+  if (newVal !== undefined && newVal !== "") return newVal;
+  for (const old of oldNames) {
+    const oldVal = process.env[old];
+    if (oldVal !== undefined && oldVal !== "") {
+      deprecations.push({ oldName: old, newName });
+      return oldVal;
+    }
+  }
+  return undefined;
+}
+
+/** Parse "true"/"1" → true, everything else → false */
+const booleanFromEnv = z
+  .string()
+  .optional()
+  .transform((v) => v === "true" || v === "1");
+
+/** Parse string to int, returning undefined for absent/empty values */
+const optionalInt = z
+  .string()
+  .optional()
+  .transform((v) => (v !== undefined && v !== "" ? parseInt(v, 10) : undefined))
+  .pipe(z.number().int().optional());
+
+/** Parse string to int with a default */
+function intWithDefault(defaultValue: number) {
+  return z
+    .string()
+    .optional()
+    .transform((v) => (v !== undefined && v !== "" ? parseInt(v, 10) : defaultValue))
+    .pipe(z.number().int());
+}
+
+/** Parse string to positive int (optional) */
+const optionalPositiveInt = z
+  .string()
+  .optional()
+  .transform((v) => (v !== undefined && v !== "" ? parseInt(v, 10) : undefined))
+  .pipe(z.number().int().positive().optional());
+
+const coreSchema = z.object({
+  debug: booleanFromEnv,
+  qdrantUrl: z.string().default("http://localhost:6333"),
+  qdrantApiKey: z.string().optional(),
+  transportMode: z.enum(["stdio", "http"]),
+  httpPort: intWithDefault(3000),
+  requestTimeoutMs: intWithDefault(300000),
+  promptsConfigFile: z.string().default(join(__dirname, "../../prompts.json")),
+});
+
+const embeddingTuneSchema = z.object({
+  concurrency: intWithDefault(1),
+  batchSize: intWithDefault(1024),
+  minBatchSize: optionalInt,
+  batchTimeoutMs: intWithDefault(2000),
+  maxRequestsPerMinute: optionalPositiveInt,
+  retryAttempts: intWithDefault(3),
+  retryDelayMs: intWithDefault(1000),
+});
+
+const embeddingSchema = z.object({
+  provider: z.enum(["ollama", "openai", "cohere", "voyage"]).default("ollama"),
+  model: z.string().optional(),
+  dimensions: optionalPositiveInt,
+  baseUrl: z.string().optional(),
+  ollamaLegacyApi: booleanFromEnv,
+  ollamaNumGpu: intWithDefault(999),
+  openaiApiKey: z.string().optional(),
+  cohereApiKey: z.string().optional(),
+  voyageApiKey: z.string().optional(),
+  tune: embeddingTuneSchema,
+});
+
+export type CoreConfig = z.infer<typeof coreSchema>;
+export type EmbeddingTuneConfig = z.infer<typeof embeddingTuneSchema>;
+export type EmbeddingConfig = z.infer<typeof embeddingSchema>;
+
+export function parseAppConfigZod(): {
+  core: CoreConfig;
+  embedding: EmbeddingConfig;
+  deprecations: DeprecationNotice[];
+} {
+  const deprecations: DeprecationNotice[] = [];
+  const env = (name: string, ...fallbacks: string[]) => envWithFallback(deprecations, name, ...fallbacks);
+
+  const coreInput = {
+    debug: env("DEBUG"),
+    qdrantUrl: env("QDRANT_URL"),
+    qdrantApiKey: env("QDRANT_API_KEY"),
+    transportMode: env("SERVER_TRANSPORT", "TRANSPORT_MODE") ?? "stdio",
+    httpPort: env("SERVER_HTTP_PORT", "HTTP_PORT"),
+    requestTimeoutMs: env("SERVER_HTTP_TIMEOUT_MS", "HTTP_REQUEST_TIMEOUT_MS"),
+    promptsConfigFile: env("SERVER_PROMPTS_FILE", "PROMPTS_CONFIG_FILE"),
+  };
+
+  const tuneInput = {
+    concurrency: env("EMBEDDING_TUNE_CONCURRENCY", "EMBEDDING_CONCURRENCY"),
+    batchSize: env("EMBEDDING_TUNE_BATCH_SIZE", "EMBEDDING_BATCH_SIZE", "CODE_BATCH_SIZE"),
+    minBatchSize: env("EMBEDDING_TUNE_MIN_BATCH_SIZE", "MIN_BATCH_SIZE"),
+    batchTimeoutMs: env("EMBEDDING_TUNE_BATCH_TIMEOUT_MS", "BATCH_FORMATION_TIMEOUT_MS"),
+    maxRequestsPerMinute: env("EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE", "EMBEDDING_MAX_REQUESTS_PER_MINUTE"),
+    retryAttempts: env("EMBEDDING_TUNE_RETRY_ATTEMPTS", "EMBEDDING_RETRY_ATTEMPTS"),
+    retryDelayMs: env("EMBEDDING_TUNE_RETRY_DELAY_MS", "EMBEDDING_RETRY_DELAY"),
+  };
+
+  const embeddingInput = {
+    provider: env("EMBEDDING_PROVIDER"),
+    model: env("EMBEDDING_MODEL"),
+    dimensions: env("EMBEDDING_DIMENSIONS"),
+    baseUrl: env("EMBEDDING_BASE_URL"),
+    ollamaLegacyApi: env("OLLAMA_LEGACY_API"),
+    ollamaNumGpu: env("OLLAMA_NUM_GPU"),
+    openaiApiKey: env("OPENAI_API_KEY"),
+    cohereApiKey: env("COHERE_API_KEY"),
+    voyageApiKey: env("VOYAGE_API_KEY"),
+    tune: tuneInput,
+  };
+
+  const coreResult = coreSchema.safeParse(coreInput);
+  if (!coreResult.success) {
+    const issues = coreResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    throw new Error(`Invalid config (core): ${issues}`);
+  }
+
+  const embeddingResult = embeddingSchema.safeParse(embeddingInput);
+  if (!embeddingResult.success) {
+    const issues = embeddingResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+    throw new Error(`Invalid config (embedding): ${issues}`);
+  }
+
+  return {
+    core: coreResult.data,
+    embedding: embeddingResult.data,
+    deprecations,
+  };
+}
+
+export function printDeprecationWarnings(notices: DeprecationNotice[]): void {
+  if (notices.length === 0) return;
+  const lines = notices.map((n) => `  - ${n.oldName} -> use ${n.newName} instead`).join("\n");
+  process.stderr.write(`[tea-rags] Deprecated env vars detected:\n${lines}\n`);
+}
+
+export function getConfigDump(config: object): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  function flatten(obj: object, prefix: string): void {
+    for (const [key, value] of Object.entries(obj)) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+        flatten(value as object, path);
+      } else {
+        result[path] = value;
+      }
+    }
+  }
+
+  flatten(config, "");
+  return result;
 }
