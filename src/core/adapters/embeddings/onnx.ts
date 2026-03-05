@@ -24,10 +24,13 @@ function parseModelSpec(model: string): { baseModel: string; dtype: Dtype | unde
   return { baseModel: model, dtype: undefined };
 }
 
+const MIN_BATCH_SIZE = 4;
+
 export class OnnxEmbeddings implements EmbeddingProvider {
   private readonly model: string;
   private readonly dimensions: number;
   private extractor: Pipeline | null = null;
+  private maxBatchSize: number | null = null;
 
   constructor(model = DEFAULT_ONNX_MODEL, dimensions = DEFAULT_ONNX_DIMENSIONS) {
     this.model = model;
@@ -90,15 +93,26 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     if (texts.length === 0) return [];
 
     const extractor = await this.ensureLoaded();
-    const maxBatch = parseInt(process.env.ONNX_MAX_BATCH_SIZE || "32", 10);
+    const batchSize = this.maxBatchSize ?? texts.length;
     const results: EmbeddingResult[] = [];
+    let i = 0;
 
-    for (let i = 0; i < texts.length; i += maxBatch) {
-      const chunk = texts.slice(i, i + maxBatch);
-      const output = await extractor(chunk, { pooling: "mean", normalize: true });
-      const vectors = output.tolist();
-      for (const embedding of vectors) {
-        results.push({ embedding, dimensions: this.dimensions });
+    while (i < texts.length) {
+      const currentBatch = this.maxBatchSize ?? batchSize;
+      const chunk = texts.slice(i, i + currentBatch);
+      try {
+        const output = await extractor(chunk, { pooling: "mean", normalize: true });
+        const vectors = output.tolist();
+        for (const embedding of vectors) {
+          results.push({ embedding, dimensions: this.dimensions });
+        }
+        i += chunk.length;
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        const prev = this.maxBatchSize ?? chunk.length;
+        if (prev <= MIN_BATCH_SIZE) throw error;
+        this.maxBatchSize = Math.max(MIN_BATCH_SIZE, Math.floor(prev / 2));
+        console.error(`[ONNX] Batch of ${prev} failed (${msg}), reducing to ${this.maxBatchSize}`);
       }
     }
 
