@@ -55,16 +55,17 @@ export function filterResultsByGlob<T extends ResultWithPath>(results: T[], patt
 }
 
 /**
- * Calculates recommended fetch limit when using glob filtering
+ * Calculates fetch limit for Qdrant queries.
  *
- * Since glob filtering happens client-side after fetching from Qdrant,
- * we need to fetch more results to ensure we have enough after filtering.
+ * Always overfetches to ensure enough candidates for post-processing
+ * (glob filtering, reranking). Uses higher multiplier when client-side
+ * filtering or reranking will further reduce the result set.
  *
  * @param requestedLimit - The number of results the user wants
- * @param hasPattern - Whether a glob pattern will be applied
- * @param multiplier - How many extra results to fetch (default: 3)
- * @returns The limit to use when querying Qdrant
+ * @param needsOverfetch - Whether extra overfetch is needed (pathPattern, rerank)
+ * @returns The limit to use when querying Qdrant (minimum 20)
  */
-export function calculateFetchLimit(requestedLimit: number, hasPattern: boolean, multiplier = 3): number {
-  return hasPattern ? requestedLimit * multiplier : requestedLimit;
+export function calculateFetchLimit(requestedLimit: number, needsOverfetch: boolean): number {
+  const multiplier = needsOverfetch ? 6 : 4;
+  return Math.max(20, requestedLimit * multiplier);
 }

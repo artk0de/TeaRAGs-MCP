@@ -152,23 +152,22 @@ describe("filterResultsByGlob", () => {
 });
 
 describe("calculateFetchLimit", () => {
-  it("should return original limit when no pattern", () => {
-    expect(calculateFetchLimit(10, false)).toBe(10);
-    expect(calculateFetchLimit(5, false)).toBe(5);
+  it("should apply base multiplier (×4, min 20) when no overfetch needed", () => {
+    expect(calculateFetchLimit(10, false)).toBe(40); // 10 * 4
+    expect(calculateFetchLimit(5, false)).toBe(20); // max(20, 5 * 4)
+    expect(calculateFetchLimit(3, false)).toBe(20); // max(20, 3 * 4) = max(20, 12) = 20
   });
 
-  it("should multiply limit when pattern exists", () => {
-    expect(calculateFetchLimit(10, true)).toBe(30);
-    expect(calculateFetchLimit(5, true)).toBe(15);
+  it("should apply overfetch multiplier (×6, min 20) when pattern/rerank active", () => {
+    expect(calculateFetchLimit(10, true)).toBe(60); // 10 * 6
+    expect(calculateFetchLimit(5, true)).toBe(30); // 5 * 6
+    expect(calculateFetchLimit(3, true)).toBe(20); // max(20, 3 * 6) = max(20, 18) = 20
   });
 
-  it("should use custom multiplier", () => {
-    expect(calculateFetchLimit(10, true, 5)).toBe(50);
-    expect(calculateFetchLimit(10, true, 2)).toBe(20);
-  });
-
-  it("should handle edge cases", () => {
-    expect(calculateFetchLimit(0, true)).toBe(0);
-    expect(calculateFetchLimit(1, true)).toBe(3);
+  it("should enforce minimum of 20 candidates", () => {
+    expect(calculateFetchLimit(1, false)).toBe(20); // max(20, 1 * 4)
+    expect(calculateFetchLimit(1, true)).toBe(20); // max(20, 1 * 6)
+    expect(calculateFetchLimit(0, false)).toBe(20); // max(20, 0)
+    expect(calculateFetchLimit(0, true)).toBe(20); // max(20, 0)
   });
 });
