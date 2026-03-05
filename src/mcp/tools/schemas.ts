@@ -15,6 +15,12 @@ import { z } from "zod";
 
 import type { SchemaBuilder } from "../../core/api/schema-builder.js";
 
+/** Coerce string→number for MCP params (agents sometimes send "5" instead of 5) */
+const coerceNumber = () => z.preprocess((v) => (typeof v === "string" ? Number(v) : v), z.number());
+
+/** Coerce string→boolean for MCP params (agents sometimes send "true" instead of true) */
+const coerceBoolean = () => z.preprocess((v) => (typeof v === "string" ? v === "true" : v), z.boolean());
+
 // ---------------------------------------------------------------------------
 // Collection management schemas (static)
 // ---------------------------------------------------------------------------
@@ -22,7 +28,7 @@ import type { SchemaBuilder } from "../../core/api/schema-builder.js";
 export const CreateCollectionSchema = {
   name: z.string().describe("Name of the collection"),
   distance: z.enum(["Cosine", "Euclid", "Dot"]).optional().describe("Distance metric (default: Cosine)"),
-  enableHybrid: z.boolean().optional().describe("Enable hybrid search with sparse vectors (default: false)"),
+  enableHybrid: coerceBoolean().optional().describe("Enable hybrid search with sparse vectors (default: false)"),
 };
 
 export const DeleteCollectionSchema = {
@@ -61,7 +67,7 @@ export const DeleteDocumentsSchema = {
 
 export const IndexCodebaseSchema = {
   path: z.string().describe("Absolute or relative path to codebase root directory"),
-  forceReindex: z.boolean().optional().describe("Force full re-index even if already indexed (default: false)"),
+  forceReindex: coerceBoolean().optional().describe("Force full re-index even if already indexed (default: false)"),
   extensions: z.array(z.string()).optional().describe("Custom file extensions to index (e.g., ['.proto', '.graphql'])"),
   ignorePatterns: z
     .array(z.string())
@@ -107,7 +113,7 @@ function collectionPathFields() {
 function searchCommonFields() {
   return {
     query: z.string().describe("Search query text"),
-    limit: z.number().optional().describe("Maximum number of results (default: 5)"),
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 5)"),
     filter: z
       .record(z.any())
       .optional()
@@ -154,8 +160,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
           "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
           "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
       ),
-    metaOnly: z
-      .boolean()
+    metaOnly: coerceBoolean()
       .optional()
       .describe(
         "For code analytics: return only metadata (path, lines, git info) without content. " +
@@ -176,8 +181,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
           "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
           "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
       ),
-    metaOnly: z
-      .boolean()
+    metaOnly: coerceBoolean()
       .optional()
       .describe(
         "For code analytics: return only metadata (path, lines, git info) without content. " +
@@ -189,7 +193,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
   const SearchCodeSchema = {
     path: z.string().describe("Path to codebase (must be indexed first)"),
     query: z.string().describe("Natural language search query (e.g., 'authentication logic')"),
-    limit: z.number().optional().describe("Maximum number of results (default: 5, max: 100)"),
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 5, max: 100)"),
     fileTypes: z.array(z.string()).optional().describe("Filter by file extensions (e.g., ['.ts', '.py'])"),
     pathPattern: z
       .string()
@@ -198,8 +202,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
         "Glob pattern for filtering by file path (client-side via picomatch). " +
           "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
       ),
-    documentationOnly: z
-      .boolean()
+    documentationOnly: coerceBoolean()
       .optional()
       .describe(
         "Search only in documentation files (markdown, READMEs, etc.). " +
@@ -229,22 +232,19 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
         "Filter code modified before this date. Use for: finding old code, historical debugging, compliance audits. " +
           "ISO format: '2024-12-31'",
       ),
-    minAgeDays: z
-      .number()
+    minAgeDays: coerceNumber()
       .optional()
       .describe(
         "Filter code older than N days (since last modification). " +
           "Use for: finding legacy/stale code, tech debt assessment, documentation needs, refactoring candidates.",
       ),
-    maxAgeDays: z
-      .number()
+    maxAgeDays: coerceNumber()
       .optional()
       .describe(
         "Filter code newer than N days (since last modification). " +
           "Use for: recent changes review, sprint work, incident response, release notes.",
       ),
-    minCommitCount: z
-      .number()
+    minCommitCount: coerceNumber()
       .optional()
       .describe(
         "Filter by minimum number of commits touching the chunk (churn indicator). " +
