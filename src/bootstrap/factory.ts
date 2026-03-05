@@ -14,6 +14,7 @@ import { IngestFacade } from "../core/api/ingest-facade.js";
 import { SchemaBuilder } from "../core/api/schema-builder.js";
 import { SearchFacade } from "../core/api/search-facade.js";
 import { StatsCache } from "../core/api/stats-cache.js";
+import { buildPipelineConfig } from "../core/ingest/pipeline/types.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
@@ -51,6 +52,16 @@ export function createAppContext(config: AppConfig): AppContext {
     batchSize: zodConfig.qdrantTune.deleteBatchSize,
     concurrency: zodConfig.qdrantTune.deleteConcurrency,
   };
+  const pipelineConfig = buildPipelineConfig(zodConfig.embedding.tune, zodConfig.qdrantTune);
+  const pipelineTuning = {
+    pipelineConfig,
+    chunkerPoolSize: zodConfig.ingest.tune.chunkerPoolSize,
+    fileConcurrency: zodConfig.ingest.tune.fileConcurrency,
+  };
+  const syncTuning = {
+    concurrency: zodConfig.embedding.tune.concurrency,
+    ioConcurrency: zodConfig.ingest.tune.ioConcurrency,
+  };
   const ingest = new IngestFacade(
     qdrant,
     embeddings,
@@ -59,6 +70,8 @@ export function createAppContext(config: AppConfig): AppContext {
     allPayloadSignalDescriptors,
     reranker,
     deleteConfig,
+    pipelineTuning,
+    syncTuning,
   );
   const search = new SearchFacade(qdrant, embeddings, config.code, reranker, registry, statsCache);
   return { qdrant, embeddings, ingest, search, reranker, schemaBuilder, essentialTrajectoryFields };

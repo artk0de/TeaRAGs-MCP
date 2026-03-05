@@ -18,23 +18,47 @@ import type { ChunkLookupEntry, CodeConfig } from "../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
-import { ChunkPipeline, DEFAULT_CONFIG } from "./index.js";
+import { ChunkPipeline } from "./index.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { FileScanner } from "./scanner.js";
+import type { PipelineConfig } from "./types.js";
 
 export interface ProcessingContext {
   chunkerPool: ChunkerPool;
   chunkPipeline: ChunkPipeline;
 }
 
+export interface PipelineTuning {
+  pipelineConfig: PipelineConfig;
+  chunkerPoolSize: number;
+  fileConcurrency: number;
+}
+
+/** Fallback tuning when no config is injected (tests, legacy callers) */
+const DEFAULT_TUNING: PipelineTuning = {
+  pipelineConfig: {
+    workerPool: { concurrency: 1, maxRetries: 3, retryBaseDelayMs: 100, retryMaxDelayMs: 5000 },
+    deleteWorkerPool: { concurrency: 8, maxRetries: 3, retryBaseDelayMs: 100, retryMaxDelayMs: 5000 },
+    upsertAccumulator: { batchSize: 1024, flushTimeoutMs: 2000, maxQueueSize: 2 },
+    deleteAccumulator: { batchSize: 500, flushTimeoutMs: 1000, maxQueueSize: 16 },
+  },
+  chunkerPoolSize: 4,
+  fileConcurrency: 50,
+};
+
 export abstract class BaseIndexingPipeline {
+  protected readonly tuning: PipelineTuning;
+
   constructor(
     protected readonly qdrant: QdrantManager,
     protected readonly embeddings: EmbeddingProvider,
     protected readonly config: CodeConfig,
     protected readonly enrichment: EnrichmentCoordinator,
     protected readonly deps: IngestDependencies,
-  ) {}
+    tuning?: PipelineTuning,
+  ) {
+    this.tuning = tuning ?? DEFAULT_TUNING;
+  }
 
   // ── Shared context ─────────────────────────────────────────
 
@@ -93,20 +117,17 @@ export abstract class BaseIndexingPipeline {
   // ── Processing components (private) ────────────────────
 
   private createChunkerPool(): ChunkerPool {
-    return new ChunkerPool(
-      parseInt(process.env.INGEST_TUNE_CHUNKER_POOL_SIZE || process.env.CHUNKER_POOL_SIZE || "4", 10),
-      {
-        chunkSize: this.config.chunkSize,
-        chunkOverlap: this.config.chunkOverlap,
-        maxChunkSize: this.config.chunkSize * 2,
-      },
-    );
+    return new ChunkerPool(this.tuning.chunkerPoolSize, {
+      chunkSize: this.config.chunkSize,
+      chunkOverlap: this.config.chunkOverlap,
+      maxChunkSize: this.config.chunkSize * 2,
+    });
   }
 
   private createChunkPipeline(collectionName: string): ChunkPipeline {
     return new ChunkPipeline(this.qdrant, this.embeddings, collectionName, {
-      workerPool: DEFAULT_CONFIG.workerPool,
-      accumulator: DEFAULT_CONFIG.upsertAccumulator,
+      workerPool: this.tuning.pipelineConfig.workerPool,
+      accumulator: this.tuning.pipelineConfig.upsertAccumulator,
       enableHybrid: this.config.enableHybridSearch,
     });
   }

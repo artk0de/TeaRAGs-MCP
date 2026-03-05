@@ -20,14 +20,13 @@ import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { WorkerPool } from "./infra/worker-pool.js";
-import {
-  DEFAULT_CONFIG,
-  type Batch,
-  type BatchAccumulatorConfig,
-  type BatchResult,
-  type ChunkItem,
-  type PipelineStats,
-  type WorkerPoolConfig,
+import type {
+  Batch,
+  BatchAccumulatorConfig,
+  BatchResult,
+  ChunkItem,
+  PipelineStats,
+  WorkerPoolConfig,
 } from "./types.js";
 
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
@@ -73,8 +72,17 @@ export class ChunkPipeline {
     this.collectionName = collectionName;
 
     this.config = {
-      workerPool: config?.workerPool ?? DEFAULT_CONFIG.workerPool,
-      accumulator: config?.accumulator ?? DEFAULT_CONFIG.upsertAccumulator,
+      workerPool: config?.workerPool ?? {
+        concurrency: 1,
+        maxRetries: 3,
+        retryBaseDelayMs: 100,
+        retryMaxDelayMs: 5000,
+      },
+      accumulator: config?.accumulator ?? {
+        batchSize: 1024,
+        flushTimeoutMs: 2000,
+        maxQueueSize: 2,
+      },
       enableHybrid: config?.enableHybrid ?? false,
     };
 

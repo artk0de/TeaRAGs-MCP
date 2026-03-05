@@ -3,7 +3,7 @@
  * Auto-migrated from test-business-logic.mjs
  */
 
-import { DEFAULT_CONFIG } from "../../../build/code/pipeline/index.js";
+import { buildPipelineConfig } from "../../../build/code/pipeline/index.js";
 import { CURRENT_SCHEMA_VERSION, SchemaManager } from "../../../build/code/schema-migration.js";
 import { assert, log, section } from "../helpers.mjs";
 
@@ -75,21 +75,27 @@ export async function testSchemaAndDeleteOptimization(qdrant) {
     // Test 10: Delete configuration defaults
     log("info", "Testing delete optimization configuration...");
 
-    // Check DEFAULT_CONFIG has separate delete worker pool
-    assert(DEFAULT_CONFIG.deleteWorkerPool !== undefined, "DEFAULT_CONFIG has deleteWorkerPool");
+    // Build config with known values to verify the factory
+    const testConfig = buildPipelineConfig(
+      { concurrency: 1, batchSize: 1024, batchTimeoutMs: 2000 },
+      { deleteConcurrency: 8, deleteBatchSize: 500, deleteFlushTimeoutMs: 1000 },
+    );
+
+    // Check config has separate delete worker pool
+    assert(testConfig.deleteWorkerPool !== undefined, "Config has deleteWorkerPool");
     assert(
-      DEFAULT_CONFIG.deleteWorkerPool.concurrency >= 8,
-      `Delete concurrency is high (${DEFAULT_CONFIG.deleteWorkerPool.concurrency})`,
+      testConfig.deleteWorkerPool.concurrency >= 8,
+      `Delete concurrency is high (${testConfig.deleteWorkerPool.concurrency})`,
     );
     assert(
-      DEFAULT_CONFIG.deleteAccumulator.batchSize >= 500,
-      `Delete batch size is large (${DEFAULT_CONFIG.deleteAccumulator.batchSize})`,
+      testConfig.deleteAccumulator.batchSize >= 500,
+      `Delete batch size is large (${testConfig.deleteAccumulator.batchSize})`,
     );
 
     // Verify upsert and delete have independent settings
     assert(
-      DEFAULT_CONFIG.workerPool.concurrency !== DEFAULT_CONFIG.deleteWorkerPool.concurrency ||
-        DEFAULT_CONFIG.upsertAccumulator.batchSize !== DEFAULT_CONFIG.deleteAccumulator.batchSize,
+      testConfig.workerPool.concurrency !== testConfig.deleteWorkerPool.concurrency ||
+        testConfig.upsertAccumulator.batchSize !== testConfig.deleteAccumulator.batchSize,
       "Upsert and delete have different settings",
     );
 

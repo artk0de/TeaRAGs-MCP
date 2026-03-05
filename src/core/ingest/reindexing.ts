@@ -6,7 +6,7 @@
  */
 
 import type { ChangeStats, ChunkLookupEntry, ProgressCallback } from "../types.js";
-import { BaseIndexingPipeline } from "./pipeline/base.js";
+import { BaseIndexingPipeline, type PipelineTuning } from "./pipeline/base.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
 import { pipelineLog } from "./pipeline/infra/debug-logger.js";
 import { performDeletion, type DeletionConfig } from "./sync/deletion-strategy.js";
@@ -19,8 +19,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     enrichment: ConstructorParameters<typeof BaseIndexingPipeline>[3],
     deps: ConstructorParameters<typeof BaseIndexingPipeline>[4],
     private readonly deleteConfig: DeletionConfig = { batchSize: 500, concurrency: 8 },
+    tuning?: PipelineTuning,
   ) {
-    super(qdrant, embeddings, config, enrichment, deps);
+    super(qdrant, embeddings, config, enrichment, deps, tuning);
   }
 
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
@@ -111,7 +112,10 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       const addedFiles = [...changes.added];
       const modifiedFiles = [...changes.modified];
 
-      const processOpts = { enableGitMetadata: this.config.enableGitMetadata === true };
+      const processOpts = {
+        enableGitMetadata: this.config.enableGitMetadata === true,
+        concurrency: this.tuning.fileConcurrency,
+      };
 
       // PARALLEL PIPELINES: delete + add simultaneously, then modified after delete
       const parallelStart = Date.now();

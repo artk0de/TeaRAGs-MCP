@@ -81,9 +81,19 @@ vi.mock("../../src/bootstrap/config.js", async () => {
           retryDelayMs: 1000,
         },
       },
-      ingest: {},
+      ingest: {
+        tune: {
+          chunkerPoolSize: 4,
+          fileConcurrency: 50,
+          ioConcurrency: 50,
+        },
+      },
       trajectoryGit: {},
-      qdrantTune: {},
+      qdrantTune: {
+        deleteBatchSize: 500,
+        deleteConcurrency: 8,
+        deleteFlushTimeoutMs: 1000,
+      },
       deprecations: [],
     }),
   };

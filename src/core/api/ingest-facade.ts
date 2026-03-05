@@ -19,8 +19,9 @@ import { scrollAllPoints } from "../adapters/qdrant/scroll.js";
 import { computeCollectionStats } from "../contracts/collection-stats.js";
 import { resolveCollectionName, validatePath } from "../contracts/collection.js";
 import type { PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
-import { createIngestDependencies } from "../ingest/factory.js";
+import { createIngestDependencies, type SynchronizerTuning } from "../ingest/factory.js";
 import { IndexPipeline } from "../ingest/indexing.js";
+import type { PipelineTuning } from "../ingest/pipeline/base.js";
 import { EnrichmentCoordinator } from "../ingest/pipeline/enrichment/coordinator.js";
 import { StatusModule } from "../ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../ingest/reindexing.js";
@@ -44,18 +45,20 @@ export class IngestFacade {
     private readonly allPayloadSignals?: PayloadSignalDescriptor[],
     private readonly reranker?: Reranker,
     deleteConfig?: DeletionConfig,
+    pipelineTuning?: PipelineTuning,
+    syncTuning?: SynchronizerTuning,
   ) {
     const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
-    const deps = createIngestDependencies(qdrant, snapshotDir);
+    const deps = createIngestDependencies(qdrant, snapshotDir, syncTuning);
 
     const squashOpts = config.squashAwareSessions
       ? { squashAwareSessions: true, sessionGapMinutes: config.sessionGapMinutes ?? 30 }
       : undefined;
     const providers = config.enableGitMetadata ? [new GitEnrichmentProvider(squashOpts)] : [];
     this.enrichment = new EnrichmentCoordinator(qdrant, providers);
-    this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment, deps);
+    this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment, deps, pipelineTuning);
     this.status = new StatusModule(qdrant);
-    this.reindex = new ReindexPipeline(qdrant, embeddings, config, this.enrichment, deps, deleteConfig);
+    this.reindex = new ReindexPipeline(qdrant, embeddings, config, this.enrichment, deps, deleteConfig, pipelineTuning);
   }
 
   /** Index a codebase from scratch or force re-index */
