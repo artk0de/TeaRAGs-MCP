@@ -204,17 +204,31 @@ export class PointsAccumulator {
  * Factory function to create accumulator with environment-based config.
  *
  * Environment variables:
- * - QDRANT_UPSERT_BATCH_SIZE: Points per Qdrant upsert batch (default: 100)
- *   Legacy: CODE_BATCH_SIZE (deprecated, use QDRANT_UPSERT_BATCH_SIZE)
- * - QDRANT_FLUSH_INTERVAL_MS: Auto-flush interval (default: 500, 0 to disable)
- * - QDRANT_BATCH_ORDERING: Ordering mode "weak"|"medium"|"strong" (default: "weak")
+ * - QDRANT_TUNE_UPSERT_BATCH_SIZE: Points per Qdrant upsert batch (default: 100)
+ *   Legacy: QDRANT_UPSERT_BATCH_SIZE, CODE_BATCH_SIZE (deprecated)
+ * - QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS: Auto-flush interval (default: 500, 0 to disable)
+ *   Legacy: QDRANT_FLUSH_INTERVAL_MS (deprecated)
+ * - QDRANT_TUNE_UPSERT_ORDERING: Ordering mode "weak"|"medium"|"strong" (default: "weak")
+ *   Legacy: QDRANT_BATCH_ORDERING (deprecated)
  */
 export function createAccumulator(qdrant: QdrantManager, collectionName: string, isHybrid = false): PointsAccumulator {
   const config: Partial<AccumulatorConfig> = {
-    // QDRANT_UPSERT_BATCH_SIZE is canonical, CODE_BATCH_SIZE is deprecated fallback
-    bufferSize: parseInt(process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "100", 10),
-    flushIntervalMs: parseInt(process.env.QDRANT_FLUSH_INTERVAL_MS || "500", 10),
-    ordering: (process.env.QDRANT_BATCH_ORDERING as AccumulatorConfig["ordering"]) || "weak",
+    // QDRANT_TUNE_UPSERT_BATCH_SIZE is canonical; QDRANT_UPSERT_BATCH_SIZE and CODE_BATCH_SIZE are deprecated fallbacks
+    bufferSize: parseInt(
+      process.env.QDRANT_TUNE_UPSERT_BATCH_SIZE ||
+        process.env.QDRANT_UPSERT_BATCH_SIZE ||
+        process.env.CODE_BATCH_SIZE ||
+        "100",
+      10,
+    ),
+    flushIntervalMs: parseInt(
+      process.env.QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS || process.env.QDRANT_FLUSH_INTERVAL_MS || "500",
+      10,
+    ),
+    ordering:
+      (process.env.QDRANT_TUNE_UPSERT_ORDERING as AccumulatorConfig["ordering"]) ||
+      (process.env.QDRANT_BATCH_ORDERING as AccumulatorConfig["ordering"]) ||
+      "weak",
   };
 
   return new PointsAccumulator(qdrant, collectionName, isHybrid, config);

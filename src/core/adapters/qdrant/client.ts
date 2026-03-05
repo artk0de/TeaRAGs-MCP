@@ -449,10 +449,22 @@ export class QdrantManager {
     }
 
     // Default: 500 paths per batch, 8 concurrent (optimized for indexed relativePath)
-    // QDRANT_DELETE_* are canonical names, DELETE_* are deprecated but still supported
+    // QDRANT_TUNE_DELETE_* are canonical names, QDRANT_DELETE_*/DELETE_* are deprecated but still supported
     const {
-      batchSize = parseInt(process.env.QDRANT_DELETE_BATCH_SIZE || process.env.DELETE_BATCH_SIZE || "500", 10),
-      concurrency = parseInt(process.env.QDRANT_DELETE_CONCURRENCY || process.env.DELETE_CONCURRENCY || "8", 10),
+      batchSize = parseInt(
+        process.env.QDRANT_TUNE_DELETE_BATCH_SIZE ||
+          process.env.QDRANT_DELETE_BATCH_SIZE ||
+          process.env.DELETE_BATCH_SIZE ||
+          "500",
+        10,
+      ),
+      concurrency = parseInt(
+        process.env.QDRANT_TUNE_DELETE_CONCURRENCY ||
+          process.env.QDRANT_DELETE_CONCURRENCY ||
+          process.env.DELETE_CONCURRENCY ||
+          "8",
+        10,
+      ),
       onProgress,
     } = options;
 

@@ -7,73 +7,108 @@ sidebar_position: 4
 
 TeaRAGs is configured via environment variables passed to the MCP server. All variables are optional unless specified otherwise.
 
-## Core Configuration
+## Server
 
-| Variable                  | Description                             | Default               |
-| ------------------------- | --------------------------------------- | --------------------- |
-| `TRANSPORT_MODE`          | "stdio" or "http"                       | stdio                 |
-| `HTTP_PORT`               | Port for HTTP transport                 | 3000                  |
-| `HTTP_REQUEST_TIMEOUT_MS` | Request timeout for HTTP transport (ms) | 300000                |
-| `EMBEDDING_PROVIDER`      | "ollama", "openai", "cohere", "voyage"  | ollama                |
-| `QDRANT_URL`              | Qdrant server URL                       | http://localhost:6333 |
-| `QDRANT_API_KEY`          | API key for Qdrant authentication       | -                     |
-| `PROMPTS_CONFIG_FILE`     | Path to prompts configuration JSON      | prompts.json          |
+| Variable | Description | Default |
+| --- | --- | --- |
+| `SERVER_TRANSPORT` | Transport mode: `stdio` or `http` | `stdio` |
+| `SERVER_HTTP_PORT` | Port for HTTP transport | `3000` |
+| `SERVER_HTTP_TIMEOUT_MS` | Request timeout for HTTP transport (ms) | `300000` |
+| `SERVER_PROMPTS_FILE` | Path to prompts configuration JSON | `prompts.json` |
 
-## Embedding Configuration
+## Qdrant
 
-| Variable                            | Description                                                | Default                                            |
-| ----------------------------------- | ---------------------------------------------------------- | -------------------------------------------------- |
-| `EMBEDDING_MODEL`                   | Model name                                                 | `unclemusclez/jina-embeddings-v2-base-code:latest` |
-| `EMBEDDING_BASE_URL`                | Custom API URL                                             | Provider-specific                                  |
-| `EMBEDDING_DIMENSION`               | Vector dimensions (auto-detected from model)               | Auto                                               |
-| `EMBEDDING_BATCH_SIZE`              | Chunks per embedding batch (pipeline accumulator size)     | 1024                                               |
-| `EMBEDDING_CONCURRENCY`             | Parallel embedding workers (for remote GPU latency hiding) | 1                                                  |
-| `EMBEDDING_MAX_REQUESTS_PER_MINUTE` | Rate limit                                                 | Provider-specific                                  |
-| `EMBEDDING_RETRY_ATTEMPTS`          | Retry count                                                | 3                                                  |
-| `EMBEDDING_RETRY_DELAY`             | Initial retry delay (ms)                                   | 1000                                               |
-| `OPENAI_API_KEY`                    | OpenAI API key                                             | -                                                  |
-| `COHERE_API_KEY`                    | Cohere API key                                             | -                                                  |
-| `VOYAGE_API_KEY`                    | Voyage AI API key                                          | -                                                  |
-| `OLLAMA_NUM_GPU`                    | Ollama GPU's num (Set `0` to enable CPU only mode)         | 999                                                |
+| Variable | Description | Default |
+| --- | --- | --- |
+| `QDRANT_URL` | Qdrant server URL | `http://localhost:6333` |
+| `QDRANT_API_KEY` | API key for Qdrant authentication | - |
 
-## Code Vectorization Configuration
+## Embedding
 
-| Variable                   | Description                                         | Default |
-| -------------------------- | --------------------------------------------------- | ------- |
-| `CODE_CHUNK_SIZE`          | Maximum chunk size in characters                    | 2500    |
-| `CODE_CHUNK_OVERLAP`       | Overlap between chunks in characters                | 300     |
-| `CODE_ENABLE_AST`          | Enable AST-aware chunking (tree-sitter)             | true    |
-| `CODE_CUSTOM_EXTENSIONS`   | Additional file extensions (comma-separated)        | -       |
-| `CODE_CUSTOM_IGNORE`       | Additional ignore patterns (comma-separated)        | -       |
-| `CODE_DEFAULT_LIMIT`       | Default search result limit                         | 5       |
-| `CODE_ENABLE_GIT_METADATA` | Enrich chunks with git blame (author, dates, tasks) | false   |
+| Variable | Description | Default |
+| --- | --- | --- |
+| `EMBEDDING_PROVIDER` | Provider: `ollama`, `openai`, `cohere`, `voyage` | `ollama` |
+| `EMBEDDING_MODEL` | Model name | `jina-embeddings-v2-base-code` |
+| `EMBEDDING_BASE_URL` | Custom API URL | Provider-specific |
+| `EMBEDDING_DIMENSIONS` | Vector dimensions (auto-detected from model) | Auto |
+| `OPENAI_API_KEY` | OpenAI API key | - |
+| `COHERE_API_KEY` | Cohere API key | - |
+| `VOYAGE_API_KEY` | Voyage AI API key | - |
+| `OLLAMA_LEGACY_API` | Use legacy single-request Ollama API | `false` |
+| `OLLAMA_NUM_GPU` | Ollama GPU count (`0` = CPU only) | `999` |
 
-## Qdrant Batch Pipeline Configuration
+## Ingest
 
-| Variable                    | Description                                                      | Default |
-| --------------------------- | ---------------------------------------------------------------- | ------- |
-| `QDRANT_UPSERT_BATCH_SIZE`  | Points per Qdrant upsert batch                                   | 100     |
-| `QDRANT_FLUSH_INTERVAL_MS`  | Auto-flush buffer interval (0 to disable timer)                  | 500     |
-| `QDRANT_BATCH_ORDERING`     | Ordering mode: "weak", "medium", or "strong"                     | weak    |
-| `QDRANT_DELETE_BATCH_SIZE`  | Paths per delete batch (with payload index, larger is efficient) | 500     |
-| `QDRANT_DELETE_CONCURRENCY` | Parallel delete requests (Qdrant-bound, not embedding-bound)     | 8       |
+| Variable | Description | Default |
+| --- | --- | --- |
+| `INGEST_CHUNK_SIZE` | Maximum chunk size in characters | `2500` |
+| `INGEST_CHUNK_OVERLAP` | Overlap between chunks in characters | `300` |
+| `INGEST_ENABLE_AST` | Enable AST-aware chunking (tree-sitter) | `true` |
+| `INGEST_ENABLE_HYBRID` | Enable hybrid search (dense + sparse vectors) | `false` |
+| `INGEST_DEFAULT_SEARCH_LIMIT` | Default search result limit | `5` |
 
-## Performance & Debug Configuration
+## Trajectory: Git
 
-| Variable                      | Description                                         | Default |
-| ----------------------------- | --------------------------------------------------- | ------- |
-| `CHUNKER_POOL_SIZE`           | Worker threads for parallel AST parsing             | 4       |
-| `FILE_PROCESSING_CONCURRENCY` | Parallel file read + chunk dispatch during indexing | 50      |
-| `MIN_BATCH_SIZE`              | Min chunks before timeout flush (0 = no minimum)    | 0       |
-| `BATCH_FORMATION_TIMEOUT_MS`  | Flush partial embedding batch after timeout (ms)    | 2000    |
-| `MAX_IO_CONCURRENCY`          | Max parallel file I/O operations during cache sync  | 50      |
-| `DEBUG`                       | Enable debug timing logs (`true` or `1` to enable)  | false   |
+| Variable | Description | Default |
+| --- | --- | --- |
+| `TRAJECTORY_GIT_ENABLED` | Enable git enrichment (file + chunk signals) | `false` |
+| `TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS` | Git log depth for file-level signals (months) | `12` |
+| `TRAJECTORY_GIT_LOG_TIMEOUT_MS` | Timeout for `git log --numstat` (ms) | `60000` |
+| `TRAJECTORY_GIT_CHUNK_CONCURRENCY` | Parallel files for chunk-level churn analysis | `10` |
+| `TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS` | Git log depth for chunk-level churn (months) | `6` |
+| `TRAJECTORY_GIT_CHUNK_TIMEOUT_MS` | Timeout for chunk churn CLI pathspec (ms) | `120000` |
+| `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` | Skip chunk churn for files > N lines | `10000` |
+| `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | Group commits into sessions (squash noise reduction) | `false` |
+| `TRAJECTORY_GIT_SESSION_GAP_MINUTES` | Gap between commits to split sessions | `30` |
+
+## Debug
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `DEBUG` | Enable debug timing logs (`true` or `1`) | `false` |
+
+## Performance Tuning
+
+:::tip
+These variables control batch sizes, concurrency, timeouts, and pool sizes. Defaults work well for most setups. Tune only if you hit performance bottlenecks.
+:::
+
+### Qdrant Tune
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `QDRANT_TUNE_UPSERT_BATCH_SIZE` | Points per Qdrant upsert batch | `100` |
+| `QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS` | Auto-flush buffer interval (0 to disable) | `500` |
+| `QDRANT_TUNE_UPSERT_ORDERING` | Ordering: `weak`, `medium`, `strong` | `weak` |
+| `QDRANT_TUNE_DELETE_BATCH_SIZE` | Paths per delete batch | `500` |
+| `QDRANT_TUNE_DELETE_CONCURRENCY` | Parallel delete requests | `8` |
+| `QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS` | Flush timeout for delete accumulator (ms) | `1000` |
+
+### Embedding Tune
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `EMBEDDING_TUNE_CONCURRENCY` | Parallel embedding workers | `1` |
+| `EMBEDDING_TUNE_BATCH_SIZE` | Chunks per embedding batch | `1024` |
+| `EMBEDDING_TUNE_MIN_BATCH_SIZE` | Min chunks before timeout flush | `batchSize × 0.5` |
+| `EMBEDDING_TUNE_BATCH_TIMEOUT_MS` | Flush partial batch after timeout (ms) | `2000` |
+| `EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE` | Rate limit for embedding API | Provider-specific |
+| `EMBEDDING_TUNE_RETRY_ATTEMPTS` | Retry count for failed embedding calls | `3` |
+| `EMBEDDING_TUNE_RETRY_DELAY_MS` | Initial retry delay (ms) | `1000` |
+
+### Ingest Tune
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `INGEST_TUNE_CHUNKER_POOL_SIZE` | Worker threads for parallel AST parsing | `4` |
+| `INGEST_TUNE_FILE_CONCURRENCY` | Parallel file read + chunk dispatch | `50` |
+| `INGEST_TUNE_IO_CONCURRENCY` | Max parallel file I/O during cache sync | `50` |
 
 ## Data Directories
 
 The server stores data in `~/.tea-rags-mcp/`:
 
-| Directory    | Purpose                                              |
-| ------------ | ---------------------------------------------------- |
+| Directory | Purpose |
+| --- | --- |
 | `snapshots/` | Sharded file hash snapshots for incremental indexing |
-| `logs/`      | Debug logs when `DEBUG=1` is enabled                 |
+| `logs/` | Debug logs when `DEBUG=1` is enabled |

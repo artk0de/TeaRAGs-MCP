@@ -93,11 +93,14 @@ export abstract class BaseIndexingPipeline {
   // ── Processing components (private) ────────────────────
 
   private createChunkerPool(): ChunkerPool {
-    return new ChunkerPool(parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10), {
-      chunkSize: this.config.chunkSize,
-      chunkOverlap: this.config.chunkOverlap,
-      maxChunkSize: this.config.chunkSize * 2,
-    });
+    return new ChunkerPool(
+      parseInt(process.env.INGEST_TUNE_CHUNKER_POOL_SIZE || process.env.CHUNKER_POOL_SIZE || "4", 10),
+      {
+        chunkSize: this.config.chunkSize,
+        chunkOverlap: this.config.chunkOverlap,
+        maxChunkSize: this.config.chunkSize * 2,
+      },
+    );
   }
 
   private createChunkPipeline(collectionName: string): ChunkPipeline {
