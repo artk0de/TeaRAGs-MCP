@@ -4,14 +4,16 @@ type Pipeline = (texts: string[], options: Record<string, unknown>) => Promise<{
 
 const KNOWN_DTYPES = ["q4", "q8", "fp16", "fp32", "int8", "bnb4"] as const;
 
+type Dtype = (typeof KNOWN_DTYPES)[number];
+
 /** Parse "Xenova/model-name-q8" → { baseModel: "Xenova/model-name", dtype: "q8" } */
-function parseModelSpec(model: string): { baseModel: string; dtype: string | undefined } {
+function parseModelSpec(model: string): { baseModel: string; dtype: Dtype | undefined } {
   const lastDash = model.lastIndexOf("-");
   if (lastDash === -1) return { baseModel: model, dtype: undefined };
 
   const suffix = model.slice(lastDash + 1);
-  if (KNOWN_DTYPES.includes(suffix as (typeof KNOWN_DTYPES)[number])) {
-    return { baseModel: model.slice(0, lastDash), dtype: suffix };
+  if (KNOWN_DTYPES.includes(suffix as Dtype)) {
+    return { baseModel: model.slice(0, lastDash), dtype: suffix as Dtype };
   }
   return { baseModel: model, dtype: undefined };
 }
@@ -32,7 +34,6 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     const { baseModel, dtype } = parseModelSpec(this.model);
 
     try {
-      // @ts-expect-error — optional dependency, may not be installed
       const { pipeline } = await import("@huggingface/transformers");
       const label = dtype ? `${baseModel} (${dtype})` : baseModel;
       console.error(`[ONNX] Loading model ${label}... (first time, may download ~70MB)`);
