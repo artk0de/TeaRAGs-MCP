@@ -5,7 +5,7 @@ type Pipeline = (texts: string[], options: Record<string, unknown>) => Promise<{
 
 const DEFAULT_CACHE_DIR = modelsDir();
 
-export const DEFAULT_ONNX_MODEL = "jinaai/jina-embeddings-v2-base-code-int8";
+export const DEFAULT_ONNX_MODEL = "jinaai/jina-embeddings-v2-base-code-q8";
 export const DEFAULT_ONNX_DIMENSIONS = 768;
 
 const KNOWN_DTYPES = ["q4", "q8", "fp16", "fp32", "int8", "bnb4"] as const;
