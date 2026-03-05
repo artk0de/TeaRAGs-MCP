@@ -2,7 +2,7 @@ import type { EmbeddingConfig } from "../../../bootstrap/config/index.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
 import { OllamaEmbeddings } from "./ollama.js";
-import { OnnxEmbeddings } from "./onnx.js";
+import { DEFAULT_ONNX_MODEL, OnnxEmbeddings } from "./onnx.js";
 import { OpenAIEmbeddings } from "./openai.js";
 import { VoyageEmbeddings } from "./voyage.js";
 
@@ -59,7 +59,7 @@ export class EmbeddingProviderFactory {
         );
 
       case "onnx":
-        return new OnnxEmbeddings(model || "Xenova/jina-embeddings-v2-base-code-int8", dimensions);
+        return new OnnxEmbeddings(model || DEFAULT_ONNX_MODEL, dimensions);
 
       default:
         throw new Error(
