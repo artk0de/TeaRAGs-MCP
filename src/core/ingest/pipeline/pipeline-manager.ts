@@ -22,16 +22,7 @@
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { WorkerPool } from "./infra/worker-pool.js";
-import {
-  DEFAULT_CONFIG,
-  type Batch,
-  type BatchResult,
-  type DeleteItem,
-  type PipelineConfig,
-  type PipelineStats,
-  type UpsertItem,
-  type WorkItem,
-} from "./types.js";
+import type { Batch, BatchResult, DeleteItem, PipelineConfig, PipelineStats, UpsertItem, WorkItem } from "./types.js";
 
 /** Enable debug logging */
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
@@ -64,18 +55,15 @@ export class PipelineManager {
   };
 
   constructor(handlers: PipelineHandlers, config?: Partial<PipelineConfig>) {
+    const fallbackWorkerPool = { concurrency: 1, maxRetries: 3, retryBaseDelayMs: 100, retryMaxDelayMs: 5000 };
+    const fallbackUpsert = { batchSize: 1024, flushTimeoutMs: 2000, maxQueueSize: 2 };
+    const fallbackDelete = { batchSize: 500, flushTimeoutMs: 1000, maxQueueSize: 16 };
+
     this.config = {
-      ...DEFAULT_CONFIG,
-      ...config,
-      workerPool: { ...DEFAULT_CONFIG.workerPool, ...config?.workerPool },
-      upsertAccumulator: {
-        ...DEFAULT_CONFIG.upsertAccumulator,
-        ...config?.upsertAccumulator,
-      },
-      deleteAccumulator: {
-        ...DEFAULT_CONFIG.deleteAccumulator,
-        ...config?.deleteAccumulator,
-      },
+      workerPool: { ...fallbackWorkerPool, ...config?.workerPool },
+      deleteWorkerPool: { ...fallbackWorkerPool, concurrency: 8, ...config?.deleteWorkerPool },
+      upsertAccumulator: { ...fallbackUpsert, ...config?.upsertAccumulator },
+      deleteAccumulator: { ...fallbackDelete, ...config?.deleteAccumulator },
     };
     this.handlers = handlers;
 

@@ -61,9 +61,7 @@ export async function processFiles(
     errors: [],
   };
 
-  const concurrency =
-    options.concurrency ??
-    parseInt(process.env.INGEST_TUNE_FILE_CONCURRENCY || process.env.FILE_PROCESSING_CONCURRENCY || "50", 10);
+  const concurrency = options.concurrency ?? 50;
 
   await parallelLimit(
     absolutePaths,

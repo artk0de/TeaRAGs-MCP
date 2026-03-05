@@ -380,24 +380,14 @@ describe("Environment Configuration", () => {
     }
   });
 
-  it("should use EMBEDDING_CONCURRENCY env if no concurrency arg given", () => {
-    const originalEnv = process.env.EMBEDDING_CONCURRENCY;
-    process.env.EMBEDDING_CONCURRENCY = "8";
-
-    const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir);
+  it("should use explicit concurrency arg", () => {
+    const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 8);
     expect(sync.getConcurrency()).toBe(8);
-
-    process.env.EMBEDDING_CONCURRENCY = originalEnv;
   });
 
-  it("should default to 1 if EMBEDDING_CONCURRENCY not set", () => {
-    const originalEnv = process.env.EMBEDDING_CONCURRENCY;
-    delete process.env.EMBEDDING_CONCURRENCY;
-
+  it("should default to 1 if no concurrency arg given", () => {
     const sync = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir);
     expect(sync.getConcurrency()).toBe(1);
-
-    process.env.EMBEDDING_CONCURRENCY = originalEnv;
   });
 });
 

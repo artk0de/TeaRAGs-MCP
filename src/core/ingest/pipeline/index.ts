@@ -32,4 +32,4 @@ export type {
   WorkItem,
 } from "./types.js";
 
-export { DEFAULT_CONFIG } from "./types.js";
+export { buildPipelineConfig } from "./types.js";

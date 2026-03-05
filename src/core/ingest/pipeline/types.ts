@@ -171,7 +171,7 @@ export type BackpressureCallback = (isPaused: boolean) => void;
 export type BatchHandler<T extends WorkItem> = (batch: Batch<T>) => Promise<void>;
 
 /**
- * Default configuration values
+ * Build pipeline config from pre-parsed config slices.
  *
  * GPU Optimization for Ollama embeddings:
  * - LARGE batches = better GPU utilization (CUDA cores parallelize within batch)
@@ -182,64 +182,42 @@ export type BatchHandler<T extends WorkItem> = (batch: Batch<T>) => Promise<void
  * cause GPU idle time between kernel launches. The problem is not batch size,
  * but ensuring chunks are generated FAST enough to fill batches quickly.
  */
-export const DEFAULT_CONFIG: PipelineConfig = {
-  workerPool: {
-    // Concurrent embedding workers (parallel batches to Ollama)
-    concurrency: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10),
-    maxRetries: 3,
-    retryBaseDelayMs: 100,
-    retryMaxDelayMs: 5000,
+export function buildPipelineConfig(
+  embeddingTune: {
+    concurrency: number;
+    batchSize: number;
+    minBatchSize?: number;
+    batchTimeoutMs: number;
   },
-  deleteWorkerPool: {
-    // Delete is Qdrant-bound (not embedding), can use higher concurrency
-    // QDRANT_TUNE_DELETE_CONCURRENCY is canonical; QDRANT_DELETE_CONCURRENCY and DELETE_CONCURRENCY are deprecated
-    concurrency: parseInt(
-      process.env.QDRANT_TUNE_DELETE_CONCURRENCY ||
-        process.env.QDRANT_DELETE_CONCURRENCY ||
-        process.env.DELETE_CONCURRENCY ||
-        "8",
-      10,
-    ),
-    maxRetries: 3,
-    retryBaseDelayMs: 100,
-    retryMaxDelayMs: 5000,
+  qdrantTune: {
+    deleteConcurrency: number;
+    deleteBatchSize: number;
+    deleteFlushTimeoutMs: number;
   },
-  upsertAccumulator: {
-    // Chunks to accumulate before sending to embedding
-    // EMBEDDING_BATCH_SIZE is canonical, CODE_BATCH_SIZE is deprecated fallback
-    batchSize: parseInt(process.env.EMBEDDING_BATCH_SIZE || process.env.CODE_BATCH_SIZE || "1024", 10),
-    // Minimum chunks before timeout flush (unset = 50% of batchSize, 0 = disabled)
-    minBatchSize:
-      process.env.MIN_BATCH_SIZE !== null && process.env.MIN_BATCH_SIZE !== undefined
-        ? parseInt(process.env.MIN_BATCH_SIZE, 10)
-        : undefined,
-    // Flush partial batch after timeout to avoid GPU idle time
-    flushTimeoutMs: parseInt(process.env.BATCH_FORMATION_TIMEOUT_MS || "2000", 10),
-    // Queue size based on concurrency
-    maxQueueSize: parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10) * 2,
-  },
-  deleteAccumulator: {
-    // Larger batches (500) are efficient with payload index on relativePath
-    // QDRANT_TUNE_DELETE_BATCH_SIZE is canonical; QDRANT_DELETE_BATCH_SIZE and DELETE_BATCH_SIZE are deprecated
-    batchSize: parseInt(
-      process.env.QDRANT_TUNE_DELETE_BATCH_SIZE ||
-        process.env.QDRANT_DELETE_BATCH_SIZE ||
-        process.env.DELETE_BATCH_SIZE ||
-        "500",
-      10,
-    ),
-    // Faster flush for deletes (1s) - deletes are quick
-    flushTimeoutMs: parseInt(
-      process.env.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS || process.env.DELETE_FLUSH_TIMEOUT_MS || "1000",
-      10,
-    ),
-    maxQueueSize:
-      parseInt(
-        process.env.QDRANT_TUNE_DELETE_CONCURRENCY ||
-          process.env.QDRANT_DELETE_CONCURRENCY ||
-          process.env.DELETE_CONCURRENCY ||
-          "8",
-        10,
-      ) * 2,
-  },
-};
+): PipelineConfig {
+  return {
+    workerPool: {
+      concurrency: embeddingTune.concurrency,
+      maxRetries: 3,
+      retryBaseDelayMs: 100,
+      retryMaxDelayMs: 5000,
+    },
+    deleteWorkerPool: {
+      concurrency: qdrantTune.deleteConcurrency,
+      maxRetries: 3,
+      retryBaseDelayMs: 100,
+      retryMaxDelayMs: 5000,
+    },
+    upsertAccumulator: {
+      batchSize: embeddingTune.batchSize,
+      minBatchSize: embeddingTune.minBatchSize,
+      flushTimeoutMs: embeddingTune.batchTimeoutMs,
+      maxQueueSize: embeddingTune.concurrency * 2,
+    },
+    deleteAccumulator: {
+      batchSize: qdrantTune.deleteBatchSize,
+      flushTimeoutMs: qdrantTune.deleteFlushTimeoutMs,
+      maxQueueSize: qdrantTune.deleteConcurrency * 2,
+    },
+  };
+}

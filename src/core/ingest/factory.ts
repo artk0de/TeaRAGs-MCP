@@ -13,6 +13,11 @@ import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
 // ── Public interfaces ────────────────────────────────────────────
 
+export interface SynchronizerTuning {
+  concurrency?: number;
+  ioConcurrency?: number;
+}
+
 export interface IngestDependencies {
   createSchemaManager: () => SchemaManager;
   createSynchronizer: (codebasePath: string, collectionName: string) => ParallelFileSynchronizer;
@@ -21,11 +26,21 @@ export interface IngestDependencies {
 
 // ── Default factory ──────────────────────────────────────────────
 
-export function createIngestDependencies(qdrant: QdrantManager, snapshotDir: string): IngestDependencies {
+export function createIngestDependencies(
+  qdrant: QdrantManager,
+  snapshotDir: string,
+  syncTuning?: SynchronizerTuning,
+): IngestDependencies {
   return {
     createSchemaManager: () => new SchemaManager(qdrant),
     createSynchronizer: (codebasePath, collectionName) =>
-      new ParallelFileSynchronizer(codebasePath, collectionName, snapshotDir),
+      new ParallelFileSynchronizer(
+        codebasePath,
+        collectionName,
+        snapshotDir,
+        syncTuning?.concurrency,
+        syncTuning?.ioConcurrency,
+      ),
     createMigrator: (collectionName, codebasePath) => new SnapshotMigrator(snapshotDir, collectionName, codebasePath),
   };
 }

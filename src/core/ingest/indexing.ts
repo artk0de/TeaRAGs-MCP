@@ -85,6 +85,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
           enableGitMetadata: this.config.enableGitMetadata === true,
           maxChunksPerFile: this.config.maxChunksPerFile,
           maxTotalChunks: this.config.maxTotalChunks,
+          concurrency: this.tuning.fileConcurrency,
         },
         {
           onFileProcessed: (_filePath, chunksCount) => {

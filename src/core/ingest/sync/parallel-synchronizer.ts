@@ -22,11 +22,8 @@ import { ShardedSnapshotManager, type FileMetadata, type LoadedSnapshot } from "
 
 export { parallelLimit };
 
-/** Maximum concurrent I/O operations to prevent filesystem saturation */
-const MAX_IO_CONCURRENCY = parseInt(
-  process.env.INGEST_TUNE_IO_CONCURRENCY || process.env.MAX_IO_CONCURRENCY || "50",
-  10,
-);
+/** Default max concurrent I/O operations to prevent filesystem saturation */
+const DEFAULT_IO_CONCURRENCY = 50;
 
 /** Enable debug timing logs */
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
@@ -62,13 +59,19 @@ export class ParallelFileSynchronizer {
   /** Cached hashes from last detectChanges call for reuse in updateSnapshot */
   private lastComputedHashes: Map<string, FileMetadata> | null = null;
 
-  constructor(codebasePath: string, collectionName: string, snapshotDir: string, concurrency?: number) {
+  constructor(
+    codebasePath: string,
+    collectionName: string,
+    snapshotDir: string,
+    concurrency?: number,
+    private readonly ioConcurrency: number = DEFAULT_IO_CONCURRENCY,
+  ) {
     this.codebasePath = codebasePath;
     this.collectionName = collectionName;
     this.snapshotDir = snapshotDir;
 
-    // Get concurrency from param, env, or default
-    this.concurrency = concurrency ?? parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
+    // Get concurrency from param or default
+    this.concurrency = concurrency ?? 1;
 
     this.hashRing = new ConsistentHash(this.concurrency);
     this.snapshotManager = new ShardedSnapshotManager(snapshotDir, collectionName, this.concurrency);
@@ -370,7 +373,7 @@ export class ParallelFileSynchronizer {
     const currentMetadata = new Map<string, FileMetadata>();
 
     // OPTIMIZATION: Use bounded concurrency instead of unbounded Promise.all
-    const results = await parallelLimit(files, async (file) => this.checkSingleFile(file), MAX_IO_CONCURRENCY);
+    const results = await parallelLimit(files, async (file) => this.checkSingleFile(file), this.ioConcurrency);
 
     for (const result of results) {
       if (!result) continue;
@@ -500,7 +503,7 @@ export class ParallelFileSynchronizer {
           metadata: { mtime: meta.mtime, size: meta.size, hash },
         };
       },
-      MAX_IO_CONCURRENCY,
+      this.ioConcurrency,
     );
 
     const metadata = new Map<string, FileMetadata>();
