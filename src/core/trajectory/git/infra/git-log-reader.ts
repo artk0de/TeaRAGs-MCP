@@ -30,8 +30,12 @@ export class GitLogReader {
    * Build per-file FileChurnData from git history.
    * Delegates to file-reader (CLI only).
    */
-  async buildFileSignalMap(repoRoot: string, maxAgeMonths?: number): Promise<Map<string, FileChurnData>> {
-    return buildFileSignalMapImpl(repoRoot, this.enrichmentCache, maxAgeMonths);
+  async buildFileSignalMap(
+    repoRoot: string,
+    maxAgeMonths?: number,
+    timeoutMs?: number,
+  ): Promise<Map<string, FileChurnData>> {
+    return buildFileSignalMapImpl(repoRoot, this.enrichmentCache, maxAgeMonths, timeoutMs);
   }
 
   /** @deprecated Use getHead from adapters/git/client.js */

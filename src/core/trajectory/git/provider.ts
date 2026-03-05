@@ -9,6 +9,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import type { TrajectoryGitConfig } from "../../../bootstrap/config.js";
 import { resolveRepoRoot } from "../../adapters/git/client.js";
 import type { FileChurnData } from "../../adapters/git/types.js";
 import type {
@@ -30,6 +31,21 @@ import { gitPayloadSignalDescriptors } from "./payload-signals.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
 
+/** Subset of TrajectoryGitConfig used by the provider at runtime. */
+export type GitProviderConfig = Pick<
+  TrajectoryGitConfig,
+  "logMaxAgeMonths" | "logTimeoutMs" | "chunkConcurrency" | "chunkMaxAgeMonths" | "chunkTimeoutMs" | "chunkMaxFileLines"
+>;
+
+const DEFAULT_PROVIDER_CONFIG: GitProviderConfig = {
+  logMaxAgeMonths: 12,
+  logTimeoutMs: 60000,
+  chunkConcurrency: 10,
+  chunkMaxAgeMonths: 6,
+  chunkTimeoutMs: 120000,
+  chunkMaxFileLines: 10000,
+};
+
 export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly key = "git";
 
@@ -40,8 +56,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly presets: RerankPreset[] = GIT_PRESETS;
 
   private readonly squashOpts?: SquashOptions;
+  private readonly config: GitProviderConfig;
 
-  constructor(squashOpts?: SquashOptions) {
+  constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
+    this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
     this.squashOpts = squashOpts;
     this.fileSignalTransform = (data, maxEndLine) =>
       assembleFileSignals(
@@ -70,9 +88,14 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     let rawData: Map<string, FileChurnData>;
 
     if (options?.paths) {
-      rawData = await buildFileSignalsForPaths(root, options.paths);
+      rawData = await buildFileSignalsForPaths(root, options.paths, this.config.logTimeoutMs);
     } else {
-      rawData = await buildFileSignalMap(root, this.enrichmentCache);
+      rawData = await buildFileSignalMap(
+        root,
+        this.enrichmentCache,
+        this.config.logMaxAgeMonths,
+        this.config.logTimeoutMs,
+      );
     }
 
     this.lastFileResult = rawData;
@@ -90,23 +113,17 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
-    const concurrency = parseInt(
-      process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY ?? process.env.GIT_CHUNK_CONCURRENCY ?? "10",
-      10,
-    );
-    const maxAgeMonths = parseFloat(
-      process.env.TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS ?? process.env.GIT_CHUNK_MAX_AGE_MONTHS ?? "6",
-    );
-
     const rawResult = await buildChunkChurnMap(
       root,
       chunkMap,
       this.enrichmentCache,
       this.isoGitCache,
-      concurrency,
-      maxAgeMonths,
+      this.config.chunkConcurrency,
+      this.config.chunkMaxAgeMonths,
       this.lastFileResult ?? undefined,
       this.squashOpts,
+      this.config.chunkTimeoutMs,
+      this.config.chunkMaxFileLines,
     );
 
     const result = new Map<string, Map<string, ChunkSignalOverlay>>();

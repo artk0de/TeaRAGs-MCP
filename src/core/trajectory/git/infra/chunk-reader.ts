@@ -39,6 +39,8 @@ export async function buildChunkChurnMap(
   maxAgeMonths = 6,
   fileChurnDataMap?: Map<string, FileChurnData>,
   squashOpts?: SquashOptions,
+  chunkTimeoutMs = 120000,
+  maxFileLines = MAX_FILE_LINES_DEFAULT,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Check HEAD-based cache
   const cached = await enrichmentCache.getChunkChurn(repoRoot);
@@ -52,6 +54,8 @@ export async function buildChunkChurnMap(
     maxAgeMonths,
     fileChurnDataMap,
     squashOpts,
+    chunkTimeoutMs,
+    maxFileLines,
   );
 
   // Store in cache (non-fatal if HEAD unresolvable)
@@ -68,14 +72,9 @@ export async function buildChunkChurnMapUncached(
   maxAgeMonths: number,
   fileChurnDataMap?: Map<string, FileChurnData>,
   squashOpts?: SquashOptions,
+  chunkTimeoutMs = 120000,
+  maxFileLines = MAX_FILE_LINES_DEFAULT,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
-  const maxFileLines = parseInt(
-    process.env.TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES ??
-      process.env.GIT_CHUNK_MAX_FILE_LINES ??
-      String(MAX_FILE_LINES_DEFAULT),
-    10,
-  );
-
   // Build relative path → entries lookup (chunkMap keys may be absolute paths)
   // Also filter: only files with >1 chunk benefit from chunk-level analysis
   const relativeChunkMap = new Map<string, ChunkLookupEntry[]>();
@@ -119,10 +118,6 @@ export async function buildChunkChurnMapUncached(
   // Use CLI pathspec filtering — only fetches commits touching our files
   let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
   try {
-    const chunkTimeoutMs = parseInt(
-      process.env.TRAJECTORY_GIT_CHUNK_TIMEOUT_MS ?? process.env.GIT_CHUNK_TIMEOUT_MS ?? "120000",
-      10,
-    );
     commitEntries = await getCommitsByPathspec(repoRoot, sinceDate, filePaths, chunkTimeoutMs);
   } catch (error) {
     // CLI pathspec failed — no fallback (isomorphic-git git.log causes OOM on large repos)

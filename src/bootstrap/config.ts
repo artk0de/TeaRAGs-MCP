@@ -63,6 +63,14 @@ export function parseAppConfig(): AppConfig {
       enableGitMetadata: zodConfig.trajectoryGit.enabled,
       squashAwareSessions: zodConfig.trajectoryGit.squashAwareSessions,
       sessionGapMinutes: zodConfig.trajectoryGit.sessionGapMinutes,
+      trajectoryGit: {
+        logMaxAgeMonths: zodConfig.trajectoryGit.logMaxAgeMonths,
+        logTimeoutMs: zodConfig.trajectoryGit.logTimeoutMs,
+        chunkConcurrency: zodConfig.trajectoryGit.chunkConcurrency,
+        chunkMaxAgeMonths: zodConfig.trajectoryGit.chunkMaxAgeMonths,
+        chunkTimeoutMs: zodConfig.trajectoryGit.chunkTimeoutMs,
+        chunkMaxFileLines: zodConfig.trajectoryGit.chunkMaxFileLines,
+      },
     },
   };
 }

@@ -17,31 +17,24 @@ const execFileAsync = promisify(execFile);
  * Build per-file FileChurnData from git history.
  * Uses CLI `git log HEAD --numstat` (single process spawn).
  *
- * @param maxAgeMonths - limit commits to last N months (default: GIT_LOG_MAX_AGE_MONTHS env, default 12).
+ * @param maxAgeMonths - limit commits to last N months (default 12).
  *   Set to 0 to disable (read all commits).
+ * @param timeoutMs - timeout for git log command (default 60000).
  */
 export async function buildFileSignalMap(
   repoRoot: string,
   enrichmentCache: GitEnrichmentCache,
-  maxAgeMonths?: number,
+  maxAgeMonths = 12,
+  timeoutMs = 60000,
 ): Promise<Map<string, FileChurnData>> {
-  const effectiveMaxAge =
-    maxAgeMonths ??
-    parseFloat(process.env.TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS ?? process.env.GIT_LOG_MAX_AGE_MONTHS ?? "12");
-
   // Cache key includes maxAge to avoid returning stale results for different time windows
-  const cacheKey = `${repoRoot}:${effectiveMaxAge}`;
+  const cacheKey = `${repoRoot}:${maxAgeMonths}`;
 
   // Check HEAD-based cache (non-fatal if HEAD resolution fails)
   const cached = await enrichmentCache.getFileMetadata(cacheKey, repoRoot);
   if (cached) return cached;
 
-  const sinceDate = effectiveMaxAge > 0 ? new Date(Date.now() - effectiveMaxAge * 30 * 86400 * 1000) : undefined;
-
-  const timeoutMs = parseInt(
-    process.env.TRAJECTORY_GIT_LOG_TIMEOUT_MS ?? process.env.GIT_LOG_TIMEOUT_MS ?? "60000",
-    10,
-  );
+  const sinceDate = maxAgeMonths > 0 ? new Date(Date.now() - maxAgeMonths * 30 * 86400 * 1000) : undefined;
 
   const result = await withTimeout(buildViaCli(repoRoot, sinceDate), timeoutMs, "CLI git log timed out");
 
