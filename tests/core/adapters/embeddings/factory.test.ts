@@ -4,7 +4,7 @@ import type { EmbeddingConfig } from "../../../../src/bootstrap/config/index.js"
 import { CohereEmbeddings } from "../../../../src/core/adapters/embeddings/cohere.js";
 import { EmbeddingProviderFactory } from "../../../../src/core/adapters/embeddings/factory.js";
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
-import { OnnxEmbeddings } from "../../../../src/core/adapters/embeddings/onnx.js";
+import { DEFAULT_ONNX_MODEL, OnnxEmbeddings } from "../../../../src/core/adapters/embeddings/onnx.js";
 import { OpenAIEmbeddings } from "../../../../src/core/adapters/embeddings/openai.js";
 import { VoyageEmbeddings } from "../../../../src/core/adapters/embeddings/voyage.js";
 
@@ -219,7 +219,7 @@ describe("EmbeddingProviderFactory", () => {
         const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "onnx" }));
 
         expect(provider).toBeInstanceOf(OnnxEmbeddings);
-        expect(provider.getModel()).toBe("jinaai/jina-embeddings-v2-base-code-int8");
+        expect(provider.getModel()).toBe(DEFAULT_ONNX_MODEL);
         expect(provider.getDimensions()).toBe(768);
       });
 

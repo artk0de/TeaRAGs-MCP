@@ -41,7 +41,7 @@ describe("OnnxEmbeddings", () => {
       expect(mockPipeline).toHaveBeenCalledWith(
         "feature-extraction",
         "jinaai/jina-embeddings-v2-base-code",
-        { dtype: "int8" },
+        { dtype: "q8" },
       );
     });
 
