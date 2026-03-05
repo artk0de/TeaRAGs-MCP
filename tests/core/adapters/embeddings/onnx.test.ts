@@ -8,6 +8,7 @@ const mockPipeline = vi.fn().mockResolvedValue(mockExtractor);
 
 vi.mock("@huggingface/transformers", () => ({
   pipeline: mockPipeline,
+  env: { cacheDir: "", allowLocalModels: true },
 }));
 
 describe("OnnxEmbeddings", () => {
@@ -19,8 +20,8 @@ describe("OnnxEmbeddings", () => {
   });
 
   describe("constructor", () => {
-    it("should use default model with q8 quantization", () => {
-      expect(provider.getModel()).toBe("Xenova/jina-embeddings-v2-base-code-q8");
+    it("should use default model with int8 quantization", () => {
+      expect(provider.getModel()).toBe("Xenova/jina-embeddings-v2-base-code-int8");
       expect(provider.getDimensions()).toBe(768);
     });
 
@@ -40,7 +41,7 @@ describe("OnnxEmbeddings", () => {
       expect(mockPipeline).toHaveBeenCalledWith(
         "feature-extraction",
         "Xenova/jina-embeddings-v2-base-code",
-        { dtype: "q8" },
+        { dtype: "int8" },
       );
     });
 
@@ -136,13 +137,25 @@ describe("OnnxEmbeddings", () => {
       );
     });
 
+    it("should throw guided HF auth flow when Unauthorized", async () => {
+      mockPipeline.mockRejectedValueOnce(new Error('Unauthorized access to file: "https://huggingface.co/..."'));
+
+      const freshProvider = new OnnxEmbeddings();
+
+      const error = await freshProvider.embed("test").catch((e: Error) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain("requires HuggingFace authentication");
+      expect((error as Error).message).toContain("https://huggingface.co/join");
+      expect((error as Error).message).toContain("HF_TOKEN");
+    });
+
     it("should throw descriptive error for model load failure", async () => {
       mockPipeline.mockRejectedValueOnce(new Error("Network error: model not found"));
 
       const freshProvider = new OnnxEmbeddings();
 
       await expect(freshProvider.embed("test")).rejects.toThrow(
-        'Failed to load ONNX model "Xenova/jina-embeddings-v2-base-code-q8"',
+        'Failed to load ONNX model "Xenova/jina-embeddings-v2-base-code-int8"',
       );
     });
   });
