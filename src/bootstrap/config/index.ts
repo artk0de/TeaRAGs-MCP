@@ -1,6 +1,6 @@
 import type { IngestCodeConfig, SearchCodeConfig, TrajectoryIngestConfig } from "../../core/types.js";
 import { DEFAULT_CODE_EXTENSIONS, DEFAULT_IGNORE_PATTERNS } from "./defaults.js";
-import { parseAppConfigZod, printDeprecationWarnings } from "./parse.js";
+import { parseAppConfigZod } from "./parse.js";
 
 export * from "./defaults.js";
 export * from "./utils.js";
@@ -31,9 +31,6 @@ export function getZodConfig(): ReturnType<typeof parseAppConfigZod> {
 export function parseAppConfig(): AppConfig {
   const zodConfig = parseAppConfigZod();
   _lastZodConfig = zodConfig;
-
-  // Print deprecation warnings at parse time
-  printDeprecationWarnings(zodConfig.deprecations);
 
   // Bridge Zod slices to typed AppConfig for consumers
   return {
