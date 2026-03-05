@@ -16,6 +16,7 @@ import { join, relative } from "node:path";
 
 import type { FileChanges } from "../../types.js";
 import { parallelLimit } from "../pipeline/infra/parallel.js";
+import { isDebug } from "../pipeline/infra/runtime.js";
 import { ConsistentHash } from "./consistent-hash.js";
 import { MerkleTree } from "./merkle.js";
 import { ShardedSnapshotManager, type FileMetadata, type LoadedSnapshot } from "./sharded-snapshot.js";
@@ -24,9 +25,6 @@ export { parallelLimit };
 
 /** Default max concurrent I/O operations to prevent filesystem saturation */
 const DEFAULT_IO_CONCURRENCY = 50;
-
-/** Enable debug timing logs */
-const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
 /**
  * Checkpoint data for resumable indexing
@@ -93,7 +91,7 @@ export class ParallelFileSynchronizer {
 
     this.previousSnapshot = await this.snapshotManager.load();
 
-    if (DEBUG) {
+    if (isDebug()) {
       const elapsed = Date.now() - startTime;
       const fileCount = this.previousSnapshot?.files.size ?? 0;
       console.error(`[Sync] initialize: loaded ${fileCount} files in ${elapsed}ms`);
@@ -121,18 +119,18 @@ export class ParallelFileSynchronizer {
     if (precomputedHashes) {
       // Use provided hashes (from detectChanges)
       fileMetadata = precomputedHashes;
-      if (DEBUG) {
+      if (isDebug()) {
         console.error(`[Sync] updateSnapshot: reusing ${precomputedHashes.size} precomputed hashes`);
       }
     } else if (this.lastComputedHashes) {
       // Use cached hashes from last detectChanges
       fileMetadata = this.lastComputedHashes;
-      if (DEBUG) {
+      if (isDebug()) {
         console.error(`[Sync] updateSnapshot: reusing ${this.lastComputedHashes.size} cached hashes`);
       }
     } else {
       // Fallback: compute all hashes (slow path)
-      if (DEBUG) {
+      if (isDebug()) {
         console.error(`[Sync] updateSnapshot: computing hashes for ${files.length} files (slow path)`);
       }
       fileMetadata = await this.computeAllFileMetadata(files);
@@ -143,7 +141,7 @@ export class ParallelFileSynchronizer {
     // Clear cache after use
     this.lastComputedHashes = null;
 
-    if (DEBUG) {
+    if (isDebug()) {
       console.error(`[Sync] updateSnapshot: saved ${fileMetadata.size} files in ${Date.now() - startTime}ms`);
     }
   }
@@ -186,7 +184,7 @@ export class ParallelFileSynchronizer {
     }
     timings.caching = Date.now() - cacheStart;
 
-    if (DEBUG) {
+    if (isDebug()) {
       const total = Date.now() - startTime;
       console.error(
         `[Sync] detectChanges: ${currentFiles.length} files in ${total}ms ` +
@@ -392,7 +390,7 @@ export class ParallelFileSynchronizer {
       }
     }
 
-    if (DEBUG) {
+    if (isDebug()) {
       console.error(`[Sync] shard-${shardIndex}: processed ${files.length} files in ${Date.now() - startTime}ms`);
     }
 
@@ -513,7 +511,7 @@ export class ParallelFileSynchronizer {
       }
     }
 
-    if (DEBUG) {
+    if (isDebug()) {
       console.error(`[Sync] computeAllFileMetadata: ${files.length} files in ${Date.now() - startTime}ms`);
     }
 

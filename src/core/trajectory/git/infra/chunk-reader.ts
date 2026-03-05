@@ -11,6 +11,7 @@ import git from "isomorphic-git";
 
 import { getCommitsByPathspec, readBlobAsString } from "../../../adapters/git/client.js";
 import type { CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
+import { isDebug } from "../../../ingest/pipeline/infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import type { GitEnrichmentCache } from "./cache.js";
@@ -112,7 +113,6 @@ export async function buildChunkChurnMapUncached(
   const filePaths = Array.from(relativeChunkMap.keys());
 
   // Debug timing
-  const debug = process.env.DEBUG === "true" || process.env.DEBUG === "1";
   const t0 = Date.now();
 
   // Use CLI pathspec filtering — only fetches commits touching our files
@@ -121,7 +121,7 @@ export async function buildChunkChurnMapUncached(
     commitEntries = await getCommitsByPathspec(repoRoot, sinceDate, filePaths, chunkTimeoutMs);
   } catch (error) {
     // CLI pathspec failed — no fallback (isomorphic-git git.log causes OOM on large repos)
-    if (debug) {
+    if (isDebug()) {
       console.error(
         `[ChunkChurn] CLI pathspec failed, skipping chunk churn:`,
         error instanceof Error ? error.message : error,
@@ -132,7 +132,7 @@ export async function buildChunkChurnMapUncached(
 
   const t1 = Date.now();
 
-  if (debug) {
+  if (isDebug()) {
     console.error(
       `[ChunkChurn] CLI pathspec: ${commitEntries.length} commits for ${filePaths.length} files in ${t1 - t0}ms`,
     );
@@ -266,7 +266,7 @@ export async function buildChunkChurnMapUncached(
 
   const t2 = Date.now();
 
-  if (debug) {
+  if (isDebug()) {
     console.error(
       `[ChunkChurn] Hunk mapping: ${patchCalls} patches, ${blobReads} blob reads in ${t2 - t1}ms` +
         ` (skipped: ${skippedLargeFiles} large files, ${skippedEmptyBlobs} empty blobs)`,
@@ -319,7 +319,7 @@ export async function buildChunkChurnMapUncached(
     }
   }
 
-  if (debug) {
+  if (isDebug()) {
     const totalMs = Date.now() - t0;
     const filesWithOverlays = result.size;
     const totalOverlays = Array.from(result.values()).reduce((sum, m) => sum + m.size, 0);

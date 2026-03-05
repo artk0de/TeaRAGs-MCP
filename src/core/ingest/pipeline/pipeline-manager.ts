@@ -21,11 +21,9 @@
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
+import { isDebug } from "./infra/runtime.js";
 import { WorkerPool } from "./infra/worker-pool.js";
 import type { Batch, BatchResult, DeleteItem, PipelineConfig, PipelineStats, UpsertItem, WorkItem } from "./types.js";
-
-/** Enable debug logging */
-const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
 /**
  * Handlers for processing different operation types
@@ -99,7 +97,7 @@ export class PipelineManager {
     this.isRunning = true;
     this.stats.startTime = Date.now();
 
-    if (DEBUG) {
+    if (isDebug()) {
       console.error(
         `[PipelineManager] Started with config: ` +
           `workers=${this.config.workerPool.concurrency}, ` +
@@ -200,7 +198,7 @@ export class PipelineManager {
     await this.workerPool.shutdown();
     this.isRunning = false;
 
-    if (DEBUG) {
+    if (isDebug()) {
       const stats = this.getStats();
       console.error(
         `[PipelineManager] Shutdown: ${stats.itemsProcessed} items, ` +

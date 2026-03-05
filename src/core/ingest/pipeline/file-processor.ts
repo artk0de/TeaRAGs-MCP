@@ -17,6 +17,7 @@ import { detectLanguage } from "./chunker/utils/language-detector.js";
 import { containsSecrets } from "./chunker/utils/secrets-detector.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { parallelLimit } from "./infra/parallel.js";
+import { isDebug } from "./infra/runtime.js";
 
 export interface FileProcessorOptions {
   enableGitMetadata: boolean;
@@ -171,7 +172,7 @@ export async function processRelativeFiles(
 
   const absolutePaths = relativePaths.map((f) => join(basePath, f));
 
-  if (process.env.DEBUG) {
+  if (isDebug()) {
     console.error(`[Reindex] ${label}: starting ${relativePaths.length} files`);
   }
 
@@ -183,7 +184,7 @@ export async function processRelativeFiles(
     chunkMap.set(key, [...existing, ...entries]);
   }
 
-  if (process.env.DEBUG) {
+  if (isDebug()) {
     console.error(`[Reindex] ${label}: completed ${relativePaths.length} files, ${result.chunksCreated} chunks queued`);
   }
 

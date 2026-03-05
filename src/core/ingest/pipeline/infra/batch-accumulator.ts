@@ -11,9 +11,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { BackpressureCallback, Batch, BatchAccumulatorConfig, OperationType, WorkItem } from "../types.js";
-
-/** Enable debug logging */
-const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
+import { isDebug } from "./runtime.js";
 
 export class BatchAccumulator<T extends WorkItem> {
   private readonly config: BatchAccumulatorConfig;
@@ -97,7 +95,7 @@ export class BatchAccumulator<T extends WorkItem> {
 
     this.pendingItems = [];
 
-    if (DEBUG) {
+    if (isDebug()) {
       console.error(
         `[BatchAccumulator] ${this.operationType}: flushing batch ${batch.id} with ${batch.items.length} items`,
       );
@@ -114,7 +112,7 @@ export class BatchAccumulator<T extends WorkItem> {
       this.isPaused = true;
       this.onBackpressure?.(true);
 
-      if (DEBUG) {
+      if (isDebug()) {
         console.error(`[BatchAccumulator] ${this.operationType}: backpressure ACTIVE`);
       }
     }
@@ -128,7 +126,7 @@ export class BatchAccumulator<T extends WorkItem> {
       this.isPaused = false;
       this.onBackpressure?.(false);
 
-      if (DEBUG) {
+      if (isDebug()) {
         console.error(`[BatchAccumulator] ${this.operationType}: backpressure RELEASED`);
       }
     }

@@ -9,6 +9,7 @@ import type { ChangeStats, ChunkLookupEntry, ProgressCallback } from "../types.j
 import { BaseIndexingPipeline, type PipelineTuning } from "./pipeline/base.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
 import { pipelineLog } from "./pipeline/infra/debug-logger.js";
+import { isDebug } from "./pipeline/infra/runtime.js";
 import { performDeletion, type DeletionConfig } from "./sync/deletion-strategy.js";
 
 export class ReindexPipeline extends BaseIndexingPipeline {
@@ -126,7 +127,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         modified: modifiedFiles.length,
       });
 
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         console.error(
           `[Reindex] Starting parallel pipelines: ` +
             `delete=${filesToDelete.length}, added=${addedFiles.length}, modified=${modifiedFiles.length}`,
@@ -163,7 +164,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         deleted: filesToDelete.length,
       });
 
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         console.error(`[Reindex] Delete complete, starting modified indexing (add still running in parallel)`);
       }
 
@@ -193,7 +194,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       });
 
       // Flush, shutdown, and enrichment
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         const pipelineStats = ctx.chunkPipeline.getStats();
         console.error(
           `[Reindex] ChunkPipeline before flush: ` +
@@ -206,7 +207,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       const getEnrichmentStatus = await this.finalizeProcessing(ctx, chunkMap, collectionName, absolutePath);
 
       const pipelineStats = ctx.chunkPipeline.getStats();
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         console.error(
           `[Reindex] Parallel pipelines completed in ${Date.now() - parallelStart}ms ` +
             `(pipeline: ${pipelineStats.itemsProcessed} chunks in ${pipelineStats.batchesProcessed} batches, ` +
@@ -223,7 +224,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       stats.enrichmentStatus = getEnrichmentStatus();
       stats.durationMs = Date.now() - startTime;
 
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         console.error(
           `[Reindex] Complete: ${stats.filesAdded} added, ` +
             `${stats.filesModified} modified, ${stats.filesDeleted} deleted. ` +

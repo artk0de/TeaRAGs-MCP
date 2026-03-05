@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 
 import git from "isomorphic-git";
 
+import { isDebug } from "../../ingest/pipeline/infra/runtime.js";
 import { parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
 import type { CommitInfo, FileChurnData } from "./types.js";
 
@@ -155,8 +156,7 @@ export async function getCommitsByPathspecBatched(
     batches.push(filePaths.slice(i, i + batchSize));
   }
 
-  const debug = process.env.DEBUG === "true" || process.env.DEBUG === "1";
-  if (debug) {
+  if (isDebug()) {
     console.error(
       `[ChunkChurn] Pathspec batching: ${filePaths.length} files → ${batches.length} batches of ≤${batchSize}`,
     );
@@ -179,7 +179,7 @@ export async function getCommitsByPathspecBatched(
         }
       }
     } catch (error) {
-      if (debug) {
+      if (isDebug()) {
         console.error(
           `[ChunkChurn] Pathspec batch failed (${batch.length} files):`,
           error instanceof Error ? error.message : error,

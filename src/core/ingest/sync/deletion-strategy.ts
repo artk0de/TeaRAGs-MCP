@@ -9,6 +9,7 @@
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { ProgressCallback } from "../../types.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
+import { isDebug } from "../pipeline/infra/runtime.js";
 
 export interface DeletionConfig {
   batchSize: number;
@@ -50,7 +51,7 @@ export async function performDeletion(
       },
     });
 
-    if (process.env.DEBUG) {
+    if (isDebug()) {
       console.error(
         `[Reindex] Deleted ${deleteResult.deletedPaths} paths in ${deleteResult.batchCount} batches (${deleteResult.durationMs}ms)`,
       );
@@ -92,7 +93,7 @@ export async function performDeletion(
           deleted++;
         } catch (innerError) {
           failed++;
-          if (process.env.DEBUG) {
+          if (isDebug()) {
             console.error(`[Reindex] FALLBACK L2: Failed to delete ${relativePath}:`, innerError);
           }
         }

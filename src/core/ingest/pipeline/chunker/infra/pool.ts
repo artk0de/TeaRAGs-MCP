@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
+import { isDebug } from "../../infra/runtime.js";
 import type { WorkerRequest, WorkerResponse } from "./worker.js";
 
 /**
@@ -37,8 +38,6 @@ interface PoolWorker {
   busy: boolean;
   pending: PendingRequest | null;
 }
-
-const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
 export class ChunkerPool {
   private workers: PoolWorker[] = [];
@@ -97,7 +96,7 @@ export class ChunkerPool {
       this.workers.push(poolWorker);
     }
 
-    if (DEBUG) {
+    if (isDebug()) {
       console.error(`[ChunkerPool] Initialized ${this.poolSize} worker threads`);
     }
   }
@@ -143,7 +142,7 @@ export class ChunkerPool {
     await Promise.all(this.workers.map(async (pw) => pw.worker.terminate()));
     this.workers = [];
 
-    if (DEBUG) {
+    if (isDebug()) {
       console.error("[ChunkerPool] Shut down all workers");
     }
   }

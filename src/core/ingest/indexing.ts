@@ -9,6 +9,7 @@ import type { IndexOptions, IndexStats, ProgressCallback } from "../types.js";
 import { BaseIndexingPipeline } from "./pipeline/base.js";
 import { processFiles } from "./pipeline/file-processor.js";
 import { storeIndexingMarker } from "./pipeline/indexing-marker.js";
+import { isDebug } from "./pipeline/infra/runtime.js";
 
 export class IndexPipeline extends BaseIndexingPipeline {
   async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
@@ -123,7 +124,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       const getEnrichmentStatus = await this.finalizeProcessing(ctx, result.chunkMap, collectionName, absolutePath);
 
       const finalPipelineStats = ctx.chunkPipeline.getStats();
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         console.error(
           `[Index] Pipeline completed: ${finalPipelineStats.itemsProcessed} chunks in ${finalPipelineStats.batchesProcessed} batches, ` +
             `${finalPipelineStats.throughput.toFixed(1)} chunks/s`,

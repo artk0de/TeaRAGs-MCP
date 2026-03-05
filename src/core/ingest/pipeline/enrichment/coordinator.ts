@@ -19,6 +19,7 @@ import type { FileSignalOverlay } from "../../../contracts/types/provider.js";
 import type { ChunkLookupEntry, EnrichmentInfo, EnrichmentMetrics } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../../constants.js";
 import { pipelineLog } from "../infra/debug-logger.js";
+import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
 import type { EnrichmentProvider } from "./types.js";
@@ -411,7 +412,7 @@ export class EnrichmentCoordinator {
       }
       await this.qdrant.setPayload(collectionName, { enrichment }, { points: [INDEXING_METADATA_ID] });
     } catch (error) {
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         console.error("[Enrichment] Failed to update marker:", error);
       }
     }
@@ -497,7 +498,7 @@ export class EnrichmentCoordinator {
         try {
           await this.qdrant.batchSetPayload(collectionName, batch);
         } catch (error) {
-          if (process.env.DEBUG) {
+          if (isDebug()) {
             console.error(`[Enrichment:${state.provider.key}] backfill batch failed:`, error);
           }
         }

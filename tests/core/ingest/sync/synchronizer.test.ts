@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { setDebug } from "../../../../src/core/ingest/pipeline/infra/runtime.js";
 import { FileSynchronizer } from "../../../../src/core/ingest/sync/synchronizer.js";
 
 describe("FileSynchronizer", () => {
@@ -1034,10 +1035,12 @@ describe("FileSynchronizer", () => {
       } else {
         delete process.env.DEBUG;
       }
+      setDebug(originalDebug === "true" || originalDebug === "1");
     });
 
     it("should log performance stats when DEBUG is enabled", async () => {
       process.env.DEBUG = "true";
+      setDebug(true);
 
       await createFile(codebaseDir, "file1.ts", "content1");
       await createFile(codebaseDir, "file2.ts", "content2");
@@ -1055,6 +1058,7 @@ describe("FileSynchronizer", () => {
 
     it("should log change detection results when DEBUG is enabled", async () => {
       process.env.DEBUG = "true";
+      setDebug(true);
 
       await createFile(codebaseDir, "file1.ts", "content1");
       await synchronizer.updateSnapshot(["file1.ts"]);
@@ -1070,6 +1074,7 @@ describe("FileSynchronizer", () => {
 
     it("should log checkpoint save when DEBUG is enabled", async () => {
       process.env.DEBUG = "true";
+      setDebug(true);
 
       // This should log checkpoint save message
       await synchronizer.saveCheckpoint(["file1.ts", "file2.ts"], 10, "indexing");

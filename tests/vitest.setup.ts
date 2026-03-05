@@ -5,9 +5,12 @@
  * (e.g., integration.test.ts) to avoid breaking tree-sitter-chunker unit tests.
  */
 
+import { setDebug } from "../src/core/ingest/pipeline/infra/runtime.js";
+
 // Set test-specific environment variables
 // Enable DEBUG to cover debug logging branches across all modules
 process.env.DEBUG = process.env.DEBUG || "true";
+setDebug(true);
 // Limit chunk processing to prevent slow tests and ensure consistent behavior
 process.env.MAX_TOTAL_CHUNKS = process.env.MAX_TOTAL_CHUNKS || "1000";
 // Reduce ChunkerPool worker threads to 1 in tests to prevent fork termination hangs.
