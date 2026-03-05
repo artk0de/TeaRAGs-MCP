@@ -8,6 +8,7 @@ import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
 import type { IngestFacade } from "../../core/api/ingest-facade.js";
 import type { SchemaBuilder } from "../../core/api/schema-builder.js";
+import type { SchemaDriftMonitor } from "../../core/api/schema-drift-monitor.js";
 import type { SearchFacade } from "../../core/api/search-facade.js";
 import type { Reranker } from "../../core/search/reranker.js";
 import { registerCodeTools } from "./code.js";
@@ -23,6 +24,7 @@ export interface ToolDependencies {
   reranker: Reranker;
   schemaBuilder: SchemaBuilder;
   essentialTrajectoryFields: string[];
+  schemaDriftMonitor: SchemaDriftMonitor;
 }
 
 /**
@@ -45,12 +47,14 @@ export function registerAllTools(server: McpServer, deps: ToolDependencies): voi
     reranker: deps.reranker,
     schemaBuilder: deps.schemaBuilder,
     essentialTrajectoryFields: deps.essentialTrajectoryFields,
+    schemaDriftMonitor: deps.schemaDriftMonitor,
   });
 
   registerCodeTools(server, {
     ingest: deps.ingest,
     search: deps.search,
     schemaBuilder: deps.schemaBuilder,
+    schemaDriftMonitor: deps.schemaDriftMonitor,
   });
 }
 

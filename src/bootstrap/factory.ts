@@ -12,6 +12,7 @@ import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { createComposition, type CompositionResult } from "../core/api/composition.js";
 import { IngestFacade } from "../core/api/ingest-facade.js";
 import { SchemaBuilder } from "../core/api/schema-builder.js";
+import { SchemaDriftMonitor } from "../core/api/schema-drift-monitor.js";
 import { SearchFacade } from "../core/api/search-facade.js";
 import { StatsCache } from "../core/api/stats-cache.js";
 import { setDebug } from "../core/ingest/pipeline/infra/runtime.js";
@@ -38,6 +39,7 @@ export interface AppContext {
   reranker: CompositionResult["reranker"];
   schemaBuilder: SchemaBuilder;
   essentialTrajectoryFields: string[];
+  schemaDriftMonitor: SchemaDriftMonitor;
 }
 
 export function createAppContext(config: AppConfig): AppContext {
@@ -77,7 +79,9 @@ export function createAppContext(config: AppConfig): AppContext {
     syncTuning,
   );
   const search = new SearchFacade(qdrant, embeddings, config.searchCode, reranker, registry, statsCache);
-  return { qdrant, embeddings, ingest, search, reranker, schemaBuilder, essentialTrajectoryFields };
+  const currentPayloadKeys = allPayloadSignalDescriptors.map((d) => d.key);
+  const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, currentPayloadKeys);
+  return { qdrant, embeddings, ingest, search, reranker, schemaBuilder, essentialTrajectoryFields, schemaDriftMonitor };
 }
 
 export function loadPrompts(config: AppConfig): PromptsConfig | null {
@@ -106,6 +110,7 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
     reranker: ctx.reranker,
     schemaBuilder: ctx.schemaBuilder,
     essentialTrajectoryFields: ctx.essentialTrajectoryFields,
+    schemaDriftMonitor: ctx.schemaDriftMonitor,
   });
 
   registerAllResources(server, ctx.qdrant);
