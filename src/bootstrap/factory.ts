@@ -67,7 +67,8 @@ export function createAppContext(config: AppConfig): AppContext {
   const ingest = new IngestFacade(
     qdrant,
     embeddings,
-    config.code,
+    config.ingestCode,
+    config.trajectoryIngest,
     statsCache,
     allPayloadSignalDescriptors,
     reranker,
@@ -75,7 +76,7 @@ export function createAppContext(config: AppConfig): AppContext {
     pipelineTuning,
     syncTuning,
   );
-  const search = new SearchFacade(qdrant, embeddings, config.code, reranker, registry, statsCache);
+  const search = new SearchFacade(qdrant, embeddings, config.searchCode, reranker, registry, statsCache);
   return { qdrant, embeddings, ingest, search, reranker, schemaBuilder, essentialTrajectoryFields };
 }
 

@@ -8,11 +8,12 @@ import {
   createTempTestDir,
   createTestFile,
   defaultTestConfig,
+  defaultTrajectoryConfig,
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
 import { IngestFacade } from "../../../../src/core/api/ingest-facade.js";
-import type { CodeConfig } from "../../../../src/core/types.js";
+import type { IngestCodeConfig } from "../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
@@ -45,7 +46,7 @@ describe("StatusModule", () => {
   let ingest: IngestFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
-  let config: CodeConfig;
+  let config: IngestCodeConfig;
   let tempDir: string;
   let codebaseDir: string;
 
@@ -54,7 +55,7 @@ describe("StatusModule", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
   });
 
   afterEach(async () => {

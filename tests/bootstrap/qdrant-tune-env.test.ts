@@ -242,12 +242,12 @@ describe("QDRANT_TUNE_* env var rename (backwards compat)", () => {
   // at the module level (not just the helper function).
 
   describe("config.ts integration", () => {
-    it("parseAppConfig reads QDRANT_TUNE_UPSERT_BATCH_SIZE with fallback", async () => {
+    it("parseAppConfigZod reads QDRANT_TUNE_UPSERT_BATCH_SIZE with fallback", async () => {
       process.env.QDRANT_TUNE_UPSERT_BATCH_SIZE = "42";
       vi.resetModules();
-      const { parseAppConfig } = await import("../../src/bootstrap/config.js");
-      const config = parseAppConfig();
-      expect(config.code.batchSize).toBe(42);
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.upsertBatchSize).toBe(42);
       cleanEnv();
     });
   });

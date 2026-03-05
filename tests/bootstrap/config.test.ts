@@ -64,15 +64,13 @@ describe("parseAppConfig (Zod bridge)", () => {
     expect(config.transportMode).toBe("stdio");
     expect(config.httpPort).toBe(3000);
     expect(config.requestTimeoutMs).toBe(300000);
-    expect(config.code.chunkSize).toBe(2500);
-    expect(config.code.chunkOverlap).toBe(300);
-    expect(config.code.enableASTChunking).toBe(true);
-    expect(config.code.batchSize).toBe(100);
-    expect(config.code.defaultSearchLimit).toBe(5);
-    expect(config.code.enableHybridSearch).toBe(false);
-    expect(config.code.enableGitMetadata).toBe(false);
-    expect(config.code.squashAwareSessions).toBe(false);
-    expect(config.code.sessionGapMinutes).toBe(30);
+    expect(config.ingestCode.chunkSize).toBe(2500);
+    expect(config.ingestCode.chunkOverlap).toBe(300);
+    expect(config.searchCode.defaultSearchLimit).toBe(5);
+    expect(config.ingestCode.enableHybridSearch).toBe(false);
+    expect(config.trajectoryIngest.enableGitMetadata).toBe(false);
+    expect(config.trajectoryIngest.squashAwareSessions).toBe(false);
+    expect(config.trajectoryIngest.sessionGapMinutes).toBe(30);
   });
 
   it("should parse env vars when set (via deprecated names)", async () => {
@@ -94,9 +92,9 @@ describe("parseAppConfig (Zod bridge)", () => {
     expect(config.embeddingProvider).toBe("openai");
     expect(config.transportMode).toBe("http");
     expect(config.httpPort).toBe(8080);
-    expect(config.code.chunkSize).toBe(5000);
-    expect(config.code.enableGitMetadata).toBe(true);
-    expect(config.code.enableHybridSearch).toBe(true);
+    expect(config.ingestCode.chunkSize).toBe(5000);
+    expect(config.trajectoryIngest.enableGitMetadata).toBe(true);
+    expect(config.ingestCode.enableHybridSearch).toBe(true);
   });
 
   it("should print deprecation warnings to stderr", async () => {
@@ -147,9 +145,9 @@ describe("parseAppConfig (Zod bridge)", () => {
     const { parseAppConfig } = await freshImport();
     const config = parseAppConfig();
 
-    expect(config.code.supportedExtensions).toBeDefined();
-    expect(config.code.supportedExtensions.length).toBeGreaterThan(0);
-    expect(config.code.ignorePatterns).toBeDefined();
-    expect(config.code.ignorePatterns.length).toBeGreaterThan(0);
+    expect(config.ingestCode.supportedExtensions).toBeDefined();
+    expect(config.ingestCode.supportedExtensions.length).toBeGreaterThan(0);
+    expect(config.ingestCode.ignorePatterns).toBeDefined();
+    expect(config.ingestCode.ignorePatterns.length).toBeGreaterThan(0);
   });
 });

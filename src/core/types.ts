@@ -2,35 +2,39 @@
  * Type definitions for code vectorization module
  */
 
-export interface CodeConfig {
+/** Config for indexing pipelines (BaseIndexingPipeline, IndexPipeline, ReindexPipeline) */
+export interface IngestCodeConfig {
   // Chunking
   chunkSize: number;
   chunkOverlap: number;
-  enableASTChunking: boolean;
 
   // File discovery
   supportedExtensions: string[];
   ignorePatterns: string[];
-  customExtensions?: string[];
   customIgnorePatterns?: string[];
 
   // Indexing
-  batchSize: number; // Embeddings per batch
   maxChunksPerFile?: number;
   maxTotalChunks?: number;
 
-  // Search
-  defaultSearchLimit: number;
+  // Search (used at collection creation time)
   enableHybridSearch: boolean;
 
   // Git metadata (optional, adds author/commit info to chunks)
   enableGitMetadata?: boolean;
+}
 
-  // Squash-aware sessions: group burst commits into sessions for churn signals
+/** Config for SearchModule */
+export interface SearchCodeConfig {
+  enableHybridSearch: boolean;
+  defaultSearchLimit: number;
+}
+
+/** Config for IngestFacade trajectory enrichment setup */
+export interface TrajectoryIngestConfig {
+  enableGitMetadata?: boolean;
   squashAwareSessions?: boolean;
   sessionGapMinutes?: number;
-
-  // Trajectory git config slice (DI'd into GitEnrichmentProvider)
   trajectoryGit?: {
     logMaxAgeMonths: number;
     logTimeoutMs: number;

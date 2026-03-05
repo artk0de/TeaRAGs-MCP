@@ -3,12 +3,13 @@ import { promises as fs } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
-import type { CodeConfig } from "../../../src/core/types.js";
+import type { IngestCodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
   createTestFile,
   defaultTestConfig,
+  defaultTrajectoryConfig,
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "./__helpers__/test-helpers.js";
@@ -44,7 +45,7 @@ describe("IndexPipeline", () => {
   let ingest: IngestFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
-  let config: CodeConfig;
+  let config: IngestCodeConfig;
   let tempDir: string;
   let codebaseDir: string;
 
@@ -53,7 +54,7 @@ describe("IndexPipeline", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
   });
 
   afterEach(async () => {
@@ -163,7 +164,7 @@ describe("IndexPipeline", () => {
 
     it("should enable hybrid search when configured", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIndexer = new IngestFacade(qdrant as any, embeddings, hybridConfig);
+      const hybridIndexer = new IngestFacade(qdrant as any, embeddings, hybridConfig, defaultTrajectoryConfig());
 
       await createTestFile(
         codebaseDir,
@@ -219,7 +220,7 @@ describe("IndexPipeline", () => {
         ...config,
         maxChunksPerFile: 2,
       };
-      const limitedIndexer = new IngestFacade(qdrant as any, embeddings, limitedConfig);
+      const limitedIndexer = new IngestFacade(qdrant as any, embeddings, limitedConfig, defaultTrajectoryConfig());
 
       const largeContent = Array(50)
         .fill(null)
@@ -239,7 +240,7 @@ describe("IndexPipeline", () => {
         ...config,
         maxTotalChunks: 3,
       };
-      const limitedIndexer = new IngestFacade(qdrant as any, embeddings, limitedConfig);
+      const limitedIndexer = new IngestFacade(qdrant as any, embeddings, limitedConfig, defaultTrajectoryConfig());
 
       for (let i = 0; i < 10; i++) {
         await createTestFile(
@@ -260,7 +261,7 @@ describe("IndexPipeline", () => {
         ...config,
         maxTotalChunks: 1,
       };
-      const limitedIndexer = new IngestFacade(qdrant as any, embeddings, limitedConfig);
+      const limitedIndexer = new IngestFacade(qdrant as any, embeddings, limitedConfig, defaultTrajectoryConfig());
 
       const content = `
 function first() {

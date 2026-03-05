@@ -11,14 +11,14 @@ import { calculateFetchLimit, filterResultsByGlob } from "../adapters/qdrant/fil
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
 import { resolveCollectionName, validatePath } from "../contracts/collection.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
-import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
+import type { CodeSearchResult, SearchCodeConfig, SearchOptions } from "../types.js";
 import type { Reranker, RerankMode } from "./reranker.js";
 
 export class SearchModule {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
-    private readonly config: CodeConfig,
+    private readonly config: SearchCodeConfig,
     private readonly reranker: Reranker,
     private readonly registry?: TrajectoryRegistry,
   ) {}

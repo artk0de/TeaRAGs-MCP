@@ -15,7 +15,7 @@ import { GitTrajectory } from "../../src/core/trajectory/git.js";
 import { gitDerivedSignals } from "../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../src/core/trajectory/git/rerank/presets/index.js";
 import { TrajectoryRegistry } from "../../src/core/trajectory/index.js";
-import type { CodeConfig } from "../../src/core/types.js";
+import type { IngestCodeConfig, SearchCodeConfig } from "../../src/core/types.js";
 
 // Mock tree-sitter modules to prevent native binding crashes in integration tests
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
@@ -249,7 +249,8 @@ describe("IngestFacade + SearchFacade Integration Tests", () => {
   let registry: TrajectoryRegistry;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
-  let config: CodeConfig;
+  let config: IngestCodeConfig;
+  let searchConfig: SearchCodeConfig;
   let tempDir: string;
   let codebaseDir: string;
 
@@ -267,16 +268,17 @@ describe("IngestFacade + SearchFacade Integration Tests", () => {
     config = {
       chunkSize: 500,
       chunkOverlap: 50,
-      enableASTChunking: true,
       supportedExtensions: [".ts", ".js", ".py", ".go"],
       ignorePatterns: ["node_modules/**", "dist/**", "*.test.*"],
-      batchSize: 10,
-      defaultSearchLimit: 5,
       enableHybridSearch: false,
     };
+    searchConfig = {
+      enableHybridSearch: false,
+      defaultSearchLimit: 5,
+    };
 
-    ingest = new IngestFacade(qdrant as any, embeddings, config);
-    search = new SearchFacade(qdrant as any, embeddings, config, reranker, registry);
+    ingest = new IngestFacade(qdrant as any, embeddings, config, {});
+    search = new SearchFacade(qdrant as any, embeddings, searchConfig, reranker, registry);
   });
 
   afterEach(async () => {
@@ -897,8 +899,9 @@ describe('Engine', () => {
   describe("Hybrid search workflow", () => {
     it("should enable and use hybrid search", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig);
-      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridConfig, reranker, registry);
+      const hybridSearchConfig = { ...searchConfig, enableHybridSearch: true };
+      const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig, {});
+      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
 
       await createTestFile(codebaseDir, "search.ts", "function performSearch(query: string) { return results; }");
 
@@ -910,8 +913,8 @@ describe('Engine', () => {
     });
 
     it("should fallback to standard search if hybrid not available", async () => {
-      const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridConfig, reranker, registry);
+      const hybridSearchConfig = { ...searchConfig, enableHybridSearch: true };
+      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
 
       // Index without hybrid
       await createTestFile(
@@ -1213,7 +1216,7 @@ function validate(): boolean {
   describe("Hybrid search with incremental updates", () => {
     it("should use hybrid search during reindexChanges", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig);
+      const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig, {});
 
       // Initial indexing with hybrid search
       await createTestFile(codebaseDir, "initial.ts", "export const initial = 1;\nconsole.log('Initial file');");
