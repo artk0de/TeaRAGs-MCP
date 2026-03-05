@@ -38,11 +38,9 @@ describe("OnnxEmbeddings", () => {
 
       await provider.embed("test");
 
-      expect(mockPipeline).toHaveBeenCalledWith(
-        "feature-extraction",
-        "jinaai/jina-embeddings-v2-base-code",
-        { dtype: "q8" },
-      );
+      expect(mockPipeline).toHaveBeenCalledWith("feature-extraction", "jinaai/jina-embeddings-v2-base-code", {
+        dtype: "q8",
+      });
     });
 
     it("should pass fp16 dtype when model ends with -fp16", async () => {
@@ -69,11 +67,9 @@ describe("OnnxEmbeddings", () => {
 
       await q4Provider.embed("test");
 
-      expect(mockPipeline).toHaveBeenCalledWith(
-        "feature-extraction",
-        "Xenova/jina-embeddings-v2-base-code",
-        { dtype: "q4" },
-      );
+      expect(mockPipeline).toHaveBeenCalledWith("feature-extraction", "Xenova/jina-embeddings-v2-base-code", {
+        dtype: "q4",
+      });
     });
   });
 
@@ -126,6 +122,97 @@ describe("OnnxEmbeddings", () => {
     });
   });
 
+  describe("adaptive batch sizing", () => {
+    it("should use initial batch size of 32, not full input length", async () => {
+      const texts = Array.from({ length: 100 }, (_, i) => `text${i}`);
+      mockExtractor.mockResolvedValue({
+        tolist: () => texts.slice(0, 32).map(() => [0.1]),
+      });
+
+      await provider.embedBatch(texts);
+
+      // First call should be capped at 32, not 100
+      const firstCallTexts = mockExtractor.mock.calls[0][0] as string[];
+      expect(firstCallTexts).toHaveLength(32);
+    });
+
+    it("should halve batch size on failure and retry", async () => {
+      const texts = Array.from({ length: 10 }, (_, i) => `text${i}`);
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // First call (10 texts, capped at 10 since < 32): fail
+      // Retry with 5: succeed
+      // Next batch of 5: succeed
+      let callCount = 0;
+      mockExtractor.mockImplementation(async (batch: string[]) => {
+        callCount++;
+        if (callCount === 1) throw new Error("OOM");
+        return Promise.resolve({ tolist: () => batch.map(() => [0.1]) });
+      });
+
+      const results = await provider.embedBatch(texts);
+
+      expect(results).toHaveLength(10);
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("reducing to 5"));
+      consoleSpy.mockRestore();
+    });
+
+    it("should halve multiple times until batch succeeds", async () => {
+      const texts = Array.from({ length: 40 }, (_, i) => `text${i}`);
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      mockExtractor.mockImplementation(async (batch: string[]) => {
+        // Fail at 32 and 16, succeed at 8
+        if (batch.length > 8) throw new Error("OOM");
+        return Promise.resolve({ tolist: () => batch.map(() => [0.1]) });
+      });
+
+      const results = await provider.embedBatch(texts);
+
+      expect(results).toHaveLength(40);
+      // Should have reduced: 32 → 16 → 8
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("reducing to 16"));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("reducing to 8"));
+      consoleSpy.mockRestore();
+    });
+
+    it("should throw when batch size reaches minimum and still fails", async () => {
+      const texts = Array.from({ length: 10 }, (_, i) => `text${i}`);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+
+      mockExtractor.mockRejectedValue(new Error("OOM"));
+
+      await expect(provider.embedBatch(texts)).rejects.toThrow("OOM");
+    });
+
+    it("should persist learned batch size across calls", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      // First call: fail at 5, succeed at 4 (min)
+      let firstCallCount = 0;
+      mockExtractor.mockImplementation(async (batch: string[]) => {
+        firstCallCount++;
+        if (firstCallCount === 1) throw new Error("OOM");
+        return Promise.resolve({ tolist: () => batch.map(() => [0.1]) });
+      });
+
+      await provider.embedBatch(["a", "b", "c", "d", "e"]);
+
+      // Reset mock for second call
+      mockExtractor.mockReset();
+      mockExtractor.mockImplementation(async (batch: string[]) => {
+        return Promise.resolve({ tolist: () => batch.map(() => [0.2]) });
+      });
+
+      await provider.embedBatch(["x", "y", "z"]);
+
+      // Second call should use the learned batch size, not INITIAL_BATCH_SIZE
+      const secondCallTexts = mockExtractor.mock.calls[0][0] as string[];
+      expect(secondCallTexts.length).toBeLessThanOrEqual(5);
+      consoleSpy.mockRestore();
+    });
+  });
+
   describe("ensureLoaded error handling", () => {
     it("should throw clear message when @huggingface/transformers is not installed", async () => {
       mockPipeline.mockRejectedValueOnce(new Error("Cannot find package '@huggingface/transformers'"));
@@ -154,9 +241,7 @@ describe("OnnxEmbeddings", () => {
 
       const freshProvider = new OnnxEmbeddings();
 
-      await expect(freshProvider.embed("test")).rejects.toThrow(
-        `Failed to load ONNX model "${DEFAULT_ONNX_MODEL}"`,
-      );
+      await expect(freshProvider.embed("test")).rejects.toThrow(`Failed to load ONNX model "${DEFAULT_ONNX_MODEL}"`);
     });
   });
 });
