@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { OnnxEmbeddings } from "../../../../src/core/adapters/embeddings/onnx.js";
+import { DEFAULT_ONNX_MODEL, OnnxEmbeddings } from "../../../../src/core/adapters/embeddings/onnx.js";
 
 // Mock the dynamic import of @huggingface/transformers
 const mockExtractor = vi.fn();
@@ -21,7 +21,7 @@ describe("OnnxEmbeddings", () => {
 
   describe("constructor", () => {
     it("should use default model with int8 quantization", () => {
-      expect(provider.getModel()).toBe("Xenova/jina-embeddings-v2-base-code-int8");
+      expect(provider.getModel()).toBe(DEFAULT_ONNX_MODEL);
       expect(provider.getDimensions()).toBe(768);
     });
 
@@ -40,7 +40,7 @@ describe("OnnxEmbeddings", () => {
 
       expect(mockPipeline).toHaveBeenCalledWith(
         "feature-extraction",
-        "Xenova/jina-embeddings-v2-base-code",
+        "jinaai/jina-embeddings-v2-base-code",
         { dtype: "int8" },
       );
     });
@@ -155,7 +155,7 @@ describe("OnnxEmbeddings", () => {
       const freshProvider = new OnnxEmbeddings();
 
       await expect(freshProvider.embed("test")).rejects.toThrow(
-        'Failed to load ONNX model "Xenova/jina-embeddings-v2-base-code-int8"',
+        `Failed to load ONNX model "${DEFAULT_ONNX_MODEL}"`,
       );
     });
   });

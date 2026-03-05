@@ -5,6 +5,9 @@ type Pipeline = (texts: string[], options: Record<string, unknown>) => Promise<{
 
 const DEFAULT_CACHE_DIR = modelsDir();
 
+export const DEFAULT_ONNX_MODEL = "jinaai/jina-embeddings-v2-base-code-int8";
+export const DEFAULT_ONNX_DIMENSIONS = 768;
+
 const KNOWN_DTYPES = ["q4", "q8", "fp16", "fp32", "int8", "bnb4"] as const;
 
 type Dtype = (typeof KNOWN_DTYPES)[number];
@@ -26,7 +29,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private readonly dimensions: number;
   private extractor: Pipeline | null = null;
 
-  constructor(model = "Xenova/jina-embeddings-v2-base-code-int8", dimensions = 768) {
+  constructor(model = DEFAULT_ONNX_MODEL, dimensions = DEFAULT_ONNX_DIMENSIONS) {
     this.model = model;
     this.dimensions = dimensions;
   }
