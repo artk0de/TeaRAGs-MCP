@@ -90,13 +90,19 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     if (texts.length === 0) return [];
 
     const extractor = await this.ensureLoaded();
-    const output = await extractor(texts, { pooling: "mean", normalize: true });
-    const vectors = output.tolist();
+    const maxBatch = parseInt(process.env.ONNX_MAX_BATCH_SIZE || "32", 10);
+    const results: EmbeddingResult[] = [];
 
-    return vectors.map((embedding: number[]) => ({
-      embedding,
-      dimensions: this.dimensions,
-    }));
+    for (let i = 0; i < texts.length; i += maxBatch) {
+      const chunk = texts.slice(i, i + maxBatch);
+      const output = await extractor(chunk, { pooling: "mean", normalize: true });
+      const vectors = output.tolist();
+      for (const embedding of vectors) {
+        results.push({ embedding, dimensions: this.dimensions });
+      }
+    }
+
+    return results;
   }
 
   getDimensions(): number {
