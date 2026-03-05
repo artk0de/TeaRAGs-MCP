@@ -18,6 +18,13 @@ import { isDebug } from "./runtime.js";
 
 const LOG_DIR = logsDir();
 
+/** Filesystem-safe local timestamp: 2026-03-06T01-23-45 */
+function localTimestamp(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+}
+
 export type PipelineStage =
   | "scan"
   | "parse"
@@ -182,7 +189,7 @@ class DebugLogger {
         mkdirSync(LOG_DIR, { recursive: true });
       }
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const timestamp = localTimestamp();
       this.logFile = join(LOG_DIR, `pipeline-${timestamp}.log`);
 
       let dump: Record<string, unknown> = {};
@@ -205,7 +212,7 @@ class DebugLogger {
 
       this.writeRaw(`
 ================================================================================
-PIPELINE DEBUG LOG - Session started at ${new Date().toISOString()}
+PIPELINE DEBUG LOG - Session started at ${new Date().toLocaleString()}
 ================================================================================
 CONFIG:
 ${configLines}
