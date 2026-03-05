@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { parseAppConfig } from "./bootstrap/config.js";
+import { getZodConfig, parseAppConfig } from "./bootstrap/config.js";
 import { createAppContext, createConfiguredServer, loadPrompts } from "./bootstrap/factory.js";
 import { checkOllamaAvailability } from "./bootstrap/ollama.js";
 import { startHttpServer } from "./bootstrap/transport/http.js";
@@ -7,7 +7,8 @@ import { startStdioServer } from "./bootstrap/transport/stdio.js";
 
 async function main() {
   const config = parseAppConfig();
-  await checkOllamaAvailability(config.embeddingProvider);
+  const zodConfig = getZodConfig();
+  await checkOllamaAvailability(zodConfig.embedding.provider, zodConfig.embedding.baseUrl, zodConfig.embedding.model);
 
   const ctx = createAppContext(config);
   const promptsConfig = loadPrompts(config);

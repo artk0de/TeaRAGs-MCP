@@ -27,8 +27,17 @@ export interface AppConfig {
   code: CodeConfig;
 }
 
+let _lastZodConfig: ReturnType<typeof parseAppConfigZod> | null = null;
+
+/** Get the full Zod config from the last parseAppConfig() call */
+export function getZodConfig(): ReturnType<typeof parseAppConfigZod> {
+  if (!_lastZodConfig) throw new Error("parseAppConfig() must be called first");
+  return _lastZodConfig;
+}
+
 export function parseAppConfig(): AppConfig {
   const zodConfig = parseAppConfigZod();
+  _lastZodConfig = zodConfig;
 
   // Print deprecation warnings at parse time
   printDeprecationWarnings(zodConfig.deprecations);
