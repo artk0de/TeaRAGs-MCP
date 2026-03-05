@@ -206,10 +206,10 @@ ENV:
   EMBEDDING_BATCH_SIZE        = ${env("EMBEDDING_BATCH_SIZE", "1024")}
   MIN_BATCH_SIZE              = ${minBatchRaw !== null && minBatchRaw !== undefined ? minBatchRaw : "unset"} → effective: ${minBatchEffective}
   BATCH_FORMATION_TIMEOUT_MS  = ${env("BATCH_FORMATION_TIMEOUT_MS", "2000")}
-  CHUNKER_POOL_SIZE           = ${env("CHUNKER_POOL_SIZE", "4")}
-  FILE_PROCESSING_CONCURRENCY = ${env("FILE_PROCESSING_CONCURRENCY", "50")}
-  MAX_IO_CONCURRENCY          = ${env("MAX_IO_CONCURRENCY", "100")}
-  QDRANT_UPSERT_BATCH_SIZE    = ${env("QDRANT_UPSERT_BATCH_SIZE", "100")}
+  INGEST_TUNE_CHUNKER_POOL_SIZE = ${env("INGEST_TUNE_CHUNKER_POOL_SIZE", env("CHUNKER_POOL_SIZE", "4"))}
+  INGEST_TUNE_FILE_CONCURRENCY  = ${env("INGEST_TUNE_FILE_CONCURRENCY", env("FILE_PROCESSING_CONCURRENCY", "50"))}
+  INGEST_TUNE_IO_CONCURRENCY    = ${env("INGEST_TUNE_IO_CONCURRENCY", env("MAX_IO_CONCURRENCY", "50"))}
+  QDRANT_TUNE_UPSERT_BATCH_SIZE = ${env("QDRANT_TUNE_UPSERT_BATCH_SIZE", env("QDRANT_UPSERT_BATCH_SIZE", "100"))}
   TRAJECTORY_GIT_ENABLED      = ${env("TRAJECTORY_GIT_ENABLED", env("CODE_ENABLE_GIT_METADATA", "false"))}
   GIT_ENRICHMENT              = background (CLI primary, isomorphic-git fallback)
   TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS  = ${env("TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS", env("GIT_LOG_MAX_AGE_MONTHS", "12"))}
@@ -430,7 +430,7 @@ DERIVED:
       const embeddingConcurrency = parseInt(process.env.EMBEDDING_CONCURRENCY || "1", 10);
       const concurrency: Record<PipelineStage, number> = {
         scan: 1, // Serial file scanning
-        parse: parseInt(process.env.CHUNKER_POOL_SIZE || "4", 10),
+        parse: parseInt(process.env.INGEST_TUNE_CHUNKER_POOL_SIZE || process.env.CHUNKER_POOL_SIZE || "4", 10),
         git: parseInt(process.env.TRAJECTORY_GIT_CHUNK_CONCURRENCY || process.env.GIT_CHUNK_CONCURRENCY || "10", 10),
         embed: embeddingConcurrency,
         qdrant: embeddingConcurrency,

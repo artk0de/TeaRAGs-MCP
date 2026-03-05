@@ -26,28 +26,44 @@ export interface AppConfig {
 }
 
 export function parseAppConfig(): AppConfig {
-  const transportMode = (process.env.TRANSPORT_MODE || "stdio").toLowerCase();
+  const transportMode = (process.env.SERVER_TRANSPORT || process.env.TRANSPORT_MODE || "stdio").toLowerCase();
 
   return {
     qdrantUrl: process.env.QDRANT_URL || "http://localhost:6333",
     qdrantApiKey: process.env.QDRANT_API_KEY,
     embeddingProvider: (process.env.EMBEDDING_PROVIDER || "ollama").toLowerCase(),
     transportMode: transportMode as "stdio" | "http",
-    httpPort: parseInt(process.env.HTTP_PORT || "3000", 10),
-    requestTimeoutMs: parseInt(process.env.HTTP_REQUEST_TIMEOUT_MS || "300000", 10),
-    promptsConfigFile: process.env.PROMPTS_CONFIG_FILE || join(__dirname, "../../prompts.json"),
+    httpPort: parseInt(process.env.SERVER_HTTP_PORT || process.env.HTTP_PORT || "3000", 10),
+    requestTimeoutMs: parseInt(
+      process.env.SERVER_HTTP_TIMEOUT_MS || process.env.HTTP_REQUEST_TIMEOUT_MS || "300000",
+      10,
+    ),
+    promptsConfigFile:
+      process.env.SERVER_PROMPTS_FILE || process.env.PROMPTS_CONFIG_FILE || join(__dirname, "../../prompts.json"),
     code: {
-      chunkSize: parseInt(process.env.CODE_CHUNK_SIZE || String(DEFAULT_CHUNK_SIZE), 10),
-      chunkOverlap: parseInt(process.env.CODE_CHUNK_OVERLAP || String(DEFAULT_CHUNK_OVERLAP), 10),
-      enableASTChunking: process.env.CODE_ENABLE_AST !== "false",
+      chunkSize: parseInt(
+        process.env.INGEST_CHUNK_SIZE || process.env.CODE_CHUNK_SIZE || String(DEFAULT_CHUNK_SIZE),
+        10,
+      ),
+      chunkOverlap: parseInt(
+        process.env.INGEST_CHUNK_OVERLAP || process.env.CODE_CHUNK_OVERLAP || String(DEFAULT_CHUNK_OVERLAP),
+        10,
+      ),
+      enableASTChunking: (process.env.INGEST_ENABLE_AST ?? process.env.CODE_ENABLE_AST) !== "false",
       supportedExtensions: DEFAULT_CODE_EXTENSIONS,
       ignorePatterns: DEFAULT_IGNORE_PATTERNS,
       batchSize: parseInt(
-        process.env.QDRANT_UPSERT_BATCH_SIZE || process.env.CODE_BATCH_SIZE || String(DEFAULT_BATCH_SIZE),
+        process.env.QDRANT_TUNE_UPSERT_BATCH_SIZE ||
+          process.env.QDRANT_UPSERT_BATCH_SIZE ||
+          process.env.CODE_BATCH_SIZE ||
+          String(DEFAULT_BATCH_SIZE),
         10,
       ),
-      defaultSearchLimit: parseInt(process.env.CODE_SEARCH_LIMIT || String(DEFAULT_SEARCH_LIMIT), 10),
-      enableHybridSearch: process.env.CODE_ENABLE_HYBRID === "true",
+      defaultSearchLimit: parseInt(
+        process.env.INGEST_DEFAULT_SEARCH_LIMIT || process.env.CODE_SEARCH_LIMIT || String(DEFAULT_SEARCH_LIMIT),
+        10,
+      ),
+      enableHybridSearch: (process.env.INGEST_ENABLE_HYBRID ?? process.env.CODE_ENABLE_HYBRID) === "true",
       enableGitMetadata: (process.env.TRAJECTORY_GIT_ENABLED ?? process.env.CODE_ENABLE_GIT_METADATA) === "true",
       squashAwareSessions: process.env.TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS === "true",
       sessionGapMinutes: parseInt(process.env.TRAJECTORY_GIT_SESSION_GAP_MINUTES || "30", 10),

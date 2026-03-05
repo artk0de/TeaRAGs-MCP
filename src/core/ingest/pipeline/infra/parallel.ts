@@ -3,7 +3,10 @@
  */
 
 /** Default max concurrent I/O operations */
-const DEFAULT_CONCURRENCY = parseInt(process.env.MAX_IO_CONCURRENCY || "50", 10);
+const DEFAULT_CONCURRENCY = parseInt(
+  process.env.INGEST_TUNE_IO_CONCURRENCY || process.env.MAX_IO_CONCURRENCY || "50",
+  10,
+);
 
 /**
  * Execute promises with bounded concurrency.

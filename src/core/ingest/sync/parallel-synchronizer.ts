@@ -23,7 +23,10 @@ import { ShardedSnapshotManager, type FileMetadata, type LoadedSnapshot } from "
 export { parallelLimit };
 
 /** Maximum concurrent I/O operations to prevent filesystem saturation */
-const MAX_IO_CONCURRENCY = parseInt(process.env.MAX_IO_CONCURRENCY || "50", 10);
+const MAX_IO_CONCURRENCY = parseInt(
+  process.env.INGEST_TUNE_IO_CONCURRENCY || process.env.MAX_IO_CONCURRENCY || "50",
+  10,
+);
 
 /** Enable debug timing logs */
 const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
