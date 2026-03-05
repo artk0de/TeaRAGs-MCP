@@ -1,4 +1,4 @@
-import type { EmbeddingConfig } from "../../../bootstrap/config.js";
+import type { EmbeddingConfig } from "../../../bootstrap/config/index.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
 import { OllamaEmbeddings } from "./ollama.js";

@@ -20,7 +20,7 @@ import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
-import { getZodConfig, type AppConfig } from "./config.js";
+import { getZodConfig, type AppConfig } from "./config/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {

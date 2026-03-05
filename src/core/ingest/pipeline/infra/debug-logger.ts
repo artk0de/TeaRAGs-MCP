@@ -14,7 +14,7 @@ import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { getConfigDump, getZodConfig } from "../../../../bootstrap/config.js";
+import { getConfigDump, getZodConfig } from "../../../../bootstrap/config/index.js";
 import { isDebug } from "./runtime.js";
 
 const LOG_DIR = join(homedir(), ".tea-rags-mcp", "logs");

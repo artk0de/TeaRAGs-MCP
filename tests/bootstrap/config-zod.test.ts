@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Helper: dynamic import with cache-busting to get fresh module state per test
 async function freshImport() {
   vi.resetModules();
-  return await import("../../src/bootstrap/config.js");
+  return await import("../../src/bootstrap/config/index.js");
 }
 
 describe("parseAppConfigZod", () => {

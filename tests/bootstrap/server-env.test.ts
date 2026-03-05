@@ -24,7 +24,7 @@ const ALL_KEYS = [
 
 /** Fresh import of config.ts to pick up env var changes */
 async function freshImport() {
-  const mod = await import("../../src/bootstrap/config.js");
+  const mod = await import("../../src/bootstrap/config/index.js");
   return mod;
 }
 

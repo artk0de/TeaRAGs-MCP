@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { getZodConfig, parseAppConfig } from "./bootstrap/config.js";
+import { getZodConfig, parseAppConfig } from "./bootstrap/config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts } from "./bootstrap/factory.js";
 import { checkOllamaAvailability } from "./bootstrap/ollama.js";
 import { startHttpServer } from "./bootstrap/transport/http.js";

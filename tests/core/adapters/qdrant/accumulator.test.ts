@@ -4,7 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { QdrantTuneConfig } from "../../../../src/bootstrap/config.js";
+import type { QdrantTuneConfig } from "../../../../src/bootstrap/config/index.js";
 import {
   createAccumulator,
   PointsAccumulator,
