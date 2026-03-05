@@ -84,9 +84,17 @@ export function resolveRepoRoot(absolutePath: string): string {
 }
 
 /** Run CLI `git log --numstat` and parse output into FileChurnData map. */
-export async function buildViaCli(repoRoot: string, sinceDate?: Date): Promise<Map<string, FileChurnData>> {
+export async function buildViaCli(
+  repoRoot: string,
+  sinceDate?: Date,
+  timeoutMs?: number,
+): Promise<Map<string, FileChurnData>> {
   const args = buildCliArgs(sinceDate);
-  const { stdout } = await execFileAsync("git", args, { cwd: repoRoot, maxBuffer: Infinity });
+  const { stdout } = await execFileAsync("git", args, {
+    cwd: repoRoot,
+    maxBuffer: Infinity,
+    timeout: timeoutMs,
+  });
   return parseNumstatOutput(stdout);
 }
 
