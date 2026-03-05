@@ -3,7 +3,7 @@ import * as nodeFs from "node:fs";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { AppConfig } from "../../src/bootstrap/config.js";
+import type { AppConfig } from "../../src/bootstrap/config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts } from "../../src/bootstrap/factory.js";
 import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
 
@@ -56,8 +56,8 @@ vi.mock("node:fs", async () => {
 });
 
 // Mock getZodConfig to return a valid embedding config slice
-vi.mock("../../src/bootstrap/config.js", async () => {
-  const actual = await import("../../src/bootstrap/config.js");
+vi.mock("../../src/bootstrap/config/index.js", async () => {
+  const actual = await import("../../src/bootstrap/config/index.js");
   return {
     ...actual,
     getZodConfig: vi.fn().mockReturnValue({

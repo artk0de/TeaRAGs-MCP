@@ -4,7 +4,7 @@ import Bottleneck from "bottleneck";
 import express from "express";
 
 import type { PromptsConfig } from "../../mcp/prompts/index.js";
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from "../config/index.js";
 import { createConfiguredServer, pkg, type AppContext } from "../factory.js";
 
 export interface HttpServerDeps {

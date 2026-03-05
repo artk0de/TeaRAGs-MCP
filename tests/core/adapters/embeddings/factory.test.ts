@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { EmbeddingConfig } from "../../../../src/bootstrap/config.js";
+import type { EmbeddingConfig } from "../../../../src/bootstrap/config/index.js";
 import { CohereEmbeddings } from "../../../../src/core/adapters/embeddings/cohere.js";
 import { EmbeddingProviderFactory } from "../../../../src/core/adapters/embeddings/factory.js";
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";

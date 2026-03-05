@@ -13,7 +13,7 @@
  * - Uses wait=true for final flush (consistency guarantee)
  */
 
-import type { QdrantTuneConfig } from "../../../bootstrap/config.js";
+import type { QdrantTuneConfig } from "../../../bootstrap/config/index.js";
 import type { QdrantManager, SparseVector } from "./client.js";
 
 export interface DensePoint {
