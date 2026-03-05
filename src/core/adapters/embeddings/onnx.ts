@@ -16,6 +16,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     if (this.extractor) return this.extractor;
 
     try {
+      // @ts-expect-error — optional dependency, may not be installed
       const { pipeline } = await import("@huggingface/transformers");
       console.error(`[ONNX] Loading model ${this.model}... (first time, may download ~70MB)`);
       this.extractor = (await pipeline("feature-extraction", this.model, {

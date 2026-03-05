@@ -2,10 +2,11 @@ import type { EmbeddingConfig } from "../../../bootstrap/config/index.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
 import { OllamaEmbeddings } from "./ollama.js";
+import { OnnxEmbeddings } from "./onnx.js";
 import { OpenAIEmbeddings } from "./openai.js";
 import { VoyageEmbeddings } from "./voyage.js";
 
-export type EmbeddingProviderType = "openai" | "cohere" | "voyage" | "ollama";
+export type EmbeddingProviderType = "openai" | "cohere" | "voyage" | "ollama" | "onnx";
 
 export class EmbeddingProviderFactory {
   static create(config: EmbeddingConfig): EmbeddingProvider {
@@ -57,9 +58,12 @@ export class EmbeddingProviderFactory {
           config.ollamaNumGpu,
         );
 
+      case "onnx":
+        return new OnnxEmbeddings(model || "Xenova/jina-embeddings-v2-base-code", dimensions);
+
       default:
         throw new Error(
-          `Unknown embedding provider: ${String(provider)}. Supported providers: openai, cohere, voyage, ollama`,
+          `Unknown embedding provider: ${String(provider)}. Supported providers: openai, cohere, voyage, ollama, onnx`,
         );
     }
   }

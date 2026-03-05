@@ -4,6 +4,7 @@ import type { EmbeddingConfig } from "../../../../src/bootstrap/config/index.js"
 import { CohereEmbeddings } from "../../../../src/core/adapters/embeddings/cohere.js";
 import { EmbeddingProviderFactory } from "../../../../src/core/adapters/embeddings/factory.js";
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
+import { OnnxEmbeddings } from "../../../../src/core/adapters/embeddings/onnx.js";
 import { OpenAIEmbeddings } from "../../../../src/core/adapters/embeddings/openai.js";
 import { VoyageEmbeddings } from "../../../../src/core/adapters/embeddings/voyage.js";
 
@@ -43,7 +44,7 @@ describe("EmbeddingProviderFactory", () => {
 
       it("should list supported providers in error message", () => {
         expect(() => EmbeddingProviderFactory.create(makeConfig({ provider: "invalid" as any }))).toThrow(
-          "openai, cohere, voyage, ollama",
+          "openai, cohere, voyage, ollama, onnx",
         );
       });
     });
@@ -210,6 +211,25 @@ describe("EmbeddingProviderFactory", () => {
         );
 
         expect(provider).toBeInstanceOf(OllamaEmbeddings);
+      });
+    });
+
+    describe("ONNX provider", () => {
+      it("should not require API key", () => {
+        const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "onnx" }));
+
+        expect(provider).toBeInstanceOf(OnnxEmbeddings);
+        expect(provider.getModel()).toBe("Xenova/jina-embeddings-v2-base-code");
+        expect(provider.getDimensions()).toBe(768);
+      });
+
+      it("should use custom model", () => {
+        const provider = EmbeddingProviderFactory.create(
+          makeConfig({ provider: "onnx", model: "Xenova/all-MiniLM-L6-v2", dimensions: 384 }),
+        );
+
+        expect(provider.getModel()).toBe("Xenova/all-MiniLM-L6-v2");
+        expect(provider.getDimensions()).toBe(384);
       });
     });
   });
