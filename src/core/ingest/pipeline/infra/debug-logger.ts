@@ -173,10 +173,6 @@ class DebugLogger {
 
   constructor() {
     this.sessionStart = Date.now();
-
-    if (DEBUG) {
-      this.initLogFile();
-    }
   }
 
   private initLogFile(): void {
@@ -235,6 +231,10 @@ DERIVED:
   }
 
   private writeRaw(message: string): void {
+    if (!DEBUG) return;
+    if (!this.logFile) {
+      this.initLogFile();
+    }
     if (this.logFile) {
       try {
         appendFileSync(this.logFile, `${message}\n`);

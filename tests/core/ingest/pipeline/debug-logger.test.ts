@@ -658,6 +658,42 @@ describe("Stage Profiling", () => {
   });
 });
 
+describe("DebugLogger - lazy initialization", () => {
+  it("should not create log file until first write", async () => {
+    vi.resetModules();
+    vi.doMock("node:fs", () => ({
+      appendFileSync: vi.fn(),
+      existsSync: vi.fn(() => true),
+      mkdirSync: vi.fn(),
+    }));
+
+    // Save and set DEBUG
+    const originalDebug = process.env.DEBUG;
+    process.env.DEBUG = "true";
+
+    const { pipelineLog: freshLogger } = await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
+    const fsModule = await import("node:fs");
+
+    // Clear initialization calls
+    vi.mocked(fsModule.appendFileSync).mockClear();
+    vi.mocked(fsModule.mkdirSync).mockClear();
+
+    // Log path should be null before first write
+    expect(freshLogger.getLogPath()).toBeNull();
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // First write should trigger lazy init
+    freshLogger.step({ component: "Test" }, "first write");
+    expect(freshLogger.getLogPath()).not.toBeNull();
+    expect(freshLogger.getLogPath()).toMatch(/pipeline-.*\.log$/);
+
+    // Cleanup
+    consoleErrorSpy.mockRestore();
+    process.env.DEBUG = originalDebug;
+  });
+});
+
 describe("DebugLogger - DEBUG environment variable", () => {
   it("should suppress logs when DEBUG is not set", async () => {
     // Reset module cache to allow reimport
