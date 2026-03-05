@@ -2,12 +2,26 @@ import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
 
 type Pipeline = (texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
 
+const KNOWN_DTYPES = ["q4", "q8", "fp16", "fp32", "int8", "bnb4"] as const;
+
+/** Parse "Xenova/model-name-q8" → { baseModel: "Xenova/model-name", dtype: "q8" } */
+function parseModelSpec(model: string): { baseModel: string; dtype: string | undefined } {
+  const lastDash = model.lastIndexOf("-");
+  if (lastDash === -1) return { baseModel: model, dtype: undefined };
+
+  const suffix = model.slice(lastDash + 1);
+  if (KNOWN_DTYPES.includes(suffix as (typeof KNOWN_DTYPES)[number])) {
+    return { baseModel: model.slice(0, lastDash), dtype: suffix };
+  }
+  return { baseModel: model, dtype: undefined };
+}
+
 export class OnnxEmbeddings implements EmbeddingProvider {
   private readonly model: string;
   private readonly dimensions: number;
   private extractor: Pipeline | null = null;
 
-  constructor(model = "Xenova/jina-embeddings-v2-base-code", dimensions = 768) {
+  constructor(model = "Xenova/jina-embeddings-v2-base-code-q8", dimensions = 768) {
     this.model = model;
     this.dimensions = dimensions;
   }
@@ -15,12 +29,15 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private async ensureLoaded(): Promise<Pipeline> {
     if (this.extractor) return this.extractor;
 
+    const { baseModel, dtype } = parseModelSpec(this.model);
+
     try {
       // @ts-expect-error — optional dependency, may not be installed
       const { pipeline } = await import("@huggingface/transformers");
-      console.error(`[ONNX] Loading model ${this.model}... (first time, may download ~70MB)`);
-      this.extractor = (await pipeline("feature-extraction", this.model, {
-        dtype: "q8",
+      const label = dtype ? `${baseModel} (${dtype})` : baseModel;
+      console.error(`[ONNX] Loading model ${label}... (first time, may download ~70MB)`);
+      this.extractor = (await pipeline("feature-extraction", baseModel, {
+        ...(dtype ? { dtype } : {}),
       })) as unknown as Pipeline;
       console.error(`[ONNX] Model loaded.`);
       return this.extractor;
