@@ -3,8 +3,6 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { DEFAULT_BATCH_SIZE, DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE } from "../../core/ingest/config.js";
-import { DEFAULT_SEARCH_LIMIT } from "../../core/search/config.js";
 import {
   booleanFromEnv,
   booleanFromEnvWithDefault,
@@ -56,11 +54,11 @@ export const ingestTuneSchema = z.object({
 });
 
 export const ingestSchema = z.object({
-  chunkSize: intWithDefault(DEFAULT_CHUNK_SIZE),
-  chunkOverlap: intWithDefault(DEFAULT_CHUNK_OVERLAP),
+  chunkSize: intWithDefault(2500),
+  chunkOverlap: intWithDefault(300),
   enableAST: booleanFromEnvWithDefault(true),
   enableHybrid: booleanFromEnv,
-  defaultSearchLimit: intWithDefault(DEFAULT_SEARCH_LIMIT),
+  defaultSearchLimit: intWithDefault(5),
   tune: ingestTuneSchema,
 });
 
@@ -77,7 +75,7 @@ export const trajectoryGitSchema = z.object({
 });
 
 export const qdrantTuneSchema = z.object({
-  upsertBatchSize: intWithDefault(DEFAULT_BATCH_SIZE),
+  upsertBatchSize: intWithDefault(100),
   upsertFlushIntervalMs: intWithDefault(500),
   upsertOrdering: z.enum(["weak", "medium", "strong"]).default("weak"),
   deleteBatchSize: intWithDefault(500),
