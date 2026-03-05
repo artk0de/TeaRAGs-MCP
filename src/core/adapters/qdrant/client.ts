@@ -590,7 +590,7 @@ export class QdrantManager {
     collectionName: string,
     denseVector: number[],
     sparseVector: SparseVector,
-    limit = 5,
+    fetchLimit: number,
     filter?: Record<string, unknown>,
     semanticWeight = 0.7,
   ): Promise<SearchResult[]> {
@@ -609,7 +609,6 @@ export class QdrantManager {
       }
     }
 
-    const fetchLimit = Math.max(20, limit * 4);
     const sparseWeight = 1 - semanticWeight;
 
     try {
@@ -664,9 +663,9 @@ export class QdrantManager {
         });
       });
 
-      // Sort by fused score descending, take top limit
+      // Sort by fused score descending
       merged.sort((a, b) => b.score - a.score);
-      return merged.slice(0, limit);
+      return merged;
     } catch (error: unknown) {
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
