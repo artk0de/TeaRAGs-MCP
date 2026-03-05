@@ -124,7 +124,7 @@ export function parseAppConfigZod(): {
 
   // Validate API keys for non-ollama providers
   const embedding = embeddingResult.data;
-  if (embedding.provider !== "ollama") {
+  if (embedding.provider !== "ollama" && embedding.provider !== "onnx") {
     const keyMap: Record<string, keyof EmbeddingConfig> = {
       openai: "openaiApiKey",
       cohere: "cohereApiKey",
