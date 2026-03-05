@@ -52,46 +52,17 @@ else
   echo "⏭️  No TypeScript changes, skipping type check"
 fi
 
-# Run tests and type-check in parallel when both are needed
-if [ -n "$RUN_TESTS" ] && [ -n "$RUN_TYPECHECK" ]; then
-  echo "📦 Running tests and type-check in parallel..."
+# Run type-check first (fast), then tests — sequential to avoid vitest fork timeouts
+if [ -n "$RUN_TYPECHECK" ]; then
+  echo "🔍 Running type check..."
+  npm run type-check || { echo "❌ Type check failed"; exit 1; }
+fi
 
-  npm test -- --run &
-  TEST_PID=$!
-
-  npm run type-check &
-  TYPECHECK_PID=$!
-
-  TEST_EXIT=0
-  TYPECHECK_EXIT=0
-
-  wait $TEST_PID || TEST_EXIT=$?
-  wait $TYPECHECK_PID || TYPECHECK_EXIT=$?
-
-  if [ $TEST_EXIT -ne 0 ]; then
-    echo "❌ Tests failed"
-  fi
-  if [ $TYPECHECK_EXIT -ne 0 ]; then
-    echo "❌ Type check failed"
-  fi
-  if [ $TEST_EXIT -ne 0 ] || [ $TYPECHECK_EXIT -ne 0 ]; then
-    exit 1
-  fi
-
-  # Coverage check (optional, set CHECK_COVERAGE=1 to enable)
-  if [ "$CHECK_COVERAGE" = "1" ]; then
-    .claude/hooks/check-coverage.sh
-  fi
-
-elif [ -n "$RUN_TESTS" ]; then
-  echo "📦 src/ changed, running tests..."
-  npm test -- --run
+if [ -n "$RUN_TESTS" ]; then
+  echo "📦 Running tests..."
+  npm test -- --run || { echo "❌ Tests failed"; exit 1; }
 
   if [ "$CHECK_COVERAGE" = "1" ]; then
     .claude/hooks/check-coverage.sh
   fi
-
-elif [ -n "$RUN_TYPECHECK" ]; then
-  echo "🔍 TypeScript files changed, running type check..."
-  npm run type-check
 fi
