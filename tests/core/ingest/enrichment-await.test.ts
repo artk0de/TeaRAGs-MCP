@@ -13,12 +13,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
 import { createIngestDependencies } from "../../../src/core/ingest/factory.js";
-import type { CodeConfig } from "../../../src/core/types.js";
+import type { IngestCodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
   createTestFile,
   defaultTestConfig,
+  defaultTrajectoryConfig,
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "./__helpers__/test-helpers.js";
@@ -66,7 +67,7 @@ describe("Enrichment status detection", () => {
   let ingest: IngestFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
-  let config: CodeConfig;
+  let config: IngestCodeConfig;
   let tempDir: string;
   let codebaseDir: string;
 
@@ -83,7 +84,7 @@ describe("Enrichment status detection", () => {
 
   it("should report 'completed' when enrichment finishes before return", async () => {
     config.enableGitMetadata = true;
-    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
 
     await createTestFile(
       codebaseDir,
@@ -112,7 +113,7 @@ describe("Enrichment status detection", () => {
     slowEnrichment.startChunkEnrichment = vi.fn();
 
     // Inject slow enrichment into the ingest facade
-    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
     (ingest as any).enrichment = slowEnrichment;
     const deps = createIngestDependencies(qdrant as any, tempDir);
     (ingest as any).indexing = new (await import("../../../src/core/ingest/indexing.js")).IndexPipeline(
@@ -164,7 +165,7 @@ describe("Enrichment status detection", () => {
     deferredEnrichment.startChunkEnrichment = vi.fn();
 
     const deps = createIngestDependencies(qdrant as any, tempDir);
-    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
     (ingest as any).enrichment = deferredEnrichment;
     (ingest as any).indexing = new (await import("../../../src/core/ingest/indexing.js")).IndexPipeline(
       qdrant,

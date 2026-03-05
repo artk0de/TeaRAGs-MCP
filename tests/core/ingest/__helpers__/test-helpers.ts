@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import type { EmbeddingProvider } from "../../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
-import type { CodeConfig } from "../../../../src/core/types.js";
+import type { IngestCodeConfig, SearchCodeConfig, TrajectoryIngestConfig } from "../../../../src/core/types.js";
 
 /** Mock QdrantManager — mirrors all public methods */
 export class MockQdrantManager implements Partial<QdrantManager> {
@@ -237,18 +237,28 @@ export async function createTestFile(baseDir: string, relativePath: string, cont
   await fs.writeFile(fullPath, content, "utf-8");
 }
 
-/** Default test config */
-export function defaultTestConfig(): CodeConfig {
+/** Default ingest test config */
+export function defaultTestConfig(): IngestCodeConfig {
   return {
     chunkSize: 500,
     chunkOverlap: 50,
-    enableASTChunking: true,
     supportedExtensions: [".ts", ".js", ".py"],
     ignorePatterns: ["node_modules/**", "dist/**"],
-    batchSize: 10,
-    defaultSearchLimit: 5,
     enableHybridSearch: false,
   };
+}
+
+/** Default search test config */
+export function defaultSearchConfig(): SearchCodeConfig {
+  return {
+    enableHybridSearch: false,
+    defaultSearchLimit: 5,
+  };
+}
+
+/** Default trajectory test config */
+export function defaultTrajectoryConfig(): TrajectoryIngestConfig {
+  return {};
 }
 
 /** Create a temp directory for tests and return paths */

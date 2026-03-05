@@ -1771,3 +1771,113 @@ time=2026-03-04T02:28:02.848+03:00 level=INFO msg="Auto-import complete"
 time=2026-03-04T02:28:03.193+03:00 level=INFO msg="Import triggered by file change"
 time=2026-03-04T02:28:03.194+03:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
 time=2026-03-04T02:28:03.195+03:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-03-05T18:07:21.462+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:07:21.462+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:07:21.477+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:07:23.686+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:07:23.686+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:07:23.701+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:07:25.181+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:07:25.181+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:07:25.197+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:07:25.421+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:07:25.421+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:07:25.437+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:07:26.574+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:07:26.575+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:07:26.590+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:07:27.327+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:07:27.327+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:07:27.342+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:07:30.913+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:07:30.913+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:07:30.929+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:11:06.976+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:11:06.977+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:11:06.994+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:12:10.167+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:12:10.167+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:12:10.182+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:17:03.517+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:17:03.519+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:17:03.535+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T18:42:19.155+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T18:42:19.159+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T18:42:19.177+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T19:27:56.882+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T19:27:56.882+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T19:27:56.899+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T19:46:10.223+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T19:46:10.223+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T19:46:10.241+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T21:06:42.822+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T21:06:42.822+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T21:06:42.840+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T21:14:50.043+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T21:14:50.043+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T21:14:50.060+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T21:27:17.481+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T21:27:17.481+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T21:27:17.499+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T21:34:38.430+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T21:34:38.431+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T21:34:38.449+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T21:59:24.347+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T21:59:24.347+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T21:59:24.365+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T22:02:34.976+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T22:02:34.977+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T22:02:34.994+03:00 level=ERROR msg="cannot open database" error="failed to enable WAL mode: sqlite3: file is not a database"
+time=2026-03-05T22:02:56.013+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T22:02:56.013+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T22:02:56.036+03:00 level=INFO msg="database opened" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db backend=sqlite freshness_checking=true
+time=2026-03-05T22:02:56.036+03:00 level=ERROR msg="repository fingerprint validation failed" error="\nLEGACY DATABASE DETECTED!\n\nThis database was created before version 0.17.5 and lacks a repository fingerprint.\nTo continue using this database, you must explicitly set its repository ID:\n\n  bd migrate --update-repo-id\n\nThis ensures the database is bound to this repository and prevents accidental\ndatabase sharing between different repositories.\n\nIf this is a fresh clone, run:\n  rm -rf .beads && bd init\n\nNote: Auto-claiming legacy databases is intentionally disabled to prevent\nsilent corruption when databases are copied between repositories.\n"
+time=2026-03-05T22:03:01.615+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T22:03:01.615+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T22:03:01.639+03:00 level=INFO msg="database opened" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db backend=sqlite freshness_checking=true
+time=2026-03-05T22:03:01.639+03:00 level=ERROR msg="repository fingerprint validation failed" error="\nLEGACY DATABASE DETECTED!\n\nThis database was created before version 0.17.5 and lacks a repository fingerprint.\nTo continue using this database, you must explicitly set its repository ID:\n\n  bd migrate --update-repo-id\n\nThis ensures the database is bound to this repository and prevents accidental\ndatabase sharing between different repositories.\n\nIf this is a fresh clone, run:\n  rm -rf .beads && bd init\n\nNote: Auto-claiming legacy databases is intentionally disabled to prevent\nsilent corruption when databases are copied between repositories.\n"
+time=2026-03-05T22:03:06.673+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T22:03:06.673+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T22:03:06.697+03:00 level=INFO msg="database opened" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db backend=sqlite freshness_checking=true
+time=2026-03-05T22:03:06.697+03:00 level=ERROR msg="repository fingerprint validation failed" error="\nLEGACY DATABASE DETECTED!\n\nThis database was created before version 0.17.5 and lacks a repository fingerprint.\nTo continue using this database, you must explicitly set its repository ID:\n\n  bd migrate --update-repo-id\n\nThis ensures the database is bound to this repository and prevents accidental\ndatabase sharing between different repositories.\n\nIf this is a fresh clone, run:\n  rm -rf .beads && bd init\n\nNote: Auto-claiming legacy databases is intentionally disabled to prevent\nsilent corruption when databases are copied between repositories.\n"
+time=2026-03-05T22:03:44.098+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T22:03:44.099+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T22:03:44.124+03:00 level=INFO msg="database opened" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db backend=sqlite freshness_checking=true
+time=2026-03-05T22:03:44.124+03:00 level=ERROR msg="repository fingerprint validation failed" error="\nLEGACY DATABASE DETECTED!\n\nThis database was created before version 0.17.5 and lacks a repository fingerprint.\nTo continue using this database, you must explicitly set its repository ID:\n\n  bd migrate --update-repo-id\n\nThis ensures the database is bound to this repository and prevents accidental\ndatabase sharing between different repositories.\n\nIf this is a fresh clone, run:\n  rm -rf .beads && bd init\n\nNote: Auto-claiming legacy databases is intentionally disabled to prevent\nsilent corruption when databases are copied between repositories.\n"
+time=2026-03-05T22:04:00.202+03:00 level=INFO msg="Daemon started (interval: %v, auto-commit: %v, auto-push: %v)" !BADKEY=5s !BADKEY=false !BADKEY=false
+time=2026-03-05T22:04:00.202+03:00 level=INFO msg="using database" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db
+time=2026-03-05T22:04:00.230+03:00 level=INFO msg="database opened" path=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db backend=sqlite freshness_checking=true
+time=2026-03-05T22:04:00.260+03:00 level=INFO msg="Repository fingerprint validated: %s" !BADKEY=b37463bd
+time=2026-03-05T22:04:00.261+03:00 level=INFO msg="starting RPC server" socket=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/bd.sock
+time=2026-03-05T22:04:00.261+03:00 level=INFO msg="RPC server ready (socket listening)"
+time=2026-03-05T22:04:00.266+03:00 level=INFO msg="registered in global registry"
+time=2026-03-05T22:04:00.266+03:00 level=INFO msg="Starting %s..." !BADKEY="sync cycle"
+time=2026-03-05T22:04:00.288+03:00 level=INFO msg="Exported to JSONL"
+time=2026-03-05T22:04:03.654+03:00 level=INFO msg="Pulled from remote"
+time=2026-03-05T22:04:03.721+03:00 level=INFO msg="Imported from JSONL"
+time=2026-03-05T22:04:03.762+03:00 level=INFO msg="Sync cycle complete"
+time=2026-03-05T22:04:03.762+03:00 level=INFO msg="monitoring parent process" pid=0
+time=2026-03-05T22:04:03.762+03:00 level=INFO msg="using event-driven mode"
+time=2026-03-05T22:04:03.762+03:00 level=INFO msg="Auto-pull disabled: use 'git pull' manually to sync remote changes"
+time=2026-03-05T22:04:07.770+03:00 level=INFO msg="File change detected: %s" !BADKEY=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/issues.jsonl
+time=2026-03-05T22:04:08.772+03:00 level=INFO msg="Import triggered by file change"
+time=2026-03-05T22:04:08.775+03:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-03-05T22:04:08.775+03:00 level=INFO msg="Skipping %s: JSONL content unchanged" !BADKEY=auto-import
+time=2026-03-05T22:04:14.743+03:00 level=INFO msg="Mutation detected: %s %s" status=tea-m3k
+time=2026-03-05T22:04:15.152+03:00 level=INFO msg="Mutation detected: %s %s" status=tea-76y
+time=2026-03-05T22:04:15.653+03:00 level=INFO msg="Export triggered by mutation events"
+time=2026-03-05T22:04:15.654+03:00 level=INFO msg="Starting %s..." !BADKEY=export
+time=2026-03-05T22:04:15.678+03:00 level=INFO msg="JSONL removed/renamed, re-establishing watch"
+time=2026-03-05T22:04:15.686+03:00 level=INFO msg="Exported to JSONL"
+time=2026-03-05T22:04:15.686+03:00 level=INFO msg="Export complete"
+time=2026-03-05T22:04:15.729+03:00 level=INFO msg="Successfully re-established JSONL watch after %v" !BADKEY=50ms
+time=2026-03-05T22:04:15.729+03:00 level=INFO msg="JSONL file created: %s" !BADKEY=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/issues.jsonl
+time=2026-03-05T22:04:16.731+03:00 level=INFO msg="Import triggered by file change"
+time=2026-03-05T22:04:16.732+03:00 level=INFO msg="Starting %s..." !BADKEY=auto-import
+time=2026-03-05T22:04:16.734+03:00 level=INFO msg="JSONL content changed, proceeding with %s..." !BADKEY=auto-import
+time=2026-03-05T22:04:16.755+03:00 level=INFO msg="⚠️  WARNING: Uncommitted local changes detected in %s" !BADKEY=/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/issues.jsonl
+time=2026-03-05T22:04:16.755+03:00 level=INFO msg="   Pulling from remote may overwrite local unpushed changes."
+time=2026-03-05T22:04:16.755+03:00 level=INFO msg="   Consider running 'bd sync' to commit and push your changes first."
+time=2026-03-05T22:04:19.344+03:00 level=INFO msg="Pulled from remote"
+time=2026-03-05T22:04:19.354+03:00 level=INFO msg="Imported from JSONL"
+time=2026-03-05T22:04:19.356+03:00 level=INFO msg="Auto-import complete"

@@ -4,12 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
-import type { CodeConfig } from "../../../src/core/types.js";
+import type { IngestCodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
   createTestFile,
   defaultTestConfig,
+  defaultTrajectoryConfig,
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "./__helpers__/test-helpers.js";
@@ -45,7 +46,7 @@ describe("ReindexPipeline", () => {
   let ingest: IngestFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
-  let config: CodeConfig;
+  let config: IngestCodeConfig;
   let tempDir: string;
   let codebaseDir: string;
 
@@ -54,7 +55,7 @@ describe("ReindexPipeline", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    ingest = new IngestFacade(qdrant as any, embeddings, config);
+    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
   });
 
   afterEach(async () => {

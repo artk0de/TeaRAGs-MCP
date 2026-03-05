@@ -107,16 +107,18 @@ function makeConfig(): AppConfig {
     httpPort: 3000,
     requestTimeoutMs: 300000,
     promptsConfigFile: "/nonexistent/prompts.json",
-    code: {
+    ingestCode: {
       chunkSize: 2500,
       chunkOverlap: 300,
-      enableASTChunking: true,
       supportedExtensions: [".ts"],
       ignorePatterns: [],
-      batchSize: 100,
-      defaultSearchLimit: 5,
       enableHybridSearch: false,
     },
+    searchCode: {
+      enableHybridSearch: false,
+      defaultSearchLimit: 5,
+    },
+    trajectoryIngest: {},
   };
 }
 

@@ -12,7 +12,7 @@ import {
   DEFAULT_IGNORE_PATTERNS,
 } from "../core/ingest/config.js";
 import { DEFAULT_SEARCH_LIMIT } from "../core/search/config.js";
-import type { CodeConfig } from "../core/types.js";
+import type { IngestCodeConfig, SearchCodeConfig, TrajectoryIngestConfig } from "../core/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -24,7 +24,9 @@ export interface AppConfig {
   httpPort: number;
   requestTimeoutMs: number;
   promptsConfigFile: string;
-  code: CodeConfig;
+  ingestCode: IngestCodeConfig;
+  searchCode: SearchCodeConfig;
+  trajectoryIngest: TrajectoryIngestConfig;
 }
 
 let _lastZodConfig: ReturnType<typeof parseAppConfigZod> | null = null;
@@ -42,7 +44,7 @@ export function parseAppConfig(): AppConfig {
   // Print deprecation warnings at parse time
   printDeprecationWarnings(zodConfig.deprecations);
 
-  // Bridge to old AppConfig shape for consumers
+  // Bridge Zod slices to typed AppConfig for consumers
   return {
     qdrantUrl: zodConfig.core.qdrantUrl,
     qdrantApiKey: zodConfig.core.qdrantApiKey,
@@ -51,15 +53,21 @@ export function parseAppConfig(): AppConfig {
     httpPort: zodConfig.core.httpPort,
     requestTimeoutMs: zodConfig.core.requestTimeoutMs,
     promptsConfigFile: zodConfig.core.promptsConfigFile,
-    code: {
+    ingestCode: {
       chunkSize: zodConfig.ingest.chunkSize,
       chunkOverlap: zodConfig.ingest.chunkOverlap,
-      enableASTChunking: zodConfig.ingest.enableAST,
       supportedExtensions: DEFAULT_CODE_EXTENSIONS,
       ignorePatterns: DEFAULT_IGNORE_PATTERNS,
-      batchSize: zodConfig.qdrantTune.upsertBatchSize,
-      defaultSearchLimit: zodConfig.ingest.defaultSearchLimit,
       enableHybridSearch: zodConfig.ingest.enableHybrid,
+      enableGitMetadata: zodConfig.trajectoryGit.enabled,
+      maxChunksPerFile: undefined,
+      maxTotalChunks: undefined,
+    },
+    searchCode: {
+      enableHybridSearch: zodConfig.ingest.enableHybrid,
+      defaultSearchLimit: zodConfig.ingest.defaultSearchLimit,
+    },
+    trajectoryIngest: {
       enableGitMetadata: zodConfig.trajectoryGit.enabled,
       squashAwareSessions: zodConfig.trajectoryGit.squashAwareSessions,
       sessionGapMinutes: zodConfig.trajectoryGit.sessionGapMinutes,

@@ -28,7 +28,15 @@ import { ReindexPipeline } from "../ingest/reindexing.js";
 import type { DeletionConfig } from "../ingest/sync/deletion-strategy.js";
 import type { Reranker } from "../search/reranker.js";
 import { GitEnrichmentProvider } from "../trajectory/git/provider.js";
-import type { ChangeStats, CodeConfig, IndexOptions, IndexStats, IndexStatus, ProgressCallback } from "../types.js";
+import type {
+  ChangeStats,
+  IndexOptions,
+  IndexStats,
+  IndexStatus,
+  IngestCodeConfig,
+  ProgressCallback,
+  TrajectoryIngestConfig,
+} from "../types.js";
 import type { StatsCache } from "./stats-cache.js";
 
 export class IngestFacade {
@@ -40,7 +48,8 @@ export class IngestFacade {
   constructor(
     private readonly qdrant: QdrantManager,
     embeddings: EmbeddingProvider,
-    config: CodeConfig,
+    ingestConfig: IngestCodeConfig,
+    trajectoryConfig: TrajectoryIngestConfig,
     private readonly statsCache?: StatsCache,
     private readonly allPayloadSignals?: PayloadSignalDescriptor[],
     private readonly reranker?: Reranker,
@@ -51,16 +60,24 @@ export class IngestFacade {
     const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
     const deps = createIngestDependencies(qdrant, snapshotDir, syncTuning);
 
-    const squashOpts = config.squashAwareSessions
-      ? { squashAwareSessions: true, sessionGapMinutes: config.sessionGapMinutes ?? 30 }
+    const squashOpts = trajectoryConfig.squashAwareSessions
+      ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
       : undefined;
-    const providers = config.enableGitMetadata
-      ? [new GitEnrichmentProvider(config.trajectoryGit ?? undefined, squashOpts)]
+    const providers = trajectoryConfig.enableGitMetadata
+      ? [new GitEnrichmentProvider(trajectoryConfig.trajectoryGit ?? undefined, squashOpts)]
       : [];
     this.enrichment = new EnrichmentCoordinator(qdrant, providers);
-    this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment, deps, pipelineTuning);
+    this.indexing = new IndexPipeline(qdrant, embeddings, ingestConfig, this.enrichment, deps, pipelineTuning);
     this.status = new StatusModule(qdrant);
-    this.reindex = new ReindexPipeline(qdrant, embeddings, config, this.enrichment, deps, deleteConfig, pipelineTuning);
+    this.reindex = new ReindexPipeline(
+      qdrant,
+      embeddings,
+      ingestConfig,
+      this.enrichment,
+      deps,
+      deleteConfig,
+      pipelineTuning,
+    );
   }
 
   /** Index a codebase from scratch or force re-index */

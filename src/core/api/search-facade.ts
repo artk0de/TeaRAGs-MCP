@@ -13,7 +13,7 @@ import { resolveCollectionName, validatePath } from "../contracts/collection.js"
 import type { Reranker } from "../search/reranker.js";
 import { SearchModule } from "../search/search-module.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
-import type { CodeConfig, CodeSearchResult, SearchOptions } from "../types.js";
+import type { CodeSearchResult, SearchCodeConfig, SearchOptions } from "../types.js";
 import type { StatsCache } from "./stats-cache.js";
 
 export class SearchFacade {
@@ -22,7 +22,7 @@ export class SearchFacade {
   constructor(
     qdrant: QdrantManager,
     embeddings: EmbeddingProvider,
-    config: CodeConfig,
+    config: SearchCodeConfig,
     private readonly reranker: Reranker,
     registry?: TrajectoryRegistry,
     private readonly statsCache?: StatsCache,

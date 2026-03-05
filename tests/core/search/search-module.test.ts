@@ -9,12 +9,14 @@ import { GitTrajectory } from "../../../src/core/trajectory/git.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";
 import { TrajectoryRegistry } from "../../../src/core/trajectory/index.js";
-import type { CodeConfig } from "../../../src/core/types.js";
+import type { IngestCodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
   createTestFile,
+  defaultSearchConfig,
   defaultTestConfig,
+  defaultTrajectoryConfig,
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../ingest/__helpers__/test-helpers.js";
@@ -53,7 +55,7 @@ describe("SearchModule", () => {
   let embeddings: MockEmbeddingProvider;
   let reranker: Reranker;
   let registry: TrajectoryRegistry;
-  let config: CodeConfig;
+  let config: IngestCodeConfig;
   let tempDir: string;
   let codebaseDir: string;
 
@@ -66,8 +68,8 @@ describe("SearchModule", () => {
     reranker = new Reranker([...gitDerivedSignals, ...structuralSignals], resolvedPresets);
     registry = new TrajectoryRegistry();
     registry.register(new GitTrajectory());
-    ingest = new IngestFacade(qdrant as any, embeddings, config);
-    search = new SearchFacade(qdrant as any, embeddings, config, reranker, registry);
+    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
+    search = new SearchFacade(qdrant as any, embeddings, defaultSearchConfig(), reranker, registry);
   });
 
   afterEach(async () => {
@@ -132,8 +134,9 @@ describe("SearchModule", () => {
 
     it("should use hybrid search when enabled", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig);
-      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridConfig, reranker, registry);
+      const hybridSearchConfig = { ...defaultSearchConfig(), enableHybridSearch: true };
+      const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig, defaultTrajectoryConfig());
+      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
 
       await createTestFile(
         codebaseDir,

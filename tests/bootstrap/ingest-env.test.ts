@@ -74,7 +74,7 @@ describe("INGEST env var naming", () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect((config.code as Record<string, unknown>)[configKey]).toBe(999);
+          expect(({ ...config.ingestCode, ...config.searchCode } as Record<string, unknown>)[configKey]).toBe(999);
         });
 
         it("should fall back to old name", async () => {
@@ -83,7 +83,7 @@ describe("INGEST env var naming", () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect((config.code as Record<string, unknown>)[configKey]).toBe(888);
+          expect(({ ...config.ingestCode, ...config.searchCode } as Record<string, unknown>)[configKey]).toBe(888);
         });
 
         it("should prefer new name over old name", async () => {
@@ -93,14 +93,16 @@ describe("INGEST env var naming", () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect((config.code as Record<string, unknown>)[configKey]).toBe(111);
+          expect(({ ...config.ingestCode, ...config.searchCode } as Record<string, unknown>)[configKey]).toBe(111);
         });
 
         it(`should default to ${defaultVal} when nothing set`, async () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect((config.code as Record<string, unknown>)[configKey]).toBe(parseInt(defaultVal, 10));
+          expect(({ ...config.ingestCode, ...config.searchCode } as Record<string, unknown>)[configKey]).toBe(
+            parseInt(defaultVal, 10),
+          );
         });
       });
     }
@@ -113,7 +115,7 @@ describe("INGEST env var naming", () => {
       const { parseAppConfig } = await freshImport();
       const config = parseAppConfig();
 
-      expect(config.code.enableHybridSearch).toBe(true);
+      expect(config.ingestCode.enableHybridSearch).toBe(true);
     });
 
     it("should fall back to old name", async () => {
@@ -122,7 +124,7 @@ describe("INGEST env var naming", () => {
       const { parseAppConfig } = await freshImport();
       const config = parseAppConfig();
 
-      expect(config.code.enableHybridSearch).toBe(true);
+      expect(config.ingestCode.enableHybridSearch).toBe(true);
     });
 
     it("should prefer new name over old name", async () => {
@@ -132,69 +134,69 @@ describe("INGEST env var naming", () => {
       const { parseAppConfig } = await freshImport();
       const config = parseAppConfig();
 
-      expect(config.code.enableHybridSearch).toBe(false);
+      expect(config.ingestCode.enableHybridSearch).toBe(false);
     });
 
     it("should default to false when nothing set", async () => {
       const { parseAppConfig } = await freshImport();
       const config = parseAppConfig();
 
-      expect(config.code.enableHybridSearch).toBe(false);
+      expect(config.ingestCode.enableHybridSearch).toBe(false);
     });
   });
 
-  describe("parseAppConfig — INGEST_ENABLE_AST (Zod: 'true'/'1' enables, default true)", () => {
+  describe("parseAppConfigZod — INGEST_ENABLE_AST (Zod: 'true'/'1' enables, default true)", () => {
     it("should read new name — 'false' disables", async () => {
       process.env[AST_NEW] = "false";
 
-      const { parseAppConfig } = await freshImport();
-      const config = parseAppConfig();
+      const { parseAppConfigZod } = await freshImport();
+      const { ingest } = parseAppConfigZod();
 
-      expect(config.code.enableASTChunking).toBe(false);
+      expect(ingest.enableAST).toBe(false);
     });
 
     it("should read new name — 'true' enables", async () => {
       process.env[AST_NEW] = "true";
 
-      const { parseAppConfig } = await freshImport();
-      const config = parseAppConfig();
+      const { parseAppConfigZod } = await freshImport();
+      const { ingest } = parseAppConfigZod();
 
-      expect(config.code.enableASTChunking).toBe(true);
+      expect(ingest.enableAST).toBe(true);
     });
 
     it("should read new name — unrecognized value disables (Zod strict)", async () => {
       process.env[AST_NEW] = "whatever";
 
-      const { parseAppConfig } = await freshImport();
-      const config = parseAppConfig();
+      const { parseAppConfigZod } = await freshImport();
+      const { ingest } = parseAppConfigZod();
 
-      expect(config.code.enableASTChunking).toBe(false);
+      expect(ingest.enableAST).toBe(false);
     });
 
     it("should fall back to old name — 'false' disables", async () => {
       process.env[AST_OLD] = "false";
 
-      const { parseAppConfig } = await freshImport();
-      const config = parseAppConfig();
+      const { parseAppConfigZod } = await freshImport();
+      const { ingest } = parseAppConfigZod();
 
-      expect(config.code.enableASTChunking).toBe(false);
+      expect(ingest.enableAST).toBe(false);
     });
 
     it("should prefer new name over old name", async () => {
       process.env[AST_NEW] = "true";
       process.env[AST_OLD] = "false";
 
-      const { parseAppConfig } = await freshImport();
-      const config = parseAppConfig();
+      const { parseAppConfigZod } = await freshImport();
+      const { ingest } = parseAppConfigZod();
 
-      expect(config.code.enableASTChunking).toBe(true);
+      expect(ingest.enableAST).toBe(true);
     });
 
     it("should default to true (enabled) when nothing set", async () => {
-      const { parseAppConfig } = await freshImport();
-      const config = parseAppConfig();
+      const { parseAppConfigZod } = await freshImport();
+      const { ingest } = parseAppConfigZod();
 
-      expect(config.code.enableASTChunking).toBe(true);
+      expect(ingest.enableAST).toBe(true);
     });
   });
 

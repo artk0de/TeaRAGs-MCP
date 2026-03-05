@@ -14,7 +14,7 @@ import type { Ignore } from "ignore";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../contracts/collection.js";
-import type { ChunkLookupEntry, CodeConfig } from "../../types.js";
+import type { ChunkLookupEntry, IngestCodeConfig } from "../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
@@ -52,7 +52,7 @@ export abstract class BaseIndexingPipeline {
   constructor(
     protected readonly qdrant: QdrantManager,
     protected readonly embeddings: EmbeddingProvider,
-    protected readonly config: CodeConfig,
+    protected readonly config: IngestCodeConfig,
     protected readonly enrichment: EnrichmentCoordinator,
     protected readonly deps: IngestDependencies,
     tuning?: PipelineTuning,

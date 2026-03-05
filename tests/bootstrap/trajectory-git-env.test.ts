@@ -49,7 +49,7 @@ describe("TRAJECTORY_GIT env var naming", () => {
       const { parseAppConfig } = await freshImport();
       const config = parseAppConfig();
 
-      expect(config.code.enableGitMetadata).toBe(true);
+      expect(config.trajectoryIngest.enableGitMetadata).toBe(true);
     });
 
     it("should fall back to CODE_ENABLE_GIT_METADATA (old name)", async () => {
@@ -58,7 +58,7 @@ describe("TRAJECTORY_GIT env var naming", () => {
       const { parseAppConfig } = await freshImport();
       const config = parseAppConfig();
 
-      expect(config.code.enableGitMetadata).toBe(true);
+      expect(config.trajectoryIngest.enableGitMetadata).toBe(true);
     });
 
     it("should prefer TRAJECTORY_GIT_ENABLED over CODE_ENABLE_GIT_METADATA", async () => {
@@ -68,7 +68,7 @@ describe("TRAJECTORY_GIT env var naming", () => {
       const { parseAppConfig } = await freshImport();
       const config = parseAppConfig();
 
-      expect(config.code.enableGitMetadata).toBe(false);
+      expect(config.trajectoryIngest.enableGitMetadata).toBe(false);
     });
   });
 
