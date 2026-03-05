@@ -59,7 +59,7 @@ export class EmbeddingProviderFactory {
         );
 
       case "onnx":
-        return new OnnxEmbeddings(model || "Xenova/jina-embeddings-v2-base-code-q8", dimensions);
+        return new OnnxEmbeddings(model || "Xenova/jina-embeddings-v2-base-code-int8", dimensions);
 
       default:
         throw new Error(

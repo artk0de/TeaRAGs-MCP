@@ -219,7 +219,7 @@ describe("EmbeddingProviderFactory", () => {
         const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "onnx" }));
 
         expect(provider).toBeInstanceOf(OnnxEmbeddings);
-        expect(provider.getModel()).toBe("Xenova/jina-embeddings-v2-base-code-q8");
+        expect(provider.getModel()).toBe("Xenova/jina-embeddings-v2-base-code-int8");
         expect(provider.getDimensions()).toBe(768);
       });
 

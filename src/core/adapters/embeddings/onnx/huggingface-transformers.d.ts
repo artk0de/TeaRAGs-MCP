@@ -24,4 +24,9 @@ declare module "@huggingface/transformers" {
     model: string,
     options?: PipelineOptions,
   ): Promise<FeatureExtractionPipeline>;
+
+  export const env: {
+    cacheDir: string;
+    allowLocalModels: boolean;
+  };
 }
