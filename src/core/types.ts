@@ -29,6 +29,16 @@ export interface CodeConfig {
   // Squash-aware sessions: group burst commits into sessions for churn signals
   squashAwareSessions?: boolean;
   sessionGapMinutes?: number;
+
+  // Trajectory git config slice (DI'd into GitEnrichmentProvider)
+  trajectoryGit?: {
+    logMaxAgeMonths: number;
+    logTimeoutMs: number;
+    chunkConcurrency: number;
+    chunkMaxAgeMonths: number;
+    chunkTimeoutMs: number;
+    chunkMaxFileLines: number;
+  };
 }
 
 export interface ScannerConfig {

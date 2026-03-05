@@ -64,7 +64,7 @@ describe("GitEnrichmentProvider", () => {
 
       const result = await provider.buildFileSignals("/repo");
 
-      expect(buildFileSignalMap).toHaveBeenCalledWith("/repo", expect.anything());
+      expect(buildFileSignalMap).toHaveBeenCalledWith("/repo", expect.anything(), 12, 60000);
       expect(result.size).toBe(1);
       expect(result.has("src/a.ts")).toBe(true);
     });
@@ -76,7 +76,7 @@ describe("GitEnrichmentProvider", () => {
 
       const result = await provider.buildFileSignals("/repo", { paths: ["src/b.ts"] });
 
-      expect(buildFileSignalsForPaths).toHaveBeenCalledWith("/repo", ["src/b.ts"]);
+      expect(buildFileSignalsForPaths).toHaveBeenCalledWith("/repo", ["src/b.ts"], 60000);
       expect(result.size).toBe(1);
       expect(result.has("src/b.ts")).toBe(true);
     });
@@ -97,10 +97,12 @@ describe("GitEnrichmentProvider", () => {
         chunkMap,
         expect.anything(), // enrichmentCache
         expect.anything(), // isoGitCache
-        expect.any(Number), // concurrency
-        expect.any(Number), // maxAgeMonths
+        10, // concurrency (default)
+        6, // maxAgeMonths (default)
         fakeData, // lastFileResult passed through
         undefined, // squashOpts
+        120000, // chunkTimeoutMs (default)
+        10000, // chunkMaxFileLines (default)
       );
     });
   });

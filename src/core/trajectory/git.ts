@@ -11,8 +11,9 @@
 
 import type { Trajectory } from "../contracts/types/trajectory.js";
 import { gitFilters } from "./git/filters.js";
+import type { SquashOptions } from "./git/infra/metrics.js";
 import { gitPayloadSignalDescriptors } from "./git/payload-signals.js";
-import { GitEnrichmentProvider } from "./git/provider.js";
+import { GitEnrichmentProvider, type GitProviderConfig } from "./git/provider.js";
 import { gitDerivedSignals } from "./git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./git/rerank/presets/index.js";
 
@@ -24,5 +25,9 @@ export class GitTrajectory implements Trajectory {
   readonly derivedSignals = gitDerivedSignals;
   readonly filters = gitFilters;
   readonly presets = GIT_PRESETS;
-  readonly enrichment = new GitEnrichmentProvider();
+  readonly enrichment: GitEnrichmentProvider;
+
+  constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
+    this.enrichment = new GitEnrichmentProvider(config, squashOpts);
+  }
 }

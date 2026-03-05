@@ -1331,25 +1331,15 @@ describe("buildFileSignalMap — timeout and cache", () => {
   it("should throw on timeout (no isomorphic-git fallback)", async () => {
     reader = new GitLogReader();
 
-    const originalEnv = process.env.GIT_LOG_TIMEOUT_MS;
-    process.env.GIT_LOG_TIMEOUT_MS = "1"; // 1ms timeout — will always expire
+    vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
 
-    try {
-      vi.spyOn(gitClient, "getHead").mockResolvedValue("h".repeat(40));
+    // Make CLI hang (never resolve)
+    vi.spyOn(gitClient, "buildViaCli").mockReturnValue(
+      new Promise(() => {}), // never resolves
+    );
 
-      // Make CLI hang (never resolve)
-      vi.spyOn(gitClient, "buildViaCli").mockReturnValue(
-        new Promise(() => {}), // never resolves
-      );
-
-      await expect(reader.buildFileSignalMap("/fake/repo")).rejects.toThrow("CLI git log timed out");
-    } finally {
-      if (originalEnv === undefined) {
-        delete process.env.GIT_LOG_TIMEOUT_MS;
-      } else {
-        process.env.GIT_LOG_TIMEOUT_MS = originalEnv;
-      }
-    }
+    // Pass 1ms timeout via parameter — will always expire
+    await expect(reader.buildFileSignalMap("/fake/repo", undefined, 1)).rejects.toThrow("CLI git log timed out");
   });
 
   it("should return cached data when HEAD has not changed", async () => {

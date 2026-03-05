@@ -54,7 +54,9 @@ export class IngestFacade {
     const squashOpts = config.squashAwareSessions
       ? { squashAwareSessions: true, sessionGapMinutes: config.sessionGapMinutes ?? 30 }
       : undefined;
-    const providers = config.enableGitMetadata ? [new GitEnrichmentProvider(squashOpts)] : [];
+    const providers = config.enableGitMetadata
+      ? [new GitEnrichmentProvider(config.trajectoryGit ?? undefined, squashOpts)]
+      : [];
     this.enrichment = new EnrichmentCoordinator(qdrant, providers);
     this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment, deps, pipelineTuning);
     this.status = new StatusModule(qdrant);
