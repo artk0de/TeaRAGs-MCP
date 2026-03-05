@@ -25,7 +25,9 @@ export async function buildFileSignalMap(
   enrichmentCache: GitEnrichmentCache,
   maxAgeMonths?: number,
 ): Promise<Map<string, FileChurnData>> {
-  const effectiveMaxAge = maxAgeMonths ?? parseFloat(process.env.GIT_LOG_MAX_AGE_MONTHS ?? "12");
+  const effectiveMaxAge =
+    maxAgeMonths ??
+    parseFloat(process.env.TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS ?? process.env.GIT_LOG_MAX_AGE_MONTHS ?? "12");
 
   // Cache key includes maxAge to avoid returning stale results for different time windows
   const cacheKey = `${repoRoot}:${effectiveMaxAge}`;
@@ -36,7 +38,10 @@ export async function buildFileSignalMap(
 
   const sinceDate = effectiveMaxAge > 0 ? new Date(Date.now() - effectiveMaxAge * 30 * 86400 * 1000) : undefined;
 
-  const timeoutMs = parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "60000", 10);
+  const timeoutMs = parseInt(
+    process.env.TRAJECTORY_GIT_LOG_TIMEOUT_MS ?? process.env.GIT_LOG_TIMEOUT_MS ?? "60000",
+    10,
+  );
 
   const result = await withTimeout(buildViaCli(repoRoot, sinceDate), timeoutMs, "CLI git log timed out");
 

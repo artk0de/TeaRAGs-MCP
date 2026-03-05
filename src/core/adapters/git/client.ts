@@ -125,7 +125,8 @@ export async function getCommitsByPathspecSingle(
   filePaths: string[],
   timeoutMs?: number,
 ): Promise<{ commit: CommitInfo; changedFiles: string[] }[]> {
-  const effectiveTimeoutMs = timeoutMs ?? parseInt(process.env.GIT_LOG_TIMEOUT_MS ?? "30000", 10);
+  const effectiveTimeoutMs =
+    timeoutMs ?? parseInt(process.env.TRAJECTORY_GIT_LOG_TIMEOUT_MS ?? process.env.GIT_LOG_TIMEOUT_MS ?? "30000", 10);
   const args = [
     "log",
     `--since=${sinceDate.toISOString()}`,
