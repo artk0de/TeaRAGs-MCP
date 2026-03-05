@@ -72,18 +72,14 @@ describe("Search tools glob filtering", () => {
   });
 
   describe("calculateFetchLimit", () => {
-    it("should return original limit when no pathPattern", () => {
-      expect(calculateFetchLimit(5, false)).toBe(5);
-      expect(calculateFetchLimit(10, false)).toBe(10);
+    it("should apply base multiplier when no overfetch needed", () => {
+      expect(calculateFetchLimit(5, false)).toBe(20); // max(20, 5 * 4)
+      expect(calculateFetchLimit(10, false)).toBe(40); // 10 * 4
     });
 
-    it("should multiply limit by 3 when pathPattern is provided", () => {
-      expect(calculateFetchLimit(5, true)).toBe(15);
-      expect(calculateFetchLimit(10, true)).toBe(30);
-    });
-
-    it("should use custom multiplier when provided", () => {
-      expect(calculateFetchLimit(5, true, 5)).toBe(25);
+    it("should apply overfetch multiplier when pattern/rerank active", () => {
+      expect(calculateFetchLimit(5, true)).toBe(30); // 5 * 6
+      expect(calculateFetchLimit(10, true)).toBe(60); // 10 * 6
     });
   });
 

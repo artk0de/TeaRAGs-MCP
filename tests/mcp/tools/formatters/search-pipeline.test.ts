@@ -40,7 +40,7 @@ describe("getSearchFetchLimit", () => {
   it("should return default limit of 5", () => {
     const result = getSearchFetchLimit(undefined);
     expect(result.requestedLimit).toBe(5);
-    expect(result.fetchLimit).toBe(5);
+    expect(result.fetchLimit).toBe(20); // max(20, 5 * 4)
   });
 
   it("should use provided limit", () => {
@@ -58,9 +58,9 @@ describe("getSearchFetchLimit", () => {
     expect(result.fetchLimit).toBeGreaterThan(5);
   });
 
-  it("should not overfetch for relevance rerank", () => {
+  it("should apply base multiplier for relevance rerank", () => {
     const result = getSearchFetchLimit(5, undefined, "relevance");
-    expect(result.fetchLimit).toBe(5);
+    expect(result.fetchLimit).toBe(20); // max(20, 5 * 4) — always overfetches now
   });
 });
 
