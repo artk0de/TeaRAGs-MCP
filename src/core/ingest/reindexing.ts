@@ -9,9 +9,20 @@ import type { ChangeStats, ChunkLookupEntry, ProgressCallback } from "../types.j
 import { BaseIndexingPipeline } from "./pipeline/base.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
 import { pipelineLog } from "./pipeline/infra/debug-logger.js";
-import { performDeletion } from "./sync/deletion-strategy.js";
+import { performDeletion, type DeletionConfig } from "./sync/deletion-strategy.js";
 
 export class ReindexPipeline extends BaseIndexingPipeline {
+  constructor(
+    qdrant: ConstructorParameters<typeof BaseIndexingPipeline>[0],
+    embeddings: ConstructorParameters<typeof BaseIndexingPipeline>[1],
+    config: ConstructorParameters<typeof BaseIndexingPipeline>[2],
+    enrichment: ConstructorParameters<typeof BaseIndexingPipeline>[3],
+    deps: ConstructorParameters<typeof BaseIndexingPipeline>[4],
+    private readonly deleteConfig: DeletionConfig = { batchSize: 500, concurrency: 8 },
+  ) {
+    super(qdrant, embeddings, config, enrichment, deps);
+  }
+
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
     const startTime = Date.now();
     const stats: ChangeStats = {
@@ -119,7 +130,13 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       const deleteStartTime = Date.now();
-      const deletePromise = performDeletion(this.qdrant, collectionName, filesToDelete, progressCallback);
+      const deletePromise = performDeletion(
+        this.qdrant,
+        collectionName,
+        filesToDelete,
+        this.deleteConfig,
+        progressCallback,
+      );
       const addPromise = processRelativeFiles(
         addedFiles,
         absolutePath,

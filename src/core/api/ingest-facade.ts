@@ -24,6 +24,7 @@ import { IndexPipeline } from "../ingest/indexing.js";
 import { EnrichmentCoordinator } from "../ingest/pipeline/enrichment/coordinator.js";
 import { StatusModule } from "../ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../ingest/reindexing.js";
+import type { DeletionConfig } from "../ingest/sync/deletion-strategy.js";
 import type { Reranker } from "../search/reranker.js";
 import { GitEnrichmentProvider } from "../trajectory/git/provider.js";
 import type { ChangeStats, CodeConfig, IndexOptions, IndexStats, IndexStatus, ProgressCallback } from "../types.js";
@@ -42,6 +43,7 @@ export class IngestFacade {
     private readonly statsCache?: StatsCache,
     private readonly allPayloadSignals?: PayloadSignalDescriptor[],
     private readonly reranker?: Reranker,
+    deleteConfig?: DeletionConfig,
   ) {
     const snapshotDir = join(homedir(), ".tea-rags-mcp", "snapshots");
     const deps = createIngestDependencies(qdrant, snapshotDir);
@@ -53,7 +55,7 @@ export class IngestFacade {
     this.enrichment = new EnrichmentCoordinator(qdrant, providers);
     this.indexing = new IndexPipeline(qdrant, embeddings, config, this.enrichment, deps);
     this.status = new StatusModule(qdrant);
-    this.reindex = new ReindexPipeline(qdrant, embeddings, config, this.enrichment, deps);
+    this.reindex = new ReindexPipeline(qdrant, embeddings, config, this.enrichment, deps, deleteConfig);
   }
 
   /** Index a codebase from scratch or force re-index */

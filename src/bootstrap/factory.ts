@@ -47,7 +47,19 @@ export function createAppContext(config: AppConfig): AppContext {
   const schemaBuilder = new SchemaBuilder(reranker);
   const snapshotsDir = join(homedir(), ".tea-rags-mcp", "snapshots");
   const statsCache = new StatsCache(snapshotsDir);
-  const ingest = new IngestFacade(qdrant, embeddings, config.code, statsCache, allPayloadSignalDescriptors, reranker);
+  const deleteConfig = {
+    batchSize: zodConfig.qdrantTune.deleteBatchSize,
+    concurrency: zodConfig.qdrantTune.deleteConcurrency,
+  };
+  const ingest = new IngestFacade(
+    qdrant,
+    embeddings,
+    config.code,
+    statsCache,
+    allPayloadSignalDescriptors,
+    reranker,
+    deleteConfig,
+  );
   const search = new SearchFacade(qdrant, embeddings, config.code, reranker, registry, statsCache);
   return { qdrant, embeddings, ingest, search, reranker, schemaBuilder, essentialTrajectoryFields };
 }
