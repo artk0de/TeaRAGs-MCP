@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
 import type { FileChanges } from "../../types.js";
+import { isDebug } from "../pipeline/infra/runtime.js";
 import { MerkleTree } from "./merkle.js";
 import { SnapshotManager } from "./snapshot.js";
 
@@ -209,7 +210,7 @@ export class FileSynchronizer {
     }
 
     // Log performance stats
-    if (process.env.DEBUG) {
+    if (isDebug()) {
       console.error(
         `[FileSynchronizer] Cache: ${cachedHits} hits, ${hashComputations} computations ` +
           `(${((cachedHits / (cachedHits + hashComputations)) * 100).toFixed(1)}% cached)`,
@@ -256,7 +257,7 @@ export class FileSynchronizer {
     const changes = MerkleTree.compare(this.previousHashes, currentHashes);
 
     // DEBUG: Log change detection results
-    if (process.env.DEBUG) {
+    if (isDebug()) {
       console.error(
         `[FileSynchronizer] Change detection: ` +
           `${changes.added.length} added, ` +
@@ -344,7 +345,7 @@ export class FileSynchronizer {
       await fs.writeFile(tempPath, JSON.stringify(checkpoint, null, 2));
       await fs.rename(tempPath, this.checkpointPath);
 
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         console.error(`[Checkpoint] Saved: ${processedFiles.length}/${totalFiles} files (${phase})`);
       }
     } catch (error) {

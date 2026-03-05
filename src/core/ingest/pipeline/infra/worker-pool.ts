@@ -16,9 +16,7 @@ import type {
   WorkerPoolConfig,
   WorkItem,
 } from "../types.js";
-
-/** Enable debug logging */
-const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
+import { isDebug } from "./runtime.js";
 
 interface QueuedBatch<T extends WorkItem> {
   batch: Batch<T>;
@@ -137,7 +135,7 @@ export class WorkerPool {
     this.isShuttingDown = true;
     await this.drain();
 
-    if (DEBUG) {
+    if (isDebug()) {
       const stats = this.getStats();
       console.error(
         `[WorkerPool] Shutdown complete: processed=${stats.processed}, errors=${stats.errors}, ` +
@@ -209,7 +207,7 @@ export class WorkerPool {
         retryCount: queuedBatch.retryCount,
       };
 
-      if (DEBUG) {
+      if (isDebug()) {
         console.error(
           `[WorkerPool] Batch ${batch.id} completed in ${durationMs}ms ` +
             `(${batch.items.length} items, retry=${queuedBatch.retryCount})`,
@@ -226,7 +224,7 @@ export class WorkerPool {
         queuedBatch.retryCount++;
         const delay = this.calculateBackoff(queuedBatch.retryCount);
 
-        if (DEBUG) {
+        if (isDebug()) {
           console.error(
             `[WorkerPool] Batch ${batch.id} failed (attempt ${queuedBatch.retryCount}/${this.config.maxRetries}), ` +
               `retrying in ${delay}ms: ${errorMessage}`,

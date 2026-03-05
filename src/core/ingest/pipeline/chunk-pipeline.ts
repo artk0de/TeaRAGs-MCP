@@ -19,6 +19,7 @@ import { BM25SparseVectorGenerator } from "../../adapters/embeddings/sparse.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
+import { isDebug } from "./infra/runtime.js";
 import { WorkerPool } from "./infra/worker-pool.js";
 import type {
   Batch,
@@ -29,7 +30,6 @@ import type {
   WorkerPoolConfig,
 } from "./types.js";
 
-const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 const LOG_CTX = { component: "ChunkPipeline" };
 
 export interface ChunkPipelineConfig {
@@ -130,7 +130,7 @@ export class ChunkPipeline {
       collection: this.collectionName,
     });
 
-    if (DEBUG) {
+    if (isDebug()) {
       console.error(
         `[ChunkPipeline] Started: ` +
           `workers=${this.config.workerPool.concurrency}, ` +
@@ -239,7 +239,7 @@ export class ChunkPipeline {
       avgBatchTimeMs: stats.avgBatchTimeMs,
     });
 
-    if (DEBUG) {
+    if (isDebug()) {
       console.error(
         `[ChunkPipeline] Shutdown: ${stats.itemsProcessed} chunks, ` +
           `${stats.batchesProcessed} batches, ${stats.errors} errors ` +
@@ -395,12 +395,12 @@ export class ChunkPipeline {
         result.retryCount || 0,
         this.config.workerPool.maxRetries,
       );
-      if (DEBUG) {
+      if (isDebug()) {
         console.error(`[ChunkPipeline] Batch ${result.batchId} failed: ${result.error}`);
       }
     } else {
       pipelineLog.batchComplete(ctx, result.batchId, result.itemCount, result.durationMs, result.retryCount || 0);
-      if (DEBUG) {
+      if (isDebug()) {
         console.error(
           `[ChunkPipeline] Batch ${result.batchId} complete: ${result.itemCount} chunks in ${result.durationMs}ms`,
         );

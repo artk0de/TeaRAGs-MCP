@@ -10,6 +10,7 @@
 import Parser from "tree-sitter";
 
 import type { ChunkerConfig, CodeChunk } from "../../../types.js";
+import { isDebug } from "../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import { LANGUAGE_DEFINITIONS, type LanguageConfig, type LanguageDefinition } from "./config.js";
@@ -51,10 +52,7 @@ export class TreeSitterChunker implements CodeChunker {
 
   constructor(private readonly config: ChunkerConfig) {
     this.fallbackChunker = new CharacterChunker(config);
-    this.markdownChunker = new MarkdownChunker(
-      { maxChunkSize: this.config.maxChunkSize },
-      this.fallbackChunker,
-    );
+    this.markdownChunker = new MarkdownChunker({ maxChunkSize: this.config.maxChunkSize }, this.fallbackChunker);
     // NO parser initialization here - lazy load on demand!
   }
 
@@ -113,7 +111,7 @@ export class TreeSitterChunker implements CodeChunker {
       const parser = new Parser();
       parser.setLanguage(langModule);
 
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         console.error(`[TreeSitter] Lazy-loaded ${language} parser in ${Date.now() - startTime}ms`);
       }
 

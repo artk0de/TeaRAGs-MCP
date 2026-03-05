@@ -14,8 +14,9 @@ import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { isDebug } from "./runtime.js";
+
 const LOG_DIR = join(homedir(), ".tea-rags-mcp", "logs");
-const DEBUG = process.env.DEBUG === "true" || process.env.DEBUG === "1";
 
 export type PipelineStage =
   | "scan"
@@ -231,7 +232,7 @@ DERIVED:
   }
 
   private writeRaw(message: string): void {
-    if (!DEBUG) return;
+    if (!isDebug()) return;
     if (!this.logFile) {
       this.initLogFile();
     }
@@ -255,7 +256,7 @@ DERIVED:
    * Log a pipeline step with timing
    */
   step(ctx: LogContext, message: string, data?: Record<string, unknown>): void {
-    if (!DEBUG) return;
+    if (!isDebug()) return;
 
     const time = this.formatTime();
     const prefix = `[${time}] [${ctx.component}]`;

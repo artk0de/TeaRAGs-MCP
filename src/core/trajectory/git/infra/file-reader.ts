@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { buildViaCli, withTimeout } from "../../../adapters/git/client.js";
 import { parseNumstatOutput } from "../../../adapters/git/parsers.js";
 import type { FileChurnData } from "../../../adapters/git/types.js";
+import { isDebug } from "../../../ingest/pipeline/infra/runtime.js";
 import type { GitEnrichmentCache } from "./cache.js";
 
 const execFileAsync = promisify(execFile);
@@ -74,7 +75,7 @@ export async function buildFileSignalsForPaths(
         result.set(path, data);
       }
     } catch (error) {
-      if (process.env.DEBUG) {
+      if (isDebug()) {
         console.error(`[GitLogReader] Backfill batch failed:`, error instanceof Error ? error.message : error);
       }
     }

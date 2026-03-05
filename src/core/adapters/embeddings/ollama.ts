@@ -14,6 +14,7 @@
 
 import Bottleneck from "bottleneck";
 
+import { isDebug } from "../../ingest/pipeline/infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 
 interface OllamaError {
@@ -267,7 +268,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     if (this.useNativeBatch) {
       return this.limiter.schedule(async () =>
         this.retryWithBackoff(async () => {
-          if (process.env.DEBUG) {
+          if (isDebug()) {
             console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request`);
           }
 
@@ -286,7 +287,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     }
 
     // Fallback: Legacy parallel individual requests (old Ollama without /api/embed)
-    if (process.env.DEBUG) {
+    if (isDebug()) {
       console.error(`[Ollama] Fallback: ${texts.length} individual requests`);
     }
     const results: EmbeddingResult[] = [];

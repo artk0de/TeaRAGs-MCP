@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LogContext } from "../../../../src/core/ingest/pipeline/infra/debug-logger.js";
+// Import after setting DEBUG
+import { setDebug } from "../../../../src/core/ingest/pipeline/infra/runtime.js";
 
 // Mock fs module before importing the module under test
 vi.mock("node:fs", () => ({
@@ -12,7 +14,8 @@ vi.mock("node:fs", () => ({
 // Set DEBUG before importing to ensure logger is initialized with DEBUG on
 process.env.DEBUG = "true";
 
-// Import after setting DEBUG
+setDebug(true);
+
 const { pipelineLog } = await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
 const fs = await import("node:fs");
 
@@ -671,6 +674,10 @@ describe("DebugLogger - lazy initialization", () => {
     const originalDebug = process.env.DEBUG;
     process.env.DEBUG = "true";
 
+    // After resetModules, must reimport runtime to set debug on the fresh instance
+    const { setDebug: freshSetDebug } = await import("../../../../src/core/ingest/pipeline/infra/runtime.js");
+    freshSetDebug(true);
+
     const { pipelineLog: freshLogger } = await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
     const fsModule = await import("node:fs");
 
@@ -691,6 +698,7 @@ describe("DebugLogger - lazy initialization", () => {
     // Cleanup
     consoleErrorSpy.mockRestore();
     process.env.DEBUG = originalDebug;
+    setDebug(originalDebug === "true" || originalDebug === "1");
   });
 });
 
@@ -709,6 +717,10 @@ describe("DebugLogger - DEBUG environment variable", () => {
     // Delete DEBUG env var before importing
     const originalDebug = process.env.DEBUG;
     delete process.env.DEBUG;
+
+    // After resetModules, must reimport runtime to set debug on the fresh instance
+    const { setDebug: freshSetDebug } = await import("../../../../src/core/ingest/pipeline/infra/runtime.js");
+    freshSetDebug(false);
 
     // Import module with DEBUG unset (vi.resetModules() already cleared cache)
     const { pipelineLog: noDebugLogger } = await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
@@ -730,5 +742,6 @@ describe("DebugLogger - DEBUG environment variable", () => {
     // Cleanup
     consoleErrorSpy.mockRestore();
     process.env.DEBUG = originalDebug;
+    setDebug(originalDebug === "true" || originalDebug === "1");
   });
 });

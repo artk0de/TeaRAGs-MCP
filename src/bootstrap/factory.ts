@@ -14,6 +14,7 @@ import { IngestFacade } from "../core/api/ingest-facade.js";
 import { SchemaBuilder } from "../core/api/schema-builder.js";
 import { SearchFacade } from "../core/api/search-facade.js";
 import { StatsCache } from "../core/api/stats-cache.js";
+import { setDebug } from "../core/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/ingest/pipeline/types.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
@@ -42,6 +43,7 @@ export interface AppContext {
 export function createAppContext(config: AppConfig): AppContext {
   const qdrant = new QdrantManager(config.qdrantUrl, config.qdrantApiKey);
   const zodConfig = getZodConfig();
+  setDebug(zodConfig.core.debug);
   const embeddings = EmbeddingProviderFactory.create(zodConfig.embedding);
   const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
   const essentialTrajectoryFields = registry.getEssentialPayloadKeys();

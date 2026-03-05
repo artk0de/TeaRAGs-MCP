@@ -13,6 +13,7 @@ import { relative } from "node:path";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { ChunkSignalOverlay, FileSignalOverlay, FileSignalTransform } from "../../../contracts/types/provider.js";
 import { pipelineLog } from "../infra/debug-logger.js";
+import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 
 const BATCH_SIZE = 100;
@@ -89,7 +90,7 @@ export class EnrichmentApplier {
       try {
         await this.qdrant.batchSetPayload(collectionName, batch);
       } catch (error) {
-        if (process.env.DEBUG) {
+        if (isDebug()) {
           console.error("[EnrichmentApplier] batchSetPayload failed:", error);
         }
       }
@@ -125,7 +126,7 @@ export class EnrichmentApplier {
             await this.qdrant.batchSetPayload(collectionName, batch);
             applied += batch.length;
           } catch (error) {
-            if (process.env.DEBUG) {
+            if (isDebug()) {
               console.error("[EnrichmentApplier] chunk batch failed:", error);
             }
           }
@@ -139,7 +140,7 @@ export class EnrichmentApplier {
         await this.qdrant.batchSetPayload(collectionName, batch);
         applied += batch.length;
       } catch (error) {
-        if (process.env.DEBUG) {
+        if (isDebug()) {
           console.error("[EnrichmentApplier] final chunk batch failed:", error);
         }
       }
