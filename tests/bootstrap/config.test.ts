@@ -97,18 +97,15 @@ describe("parseAppConfig (Zod bridge)", () => {
     expect(config.ingestCode.enableHybridSearch).toBe(true);
   });
 
-  it("should print deprecation warnings to stderr", async () => {
+  it("should collect deprecation notices for old env var names", async () => {
     process.env.TRANSPORT_MODE = "stdio";
-    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-    const { parseAppConfig } = await freshImport();
+    const { parseAppConfig, getZodConfig } = await freshImport();
     parseAppConfig();
 
-    expect(stderrSpy).toHaveBeenCalled();
-    const output = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
-    expect(output).toContain("TRANSPORT_MODE");
-
-    stderrSpy.mockRestore();
+    const { deprecations } = getZodConfig();
+    expect(deprecations.length).toBeGreaterThan(0);
+    expect(deprecations.some((d: { oldName: string }) => d.oldName === "TRANSPORT_MODE")).toBe(true);
   });
 
   it("should throw for invalid transport mode via Zod", async () => {
