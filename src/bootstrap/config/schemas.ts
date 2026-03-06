@@ -38,6 +38,7 @@ export const embeddingSchema = z.object({
   provider: z.enum(["ollama", "openai", "cohere", "voyage", "onnx"]).default("ollama"),
   model: z.string().optional(),
   dimensions: optionalPositiveInt,
+  device: z.string().optional().default("auto"),
   baseUrl: z.string().optional(),
   ollamaLegacyApi: booleanFromEnv,
   ollamaNumGpu: intWithDefault(999),

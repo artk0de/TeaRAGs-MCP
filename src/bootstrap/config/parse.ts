@@ -47,6 +47,7 @@ export function parseAppConfigZod(): {
     provider: env("EMBEDDING_PROVIDER"),
     model: env("EMBEDDING_MODEL"),
     dimensions: env("EMBEDDING_DIMENSIONS"),
+    device: env("EMBEDDING_DEVICE"),
     baseUrl: env("EMBEDDING_BASE_URL"),
     ollamaLegacyApi: env("OLLAMA_LEGACY_API"),
     ollamaNumGpu: env("OLLAMA_NUM_GPU"),
