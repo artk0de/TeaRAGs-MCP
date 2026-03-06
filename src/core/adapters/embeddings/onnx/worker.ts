@@ -3,11 +3,12 @@
  *
  * Runs @huggingface/transformers pipeline off the main thread so the
  * event loop stays unblocked during heavy inference.
+ *
+ * Uses WebGPU device (Metal on macOS, D3D12 on Windows, Vulkan on Linux).
  */
 
 import { parentPort } from "node:worker_threads";
 
-import { buildPipelineOptions, patchInferenceSession } from "./coreml.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
 
 type Pipeline = (texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
@@ -26,11 +27,7 @@ function parseModelSpec(model: string): { baseModel: string; dtype: Dtype | unde
   return { baseModel: model, dtype: undefined };
 }
 
-const MIN_BATCH_SIZE = 4;
-const INITIAL_BATCH_SIZE = 32;
-
 let extractor: Pipeline | null = null;
-let maxBatchSize: number | null = null;
 
 function post(msg: WorkerResponse): void {
   parentPort!.postMessage(msg);
@@ -44,10 +41,22 @@ console.error = (...args: unknown[]) => {
   originalConsoleError.apply(console, args);
 };
 
-async function handleInit(model: string, cacheDir?: string, device?: string): Promise<void> {
+async function handleInit(model: string, cacheDir?: string): Promise<void> {
+  const { baseModel, dtype } = parseModelSpec(model);
   try {
-    const { baseModel, dtype } = parseModelSpec(model);
-    const { pipeline, env } = await import("@huggingface/transformers");
+    // Dynamic import of optional dependency — type annotation requires import() syntax
+    // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+    let transformers: typeof import("@huggingface/transformers");
+    try {
+      transformers = await import("@huggingface/transformers");
+    } catch {
+      throw new Error(
+        "ONNX provider requires additional packages. Install them with:\n" +
+          "  npm install @huggingface/transformers@next",
+      );
+    }
+
+    const { pipeline, env } = transformers;
 
     const resolvedCacheDir = process.env.HF_CACHE_DIR ?? cacheDir;
     if (resolvedCacheDir) {
@@ -55,29 +64,25 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
     }
 
     const label = dtype ? `${baseModel} (${dtype})` : baseModel;
-    const deviceLabel = device ?? "cpu";
 
-    // CoreML: patch onnxruntime-node to inject CoreMLExecutionProvider
-    let restorePatch: (() => void) | undefined;
-    if (device === "coreml") {
-      const ort = await import("onnxruntime-node");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const IS = (ort as any).InferenceSession ?? (ort as any).default?.InferenceSession;
-      restorePatch = patchInferenceSession(IS);
-    }
-
-    console.error(`[ONNX] Loading model ${label} [${deviceLabel}]... (first time, may download ~70MB)`);
+    console.error(`[ONNX] Loading model ${label} [webgpu]...`);
     console.error(`[ONNX] Cache dir: ${env.cacheDir}`);
 
-    const pipelineDevice = device === "coreml" ? undefined : device;
-    const pipelineOpts = buildPipelineOptions(dtype, pipelineDevice);
+    const pipelineOpts: Record<string, string> = { device: "webgpu" };
+    if (dtype) pipelineOpts.dtype = dtype;
+
     extractor = (await pipeline("feature-extraction", baseModel, pipelineOpts)) as unknown as Pipeline;
 
-    restorePatch?.();
     console.error(`[ONNX] Model loaded.`);
     post({ type: "ready" });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
+    const raw = error instanceof Error ? error.message : String(error);
+    const message =
+      raw.includes("Unauthorized") || raw.includes("401") || raw.includes("403")
+        ? `Model access denied: ${baseModel}. This model may require authentication.\n` +
+          `  Set the HF_TOKEN environment variable: export HF_TOKEN=hf_your_token\n` +
+          `  Get your token at: https://huggingface.co/settings/tokens`
+        : raw;
     post({ type: "error", id: -1, message });
   }
 }
@@ -89,28 +94,9 @@ async function handleEmbed(id: number, texts: string[]): Promise<void> {
   }
 
   try {
-    const batchSize = maxBatchSize ?? INITIAL_BATCH_SIZE;
-    const allEmbeddings: number[][] = [];
-    let i = 0;
-
-    while (i < texts.length) {
-      const currentBatch = maxBatchSize ?? batchSize;
-      const chunk = texts.slice(i, i + currentBatch);
-      try {
-        const output = await extractor(chunk, { pooling: "mean", normalize: true });
-        const vectors = output.tolist();
-        allEmbeddings.push(...vectors);
-        i += chunk.length;
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        const prev = maxBatchSize ?? chunk.length;
-        if (prev <= MIN_BATCH_SIZE) throw error;
-        maxBatchSize = Math.max(MIN_BATCH_SIZE, Math.floor(prev / 2));
-        console.error(`[ONNX] Batch of ${prev} failed (${msg}), reducing to ${maxBatchSize}`);
-      }
-    }
-
-    post({ type: "result", id, embeddings: allEmbeddings });
+    const output = await extractor(texts, { pooling: "mean", normalize: true });
+    const embeddings = output.tolist();
+    post({ type: "result", id, embeddings });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     post({ type: "error", id, message });
@@ -120,7 +106,7 @@ async function handleEmbed(id: number, texts: string[]): Promise<void> {
 parentPort!.on("message", (msg: WorkerRequest) => {
   switch (msg.type) {
     case "init":
-      void handleInit(msg.model, msg.cacheDir, msg.device);
+      void handleInit(msg.model, msg.cacheDir);
       break;
     case "embed":
       void handleEmbed(msg.id, msg.texts);
