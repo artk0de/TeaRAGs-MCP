@@ -523,6 +523,39 @@ describe("typescriptBodyChunkingHook", () => {
     expect(ctx.bodyChunks.length).toBeGreaterThan(1);
   });
 
+  it("should assign distinct startLine/endLine to each sub-chunk after splitting oversized group", () => {
+    // Build a class with many long properties that will exceed a small maxChunkSize
+    const props = Array.from({ length: 20 }, (_, i) => `  property${i}: string; // ${"x".repeat(40)}`);
+    const code = ["export class SplitTest {", ...props, "", "  run() { return true; }", "}"].join("\n");
+
+    // Use a small maxChunkSize so the properties group needs splitting into multiple sub-chunks
+    const ctx = buildContext(code, { maxChunkSize: 250 });
+    typescriptBodyChunkingHook.process(ctx);
+
+    // Should produce more than 1 chunk due to splitting
+    expect(ctx.bodyChunks.length).toBeGreaterThan(1);
+
+    // Each sub-chunk must have different startLine
+    for (let i = 1; i < ctx.bodyChunks.length; i++) {
+      expect(ctx.bodyChunks[i].startLine).not.toBe(ctx.bodyChunks[0].startLine);
+    }
+
+    // startLines should be in strictly ascending order
+    for (let i = 1; i < ctx.bodyChunks.length; i++) {
+      expect(ctx.bodyChunks[i].startLine).toBeGreaterThan(ctx.bodyChunks[i - 1].startLine);
+    }
+
+    // endLine of each chunk should be >= its startLine
+    for (const chunk of ctx.bodyChunks) {
+      expect(chunk.endLine).toBeGreaterThanOrEqual(chunk.startLine);
+    }
+
+    // endLine of chunk i should be < startLine of chunk i+1 (no overlap)
+    for (let i = 0; i < ctx.bodyChunks.length - 1; i++) {
+      expect(ctx.bodyChunks[i].endLine).toBeLessThan(ctx.bodyChunks[i + 1].startLine);
+    }
+  });
+
   it("should set correct startLine and endLine on body chunks", () => {
     const code = [
       "export class Lined {", // row 0, line 1

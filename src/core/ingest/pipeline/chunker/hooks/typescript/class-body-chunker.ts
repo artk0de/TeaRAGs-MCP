@@ -264,18 +264,21 @@ function splitOversizedChunk(
   const results: BodyChunkResult[] = [];
   let subLines: string[] = [];
   let subSize = headerPrefix.length;
+  let subStartOffset = 0;
 
-  for (const line of bodyLines) {
+  for (let i = 0; i < bodyLines.length; i++) {
+    const line = bodyLines[i];
     const lineLen = line.length + 1; // +1 for newline
     if (subSize + lineLen > maxChunkSize && subLines.length > 0) {
       results.push({
         content: `${headerPrefix}${subLines.join("\n")}`.trim(),
-        startLine: chunk.startLine,
-        endLine: chunk.endLine,
+        startLine: chunk.startLine + subStartOffset,
+        endLine: chunk.startLine + i - 1,
         lineRanges: chunk.lineRanges,
       });
       subLines = [];
       subSize = headerPrefix.length;
+      subStartOffset = i;
     }
     subLines.push(line);
     subSize += lineLen;
@@ -284,8 +287,8 @@ function splitOversizedChunk(
   if (subLines.length > 0) {
     results.push({
       content: `${headerPrefix}${subLines.join("\n")}`.trim(),
-      startLine: chunk.startLine,
-      endLine: chunk.endLine,
+      startLine: chunk.startLine + subStartOffset,
+      endLine: chunk.startLine + bodyLines.length - 1,
       lineRanges: chunk.lineRanges,
     });
   }
