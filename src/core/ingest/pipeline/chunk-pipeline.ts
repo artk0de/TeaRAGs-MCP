@@ -351,6 +351,10 @@ export class ChunkPipeline {
             ...(item.chunk.metadata.imports?.length && {
               imports: item.chunk.metadata.imports,
             }),
+            ...(item.chunk.metadata.methodLines && {
+              methodLines: item.chunk.metadata.methodLines,
+              methodDensity: Math.round(item.chunk.content.length / item.chunk.metadata.methodLines),
+            }),
           },
         };
       });

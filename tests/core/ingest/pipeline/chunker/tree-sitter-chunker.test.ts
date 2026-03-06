@@ -2267,4 +2267,87 @@ enum Direction {
       expect(name).toBeUndefined();
     });
   });
+
+  describe("methodLines metadata", () => {
+    it("sets methodLines on regular function chunks", async () => {
+      const code = `
+function hello() {
+  console.log("hello");
+  console.log("world");
+  return true;
+}
+`.trim();
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+      expect(chunks.length).toBeGreaterThan(0);
+      const chunk = chunks[0];
+      expect(chunk.metadata.methodLines).toBe(chunk.endLine - chunk.startLine);
+    });
+
+    it("sets methodLines on child method chunks", async () => {
+      const code = `
+class Greeter {
+  sayHello(name: string): string {
+    const greeting = "Hello, " + name;
+    console.log(greeting);
+    return greeting;
+  }
+
+  sayGoodbye(name: string): string {
+    const farewell = "Goodbye, " + name;
+    console.log(farewell);
+    return farewell;
+  }
+}
+`.trim();
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThan(0);
+      for (const chunk of methodChunks) {
+        expect(chunk.metadata.methodLines).toBeDefined();
+        expect(chunk.metadata.methodLines).toBe(chunk.endLine - chunk.startLine);
+      }
+    });
+
+    it("does not set methodLines on body/block chunks", async () => {
+      const code = `
+class MyService {
+  private readonly name = "service";
+  private readonly version = 1;
+  private readonly enabled = true;
+  private readonly config = { key: "value", timeout: 1000 };
+
+  process(input: string): string {
+    const result = input.toUpperCase();
+    console.log(result);
+    return result;
+  }
+}
+`.trim();
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+      const bodyChunks = chunks.filter((c) => c.metadata.chunkType === "block");
+      for (const chunk of bodyChunks) {
+        expect(chunk.metadata.methodLines).toBeUndefined();
+      }
+    });
+
+    it("preserves original methodLines when child node is split via fallback", async () => {
+      // Create a function large enough to trigger character fallback (> maxChunkSize * 2)
+      const lines = Array.from(
+        { length: 200 },
+        (_, i) => `  const x${i} = ${i}; // padding to exceed chunk size limit ${"x".repeat(80)}`,
+      );
+      const code = `function bigMethod() {\n${lines.join("\n")}\n}`;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+      expect(chunks.length).toBeGreaterThan(1); // Should be split
+
+      const originalLines = code.split("\n").length;
+      for (const chunk of chunks) {
+        expect(chunk.metadata.methodLines).toBe(originalLines);
+      }
+    });
+  });
 });

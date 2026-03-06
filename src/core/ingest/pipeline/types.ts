@@ -54,6 +54,8 @@ export interface ChunkItem extends WorkItem {
       isDocumentation?: boolean;
       /** File-level imports (inherited by all chunks from the file) */
       imports?: string[];
+      /** Original method/block line count before chunk splitting. Used by decomposition signals. */
+      methodLines?: number;
     };
   };
   /** Pre-computed chunk ID */
