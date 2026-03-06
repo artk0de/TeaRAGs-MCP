@@ -323,6 +323,7 @@ export class ChunkPipeline {
           vector: embeddings[idx].embedding,
           payload: {
             content: item.chunk.content,
+            contentSize: item.chunk.content.length,
             relativePath,
             startLine: item.chunk.startLine,
             endLine: item.chunk.endLine,

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
 
 describe("structuralSignals", () => {
-  it("has 5 descriptors", () => {
-    expect(structuralSignals).toHaveLength(5);
+  it("has 6 descriptors", () => {
+    expect(structuralSignals).toHaveLength(6);
   });
 
   it("every descriptor has empty sources (structural, no raw signal dependency)", () => {

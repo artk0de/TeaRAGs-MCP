@@ -1081,6 +1081,19 @@ describe("Reranker (v2 class)", () => {
     expect(ranked[0].rankingOverlay).toBeUndefined();
   });
 
+  it("decomposition preset includes derived values in overlay", () => {
+    const results = [
+      makeResult(0.8, undefined, { contentSize: 5000, startLine: 1, endLine: 100 }),
+      makeResult(0.7, undefined, { contentSize: 500, startLine: 1, endLine: 10 }),
+    ];
+    const ranked = reranker.rerank(results, "decomposition", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+    expect(overlay.preset).toBe("decomposition");
+    expect(overlay.derived).toBeDefined();
+    expect(overlay.derived!.chunkSize).toBeGreaterThan(0);
+    expect(overlay.derived!.chunkDensity).toBeGreaterThan(0);
+  });
+
   it("supports custom weights with overlay", () => {
     const results = [
       makeResult(0.5, undefined, { isDocumentation: true }),

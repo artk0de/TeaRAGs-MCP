@@ -27,9 +27,10 @@ describe("RELEVANCE_PRESETS", () => {
     expect(weights).toEqual({ similarity: 1.0 });
   });
 
-  it("is a single RelevancePreset instance with tools[]", () => {
-    expect(RELEVANCE_PRESETS).toHaveLength(1);
-    expect(RELEVANCE_PRESETS[0].tools).toEqual(["semantic_search", "search_code"]);
+  it("contains RelevancePreset and DecompositionPreset", () => {
+    expect(RELEVANCE_PRESETS).toHaveLength(2);
+    expect(RELEVANCE_PRESETS.map((p) => p.name)).toContain("relevance");
+    expect(RELEVANCE_PRESETS.map((p) => p.name)).toContain("decomposition");
   });
 });
 

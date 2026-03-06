@@ -9,14 +9,16 @@
 
 import type { ScoringWeights } from "../../../contracts/types/provider.js";
 import type { RerankPreset } from "../../../contracts/types/reranker.js";
+import { DecompositionPreset } from "./decomposition.js";
 import { RelevancePreset } from "./relevance.js";
 
 // Re-export for consumers
 export type { RerankPreset } from "../../../contracts/types/reranker.js";
+export { DecompositionPreset } from "./decomposition.js";
 export { RelevancePreset } from "./relevance.js";
 
 /** Generic relevance presets — always available regardless of registered trajectories. */
-export const RELEVANCE_PRESETS: RerankPreset[] = [new RelevancePreset()];
+export const RELEVANCE_PRESETS: RerankPreset[] = [new RelevancePreset(), new DecompositionPreset()];
 
 /**
  * Resolve presets by 3-level hierarchy: generic -> trajectory -> composite.

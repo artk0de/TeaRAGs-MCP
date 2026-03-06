@@ -159,6 +159,23 @@ describe("ChunkPipeline", () => {
     });
   });
 
+  describe("Payload fields", () => {
+    it("should include contentSize in Qdrant payload", async () => {
+      pipeline.addChunk(createChunk(1), "chunk-1", "/test/path");
+      pipeline.addChunk(createChunk(2), "chunk-2", "/test/path");
+      pipeline.addChunk(createChunk(3), "chunk-3", "/test/path");
+
+      await vi.runAllTimersAsync();
+
+      const points = mockQdrant.addPointsOptimized.mock.calls[0][1];
+      for (const point of points) {
+        expect(point.payload).toHaveProperty("contentSize");
+        expect(typeof point.payload.contentSize).toBe("number");
+        expect(point.payload.contentSize).toBe(point.payload.content.length);
+      }
+    });
+  });
+
   describe("Hybrid search", () => {
     it("should use sparse vectors when hybrid enabled", async () => {
       const hybridPipeline = new ChunkPipeline(mockQdrant as any, mockEmbeddings as any, testCollectionName, {
