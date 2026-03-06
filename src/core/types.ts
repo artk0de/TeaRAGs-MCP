@@ -291,6 +291,9 @@ export interface CodeChunk {
      * Used for imports structural signal in reranking
      */
     imports?: string[];
+
+    /** Original method/block line count before chunk splitting. Used by decomposition signals. */
+    methodLines?: number;
   };
 }
 
