@@ -7,10 +7,12 @@ describe("structuralSignals", () => {
     expect(structuralSignals).toHaveLength(6);
   });
 
-  it("every descriptor except chunkSize has empty sources (structural, no raw signal dependency)", () => {
+  it("structural signals declare correct sources", () => {
     for (const d of structuralSignals) {
       if (d.name === "chunkSize") {
         expect(d.sources).toEqual(["methodLines"]);
+      } else if (d.name === "chunkDensity") {
+        expect(d.sources).toEqual(["methodDensity"]);
       } else {
         expect(d.sources).toEqual([]);
       }
