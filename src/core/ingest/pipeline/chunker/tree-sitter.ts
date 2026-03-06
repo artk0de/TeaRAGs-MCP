@@ -195,6 +195,7 @@ export class TreeSitterChunker implements CodeChunker {
 
               // If child is also too large, use character fallback
               if (childContent.length > this.config.maxChunkSize * 2) {
+                const childMethodLines = childNode.endPosition.row - childNode.startPosition.row + 1;
                 const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
                 for (const subChunk of subChunks) {
                   chunks.push({
@@ -208,6 +209,7 @@ export class TreeSitterChunker implements CodeChunker {
                       chunkIndex: chunks.length,
                       parentName,
                       parentType,
+                      methodLines: childMethodLines,
                     },
                   });
                 }
@@ -241,6 +243,7 @@ export class TreeSitterChunker implements CodeChunker {
                   parentName,
                   parentType,
                   symbolId: this.buildSymbolId(childName, parentName),
+                  methodLines: this.computeEndLine(childNode) - (childNode.startPosition.row + 1),
                 },
               });
             }
@@ -296,6 +299,7 @@ export class TreeSitterChunker implements CodeChunker {
           // No valid children found
           if (isTooLarge) {
             // Fall back to character chunking for oversized nodes
+            const nodeMethodLines = node.endPosition.row - node.startPosition.row + 1;
             const subChunks = await this.fallbackChunker.chunk(content, filePath, language);
             for (const subChunk of subChunks) {
               chunks.push({
@@ -309,6 +313,7 @@ export class TreeSitterChunker implements CodeChunker {
                   chunkIndex: chunks.length,
                   parentName,
                   parentType,
+                  methodLines: nodeMethodLines,
                 },
               });
             }
@@ -329,6 +334,7 @@ export class TreeSitterChunker implements CodeChunker {
             chunkType: this.getChunkType(node.type),
             name: nodeName,
             symbolId: this.buildSymbolId(nodeName),
+            methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
           },
         });
       }
