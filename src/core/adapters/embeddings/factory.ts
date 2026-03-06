@@ -60,7 +60,7 @@ export class EmbeddingProviderFactory {
         );
 
       case "onnx":
-        return new OnnxEmbeddings(model || DEFAULT_ONNX_MODEL, dimensions, modelsDir());
+        return new OnnxEmbeddings(model || DEFAULT_ONNX_MODEL, dimensions, modelsDir(), config.device);
 
       default:
         throw new Error(
