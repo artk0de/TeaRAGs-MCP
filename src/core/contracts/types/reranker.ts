@@ -45,6 +45,7 @@ export interface RerankableResult {
 export interface OverlayMask {
   readonly file?: string[];
   readonly chunk?: string[];
+  readonly derived?: string[];
 }
 
 /** Typed preset definition with description for schema generation and DI. */
@@ -63,6 +64,7 @@ export interface RankingOverlay {
   preset: string;
   file?: Record<string, unknown>;
   chunk?: Record<string, unknown>;
+  derived?: Record<string, number>;
 }
 
 /** Search result with ranking overlay from reranker. */

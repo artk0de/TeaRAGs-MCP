@@ -275,7 +275,7 @@ export class Reranker {
     result: RerankableResult,
     presetName: string,
     weights: ScoringWeights,
-    _derivedValues: Record<string, number>,
+    derivedValues: Record<string, number>,
     mask?: OverlayMask,
   ): RankingOverlay {
     const rawFile: Record<string, unknown> = {};
@@ -307,10 +307,23 @@ export class Reranker {
       }
     }
 
+    // Extract derived signal values when mask specifies them
+    let derivedOverlay: Record<string, number> | undefined;
+    if (mask?.derived) {
+      derivedOverlay = {};
+      for (const name of mask.derived) {
+        if (name in derivedValues) {
+          derivedOverlay[name] = derivedValues[name];
+        }
+      }
+      if (Object.keys(derivedOverlay).length === 0) derivedOverlay = undefined;
+    }
+
     return {
       preset: presetName,
       ...(Object.keys(rawFile).length > 0 ? { file: rawFile } : {}),
       ...(Object.keys(rawChunk).length > 0 ? { chunk: rawChunk } : {}),
+      ...(derivedOverlay ? { derived: derivedOverlay } : {}),
     };
   }
 
