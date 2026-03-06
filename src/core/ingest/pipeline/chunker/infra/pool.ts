@@ -128,6 +128,10 @@ export class ChunkerPool {
 
   /**
    * Shut down all workers gracefully.
+   *
+   * Sends a shutdown message so each worker can close its port and let
+   * tree-sitter NAPI destructors run in the correct thread. Falls back
+   * to terminate() if a worker doesn't exit within the timeout.
    */
   async shutdown(): Promise<void> {
     this.isShutdown = true;
@@ -138,8 +142,26 @@ export class ChunkerPool {
     }
     this.queue = [];
 
-    // Terminate all workers
-    await Promise.all(this.workers.map(async (pw) => pw.worker.terminate()));
+    // Graceful shutdown: unref workers so they don't keep the process alive,
+    // then post shutdown message and wait for exit with a timeout fallback.
+    await Promise.all(
+      this.workers.map(
+        async (pw) =>
+          new Promise<void>((resolve) => {
+            const timer = setTimeout(() => {
+              void pw.worker.terminate().then(() => {
+                resolve();
+              });
+            }, 2000);
+            pw.worker.once("exit", () => {
+              clearTimeout(timer);
+              resolve();
+            });
+            pw.worker.unref();
+            pw.worker.postMessage({ type: "shutdown" });
+          }),
+      ),
+    );
     this.workers = [];
 
     if (isDebug()) {
