@@ -1083,8 +1083,14 @@ describe("Reranker (v2 class)", () => {
 
   it("decomposition preset includes derived values in overlay", () => {
     const results = [
-      makeResult(0.8, undefined, { contentSize: 5000, startLine: 1, endLine: 100, methodLines: 99 }),
-      makeResult(0.7, undefined, { contentSize: 500, startLine: 1, endLine: 10, methodLines: 9 }),
+      makeResult(0.8, undefined, {
+        contentSize: 5000,
+        startLine: 1,
+        endLine: 100,
+        methodLines: 99,
+        methodDensity: 50.5,
+      }),
+      makeResult(0.7, undefined, { contentSize: 500, startLine: 1, endLine: 10, methodLines: 9, methodDensity: 55.6 }),
     ];
     const ranked = reranker.rerank(results, "decomposition", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
