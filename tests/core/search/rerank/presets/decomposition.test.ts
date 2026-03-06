@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { structuralSignals } from "../../../../../src/core/search/rerank/derived-signals/index.js";
 import { DecompositionPreset } from "../../../../../src/core/search/rerank/presets/decomposition.js";
+import { Reranker } from "../../../../../src/core/search/reranker.js";
 
 describe("DecompositionPreset", () => {
   const preset = new DecompositionPreset();
@@ -30,5 +32,50 @@ describe("DecompositionPreset", () => {
     expect(preset.overlayMask.derived).toContain("chunkDensity");
     expect(preset.overlayMask.file).toBeUndefined();
     expect(preset.overlayMask.chunk).toBeUndefined();
+  });
+});
+
+describe("Decomposition reranking produces scores in 0-1", () => {
+  const reranker = new Reranker(structuralSignals, [new DecompositionPreset()]);
+
+  it("scores large dense methods higher than small sparse ones", () => {
+    const results = [
+      { score: 0.8, payload: { methodLines: 200, methodDensity: 80 } },
+      { score: 0.9, payload: { methodLines: 10, methodDensity: 30 } },
+    ];
+
+    const ranked = reranker.rerank(results, "decomposition", "semantic_search");
+
+    for (const r of ranked) {
+      expect(r.score).toBeGreaterThanOrEqual(0);
+      expect(r.score).toBeLessThanOrEqual(1);
+    }
+
+    // Large dense method should rank first despite lower similarity
+    expect(ranked[0].payload?.methodLines).toBe(200);
+  });
+
+  it("split sub-chunks with same methodLines/methodDensity score equally on size/density", () => {
+    const results = [
+      { score: 0.8, payload: { methodLines: 100, methodDensity: 60, startLine: 10, endLine: 50 } },
+      { score: 0.8, payload: { methodLines: 100, methodDensity: 60, startLine: 51, endLine: 110 } },
+    ];
+
+    const ranked = reranker.rerank(results, "decomposition", "semantic_search");
+
+    // Both should have identical scores (same methodLines, same methodDensity, same similarity)
+    expect(ranked[0].score).toBeCloseTo(ranked[1].score, 5);
+  });
+
+  it("ranking overlay includes chunkSize and chunkDensity derived values", () => {
+    const results = [{ score: 0.8, payload: { methodLines: 100, methodDensity: 60 } }];
+
+    const ranked = reranker.rerank(results, "decomposition", "semantic_search");
+    const overlay = ranked[0].rankingOverlay;
+
+    expect(overlay).toBeDefined();
+    expect(overlay?.preset).toBe("decomposition");
+    expect(overlay?.derived?.chunkSize).toBeGreaterThan(0);
+    expect(overlay?.derived?.chunkDensity).toBeGreaterThan(0);
   });
 });
