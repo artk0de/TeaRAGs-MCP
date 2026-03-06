@@ -7,9 +7,13 @@ describe("structuralSignals", () => {
     expect(structuralSignals).toHaveLength(6);
   });
 
-  it("every descriptor has empty sources (structural, no raw signal dependency)", () => {
+  it("every descriptor except chunkSize has empty sources (structural, no raw signal dependency)", () => {
     for (const d of structuralSignals) {
-      expect(d.sources).toEqual([]);
+      if (d.name === "chunkSize") {
+        expect(d.sources).toEqual(["methodLines"]);
+      } else {
+        expect(d.sources).toEqual([]);
+      }
     }
   });
 
@@ -34,20 +38,20 @@ describe("structuralSignals", () => {
   });
 
   describe("chunkSize", () => {
-    it("normalizes line range against 500", () => {
+    it("normalizes methodLines against 500", () => {
       const d = structuralSignals.find((s) => s.name === "chunkSize")!;
       // 100 lines / 500 = 0.2
-      expect(d.extract({ startLine: 10, endLine: 110 })).toBeCloseTo(0.2, 2);
+      expect(d.extract({ methodLines: 100 })).toBeCloseTo(0.2, 2);
     });
 
-    it("returns 0 for zero-size chunk", () => {
+    it("returns 0 when methodLines is missing", () => {
       const d = structuralSignals.find((s) => s.name === "chunkSize")!;
-      expect(d.extract({ startLine: 10, endLine: 10 })).toBe(0);
+      expect(d.extract({})).toBe(0);
     });
 
-    it("clamps at 1.0 for very large chunks", () => {
+    it("clamps at 1.0 when methodLines exceeds bound", () => {
       const d = structuralSignals.find((s) => s.name === "chunkSize")!;
-      expect(d.extract({ startLine: 1, endLine: 1000 })).toBe(1);
+      expect(d.extract({ methodLines: 1000 })).toBe(1);
     });
   });
 
