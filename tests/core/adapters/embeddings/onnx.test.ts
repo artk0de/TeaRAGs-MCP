@@ -1,28 +1,125 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_ONNX_MODEL, OnnxEmbeddings } from "../../../../src/core/adapters/embeddings/onnx.js";
+// Now import SUT
+import {
+  DEFAULT_ONNX_DIMENSIONS,
+  DEFAULT_ONNX_MODEL,
+  OnnxEmbeddings,
+} from "../../../../src/core/adapters/embeddings/onnx.js";
+import type { WorkerRequest, WorkerResponse } from "../../../../src/core/adapters/embeddings/onnx/worker-types.js";
 
-// Mock the dynamic import of @huggingface/transformers
-const mockExtractor = vi.fn();
-const mockPipeline = vi.fn().mockResolvedValue(mockExtractor);
+// --- State shared between mock and tests ---
 
-vi.mock("@huggingface/transformers", () => ({
-  pipeline: mockPipeline,
-  env: { cacheDir: "", allowLocalModels: true },
+type MessageHandler = (msg: WorkerResponse) => void;
+type ExitHandler = (code: number) => void;
+
+const state = vi.hoisted(() => ({
+  messageHandlers: [] as MessageHandler[],
+  exitHandlers: [] as ExitHandler[],
+  onceExitHandlers: [] as ExitHandler[],
+  workerConstructCount: 0,
+  postMessageCalls: [] as WorkerRequest[],
+  postMessageImpl: null as ((msg: WorkerRequest) => void) | null,
 }));
 
-describe("OnnxEmbeddings", () => {
+// --- Mock worker_threads (hoisted) ---
+
+vi.mock("node:worker_threads", () => {
+  class MockWorker {
+    constructor(_path: string) {
+      state.workerConstructCount++;
+    }
+
+    postMessage(msg: WorkerRequest): void {
+      state.postMessageCalls.push(msg);
+      state.postMessageImpl?.(msg);
+    }
+
+    on(event: string, handler: MessageHandler | ExitHandler): void {
+      if (event === "message") state.messageHandlers.push(handler as MessageHandler);
+      if (event === "exit") state.exitHandlers.push(handler as ExitHandler);
+    }
+
+    once(event: string, handler: ExitHandler): void {
+      if (event === "exit") state.onceExitHandlers.push(handler);
+    }
+
+    removeListener(event: string, handler: MessageHandler | ExitHandler): void {
+      if (event === "message") {
+        state.messageHandlers = state.messageHandlers.filter((h) => h !== handler);
+      }
+      if (event === "exit") {
+        state.exitHandlers = state.exitHandlers.filter((h) => h !== handler);
+      }
+    }
+
+    terminate(): void {
+      // no-op
+    }
+  }
+
+  return { Worker: MockWorker };
+});
+
+// --- Helpers ---
+
+function emitMessage(msg: WorkerResponse): void {
+  const handlers = [...state.messageHandlers];
+  for (const h of handlers) h(msg);
+}
+
+function emitExit(code: number): void {
+  const handlers = [...state.exitHandlers];
+  for (const h of handlers) h(code);
+  const once = [...state.onceExitHandlers];
+  state.onceExitHandlers = [];
+  for (const h of once) h(code);
+}
+
+function resetState(): void {
+  state.messageHandlers = [];
+  state.exitHandlers = [];
+  state.onceExitHandlers = [];
+  state.workerConstructCount = 0;
+  state.postMessageCalls.length = 0;
+  state.postMessageImpl = null;
+}
+
+/** Set postMessage to auto-respond with ready + embed results */
+function autoRespondEmbed(embeddingFactory: (texts: string[]) => number[][]): void {
+  state.postMessageImpl = (msg: WorkerRequest) => {
+    if (msg.type === "init") {
+      queueMicrotask(() => {
+        emitMessage({ type: "ready" });
+      });
+    } else if (msg.type === "embed") {
+      const embeddings = embeddingFactory(msg.texts);
+      queueMicrotask(() => {
+        emitMessage({ type: "result", id: msg.id, embeddings });
+      });
+    }
+  };
+}
+
+describe("OnnxEmbeddings (worker proxy)", () => {
   let provider: OnnxEmbeddings;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    resetState();
     provider = new OnnxEmbeddings();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe("constructor", () => {
-    it("should use default model with int8 quantization", () => {
+    it("should return default model", () => {
       expect(provider.getModel()).toBe(DEFAULT_ONNX_MODEL);
-      expect(provider.getDimensions()).toBe(768);
+    });
+
+    it("should return default dimensions", () => {
+      expect(provider.getDimensions()).toBe(DEFAULT_ONNX_DIMENSIONS);
     });
 
     it("should accept custom model and dimensions", () => {
@@ -30,218 +127,196 @@ describe("OnnxEmbeddings", () => {
       expect(custom.getModel()).toBe("Xenova/all-MiniLM-L6-v2");
       expect(custom.getDimensions()).toBe(384);
     });
-  });
 
-  describe("parseModelSpec (via ensureLoaded)", () => {
-    it("should extract dtype from model name suffix", async () => {
-      mockExtractor.mockResolvedValue({ tolist: () => [[0.1]] });
-
-      await provider.embed("test");
-
-      expect(mockPipeline).toHaveBeenCalledWith("feature-extraction", "jinaai/jina-embeddings-v2-base-code", {
-        dtype: "q8",
-      });
-    });
-
-    it("should pass fp16 dtype when model ends with -fp16", async () => {
-      mockExtractor.mockResolvedValue({ tolist: () => [[0.1]] });
-      const fp16Provider = new OnnxEmbeddings("Xenova/model-fp16", 384);
-
-      await fp16Provider.embed("test");
-
-      expect(mockPipeline).toHaveBeenCalledWith("feature-extraction", "Xenova/model", { dtype: "fp16" });
-    });
-
-    it("should not extract dtype when suffix is not a known quantization", async () => {
-      mockExtractor.mockResolvedValue({ tolist: () => [[0.1]] });
-      const plainProvider = new OnnxEmbeddings("Xenova/all-MiniLM-L6-v2", 384);
-
-      await plainProvider.embed("test");
-
-      expect(mockPipeline).toHaveBeenCalledWith("feature-extraction", "Xenova/all-MiniLM-L6-v2", {});
-    });
-
-    it("should handle q4 quantization", async () => {
-      mockExtractor.mockResolvedValue({ tolist: () => [[0.1]] });
-      const q4Provider = new OnnxEmbeddings("Xenova/jina-embeddings-v2-base-code-q4", 768);
-
-      await q4Provider.embed("test");
-
-      expect(mockPipeline).toHaveBeenCalledWith("feature-extraction", "Xenova/jina-embeddings-v2-base-code", {
-        dtype: "q4",
-      });
+    it("should not create worker until needed", () => {
+      expect(state.workerConstructCount).toBe(0);
     });
   });
 
   describe("embed", () => {
-    it("should return embedding result for single text", async () => {
-      const fakeEmbedding = new Float32Array(768).fill(0.1);
-      mockExtractor.mockResolvedValue({
-        tolist: () => [[...fakeEmbedding]],
-      });
+    it("should create worker, send init, wait for ready, send embed, return result", async () => {
+      const fakeEmbedding = Array.from({ length: 768 }, () => 0.1);
+      autoRespondEmbed(() => [fakeEmbedding]);
 
       const result = await provider.embed("function hello() {}");
 
-      expect(result.embedding).toHaveLength(768);
+      // Worker created
+      expect(state.workerConstructCount).toBe(1);
+
+      // Init sent
+      const initCall = state.postMessageCalls.find((m) => m.type === "init");
+      expect(initCall).toBeDefined();
+      expect((initCall as WorkerRequest & { type: "init" }).model).toBe(DEFAULT_ONNX_MODEL);
+
+      // Embed sent
+      const embedCall = state.postMessageCalls.find((m) => m.type === "embed");
+      expect(embedCall).toBeDefined();
+
+      // Result
+      expect(result.embedding).toEqual(fakeEmbedding);
       expect(result.dimensions).toBe(768);
-      expect(mockExtractor).toHaveBeenCalledWith(["function hello() {}"], { pooling: "mean", normalize: true });
     });
 
-    it("should lazy-load pipeline on first call", async () => {
-      const fakeEmbedding = new Float32Array(768).fill(0.1);
-      mockExtractor.mockResolvedValue({
-        tolist: () => [[...fakeEmbedding]],
-      });
+    it("should only create worker once across multiple calls", async () => {
+      autoRespondEmbed((texts) => texts.map(() => [0.1]));
 
-      await provider.embed("test");
+      await provider.embed("test1");
       await provider.embed("test2");
 
-      // pipeline() called only once (lazy init)
-      expect(mockPipeline).toHaveBeenCalledTimes(1);
+      expect(state.workerConstructCount).toBe(1);
     });
   });
 
   describe("embedBatch", () => {
-    it("should return empty array for empty input", async () => {
+    it("should return empty array for empty input without creating worker", async () => {
       const result = await provider.embedBatch([]);
       expect(result).toEqual([]);
+      expect(state.workerConstructCount).toBe(0);
     });
 
-    it("should return embeddings for multiple texts", async () => {
-      const fakeEmbeddings = [new Float32Array(768).fill(0.1), new Float32Array(768).fill(0.2)];
-      mockExtractor.mockResolvedValue({
-        tolist: () => fakeEmbeddings.map((e) => [...e]),
-      });
+    it("should delegate to worker and return results", async () => {
+      const fakeEmbeddings = [
+        [0.1, 0.2, 0.3],
+        [0.4, 0.5, 0.6],
+      ];
+      autoRespondEmbed(() => fakeEmbeddings);
 
       const results = await provider.embedBatch(["text1", "text2"]);
 
       expect(results).toHaveLength(2);
+      expect(results[0].embedding).toEqual(fakeEmbeddings[0]);
       expect(results[0].dimensions).toBe(768);
+      expect(results[1].embedding).toEqual(fakeEmbeddings[1]);
       expect(results[1].dimensions).toBe(768);
-      expect(mockExtractor).toHaveBeenCalledWith(["text1", "text2"], { pooling: "mean", normalize: true });
     });
   });
 
-  describe("adaptive batch sizing", () => {
-    it("should use initial batch size of 32, not full input length", async () => {
-      const texts = Array.from({ length: 100 }, (_, i) => `text${i}`);
-      mockExtractor.mockResolvedValue({
-        tolist: () => texts.slice(0, 32).map(() => [0.1]),
-      });
+  describe("worker crash recovery", () => {
+    it("should recreate worker after non-zero exit", async () => {
+      autoRespondEmbed((texts) => texts.map(() => [0.1]));
 
-      await provider.embedBatch(texts);
+      // First call — creates worker
+      await provider.embed("test1");
+      expect(state.workerConstructCount).toBe(1);
 
-      // First call should be capped at 32, not 100
-      const firstCallTexts = mockExtractor.mock.calls[0][0] as string[];
-      expect(firstCallTexts).toHaveLength(32);
+      // Simulate crash
+      emitExit(1);
+
+      // Next call should recreate worker
+      await provider.embed("test2");
+      expect(state.workerConstructCount).toBe(2);
     });
 
-    it("should halve batch size on failure and retry", async () => {
-      const texts = Array.from({ length: 10 }, (_, i) => `text${i}`);
+    it("should log warning on non-zero exit", async () => {
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      autoRespondEmbed((texts) => texts.map(() => [0.1]));
 
-      // First call (10 texts, capped at 10 since < 32): fail
-      // Retry with 5: succeed
-      // Next batch of 5: succeed
-      let callCount = 0;
-      mockExtractor.mockImplementation(async (batch: string[]) => {
-        callCount++;
-        if (callCount === 1) throw new Error("OOM");
-        return Promise.resolve({ tolist: () => batch.map(() => [0.1]) });
-      });
+      await provider.embed("test");
+      emitExit(1);
 
-      const results = await provider.embedBatch(texts);
-
-      expect(results).toHaveLength(10);
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("reducing to 5"));
-      consoleSpy.mockRestore();
-    });
-
-    it("should halve multiple times until batch succeeds", async () => {
-      const texts = Array.from({ length: 40 }, (_, i) => `text${i}`);
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      mockExtractor.mockImplementation(async (batch: string[]) => {
-        // Fail at 32 and 16, succeed at 8
-        if (batch.length > 8) throw new Error("OOM");
-        return Promise.resolve({ tolist: () => batch.map(() => [0.1]) });
-      });
-
-      const results = await provider.embedBatch(texts);
-
-      expect(results).toHaveLength(40);
-      // Should have reduced: 32 → 16 → 8
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("reducing to 16"));
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("reducing to 8"));
-      consoleSpy.mockRestore();
-    });
-
-    it("should throw when batch size reaches minimum and still fails", async () => {
-      const texts = Array.from({ length: 10 }, (_, i) => `text${i}`);
-      vi.spyOn(console, "error").mockImplementation(() => {});
-
-      mockExtractor.mockRejectedValue(new Error("OOM"));
-
-      await expect(provider.embedBatch(texts)).rejects.toThrow("OOM");
-    });
-
-    it("should persist learned batch size across calls", async () => {
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-      // First call: fail at 5, succeed at 4 (min)
-      let firstCallCount = 0;
-      mockExtractor.mockImplementation(async (batch: string[]) => {
-        firstCallCount++;
-        if (firstCallCount === 1) throw new Error("OOM");
-        return Promise.resolve({ tolist: () => batch.map(() => [0.1]) });
-      });
-
-      await provider.embedBatch(["a", "b", "c", "d", "e"]);
-
-      // Reset mock for second call
-      mockExtractor.mockReset();
-      mockExtractor.mockImplementation(async (batch: string[]) => {
-        return Promise.resolve({ tolist: () => batch.map(() => [0.2]) });
-      });
-
-      await provider.embedBatch(["x", "y", "z"]);
-
-      // Second call should use the learned batch size, not INITIAL_BATCH_SIZE
-      const secondCallTexts = mockExtractor.mock.calls[0][0] as string[];
-      expect(secondCallTexts.length).toBeLessThanOrEqual(5);
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Worker exited with code 1"));
       consoleSpy.mockRestore();
     });
   });
 
-  describe("ensureLoaded error handling", () => {
-    it("should throw clear message when @huggingface/transformers is not installed", async () => {
-      mockPipeline.mockRejectedValueOnce(new Error("Cannot find package '@huggingface/transformers'"));
+  describe("init error", () => {
+    it("should reject when worker responds with error id=-1", async () => {
+      state.postMessageImpl = (msg: WorkerRequest) => {
+        if (msg.type === "init") {
+          queueMicrotask(() => {
+            emitMessage({ type: "error", id: -1, message: "Model not found" });
+          });
+        }
+      };
 
-      const freshProvider = new OnnxEmbeddings();
-
-      await expect(freshProvider.embed("test")).rejects.toThrow(
-        "Built-in ONNX embeddings require @huggingface/transformers",
-      );
+      await expect(provider.embed("test")).rejects.toThrow("Model not found");
     });
 
-    it("should throw guided HF auth flow when Unauthorized", async () => {
-      mockPipeline.mockRejectedValueOnce(new Error('Unauthorized access to file: "https://huggingface.co/..."'));
+    it("should allow retry after init failure", async () => {
+      let initCount = 0;
+      state.postMessageImpl = (msg: WorkerRequest) => {
+        if (msg.type === "init") {
+          initCount++;
+          if (initCount === 1) {
+            queueMicrotask(() => {
+              emitMessage({ type: "error", id: -1, message: "Transient error" });
+            });
+          } else {
+            queueMicrotask(() => {
+              emitMessage({ type: "ready" });
+            });
+          }
+        } else if (msg.type === "embed") {
+          queueMicrotask(() => {
+            emitMessage({ type: "result", id: msg.id, embeddings: [[0.1]] });
+          });
+        }
+      };
 
-      const freshProvider = new OnnxEmbeddings();
+      await expect(provider.embed("test")).rejects.toThrow("Transient error");
 
-      const error = await freshProvider.embed("test").catch((e: Error) => e);
-      expect(error).toBeInstanceOf(Error);
-      expect((error as Error).message).toContain("requires HuggingFace authentication");
-      expect((error as Error).message).toContain("https://huggingface.co/join");
-      expect((error as Error).message).toContain("HF_TOKEN");
+      // Second attempt should succeed (initPromise was cleared)
+      const result = await provider.embed("test");
+      expect(result.embedding).toEqual([0.1]);
+    });
+  });
+
+  describe("embed error", () => {
+    it("should reject when worker responds with error for request id", async () => {
+      state.postMessageImpl = (msg: WorkerRequest) => {
+        if (msg.type === "init") {
+          queueMicrotask(() => {
+            emitMessage({ type: "ready" });
+          });
+        } else if (msg.type === "embed") {
+          queueMicrotask(() => {
+            emitMessage({ type: "error", id: msg.id, message: "OOM" });
+          });
+        }
+      };
+
+      await expect(provider.embed("test")).rejects.toThrow("OOM");
+    });
+  });
+
+  describe("terminate", () => {
+    it("should send terminate message and wait for exit", async () => {
+      autoRespondEmbed((texts) => texts.map(() => [0.1]));
+      await provider.embed("test");
+
+      // Override to handle terminate
+      state.postMessageImpl = (msg: WorkerRequest) => {
+        if (msg.type === "terminate") {
+          queueMicrotask(() => {
+            emitExit(0);
+          });
+        }
+      };
+
+      await provider.terminate();
+
+      const terminateCall = state.postMessageCalls.find((m) => m.type === "terminate");
+      expect(terminateCall).toBeDefined();
     });
 
-    it("should throw descriptive error for model load failure", async () => {
-      mockPipeline.mockRejectedValueOnce(new Error("Network error: model not found"));
+    it("should be a no-op when no worker exists", async () => {
+      await provider.terminate(); // Should not throw
+      expect(state.workerConstructCount).toBe(0);
+    });
+  });
 
-      const freshProvider = new OnnxEmbeddings();
+  describe("log forwarding", () => {
+    it("should forward log messages from worker to console.error", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      autoRespondEmbed((texts) => texts.map(() => [0.1]));
 
-      await expect(freshProvider.embed("test")).rejects.toThrow(`Failed to load ONNX model "${DEFAULT_ONNX_MODEL}"`);
+      await provider.embed("test");
+
+      // Simulate worker sending a log message
+      emitMessage({ type: "log", level: "error", message: "[ONNX] Loading model..." });
+
+      expect(consoleSpy).toHaveBeenCalledWith("[ONNX] Loading model...");
+      consoleSpy.mockRestore();
     });
   });
 });
