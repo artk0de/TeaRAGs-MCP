@@ -8,10 +8,11 @@ declare module "@huggingface/transformers" {
 
   interface PipelineOptions {
     dtype?: Dtype;
+    device?: string;
   }
 
   interface FeatureExtractionOutput {
-    tolist(): number[][];
+    tolist: () => number[][];
   }
 
   type FeatureExtractionPipeline = (

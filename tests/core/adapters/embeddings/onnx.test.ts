@@ -122,6 +122,10 @@ describe("OnnxEmbeddings (worker proxy)", () => {
       expect(provider.getDimensions()).toBe(DEFAULT_ONNX_DIMENSIONS);
     });
 
+    it("should use fp16 model by default", () => {
+      expect(provider.getModel()).toBe("jinaai/jina-embeddings-v2-base-code-fp16");
+    });
+
     it("should accept custom model and dimensions", () => {
       const custom = new OnnxEmbeddings("Xenova/all-MiniLM-L6-v2", 384);
       expect(custom.getModel()).toBe("Xenova/all-MiniLM-L6-v2");

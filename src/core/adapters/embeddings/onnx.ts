@@ -5,23 +5,21 @@ import { Worker } from "node:worker_threads";
 import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
 import type { WorkerRequest, WorkerResponse } from "./onnx/worker-types.js";
 
-export const DEFAULT_ONNX_MODEL = "jinaai/jina-embeddings-v2-base-code-q8";
+export const DEFAULT_ONNX_MODEL = "jinaai/jina-embeddings-v2-base-code-fp16";
 export const DEFAULT_ONNX_DIMENSIONS = 768;
 
 export class OnnxEmbeddings implements EmbeddingProvider {
   private readonly model: string;
   private readonly dimensions: number;
   private readonly cacheDir: string | undefined;
-  private readonly device: string | undefined;
   private worker: Worker | null = null;
   private initPromise: Promise<void> | null = null;
   private nextId = 0;
 
-  constructor(model = DEFAULT_ONNX_MODEL, dimensions = DEFAULT_ONNX_DIMENSIONS, cacheDir?: string, device?: string) {
+  constructor(model = DEFAULT_ONNX_MODEL, dimensions = DEFAULT_ONNX_DIMENSIONS, cacheDir?: string) {
     this.model = model;
     this.dimensions = dimensions;
     this.cacheDir = cacheDir;
-    this.device = device && device !== "cpu" ? device : undefined;
   }
 
   private ensureWorker(): Worker {
@@ -69,7 +67,6 @@ export class OnnxEmbeddings implements EmbeddingProvider {
         type: "init",
         model: this.model,
         cacheDir: this.cacheDir,
-        device: this.device,
       } satisfies WorkerRequest);
     });
 

@@ -1,6 +1,6 @@
 /** Messages from main thread to worker */
 export type WorkerRequest =
-  | { type: "init"; model: string; cacheDir?: string; device?: string }
+  | { type: "init"; model: string; cacheDir?: string }
   | { type: "embed"; id: number; texts: string[] }
   | { type: "terminate" };
 
