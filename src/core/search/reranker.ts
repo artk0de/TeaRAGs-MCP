@@ -257,13 +257,9 @@ export class Reranker {
       return typeof val === "number" ? val : undefined;
     }
 
-    // 2. Fallback: source is itself a dotted path
-    if (source.includes(".")) {
-      const val = readPayloadPath(payload, source);
-      return typeof val === "number" ? val : undefined;
-    }
-
-    return undefined;
+    // 2. Fallback: source as payload path (dotted or top-level)
+    const val = readPayloadPath(payload, source);
+    return typeof val === "number" ? val : undefined;
   }
 
   /**
