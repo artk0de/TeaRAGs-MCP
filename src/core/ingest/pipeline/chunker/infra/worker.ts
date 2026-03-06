@@ -30,7 +30,16 @@ if (parentPort) {
   const config = workerData as ChunkerConfig;
   const chunker = new TreeSitterChunker(config);
 
-  parentPort.on("message", (request: WorkerRequest) => {
+  parentPort.on("message", (msg: WorkerRequest | { type: "shutdown" }) => {
+    // Graceful shutdown: close the port so the thread exits cleanly,
+    // letting tree-sitter NAPI destructors run in the correct thread
+    // instead of crashing with libc++abi when worker.terminate() kills it.
+    if ("type" in msg && msg.type === "shutdown") {
+      parentPort?.close();
+      return;
+    }
+
+    const request = msg as WorkerRequest;
     void (async () => {
       try {
         const chunks = await chunker.chunk(request.code, request.filePath, request.language);
