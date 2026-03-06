@@ -78,6 +78,6 @@ export interface Trajectory {
   readonly derivedSignals: DerivedSignalDescriptor[];
   readonly filters: FilterDescriptor[];
   readonly presets: RerankPreset[];
-  // Ingest-side (ISP)
-  readonly enrichment: EnrichmentProvider;
+  // Ingest-side (ISP) — optional: not all trajectories have ingest enrichment
+  readonly enrichment?: EnrichmentProvider;
 }

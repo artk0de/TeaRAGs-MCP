@@ -99,7 +99,9 @@ export class TrajectoryRegistry {
 
   /** All enrichment providers from all registered trajectories (for ingest layer). */
   getAllEnrichmentProviders(): EnrichmentProvider[] {
-    return [...this.trajectories.values()].map((t) => t.enrichment);
+    return [...this.trajectories.values()]
+      .filter((t): t is Trajectory & { enrichment: EnrichmentProvider } => t.enrichment !== undefined)
+      .map((t) => t.enrichment);
   }
 
   /**
