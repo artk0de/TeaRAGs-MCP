@@ -59,10 +59,6 @@ if [ -n "$RUN_TYPECHECK" ]; then
 fi
 
 if [ -n "$RUN_TESTS" ]; then
-  echo "📦 Running tests..."
-  npm test -- --run || { echo "❌ Tests failed"; exit 1; }
-
-  if [ "$CHECK_COVERAGE" = "1" ]; then
-    .claude/hooks/check-coverage.sh
-  fi
+  echo "📦 Running tests with coverage check..."
+  npm test -- --run --coverage || { echo "❌ Tests or coverage threshold failed"; exit 1; }
 fi
