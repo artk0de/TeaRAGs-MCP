@@ -231,7 +231,19 @@ export async function testPipelineWorkerpool(_qdrant) {
     },
   };
 
-  const chunkPipeline = new ChunkPipeline(mockQdrant, mockEmbeddings, "test_chunk_collection", {
+  const mockPayloadBuilder = {
+    buildPayload: (chunk, codebasePath) => ({
+      content: chunk.content,
+      contentSize: chunk.content.length,
+      relativePath: chunk.metadata.filePath,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      language: chunk.metadata.language,
+      codebasePath,
+    }),
+  };
+
+  const chunkPipeline = new ChunkPipeline(mockQdrant, mockEmbeddings, "test_chunk_collection", mockPayloadBuilder, {
     workerPool: { concurrency: 2, maxRetries: 1, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
     accumulator: { batchSize: 3, flushTimeoutMs: 50, maxQueueSize: 10 },
     enableHybrid: false,

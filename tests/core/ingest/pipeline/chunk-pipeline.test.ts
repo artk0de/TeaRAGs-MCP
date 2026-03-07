@@ -13,6 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChunkPipeline } from "../../../../src/core/ingest/pipeline/chunk-pipeline.js";
 import type { ChunkItem } from "../../../../src/core/ingest/pipeline/types.js";
+// Use real StaticPayloadBuilder for full payload construction
+import { StaticPayloadBuilder } from "../../../../src/core/trajectory/static/provider.js";
 
 // Mock embeddings provider
 const mockEmbeddings = {
@@ -26,6 +28,8 @@ const mockQdrant = {
   addPointsOptimized: vi.fn(),
   addPointsWithSparse: vi.fn(),
 };
+
+const mockPayloadBuilder = new StaticPayloadBuilder();
 
 describe("ChunkPipeline", () => {
   let pipeline: ChunkPipeline;
@@ -44,7 +48,7 @@ describe("ChunkPipeline", () => {
     mockQdrant.addPointsOptimized.mockResolvedValue(undefined);
     mockQdrant.addPointsWithSparse.mockResolvedValue(undefined);
 
-    pipeline = new ChunkPipeline(mockQdrant as any, mockEmbeddings as any, testCollectionName, {
+    pipeline = new ChunkPipeline(mockQdrant as any, mockEmbeddings as any, testCollectionName, mockPayloadBuilder, {
       workerPool: {
         concurrency: 2,
         maxRetries: 2,
@@ -83,7 +87,12 @@ describe("ChunkPipeline", () => {
 
   describe("Lifecycle", () => {
     it("should throw if adding chunks before start", () => {
-      const notStartedPipeline = new ChunkPipeline(mockQdrant as any, mockEmbeddings as any, testCollectionName);
+      const notStartedPipeline = new ChunkPipeline(
+        mockQdrant as any,
+        mockEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+      );
 
       expect(() => notStartedPipeline.addChunk(createChunk(1), "chunk-1", "/test/path")).toThrow(
         "ChunkPipeline not started",
@@ -178,20 +187,26 @@ describe("ChunkPipeline", () => {
 
   describe("Hybrid search", () => {
     it("should use sparse vectors when hybrid enabled", async () => {
-      const hybridPipeline = new ChunkPipeline(mockQdrant as any, mockEmbeddings as any, testCollectionName, {
-        workerPool: {
-          concurrency: 2,
-          maxRetries: 2,
-          retryBaseDelayMs: 50,
-          retryMaxDelayMs: 500,
+      const hybridPipeline = new ChunkPipeline(
+        mockQdrant as any,
+        mockEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: {
+            concurrency: 2,
+            maxRetries: 2,
+            retryBaseDelayMs: 50,
+            retryMaxDelayMs: 500,
+          },
+          accumulator: {
+            batchSize: 2,
+            flushTimeoutMs: 100,
+            maxQueueSize: 4,
+          },
+          enableHybrid: true,
         },
-        accumulator: {
-          batchSize: 2,
-          flushTimeoutMs: 100,
-          maxQueueSize: 4,
-        },
-        enableHybrid: true,
-      });
+      );
 
       hybridPipeline.start();
 
@@ -335,7 +350,12 @@ describe("ChunkPipeline", () => {
     });
 
     it("should no-op when shutdown is called on a non-running pipeline", async () => {
-      const stoppedPipeline = new ChunkPipeline(mockQdrant as any, mockEmbeddings as any, testCollectionName);
+      const stoppedPipeline = new ChunkPipeline(
+        mockQdrant as any,
+        mockEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+      );
 
       // Should not throw
       await stoppedPipeline.shutdown();
@@ -400,11 +420,17 @@ describe("ChunkPipeline", () => {
         embed: vi.fn(),
         getDimensions: vi.fn(() => 3),
       };
-      const batchPipeline = new ChunkPipeline(realQdrant as any, realEmbeddings as any, testCollectionName, {
-        workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
-        accumulator: { batchSize: 1, flushTimeoutMs: 100, maxQueueSize: 10 },
-        enableHybrid: false,
-      });
+      const batchPipeline = new ChunkPipeline(
+        realQdrant as any,
+        realEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+          accumulator: { batchSize: 1, flushTimeoutMs: 100, maxQueueSize: 10 },
+          enableHybrid: false,
+        },
+      );
       const callback = vi.fn();
       batchPipeline.setOnBatchUpserted(callback);
       batchPipeline.start();
@@ -444,7 +470,12 @@ describe("ChunkPipeline", () => {
 
   describe("Stats edge cases", () => {
     it("should return zero throughput when pipeline has not started", () => {
-      const freshPipeline = new ChunkPipeline(mockQdrant as any, mockEmbeddings as any, testCollectionName);
+      const freshPipeline = new ChunkPipeline(
+        mockQdrant as any,
+        mockEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+      );
 
       const stats = freshPipeline.getStats();
       expect(stats.throughput).toBe(0);

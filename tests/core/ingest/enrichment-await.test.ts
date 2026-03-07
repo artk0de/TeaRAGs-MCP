@@ -115,7 +115,9 @@ describe("Enrichment status detection", () => {
     // Inject slow enrichment into the ingest facade
     ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
     (ingest as any).enrichment = slowEnrichment;
-    const deps = createIngestDependencies(qdrant as any, tempDir);
+    const deps = createIngestDependencies(qdrant as any, tempDir, {
+      buildPayload: (chunk: any, cp: string) => ({ content: chunk.content, codebasePath: cp }),
+    });
     (ingest as any).indexing = new (await import("../../../src/core/ingest/indexing.js")).IndexPipeline(
       qdrant,
       embeddings,
@@ -164,7 +166,9 @@ describe("Enrichment status detection", () => {
     deferredEnrichment.onChunksStored = vi.fn();
     deferredEnrichment.startChunkEnrichment = vi.fn();
 
-    const deps = createIngestDependencies(qdrant as any, tempDir);
+    const deps = createIngestDependencies(qdrant as any, tempDir, {
+      buildPayload: (chunk: any, cp: string) => ({ content: chunk.content, codebasePath: cp }),
+    });
     ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
     (ingest as any).enrichment = deferredEnrichment;
     (ingest as any).indexing = new (await import("../../../src/core/ingest/indexing.js")).IndexPipeline(

@@ -52,6 +52,16 @@ export interface FilterDescriptor {
 
 export type FileSignalTransform = (data: FileSignalOverlay, maxEndLine: number) => FileSignalOverlay;
 
+// --- Payload builder ---
+
+/** Builds the base Qdrant payload from a chunk. Injected into the pipeline. */
+export interface PayloadBuilder {
+  buildPayload: (
+    chunk: { content: string; startLine: number; endLine: number; metadata: Record<string, unknown> },
+    codebasePath: string,
+  ) => Record<string, unknown>;
+}
+
 // --- Enrichment provider ---
 
 export interface EnrichmentProvider {

@@ -12,11 +12,10 @@
  *   [File Thread N] ─┘      (5s timeout)    (1s flush)     (bounded)
  */
 
-import { extname, relative } from "node:path";
-
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import { BM25SparseVectorGenerator } from "../../adapters/embeddings/sparse.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import type { PayloadBuilder } from "../../contracts/types/provider.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { isDebug } from "./infra/runtime.js";
@@ -46,6 +45,7 @@ export class ChunkPipeline {
   private readonly qdrant: QdrantManager;
   private readonly embeddings: EmbeddingProvider;
   private readonly collectionName: string;
+  private readonly payloadBuilder: PayloadBuilder;
   private readonly sparseGenerator: BM25SparseVectorGenerator | null;
 
   private readonly workerPool: WorkerPool;
@@ -65,11 +65,13 @@ export class ChunkPipeline {
     qdrant: QdrantManager,
     embeddings: EmbeddingProvider,
     collectionName: string,
+    payloadBuilder: PayloadBuilder,
     config?: Partial<ChunkPipelineConfig>,
   ) {
     this.qdrant = qdrant;
     this.embeddings = embeddings;
     this.collectionName = collectionName;
+    this.payloadBuilder = payloadBuilder;
 
     this.config = {
       workerPool: config?.workerPool ?? {
@@ -315,49 +317,11 @@ export class ChunkPipeline {
       pipelineLog.addStageTime("embed", embedDuration);
 
       // 3. Build points
-      const points = batch.items.map((item, idx) => {
-        const relativePath = relative(item.codebasePath, item.chunk.metadata.filePath);
-
-        return {
-          id: item.chunkId,
-          vector: embeddings[idx].embedding,
-          payload: {
-            content: item.chunk.content,
-            contentSize: item.chunk.content.length,
-            relativePath,
-            startLine: item.chunk.startLine,
-            endLine: item.chunk.endLine,
-            fileExtension: extname(item.chunk.metadata.filePath),
-            language: item.chunk.metadata.language,
-            codebasePath: item.codebasePath,
-            chunkIndex: item.chunk.metadata.chunkIndex,
-            ...(item.chunk.metadata.name && { name: item.chunk.metadata.name }),
-            ...(item.chunk.metadata.chunkType && {
-              chunkType: item.chunk.metadata.chunkType,
-            }),
-            ...(item.chunk.metadata.parentName && {
-              parentName: item.chunk.metadata.parentName,
-            }),
-            ...(item.chunk.metadata.parentType && {
-              parentType: item.chunk.metadata.parentType,
-            }),
-            ...(item.chunk.metadata.symbolId && {
-              symbolId: item.chunk.metadata.symbolId,
-            }),
-            ...(item.chunk.metadata.isDocumentation && {
-              isDocumentation: item.chunk.metadata.isDocumentation,
-            }),
-            // File-level imports (inherited by all chunks from the file)
-            ...(item.chunk.metadata.imports?.length && {
-              imports: item.chunk.metadata.imports,
-            }),
-            ...(item.chunk.metadata.methodLines && {
-              methodLines: item.chunk.metadata.methodLines,
-              methodDensity: Math.round(item.chunk.content.length / item.chunk.metadata.methodLines),
-            }),
-          },
-        };
-      });
+      const points = batch.items.map((item, idx) => ({
+        id: item.chunkId,
+        vector: embeddings[idx].embedding,
+        payload: this.payloadBuilder.buildPayload(item.chunk, item.codebasePath),
+      }));
 
       // 4. Store to Qdrant
       const qdrantStart = Date.now();
