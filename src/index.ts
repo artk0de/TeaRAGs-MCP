@@ -20,6 +20,16 @@ async function main() {
     console.error(`[tea-rags] Deprecated env vars:\n${lines}`);
   }
 
+  // Graceful shutdown: disconnect embedding provider (daemon refcount--)
+  const cleanup = () => {
+    if ("terminate" in ctx.embeddings && typeof ctx.embeddings.terminate === "function") {
+      void (ctx.embeddings as { terminate: () => Promise<void> }).terminate();
+    }
+  };
+  process.on("SIGTERM", cleanup);
+  process.on("SIGINT", cleanup);
+  process.on("beforeExit", cleanup);
+
   if (config.transportMode === "http") {
     await startHttpServer({ config, ctx, promptsConfig });
   } else {
