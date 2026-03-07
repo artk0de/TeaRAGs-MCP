@@ -1,31 +1,38 @@
 import { extname, relative } from "node:path";
 
-import type { CodeChunk } from "../../types.js";
+import type { PayloadBuilder } from "../../contracts/types/provider.js";
 
-export class StaticPayloadBuilder {
-  static buildPayload(chunk: CodeChunk, codebasePath: string): Record<string, unknown> {
-    const relativePath = relative(codebasePath, chunk.metadata.filePath);
-    return {
+export class StaticPayloadBuilder implements PayloadBuilder {
+  buildPayload(
+    chunk: { content: string; startLine: number; endLine: number; metadata: Record<string, unknown> },
+    codebasePath: string,
+  ): Record<string, unknown> {
+    const m = chunk.metadata;
+    const filePath = m.filePath as string;
+    const methodLines = m.methodLines as number | undefined;
+    const payload: Record<string, unknown> = {
       content: chunk.content,
       contentSize: chunk.content.length,
-      relativePath,
+      relativePath: relative(codebasePath, filePath),
       startLine: chunk.startLine,
       endLine: chunk.endLine,
-      fileExtension: extname(chunk.metadata.filePath),
-      language: chunk.metadata.language,
+      fileExtension: extname(filePath),
+      language: m.language,
       codebasePath,
-      chunkIndex: chunk.metadata.chunkIndex,
-      ...(chunk.metadata.name && { name: chunk.metadata.name }),
-      ...(chunk.metadata.chunkType && { chunkType: chunk.metadata.chunkType }),
-      ...(chunk.metadata.parentName && { parentName: chunk.metadata.parentName }),
-      ...(chunk.metadata.parentType && { parentType: chunk.metadata.parentType }),
-      ...(chunk.metadata.symbolId && { symbolId: chunk.metadata.symbolId }),
-      ...(chunk.metadata.isDocumentation && { isDocumentation: chunk.metadata.isDocumentation }),
-      ...(chunk.metadata.imports?.length && { imports: chunk.metadata.imports }),
-      ...(chunk.metadata.methodLines && {
-        methodLines: chunk.metadata.methodLines,
-        methodDensity: Math.round(chunk.content.length / chunk.metadata.methodLines),
-      }),
+      chunkIndex: m.chunkIndex,
     };
+    if (m.name) payload.name = m.name;
+    if (m.chunkType) payload.chunkType = m.chunkType;
+    if (m.parentName) payload.parentName = m.parentName;
+    if (m.parentType) payload.parentType = m.parentType;
+    if (m.symbolId) payload.symbolId = m.symbolId;
+    if (m.isDocumentation) payload.isDocumentation = m.isDocumentation;
+    const imports = m.imports as string[] | undefined;
+    if (imports?.length) payload.imports = imports;
+    if (methodLines) {
+      payload.methodLines = methodLines;
+      payload.methodDensity = Math.round(chunk.content.length / methodLines);
+    }
+    return payload;
   }
 }

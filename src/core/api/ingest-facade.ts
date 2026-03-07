@@ -26,6 +26,7 @@ import { ReindexPipeline } from "../ingest/reindexing.js";
 import type { DeletionConfig } from "../ingest/sync/deletion-strategy.js";
 import type { Reranker } from "../search/reranker.js";
 import { GitEnrichmentProvider } from "../trajectory/git/provider.js";
+import { StaticPayloadBuilder } from "../trajectory/static/provider.js";
 import type {
   ChangeStats,
   IndexOptions,
@@ -56,7 +57,7 @@ export class IngestFacade {
     syncTuning?: SynchronizerTuning,
   ) {
     const snapshotDir = snapshotsDir();
-    const deps = createIngestDependencies(qdrant, snapshotDir, syncTuning);
+    const deps = createIngestDependencies(qdrant, snapshotDir, new StaticPayloadBuilder(), syncTuning);
 
     const squashOpts = trajectoryConfig.squashAwareSessions
       ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }

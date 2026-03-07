@@ -123,7 +123,7 @@ export abstract class BaseIndexingPipeline {
   }
 
   private createChunkPipeline(collectionName: string): ChunkPipeline {
-    return new ChunkPipeline(this.qdrant, this.embeddings, collectionName, {
+    return new ChunkPipeline(this.qdrant, this.embeddings, collectionName, this.deps.payloadBuilder, {
       workerPool: this.tuning.pipelineConfig.workerPool,
       accumulator: this.tuning.pipelineConfig.upsertAccumulator,
       enableHybrid: this.config.enableHybridSearch,
