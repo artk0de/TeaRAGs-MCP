@@ -104,6 +104,7 @@ export async function processFiles(
               parentType: chunk.metadata.parentType,
               symbolId: chunk.metadata.symbolId,
               isDocumentation: chunk.metadata.isDocumentation,
+              methodLines: chunk.metadata.methodLines,
               ...(imports.length > 0 && { imports }),
             } as CodeChunk["metadata"],
           };
