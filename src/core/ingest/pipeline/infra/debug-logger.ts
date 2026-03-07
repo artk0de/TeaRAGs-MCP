@@ -208,7 +208,7 @@ class DebugLogger {
       const configLines = dumpEntries.map(([k, v]) => `  ${k.padEnd(maxKeyLen)} = ${v}`).join("\n");
 
       // Derive concurrency stats
-      const concurrency = (dump["embedding.tune.concurrency"] as number) ?? 1;
+      const concurrency = (dump["ingest.tune.pipelineConcurrency"] as number) ?? 1;
 
       this.writeRaw(`
 ================================================================================
@@ -218,7 +218,7 @@ CONFIG:
 ${configLines}
   GIT_ENRICHMENT${"".padEnd(Math.max(0, maxKeyLen - "GIT_ENRICHMENT".length))} = background (CLI primary, isomorphic-git fallback)
 DERIVED:
-  maxQueueSize                = ${concurrency * 2} (embedding.tune.concurrency × 2)
+  maxQueueSize                = ${concurrency * 2} (ingest.tune.pipelineConcurrency × 2)
   backpressure ON threshold   = ${concurrency * 2} batches
   backpressure OFF threshold  = ${Math.floor(concurrency * 2 * 0.5)} batches
 ================================================================================
@@ -425,12 +425,12 @@ DERIVED:
       const pipelineWallMs = (stats as { uptimeMs?: number }).uptimeMs || stageTotalMs;
 
       // Concurrency per stage (for estimating incremental time)
-      let embeddingConcurrency = 1;
+      let pipelineConcurrency = 1;
       let chunkerPoolSize = 4;
       let gitChunkConcurrency = 10;
       try {
         const zodConfig = getZodConfig();
-        embeddingConcurrency = zodConfig.embedding.tune.concurrency;
+        pipelineConcurrency = zodConfig.ingest.tune.pipelineConcurrency;
         chunkerPoolSize = zodConfig.ingest.tune.chunkerPoolSize;
         gitChunkConcurrency = zodConfig.trajectoryGit.chunkConcurrency;
       } catch {
@@ -440,8 +440,8 @@ DERIVED:
         scan: 1, // Serial file scanning
         parse: chunkerPoolSize,
         git: gitChunkConcurrency,
-        embed: embeddingConcurrency,
-        qdrant: embeddingConcurrency,
+        embed: pipelineConcurrency,
+        qdrant: pipelineConcurrency,
         enrichment_prefetch: 1, // Parallel per-provider prefetch
         enrichGit: 1, // Background, single-threaded
         enrichApply: 1, // Streaming setPayload calls

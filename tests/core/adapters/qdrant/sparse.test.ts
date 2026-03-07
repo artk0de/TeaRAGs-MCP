@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BM25SparseVectorGenerator } from "../../../../src/core/adapters/embeddings/sparse.js";
+import { BM25SparseVectorGenerator } from "../../../../src/core/adapters/qdrant/sparse.js";
 
 describe("BM25SparseVectorGenerator", () => {
   it("should generate sparse vectors for simple text", () => {

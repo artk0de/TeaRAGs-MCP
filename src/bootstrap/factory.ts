@@ -54,14 +54,18 @@ export function createAppContext(config: AppConfig): AppContext {
     batchSize: zodConfig.qdrantTune.deleteBatchSize,
     concurrency: zodConfig.qdrantTune.deleteConcurrency,
   };
-  const pipelineConfig = buildPipelineConfig(zodConfig.embedding.tune, zodConfig.qdrantTune);
+  const pipelineConfig = buildPipelineConfig(
+    zodConfig.ingest.tune.pipelineConcurrency,
+    zodConfig.embedding.tune,
+    zodConfig.qdrantTune,
+  );
   const pipelineTuning = {
     pipelineConfig,
     chunkerPoolSize: zodConfig.ingest.tune.chunkerPoolSize,
     fileConcurrency: zodConfig.ingest.tune.fileConcurrency,
   };
   const syncTuning = {
-    concurrency: zodConfig.embedding.tune.concurrency,
+    concurrency: zodConfig.ingest.tune.pipelineConcurrency,
     ioConcurrency: zodConfig.ingest.tune.ioConcurrency,
   };
   const ingest = new IngestFacade(

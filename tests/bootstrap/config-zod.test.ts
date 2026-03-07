@@ -33,8 +33,6 @@ describe("parseAppConfigZod", () => {
       "OPENAI_API_KEY",
       "COHERE_API_KEY",
       "VOYAGE_API_KEY",
-      "EMBEDDING_TUNE_CONCURRENCY",
-      "EMBEDDING_CONCURRENCY",
       "EMBEDDING_TUNE_BATCH_SIZE",
       "EMBEDDING_BATCH_SIZE",
       "CODE_BATCH_SIZE",
@@ -59,6 +57,9 @@ describe("parseAppConfigZod", () => {
       "CODE_ENABLE_HYBRID",
       "INGEST_DEFAULT_SEARCH_LIMIT",
       "CODE_SEARCH_LIMIT",
+      "INGEST_PIPELINE_CONCURRENCY",
+      "EMBEDDING_TUNE_CONCURRENCY",
+      "EMBEDDING_CONCURRENCY",
       "INGEST_TUNE_CHUNKER_POOL_SIZE",
       "CHUNKER_POOL_SIZE",
       "INGEST_TUNE_FILE_CONCURRENCY",
@@ -136,13 +137,66 @@ describe("parseAppConfigZod", () => {
       expect(embedding.openaiApiKey).toBeUndefined();
       expect(embedding.cohereApiKey).toBeUndefined();
       expect(embedding.voyageApiKey).toBeUndefined();
-      expect(embedding.tune.concurrency).toBe(1);
       expect(embedding.tune.batchSize).toBe(1024);
       expect(embedding.tune.minBatchSize).toBeUndefined();
       expect(embedding.tune.batchTimeoutMs).toBe(2000);
       expect(embedding.tune.maxRequestsPerMinute).toBeUndefined();
       expect(embedding.tune.retryAttempts).toBe(3);
       expect(embedding.tune.retryDelayMs).toBe(1000);
+    });
+  });
+
+  describe("provider-specific batch size defaults", () => {
+    it("ollama gets batchSize=1024 when not explicitly set", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.provider).toBe("ollama");
+      expect(embedding.tune.batchSize).toBe(1024);
+    });
+
+    it("onnx gets batchSize=8 when not explicitly set", async () => {
+      process.env.EMBEDDING_PROVIDER = "onnx";
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.batchSize).toBe(8);
+    });
+
+    it("openai gets batchSize=2048 when not explicitly set", async () => {
+      process.env.EMBEDDING_PROVIDER = "openai";
+      process.env.OPENAI_API_KEY = "sk-test";
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.batchSize).toBe(2048);
+    });
+
+    it("cohere gets batchSize=96 when not explicitly set", async () => {
+      process.env.EMBEDDING_PROVIDER = "cohere";
+      process.env.COHERE_API_KEY = "test-key";
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.batchSize).toBe(96);
+    });
+
+    it("voyage gets batchSize=128 when not explicitly set", async () => {
+      process.env.EMBEDDING_PROVIDER = "voyage";
+      process.env.VOYAGE_API_KEY = "test-key";
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.batchSize).toBe(128);
+    });
+
+    it("explicit EMBEDDING_TUNE_BATCH_SIZE overrides provider default", async () => {
+      process.env.EMBEDDING_PROVIDER = "onnx";
+      process.env.EMBEDDING_TUNE_BATCH_SIZE = "256";
+      const { parseAppConfigZod } = await freshImport();
+      const { embedding } = parseAppConfigZod();
+
+      expect(embedding.tune.batchSize).toBe(256);
     });
   });
 
@@ -171,15 +225,15 @@ describe("parseAppConfigZod", () => {
       });
     });
 
-    it("EMBEDDING_CONCURRENCY (old name) falls back correctly", async () => {
+    it("EMBEDDING_CONCURRENCY (old name) falls back to ingest.tune.pipelineConcurrency", async () => {
       process.env.EMBEDDING_CONCURRENCY = "4";
       const { parseAppConfigZod } = await freshImport();
-      const { embedding, deprecations } = parseAppConfigZod();
+      const { ingest, deprecations } = parseAppConfigZod();
 
-      expect(embedding.tune.concurrency).toBe(4);
+      expect(ingest.tune.pipelineConcurrency).toBe(4);
       expect(deprecations).toContainEqual({
         oldName: "EMBEDDING_CONCURRENCY",
-        newName: "EMBEDDING_TUNE_CONCURRENCY",
+        newName: "INGEST_PIPELINE_CONCURRENCY",
       });
     });
 
@@ -208,14 +262,14 @@ describe("parseAppConfigZod", () => {
       expect(deprecations.filter((d) => d.oldName === "TRANSPORT_MODE")).toHaveLength(0);
     });
 
-    it("EMBEDDING_TUNE_CONCURRENCY overrides EMBEDDING_CONCURRENCY", async () => {
-      process.env.EMBEDDING_TUNE_CONCURRENCY = "8";
-      process.env.EMBEDDING_CONCURRENCY = "2";
+    it("INGEST_PIPELINE_CONCURRENCY overrides EMBEDDING_TUNE_CONCURRENCY", async () => {
+      process.env.INGEST_PIPELINE_CONCURRENCY = "8";
+      process.env.EMBEDDING_TUNE_CONCURRENCY = "2";
       const { parseAppConfigZod } = await freshImport();
-      const { embedding, deprecations } = parseAppConfigZod();
+      const { ingest, deprecations } = parseAppConfigZod();
 
-      expect(embedding.tune.concurrency).toBe(8);
-      expect(deprecations.filter((d) => d.oldName === "EMBEDDING_CONCURRENCY")).toHaveLength(0);
+      expect(ingest.tune.pipelineConcurrency).toBe(8);
+      expect(deprecations.filter((d) => d.oldName === "EMBEDDING_TUNE_CONCURRENCY")).toHaveLength(0);
     });
   });
 
@@ -374,6 +428,7 @@ describe("parseAppConfigZod — ingest", () => {
     expect(ingest.enableAST).toBe(true);
     expect(ingest.enableHybrid).toBe(false);
     expect(ingest.defaultSearchLimit).toBe(5);
+    expect(ingest.tune.pipelineConcurrency).toBe(1);
     expect(ingest.tune.chunkerPoolSize).toBe(4);
     expect(ingest.tune.fileConcurrency).toBe(50);
     expect(ingest.tune.ioConcurrency).toBe(50);
@@ -665,14 +720,16 @@ describe("getConfigDump", () => {
 
     const dump = getConfigDump({
       core: { debug: false, qdrantUrl: "http://localhost:6333" },
-      embedding: { provider: "ollama", tune: { concurrency: 1 } },
+      embedding: { provider: "ollama", tune: { batchSize: 1024 } },
+      ingest: { tune: { pipelineConcurrency: 1 } },
     });
 
     expect(dump).toEqual({
       "core.debug": false,
       "core.qdrantUrl": "http://localhost:6333",
       "embedding.provider": "ollama",
-      "embedding.tune.concurrency": 1,
+      "embedding.tune.batchSize": 1024,
+      "ingest.tune.pipelineConcurrency": 1,
     });
   });
 });

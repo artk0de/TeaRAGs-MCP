@@ -185,8 +185,8 @@ export type BatchHandler<T extends WorkItem> = (batch: Batch<T>) => Promise<void
  * but ensuring chunks are generated FAST enough to fill batches quickly.
  */
 export function buildPipelineConfig(
+  pipelineConcurrency: number,
   embeddingTune: {
-    concurrency: number;
     batchSize: number;
     minBatchSize?: number;
     batchTimeoutMs: number;
@@ -199,7 +199,7 @@ export function buildPipelineConfig(
 ): PipelineConfig {
   return {
     workerPool: {
-      concurrency: embeddingTune.concurrency,
+      concurrency: pipelineConcurrency,
       maxRetries: 3,
       retryBaseDelayMs: 100,
       retryMaxDelayMs: 5000,
@@ -214,7 +214,7 @@ export function buildPipelineConfig(
       batchSize: embeddingTune.batchSize,
       minBatchSize: embeddingTune.minBatchSize,
       flushTimeoutMs: embeddingTune.batchTimeoutMs,
-      maxQueueSize: embeddingTune.concurrency * 2,
+      maxQueueSize: pipelineConcurrency * 2,
     },
     deleteAccumulator: {
       batchSize: qdrantTune.deleteBatchSize,
