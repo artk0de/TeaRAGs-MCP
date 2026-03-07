@@ -1,7 +1,7 @@
 {
-  "pid": 41914,
-  "parent_pid": 41905,
+  "pid": 28504,
+  "parent_pid": 28495,
   "database": "/Users/artk0re/Dev/Tools/tea-rags-mcp/.beads/beads.db",
   "version": "0.49.3",
-  "started_at": "2026-03-05T19:04:00.195968Z"
+  "started_at": "2026-03-03T23:27:32.181231Z"
 }
