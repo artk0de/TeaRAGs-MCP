@@ -1,4 +1,8 @@
 import { createConnection, type Socket } from "node:net";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
 import { LineSplitter } from "./onnx/line-splitter.js";
@@ -21,6 +25,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private readonly cacheDir: string | undefined;
   private readonly device: string;
   private readonly socketPath: string;
+  private readonly pidFile: string | undefined;
 
   private socket: Socket | null = null;
   private splitter: LineSplitter | null = null;
@@ -34,18 +39,25 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     { resolve: (embeddings: number[][]) => void; reject: (err: Error) => void }
   >();
 
+  /** Max time (ms) to wait for daemon socket to appear after spawn. @internal */
+  private readonly spawnTimeoutMs: number;
+
   constructor(
     model = DEFAULT_ONNX_MODEL,
     dimensions = DEFAULT_ONNX_DIMENSIONS,
     cacheDir?: string,
     device = "cpu",
     socketPath = DEFAULT_SOCKET_PATH,
+    pidFile?: string,
+    spawnTimeoutMs = 30_000,
   ) {
     this.model = model;
     this.dimensions = dimensions;
     this.cacheDir = cacheDir;
     this.device = device;
     this.socketPath = socketPath;
+    this.pidFile = pidFile;
+    this.spawnTimeoutMs = spawnTimeoutMs;
   }
 
   // ---------------------------------------------------------------------------
@@ -55,6 +67,11 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private async ensureInitialized(): Promise<void> {
     if (this.connectPromise) return this.connectPromise;
 
+    // Spawn daemon if socket does not exist yet
+    if (!existsSync(this.socketPath)) {
+      await this.spawnDaemon();
+    }
+
     this.connectPromise = this.connectToDaemon();
 
     try {
@@ -63,6 +80,35 @@ export class OnnxEmbeddings implements EmbeddingProvider {
       this.connectPromise = null;
       throw err;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Daemon spawn
+  // ---------------------------------------------------------------------------
+
+  private async spawnDaemon(): Promise<void> {
+    const daemonPath = join(dirname(fileURLToPath(import.meta.url)), "onnx", "daemon.js");
+
+    const child: ChildProcess = spawn(
+      process.execPath,
+      [daemonPath, this.socketPath, this.pidFile ?? ""],
+      { detached: true, stdio: "ignore" },
+    );
+    child.unref();
+
+    // Poll for socket file to appear
+    const maxWaitMs = this.spawnTimeoutMs;
+    const pollMs = 100;
+    const deadline = Date.now() + maxWaitMs;
+
+    while (Date.now() < deadline) {
+      if (existsSync(this.socketPath)) return;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+
+    throw new Error(
+      `Timed out waiting for ONNX daemon to start (socket: ${this.socketPath})`,
+    );
   }
 
   private connectToDaemon(): Promise<void> {
