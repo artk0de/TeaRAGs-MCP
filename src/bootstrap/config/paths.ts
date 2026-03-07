@@ -18,3 +18,11 @@ export function logsDir(): string {
 export function modelsDir(): string {
   return join(appDataDir(), "models");
 }
+
+export function daemonSocketPath(): string {
+  return join(appDataDir(), "onnx.sock");
+}
+
+export function daemonPidFile(): string {
+  return join(appDataDir(), "onnx-daemon.pid");
+}
