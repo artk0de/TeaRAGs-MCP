@@ -2,15 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import type { RerankPreset } from "../../../src/core/contracts/types/reranker.js";
 import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
-import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
-import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
+import { resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
 import { Reranker, type RerankableResult } from "../../../src/core/search/reranker.js";
 import { gitPayloadSignalDescriptors } from "../../../src/core/trajectory/git/payload-signals.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";
+import { staticDerivedSignals } from "../../../src/core/trajectory/static/rerank/derived-signals/index.js";
+import { STATIC_PRESETS } from "../../../src/core/trajectory/static/rerank/presets/index.js";
 
-const testPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
-const allDescriptors = [...gitDerivedSignals, ...structuralSignals];
+const testPresets = resolvePresets([...STATIC_PRESETS, ...GIT_PRESETS], []);
+const allDescriptors = [...gitDerivedSignals, ...staticDerivedSignals];
 const testPayloadSignals: PayloadSignalDescriptor[] = gitPayloadSignalDescriptors;
 
 describe("reranker", () => {

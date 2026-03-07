@@ -1,9 +1,9 @@
 // src/mcp/tools/formatters/search-pipeline.ts
 import { calculateFetchLimit, filterResultsByGlob } from "../../../core/adapters/qdrant/filters/index.js";
 import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/contracts/collection.js";
-import { BASE_PAYLOAD_SIGNALS } from "../../../core/contracts/payload-signals.js";
 import type { RankingOverlay } from "../../../core/contracts/types/reranker.js";
 import type { Reranker, RerankMode } from "../../../core/search/reranker.js";
+import { BASE_PAYLOAD_SIGNALS } from "../../../core/trajectory/static/payload-signals.js";
 
 interface SearchResult {
   id: string | number;

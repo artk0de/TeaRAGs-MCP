@@ -1,36 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import type { RerankPreset } from "../../../../src/core/contracts/types/reranker.js";
-import {
-  getPresetNames,
-  getPresetWeights,
-  RELEVANCE_PRESETS,
-  resolvePresets,
-} from "../../../../src/core/search/rerank/presets/index.js";
+import { getPresetNames, getPresetWeights, resolvePresets } from "../../../../src/core/search/rerank/presets/index.js";
 import { OnboardingPreset } from "../../../../src/core/trajectory/git/rerank/presets/onboarding.js";
 import { RecentPreset } from "../../../../src/core/trajectory/git/rerank/presets/recent.js";
 import { StablePreset } from "../../../../src/core/trajectory/git/rerank/presets/stable.js";
+import { STATIC_PRESETS } from "../../../../src/core/trajectory/static/rerank/presets/index.js";
 
 const EMPTY_MASK = {} as const;
 
-describe("RELEVANCE_PRESETS", () => {
+describe("STATIC_PRESETS", () => {
   it("provides relevance for semantic_search", () => {
-    expect(getPresetNames(RELEVANCE_PRESETS, "semantic_search")).toContain("relevance");
+    expect(getPresetNames(STATIC_PRESETS, "semantic_search")).toContain("relevance");
   });
 
   it("provides relevance for search_code", () => {
-    expect(getPresetNames(RELEVANCE_PRESETS, "search_code")).toContain("relevance");
+    expect(getPresetNames(STATIC_PRESETS, "search_code")).toContain("relevance");
   });
 
   it("uses only similarity weight", () => {
-    const weights = getPresetWeights(RELEVANCE_PRESETS, "relevance", "semantic_search");
+    const weights = getPresetWeights(STATIC_PRESETS, "relevance", "semantic_search");
     expect(weights).toEqual({ similarity: 1.0 });
   });
 
   it("contains RelevancePreset and DecompositionPreset", () => {
-    expect(RELEVANCE_PRESETS).toHaveLength(2);
-    expect(RELEVANCE_PRESETS.map((p) => p.name)).toContain("relevance");
-    expect(RELEVANCE_PRESETS.map((p) => p.name)).toContain("decomposition");
+    expect(STATIC_PRESETS).toHaveLength(2);
+    expect(STATIC_PRESETS.map((p) => p.name)).toContain("relevance");
+    expect(STATIC_PRESETS.map((p) => p.name)).toContain("decomposition");
   });
 });
 
@@ -144,7 +140,7 @@ describe("resolvePresets", () => {
   ];
 
   it("merges generic + trajectory", () => {
-    const resolved = resolvePresets(generic, trajectory, []);
+    const resolved = resolvePresets([...generic, ...trajectory], []);
     expect(getPresetNames(resolved, "semantic_search")).toContain("relevance");
     expect(getPresetNames(resolved, "semantic_search")).toContain("techDebt");
   });
@@ -159,17 +155,17 @@ describe("resolvePresets", () => {
         overlayMask: EMPTY_MASK,
       },
     ];
-    const resolved = resolvePresets(generic, trajectory, composite);
+    const resolved = resolvePresets([...generic, ...trajectory], composite);
     expect(getPresetWeights(resolved, "techDebt", "semantic_search")).toEqual({ similarity: 0.5 });
   });
 
   it("does not mix tools", () => {
-    const resolved = resolvePresets(generic, trajectory, []);
+    const resolved = resolvePresets([...generic, ...trajectory], []);
     expect(getPresetNames(resolved, "search_code")).not.toContain("techDebt");
   });
 
   it("preserves generic when trajectory has different names", () => {
-    const resolved = resolvePresets(generic, trajectory, []);
+    const resolved = resolvePresets([...generic, ...trajectory], []);
     expect(getPresetWeights(resolved, "relevance", "semantic_search")).toEqual({ similarity: 1.0 });
   });
 
@@ -183,7 +179,7 @@ describe("resolvePresets", () => {
         overlayMask: EMPTY_MASK,
       },
     ];
-    const resolved = resolvePresets(multiTool, trajectory, []);
+    const resolved = resolvePresets([...multiTool, ...trajectory], []);
     expect(getPresetNames(resolved, "semantic_search")).toContain("relevance");
     expect(getPresetNames(resolved, "search_code")).toContain("relevance");
   });
@@ -198,7 +194,7 @@ describe("resolvePresets", () => {
         overlayMask: EMPTY_MASK,
       },
     ];
-    const resolved = resolvePresets(multiTool, [], []);
+    const resolved = resolvePresets(multiTool, []);
     expect(resolved).toHaveLength(1);
   });
 });
