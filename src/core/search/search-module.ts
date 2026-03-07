@@ -5,7 +5,7 @@
  */
 
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
-import { BM25SparseVectorGenerator } from "../adapters/embeddings/sparse.js";
+import { BM25SparseVectorGenerator } from "../adapters/qdrant/sparse.js";
 import type { QdrantManager, SearchResult } from "../adapters/qdrant/client.js";
 import { calculateFetchLimit, filterResultsByGlob } from "../adapters/qdrant/filters/index.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";

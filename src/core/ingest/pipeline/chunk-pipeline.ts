@@ -13,7 +13,7 @@
  */
 
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
-import { BM25SparseVectorGenerator } from "../../adapters/embeddings/sparse.js";
+import { BM25SparseVectorGenerator } from "../../adapters/qdrant/sparse.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { PayloadBuilder } from "../../contracts/types/provider.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";

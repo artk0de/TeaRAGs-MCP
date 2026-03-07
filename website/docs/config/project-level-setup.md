@@ -144,7 +144,7 @@ Configure embedding provider and batching.
 | `EMBEDDING_BASE_URL` | string | `http://localhost:11434` | Ollama server URL |
 | `EMBEDDING_MODEL` | string | `unclemusclez/jina-embeddings-v2-base-code:latest` | Embedding model name |
 | `EMBEDDING_BATCH_SIZE` | number | Auto-tuned | Chunks per embedding batch |
-| `EMBEDDING_CONCURRENCY` | number | Auto-tuned | Parallel embedding workers |
+| `INGEST_PIPELINE_CONCURRENCY` | number | Auto-tuned | Pipeline worker concurrency |
 
 **Example:**
 ```json
@@ -152,7 +152,7 @@ Configure embedding provider and batching.
   "env": {
     "EMBEDDING_MODEL": "nomic-embed-text:latest",
     "EMBEDDING_BATCH_SIZE": "512",
-    "EMBEDDING_CONCURRENCY": "1"
+    "INGEST_PIPELINE_CONCURRENCY": "1"
   }
 }
 ```

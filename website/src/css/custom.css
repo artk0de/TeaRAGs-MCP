@@ -359,6 +359,18 @@ pre code {
   color: rgba(255, 255, 255, 0.98);
 }
 
+.theme-admonition.alert.alert--success .admonition-content a,
+.theme-admonition.alert.alert--success a {
+  color: #ffe066 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+}
+
+.theme-admonition.alert.alert--success .admonition-content a:hover,
+.theme-admonition.alert.alert--success a:hover {
+  color: #fff59d !important;
+}
+
 [data-theme="light"] .theme-admonition.alert.alert--success {
   background: linear-gradient(135deg, rgba(255, 200, 40, 0.45), rgba(255, 220, 100, 0.35)) !important;
   border-color: rgba(240, 170, 30, 0.85) !important;
@@ -384,6 +396,19 @@ pre code {
 
 [data-theme="light"] .theme-admonition.alert.alert--success .admonition-content {
   color: rgba(0, 0, 0, 0.88);
+}
+
+[data-theme="light"] .theme-admonition.alert.alert--success .admonition-content a,
+[data-theme="light"] .theme-admonition.alert.alert--success a {
+  color: #8b6914 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+  font-weight: 600;
+}
+
+[data-theme="light"] .theme-admonition.alert.alert--success .admonition-content a:hover,
+[data-theme="light"] .theme-admonition.alert.alert--success a:hover {
+  color: #6b4f0e !important;
 }
 
 /* Warning — saturated dark orange-gold with vertical gradient */
@@ -415,6 +440,18 @@ pre code {
   color: rgba(255, 255, 255, 0.95);
 }
 
+.theme-admonition.alert.alert--warning .admonition-content a,
+.theme-admonition.alert.alert--warning a {
+  color: #ffb74d !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+}
+
+.theme-admonition.alert.alert--warning .admonition-content a:hover,
+.theme-admonition.alert.alert--warning a:hover {
+  color: #ffcc80 !important;
+}
+
 [data-theme="light"] .theme-admonition.alert.alert--warning {
   background: linear-gradient(180deg, rgba(220, 90, 10, 0.38), rgba(240, 150, 80, 0.28)) !important;
   border-color: rgba(200, 75, 10, 0.8) !important;
@@ -443,6 +480,19 @@ pre code {
 
 [data-theme="light"] .theme-admonition.alert.alert--warning .admonition-content {
   color: rgba(0, 0, 0, 0.88);
+}
+
+[data-theme="light"] .theme-admonition.alert.alert--warning .admonition-content a,
+[data-theme="light"] .theme-admonition.alert.alert--warning a {
+  color: #b34700 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+  font-weight: 600;
+}
+
+[data-theme="light"] .theme-admonition.alert.alert--warning .admonition-content a:hover,
+[data-theme="light"] .theme-admonition.alert.alert--warning a:hover {
+  color: #8b3800 !important;
 }
 
 /* Info — dark golden outline only, no background */

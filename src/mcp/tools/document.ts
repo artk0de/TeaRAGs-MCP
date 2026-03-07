@@ -5,7 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
-import { BM25SparseVectorGenerator } from "../../core/adapters/embeddings/sparse.js";
+import { BM25SparseVectorGenerator } from "../../core/adapters/qdrant/sparse.js";
 import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
 import * as schemas from "./schemas.js";
 

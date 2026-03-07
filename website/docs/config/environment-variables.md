@@ -27,7 +27,7 @@ TeaRAGs is configured via environment variables passed to the MCP server. All va
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `EMBEDDING_PROVIDER` | Provider: `ollama`, `openai`, `cohere`, `voyage` | `ollama` |
+| `EMBEDDING_PROVIDER` | Provider: `onnx`, `ollama`, `openai`, `cohere`, `voyage` | `ollama` |
 | `EMBEDDING_MODEL` | Model name | `jina-embeddings-v2-base-code` |
 | `EMBEDDING_BASE_URL` | Custom API URL | Provider-specific |
 | `EMBEDDING_DIMENSIONS` | Vector dimensions (auto-detected from model) | Auto |
@@ -88,7 +88,7 @@ These variables control batch sizes, concurrency, timeouts, and pool sizes. Defa
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `EMBEDDING_TUNE_CONCURRENCY` | Parallel embedding workers | `1` |
+| `INGEST_PIPELINE_CONCURRENCY` | Pipeline worker concurrency | `1` |
 | `EMBEDDING_TUNE_BATCH_SIZE` | Chunks per embedding batch | `1024` |
 | `EMBEDDING_TUNE_MIN_BATCH_SIZE` | Min chunks before timeout flush | `batchSize × 0.5` |
 | `EMBEDDING_TUNE_BATCH_TIMEOUT_MS` | Flush partial batch after timeout (ms) | `2000` |

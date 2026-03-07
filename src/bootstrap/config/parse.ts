@@ -33,9 +33,10 @@ export function parseAppConfigZod(): {
     promptsConfigFile: env("SERVER_PROMPTS_FILE", "PROMPTS_CONFIG_FILE"),
   };
 
+  const userSetBatchSize = env("EMBEDDING_TUNE_BATCH_SIZE", "EMBEDDING_BATCH_SIZE", "CODE_BATCH_SIZE");
+
   const embeddingTuneInput = {
-    concurrency: env("EMBEDDING_TUNE_CONCURRENCY", "EMBEDDING_CONCURRENCY"),
-    batchSize: env("EMBEDDING_TUNE_BATCH_SIZE", "EMBEDDING_BATCH_SIZE", "CODE_BATCH_SIZE"),
+    batchSize: userSetBatchSize,
     minBatchSize: env("EMBEDDING_TUNE_MIN_BATCH_SIZE", "MIN_BATCH_SIZE"),
     batchTimeoutMs: env("EMBEDDING_TUNE_BATCH_TIMEOUT_MS", "BATCH_FORMATION_TIMEOUT_MS"),
     maxRequestsPerMinute: env("EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE", "EMBEDDING_MAX_REQUESTS_PER_MINUTE"),
@@ -58,6 +59,7 @@ export function parseAppConfigZod(): {
   };
 
   const ingestTuneInput = {
+    pipelineConcurrency: env("INGEST_PIPELINE_CONCURRENCY", "EMBEDDING_TUNE_CONCURRENCY", "EMBEDDING_CONCURRENCY"),
     chunkerPoolSize: env("INGEST_TUNE_CHUNKER_POOL_SIZE", "CHUNKER_POOL_SIZE"),
     fileConcurrency: env("INGEST_TUNE_FILE_CONCURRENCY", "FILE_PROCESSING_CONCURRENCY"),
     ioConcurrency: env("INGEST_TUNE_IO_CONCURRENCY", "MAX_IO_CONCURRENCY"),
@@ -140,6 +142,18 @@ export function parseAppConfigZod(): {
     if (keyField && !embedding[keyField]) {
       throw new Error(`${envMap[embedding.provider]} is required for ${embedding.provider} provider.`);
     }
+  }
+
+  // Apply provider-specific batch size default if not explicitly set
+  if (!userSetBatchSize) {
+    const providerBatchDefaults: Record<string, number> = {
+      onnx: 8,
+      ollama: 1024,
+      openai: 2048,
+      cohere: 96,
+      voyage: 128,
+    };
+    embedding.tune.batchSize = providerBatchDefaults[embedding.provider] ?? 1024;
   }
 
   return {

@@ -16,6 +16,7 @@ import Bottleneck from "bottleneck";
 
 import { isDebug } from "../../ingest/pipeline/infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface OllamaError {
   status?: number;
@@ -57,16 +58,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     // Enable native batch by default unless legacyApi is true
     this.useNativeBatch = !legacyApi;
 
-    // Default dimensions for different models
-    const defaultDimensions: Record<string, number> = {
-      "nomic-embed-text": 768,
-      "mxbai-embed-large": 1024,
-      "all-minilm": 384,
-      "jina-embeddings-v2-base-code": 768,
-      "unclemusclez/jina-embeddings-v2-base-code:latest": 768,
-    };
-
-    this.dimensions = dimensions || defaultDimensions[model] || 768;
+    this.dimensions = dimensions || getModelDimensions(model) || 768;
 
     // Rate limiting configuration (more lenient for local models)
     const maxRequestsPerMinute = rateLimitConfig?.maxRequestsPerMinute || 1000;
@@ -248,7 +240,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * Performance: ~50-100x less network overhead
    *
    * Batch size configurable via EMBEDDING_BATCH_SIZE env var:
-   * - 0 = use single requests with EMBEDDING_CONCURRENCY (fallback mode)
+   * - 0 = use single requests with INGEST_PIPELINE_CONCURRENCY (fallback mode)
    * - 32 = conservative (recommended for limited VRAM)
    * - 64 = balanced (default, good for 8GB+ VRAM)
    * - 128-512 = aggressive (for high-end GPUs)

@@ -277,7 +277,7 @@ Git enrichment runs concurrently with embedding and does not increase indexing t
 | Variable | Default | When to change |
 |----------|---------|----------------|
 | `EMBEDDING_BATCH_SIZE` | `1024` | Tune via `npm run tune` for your hardware |
-| `EMBEDDING_CONCURRENCY` | `1` | Increase for remote GPU (2–4 typical) |
+| `INGEST_PIPELINE_CONCURRENCY` | `1` | Increase for remote GPU (2–4 typical) |
 | `QDRANT_UPSERT_BATCH_SIZE` | `100` | Tune via `npm run tune` |
 
 **Auto-tune for your setup:**
@@ -321,7 +321,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
   -e QDRANT_URL=http://gpu-server:6333 \
   -e EMBEDDING_BASE_URL=http://gpu-server:11434 \
   -e EMBEDDING_BATCH_SIZE=256 \
-  -e EMBEDDING_CONCURRENCY=4 \
+  -e INGEST_PIPELINE_CONCURRENCY=4 \
   -e QDRANT_UPSERT_BATCH_SIZE=384
 ```
 
@@ -344,7 +344,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js
 claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
   -e QDRANT_URL=http://192.168.1.100:6333 \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
-  -e EMBEDDING_CONCURRENCY=4
+  -e INGEST_PIPELINE_CONCURRENCY=4
 ```
 
 </details>

@@ -2,6 +2,7 @@ import Bottleneck from "bottleneck";
 import OpenAI from "openai";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface OpenAIError {
   status?: number;
@@ -30,14 +31,7 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
     this.client = new OpenAI({ apiKey });
     this.model = model;
 
-    // Default dimensions for different models
-    const defaultDimensions: Record<string, number> = {
-      "text-embedding-3-small": 1536,
-      "text-embedding-3-large": 3072,
-      "text-embedding-ada-002": 1536,
-    };
-
-    this.dimensions = dimensions || defaultDimensions[model] || 1536;
+    this.dimensions = dimensions || getModelDimensions(model) || 1536;
 
     // Rate limiting configuration
     const maxRequestsPerMinute = rateLimitConfig?.maxRequestsPerMinute || 3500;

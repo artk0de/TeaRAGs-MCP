@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // Env vars we need to clean between tests
 const VARS_TO_CLEAN = [
   // New names
+  "INGEST_PIPELINE_CONCURRENCY",
   "EMBEDDING_TUNE_CONCURRENCY",
   "EMBEDDING_TUNE_BATCH_SIZE",
   "EMBEDDING_TUNE_MIN_BATCH_SIZE",
@@ -72,24 +73,36 @@ describe("EMBEDDING_TUNE_* env vars — pipeline types (DEFAULT_CONFIG)", () => 
    * Instead, we test the env-reading expressions directly.
    */
 
-  // --- EMBEDDING_TUNE_CONCURRENCY (default: "1") ---
+  // --- INGEST_PIPELINE_CONCURRENCY (default: "1") ---
 
-  describe("EMBEDDING_TUNE_CONCURRENCY", () => {
-    const read = () => parseInt(process.env.EMBEDDING_TUNE_CONCURRENCY || process.env.EMBEDDING_CONCURRENCY || "1", 10);
+  describe("INGEST_PIPELINE_CONCURRENCY", () => {
+    const read = () =>
+      parseInt(
+        process.env.INGEST_PIPELINE_CONCURRENCY ||
+          process.env.EMBEDDING_TUNE_CONCURRENCY ||
+          process.env.EMBEDDING_CONCURRENCY ||
+          "1",
+        10,
+      );
 
     it("uses new name", () => {
-      process.env.EMBEDDING_TUNE_CONCURRENCY = "4";
+      process.env.INGEST_PIPELINE_CONCURRENCY = "4";
       expect(read()).toBe(4);
     });
 
-    it("falls back to old name", () => {
+    it("falls back to EMBEDDING_TUNE_CONCURRENCY", () => {
+      process.env.EMBEDDING_TUNE_CONCURRENCY = "3";
+      expect(read()).toBe(3);
+    });
+
+    it("falls back to EMBEDDING_CONCURRENCY", () => {
       process.env.EMBEDDING_CONCURRENCY = "3";
       expect(read()).toBe(3);
     });
 
     it("new name takes priority", () => {
-      process.env.EMBEDDING_TUNE_CONCURRENCY = "5";
-      process.env.EMBEDDING_CONCURRENCY = "2";
+      process.env.INGEST_PIPELINE_CONCURRENCY = "5";
+      process.env.EMBEDDING_TUNE_CONCURRENCY = "2";
       expect(read()).toBe(5);
     });
 

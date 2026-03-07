@@ -1,6 +1,7 @@
 import Bottleneck from "bottleneck";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface VoyageError {
   status?: number;
@@ -38,15 +39,7 @@ export class VoyageEmbeddings implements EmbeddingProvider {
     this.baseUrl = baseUrl;
     this.inputType = inputType;
 
-    // Default dimensions for different models
-    const defaultDimensions: Record<string, number> = {
-      "voyage-2": 1024,
-      "voyage-large-2": 1536,
-      "voyage-code-2": 1536,
-      "voyage-lite-02-instruct": 1024,
-    };
-
-    this.dimensions = dimensions || defaultDimensions[model] || 1024;
+    this.dimensions = dimensions || getModelDimensions(model) || 1024;
 
     // Rate limiting configuration
     const maxRequestsPerMinute = rateLimitConfig?.maxRequestsPerMinute || 300;

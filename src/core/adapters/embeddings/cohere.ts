@@ -2,6 +2,7 @@ import Bottleneck from "bottleneck";
 import { CohereClient } from "cohere-ai";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface CohereError {
   status?: number;
@@ -29,15 +30,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
     this.model = model;
     this.inputType = inputType;
 
-    // Default dimensions for different models
-    const defaultDimensions: Record<string, number> = {
-      "embed-english-v3.0": 1024,
-      "embed-multilingual-v3.0": 1024,
-      "embed-english-light-v3.0": 384,
-      "embed-multilingual-light-v3.0": 384,
-    };
-
-    this.dimensions = dimensions || defaultDimensions[model] || 1024;
+    this.dimensions = dimensions || getModelDimensions(model) || 1024;
 
     // Rate limiting configuration
     const maxRequestsPerMinute = rateLimitConfig?.maxRequestsPerMinute || 100;

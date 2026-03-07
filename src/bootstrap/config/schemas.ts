@@ -25,7 +25,6 @@ export const coreSchema = z.object({
 });
 
 export const embeddingTuneSchema = z.object({
-  concurrency: intWithDefault(1),
   batchSize: intWithDefault(1024),
   minBatchSize: optionalInt,
   batchTimeoutMs: intWithDefault(2000),
@@ -49,6 +48,7 @@ export const embeddingSchema = z.object({
 });
 
 export const ingestTuneSchema = z.object({
+  pipelineConcurrency: intWithDefault(1),
   chunkerPoolSize: intWithDefault(4),
   fileConcurrency: intWithDefault(50),
   ioConcurrency: intWithDefault(50),

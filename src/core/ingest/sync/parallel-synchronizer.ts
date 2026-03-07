@@ -5,7 +5,7 @@
  * - Parallel file hashing across shards
  * - mtime+size fast path for unchanged files
  * - Two-level Merkle tree for quick "any changes?" check
- * - Configurable concurrency via EMBEDDING_CONCURRENCY env
+ * - Configurable concurrency via INGEST_PIPELINE_CONCURRENCY env
  * - OPTIMIZED: Bounded parallelism to prevent I/O saturation
  * - OPTIMIZED: Hash reuse between detectChanges and updateSnapshot
  */

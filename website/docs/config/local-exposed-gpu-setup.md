@@ -490,7 +490,7 @@ On your development machine, point TeaRAGs to the GPU server:
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
-  -e EMBEDDING_CONCURRENCY=4
+  -e INGEST_PIPELINE_CONCURRENCY=4
 ```
 
 **If Qdrant also runs on GPU server:**
@@ -498,7 +498,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
 claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
   -e QDRANT_URL=http://192.168.1.100:6333 \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
-  -e EMBEDDING_CONCURRENCY=4
+  -e INGEST_PIPELINE_CONCURRENCY=4
 ```
 
 ### Run Local Qdrant (Recommended)
@@ -531,7 +531,7 @@ EMBEDDING_BASE_URL=http://192.168.1.100:11434 npm run tune
 **Expected optimal settings:**
 ```bash
 EMBEDDING_BATCH_SIZE=256
-EMBEDDING_CONCURRENCY=4-6
+INGEST_PIPELINE_CONCURRENCY=4-6
 QDRANT_UPSERT_BATCH_SIZE=512
 QDRANT_BATCH_ORDERING=strong
 ```
@@ -656,7 +656,7 @@ Multiple developers can share the same GPU server:
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
-  -e EMBEDDING_CONCURRENCY=4
+  -e INGEST_PIPELINE_CONCURRENCY=4
 ```
 
 :::tip Shared GPU Performance

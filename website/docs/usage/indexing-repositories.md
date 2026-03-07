@@ -291,10 +291,10 @@ when you plan to use rerank presets like `techDebt`, `hotspots`, `ownership`, or
    ```
 3. **Exclude large or binary files** that produce low-value chunks (lock files,
    minified bundles, vendored code)
-4. **Increase embedding concurrency** for cloud providers with spare rate-limit
+4. **Increase pipeline concurrency** for cloud providers with spare rate-limit
    headroom:
    ```bash
-   export EMBEDDING_CONCURRENCY=4
+   export INGEST_PIPELINE_CONCURRENCY=4
    ```
 
 ### Memory Issues
