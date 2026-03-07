@@ -331,6 +331,127 @@ describe("EnrichmentCoordinator — updateEnrichmentMarker", () => {
   });
 });
 
+describe("EnrichmentCoordinator — backfill missed files", () => {
+  let mockQdrant: any;
+  let mockProvider: any;
+
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+    };
+  });
+
+  it("backfills missed files with batch operations during awaitCompletion", async () => {
+    // Provider returns metadata only for file "src/a.ts", not "src/missing.ts"
+    mockProvider = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi
+        .fn()
+        .mockResolvedValueOnce(new Map([["src/a.ts", { x: 1 }]])) // initial prefetch — missing.ts not here
+        .mockResolvedValueOnce(new Map([["src/missing.ts", { backfilled: true }]])), // backfill call
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Store chunks for both files — src/missing.ts will be "missed"
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/missing.ts" }, endLine: 20 } } as any,
+    ]);
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    const metrics = await coordinator.awaitCompletion("test-col");
+
+    // buildFileSignals called twice: prefetch + backfill
+    expect(mockProvider.buildFileSignals).toHaveBeenCalledTimes(2);
+    expect(mockProvider.buildFileSignals).toHaveBeenLastCalledWith("/repo", { paths: ["src/missing.ts"] });
+
+    // Backfilled file should be written via batchSetPayload
+    // At least 2 calls: one for initial apply, one for backfill
+    expect(mockQdrant.batchSetPayload).toHaveBeenCalled();
+
+    // Metrics should reflect backfill: matchedFiles includes backfilled
+    expect(metrics.matchedFiles).toBeGreaterThanOrEqual(1);
+  });
+
+  it("handles batchSetPayload error during backfill gracefully", async () => {
+    mockProvider = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi
+        .fn()
+        .mockResolvedValueOnce(new Map()) // initial prefetch — all files missed
+        .mockResolvedValueOnce(new Map([["src/missed.ts", { recovered: true }]])), // backfill
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/missed.ts" }, endLine: 15 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Make batchSetPayload fail on backfill batch
+    // First call was for initial apply (empty, so may not be called). Set all future calls to fail.
+    mockQdrant.batchSetPayload.mockRejectedValue(new Error("backfill batch error"));
+
+    // Should not throw — error is caught internally
+    const metrics = await coordinator.awaitCompletion("test-col");
+    expect(metrics).toHaveProperty("totalDurationMs");
+    expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("backfills with batching when operations exceed BATCH_SIZE", async () => {
+    // Create 150 missed chunks across one file to trigger batch splitting in backfill
+    const missedChunks: any[] = [];
+    for (let i = 0; i < 150; i++) {
+      missedChunks.push({
+        chunkId: `c-${i}`,
+        chunk: { metadata: { filePath: "/repo/src/big.ts" }, endLine: i + 1 },
+      });
+    }
+
+    mockProvider = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi
+        .fn()
+        .mockResolvedValueOnce(new Map()) // prefetch: no files → all missed
+        .mockResolvedValueOnce(new Map([["src/big.ts", { recovered: true }]])), // backfill
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", missedChunks);
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    // Backfill should produce 150 operations → 2 batches (100 + 50)
+    // Filter batchSetPayload calls that have >1 items (backfill batches)
+    const backfillCalls = mockQdrant.batchSetPayload.mock.calls.filter(
+      (call: any[]) => call[1].length > 0,
+    );
+    expect(backfillCalls.length).toBeGreaterThanOrEqual(2);
+
+    // Verify total operations across backfill calls sum to 150
+    const totalOps = backfillCalls.reduce((sum: number, call: any[]) => sum + call[1].length, 0);
+    expect(totalOps).toBe(150);
+  });
+});
+
 describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
   it("returns aggregated metrics across multiple providers", async () => {
     const mockQdrant: any = {

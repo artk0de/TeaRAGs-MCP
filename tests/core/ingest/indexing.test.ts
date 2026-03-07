@@ -288,6 +288,68 @@ function third() {
     });
   });
 
+  describe("Snapshot save failure", () => {
+    it("should not fail indexing when snapshot save throws", async () => {
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export function snapshotTest(): string {\n  console.log('Testing snapshot failure');\n  return 'ok';\n}",
+      );
+
+      // First indexing succeeds and creates the collection
+      await ingest.indexCodebase(codebaseDir);
+
+      // Now force reindex with a broken synchronizer
+      // We mock the ParallelFileSynchronizer's updateSnapshot to throw
+      const { ParallelFileSynchronizer } = await import(
+        "../../../src/core/ingest/sync/parallel-synchronizer.js"
+      );
+      const origUpdateSnapshot = ParallelFileSynchronizer.prototype.updateSnapshot;
+      ParallelFileSynchronizer.prototype.updateSnapshot = async function () {
+        throw new Error("Disk full: cannot save snapshot");
+      };
+
+      try {
+        const stats = await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+        // Indexing should still complete successfully
+        expect(stats.status).toBe("completed");
+        // But the snapshot error should be recorded
+        expect(stats.errors?.some((e) => e.includes("Snapshot save failed"))).toBe(true);
+        expect(stats.errors?.some((e) => e.includes("Disk full"))).toBe(true);
+      } finally {
+        ParallelFileSynchronizer.prototype.updateSnapshot = origUpdateSnapshot;
+      }
+    });
+  });
+
+  describe("Overall indexing failure", () => {
+    it("should return failed status when indexing encounters a fatal error", async () => {
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export function fatalTest(): number {\n  console.log('Testing fatal error');\n  return 42;\n}",
+      );
+
+      // Make createCollection throw to trigger the outer catch block
+      const origCreateCollection = qdrant.createCollection.bind(qdrant);
+      vi.spyOn(qdrant, "createCollection").mockImplementation(async () => {
+        throw new Error("Qdrant connection refused");
+      });
+
+      try {
+        const stats = await ingest.indexCodebase(codebaseDir);
+
+        expect(stats.status).toBe("failed");
+        expect(stats.errors?.some((e) => e.includes("Indexing failed"))).toBe(true);
+        expect(stats.errors?.some((e) => e.includes("Qdrant connection refused"))).toBe(true);
+        expect(stats.durationMs).toBeGreaterThanOrEqual(0);
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+  });
+
   describe("Error handling edge cases", () => {
     it("should handle non-Error exceptions", async () => {
       await createTestFile(codebaseDir, "test.ts", "const x = 1;");

@@ -708,6 +708,73 @@ describe("OllamaEmbeddings", () => {
       );
     });
 
+    it("should throw when embedBatch response count mismatches input count", async () => {
+      // Return 2 embeddings for 3 input texts
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: [Array(768).fill(0.1), Array(768).fill(0.2)],
+        }),
+      });
+
+      await expect(batchEmbeddings.embedBatch(["text1", "text2", "text3"])).rejects.toThrow(
+        "Ollama returned 2 embeddings for 3 texts",
+      );
+    });
+
+    it("should throw when embedBatch response has no embeddings field", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+        }),
+      });
+
+      await expect(batchEmbeddings.embedBatch(["text1"])).rejects.toThrow(
+        "Ollama returned 0 embeddings for 1 texts",
+      );
+    });
+
+    it("should detect batch support via checkBatchSupport", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: "nomic-embed-text",
+          embeddings: [Array(768).fill(0.5)],
+        }),
+      });
+
+      const supported = await batchEmbeddings.checkBatchSupport();
+      expect(supported).toBe(true);
+    });
+
+    it("should disable native batch when checkBatchSupport fails", async () => {
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      mockFetch.mockRejectedValue(new Error("404 Not Found"));
+
+      const supported = await batchEmbeddings.checkBatchSupport();
+      expect(supported).toBe(false);
+
+      // After checkBatchSupport fails, useNativeBatch should be false
+      // Verify by calling embed — it should now use legacy /api/embeddings
+      const mockEmbedding = Array(768).fill(0.5);
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ embedding: mockEmbedding }),
+      });
+
+      await batchEmbeddings.embed("test");
+      // Should call legacy endpoint
+      expect(mockFetch).toHaveBeenLastCalledWith(
+        "http://localhost:11434/api/embeddings",
+        expect.any(Object),
+      );
+
+      consoleSpy.mockRestore();
+    });
+
     it("should use legacy fallback with individual requests when native batch not available", async () => {
       // Create instance without native batch support
       const legacyEmbeddings = new OllamaEmbeddings("nomic-embed-text");

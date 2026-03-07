@@ -51,15 +51,17 @@ export default defineConfig({
         "src/core/ingest/pipeline/enrichment/trajectory/git/types.ts",
         "src/core/ingest/pipeline/types.ts",
         "src/core/ingest/pipeline/chunker/hooks/types.ts",
+        // Barrel re-exports (no logic, just re-export)
+        "src/core/ingest/pipeline/chunker/hooks/*/index.ts",
         // Test utilities (not production code)
         "tests/**/test-helpers.ts",
       ],
       thresholds: {
         // Global thresholds
-        lines: 95,
-        functions: 93,
-        branches: 85,
-        statements: 95,
+        lines: 97,
+        functions: 97,
+        branches: 87,
+        statements: 97,
         // File-specific thresholds
         "src/core/adapters/qdrant/client.ts": {
           lines: 90,
