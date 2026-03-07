@@ -77,6 +77,9 @@ async function loadPipeline(
     const gpuMsg = gpuError instanceof Error ? gpuError.message : String(gpuError);
     console.error(`[ONNX] ${device} failed (${gpuMsg}), falling back to cpu`);
     delete pipelineOpts.device;
+    // FP16 graph optimization can fail on CPU (ONNX Runtime bug with
+    // SimplifiedLayerNormFusion nodes), so drop dtype for CPU fallback.
+    delete pipelineOpts.dtype;
     return (await pipelineFn("feature-extraction", baseModel, pipelineOpts)) as Pipeline;
   }
 }

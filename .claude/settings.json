@@ -29,16 +29,6 @@
         ]
       }
     ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-run-tests.sh",
-            "statusMessage": "Running tests (skipped if only .md/.json/.claude/.beads files changed)"
-          }
-        ]
-      }
-    ]
+    "Stop": []
   }
 }
