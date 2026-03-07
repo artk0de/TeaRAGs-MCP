@@ -43,21 +43,21 @@ of domain modules — api/ never imports from foundation directly.
 - Orchestrates domain modules: gets data from trajectory/, passes to search/
 - Imports ONLY from domain modules, never from foundation directly
 
-**core/search/** — Query-time reranking (domain module)
+**core/search/** — Query-time reranking engine (domain module)
 - Reranker (orchestrator: derived signals → adaptive bounds → scoring → ranking overlay)
 - Receives descriptors + resolved presets via DI (constructor), never imports from trajectory/
-- Derived signal descriptors from providers (via registry) + structural signals (built-in)
-- Presets: 3-level hierarchy (generic → trajectory → composite), resolved at composition root
+- No signal definitions — all signals come from trajectory/ via registry
+- Presets: 2-level hierarchy (registry → composite), resolved at composition root
 
 **core/trajectory/** — Trajectory implementations (domain module)
-- Signal definitions (Signal[])
-- Filter definitions (FilterDescriptor[])
-- Provider implementations (EnrichmentProvider)
-- Infra: readers, metrics, caches
+- Static trajectory: base payload signals, structural derived signals, generic presets, static filters
+- Git trajectory: git-enriched signals, derived signals, git-specific presets and filters
+- StaticPayloadBuilder: builds base Qdrant payload (injected into pipeline via PayloadBuilder DIP)
+- Provider implementations (EnrichmentProvider — optional, not all trajectories have ingest enrichment)
 
 **core/ingest/** — Indexing pipeline (domain module)
 - Chunking, embedding, enrichment coordination
-- Depends on EnrichmentProvider interface from contracts, NOT from trajectory
+- Depends on PayloadBuilder and EnrichmentProvider interfaces from contracts, NOT from trajectory
 
 **core/contracts/** — Shared interfaces, registries, utilities (foundation)
 - All shared interfaces and types (Signal, FilterDescriptor, EnrichmentProvider, etc.)
@@ -131,22 +131,32 @@ core/
     schema-builder.ts                  # SchemaBuilder: dynamic MCP schemas via Reranker API (DIP)
     shared.ts                          # resolveCollectionName, validatePath
 
-  search/                              # Domain module: query-time reranking
+  search/                              # Domain module: query-time reranking engine
     reranker.ts                        # Reranker: scoring, overlay mask, adaptive bounds
     rerank/
-      derived-signals/                 # Structural signal classes (1 per file)
-        similarity.ts                  # class SimilaritySignal
-        chunk-size.ts                  # class ChunkSizeSignal
-        documentation.ts               # class DocumentationSignal
-        imports.ts                     # class ImportsSignal
-        path-risk.ts                   # class PathRiskSignal
-        index.ts                       # structuralSignals: DerivedSignalDescriptor[]
       presets/
-        relevance.ts                   # class RelevancePreset (multi-tool: semantic_search + search_code)
-        index.ts                       # RELEVANCE_PRESETS + resolvePresets() + getPresetNames/Weights
+        index.ts                       # resolvePresets() + getPresetNames/Weights (engine utility)
     search-module.ts                   # Search orchestration
 
   trajectory/                          # Domain module: provider implementations
+    static/
+      index.ts                         # StaticTrajectory: base signals, structural derived, generic presets
+      provider.ts                      # StaticPayloadBuilder.buildPayload(chunk, codebasePath)
+      payload-signals.ts               # BASE_PAYLOAD_SIGNALS (base Qdrant payload fields)
+      filters.ts                       # staticFilters: language, fileExtension, chunkType, isDocumentation
+      rerank/
+        derived-signals/               # Structural signal classes (1 per file)
+          similarity.ts                # class SimilaritySignal
+          chunk-size.ts                # class ChunkSizeSignal
+          chunk-density.ts             # class ChunkDensitySignal
+          documentation.ts             # class DocumentationSignal
+          imports.ts                   # class ImportsSignal
+          path-risk.ts                 # class PathRiskSignal
+          index.ts                     # staticDerivedSignals: DerivedSignalDescriptor[]
+        presets/
+          relevance.ts                 # class RelevancePreset (multi-tool)
+          decomposition.ts             # class DecompositionPreset (multi-tool)
+          index.ts                     # STATIC_PRESETS[]
     git/
       signals.ts                       # gitSignals: Signal[] (raw payload field docs)
       rerank/
@@ -191,7 +201,7 @@ core/
     signal-utils.ts                    # normalize, p95, payload resolvers
     types/
       provider.ts                      # Signal, FilterDescriptor, FilterLevel,
-                                       # ScoringWeights, TrajectoryQueryContract,
+                                       # ScoringWeights, PayloadBuilder,
                                        # EnrichmentProvider, FileSignalTransform,
                                        # FileSignalOverlay, ChunkSignalOverlay
       reranker.ts                      # RerankableResult, RerankPreset,
