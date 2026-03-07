@@ -28,4 +28,5 @@ describe("daemon-types", () => {
       expect(parseLine("{broken")).toBeNull();
     });
   });
+
 });

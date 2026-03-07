@@ -12,6 +12,9 @@ import { parentPort } from "node:worker_threads";
 import { detectDevice } from "./device.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
 
+// Sequential lock: ensures only one embed runs at a time on GPU
+let embedQueue: Promise<void> = Promise.resolve();
+
 type Pipeline = (texts: string[], options: Record<string, unknown>) => Promise<{ tolist: () => number[][] }>;
 type TransformersModule = { pipeline: (...args: unknown[]) => Promise<unknown>; env: { cacheDir: string } };
 type PipelineFn = TransformersModule["pipeline"];
@@ -67,21 +70,8 @@ async function loadPipeline(
   pipelineFn: PipelineFn,
   baseModel: string,
   pipelineOpts: Record<string, string>,
-  device: string,
 ): Promise<Pipeline> {
-  try {
-    return (await pipelineFn("feature-extraction", baseModel, pipelineOpts)) as Pipeline;
-  } catch (gpuError: unknown) {
-    if (device === "cpu") throw gpuError;
-
-    const gpuMsg = gpuError instanceof Error ? gpuError.message : String(gpuError);
-    console.error(`[ONNX] ${device} failed (${gpuMsg}), falling back to cpu`);
-    delete pipelineOpts.device;
-    // FP16 graph optimization can fail on CPU (ONNX Runtime bug with
-    // SimplifiedLayerNormFusion nodes), so drop dtype for CPU fallback.
-    delete pipelineOpts.dtype;
-    return (await pipelineFn("feature-extraction", baseModel, pipelineOpts)) as Pipeline;
-  }
+  return (await pipelineFn("feature-extraction", baseModel, pipelineOpts)) as Pipeline;
 }
 
 async function handleInit(model: string, cacheDir?: string, device?: string): Promise<void> {
@@ -102,9 +92,9 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
     if (dtype) pipelineOpts.dtype = dtype;
     if (resolvedDevice !== "cpu") pipelineOpts.device = resolvedDevice;
 
-    extractor = await loadPipeline(pipeline, baseModel, pipelineOpts, resolvedDevice);
+    extractor = await loadPipeline(pipeline, baseModel, pipelineOpts);
 
-    console.error(`[ONNX] Model loaded.`);
+    console.error(`[ONNX] Model loaded on ${resolvedDevice}.`);
     post({ type: "ready" });
   } catch (error: unknown) {
     const raw = error instanceof Error ? error.message : String(error);
@@ -135,7 +125,7 @@ parentPort!.on("message", (msg: WorkerRequest) => {
       void handleInit(msg.model, msg.cacheDir, msg.device);
       break;
     case "embed":
-      void handleEmbed(msg.id, msg.texts);
+      embedQueue = embedQueue.then(() => handleEmbed(msg.id, msg.texts));
       break;
     case "terminate":
       process.exit(0);
