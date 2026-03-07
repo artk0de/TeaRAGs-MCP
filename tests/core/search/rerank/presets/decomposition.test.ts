@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { structuralSignals } from "../../../../../src/core/search/rerank/derived-signals/index.js";
-import { DecompositionPreset } from "../../../../../src/core/search/rerank/presets/decomposition.js";
 import { Reranker } from "../../../../../src/core/search/reranker.js";
+import { staticDerivedSignals } from "../../../../../src/core/trajectory/static/rerank/derived-signals/index.js";
+import { DecompositionPreset } from "../../../../../src/core/trajectory/static/rerank/presets/decomposition.js";
 
 describe("DecompositionPreset", () => {
   const preset = new DecompositionPreset();
@@ -36,7 +36,7 @@ describe("DecompositionPreset", () => {
 });
 
 describe("Decomposition reranking produces scores in 0-1", () => {
-  const reranker = new Reranker(structuralSignals, [new DecompositionPreset()]);
+  const reranker = new Reranker(staticDerivedSignals, [new DecompositionPreset()]);
 
   it("scores large dense methods higher than small sparse ones", () => {
     const results = [

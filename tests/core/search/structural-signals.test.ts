@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
+import { staticDerivedSignals as structuralSignals } from "../../../src/core/trajectory/static/rerank/derived-signals/index.js";
 
 describe("structuralSignals", () => {
   it("has 6 descriptors", () => {

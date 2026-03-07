@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ChunkDensitySignal } from "../../../../../src/core/search/rerank/derived-signals/chunk-density.js";
+import { ChunkDensitySignal } from "../../../../../src/core/trajectory/static/rerank/derived-signals/chunk-density.js";
 
 describe("ChunkDensitySignal", () => {
   const signal = new ChunkDensitySignal();

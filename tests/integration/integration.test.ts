@@ -8,13 +8,14 @@ import type { EmbeddingProvider } from "../../src/core/adapters/embeddings/base.
 import type { QdrantManager } from "../../src/core/adapters/qdrant/client.js";
 import { IngestFacade } from "../../src/core/api/ingest-facade.js";
 import { SearchFacade } from "../../src/core/api/search-facade.js";
-import { structuralSignals } from "../../src/core/search/rerank/derived-signals/index.js";
-import { RELEVANCE_PRESETS, resolvePresets } from "../../src/core/search/rerank/presets/index.js";
+import { resolvePresets } from "../../src/core/search/rerank/presets/index.js";
 import { Reranker } from "../../src/core/search/reranker.js";
 import { GitTrajectory } from "../../src/core/trajectory/git.js";
 import { gitDerivedSignals } from "../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../src/core/trajectory/git/rerank/presets/index.js";
 import { TrajectoryRegistry } from "../../src/core/trajectory/index.js";
+import { staticDerivedSignals } from "../../src/core/trajectory/static/rerank/derived-signals/index.js";
+import { STATIC_PRESETS } from "../../src/core/trajectory/static/rerank/presets/index.js";
 import type { IngestCodeConfig, SearchCodeConfig } from "../../src/core/types.js";
 
 // Mock tree-sitter modules to prevent native binding crashes in integration tests
@@ -261,8 +262,8 @@ describe("IngestFacade + SearchFacade Integration Tests", () => {
 
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
-    const resolvedPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
-    reranker = new Reranker([...gitDerivedSignals, ...structuralSignals], resolvedPresets);
+    const resolvedPresets = resolvePresets([...STATIC_PRESETS, ...GIT_PRESETS], []);
+    reranker = new Reranker([...gitDerivedSignals, ...staticDerivedSignals], resolvedPresets);
     registry = new TrajectoryRegistry();
     registry.register(new GitTrajectory());
     config = {

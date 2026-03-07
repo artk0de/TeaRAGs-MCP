@@ -7,13 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
 import { SearchFacade } from "../../../src/core/api/search-facade.js";
-import { structuralSignals } from "../../../src/core/search/rerank/derived-signals/index.js";
-import { RELEVANCE_PRESETS, resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
+import { resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
 import { Reranker } from "../../../src/core/search/reranker.js";
 import { GitTrajectory } from "../../../src/core/trajectory/git.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";
 import { TrajectoryRegistry } from "../../../src/core/trajectory/index.js";
+import { staticDerivedSignals } from "../../../src/core/trajectory/static/rerank/derived-signals/index.js";
+import { STATIC_PRESETS } from "../../../src/core/trajectory/static/rerank/presets/index.js";
 import type { IngestCodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
@@ -68,8 +69,8 @@ describe("IngestFacade + SearchFacade", () => {
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
     ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
-    const resolvedPresets = resolvePresets(RELEVANCE_PRESETS, GIT_PRESETS, []);
-    const reranker = new Reranker([...gitDerivedSignals, ...structuralSignals], resolvedPresets);
+    const resolvedPresets = resolvePresets([...STATIC_PRESETS, ...GIT_PRESETS], []);
+    const reranker = new Reranker([...gitDerivedSignals, ...staticDerivedSignals], resolvedPresets);
     const registry = new TrajectoryRegistry();
     registry.register(new GitTrajectory());
     search = new SearchFacade(qdrant as any, embeddings, defaultSearchConfig(), reranker, registry);

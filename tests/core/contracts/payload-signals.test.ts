@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BASE_PAYLOAD_SIGNALS } from "../../../src/core/contracts/payload-signals.js";
+import { BASE_PAYLOAD_SIGNALS } from "../../../src/core/trajectory/static/payload-signals.js";
 
 describe("BASE_PAYLOAD_SIGNALS", () => {
   it("includes relativePath", () => {

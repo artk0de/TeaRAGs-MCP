@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ChunkSizeSignal } from "../../../../../src/core/search/rerank/derived-signals/chunk-size.js";
+import { ChunkSizeSignal } from "../../../../../src/core/trajectory/static/rerank/derived-signals/chunk-size.js";
 
 describe("ChunkSizeSignal", () => {
   const signal = new ChunkSizeSignal();
