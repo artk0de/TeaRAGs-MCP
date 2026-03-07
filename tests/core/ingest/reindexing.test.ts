@@ -3,7 +3,9 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SchemaManager } from "../../../src/core/adapters/qdrant/schema-migration.js";
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import { ParallelFileSynchronizer } from "../../../src/core/ingest/sync/parallel-synchronizer.js";
 import type { IngestCodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
@@ -326,6 +328,75 @@ console.log('This file has secrets');`,
       const stats = await ingest.reindexChanges(codebaseDir);
       // The file was detected as deleted (not added, since it's gone)
       expect(stats.status).toBe("completed");
+    });
+  });
+
+  describe("schema migration during reindex", () => {
+    it("should log when schema migrations are applied", async () => {
+      await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('Initial');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Spy on ensureCurrentSchema to return migrations applied
+      const ensureCurrentSchemaSpy = vi
+        .spyOn(SchemaManager.prototype, "ensureCurrentSchema")
+        .mockResolvedValueOnce({
+          success: true,
+          fromVersion: 1,
+          toVersion: 2,
+          migrationsApplied: ["add_chunk_type_index"],
+        });
+
+      await createTestFile(codebaseDir, "file2.ts", "export const v2 = 2;\nconsole.log('Added');");
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(ensureCurrentSchemaSpy).toHaveBeenCalled();
+      expect(stats.filesAdded).toBe(1);
+
+      ensureCurrentSchemaSpy.mockRestore();
+    });
+  });
+
+  describe("no snapshot error", () => {
+    it("should throw when no previous snapshot exists", async () => {
+      await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('Initial');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Spy on initialize to return false (no snapshot found)
+      const initializeSpy = vi
+        .spyOn(ParallelFileSynchronizer.prototype, "initialize")
+        .mockResolvedValueOnce(false);
+
+      await expect(ingest.reindexChanges(codebaseDir)).rejects.toThrow(
+        "No previous snapshot found",
+      );
+
+      initializeSpy.mockRestore();
+    });
+  });
+
+  describe("checkpoint resume", () => {
+    it("should resume from checkpoint when one exists", async () => {
+      await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('Initial');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Spy on loadCheckpoint to return a valid checkpoint
+      const loadCheckpointSpy = vi
+        .spyOn(ParallelFileSynchronizer.prototype, "loadCheckpoint")
+        .mockResolvedValueOnce({
+          processedFiles: ["file1.ts"],
+          totalFiles: 2,
+          timestamp: Date.now(),
+        });
+
+      await createTestFile(codebaseDir, "file2.ts", "export const v2 = 2;\nconsole.log('Added');");
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(loadCheckpointSpy).toHaveBeenCalled();
+      expect(stats.filesAdded).toBe(1);
+
+      loadCheckpointSpy.mockRestore();
     });
   });
 

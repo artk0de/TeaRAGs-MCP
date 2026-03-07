@@ -225,6 +225,104 @@ describe("QdrantManager", () => {
         hybridEnabled: true,
       });
     });
+
+    it("should handle null/non-object vectorConfig gracefully", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "no-vectors",
+        points_count: 0,
+        config: {
+          params: {
+            vectors: null,
+          },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("no-vectors");
+
+      expect(info).toEqual({
+        name: "no-vectors",
+        vectorSize: 0,
+        pointsCount: 0,
+        distance: "Cosine",
+        hybridEnabled: false,
+      });
+    });
+
+    it("should handle named vector config with non-number size", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "bad-dense",
+        points_count: 10,
+        config: {
+          params: {
+            vectors: {
+              dense: {
+                size: "not-a-number",
+                distance: "Euclid",
+              },
+            },
+          },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("bad-dense");
+
+      expect(info).toEqual({
+        name: "bad-dense",
+        vectorSize: 0,
+        pointsCount: 10,
+        distance: "Euclid",
+        hybridEnabled: false,
+      });
+    });
+
+    it("should handle unnamed vector config with non-number size", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "bad-unnamed",
+        points_count: 5,
+        config: {
+          params: {
+            vectors: {
+              size: "invalid",
+              distance: "Dot",
+            },
+          },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("bad-unnamed");
+
+      expect(info).toEqual({
+        name: "bad-unnamed",
+        vectorSize: 0,
+        pointsCount: 5,
+        distance: "Dot",
+        hybridEnabled: false,
+      });
+    });
+
+    it("should handle vectorConfig object with neither size nor dense keys", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "unknown-config",
+        points_count: 3,
+        config: {
+          params: {
+            vectors: {
+              someOtherKey: { size: 512 },
+            },
+          },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("unknown-config");
+
+      expect(info).toEqual({
+        name: "unknown-config",
+        vectorSize: 0,
+        pointsCount: 3,
+        distance: "Cosine",
+        hybridEnabled: false,
+      });
+    });
   });
 
   describe("deleteCollection", () => {
@@ -1697,6 +1795,28 @@ describe("QdrantManager", () => {
       // Non-last batch should have wait=false
       const firstCall = mockClient.batchUpdate.mock.calls[0];
       expect(firstCall[1].wait).toBe(false);
+    });
+
+    it("should include key in set_payload when op.key is provided", async () => {
+      const operations = [
+        { payload: { git: { ageDays: 1 } }, points: ["id-1"] as (string | number)[], key: "git" },
+      ];
+
+      await manager.batchSetPayload("test-collection", operations);
+
+      expect(mockClient.batchUpdate).toHaveBeenCalledWith("test-collection", {
+        operations: [
+          {
+            set_payload: {
+              payload: { git: { ageDays: 1 } },
+              points: [expect.any(String)],
+              key: "git",
+            },
+          },
+        ],
+        wait: false,
+        ordering: "weak",
+      });
     });
   });
 });

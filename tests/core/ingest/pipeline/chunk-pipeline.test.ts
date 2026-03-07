@@ -238,6 +238,153 @@ describe("ChunkPipeline", () => {
       const result = await pipeline.waitForBackpressure(100);
       expect(result).toBe(true);
     });
+
+    it("should pause accumulator when queue reaches maxQueueSize", async () => {
+      vi.useRealTimers();
+
+      // Use a slow embedding to make batches pile up in the worker pool queue
+      let embedResolvers: Array<(val: { embedding: number[] }[]) => void> = [];
+      const slowEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(
+          () =>
+            new Promise<{ embedding: number[] }[]>((resolve) => {
+              embedResolvers.push(resolve);
+            }),
+        ),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 384),
+      };
+
+      const bpPipeline = new ChunkPipeline(
+        mockQdrant as any,
+        slowEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: {
+            concurrency: 1, // Only 1 concurrent batch processing
+            maxRetries: 0,
+            retryBaseDelayMs: 10,
+            retryMaxDelayMs: 100,
+          },
+          accumulator: {
+            batchSize: 1, // Each chunk forms a batch immediately
+            flushTimeoutMs: 50,
+            maxQueueSize: 2, // Backpressure at queue depth >= 2
+          },
+          enableHybrid: false,
+        },
+      );
+
+      bpPipeline.start();
+
+      // Add chunks rapidly — each becomes a batch of 1
+      // First batch goes to active processing (concurrency=1)
+      bpPipeline.addChunk(createChunk(1), "bp-1", "/test/path");
+      // Wait for batch to be submitted to worker pool
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Second batch goes to queue (queue size = 1)
+      bpPipeline.addChunk(createChunk(2), "bp-2", "/test/path");
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Third batch goes to queue (queue size = 2 >= maxQueueSize)
+      bpPipeline.addChunk(createChunk(3), "bp-3", "/test/path");
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Backpressure should now be active
+      expect(bpPipeline.isBackpressured()).toBe(true);
+
+      // Resolve all pending embeds to drain
+      for (const resolve of embedResolvers) {
+        resolve([{ embedding: [1, 2, 3] }]);
+      }
+      embedResolvers = [];
+
+      // Wait for queue to drain
+      await new Promise((r) => setTimeout(r, 300));
+
+      // Resolve any remaining embeds from retry/drain
+      for (const resolve of embedResolvers) {
+        resolve([{ embedding: [1, 2, 3] }]);
+      }
+
+      // Backpressure should release once queue drops below 50% threshold
+      await new Promise((r) => setTimeout(r, 300));
+      expect(bpPipeline.isBackpressured()).toBe(false);
+
+      bpPipeline.forceShutdown();
+      vi.useFakeTimers();
+    });
+
+    it("should log backpressure release when accumulator was paused", async () => {
+      vi.useRealTimers();
+
+      let embedResolvers: Array<(val: { embedding: number[] }[]) => void> = [];
+      const slowEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(
+          () =>
+            new Promise<{ embedding: number[] }[]>((resolve) => {
+              embedResolvers.push(resolve);
+            }),
+        ),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 384),
+      };
+
+      const bpPipeline = new ChunkPipeline(
+        mockQdrant as any,
+        slowEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: {
+            concurrency: 1,
+            maxRetries: 0,
+            retryBaseDelayMs: 10,
+            retryMaxDelayMs: 100,
+          },
+          accumulator: {
+            batchSize: 1,
+            flushTimeoutMs: 50,
+            maxQueueSize: 2,
+          },
+          enableHybrid: false,
+        },
+      );
+
+      bpPipeline.start();
+
+      // Fill the queue to trigger backpressure
+      bpPipeline.addChunk(createChunk(10), "bp-log-1", "/test/path");
+      await new Promise((r) => setTimeout(r, 100));
+      bpPipeline.addChunk(createChunk(11), "bp-log-2", "/test/path");
+      await new Promise((r) => setTimeout(r, 100));
+      bpPipeline.addChunk(createChunk(12), "bp-log-3", "/test/path");
+      await new Promise((r) => setTimeout(r, 100));
+
+      // Confirm backpressure is active
+      expect(bpPipeline.isBackpressured()).toBe(true);
+
+      // Resolve embeds to drain the queue
+      for (const resolve of embedResolvers) {
+        resolve([{ embedding: [1, 2, 3] }]);
+      }
+      embedResolvers = [];
+
+      // Wait for queue to drain below 50% threshold (< 1)
+      await new Promise((r) => setTimeout(r, 500));
+      for (const resolve of embedResolvers) {
+        resolve([{ embedding: [1, 2, 3] }]);
+      }
+      await new Promise((r) => setTimeout(r, 300));
+
+      // Backpressure should be released (and the isPausedState branch was hit)
+      expect(bpPipeline.isBackpressured()).toBe(false);
+
+      bpPipeline.forceShutdown();
+      vi.useFakeTimers();
+    });
   });
 
   describe("Statistics", () => {
@@ -465,6 +612,61 @@ describe("ChunkPipeline", () => {
       const stats = pipeline.getStats();
       expect(stats.errors).toBeGreaterThanOrEqual(1);
       expect(stats.batchesProcessed).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe("pendingBatches cleanup (isPromiseResolved)", () => {
+    it("should clean up resolved promises when pendingBatches exceeds 100", async () => {
+      vi.useRealTimers();
+
+      const fastEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(async (texts: string[]) =>
+          texts.map(() => ({ embedding: [1, 2, 3] })),
+        ),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 384),
+      };
+      const fastQdrant = {
+        addPointsOptimized: vi.fn().mockResolvedValue(undefined),
+        addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const manyBatchPipeline = new ChunkPipeline(
+        fastQdrant as any,
+        fastEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: {
+            concurrency: 4,
+            maxRetries: 0,
+            retryBaseDelayMs: 10,
+            retryMaxDelayMs: 100,
+          },
+          accumulator: {
+            batchSize: 1, // Each chunk -> 1 batch
+            flushTimeoutMs: 50,
+            maxQueueSize: 200,
+          },
+          enableHybrid: false,
+        },
+      );
+
+      manyBatchPipeline.start();
+
+      // Add 105 chunks to trigger the > 100 pendingBatches cleanup path
+      for (let i = 0; i < 105; i++) {
+        manyBatchPipeline.addChunk(createChunk(i), `cleanup-${i}`, "/test/path");
+      }
+
+      // Wait for all batches to be processed
+      await manyBatchPipeline.flush();
+
+      const stats = manyBatchPipeline.getStats();
+      expect(stats.itemsProcessed).toBe(105);
+
+      manyBatchPipeline.forceShutdown();
+      vi.useFakeTimers();
     });
   });
 

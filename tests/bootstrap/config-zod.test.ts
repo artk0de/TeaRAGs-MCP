@@ -240,6 +240,20 @@ describe("parseAppConfigZod", () => {
 
       expect(() => parseAppConfigZod()).toThrow(/provider/i);
     });
+
+    it("throws readable error for invalid ingest config (non-numeric chunk size)", async () => {
+      process.env.INGEST_CHUNK_SIZE = "abc";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(() => parseAppConfigZod()).toThrow(/Invalid config \(ingest\)/);
+    });
+
+    it("throws readable error for invalid trajectoryGit config (non-numeric timeout)", async () => {
+      process.env.TRAJECTORY_GIT_LOG_TIMEOUT_MS = "abc";
+      const { parseAppConfigZod } = await freshImport();
+
+      expect(() => parseAppConfigZod()).toThrow(/Invalid config \(trajectoryGit\)/);
+    });
   });
 
   describe("API key validation", () => {

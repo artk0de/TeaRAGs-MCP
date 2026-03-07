@@ -296,6 +296,55 @@ describe("StatusModule", () => {
 
         expect(initialStatus.chunksCount).toBeGreaterThanOrEqual(0);
       });
+
+      it("should return indexed for legacy collection with chunks but no indexing marker", async () => {
+        // Simulate a legacy collection: collection exists with points but no indexing marker.
+        // We manually create the collection and add a point without any indexing marker.
+        const { resolveCollectionName, validatePath } = await import(
+          "../../../../src/core/contracts/collection.js"
+        );
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+
+        // Create collection and add a fake chunk point (no indexing marker)
+        await qdrant.createCollection(collectionName, 384, "Cosine", false);
+        await qdrant.addPoints(collectionName, [
+          {
+            id: "fake-chunk-1",
+            vector: new Array(384).fill(0.1),
+            payload: { relativePath: "legacy.ts", content: "legacy code" },
+          },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.isIndexed).toBe(true);
+        expect(status.status).toBe("indexed");
+        expect(status.collectionName).toBe(collectionName);
+        expect(status.chunksCount).toBe(1);
+        // Legacy collections should not have lastUpdated or enrichment info
+        expect(status.lastUpdated).toBeUndefined();
+        expect(status.enrichment).toBeUndefined();
+        expect(status.chunkEnrichment).toBeUndefined();
+      });
+
+      it("should return not_indexed for legacy collection with no chunks and no marker", async () => {
+        // Collection exists but is empty and has no indexing marker
+        const { resolveCollectionName, validatePath } = await import(
+          "../../../../src/core/contracts/collection.js"
+        );
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+
+        await qdrant.createCollection(collectionName, 384, "Cosine", false);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.isIndexed).toBe(false);
+        expect(status.status).toBe("not_indexed");
+        expect(status.collectionName).toBe(collectionName);
+        expect(status.chunksCount).toBe(0);
+      });
     });
   });
 
