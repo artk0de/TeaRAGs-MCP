@@ -432,3 +432,35 @@ export class OnnxDaemon {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// CLI entry — runs when executed as: node daemon.js <socketPath> [pidFile]
+// ---------------------------------------------------------------------------
+
+const isDirectRun =
+  process.argv[1] &&
+  (import.meta.url === `file://${process.argv[1]}` ||
+    import.meta.url.endsWith(process.argv[1].replace(/.*build\//, "")));
+
+if (isDirectRun) {
+  const socketPath = process.argv[2];
+  const pidFile = process.argv[3];
+  if (!socketPath) {
+    console.error("Usage: daemon.js <socketPath> [pidFile]");
+    process.exit(1);
+  }
+
+  const daemon = new OnnxDaemon({
+    socketPath,
+    pidFile,
+    idleTimeoutMs: 30_000,
+    heartbeatTimeoutMs: 45_000,
+  });
+
+  const shutdown = () => void daemon.stop().then(() => process.exit(0));
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+
+  await daemon.start();
+  console.error(`[OnnxDaemon] Listening on ${socketPath} (PID ${process.pid})`);
+}

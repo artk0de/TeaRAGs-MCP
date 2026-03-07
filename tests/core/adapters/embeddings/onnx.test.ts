@@ -129,16 +129,20 @@ describe("OnnxEmbeddings (daemon client)", () => {
   });
 
   describe("error handling", () => {
-    it("should throw when daemon socket does not exist", async () => {
+    it("should fail if daemon cannot be reached after spawn attempt", async () => {
       const badProvider = new OnnxEmbeddings(
         "test-model",
         3,
         undefined,
         "cpu",
         "/tmp/nonexistent-socket.sock",
+        undefined, // pidFile
+        500, // spawnTimeoutMs — short for test
       );
-      await expect(badProvider.embed("test")).rejects.toThrow();
-    });
+      await expect(badProvider.embed("test")).rejects.toThrow(
+        /Timed out waiting for ONNX daemon to start/,
+      );
+    }, 5_000);
 
     it("should propagate daemon error responses", async () => {
       // Create a mock worker that returns errors for embed
