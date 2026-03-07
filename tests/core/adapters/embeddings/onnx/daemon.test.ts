@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
 import { OnnxDaemon } from "../../../../../src/core/adapters/embeddings/onnx/daemon.js";
@@ -462,5 +462,274 @@ describe("OnnxDaemon", () => {
       type: "error",
       message: expect.stringContaining("not connected"),
     });
+  });
+
+  it("should clean up stale socket file on start", async () => {
+    // Pre-create a stale socket file
+    writeFileSync(socketPath, "stale");
+    expect(existsSync(socketPath)).toBe(true);
+
+    daemon = new OnnxDaemon({
+      socketPath,
+      pidFile,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: createMockWorkerFactory(),
+    });
+
+    await daemon.start();
+
+    // Daemon should have removed old file and created a new socket
+    const responses = await connectAndSend(socketPath, [{ type: "status" }], 1);
+    expect(responses[0]).toMatchObject({ type: "status" });
+  });
+
+  it("should handle worker error event", async () => {
+    let workerInstance: MockWorker | null = null;
+    daemon = new OnnxDaemon({
+      socketPath,
+      pidFile,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: () => {
+        workerInstance = new MockWorker();
+        return workerInstance;
+      },
+    });
+
+    await daemon.start();
+
+    // Connect a client to trigger worker spawn
+    const client = createPersistentClient(socketPath);
+    client.send({ type: "connect", model: "test-model", device: "cpu" });
+    await client.waitForResponse();
+
+    // Simulate worker error — should log but not crash
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    workerInstance!.emit("error", new Error("Worker crashed"));
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Worker crashed"));
+    consoleSpy.mockRestore();
+
+    await client.close();
+  });
+
+  it("should handle worker exit event", async () => {
+    let workerInstance: MockWorker | null = null;
+    daemon = new OnnxDaemon({
+      socketPath,
+      pidFile,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: () => {
+        workerInstance = new MockWorker();
+        return workerInstance;
+      },
+    });
+
+    await daemon.start();
+
+    // Connect to spawn worker
+    const client = createPersistentClient(socketPath);
+    client.send({ type: "connect", model: "test-model", device: "cpu" });
+    await client.waitForResponse();
+
+    // Simulate worker exit
+    workerInstance!.emit("exit", 1);
+
+    // After exit, embed should fail (worker is null)
+    client.send({ type: "embed", id: 1, texts: ["hello"] });
+    const resp = await client.waitForResponse();
+    expect(resp).toMatchObject({
+      type: "error",
+      message: expect.stringContaining("not connected"),
+    });
+
+    await client.close();
+  });
+
+  it("should disconnect client when heartbeat times out", async () => {
+    daemon = new OnnxDaemon({
+      socketPath,
+      pidFile,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 200, // Very short timeout for test
+      workerFactory: createMockWorkerFactory(),
+    });
+
+    await daemon.start();
+
+    // Connect a client
+    const client = createPersistentClient(socketPath);
+    client.send({ type: "connect", model: "test-model", device: "cpu" });
+    await client.waitForResponse();
+
+    // Don't send heartbeats — wait for timeout to fire
+    await new Promise((r) => setTimeout(r, 400));
+
+    // Check status — client should have been disconnected
+    const statusClient = createPersistentClient(socketPath);
+    statusClient.send({ type: "status" });
+    const statusResp = await statusClient.waitForResponse();
+    expect(statusResp).toMatchObject({ type: "status", clients: 0 });
+
+    await statusClient.close();
+    // Original client socket is already destroyed by daemon
+    client.socket.destroy();
+  });
+
+  it("should forward worker error response to client", async () => {
+    class ErrorOnEmbedWorker extends EventEmitter {
+      postMessage(msg: WorkerRequest): void {
+        if (msg.type === "init") {
+          setImmediate(() => this.emit("message", { type: "ready" } satisfies WorkerResponse));
+        } else if (msg.type === "embed") {
+          setImmediate(() =>
+            this.emit("message", {
+              type: "error",
+              id: msg.id,
+              message: "ONNX runtime error",
+            } satisfies WorkerResponse),
+          );
+        }
+      }
+      terminate(): Promise<number> {
+        this.emit("exit", 0);
+        return Promise.resolve(0);
+      }
+    }
+
+    daemon = new OnnxDaemon({
+      socketPath,
+      pidFile,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: () => new ErrorOnEmbedWorker(),
+    });
+
+    await daemon.start();
+
+    const client = createPersistentClient(socketPath);
+    client.send({ type: "connect", model: "test-model", device: "cpu" });
+    await client.waitForResponse();
+
+    client.send({ type: "embed", id: 42, texts: ["test"] });
+    const resp = await client.waitForResponse();
+    expect(resp).toMatchObject({ type: "error", message: "ONNX runtime error" });
+
+    await client.close();
+  });
+
+  it("should handle socket error on client connection", async () => {
+    daemon = new OnnxDaemon({
+      socketPath,
+      pidFile,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: createMockWorkerFactory(),
+    });
+
+    await daemon.start();
+
+    const client = createPersistentClient(socketPath);
+    client.send({ type: "connect", model: "test-model", device: "cpu" });
+    await client.waitForResponse();
+
+    // Force close without graceful disconnect — triggers the close handler
+    client.socket.destroy();
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Check status — close should have disconnected the client
+    const statusClient = createPersistentClient(socketPath);
+    statusClient.send({ type: "status" });
+    const statusResp = await statusClient.waitForResponse();
+    expect(statusResp).toMatchObject({ type: "status", clients: 0 });
+
+    await statusClient.close();
+  });
+
+  it("should handle stop() called twice", async () => {
+    daemon = new OnnxDaemon({
+      socketPath,
+      pidFile,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: createMockWorkerFactory(),
+    });
+
+    await daemon.start();
+    await daemon.stop();
+    // Second stop should be a no-op
+    await daemon.stop();
+    expect(existsSync(socketPath)).toBe(false);
+  });
+
+  it("should forward worker log messages to connected clients", async () => {
+    class LogWorker extends EventEmitter {
+      postMessage(msg: WorkerRequest): void {
+        if (msg.type === "init") {
+          setImmediate(() => this.emit("message", { type: "ready" } satisfies WorkerResponse));
+        } else if (msg.type === "embed") {
+          // Emit log first, then result
+          setImmediate(() => {
+            this.emit("message", { type: "log", level: "info", message: "Processing batch..." } satisfies WorkerResponse);
+            setTimeout(() =>
+              this.emit("message", {
+                type: "result",
+                id: msg.id,
+                embeddings: msg.texts.map(() => [1, 2, 3]),
+              } satisfies WorkerResponse), 10);
+          });
+        }
+      }
+      terminate(): Promise<number> {
+        this.emit("exit", 0);
+        return Promise.resolve(0);
+      }
+    }
+
+    daemon = new OnnxDaemon({
+      socketPath,
+      pidFile,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: () => new LogWorker(),
+    });
+
+    await daemon.start();
+
+    const client = createPersistentClient(socketPath);
+    client.send({ type: "connect", model: "test-model", device: "cpu" });
+    const connectResp = await client.waitForResponse();
+    expect(connectResp.type).toBe("connected");
+
+    // Send embed — worker will emit log then result
+    client.send({ type: "embed", id: 1, texts: ["hello"] });
+
+    const resp1 = await client.waitForResponse();
+    const resp2 = await client.waitForResponse();
+
+    const responses = [resp1, resp2];
+    const hasLog = responses.some((r) => r.type === "log");
+    const hasResult = responses.some((r) => r.type === "result");
+    expect(hasLog).toBe(true);
+    expect(hasResult).toBe(true);
+
+    await client.close();
+  });
+
+  it("should start without pidFile config", async () => {
+    daemon = new OnnxDaemon({
+      socketPath,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: createMockWorkerFactory(),
+    });
+
+    await daemon.start();
+
+    // Should work fine without pidFile
+    const responses = await connectAndSend(socketPath, [{ type: "status" }], 1);
+    expect(responses[0]).toMatchObject({ type: "status" });
   });
 });

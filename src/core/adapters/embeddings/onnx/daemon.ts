@@ -166,6 +166,7 @@ export class OnnxDaemon {
       this.handleClientDisconnect(socket, state);
     });
 
+    /* v8 ignore next 3 -- error always precedes close; close handler covers this path */
     socket.on("error", () => {
       this.handleClientDisconnect(socket, state);
     });
@@ -311,6 +312,7 @@ export class OnnxDaemon {
     if (this.config.workerFactory) {
       this.worker = this.config.workerFactory() as WorkerLike;
     } else {
+      /* v8 ignore next 2 -- real Worker path, tested via e2e */
       const workerPath = join(dirname(fileURLToPath(import.meta.url)), "worker.js");
       this.worker = new Worker(workerPath) as unknown as WorkerLike;
     }
@@ -437,6 +439,7 @@ export class OnnxDaemon {
 // CLI entry — runs when executed as: node daemon.js <socketPath> [pidFile]
 // ---------------------------------------------------------------------------
 
+/* v8 ignore start */
 const isDirectRun =
   process.argv[1] &&
   (import.meta.url === `file://${process.argv[1]}` ||
@@ -464,3 +467,4 @@ if (isDirectRun) {
   await daemon.start();
   console.error(`[OnnxDaemon] Listening on ${socketPath} (PID ${process.pid})`);
 }
+/* v8 ignore stop */

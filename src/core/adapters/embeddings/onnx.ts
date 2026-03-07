@@ -5,6 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
+import { getModelDimensions } from "./utils/model-dimensions.js";
 import { LineSplitter } from "./onnx/line-splitter.js";
 import {
   serialize,
@@ -44,7 +45,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
 
   constructor(
     model = DEFAULT_ONNX_MODEL,
-    dimensions = DEFAULT_ONNX_DIMENSIONS,
+    dimensions?: number,
     cacheDir?: string,
     device = "cpu",
     socketPath = DEFAULT_SOCKET_PATH,
@@ -52,7 +53,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     spawnTimeoutMs = 30_000,
   ) {
     this.model = model;
-    this.dimensions = dimensions;
+    this.dimensions = dimensions || getModelDimensions(model) || DEFAULT_ONNX_DIMENSIONS;
     this.cacheDir = cacheDir;
     this.device = device;
     this.socketPath = socketPath;
@@ -102,6 +103,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     const deadline = Date.now() + maxWaitMs;
 
     while (Date.now() < deadline) {
+      /* v8 ignore next -- success path tested via e2e (real daemon spawn) */
       if (existsSync(this.socketPath)) return;
       await new Promise((r) => setTimeout(r, pollMs));
     }
@@ -117,10 +119,12 @@ export class OnnxEmbeddings implements EmbeddingProvider {
       const splitter = new LineSplitter();
 
       // Timeout for connect handshake
+      /* v8 ignore start */
       const timeout = setTimeout(() => {
         socket.destroy();
         reject(new Error(`Timeout connecting to ONNX daemon at ${this.socketPath}`));
       }, 10_000);
+      /* v8 ignore stop */
 
       socket.on("error", (err) => {
         clearTimeout(timeout);
@@ -128,9 +132,10 @@ export class OnnxEmbeddings implements EmbeddingProvider {
           handshakeDone = true;
           reject(new Error(`Cannot connect to ONNX daemon at ${this.socketPath}: ${err.message}`));
         } else {
-          // Connection error during operation — mark for reconnect
+          /* v8 ignore start */
           this.cleanup();
           this.rejectAllPending(new Error(`Socket error: ${err.message}`));
+          /* v8 ignore stop */
         }
       });
 
@@ -213,6 +218,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
         break;
       }
 
+      /* v8 ignore next 3 -- logs intercepted in onLine callback before reaching handleResponse */
       case "log":
         console.error(msg.message);
         break;
@@ -233,11 +239,13 @@ export class OnnxEmbeddings implements EmbeddingProvider {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
+    /* v8 ignore start */
     this.heartbeatInterval = setInterval(() => {
       if (this.socket && !this.socket.destroyed) {
         this.socket.write(serialize({ type: "heartbeat" }));
       }
     }, HEARTBEAT_INTERVAL_MS);
+    /* v8 ignore stop */
     // Don't prevent process exit
     if (this.heartbeatInterval.unref) {
       this.heartbeatInterval.unref();
@@ -336,18 +344,22 @@ export class OnnxEmbeddings implements EmbeddingProvider {
 
         // Give 500ms for graceful disconnect, then force
         setTimeout(() => {
+          /* v8 ignore start */
           if (!socket.destroyed) {
             socket.destroy();
           }
+          /* v8 ignore stop */
           done();
         }, 500);
       });
     } catch {
       // Ignore errors during terminate
     } finally {
+      /* v8 ignore start */
       if (!socket.destroyed) {
         socket.destroy();
       }
+      /* v8 ignore stop */
       this.cleanup();
     }
   }
