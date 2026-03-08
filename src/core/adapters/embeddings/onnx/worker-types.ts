@@ -7,6 +7,7 @@ export type WorkerRequest =
 /** Messages from worker to main thread */
 export type WorkerResponse =
   | { type: "ready" }
-  | { type: "result"; id: number; embeddings: number[][] }
+  | { type: "calibrated"; batchSize: number }
+  | { type: "result"; id: number; embeddings: number[][]; durationMs: number }
   | { type: "error"; id: number; message: string }
   | { type: "log"; level: "error"; message: string };

@@ -25,16 +25,18 @@ class MockWorker extends EventEmitter {
   postMessage(msg: WorkerRequest): void {
     switch (msg.type) {
       case "init":
-        // Simulate async ready
+        // Simulate async ready + calibration
         setImmediate(() => this.emit("message", { type: "ready" } satisfies WorkerResponse));
+        setImmediate(() => this.emit("message", { type: "calibrated", batchSize: 8 } satisfies WorkerResponse));
         break;
       case "embed":
-        // Return fake embeddings: one vector of [1,2,3] per text
+        // Return fake embeddings with durationMs
         setImmediate(() =>
           this.emit("message", {
             type: "result",
             id: msg.id,
             embeddings: msg.texts.map(() => [1, 2, 3]),
+            durationMs: 50,
           } satisfies WorkerResponse),
         );
         break;
@@ -678,6 +680,7 @@ describe("OnnxDaemon", () => {
                 type: "result",
                 id: msg.id,
                 embeddings: msg.texts.map(() => [1, 2, 3]),
+                durationMs: 50,
               } satisfies WorkerResponse), 10);
           });
         }
