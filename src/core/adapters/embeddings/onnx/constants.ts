@@ -21,3 +21,6 @@ export const ROLLING_WINDOW = 10;
 
 /** Absolute minimum batch size (floor for adaptive reduction) */
 export const MIN_BATCH_SIZE = 2;
+
+/** Minimum recommended pipeline batch size (floor for recommendedBatchSize) */
+export const MIN_RECOMMENDED_BATCH_SIZE = 32;

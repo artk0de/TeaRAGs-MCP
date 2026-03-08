@@ -747,7 +747,8 @@ describe("OnnxDaemon", () => {
 
     expect(resp.type).toBe("connected");
     if (resp.type === "connected") {
-      expect(resp.recommendedBatchSize).toBe(8);
+      // MockWorker calibrates batchSize=8 → recommended = max(32, 8*2) = 32
+      expect(resp.recommendedBatchSize).toBe(32);
     }
 
     await client1.close();
