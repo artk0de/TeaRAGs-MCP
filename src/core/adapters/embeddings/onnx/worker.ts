@@ -71,7 +71,7 @@ function formatAuthError(baseModel: string): string {
 async function loadPipeline(
   pipelineFn: PipelineFn,
   baseModel: string,
-  pipelineOpts: Record<string, string>,
+  pipelineOpts: Record<string, unknown>,
 ): Promise<Pipeline> {
   return (await pipelineFn("feature-extraction", baseModel, pipelineOpts)) as Pipeline;
 }
@@ -90,13 +90,33 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
     console.error(`[ONNX] Loading model ${label} [${resolvedDevice}]...`);
     console.error(`[ONNX] Cache dir: ${env.cacheDir}`);
 
-    const pipelineOpts: Record<string, string> = {};
+    const pipelineOpts: Record<string, unknown> = {
+      session_options: {
+        graphOptimizationLevel: "all",
+        enableCpuMemArena: true,
+        enableMemPattern: true,
+        ...(resolvedDevice === "webgpu" ? { enableGraphCapture: true } : {}),
+        extra: {
+          optimization: { enable_gelu_approximation: "1" },
+          session: { set_denormal_as_zero: "1" },
+        },
+      },
+    };
     if (dtype) pipelineOpts.dtype = dtype;
     if (resolvedDevice !== "cpu") pipelineOpts.device = resolvedDevice;
 
     extractor = await loadPipeline(pipeline, baseModel, pipelineOpts);
 
     console.error(`[ONNX] Model loaded on ${resolvedDevice}.`);
+
+    // Warm-up: prime GPU caches and JIT before accepting real work
+    try {
+      await extractor(["warm-up"], { pooling: "mean", normalize: true });
+      console.error("[ONNX] Warm-up complete.");
+    } catch {
+      // non-fatal
+    }
+
     post({ type: "ready" });
   } catch (error: unknown) {
     const raw = error instanceof Error ? error.message : String(error);
