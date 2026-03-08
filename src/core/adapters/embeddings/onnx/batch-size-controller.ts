@@ -3,6 +3,7 @@ import {
   RUNTIME_PRESSURE_THRESHOLD,
   RUNTIME_STABLE_THRESHOLD,
   MIN_BATCH_SIZE,
+  MIN_RECOMMENDED_BATCH_SIZE,
 } from "./constants.js";
 
 /**
@@ -47,8 +48,13 @@ export class BatchSizeController {
     }
   }
 
-  /** Current recommended batch size for GPU inference */
+  /** Current internal GPU batch size */
   currentBatchSize(): number {
     return this.current;
+  }
+
+  /** Recommended pipeline batch size: max(32, calibrated * 2) */
+  recommendedPipelineBatchSize(): number {
+    return Math.max(MIN_RECOMMENDED_BATCH_SIZE, this.calibratedSize * 2);
   }
 }
