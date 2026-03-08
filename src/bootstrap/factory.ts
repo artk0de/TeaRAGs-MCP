@@ -41,22 +41,11 @@ export interface AppContext {
   schemaDriftMonitor: SchemaDriftMonitor;
 }
 
-export async function createAppContext(config: AppConfig): Promise<AppContext> {
+export function createAppContext(config: AppConfig): AppContext {
   const qdrant = new QdrantManager(config.qdrantUrl, config.qdrantApiKey);
   const zodConfig = getZodConfig();
   setDebug(zodConfig.core.debug);
   const embeddings = EmbeddingProviderFactory.create(zodConfig.embedding);
-
-  // Eagerly init ONNX to get calibrated batch size before pipeline config
-  if (embeddings.initialize) {
-    await embeddings.initialize();
-  }
-
-  // If user didn't explicitly set batch size, use GPU-calibrated recommendation
-  if (!zodConfig.flags.userSetBatchSize && embeddings.recommendedBatchSize) {
-    zodConfig.embedding.tune.batchSize = embeddings.recommendedBatchSize;
-  }
-
   const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
   const essentialTrajectoryFields = registry.getEssentialPayloadKeys();
   const schemaBuilder = new SchemaBuilder(reranker);

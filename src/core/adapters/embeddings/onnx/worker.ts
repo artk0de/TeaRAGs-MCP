@@ -128,12 +128,22 @@ async function runProbe(pipeline: Pipeline, model: string, device: string): Prom
   }
 
   console.error("[ONNX] Running GPU batch size calibration...");
-  const probeText = "The quick brown fox jumps over the lazy dog. function main() { return 42; }";
+  // Use diverse texts to simulate real workload — identical texts let GPU cache aggressively
+  const probeTexts = [
+    "export class UserService { constructor(private db: Database) {} async findById(id: string) { return this.db.query('SELECT * FROM users WHERE id = ?', [id]); } }",
+    "The authentication middleware validates JWT tokens and extracts user claims before passing control to route handlers.",
+    "function fibonacci(n: number): number { if (n <= 1) return n; return fibonacci(n - 1) + fibonacci(n - 2); }",
+    "import { useState, useEffect } from 'react'; export default function App() { const [data, setData] = useState(null); useEffect(() => { fetch('/api').then(r => r.json()).then(setData); }, []); }",
+    "CREATE TABLE orders (id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id), total DECIMAL(10,2), created_at TIMESTAMP DEFAULT NOW());",
+    "async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> { for (let i = 0; i < maxRetries; i++) { try { return await fn(); } catch (e) { if (i === maxRetries - 1) throw e; await sleep(Math.pow(2, i) * 1000); } } throw new Error('unreachable'); }",
+    "# Configuration Guide\n\nSet environment variables before starting the server. Required: `DATABASE_URL`, `API_KEY`. Optional: `LOG_LEVEL` (default: info), `PORT` (default: 3000).",
+    "describe('PaymentProcessor', () => { it('should charge the correct amount', async () => { const processor = new PaymentProcessor(mockGateway); const result = await processor.charge(100, 'USD'); expect(result.success).toBe(true); }); });",
+  ];
   let bestMsPerText = Infinity;
   let calibratedSize = DEFAULT_GPU_BATCH_SIZE;
 
   for (const bs of PROBE_BATCH_SIZES) {
-    const texts = Array.from({ length: bs }, () => probeText);
+    const texts = Array.from({ length: bs }, (_, i) => probeTexts[i % probeTexts.length]);
     try {
       const start = performance.now();
       await pipeline(texts, { pooling: "mean", normalize: true });
