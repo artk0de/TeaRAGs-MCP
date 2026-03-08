@@ -16,7 +16,7 @@ import type { EventEmitter } from "node:events";
 import { LineSplitter } from "./line-splitter.js";
 import { serialize, parseLine, type DaemonRequest, type DaemonResponse } from "./daemon-types.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
-import { DEFAULT_GPU_BATCH_SIZE } from "./constants.js";
+import { DEFAULT_GPU_BATCH_SIZE, MIN_RECOMMENDED_BATCH_SIZE } from "./constants.js";
 import { BatchSizeController } from "./batch-size-controller.js";
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,10 @@ export class OnnxDaemon {
 
   // Adaptive batch size
   private batchController: BatchSizeController | null = null;
+  /** Internal GPU batch size from calibration */
   private calibratedBatchSize: number | undefined;
+  /** Pipeline-facing recommendation: max(32, calibrated * 2) */
+  private recommendedBatchSize: number | undefined;
 
   // Shutdown tracking
   private stopped = false;
@@ -286,7 +289,7 @@ export class OnnxDaemon {
       type: "connected",
       model: this.loadedModel,
       clients: this.connectedClientCount(),
-      recommendedBatchSize: this.calibratedBatchSize,
+      recommendedBatchSize: this.recommendedBatchSize,
     });
   }
 
@@ -390,8 +393,9 @@ export class OnnxDaemon {
 
       case "calibrated": {
         this.calibratedBatchSize = msg.batchSize;
+        this.recommendedBatchSize = Math.max(MIN_RECOMMENDED_BATCH_SIZE, msg.batchSize * 2);
         this.batchController = new BatchSizeController(msg.batchSize);
-        console.error(`[OnnxDaemon] Calibrated GPU batch size: ${msg.batchSize}`);
+        console.error(`[OnnxDaemon] Calibrated GPU batch size: ${msg.batchSize}, recommended pipeline: ${this.recommendedBatchSize}`);
         break;
       }
 
