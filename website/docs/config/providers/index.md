@@ -11,13 +11,13 @@ TeaRAGs supports five embedding providers — from zero-config local inference t
 
 | Provider | Type | Price | Scale* | Key Feature |
 |----------|------|-------|--------|-------------|
-| [**ONNX**](./onnx) | Local | 🟢 Free | ~330k LoC | Zero-config, built-in runtime |
+| [**ONNX**](./onnx) | Local | 🟢 Free | ~700k LoC | Zero-config, built-in runtime, adaptive GPU batching |
 | [**Ollama**](./ollama) | Local | 🟢 Free | ~8M+ LoC (depends on hardware) | GPU acceleration, 100+ models |
 | [**OpenAI**](./openai) | Cloud | 🟡 Pay-per-use ($0.02/1M tokens) | ~800k–8M LoC (depends on API tier) | Highest quality, easy setup |
 | [**Cohere**](./cohere) | Cloud | 🟡 Pay-per-use ($0.10/1M tokens) | ~1M LoC | Multilingual support |
 | [**Voyage**](./voyage) | Cloud | 🟡 Pay-per-use ($0.12/1M tokens) | ~2.4M LoC | Code-specialized models |
 
-> \* Estimated lines of code for initial full indexing within 45 minutes. Incremental reindexing is fast on any provider — typically only 1–5% of files change between runs.
+> \* Estimated lines of code for initial full indexing within 45 minutes. Benchmarked on Apple M3 Pro with WebGPU — actual throughput depends on your hardware. Incremental reindexing is fast on any provider — typically only 1–5% of files change between runs.
 
 ## How to Choose
 
@@ -48,7 +48,7 @@ All providers share these tuning variables:
 
 | Provider | Default Batch Size | Rationale |
 |----------|-------------------|-----------|
-| ONNX | 8 | Local inference, small memory footprint |
+| ONNX | Auto-calibrated | GPU probe sets optimal batch size at startup |
 | Ollama | 1024 | GPU-optimized, native batch API |
 | OpenAI | 2048 | Max texts per API request |
 | Cohere | 96 | API limit: 96 texts per request |
