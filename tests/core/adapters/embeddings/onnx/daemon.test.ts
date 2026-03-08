@@ -44,7 +44,7 @@ class MockWorker extends EventEmitter {
     }
   }
 
-  terminate(): Promise<number> {
+  async terminate(): Promise<number> {
     this.emit("exit", 0);
     return Promise.resolve(0);
   }
@@ -58,7 +58,7 @@ function createMockWorkerFactory(): () => MockWorker {
 // Test helper: connect to daemon, send messages, collect responses
 // ---------------------------------------------------------------------------
 
-function connectAndSend(
+async function connectAndSend(
   socketPath: string,
   messages: DaemonRequest[],
   expectedResponses: number,
@@ -82,7 +82,7 @@ function connectAndSend(
       }
     });
 
-    client.on("data", (data) => splitter.feed(data.toString()));
+    client.on("data", (data) => { splitter.feed(data.toString()); });
     client.on("error", reject);
     client.on("connect", () => {
       for (const msg of messages) {
@@ -113,9 +113,9 @@ function createPersistentClient(socketPath: string) {
     }
   });
 
-  client.on("data", (data) => splitter.feed(data.toString()));
+  client.on("data", (data) => { splitter.feed(data.toString()); });
 
-  function waitForResponse(): Promise<DaemonResponse> {
+  async function waitForResponse(): Promise<DaemonResponse> {
     if (responseQueue.length > 0) {
       return Promise.resolve(responseQueue.shift()!);
     }
@@ -129,7 +129,7 @@ function createPersistentClient(socketPath: string) {
       client.write(serialize(msg));
     },
     waitForResponse,
-    close(): Promise<void> {
+    async close(): Promise<void> {
       return new Promise((resolve) => {
         client.on("close", resolve);
         client.end();
@@ -592,7 +592,7 @@ describe("OnnxDaemon", () => {
           );
         }
       }
-      terminate(): Promise<number> {
+      async terminate(): Promise<number> {
         this.emit("exit", 0);
         return Promise.resolve(0);
       }
@@ -682,7 +682,7 @@ describe("OnnxDaemon", () => {
           });
         }
       }
-      terminate(): Promise<number> {
+      async terminate(): Promise<number> {
         this.emit("exit", 0);
         return Promise.resolve(0);
       }

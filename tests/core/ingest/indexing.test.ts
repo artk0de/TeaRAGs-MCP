@@ -332,7 +332,6 @@ function third() {
       );
 
       // Make createCollection throw to trigger the outer catch block
-      const origCreateCollection = qdrant.createCollection.bind(qdrant);
       vi.spyOn(qdrant, "createCollection").mockImplementation(async () => {
         throw new Error("Qdrant connection refused");
       });

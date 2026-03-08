@@ -650,11 +650,13 @@ export class QdrantManager {
         // Get payload from whichever source has it
         const point = denseResults.find((r) => String(r.id) === id) ?? sparseResults.find((r) => String(r.id) === id);
 
-        merged.push({
-          id: point!.id,
-          score,
-          payload: (point!.payload as Record<string, unknown> | null | undefined) ?? undefined,
-        });
+        if (point) {
+          merged.push({
+            id: point.id,
+            score,
+            payload: (point.payload as Record<string, unknown> | null | undefined) ?? undefined,
+          });
+        }
       });
 
       // Sort by fused score descending

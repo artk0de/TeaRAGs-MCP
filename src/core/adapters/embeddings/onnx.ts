@@ -113,7 +113,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     );
   }
 
-  private connectToDaemon(): Promise<void> {
+  private async connectToDaemon(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const socket = createConnection(this.socketPath);
       const splitter = new LineSplitter();
@@ -145,7 +145,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
         this.rejectAllPending(new Error("Socket closed"));
       });
 
-      socket.on("data", (data) => splitter.feed(data.toString()));
+      socket.on("data", (data) => { splitter.feed(data.toString()); });
 
       // Wait for "connected" response after sending "connect"
       let handshakeDone = false;
@@ -230,6 +230,11 @@ export class OnnxEmbeddings implements EmbeddingProvider {
       case "bye":
         // Server confirmed disconnect
         break;
+
+      case "status":
+      case "connected":
+        // Informational responses — not expected during normal client flow
+        break;
     }
   }
 
@@ -285,9 +290,12 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     await this.ensureInitialized();
 
     const id = this.nextId++;
+    const { socket } = this;
+    if (!socket) throw new Error("Socket not connected");
+
     const embeddings = await new Promise<number[][]>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      this.socket!.write(serialize({ type: "embed", id, texts: [text] }));
+      socket.write(serialize({ type: "embed", id, texts: [text] }));
     });
 
     return {
@@ -301,10 +309,13 @@ export class OnnxEmbeddings implements EmbeddingProvider {
 
     await this.ensureInitialized();
 
+    const { socket } = this;
+    if (!socket) throw new Error("Socket not connected");
+
     const id = this.nextId++;
     const embeddings = await new Promise<number[][]>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      this.socket!.write(serialize({ type: "embed", id, texts }));
+      socket.write(serialize({ type: "embed", id, texts }));
     });
 
     return embeddings.map((embedding) => ({
@@ -327,7 +338,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
       return;
     }
 
-    const socket = this.socket;
+    const {socket} = this;
 
     try {
       await new Promise<void>((resolve) => {
@@ -364,3 +375,4 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     }
   }
 }
+// test

@@ -39,7 +39,7 @@ class MockWorker extends EventEmitter {
     }
   }
 
-  terminate(): Promise<number> {
+  async terminate(): Promise<number> {
     this.emit("exit", 0);
     return Promise.resolve(0);
   }

@@ -243,10 +243,10 @@ describe("ChunkPipeline", () => {
       vi.useRealTimers();
 
       // Use a slow embedding to make batches pile up in the worker pool queue
-      let embedResolvers: Array<(val: { embedding: number[] }[]) => void> = [];
+      let embedResolvers: ((val: { embedding: number[] }[]) => void)[] = [];
       const slowEmbeddings = {
         embedBatch: vi.fn().mockImplementation(
-          () =>
+          async () =>
             new Promise<{ embedding: number[] }[]>((resolve) => {
               embedResolvers.push(resolve);
             }),
@@ -320,10 +320,10 @@ describe("ChunkPipeline", () => {
     it("should log backpressure release when accumulator was paused", async () => {
       vi.useRealTimers();
 
-      let embedResolvers: Array<(val: { embedding: number[] }[]) => void> = [];
+      let embedResolvers: ((val: { embedding: number[] }[]) => void)[] = [];
       const slowEmbeddings = {
         embedBatch: vi.fn().mockImplementation(
-          () =>
+          async () =>
             new Promise<{ embedding: number[] }[]>((resolve) => {
               embedResolvers.push(resolve);
             }),

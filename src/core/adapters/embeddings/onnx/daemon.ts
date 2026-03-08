@@ -11,7 +11,7 @@ import { Worker } from "node:worker_threads";
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { EventEmitter } from "node:events";
+import type { EventEmitter } from "node:events";
 
 import { LineSplitter } from "./line-splitter.js";
 import { serialize, parseLine, type DaemonRequest, type DaemonResponse } from "./daemon-types.js";
@@ -32,8 +32,8 @@ export interface DaemonConfig {
 
 /** Minimal worker interface matching what we need from Worker / mock */
 interface WorkerLike extends EventEmitter {
-  postMessage(msg: WorkerRequest): void;
-  terminate(): Promise<number>;
+  postMessage: (msg: WorkerRequest) => void;
+  terminate: () => Promise<number>;
 }
 
 interface ClientState {
@@ -88,11 +88,12 @@ export class OnnxDaemon {
       unlinkSync(this.config.socketPath);
     }
 
-    this.server = createServer((socket) => this.handleConnection(socket));
+    this.server = createServer((socket) => { this.handleConnection(socket); });
 
+    const { server } = this;
     await new Promise<void>((resolve, reject) => {
-      this.server!.on("error", reject);
-      this.server!.listen(this.config.socketPath, () => resolve());
+      server.on("error", reject);
+      server.listen(this.config.socketPath, () => { resolve(); });
     });
 
     // Write PID file
@@ -129,8 +130,9 @@ export class OnnxDaemon {
 
     // Close server
     if (this.server) {
+      const { server: srv } = this;
       await new Promise<void>((resolve) => {
-        this.server!.close(() => resolve());
+        srv.close(() => { resolve(); });
       });
       this.server = null;
     }
@@ -160,7 +162,7 @@ export class OnnxDaemon {
       }
     });
 
-    socket.on("data", (data) => splitter.feed(data.toString()));
+    socket.on("data", (data) => { splitter.feed(data.toString()); });
 
     socket.on("close", () => {
       this.handleClientDisconnect(socket, state);
@@ -252,7 +254,7 @@ export class OnnxDaemon {
 
     // Spawn worker if not yet created
     if (!this.worker) {
-      this.spawnWorker();
+      const worker = this.spawnWorker();
       this.loadedModel = model;
       this.loadedDevice = device;
 
@@ -262,7 +264,7 @@ export class OnnxDaemon {
       });
 
       // Send init to worker
-      this.worker!.postMessage({ type: "init", model, cacheDir, device });
+      worker.postMessage({ type: "init", model, cacheDir, device });
     }
 
     // Wait for worker to be ready
@@ -286,7 +288,8 @@ export class OnnxDaemon {
   // -------------------------------------------------------------------------
 
   private async handleEmbed(socket: Socket, state: ClientState, id: number, texts: string[]): Promise<void> {
-    if (!state.connected || !this.worker || !this.workerReady) {
+    const { worker } = this;
+    if (!state.connected || !worker || !this.workerReady) {
       this.send(socket, { type: "error", message: "Client not connected. Send 'connect' first." });
       return;
     }
@@ -294,7 +297,7 @@ export class OnnxDaemon {
     // Forward to worker and wait for response
     const resp = await new Promise<WorkerResponse>((resolve) => {
       this.pendingEmbeds.set(id, resolve);
-      this.worker!.postMessage({ type: "embed", id, texts });
+      worker.postMessage({ type: "embed", id, texts });
     });
 
     if (resp.type === "result") {
@@ -308,27 +311,30 @@ export class OnnxDaemon {
   // Worker management
   // -------------------------------------------------------------------------
 
-  private spawnWorker(): void {
+  private spawnWorker(): WorkerLike {
     if (this.config.workerFactory) {
-      this.worker = this.config.workerFactory() as WorkerLike;
+      this.worker = this.config.workerFactory();
     } else {
       /* v8 ignore next 2 -- real Worker path, tested via e2e */
       const workerPath = join(dirname(fileURLToPath(import.meta.url)), "worker.js");
       this.worker = new Worker(workerPath) as unknown as WorkerLike;
     }
 
-    this.worker.on("message", (msg: WorkerResponse) => {
+    const { worker } = this;
+    worker.on("message", (msg: WorkerResponse) => {
       this.handleWorkerMessage(msg);
     });
 
-    this.worker.on("error", (err: Error) => {
+    worker.on("error", (err: Error) => {
       console.error(`[OnnxDaemon] Worker error: ${err.message}`);
     });
 
-    this.worker.on("exit", (_code: number) => {
+    worker.on("exit", (_code: number) => {
       this.worker = null;
       this.workerReady = false;
     });
+
+    return worker;
   }
 
   private handleWorkerMessage(msg: WorkerResponse): void {

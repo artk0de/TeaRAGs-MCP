@@ -205,10 +205,10 @@ class DebugLogger {
       // Format config dump as aligned key=value pairs
       const dumpEntries = Object.entries(dump);
       const maxKeyLen = dumpEntries.length > 0 ? Math.max(...dumpEntries.map(([k]) => k.length)) : 0;
-      const configLines = dumpEntries.map(([k, v]) => `  ${k.padEnd(maxKeyLen)} = ${v}`).join("\n");
+      const configLines = dumpEntries.map(([k, v]) => `  ${k.padEnd(maxKeyLen)} = ${String(v)}`).join("\n");
 
       // Derive concurrency stats
-      const concurrency = (dump["ingest.tune.pipelineConcurrency"] as number) ?? 1;
+      const concurrency = (dump["ingest.tune.pipelineConcurrency"] as number | undefined) ?? 1;
 
       this.writeRaw(`
 ================================================================================
@@ -430,8 +430,8 @@ DERIVED:
       let gitChunkConcurrency = 10;
       try {
         const zodConfig = getZodConfig();
-        pipelineConcurrency = zodConfig.ingest.tune.pipelineConcurrency;
-        chunkerPoolSize = zodConfig.ingest.tune.chunkerPoolSize;
+        ({ pipelineConcurrency } = zodConfig.ingest.tune);
+        ({ chunkerPoolSize } = zodConfig.ingest.tune);
         gitChunkConcurrency = zodConfig.trajectoryGit.chunkConcurrency;
       } catch {
         // Config not yet parsed — use defaults

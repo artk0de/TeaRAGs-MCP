@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkerResponse } from "../../../../../../src/core/ingest/pipeline/chunker/infra/worker.js";
 import type { ChunkerConfig } from "../../../../../../src/core/types.js";
+import type { ChunkerPool as ChunkerPoolType } from "../../../../../../src/core/ingest/pipeline/chunker/infra/pool.js";
 
 // --- Shared mock state (hoisted so vi.mock can reference it) ---
 
@@ -114,13 +115,12 @@ const CHUNKER_CONFIG: ChunkerConfig = {
 };
 
 describe("ChunkerPool (edge cases with mocked workers)", () => {
-  let ChunkerPool: typeof import("../../../../../../src/core/ingest/pipeline/chunker/infra/pool.js").ChunkerPool;
+  let ChunkerPool: typeof ChunkerPoolType;
 
   beforeEach(async () => {
     resetState();
     // Dynamic import so vi.mock is applied first
-    const mod = await import("../../../../../../src/core/ingest/pipeline/chunker/infra/pool.js");
-    ChunkerPool = mod.ChunkerPool;
+    ({ ChunkerPool } = await import("../../../../../../src/core/ingest/pipeline/chunker/infra/pool.js"));
   });
 
   afterEach(() => {
@@ -160,7 +160,7 @@ describe("ChunkerPool (edge cases with mocked workers)", () => {
       const pool = new ChunkerPool(1, CHUNKER_CONFIG);
 
       // Submit first file — takes the only worker
-      const promise1 = pool.processFile("a.ts", "const a = 1;", "typescript");
+      const _promise1 = pool.processFile("a.ts", "const a = 1;", "typescript");
 
       // Submit second file — goes to queue since worker is busy
       const promise2 = pool.processFile("b.ts", "const b = 2;", "typescript");

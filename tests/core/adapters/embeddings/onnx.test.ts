@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
-import { createConnection, createServer, type Server } from "node:net";
+import { createServer, type Server } from "node:net";
 
 import { OnnxDaemon } from "../../../../src/core/adapters/embeddings/onnx/daemon.js";
 import type { WorkerRequest, WorkerResponse } from "../../../../src/core/adapters/embeddings/onnx/worker-types.js";
@@ -13,7 +13,7 @@ import {
   DEFAULT_ONNX_MODEL,
   OnnxEmbeddings,
 } from "../../../../src/core/adapters/embeddings/onnx.js";
-import { serialize } from "../../../../src/core/adapters/embeddings/onnx/daemon-types.js";
+import type { Socket } from "node:net";
 
 // ---------------------------------------------------------------------------
 // Mock worker factory — same as daemon.test.ts
@@ -40,7 +40,7 @@ class MockWorker extends EventEmitter {
     }
   }
 
-  terminate(): Promise<number> {
+  async terminate(): Promise<number> {
     this.emit("exit", 0);
     return Promise.resolve(0);
   }
@@ -163,7 +163,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
             );
           }
         }
-        terminate(): Promise<number> {
+        async terminate(): Promise<number> {
           this.emit("exit", 0);
           return Promise.resolve(0);
         }
@@ -212,7 +212,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
             });
           }
         }
-        terminate(): Promise<number> {
+        async terminate(): Promise<number> {
           this.emit("exit", 0);
           return Promise.resolve(0);
         }
@@ -267,7 +267,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
             // Second embed: never respond — let socket close reject it
           }
         }
-        terminate(): Promise<number> {
+        async terminate(): Promise<number> {
           this.emit("exit", 0);
           return Promise.resolve(0);
         }
@@ -339,7 +339,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
 
       const rejection = new Promise<void>((resolve, reject) => {
         pendingMap.set(999, {
-          resolve: () => reject(new Error("Should not resolve")),
+          resolve: () => { reject(new Error("Should not resolve")); },
           reject: (err) => {
             expect(err.message).toMatch(/Socket closed/);
             resolve();
@@ -368,7 +368,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
       await provider.embed("test");
 
       // Destroy the socket before terminate
-      const internalSocket = (provider as unknown as { socket: import("node:net").Socket }).socket;
+      const internalSocket = (provider as unknown as { socket: Socket }).socket;
       internalSocket.destroy();
 
       // terminate should handle destroyed socket gracefully
@@ -382,17 +382,17 @@ describe("OnnxEmbeddings (daemon client)", () => {
       await provider.embed("test");
 
       // Access internal socket to send raw messages that trigger handleResponse
-      const internalSocket = (provider as unknown as { socket: import("node:net").Socket }).socket;
+      const internalSocket = (provider as unknown as { socket: Socket }).socket;
 
       // Send pong — should be silently consumed
-      internalSocket.emit("data", Buffer.from(JSON.stringify({ type: "pong" }) + "\n"));
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "pong" })  }\n`));
 
       // Send bye — should be silently consumed
-      internalSocket.emit("data", Buffer.from(JSON.stringify({ type: "bye" }) + "\n"));
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "bye" })  }\n`));
 
       // Send log — should call console.error
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      internalSocket.emit("data", Buffer.from(JSON.stringify({ type: "log", message: "test-log" }) + "\n"));
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "log", message: "test-log" })  }\n`));
 
       await new Promise((r) => setTimeout(r, 50));
       expect(consoleSpy).toHaveBeenCalledWith("test-log");
@@ -408,7 +408,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
 
       const rejection = new Promise<void>((resolve, reject) => {
         pendingMap.set(888, {
-          resolve: () => reject(new Error("Should not resolve")),
+          resolve: () => { reject(new Error("Should not resolve")); },
           reject: (err) => {
             expect(err.message).toBe("Daemon error");
             resolve();
@@ -416,8 +416,8 @@ describe("OnnxEmbeddings (daemon client)", () => {
         });
       });
 
-      const internalSocket = (provider as unknown as { socket: import("node:net").Socket }).socket;
-      internalSocket.emit("data", Buffer.from(JSON.stringify({ type: "error", message: "Daemon error" }) + "\n"));
+      const internalSocket = (provider as unknown as { socket: Socket }).socket;
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "error", message: "Daemon error" })  }\n`));
 
       await rejection;
     });
@@ -425,9 +425,9 @@ describe("OnnxEmbeddings (daemon client)", () => {
     it("should handle result for unknown id gracefully", async () => {
       await provider.embed("test");
 
-      const internalSocket = (provider as unknown as { socket: import("node:net").Socket }).socket;
+      const internalSocket = (provider as unknown as { socket: Socket }).socket;
       // Send result with id that has no pending handler — should not throw
-      internalSocket.emit("data", Buffer.from(JSON.stringify({ type: "result", id: 77777, embeddings: [[0]] }) + "\n"));
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "result", id: 77777, embeddings: [[0]] })  }\n`));
 
       // If we get here without error, the test passes
       await new Promise((r) => setTimeout(r, 50));
@@ -474,20 +474,6 @@ describe("OnnxEmbeddings (daemon client)", () => {
 
   describe("handshake error from daemon", () => {
     it("should reject when daemon sends error during handshake", async () => {
-      // Create a daemon with a worker that fails to init
-      class FailInitWorker extends EventEmitter {
-        postMessage(msg: WorkerRequest): void {
-          if (msg.type === "init") {
-            // Don't send ready — the connect handler will hang
-            // But the daemon sends the error through model mismatch
-          }
-        }
-        terminate(): Promise<number> {
-          this.emit("exit", 0);
-          return Promise.resolve(0);
-        }
-      }
-
       // First, start a daemon and connect one client with model-a
       const errSocketPath = join(tmpdir(), `onnx-hserr-${randomUUID().slice(0, 8)}.sock`);
       const errDaemon = new OnnxDaemon({
@@ -527,7 +513,7 @@ describe("OnnxEmbeddings (raw server edge cases)", () => {
   afterEach(async () => {
     if (server) {
       await new Promise<void>((resolve) => {
-        server.close(() => resolve());
+        server.close(() => { resolve(); });
       });
     }
   });
@@ -558,7 +544,7 @@ describe("OnnxEmbeddings (raw server edge cases)", () => {
           if (!line) continue;
           const msg = JSON.parse(line);
           if (msg.type === "connect") {
-            socket.write(JSON.stringify({ type: "connected", model: msg.model, clients: 1 }) + "\n");
+            socket.write(`${JSON.stringify({ type: "connected", model: msg.model, clients: 1 })  }\n`);
             // After handshake, close socket after short delay
             setTimeout(() => {
               socket.end();
@@ -592,10 +578,10 @@ describe("OnnxEmbeddings (raw server edge cases)", () => {
           if (msg.type === "connect") {
             // Send invalid JSON first, then valid connected response
             socket.write("not-valid-json\n");
-            socket.write(JSON.stringify({ type: "connected", model: msg.model, clients: 1 }) + "\n");
+            socket.write(`${JSON.stringify({ type: "connected", model: msg.model, clients: 1 })  }\n`);
           } else if (msg.type === "embed") {
             socket.write(
-              JSON.stringify({ type: "result", id: msg.id, embeddings: msg.texts.map(() => [1, 2, 3]) }) + "\n",
+              `${JSON.stringify({ type: "result", id: msg.id, embeddings: msg.texts.map(() => [1, 2, 3]) })  }\n`,
             );
           }
         }

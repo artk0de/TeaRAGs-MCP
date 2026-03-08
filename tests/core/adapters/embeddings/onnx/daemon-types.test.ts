@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   type DaemonRequest,
-  type DaemonResponse,
   parseLine,
   serialize,
 } from "../../../../../src/core/adapters/embeddings/onnx/daemon-types.js";

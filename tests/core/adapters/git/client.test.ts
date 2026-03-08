@@ -33,7 +33,6 @@ import { parsePathspecOutput } from "../../../../src/core/adapters/git/parsers.j
 import {
   getCommitsByPathspec,
   getCommitsByPathspecBatched,
-  getCommitsByPathspecSingle,
 } from "../../../../src/core/adapters/git/client.js";
 
 // Helper to create a mock execFile that resolves with stdout
