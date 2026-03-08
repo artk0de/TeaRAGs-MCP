@@ -34,6 +34,8 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private nextId = 0;
 
+  public recommendedBatchSize?: number;
+
   // Pending embed requests: id → { resolve, reject }
   private readonly pending = new Map<
     number,
@@ -165,6 +167,9 @@ export class OnnxEmbeddings implements EmbeddingProvider {
           clearTimeout(timeout);
           this.socket = socket;
           this.splitter = splitter;
+          if (msg.recommendedBatchSize !== undefined) {
+            this.recommendedBatchSize = msg.recommendedBatchSize;
+          }
           this.startHeartbeat();
           resolve();
           return;
@@ -332,6 +337,11 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     return this.model;
   }
 
+  /** Eagerly initialize connection to daemon (for batch size calibration) */
+  async initialize(): Promise<void> {
+    await this.ensureInitialized();
+  }
+
   async terminate(): Promise<void> {
     if (!this.socket || this.socket.destroyed) {
       this.cleanup();
@@ -375,4 +385,3 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     }
   }
 }
-// test
