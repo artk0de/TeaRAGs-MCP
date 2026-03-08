@@ -721,8 +721,41 @@ describe("OnnxDaemon", () => {
     await client.close();
   });
 
+  it("should include recommendedBatchSize in connected response after calibration", async () => {
+    daemon = new OnnxDaemon({
+      socketPath,
+      pidFile,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: createMockWorkerFactory(),
+    });
+
+    await daemon.start();
+
+    // First client triggers worker spawn; calibrated message arrives after ready
+    const client1 = createPersistentClient(socketPath);
+    client1.send({ type: "connect", model: "test-model", device: "cpu" });
+    await client1.waitForResponse(); // connected (may not have recommendedBatchSize yet)
+
+    // Wait for calibrated message to be processed by daemon
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Second client connects after calibration — should get recommendedBatchSize
+    const client2 = createPersistentClient(socketPath);
+    client2.send({ type: "connect", model: "test-model", device: "cpu" });
+    const resp = await client2.waitForResponse();
+
+    expect(resp.type).toBe("connected");
+    if (resp.type === "connected") {
+      expect(resp.recommendedBatchSize).toBe(8);
+    }
+
+    await client1.close();
+    await client2.close();
+  });
+
   describe("daemon-side batching", () => {
-    it("should split large batch into GPU_BATCH_SIZE chunks and return combined result", async () => {
+    it("should split large batch into DEFAULT_GPU_BATCH_SIZE chunks and return combined result", async () => {
       daemon = new OnnxDaemon({
         socketPath,
         pidFile,
@@ -753,7 +786,7 @@ describe("OnnxDaemon", () => {
       await client.close();
     });
 
-    it("should pass through batch that fits in GPU_BATCH_SIZE without splitting", async () => {
+    it("should pass through batch that fits in DEFAULT_GPU_BATCH_SIZE without splitting", async () => {
       daemon = new OnnxDaemon({
         socketPath,
         pidFile,
@@ -782,7 +815,7 @@ describe("OnnxDaemon", () => {
       await client.close();
     });
 
-    it("should handle batch that is exact multiple of GPU_BATCH_SIZE", async () => {
+    it("should handle batch that is exact multiple of DEFAULT_GPU_BATCH_SIZE", async () => {
       daemon = new OnnxDaemon({
         socketPath,
         pidFile,
