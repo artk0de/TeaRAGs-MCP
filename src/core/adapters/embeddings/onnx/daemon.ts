@@ -16,7 +16,7 @@ import type { EventEmitter } from "node:events";
 import { LineSplitter } from "./line-splitter.js";
 import { serialize, parseLine, type DaemonRequest, type DaemonResponse } from "./daemon-types.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
-import { GPU_BATCH_SIZE } from "./constants.js";
+import { DEFAULT_GPU_BATCH_SIZE } from "./constants.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -308,7 +308,7 @@ export class OnnxDaemon {
     }
 
     // Fast path: single batch fits in GPU limit
-    if (texts.length <= GPU_BATCH_SIZE) {
+    if (texts.length <= DEFAULT_GPU_BATCH_SIZE) {
       const resp = await this.embedViaWorker(worker, id, texts);
       if (resp.type === "result") {
         this.send(socket, { type: "result", id, embeddings: resp.embeddings });
@@ -318,10 +318,10 @@ export class OnnxDaemon {
       return;
     }
 
-    // Split into sub-batches of GPU_BATCH_SIZE
+    // Split into sub-batches of DEFAULT_GPU_BATCH_SIZE
     const allEmbeddings: number[][] = [];
-    for (let offset = 0; offset < texts.length; offset += GPU_BATCH_SIZE) {
-      const subTexts = texts.slice(offset, offset + GPU_BATCH_SIZE);
+    for (let offset = 0; offset < texts.length; offset += DEFAULT_GPU_BATCH_SIZE) {
+      const subTexts = texts.slice(offset, offset + DEFAULT_GPU_BATCH_SIZE);
       const subId = id * 10000 + offset; // unique sub-id to avoid collision with pending map
       const resp = await this.embedViaWorker(worker, subId, subTexts);
 
