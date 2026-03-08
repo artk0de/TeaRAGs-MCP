@@ -26,3 +26,7 @@ export function daemonSocketPath(): string {
 export function daemonPidFile(): string {
   return join(appDataDir(), "onnx-daemon.pid");
 }
+
+export function calibrationCachePath(): string {
+  return join(appDataDir(), "onnx-calibration.json");
+}
