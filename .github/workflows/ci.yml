@@ -46,7 +46,7 @@ jobs:
         run: npm run build
 
       - name: Run tests with coverage (quality gate)
-        run: npm run test:coverage
+        run: npm run test:coverage -- --reporter=dot
         # Note: This step enforces 90% coverage thresholds via vitest.config.ts
         # If thresholds are not met, this step will fail with exit code 1
 
