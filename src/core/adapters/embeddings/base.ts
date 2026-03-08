@@ -14,10 +14,6 @@ export interface EmbeddingProvider {
   embedBatch: (texts: string[]) => Promise<EmbeddingResult[]>;
   getDimensions: () => number;
   getModel: () => string;
-  /** Optimal batch size detected by GPU calibration. Undefined if not available. */
-  recommendedBatchSize?: number;
-  /** Optional eager initialization (e.g. for ONNX daemon connection) */
-  initialize?: () => Promise<void>;
 }
 
 export interface ProviderConfig {

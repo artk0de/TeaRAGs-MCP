@@ -19,7 +19,6 @@ export function parseAppConfigZod(): {
   trajectoryGit: TrajectoryGitConfig;
   qdrantTune: QdrantTuneConfig;
   deprecations: DeprecationNotice[];
-  flags: { userSetBatchSize: boolean };
 } {
   const deprecations: DeprecationNotice[] = [];
   const env = (name: string, ...fallbacks: string[]) => envWithFallback(deprecations, name, ...fallbacks);
@@ -164,9 +163,6 @@ export function parseAppConfigZod(): {
     trajectoryGit: trajectoryGitResult.data,
     qdrantTune: qdrantTuneResult.data,
     deprecations,
-    flags: {
-      userSetBatchSize: !!userSetBatchSize,
-    },
   };
 }
 
