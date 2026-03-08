@@ -446,12 +446,16 @@ describe("GitLogReader", () => {
     expect(tinyMap.size).toBeLessThanOrEqual(fullMap.size);
   });
 
-  it("should use since parameter in isomorphic-git to filter by date", async () => {
+  it("should use since parameter to filter by date", async () => {
     if (!repoRoot) return;
 
-    // 0.001 months ≈ 43 minutes — only very recent commits
-    const map = await reader.buildFileSignalMap(repoRoot, 0.001);
-    const cutoffSec = Date.now() / 1000 - 2 * 3600; // 2 hours ago
+    // Use a window that's generous enough to include recent commits but
+    // narrow enough to exclude very old ones. 0.5 months ≈ 15 days.
+    const maxAgeMonths = 0.5;
+    const map = await reader.buildFileSignalMap(repoRoot, maxAgeMonths);
+    // Generous cutoff: 2x the filter window to account for git date filtering variance
+    const toleranceSec = maxAgeMonths * 30 * 24 * 3600 * 2;
+    const cutoffSec = Date.now() / 1000 - toleranceSec;
 
     for (const [, entry] of map) {
       for (const commit of entry.commits) {
