@@ -231,6 +231,7 @@ describe("typescriptBodyChunkingHook", () => {
       "  abstract intersectsWith(other: Shape): boolean;",
       "",
       "  describe() {",
+      // eslint-disable-next-line no-template-curly-in-string
       "    return `Shape: ${this.colorValue}`;",
       "  }",
       "}",

@@ -25,7 +25,7 @@ export type DaemonResponse =
   | { type: "log"; level: "error"; message: string };
 
 export function serialize(msg: DaemonRequest | DaemonResponse): string {
-  return JSON.stringify(msg) + "\n";
+  return `${JSON.stringify(msg)  }\n`;
 }
 
 export function parseLine(
@@ -34,7 +34,7 @@ export function parseLine(
   const trimmed = line.trim();
   if (!trimmed) return null;
   try {
-    return JSON.parse(trimmed);
+    return JSON.parse(trimmed) as DaemonRequest | DaemonResponse;
   } catch {
     return null;
   }

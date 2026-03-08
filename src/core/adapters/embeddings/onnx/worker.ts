@@ -35,8 +35,10 @@ function parseModelSpec(model: string): { baseModel: string; dtype: Dtype | unde
 
 let extractor: Pipeline | null = null;
 
+const port = parentPort;
+
 function post(msg: WorkerResponse): void {
-  parentPort!.postMessage(msg);
+  port?.postMessage(msg);
 }
 
 // Forward console.error to main thread
@@ -119,13 +121,13 @@ async function handleEmbed(id: number, texts: string[]): Promise<void> {
   }
 }
 
-parentPort!.on("message", (msg: WorkerRequest) => {
+port?.on("message", (msg: WorkerRequest) => {
   switch (msg.type) {
     case "init":
       void handleInit(msg.model, msg.cacheDir, msg.device);
       break;
     case "embed":
-      embedQueue = embedQueue.then(() => handleEmbed(msg.id, msg.texts));
+      embedQueue = embedQueue.then(async () => handleEmbed(msg.id, msg.texts));
       break;
     case "terminate":
       process.exit(0);
