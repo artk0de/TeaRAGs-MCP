@@ -216,7 +216,10 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
     post({ type: "ready" });
 
     // Fire-and-forget: calibrate GPU batch size in background (queued to avoid GPU contention)
-    embedQueue = embedQueue.then(() => runProbe(extractor!, model, resolvedDevice));
+    const loadedPipeline = extractor;
+    if (loadedPipeline) {
+      embedQueue = embedQueue.then(async () => runProbe(loadedPipeline, model, resolvedDevice));
+    }
   } catch (error: unknown) {
     const raw = error instanceof Error ? error.message : String(error);
     const isAuthError = raw.includes("Unauthorized") || raw.includes("401") || raw.includes("403");
