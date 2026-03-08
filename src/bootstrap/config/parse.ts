@@ -147,7 +147,7 @@ export function parseAppConfigZod(): {
   // Apply provider-specific batch size default if not explicitly set
   if (!userSetBatchSize) {
     const providerBatchDefaults: Record<string, number> = {
-      onnx: 8,
+      onnx: 32,
       ollama: 1024,
       openai: 2048,
       cohere: 96,

@@ -155,12 +155,12 @@ describe("parseAppConfigZod", () => {
       expect(embedding.tune.batchSize).toBe(1024);
     });
 
-    it("onnx gets batchSize=8 when not explicitly set", async () => {
+    it("onnx gets batchSize=32 when not explicitly set", async () => {
       process.env.EMBEDDING_PROVIDER = "onnx";
       const { parseAppConfigZod } = await freshImport();
       const { embedding } = parseAppConfigZod();
 
-      expect(embedding.tune.batchSize).toBe(8);
+      expect(embedding.tune.batchSize).toBe(32);
     });
 
     it("openai gets batchSize=2048 when not explicitly set", async () => {
