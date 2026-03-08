@@ -8,8 +8,15 @@
  */
 
 import { parentPort } from "node:worker_threads";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 import { detectDevice } from "./device.js";
+import {
+  DEFAULT_GPU_BATCH_SIZE,
+  PROBE_BATCH_SIZES,
+  PROBE_PRESSURE_THRESHOLD,
+} from "./constants.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
 
 // Sequential lock: ensures only one embed runs at a time on GPU
@@ -76,6 +83,85 @@ async function loadPipeline(
   return (await pipelineFn("feature-extraction", baseModel, pipelineOpts)) as Pipeline;
 }
 
+function calibrationCachePath(): string | null {
+  const dataDir = process.env.TEA_RAGS_DATA_DIR ?? (process.env.HOME ? `${process.env.HOME}/.tea-rags-mcp` : null);
+  return dataDir ? `${dataDir}/onnx-calibration.json` : null;
+}
+
+interface CalibrationCache {
+  model: string;
+  device: string;
+  batchSize: number;
+}
+
+function readCalibrationCache(model: string, device: string): number | null {
+  const path = calibrationCachePath();
+  if (!path) return null;
+  try {
+    const data = JSON.parse(readFileSync(path, "utf-8")) as CalibrationCache;
+    if (data.model === model && data.device === device) {
+      return data.batchSize;
+    }
+  } catch {
+    // no cache or invalid
+  }
+  return null;
+}
+
+function writeCalibrationCache(model: string, device: string, batchSize: number): void {
+  const path = calibrationCachePath();
+  if (!path) return;
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ model, device, batchSize }), "utf-8");
+  } catch {
+    // non-fatal
+  }
+}
+
+async function runProbe(pipeline: Pipeline, model: string, device: string): Promise<void> {
+  const cachedSize = readCalibrationCache(model, device);
+  if (cachedSize !== null) {
+    console.error(`[ONNX] Calibration cache hit: batchSize=${cachedSize}`);
+    post({ type: "calibrated", batchSize: cachedSize });
+    return;
+  }
+
+  console.error("[ONNX] Running GPU batch size calibration...");
+  const probeText = "The quick brown fox jumps over the lazy dog. function main() { return 42; }";
+  let bestMsPerText = Infinity;
+  let calibratedSize = DEFAULT_GPU_BATCH_SIZE;
+
+  for (const bs of PROBE_BATCH_SIZES) {
+    const texts = Array.from({ length: bs }, () => probeText);
+    try {
+      const start = performance.now();
+      await pipeline(texts, { pooling: "mean", normalize: true });
+      const elapsed = performance.now() - start;
+      const msPerText = elapsed / bs;
+
+      console.error(`[ONNX] Probe bs=${bs}: ${elapsed.toFixed(0)}ms total, ${msPerText.toFixed(1)}ms/text`);
+
+      if (msPerText < bestMsPerText) {
+        bestMsPerText = msPerText;
+        calibratedSize = bs;
+      }
+
+      if (msPerText > bestMsPerText * PROBE_PRESSURE_THRESHOLD) {
+        console.error(`[ONNX] Pressure at bs=${bs}, optimal=${calibratedSize}`);
+        break;
+      }
+    } catch {
+      console.error(`[ONNX] Probe failed at bs=${bs}, stopping`);
+      break;
+    }
+  }
+
+  writeCalibrationCache(model, device, calibratedSize);
+  console.error(`[ONNX] Calibrated GPU batch size: ${calibratedSize}`);
+  post({ type: "calibrated", batchSize: calibratedSize });
+}
+
 async function handleInit(model: string, cacheDir?: string, device?: string): Promise<void> {
   const { baseModel, dtype } = parseModelSpec(model);
   const resolvedDevice = detectDevice(device);
@@ -118,6 +204,9 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
     }
 
     post({ type: "ready" });
+
+    // Fire-and-forget: calibrate GPU batch size in background (queued to avoid GPU contention)
+    embedQueue = embedQueue.then(() => runProbe(extractor!, model, resolvedDevice));
   } catch (error: unknown) {
     const raw = error instanceof Error ? error.message : String(error);
     const isAuthError = raw.includes("Unauthorized") || raw.includes("401") || raw.includes("403");
@@ -133,8 +222,10 @@ async function handleEmbed(id: number, texts: string[]): Promise<void> {
   }
 
   try {
+    const start = performance.now();
     const output = await extractor(texts, { pooling: "mean", normalize: true });
-    post({ type: "result", id, embeddings: output.tolist() });
+    const durationMs = Math.round(performance.now() - start);
+    post({ type: "result", id, embeddings: output.tolist(), durationMs });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     post({ type: "error", id, message });
@@ -151,6 +242,5 @@ port?.on("message", (msg: WorkerRequest) => {
       break;
     case "terminate":
       process.exit(0);
-      break;
   }
 });
