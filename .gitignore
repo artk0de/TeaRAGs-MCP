@@ -56,3 +56,7 @@ docs/plans/**
 website/node_modules/
 website/build/
 website/.docusaurus/
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
