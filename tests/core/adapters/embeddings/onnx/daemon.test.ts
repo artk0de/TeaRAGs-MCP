@@ -718,6 +718,97 @@ describe("OnnxDaemon", () => {
     await client.close();
   });
 
+  describe("daemon-side batching", () => {
+    it("should split large batch into GPU_BATCH_SIZE chunks and return combined result", async () => {
+      daemon = new OnnxDaemon({
+        socketPath,
+        pidFile,
+        idleTimeoutMs: 30_000,
+        heartbeatTimeoutMs: 45_000,
+        workerFactory: createMockWorkerFactory(),
+      });
+
+      await daemon.start();
+
+      const texts = Array.from({ length: 20 }, (_, i) => `text-${i}`);
+      const client = createPersistentClient(socketPath);
+
+      client.send({ type: "connect", model: "test-model", device: "cpu" });
+      await client.waitForResponse(); // connected
+
+      client.send({ type: "embed", id: 1, texts });
+      const resp = await client.waitForResponse();
+
+      expect(resp.type).toBe("result");
+      if (resp.type === "result") {
+        expect(resp.id).toBe(1);
+        expect(resp.embeddings).toHaveLength(20);
+        expect(resp.embeddings[0]).toEqual([1, 2, 3]);
+        expect(resp.embeddings[19]).toEqual([1, 2, 3]);
+      }
+
+      await client.close();
+    });
+
+    it("should pass through batch that fits in GPU_BATCH_SIZE without splitting", async () => {
+      daemon = new OnnxDaemon({
+        socketPath,
+        pidFile,
+        idleTimeoutMs: 30_000,
+        heartbeatTimeoutMs: 45_000,
+        workerFactory: createMockWorkerFactory(),
+      });
+
+      await daemon.start();
+
+      const texts = Array.from({ length: 5 }, (_, i) => `text-${i}`);
+      const client = createPersistentClient(socketPath);
+
+      client.send({ type: "connect", model: "test-model", device: "cpu" });
+      await client.waitForResponse();
+
+      client.send({ type: "embed", id: 2, texts });
+      const resp = await client.waitForResponse();
+
+      expect(resp.type).toBe("result");
+      if (resp.type === "result") {
+        expect(resp.id).toBe(2);
+        expect(resp.embeddings).toHaveLength(5);
+      }
+
+      await client.close();
+    });
+
+    it("should handle batch that is exact multiple of GPU_BATCH_SIZE", async () => {
+      daemon = new OnnxDaemon({
+        socketPath,
+        pidFile,
+        idleTimeoutMs: 30_000,
+        heartbeatTimeoutMs: 45_000,
+        workerFactory: createMockWorkerFactory(),
+      });
+
+      await daemon.start();
+
+      const texts = Array.from({ length: 16 }, (_, i) => `text-${i}`);
+      const client = createPersistentClient(socketPath);
+
+      client.send({ type: "connect", model: "test-model", device: "cpu" });
+      await client.waitForResponse();
+
+      client.send({ type: "embed", id: 3, texts });
+      const resp = await client.waitForResponse();
+
+      expect(resp.type).toBe("result");
+      if (resp.type === "result") {
+        expect(resp.id).toBe(3);
+        expect(resp.embeddings).toHaveLength(16);
+      }
+
+      await client.close();
+    });
+  });
+
   it("should start without pidFile config", async () => {
     daemon = new OnnxDaemon({
       socketPath,

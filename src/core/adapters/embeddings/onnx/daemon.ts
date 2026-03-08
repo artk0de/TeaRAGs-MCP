@@ -16,6 +16,7 @@ import type { EventEmitter } from "node:events";
 import { LineSplitter } from "./line-splitter.js";
 import { serialize, parseLine, type DaemonRequest, type DaemonResponse } from "./daemon-types.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
+import { GPU_BATCH_SIZE } from "./constants.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -287,6 +288,18 @@ export class OnnxDaemon {
   // embed
   // -------------------------------------------------------------------------
 
+  /** Send embed request to worker and wait for response */
+  private embedViaWorker(
+    worker: WorkerLike,
+    id: number,
+    texts: string[],
+  ): Promise<WorkerResponse> {
+    return new Promise<WorkerResponse>((resolve) => {
+      this.pendingEmbeds.set(id, resolve);
+      worker.postMessage({ type: "embed", id, texts });
+    });
+  }
+
   private async handleEmbed(socket: Socket, state: ClientState, id: number, texts: string[]): Promise<void> {
     const { worker } = this;
     if (!state.connected || !worker || !this.workerReady) {
@@ -294,17 +307,34 @@ export class OnnxDaemon {
       return;
     }
 
-    // Forward to worker and wait for response
-    const resp = await new Promise<WorkerResponse>((resolve) => {
-      this.pendingEmbeds.set(id, resolve);
-      worker.postMessage({ type: "embed", id, texts });
-    });
-
-    if (resp.type === "result") {
-      this.send(socket, { type: "result", id: resp.id, embeddings: resp.embeddings });
-    } else if (resp.type === "error") {
-      this.send(socket, { type: "error", message: resp.message });
+    // Fast path: single batch fits in GPU limit
+    if (texts.length <= GPU_BATCH_SIZE) {
+      const resp = await this.embedViaWorker(worker, id, texts);
+      if (resp.type === "result") {
+        this.send(socket, { type: "result", id, embeddings: resp.embeddings });
+      } else if (resp.type === "error") {
+        this.send(socket, { type: "error", message: resp.message });
+      }
+      return;
     }
+
+    // Split into sub-batches of GPU_BATCH_SIZE
+    const allEmbeddings: number[][] = [];
+    for (let offset = 0; offset < texts.length; offset += GPU_BATCH_SIZE) {
+      const subTexts = texts.slice(offset, offset + GPU_BATCH_SIZE);
+      const subId = id * 10000 + offset; // unique sub-id to avoid collision with pending map
+      const resp = await this.embedViaWorker(worker, subId, subTexts);
+
+      if (resp.type === "error") {
+        this.send(socket, { type: "error", message: resp.message });
+        return;
+      }
+      if (resp.type === "result") {
+        allEmbeddings.push(...resp.embeddings);
+      }
+    }
+
+    this.send(socket, { type: "result", id, embeddings: allEmbeddings });
   }
 
   // -------------------------------------------------------------------------
