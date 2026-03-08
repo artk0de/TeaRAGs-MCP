@@ -17,6 +17,7 @@ import { LineSplitter } from "./line-splitter.js";
 import { serialize, parseLine, type DaemonRequest, type DaemonResponse } from "./daemon-types.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
 import { DEFAULT_GPU_BATCH_SIZE } from "./constants.js";
+import { BatchSizeController } from "./batch-size-controller.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,6 +68,10 @@ export class OnnxDaemon {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private startTime = 0;
   private lastActivityTime = 0;
+
+  // Adaptive batch size
+  private batchController: BatchSizeController | null = null;
+  private calibratedBatchSize: number | undefined;
 
   // Shutdown tracking
   private stopped = false;
@@ -281,6 +286,7 @@ export class OnnxDaemon {
       type: "connected",
       model: this.loadedModel,
       clients: this.connectedClientCount(),
+      recommendedBatchSize: this.calibratedBatchSize,
     });
   }
 
@@ -307,10 +313,13 @@ export class OnnxDaemon {
       return;
     }
 
+    const batchSize = this.batchController?.currentBatchSize() ?? DEFAULT_GPU_BATCH_SIZE;
+
     // Fast path: single batch fits in GPU limit
-    if (texts.length <= DEFAULT_GPU_BATCH_SIZE) {
+    if (texts.length <= batchSize) {
       const resp = await this.embedViaWorker(worker, id, texts);
       if (resp.type === "result") {
+        this.batchController?.report(resp.durationMs, texts.length);
         this.send(socket, { type: "result", id, embeddings: resp.embeddings });
       } else if (resp.type === "error") {
         this.send(socket, { type: "error", message: resp.message });
@@ -318,10 +327,10 @@ export class OnnxDaemon {
       return;
     }
 
-    // Split into sub-batches of DEFAULT_GPU_BATCH_SIZE
+    // Split into sub-batches
     const allEmbeddings: number[][] = [];
-    for (let offset = 0; offset < texts.length; offset += DEFAULT_GPU_BATCH_SIZE) {
-      const subTexts = texts.slice(offset, offset + DEFAULT_GPU_BATCH_SIZE);
+    for (let offset = 0; offset < texts.length; offset += batchSize) {
+      const subTexts = texts.slice(offset, offset + batchSize);
       const subId = id * 10000 + offset; // unique sub-id to avoid collision with pending map
       const resp = await this.embedViaWorker(worker, subId, subTexts);
 
@@ -330,6 +339,7 @@ export class OnnxDaemon {
         return;
       }
       if (resp.type === "result") {
+        this.batchController?.report(resp.durationMs, subTexts.length);
         allEmbeddings.push(...resp.embeddings);
       }
     }
@@ -377,6 +387,13 @@ export class OnnxDaemon {
           this.workerReadyPromise = null;
         }
         break;
+
+      case "calibrated": {
+        this.calibratedBatchSize = msg.batchSize;
+        this.batchController = new BatchSizeController(msg.batchSize);
+        console.error(`[OnnxDaemon] Calibrated GPU batch size: ${msg.batchSize}`);
+        break;
+      }
 
       case "result":
       case "error": {
