@@ -57,4 +57,21 @@ describe("BatchSizeController", () => {
     c.report(1000, 8); // extreme pressure, but window not full
     expect(c.currentBatchSize()).toBe(16); // no change
   });
+
+  describe("recommendedPipelineBatchSize", () => {
+    it("should return calibrated * 2 when above minimum", () => {
+      const c = new BatchSizeController(64);
+      expect(c.recommendedPipelineBatchSize()).toBe(128); // 64 * 2
+    });
+
+    it("should return minimum 32 when calibrated * 2 is below", () => {
+      const c = new BatchSizeController(4);
+      expect(c.recommendedPipelineBatchSize()).toBe(32); // max(32, 4*2=8) = 32
+    });
+
+    it("should return 32 when calibrated is exactly 16", () => {
+      const c = new BatchSizeController(16);
+      expect(c.recommendedPipelineBatchSize()).toBe(32); // max(32, 16*2=32) = 32
+    });
+  });
 });
