@@ -11,12 +11,12 @@ Local embedding provider using ONNX Runtime via `@huggingface/transformers`. Zer
 |---|---|
 | **Type** | Local |
 | **Price** | 🟢 Free |
-| **Scale*** | ~330k LoC |
+| **Scale*** | ~700k LoC |
 | **Default model** | `jinaai/jina-embeddings-v2-base-code-fp16` |
 | **Dimensions** | 768 |
 | **URL** | — (built-in, no external service) |
 
-> \* Estimated lines of code for initial full indexing within 45 minutes. Incremental reindexing is fast.
+> \* Estimated lines of code for initial full indexing within 45 minutes. Benchmarked on Apple M3 Pro with WebGPU — actual throughput depends on your hardware (GPU, memory bandwidth, device type).
 
 ## Key Features
 
@@ -26,6 +26,7 @@ Local embedding provider using ONNX Runtime via `@huggingface/transformers`. Zer
 - **CPU fallback** — works everywhere, even without a GPU
 - **HuggingFace models** — any ONNX-compatible model from HuggingFace Hub
 - **Persistent daemon** — model loads once, stays warm across indexing runs
+- **Adaptive GPU batching** — calibration probe auto-detects optimal batch size at startup
 
 ## Setup
 
@@ -61,7 +62,7 @@ Optional variables:
 |----------|-------------|---------|
 | `EMBEDDING_MODEL` | HuggingFace model ID | `jinaai/jina-embeddings-v2-base-code-fp16` |
 | `EMBEDDING_DIMENSIONS` | Vector dimensions | `768` (auto-detected) |
-| `EMBEDDING_TUNE_BATCH_SIZE` | Texts per embedding batch | `8` |
+| `EMBEDDING_TUNE_BATCH_SIZE` | Texts per embedding batch | Auto-calibrated |
 | `EMBEDDING_DEVICE` | Compute device: `auto`, `cpu`, `webgpu`, `cuda`, `dml` | `auto` |
 | `HF_TOKEN` | HuggingFace access token (for gated/private models) | — |
 
@@ -121,13 +122,15 @@ Some HuggingFace models require authentication (gated models like Llama, or priv
 
 ## Tuning Notes
 
-**Batch size** defaults to `8` — ONNX runs inference locally and small batches keep memory usage low. Increase cautiously if you have a powerful GPU with WebGPU or CUDA.
+**Batch size** is auto-calibrated on first startup. The daemon runs a GPU calibration probe that tests batch sizes [1, 4, 8, 16, 32, 64, 128] and picks the optimal one for your hardware. The result is cached in `~/.tea-rags-mcp/onnx-calibration.json` — subsequent startups use the cached value instantly. Override with `EMBEDDING_TUNE_BATCH_SIZE` if needed.
 
 **Concurrency** (`INGEST_PIPELINE_CONCURRENCY`) should stay at `1`. The ONNX daemon processes requests sequentially on a single model instance. Higher concurrency adds queue overhead without improving throughput.
 
+**Runtime adaptation** — the daemon monitors per-text inference latency and dynamically adjusts the internal GPU batch size: halves on pressure spikes, doubles when stable. This handles thermal throttling and competing GPU workloads automatically.
+
 ## When to Use
 
-- Small-to-medium projects (up to ~100k LoC for comfortable indexing speed)
+- Small-to-medium projects (up to ~700k LoC for comfortable indexing speed)
 - Air-gapped environments with no internet access (after initial model download)
 - Quick experiments — no setup overhead
 - CI/CD pipelines where installing Ollama is impractical
