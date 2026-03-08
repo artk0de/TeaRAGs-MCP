@@ -100,6 +100,7 @@ vi.mock("../../src/bootstrap/config/index.js", async () => {
         deleteFlushTimeoutMs: 1000,
       },
       deprecations: [],
+      flags: { userSetBatchSize: false },
     }),
   };
 });
@@ -128,8 +129,8 @@ function makeConfig(): AppConfig {
 }
 
 describe("createAppContext", () => {
-  it("should create qdrant, embeddings, ingest, search, and reranker", () => {
-    const ctx = createAppContext(makeConfig());
+  it("should create qdrant, embeddings, ingest, search, and reranker", async () => {
+    const ctx = await createAppContext(makeConfig());
     expect(ctx.qdrant).toBeDefined();
     expect(ctx.embeddings).toBeDefined();
     expect(ctx.ingest).toBeDefined();
@@ -139,8 +140,8 @@ describe("createAppContext", () => {
 });
 
 describe("createConfiguredServer", () => {
-  it("should return an MCP server instance", () => {
-    const ctx = createAppContext(makeConfig());
+  it("should return an MCP server instance", async () => {
+    const ctx = await createAppContext(makeConfig());
     const server = createConfiguredServer(ctx, null);
     expect(server).toBeDefined();
     // Verify it has connect method (MCP server interface)

@@ -10,7 +10,7 @@ async function main() {
   const zodConfig = getZodConfig();
   await checkOllamaAvailability(zodConfig.embedding.provider, zodConfig.embedding.baseUrl, zodConfig.embedding.model);
 
-  const ctx = createAppContext(config);
+  const ctx = await createAppContext(config);
   const promptsConfig = loadPrompts(config);
 
   // Log deprecation warnings
