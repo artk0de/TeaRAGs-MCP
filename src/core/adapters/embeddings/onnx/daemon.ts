@@ -295,7 +295,7 @@ export class OnnxDaemon {
   // -------------------------------------------------------------------------
 
   /** Send embed request to worker and wait for response */
-  private embedViaWorker(
+  private async embedViaWorker(
     worker: WorkerLike,
     id: number,
     texts: string[],
