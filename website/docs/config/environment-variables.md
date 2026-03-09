@@ -20,8 +20,9 @@ TeaRAGs is configured via environment variables passed to the MCP server. All va
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `QDRANT_URL` | Qdrant server URL | `http://localhost:6333` |
+| `QDRANT_URL` | Qdrant connection mode. **Unset** = autodetect (probe `localhost:6333` for external Qdrant, fallback to embedded). `"embedded"` = always use embedded Qdrant. `"http://..."` = use external Qdrant at that URL. | Autodetect |
 | `QDRANT_API_KEY` | API key for Qdrant authentication | - |
+| `QDRANT_EMBEDDED_STORAGE_PATH` | Override embedded Qdrant storage location | `~/.tea-rags/qdrant/storage` |
 
 ## Embedding
 

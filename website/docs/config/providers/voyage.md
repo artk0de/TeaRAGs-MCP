@@ -49,7 +49,6 @@ export VOYAGE_API_KEY=pa-...
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "QDRANT_URL": "http://localhost:6333",
         "EMBEDDING_PROVIDER": "voyage",
         "VOYAGE_API_KEY": "pa-...",
         "EMBEDDING_MODEL": "voyage-code-3"
@@ -58,6 +57,10 @@ export VOYAGE_API_KEY=pa-...
   }
 }
 ```
+
+:::tip
+`QDRANT_URL` is not needed — Qdrant is built-in and starts automatically. Add it only if using external Qdrant.
+:::
 
 Optional variables:
 

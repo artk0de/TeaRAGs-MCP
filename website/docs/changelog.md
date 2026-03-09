@@ -58,7 +58,7 @@ sidebar_position: 99
 * feat(drift): payload schema drift detection — warn agent once per session ([25e0013](https://github.com/artk0de/TeaRAGs-MCP/commit/25e0013))
 * feat(embedding): adaptive batch sizing with exponential backoff ([3d90152](https://github.com/artk0de/TeaRAGs-MCP/commit/3d90152))
 * feat(embedding): add OnnxEmbeddings provider with lazy loading ([ae1ea68](https://github.com/artk0de/TeaRAGs-MCP/commit/ae1ea68))
-* feat(embedding): cache models in ~/.tea-rags-mcp, guided HF auth, int8 default ([8474e6a](https://github.com/artk0de/TeaRAGs-MCP/commit/8474e6a))
+* feat(embedding): cache models in ~/.tea-rags, guided HF auth, int8 default ([8474e6a](https://github.com/artk0de/TeaRAGs-MCP/commit/8474e6a))
 * feat(embedding): safe initial batch size, DI for cacheDir, backoff tests ([5df5876](https://github.com/artk0de/TeaRAGs-MCP/commit/5df5876))
 * feat(embedding): wire OnnxEmbeddings into factory ([c5eba6a](https://github.com/artk0de/TeaRAGs-MCP/commit/c5eba6a))
 * feat(factory): wire daemon socket paths into OnnxEmbeddings ([229e5f8](https://github.com/artk0de/TeaRAGs-MCP/commit/229e5f8))

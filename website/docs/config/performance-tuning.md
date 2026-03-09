@@ -19,7 +19,7 @@ Creates `tuned_environment_variables.env` with optimal values in ~60-90 seconds.
 
 **For local setup**, just run `npm run tune` — defaults work out of the box:
 
-- `QDRANT_URL` defaults to `http://localhost:6333`
+- `QDRANT_URL` autodetects (probes localhost:6333, falls back to embedded Qdrant)
 - `EMBEDDING_BASE_URL` defaults to `http://localhost:11434`
 - `EMBEDDING_MODEL` defaults to `unclemusclez/jina-embeddings-v2-base-code:latest`
 
@@ -43,7 +43,6 @@ Then add tuned values to your MCP config:
 
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
-  -e QDRANT_URL=http://localhost:6333 \
   -e EMBEDDING_BATCH_SIZE=256 \
   -e INGEST_PIPELINE_CONCURRENCY=2 \
   -e QDRANT_UPSERT_BATCH_SIZE=384
@@ -172,7 +171,7 @@ flowchart LR
     subgraph machine["💻 Your Machine"]
         claude["🤖 Coding Agent"]
         ollama["✨ Ollama<br/><small>GPU</small>"]
-        qdrant["🗄️ Qdrant<br/><small>Docker</small>"]
+        qdrant["🗄️ Qdrant<br/><small>embedded</small>"]
 
         claude -->|embedding| ollama
         ollama -->|vectors| claude
@@ -192,7 +191,7 @@ Embedding on dedicated GPU server, Qdrant runs locally in Docker.
 flowchart LR
     subgraph dev["💻 Development Machine"]
         claude["🤖 Coding Agent"]
-        qdrant["🗄️ Qdrant<br/><small>Docker</small>"]
+        qdrant["🗄️ Qdrant<br/><small>embedded</small>"]
     end
 
     subgraph gpu["🖥️ GPU Server<br/><small>LAN</small>"]
@@ -305,7 +304,7 @@ Even at 156 ch/s (remote GPU), embedding is **40x slower** than storage. Invest 
 
 - ✅ Run `npm run tune` to find optimal batch sizes
 - ✅ Increase `MAX_IO_CONCURRENCY=100` for SSD
-- ✅ Increase Qdrant memory limits in docker-compose.yml
+- ✅ Increase Qdrant memory limits (docker-compose.yml for external Qdrant)
 - ✅ Use `.contextignore` to exclude node_modules, build artifacts
 
 ### For Slow Search
@@ -319,7 +318,7 @@ Even at 156 ch/s (remote GPU), embedding is **40x slower** than storage. Invest 
 
 - ⚠️ Reduce `CODE_CHUNK_SIZE` (default 2500)
 - ⚠️ Reduce `QDRANT_UPSERT_BATCH_SIZE`
-- ⚠️ Increase Qdrant memory in docker-compose.yml
+- ⚠️ Increase Qdrant memory (docker-compose.yml for external Qdrant)
 - ⚠️ Index subdirectories separately
 
 ## Monitoring & Debug

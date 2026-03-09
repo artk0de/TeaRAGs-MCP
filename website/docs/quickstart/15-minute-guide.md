@@ -20,9 +20,12 @@ From zero to semantic code search in one page. By the end, you'll have TeaRAGs r
 Before you start, make sure you have:
 
 - **Node.js 22+** — `node -v`
-- **Podman** or **Docker** with Compose support — `podman --version` or `docker --version`
 - **An AI agent** — [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) (recommended), [Roo Code](https://rooscode.com), or [Cursor](https://cursor.com)
 - **A git repository** you want to search
+
+:::tip No Docker required
+Qdrant is built-in — it downloads and starts automatically. Docker is only needed if you prefer external Qdrant.
+:::
 
 ## Step 1: Clone and Build {#step-1}
 
@@ -32,23 +35,21 @@ cd TeaRAGs-MCP
 npm install && npm run build
 ```
 
-## Step 2: Start Services {#step-2}
+## Step 2: Set Up Embeddings {#step-2}
 
-TeaRAGs needs two services: **Qdrant** (vector database) and **Ollama** (local embeddings).
+TeaRAGs needs an embedding provider. **Qdrant is built-in** and starts automatically — no setup needed.
+
+For embeddings, install [Ollama](https://ollama.com) and pull the default model:
 
 ```bash
-# Start both services
-podman compose up -d    # or: docker compose up -d
-
-# Pull the embedding model (~270 MB)
-podman exec ollama ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
-# or: docker exec ollama ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
+# Install Ollama (see https://ollama.com for your platform)
+# Then pull the embedding model (~270 MB)
+ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
 ```
 
-**Verify services are running:**
+**Verify Ollama is running:**
 
 ```bash
-curl -s http://localhost:6333/readyz    # Qdrant — should return "ok" or similar
 curl -s http://localhost:11434/api/tags  # Ollama — should list your model
 ```
 
@@ -57,12 +58,10 @@ curl -s http://localhost:11434/api/tags  # Ollama — should list your model
 ### Claude Code
 
 ```bash
-claude mcp add tea-rags -s user -- node /absolute/path/to/tea-rags/build/index.js \
-  -e QDRANT_URL=http://localhost:6333 \
-  -e EMBEDDING_BASE_URL=http://localhost:11434
+claude mcp add tea-rags -s user -- node /absolute/path/to/tea-rags/build/index.js
 ```
 
-Replace `/absolute/path/to/tea-rags` with the actual path where you cloned the repository.
+Replace `/absolute/path/to/tea-rags` with the actual path where you cloned the repository. Qdrant starts automatically — no `QDRANT_URL` needed.
 
 ### Other agents
 
@@ -73,15 +72,15 @@ For Roo Code, Cursor, or other MCP clients, add this to your MCP configuration J
   "mcpServers": {
     "tea-rags": {
       "command": "node",
-      "args": ["/absolute/path/to/tea-rags/build/index.js"],
-      "env": {
-        "QDRANT_URL": "http://localhost:6333",
-        "EMBEDDING_BASE_URL": "http://localhost:11434"
-      }
+      "args": ["/absolute/path/to/tea-rags/build/index.js"]
     }
   }
 }
 ```
+
+:::tip
+`QDRANT_URL` and `EMBEDDING_BASE_URL` are autodetected. Add them to `env` only if using non-default locations.
+:::
 
 **Restart your agent** after adding the configuration.
 
