@@ -39,14 +39,14 @@ describe("getPlatformAsset", () => {
 });
 
 describe("getBinaryPath", () => {
-  it("returns qdrant for unix platforms", () => {
+  it("returns qdrant under qdrant/bin for unix platforms", () => {
     const path = getBinaryPath("darwin");
-    expect(path).toMatch(/\.cache[\\/]tea-rags[\\/]qdrant$/);
+    expect(path).toMatch(/qdrant[\\/]bin[\\/]qdrant$/);
   });
 
-  it("returns qdrant.exe for windows", () => {
+  it("returns qdrant.exe under qdrant/bin for windows", () => {
     const path = getBinaryPath("win32");
-    expect(path).toMatch(/\.cache[\\/]tea-rags[\\/]qdrant\.exe$/);
+    expect(path).toMatch(/qdrant[\\/]bin[\\/]qdrant\.exe$/);
   });
 });
 
@@ -58,7 +58,7 @@ describe("QDRANT_VERSION", () => {
 
 describe("isBinaryUpToDate", () => {
   it("returns false when binary does not exist (real path check)", () => {
-    // getBinaryPath points to node_modules/.cache/tea-rags/qdrant which doesn't exist in test env
+    // getBinaryPath points to ~/.tea-rags/qdrant/bin/qdrant which doesn't exist in test env
     expect(isBinaryPresent()).toBe(false);
     expect(isBinaryUpToDate()).toBe(false);
   });
