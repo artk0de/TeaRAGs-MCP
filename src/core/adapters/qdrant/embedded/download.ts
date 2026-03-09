@@ -2,7 +2,8 @@ import { execSync } from "node:child_process";
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { get } from "node:https";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+
+import { appDataDir } from "../../../../bootstrap/config/paths.js";
 
 export const QDRANT_VERSION = "1.17.0";
 
@@ -28,10 +29,13 @@ export function getPlatformAsset(platform: string, arch: string): string {
   return archMap[arch];
 }
 
+export function getQdrantBinaryDir(): string {
+  return join(appDataDir(), "qdrant", "bin");
+}
+
 export function getBinaryPath(platform = process.platform): string {
-  const __dirname = dirname(fileURLToPath(import.meta.url));
   const name = platform === "win32" ? "qdrant.exe" : "qdrant";
-  return join(__dirname, "../../node_modules/.cache/tea-rags", name);
+  return join(getQdrantBinaryDir(), name);
 }
 
 export function getDownloadUrl(asset: string): string {
