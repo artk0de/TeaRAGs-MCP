@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { appDataDir } from "../../../../bootstrap/config/paths.js";
@@ -137,6 +137,7 @@ async function ensureDaemon(): Promise<DaemonHandle> {
   const binaryPath = getBinaryPath();
 
   const child = spawn(binaryPath, ["--disable-telemetry"], {
+    cwd: dirname(binaryPath),
     detached: true,
     stdio: "ignore",
     env: {
