@@ -1,9 +1,10 @@
 import { promises as fs } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { snapshotsDir } from "../../../../src/bootstrap/config/paths.js";
 import { setDebug } from "../../../../src/core/ingest/pipeline/infra/runtime.js";
 import { FileSynchronizer } from "../../../../src/core/ingest/sync/synchronizer.js";
 
@@ -34,7 +35,7 @@ describe("FileSynchronizer", () => {
 
     // Clean up snapshot file
     try {
-      const snapshotPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.json`);
+      const snapshotPath = join(snapshotsDir(), `${collectionName}.json`);
       await fs.rm(snapshotPath, { force: true });
     } catch (_error) {
       // Ignore cleanup errors
@@ -542,7 +543,7 @@ describe("FileSynchronizer", () => {
     let checkpointPath: string;
 
     beforeEach(async () => {
-      checkpointPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.checkpoint.json`);
+      checkpointPath = join(snapshotsDir(), `${collectionName}.checkpoint.json`);
     });
 
     afterEach(async () => {
@@ -614,7 +615,7 @@ describe("FileSynchronizer", () => {
           timestamp: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
           phase: "indexing",
         };
-        await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+        await fs.mkdir(join(snapshotsDir()), { recursive: true });
         await fs.writeFile(checkpointPath, JSON.stringify(staleCheckpoint));
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -622,7 +623,7 @@ describe("FileSynchronizer", () => {
       });
 
       it("should return null for corrupted JSON", async () => {
-        await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+        await fs.mkdir(join(snapshotsDir()), { recursive: true });
         await fs.writeFile(checkpointPath, "{ invalid json }");
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -635,7 +636,7 @@ describe("FileSynchronizer", () => {
           timestamp: Date.now(),
           phase: "indexing",
         };
-        await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+        await fs.mkdir(join(snapshotsDir()), { recursive: true });
         await fs.writeFile(checkpointPath, JSON.stringify(invalidCheckpoint));
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -648,7 +649,7 @@ describe("FileSynchronizer", () => {
           timestamp: Date.now(),
           phase: "indexing",
         };
-        await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+        await fs.mkdir(join(snapshotsDir()), { recursive: true });
         await fs.writeFile(checkpointPath, JSON.stringify(invalidCheckpoint));
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -885,7 +886,7 @@ describe("FileSynchronizer", () => {
       await synchronizer.updateSnapshot(["file1.ts"]);
 
       // Corrupt the snapshot file
-      const snapshotPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.json`);
+      const snapshotPath = join(snapshotsDir(), `${collectionName}.json`);
       await fs.writeFile(snapshotPath, "{ invalid json }", "utf-8");
 
       // Create new synchronizer and try to initialize
@@ -954,7 +955,7 @@ describe("FileSynchronizer", () => {
   describe("snapshot v1 to v2 migration", () => {
     it("should migrate v1 snapshot to v2 with metadata", async () => {
       // Manually create a v1 snapshot (without metadata)
-      const snapshotPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.json`);
+      const snapshotPath = join(snapshotsDir(), `${collectionName}.json`);
 
       await createFile(codebaseDir, "file1.ts", "content1");
       await createFile(codebaseDir, "file2.ts", "content2");
@@ -974,7 +975,7 @@ describe("FileSynchronizer", () => {
         }),
       };
 
-      await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+      await fs.mkdir(join(snapshotsDir()), { recursive: true });
       await fs.writeFile(snapshotPath, JSON.stringify(v1Snapshot), "utf-8");
 
       // Create a new synchronizer and initialize (loads v1 snapshot)
@@ -1092,10 +1093,10 @@ describe("FileSynchronizer", () => {
     });
 
     it("should handle checkpoint load errors for invalid JSON", async () => {
-      const checkpointPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.checkpoint.json`);
+      const checkpointPath = join(snapshotsDir(), `${collectionName}.checkpoint.json`);
 
       // Create invalid checkpoint file
-      await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+      await fs.mkdir(join(snapshotsDir()), { recursive: true });
       await fs.writeFile(checkpointPath, "invalid json {", "utf-8");
 
       const checkpoint = await synchronizer.loadCheckpoint();
@@ -1103,7 +1104,7 @@ describe("FileSynchronizer", () => {
     });
 
     it("should delete stale checkpoints automatically", async () => {
-      const checkpointPath = join(homedir(), ".tea-rags-mcp", "snapshots", `${collectionName}.checkpoint.json`);
+      const checkpointPath = join(snapshotsDir(), `${collectionName}.checkpoint.json`);
 
       // Create stale checkpoint (> 24 hours old)
       const staleCheckpoint = {
@@ -1113,7 +1114,7 @@ describe("FileSynchronizer", () => {
         phase: "indexing",
       };
 
-      await fs.mkdir(join(homedir(), ".tea-rags-mcp", "snapshots"), { recursive: true });
+      await fs.mkdir(join(snapshotsDir()), { recursive: true });
       await fs.writeFile(checkpointPath, JSON.stringify(staleCheckpoint), "utf-8");
 
       const checkpoint = await synchronizer.loadCheckpoint();

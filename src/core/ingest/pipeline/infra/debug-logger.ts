@@ -1,7 +1,7 @@
 /**
  * Debug Logger for Pipeline Operations
  *
- * Writes detailed trace logs to ~/.tea-rags-mcp/logs/ when DEBUG=1
+ * Writes detailed trace logs to ~/.tea-rags/logs/ when DEBUG=1
  * Helps diagnose:
  * - Pipeline step timing
  * - Batch formation and processing

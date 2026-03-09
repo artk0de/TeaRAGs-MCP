@@ -1,10 +1,10 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const APP_DIR_NAME = ".tea-rags-mcp";
+const APP_DIR_NAME = ".tea-rags";
 
 export function appDataDir(): string {
-  return join(homedir(), APP_DIR_NAME);
+  return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), APP_DIR_NAME);
 }
 
 export function snapshotsDir(): string {
