@@ -58,9 +58,11 @@ export interface RerankPreset {
   readonly tools: string[];
   readonly weights: ScoringWeights;
   readonly overlayMask: OverlayMask;
+  /** Payload field to group results by (keep highest-scored per group). Used by rank_chunks. */
+  readonly groupBy?: string;
 }
 
-export type RerankMode<T extends string> = T | { custom: ScoringWeights };
+export type RerankMode<T extends string> = T | { custom: ScoringWeights; preset?: T };
 
 /** Ranking overlay attached to each reranked result — explains WHY it scored this way. */
 export interface RankingOverlay {

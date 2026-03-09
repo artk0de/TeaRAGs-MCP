@@ -6,11 +6,12 @@ export class HotspotsPreset implements RerankPreset {
   readonly description = "Identify frequently-changing bug-prone code areas";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks"];
   readonly weights: ScoringWeights = {
-    similarity: 0.25,
+    similarity: 0.2,
+    chunkSize: 0.1,
     chunkChurn: 0.15,
     chunkRelativeChurn: 0.15,
     burstActivity: 0.15,
-    bugFix: 0.15,
+    bugFix: 0.1,
     volatility: 0.15,
     blockPenalty: -0.15,
   };

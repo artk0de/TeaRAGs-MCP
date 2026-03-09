@@ -19,12 +19,17 @@ type ScrollFn = (
   filter?: Record<string, unknown>,
 ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
 
+type EnsureIndexFn = (collectionName: string, fieldName: string) => Promise<void>;
+
 export interface RankOptions {
   weights: Record<string, number>;
   level: "chunk" | "file";
   limit: number;
   scrollFn: ScrollFn;
+  ensureIndexFn?: EnsureIndexFn;
   filter?: Record<string, unknown>;
+  /** Original preset name — passed to reranker for overlay mask resolution. */
+  presetName?: string;
 }
 
 const OVERFETCH_FACTOR = 3;
@@ -70,7 +75,7 @@ export class RankModule {
    * Rank chunks: scatter-gather → merge → rerank → top-N.
    */
   async rankChunks(collectionName: string, options: RankOptions): Promise<RerankableResult[]> {
-    const { weights, level, limit, scrollFn, filter } = options;
+    const { weights, level, limit, scrollFn, ensureIndexFn, filter, presetName } = options;
 
     // Remove similarity and re-normalize
     const cleanWeights = this.removeAndNormalize(weights);
@@ -78,6 +83,11 @@ export class RankModule {
     // Resolve order_by fields
     const orderByFields = this.resolveOrderByFields(cleanWeights, level);
     if (orderByFields.length === 0) return [];
+
+    // Ensure payload indexes exist for order_by fields (Qdrant requires range index)
+    if (ensureIndexFn) {
+      await Promise.all(orderByFields.map(async (field) => ensureIndexFn(collectionName, field.key)));
+    }
 
     // Parallel scroll (scatter)
     const fetchLimit = limit * OVERFETCH_FACTOR;
@@ -95,8 +105,9 @@ export class RankModule {
       payload: p.payload,
     }));
 
-    // Rerank with cleaned weights
-    const reranked = this.reranker.rerank(rerankable, { custom: cleanWeights }, "rank_chunks");
+    // Rerank: use cleaned weights (no similarity) with preset overlay mask
+    const rerankMode = presetName ? { custom: cleanWeights, preset: presetName } : { custom: cleanWeights };
+    const reranked = this.reranker.rerank(rerankable, rerankMode, "rank_chunks");
 
     return reranked.slice(0, limit);
   }

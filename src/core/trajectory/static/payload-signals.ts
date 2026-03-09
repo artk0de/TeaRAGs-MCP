@@ -14,11 +14,17 @@ export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
   { key: "parentType", type: "string", description: "Parent symbol type" },
   { key: "imports", type: "string[]", description: "File-level imports inherited by all chunks" },
   { key: "symbolId", type: "string", description: "Unique symbol identifier (e.g. 'MyClass.processData')" },
-  { key: "methodLines", type: "number", description: "Original method/block line count before splitting" },
+  {
+    key: "methodLines",
+    type: "number",
+    description: "Original method/block line count before splitting",
+    stats: { percentiles: [50, 95] },
+  },
   {
     key: "methodDensity",
     type: "number",
     description: "Code density: characters per line (contentSize / methodLines)",
+    stats: { percentiles: [95] },
   },
   { key: "contentSize", type: "number", description: "Character count of chunk content" },
 ];

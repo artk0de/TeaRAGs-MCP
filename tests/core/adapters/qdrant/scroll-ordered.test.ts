@@ -2,24 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 
 import { scrollOrderedBy } from "../../../../src/core/adapters/qdrant/scroll.js";
 
-function createMockQdrant(scrollResponse: unknown) {
+function createMockQdrant(scrollResponse: { id: string | number; payload: Record<string, unknown> }[]) {
   return {
-    client: {
-      scroll: vi.fn().mockResolvedValue(scrollResponse),
-    },
+    scrollOrdered: vi.fn().mockResolvedValue(scrollResponse),
   };
 }
 
 describe("scrollOrderedBy", () => {
-  it("calls scroll with order_by, filter, and limit", async () => {
-    const mockResponse = {
-      points: [
-        { id: "a", payload: { methodLines: 200, relativePath: "big.ts" } },
-        { id: "b", payload: { methodLines: 150, relativePath: "medium.ts" } },
-      ],
-      next_page_offset: null,
-    };
-    const qdrant = createMockQdrant(mockResponse);
+  it("delegates to qdrant.scrollOrdered with correct arguments", async () => {
+    const mockPoints = [
+      { id: "a", payload: { methodLines: 200, relativePath: "big.ts" } },
+      { id: "b", payload: { methodLines: 150, relativePath: "medium.ts" } },
+    ];
+    const qdrant = createMockQdrant(mockPoints);
 
     const results = await scrollOrderedBy(
       qdrant as never,
@@ -28,35 +23,33 @@ describe("scrollOrderedBy", () => {
       10,
     );
 
-    expect(qdrant.client.scroll).toHaveBeenCalledWith("test-collection", {
-      limit: 10,
-      offset: undefined,
-      with_payload: true,
-      with_vector: false,
-      order_by: { key: "methodLines", direction: "desc" },
-    });
+    expect(qdrant.scrollOrdered).toHaveBeenCalledWith(
+      "test-collection",
+      { key: "methodLines", direction: "desc" },
+      10,
+      undefined,
+    );
     expect(results).toHaveLength(2);
     expect(results[0].id).toBe("a");
     expect(results[0].payload.methodLines).toBe(200);
   });
 
   it("passes filter when provided", async () => {
-    const qdrant = createMockQdrant({ points: [], next_page_offset: null });
+    const qdrant = createMockQdrant([]);
+    const filter = { must: [{ key: "language", match: { value: "typescript" } }] };
 
-    await scrollOrderedBy(qdrant as never, "test-collection", { key: "git.file.ageDays", direction: "asc" }, 5, {
-      must: [{ key: "language", match: { value: "typescript" } }],
-    });
+    await scrollOrderedBy(qdrant as never, "test-collection", { key: "git.file.ageDays", direction: "asc" }, 5, filter);
 
-    expect(qdrant.client.scroll).toHaveBeenCalledWith(
+    expect(qdrant.scrollOrdered).toHaveBeenCalledWith(
       "test-collection",
-      expect.objectContaining({
-        filter: { must: [{ key: "language", match: { value: "typescript" } }] },
-      }),
+      { key: "git.file.ageDays", direction: "asc" },
+      5,
+      filter,
     );
   });
 
   it("returns empty array when no points match", async () => {
-    const qdrant = createMockQdrant({ points: [], next_page_offset: null });
+    const qdrant = createMockQdrant([]);
 
     const results = await scrollOrderedBy(
       qdrant as never,

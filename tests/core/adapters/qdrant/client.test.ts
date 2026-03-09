@@ -17,6 +17,7 @@ const mockClient = {
   updateCollection: vi.fn().mockResolvedValue({}),
   setPayload: vi.fn().mockResolvedValue({}),
   batchUpdate: vi.fn().mockResolvedValue({}),
+  scroll: vi.fn().mockResolvedValue({ points: [] }),
 };
 
 vi.mock("@qdrant/js-client-rest", () => ({
@@ -1798,9 +1799,7 @@ describe("QdrantManager", () => {
     });
 
     it("should include key in set_payload when op.key is provided", async () => {
-      const operations = [
-        { payload: { git: { ageDays: 1 } }, points: ["id-1"] as (string | number)[], key: "git" },
-      ];
+      const operations = [{ payload: { git: { ageDays: 1 } }, points: ["id-1"] as (string | number)[], key: "git" }];
 
       await manager.batchSetPayload("test-collection", operations);
 
@@ -1817,6 +1816,62 @@ describe("QdrantManager", () => {
         wait: false,
         ordering: "weak",
       });
+    });
+  });
+
+  describe("scrollOrdered", () => {
+    it("should scroll points ordered by payload field", async () => {
+      mockClient.scroll.mockResolvedValueOnce({
+        points: [
+          { id: "a", payload: { methodLines: 200 } },
+          { id: "b", payload: { methodLines: 100 } },
+        ],
+      });
+
+      const results = await manager.scrollOrdered("test", { key: "methodLines", direction: "desc" }, 10);
+
+      expect(results).toEqual([
+        { id: "a", payload: { methodLines: 200 } },
+        { id: "b", payload: { methodLines: 100 } },
+      ]);
+      expect(mockClient.scroll).toHaveBeenCalledWith("test", {
+        limit: 10,
+        with_payload: true,
+        with_vector: false,
+        order_by: { key: "methodLines", direction: "desc" },
+      });
+    });
+
+    it("should pass filter when provided", async () => {
+      mockClient.scroll.mockResolvedValueOnce({ points: [] });
+
+      await manager.scrollOrdered("test", { key: "methodLines", direction: "desc" }, 5, {
+        must: [{ key: "language", match: { value: "typescript" } }],
+      });
+
+      expect(mockClient.scroll).toHaveBeenCalledWith("test", expect.objectContaining({ filter: expect.any(Object) }));
+    });
+
+    it("should filter out points with null payload", async () => {
+      mockClient.scroll.mockResolvedValueOnce({
+        points: [
+          { id: "a", payload: { methodLines: 200 } },
+          { id: "b", payload: null },
+          { id: "c", payload: undefined },
+        ],
+      });
+
+      const results = await manager.scrollOrdered("test", { key: "methodLines", direction: "desc" }, 10);
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe("a");
+    });
+
+    it("should throw with descriptive error on failure", async () => {
+      mockClient.scroll.mockRejectedValueOnce(new Error("connection refused"));
+
+      await expect(manager.scrollOrdered("test", { key: "methodLines", direction: "desc" }, 10)).rejects.toThrow(
+        /scrollOrdered failed.*connection refused/,
+      );
     });
   });
 });

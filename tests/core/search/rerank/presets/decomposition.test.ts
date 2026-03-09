@@ -18,10 +18,10 @@ describe("DecompositionPreset", () => {
     expect(preset.tools).not.toContain("search_code");
   });
 
-  it("has balanced weights: similarity 0.3, chunkSize 0.35, chunkDensity 0.35", () => {
-    expect(preset.weights.similarity).toBe(0.3);
-    expect(preset.weights.chunkSize).toBe(0.35);
-    expect(preset.weights.chunkDensity).toBe(0.35);
+  it("has weights: similarity 0.4, chunkSize 0.4, chunkDensity 0.2", () => {
+    expect(preset.weights.similarity).toBe(0.4);
+    expect(preset.weights.chunkSize).toBe(0.4);
+    expect(preset.weights.chunkDensity).toBe(0.2);
   });
 
   it("weights sum to 1.0", () => {

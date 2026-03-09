@@ -77,15 +77,24 @@ export class Reranker {
     mode: RerankMode<string>,
     presetSet: "semantic_search" | "search_code" | "rank_chunks",
   ): (T & { rankingOverlay?: RankingOverlay })[] {
-    // Resolve weights and overlay mask
+    // Resolve weights, overlay mask, and groupBy
     let weights: ScoringWeights;
     let presetName: string;
     let mask: OverlayMask | undefined;
+    let groupBy: string | undefined;
     if (typeof mode === "string") {
       presetName = mode;
       const fullPreset = this.resolvedPresets.find((p) => p.name === mode && this.matchesTool(p, presetSet));
       weights = fullPreset?.weights ?? { similarity: 1.0 };
       mask = fullPreset?.overlayMask;
+      groupBy = fullPreset?.groupBy;
+    } else if (mode.preset) {
+      // Custom weights with preset overlay mask (used by rank_chunks)
+      presetName = mode.preset;
+      weights = mode.custom;
+      const fullPreset = this.resolvedPresets.find((p) => p.name === mode.preset && this.matchesTool(p, presetSet));
+      mask = fullPreset?.overlayMask;
+      groupBy = fullPreset?.groupBy;
     } else {
       presetName = "custom";
       weights = mode.custom;
@@ -112,7 +121,22 @@ export class Reranker {
       return { ...result, score, rankingOverlay: overlay };
     });
 
-    return scored.sort((a, b) => b.score - a.score);
+    const sorted = scored.sort((a, b) => b.score - a.score);
+
+    // Group by payload field: keep highest-scored (first) per group
+    if (groupBy) {
+      const seen = new Map<string, (typeof sorted)[number]>();
+      for (const r of sorted) {
+        const raw = r.payload?.[groupBy];
+        const key = typeof raw === "string" ? raw : "";
+        if (!key || !seen.has(key)) {
+          seen.set(key || `__ungrouped_${seen.size}`, r);
+        }
+      }
+      return [...seen.values()];
+    }
+
+    return sorted;
   }
 
   /**
@@ -120,6 +144,13 @@ export class Reranker {
    */
   getPreset(name: string, tool: "semantic_search" | "search_code" | "rank_chunks"): ScoringWeights | undefined {
     return this.resolvedPresets.find((p) => p.name === name && this.matchesTool(p, tool))?.weights;
+  }
+
+  /**
+   * Get full preset object for a specific preset name and tool.
+   */
+  getFullPreset(name: string, tool: "semantic_search" | "search_code" | "rank_chunks"): RerankPreset | undefined {
+    return this.resolvedPresets.find((p) => p.name === name && this.matchesTool(p, tool));
   }
 
   /**
@@ -218,7 +249,7 @@ export class Reranker {
         bounds[source] = Math.max(sourceBound, floor);
       }
       const dampeningThreshold = this.resolveDampeningThreshold(d);
-      signals[d.name] = d.extract(payload, { bounds, dampeningThreshold });
+      signals[d.name] = d.extract(payload, { bounds, dampeningThreshold, collectionStats: this.collectionStats });
     }
 
     return signals;

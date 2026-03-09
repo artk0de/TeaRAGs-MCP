@@ -759,6 +759,39 @@ export class QdrantManager {
       );
     }
   }
+  /**
+   * Scroll points ordered by a payload field. Returns points with IDs and payloads.
+   * Requires Qdrant 1.8+. The field should have a payload index for performance.
+   */
+  async scrollOrdered(
+    collectionName: string,
+    orderBy: { key: string; direction: "asc" | "desc" },
+    limit: number,
+    filter?: Record<string, unknown>,
+  ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
+    try {
+      const result = await this.client.scroll(collectionName, {
+        limit,
+        with_payload: true,
+        with_vector: false,
+        order_by: orderBy,
+        ...(filter ? { filter } : {}),
+      });
+
+      return result.points
+        .filter(
+          (p): p is { id: string | number; payload: Record<string, unknown> } =>
+            p.payload !== null && p.payload !== undefined,
+        )
+        .map((p) => ({ id: p.id, payload: p.payload }));
+    } catch (error: unknown) {
+      const errorData = error as { data?: { status?: { error?: string } }; message?: string };
+      const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
+      throw new Error(
+        `scrollOrdered failed on "${collectionName}" order_by=${JSON.stringify(orderBy)}: ${errorMessage}`,
+      );
+    }
+  }
 }
 
 /** Min-max normalize an array of scores to [0, 1]. */
