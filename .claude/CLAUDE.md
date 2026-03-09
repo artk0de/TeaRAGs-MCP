@@ -216,3 +216,28 @@ core/
     git/
     embeddings/
 ```
+
+## Commit Rules
+
+### BREAKING CHANGE footer (MANDATORY)
+
+Add `BREAKING CHANGE:` footer to commit messages when:
+- Environment variable names, defaults, or semantics change
+- Configuration file format or location changes
+- CLI flags or arguments change
+- Package name changes
+- Data directory paths change
+- Any change that **requires user action** (update config, re-run setup, etc.)
+
+Do NOT use BREAKING CHANGE for:
+- Internal refactoring that doesn't affect user-facing behavior
+- New features that are additive (no existing behavior changes)
+- Bug fixes (unless the buggy behavior was documented/relied upon)
+
+Format:
+```
+feat: add embedded Qdrant support
+
+BREAKING CHANGE: QDRANT_URL default changed from http://localhost:6333 to autodetect.
+Users with Docker Qdrant should set QDRANT_URL=http://localhost:6333 explicitly.
+```
