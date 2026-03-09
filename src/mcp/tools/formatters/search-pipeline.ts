@@ -57,7 +57,9 @@ export function applyPostProcessing(
 
 function hasOverlayData(overlay: RankingOverlay): boolean {
   return Boolean(
-    (overlay.file && Object.keys(overlay.file).length > 0) || (overlay.chunk && Object.keys(overlay.chunk).length > 0),
+    (overlay.file && Object.keys(overlay.file).length > 0) ||
+    (overlay.chunk && Object.keys(overlay.chunk).length > 0) ||
+    (overlay.derived && Object.keys(overlay.derived).length > 0),
   );
 }
 
@@ -111,7 +113,9 @@ export function formatSearchResults(
 
       if (overlay && hasOverlayData(overlay)) {
         // Rerank with mask: use overlay data as git
-        meta.git = buildGitFromOverlay(overlay);
+        const gitFromOverlay = buildGitFromOverlay(overlay);
+        if (Object.keys(gitFromOverlay).length > 0) meta.git = gitFromOverlay;
+        if (overlay.derived && Object.keys(overlay.derived).length > 0) meta.derived = overlay.derived;
         meta.preset = overlay.preset;
       } else if (fullGit) {
         // No overlay or empty overlay: filter to essential fields

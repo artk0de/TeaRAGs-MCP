@@ -31,7 +31,15 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (imports?.length) payload.imports = imports;
     if (methodLines) {
       payload.methodLines = methodLines;
-      payload.methodDensity = Math.round(chunk.content.length / methodLines);
+    }
+    // Density: chars per line, dampened for small chunks relative to parent size.
+    // Threshold adapts: sqrt(methodLines) for split chunks, sqrt(chunkLines) for standalone.
+    const chunkLines = chunk.endLine - chunk.startLine;
+    if (chunkLines > 0) {
+      const threshold = Math.max(2, Math.ceil(Math.sqrt(methodLines ?? chunkLines)));
+      const charsPerLine = chunk.content.length / chunkLines;
+      const dampening = Math.min(1, chunkLines / threshold);
+      payload.methodDensity = Math.round(charsPerLine * dampening);
     }
     return payload;
   }

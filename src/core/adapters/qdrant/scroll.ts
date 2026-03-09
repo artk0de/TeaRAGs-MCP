@@ -47,53 +47,13 @@ export async function scrollAllPoints(
   return points;
 }
 
-interface OrderBy {
-  key: string;
-  direction: "asc" | "desc";
-}
-
-interface OrderedScrollResult {
-  points: { id: string | number; payload?: Record<string, unknown> | null }[];
-  next_page_offset?: string | number | null;
-}
-
-interface OrderedScrollClient {
-  client: {
-    scroll: (
-      collectionName: string,
-      options: {
-        limit: number;
-        offset: string | number | undefined;
-        with_payload: boolean;
-        with_vector: boolean;
-        order_by?: OrderBy;
-        filter?: Record<string, unknown>;
-      },
-    ) => Promise<OrderedScrollResult>;
-  };
-}
-
-/** Scroll points ordered by a payload field. Returns points with IDs and payloads. */
+/** Scroll points ordered by a payload field. Delegates to QdrantManager.scrollOrdered. */
 export async function scrollOrderedBy(
   qdrant: QdrantManager,
   collectionName: string,
-  orderBy: OrderBy,
+  orderBy: { key: string; direction: "asc" | "desc" },
   limit: number,
   filter?: Record<string, unknown>,
 ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
-  const result = await (qdrant as unknown as OrderedScrollClient).client.scroll(collectionName, {
-    limit,
-    offset: undefined,
-    with_payload: true,
-    with_vector: false,
-    order_by: orderBy,
-    ...(filter ? { filter } : {}),
-  });
-
-  return result.points
-    .filter(
-      (p): p is { id: string | number; payload: Record<string, unknown> } =>
-        p.payload !== null && p.payload !== undefined,
-    )
-    .map((p) => ({ id: p.id, payload: p.payload }));
+  return qdrant.scrollOrdered(collectionName, orderBy, limit, filter);
 }

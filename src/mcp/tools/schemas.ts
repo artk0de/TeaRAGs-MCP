@@ -298,9 +298,17 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
         "Glob pattern for filtering by file path (client-side via picomatch). " +
           "Examples: 'src/core/ingest/**', '**/*.ts'",
       ),
+    offset: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .default(0)
+      .describe("Skip first N results (for pagination). Default: 0."),
     metaOnly: coerceBoolean()
       .optional()
-      .describe("Return only metadata (path, lines, git info) without content. Default: false."),
+      .default(true)
+      .describe("Return only metadata (path, lines, git info) without content. Default: true."),
   };
 
   return { SemanticSearchSchema, HybridSearchSchema, SearchCodeSchema, RankChunksSchema };

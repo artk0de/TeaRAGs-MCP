@@ -148,7 +148,7 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
         "ownership reports — any analysis where you need top-N chunks by signal, not by query similarity.",
       inputSchema: searchSchemas.RankChunksSchema,
     },
-    async ({ collection, path, rerank, level, limit, filter, pathPattern, metaOnly }) => {
+    async ({ collection, path, rerank, level, limit, offset, filter, pathPattern, metaOnly }) => {
       const resolved = resolveCollectionName(collection, path);
       if ("error" in resolved) return resolved.error;
 
@@ -180,24 +180,66 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
         f?: Record<string, unknown>,
       ) => scrollOrderedBy(qdrant, col, orderBy, lim, f);
 
-      let results = await rankModule.rankChunks(resolved.collectionName, {
-        weights,
-        level,
-        limit: limit || 10,
-        scrollFn,
-        filter,
-      });
+      const ensureIndexFn = async (col: string, fieldName: string) => {
+        // Determine field type: git fields with counts/days are integer, others are float
+        const isInteger = /count|days|lines/i.test(fieldName);
+        await qdrant.ensurePayloadIndex(col, fieldName, isInteger ? "integer" : "float");
+      };
 
-      // Apply pathPattern client-side
-      if (pathPattern) {
-        results = filterResultsByGlob(results as never, pathPattern);
+      try {
+        const effectiveOffset = offset || 0;
+        const fetchLimit = (limit || 10) + effectiveOffset;
+
+        // Exclude documentation from reranked results
+        const effectiveFilter = excludeDocumentation(filter);
+
+        let results = await rankModule.rankChunks(resolved.collectionName, {
+          weights,
+          level,
+          limit: fetchLimit,
+          scrollFn,
+          ensureIndexFn,
+          filter: effectiveFilter,
+          presetName: typeof rerank === "string" ? rerank : undefined,
+        });
+
+        // Apply pathPattern client-side
+        if (pathPattern) {
+          results = filterResultsByGlob(results as never, pathPattern);
+        }
+
+        // Apply offset
+        if (effectiveOffset > 0) {
+          results = results.slice(effectiveOffset);
+        }
+
+        const result = formatSearchResults(results as never, metaOnly, deps.essentialTrajectoryFields);
+        const driftWarning = path
+          ? await schemaDriftMonitor.checkAndConsume(path)
+          : schemaDriftMonitor.checkByCollectionName(resolved.collectionName);
+        return appendDriftWarning(result, driftWarning);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: "text", text: `Error in rank_chunks: ${msg}` }],
+          isError: true,
+        };
       }
-
-      const result = formatSearchResults(results as never, metaOnly, deps.essentialTrajectoryFields);
-      const driftWarning = path
-        ? await schemaDriftMonitor.checkAndConsume(path)
-        : schemaDriftMonitor.checkByCollectionName(resolved.collectionName);
-      return appendDriftWarning(result, driftWarning);
     },
   );
+}
+
+/**
+ * Exclude documentation chunks from reranked results using must_not.
+ * Uses must_not because code chunks don't have isDocumentation field at all —
+ * Qdrant can't match {value: false} on a missing field.
+ */
+function excludeDocumentation(filter?: Record<string, unknown>): Record<string, unknown> {
+  const docExclusion = { key: "isDocumentation", match: { value: true } };
+  if (!filter) {
+    return { must_not: [docExclusion] };
+  }
+  const existing = filter.must_not;
+  const mustNot = Array.isArray(existing) ? [...(existing as Record<string, unknown>[]), docExclusion] : [docExclusion];
+  return { ...filter, must_not: mustNot };
 }
