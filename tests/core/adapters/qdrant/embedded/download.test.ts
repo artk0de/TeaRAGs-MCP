@@ -18,15 +18,28 @@ describe("getPlatformAsset", () => {
     expect(getPlatformAsset("linux", "arm64")).toBe("qdrant-aarch64-unknown-linux-musl.tar.gz");
   });
 
+  it("returns correct asset for win32-x64", () => {
+    expect(getPlatformAsset("win32", "x64")).toBe("qdrant-x86_64-pc-windows-msvc.zip");
+  });
+
   it("throws for unsupported platform", () => {
-    expect(() => getPlatformAsset("win32", "x64")).toThrow(/unsupported platform/i);
+    expect(() => getPlatformAsset("freebsd", "x64")).toThrow(/unsupported platform/i);
+  });
+
+  it("throws for unsupported arch", () => {
+    expect(() => getPlatformAsset("win32", "arm64")).toThrow(/unsupported platform/i);
   });
 });
 
 describe("getBinaryPath", () => {
-  it("returns path under node_modules/.cache/tea-rags", () => {
-    const path = getBinaryPath();
-    expect(path).toMatch(/\.cache[\\/]tea-rags[\\/]qdrant/);
+  it("returns qdrant for unix platforms", () => {
+    const path = getBinaryPath("darwin");
+    expect(path).toMatch(/\.cache[\\/]tea-rags[\\/]qdrant$/);
+  });
+
+  it("returns qdrant.exe for windows", () => {
+    const path = getBinaryPath("win32");
+    expect(path).toMatch(/\.cache[\\/]tea-rags[\\/]qdrant\.exe$/);
   });
 });
 
