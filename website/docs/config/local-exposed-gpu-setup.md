@@ -1,6 +1,6 @@
 ---
 title: Local Exposed GPU Setup
-sidebar_position: 3
+sidebar_position: 4
 ---
 
 import MermaidTeaRAGs from '@site/src/components/MermaidTeaRAGs';

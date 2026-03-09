@@ -1,5 +1,12 @@
-import { describe, it, expect } from "vitest";
-import { getPlatformAsset, getBinaryPath, QDRANT_VERSION } from "../../../../../src/core/adapters/qdrant/embedded/download.js";
+import { describe, expect, it } from "vitest";
+
+import {
+  getBinaryPath,
+  getPlatformAsset,
+  isBinaryPresent,
+  isBinaryUpToDate,
+  QDRANT_VERSION,
+} from "../../../../../src/core/adapters/qdrant/embedded/download.js";
 
 describe("getPlatformAsset", () => {
   it("returns correct asset for darwin-arm64", () => {
@@ -46,5 +53,13 @@ describe("getBinaryPath", () => {
 describe("QDRANT_VERSION", () => {
   it("is a valid semver string", () => {
     expect(QDRANT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+describe("isBinaryUpToDate", () => {
+  it("returns false when binary does not exist (real path check)", () => {
+    // getBinaryPath points to node_modules/.cache/tea-rags/qdrant which doesn't exist in test env
+    expect(isBinaryPresent()).toBe(false);
+    expect(isBinaryUpToDate()).toBe(false);
   });
 });
