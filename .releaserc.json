@@ -9,17 +9,64 @@
           "mergePattern": "^Merge"
         },
         "releaseRules": [
+          { "breaking": true, "release": "major" },
+
+          { "type": "feat", "scope": "test", "release": false },
+          { "type": "feat", "scope": "beads", "release": false },
+          { "type": "feat", "scope": "scripts", "release": false },
+          { "type": "feat", "scope": "ci", "release": false },
+          { "type": "feat", "scope": "website", "release": false },
+          { "type": "feat", "scope": "deps", "release": false },
+
+          { "type": "feat", "scope": "onnx", "release": "patch" },
+          { "type": "feat", "scope": "embedding", "release": "patch" },
+          { "type": "feat", "scope": "embedded", "release": "patch" },
+          { "type": "feat", "scope": "adapters", "release": "patch" },
+          { "type": "feat", "scope": "qdrant", "release": "patch" },
+          { "type": "feat", "scope": "git", "release": "patch" },
+          { "type": "feat", "scope": "config", "release": "patch" },
+          { "type": "feat", "scope": "factory", "release": "patch" },
+          { "type": "feat", "scope": "bootstrap", "release": "patch" },
+          { "type": "feat", "scope": "debug", "release": "patch" },
+          { "type": "feat", "scope": "logs", "release": "patch" },
+
           { "type": "feat", "release": "minor" },
+
+          { "type": "improve", "scope": "test", "release": false },
+          { "type": "improve", "scope": "beads", "release": false },
+          { "type": "improve", "scope": "scripts", "release": false },
+          { "type": "improve", "scope": "ci", "release": false },
+          { "type": "improve", "scope": "website", "release": false },
+          { "type": "improve", "scope": "deps", "release": false },
+          { "type": "improve", "release": "patch" },
+
+          { "type": "fix", "scope": "test", "release": false },
+          { "type": "fix", "scope": "beads", "release": false },
+          { "type": "fix", "scope": "scripts", "release": false },
+          { "type": "fix", "scope": "ci", "release": false },
+          { "type": "fix", "scope": "website", "release": false },
+          { "type": "fix", "scope": "deps", "release": false },
           { "type": "fix", "release": "patch" },
+
+          { "type": "perf", "scope": "test", "release": false },
+          { "type": "perf", "scope": "beads", "release": false },
+          { "type": "perf", "scope": "website", "release": false },
           { "type": "perf", "release": "patch" },
+
           { "type": "docs", "release": "patch" },
+
+          { "type": "refactor", "scope": "test", "release": false },
+          { "type": "refactor", "scope": "beads", "release": false },
+          { "type": "refactor", "scope": "scripts", "release": false },
+          { "type": "refactor", "scope": "ci", "release": false },
+          { "type": "refactor", "scope": "website", "release": false },
           { "type": "refactor", "release": "patch" },
+
           { "type": "style", "release": false },
           { "type": "test", "release": false },
           { "type": "chore", "release": false },
           { "type": "ci", "release": false },
-          { "type": "build", "release": false },
-          { "breaking": true, "release": "major" }
+          { "type": "build", "release": false }
         ]
       }
     ],
@@ -33,6 +80,7 @@
         "presetConfig": {
           "types": [
             { "type": "feat", "section": "Features" },
+            { "type": "improve", "section": "Improvements" },
             { "type": "fix", "section": "Bug Fixes" },
             { "type": "perf", "section": "Performance Improvements" },
             { "type": "docs", "section": "Documentation" },
@@ -43,7 +91,7 @@
             { "type": "ci", "section": "CI/CD", "hidden": true },
             { "type": "build", "section": "Build System", "hidden": true }
           ],
-          "commitGroupsSort": ["Breaking Changes", "Features", "Bug Fixes", "Performance Improvements", "Documentation", "Code Refactoring"]
+          "commitGroupsSort": ["Breaking Changes", "Features", "Improvements", "Bug Fixes", "Performance Improvements", "Documentation", "Code Refactoring"]
         }
       }
     ],
