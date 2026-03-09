@@ -23,6 +23,9 @@ export interface DerivedSignalDescriptor {
   defaultBound?: number;
   /** Dampening source: which collection stat to use as confidence threshold. */
   dampeningSource?: DampeningConfig;
+  /** Whether this signal inverts the raw value (1 - normalize pattern).
+   *  Used by rank_chunks to determine scroll direction: inverted=true → asc. */
+  inverted?: boolean;
 }
 
 export interface RerankableResult {

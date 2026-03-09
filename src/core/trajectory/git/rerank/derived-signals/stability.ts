@@ -8,6 +8,7 @@ export class StabilitySignal implements DerivedSignalDescriptor {
     "Inverse of churn: stable code with few commits scores higher. L3 blends chunk+file commitCount.";
   readonly sources = ["file.commitCount", "chunk.commitCount"];
   readonly defaultBound = 50;
+  readonly inverted = true as const;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.commitCount"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.commitCount"] ?? this.defaultBound;
