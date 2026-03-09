@@ -42,7 +42,8 @@
             { "type": "chore", "section": "Chores", "hidden": true },
             { "type": "ci", "section": "CI/CD", "hidden": true },
             { "type": "build", "section": "Build System", "hidden": true }
-          ]
+          ],
+          "commitGroupsSort": ["Breaking Changes", "Features", "Bug Fixes", "Performance Improvements", "Documentation", "Code Refactoring"]
         }
       }
     ],
