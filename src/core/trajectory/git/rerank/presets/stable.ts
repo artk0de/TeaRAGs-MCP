@@ -4,7 +4,7 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
 export class StablePreset implements RerankPreset {
   readonly name = "stable";
   readonly description = "Boost low-churn, long-lived, predictable code";
-  readonly tools = ["search_code", "semantic_search", "rank_chunks"];
+  readonly tools = ["search_code", "semantic_search", "hybrid_search"];
   readonly weights: ScoringWeights = {
     similarity: 0.5,
     stability: 0.2,

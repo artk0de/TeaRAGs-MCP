@@ -4,7 +4,7 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
 export class RelevancePreset implements RerankPreset {
   readonly name = "relevance";
   readonly description = "Pure semantic similarity ranking";
-  readonly tools = ["semantic_search", "search_code", "rank_chunks"];
+  readonly tools = ["semantic_search", "hybrid_search", "search_code"];
   readonly weights: ScoringWeights = { similarity: 1.0 };
   readonly overlayMask: OverlayMask = {};
 }
