@@ -136,9 +136,15 @@ async function ensureDaemon(): Promise<DaemonHandle> {
   const port = await findFreePort();
   const binaryPath = getBinaryPath();
 
-  const child = spawn(binaryPath, ["--storage-path", storagePath, "--port", String(port), "--grpc-port", "0"], {
+  const child = spawn(binaryPath, ["--disable-telemetry"], {
     detached: true,
     stdio: "ignore",
+    env: {
+      ...process.env,
+      QDRANT__STORAGE__STORAGE_PATH: storagePath,
+      QDRANT__SERVICE__HTTP_PORT: String(port),
+      QDRANT__SERVICE__GRPC_PORT: "0",
+    },
   });
   child.unref();
 
