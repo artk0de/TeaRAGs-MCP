@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 async function main() {
   try {
-    const { isBinaryPresent, downloadQdrant, QDRANT_VERSION, getPlatformAsset } =
+    const { isBinaryUpToDate, downloadQdrant, QDRANT_VERSION, getPlatformAsset } =
       await import("../build/core/adapters/qdrant/embedded/download.js");
 
-    if (isBinaryPresent()) {
+    if (isBinaryUpToDate()) {
       console.error(`[tea-rags] Qdrant v${QDRANT_VERSION} binary already present`);
       return;
     }

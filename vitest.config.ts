@@ -45,6 +45,10 @@ export default defineConfig({
         "src/core/ingest/pipeline/index.ts",
         "src/core/adapters/qdrant/filters/index.ts",
         "src/mcp/prompts/index.ts",
+        // I/O-heavy runtime (child process spawn, HTTP download — tested via integration)
+        "src/core/adapters/qdrant/embedded/daemon.ts",
+        "src/core/adapters/qdrant/embedded/download.ts",
+        "src/core/adapters/qdrant/embedded/types.ts",
         // Type-only files (no executable code to test)
         "src/core/types.ts",
         "src/core/ingest/pipeline/enrichment/types.ts",

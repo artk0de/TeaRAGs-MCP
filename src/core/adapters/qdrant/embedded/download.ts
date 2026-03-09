@@ -1,8 +1,8 @@
-import { chmodSync, createWriteStream, existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { get } from "node:https";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
 
 export const QDRANT_VERSION = "1.17.0";
 
@@ -38,14 +38,31 @@ export function getDownloadUrl(asset: string): string {
   return `https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VERSION}/${asset}`;
 }
 
+function getVersionPath(): string {
+  return join(dirname(getBinaryPath()), "qdrant.version");
+}
+
+function getInstalledVersion(): string | null {
+  try {
+    return readFileSync(getVersionPath(), "utf-8").trim();
+  } catch {
+    return null;
+  }
+}
+
+function writeInstalledVersion(): void {
+  writeFileSync(getVersionPath(), QDRANT_VERSION, "utf-8");
+}
+
 export function isBinaryPresent(): boolean {
   return existsSync(getBinaryPath());
 }
 
-export async function downloadQdrant(
-  platform = process.platform,
-  arch = process.arch,
-): Promise<string> {
+export function isBinaryUpToDate(): boolean {
+  return isBinaryPresent() && getInstalledVersion() === QDRANT_VERSION;
+}
+
+export async function downloadQdrant(platform = process.platform, arch = process.arch): Promise<string> {
   const asset = getPlatformAsset(platform, arch);
   const url = getDownloadUrl(asset);
   const binaryPath = getBinaryPath(platform);
@@ -74,22 +91,27 @@ export async function downloadQdrant(
     chmodSync(binaryPath, 0o755);
   }
 
+  writeInstalledVersion();
   return binaryPath;
 }
 
-function downloadFile(url: string, dest: string): Promise<void> {
+async function downloadFile(url: string, dest: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const file = createWriteStream(dest);
     const request = (reqUrl: string) => {
       get(reqUrl, (res) => {
         if (res.statusCode === 301 || res.statusCode === 302) {
-          const location = res.headers.location;
-          if (!location) return reject(new Error("Redirect without location"));
+          const { location } = res.headers;
+          if (!location) {
+            reject(new Error("Redirect without location"));
+            return;
+          }
           request(location);
           return;
         }
         if (res.statusCode !== 200) {
-          return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          return;
         }
         res.pipe(file);
         file.on("finish", () => {

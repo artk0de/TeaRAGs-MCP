@@ -1,13 +1,11 @@
 import { spawn } from "node:child_process";
-import {
-  existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { appDataDir } from "../../../../bootstrap/config/paths.js";
-import { downloadQdrant, getBinaryPath, isBinaryPresent, QDRANT_VERSION } from "./download.js";
+import { downloadQdrant, getBinaryPath, isBinaryUpToDate, QDRANT_VERSION } from "./download.js";
 import type { DaemonHandle, DaemonPaths, QdrantResolution } from "./types.js";
 
 export const EMBEDDED_MARKER = "embedded";
@@ -70,7 +68,11 @@ function decrementRefs(paths: DaemonPaths): number {
 
 function cleanupDaemonFiles(paths: DaemonPaths): void {
   for (const f of [paths.pidFile, paths.portFile, paths.refsFile]) {
-    try { unlinkSync(f); } catch { /* ignore */ }
+    try {
+      unlinkSync(f);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -79,7 +81,9 @@ export async function findFreePort(): Promise<number> {
     const server = createServer();
     server.listen(0, "127.0.0.1", () => {
       const { port } = server.address() as AddressInfo;
-      server.close(() => resolve(port));
+      server.close(() => {
+        resolve(port);
+      });
     });
     server.on("error", reject);
   });
@@ -124,7 +128,7 @@ async function ensureDaemon(): Promise<DaemonHandle> {
 
   cleanupDaemonFiles(paths);
 
-  if (!isBinaryPresent()) {
+  if (!isBinaryUpToDate()) {
     console.error(`[tea-rags] Downloading Qdrant v${QDRANT_VERSION}...`);
     await downloadQdrant();
   }
@@ -132,17 +136,18 @@ async function ensureDaemon(): Promise<DaemonHandle> {
   const port = await findFreePort();
   const binaryPath = getBinaryPath();
 
-  const child = spawn(binaryPath, [
-    "--storage-path", storagePath,
-    "--port", String(port),
-    "--grpc-port", "0",
-  ], {
+  const child = spawn(binaryPath, ["--storage-path", storagePath, "--port", String(port), "--grpc-port", "0"], {
     detached: true,
     stdio: "ignore",
   });
   child.unref();
 
-  writeFileSync(paths.pidFile, String(child.pid), "utf-8");
+  const { pid } = child;
+  if (pid === undefined) {
+    throw new Error("Qdrant daemon failed to spawn — no PID assigned");
+  }
+
+  writeFileSync(paths.pidFile, String(pid), "utf-8");
   writeFileSync(paths.portFile, String(port), "utf-8");
   writeFileSync(paths.refsFile, "1", "utf-8");
 
@@ -150,8 +155,8 @@ async function ensureDaemon(): Promise<DaemonHandle> {
   const start = Date.now();
   while (Date.now() - start < HEALTH_CHECK_TIMEOUT_MS) {
     if (await probeHealth(url)) {
-      console.error(`[tea-rags] Qdrant daemon started (pid=${child.pid}, port=${port})`);
-      scheduleIdleWatcher(paths, child.pid!);
+      console.error(`[tea-rags] Qdrant daemon started (pid=${pid}, port=${port})`);
+      scheduleIdleWatcher(paths, pid);
       return {
         url,
         release: () => {
@@ -163,7 +168,11 @@ async function ensureDaemon(): Promise<DaemonHandle> {
     await sleep(HEALTH_CHECK_INTERVAL_MS);
   }
 
-  try { process.kill(child.pid!, "SIGKILL"); } catch { /* ignore */ }
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    /* ignore */
+  }
   cleanupDaemonFiles(paths);
   throw new Error(`Qdrant daemon failed to start within ${HEALTH_CHECK_TIMEOUT_MS}ms`);
 }
@@ -172,7 +181,9 @@ function scheduleIdleWatcher(paths: DaemonPaths, pid: number): void {
   let idleSince: number | null = null;
 
   const interval = setInterval(() => {
-    try { process.kill(pid, 0); } catch {
+    try {
+      process.kill(pid, 0);
+    } catch {
       clearInterval(interval);
       cleanupDaemonFiles(paths);
       return;
@@ -184,7 +195,11 @@ function scheduleIdleWatcher(paths: DaemonPaths, pid: number): void {
         idleSince = Date.now();
       } else if (Date.now() - idleSince >= IDLE_SHUTDOWN_MS) {
         console.error(`[tea-rags] Qdrant daemon idle, shutting down`);
-        try { process.kill(pid, "SIGTERM"); } catch { /* ignore */ }
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch {
+          /* ignore */
+        }
         cleanupDaemonFiles(paths);
         clearInterval(interval);
       }

@@ -1,6 +1,6 @@
 ---
 title: Performance Tuning
-sidebar_position: 5
+sidebar_position: 6
 ---
 
 import MermaidTeaRAGs from '@site/src/components/MermaidTeaRAGs';
