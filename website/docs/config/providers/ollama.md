@@ -78,7 +78,6 @@ export EMBEDDING_BASE_URL=http://localhost:11434
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "QDRANT_URL": "http://localhost:6333",
         "EMBEDDING_PROVIDER": "ollama",
         "EMBEDDING_BASE_URL": "http://localhost:11434"
       }
@@ -86,6 +85,10 @@ export EMBEDDING_BASE_URL=http://localhost:11434
   }
 }
 ```
+
+:::tip
+`QDRANT_URL` is not needed — Qdrant is built-in and starts automatically. Add it only if using external Qdrant.
+:::
 
 Optional variables:
 

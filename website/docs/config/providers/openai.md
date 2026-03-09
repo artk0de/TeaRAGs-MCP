@@ -49,7 +49,6 @@ export OPENAI_API_KEY=sk-...
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "QDRANT_URL": "http://localhost:6333",
         "EMBEDDING_PROVIDER": "openai",
         "OPENAI_API_KEY": "sk-..."
       }
@@ -57,6 +56,10 @@ export OPENAI_API_KEY=sk-...
   }
 }
 ```
+
+:::tip
+`QDRANT_URL` is not needed — Qdrant is built-in and starts automatically. Add it only if using external Qdrant.
+:::
 
 Optional variables:
 

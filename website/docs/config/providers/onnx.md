@@ -48,13 +48,16 @@ The first run downloads the model (~260 MB) to a local cache. Subsequent runs st
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "QDRANT_URL": "http://localhost:6333",
         "EMBEDDING_PROVIDER": "onnx"
       }
     }
   }
 }
 ```
+
+:::tip
+`QDRANT_URL` is not needed — Qdrant is built-in and starts automatically. Add it only if using external Qdrant.
+:::
 
 Optional variables:
 
@@ -110,7 +113,6 @@ Some HuggingFace models require authentication (gated models like Llama, or priv
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "QDRANT_URL": "http://localhost:6333",
         "EMBEDDING_PROVIDER": "onnx",
         "EMBEDDING_MODEL": "your-org/private-model",
         "HF_TOKEN": "hf_..."

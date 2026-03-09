@@ -8,7 +8,7 @@ sidebar_position: 1
 Configure TeaRAGs on a per-project basis using environment variables.
 
 :::info Future: .mcp.json Configuration
-Project-level `.mcp.json` configuration file is planned for future release ([tea-rags-mcp-h64](https://github.com/mhalder/tea-rags-mcp/issues)). Currently, use environment variables for project-specific settings.
+Project-level `.mcp.json` configuration file is planned for future release ([tea-rags-mcp-h64](https://github.com/artk0de/TeaRAGs-MCP/issues)). Currently, use environment variables for project-specific settings.
 :::
 
 ## Why Project-Level Configuration?
@@ -39,14 +39,16 @@ Edit `~/.config/claude/claude_desktop_config.json` (or equivalent):
       "env": {
         "CODE_CHUNK_SIZE": "2500",
         "CODE_CHUNK_OVERLAP": "300",
-        "CODE_ENABLE_GIT_METADATA": "false",
-        "QDRANT_URL": "http://localhost:6333",
-        "EMBEDDING_BASE_URL": "http://localhost:11434"
+        "CODE_ENABLE_GIT_METADATA": "false"
       }
     }
   }
 }
 ```
+
+:::tip
+`QDRANT_URL` is autodetected (embedded Qdrant starts automatically). Add it only if using external Qdrant.
+:::
 
 ### Per-Project Workflows
 

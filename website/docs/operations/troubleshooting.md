@@ -9,9 +9,9 @@ sidebar_position: 3
 
 | Issue | Solution |
 |-------|----------|
-| **Qdrant not running** | `podman compose up -d` or `docker compose up -d` |
+| **Qdrant not running** | Qdrant is built-in and starts automatically. If using external Qdrant: `podman compose up -d` or `docker compose up -d` |
 | **Collection missing** | Create collection first before adding documents |
-| **Ollama not running** | Verify with `curl http://localhost:11434`, start with `podman compose up -d` |
+| **Ollama not running** | Verify with `curl http://localhost:11434`, start Ollama or run `podman compose up -d` |
 | **Model missing** | `podman exec ollama ollama pull nomic-embed-text` |
 | **Rate limit errors** | Adjust `EMBEDDING_MAX_REQUESTS_PER_MINUTE` to match your provider tier |
 | **API key errors** | Verify correct API key in environment configuration |

@@ -7,41 +7,50 @@ sidebar_position: 0
 
 ## Default Setup
 
-TeaRAGs is **pre-configured for MacBook M1/M2/M3** out of the box. Default settings are optimized for local development with Docker-based Qdrant and Ollama running on the same machine.
+TeaRAGs is **pre-configured for MacBook M1/M2/M3** out of the box. Qdrant is **built-in** — it downloads and runs automatically as an embedded process. No Docker required.
 
 **No configuration required** if you're running:
-- Qdrant on `http://localhost:6333`
 - Ollama on `http://localhost:11434`
 - Default embedding model: `unclemusclez/jina-embeddings-v2-base-code:latest`
 
-Just install, index, and search — defaults work immediately.
+Just install, index, and search — defaults work immediately. Qdrant starts automatically on first use.
 
 ## Prerequisites & Installation
 
-### Quick Start: Everything in Docker
+### Qdrant (Built-in)
 
-**Easiest option** — run both Qdrant and Ollama in Docker:
+Qdrant is **embedded** — TeaRAGs automatically downloads the Qdrant binary and manages it as a child process. No Docker, no manual setup.
 
+**How it works:**
+- On first use, TeaRAGs downloads the Qdrant binary for your platform
+- Qdrant runs as a managed child process alongside TeaRAGs
+- Data is stored in `~/.tea-rags/qdrant/storage` by default
+- Override storage location with `QDRANT_EMBEDDED_STORAGE_PATH`
+
+**Autodetect behavior** (default, `QDRANT_URL` unset):
+1. Probe `localhost:6333` for an existing external Qdrant
+2. If found, use it (seamless upgrade for existing Docker setups)
+3. If not found, start embedded Qdrant automatically
+
+**Force embedded Qdrant:**
 ```bash
-cd ~/yourpath/to/tea-rags
-
-# Start both services (Qdrant + Ollama)
-docker-compose up -d
-
-# Pull the default embedding model
-docker exec -it $(docker ps -q -f name=ollama) ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
+export QDRANT_URL=embedded
 ```
-
-**That's it!** TeaRAGs will connect to `http://localhost:6333` (Qdrant) and `http://localhost:11434` (Ollama) automatically.
 
 ---
 
-### Qdrant Setup
+### Using External Qdrant (Optional)
 
-#### Option 1: Docker (Recommended)
+If you prefer to run Qdrant separately (Docker, Qdrant Cloud, etc.), set `QDRANT_URL` explicitly:
 
 ```bash
-# Run Qdrant in Docker
+export QDRANT_URL=http://localhost:6333
+```
+
+<details>
+<summary>Docker setup</summary>
+
+```bash
 docker run -d \
   --name qdrant \
   -p 6333:6333 \
@@ -59,20 +68,17 @@ docker run -d \
   qdrant/qdrant:latest
 ```
 
-#### Option 2: Native Installation
+</details>
 
 <details>
-<summary>macOS</summary>
+<summary>Native installation</summary>
 
+**macOS:**
 ```bash
 brew install qdrant
 ```
 
-</details>
-
-<details>
-<summary>Linux</summary>
-
+**Linux:**
 ```bash
 wget https://github.com/qdrant/qdrant/releases/latest/download/qdrant-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf qdrant-x86_64-unknown-linux-gnu.tar.gz
@@ -81,10 +87,9 @@ tar -xzf qdrant-x86_64-unknown-linux-gnu.tar.gz
 
 </details>
 
-#### Verify Qdrant
+#### Verify External Qdrant
 
 ```bash
-# Check Qdrant is running
 curl http://localhost:6333/healthz
 # Should return: "healthy"
 ```
@@ -198,15 +203,15 @@ ollama run unclemusclez/jina-embeddings-v2-base-code:latest "test"
 
 | Component | Recommended | Alternative |
 |-----------|-------------|-------------|
-| **Qdrant** | Docker | Native binary |
+| **Qdrant** | Built-in (embedded, zero setup) | Docker or native binary |
 | **Ollama** | Native (for GPU) | Docker (CPU-only on Mac) |
 
 **Recommended setup for MacBook:**
-- Qdrant: Docker (simple, isolated)
+- Qdrant: Built-in (automatic, no setup needed)
 - Ollama: Native (GPU acceleration)
 
 **Recommended setup for Linux:**
-- Qdrant: Docker (simple)
+- Qdrant: Built-in (automatic)
 - Ollama: Native or Docker with GPU (both support GPU)
 
 **All-in-Docker setup:**
@@ -231,10 +236,10 @@ Set these in your MCP server configuration when deviating from defaults:
 
 | Variable | Default | When to change |
 |----------|---------|----------------|
-| `QDRANT_URL` | `http://localhost:6333` | Qdrant on remote server or custom port |
+| `QDRANT_URL` | Autodetect (probe localhost, fallback to embedded) | External Qdrant on remote server, or `"embedded"` to force built-in |
 | `EMBEDDING_BASE_URL` | `http://localhost:11434` | Ollama on remote GPU server or custom port |
 
-**Example: Remote GPU server**
+**Example: Remote GPU server with external Qdrant**
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://192.168.1.100:6333 \
@@ -303,7 +308,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js
 
 ### 2. Configure only what you need
 ```bash
-# Remote Qdrant example
+# Remote Qdrant + remote Ollama example
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://gpu-server:6333 \
   -e EMBEDDING_BASE_URL=http://gpu-server:11434
@@ -311,14 +316,12 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
 
 ### 3. Performance tune (optional)
 ```bash
-# Auto-tune for your hardware
-QDRANT_URL=http://gpu-server:6333 \
+# Auto-tune for your hardware (Qdrant auto-starts if not running)
 EMBEDDING_BASE_URL=http://gpu-server:11434 \
 npm run tune
 
 # Apply tuned values
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
-  -e QDRANT_URL=http://gpu-server:6333 \
   -e EMBEDDING_BASE_URL=http://gpu-server:11434 \
   -e EMBEDDING_BATCH_SIZE=256 \
   -e INGEST_PIPELINE_CONCURRENCY=4 \
@@ -338,7 +341,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js
 </details>
 
 <details>
-<summary>Remote GPU Server</summary>
+<summary>Remote GPU Server (with external Qdrant)</summary>
 
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
