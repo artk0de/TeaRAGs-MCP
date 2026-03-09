@@ -59,7 +59,7 @@ describe("parseAppConfig (Zod bridge)", () => {
     const { parseAppConfig } = await freshImport();
     const config = parseAppConfig();
 
-    expect(config.qdrantUrl).toBe("http://localhost:6333");
+    expect(config.qdrantUrl).toBeUndefined();
     expect(config.embeddingProvider).toBe("ollama");
     expect(config.transportMode).toBe("stdio");
     expect(config.httpPort).toBe(3000);
