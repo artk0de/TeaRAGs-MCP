@@ -11,9 +11,11 @@ describe("DecompositionPreset", () => {
     expect(preset.name).toBe("decomposition");
   });
 
-  it("supports both semantic_search and search_code tools", () => {
+  it("supports semantic_search, hybrid_search, and rank_chunks tools", () => {
     expect(preset.tools).toContain("semantic_search");
-    expect(preset.tools).toContain("search_code");
+    expect(preset.tools).toContain("hybrid_search");
+    expect(preset.tools).toContain("rank_chunks");
+    expect(preset.tools).not.toContain("search_code");
   });
 
   it("has balanced weights: similarity 0.3, chunkSize 0.35, chunkDensity 0.35", () => {
