@@ -75,7 +75,7 @@ export class Reranker {
   rerank<T extends RerankableResult>(
     results: T[],
     mode: RerankMode<string>,
-    presetSet: "semantic_search" | "search_code",
+    presetSet: "semantic_search" | "search_code" | "rank_chunks",
   ): (T & { rankingOverlay?: RankingOverlay })[] {
     // Resolve weights and overlay mask
     let weights: ScoringWeights;
