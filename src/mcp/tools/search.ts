@@ -5,10 +5,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
-import { BM25SparseVectorGenerator } from "../../core/adapters/qdrant/sparse.js";
 import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
+import { filterResultsByGlob } from "../../core/adapters/qdrant/filters/index.js";
+import { scrollOrderedBy } from "../../core/adapters/qdrant/scroll.js";
+import { BM25SparseVectorGenerator } from "../../core/adapters/qdrant/sparse.js";
 import type { SchemaBuilder } from "../../core/api/schema-builder.js";
 import type { SchemaDriftMonitor } from "../../core/api/schema-drift-monitor.js";
+import { RankModule } from "../../core/search/rank-module.js";
 import type { Reranker } from "../../core/search/reranker.js";
 import {
   applyPostProcessing,
@@ -125,6 +128,72 @@ export function registerSearchTools(server: McpServer, deps: SearchToolDependenc
       });
 
       const result = formatSearchResults(processed, metaOnly, deps.essentialTrajectoryFields);
+      const driftWarning = path
+        ? await schemaDriftMonitor.checkAndConsume(path)
+        : schemaDriftMonitor.checkByCollectionName(resolved.collectionName);
+      return appendDriftWarning(result, driftWarning);
+    },
+  );
+
+  // rank_chunks
+  const rankModule = new RankModule(deps.reranker, deps.reranker.getDescriptors());
+
+  server.registerTool(
+    "rank_chunks",
+    {
+      title: "Rank Chunks",
+      description:
+        "Rank all chunks in a collection by rerank signals without vector search. " +
+        "Use for: finding decomposition candidates, tech debt analysis, hotspot detection, " +
+        "ownership reports — any analysis where you need top-N chunks by signal, not by query similarity.",
+      inputSchema: searchSchemas.RankChunksSchema,
+    },
+    async ({ collection, path, rerank, level, limit, filter, pathPattern, metaOnly }) => {
+      const resolved = resolveCollectionName(collection, path);
+      if ("error" in resolved) return resolved.error;
+
+      const collectionError = await validateCollectionExists(qdrant, resolved.collectionName, path);
+      if (collectionError) return collectionError;
+
+      // Resolve weights from preset or custom
+      let sourceWeights: Record<string, number | undefined>;
+      if (typeof rerank === "string") {
+        const preset = deps.reranker.getPreset(rerank, "rank_chunks");
+        if (!preset) {
+          return {
+            content: [{ type: "text", text: `Error: Unknown preset "${rerank}" for rank_chunks.` }],
+            isError: true,
+          };
+        }
+        sourceWeights = preset;
+      } else {
+        sourceWeights = rerank.custom;
+      }
+      const weights: Record<string, number> = Object.fromEntries(
+        Object.entries(sourceWeights).filter((e): e is [string, number] => typeof e[1] === "number"),
+      );
+
+      const scrollFn = async (
+        col: string,
+        orderBy: { key: string; direction: "asc" | "desc" },
+        lim: number,
+        f?: Record<string, unknown>,
+      ) => scrollOrderedBy(qdrant, col, orderBy, lim, f);
+
+      let results = await rankModule.rankChunks(resolved.collectionName, {
+        weights,
+        level,
+        limit: limit || 10,
+        scrollFn,
+        filter,
+      });
+
+      // Apply pathPattern client-side
+      if (pathPattern) {
+        results = filterResultsByGlob(results as never, pathPattern);
+      }
+
+      const result = formatSearchResults(results as never, metaOnly, deps.essentialTrajectoryFields);
       const driftWarning = path
         ? await schemaDriftMonitor.checkAndConsume(path)
         : schemaDriftMonitor.checkByCollectionName(resolved.collectionName);

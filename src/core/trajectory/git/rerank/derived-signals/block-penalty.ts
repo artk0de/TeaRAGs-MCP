@@ -7,6 +7,7 @@ export class BlockPenaltySignal implements DerivedSignalDescriptor {
   readonly description =
     "Data quality discount for block chunks: 1.0 if block without chunk data (alpha=0), 0 otherwise";
   readonly sources = ["chunk.commitCount", "file.commitCount"];
+  readonly inverted = true as const;
   extract(rawSignals: Record<string, unknown>, _ctx?: ExtractContext): number {
     const { chunkType } = rawSignals;
     if (chunkType !== "block") return 0;

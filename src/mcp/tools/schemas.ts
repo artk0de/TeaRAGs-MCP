@@ -266,7 +266,44 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       ),
   };
 
-  return { SemanticSearchSchema, HybridSearchSchema, SearchCodeSchema };
+  const rankChunksRerankSchema = schemaBuilder.buildRerankSchema("rank_chunks");
+
+  const RankChunksSchema = {
+    ...collectionPathFields(),
+    rerank: rankChunksRerankSchema.describe(
+      "Reranking mode (REQUIRED). Determines how chunks are scored and sorted. " +
+        "similarity weight is ignored (no vector search). " +
+        "Use decomposition for large chunks, techDebt for old+churned, " +
+        "hotspots for high-churn, refactoring for large+churned, ownership for single-author.",
+    ),
+    level: z
+      .enum(["chunk", "file"])
+      .describe(
+        "Analysis level. 'chunk' for active work (decomposition, hotspots). " +
+          "'file' for tech debt and ownership analysis.",
+      ),
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
+    filter: z
+      .record(z.any())
+      .optional()
+      .describe(
+        "Qdrant filter object with must/should/must_not conditions. " +
+          "Available fields: relativePath, fileExtension, language, chunkType, " +
+          "git.commitCount, git.ageDays, etc.",
+      ),
+    pathPattern: z
+      .string()
+      .optional()
+      .describe(
+        "Glob pattern for filtering by file path (client-side via picomatch). " +
+          "Examples: 'src/core/ingest/**', '**/*.ts'",
+      ),
+    metaOnly: coerceBoolean()
+      .optional()
+      .describe("Return only metadata (path, lines, git info) without content. Default: false."),
+  };
+
+  return { SemanticSearchSchema, HybridSearchSchema, SearchCodeSchema, RankChunksSchema };
 }
 
 /** Return type of createSearchSchemas for typing in tool registrations. */

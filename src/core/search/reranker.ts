@@ -118,20 +118,25 @@ export class Reranker {
   /**
    * Get preset weights for a specific preset name and tool.
    */
-  getPreset(name: string, tool: "semantic_search" | "search_code"): ScoringWeights | undefined {
+  getPreset(name: string, tool: "semantic_search" | "search_code" | "rank_chunks"): ScoringWeights | undefined {
     return this.resolvedPresets.find((p) => p.name === name && this.matchesTool(p, tool))?.weights;
   }
 
   /**
    * Get available preset names for a tool.
    */
-  getAvailablePresets(tool: "semantic_search" | "search_code"): string[] {
+  getAvailablePresets(tool: "semantic_search" | "search_code" | "rank_chunks"): string[] {
     return this.resolvedPresets.filter((p) => this.matchesTool(p, tool)).map((p) => p.name);
   }
 
   /** Descriptor info for MCP schema generation. */
   getDescriptorInfo(): { name: string; description: string }[] {
     return this.descriptors.map((d) => ({ name: d.name, description: d.description }));
+  }
+
+  /** All derived signal descriptors (for RankModule). */
+  getDescriptors(): DerivedSignalDescriptor[] {
+    return this.descriptors;
   }
 
   /** Preset names for a specific tool. */
