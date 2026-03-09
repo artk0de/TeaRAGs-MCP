@@ -4,7 +4,7 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
 export class HotspotsPreset implements RerankPreset {
   readonly name = "hotspots";
   readonly description = "Identify frequently-changing bug-prone code areas";
-  readonly tools = ["semantic_search", "rank_chunks"];
+  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks"];
   readonly weights: ScoringWeights = {
     similarity: 0.25,
     chunkChurn: 0.15,
