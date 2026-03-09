@@ -215,18 +215,29 @@ Automated via [semantic-release](https://semantic-release.gitbook.io/):
 
 ```
 tea-rags-mcp/
-├── src/core/
-│   ├── api/            # Composition root, MCP facades
-│   ├── search/         # Query-time reranking engine
-│   ├── trajectory/     # Provider implementations (static, git)
-│   ├── ingest/         # Indexing pipeline, chunking, enrichment
-│   ├── contracts/      # Shared interfaces, registries
-│   └── adapters/       # External system types (Qdrant, git, embeddings)
-├── tests/              # Test suite (mirrors src/ structure)
-├── docs/               # Design docs and plans
-├── website/            # Docusaurus documentation site
-├── scripts/            # Utility scripts
-└── .github/            # GitHub Actions workflows
+├── src/
+│   ├── bootstrap/         # App startup and wiring
+│   │   ├── config/        # Zod config schemas, env parsing, paths
+│   │   ├── factory.ts     # Dependency injection factory
+│   │   ├── transport/     # MCP transport setup
+│   │   ├── migrate.ts     # Data migration utilities
+│   │   └── ollama.ts      # Ollama health checks
+│   ├── mcp/               # MCP protocol layer
+│   │   ├── tools/         # MCP tool implementations
+│   │   ├── prompts/       # MCP prompt templates
+│   │   └── resources/     # MCP resource definitions
+│   └── core/              # Domain logic
+│       ├── api/           # Composition root, MCP facades
+│       ├── search/        # Query-time reranking engine
+│       ├── trajectory/    # Provider implementations (static, git)
+│       ├── ingest/        # Indexing pipeline, chunking, enrichment
+│       ├── contracts/     # Shared interfaces, registries
+│       └── adapters/      # External system types (Qdrant, git, embeddings)
+├── tests/                 # Test suite (mirrors src/ structure)
+├── docs/                  # Design docs and plans
+├── website/               # Docusaurus documentation site
+├── scripts/               # Utility scripts
+└── .github/               # GitHub Actions workflows
 ```
 
 ## License
