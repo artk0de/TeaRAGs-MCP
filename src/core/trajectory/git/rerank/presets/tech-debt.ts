@@ -4,7 +4,7 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
 export class TechDebtPreset implements RerankPreset {
   readonly name = "techDebt";
   readonly description = "Find legacy code with high churn, old age, and frequent bug fixes";
-  readonly tools = ["semantic_search"];
+  readonly tools = ["semantic_search", "rank_chunks"];
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     age: 0.15,

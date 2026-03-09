@@ -4,7 +4,7 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
 export class OnboardingPreset implements RerankPreset {
   readonly name = "onboarding";
   readonly description = "Well-documented, stable, mature code with shared ownership — ideal for new team members";
-  readonly tools = ["semantic_search"];
+  readonly tools = ["semantic_search", "rank_chunks"];
   readonly weights: ScoringWeights = {
     similarity: 0.3,
     documentation: 0.2,

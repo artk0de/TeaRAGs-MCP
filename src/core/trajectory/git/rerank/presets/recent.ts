@@ -4,7 +4,7 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
 export class RecentPreset implements RerankPreset {
   readonly name = "recent";
   readonly description = "Boost actively developed, recently modified code";
-  readonly tools = ["search_code", "semantic_search"];
+  readonly tools = ["search_code", "semantic_search", "rank_chunks"];
   readonly weights: ScoringWeights = {
     similarity: 0.5,
     recency: 0.2,
