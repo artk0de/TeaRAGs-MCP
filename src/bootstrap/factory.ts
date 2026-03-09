@@ -21,6 +21,7 @@ import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { getZodConfig, snapshotsDir, type AppConfig } from "./config/index.js";
+import { resolveQdrantUrl } from "../embedded/daemon.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -39,10 +40,13 @@ export interface AppContext {
   schemaBuilder: SchemaBuilder;
   essentialTrajectoryFields: string[];
   schemaDriftMonitor: SchemaDriftMonitor;
+  embeddedRelease?: () => void;
 }
 
 export async function createAppContext(config: AppConfig): Promise<AppContext> {
-  const qdrant = new QdrantManager(config.qdrantUrl, config.qdrantApiKey);
+  const resolution = await resolveQdrantUrl(config.qdrantUrl);
+  const qdrant = new QdrantManager(resolution.url, config.qdrantApiKey);
+  const embeddedRelease = resolution.mode === "embedded" ? resolution.release : undefined;
   const zodConfig = getZodConfig();
   setDebug(zodConfig.core.debug);
   const embeddings = EmbeddingProviderFactory.create(zodConfig.embedding);
@@ -94,7 +98,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   const search = new SearchFacade(qdrant, embeddings, config.searchCode, reranker, registry, statsCache);
   const currentPayloadKeys = allPayloadSignalDescriptors.map((d) => d.key);
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, currentPayloadKeys);
-  return { qdrant, embeddings, ingest, search, reranker, schemaBuilder, essentialTrajectoryFields, schemaDriftMonitor };
+  return { qdrant, embeddings, ingest, search, reranker, schemaBuilder, essentialTrajectoryFields, schemaDriftMonitor, embeddedRelease };
 }
 
 export function loadPrompts(config: AppConfig): PromptsConfig | null {

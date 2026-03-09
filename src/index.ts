@@ -27,6 +27,9 @@ async function main() {
     if ("terminate" in ctx.embeddings && typeof ctx.embeddings.terminate === "function") {
       void (ctx.embeddings as { terminate: () => Promise<void> }).terminate();
     }
+    if (ctx.embeddedRelease) {
+      ctx.embeddedRelease();
+    }
   };
   process.on("SIGTERM", cleanup);
   process.on("SIGINT", cleanup);

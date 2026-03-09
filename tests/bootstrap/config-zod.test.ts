@@ -114,7 +114,7 @@ describe("parseAppConfigZod", () => {
       const { core } = parseAppConfigZod();
 
       expect(core.debug).toBe(false);
-      expect(core.qdrantUrl).toBe("http://localhost:6333");
+      expect(core.qdrantUrl).toBeUndefined();
       expect(core.qdrantApiKey).toBeUndefined();
       expect(core.transportMode).toBe("stdio");
       expect(core.httpPort).toBe(3000);

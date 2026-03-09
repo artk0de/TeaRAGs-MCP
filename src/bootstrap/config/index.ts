@@ -9,7 +9,7 @@ export * from "./schemas.js";
 export * from "./parse.js";
 
 export interface AppConfig {
-  qdrantUrl: string;
+  qdrantUrl?: string;
   qdrantApiKey?: string;
   embeddingProvider: string;
   transportMode: "stdio" | "http";

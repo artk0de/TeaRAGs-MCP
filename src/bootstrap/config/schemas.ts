@@ -16,7 +16,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export const coreSchema = z.object({
   debug: booleanFromEnv,
-  qdrantUrl: z.string().default("http://localhost:6333"),
+  qdrantUrl: z.string().optional(),
   qdrantApiKey: z.string().optional(),
   transportMode: z.enum(["stdio", "http"]),
   httpPort: intWithDefault(3000),
