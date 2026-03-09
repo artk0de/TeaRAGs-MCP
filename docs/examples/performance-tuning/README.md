@@ -522,7 +522,7 @@ Git metadata uses two-level caching:
 | Cache | Location | Purpose |
 |-------|----------|---------|
 | L1 (Memory) | In-process | Hot data, instant access |
-| L2 (Disk) | `~/.tea-rags-mcp/` | Persistent, survives restarts |
+| L2 (Disk) | `~/.tea-rags/` | Persistent, survives restarts |
 
 Cache is invalidated automatically when file content changes.
 
@@ -588,7 +588,7 @@ Enable detailed timing logs:
 export DEBUG=1
 ```
 
-Logs are written to `~/.tea-rags-mcp/logs/`.
+Logs are written to `~/.tea-rags/logs/`.
 
 ### Index Status
 

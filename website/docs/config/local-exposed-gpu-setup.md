@@ -488,14 +488,14 @@ curl http://192.168.1.100:6333/healthz
 On your development machine, point TeaRAGs to the GPU server:
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
   -e INGEST_PIPELINE_CONCURRENCY=4
 ```
 
 **If Qdrant also runs on GPU server:**
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://192.168.1.100:6333 \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
   -e INGEST_PIPELINE_CONCURRENCY=4
@@ -603,7 +603,7 @@ If GPU server IP changes after router reboot:
 
 **Increase timeout:**
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
   -e HTTP_REQUEST_TIMEOUT_MS=600000
 ```
@@ -654,7 +654,7 @@ Multiple developers can share the same GPU server:
 
 **Configuration (same on all dev machines):**
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
   -e INGEST_PIPELINE_CONCURRENCY=4
 ```

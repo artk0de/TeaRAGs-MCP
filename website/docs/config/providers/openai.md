@@ -47,7 +47,7 @@ export OPENAI_API_KEY=sk-...
   "mcpServers": {
     "tea-rags": {
       "command": "node",
-      "args": ["/path/to/tea-rags-mcp/build/index.js"],
+      "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
         "QDRANT_URL": "http://localhost:6333",
         "EMBEDDING_PROVIDER": "openai",

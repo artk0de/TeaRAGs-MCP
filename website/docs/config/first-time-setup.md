@@ -236,7 +236,7 @@ Set these in your MCP server configuration when deviating from defaults:
 
 **Example: Remote GPU server**
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://192.168.1.100:6333 \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434
 ```
@@ -250,7 +250,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
 
 **Example: OpenAI**
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e EMBEDDING_PROVIDER=openai \
   -e EMBEDDING_MODEL=text-embedding-3-small \
   -e OPENAI_API_KEY=sk-...
@@ -264,7 +264,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
 
 **Enable trajectory enrichment:**
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e CODE_ENABLE_GIT_METADATA=true
 ```
 
@@ -298,13 +298,13 @@ For detailed benchmarks, batch size optimization, and hardware-specific recommen
 # Install and run with zero configuration
 npm install
 npm run build
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js
 ```
 
 ### 2. Configure only what you need
 ```bash
 # Remote Qdrant example
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://gpu-server:6333 \
   -e EMBEDDING_BASE_URL=http://gpu-server:11434
 ```
@@ -317,7 +317,7 @@ EMBEDDING_BASE_URL=http://gpu-server:11434 \
 npm run tune
 
 # Apply tuned values
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://gpu-server:6333 \
   -e EMBEDDING_BASE_URL=http://gpu-server:11434 \
   -e EMBEDDING_BATCH_SIZE=256 \
@@ -332,7 +332,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
 
 ```bash
 # No configuration needed — defaults work out of the box
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js
 ```
 
 </details>
@@ -341,7 +341,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js
 <summary>Remote GPU Server</summary>
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://192.168.1.100:6333 \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
   -e INGEST_PIPELINE_CONCURRENCY=4
@@ -353,7 +353,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
 <summary>OpenAI Embeddings</summary>
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e EMBEDDING_PROVIDER=openai \
   -e EMBEDDING_MODEL=text-embedding-3-small \
   -e OPENAI_API_KEY=sk-...
@@ -365,7 +365,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
 <summary>Production with Git Enrichment</summary>
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e CODE_ENABLE_GIT_METADATA=true
 ```
 

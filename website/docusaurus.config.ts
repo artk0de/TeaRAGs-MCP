@@ -133,7 +133,7 @@ const config: Config = {
             },
             {
               label: "npm",
-              href: "https://www.npmjs.com/package/@artk0de/tea-rags-mcp",
+              href: "https://www.npmjs.com/package/tea-rags",
             },
           ],
         },

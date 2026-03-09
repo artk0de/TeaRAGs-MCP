@@ -214,7 +214,7 @@ Automated via [semantic-release](https://semantic-release.gitbook.io/):
 ## Project Structure
 
 ```
-tea-rags-mcp/
+tea-rags/
 ├── src/
 │   ├── bootstrap/         # App startup and wiring
 │   │   ├── config/        # Zod config schemas, env parsing, paths

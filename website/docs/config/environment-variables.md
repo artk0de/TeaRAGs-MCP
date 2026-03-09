@@ -106,7 +106,7 @@ These variables control batch sizes, concurrency, timeouts, and pool sizes. Defa
 
 ## Data Directories
 
-The server stores data in `~/.tea-rags-mcp/`:
+The server stores data in `~/.tea-rags/`:
 
 | Directory | Purpose |
 | --- | --- |

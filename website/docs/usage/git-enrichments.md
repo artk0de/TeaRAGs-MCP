@@ -18,7 +18,7 @@ Git enrichment runs concurrently with embedding and does not increase indexing t
 Set the environment variable when configuring your MCP server:
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e CODE_ENABLE_GIT_METADATA=true
 ```
 

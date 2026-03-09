@@ -39,7 +39,7 @@ Reusable text templates with parameters that AI assistants can invoke via MCP. D
 3. **Use prompts** in your AI assistant:
 
 ```bash
-/mcp__tea-rags-mcp__find_similar_docs papers "neural networks" 10
+/mcp__tea-rags__find_similar_docs papers "neural networks" 10
 ```
 
 ## Template Syntax

@@ -48,7 +48,7 @@ Just run `index_codebase` again. Completed steps are cached -- only remaining wo
 
 ### Where are cache snapshots and logs stored?
 
-All data is stored in `~/.tea-rags-mcp/`:
+All data is stored in `~/.tea-rags/`:
 
 - `snapshots/` -- file hash snapshots for incremental indexing
 - `git-cache/` -- git blame cache (L2 disk cache)
