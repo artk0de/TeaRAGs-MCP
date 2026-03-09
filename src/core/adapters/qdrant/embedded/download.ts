@@ -15,6 +15,9 @@ const PLATFORM_MAP: Record<string, Record<string, string>> = {
     x64: "qdrant-x86_64-unknown-linux-gnu.tar.gz",
     arm64: "qdrant-aarch64-unknown-linux-musl.tar.gz",
   },
+  win32: {
+    x64: "qdrant-x86_64-pc-windows-msvc.zip",
+  },
 };
 
 export function getPlatformAsset(platform: string, arch: string): string {
@@ -25,9 +28,10 @@ export function getPlatformAsset(platform: string, arch: string): string {
   return archMap[arch];
 }
 
-export function getBinaryPath(): string {
+export function getBinaryPath(platform = process.platform): string {
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  return join(__dirname, "../../node_modules/.cache/tea-rags/qdrant");
+  const name = platform === "win32" ? "qdrant.exe" : "qdrant";
+  return join(__dirname, "../../node_modules/.cache/tea-rags", name);
 }
 
 export function getDownloadUrl(asset: string): string {
@@ -44,20 +48,31 @@ export async function downloadQdrant(
 ): Promise<string> {
   const asset = getPlatformAsset(platform, arch);
   const url = getDownloadUrl(asset);
-  const binaryPath = getBinaryPath();
+  const binaryPath = getBinaryPath(platform);
   const cacheDir = dirname(binaryPath);
 
   mkdirSync(cacheDir, { recursive: true });
 
-  const tarPath = join(cacheDir, asset);
-  await downloadFile(url, tarPath);
+  const archivePath = join(cacheDir, asset);
+  await downloadFile(url, archivePath);
 
-  execSync(`tar -xzf ${JSON.stringify(tarPath)} -C ${JSON.stringify(cacheDir)} qdrant`, {
-    stdio: "pipe",
-  });
+  if (asset.endsWith(".zip")) {
+    // Windows: unzip
+    execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${cacheDir}' -Force"`, {
+      stdio: "pipe",
+    });
+  } else {
+    // macOS/Linux: tar
+    execSync(`tar -xzf ${JSON.stringify(archivePath)} -C ${JSON.stringify(cacheDir)} qdrant`, {
+      stdio: "pipe",
+    });
+  }
 
-  unlinkSync(tarPath);
-  chmodSync(binaryPath, 0o755);
+  unlinkSync(archivePath);
+
+  if (platform !== "win32") {
+    chmodSync(binaryPath, 0o755);
+  }
 
   return binaryPath;
 }
