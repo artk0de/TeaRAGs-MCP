@@ -66,8 +66,22 @@ of domain modules — api/ never imports from foundation directly.
 - Barrel exports via index.ts
 
 **core/adapters/** — External system types (foundation)
-- Qdrant types and client (QdrantFilter, QdrantFilterCondition, etc.)
+- Qdrant types, client, embedded daemon (QdrantFilter, QdrantFilterCondition, etc.)
 - Git client, embedding providers
+
+### New Code Placement Rule (MANDATORY)
+
+**All new code MUST be placed within the existing layer structure.**
+Never create top-level directories under `src/` — all code goes into `core/`.
+
+| New code type | Correct location | WRONG location |
+|---------------|-----------------|----------------|
+| Qdrant adapter/daemon | `core/adapters/qdrant/` | `src/embedded/` |
+| Embedding adapter | `core/adapters/embeddings/` | `src/providers/` |
+| New domain module | `core/<module-name>/` | `src/<module-name>/` |
+| Bootstrap/config | `bootstrap/` | `src/config/` |
+
+Tests mirror source structure: `tests/core/adapters/qdrant/` for `src/core/adapters/qdrant/`.
 
 ### Dependency Inversion Principle
 
@@ -213,6 +227,11 @@ core/
   adapters/                            # Foundation: external system types
     qdrant/
       types.ts                         # QdrantFilter, QdrantFilterCondition
+      client.ts                        # QdrantManager (REST client wrapper)
+      embedded/                        # Embedded Qdrant daemon
+        daemon.ts                      # Process manager with refcounting
+        download.ts                    # Binary downloader (postinstall + lazy)
+        types.ts                       # DaemonPaths, QdrantResolution
     git/
     embeddings/
 ```

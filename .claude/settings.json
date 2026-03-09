@@ -27,6 +27,16 @@
             "statusMessage": "Validating MCP tool schema"
           }
         ]
+      },
+      {
+        "matcher": "Bash|mcp__git-global__git_commit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-release-scope.sh",
+            "statusMessage": "Checking release scope configuration"
+          }
+        ]
       }
     ],
     "Stop": []

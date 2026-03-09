@@ -2,7 +2,7 @@
 async function main() {
   try {
     const { isBinaryPresent, downloadQdrant, QDRANT_VERSION, getPlatformAsset } =
-      await import("../build/embedded/download.js");
+      await import("../build/core/adapters/qdrant/embedded/download.js");
 
     if (isBinaryPresent()) {
       console.error(`[tea-rags] Qdrant v${QDRANT_VERSION} binary already present`);

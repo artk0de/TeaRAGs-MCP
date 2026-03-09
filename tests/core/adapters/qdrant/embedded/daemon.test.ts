@@ -6,7 +6,7 @@ import {
   EMBEDDED_MARKER,
   getDaemonPaths,
   isDaemonAlive,
-} from "../../../src/embedded/daemon.js";
+} from "../../../../../src/core/adapters/qdrant/embedded/daemon.js";
 
 describe("EMBEDDED_MARKER", () => {
   it("equals 'embedded'", () => {

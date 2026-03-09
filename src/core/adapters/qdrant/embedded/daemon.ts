@@ -6,7 +6,7 @@ import { createServer, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { appDataDir } from "../bootstrap/config/paths.js";
+import { appDataDir } from "../../../../bootstrap/config/paths.js";
 import { downloadQdrant, getBinaryPath, isBinaryPresent, QDRANT_VERSION } from "./download.js";
 import type { DaemonHandle, DaemonPaths, QdrantResolution } from "./types.js";
 

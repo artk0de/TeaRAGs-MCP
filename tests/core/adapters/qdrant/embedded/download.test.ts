@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getPlatformAsset, getBinaryPath, QDRANT_VERSION } from "../../../src/embedded/download.js";
+import { getPlatformAsset, getBinaryPath, QDRANT_VERSION } from "../../../../../src/core/adapters/qdrant/embedded/download.js";
 
 describe("getPlatformAsset", () => {
   it("returns correct asset for darwin-arm64", () => {
