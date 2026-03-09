@@ -151,7 +151,7 @@ flowchart LR
         direction TB
         CB["📄 Codebase<br/>TS · Python · Go · Ruby · Markdown"]
         GR["📜 Git Repository<br/>Commits · Authors · Task IDs"]
-        CS["💾 Cache<br/>~/.tea-rags-mcp/"]
+        CS["💾 Cache<br/>~/.tea-rags/"]
     end
 
     TR["🍵 TeaRAGs"]
@@ -167,7 +167,7 @@ flowchart LR
 |--------|---------|---------|
 | **Codebase** | Source files and documentation | TypeScript, Python, Go, Ruby, Markdown, README. Respects `.gitignore` exclusion rules |
 | **Git Repository** | History for trajectory enrichment | Commit history, author metadata, timestamps. Task IDs from commit messages (JIRA, GitHub, Linear) |
-| **Cache Storage** (`~/.tea-rags-mcp/`) | Incremental indexing and performance | **Snapshots** — file hash snapshots. **Git cache** — L1 (memory) + L2 (disk) for git blame. **Logs** — debug logs (`DEBUG=1`) |
+| **Cache Storage** (`~/.tea-rags/`) | Incremental indexing and performance | **Snapshots** — file hash snapshots. **Git cache** — L1 (memory) + L2 (disk) for git blame. **Logs** — debug logs (`DEBUG=1`) |
 
 ## Request Flow
 

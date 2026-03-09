@@ -4,7 +4,7 @@
 
 Code churn metrics quantify how frequently and intensively code changes over time. Research shows that churn is one of the strongest predictors of software defects (Nagappan & Ball 2005, Munson & Elbaum 1998).
 
-tea-rags-mcp computes churn metrics at **two levels**:
+tea-rags computes churn metrics at **two levels**:
 
 1. **File-level** — from `git log` via isomorphic-git (0 process spawns). All chunks of a file share the same file-level metrics.
 2. **Chunk-level** — by diffing commit trees and mapping line-level hunks to chunk boundaries. Each chunk gets its own churn overlay reflecting only the commits that touched its specific line range.

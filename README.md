@@ -48,7 +48,7 @@ podman compose up -d
 podman exec ollama ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
 
 # Add to Claude Code
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://localhost:6333 \
   -e EMBEDDING_BASE_URL=http://localhost:11434
 ```

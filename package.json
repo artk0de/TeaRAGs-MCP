@@ -1,10 +1,10 @@
 {
-  "name": "@artk0de/tea-rags-mcp",
+  "name": "tea-rags",
   "version": "0.9.0",
   "description": "MCP server for semantic search using local Qdrant and Ollama (default) with support for OpenAI, Cohere, and Voyage AI",
   "type": "module",
   "bin": {
-    "qdrant-mcp-server": "build/index.js"
+    "tea-rags": "build/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -14,6 +14,7 @@
     "test:coverage": "vitest --coverage",
     "test:providers": "node scripts/verify-providers.js",
     "type-check": "tsc --noEmit",
+    "postinstall": "node scripts/postinstall.js",
     "prepare": "husky",
     "test-integration": "node tests/integration/index.mjs",
     "tune": "node benchmarks/tune.mjs",
@@ -42,7 +43,6 @@
     "url": "https://github.com/artk0de/TeaRAGs-MCP.git"
   },
   "publishConfig": {
-    "access": "public",
     "provenance": true
   },
   "overrides": {

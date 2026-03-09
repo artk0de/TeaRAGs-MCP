@@ -220,7 +220,7 @@ This also means:
 **The fix:** Enable git enrichment during indexing:
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e CODE_ENABLE_GIT_METADATA=true
 ```
 

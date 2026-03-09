@@ -47,7 +47,7 @@ export COHERE_API_KEY=...
   "mcpServers": {
     "tea-rags": {
       "command": "node",
-      "args": ["/path/to/tea-rags-mcp/build/index.js"],
+      "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
         "QDRANT_URL": "http://localhost:6333",
         "EMBEDDING_PROVIDER": "cohere",

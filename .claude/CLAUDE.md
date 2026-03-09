@@ -1,4 +1,4 @@
-# tea-rags-mcp — Project Rules
+# tea-rags — Project Rules
 
 ## Domain Boundaries (MANDATORY)
 

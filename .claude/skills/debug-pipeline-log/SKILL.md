@@ -14,7 +14,7 @@ Analyze the pipeline debug log to identify performance bottlenecks and anomalies
 If `$ARGUMENTS` is provided, use that path. Otherwise find the latest log:
 
 ```
-~/.tea-rags-mcp/logs/pipeline-*.log
+~/.tea-rags/logs/pipeline-*.log
 ```
 
 Pick the most recent file by modification time.

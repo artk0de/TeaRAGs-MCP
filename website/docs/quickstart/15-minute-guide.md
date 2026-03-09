@@ -57,12 +57,12 @@ curl -s http://localhost:11434/api/tags  # Ollama — should list your model
 ### Claude Code
 
 ```bash
-claude mcp add tea-rags -s user -- node /absolute/path/to/qdrant-mcp-server/build/index.js \
+claude mcp add tea-rags -s user -- node /absolute/path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://localhost:6333 \
   -e EMBEDDING_BASE_URL=http://localhost:11434
 ```
 
-Replace `/absolute/path/to/qdrant-mcp-server` with the actual path where you cloned the repository.
+Replace `/absolute/path/to/tea-rags` with the actual path where you cloned the repository.
 
 ### Other agents
 
@@ -73,7 +73,7 @@ For Roo Code, Cursor, or other MCP clients, add this to your MCP configuration J
   "mcpServers": {
     "tea-rags": {
       "command": "node",
-      "args": ["/absolute/path/to/qdrant-mcp-server/build/index.js"],
+      "args": ["/absolute/path/to/tea-rags/build/index.js"],
       "env": {
         "QDRANT_URL": "http://localhost:6333",
         "EMBEDDING_BASE_URL": "http://localhost:11434"

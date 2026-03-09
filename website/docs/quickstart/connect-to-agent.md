@@ -7,7 +7,7 @@ sidebar_position: 2
 
 ```bash
 # Local setup (Qdrant + Ollama on localhost)
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://localhost:6333 \
   -e EMBEDDING_BASE_URL=http://localhost:11434
 ```
@@ -16,7 +16,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
 
 ```bash
 # Qdrant + Ollama on separate host
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://192.168.1.100:6333 \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434
 ```
@@ -24,7 +24,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
 ### Qdrant Cloud
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=https://your-cluster.qdrant.io:6333 \
   -e QDRANT_API_KEY=your-api-key-here \
   -e EMBEDDING_BASE_URL=http://localhost:11434

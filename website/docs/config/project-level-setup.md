@@ -35,7 +35,7 @@ Edit `~/.config/claude/claude_desktop_config.json` (or equivalent):
   "mcpServers": {
     "tea-rags": {
       "command": "node",
-      "args": ["/path/to/tea-rags-mcp/build/index.js"],
+      "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
         "CODE_CHUNK_SIZE": "2500",
         "CODE_CHUNK_OVERLAP": "300",
@@ -166,7 +166,7 @@ Configure embedding provider and batching.
   "mcpServers": {
     "tea-rags-monorepo": {
       "command": "node",
-      "args": ["/path/to/tea-rags-mcp/build/index.js"],
+      "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
         "CODE_CHUNK_SIZE": "2000",
         "CODE_CHUNK_OVERLAP": "200",
@@ -197,7 +197,7 @@ scripts/**
   "mcpServers": {
     "tea-rags-docs": {
       "command": "node",
-      "args": ["/path/to/tea-rags-mcp/build/index.js"],
+      "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
         "CODE_CHUNK_SIZE": "3500",
         "CODE_CHUNK_OVERLAP": "500",
@@ -226,7 +226,7 @@ build/**
   "mcpServers": {
     "tea-rags-legacy": {
       "command": "node",
-      "args": ["/path/to/tea-rags-mcp/build/index.js"],
+      "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
         "CODE_CHUNK_SIZE": "2500",
         "CODE_CHUNK_OVERLAP": "300",
@@ -255,7 +255,7 @@ third-party/**
   "mcpServers": {
     "tea-rags-microservice": {
       "command": "node",
-      "args": ["/path/to/tea-rags-mcp/build/index.js"],
+      "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
         "CODE_CHUNK_SIZE": "2000",
         "CODE_CHUNK_OVERLAP": "200",
@@ -327,7 +327,7 @@ Logs show:
 - Which settings were overridden
 - Validation errors (if any)
 
-Check logs in `~/.tea-rags-mcp/logs/`
+Check logs in `~/.tea-rags/logs/`
 
 ## Best Practices
 
@@ -399,7 +399,7 @@ Enable debug mode:
 export DEBUG=1
 ```
 
-Check logs in `~/.tea-rags-mcp/logs/` for validation errors.
+Check logs in `~/.tea-rags/logs/` for validation errors.
 
 ### Query Parameters Not Overriding
 

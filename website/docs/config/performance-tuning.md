@@ -42,7 +42,7 @@ Phase 3: Qdrant Batch Size ... Optimal: 384
 Then add tuned values to your MCP config:
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags-mcp/build/index.js \
+claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e QDRANT_URL=http://localhost:6333 \
   -e EMBEDDING_BATCH_SIZE=256 \
   -e INGEST_PIPELINE_CONCURRENCY=2 \
@@ -330,7 +330,7 @@ Enable detailed timing logs:
 export DEBUG=1
 ```
 
-Logs are written to `~/.tea-rags-mcp/logs/`.
+Logs are written to `~/.tea-rags/logs/`.
 
 Check index status:
 
