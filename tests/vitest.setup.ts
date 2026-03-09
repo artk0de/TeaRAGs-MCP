@@ -5,6 +5,10 @@
  * (e.g., integration.test.ts) to avoid breaking tree-sitter-chunker unit tests.
  */
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterAll } from "vitest";
 import { setDebug } from "../src/core/ingest/pipeline/infra/runtime.js";
 
 // Set test-specific environment variables
@@ -15,3 +19,11 @@ setDebug(true);
 process.env.MAX_TOTAL_CHUNKS = process.env.MAX_TOTAL_CHUNKS || "1000";
 // Reduce ChunkerPool worker threads to 1 in tests for faster, deterministic execution.
 process.env.CHUNKER_POOL_SIZE = process.env.CHUNKER_POOL_SIZE || "1";
+
+// Redirect app data to temp dir to avoid polluting user's home
+const testDataDir = mkdtempSync(join(tmpdir(), "tea-rags-test-"));
+process.env.TEA_RAGS_DATA_DIR = testDataDir;
+
+afterAll(() => {
+  rmSync(testDataDir, { recursive: true, force: true });
+});

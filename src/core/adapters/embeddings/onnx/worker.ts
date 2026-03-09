@@ -84,7 +84,7 @@ async function loadPipeline(
 }
 
 function calibrationCachePath(): string | null {
-  const dataDir = process.env.TEA_RAGS_DATA_DIR ?? (process.env.HOME ? `${process.env.HOME}/.tea-rags-mcp` : null);
+  const dataDir = process.env.TEA_RAGS_DATA_DIR ?? (process.env.HOME ? `${process.env.HOME}/.tea-rags` : null);
   return dataDir ? `${dataDir}/onnx-calibration.json` : null;
 }
 
