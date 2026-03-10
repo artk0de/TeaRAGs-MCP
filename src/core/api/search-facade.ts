@@ -9,7 +9,7 @@
 
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
-import { resolveCollectionName, validatePath } from "../contracts/collection.js";
+import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import type { Reranker } from "../search/reranker.js";
 import { SearchModule } from "../search/search-module.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";

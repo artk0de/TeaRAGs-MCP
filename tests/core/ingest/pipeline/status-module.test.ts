@@ -300,9 +300,7 @@ describe("StatusModule", () => {
       it("should return indexed for legacy collection with chunks but no indexing marker", async () => {
         // Simulate a legacy collection: collection exists with points but no indexing marker.
         // We manually create the collection and add a point without any indexing marker.
-        const { resolveCollectionName, validatePath } = await import(
-          "../../../../src/core/contracts/collection.js"
-        );
+        const { resolveCollectionName, validatePath } = await import("../../../../src/core/ingest/collection.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
 
@@ -330,9 +328,7 @@ describe("StatusModule", () => {
 
       it("should return not_indexed for legacy collection with no chunks and no marker", async () => {
         // Collection exists but is empty and has no indexing marker
-        const { resolveCollectionName, validatePath } = await import(
-          "../../../../src/core/contracts/collection.js"
-        );
+        const { resolveCollectionName, validatePath } = await import("../../../../src/core/ingest/collection.js");
         const absolutePath = await validatePath(codebaseDir);
         const collectionName = resolveCollectionName(absolutePath);
 

@@ -1,9 +1,8 @@
 /**
- * Shared utilities for collection name resolution and path validation.
+ * Utilities for collection name resolution and path validation.
  *
- * These are domain-agnostic helpers used by search, ingest, and api layers.
- * Placed in contracts/ so all domain modules can import them without
- * violating dependency boundaries.
+ * Part of the ingest domain — collection naming and path validation
+ * are ingest responsibilities (path → collection mapping for indexing).
  */
 
 import { createHash } from "node:crypto";

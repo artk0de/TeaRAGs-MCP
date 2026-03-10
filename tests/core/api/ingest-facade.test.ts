@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-const { mockIndexCodebase, mockReindexChanges, mockScrollAllPoints, mockComputeStats } = vi.hoisted(
-  () => ({
-    mockIndexCodebase: vi.fn().mockResolvedValue({ chunksIndexed: 10 }),
-    mockReindexChanges: vi.fn().mockResolvedValue({ added: 1, removed: 0 }),
-    mockScrollAllPoints: vi.fn().mockResolvedValue([]),
-    mockComputeStats: vi.fn().mockReturnValue({ computedAt: Date.now(), perSignal: new Map() }),
-  }),
-);
+import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+
+const { mockIndexCodebase, mockReindexChanges, mockScrollAllPoints, mockComputeStats } = vi.hoisted(() => ({
+  mockIndexCodebase: vi.fn().mockResolvedValue({ chunksIndexed: 10 }),
+  mockReindexChanges: vi.fn().mockResolvedValue({ added: 1, removed: 0 }),
+  mockScrollAllPoints: vi.fn().mockResolvedValue([]),
+  mockComputeStats: vi.fn().mockReturnValue({ computedAt: Date.now(), perSignal: new Map() }),
+}));
 
 vi.mock("../../../src/bootstrap/config/paths.js", () => ({
   snapshotsDir: () => "/tmp/snapshots-test",
@@ -52,11 +52,9 @@ vi.mock("../../../src/core/adapters/qdrant/scroll.js", () => ({
   scrollAllPoints: (...args: any[]) => mockScrollAllPoints(...args),
 }));
 
-vi.mock("../../../src/core/contracts/collection-stats.js", () => ({
+vi.mock("../../../src/core/ingest/collection-stats.js", () => ({
   computeCollectionStats: (...args: any[]) => mockComputeStats(...args),
 }));
-
-import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
 
 describe("IngestFacade", () => {
   function makeFacade(opts: { withStats?: boolean; withReranker?: boolean } = {}) {
