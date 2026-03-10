@@ -6,7 +6,7 @@
  * Qdrant scrolling is handled at the API layer — this function is pure.
  */
 
-import type { CollectionSignalStats, PayloadSignalDescriptor, SignalStats } from "./types/trajectory.js";
+import type { CollectionSignalStats, PayloadSignalDescriptor, SignalStats } from "../contracts/types/trajectory.js";
 
 /**
  * Read a value from a nested object using dot-notation path.

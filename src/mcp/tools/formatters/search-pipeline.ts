@@ -1,7 +1,7 @@
 // src/mcp/tools/formatters/search-pipeline.ts
 import { calculateFetchLimit, filterResultsByGlob } from "../../../core/adapters/qdrant/filters/index.js";
-import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/contracts/collection.js";
 import type { RankingOverlay } from "../../../core/contracts/types/reranker.js";
+import { resolveCollectionName as resolveCollectionNameFromPath } from "../../../core/ingest/collection.js";
 import type { Reranker, RerankMode } from "../../../core/search/reranker.js";
 import { BASE_PAYLOAD_SIGNALS } from "../../../core/trajectory/static/payload-signals.js";
 

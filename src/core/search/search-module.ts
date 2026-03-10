@@ -5,11 +5,11 @@
  */
 
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
-import { BM25SparseVectorGenerator } from "../adapters/qdrant/sparse.js";
 import type { QdrantManager, SearchResult } from "../adapters/qdrant/client.js";
 import { calculateFetchLimit, filterResultsByGlob } from "../adapters/qdrant/filters/index.js";
+import { BM25SparseVectorGenerator } from "../adapters/qdrant/sparse.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
-import { resolveCollectionName, validatePath } from "../contracts/collection.js";
+import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
 import type { CodeSearchResult, SearchCodeConfig, SearchOptions } from "../types.js";
 import type { Reranker, RerankMode } from "./reranker.js";
