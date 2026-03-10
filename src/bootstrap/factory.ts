@@ -8,11 +8,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
+import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import { createComposition, type CompositionResult } from "../core/api/composition.js";
+import { SearchFacade } from "../core/api/explore-facade.js";
 import { IngestFacade } from "../core/api/ingest-facade.js";
 import { SchemaBuilder } from "../core/api/schema-builder.js";
 import { SchemaDriftMonitor } from "../core/api/schema-drift-monitor.js";
-import { SearchFacade } from "../core/api/search-facade.js";
 import { StatsCache } from "../core/api/stats-cache.js";
 import { setDebug } from "../core/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/ingest/pipeline/types.js";
@@ -21,7 +22,6 @@ import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { getZodConfig, snapshotsDir, type AppConfig } from "./config/index.js";
-import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -57,7 +57,11 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   }
 
   // If user didn't explicitly set batch size, use GPU-calibrated recommendation
-  if (!zodConfig.flags.userSetBatchSize && "recommendedBatchSize" in embeddings && typeof embeddings.recommendedBatchSize === "number") {
+  if (
+    !zodConfig.flags.userSetBatchSize &&
+    "recommendedBatchSize" in embeddings &&
+    typeof embeddings.recommendedBatchSize === "number"
+  ) {
     zodConfig.embedding.tune.batchSize = embeddings.recommendedBatchSize;
   }
 
@@ -98,7 +102,17 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   const search = new SearchFacade(qdrant, embeddings, config.searchCode, reranker, registry, statsCache);
   const currentPayloadKeys = allPayloadSignalDescriptors.map((d) => d.key);
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, currentPayloadKeys);
-  return { qdrant, embeddings, ingest, search, reranker, schemaBuilder, essentialTrajectoryFields, schemaDriftMonitor, embeddedRelease };
+  return {
+    qdrant,
+    embeddings,
+    ingest,
+    search,
+    reranker,
+    schemaBuilder,
+    essentialTrajectoryFields,
+    schemaDriftMonitor,
+    embeddedRelease,
+  };
 }
 
 export function loadPrompts(config: AppConfig): PromptsConfig | null {

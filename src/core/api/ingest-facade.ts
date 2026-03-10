@@ -15,6 +15,7 @@ import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
 import { scrollAllPoints } from "../adapters/qdrant/scroll.js";
 import type { PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
+import type { Reranker } from "../explore/reranker.js";
 import { computeCollectionStats } from "../ingest/collection-stats.js";
 import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import { createIngestDependencies, type SynchronizerTuning } from "../ingest/factory.js";
@@ -24,7 +25,6 @@ import { EnrichmentCoordinator } from "../ingest/pipeline/enrichment/coordinator
 import { StatusModule } from "../ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../ingest/reindexing.js";
 import type { DeletionConfig } from "../ingest/sync/deletion-strategy.js";
-import type { Reranker } from "../search/reranker.js";
 import { GitEnrichmentProvider } from "../trajectory/git/provider.js";
 import { StaticPayloadBuilder } from "../trajectory/static/provider.js";
 import type {

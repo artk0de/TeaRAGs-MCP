@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RerankPreset } from "../../../../src/core/contracts/types/reranker.js";
-import { getPresetNames, getPresetWeights, resolvePresets } from "../../../../src/core/search/rerank/presets/index.js";
+import { getPresetNames, getPresetWeights, resolvePresets } from "../../../../src/core/explore/rerank/presets/index.js";
 import { OnboardingPreset } from "../../../../src/core/trajectory/git/rerank/presets/onboarding.js";
 import { RecentPreset } from "../../../../src/core/trajectory/git/rerank/presets/recent.js";
 import { StablePreset } from "../../../../src/core/trajectory/git/rerank/presets/stable.js";

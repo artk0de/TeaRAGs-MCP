@@ -11,8 +11,8 @@ import { scrollOrderedBy } from "../../core/adapters/qdrant/scroll.js";
 import { BM25SparseVectorGenerator } from "../../core/adapters/qdrant/sparse.js";
 import type { SchemaBuilder } from "../../core/api/schema-builder.js";
 import type { SchemaDriftMonitor } from "../../core/api/schema-drift-monitor.js";
-import { RankModule } from "../../core/search/rank-module.js";
-import type { Reranker } from "../../core/search/reranker.js";
+import { RankModule } from "../../core/explore/rank-module.js";
+import type { Reranker } from "../../core/explore/reranker.js";
 import {
   applyPostProcessing,
   formatSearchResults,

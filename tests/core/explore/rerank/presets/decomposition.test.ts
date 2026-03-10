@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Reranker } from "../../../../../src/core/search/reranker.js";
+import { Reranker } from "../../../../../src/core/explore/reranker.js";
 import { staticDerivedSignals } from "../../../../../src/core/trajectory/static/rerank/derived-signals/index.js";
 import { DecompositionPreset } from "../../../../../src/core/trajectory/static/rerank/presets/decomposition.js";
 
