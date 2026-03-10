@@ -13,7 +13,7 @@ import { promisify } from "node:util";
 
 import git from "isomorphic-git";
 
-import { isDebug } from "../../ingest/pipeline/infra/runtime.js";
+import { isDebug } from "../../infra/runtime.js";
 import { parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
 import type { CommitInfo, FileChurnData } from "./types.js";
 

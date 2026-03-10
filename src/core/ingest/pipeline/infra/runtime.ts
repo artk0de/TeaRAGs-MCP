@@ -1,13 +1,5 @@
 /**
- * Runtime config — set once at startup, read many times.
- * Avoids passing debug flag through every function signature.
+ * @deprecated Import from "core/infra/runtime.js" instead.
+ * Re-export kept for backward compatibility during migration.
  */
-let _debug = false;
-
-export function setDebug(value: boolean): void {
-  _debug = value;
-}
-
-export function isDebug(): boolean {
-  return _debug;
-}
+export { isDebug, setDebug } from "../../../infra/runtime.js";

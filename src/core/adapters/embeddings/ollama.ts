@@ -14,7 +14,7 @@
 
 import Bottleneck from "bottleneck";
 
-import { isDebug } from "../../ingest/pipeline/infra/runtime.js";
+import { isDebug } from "../../infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 

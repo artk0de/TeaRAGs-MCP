@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { buildViaCli } from "../../../adapters/git/client.js";
 import { parseNumstatOutput } from "../../../adapters/git/parsers.js";
 import type { FileChurnData } from "../../../adapters/git/types.js";
-import { isDebug } from "../../../ingest/pipeline/infra/runtime.js";
+import { isDebug } from "../../../infra/runtime.js";
 import type { GitEnrichmentCache } from "./cache.js";
 
 const execFileAsync = promisify(execFile);
