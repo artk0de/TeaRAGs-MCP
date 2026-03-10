@@ -1,7 +1,7 @@
 // src/tools/formatters/search-pipeline.test.ts
 import { describe, expect, it, vi } from "vitest";
 
-import type { Reranker } from "../../../../src/core/search/reranker.js";
+import type { Reranker } from "../../../../src/core/explore/reranker.js";
 import {
   applyPostProcessing,
   formatSearchResults,

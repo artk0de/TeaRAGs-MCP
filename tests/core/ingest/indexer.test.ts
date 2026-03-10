@@ -5,10 +5,10 @@ import { join } from "node:path";
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SearchFacade } from "../../../src/core/api/explore-facade.js";
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
-import { SearchFacade } from "../../../src/core/api/search-facade.js";
-import { resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
-import { Reranker } from "../../../src/core/search/reranker.js";
+import { resolvePresets } from "../../../src/core/explore/rerank/presets/index.js";
+import { Reranker } from "../../../src/core/explore/reranker.js";
 import { GitTrajectory } from "../../../src/core/trajectory/git.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";

@@ -8,8 +8,8 @@
 
 import type { DerivedSignalDescriptor, RerankPreset } from "../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
-import { resolvePresets } from "../search/rerank/presets/index.js";
-import { Reranker } from "../search/reranker.js";
+import { resolvePresets } from "../explore/rerank/presets/index.js";
+import { Reranker } from "../explore/reranker.js";
 import { GitTrajectory } from "../trajectory/git.js";
 import { TrajectoryRegistry } from "../trajectory/index.js";
 import { StaticTrajectory } from "../trajectory/static/index.js";

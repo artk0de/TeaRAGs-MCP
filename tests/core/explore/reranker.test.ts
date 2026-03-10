@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { RerankPreset } from "../../../src/core/contracts/types/reranker.js";
 import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
-import { resolvePresets } from "../../../src/core/search/rerank/presets/index.js";
-import { Reranker, type RerankableResult } from "../../../src/core/search/reranker.js";
+import { resolvePresets } from "../../../src/core/explore/rerank/presets/index.js";
+import { Reranker, type RerankableResult } from "../../../src/core/explore/reranker.js";
 import { gitPayloadSignalDescriptors } from "../../../src/core/trajectory/git/payload-signals.js";
 import { gitDerivedSignals } from "../../../src/core/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../src/core/trajectory/git/rerank/presets/index.js";

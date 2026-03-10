@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SearchFacade } from "../../../src/core/api/search-facade.js";
+import { SearchFacade } from "../../../src/core/api/explore-facade.js";
 
 const searchCodeSpy = vi.fn().mockResolvedValue([{ path: "a.ts", score: 0.9 }]);
 
-vi.mock("../../../src/core/search/search-module.js", () => {
+vi.mock("../../../src/core/explore/search-module.js", () => {
   return {
     SearchModule: class {
       constructor(

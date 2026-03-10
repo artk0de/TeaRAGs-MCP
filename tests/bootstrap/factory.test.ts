@@ -19,13 +19,13 @@ vi.mock("../../src/core/adapters/embeddings/factory.js", () => ({
 vi.mock("../../src/core/api/ingest-facade.js", () => ({
   IngestFacade: vi.fn().mockImplementation(function () {}),
 }));
-vi.mock("../../src/core/api/search-facade.js", () => ({
+vi.mock("../../src/core/api/explore-facade.js", () => ({
   SearchFacade: vi.fn().mockImplementation(function () {}),
 }));
-vi.mock("../../src/core/search/reranker.js", () => ({
+vi.mock("../../src/core/explore/reranker.js", () => ({
   Reranker: vi.fn().mockImplementation(function () {}),
 }));
-vi.mock("../../src/core/search/rerank/presets/index.js", () => ({
+vi.mock("../../src/core/explore/rerank/presets/index.js", () => ({
   resolvePresets: vi.fn().mockReturnValue([]),
 }));
 vi.mock("../../src/core/trajectory/static/index.js", () => ({

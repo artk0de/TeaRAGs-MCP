@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 
-import type { Reranker } from "../search/reranker.js";
+import type { Reranker } from "../explore/reranker.js";
 
 export class SchemaBuilder {
   constructor(private readonly reranker: Reranker) {}

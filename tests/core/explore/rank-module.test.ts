@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { DerivedSignalDescriptor } from "../../../src/core/contracts/types/reranker.js";
-import { RankModule } from "../../../src/core/search/rank-module.js";
-import type { Reranker } from "../../../src/core/search/reranker.js";
+import { RankModule } from "../../../src/core/explore/rank-module.js";
+import type { Reranker } from "../../../src/core/explore/reranker.js";
 
 // Minimal descriptors for testing
 const chunkSizeDesc: DerivedSignalDescriptor = {
