@@ -6,44 +6,43 @@
 
 ```
                   api/                            ← Composition root
-               ↗   ↑   ↖                           Imports from: domain modules ONLY
+               ↗   ↑   ↖                           Imports from: everything (assembles DI)
              /     |     \
-          search/ trajectory/ ingest/             ← Domain modules
-             \     |     /                          Import from: foundation ONLY
-              ↘    ↓    ↙                           Export to: api/
-          contracts/   adapters/                  ← Foundation (lowest level)
+          explore/ trajectory/ ingest/            ← Domain modules
+             \     |     /                          Import from: contracts/, infra/
+              ↘    ↓    ↙                           NOT from each other
+          contracts/   adapters/   infra/         ← Foundation (lowest level)
 ```
 
 **Dependency rules:**
 
 | Layer | Imports from | Exports to |
 |-------|-------------|------------|
-| `core/api/` | domain modules only | external consumers |
-| `core/search/` | `contracts/`, `adapters/` | `api/` |
-| `core/trajectory/` | `contracts/`, `adapters/` | `api/` |
-| `core/ingest/` | `contracts/`, `adapters/` | `api/` |
-| `core/contracts/` | `adapters/` (types only) | domain modules |
-| `core/adapters/` | nothing | domain modules |
+| `core/api/` | domain modules, `contracts/`, `adapters/`, `infra/` | external consumers |
+| `core/explore/` | `contracts/`, `infra/` | `api/` |
+| `core/trajectory/` | `contracts/`, `adapters/`, `infra/` | `api/` |
+| `core/ingest/` | `contracts/`, `adapters/`, `infra/` | `api/` |
+| `core/contracts/` | `infra/` | domain modules, `api/` |
+| `core/adapters/` | `infra/` | domain modules, `api/` |
+| `core/infra/` | nothing | all layers |
 
-**api/ is the composition root:** it orchestrates domain modules through their
-public APIs. Foundation (contracts/, adapters/) is an implementation detail
-of domain modules — api/ never imports from foundation directly.
+**api/ is the composition root:** it assembles dependencies from all layers,
+creates instances, and wires them together via DI.
 
 **Prohibited dependencies (hard errors):**
 
-- `api/` -x-> `contracts/`, `adapters/` (use domain module APIs instead)
-- Domain modules -x-> each other (`search` -x-> `trajectory`, etc.)
-- Foundation -x-> any layer above
+- Domain modules -x-> each other (`explore` -x-> `trajectory`, etc.)
+- Foundation -x-> any layer above (`contracts`/`adapters`/`infra` -x-> domain modules or `api/`)
 
 ### Layer Responsibilities
 
 **core/api/** — Composition root + MCP facades
-- IngestFacade, SearchFacade
+- IngestFacade, ExploreFacade
 - SchemaBuilder (dynamic MCP schema generation via domain module APIs)
-- Orchestrates domain modules: gets data from trajectory/, passes to search/
-- Imports ONLY from domain modules, never from foundation directly
+- Orchestrates domain modules: gets data from trajectory/, passes to explore/
+- Imports from all layers (composition root assembles DI)
 
-**core/search/** — Query-time reranking engine (domain module)
+**core/explore/** — Query-time reranking engine (domain module)
 - Reranker (orchestrator: derived signals → adaptive bounds → scoring → ranking overlay)
 - Receives descriptors + resolved presets via DI (constructor), never imports from trajectory/
 - No signal definitions — all signals come from trajectory/ via registry
@@ -57,17 +56,20 @@ of domain modules — api/ never imports from foundation directly.
 
 **core/ingest/** — Indexing pipeline (domain module)
 - Chunking, embedding, enrichment coordination
+- Collection utilities (resolveCollectionName, validatePath, computeCollectionStats)
 - Depends on PayloadBuilder and EnrichmentProvider interfaces from contracts, NOT from trajectory
 
 **core/contracts/** — Shared interfaces, registries, utilities (foundation)
 - All shared interfaces and types (Signal, FilterDescriptor, EnrichmentProvider, etc.)
-- TrajectoryRegistry (aggregates via TrajectoryQueryContract — interface-only)
 - Signal utilities (normalize, p95, payload resolvers)
 - Barrel exports via index.ts
 
 **core/adapters/** — External system types (foundation)
 - Qdrant types, client, embedded daemon (QdrantFilter, QdrantFilterCondition, etc.)
 - Git client, embedding providers
+
+**core/infra/** — Runtime utilities (foundation, lowest level)
+- isDebug(), setDebug() — runtime config imported by all layers
 
 ### New Code Placement Rule (MANDATORY)
 
@@ -96,10 +98,10 @@ Example flow:
 - `EnrichmentProvider` interface → `core/contracts/types/provider.ts`
 - `GitEnrichmentProvider` implementation → `core/trajectory/git/provider.ts`
 - `EnrichmentCoordinator` in `core/ingest/` imports only the interface from `core/contracts/`
-- `TrajectoryRegistry` in `core/contracts/` aggregates via `TrajectoryQueryContract` interface
+- `TrajectoryRegistry` in `trajectory/` aggregates trajectory implementations
 - `trajectory/` exposes its query contract through public API
-- `search/` exposes `registerTrajectory()` method
-- `api/` calls `trajectory/` → gets contract → passes to `search/` (never imports registry directly)
+- `explore/` receives resolved data via DI (constructor params), never imports trajectory/
+- `api/` creates registry from trajectory/, extracts data, passes to explore/
 
 ## Terminology (MANDATORY)
 
@@ -110,7 +112,7 @@ Example flow:
 | **Signal** (raw) | Value stored in Qdrant payload. Defined by Provider. Not normalized. | `ageDays=142`, `commitCount=23`, `bugFixRate=35` | `payload.git.file.*`, `payload.git.chunk.*` |
 | **Derived Signal** | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets. | `recency` (from ageDays), `ownership` (from dominantAuthorPct+authors) | `DerivedSignalDescriptor` in provider |
 | **Structural Signal** | Derived signal from payload structure, not from any trajectory provider. | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk` | Reranker built-in |
-| **Preset** (`RerankPreset`) | Class with name, description, tools[], weights, overlayMask. 3-level hierarchy: Generic → Trajectory → Composite. Each preset is a class file. | `class TechDebtPreset { tools: ["semantic_search"], weights: {...}, overlayMask: {...} }` | `trajectory/git/rerank/presets/`, `search/rerank/presets/` |
+| **Preset** (`RerankPreset`) | Class with name, description, tools[], weights, overlayMask. 3-level hierarchy: Generic → Trajectory → Composite. Each preset is a class file. | `class TechDebtPreset { tools: ["semantic_search"], weights: {...}, overlayMask: {...} }` | `trajectory/git/rerank/presets/`, `explore/rerank/presets/` |
 | **Overlay Mask** (`OverlayMask`) | Curates which signals appear in ranking overlay for a preset. `derived: string[]` + optional `raw: { file?, chunk? }`. | `{ derived: ["age", "churn"], raw: { file: ["ageDays"] } }` | Each preset class |
 | **Ranking Overlay** | Subset of raw + derived signals filtered by OverlayMask (or weight keys for custom), attached to each reranked result. | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }` | Reranker response |
 
@@ -141,16 +143,19 @@ Example flow:
 core/
   api/                                 # Composition root
     ingest-facade.ts                   # IngestFacade (MCP entry)
-    search-facade.ts                   # SearchFacade (MCP entry)
+    explore-facade.ts                  # ExploreFacade (MCP entry)
     schema-builder.ts                  # SchemaBuilder: dynamic MCP schemas via Reranker API (DIP)
-    shared.ts                          # resolveCollectionName, validatePath
 
-  search/                              # Domain module: query-time reranking engine
+  explore/                             # Domain module: query-time reranking engine
     reranker.ts                        # Reranker: scoring, overlay mask, adaptive bounds
     rerank/
       presets/
         index.ts                       # resolvePresets() + getPresetNames/Weights (engine utility)
     search-module.ts                   # Search orchestration
+    rank-module.ts                     # Scroll-based chunk ranking
+
+  infra/                               # Foundation: runtime utilities
+    runtime.ts                         # isDebug(), setDebug() — lowest layer
 
   trajectory/                          # Domain module: provider implementations
     static/
@@ -207,11 +212,12 @@ core/
       infra/                           # readers, metrics, caches
 
   ingest/                              # Domain module: indexing pipeline
+    collection.ts                      # resolveCollectionName, validatePath
+    collection-stats.ts                # computeCollectionStats
     pipeline/
       enrichment/                      # coordinator, applier
 
   contracts/                           # Foundation: interfaces + registries
-    trajectory-registry.ts             # Aggregates via TrajectoryQueryContract
     signal-utils.ts                    # normalize, p95, payload resolvers
     types/
       provider.ts                      # Signal, FilterDescriptor, FilterLevel,
@@ -261,7 +267,7 @@ core/
 Scope determines version bump. **Always use a scope.**
 
 **Public + Functional** (feat → minor):
-`api`, `mcp`, `contracts`, `types`, `drift`, `search`, `rerank`, `hybrid`,
+`api`, `mcp`, `contracts`, `types`, `drift`, `explore`, `search`, `rerank`, `hybrid`,
 `trajectory`, `signals`, `presets`, `filters`, `ingest`, `pipeline`, `chunker`
 
 **Infrastructure** (feat → patch):
