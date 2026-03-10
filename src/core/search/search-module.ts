@@ -9,10 +9,11 @@ import type { QdrantManager, SearchResult } from "../adapters/qdrant/client.js";
 import { calculateFetchLimit, filterResultsByGlob } from "../adapters/qdrant/filters/index.js";
 import { BM25SparseVectorGenerator } from "../adapters/qdrant/sparse.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
-import { resolveCollectionName, validatePath } from "../ingest/collection.js";
-import type { TrajectoryRegistry } from "../trajectory/index.js";
 import type { CodeSearchResult, SearchCodeConfig, SearchOptions } from "../types.js";
 import type { Reranker, RerankMode } from "./reranker.js";
+
+/** Builds Qdrant filter from search params. Injected by api/ layer. */
+export type FilterBuilder = (params: Record<string, unknown>, level?: string) => Record<string, unknown> | undefined;
 
 export class SearchModule {
   constructor(
@@ -20,24 +21,22 @@ export class SearchModule {
     private readonly embeddings: EmbeddingProvider,
     private readonly config: SearchCodeConfig,
     private readonly reranker: Reranker,
-    private readonly registry?: TrajectoryRegistry,
+    private readonly collectionName: string,
+    private readonly buildFilter?: FilterBuilder,
   ) {}
 
   /**
    * Search code semantically
    */
-  async searchCode(path: string, query: string, options?: SearchOptions): Promise<CodeSearchResult[]> {
-    const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
-
+  async searchCode(query: string, options?: SearchOptions): Promise<CodeSearchResult[]> {
     // Check if collection exists
-    const exists = await this.qdrant.collectionExists(collectionName);
+    const exists = await this.qdrant.collectionExists(this.collectionName);
     if (!exists) {
-      throw new Error(`Codebase not indexed: ${path}`);
+      throw new Error(`Collection not found: ${this.collectionName}`);
     }
 
     // Check if collection has hybrid search enabled
-    const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
+    const collectionInfo = await this.qdrant.getCollectionInfo(this.collectionName);
     const useHybrid = (options?.useHybrid ?? this.config.enableHybridSearch) && collectionInfo.hybridEnabled;
 
     // Generate query embedding
@@ -48,8 +47,8 @@ export class SearchModule {
     // Note: pathPattern is handled via client-side filtering, not Qdrant filter
     const hasBasicFilters = options?.fileTypes || options?.documentationOnly;
 
-    // Build trajectory filters via registry (git params etc.)
-    const trajectoryFilter = this.registry?.buildFilter(
+    // Build trajectory filters via injected filterBuilder (git params etc.)
+    const trajectoryFilter = this.buildFilter?.(
       {
         author: options?.author,
         modifiedAfter: options?.modifiedAfter,
@@ -60,7 +59,7 @@ export class SearchModule {
         taskId: options?.taskId,
       },
       "chunk",
-    );
+    ) as QdrantFilter | undefined;
     const hasTrajectoryFilters = trajectoryFilter?.must && trajectoryFilter.must.length > 0;
 
     if (hasBasicFilters || hasTrajectoryFilters) {
@@ -83,7 +82,7 @@ export class SearchModule {
         });
       }
 
-      // Trajectory filters (git metadata etc.) via registry
+      // Trajectory filters (git metadata etc.) via injected filterBuilder
       if (trajectoryFilter?.must) {
         mustConditions.push(...trajectoryFilter.must);
       }
@@ -100,14 +99,14 @@ export class SearchModule {
       const sparseGenerator = new BM25SparseVectorGenerator();
       const sparseVector = sparseGenerator.generate(query);
       results = await this.qdrant.hybridSearch(
-        collectionName,
+        this.collectionName,
         embedding,
         sparseVector,
         fetchLimit,
         filter as Record<string, unknown>,
       );
     } else {
-      results = await this.qdrant.search(collectionName, embedding, fetchLimit, filter as Record<string, unknown>);
+      results = await this.qdrant.search(this.collectionName, embedding, fetchLimit, filter as Record<string, unknown>);
     }
 
     // Apply glob pattern filter if specified (client-side filtering)
