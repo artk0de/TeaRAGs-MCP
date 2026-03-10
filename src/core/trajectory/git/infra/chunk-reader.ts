@@ -11,7 +11,7 @@ import git from "isomorphic-git";
 
 import { getCommitsByPathspec, readBlobAsString } from "../../../adapters/git/client.js";
 import type { CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
-import { isDebug } from "../../../ingest/pipeline/infra/runtime.js";
+import { isDebug } from "../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import type { GitEnrichmentCache } from "./cache.js";
