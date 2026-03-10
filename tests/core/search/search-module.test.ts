@@ -101,7 +101,7 @@ describe("SearchModule", () => {
       const nonIndexedDir = join(tempDir, "non-indexed");
       await fs.mkdir(nonIndexedDir, { recursive: true });
 
-      await expect(search.searchCode(nonIndexedDir, "test")).rejects.toThrow("not indexed");
+      await expect(search.searchCode(nonIndexedDir, "test")).rejects.toThrow("Collection not found");
     });
 
     it("should respect limit option", async () => {
