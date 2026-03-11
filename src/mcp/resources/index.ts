@@ -4,12 +4,12 @@
 
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
+import type { App } from "../../core/api/app.js";
 
 /**
  * Register all MCP resources on the server
  */
-export function registerAllResources(server: McpServer, qdrant: QdrantManager): void {
+export function registerAllResources(server: McpServer, app: App): void {
   // Static resource: list all collections
   server.registerResource(
     "collections",
@@ -20,7 +20,7 @@ export function registerAllResources(server: McpServer, qdrant: QdrantManager): 
       mimeType: "application/json",
     },
     async (uri) => {
-      const collections = await qdrant.listCollections();
+      const collections = await app.listCollections();
       return {
         contents: [
           {
@@ -38,7 +38,7 @@ export function registerAllResources(server: McpServer, qdrant: QdrantManager): 
     "collection-info",
     new ResourceTemplate("qdrant://collection/{name}", {
       list: async () => {
-        const collections = await qdrant.listCollections();
+        const collections = await app.listCollections();
         return {
           resources: collections.map((name) => ({
             uri: `qdrant://collection/${name}`,
@@ -59,7 +59,7 @@ export function registerAllResources(server: McpServer, qdrant: QdrantManager): 
       if (typeof name !== "string" || !name) {
         throw new Error("Invalid collection name parameter");
       }
-      const info = await qdrant.getCollectionInfo(name);
+      const info = await app.getCollectionInfo(name);
       return {
         contents: [
           {

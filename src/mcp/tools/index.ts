@@ -4,58 +4,26 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
-import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
-import type { ExploreFacade } from "../../core/api/explore-facade.js";
-import type { IngestFacade } from "../../core/api/ingest-facade.js";
+import type { App } from "../../core/api/app.js";
 import type { SchemaBuilder } from "../../core/api/schema-builder.js";
-import type { SchemaDriftMonitor } from "../../core/api/schema-drift-monitor.js";
-import type { Reranker } from "../../core/explore/reranker.js";
 import { registerCodeTools } from "./code.js";
 import { registerCollectionTools } from "./collection.js";
 import { registerDocumentTools } from "./document.js";
-import { registerSearchTools } from "./search.js";
+import { registerSearchTools } from "./explore.js";
 
 export interface ToolDependencies {
-  qdrant: QdrantManager;
-  embeddings: EmbeddingProvider;
-  ingest: IngestFacade;
-  search: ExploreFacade;
-  reranker: Reranker;
+  app: App;
   schemaBuilder: SchemaBuilder;
-  essentialTrajectoryFields: string[];
-  schemaDriftMonitor: SchemaDriftMonitor;
 }
 
 /**
  * Register all MCP tools on the server
  */
 export function registerAllTools(server: McpServer, deps: ToolDependencies): void {
-  registerCollectionTools(server, {
-    qdrant: deps.qdrant,
-    embeddings: deps.embeddings,
-  });
-
-  registerDocumentTools(server, {
-    qdrant: deps.qdrant,
-    embeddings: deps.embeddings,
-  });
-
-  registerSearchTools(server, {
-    qdrant: deps.qdrant,
-    embeddings: deps.embeddings,
-    reranker: deps.reranker,
-    schemaBuilder: deps.schemaBuilder,
-    essentialTrajectoryFields: deps.essentialTrajectoryFields,
-    schemaDriftMonitor: deps.schemaDriftMonitor,
-  });
-
-  registerCodeTools(server, {
-    ingest: deps.ingest,
-    search: deps.search,
-    schemaBuilder: deps.schemaBuilder,
-    schemaDriftMonitor: deps.schemaDriftMonitor,
-  });
+  registerCollectionTools(server, { app: deps.app });
+  registerDocumentTools(server, { app: deps.app });
+  registerSearchTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder });
+  registerCodeTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder });
 }
 
 // Re-export schemas for external use

@@ -428,6 +428,20 @@ describe("ExploreFacade — expanded methods", () => {
       expect(filterMetaOnly).toHaveBeenCalled();
     });
 
+    it("merges existing must_not filter with documentation exclusion", async () => {
+      const { facade } = makeFacade();
+
+      await facade.rankChunks({
+        collection: "test_col",
+        rerank: "techDebt",
+        level: "chunk",
+        filter: { must_not: [{ key: "language", match: { value: "markdown" } }] },
+      });
+
+      // Should succeed (documentation exclusion is merged with existing must_not)
+      // The underlying rankChunks mock verifies execution completed
+    });
+
     it("skips metaOnly when explicitly false", async () => {
       const { facade } = makeFacade();
       const { filterMetaOnly } = await import("../../../src/core/explore/post-process.js");

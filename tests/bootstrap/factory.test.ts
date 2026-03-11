@@ -129,14 +129,11 @@ function makeConfig(): AppConfig {
 }
 
 describe("createAppContext", () => {
-  it("should create app and legacy dependencies", async () => {
+  it("should create app, schemaBuilder, and cleanup", async () => {
     const ctx = await createAppContext(makeConfig());
     expect(ctx.app).toBeDefined();
-    expect(ctx.qdrant).toBeDefined();
-    expect(ctx.embeddings).toBeDefined();
-    expect(ctx.ingest).toBeDefined();
-    expect(ctx.search).toBeDefined();
-    expect(ctx.reranker).toBeDefined();
+    expect(ctx.schemaBuilder).toBeDefined();
+    expect(ctx.cleanup).toBeDefined();
   });
 });
 

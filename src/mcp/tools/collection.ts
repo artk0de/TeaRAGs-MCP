@@ -1,20 +1,15 @@
 /**
- * Collection management tools registration
+ * Collection management tools registration — thin wrappers delegating to App.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
-import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
+import type { App } from "../../core/api/app.js";
+import { formatMcpError, formatMcpResponse, formatMcpText } from "../format.js";
 import * as schemas from "./schemas.js";
 
-export interface CollectionToolDependencies {
-  qdrant: QdrantManager;
-  embeddings: EmbeddingProvider;
-}
-
-export function registerCollectionTools(server: McpServer, deps: CollectionToolDependencies): void {
-  const { qdrant, embeddings } = deps;
+export function registerCollectionTools(server: McpServer, deps: { app: App }): void {
+  const { app } = deps;
 
   // create_collection
   server.registerTool(
@@ -26,17 +21,16 @@ export function registerCollectionTools(server: McpServer, deps: CollectionToolD
       inputSchema: schemas.CreateCollectionSchema,
     },
     async ({ name, distance, enableHybrid }) => {
-      const vectorSize = embeddings.getDimensions();
-      await qdrant.createCollection(name, vectorSize, distance, enableHybrid || false);
-
-      let message = `Collection "${name}" created successfully with ${vectorSize} dimensions and ${distance || "Cosine"} distance metric.`;
-      if (enableHybrid) {
-        message += " Hybrid search is enabled for this collection.";
+      try {
+        const info = await app.createCollection({ name, distance, enableHybrid });
+        let message = `Collection "${info.name}" created successfully with ${info.vectorSize} dimensions and ${info.distance} distance metric.`;
+        if (info.hybridEnabled) {
+          message += " Hybrid search is enabled for this collection.";
+        }
+        return formatMcpText(message);
+      } catch (error) {
+        return formatMcpError(error instanceof Error ? error.message : String(error));
       }
-
-      return {
-        content: [{ type: "text", text: message }],
-      };
     },
   );
 
@@ -49,10 +43,12 @@ export function registerCollectionTools(server: McpServer, deps: CollectionToolD
       inputSchema: {},
     },
     async () => {
-      const collections = await qdrant.listCollections();
-      return {
-        content: [{ type: "text", text: JSON.stringify(collections, null, 2) }],
-      };
+      try {
+        const collections = await app.listCollections();
+        return formatMcpResponse(collections);
+      } catch (error) {
+        return formatMcpError(error instanceof Error ? error.message : String(error));
+      }
     },
   );
 
@@ -66,10 +62,12 @@ export function registerCollectionTools(server: McpServer, deps: CollectionToolD
       inputSchema: schemas.GetCollectionInfoSchema,
     },
     async ({ name }) => {
-      const info = await qdrant.getCollectionInfo(name);
-      return {
-        content: [{ type: "text", text: JSON.stringify(info, null, 2) }],
-      };
+      try {
+        const info = await app.getCollectionInfo(name);
+        return formatMcpResponse(info);
+      } catch (error) {
+        return formatMcpError(error instanceof Error ? error.message : String(error));
+      }
     },
   );
 
@@ -82,10 +80,12 @@ export function registerCollectionTools(server: McpServer, deps: CollectionToolD
       inputSchema: schemas.DeleteCollectionSchema,
     },
     async ({ name }) => {
-      await qdrant.deleteCollection(name);
-      return {
-        content: [{ type: "text", text: `Collection "${name}" deleted successfully.` }],
-      };
+      try {
+        await app.deleteCollection(name);
+        return formatMcpText(`Collection "${name}" deleted successfully.`);
+      } catch (error) {
+        return formatMcpError(error instanceof Error ? error.message : String(error));
+      }
     },
   );
 }
