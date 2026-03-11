@@ -10,7 +10,7 @@ import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import { createComposition, type CompositionResult } from "../core/api/composition.js";
-import { SearchFacade } from "../core/api/explore-facade.js";
+import { ExploreFacade } from "../core/api/explore-facade.js";
 import { IngestFacade } from "../core/api/ingest-facade.js";
 import { SchemaBuilder } from "../core/api/schema-builder.js";
 import { SchemaDriftMonitor } from "../core/api/schema-drift-monitor.js";
@@ -35,7 +35,7 @@ export interface AppContext {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
   ingest: IngestFacade;
-  search: SearchFacade;
+  search: ExploreFacade;
   reranker: CompositionResult["reranker"];
   schemaBuilder: SchemaBuilder;
   essentialTrajectoryFields: string[];
@@ -99,7 +99,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     pipelineTuning,
     syncTuning,
   );
-  const search = new SearchFacade(qdrant, embeddings, config.searchCode, reranker, registry, statsCache);
+  const search = new ExploreFacade(qdrant, embeddings, config.searchCode, reranker, registry, statsCache);
   const currentPayloadKeys = allPayloadSignalDescriptors.map((d) => d.key);
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, currentPayloadKeys);
   return {

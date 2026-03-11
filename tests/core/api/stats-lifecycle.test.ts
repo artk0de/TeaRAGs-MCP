@@ -57,7 +57,7 @@ describe("Stats lifecycle — cold start", () => {
     // Simulate cold start: reranker has no stats
     expect(reranker.hasCollectionStats).toBe(false);
 
-    // Load from cache (what SearchFacade will do)
+    // Load from cache (what ExploreFacade will do)
     const loaded = statsCache.load("test_collection");
     if (loaded) reranker.setCollectionStats(loaded);
 

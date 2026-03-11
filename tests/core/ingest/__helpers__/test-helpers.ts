@@ -1,5 +1,5 @@
 /**
- * Shared test utilities for IngestFacade/SearchFacade module tests.
+ * Shared test utilities for IngestFacade/ExploreFacade module tests.
  */
 
 import { promises as fs } from "node:fs";

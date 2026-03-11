@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SearchFacade } from "../../../src/core/api/explore-facade.js";
+import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
 import { resolvePresets } from "../../../src/core/explore/rerank/presets/index.js";
 import { Reranker } from "../../../src/core/explore/reranker.js";
@@ -51,7 +51,7 @@ vi.mock("tree-sitter-typescript", () => ({
 
 describe("SearchModule", () => {
   let ingest: IngestFacade;
-  let search: SearchFacade;
+  let search: ExploreFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
   let reranker: Reranker;
@@ -70,7 +70,7 @@ describe("SearchModule", () => {
     registry = new TrajectoryRegistry();
     registry.register(new GitTrajectory());
     ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
-    search = new SearchFacade(qdrant as any, embeddings, defaultSearchConfig(), reranker, registry);
+    search = new ExploreFacade(qdrant as any, embeddings, defaultSearchConfig(), reranker, registry);
   });
 
   afterEach(async () => {
@@ -137,7 +137,7 @@ describe("SearchModule", () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
       const hybridSearchConfig = { ...defaultSearchConfig(), enableHybridSearch: true };
       const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig, defaultTrajectoryConfig());
-      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
+      const hybridSearch = new ExploreFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
 
       await createTestFile(
         codebaseDir,

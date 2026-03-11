@@ -4,7 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { SearchFacade } from "../../core/api/explore-facade.js";
+import type { ExploreFacade } from "../../core/api/explore-facade.js";
 import type { IngestFacade } from "../../core/api/ingest-facade.js";
 import type { SchemaBuilder } from "../../core/api/schema-builder.js";
 import type { SchemaDriftMonitor } from "../../core/api/schema-drift-monitor.js";
@@ -15,7 +15,7 @@ import * as schemas from "./schemas.js";
 
 export interface CodeToolDependencies {
   ingest: IngestFacade;
-  search: SearchFacade;
+  search: ExploreFacade;
   schemaBuilder: SchemaBuilder;
   schemaDriftMonitor: SchemaDriftMonitor;
 }
