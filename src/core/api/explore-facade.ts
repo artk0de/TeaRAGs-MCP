@@ -18,6 +18,8 @@ import { ExploreModule } from "../explore/explore-module.js";
 import { computeFetchLimit, filterMetaOnly, postProcess } from "../explore/post-process.js";
 import { RankModule } from "../explore/rank-module.js";
 import type { Reranker } from "../explore/reranker.js";
+import type { SchemaDriftMonitor } from "../infra/schema-drift-monitor.js";
+import type { StatsCache } from "../infra/stats-cache.js";
 import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
 import { BASE_PAYLOAD_SIGNALS } from "../trajectory/static/payload-signals.js";
@@ -32,8 +34,6 @@ import type {
   SearchResult,
   SemanticSearchRequest,
 } from "./app.js";
-import type { SchemaDriftMonitor } from "./schema-drift-monitor.js";
-import type { StatsCache } from "./stats-cache.js";
 
 // ---------------------------------------------------------------------------
 // Errors

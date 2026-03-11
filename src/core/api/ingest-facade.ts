@@ -16,6 +16,7 @@ import type { QdrantManager } from "../adapters/qdrant/client.js";
 import { scrollAllPoints } from "../adapters/qdrant/scroll.js";
 import type { PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
 import type { Reranker } from "../explore/reranker.js";
+import type { StatsCache } from "../infra/stats-cache.js";
 import { computeCollectionStats } from "../ingest/collection-stats.js";
 import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import { createIngestDependencies, type SynchronizerTuning } from "../ingest/factory.js";
@@ -36,7 +37,6 @@ import type {
   ProgressCallback,
   TrajectoryIngestConfig,
 } from "../types.js";
-import type { StatsCache } from "./stats-cache.js";
 
 export class IngestFacade {
   private readonly enrichment: EnrichmentCoordinator;

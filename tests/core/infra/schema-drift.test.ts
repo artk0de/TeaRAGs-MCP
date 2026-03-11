@@ -5,8 +5,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { StatsCache } from "../../../src/core/api/stats-cache.js";
 import type { CollectionSignalStats } from "../../../src/core/contracts/types/trajectory.js";
+import { StatsCache } from "../../../src/core/infra/stats-cache.js";
 
 function makeTmpDir(): string {
   const suffix = randomBytes(6).toString("hex");
