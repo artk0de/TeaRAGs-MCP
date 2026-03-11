@@ -113,6 +113,9 @@
     "*.{ts,js,mts,mjs}": [
       "eslint --no-warn-ignored --max-warnings 0 --fix",
       "prettier --write"
+    ],
+    "*.{md,json,yaml,yml,css}": [
+      "prettier --write"
     ]
   }
 }
