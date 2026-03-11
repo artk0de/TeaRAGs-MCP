@@ -140,9 +140,10 @@ describe("RankChunksRequest", () => {
     expect(true).toBe(true);
   });
 
-  it("requires rerank", () => {
-    const req: RankChunksRequest = { rerank: "decomposition" };
+  it("requires rerank and level", () => {
+    const req: RankChunksRequest = { rerank: "decomposition", level: "chunk" };
     expect(req.rerank).toBe("decomposition");
+    expect(req.level).toBe("chunk");
   });
 
   it("accepts all optional fields", () => {
@@ -255,14 +256,16 @@ describe("SearchCodeResult", () => {
 // ---------------------------------------------------------------------------
 
 describe("SearchResponse", () => {
-  it("contains results array", () => {
+  it("contains results array and driftWarning", () => {
     const response: SearchResponse = {
       results: [{ id: "1", score: 0.9 }],
+      driftWarning: null,
     };
     expect(response.results).toHaveLength(1);
+    expect(response.driftWarning).toBeNull();
   });
 
-  it("accepts optional drift warning", () => {
+  it("accepts string drift warning", () => {
     const response: SearchResponse = {
       results: [],
       driftWarning: "Schema drift detected: new fields [bugFixRate]",
@@ -280,7 +283,7 @@ describe("SearchResponse", () => {
 });
 
 describe("SearchCodeResponse", () => {
-  it("contains results array", () => {
+  it("contains results array and driftWarning", () => {
     const response: SearchCodeResponse = {
       results: [
         {
@@ -293,8 +296,10 @@ describe("SearchCodeResponse", () => {
           fileExtension: ".ts",
         },
       ],
+      driftWarning: null,
     };
     expect(response.results).toHaveLength(1);
+    expect(response.driftWarning).toBeNull();
   });
 });
 

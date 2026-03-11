@@ -15,7 +15,10 @@ import type { ChangeStats, IndexOptions, IndexStats, IndexStatus, ProgressCallba
 // Collection reference (shared by search requests)
 // ---------------------------------------------------------------------------
 
-/** Identifies a collection by name or by codebase path (resolved to collection name internally). */
+/**
+ * Identifies a collection by name or by codebase path (resolved to collection name internally).
+ * At least one of collection or path must be provided. Runtime validation enforces this.
+ */
 export interface CollectionRef {
   collection?: string;
   path?: string;
@@ -25,6 +28,11 @@ export interface CollectionRef {
 // Search request types
 // ---------------------------------------------------------------------------
 
+/**
+ * Semantic (dense vector) search request.
+ * Intentionally separate from HybridSearchRequest to allow future divergence
+ * (e.g., hybrid may gain fusionWeight, sparse boosting params).
+ */
 export interface SemanticSearchRequest extends CollectionRef {
   query: string;
   limit?: number;
@@ -34,6 +42,11 @@ export interface SemanticSearchRequest extends CollectionRef {
   metaOnly?: boolean;
 }
 
+/**
+ * Hybrid (dense + BM25 sparse) search request.
+ * Intentionally separate from SemanticSearchRequest to allow future divergence
+ * (e.g., fusionWeight, sparse boosting params).
+ */
 export interface HybridSearchRequest extends CollectionRef {
   query: string;
   limit?: number;
@@ -45,7 +58,7 @@ export interface HybridSearchRequest extends CollectionRef {
 
 export interface RankChunksRequest extends CollectionRef {
   rerank: string | { custom: Record<string, number> };
-  level?: string;
+  level: "chunk" | "file";
   limit?: number;
   offset?: number;
   filter?: Record<string, unknown>;
@@ -89,6 +102,7 @@ export interface SearchCodeResult {
   language: string;
   score: number;
   fileExtension: string;
+  /** Loosely typed for public API. See CodeSearchResult in types.ts for full structure. */
   metadata?: Record<string, unknown>;
 }
 
@@ -98,12 +112,12 @@ export interface SearchCodeResult {
 
 export interface SearchResponse {
   results: SearchResult[];
-  driftWarning?: string | null;
+  driftWarning: string | null;
 }
 
 export interface SearchCodeResponse {
   results: SearchCodeResult[];
-  driftWarning?: string | null;
+  driftWarning: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +203,7 @@ export interface App {
   getSchemaDescriptors: () => PresetDescriptors;
 
   // -- Drift monitoring --
-  checkSchemaDrift: (pathOrCollection: string, isPath: boolean) => Promise<string | null>;
+  checkSchemaDrift: (ref: { path: string } | { collection: string }) => Promise<string | null>;
 }
 
 // Re-export domain types consumed by App methods
