@@ -9,12 +9,12 @@
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
 import type { Reranker } from "../explore/reranker.js";
+import type { SchemaDriftMonitor } from "../infra/schema-drift-monitor.js";
 import type { App } from "./app.js";
 import { CollectionOps } from "./collection-ops.js";
 import { DocumentOps } from "./document-ops.js";
 import type { ExploreFacade } from "./explore-facade.js";
 import type { IngestFacade } from "./ingest-facade.js";
-import type { SchemaDriftMonitor } from "./schema-drift-monitor.js";
 
 // ---------------------------------------------------------------------------
 // Dependency interface

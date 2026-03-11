@@ -5,8 +5,8 @@ import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js"
 import { createApp, type AppDeps } from "../../../src/core/api/create-app.js";
 import type { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 import type { IngestFacade } from "../../../src/core/api/ingest-facade.js";
-import type { SchemaDriftMonitor } from "../../../src/core/api/schema-drift-monitor.js";
 import type { Reranker } from "../../../src/core/explore/reranker.js";
+import type { SchemaDriftMonitor } from "../../../src/core/infra/schema-drift-monitor.js";
 
 // ---------------------------------------------------------------------------
 // Mock factories
