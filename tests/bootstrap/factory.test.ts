@@ -129,8 +129,9 @@ function makeConfig(): AppConfig {
 }
 
 describe("createAppContext", () => {
-  it("should create qdrant, embeddings, ingest, search, and reranker", async () => {
+  it("should create app and legacy dependencies", async () => {
     const ctx = await createAppContext(makeConfig());
+    expect(ctx.app).toBeDefined();
     expect(ctx.qdrant).toBeDefined();
     expect(ctx.embeddings).toBeDefined();
     expect(ctx.ingest).toBeDefined();

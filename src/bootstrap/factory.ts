@@ -9,7 +9,9 @@ import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
+import type { App } from "../core/api/app.js";
 import { createComposition, type CompositionResult } from "../core/api/composition.js";
+import { createApp } from "../core/api/create-app.js";
 import { ExploreFacade } from "../core/api/explore-facade.js";
 import { IngestFacade } from "../core/api/ingest-facade.js";
 import { SchemaBuilder } from "../core/api/schema-builder.js";
@@ -32,6 +34,8 @@ const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-
 export { pkg };
 
 export interface AppContext {
+  app: App;
+  // Legacy fields — removed when MCP handlers migrate to App (Task 7)
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
   ingest: IngestFacade;
@@ -102,7 +106,18 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   const search = new ExploreFacade(qdrant, embeddings, config.searchCode, reranker, registry, statsCache);
   const currentPayloadKeys = allPayloadSignalDescriptors.map((d) => d.key);
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, currentPayloadKeys);
+  const app = createApp({
+    qdrant,
+    embeddings,
+    ingest,
+    search,
+    reranker,
+    schemaDriftMonitor,
+  });
+
   return {
+    app,
+    // Legacy fields — removed when MCP handlers migrate to App (Task 7)
     qdrant,
     embeddings,
     ingest,
