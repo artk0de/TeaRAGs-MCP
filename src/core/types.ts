@@ -24,8 +24,8 @@ export interface IngestCodeConfig {
   enableGitMetadata?: boolean;
 }
 
-/** Config for SearchModule */
-export interface SearchCodeConfig {
+/** Config for ExploreModule (search defaults, hybrid flag) */
+export interface ExploreCodeConfig {
   enableHybridSearch: boolean;
   defaultSearchLimit: number;
 }

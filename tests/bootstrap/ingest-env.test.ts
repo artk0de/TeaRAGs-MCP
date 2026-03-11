@@ -74,7 +74,7 @@ describe("INGEST env var naming", () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect(({ ...config.ingestCode, ...config.searchCode } as Record<string, unknown>)[configKey]).toBe(999);
+          expect(({ ...config.ingestCode, ...config.exploreCode } as Record<string, unknown>)[configKey]).toBe(999);
         });
 
         it("should fall back to old name", async () => {
@@ -83,7 +83,7 @@ describe("INGEST env var naming", () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect(({ ...config.ingestCode, ...config.searchCode } as Record<string, unknown>)[configKey]).toBe(888);
+          expect(({ ...config.ingestCode, ...config.exploreCode } as Record<string, unknown>)[configKey]).toBe(888);
         });
 
         it("should prefer new name over old name", async () => {
@@ -93,14 +93,14 @@ describe("INGEST env var naming", () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect(({ ...config.ingestCode, ...config.searchCode } as Record<string, unknown>)[configKey]).toBe(111);
+          expect(({ ...config.ingestCode, ...config.exploreCode } as Record<string, unknown>)[configKey]).toBe(111);
         });
 
         it(`should default to ${defaultVal} when nothing set`, async () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect(({ ...config.ingestCode, ...config.searchCode } as Record<string, unknown>)[configKey]).toBe(
+          expect(({ ...config.ingestCode, ...config.exploreCode } as Record<string, unknown>)[configKey]).toBe(
             parseInt(defaultVal, 10),
           );
         });

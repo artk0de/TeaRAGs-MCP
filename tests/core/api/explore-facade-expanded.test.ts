@@ -19,8 +19,8 @@ const searchCodeSpy = vi.fn().mockResolvedValue([
   },
 ]);
 
-vi.mock("../../../src/core/explore/search-module.js", () => ({
-  SearchModule: class {
+vi.mock("../../../src/core/explore/explore-module.js", () => ({
+  ExploreModule: class {
     constructor(_q: any, _e: any, _c: any, _r: any, _col: string, _bf?: any) {}
     searchCode = searchCodeSpy;
   },

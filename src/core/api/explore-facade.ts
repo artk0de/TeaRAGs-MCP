@@ -2,7 +2,7 @@
  * ExploreFacade - Public API for code exploration and search.
  *
  * Delegates to:
- * - SearchModule: semantic code search over indexed collections
+ * - ExploreModule: semantic code search over indexed collections
  * - Post-process pipeline: computeFetchLimit, postProcess, filterMetaOnly
  * - RankModule: scroll-based chunk ranking without vector search
  *
@@ -14,14 +14,14 @@ import type { QdrantManager } from "../adapters/qdrant/client.js";
 import { filterResultsByGlob } from "../adapters/qdrant/filters/index.js";
 import { scrollOrderedBy } from "../adapters/qdrant/scroll.js";
 import { BM25SparseVectorGenerator } from "../adapters/qdrant/sparse.js";
+import { ExploreModule } from "../explore/explore-module.js";
 import { computeFetchLimit, filterMetaOnly, postProcess } from "../explore/post-process.js";
 import { RankModule } from "../explore/rank-module.js";
 import type { Reranker } from "../explore/reranker.js";
-import { SearchModule } from "../explore/search-module.js";
 import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
 import { BASE_PAYLOAD_SIGNALS } from "../trajectory/static/payload-signals.js";
-import type { CodeSearchResult, SearchCodeConfig, SearchOptions } from "../types.js";
+import type { CodeSearchResult, ExploreCodeConfig, SearchOptions } from "../types.js";
 import type {
   HybridSearchRequest,
   RankChunksRequest,
@@ -80,7 +80,7 @@ export class ExploreFacade {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
-    private readonly config: SearchCodeConfig,
+    private readonly config: ExploreCodeConfig,
     private readonly reranker: Reranker,
     private readonly registry?: TrajectoryRegistry,
     private readonly statsCache?: StatsCache,
@@ -293,7 +293,7 @@ export class ExploreFacade {
           registry.buildFilter(params, (level as "chunk" | "file") ?? "chunk") as Record<string, unknown> | undefined
       : undefined;
 
-    const search = new SearchModule(
+    const search = new ExploreModule(
       this.qdrant,
       this.embeddings,
       this.config,

@@ -16,15 +16,15 @@
 
 **Dependency rules:**
 
-| Layer | Imports from | Exports to |
-|-------|-------------|------------|
-| `core/api/` | domain modules, `contracts/`, `adapters/`, `infra/` | external consumers |
-| `core/explore/` | `contracts/`, `infra/` | `api/` |
-| `core/trajectory/` | `contracts/`, `adapters/`, `infra/` | `api/` |
-| `core/ingest/` | `contracts/`, `adapters/`, `infra/` | `api/` |
-| `core/contracts/` | `infra/` | domain modules, `api/` |
-| `core/adapters/` | `infra/` | domain modules, `api/` |
-| `core/infra/` | nothing | all layers |
+| Layer              | Imports from                                        | Exports to             |
+| ------------------ | --------------------------------------------------- | ---------------------- |
+| `core/api/`        | domain modules, `contracts/`, `adapters/`, `infra/` | external consumers     |
+| `core/explore/`    | `contracts/`, `infra/`                              | `api/`                 |
+| `core/trajectory/` | `contracts/`, `adapters/`, `infra/`                 | `api/`                 |
+| `core/ingest/`     | `contracts/`, `adapters/`, `infra/`                 | `api/`                 |
+| `core/contracts/`  | `infra/`                                            | domain modules, `api/` |
+| `core/adapters/`   | `infra/`                                            | domain modules, `api/` |
+| `core/infra/`      | nothing                                             | all layers             |
 
 **api/ is the composition root:** it assembles dependencies from all layers,
 creates instances, and wires them together via DI.
@@ -32,107 +32,142 @@ creates instances, and wires them together via DI.
 **Prohibited dependencies (hard errors):**
 
 - Domain modules -x-> each other (`explore` -x-> `trajectory`, etc.)
-- Foundation -x-> any layer above (`contracts`/`adapters`/`infra` -x-> domain modules or `api/`)
+- Foundation -x-> any layer above (`contracts`/`adapters`/`infra` -x-> domain
+  modules or `api/`)
 
 ### Layer Responsibilities
 
-**core/api/** — Composition root + MCP facades
-- IngestFacade, ExploreFacade
+**core/api/** — Composition root + unified App interface
+
+- App interface (app.ts): unified public contract for all external consumers
+  (MCP, CLI)
+- createApp() factory (create-app.ts): wires facades into App implementation
+- ExploreFacade: orchestrates explore/ domain for search operations
+- IngestFacade: orchestrates ingest/ domain for indexing operations
+- CollectionOps, DocumentOps: CRUD operations on collections and documents
 - SchemaBuilder (dynamic MCP schema generation via domain module APIs)
-- Orchestrates domain modules: gets data from trajectory/, passes to explore/
+- SchemaDriftMonitor, StatsCache: cross-cutting concerns
+- composition.ts: trajectory registry assembly (which trajectories exist)
 - Imports from all layers (composition root assembles DI)
 
-**core/explore/** — Query-time reranking engine (domain module)
-- Reranker (orchestrator: derived signals → adaptive bounds → scoring → ranking overlay)
-- Receives descriptors + resolved presets via DI (constructor), never imports from trajectory/
+**core/explore/** — Query-time exploration engine (domain module)
+
+- Reranker (orchestrator: derived signals → adaptive bounds → scoring → ranking
+  overlay)
+- SearchModule: vector search execution (dense/hybrid) with filter building
+- RankModule: scroll-based chunk ranking without vector search
+- post-process.ts: computeFetchLimit, postProcess, filterMetaOnly
+- Receives descriptors + resolved presets via DI (constructor), never imports
+  from trajectory/
 - No signal definitions — all signals come from trajectory/ via registry
-- Presets: 2-level hierarchy (registry → composite), resolved at composition root
+- Presets: 2-level hierarchy (registry → composite), resolved at composition
+  root
 
 **core/trajectory/** — Trajectory implementations (domain module)
-- Static trajectory: base payload signals, structural derived signals, generic presets, static filters
-- Git trajectory: git-enriched signals, derived signals, git-specific presets and filters
-- StaticPayloadBuilder: builds base Qdrant payload (injected into pipeline via PayloadBuilder DIP)
-- Provider implementations (EnrichmentProvider — optional, not all trajectories have ingest enrichment)
+
+- Static trajectory: base payload signals, structural derived signals, generic
+  presets, static filters
+- Git trajectory: git-enriched signals, derived signals, git-specific presets
+  and filters
+- StaticPayloadBuilder: builds base Qdrant payload (injected into pipeline via
+  PayloadBuilder DIP)
+- Provider implementations (EnrichmentProvider — optional, not all trajectories
+  have ingest enrichment)
 
 **core/ingest/** — Indexing pipeline (domain module)
+
 - Chunking, embedding, enrichment coordination
-- Collection utilities (resolveCollectionName, validatePath, computeCollectionStats)
-- Depends on PayloadBuilder and EnrichmentProvider interfaces from contracts, NOT from trajectory
+- Collection utilities (resolveCollectionName, validatePath,
+  computeCollectionStats)
+- Depends on PayloadBuilder and EnrichmentProvider interfaces from contracts,
+  NOT from trajectory
 
 **core/contracts/** — Shared interfaces, registries, utilities (foundation)
-- All shared interfaces and types (Signal, FilterDescriptor, EnrichmentProvider, etc.)
+
+- All shared interfaces and types (Signal, FilterDescriptor, EnrichmentProvider,
+  etc.)
 - Signal utilities (normalize, p95, payload resolvers)
 - Barrel exports via index.ts
 
 **core/adapters/** — External system types (foundation)
-- Qdrant types, client, embedded daemon (QdrantFilter, QdrantFilterCondition, etc.)
+
+- Qdrant types, client, embedded daemon (QdrantFilter, QdrantFilterCondition,
+  etc.)
 - Git client, embedding providers
 
 **core/infra/** — Runtime utilities (foundation, lowest level)
+
 - isDebug(), setDebug() — runtime config imported by all layers
 
 ### New Code Placement Rule (MANDATORY)
 
-**All new code MUST be placed within the existing layer structure.**
-Never create top-level directories under `src/` — all code goes into `core/`.
+**All new code MUST be placed within the existing layer structure.** Never
+create top-level directories under `src/` — all code goes into `core/`.
 
-| New code type | Correct location | WRONG location |
-|---------------|-----------------|----------------|
-| Qdrant adapter/daemon | `core/adapters/qdrant/` | `src/embedded/` |
-| Embedding adapter | `core/adapters/embeddings/` | `src/providers/` |
-| New domain module | `core/<module-name>/` | `src/<module-name>/` |
-| Bootstrap/config | `bootstrap/` | `src/config/` |
+| New code type         | Correct location            | WRONG location       |
+| --------------------- | --------------------------- | -------------------- |
+| Qdrant adapter/daemon | `core/adapters/qdrant/`     | `src/embedded/`      |
+| Embedding adapter     | `core/adapters/embeddings/` | `src/providers/`     |
+| New domain module     | `core/<module-name>/`       | `src/<module-name>/` |
+| Bootstrap/config      | `bootstrap/`                | `src/config/`        |
 
-Tests mirror source structure: `tests/core/adapters/qdrant/` for `src/core/adapters/qdrant/`.
+Tests mirror source structure: `tests/core/adapters/qdrant/` for
+`src/core/adapters/qdrant/`.
 
 ### Dependency Inversion Principle
 
-Interfaces and registries live in `core/contracts/`. Implementations live in domain modules.
-api/ orchestrates domain modules through their public APIs — never touches foundation.
+Interfaces and registries live in `core/contracts/`. Implementations live in
+domain modules. api/ orchestrates domain modules through their public APIs —
+never touches foundation.
 
-**Registries in contracts/:** registries work ONLY through interfaces.
-Domain modules use them internally. api/ interacts with registries
-through domain module facades, not by importing from contracts/ directly.
+**Registries in contracts/:** registries work ONLY through interfaces. Domain
+modules use them internally. api/ interacts with registries through domain
+module facades, not by importing from contracts/ directly.
 
 Example flow:
+
 - `EnrichmentProvider` interface → `core/contracts/types/provider.ts`
 - `GitEnrichmentProvider` implementation → `core/trajectory/git/provider.ts`
-- `EnrichmentCoordinator` in `core/ingest/` imports only the interface from `core/contracts/`
+- `EnrichmentCoordinator` in `core/ingest/` imports only the interface from
+  `core/contracts/`
 - `TrajectoryRegistry` in `trajectory/` aggregates trajectory implementations
 - `trajectory/` exposes its query contract through public API
-- `explore/` receives resolved data via DI (constructor params), never imports trajectory/
+- `explore/` receives resolved data via DI (constructor params), never imports
+  trajectory/
 - `api/` creates registry from trajectory/, extracts data, passes to explore/
 
 ## Terminology (MANDATORY)
 
 ### Signal Taxonomy
 
-| Term | Definition | Example | Where |
-|------|-----------|---------|-------|
-| **Signal** (raw) | Value stored in Qdrant payload. Defined by Provider. Not normalized. | `ageDays=142`, `commitCount=23`, `bugFixRate=35` | `payload.git.file.*`, `payload.git.chunk.*` |
-| **Derived Signal** | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets. | `recency` (from ageDays), `ownership` (from dominantAuthorPct+authors) | `DerivedSignalDescriptor` in provider |
-| **Structural Signal** | Derived signal from payload structure, not from any trajectory provider. | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk` | Reranker built-in |
-| **Preset** (`RerankPreset`) | Class with name, description, tools[], weights, overlayMask. 3-level hierarchy: Generic → Trajectory → Composite. Each preset is a class file. | `class TechDebtPreset { tools: ["semantic_search"], weights: {...}, overlayMask: {...} }` | `trajectory/git/rerank/presets/`, `explore/rerank/presets/` |
-| **Overlay Mask** (`OverlayMask`) | Curates which signals appear in ranking overlay for a preset. `derived: string[]` + optional `raw: { file?, chunk? }`. | `{ derived: ["age", "churn"], raw: { file: ["ageDays"] } }` | Each preset class |
-| **Ranking Overlay** | Subset of raw + derived signals filtered by OverlayMask (or weight keys for custom), attached to each reranked result. | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }` | Reranker response |
+| Term                             | Definition                                                                                                                                     | Example                                                                                   | Where                                                       |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| **Signal** (raw)                 | Value stored in Qdrant payload. Defined by Provider. Not normalized.                                                                           | `ageDays=142`, `commitCount=23`, `bugFixRate=35`                                          | `payload.git.file.*`, `payload.git.chunk.*`                 |
+| **Derived Signal**               | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets.                  | `recency` (from ageDays), `ownership` (from dominantAuthorPct+authors)                    | `DerivedSignalDescriptor` in provider                       |
+| **Structural Signal**            | Derived signal from payload structure, not from any trajectory provider.                                                                       | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk`                         | Reranker built-in                                           |
+| **Preset** (`RerankPreset`)      | Class with name, description, tools[], weights, overlayMask. 3-level hierarchy: Generic → Trajectory → Composite. Each preset is a class file. | `class TechDebtPreset { tools: ["semantic_search"], weights: {...}, overlayMask: {...} }` | `trajectory/git/rerank/presets/`, `explore/rerank/presets/` |
+| **Overlay Mask** (`OverlayMask`) | Curates which signals appear in ranking overlay for a preset. `derived: string[]` + optional `raw: { file?, chunk? }`.                         | `{ derived: ["age", "churn"], raw: { file: ["ageDays"] } }`                               | Each preset class                                           |
+| **Ranking Overlay**              | Subset of raw + derived signals filtered by OverlayMask (or weight keys for custom), attached to each reranked result.                         | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }`                         | Reranker response                                           |
 
 ### Domain Terms
 
-| Term | Meaning |
-|------|---------|
-| Provider | Trajectory that defines signals, derived signals, filters, and builds signal data. |
-| Filter | Qdrant filter condition builder. Defined by Provider. |
-| Reranker | Orchestrates derived signal extraction, adaptive bounds, scoring, and ranking overlay. Receives descriptors + resolved presets via DI. |
-| SchemaBuilder | Generates Zod schemas for MCP tools from Reranker's public API (DIP). Lives in api/. |
-| Alpha-blending | L3 confidence-weighted blending of file vs chunk signals: `effective = alpha * chunk + (1-alpha) * file`. |
-| Confidence dampening | Quadratic per-signal dampening for unreliable statistical signals: `(n/k)^2` where k is signal-specific threshold. |
-| Adaptive bounds | Per-query normalization bounds computed from result set (p95), floored with defaults. |
+| Term                 | Meaning                                                                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider             | Trajectory that defines signals, derived signals, filters, and builds signal data.                                                     |
+| Filter               | Qdrant filter condition builder. Defined by Provider.                                                                                  |
+| Reranker             | Orchestrates derived signal extraction, adaptive bounds, scoring, and ranking overlay. Receives descriptors + resolved presets via DI. |
+| SchemaBuilder        | Generates Zod schemas for MCP tools from Reranker's public API (DIP). Lives in api/.                                                   |
+| Alpha-blending       | L3 confidence-weighted blending of file vs chunk signals: `effective = alpha * chunk + (1-alpha) * file`.                              |
+| Confidence dampening | Quadratic per-signal dampening for unreliable statistical signals: `(n/k)^2` where k is signal-specific threshold.                     |
+| Adaptive bounds      | Per-query normalization bounds computed from result set (p95), floored with defaults.                                                  |
 
 ### Naming Conventions
 
-- `buildFileSignals` / `buildChunkSignals` (NOT buildFileMetadata/buildChunkMetadata)
+- `buildFileSignals` / `buildChunkSignals` (NOT
+  buildFileMetadata/buildChunkMetadata)
 - `GitFileSignals` / `GitChunkSignals` (NOT GitFileMetadata/ChunkChurnOverlay)
-- `computeFileSignals` / `computeChunkSignals` (NOT computeFileMetadata/computeChunkOverlay)
+- `computeFileSignals` / `computeChunkSignals` (NOT
+  computeFileMetadata/computeChunkOverlay)
 - `fileSignalTransform` (NOT fileTransform)
 - `Signal` type (NOT FieldDoc)
 - `gitSignals: Signal[]` (NOT gitPayloadFields: FieldDoc[])
@@ -141,18 +176,26 @@ Example flow:
 
 ```
 core/
-  api/                                 # Composition root
-    ingest-facade.ts                   # IngestFacade (MCP entry)
-    explore-facade.ts                  # ExploreFacade (MCP entry)
+  api/                                 # Composition root + unified App interface
+    app.ts                             # App interface + request/response DTOs
+    create-app.ts                      # createApp() factory: wires deps into App
+    explore-facade.ts                  # ExploreFacade: orchestrates explore/ domain
+    ingest-facade.ts                   # IngestFacade: orchestrates ingest/ domain
+    collection-ops.ts                  # CollectionOps: CRUD on collections
+    document-ops.ts                    # DocumentOps: add/delete documents
+    composition.ts                     # Trajectory registry assembly
     schema-builder.ts                  # SchemaBuilder: dynamic MCP schemas via Reranker API (DIP)
+    schema-drift-monitor.ts            # SchemaDriftMonitor: payload version tracking
+    stats-cache.ts                     # StatsCache: collection signal stats persistence
 
-  explore/                             # Domain module: query-time reranking engine
+  explore/                             # Domain module: query-time exploration engine
     reranker.ts                        # Reranker: scoring, overlay mask, adaptive bounds
+    explore-module.ts                  # Vector search execution (dense/hybrid)
+    rank-module.ts                     # Scroll-based chunk ranking
+    post-process.ts                    # computeFetchLimit, postProcess, filterMetaOnly
     rerank/
       presets/
         index.ts                       # resolvePresets() + getPresetNames/Weights (engine utility)
-    search-module.ts                   # Search orchestration
-    rank-module.ts                     # Scroll-based chunk ranking
 
   infra/                               # Foundation: runtime utilities
     runtime.ts                         # isDebug(), setDebug() — lowest layer
@@ -246,44 +289,45 @@ core/
 
 ### Commit Types (MANDATORY)
 
-| Type       | When to use                               | Default bump |
-|------------|-------------------------------------------|--------------|
-| `feat`     | New capability that didn't exist before    | minor        |
-| `improve`  | Enhancement to existing functionality      | patch        |
-| `fix`      | Bug fix                                    | patch        |
-| `perf`     | Performance improvement                    | patch        |
-| `refactor` | Code restructuring, no behavior change     | patch        |
-| `docs`     | Documentation only                         | patch        |
-| `test`     | Adding/updating tests                      | none         |
-| `chore`    | Build, dependencies, tooling               | none         |
-| `ci`       | CI/CD changes                              | none         |
-| `style`    | Code style/formatting                      | none         |
-| `build`    | Build system changes                       | none         |
+| Type       | When to use                             | Default bump |
+| ---------- | --------------------------------------- | ------------ |
+| `feat`     | New capability that didn't exist before | minor        |
+| `improve`  | Enhancement to existing functionality   | patch        |
+| `fix`      | Bug fix                                 | patch        |
+| `perf`     | Performance improvement                 | patch        |
+| `refactor` | Code restructuring, no behavior change  | patch        |
+| `docs`     | Documentation only                      | patch        |
+| `test`     | Adding/updating tests                   | none         |
+| `chore`    | Build, dependencies, tooling            | none         |
+| `ci`       | CI/CD changes                           | none         |
+| `style`    | Code style/formatting                   | none         |
+| `build`    | Build system changes                    | none         |
 
-**feat vs improve**: `feat` = new capability. `improve` = enhancement to existing.
+**feat vs improve**: `feat` = new capability. `improve` = enhancement to
+existing.
 
 ### Scope-Based Versioning (MANDATORY)
 
 Scope determines version bump. **Always use a scope.**
 
-**Public + Functional** (feat → minor):
-`api`, `mcp`, `contracts`, `types`, `drift`, `explore`, `search`, `rerank`, `hybrid`,
-`trajectory`, `signals`, `presets`, `filters`, `ingest`, `pipeline`, `chunker`
+**Public + Functional** (feat → minor): `api`, `mcp`, `contracts`, `types`,
+`drift`, `explore`, `rerank`, `hybrid`, `trajectory`, `signals`,
+`presets`, `filters`, `ingest`, `pipeline`, `chunker`
 
-**Infrastructure** (feat → patch):
-`onnx`, `embedding`, `embedded`, `adapters`, `qdrant`, `git`, `config`,
-`factory`, `bootstrap`, `debug`, `logs`
+**Infrastructure** (feat → patch): `onnx`, `embedding`, `embedded`, `adapters`,
+`qdrant`, `git`, `config`, `factory`, `bootstrap`, `debug`, `logs`
 
-**Non-release** (always none):
-`test`, `beads`, `scripts`, `ci`, `website`, `deps`
+**Non-release** (always none): `test`, `beads`, `scripts`, `ci`, `website`,
+`deps`
 
-A PostToolUse hook (`check-release-scope.sh`) warns when a commit uses
-an unknown scope. When adding a new scope, update `.releaserc.json`
-and the scope tables in `CONTRIBUTING.md`.
+A PostToolUse hook (`check-release-scope.sh`) warns when a commit uses an
+unknown scope. When adding a new scope, update `.releaserc.json` and the scope
+tables in `CONTRIBUTING.md`.
 
 ### BREAKING CHANGE footer (MANDATORY)
 
 Add `BREAKING CHANGE:` footer to commit messages when:
+
 - Environment variable names, defaults, or semantics change
 - Configuration file format or location changes
 - CLI flags or arguments change
@@ -292,6 +336,7 @@ Add `BREAKING CHANGE:` footer to commit messages when:
 - Any change that **requires user action** (update config, re-run setup, etc.)
 
 Do NOT use BREAKING CHANGE for:
+
 - Internal refactoring that doesn't affect user-facing behavior
 - New features that are additive (no existing behavior changes)
 - Bug fixes (unless the buggy behavior was documented/relied upon)

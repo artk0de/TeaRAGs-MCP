@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 import type { EmbeddingProvider } from "../../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
-import type { IngestCodeConfig, SearchCodeConfig, TrajectoryIngestConfig } from "../../../../src/core/types.js";
+import type { ExploreCodeConfig, IngestCodeConfig, TrajectoryIngestConfig } from "../../../../src/core/types.js";
 
 /** Mock QdrantManager — mirrors all public methods */
 export class MockQdrantManager implements Partial<QdrantManager> {
@@ -249,7 +249,7 @@ export function defaultTestConfig(): IngestCodeConfig {
 }
 
 /** Default search test config */
-export function defaultSearchConfig(): SearchCodeConfig {
+export function defaultExploreConfig(): ExploreCodeConfig {
   return {
     enableHybridSearch: false,
     defaultSearchLimit: 5,

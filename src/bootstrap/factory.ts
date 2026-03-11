@@ -100,10 +100,10 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     statsCache,
     allPayloadSignalDescriptors.map((d) => d.key),
   );
-  const search = new ExploreFacade(
+  const explore = new ExploreFacade(
     qdrant,
     embeddings,
-    config.searchCode,
+    config.exploreCode,
     reranker,
     registry,
     statsCache,
@@ -114,7 +114,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     qdrant,
     embeddings,
     ingest,
-    search,
+    explore,
     reranker,
     schemaDriftMonitor,
   });

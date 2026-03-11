@@ -4,9 +4,9 @@ import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 
 const searchCodeSpy = vi.fn().mockResolvedValue([{ path: "a.ts", score: 0.9 }]);
 
-vi.mock("../../../src/core/explore/search-module.js", () => {
+vi.mock("../../../src/core/explore/explore-module.js", () => {
   return {
-    SearchModule: class {
+    ExploreModule: class {
       constructor(
         _qdrant: any,
         _embeddings: any,
@@ -44,7 +44,7 @@ function makeExploreFacade(
 }
 
 describe("ExploreFacade", () => {
-  it("delegates searchCode to SearchModule", async () => {
+  it("delegates searchCode to ExploreModule", async () => {
     const { facade } = makeExploreFacade();
     const results = await facade.searchCode("/project", "test query");
     expect(results).toHaveLength(1);
