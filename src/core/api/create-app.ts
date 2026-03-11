@@ -24,7 +24,7 @@ export interface AppDeps {
   qdrant: QdrantManager;
   embeddings: EmbeddingProvider;
   ingest: IngestFacade;
-  search: ExploreFacade;
+  explore: ExploreFacade;
   reranker: Reranker;
   schemaDriftMonitor: SchemaDriftMonitor;
 }
@@ -39,10 +39,10 @@ export function createApp(deps: AppDeps): App {
 
   return {
     // -- Search — delegate to ExploreFacade --
-    semanticSearch: async (req) => deps.search.semanticSearch(req),
-    hybridSearch: async (req) => deps.search.hybridSearch(req),
-    rankChunks: async (req) => deps.search.rankChunks(req),
-    searchCode: async (req) => deps.search.searchCodeTyped(req),
+    semanticSearch: async (req) => deps.explore.semanticSearch(req),
+    hybridSearch: async (req) => deps.explore.hybridSearch(req),
+    rankChunks: async (req) => deps.explore.rankChunks(req),
+    searchCode: async (req) => deps.explore.searchCodeTyped(req),
 
     // -- Indexing — delegate to IngestFacade --
     indexCodebase: async (path, options, progress) => deps.ingest.indexCodebase(path, options, progress),

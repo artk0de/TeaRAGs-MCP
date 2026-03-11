@@ -83,7 +83,7 @@ function createMockDeps(): AppDeps {
   return {
     qdrant: createMockQdrant(),
     embeddings: createMockEmbeddings(),
-    search: createMockExploreFacade(),
+    explore: createMockExploreFacade(),
     ingest: createMockIngestFacade(),
     reranker: createMockReranker(),
     schemaDriftMonitor: createMockDriftMonitor(),
@@ -143,7 +143,7 @@ describe("createApp", () => {
       const req = { query: "test", path: "/foo" };
       await app.semanticSearch(req);
 
-      expect(deps.search.semanticSearch).toHaveBeenCalledWith(req);
+      expect(deps.explore.semanticSearch).toHaveBeenCalledWith(req);
     });
 
     it("delegates hybridSearch to ExploreFacade", async () => {
@@ -151,7 +151,7 @@ describe("createApp", () => {
       const req = { query: "test", collection: "col1" };
       await app.hybridSearch(req);
 
-      expect(deps.search.hybridSearch).toHaveBeenCalledWith(req);
+      expect(deps.explore.hybridSearch).toHaveBeenCalledWith(req);
     });
 
     it("delegates rankChunks to ExploreFacade", async () => {
@@ -159,7 +159,7 @@ describe("createApp", () => {
       const req = { rerank: "techDebt", level: "chunk" as const, collection: "col1" };
       await app.rankChunks(req);
 
-      expect(deps.search.rankChunks).toHaveBeenCalledWith(req);
+      expect(deps.explore.rankChunks).toHaveBeenCalledWith(req);
     });
 
     it("delegates searchCode to ExploreFacade.searchCodeTyped", async () => {
@@ -167,7 +167,7 @@ describe("createApp", () => {
       const req = { path: "/foo", query: "test" };
       await app.searchCode(req);
 
-      expect(deps.search.searchCodeTyped).toHaveBeenCalledWith(req);
+      expect(deps.explore.searchCodeTyped).toHaveBeenCalledWith(req);
     });
   });
 

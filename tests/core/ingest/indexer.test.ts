@@ -20,7 +20,7 @@ import {
   cleanupTempDir,
   createTempTestDir,
   createTestFile,
-  defaultSearchConfig,
+  defaultExploreConfig,
   defaultTestConfig,
   defaultTrajectoryConfig,
   MockEmbeddingProvider,
@@ -56,7 +56,7 @@ vi.mock("tree-sitter-typescript", () => ({
 
 describe("IngestFacade + ExploreFacade", () => {
   let ingest: IngestFacade;
-  let search: ExploreFacade;
+  let explore: ExploreFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
   let config: IngestCodeConfig;
@@ -73,7 +73,7 @@ describe("IngestFacade + ExploreFacade", () => {
     const reranker = new Reranker([...gitDerivedSignals, ...staticDerivedSignals], resolvedPresets);
     const registry = new TrajectoryRegistry();
     registry.register(new GitTrajectory());
-    search = new ExploreFacade(qdrant as any, embeddings, defaultSearchConfig(), reranker, registry);
+    explore = new ExploreFacade(qdrant as any, embeddings, defaultExploreConfig(), reranker, registry);
   });
 
   afterEach(async () => {
@@ -160,8 +160,8 @@ describe("IngestFacade + ExploreFacade", () => {
       await ingest.indexCodebase(codebaseDir);
 
       const searchPromises = [
-        search.searchCode(codebaseDir, "test"),
-        search.searchCode(codebaseDir, "const"),
+        explore.searchCode(codebaseDir, "test"),
+        explore.searchCode(codebaseDir, "const"),
         ingest.getIndexStatus(codebaseDir),
       ];
 

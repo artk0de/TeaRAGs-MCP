@@ -1,7 +1,5 @@
 /**
- * SearchModule - Semantic code search over indexed collections.
- *
- * Extracted from CodeIndexer to isolate search logic.
+ * ExploreModule - Semantic code search over indexed collections.
  */
 
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
@@ -9,17 +7,17 @@ import type { QdrantManager, SearchResult } from "../adapters/qdrant/client.js";
 import { calculateFetchLimit, filterResultsByGlob } from "../adapters/qdrant/filters/index.js";
 import { BM25SparseVectorGenerator } from "../adapters/qdrant/sparse.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
-import type { CodeSearchResult, SearchCodeConfig, SearchOptions } from "../types.js";
+import type { CodeSearchResult, ExploreCodeConfig, SearchOptions } from "../types.js";
 import type { Reranker, RerankMode } from "./reranker.js";
 
 /** Builds Qdrant filter from search params. Injected by api/ layer. */
 export type FilterBuilder = (params: Record<string, unknown>, level?: string) => Record<string, unknown> | undefined;
 
-export class SearchModule {
+export class ExploreModule {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
-    private readonly config: SearchCodeConfig,
+    private readonly config: ExploreCodeConfig,
     private readonly reranker: Reranker,
     private readonly collectionName: string,
     private readonly buildFilter?: FilterBuilder,

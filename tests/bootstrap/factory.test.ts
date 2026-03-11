@@ -120,7 +120,7 @@ function makeConfig(): AppConfig {
       ignorePatterns: [],
       enableHybridSearch: false,
     },
-    searchCode: {
+    exploreCode: {
       enableHybridSearch: false,
       defaultSearchLimit: 5,
     },

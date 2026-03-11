@@ -16,7 +16,7 @@ import { GIT_PRESETS } from "../../src/core/trajectory/git/rerank/presets/index.
 import { TrajectoryRegistry } from "../../src/core/trajectory/index.js";
 import { staticDerivedSignals } from "../../src/core/trajectory/static/rerank/derived-signals/index.js";
 import { STATIC_PRESETS } from "../../src/core/trajectory/static/rerank/presets/index.js";
-import type { IngestCodeConfig, SearchCodeConfig } from "../../src/core/types.js";
+import type { ExploreCodeConfig, IngestCodeConfig } from "../../src/core/types.js";
 
 // Mock tree-sitter modules to prevent native binding crashes in integration tests
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
@@ -245,13 +245,13 @@ class MockEmbeddingProvider implements EmbeddingProvider {
 
 describe("IngestFacade + ExploreFacade Integration Tests", () => {
   let ingest: IngestFacade;
-  let search: ExploreFacade;
+  let explore: ExploreFacade;
   let reranker: Reranker;
   let registry: TrajectoryRegistry;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
   let config: IngestCodeConfig;
-  let searchConfig: SearchCodeConfig;
+  let exploreConfig: ExploreCodeConfig;
   let tempDir: string;
   let codebaseDir: string;
 
@@ -273,13 +273,13 @@ describe("IngestFacade + ExploreFacade Integration Tests", () => {
       ignorePatterns: ["node_modules/**", "dist/**", "*.test.*"],
       enableHybridSearch: false,
     };
-    searchConfig = {
+    exploreConfig = {
       enableHybridSearch: false,
       defaultSearchLimit: 5,
     };
 
     ingest = new IngestFacade(qdrant as any, embeddings, config, {});
-    search = new ExploreFacade(qdrant as any, embeddings, searchConfig, reranker, registry);
+    explore = new ExploreFacade(qdrant as any, embeddings, exploreConfig, reranker, registry);
   });
 
   afterEach(async () => {
@@ -336,7 +336,7 @@ export function validateEmail(email: string): boolean {
       expect(indexStats.status).toBe("completed");
 
       // Search for authentication-related code
-      const authResults = await search.searchCode(codebaseDir, "authentication login");
+      const authResults = await explore.searchCode(codebaseDir, "authentication login");
 
       expect(authResults.length).toBeGreaterThan(0);
       // Note: With mocked tree-sitter, language detection may fallback to "unknown"
@@ -384,7 +384,7 @@ def process_data(data):
       expect(stats.filesIndexed).toBe(3);
 
       // Search should find relevant code regardless of language
-      const results = await search.searchCode(codebaseDir, "process data");
+      const results = await explore.searchCode(codebaseDir, "process data");
 
       expect(results.length).toBeGreaterThan(0);
     });
@@ -444,7 +444,7 @@ export const thirdValue = 3;`,
       expect(updateStats.filesDeleted).toBe(0);
 
       // Verify search includes new content
-      const results = await search.searchCode(codebaseDir, "third");
+      const results = await explore.searchCode(codebaseDir, "third");
       expect(results.length).toBeGreaterThan(0);
     });
 
@@ -521,7 +521,7 @@ export const thirdValue = 3;`,
     });
 
     it("should filter results by file extension", async () => {
-      const results = await search.searchCode(codebaseDir, "class", {
+      const results = await explore.searchCode(codebaseDir, "class", {
         fileTypes: [".ts"],
       });
 
@@ -531,7 +531,7 @@ export const thirdValue = 3;`,
     });
 
     it("should respect search limit", async () => {
-      const results = await search.searchCode(codebaseDir, "export", {
+      const results = await explore.searchCode(codebaseDir, "export", {
         limit: 2,
       });
 
@@ -539,7 +539,7 @@ export const thirdValue = 3;`,
     });
 
     it("should apply score threshold", async () => {
-      const results = await search.searchCode(codebaseDir, "service", {
+      const results = await explore.searchCode(codebaseDir, "service", {
         scoreThreshold: 0.8,
       });
 
@@ -552,7 +552,7 @@ export const thirdValue = 3;`,
       await createTestFile(codebaseDir, "src/api/endpoints.ts", "export const API = {}");
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
-      const results = await search.searchCode(codebaseDir, "export", {
+      const results = await explore.searchCode(codebaseDir, "export", {
         pathPattern: "src/api/**",
       });
 
@@ -625,7 +625,7 @@ export function shutdownCore(): void {
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Test: should only return files from src/api/**
-      const apiResults = await search.searchCode(codebaseDir, "export function", {
+      const apiResults = await explore.searchCode(codebaseDir, "export function", {
         pathPattern: "src/api/**",
         limit: 10,
       });
@@ -636,7 +636,7 @@ export function shutdownCore(): void {
       });
 
       // Test: should only return files from src/** (both api and utils)
-      const srcResults = await search.searchCode(codebaseDir, "export function", {
+      const srcResults = await explore.searchCode(codebaseDir, "export function", {
         pathPattern: "src/**",
         limit: 10,
       });
@@ -647,7 +647,7 @@ export function shutdownCore(): void {
       });
 
       // Test: should exclude non-matching paths
-      const libResults = await search.searchCode(codebaseDir, "export function", {
+      const libResults = await explore.searchCode(codebaseDir, "export function", {
         pathPattern: "lib/**",
         limit: 10,
       });
@@ -722,7 +722,7 @@ export function shutdownCore(): void {
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Test: **/workflow/** should match workflow in any directory
-      const workflowResults = await search.searchCode(codebaseDir, "export class", {
+      const workflowResults = await explore.searchCode(codebaseDir, "export class", {
         pathPattern: "**/workflow/**",
         limit: 10,
       });
@@ -788,7 +788,7 @@ export interface UserData {
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Test brace expansion: {controllers,services}/**
-      const results = await search.searchCode(codebaseDir, "User", {
+      const results = await explore.searchCode(codebaseDir, "User", {
         pathPattern: "{controllers,services}/**",
         limit: 10,
       });
@@ -834,7 +834,7 @@ module.exports = { legacyHelper };`,
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Test: **/*.ts should only match TypeScript files
-      const tsResults = await search.searchCode(codebaseDir, "function", {
+      const tsResults = await explore.searchCode(codebaseDir, "function", {
         pathPattern: "**/*.ts",
         limit: 10,
       });
@@ -886,7 +886,7 @@ describe('Engine', () => {
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
       // Search in non-test files only using specific pattern
-      const coreResults = await search.searchCode(codebaseDir, "Engine", {
+      const coreResults = await explore.searchCode(codebaseDir, "Engine", {
         pathPattern: "core/engine.ts",
         limit: 10,
       });
@@ -900,7 +900,7 @@ describe('Engine', () => {
   describe("Hybrid search workflow", () => {
     it("should enable and use hybrid search", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridSearchConfig = { ...searchConfig, enableHybridSearch: true };
+      const hybridSearchConfig = { ...exploreConfig, enableHybridSearch: true };
       const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig, {});
       const hybridSearch = new ExploreFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
 
@@ -914,7 +914,7 @@ describe('Engine', () => {
     });
 
     it("should fallback to standard search if hybrid not available", async () => {
-      const hybridSearchConfig = { ...searchConfig, enableHybridSearch: true };
+      const hybridSearchConfig = { ...exploreConfig, enableHybridSearch: true };
       const hybridSearch = new ExploreFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
 
       // Index without hybrid
@@ -1034,7 +1034,7 @@ function validate(): boolean {
       expect(stats.chunksCreated).toBeGreaterThanOrEqual(0);
 
       // Verify all modules are searchable
-      const results = await search.searchCode(codebaseDir, "Module process id");
+      const results = await explore.searchCode(codebaseDir, "Module process id");
       expect(results.length).toBeGreaterThan(0);
     });
   });
