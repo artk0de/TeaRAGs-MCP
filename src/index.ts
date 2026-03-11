@@ -23,17 +23,11 @@ async function main() {
   }
 
   // Graceful shutdown: disconnect embedding provider (daemon refcount--)
-  const cleanup = () => {
-    if ("terminate" in ctx.embeddings && typeof ctx.embeddings.terminate === "function") {
-      void (ctx.embeddings as { terminate: () => Promise<void> }).terminate();
-    }
-    if (ctx.embeddedRelease) {
-      ctx.embeddedRelease();
-    }
-  };
-  process.on("SIGTERM", cleanup);
-  process.on("SIGINT", cleanup);
-  process.on("beforeExit", cleanup);
+  if (ctx.cleanup) {
+    process.on("SIGTERM", ctx.cleanup);
+    process.on("SIGINT", ctx.cleanup);
+    process.on("beforeExit", ctx.cleanup);
+  }
 
   if (config.transportMode === "http") {
     await startHttpServer({ config, ctx, promptsConfig });

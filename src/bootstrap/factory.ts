@@ -5,12 +5,11 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import type { App } from "../core/api/app.js";
-import { createComposition, type CompositionResult } from "../core/api/composition.js";
+import { createComposition } from "../core/api/composition.js";
 import { createApp } from "../core/api/create-app.js";
 import { ExploreFacade } from "../core/api/explore-facade.js";
 import { IngestFacade } from "../core/api/ingest-facade.js";
@@ -35,16 +34,10 @@ export { pkg };
 
 export interface AppContext {
   app: App;
-  // Legacy fields — removed when MCP handlers migrate to App (Task 7)
-  qdrant: QdrantManager;
-  embeddings: EmbeddingProvider;
-  ingest: IngestFacade;
-  search: ExploreFacade;
-  reranker: CompositionResult["reranker"];
   schemaBuilder: SchemaBuilder;
-  essentialTrajectoryFields: string[];
-  schemaDriftMonitor: SchemaDriftMonitor;
   embeddedRelease?: () => void;
+  /** Graceful shutdown: terminate embedding provider + release embedded Qdrant. */
+  cleanup?: () => void;
 }
 
 export async function createAppContext(config: AppConfig): Promise<AppContext> {
@@ -103,9 +96,20 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     pipelineTuning,
     syncTuning,
   );
-  const search = new ExploreFacade(qdrant, embeddings, config.searchCode, reranker, registry, statsCache);
-  const currentPayloadKeys = allPayloadSignalDescriptors.map((d) => d.key);
-  const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, currentPayloadKeys);
+  const schemaDriftMonitor = new SchemaDriftMonitor(
+    statsCache,
+    allPayloadSignalDescriptors.map((d) => d.key),
+  );
+  const search = new ExploreFacade(
+    qdrant,
+    embeddings,
+    config.searchCode,
+    reranker,
+    registry,
+    statsCache,
+    essentialTrajectoryFields,
+    schemaDriftMonitor,
+  );
   const app = createApp({
     qdrant,
     embeddings,
@@ -115,18 +119,20 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     schemaDriftMonitor,
   });
 
+  const cleanup = () => {
+    if ("terminate" in embeddings && typeof embeddings.terminate === "function") {
+      void (embeddings as { terminate: () => Promise<void> }).terminate();
+    }
+    if (embeddedRelease) {
+      embeddedRelease();
+    }
+  };
+
   return {
     app,
-    // Legacy fields — removed when MCP handlers migrate to App (Task 7)
-    qdrant,
-    embeddings,
-    ingest,
-    search,
-    reranker,
     schemaBuilder,
-    essentialTrajectoryFields,
-    schemaDriftMonitor,
     embeddedRelease,
+    cleanup,
   };
 }
 
@@ -148,18 +154,8 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
     version: pkg.version,
   });
 
-  registerAllTools(server, {
-    qdrant: ctx.qdrant,
-    embeddings: ctx.embeddings,
-    ingest: ctx.ingest,
-    search: ctx.search,
-    reranker: ctx.reranker,
-    schemaBuilder: ctx.schemaBuilder,
-    essentialTrajectoryFields: ctx.essentialTrajectoryFields,
-    schemaDriftMonitor: ctx.schemaDriftMonitor,
-  });
-
-  registerAllResources(server, ctx.qdrant);
+  registerAllTools(server, { app: ctx.app, schemaBuilder: ctx.schemaBuilder });
+  registerAllResources(server, ctx.app);
   registerAllPrompts(server, promptsConfig);
 
   return server;

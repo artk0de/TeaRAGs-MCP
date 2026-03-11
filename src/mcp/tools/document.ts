@@ -1,21 +1,15 @@
 /**
- * Document operation tools registration
+ * Document operation tools registration — thin wrappers delegating to App.
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
-import { BM25SparseVectorGenerator } from "../../core/adapters/qdrant/sparse.js";
-import type { QdrantManager } from "../../core/adapters/qdrant/client.js";
+import type { App } from "../../core/api/app.js";
+import { formatMcpError, formatMcpText } from "../format.js";
 import * as schemas from "./schemas.js";
 
-export interface DocumentToolDependencies {
-  qdrant: QdrantManager;
-  embeddings: EmbeddingProvider;
-}
-
-export function registerDocumentTools(server: McpServer, deps: DocumentToolDependencies): void {
-  const { qdrant, embeddings } = deps;
+export function registerDocumentTools(server: McpServer, deps: { app: App }): void {
+  const { app } = deps;
 
   // add_documents
   server.registerTool(
@@ -27,64 +21,12 @@ export function registerDocumentTools(server: McpServer, deps: DocumentToolDepen
       inputSchema: schemas.AddDocumentsSchema,
     },
     async ({ collection, documents }) => {
-      // Check if collection exists and get info
-      const exists = await qdrant.collectionExists(collection);
-      if (!exists) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error: Collection "${collection}" does not exist. Create it first using create_collection.`,
-            },
-          ],
-          isError: true,
-        };
+      try {
+        const result = await app.addDocuments({ collection, documents });
+        return formatMcpText(`Successfully added ${result.count} document(s) to collection "${collection}".`);
+      } catch (error) {
+        return formatMcpError(error instanceof Error ? error.message : String(error));
       }
-
-      const collectionInfo = await qdrant.getCollectionInfo(collection);
-
-      // Generate embeddings for all documents
-      const texts = documents.map((doc) => doc.text);
-      const embeddingResults = await embeddings.embedBatch(texts);
-
-      // If hybrid search is enabled, generate sparse vectors and use appropriate method
-      if (collectionInfo.hybridEnabled) {
-        const sparseGenerator = new BM25SparseVectorGenerator();
-
-        // Prepare points with both dense and sparse vectors
-        const points = documents.map((doc, index) => ({
-          id: doc.id,
-          vector: embeddingResults[index].embedding,
-          sparseVector: sparseGenerator.generate(doc.text),
-          payload: {
-            text: doc.text,
-            ...doc.metadata,
-          },
-        }));
-
-        await qdrant.addPointsWithSparse(collection, points);
-      } else {
-        // Standard dense-only vectors
-        const points = documents.map((doc, index) => ({
-          id: doc.id,
-          vector: embeddingResults[index].embedding,
-          payload: {
-            text: doc.text,
-            ...doc.metadata,
-          },
-        }));
-
-        await qdrant.addPoints(collection, points);
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Successfully added ${documents.length} document(s) to collection "${collection}".`,
-          },
-        ],
-      };
     },
   );
 
@@ -97,15 +39,12 @@ export function registerDocumentTools(server: McpServer, deps: DocumentToolDepen
       inputSchema: schemas.DeleteDocumentsSchema,
     },
     async ({ collection, ids }) => {
-      await qdrant.deletePoints(collection, ids);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Successfully deleted ${ids.length} document(s) from collection "${collection}".`,
-          },
-        ],
-      };
+      try {
+        const result = await app.deleteDocuments({ collection, ids });
+        return formatMcpText(`Successfully deleted ${result.count} document(s) from collection "${collection}".`);
+      } catch (error) {
+        return formatMcpError(error instanceof Error ? error.message : String(error));
+      }
     },
   );
 }
