@@ -5,7 +5,7 @@ import { join } from "node:path";
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SearchFacade } from "../../../src/core/api/explore-facade.js";
+import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
 import { resolvePresets } from "../../../src/core/explore/rerank/presets/index.js";
 import { Reranker } from "../../../src/core/explore/reranker.js";
@@ -54,9 +54,9 @@ vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
 
-describe("IngestFacade + SearchFacade", () => {
+describe("IngestFacade + ExploreFacade", () => {
   let ingest: IngestFacade;
-  let search: SearchFacade;
+  let search: ExploreFacade;
   let qdrant: MockQdrantManager;
   let embeddings: MockEmbeddingProvider;
   let config: IngestCodeConfig;
@@ -73,7 +73,7 @@ describe("IngestFacade + SearchFacade", () => {
     const reranker = new Reranker([...gitDerivedSignals, ...staticDerivedSignals], resolvedPresets);
     const registry = new TrajectoryRegistry();
     registry.register(new GitTrajectory());
-    search = new SearchFacade(qdrant as any, embeddings, defaultSearchConfig(), reranker, registry);
+    search = new ExploreFacade(qdrant as any, embeddings, defaultSearchConfig(), reranker, registry);
   });
 
   afterEach(async () => {

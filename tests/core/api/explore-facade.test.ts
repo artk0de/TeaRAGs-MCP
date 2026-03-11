@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SearchFacade } from "../../../src/core/api/explore-facade.js";
+import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 
 const searchCodeSpy = vi.fn().mockResolvedValue([{ path: "a.ts", score: 0.9 }]);
 
@@ -20,7 +20,7 @@ vi.mock("../../../src/core/explore/search-module.js", () => {
   };
 });
 
-function makeSearchFacade(
+function makeExploreFacade(
   opts: {
     hasStats?: boolean;
     hasCachedStats?: boolean;
@@ -38,21 +38,21 @@ function makeSearchFacade(
       }
     : undefined;
 
-  const facade = new SearchFacade({} as any, {} as any, {} as any, reranker, undefined, statsCache as any);
+  const facade = new ExploreFacade({} as any, {} as any, {} as any, reranker, undefined, statsCache as any);
 
   return { facade, reranker, statsCache };
 }
 
-describe("SearchFacade", () => {
+describe("ExploreFacade", () => {
   it("delegates searchCode to SearchModule", async () => {
-    const { facade } = makeSearchFacade();
+    const { facade } = makeExploreFacade();
     const results = await facade.searchCode("/project", "test query");
     expect(results).toHaveLength(1);
     expect(searchCodeSpy).toHaveBeenCalledWith("test query", undefined);
   });
 
   it("loads stats from cache on first search when reranker has no stats", async () => {
-    const { facade, reranker, statsCache } = makeSearchFacade({
+    const { facade, reranker, statsCache } = makeExploreFacade({
       hasStats: true,
       hasCachedStats: true,
       rerankerHasStats: false,
@@ -65,7 +65,7 @@ describe("SearchFacade", () => {
   });
 
   it("skips stats loading when reranker already has stats", async () => {
-    const { facade, statsCache } = makeSearchFacade({
+    const { facade, statsCache } = makeExploreFacade({
       hasStats: true,
       hasCachedStats: true,
       rerankerHasStats: true,
@@ -77,7 +77,7 @@ describe("SearchFacade", () => {
   });
 
   it("skips stats loading when no statsCache provided", async () => {
-    const { facade, reranker } = makeSearchFacade({
+    const { facade, reranker } = makeExploreFacade({
       hasStats: false,
       rerankerHasStats: false,
     });
@@ -87,7 +87,7 @@ describe("SearchFacade", () => {
   });
 
   it("does not set stats when cache returns null", async () => {
-    const { facade, reranker, statsCache } = makeSearchFacade({
+    const { facade, reranker, statsCache } = makeExploreFacade({
       hasStats: true,
       hasCachedStats: false,
       rerankerHasStats: false,
@@ -100,7 +100,7 @@ describe("SearchFacade", () => {
   });
 
   it("does not throw when stats loading fails", async () => {
-    const { facade, statsCache } = makeSearchFacade({
+    const { facade, statsCache } = makeExploreFacade({
       hasStats: true,
       hasCachedStats: false,
       rerankerHasStats: false,

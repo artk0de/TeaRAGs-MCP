@@ -1,25 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HybridSearchRequest, RankChunksRequest, SemanticSearchRequest } from "../../../src/core/api/app.js";
-import { SearchFacade } from "../../../src/core/api/explore-facade.js";
+import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const searchCodeSpy = vi
-  .fn()
-  .mockResolvedValue([
-    {
-      content: "fn test()",
-      filePath: "/project/a.ts",
-      startLine: 1,
-      endLine: 5,
-      language: "typescript",
-      score: 0.9,
-      fileExtension: ".ts",
-    },
-  ]);
+const searchCodeSpy = vi.fn().mockResolvedValue([
+  {
+    content: "fn test()",
+    filePath: "/project/a.ts",
+    startLine: 1,
+    endLine: 5,
+    language: "typescript",
+    score: 0.9,
+    fileExtension: ".ts",
+  },
+]);
 
 vi.mock("../../../src/core/explore/search-module.js", () => ({
   SearchModule: class {
@@ -118,7 +116,7 @@ function makeFacade(
   const essentialFields = overrides.essentialTrajectoryFields ?? ["git.file.ageDays"];
 
   return {
-    facade: new SearchFacade(
+    facade: new ExploreFacade(
       qdrant,
       embeddings,
       {} as any, // config
@@ -139,7 +137,7 @@ function makeFacade(
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("SearchFacade — expanded methods", () => {
+describe("ExploreFacade — expanded methods", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

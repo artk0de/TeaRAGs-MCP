@@ -1,5 +1,5 @@
 /**
- * SearchFacade - Public API for semantic code search.
+ * ExploreFacade - Public API for code exploration and search.
  *
  * Delegates to:
  * - SearchModule: semantic code search over indexed collections
@@ -70,10 +70,10 @@ class UnknownPresetError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// SearchFacade
+// ExploreFacade
 // ---------------------------------------------------------------------------
 
-export class SearchFacade {
+export class ExploreFacade {
   private readonly essentialTrajectoryFields: string[];
   private readonly schemaDriftMonitor?: SchemaDriftMonitor;
 

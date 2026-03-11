@@ -20,7 +20,7 @@ vi.mock("../../src/core/api/ingest-facade.js", () => ({
   IngestFacade: vi.fn().mockImplementation(function () {}),
 }));
 vi.mock("../../src/core/api/explore-facade.js", () => ({
-  SearchFacade: vi.fn().mockImplementation(function () {}),
+  ExploreFacade: vi.fn().mockImplementation(function () {}),
 }));
 vi.mock("../../src/core/explore/reranker.js", () => ({
   Reranker: vi.fn().mockImplementation(function () {}),

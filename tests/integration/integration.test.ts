@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EmbeddingProvider } from "../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../src/core/adapters/qdrant/client.js";
-import { SearchFacade } from "../../src/core/api/explore-facade.js";
+import { ExploreFacade } from "../../src/core/api/explore-facade.js";
 import { IngestFacade } from "../../src/core/api/ingest-facade.js";
 import { resolvePresets } from "../../src/core/explore/rerank/presets/index.js";
 import { Reranker } from "../../src/core/explore/reranker.js";
@@ -243,9 +243,9 @@ class MockEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
-describe("IngestFacade + SearchFacade Integration Tests", () => {
+describe("IngestFacade + ExploreFacade Integration Tests", () => {
   let ingest: IngestFacade;
-  let search: SearchFacade;
+  let search: ExploreFacade;
   let reranker: Reranker;
   let registry: TrajectoryRegistry;
   let qdrant: MockQdrantManager;
@@ -279,7 +279,7 @@ describe("IngestFacade + SearchFacade Integration Tests", () => {
     };
 
     ingest = new IngestFacade(qdrant as any, embeddings, config, {});
-    search = new SearchFacade(qdrant as any, embeddings, searchConfig, reranker, registry);
+    search = new ExploreFacade(qdrant as any, embeddings, searchConfig, reranker, registry);
   });
 
   afterEach(async () => {
@@ -902,7 +902,7 @@ describe('Engine', () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
       const hybridSearchConfig = { ...searchConfig, enableHybridSearch: true };
       const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig, {});
-      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
+      const hybridSearch = new ExploreFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
 
       await createTestFile(codebaseDir, "search.ts", "function performSearch(query: string) { return results; }");
 
@@ -915,7 +915,7 @@ describe('Engine', () => {
 
     it("should fallback to standard search if hybrid not available", async () => {
       const hybridSearchConfig = { ...searchConfig, enableHybridSearch: true };
-      const hybridSearch = new SearchFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
+      const hybridSearch = new ExploreFacade(qdrant as any, embeddings, hybridSearchConfig, reranker, registry);
 
       // Index without hybrid
       await createTestFile(
