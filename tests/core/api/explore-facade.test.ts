@@ -2,7 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 
-const searchCodeSpy = vi.fn().mockResolvedValue([{ path: "a.ts", score: 0.9 }]);
+const searchCodeSpy = vi.fn().mockResolvedValue([
+  {
+    content: "fn test()",
+    filePath: "/project/a.ts",
+    startLine: 1,
+    endLine: 5,
+    language: "typescript",
+    score: 0.9,
+    fileExtension: ".ts",
+  },
+]);
 
 vi.mock("../../../src/core/explore/explore-module.js", () => {
   return {
@@ -49,9 +59,9 @@ function makeExploreFacade(
 describe("ExploreFacade", () => {
   it("delegates searchCode to ExploreModule", async () => {
     const { facade } = makeExploreFacade();
-    const results = await facade.searchCode("/project", "test query");
-    expect(results).toHaveLength(1);
-    expect(searchCodeSpy).toHaveBeenCalledWith("test query", undefined);
+    const result = await facade.searchCode({ path: "/project", query: "test query" });
+    expect(result.results).toHaveLength(1);
+    expect(searchCodeSpy).toHaveBeenCalledWith("test query", expect.any(Object));
   });
 
   it("loads stats from cache on first search when reranker has no stats", async () => {
@@ -61,7 +71,7 @@ describe("ExploreFacade", () => {
       rerankerHasStats: false,
     });
 
-    await facade.searchCode("/tmp/test-project", "query");
+    await facade.searchCode({ path: "/tmp/test-project", query: "query" });
 
     expect(statsCache!.load).toHaveBeenCalled();
     expect(reranker.setCollectionStats).toHaveBeenCalled();
@@ -74,7 +84,7 @@ describe("ExploreFacade", () => {
       rerankerHasStats: true,
     });
 
-    await facade.searchCode("/tmp/test-project", "query");
+    await facade.searchCode({ path: "/tmp/test-project", query: "query" });
 
     expect(statsCache!.load).not.toHaveBeenCalled();
   });
@@ -85,7 +95,7 @@ describe("ExploreFacade", () => {
       rerankerHasStats: false,
     });
 
-    await facade.searchCode("/tmp/test-project", "query");
+    await facade.searchCode({ path: "/tmp/test-project", query: "query" });
     expect(reranker.setCollectionStats).not.toHaveBeenCalled();
   });
 
@@ -96,7 +106,7 @@ describe("ExploreFacade", () => {
       rerankerHasStats: false,
     });
 
-    await facade.searchCode("/tmp/test-project", "query");
+    await facade.searchCode({ path: "/tmp/test-project", query: "query" });
 
     expect(statsCache!.load).toHaveBeenCalled();
     expect(reranker.setCollectionStats).not.toHaveBeenCalled();
@@ -113,7 +123,7 @@ describe("ExploreFacade", () => {
       throw new Error("cache corrupt");
     });
 
-    const results = await facade.searchCode("/tmp/test-project", "query");
-    expect(results).toHaveLength(1);
+    const result = await facade.searchCode({ path: "/tmp/test-project", query: "query" });
+    expect(result.results).toHaveLength(1);
   });
 });

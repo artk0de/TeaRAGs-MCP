@@ -45,8 +45,7 @@ function createMockExploreFacade(): ExploreFacade {
     semanticSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
     hybridSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
     rankChunks: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
-    searchCodeTyped: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
-    searchCode: vi.fn().mockResolvedValue([]),
+    searchCode: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
   } as unknown as ExploreFacade;
 }
 
@@ -162,12 +161,12 @@ describe("createApp", () => {
       expect(deps.explore.rankChunks).toHaveBeenCalledWith(req);
     });
 
-    it("delegates searchCode to ExploreFacade.searchCodeTyped", async () => {
+    it("delegates searchCode to ExploreFacade.searchCode", async () => {
       const app = createApp(deps);
       const req = { path: "/foo", query: "test" };
       await app.searchCode(req);
 
-      expect(deps.explore.searchCodeTyped).toHaveBeenCalledWith(req);
+      expect(deps.explore.searchCode).toHaveBeenCalledWith(req);
     });
   });
 

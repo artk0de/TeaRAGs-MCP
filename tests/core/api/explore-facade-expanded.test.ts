@@ -460,14 +460,14 @@ describe("ExploreFacade — expanded methods", () => {
   });
 
   // =========================================================================
-  // searchCodeTyped
+  // searchCode
   // =========================================================================
 
-  describe("searchCodeTyped", () => {
+  describe("searchCode", () => {
     it("wraps searchCode and returns typed response", async () => {
       const { facade } = makeFacade();
 
-      const result = await facade.searchCodeTyped({
+      const result = await facade.searchCode({
         path: "/tmp/test-project",
         query: "test query",
       });
@@ -483,7 +483,7 @@ describe("ExploreFacade — expanded methods", () => {
     it("maps CodeSearchResult fields to SearchCodeResult", async () => {
       const { facade } = makeFacade();
 
-      const result = await facade.searchCodeTyped({
+      const result = await facade.searchCode({
         path: "/tmp/test-project",
         query: "test",
       });
@@ -501,7 +501,7 @@ describe("ExploreFacade — expanded methods", () => {
     it("passes search options from request", async () => {
       const { facade } = makeFacade();
 
-      await facade.searchCodeTyped({
+      await facade.searchCode({
         path: "/tmp/test-project",
         query: "test",
         limit: 20,
@@ -527,7 +527,7 @@ describe("ExploreFacade — expanded methods", () => {
       });
       const { facade } = makeFacade({ driftMonitor });
 
-      const result = await facade.searchCodeTyped({
+      const result = await facade.searchCode({
         path: "/tmp/test-project",
         query: "test",
       });

@@ -32,8 +32,6 @@ export interface App {
   semanticSearch: (request: SemanticSearchRequest) => Promise<ExploreResponse>;
   hybridSearch: (request: HybridSearchRequest) => Promise<ExploreResponse>;
   rankChunks: (request: RankChunksRequest) => Promise<ExploreResponse>;
-  exploreCode: (request: ExploreCodeRequest) => Promise<ExploreResponse>;
-  /** @deprecated Use exploreCode */
   searchCode: (request: ExploreCodeRequest) => Promise<SearchCodeResponse>;
 
   // -- Indexing --

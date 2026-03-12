@@ -160,8 +160,8 @@ describe("IngestFacade + ExploreFacade", () => {
       await ingest.indexCodebase(codebaseDir);
 
       const searchPromises = [
-        explore.searchCode(codebaseDir, "test"),
-        explore.searchCode(codebaseDir, "const"),
+        explore.searchCode({ path: codebaseDir, query: "test" }),
+        explore.searchCode({ path: codebaseDir, query: "const" }),
         ingest.getIndexStatus(codebaseDir),
       ];
 

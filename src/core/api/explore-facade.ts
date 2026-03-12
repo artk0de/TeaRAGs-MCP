@@ -20,13 +20,12 @@ import type { SchemaDriftMonitor } from "../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../infra/stats-cache.js";
 import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
-import type { CodeSearchResult, ExploreCodeConfig, SearchOptions } from "../types.js";
+import type { ExploreCodeConfig, SearchOptions } from "../types.js";
 import type {
   ExploreCodeRequest,
   ExploreResponse,
   HybridSearchRequest,
   RankChunksRequest,
-  SearchCodeRequest,
   SearchCodeResponse,
   SearchCodeResult,
   SemanticSearchRequest,
@@ -144,74 +143,9 @@ export class ExploreFacade {
     );
   }
 
-  /** search_code replacement — uses strategy pipeline with auto-detect hybrid. */
-  async exploreCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
+  /** Search code semantically via ExploreModule (search_code MCP tool). */
+  async searchCode(request: ExploreCodeRequest): Promise<SearchCodeResponse> {
     const absolutePath = await validatePath(request.path);
-    const collectionName = resolveCollectionName(absolutePath);
-    const { embedding } = await this.embeddings.embed(request.query);
-    const filter = this.buildMergedFilter(request, request.filter);
-
-    // Auto-detect hybrid capability
-    const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
-    const strategy = collectionInfo.hybridEnabled ? this.hybridStrategy : this.vectorStrategy;
-
-    return this.executeExplore(
-      strategy,
-      {
-        collectionName,
-        query: request.query,
-        embedding,
-        limit: request.limit ?? 10,
-        filter,
-        pathPattern: request.pathPattern,
-        rerank: request.rerank,
-      },
-      request.path,
-    );
-  }
-
-  // =========================================================================
-  // Legacy search_code path (ExploreModule — will be deleted in Task 8)
-  // =========================================================================
-
-  /** Typed wrapper around searchCode — returns SearchCodeResponse. */
-  async searchCodeTyped(request: SearchCodeRequest): Promise<SearchCodeResponse> {
-    const options: SearchOptions = {
-      limit: request.limit,
-      fileTypes: request.fileTypes,
-      pathPattern: request.pathPattern,
-      documentationOnly: request.documentationOnly,
-      author: request.author,
-      modifiedAfter: request.modifiedAfter,
-      modifiedBefore: request.modifiedBefore,
-      minAgeDays: request.minAgeDays,
-      maxAgeDays: request.maxAgeDays,
-      minCommitCount: request.minCommitCount,
-      taskId: request.taskId,
-      rerank: request.rerank as SearchOptions["rerank"],
-    };
-
-    const rawResults = await this.searchCode(request.path, request.query, options);
-
-    const results: SearchCodeResult[] = rawResults.map((r) => ({
-      content: r.content,
-      filePath: r.filePath,
-      startLine: r.startLine,
-      endLine: r.endLine,
-      language: r.language,
-      score: r.score,
-      fileExtension: r.fileExtension,
-      metadata: r.metadata as Record<string, unknown> | undefined,
-    }));
-
-    const driftWarning = this.schemaDriftMonitor ? await this.schemaDriftMonitor.checkAndConsume(request.path) : null;
-
-    return { results, driftWarning };
-  }
-
-  /** Search code semantically (original API — legacy, uses ExploreModule). */
-  async searchCode(path: string, query: string, options?: SearchOptions): Promise<CodeSearchResult[]> {
-    const absolutePath = await validatePath(path);
     const collectionName = resolveCollectionName(absolutePath);
     await this.ensureStats(collectionName);
 
@@ -230,7 +164,37 @@ export class ExploreFacade {
       filterBuilder,
     );
 
-    return search.searchCode(query, options);
+    const options: SearchOptions = {
+      limit: request.limit,
+      fileTypes: request.fileTypes,
+      pathPattern: request.pathPattern,
+      documentationOnly: request.documentationOnly,
+      author: request.author,
+      modifiedAfter: request.modifiedAfter,
+      modifiedBefore: request.modifiedBefore,
+      minAgeDays: request.minAgeDays,
+      maxAgeDays: request.maxAgeDays,
+      minCommitCount: request.minCommitCount,
+      taskId: request.taskId,
+      rerank: request.rerank as SearchOptions["rerank"],
+    };
+
+    const rawResults = await search.searchCode(request.query, options);
+
+    const results: SearchCodeResult[] = rawResults.map((r) => ({
+      content: r.content,
+      filePath: r.filePath,
+      startLine: r.startLine,
+      endLine: r.endLine,
+      language: r.language,
+      score: r.score,
+      fileExtension: r.fileExtension,
+      metadata: r.metadata as Record<string, unknown> | undefined,
+    }));
+
+    const driftWarning = this.schemaDriftMonitor ? await this.schemaDriftMonitor.checkAndConsume(request.path) : null;
+
+    return { results, driftWarning };
   }
 
   // =========================================================================
