@@ -7,8 +7,8 @@
  */
 
 import { BM25SparseVectorGenerator } from "../../adapters/qdrant/sparse.js";
-import { BaseExploreStrategy, HybridNotEnabledError } from "./types.js";
-import type { ExploreResult, SearchContext } from "./types.js";
+import { BaseExploreStrategy } from "./base.js";
+import { HybridNotEnabledError, type ExploreResult, type SearchContext } from "./types.js";
 
 export class HybridSearchStrategy extends BaseExploreStrategy {
   readonly type = "hybrid" as const;
@@ -25,12 +25,6 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
 
     const sparseVector = ctx.sparseVector ?? BM25SparseVectorGenerator.generateSimple(ctx.query ?? "");
 
-    return this.qdrant.hybridSearch(
-      ctx.collectionName,
-      ctx.embedding,
-      sparseVector,
-      ctx.limit,
-      ctx.filter,
-    );
+    return this.qdrant.hybridSearch(ctx.collectionName, ctx.embedding, sparseVector, ctx.limit, ctx.filter);
   }
 }

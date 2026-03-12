@@ -7,11 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/types/trajectory.js";
 import type { Reranker } from "../../../../src/core/explore/reranker.js";
-import {
-  BaseExploreStrategy,
-  type ExploreResult,
-  type SearchContext,
-} from "../../../../src/core/explore/strategies/types.js";
+import { BaseExploreStrategy } from "../../../../src/core/explore/strategies/base.js";
+import type { ExploreResult, SearchContext } from "../../../../src/core/explore/strategies/types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

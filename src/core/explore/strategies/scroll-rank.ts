@@ -9,7 +9,8 @@ import { filterResultsByGlob } from "../../adapters/qdrant/filters/index.js";
 import { scrollOrderedBy } from "../../adapters/qdrant/scroll.js";
 import type { RerankableResult } from "../../contracts/types/reranker.js";
 import { RankModule } from "../rank-module.js";
-import { BaseExploreStrategy, type ExploreResult, type SearchContext } from "./types.js";
+import { BaseExploreStrategy } from "./base.js";
+import type { ExploreResult, SearchContext } from "./types.js";
 
 export class ScrollRankStrategy extends BaseExploreStrategy {
   readonly type = "scroll-rank" as const;
