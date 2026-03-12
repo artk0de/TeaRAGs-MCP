@@ -5,19 +5,16 @@
  * Extracted from MCP search.ts semantic_search handler.
  */
 
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import type { ExploreResult, SearchContext, SearchStrategy } from "./types.js";
+import { BaseExploreStrategy } from "./types.js";
+import type { ExploreResult, SearchContext } from "./types.js";
 
-export class VectorSearchStrategy implements SearchStrategy {
+export class VectorSearchStrategy extends BaseExploreStrategy {
   readonly type = "vector" as const;
 
-  constructor(private readonly qdrant: QdrantManager) {}
-
-  async execute(ctx: SearchContext): Promise<ExploreResult[]> {
+  protected async executeExplore(ctx: SearchContext): Promise<ExploreResult[]> {
     if (!ctx.embedding) {
       throw new Error("VectorSearchStrategy requires an embedding in the context.");
     }
-    const results = await this.qdrant.search(ctx.collectionName, ctx.embedding, ctx.limit, ctx.filter);
-    return results;
+    return this.qdrant.search(ctx.collectionName, ctx.embedding, ctx.limit, ctx.filter);
   }
 }
