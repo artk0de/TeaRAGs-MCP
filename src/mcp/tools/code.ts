@@ -86,42 +86,15 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         "- 'Legacy code that might need documentation' → query='service', minAgeDays=60",
       inputSchema: searchSchemas.SearchCodeSchema,
     },
-    async ({
-      path,
-      query,
-      limit,
-      fileTypes,
-      pathPattern,
-      documentationOnly,
-      author,
-      modifiedAfter,
-      modifiedBefore,
-      minAgeDays,
-      maxAgeDays,
-      minCommitCount,
-      taskId,
-      rerank,
-    }) => {
+    async ({ rerank, ...rest }) => {
       try {
         const response = await app.searchCode({
-          path,
-          query,
-          limit,
-          fileTypes,
-          pathPattern,
-          documentationOnly,
-          author,
-          modifiedAfter,
-          modifiedBefore,
-          minAgeDays,
-          maxAgeDays,
-          minCommitCount,
-          taskId,
+          ...rest,
           rerank: sanitizeRerank(rerank),
         });
 
         if (response.results.length === 0) {
-          return formatMcpText(`No results found for query: "${query}"`);
+          return formatMcpText(`No results found for query: "${rest.query}"`);
         }
 
         // Format results with file references (presentation logic stays in MCP layer)
