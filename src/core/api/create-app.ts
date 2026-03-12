@@ -42,6 +42,7 @@ export function createApp(deps: AppDeps): App {
     semanticSearch: async (req) => deps.explore.semanticSearch(req),
     hybridSearch: async (req) => deps.explore.hybridSearch(req),
     rankChunks: async (req) => deps.explore.rankChunks(req),
+    exploreCode: async (req) => deps.explore.exploreCode(req),
     searchCode: async (req) => deps.explore.searchCodeTyped(req),
 
     // -- Indexing — delegate to IngestFacade --

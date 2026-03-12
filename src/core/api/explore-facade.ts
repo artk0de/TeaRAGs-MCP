@@ -22,6 +22,7 @@ import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
 import type { CodeSearchResult, ExploreCodeConfig, SearchOptions } from "../types.js";
 import type {
+  ExploreCodeRequest,
   ExploreResponse,
   HybridSearchRequest,
   RankChunksRequest,
@@ -143,8 +144,34 @@ export class ExploreFacade {
     );
   }
 
+  /** search_code replacement — uses strategy pipeline with auto-detect hybrid. */
+  async exploreCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
+    const absolutePath = await validatePath(request.path);
+    const collectionName = resolveCollectionName(absolutePath);
+    const { embedding } = await this.embeddings.embed(request.query);
+    const filter = this.buildMergedFilter(request, request.filter);
+
+    // Auto-detect hybrid capability
+    const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
+    const strategy = collectionInfo.hybridEnabled ? this.hybridStrategy : this.vectorStrategy;
+
+    return this.executeExplore(
+      strategy,
+      {
+        collectionName,
+        query: request.query,
+        embedding,
+        limit: request.limit ?? 10,
+        filter,
+        pathPattern: request.pathPattern,
+        rerank: request.rerank,
+      },
+      request.path,
+    );
+  }
+
   // =========================================================================
-  // Legacy search_code path (ExploreModule — will be migrated in Tasks 10-11)
+  // Legacy search_code path (ExploreModule — will be deleted in Task 8)
   // =========================================================================
 
   /** Typed wrapper around searchCode — returns SearchCodeResponse. */
