@@ -28,25 +28,25 @@ export interface SearchContext {
   metaOnly?: boolean;
 }
 
-export interface RawResult {
+export interface ExploreResult<P = Record<string, unknown>> {
   id?: string | number;
   score: number;
-  payload?: Record<string, unknown>;
+  payload?: P;
   rankingOverlay?: RankingOverlay;
 }
 
 export interface SearchStrategy {
   readonly type: "vector" | "hybrid" | "scroll-rank";
-  execute: (ctx: SearchContext) => Promise<RawResult[]>;
+  execute: (ctx: SearchContext) => Promise<ExploreResult[]>;
 }
 
 /**
  * BaseExploreStrategy — abstract base for all explore strategies.
  *
  * Template Method pattern:
- *   execute() = applyDefaults() → executeSearch() → postProcess()
+ *   execute() = applyDefaults() → executeExplore() → postProcess()
  *
- * Concrete strategies implement only `executeSearch()` and `type`.
+ * Concrete strategies implement only `executeExplore()` and `type`.
  */
 export abstract class BaseExploreStrategy implements SearchStrategy {
   abstract readonly type: "vector" | "hybrid" | "scroll-rank";
@@ -59,17 +59,17 @@ export abstract class BaseExploreStrategy implements SearchStrategy {
   ) {}
 
   /** Main entry point: apply defaults → execute search → post-process. */
-  async execute(ctx: SearchContext): Promise<RawResult[]> {
+  async execute(ctx: SearchContext): Promise<ExploreResult[]> {
     const prepared = this.applyDefaults(ctx);
-    const rawResults = await this.executeSearch(prepared);
+    const rawResults = await this.executeExplore(prepared);
     return this.postProcess(rawResults, ctx);
   }
 
   /** Concrete strategy implements the actual search call. */
-  protected abstract executeSearch(ctx: SearchContext): Promise<RawResult[]>;
+  protected abstract executeExplore(ctx: SearchContext): Promise<ExploreResult[]>;
 
   /**
-   * Apply defaults to context before passing to executeSearch.
+   * Apply defaults to context before passing to executeExplore.
    * - Enforces minimum limit of 5
    * - Computes overfetch limit when pathPattern or non-relevance rerank present
    * Returns a new context with adjusted limit (fetchLimit for Qdrant).
@@ -89,12 +89,12 @@ export abstract class BaseExploreStrategy implements SearchStrategy {
    *   3. Trim to requested limit
    *   4. metaOnly formatting (if ctx.metaOnly)
    */
-  protected postProcess(results: RawResult[], originalCtx: SearchContext): RawResult[] {
+  protected postProcess(results: ExploreResult[], originalCtx: SearchContext): ExploreResult[] {
     const requestedLimit = Math.max(originalCtx.limit ?? 0, 5);
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
 
     // 1. Glob filter
-    let filtered: RawResult[] = originalCtx.pathPattern
+    let filtered: ExploreResult[] = originalCtx.pathPattern
       ? filterResultsByGlob(results, originalCtx.pathPattern)
       : results;
 
@@ -116,9 +116,9 @@ export abstract class BaseExploreStrategy implements SearchStrategy {
 
   /**
    * Apply metaOnly formatting: strip raw content, keep metadata from payloadSignals.
-   * Wraps filterMetaOnly output back as RawResult[].
+   * Wraps filterMetaOnly output back as ExploreResult[].
    */
-  protected applyMetaOnly(results: RawResult[]): RawResult[] {
+  protected applyMetaOnly(results: ExploreResult[]): ExploreResult[] {
     const metaResults = filterMetaOnly(results, this.payloadSignals, this.essentialKeys);
     return metaResults.map((meta) => ({
       score: meta.score as number,

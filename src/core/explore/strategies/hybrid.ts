@@ -8,14 +8,14 @@
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { BM25SparseVectorGenerator } from "../../adapters/qdrant/sparse.js";
-import { HybridNotEnabledError, type RawResult, type SearchContext, type SearchStrategy } from "./types.js";
+import { HybridNotEnabledError, type ExploreResult, type SearchContext, type SearchStrategy } from "./types.js";
 
 export class HybridSearchStrategy implements SearchStrategy {
   readonly type = "hybrid" as const;
 
   constructor(private readonly qdrant: QdrantManager) {}
 
-  async execute(ctx: SearchContext): Promise<RawResult[]> {
+  async execute(ctx: SearchContext): Promise<ExploreResult[]> {
     if (!ctx.embedding) {
       throw new Error("HybridSearchStrategy requires an embedding in the context.");
     }
