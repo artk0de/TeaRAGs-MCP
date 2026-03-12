@@ -17,6 +17,8 @@ export interface SearchContext {
   presetName?: string;
   offset?: number;
   pathPattern?: string;
+  rerank?: unknown; // RerankMode<string> — unknown to avoid circular deps
+  metaOnly?: boolean;
 }
 
 export interface RawResult {
