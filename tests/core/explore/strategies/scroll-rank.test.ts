@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
 import type { DerivedSignalDescriptor, RerankableResult } from "../../../../src/core/contracts/types/reranker.js";
 import type { Reranker } from "../../../../src/core/explore/reranker.js";
-import { excludeDocumentation, ScrollRankStrategy } from "../../../../src/core/explore/strategies/scroll-rank.js";
+import { ScrollRankStrategy } from "../../../../src/core/explore/strategies/scroll-rank.js";
 
 const chunkSizeDesc: DerivedSignalDescriptor = {
   name: "chunkSize",
@@ -141,31 +141,5 @@ describe("ScrollRankStrategy", () => {
 
     // metaOnly=false preserves raw payload
     expect(results.length).toBeGreaterThan(0);
-  });
-});
-
-describe("excludeDocumentation", () => {
-  it("creates must_not filter when no existing filter", () => {
-    const result = excludeDocumentation();
-    expect(result).toEqual({
-      must_not: [{ key: "isDocumentation", match: { value: true } }],
-    });
-  });
-
-  it("appends to existing must_not array", () => {
-    const existing = {
-      must: [{ key: "language", match: { value: "typescript" } }],
-      must_not: [{ key: "chunkType", match: { value: "import" } }],
-    };
-    const result = excludeDocumentation(existing);
-    expect(result.must_not).toHaveLength(2);
-    expect(result.must).toEqual(existing.must);
-  });
-
-  it("creates must_not array when filter exists without must_not", () => {
-    const existing = { must: [{ key: "language", match: { value: "typescript" } }] };
-    const result = excludeDocumentation(existing);
-    expect(result.must_not).toHaveLength(1);
-    expect(result.must).toEqual(existing.must);
   });
 });
