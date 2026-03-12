@@ -8,7 +8,7 @@ import type { QdrantManager } from "../../../../src/core/adapters/qdrant/client.
 import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/types/trajectory.js";
 import type { Reranker } from "../../../../src/core/explore/reranker.js";
 import { BaseExploreStrategy } from "../../../../src/core/explore/strategies/base.js";
-import type { ExploreResult, SearchContext } from "../../../../src/core/explore/strategies/types.js";
+import type { ExploreContext, ExploreResult } from "../../../../src/core/explore/strategies/types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -33,7 +33,7 @@ const EMPTY_KEYS: string[] = [];
 class TestStrategy extends BaseExploreStrategy {
   readonly type = "vector" as const;
 
-  public lastCtx: SearchContext | undefined;
+  public lastCtx: ExploreContext | undefined;
   private readonly rawResults: ExploreResult[];
 
   constructor(
@@ -47,7 +47,7 @@ class TestStrategy extends BaseExploreStrategy {
     this.rawResults = rawResults;
   }
 
-  protected async executeExplore(ctx: SearchContext): Promise<ExploreResult[]> {
+  protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     this.lastCtx = ctx;
     return this.rawResults;
   }

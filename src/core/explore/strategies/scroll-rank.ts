@@ -10,7 +10,7 @@ import { scrollOrderedBy } from "../../adapters/qdrant/scroll.js";
 import type { RerankableResult } from "../../contracts/types/reranker.js";
 import { RankModule } from "../rank-module.js";
 import { BaseExploreStrategy } from "./base.js";
-import type { ExploreResult, SearchContext } from "./types.js";
+import type { ExploreContext, ExploreResult } from "./types.js";
 
 export class ScrollRankStrategy extends BaseExploreStrategy {
   readonly type = "scroll-rank" as const;
@@ -21,7 +21,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     this.rankModule = new RankModule(this.reranker, this.reranker.getDescriptors());
   }
 
-  protected override applyDefaults(ctx: SearchContext): SearchContext {
+  protected override applyDefaults(ctx: ExploreContext): ExploreContext {
     const metaOnly = ctx.metaOnly !== false; // defaults to true for rank_chunks
     const effectiveOffset = ctx.offset || 0;
     const requestedLimit = ctx.limit || 10;
@@ -55,7 +55,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     };
   }
 
-  protected async executeExplore(ctx: SearchContext): Promise<ExploreResult[]> {
+  protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     const { weights } = ctx;
     if (!weights || Object.keys(weights).length === 0) {
       throw new Error("ScrollRankStrategy requires weights in the context.");
@@ -89,7 +89,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     }));
   }
 
-  protected override postProcess(results: ExploreResult[], originalCtx: SearchContext): ExploreResult[] {
+  protected override postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
     let processed = results;
 
     if (originalCtx.pathPattern) {

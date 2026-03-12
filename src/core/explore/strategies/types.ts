@@ -7,7 +7,7 @@
 
 import type { RankingOverlay } from "../../contracts/types/reranker.js";
 
-export interface SearchContext {
+export interface ExploreContext {
   collectionName: string;
   query?: string;
   embedding?: number[];
@@ -32,7 +32,7 @@ export interface ExploreResult<P = Record<string, unknown>> {
 
 export interface ExploreStrategy {
   readonly type: "vector" | "hybrid" | "scroll-rank";
-  execute: (ctx: SearchContext) => Promise<ExploreResult[]>;
+  execute: (ctx: ExploreContext) => Promise<ExploreResult[]>;
 }
 
 /**

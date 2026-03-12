@@ -12,7 +12,7 @@ import { calculateFetchLimit, filterResultsByGlob } from "../../adapters/qdrant/
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
-import type { ExploreResult, ExploreStrategy, SearchContext } from "./types.js";
+import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
 export abstract class BaseExploreStrategy implements ExploreStrategy {
   abstract readonly type: "vector" | "hybrid" | "scroll-rank";
@@ -25,14 +25,14 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   ) {}
 
   /** Main entry point: apply defaults → execute search → post-process. */
-  async execute(ctx: SearchContext): Promise<ExploreResult[]> {
+  async execute(ctx: ExploreContext): Promise<ExploreResult[]> {
     const prepared = this.applyDefaults(ctx);
     const rawResults = await this.executeExplore(prepared);
     return this.postProcess(rawResults, ctx);
   }
 
   /** Concrete strategy implements the actual search call. */
-  protected abstract executeExplore(ctx: SearchContext): Promise<ExploreResult[]>;
+  protected abstract executeExplore(ctx: ExploreContext): Promise<ExploreResult[]>;
 
   /**
    * Apply defaults to context before passing to executeExplore.
@@ -40,7 +40,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    * - Computes overfetch limit when pathPattern or non-relevance rerank present
    * Returns a new context with adjusted limit (fetchLimit for Qdrant).
    */
-  protected applyDefaults(ctx: SearchContext): SearchContext {
+  protected applyDefaults(ctx: ExploreContext): ExploreContext {
     const requestedLimit = Math.max(ctx.limit ?? 0, 5);
     const rerank = ctx.rerank as RerankMode<string> | undefined;
     const needsOverfetch = Boolean(ctx.pathPattern) || Boolean(rerank && rerank !== "relevance");
@@ -55,7 +55,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    *   3. Trim to requested limit
    *   4. metaOnly formatting (if ctx.metaOnly)
    */
-  protected postProcess(results: ExploreResult[], originalCtx: SearchContext): ExploreResult[] {
+  protected postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
     const requestedLimit = Math.max(originalCtx.limit ?? 0, 5);
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
 
