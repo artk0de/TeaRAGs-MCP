@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { CollectionInfo, QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
+import type { Reranker } from "../../../../src/core/explore/reranker.js";
 import { HybridSearchStrategy } from "../../../../src/core/explore/strategies/hybrid.js";
 import { HybridNotEnabledError } from "../../../../src/core/explore/strategies/types.js";
+
+const mockReranker = { rerank: vi.fn((r: unknown[]) => r) } as unknown as Reranker;
 
 function createMockQdrant(
   hybridEnabled = true,
@@ -20,16 +23,19 @@ function createMockQdrant(
   } as unknown as QdrantManager;
 }
 
+function createStrategy(qdrant?: QdrantManager) {
+  return new HybridSearchStrategy(qdrant ?? createMockQdrant(), mockReranker, [], []);
+}
+
 describe("HybridSearchStrategy", () => {
   it("has type 'hybrid'", () => {
-    const strategy = new HybridSearchStrategy(createMockQdrant());
-    expect(strategy.type).toBe("hybrid");
+    expect(createStrategy().type).toBe("hybrid");
   });
 
   it("calls qdrant.hybridSearch with correct params when sparseVector provided", async () => {
     const mockResults = [{ id: "1", score: 0.85, payload: { relativePath: "src/a.ts" } }];
     const qdrant = createMockQdrant(true, mockResults);
-    const strategy = new HybridSearchStrategy(qdrant);
+    const strategy = createStrategy(qdrant);
 
     const sparseVector = { indices: [0, 1], values: [1.0, 0.5] };
     const results = await strategy.execute({
@@ -40,14 +46,21 @@ describe("HybridSearchStrategy", () => {
       limit: 5,
     });
 
-    expect(qdrant.hybridSearch).toHaveBeenCalledWith("test_col", [0.1, 0.2], sparseVector, 5, undefined);
+    // Base class overfetches — verify hybridSearch was called with fetchLimit >= 5
+    expect(qdrant.hybridSearch).toHaveBeenCalledWith(
+      "test_col",
+      [0.1, 0.2],
+      sparseVector,
+      expect.any(Number),
+      undefined,
+    );
     expect(results).toHaveLength(1);
     expect(results[0].score).toBe(0.85);
   });
 
   it("generates sparse vector from query when not provided", async () => {
     const qdrant = createMockQdrant(true, []);
-    const strategy = new HybridSearchStrategy(qdrant);
+    const strategy = createStrategy(qdrant);
 
     await strategy.execute({
       collectionName: "test_col",
@@ -56,7 +69,6 @@ describe("HybridSearchStrategy", () => {
       limit: 5,
     });
 
-    // hybridSearch should be called with a generated sparse vector
     expect(qdrant.hybridSearch).toHaveBeenCalledTimes(1);
     const call = (qdrant.hybridSearch as ReturnType<typeof vi.fn>).mock.calls[0];
     const generatedSparse = call[2] as { indices: number[]; values: number[] };
@@ -66,7 +78,7 @@ describe("HybridSearchStrategy", () => {
 
   it("throws HybridNotEnabledError when collection has no hybrid support", async () => {
     const qdrant = createMockQdrant(false);
-    const strategy = new HybridSearchStrategy(qdrant);
+    const strategy = createStrategy(qdrant);
 
     await expect(
       strategy.execute({
@@ -79,7 +91,7 @@ describe("HybridSearchStrategy", () => {
   });
 
   it("throws if embedding is missing", async () => {
-    const strategy = new HybridSearchStrategy(createMockQdrant());
+    const strategy = createStrategy();
     await expect(strategy.execute({ collectionName: "test_col", limit: 5 })).rejects.toThrow("requires an embedding");
   });
 });
