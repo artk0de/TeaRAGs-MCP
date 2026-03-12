@@ -62,7 +62,7 @@ export interface RankChunksRequest extends CollectionRef {
   metaOnly?: boolean;
 }
 
-export interface SearchCodeRequest {
+export interface ExploreCodeRequest {
   path: string;
   query: string;
   limit?: number;
@@ -77,7 +77,11 @@ export interface SearchCodeRequest {
   minCommitCount?: number;
   taskId?: string;
   rerank?: string | { custom: Record<string, number> };
+  filter?: Record<string, unknown>;
 }
+
+/** @deprecated Use ExploreCodeRequest */
+export type SearchCodeRequest = ExploreCodeRequest;
 
 // ---------------------------------------------------------------------------
 // Search result types
@@ -106,11 +110,15 @@ export interface SearchCodeResult {
 // Search response types
 // ---------------------------------------------------------------------------
 
-export interface SearchResponse {
+export interface ExploreResponse {
   results: SearchResult[];
   driftWarning: string | null;
 }
 
+/** @deprecated Use ExploreResponse */
+export type SearchResponse = ExploreResponse;
+
+/** @deprecated — will be removed when searchCodeTyped is deleted (Task 8). */
 export interface SearchCodeResponse {
   results: SearchCodeResult[];
   driftWarning: string | null;
