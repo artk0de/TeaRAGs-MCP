@@ -108,108 +108,16 @@ function collectionPathFields() {
 }
 
 /**
- * Shared fields for query, limit, filter, pathPattern used in semantic/hybrid search.
+ * Typed filter params shared across all search tools (semantic, hybrid, search_code, rank_chunks).
+ * These map 1:1 to TypedFilterParams in contracts/types/app.ts.
  */
-function searchCommonFields() {
+function typedFilterFields() {
   return {
-    query: z.string().describe("Search query text"),
-    limit: coerceNumber().optional().describe("Maximum number of results (default: 5)"),
-    filter: z
-      .record(z.any())
-      .optional()
-      .describe(
-        "Qdrant filter object with must/should/must_not conditions. " +
-          "Available fields for code chunks (index_codebase): " +
-          "relativePath (string), fileExtension (string), language (string), " +
-          "startLine (number), endLine (number), chunkIndex (number), " +
-          "isDocumentation (boolean), name (string), chunkType (string: function|class|interface|block), " +
-          "parentName (string), parentType (string), " +
-          "git.dominantAuthor (string), git.authors (string[]), " +
-          "git.lastModifiedAt (unix timestamp), git.firstCreatedAt (unix timestamp), " +
-          "git.commitCount (number), git.ageDays (number), git.taskIds (string[]), " +
-          "imports (string[] - file-level imports for structural signal). " +
-          "For generic documents (add_documents): user-defined metadata fields.",
-      ),
-    pathPattern: z
-      .string()
-      .optional()
-      .describe(
-        "Glob pattern for filtering by file path (client-side via picomatch). " +
-          "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
-      ),
-  };
-}
-
-/**
- * Create dynamic search schemas from SchemaBuilder.
- * Replaces hardcoded imports from trajectory/ and search/structural-signals.
- */
-export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
-  const semanticSearchRerankSchema = schemaBuilder.buildRerankSchema("semantic_search");
-  const searchCodeRerankSchema = schemaBuilder.buildRerankSchema("search_code");
-
-  const SemanticSearchSchema = {
-    ...collectionPathFields(),
-    ...searchCommonFields(),
-    rerank: semanticSearchRerankSchema
-      .optional()
-      .describe(
-        "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
-          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'recent' | 'stable' | {custom: weights}. " +
-          "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
-          "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
-          "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
-      ),
-    metaOnly: coerceBoolean()
-      .optional()
-      .describe(
-        "For code analytics: return only metadata (path, lines, git info) without content. " +
-          "Use for: file discovery, codebase structure analysis, ownership reports, churn analysis. " +
-          "Significantly reduces response size. Default: false.",
-      ),
-  };
-
-  const HybridSearchSchema = {
-    ...collectionPathFields(),
-    ...searchCommonFields(),
-    rerank: semanticSearchRerankSchema
-      .optional()
-      .describe(
-        "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
-          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'recent' | 'stable' | {custom: weights}. " +
-          "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
-          "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
-          "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
-      ),
-    metaOnly: coerceBoolean()
-      .optional()
-      .describe(
-        "For code analytics: return only metadata (path, lines, git info) without content. " +
-          "Use for: file discovery, codebase structure analysis, ownership reports, churn analysis. " +
-          "Significantly reduces response size. Default: false.",
-      ),
-  };
-
-  const SearchCodeSchema = {
-    path: z.string().describe("Path to codebase (must be indexed first)"),
-    query: z.string().describe("Natural language search query (e.g., 'authentication logic')"),
-    limit: coerceNumber().optional().describe("Maximum number of results (default: 5, max: 100)"),
-    fileTypes: z.array(z.string()).optional().describe("Filter by file extensions (e.g., ['.ts', '.py'])"),
-    pathPattern: z
-      .string()
-      .optional()
-      .describe(
-        "Glob pattern for filtering by file path (client-side via picomatch). " +
-          "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
-      ),
-    documentationOnly: coerceBoolean()
-      .optional()
-      .describe(
-        "Search only in documentation files (markdown, READMEs, etc.). " +
-          "Default: false (search in all files). Set to true to find information in docs only.",
-      ),
-    // Git metadata filters (requires CODE_ENABLE_GIT_METADATA=true during indexing)
-    // Uses canonical algorithm: aggregated signals per chunk
+    language: z.string().optional().describe("Filter by programming language"),
+    fileExtension: z.string().optional().describe("Filter by file extension (e.g. '.ts')"),
+    chunkType: z.string().optional().describe("Filter by chunk type (function, class, interface, block)"),
+    isDocumentation: coerceBoolean().optional().describe("Include only documentation chunks"),
+    excludeDocumentation: coerceBoolean().optional().describe("Exclude documentation chunks from results"),
     author: z
       .string()
       .optional()
@@ -258,6 +166,113 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
         "Filter by task/issue ID from commit messages. Supports JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890). " +
           "Use for: requirements tracing, impact analysis, audit, compliance, 'what code was written for this ticket?'",
       ),
+  };
+}
+
+/**
+ * Shared fields for query, limit, filter, pathPattern used in semantic/hybrid search.
+ */
+function searchCommonFields() {
+  return {
+    query: z.string().describe("Search query text"),
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 5)"),
+    filter: z
+      .record(z.any())
+      .optional()
+      .describe(
+        "Qdrant filter object with must/should/must_not conditions. " +
+          "Available fields for code chunks (index_codebase): " +
+          "relativePath (string), fileExtension (string), language (string), " +
+          "startLine (number), endLine (number), chunkIndex (number), " +
+          "isDocumentation (boolean), name (string), chunkType (string: function|class|interface|block), " +
+          "parentName (string), parentType (string), " +
+          "git.dominantAuthor (string), git.authors (string[]), " +
+          "git.lastModifiedAt (unix timestamp), git.firstCreatedAt (unix timestamp), " +
+          "git.commitCount (number), git.ageDays (number), git.taskIds (string[]), " +
+          "imports (string[] - file-level imports for structural signal). " +
+          "For generic documents (add_documents): user-defined metadata fields.",
+      ),
+    pathPattern: z
+      .string()
+      .optional()
+      .describe(
+        "Glob pattern for filtering by file path (client-side via picomatch). " +
+          "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
+      ),
+  };
+}
+
+/**
+ * Create dynamic search schemas from SchemaBuilder.
+ * Replaces hardcoded imports from trajectory/ and search/structural-signals.
+ */
+export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
+  const semanticSearchRerankSchema = schemaBuilder.buildRerankSchema("semantic_search");
+  const searchCodeRerankSchema = schemaBuilder.buildRerankSchema("search_code");
+
+  const SemanticSearchSchema = {
+    ...collectionPathFields(),
+    ...searchCommonFields(),
+    ...typedFilterFields(),
+    rerank: semanticSearchRerankSchema
+      .optional()
+      .describe(
+        "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
+          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'recent' | 'stable' | {custom: weights}. " +
+          "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
+          "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
+          "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
+      ),
+    metaOnly: coerceBoolean()
+      .optional()
+      .describe(
+        "For code analytics: return only metadata (path, lines, git info) without content. " +
+          "Use for: file discovery, codebase structure analysis, ownership reports, churn analysis. " +
+          "Significantly reduces response size. Default: false.",
+      ),
+  };
+
+  const HybridSearchSchema = {
+    ...collectionPathFields(),
+    ...searchCommonFields(),
+    ...typedFilterFields(),
+    rerank: semanticSearchRerankSchema
+      .optional()
+      .describe(
+        "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
+          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'recent' | 'stable' | {custom: weights}. " +
+          "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
+          "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
+          "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
+      ),
+    metaOnly: coerceBoolean()
+      .optional()
+      .describe(
+        "For code analytics: return only metadata (path, lines, git info) without content. " +
+          "Use for: file discovery, codebase structure analysis, ownership reports, churn analysis. " +
+          "Significantly reduces response size. Default: false.",
+      ),
+  };
+
+  const SearchCodeSchema = {
+    path: z.string().describe("Path to codebase (must be indexed first)"),
+    query: z.string().describe("Natural language search query (e.g., 'authentication logic')"),
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 5, max: 100)"),
+    pathPattern: z
+      .string()
+      .optional()
+      .describe(
+        "Glob pattern for filtering by file path (client-side via picomatch). " +
+          "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
+      ),
+    ...typedFilterFields(),
+    fileTypes: z.array(z.string()).optional().describe("Filter by file extensions (e.g., ['.ts', '.py'])"),
+    documentationOnly: coerceBoolean()
+      .optional()
+      .describe(
+        "Search only in documentation files (markdown, READMEs, etc.). " +
+          "Default: false (search in all files). Set to true to find information in docs only.",
+      ),
     rerank: searchCodeRerankSchema
       .optional()
       .describe(
@@ -270,6 +285,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
 
   const RankChunksSchema = {
     ...collectionPathFields(),
+    ...typedFilterFields(),
     rerank: rankChunksRerankSchema.describe(
       "Reranking mode (REQUIRED). Determines how chunks are scored and sorted. " +
         "similarity weight is ignored (no vector search). " +
