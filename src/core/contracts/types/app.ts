@@ -21,6 +21,30 @@ export interface CollectionRef {
 }
 
 // ---------------------------------------------------------------------------
+// Typed filter params (shared across all search requests)
+// ---------------------------------------------------------------------------
+
+/** Typed filter params resolved via TrajectoryRegistry.buildFilter(). */
+export interface TypedFilterParams {
+  // Static trajectory filters
+  language?: string;
+  fileExtension?: string;
+  chunkType?: string;
+  isDocumentation?: boolean;
+  excludeDocumentation?: boolean;
+  fileTypes?: string[];
+  documentationOnly?: boolean;
+  // Git trajectory filters
+  author?: string;
+  modifiedAfter?: string | Date;
+  modifiedBefore?: string | Date;
+  minAgeDays?: number;
+  maxAgeDays?: number;
+  minCommitCount?: number;
+  taskId?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Search request types
 // ---------------------------------------------------------------------------
 
@@ -29,7 +53,7 @@ export interface CollectionRef {
  * Intentionally separate from HybridSearchRequest to allow future divergence
  * (e.g., hybrid may gain fusionWeight, sparse boosting params).
  */
-export interface SemanticSearchRequest extends CollectionRef {
+export interface SemanticSearchRequest extends CollectionRef, TypedFilterParams {
   query: string;
   limit?: number;
   filter?: Record<string, unknown>;
@@ -43,7 +67,7 @@ export interface SemanticSearchRequest extends CollectionRef {
  * Intentionally separate from SemanticSearchRequest to allow future divergence
  * (e.g., fusionWeight, sparse boosting params).
  */
-export interface HybridSearchRequest extends CollectionRef {
+export interface HybridSearchRequest extends CollectionRef, TypedFilterParams {
   query: string;
   limit?: number;
   filter?: Record<string, unknown>;
@@ -52,7 +76,7 @@ export interface HybridSearchRequest extends CollectionRef {
   metaOnly?: boolean;
 }
 
-export interface RankChunksRequest extends CollectionRef {
+export interface RankChunksRequest extends CollectionRef, TypedFilterParams {
   rerank: string | { custom: Record<string, number> };
   level: "chunk" | "file";
   limit?: number;
@@ -62,20 +86,11 @@ export interface RankChunksRequest extends CollectionRef {
   metaOnly?: boolean;
 }
 
-export interface ExploreCodeRequest {
+export interface ExploreCodeRequest extends TypedFilterParams {
   path: string;
   query: string;
   limit?: number;
-  fileTypes?: string[];
   pathPattern?: string;
-  documentationOnly?: boolean;
-  author?: string;
-  modifiedAfter?: string | Date;
-  modifiedBefore?: string | Date;
-  minAgeDays?: number;
-  maxAgeDays?: number;
-  minCommitCount?: number;
-  taskId?: string;
   rerank?: string | { custom: Record<string, number> };
   filter?: Record<string, unknown>;
 }
