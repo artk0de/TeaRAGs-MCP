@@ -194,13 +194,13 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
         param: "author",
         description: "Author",
         type: "string",
-        toCondition: (v) => [{ key: "git.file.dominantAuthor", match: { value: v } }],
+        toCondition: (v) => ({ must: [{ key: "git.file.dominantAuthor", match: { value: v } }] }),
       },
       {
         param: "minAge",
         description: "Min age",
         type: "number",
-        toCondition: (v, level) => [{ key: `git.${level}.ageDays`, range: { gte: v as number } }],
+        toCondition: (v, level) => ({ must: [{ key: `git.${level}.ageDays`, range: { gte: v as number } }] }),
       },
     ];
     const registry = new TrajectoryRegistry();
@@ -219,7 +219,7 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
         param: "minAge",
         description: "Min age",
         type: "number",
-        toCondition: (v, level) => [{ key: `git.${level}.ageDays`, range: { gte: v as number } }],
+        toCondition: (v, level) => ({ must: [{ key: `git.${level}.ageDays`, range: { gte: v as number } }] }),
       },
     ];
     const registry = new TrajectoryRegistry();
@@ -235,19 +235,35 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
     expect(registry.buildFilter({ unknownParam: "value" })).toBeUndefined();
   });
 
+  it("collects must_not conditions from FilterConditionResult", () => {
+    const filters: FilterDescriptor[] = [
+      {
+        param: "excludeDocumentation",
+        description: "Exclude docs",
+        type: "boolean",
+        toCondition: () => ({ must_not: [{ key: "isDocumentation", match: { value: true } }] }),
+      },
+    ];
+    const registry = new TrajectoryRegistry();
+    registry.register(mockTrajectory({ key: "static", filters }));
+    const filter = registry.buildFilter({ excludeDocumentation: true });
+    expect(filter?.must_not).toEqual([{ key: "isDocumentation", match: { value: true } }]);
+    expect(filter?.must).toBeUndefined();
+  });
+
   it("skips undefined/null param values in buildFilter", () => {
     const filters: FilterDescriptor[] = [
       {
         param: "author",
         description: "Author",
         type: "string",
-        toCondition: (v) => [{ key: "git.file.dominantAuthor", match: { value: v } }],
+        toCondition: (v) => ({ must: [{ key: "git.file.dominantAuthor", match: { value: v } }] }),
       },
       {
         param: "minAge",
         description: "Min age",
         type: "number",
-        toCondition: (v, level) => [{ key: `git.${level}.ageDays`, range: { gte: v as number } }],
+        toCondition: (v, level) => ({ must: [{ key: `git.${level}.ageDays`, range: { gte: v as number } }] }),
       },
     ];
     const registry = new TrajectoryRegistry();

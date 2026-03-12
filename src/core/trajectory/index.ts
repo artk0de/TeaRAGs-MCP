@@ -116,16 +116,22 @@ export class TrajectoryRegistry {
    */
   buildFilter(params: Record<string, unknown>, level: FilterLevel = "chunk"): QdrantFilter | undefined {
     const allFilters = this.getAllFilters();
-    const conditions: QdrantFilterCondition[] = [];
+    const mustConditions: QdrantFilterCondition[] = [];
+    const mustNotConditions: QdrantFilterCondition[] = [];
 
     for (const filter of allFilters) {
       const value = params[filter.param];
       if (value === undefined || value === null) continue;
-      const produced = filter.toCondition(value, level);
-      conditions.push(...produced);
+      const result = filter.toCondition(value, level);
+      if (result.must) mustConditions.push(...result.must);
+      if (result.must_not) mustNotConditions.push(...result.must_not);
     }
 
-    if (conditions.length === 0) return undefined;
-    return { must: conditions };
+    if (mustConditions.length === 0 && mustNotConditions.length === 0) return undefined;
+
+    const filter: QdrantFilter = {};
+    if (mustConditions.length > 0) filter.must = mustConditions;
+    if (mustNotConditions.length > 0) filter.must_not = mustNotConditions;
+    return filter;
   }
 }
