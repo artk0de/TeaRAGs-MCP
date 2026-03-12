@@ -18,8 +18,8 @@ import type { Reranker } from "../explore/reranker.js";
 import {
   createExploreStrategy,
   type BaseExploreStrategy,
+  type ExploreContext,
   type ExploreResult,
-  type SearchContext,
 } from "../explore/strategies/index.js";
 import type { SchemaDriftMonitor } from "../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../infra/stats-cache.js";
@@ -215,7 +215,7 @@ export class ExploreFacade {
   /** Unified pipeline: validate → stats → strategy.execute → map → drift. */
   private async executeExplore(
     strategy: BaseExploreStrategy,
-    ctx: SearchContext,
+    ctx: ExploreContext,
     path?: string,
   ): Promise<SearchResponse> {
     await this.validateCollectionExists(ctx.collectionName, path);

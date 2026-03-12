@@ -8,12 +8,12 @@
 
 import { BM25SparseVectorGenerator } from "../../adapters/qdrant/sparse.js";
 import { BaseExploreStrategy } from "./base.js";
-import { HybridNotEnabledError, type ExploreResult, type SearchContext } from "./types.js";
+import { HybridNotEnabledError, type ExploreContext, type ExploreResult } from "./types.js";
 
 export class HybridSearchStrategy extends BaseExploreStrategy {
   readonly type = "hybrid" as const;
 
-  protected async executeExplore(ctx: SearchContext): Promise<ExploreResult[]> {
+  protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     if (!ctx.embedding) {
       throw new Error("HybridSearchStrategy requires an embedding in the context.");
     }

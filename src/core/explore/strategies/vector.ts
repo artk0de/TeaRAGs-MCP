@@ -6,12 +6,12 @@
  */
 
 import { BaseExploreStrategy } from "./base.js";
-import type { ExploreResult, SearchContext } from "./types.js";
+import type { ExploreContext, ExploreResult } from "./types.js";
 
 export class VectorSearchStrategy extends BaseExploreStrategy {
   readonly type = "vector" as const;
 
-  protected async executeExplore(ctx: SearchContext): Promise<ExploreResult[]> {
+  protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     if (!ctx.embedding) {
       throw new Error("VectorSearchStrategy requires an embedding in the context.");
     }
