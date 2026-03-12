@@ -6,36 +6,31 @@
  * Extracted from MCP search.ts hybrid_search handler.
  */
 
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { BM25SparseVectorGenerator } from "../../adapters/qdrant/sparse.js";
-import { HybridNotEnabledError, type ExploreResult, type SearchContext, type SearchStrategy } from "./types.js";
+import { BaseExploreStrategy, HybridNotEnabledError } from "./types.js";
+import type { ExploreResult, SearchContext } from "./types.js";
 
-export class HybridSearchStrategy implements SearchStrategy {
+export class HybridSearchStrategy extends BaseExploreStrategy {
   readonly type = "hybrid" as const;
 
-  constructor(private readonly qdrant: QdrantManager) {}
-
-  async execute(ctx: SearchContext): Promise<ExploreResult[]> {
+  protected async executeExplore(ctx: SearchContext): Promise<ExploreResult[]> {
     if (!ctx.embedding) {
       throw new Error("HybridSearchStrategy requires an embedding in the context.");
     }
 
-    // Validate hybrid support on collection
     const collectionInfo = await this.qdrant.getCollectionInfo(ctx.collectionName);
     if (!collectionInfo.hybridEnabled) {
       throw new HybridNotEnabledError(ctx.collectionName);
     }
 
-    // Generate sparse vector if not provided
     const sparseVector = ctx.sparseVector ?? BM25SparseVectorGenerator.generateSimple(ctx.query ?? "");
 
-    const results = await this.qdrant.hybridSearch(
+    return this.qdrant.hybridSearch(
       ctx.collectionName,
       ctx.embedding,
       sparseVector,
       ctx.limit,
       ctx.filter,
     );
-    return results;
   }
 }
