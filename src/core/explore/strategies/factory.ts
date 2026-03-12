@@ -5,15 +5,15 @@
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import type { Reranker } from "../reranker.js";
+import type { BaseExploreStrategy } from "./base.js";
 import { HybridSearchStrategy } from "./hybrid.js";
 import { ScrollRankStrategy } from "./scroll-rank.js";
-import type { BaseExploreStrategy } from "./types.js";
 import { VectorSearchStrategy } from "./vector.js";
 
-export type SearchStrategyType = "vector" | "hybrid" | "scroll-rank";
+export type ExploreStrategyType = "vector" | "hybrid" | "scroll-rank";
 
 export function createExploreStrategy(
-  type: SearchStrategyType,
+  type: ExploreStrategyType,
   qdrant: QdrantManager,
   reranker: Reranker,
   payloadSignals: PayloadSignalDescriptor[],

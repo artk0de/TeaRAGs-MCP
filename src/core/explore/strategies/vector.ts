@@ -5,7 +5,7 @@
  * Extracted from MCP search.ts semantic_search handler.
  */
 
-import { BaseExploreStrategy } from "./types.js";
+import { BaseExploreStrategy } from "./base.js";
 import type { ExploreResult, SearchContext } from "./types.js";
 
 export class VectorSearchStrategy extends BaseExploreStrategy {
