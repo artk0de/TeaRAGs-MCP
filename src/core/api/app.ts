@@ -13,12 +13,12 @@ import type {
   CollectionInfo,
   CreateCollectionRequest,
   DeleteDocumentsRequest,
+  ExploreCodeRequest,
+  ExploreResponse,
   HybridSearchRequest,
   PresetDescriptors,
   RankChunksRequest,
-  SearchCodeRequest,
   SearchCodeResponse,
-  SearchResponse,
   SemanticSearchRequest,
 } from "../contracts/types/app.js";
 import type { ChangeStats, IndexOptions, IndexStats, IndexStatus, ProgressCallback } from "../types.js";
@@ -29,10 +29,10 @@ import type { ChangeStats, IndexOptions, IndexStats, IndexStatus, ProgressCallba
 
 export interface App {
   // -- Search --
-  semanticSearch: (request: SemanticSearchRequest) => Promise<SearchResponse>;
-  hybridSearch: (request: HybridSearchRequest) => Promise<SearchResponse>;
-  rankChunks: (request: RankChunksRequest) => Promise<SearchResponse>;
-  searchCode: (request: SearchCodeRequest) => Promise<SearchCodeResponse>;
+  semanticSearch: (request: SemanticSearchRequest) => Promise<ExploreResponse>;
+  hybridSearch: (request: HybridSearchRequest) => Promise<ExploreResponse>;
+  rankChunks: (request: RankChunksRequest) => Promise<ExploreResponse>;
+  searchCode: (request: ExploreCodeRequest) => Promise<SearchCodeResponse>;
 
   // -- Indexing --
   indexCodebase: (path: string, options?: IndexOptions, progress?: ProgressCallback) => Promise<IndexStats>;
@@ -64,6 +64,8 @@ export type {
   CollectionRef,
   CreateCollectionRequest,
   DeleteDocumentsRequest,
+  ExploreCodeRequest,
+  ExploreResponse,
   HybridSearchRequest,
   PresetDescriptors,
   RankChunksRequest,

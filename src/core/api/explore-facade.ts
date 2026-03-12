@@ -15,25 +15,19 @@ import type { QdrantManager } from "../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
 import { ExploreModule } from "../explore/explore-module.js";
 import type { Reranker } from "../explore/reranker.js";
-import {
-  createExploreStrategy,
-  type BaseExploreStrategy,
-  type ExploreContext,
-  type ExploreResult,
-} from "../explore/strategies/index.js";
+import { createExploreStrategy, type BaseExploreStrategy, type ExploreContext } from "../explore/strategies/index.js";
 import type { SchemaDriftMonitor } from "../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../infra/stats-cache.js";
 import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
 import type { CodeSearchResult, ExploreCodeConfig, SearchOptions } from "../types.js";
 import type {
+  ExploreResponse,
   HybridSearchRequest,
   RankChunksRequest,
   SearchCodeRequest,
   SearchCodeResponse,
   SearchCodeResult,
-  SearchResponse,
-  SearchResult,
   SemanticSearchRequest,
 } from "./app.js";
 
@@ -87,7 +81,7 @@ export class ExploreFacade {
   // =========================================================================
 
   /** Semantic (dense vector) search over a collection. */
-  async semanticSearch(request: SemanticSearchRequest): Promise<SearchResponse> {
+  async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
     const { collectionName, path } = this.resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
     return this.executeExplore(
@@ -107,7 +101,7 @@ export class ExploreFacade {
   }
 
   /** Hybrid (dense + BM25 sparse) search over a collection. */
-  async hybridSearch(request: HybridSearchRequest): Promise<SearchResponse> {
+  async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
     const { collectionName, path } = this.resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
     return this.executeExplore(
@@ -127,7 +121,7 @@ export class ExploreFacade {
   }
 
   /** Rank all chunks by rerank signals without vector search. */
-  async rankChunks(request: RankChunksRequest): Promise<SearchResponse> {
+  async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
     const { collectionName, path } = this.resolveCollection(request.collection, request.path);
     return this.executeExplore(
       this.scrollRankStrategy,
@@ -217,13 +211,20 @@ export class ExploreFacade {
     strategy: BaseExploreStrategy,
     ctx: ExploreContext,
     path?: string,
-  ): Promise<SearchResponse> {
+  ): Promise<ExploreResponse> {
     await this.validateCollectionExists(ctx.collectionName, path);
     await this.ensureStats(ctx.collectionName);
     const results = await strategy.execute(ctx);
-    const searchResults = this.toSearchResults(results);
     const driftWarning = await this.checkDrift(path, ctx.collectionName);
-    return { results: searchResults, driftWarning };
+    return {
+      results: results.map((r) => ({
+        id: r.id ?? "",
+        score: r.score,
+        payload: r.payload,
+        rankingOverlay: r.rankingOverlay,
+      })),
+      driftWarning,
+    };
   }
 
   private resolveCollection(collection?: string, path?: string): { collectionName: string; path?: string } {
@@ -252,15 +253,6 @@ export class ExploreFacade {
         // Stats loading failure should not prevent search
       }
     }
-  }
-
-  private toSearchResults(results: ExploreResult[]): SearchResult[] {
-    return results.map((r) => ({
-      id: r.id ?? "",
-      score: r.score,
-      payload: r.payload,
-      rankingOverlay: r.rankingOverlay,
-    }));
   }
 
   private async checkDrift(path?: string, collectionName?: string): Promise<string | null> {
