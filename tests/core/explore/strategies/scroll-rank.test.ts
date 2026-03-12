@@ -41,16 +41,20 @@ function createMockQdrant(): QdrantManager {
   } as unknown as QdrantManager;
 }
 
+function createStrategy(qdrant?: QdrantManager, reranker?: Reranker) {
+  const q = qdrant ?? createMockQdrant();
+  const r = reranker ?? createMockReranker();
+  return new ScrollRankStrategy(q, r, [], []);
+}
+
 describe("ScrollRankStrategy", () => {
   it("has type 'scroll-rank'", () => {
-    const strategy = new ScrollRankStrategy(createMockQdrant(), createMockReranker());
-    expect(strategy.type).toBe("scroll-rank");
+    expect(createStrategy().type).toBe("scroll-rank");
   });
 
   it("executes scroll-rank with weights", async () => {
-    const qdrant = createMockQdrant();
     const reranker = createMockReranker();
-    const strategy = new ScrollRankStrategy(qdrant, reranker);
+    const strategy = createStrategy(undefined, reranker);
 
     const results = await strategy.execute({
       collectionName: "test_col",
@@ -64,14 +68,12 @@ describe("ScrollRankStrategy", () => {
   });
 
   it("throws when weights are missing", async () => {
-    const strategy = new ScrollRankStrategy(createMockQdrant(), createMockReranker());
+    const strategy = createStrategy();
     await expect(strategy.execute({ collectionName: "test_col", limit: 5 })).rejects.toThrow("requires weights");
   });
 
   it("applies pathPattern filtering", async () => {
-    const qdrant = createMockQdrant();
-    const reranker = createMockReranker();
-    const strategy = new ScrollRankStrategy(qdrant, reranker);
+    const strategy = createStrategy();
 
     const results = await strategy.execute({
       collectionName: "test_col",
@@ -81,7 +83,6 @@ describe("ScrollRankStrategy", () => {
       pathPattern: "src/**",
     });
 
-    // test/c.test.ts should be filtered out
     for (const r of results) {
       const path = r.payload?.relativePath as string;
       if (path) {
@@ -91,9 +92,7 @@ describe("ScrollRankStrategy", () => {
   });
 
   it("applies offset", async () => {
-    const qdrant = createMockQdrant();
-    const reranker = createMockReranker();
-    const strategy = new ScrollRankStrategy(qdrant, reranker);
+    const strategy = createStrategy();
 
     const allResults = await strategy.execute({
       collectionName: "test_col",
@@ -110,8 +109,38 @@ describe("ScrollRankStrategy", () => {
       offset: 1,
     });
 
-    // Offset should skip first result
     expect(offsetResults.length).toBe(allResults.length - 1);
+  });
+
+  it("defaults metaOnly to true", async () => {
+    const strategy = createStrategy();
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "chunk",
+      limit: 10,
+    });
+
+    // metaOnly=true strips content, wraps as payload
+    for (const r of results) {
+      expect(r.payload?.content).toBeUndefined();
+    }
+  });
+
+  it("preserves content when metaOnly explicitly false", async () => {
+    const strategy = createStrategy();
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "chunk",
+      limit: 10,
+      metaOnly: false,
+    });
+
+    // metaOnly=false preserves raw payload
+    expect(results.length).toBeGreaterThan(0);
   });
 });
 
