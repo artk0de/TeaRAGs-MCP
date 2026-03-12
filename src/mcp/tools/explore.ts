@@ -22,17 +22,11 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
         "Search for documents using natural language queries. Returns the most semantically similar documents.",
       inputSchema: searchSchemas.SemanticSearchSchema,
     },
-    async ({ collection, path, query, limit, filter, pathPattern, rerank, metaOnly }) => {
+    async ({ rerank, ...rest }) => {
       try {
         const response = await app.semanticSearch({
-          collection,
-          path,
-          query,
-          limit,
-          filter,
-          pathPattern,
+          ...rest,
           rerank: sanitizeRerank(rerank),
-          metaOnly,
         });
         return appendDriftWarning(formatMcpResponse(response.results), response.driftWarning);
       } catch (error) {
@@ -50,17 +44,11 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
         "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid set to true.",
       inputSchema: searchSchemas.HybridSearchSchema,
     },
-    async ({ collection, path, query, limit, filter, pathPattern, rerank, metaOnly }) => {
+    async ({ rerank, ...rest }) => {
       try {
         const response = await app.hybridSearch({
-          collection,
-          path,
-          query,
-          limit,
-          filter,
-          pathPattern,
+          ...rest,
           rerank: sanitizeRerank(rerank),
-          metaOnly,
         });
         return appendDriftWarning(formatMcpResponse(response.results), response.driftWarning);
       } catch (error) {
@@ -80,18 +68,11 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
         "ownership reports — any analysis where you need top-N chunks by signal, not by query similarity.",
       inputSchema: searchSchemas.RankChunksSchema,
     },
-    async ({ collection, path, rerank, level, limit, offset, filter, pathPattern, metaOnly }) => {
+    async ({ rerank, ...rest }) => {
       try {
         const response = await app.rankChunks({
-          collection,
-          path,
+          ...rest,
           rerank: sanitizeRerank(rerank) as string | { custom: Record<string, number> },
-          level,
-          limit,
-          offset,
-          filter,
-          pathPattern,
-          metaOnly,
         });
         return appendDriftWarning(formatMcpResponse(response.results), response.driftWarning);
       } catch (error) {
