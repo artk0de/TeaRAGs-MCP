@@ -95,9 +95,6 @@ export interface ExploreCodeRequest extends TypedFilterParams {
   filter?: Record<string, unknown>;
 }
 
-/** @deprecated Use ExploreCodeRequest */
-export type SearchCodeRequest = ExploreCodeRequest;
-
 // ---------------------------------------------------------------------------
 // Search result types
 // ---------------------------------------------------------------------------
@@ -109,33 +106,12 @@ export interface SearchResult {
   rankingOverlay?: RankingOverlay;
 }
 
-export interface SearchCodeResult {
-  content: string;
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  language: string;
-  score: number;
-  fileExtension: string;
-  /** Loosely typed for public API. See CodeSearchResult in types.ts for full structure. */
-  metadata?: Record<string, unknown>;
-}
-
 // ---------------------------------------------------------------------------
 // Search response types
 // ---------------------------------------------------------------------------
 
 export interface ExploreResponse {
   results: SearchResult[];
-  driftWarning: string | null;
-}
-
-/** @deprecated Use ExploreResponse */
-export type SearchResponse = ExploreResponse;
-
-/** @deprecated — will be removed when searchCodeTyped is deleted (Task 8). */
-export interface SearchCodeResponse {
-  results: SearchCodeResult[];
   driftWarning: string | null;
 }
 

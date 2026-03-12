@@ -24,12 +24,6 @@ export interface IngestCodeConfig {
   enableGitMetadata?: boolean;
 }
 
-/** Config for ExploreModule (search defaults, hybrid flag) */
-export interface ExploreCodeConfig {
-  enableHybridSearch: boolean;
-  defaultSearchLimit: number;
-}
-
 /** Config for IngestFacade trajectory enrichment setup */
 export interface TrajectoryIngestConfig {
   enableGitMetadata?: boolean;
@@ -86,99 +80,6 @@ export interface ChangeStats {
   /** Git enrichment status */
   enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
   enrichmentDurationMs?: number;
-}
-
-export interface CodeSearchResult {
-  content: string;
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  language: string;
-  score: number;
-  fileExtension: string;
-  /** Metadata including git information (if enableGitMetadata was true during indexing) */
-  metadata?: {
-    git?: {
-      // Nested structure (new format from EnrichmentApplier)
-      file?: {
-        lastModifiedAt: number;
-        firstCreatedAt: number;
-        dominantAuthor: string;
-        dominantAuthorEmail: string;
-        authors: string[];
-        dominantAuthorPct: number;
-        commitCount: number;
-        lastCommitHash: string;
-        ageDays: number;
-        linesAdded: number;
-        linesDeleted: number;
-        relativeChurn: number;
-        recencyWeightedFreq: number;
-        changeDensity: number;
-        churnVolatility: number;
-        bugFixRate: number;
-        contributorCount: number;
-        taskIds: string[];
-      };
-      chunk?: {
-        commitCount?: number;
-        churnRatio?: number;
-        contributorCount?: number;
-        bugFixRate?: number;
-        lastModifiedAt?: number;
-        ageDays?: number;
-        relativeChurn?: number;
-      };
-
-      // Legacy flat fields (backward compat for old indexes)
-      lastModifiedAt?: number;
-      firstCreatedAt?: number;
-      dominantAuthor?: string;
-      dominantAuthorEmail?: string;
-      authors?: string[];
-      dominantAuthorPct?: number;
-      commitCount?: number;
-      lastCommitHash?: string;
-      ageDays?: number;
-      linesAdded?: number;
-      linesDeleted?: number;
-      relativeChurn?: number;
-      recencyWeightedFreq?: number;
-      changeDensity?: number;
-      churnVolatility?: number;
-      bugFixRate?: number;
-      contributorCount?: number;
-      taskIds?: string[];
-    };
-  };
-}
-
-export interface SearchOptions {
-  limit?: number;
-  useHybrid?: boolean;
-  fileTypes?: string[];
-  pathPattern?: string;
-  scoreThreshold?: number;
-  /** Search only in documentation files (markdown, etc.) */
-  documentationOnly?: boolean;
-
-  // Git metadata filters (requires enableGitMetadata during indexing)
-  /** Filter by dominant author name */
-  author?: string;
-  /** Filter code modified after this date (ISO string or Date) */
-  modifiedAfter?: string | Date;
-  /** Filter code modified before this date (ISO string or Date) */
-  modifiedBefore?: string | Date;
-  /** Filter code older than N days */
-  minAgeDays?: number;
-  /** Filter code newer than N days */
-  maxAgeDays?: number;
-  /** Filter by minimum commit count (churn) */
-  minCommitCount?: number;
-  /** Filter by task ID (e.g., "TD-1234", "#567") */
-  taskId?: string;
-  /** Reranking mode: preset name or custom weights */
-  rerank?: "relevance" | "recent" | "stable" | { custom: Record<string, number> };
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed";

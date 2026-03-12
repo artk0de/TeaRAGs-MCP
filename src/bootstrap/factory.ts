@@ -103,7 +103,6 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   const explore = new ExploreFacade(
     qdrant,
     embeddings,
-    config.exploreCode,
     reranker,
     registry,
     statsCache,

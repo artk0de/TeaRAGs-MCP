@@ -18,7 +18,6 @@ import type {
   HybridSearchRequest,
   PresetDescriptors,
   RankChunksRequest,
-  SearchCodeResponse,
   SemanticSearchRequest,
 } from "../contracts/types/app.js";
 import type { ChangeStats, IndexOptions, IndexStats, IndexStatus, ProgressCallback } from "../types.js";
@@ -32,7 +31,7 @@ export interface App {
   semanticSearch: (request: SemanticSearchRequest) => Promise<ExploreResponse>;
   hybridSearch: (request: HybridSearchRequest) => Promise<ExploreResponse>;
   rankChunks: (request: RankChunksRequest) => Promise<ExploreResponse>;
-  searchCode: (request: ExploreCodeRequest) => Promise<SearchCodeResponse>;
+  searchCode: (request: ExploreCodeRequest) => Promise<ExploreResponse>;
 
   // -- Indexing --
   indexCodebase: (path: string, options?: IndexOptions, progress?: ProgressCallback) => Promise<IndexStats>;
@@ -69,10 +68,6 @@ export type {
   HybridSearchRequest,
   PresetDescriptors,
   RankChunksRequest,
-  SearchCodeRequest,
-  SearchCodeResponse,
-  SearchCodeResult,
-  SearchResponse,
   SearchResult,
   SemanticSearchRequest,
   SignalDescriptor,

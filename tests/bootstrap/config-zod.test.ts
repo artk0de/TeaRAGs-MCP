@@ -427,7 +427,6 @@ describe("parseAppConfigZod — ingest", () => {
     expect(ingest.chunkOverlap).toBe(300);
     expect(ingest.enableAST).toBe(true);
     expect(ingest.enableHybrid).toBe(false);
-    expect(ingest.defaultSearchLimit).toBe(5);
     expect(ingest.tune.pipelineConcurrency).toBe(1);
     expect(ingest.tune.chunkerPoolSize).toBe(4);
     expect(ingest.tune.fileConcurrency).toBe(50);

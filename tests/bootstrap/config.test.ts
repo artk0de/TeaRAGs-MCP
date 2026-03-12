@@ -34,8 +34,6 @@ describe("parseAppConfig (Zod bridge)", () => {
       "QDRANT_TUNE_UPSERT_BATCH_SIZE",
       "QDRANT_UPSERT_BATCH_SIZE",
       "CODE_BATCH_SIZE",
-      "INGEST_DEFAULT_SEARCH_LIMIT",
-      "CODE_SEARCH_LIMIT",
       "INGEST_ENABLE_HYBRID",
       "CODE_ENABLE_HYBRID",
       "TRAJECTORY_GIT_ENABLED",
@@ -66,7 +64,6 @@ describe("parseAppConfig (Zod bridge)", () => {
     expect(config.requestTimeoutMs).toBe(300000);
     expect(config.ingestCode.chunkSize).toBe(2500);
     expect(config.ingestCode.chunkOverlap).toBe(300);
-    expect(config.exploreCode.defaultSearchLimit).toBe(5);
     expect(config.ingestCode.enableHybridSearch).toBe(false);
     expect(config.trajectoryIngest.enableGitMetadata).toBe(false);
     expect(config.trajectoryIngest.squashAwareSessions).toBe(false);

@@ -2,34 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 
-const searchCodeSpy = vi.fn().mockResolvedValue([
-  {
-    content: "fn test()",
-    filePath: "/project/a.ts",
-    startLine: 1,
-    endLine: 5,
-    language: "typescript",
-    score: 0.9,
-    fileExtension: ".ts",
-  },
-]);
-
-vi.mock("../../../src/core/explore/explore-module.js", () => {
-  return {
-    ExploreModule: class {
-      constructor(
-        _qdrant: any,
-        _embeddings: any,
-        _config: any,
-        _reranker: any,
-        _collectionName: string,
-        _buildFilter?: any,
-      ) {}
-      searchCode = searchCodeSpy;
-    },
-  };
-});
-
 function makeExploreFacade(
   opts: {
     hasStats?: boolean;
@@ -37,6 +9,29 @@ function makeExploreFacade(
     rerankerHasStats?: boolean;
   } = {},
 ) {
+  const qdrant = {
+    collectionExists: vi.fn().mockResolvedValue(true),
+    search: vi.fn().mockResolvedValue([
+      {
+        id: "1",
+        score: 0.9,
+        payload: {
+          content: "fn test()",
+          relativePath: "a.ts",
+          startLine: 1,
+          endLine: 5,
+          language: "typescript",
+          fileExtension: ".ts",
+        },
+      },
+    ]),
+  } as any;
+
+  const embeddings = {
+    embed: vi.fn().mockResolvedValue({ embedding: [0.1, 0.2, 0.3] }),
+    getDimensions: vi.fn().mockReturnValue(3),
+  } as any;
+
   const reranker = {
     hasCollectionStats: opts.rerankerHasStats ?? false,
     setCollectionStats: vi.fn(),
@@ -51,17 +46,18 @@ function makeExploreFacade(
       }
     : undefined;
 
-  const facade = new ExploreFacade({} as any, {} as any, {} as any, reranker, undefined, statsCache as any);
+  const facade = new ExploreFacade(qdrant, embeddings, reranker, undefined, statsCache as any);
 
-  return { facade, reranker, statsCache };
+  return { facade, qdrant, reranker, statsCache };
 }
 
 describe("ExploreFacade", () => {
-  it("delegates searchCode to ExploreModule", async () => {
-    const { facade } = makeExploreFacade();
+  it("delegates searchCode to vector strategy", async () => {
+    const { facade, qdrant } = makeExploreFacade();
     const result = await facade.searchCode({ path: "/project", query: "test query" });
     expect(result.results).toHaveLength(1);
-    expect(searchCodeSpy).toHaveBeenCalledWith("test query", expect.any(Object));
+    expect(result.results[0].score).toBe(0.9);
+    expect(qdrant.search).toHaveBeenCalled();
   });
 
   it("loads stats from cache on first search when reranker has no stats", async () => {

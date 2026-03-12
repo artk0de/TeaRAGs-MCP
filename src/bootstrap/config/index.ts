@@ -1,4 +1,4 @@
-import type { ExploreCodeConfig, IngestCodeConfig, TrajectoryIngestConfig } from "../../core/types.js";
+import type { IngestCodeConfig, TrajectoryIngestConfig } from "../../core/types.js";
 import { DEFAULT_CODE_EXTENSIONS, DEFAULT_IGNORE_PATTERNS } from "./defaults.js";
 import { parseAppConfigZod } from "./parse.js";
 
@@ -17,7 +17,6 @@ export interface AppConfig {
   requestTimeoutMs: number;
   promptsConfigFile: string;
   ingestCode: IngestCodeConfig;
-  exploreCode: ExploreCodeConfig;
   trajectoryIngest: TrajectoryIngestConfig;
 }
 
@@ -51,10 +50,6 @@ export function parseAppConfig(): AppConfig {
       enableGitMetadata: zodConfig.trajectoryGit.enabled,
       maxChunksPerFile: undefined,
       maxTotalChunks: undefined,
-    },
-    exploreCode: {
-      enableHybridSearch: zodConfig.ingest.enableHybrid,
-      defaultSearchLimit: zodConfig.ingest.defaultSearchLimit,
     },
     trajectoryIngest: {
       enableGitMetadata: zodConfig.trajectoryGit.enabled,
