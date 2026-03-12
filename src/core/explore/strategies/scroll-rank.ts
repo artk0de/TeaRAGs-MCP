@@ -1,7 +1,7 @@
 /**
  * ScrollRankStrategy — scroll-based chunk ranking without vector search.
  *
- * Overrides applyDefaults (metaOnly=true, offset, excludeDocumentation, weights resolution)
+ * Overrides applyDefaults (metaOnly=true, offset, weights resolution)
  * and postProcess (offset slicing, own limit logic — no overfetch).
  */
 
@@ -26,8 +26,6 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     const effectiveOffset = ctx.offset || 0;
     const requestedLimit = ctx.limit || 10;
     const fetchLimit = requestedLimit + effectiveOffset;
-    const effectiveFilter = excludeDocumentation(ctx.filter);
-
     // Resolve preset → weights (Reranker is Information Expert)
     let { weights } = ctx;
     let { presetName } = ctx;
@@ -47,7 +45,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     return {
       ...ctx,
       limit: fetchLimit,
-      filter: effectiveFilter,
+      filter: ctx.filter,
       metaOnly,
       offset: effectiveOffset,
       weights,
@@ -110,19 +108,4 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
 
     return processed;
   }
-}
-
-/**
- * Exclude documentation chunks from reranked results using must_not.
- * Uses must_not because code chunks don't have isDocumentation field at all —
- * Qdrant can't match {value: false} on a missing field.
- */
-export function excludeDocumentation(filter?: Record<string, unknown>): Record<string, unknown> {
-  const docExclusion = { key: "isDocumentation", match: { value: true } };
-  if (!filter) {
-    return { must_not: [docExclusion] };
-  }
-  const existing = filter.must_not;
-  const mustNot = Array.isArray(existing) ? [...(existing as Record<string, unknown>[]), docExclusion] : [docExclusion];
-  return { ...filter, must_not: mustNot };
 }
