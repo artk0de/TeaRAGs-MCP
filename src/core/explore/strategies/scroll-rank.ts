@@ -12,7 +12,7 @@ import { scrollOrderedBy } from "../../adapters/qdrant/scroll.js";
 import type { RerankableResult } from "../../contracts/types/reranker.js";
 import { RankModule } from "../rank-module.js";
 import type { Reranker } from "../reranker.js";
-import type { RawResult, SearchContext, SearchStrategy } from "./types.js";
+import type { ExploreResult, SearchContext, SearchStrategy } from "./types.js";
 
 export class ScrollRankStrategy implements SearchStrategy {
   readonly type = "scroll-rank" as const;
@@ -25,7 +25,7 @@ export class ScrollRankStrategy implements SearchStrategy {
     this.rankModule = new RankModule(reranker, reranker.getDescriptors());
   }
 
-  async execute(ctx: SearchContext): Promise<RawResult[]> {
+  async execute(ctx: SearchContext): Promise<ExploreResult[]> {
     // Resolve weights — must be provided by caller (factory resolves preset → weights)
     const { weights } = ctx;
     if (!weights || Object.keys(weights).length === 0) {

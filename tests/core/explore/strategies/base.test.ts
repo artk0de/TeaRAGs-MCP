@@ -9,7 +9,7 @@ import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/typ
 import type { Reranker } from "../../../../src/core/explore/reranker.js";
 import {
   BaseExploreStrategy,
-  type RawResult,
+  type ExploreResult,
   type SearchContext,
 } from "../../../../src/core/explore/strategies/types.js";
 
@@ -23,7 +23,7 @@ function createMockQdrant(): QdrantManager {
 
 function createMockReranker(): Reranker {
   return {
-    rerank: vi.fn().mockImplementation((results: RawResult[]) => results),
+    rerank: vi.fn().mockImplementation((results: ExploreResult[]) => results),
   } as unknown as Reranker;
 }
 
@@ -37,26 +37,26 @@ class TestStrategy extends BaseExploreStrategy {
   readonly type = "vector" as const;
 
   public lastCtx: SearchContext | undefined;
-  private readonly rawResults: RawResult[];
+  private readonly rawResults: ExploreResult[];
 
   constructor(
     qdrant: QdrantManager,
     reranker: Reranker,
     payloadSignals: PayloadSignalDescriptor[],
     essentialKeys: string[],
-    rawResults: RawResult[] = [],
+    rawResults: ExploreResult[] = [],
   ) {
     super(qdrant, reranker, payloadSignals, essentialKeys);
     this.rawResults = rawResults;
   }
 
-  protected async executeSearch(ctx: SearchContext): Promise<RawResult[]> {
+  protected async executeExplore(ctx: SearchContext): Promise<ExploreResult[]> {
     this.lastCtx = ctx;
     return this.rawResults;
   }
 }
 
-function makeResults(n: number): RawResult[] {
+function makeResults(n: number): ExploreResult[] {
   return Array.from({ length: n }, (_, i) => ({
     id: String(i),
     score: 1 - i * 0.01,
@@ -70,10 +70,10 @@ function makeResults(n: number): RawResult[] {
 
 describe("BaseExploreStrategy", () => {
   describe("applyDefaults — limit", () => {
-    it("passes fetchLimit (overfetched) to executeSearch", async () => {
+    it("passes fetchLimit (overfetched) to executeExplore", async () => {
       const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS);
       await strategy.execute({ collectionName: "col", limit: 10 });
-      // executeSearch receives fetchLimit, which is at least limit * 4
+      // executeExplore receives fetchLimit, which is at least limit * 4
       expect(strategy.lastCtx?.limit).toBeGreaterThanOrEqual(10);
     });
 
@@ -112,7 +112,7 @@ describe("BaseExploreStrategy", () => {
       const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS, results);
       await strategy.execute({ collectionName: "col", limit: 5 });
       // fetchLimit >= limit * 4 (minimum overfetch even without extra)
-      // The key is executeSearch receives fetchLimit, not the original limit
+      // The key is executeExplore receives fetchLimit, not the original limit
       const fetchedLimit = strategy.lastCtx?.limit ?? 0;
       // Without pathPattern or non-relevance rerank, calculateFetchLimit(5, false) = max(20, 5*4) = 20
       expect(fetchedLimit).toBeGreaterThanOrEqual(20);
@@ -241,7 +241,7 @@ describe("BaseExploreStrategy", () => {
 
       const output = await strategy.execute({ collectionName: "col", limit: 10, metaOnly: true });
       // metaOnly wraps results as Record<string, unknown>[]
-      // The returned RawResult should not contain content
+      // The returned ExploreResult should not contain content
       const item = output[0];
       expect(item.payload?.content).toBeUndefined();
       expect(item.payload?.relativePath ?? item.score).toBeDefined();

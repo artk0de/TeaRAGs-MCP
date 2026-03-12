@@ -6,14 +6,14 @@
  */
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import type { RawResult, SearchContext, SearchStrategy } from "./types.js";
+import type { ExploreResult, SearchContext, SearchStrategy } from "./types.js";
 
 export class VectorSearchStrategy implements SearchStrategy {
   readonly type = "vector" as const;
 
   constructor(private readonly qdrant: QdrantManager) {}
 
-  async execute(ctx: SearchContext): Promise<RawResult[]> {
+  async execute(ctx: SearchContext): Promise<ExploreResult[]> {
     if (!ctx.embedding) {
       throw new Error("VectorSearchStrategy requires an embedding in the context.");
     }
