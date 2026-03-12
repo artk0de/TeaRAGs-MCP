@@ -119,11 +119,12 @@ function makeFacade(
     facade: new ExploreFacade(
       qdrant,
       embeddings,
-      {} as any, // config
+      {} as any, // config (legacy, for searchCode)
       reranker,
       undefined, // registry
       statsCache,
-      essentialFields,
+      [], // payloadSignals
+      essentialFields, // essentialKeys
       driftMonitor,
     ),
     qdrant,

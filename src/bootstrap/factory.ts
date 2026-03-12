@@ -107,6 +107,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     reranker,
     registry,
     statsCache,
+    allPayloadSignalDescriptors,
     essentialTrajectoryFields,
     schemaDriftMonitor,
   );
