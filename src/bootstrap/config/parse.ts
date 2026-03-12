@@ -71,7 +71,6 @@ export function parseAppConfigZod(): {
     chunkOverlap: env("INGEST_CHUNK_OVERLAP", "CODE_CHUNK_OVERLAP"),
     enableAST: env("INGEST_ENABLE_AST", "CODE_ENABLE_AST"),
     enableHybrid: env("INGEST_ENABLE_HYBRID", "CODE_ENABLE_HYBRID"),
-    defaultSearchLimit: env("INGEST_DEFAULT_SEARCH_LIMIT", "CODE_SEARCH_LIMIT"),
     tune: ingestTuneInput,
   };
 

@@ -97,15 +97,23 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
           return formatMcpText(`No results found for query: "${rest.query}"`);
         }
 
-        // Format results with file references (presentation logic stays in MCP layer)
+        // Format ExploreResult payload → human-readable text (MCP layer responsibility)
         const formattedResults = response.results
-          .map(
-            (r, idx) =>
+          .map((r, idx) => {
+            const p = r.payload ?? {};
+            const file = typeof p.relativePath === "string" ? p.relativePath : "unknown";
+            const startLine = typeof p.startLine === "number" ? p.startLine : 0;
+            const endLine = typeof p.endLine === "number" ? p.endLine : 0;
+            const lang = typeof p.language === "string" ? p.language : "unknown";
+            const content = typeof p.content === "string" ? p.content : "";
+
+            return (
               `\n--- Result ${idx + 1} (score: ${r.score.toFixed(3)}) ---\n` +
-              `File: ${r.filePath}:${r.startLine}-${r.endLine}\n` +
-              `Language: ${r.language}\n\n` +
-              `${r.content}\n`,
-          )
+              `File: ${file}:${startLine}-${endLine}\n` +
+              `Language: ${lang}\n\n` +
+              `${content}\n`
+            );
+          })
           .join("\n");
 
         const text = `Found ${response.results.length} result(s):\n${formattedResults}`;

@@ -5,7 +5,7 @@
  *   resolveCollection, validateCollectionExists, ensureStats, embed query, checkDrift
  *
  * Business logic (DELEGATED to strategies):
- *   fetchLimit, postProcess, metaOnly, BM25 generation, scroll+rank, excludeDocumentation
+ *   fetchLimit, postProcess, metaOnly, BM25 generation, scroll+rank
  *
  * Cold-start: loads cached collection stats into reranker on first search.
  */
@@ -13,21 +13,17 @@
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
-import { ExploreModule } from "../explore/explore-module.js";
 import type { Reranker } from "../explore/reranker.js";
 import { createExploreStrategy, type BaseExploreStrategy, type ExploreContext } from "../explore/strategies/index.js";
 import type { SchemaDriftMonitor } from "../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../infra/stats-cache.js";
 import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
-import type { ExploreCodeConfig, SearchOptions } from "../types.js";
 import type {
   ExploreCodeRequest,
   ExploreResponse,
   HybridSearchRequest,
   RankChunksRequest,
-  SearchCodeResponse,
-  SearchCodeResult,
   SemanticSearchRequest,
   TypedFilterParams,
 } from "./app.js";
@@ -62,7 +58,6 @@ export class ExploreFacade {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
-    private readonly config: ExploreCodeConfig,
     private readonly reranker: Reranker,
     private readonly registry?: TrajectoryRegistry,
     private readonly statsCache?: StatsCache,
@@ -143,58 +138,25 @@ export class ExploreFacade {
     );
   }
 
-  /** Search code semantically via ExploreModule (search_code MCP tool). */
-  async searchCode(request: ExploreCodeRequest): Promise<SearchCodeResponse> {
+  /** Search code semantically (search_code MCP tool). */
+  async searchCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
     const absolutePath = await validatePath(request.path);
     const collectionName = resolveCollectionName(absolutePath);
-    await this.ensureStats(collectionName);
-
-    const { registry } = this;
-    const filterBuilder = registry
-      ? (params: Record<string, unknown>, level?: string) =>
-          registry.buildFilter(params, (level as "chunk" | "file") ?? "chunk") as Record<string, unknown> | undefined
-      : undefined;
-
-    const search = new ExploreModule(
-      this.qdrant,
-      this.embeddings,
-      this.config,
-      this.reranker,
-      collectionName,
-      filterBuilder,
+    const { embedding } = await this.embeddings.embed(request.query);
+    const filter = this.buildMergedFilter(request, request.filter);
+    return this.executeExplore(
+      this.vectorStrategy,
+      {
+        collectionName,
+        query: request.query,
+        embedding,
+        limit: request.limit ?? 5,
+        filter,
+        pathPattern: request.pathPattern,
+        rerank: request.rerank,
+      },
+      absolutePath,
     );
-
-    const options: SearchOptions = {
-      limit: request.limit,
-      fileTypes: request.fileTypes,
-      pathPattern: request.pathPattern,
-      documentationOnly: request.documentationOnly,
-      author: request.author,
-      modifiedAfter: request.modifiedAfter,
-      modifiedBefore: request.modifiedBefore,
-      minAgeDays: request.minAgeDays,
-      maxAgeDays: request.maxAgeDays,
-      minCommitCount: request.minCommitCount,
-      taskId: request.taskId,
-      rerank: request.rerank as SearchOptions["rerank"],
-    };
-
-    const rawResults = await search.searchCode(request.query, options);
-
-    const results: SearchCodeResult[] = rawResults.map((r) => ({
-      content: r.content,
-      filePath: r.filePath,
-      startLine: r.startLine,
-      endLine: r.endLine,
-      language: r.language,
-      score: r.score,
-      fileExtension: r.fileExtension,
-      metadata: r.metadata as Record<string, unknown> | undefined,
-    }));
-
-    const driftWarning = this.schemaDriftMonitor ? await this.schemaDriftMonitor.checkAndConsume(request.path) : null;
-
-    return { results, driftWarning };
   }
 
   // =========================================================================

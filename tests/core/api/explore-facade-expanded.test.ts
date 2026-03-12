@@ -7,25 +7,6 @@ import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 // Mocks
 // ---------------------------------------------------------------------------
 
-const searchCodeSpy = vi.fn().mockResolvedValue([
-  {
-    content: "fn test()",
-    filePath: "/project/a.ts",
-    startLine: 1,
-    endLine: 5,
-    language: "typescript",
-    score: 0.9,
-    fileExtension: ".ts",
-  },
-]);
-
-vi.mock("../../../src/core/explore/explore-module.js", () => ({
-  ExploreModule: class {
-    constructor(_q: any, _e: any, _c: any, _r: any, _col: string, _bf?: any) {}
-    searchCode = searchCodeSpy;
-  },
-}));
-
 vi.mock("../../../src/core/explore/post-process.js", () => ({
   computeFetchLimit: vi.fn((limit?: number, _pp?: string, _r?: unknown) => ({
     requestedLimit: limit || 5,
@@ -119,7 +100,6 @@ function makeFacade(
     facade: new ExploreFacade(
       qdrant,
       embeddings,
-      {} as any, // config (legacy, for searchCode)
       reranker,
       undefined, // registry
       statsCache,
@@ -464,61 +444,20 @@ describe("ExploreFacade — expanded methods", () => {
   // =========================================================================
 
   describe("searchCode", () => {
-    it("wraps searchCode and returns typed response", async () => {
-      const { facade } = makeFacade();
+    it("uses vector strategy and returns ExploreResponse", async () => {
+      const { facade, qdrant, embeddings } = makeFacade();
 
       const result = await facade.searchCode({
         path: "/tmp/test-project",
         query: "test query",
       });
 
-      expect(searchCodeSpy).toHaveBeenCalledWith("test query", expect.any(Object));
-      expect(result.results).toHaveLength(1);
-      expect(result.results[0]).toHaveProperty("content");
-      expect(result.results[0]).toHaveProperty("filePath");
+      expect(embeddings.embed).toHaveBeenCalledWith("test query");
+      expect(qdrant.search).toHaveBeenCalled();
+      expect(result.results).toHaveLength(2);
       expect(result.results[0]).toHaveProperty("score");
+      expect(result.results[0]).toHaveProperty("payload");
       expect(result.driftWarning).toBeNull();
-    });
-
-    it("maps CodeSearchResult fields to SearchCodeResult", async () => {
-      const { facade } = makeFacade();
-
-      const result = await facade.searchCode({
-        path: "/tmp/test-project",
-        query: "test",
-      });
-
-      const first = result.results[0];
-      expect(first.content).toBe("fn test()");
-      expect(first.filePath).toBe("/project/a.ts");
-      expect(first.startLine).toBe(1);
-      expect(first.endLine).toBe(5);
-      expect(first.language).toBe("typescript");
-      expect(first.score).toBe(0.9);
-      expect(first.fileExtension).toBe(".ts");
-    });
-
-    it("passes search options from request", async () => {
-      const { facade } = makeFacade();
-
-      await facade.searchCode({
-        path: "/tmp/test-project",
-        query: "test",
-        limit: 20,
-        fileTypes: ["ts"],
-        pathPattern: "src/**",
-        rerank: "recent",
-      });
-
-      expect(searchCodeSpy).toHaveBeenCalledWith(
-        "test",
-        expect.objectContaining({
-          limit: 20,
-          fileTypes: ["ts"],
-          pathPattern: "src/**",
-          rerank: "recent",
-        }),
-      );
     });
 
     it("returns drift warning when present", async () => {

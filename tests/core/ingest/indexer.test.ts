@@ -20,7 +20,6 @@ import {
   cleanupTempDir,
   createTempTestDir,
   createTestFile,
-  defaultExploreConfig,
   defaultTestConfig,
   defaultTrajectoryConfig,
   MockEmbeddingProvider,
@@ -73,7 +72,7 @@ describe("IngestFacade + ExploreFacade", () => {
     const reranker = new Reranker([...gitDerivedSignals, ...staticDerivedSignals], resolvedPresets);
     const registry = new TrajectoryRegistry();
     registry.register(new GitTrajectory());
-    explore = new ExploreFacade(qdrant as any, embeddings, defaultExploreConfig(), reranker, registry);
+    explore = new ExploreFacade(qdrant as any, embeddings, reranker, registry);
   });
 
   afterEach(async () => {

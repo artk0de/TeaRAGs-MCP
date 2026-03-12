@@ -6,13 +6,6 @@ import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock("../../../src/core/explore/explore-module.js", () => ({
-  ExploreModule: class {
-    constructor(_q: any, _e: any, _c: any, _r: any, _col: string, _bf?: any) {}
-    searchCode = vi.fn().mockResolvedValue([]);
-  },
-}));
-
 vi.mock("../../../src/core/explore/post-process.js", () => ({
   computeFetchLimit: vi.fn((limit?: number) => ({
     requestedLimit: limit || 5,
@@ -81,7 +74,6 @@ function makeFacade(overrides: { qdrant?: any; registry?: any } = {}) {
     facade: new ExploreFacade(
       qdrant,
       makeMockEmbeddings(),
-      { enableHybridSearch: false, defaultSearchLimit: 5 } as any,
       makeMockReranker(),
       overrides.registry ?? makeMockRegistry(),
       undefined,

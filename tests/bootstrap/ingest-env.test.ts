@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 const CONFIG_MAPPINGS: [string, string, string, string][] = [
   ["INGEST_CHUNK_SIZE", "CODE_CHUNK_SIZE", "2500", "chunkSize"],
   ["INGEST_CHUNK_OVERLAP", "CODE_CHUNK_OVERLAP", "300", "chunkOverlap"],
-  ["INGEST_DEFAULT_SEARCH_LIMIT", "CODE_SEARCH_LIMIT", "5", "defaultSearchLimit"],
 ];
 
 /** Boolean env var: CODE_ENABLE_HYBRID → INGEST_ENABLE_HYBRID (=== "true") */
@@ -74,7 +73,7 @@ describe("INGEST env var naming", () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect(({ ...config.ingestCode, ...config.exploreCode } as Record<string, unknown>)[configKey]).toBe(999);
+          expect((config.ingestCode as Record<string, unknown>)[configKey]).toBe(999);
         });
 
         it("should fall back to old name", async () => {
@@ -83,7 +82,7 @@ describe("INGEST env var naming", () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect(({ ...config.ingestCode, ...config.exploreCode } as Record<string, unknown>)[configKey]).toBe(888);
+          expect((config.ingestCode as Record<string, unknown>)[configKey]).toBe(888);
         });
 
         it("should prefer new name over old name", async () => {
@@ -93,16 +92,14 @@ describe("INGEST env var naming", () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect(({ ...config.ingestCode, ...config.exploreCode } as Record<string, unknown>)[configKey]).toBe(111);
+          expect((config.ingestCode as Record<string, unknown>)[configKey]).toBe(111);
         });
 
         it(`should default to ${defaultVal} when nothing set`, async () => {
           const { parseAppConfig } = await freshImport();
           const config = parseAppConfig();
 
-          expect(({ ...config.ingestCode, ...config.exploreCode } as Record<string, unknown>)[configKey]).toBe(
-            parseInt(defaultVal, 10),
-          );
+          expect((config.ingestCode as Record<string, unknown>)[configKey]).toBe(parseInt(defaultVal, 10));
         });
       });
     }
