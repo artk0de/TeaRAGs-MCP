@@ -9,21 +9,18 @@ import { filterResultsByGlob } from "../../adapters/qdrant/filters/index.js";
 import { scrollOrderedBy } from "../../adapters/qdrant/scroll.js";
 import type { RerankableResult } from "../../contracts/types/reranker.js";
 import { RankModule } from "../rank-module.js";
-import { BaseExploreStrategy } from "./types.js";
-import type { ExploreResult, SearchContext } from "./types.js";
+import { BaseExploreStrategy, type ExploreResult, type SearchContext } from "./types.js";
 
 export class ScrollRankStrategy extends BaseExploreStrategy {
   readonly type = "scroll-rank" as const;
   private readonly rankModule: RankModule;
 
-  constructor(
-    ...args: ConstructorParameters<typeof BaseExploreStrategy>
-  ) {
+  constructor(...args: ConstructorParameters<typeof BaseExploreStrategy>) {
     super(...args);
     this.rankModule = new RankModule(this.reranker, this.reranker.getDescriptors());
   }
 
-  protected applyDefaults(ctx: SearchContext): SearchContext {
+  protected override applyDefaults(ctx: SearchContext): SearchContext {
     const metaOnly = ctx.metaOnly !== false; // defaults to true for rank_chunks
     const effectiveOffset = ctx.offset || 0;
     const requestedLimit = ctx.limit || 10;
@@ -31,8 +28,8 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     const effectiveFilter = excludeDocumentation(ctx.filter);
 
     // Resolve preset → weights (Reranker is Information Expert)
-    let weights = ctx.weights;
-    let presetName = ctx.presetName;
+    let { weights } = ctx;
+    let { presetName } = ctx;
     if (!weights && ctx.rerank) {
       if (typeof ctx.rerank === "string") {
         const preset = this.reranker.getPreset(ctx.rerank, "rank_chunks");
@@ -46,7 +43,15 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       }
     }
 
-    return { ...ctx, limit: fetchLimit, filter: effectiveFilter, metaOnly, offset: effectiveOffset, weights, presetName };
+    return {
+      ...ctx,
+      limit: fetchLimit,
+      filter: effectiveFilter,
+      metaOnly,
+      offset: effectiveOffset,
+      weights,
+      presetName,
+    };
   }
 
   protected async executeExplore(ctx: SearchContext): Promise<ExploreResult[]> {
@@ -83,7 +88,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     }));
   }
 
-  protected postProcess(results: ExploreResult[], originalCtx: SearchContext): ExploreResult[] {
+  protected override postProcess(results: ExploreResult[], originalCtx: SearchContext): ExploreResult[] {
     let processed = results;
 
     if (originalCtx.pathPattern) {
