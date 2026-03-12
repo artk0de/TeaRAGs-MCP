@@ -76,6 +76,7 @@ export type {
   SearchResult,
   SemanticSearchRequest,
   SignalDescriptor,
+  TypedFilterParams,
 } from "../contracts/types/app.js";
 
 // Re-export domain types consumed by App methods

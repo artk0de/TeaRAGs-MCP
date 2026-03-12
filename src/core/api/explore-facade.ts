@@ -29,6 +29,7 @@ import type {
   SearchCodeResponse,
   SearchCodeResult,
   SemanticSearchRequest,
+  TypedFilterParams,
 } from "./app.js";
 
 // ---------------------------------------------------------------------------
@@ -84,6 +85,7 @@ export class ExploreFacade {
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
     const { collectionName, path } = this.resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
+    const filter = this.buildMergedFilter(request, request.filter);
     return this.executeExplore(
       this.vectorStrategy,
       {
@@ -91,7 +93,7 @@ export class ExploreFacade {
         query: request.query,
         embedding,
         limit: request.limit ?? 10,
-        filter: request.filter,
+        filter,
         pathPattern: request.pathPattern,
         rerank: request.rerank,
         metaOnly: request.metaOnly,
@@ -104,6 +106,7 @@ export class ExploreFacade {
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
     const { collectionName, path } = this.resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
+    const filter = this.buildMergedFilter(request, request.filter);
     return this.executeExplore(
       this.hybridStrategy,
       {
@@ -111,7 +114,7 @@ export class ExploreFacade {
         query: request.query,
         embedding,
         limit: request.limit ?? 10,
-        filter: request.filter,
+        filter,
         pathPattern: request.pathPattern,
         rerank: request.rerank,
         metaOnly: request.metaOnly,
@@ -123,6 +126,7 @@ export class ExploreFacade {
   /** Rank all chunks by rerank signals without vector search. */
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
     const { collectionName, path } = this.resolveCollection(request.collection, request.path);
+    const filter = this.buildMergedFilter(request, request.filter, request.level);
     return this.executeExplore(
       this.scrollRankStrategy,
       {
@@ -130,7 +134,7 @@ export class ExploreFacade {
         limit: request.limit ?? 10,
         offset: request.offset,
         level: request.level,
-        filter: request.filter,
+        filter,
         pathPattern: request.pathPattern,
         rerank: request.rerank,
         metaOnly: request.metaOnly,
@@ -253,6 +257,37 @@ export class ExploreFacade {
         // Stats loading failure should not prevent search
       }
     }
+  }
+
+  /**
+   * Merge typed filter params (via registry) with raw Qdrant filter.
+   * Typed must/must_not are appended to raw filter's arrays.
+   * Raw filter's should is preserved untouched.
+   */
+  private buildMergedFilter(
+    typedParams: TypedFilterParams,
+    rawFilter?: Record<string, unknown>,
+    level: "chunk" | "file" = "chunk",
+  ): Record<string, unknown> | undefined {
+    const typedFilter = this.registry?.buildFilter(typedParams as Record<string, unknown>, level);
+    if (!typedFilter && !rawFilter) return undefined;
+    if (!typedFilter) return rawFilter;
+    if (!rawFilter) return typedFilter as Record<string, unknown>;
+
+    const merged: Record<string, unknown> = { ...rawFilter };
+    const rawMust = Array.isArray(rawFilter.must) ? (rawFilter.must as unknown[]) : [];
+    const typedMust = Array.isArray(typedFilter.must) ? (typedFilter.must as unknown[]) : [];
+    if (rawMust.length > 0 || typedMust.length > 0) {
+      merged.must = [...rawMust, ...typedMust];
+    }
+
+    const rawMustNot = Array.isArray(rawFilter.must_not) ? (rawFilter.must_not as unknown[]) : [];
+    const typedMustNot = Array.isArray(typedFilter.must_not) ? (typedFilter.must_not as unknown[]) : [];
+    if (rawMustNot.length > 0 || typedMustNot.length > 0) {
+      merged.must_not = [...rawMustNot, ...typedMustNot];
+    }
+
+    return merged;
   }
 
   private async checkDrift(path?: string, collectionName?: string): Promise<string | null> {
