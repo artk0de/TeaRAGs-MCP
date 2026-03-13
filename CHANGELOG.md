@@ -1,3 +1,14 @@
+## <small>1.0.1 (2026-03-13)</small>
+
+- ci(docs): make deploy-docs a self-contained job with own checkout
+  ([7424f9c](https://github.com/artk0de/TeaRAGs-MCP/commit/7424f9c))
+- docs(dx): add path shortcuts, deep navigation rule, and add-language-hook
+  skill ([1ff2a0b](https://github.com/artk0de/TeaRAGs-MCP/commit/1ff2a0b))
+- docs(dx): add skills for signals/presets and rules for wiring/testing
+  ([25845cf](https://github.com/artk0de/TeaRAGs-MCP/commit/25845cf))
+- refactor(dx): add domain barrel files and barrel-files rule
+  ([b869152](https://github.com/artk0de/TeaRAGs-MCP/commit/b869152))
+
 ## 1.0.0 (2026-03-13)
 
 - chore(ci): reduce CI output to errors and warnings only
