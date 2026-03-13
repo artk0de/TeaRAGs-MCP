@@ -121,16 +121,16 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     statsCache,
     allPayloadSignalDescriptors.map((d) => d.key),
   );
-  const explore = new ExploreFacade(
+  const explore = new ExploreFacade({
     qdrant,
     embeddings,
     reranker,
     registry,
     statsCache,
-    allPayloadSignalDescriptors,
-    essentialTrajectoryFields,
     schemaDriftMonitor,
-  );
+    payloadSignals: allPayloadSignalDescriptors,
+    essentialKeys: essentialTrajectoryFields,
+  });
   const app = createApp({
     qdrant,
     embeddings,

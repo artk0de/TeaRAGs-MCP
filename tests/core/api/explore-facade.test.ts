@@ -46,7 +46,15 @@ function makeExploreFacade(
       }
     : undefined;
 
-  const facade = new ExploreFacade(qdrant, embeddings, reranker, undefined, statsCache as any);
+  const registry = {
+    buildFilter: vi.fn().mockReturnValue(undefined),
+    buildMergedFilter: vi.fn().mockReturnValue(undefined),
+    getAllFilters: vi.fn().mockReturnValue([]),
+    getAllPayloadSignalDescriptors: vi.fn().mockReturnValue([]),
+    getEssentialPayloadKeys: vi.fn().mockReturnValue([]),
+  } as any;
+
+  const facade = new ExploreFacade({ qdrant, embeddings, reranker, registry, statsCache: statsCache as any });
 
   return { facade, qdrant, reranker, statsCache };
 }

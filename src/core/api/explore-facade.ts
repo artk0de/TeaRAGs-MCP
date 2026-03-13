@@ -2,7 +2,13 @@
  * ExploreFacade — thin orchestrator for code exploration and search.
  *
  * Facade responsibilities (KEPT here):
- *   resolveCollection, validateCollectionExists, ensureStats, embed query, checkDrift
+ *   validateCollectionExists, ensureStats, embed query, checkDrift
+ *
+ * Delegated to infra:
+ *   resolveCollection (infra/collection-name)
+ *
+ * Delegated to registry:
+ *   buildMergedFilter (TrajectoryRegistry)
  *
  * Business logic (DELEGATED to strategies):
  *   fetchLimit, postProcess, metaOnly, BM25 generation, scroll+rank
@@ -15,7 +21,12 @@ import type { QdrantManager } from "../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
 import type { Reranker } from "../explore/reranker.js";
 import { createExploreStrategy, type BaseExploreStrategy, type ExploreContext } from "../explore/strategies/index.js";
-import { CollectionRefError, resolveCollectionName, validatePath } from "../infra/collection-name.js";
+import {
+  CollectionRefError,
+  resolveCollection,
+  resolveCollectionName,
+  validatePath,
+} from "../infra/collection-name.js";
 import type { SchemaDriftMonitor } from "../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../infra/stats-cache.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
@@ -25,7 +36,6 @@ import type {
   HybridSearchRequest,
   RankChunksRequest,
   SemanticSearchRequest,
-  TypedFilterParams,
 } from "./app.js";
 
 // ---------------------------------------------------------------------------
@@ -40,29 +50,47 @@ class CollectionNotFoundError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// ExploreFacadeDeps
+// ---------------------------------------------------------------------------
+
+export interface ExploreFacadeDeps {
+  qdrant: QdrantManager;
+  embeddings: EmbeddingProvider;
+  reranker: Reranker;
+  registry: TrajectoryRegistry;
+  statsCache?: StatsCache;
+  schemaDriftMonitor?: SchemaDriftMonitor;
+  payloadSignals?: PayloadSignalDescriptor[];
+  essentialKeys?: string[];
+}
+
+// ---------------------------------------------------------------------------
 // ExploreFacade
 // ---------------------------------------------------------------------------
 
 export class ExploreFacade {
+  private readonly qdrant: QdrantManager;
+  private readonly embeddings: EmbeddingProvider;
+  private readonly reranker: Reranker;
+  private readonly registry: TrajectoryRegistry;
+  private readonly statsCache?: StatsCache;
+  private readonly schemaDriftMonitor?: SchemaDriftMonitor;
   private readonly vectorStrategy: BaseExploreStrategy;
   private readonly hybridStrategy: BaseExploreStrategy;
   private readonly scrollRankStrategy: BaseExploreStrategy;
 
-  constructor(
-    private readonly qdrant: QdrantManager,
-    private readonly embeddings: EmbeddingProvider,
-    private readonly reranker: Reranker,
-    private readonly registry?: TrajectoryRegistry,
-    private readonly statsCache?: StatsCache,
-    payloadSignals?: PayloadSignalDescriptor[],
-    essentialKeys?: string[],
-    private readonly schemaDriftMonitor?: SchemaDriftMonitor,
-  ) {
-    const signals = payloadSignals ?? [];
-    const keys = essentialKeys ?? [];
-    this.vectorStrategy = createExploreStrategy("vector", qdrant, reranker, signals, keys);
-    this.hybridStrategy = createExploreStrategy("hybrid", qdrant, reranker, signals, keys);
-    this.scrollRankStrategy = createExploreStrategy("scroll-rank", qdrant, reranker, signals, keys);
+  constructor(deps: ExploreFacadeDeps) {
+    this.qdrant = deps.qdrant;
+    this.embeddings = deps.embeddings;
+    this.reranker = deps.reranker;
+    this.registry = deps.registry;
+    this.statsCache = deps.statsCache;
+    this.schemaDriftMonitor = deps.schemaDriftMonitor;
+    const signals = deps.payloadSignals ?? [];
+    const keys = deps.essentialKeys ?? [];
+    this.vectorStrategy = createExploreStrategy("vector", deps.qdrant, deps.reranker, signals, keys);
+    this.hybridStrategy = createExploreStrategy("hybrid", deps.qdrant, deps.reranker, signals, keys);
+    this.scrollRankStrategy = createExploreStrategy("scroll-rank", deps.qdrant, deps.reranker, signals, keys);
   }
 
   // =========================================================================
@@ -71,9 +99,9 @@ export class ExploreFacade {
 
   /** Semantic (dense vector) search over a collection. */
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = this.resolveCollection(request.collection, request.path);
+    const { collectionName, path } = resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
-    const filter = this.buildMergedFilter(request, request.filter);
+    const filter = this.registry.buildMergedFilter(request as unknown as Record<string, unknown>, request.filter);
     return this.executeExplore(
       this.vectorStrategy,
       {
@@ -92,9 +120,9 @@ export class ExploreFacade {
 
   /** Hybrid (dense + BM25 sparse) search over a collection. */
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = this.resolveCollection(request.collection, request.path);
+    const { collectionName, path } = resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
-    const filter = this.buildMergedFilter(request, request.filter);
+    const filter = this.registry.buildMergedFilter(request as unknown as Record<string, unknown>, request.filter);
     return this.executeExplore(
       this.hybridStrategy,
       {
@@ -113,8 +141,12 @@ export class ExploreFacade {
 
   /** Rank all chunks by rerank signals without vector search. */
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = this.resolveCollection(request.collection, request.path);
-    const filter = this.buildMergedFilter(request, request.filter, request.level);
+    const { collectionName, path } = resolveCollection(request.collection, request.path);
+    const filter = this.registry.buildMergedFilter(
+      request as unknown as Record<string, unknown>,
+      request.filter,
+      request.level,
+    );
     return this.executeExplore(
       this.scrollRankStrategy,
       {
@@ -136,7 +168,7 @@ export class ExploreFacade {
     const absolutePath = await validatePath(request.path);
     const collectionName = resolveCollectionName(absolutePath);
     const { embedding } = await this.embeddings.embed(request.query);
-    const filter = this.buildMergedFilter(request, request.filter);
+    const filter = this.registry.buildMergedFilter(request as unknown as Record<string, unknown>, request.filter);
     return this.executeExplore(
       this.vectorStrategy,
       {
@@ -177,14 +209,6 @@ export class ExploreFacade {
     };
   }
 
-  private resolveCollection(collection?: string, path?: string): { collectionName: string; path?: string } {
-    if (!collection && !path) {
-      throw new CollectionRefError();
-    }
-    const collectionName = collection || resolveCollectionName(path as string);
-    return { collectionName, path };
-  }
-
   private async validateCollectionExists(collectionName: string, path?: string): Promise<void> {
     const exists = await this.qdrant.collectionExists(collectionName);
     if (!exists) {
@@ -203,37 +227,6 @@ export class ExploreFacade {
         // Stats loading failure should not prevent search
       }
     }
-  }
-
-  /**
-   * Merge typed filter params (via registry) with raw Qdrant filter.
-   * Typed must/must_not are appended to raw filter's arrays.
-   * Raw filter's should is preserved untouched.
-   */
-  private buildMergedFilter(
-    typedParams: TypedFilterParams,
-    rawFilter?: Record<string, unknown>,
-    level: "chunk" | "file" = "chunk",
-  ): Record<string, unknown> | undefined {
-    const typedFilter = this.registry?.buildFilter(typedParams as Record<string, unknown>, level);
-    if (!typedFilter && !rawFilter) return undefined;
-    if (!typedFilter) return rawFilter;
-    if (!rawFilter) return typedFilter as Record<string, unknown>;
-
-    const merged: Record<string, unknown> = { ...rawFilter };
-    const rawMust = Array.isArray(rawFilter.must) ? (rawFilter.must as unknown[]) : [];
-    const typedMust = Array.isArray(typedFilter.must) ? (typedFilter.must as unknown[]) : [];
-    if (rawMust.length > 0 || typedMust.length > 0) {
-      merged.must = [...rawMust, ...typedMust];
-    }
-
-    const rawMustNot = Array.isArray(rawFilter.must_not) ? (rawFilter.must_not as unknown[]) : [];
-    const typedMustNot = Array.isArray(typedFilter.must_not) ? (typedFilter.must_not as unknown[]) : [];
-    if (rawMustNot.length > 0 || typedMustNot.length > 0) {
-      merged.must_not = [...rawMustNot, ...typedMustNot];
-    }
-
-    return merged;
   }
 
   private async checkDrift(path?: string, collectionName?: string): Promise<string | null> {
