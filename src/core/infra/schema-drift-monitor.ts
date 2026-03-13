@@ -5,7 +5,7 @@
  * Lazy: drift check triggers on first tool call that provides a collection path.
  */
 
-import { resolveCollectionName, validatePath } from "../ingest/collection.js";
+import { resolveCollectionName, validatePath } from "./collection-name.js";
 import { StatsCache, type SchemaDrift } from "./stats-cache.js";
 
 export class SchemaDriftMonitor {

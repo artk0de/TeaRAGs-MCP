@@ -15,9 +15,9 @@ import type { QdrantManager } from "../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
 import type { Reranker } from "../explore/reranker.js";
 import { createExploreStrategy, type BaseExploreStrategy, type ExploreContext } from "../explore/strategies/index.js";
+import { CollectionRefError, resolveCollectionName, validatePath } from "../infra/collection-name.js";
 import type { SchemaDriftMonitor } from "../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../infra/stats-cache.js";
-import { resolveCollectionName, validatePath } from "../ingest/collection.js";
 import type { TrajectoryRegistry } from "../trajectory/index.js";
 import type {
   ExploreCodeRequest,
@@ -31,13 +31,6 @@ import type {
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------
-
-class CollectionRefError extends Error {
-  constructor() {
-    super("Either 'collection' or 'path' parameter is required.");
-    this.name = "CollectionRefError";
-  }
-}
 
 class CollectionNotFoundError extends Error {
   constructor(collectionName: string, path?: string) {
