@@ -113,7 +113,7 @@ describe("SchemaDriftMonitor", () => {
       const cachedKeys = ["git.file.commitCount"];
       const currentKeys = ["git.file.commitCount", "git.file.ageDays"];
       // Save under the collection name that resolveCollectionName would produce
-      const { resolveCollectionName, validatePath } = await import("../../../src/core/ingest/collection.js");
+      const { resolveCollectionName, validatePath } = await import("../../../src/core/infra/collection-name.js");
       const absPath = await validatePath("/tmp/test-project");
       const collName = resolveCollectionName(absPath);
       cache.save(collName, SAMPLE_STATS, cachedKeys);

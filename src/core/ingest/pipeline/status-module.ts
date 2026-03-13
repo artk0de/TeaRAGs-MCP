@@ -6,8 +6,8 @@
 
 import { snapshotsDir } from "../../../bootstrap/config/paths.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
 import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../../types.js";
-import { resolveCollectionName, validatePath } from "../collection.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 
