@@ -1,3 +1,5 @@
+import { realpath } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../src/core/infra/collection-name.js";
@@ -24,8 +26,9 @@ describe("collection-name utilities", () => {
 
   describe("validatePath", () => {
     it("resolves existing path", async () => {
+      const expected = await realpath("/tmp");
       const result = await validatePath("/tmp");
-      expect(result).toBe("/private/tmp"); // macOS realpath
+      expect(result).toBe(expected);
     });
 
     it("returns absolute path for non-existent path", async () => {
