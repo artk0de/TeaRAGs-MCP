@@ -37,7 +37,7 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint -- --quiet
 
       - name: Type check
         run: npm run type-check
@@ -73,4 +73,3 @@ jobs:
           files: ./coverage/lcov.info
           flags: unittests
           fail_ci_if_error: true
-          verbose: true
