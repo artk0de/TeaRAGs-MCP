@@ -7,16 +7,12 @@
  * Uses WebGPU device (Metal on macOS, D3D12 on Windows, Vulkan on Linux).
  */
 
-import { parentPort } from "node:worker_threads";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { parentPort } from "node:worker_threads";
 
+import { DEFAULT_GPU_BATCH_SIZE, PROBE_BATCH_SIZES, PROBE_PRESSURE_THRESHOLD } from "./constants.js";
 import { detectDevice } from "./device.js";
-import {
-  DEFAULT_GPU_BATCH_SIZE,
-  PROBE_BATCH_SIZES,
-  PROBE_PRESSURE_THRESHOLD,
-} from "./constants.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
 
 // Sequential lock: ensures only one embed runs at a time on GPU

@@ -1,5 +1,9 @@
-import { describe, test, expect } from "vitest";
-import { getModelDimensions, stripQuantizationSuffix } from "../../../../../src/core/adapters/embeddings/utils/model-dimensions.js";
+import { describe, expect, test } from "vitest";
+
+import {
+  getModelDimensions,
+  stripQuantizationSuffix,
+} from "../../../../../src/core/adapters/embeddings/utils/model-dimensions.js";
 
 describe("stripQuantizationSuffix", () => {
   test("strips -fp16 suffix", () => {

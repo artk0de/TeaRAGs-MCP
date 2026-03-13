@@ -1,19 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { existsSync, writeFileSync } from "node:fs";
+import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
-import { existsSync, writeFileSync } from "node:fs";
-import { EventEmitter } from "node:events";
-import { createServer, type Server } from "node:net";
 
-import { OnnxDaemon } from "../../../../src/core/adapters/embeddings/onnx/daemon.js";
-import type { WorkerRequest, WorkerResponse } from "../../../../src/core/adapters/embeddings/onnx/worker-types.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import {
   DEFAULT_ONNX_DIMENSIONS,
   DEFAULT_ONNX_MODEL,
   OnnxEmbeddings,
 } from "../../../../src/core/adapters/embeddings/onnx.js";
-import type { Socket } from "node:net";
+import { OnnxDaemon } from "../../../../src/core/adapters/embeddings/onnx/daemon.js";
+import type { WorkerRequest, WorkerResponse } from "../../../../src/core/adapters/embeddings/onnx/worker-types.js";
 
 // ---------------------------------------------------------------------------
 // Mock worker factory — same as daemon.test.ts
@@ -142,9 +142,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
         undefined, // pidFile
         500, // spawnTimeoutMs — short for test
       );
-      await expect(badProvider.embed("test")).rejects.toThrow(
-        /Timed out waiting for ONNX daemon to start/,
-      );
+      await expect(badProvider.embed("test")).rejects.toThrow(/Timed out waiting for ONNX daemon to start/);
     }, 5_000);
 
     it("should propagate daemon error responses", async () => {
@@ -200,7 +198,11 @@ describe("OnnxEmbeddings (daemon client)", () => {
             });
           } else if (msg.type === "embed") {
             setImmediate(() => {
-              this.emit("message", { type: "log", level: "error", message: "[ONNX] Processing batch..." } satisfies WorkerResponse);
+              this.emit("message", {
+                type: "log",
+                level: "error",
+                message: "[ONNX] Processing batch...",
+              } satisfies WorkerResponse);
               // Small delay then result
               setTimeout(() => {
                 this.emit("message", {
@@ -333,13 +335,17 @@ describe("OnnxEmbeddings (daemon client)", () => {
       await provider.embed("init");
 
       // Manually inject a pending request
-      const pendingMap = (provider as unknown as {
-        pending: Map<number, { resolve: (v: number[][]) => void; reject: (e: Error) => void }>;
-      }).pending;
+      const pendingMap = (
+        provider as unknown as {
+          pending: Map<number, { resolve: (v: number[][]) => void; reject: (e: Error) => void }>;
+        }
+      ).pending;
 
       const rejection = new Promise<void>((resolve, reject) => {
         pendingMap.set(999, {
-          resolve: () => { reject(new Error("Should not resolve")); },
+          resolve: () => {
+            reject(new Error("Should not resolve"));
+          },
           reject: (err) => {
             expect(err.message).toMatch(/Socket closed/);
             resolve();
@@ -385,14 +391,14 @@ describe("OnnxEmbeddings (daemon client)", () => {
       const internalSocket = (provider as unknown as { socket: Socket }).socket;
 
       // Send pong — should be silently consumed
-      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "pong" })  }\n`));
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "pong" })}\n`));
 
       // Send bye — should be silently consumed
-      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "bye" })  }\n`));
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "bye" })}\n`));
 
       // Send log — should call console.error
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "log", message: "test-log" })  }\n`));
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "log", message: "test-log" })}\n`));
 
       await new Promise((r) => setTimeout(r, 50));
       expect(consoleSpy).toHaveBeenCalledWith("test-log");
@@ -402,13 +408,17 @@ describe("OnnxEmbeddings (daemon client)", () => {
     it("should handle error response by rejecting all pending", async () => {
       await provider.embed("test");
 
-      const pendingMap = (provider as unknown as {
-        pending: Map<number, { resolve: (v: number[][]) => void; reject: (e: Error) => void }>;
-      }).pending;
+      const pendingMap = (
+        provider as unknown as {
+          pending: Map<number, { resolve: (v: number[][]) => void; reject: (e: Error) => void }>;
+        }
+      ).pending;
 
       const rejection = new Promise<void>((resolve, reject) => {
         pendingMap.set(888, {
-          resolve: () => { reject(new Error("Should not resolve")); },
+          resolve: () => {
+            reject(new Error("Should not resolve"));
+          },
           reject: (err) => {
             expect(err.message).toBe("Daemon error");
             resolve();
@@ -417,7 +427,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
       });
 
       const internalSocket = (provider as unknown as { socket: Socket }).socket;
-      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "error", message: "Daemon error" })  }\n`));
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "error", message: "Daemon error" })}\n`));
 
       await rejection;
     });
@@ -427,7 +437,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
 
       const internalSocket = (provider as unknown as { socket: Socket }).socket;
       // Send result with id that has no pending handler — should not throw
-      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "result", id: 77777, embeddings: [[0]] })  }\n`));
+      internalSocket.emit("data", Buffer.from(`${JSON.stringify({ type: "result", id: 77777, embeddings: [[0]] })}\n`));
 
       // If we get here without error, the test passes
       await new Promise((r) => setTimeout(r, 50));
@@ -439,7 +449,8 @@ describe("OnnxEmbeddings (daemon client)", () => {
       await provider.embed("test");
 
       // Verify heartbeat interval exists and was unref'd
-      const hb = (provider as unknown as { heartbeatInterval: ReturnType<typeof setInterval> | null }).heartbeatInterval;
+      const hb = (provider as unknown as { heartbeatInterval: ReturnType<typeof setInterval> | null })
+        .heartbeatInterval;
       expect(hb).not.toBeNull();
     });
   });
@@ -513,7 +524,9 @@ describe("OnnxEmbeddings (raw server edge cases)", () => {
   afterEach(async () => {
     if (server) {
       await new Promise<void>((resolve) => {
-        server.close(() => { resolve(); });
+        server.close(() => {
+          resolve();
+        });
       });
     }
   });
@@ -544,7 +557,7 @@ describe("OnnxEmbeddings (raw server edge cases)", () => {
           if (!line) continue;
           const msg = JSON.parse(line);
           if (msg.type === "connect") {
-            socket.write(`${JSON.stringify({ type: "connected", model: msg.model, clients: 1 })  }\n`);
+            socket.write(`${JSON.stringify({ type: "connected", model: msg.model, clients: 1 })}\n`);
             // After handshake, close socket after short delay
             setTimeout(() => {
               socket.end();
@@ -578,10 +591,10 @@ describe("OnnxEmbeddings (raw server edge cases)", () => {
           if (msg.type === "connect") {
             // Send invalid JSON first, then valid connected response
             socket.write("not-valid-json\n");
-            socket.write(`${JSON.stringify({ type: "connected", model: msg.model, clients: 1 })  }\n`);
+            socket.write(`${JSON.stringify({ type: "connected", model: msg.model, clients: 1 })}\n`);
           } else if (msg.type === "embed") {
             socket.write(
-              `${JSON.stringify({ type: "result", id: msg.id, embeddings: msg.texts.map(() => [1, 2, 3]) })  }\n`,
+              `${JSON.stringify({ type: "result", id: msg.id, embeddings: msg.texts.map(() => [1, 2, 3]) })}\n`,
             );
           }
         }

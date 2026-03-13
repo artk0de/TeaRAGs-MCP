@@ -1,5 +1,6 @@
 // src/tools/formatters/enrichment.test.ts
 import { describe, expect, it, vi } from "vitest";
+
 import { formatEnrichmentStatus } from "../../../../src/mcp/tools/formatters/enrichment.js";
 
 describe("formatEnrichmentStatus", () => {

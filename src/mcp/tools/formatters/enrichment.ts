@@ -24,10 +24,7 @@ export async function formatEnrichmentStatus(
   return message;
 }
 
-async function formatBackgroundEnrichment(
-  getIndexStatus: GetIndexStatusFn | undefined,
-  path: string,
-): Promise<string> {
+async function formatBackgroundEnrichment(getIndexStatus: GetIndexStatusFn | undefined, path: string): Promise<string> {
   if (!getIndexStatus) {
     return "\n\n[Git enrichment is running in background. Use get_index_status to track progress.]";
   }

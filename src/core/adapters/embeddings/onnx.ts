@@ -1,18 +1,13 @@
-import { createConnection, type Socket } from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { createConnection, type Socket } from "node:net";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
-import { getModelDimensions } from "./utils/model-dimensions.js";
+import { parseLine, serialize, type DaemonRequest, type DaemonResponse } from "./onnx/daemon-types.js";
 import { LineSplitter } from "./onnx/line-splitter.js";
-import {
-  serialize,
-  parseLine,
-  type DaemonRequest,
-  type DaemonResponse,
-} from "./onnx/daemon-types.js";
+import { getModelDimensions } from "./utils/model-dimensions.js";
 
 export const DEFAULT_ONNX_MODEL = "jinaai/jina-embeddings-v2-base-code-fp16";
 export const DEFAULT_ONNX_DIMENSIONS = 768;
@@ -92,11 +87,10 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private async spawnDaemon(): Promise<void> {
     const daemonPath = join(dirname(fileURLToPath(import.meta.url)), "onnx", "daemon.js");
 
-    const child: ChildProcess = spawn(
-      process.execPath,
-      [daemonPath, this.socketPath, this.pidFile ?? ""],
-      { detached: true, stdio: "ignore" },
-    );
+    const child: ChildProcess = spawn(process.execPath, [daemonPath, this.socketPath, this.pidFile ?? ""], {
+      detached: true,
+      stdio: "ignore",
+    });
     child.unref();
 
     // Poll for socket file to appear
@@ -110,9 +104,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
       await new Promise((r) => setTimeout(r, pollMs));
     }
 
-    throw new Error(
-      `Timed out waiting for ONNX daemon to start (socket: ${this.socketPath})`,
-    );
+    throw new Error(`Timed out waiting for ONNX daemon to start (socket: ${this.socketPath})`);
   }
 
   private async connectToDaemon(): Promise<void> {
@@ -147,7 +139,9 @@ export class OnnxEmbeddings implements EmbeddingProvider {
         this.rejectAllPending(new Error("Socket closed"));
       });
 
-      socket.on("data", (data) => { splitter.feed(data.toString()); });
+      socket.on("data", (data) => {
+        splitter.feed(data.toString());
+      });
 
       // Wait for "connected" response after sending "connect"
       let handshakeDone = false;
@@ -348,7 +342,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
       return;
     }
 
-    const {socket} = this;
+    const { socket } = this;
 
     try {
       await new Promise<void>((resolve) => {

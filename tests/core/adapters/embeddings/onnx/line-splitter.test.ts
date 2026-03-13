@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { LineSplitter } from "../../../../../src/core/adapters/embeddings/onnx/line-splitter.js";
 
 describe("LineSplitter", () => {

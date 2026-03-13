@@ -6,18 +6,18 @@
  * tracks clients with heartbeat, and shuts down after idle timeout.
  */
 
-import { createServer, type Server, type Socket } from "node:net";
-import { Worker } from "node:worker_threads";
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { EventEmitter } from "node:events";
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { createServer, type Server, type Socket } from "node:net";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 
-import { LineSplitter } from "./line-splitter.js";
-import { serialize, parseLine, type DaemonRequest, type DaemonResponse } from "./daemon-types.js";
-import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
-import { DEFAULT_GPU_BATCH_SIZE } from "./constants.js";
 import { BatchSizeController } from "./batch-size-controller.js";
+import { DEFAULT_GPU_BATCH_SIZE } from "./constants.js";
+import { parseLine, serialize, type DaemonRequest, type DaemonResponse } from "./daemon-types.js";
+import { LineSplitter } from "./line-splitter.js";
+import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,12 +94,16 @@ export class OnnxDaemon {
       unlinkSync(this.config.socketPath);
     }
 
-    this.server = createServer((socket) => { this.handleConnection(socket); });
+    this.server = createServer((socket) => {
+      this.handleConnection(socket);
+    });
 
     const { server } = this;
     await new Promise<void>((resolve, reject) => {
       server.on("error", reject);
-      server.listen(this.config.socketPath, () => { resolve(); });
+      server.listen(this.config.socketPath, () => {
+        resolve();
+      });
     });
 
     // Write PID file
@@ -138,7 +142,9 @@ export class OnnxDaemon {
     if (this.server) {
       const { server: srv } = this;
       await new Promise<void>((resolve) => {
-        srv.close(() => { resolve(); });
+        srv.close(() => {
+          resolve();
+        });
       });
       this.server = null;
     }
@@ -168,7 +174,9 @@ export class OnnxDaemon {
       }
     });
 
-    socket.on("data", (data) => { splitter.feed(data.toString()); });
+    socket.on("data", (data) => {
+      splitter.feed(data.toString());
+    });
 
     socket.on("close", () => {
       this.handleClientDisconnect(socket, state);
@@ -295,11 +303,7 @@ export class OnnxDaemon {
   // -------------------------------------------------------------------------
 
   /** Send embed request to worker and wait for response */
-  private async embedViaWorker(
-    worker: WorkerLike,
-    id: number,
-    texts: string[],
-  ): Promise<WorkerResponse> {
+  private async embedViaWorker(worker: WorkerLike, id: number, texts: string[]): Promise<WorkerResponse> {
     return new Promise<WorkerResponse>((resolve) => {
       this.pendingEmbeds.set(id, resolve);
       worker.postMessage({ type: "embed", id, texts });
@@ -391,7 +395,9 @@ export class OnnxDaemon {
       case "calibrated": {
         this.calibratedBatchSize = msg.batchSize;
         this.batchController = new BatchSizeController(msg.batchSize);
-        console.error(`[OnnxDaemon] Calibrated GPU batch size: ${msg.batchSize}, recommended pipeline: ${this.batchController.recommendedPipelineBatchSize()}`);
+        console.error(
+          `[OnnxDaemon] Calibrated GPU batch size: ${msg.batchSize}, recommended pipeline: ${this.batchController.recommendedPipelineBatchSize()}`,
+        );
         break;
       }
 

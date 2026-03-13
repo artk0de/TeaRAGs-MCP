@@ -1,6 +1,6 @@
 import { existsSync, renameSync } from "node:fs";
-import { join } from "node:path";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 const OLD_DIR_NAME = ".tea-rags-mcp";
 const NEW_DIR_NAME = ".tea-rags";

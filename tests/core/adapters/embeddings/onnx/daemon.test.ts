@@ -1,24 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createConnection } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-
-import { OnnxDaemon } from "../../../../../src/core/adapters/embeddings/onnx/daemon.js";
-import { LineSplitter } from "../../../../../src/core/adapters/embeddings/onnx/line-splitter.js";
-import {
-  serialize,
-  parseLine,
-  type DaemonRequest,
-  type DaemonResponse,
-} from "../../../../../src/core/adapters/embeddings/onnx/daemon-types.js";
-
 // ---------------------------------------------------------------------------
 // Mock worker factory — simulates worker thread via EventEmitter
 // ---------------------------------------------------------------------------
 
 import { EventEmitter } from "node:events";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createConnection } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  parseLine,
+  serialize,
+  type DaemonRequest,
+  type DaemonResponse,
+} from "../../../../../src/core/adapters/embeddings/onnx/daemon-types.js";
+import { OnnxDaemon } from "../../../../../src/core/adapters/embeddings/onnx/daemon.js";
+import { LineSplitter } from "../../../../../src/core/adapters/embeddings/onnx/line-splitter.js";
 import type { WorkerRequest, WorkerResponse } from "../../../../../src/core/adapters/embeddings/onnx/worker-types.js";
 
 class MockWorker extends EventEmitter {
@@ -71,7 +71,11 @@ async function connectAndSend(
     const splitter = new LineSplitter();
     const timeout = setTimeout(() => {
       client.destroy();
-      reject(new Error(`Timed out waiting for ${expectedResponses} responses, got ${responses.length}: ${JSON.stringify(responses)}`));
+      reject(
+        new Error(
+          `Timed out waiting for ${expectedResponses} responses, got ${responses.length}: ${JSON.stringify(responses)}`,
+        ),
+      );
     }, 5000);
 
     splitter.onLine((line) => {
@@ -84,7 +88,9 @@ async function connectAndSend(
       }
     });
 
-    client.on("data", (data) => { splitter.feed(data.toString()); });
+    client.on("data", (data) => {
+      splitter.feed(data.toString());
+    });
     client.on("error", reject);
     client.on("connect", () => {
       for (const msg of messages) {
@@ -115,7 +121,9 @@ function createPersistentClient(socketPath: string) {
     }
   });
 
-  client.on("data", (data) => { splitter.feed(data.toString()); });
+  client.on("data", (data) => {
+    splitter.feed(data.toString());
+  });
 
   async function waitForResponse(): Promise<DaemonResponse> {
     if (responseQueue.length > 0) {
@@ -232,7 +240,10 @@ describe("OnnxDaemon", () => {
     expect(embedResp).toMatchObject({
       type: "result",
       id: 1,
-      embeddings: [[1, 2, 3], [1, 2, 3]],
+      embeddings: [
+        [1, 2, 3],
+        [1, 2, 3],
+      ],
     });
 
     await client.close();
@@ -455,11 +466,7 @@ describe("OnnxDaemon", () => {
 
     await daemon.start();
 
-    const responses = await connectAndSend(
-      socketPath,
-      [{ type: "embed", id: 1, texts: ["hello"] }],
-      1,
-    );
+    const responses = await connectAndSend(socketPath, [{ type: "embed", id: 1, texts: ["hello"] }], 1);
     expect(responses[0]).toMatchObject({
       type: "error",
       message: expect.stringContaining("not connected"),
@@ -674,14 +681,21 @@ describe("OnnxDaemon", () => {
         } else if (msg.type === "embed") {
           // Emit log first, then result
           setImmediate(() => {
-            this.emit("message", { type: "log", level: "info", message: "Processing batch..." } satisfies WorkerResponse);
-            setTimeout(() =>
-              this.emit("message", {
-                type: "result",
-                id: msg.id,
-                embeddings: msg.texts.map(() => [1, 2, 3]),
-                durationMs: 50,
-              } satisfies WorkerResponse), 10);
+            this.emit("message", {
+              type: "log",
+              level: "info",
+              message: "Processing batch...",
+            } satisfies WorkerResponse);
+            setTimeout(
+              () =>
+                this.emit("message", {
+                  type: "result",
+                  id: msg.id,
+                  embeddings: msg.texts.map(() => [1, 2, 3]),
+                  durationMs: 50,
+                } satisfies WorkerResponse),
+              10,
+            );
           });
         }
       }

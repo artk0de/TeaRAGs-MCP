@@ -731,9 +731,7 @@ describe("OllamaEmbeddings", () => {
         }),
       });
 
-      await expect(batchEmbeddings.embedBatch(["text1"])).rejects.toThrow(
-        "Ollama returned 0 embeddings for 1 texts",
-      );
+      await expect(batchEmbeddings.embedBatch(["text1"])).rejects.toThrow("Ollama returned 0 embeddings for 1 texts");
     });
 
     it("should detect batch support via checkBatchSupport", async () => {
@@ -767,10 +765,7 @@ describe("OllamaEmbeddings", () => {
 
       await batchEmbeddings.embed("test");
       // Should call legacy endpoint
-      expect(mockFetch).toHaveBeenLastCalledWith(
-        "http://localhost:11434/api/embeddings",
-        expect.any(Object),
-      );
+      expect(mockFetch).toHaveBeenLastCalledWith("http://localhost:11434/api/embeddings", expect.any(Object));
 
       consoleSpy.mockRestore();
     });
