@@ -9,9 +9,9 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import type { TrajectoryGitConfig } from "../../../bootstrap/config/index.js";
 import { resolveRepoRoot } from "../../adapters/git/client.js";
 import type { FileChurnData } from "../../adapters/git/types.js";
+import type { TrajectoryGitConfig } from "../../contracts/types/config.js";
 import type {
   ChunkLookupEntry,
   ChunkSignalOverlay,

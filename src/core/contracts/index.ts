@@ -1,4 +1,5 @@
 export type * from "./types/app.js";
+export type * from "./types/config.js";
 export type * from "./types/provider.js";
 export type * from "./types/reranker.js";
 export type * from "./types/trajectory.js";

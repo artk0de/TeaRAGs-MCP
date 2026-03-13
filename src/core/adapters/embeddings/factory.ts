@@ -1,5 +1,5 @@
-import type { EmbeddingConfig } from "../../../bootstrap/config/index.js";
-import { modelsDir, daemonSocketPath, daemonPidFile } from "../../../bootstrap/config/paths.js";
+import { daemonPidFile, daemonSocketPath, modelsDir } from "../../../bootstrap/config/paths.js";
+import type { EmbeddingConfig } from "../../contracts/types/config.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
 import { OllamaEmbeddings } from "./ollama.js";
