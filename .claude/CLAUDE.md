@@ -95,9 +95,10 @@ creates instances, and wires them together via DI.
   etc.)
 - Git client, embedding providers
 
-**core/infra/** — Runtime utilities (foundation, lowest level)
+**core/infra/** — Foundation utilities (lowest level)
 
 - isDebug(), setDebug() — runtime config imported by all layers
+- collection-name.ts: validatePath, resolveCollectionName, resolveCollection
 
 ### New Code Placement Rule (MANDATORY)
 
@@ -197,8 +198,11 @@ core/
       presets/
         index.ts                       # resolvePresets() + getPresetNames/Weights (engine utility)
 
-  infra/                               # Foundation: runtime utilities
-    runtime.ts                         # isDebug(), setDebug() — lowest layer
+  infra/                               # Foundation: utilities (lowest layer)
+    runtime.ts                         # isDebug(), setDebug()
+    collection-name.ts                 # validatePath, resolveCollectionName, resolveCollection
+    schema-drift-monitor.ts            # SchemaDriftMonitor: payload version tracking
+    stats-cache.ts                     # StatsCache: collection signal stats persistence
 
   trajectory/                          # Domain module: provider implementations
     static/
@@ -255,7 +259,6 @@ core/
       infra/                           # readers, metrics, caches
 
   ingest/                              # Domain module: indexing pipeline
-    collection.ts                      # resolveCollectionName, validatePath
     collection-stats.ts                # computeCollectionStats
     pipeline/
       enrichment/                      # coordinator, applier
@@ -271,11 +274,14 @@ core/
                                        # OverlayMask, RerankMode,
                                        # DerivedSignalDescriptor,
                                        # RankingOverlay, RerankedResult
+      config.ts                        # EmbeddingConfig, TrajectoryGitConfig,
+                                       # QdrantTuneConfig (consumed by core/)
     index.ts                           # barrel re-export
 
   adapters/                            # Foundation: external system types
     qdrant/
       types.ts                         # QdrantFilter, QdrantFilterCondition
+      filter-utils.ts                  # mergeQdrantFilters (pure filter merge)
       client.ts                        # QdrantManager (REST client wrapper)
       embedded/                        # Embedded Qdrant daemon
         daemon.ts                      # Process manager with refcounting
@@ -311,8 +317,8 @@ existing.
 Scope determines version bump. **Always use a scope.**
 
 **Public + Functional** (feat → minor): `api`, `mcp`, `contracts`, `types`,
-`drift`, `explore`, `rerank`, `hybrid`, `trajectory`, `signals`,
-`presets`, `filters`, `ingest`, `pipeline`, `chunker`
+`drift`, `explore`, `rerank`, `hybrid`, `trajectory`, `signals`, `presets`,
+`filters`, `ingest`, `pipeline`, `chunker`
 
 **Infrastructure** (feat → patch): `onnx`, `embedding`, `embedded`, `adapters`,
 `qdrant`, `git`, `config`, `factory`, `bootstrap`, `debug`, `logs`
