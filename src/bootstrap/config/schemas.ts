@@ -84,9 +84,13 @@ export const qdrantTuneSchema = z.object({
 });
 
 export type CoreConfig = z.infer<typeof coreSchema>;
-export type EmbeddingTuneConfig = z.infer<typeof embeddingTuneSchema>;
-export type EmbeddingConfig = z.infer<typeof embeddingSchema>;
 export type IngestTuneConfig = z.infer<typeof ingestTuneSchema>;
 export type IngestConfig = z.infer<typeof ingestSchema>;
-export type TrajectoryGitConfig = z.infer<typeof trajectoryGitSchema>;
-export type QdrantTuneConfig = z.infer<typeof qdrantTuneSchema>;
+
+// These types are defined in core/contracts — Zod schemas stay here, interfaces live there
+export type {
+  EmbeddingTuneConfig,
+  EmbeddingConfig,
+  TrajectoryGitConfig,
+  QdrantTuneConfig,
+} from "../../core/contracts/types/config.js";
