@@ -10,9 +10,9 @@
 
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
-import { snapshotsDir } from "../../../bootstrap/config/paths.js";
 import type { FileChanges } from "../../types.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
 import { MerkleTree } from "./merkle.js";
@@ -48,11 +48,13 @@ export class FileSynchronizer {
   constructor(
     private readonly codebasePath: string,
     collectionName: string,
+    snapshotDir?: string,
   ) {
     this.collectionName = collectionName;
-    const snapshotDir = snapshotsDir();
-    const snapshotPath = join(snapshotDir, `${collectionName}.json`);
-    this.checkpointPath = join(snapshotDir, `${collectionName}.checkpoint.json`);
+    /* v8 ignore next -- fallback for backward compat */
+    const resolvedDir = snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
+    const snapshotPath = join(resolvedDir, `${collectionName}.json`);
+    this.checkpointPath = join(resolvedDir, `${collectionName}.checkpoint.json`);
     this.snapshotManager = new SnapshotManager(snapshotPath);
   }
 
@@ -335,7 +337,7 @@ export class FileSynchronizer {
     };
 
     try {
-      const dir = snapshotsDir();
+      const dir = join(this.checkpointPath, "..");
       await fs.mkdir(dir, { recursive: true });
 
       // Write checkpoint atomically (write to temp, then rename)

@@ -4,7 +4,9 @@
  * Extracted from CodeIndexer to isolate status queries and index clearing.
  */
 
-import { snapshotsDir } from "../../../bootstrap/config/paths.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
 import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../../types.js";
@@ -12,7 +14,10 @@ import { INDEXING_METADATA_ID } from "../constants.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 
 export class StatusModule {
-  constructor(private readonly qdrant: QdrantManager) {}
+  constructor(
+    private readonly qdrant: QdrantManager,
+    private readonly snapshotDir?: string,
+  ) {}
 
   /**
    * Get indexing status for a codebase
@@ -109,8 +114,9 @@ export class StatusModule {
 
     // Also delete snapshot
     try {
-      const snapshotDir = snapshotsDir();
-      const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, snapshotDir);
+      /* v8 ignore next -- fallback for backward compat */
+      const dir = this.snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
+      const synchronizer = new ParallelFileSynchronizer(absolutePath, collectionName, dir);
       await synchronizer.deleteSnapshot();
     } catch (_error) {
       // Ignore snapshot deletion errors

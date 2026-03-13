@@ -4,13 +4,13 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { snapshotsDir } from "../../../../src/bootstrap/config/paths.js";
 import { setDebug } from "../../../../src/core/ingest/pipeline/infra/runtime.js";
 import { FileSynchronizer } from "../../../../src/core/ingest/sync/synchronizer.js";
 
 describe("FileSynchronizer", () => {
   let tempDir: string;
   let codebaseDir: string;
+  let snapshotDir: string;
   let synchronizer: FileSynchronizer;
   let collectionName: string;
 
@@ -18,25 +18,19 @@ describe("FileSynchronizer", () => {
     // Create temporary directories for testing
     tempDir = join(tmpdir(), `qdrant-mcp-test-${Date.now()}-${Math.random().toString(36).substring(7)}`);
     codebaseDir = join(tempDir, "codebase");
+    snapshotDir = join(tempDir, "snapshots");
     await fs.mkdir(codebaseDir, { recursive: true });
+    await fs.mkdir(snapshotDir, { recursive: true });
 
     // Use unique collection name to avoid conflicts between test runs
     collectionName = `test-collection-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    synchronizer = new FileSynchronizer(codebaseDir, collectionName);
+    synchronizer = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
   });
 
   afterEach(async () => {
-    // Clean up temporary directory
+    // Clean up temporary directory (includes codebase + snapshots)
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
-    } catch (_error) {
-      // Ignore cleanup errors
-    }
-
-    // Clean up snapshot file
-    try {
-      const snapshotPath = join(snapshotsDir(), `${collectionName}.json`);
-      await fs.rm(snapshotPath, { force: true });
     } catch (_error) {
       // Ignore cleanup errors
     }
@@ -54,7 +48,7 @@ describe("FileSynchronizer", () => {
       await synchronizer.updateSnapshot(["file1.ts"]);
 
       // Create a new synchronizer and initialize
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       const hasSnapshot = await newSync.initialize();
 
       expect(hasSnapshot).toBe(true);
@@ -66,7 +60,7 @@ describe("FileSynchronizer", () => {
 
       await synchronizer.updateSnapshot(["file1.ts", "file2.ts"]);
 
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       await newSync.initialize();
 
       const changes = await newSync.detectChanges(["file1.ts", "file2.ts"]);
@@ -84,7 +78,7 @@ describe("FileSynchronizer", () => {
 
       await synchronizer.updateSnapshot(["file1.ts", "file2.ts"]);
 
-      const newSync = new FileSynchronizer(codebaseDir, collectionName, tempDir);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       const hasSnapshot = await newSync.initialize();
 
       expect(hasSnapshot).toBe(true);
@@ -93,7 +87,7 @@ describe("FileSynchronizer", () => {
     it("should handle empty file list", async () => {
       await synchronizer.updateSnapshot([]);
 
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       const hasSnapshot = await newSync.initialize();
 
       expect(hasSnapshot).toBe(true);
@@ -106,7 +100,7 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file2.ts", "content2");
       await synchronizer.updateSnapshot(["file2.ts"]);
 
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       await newSync.initialize();
 
       const changes = await newSync.detectChanges(["file2.ts"]);
@@ -123,7 +117,7 @@ describe("FileSynchronizer", () => {
       await synchronizer.updateSnapshot([join(codebaseDir, "file.ts")]);
 
       // Both should work without duplicates
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       await newSync.initialize();
 
       const changes = await newSync.detectChanges(["file.ts"]);
@@ -226,7 +220,7 @@ describe("FileSynchronizer", () => {
 
       await synchronizer.deleteSnapshot();
 
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       const hasSnapshot = await newSync.initialize();
 
       expect(hasSnapshot).toBe(false);
@@ -245,7 +239,7 @@ describe("FileSynchronizer", () => {
       await createFile(codebaseDir, "file2.ts", "content2");
       await synchronizer.updateSnapshot(["file2.ts"]);
 
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       const hasSnapshot = await newSync.initialize();
 
       expect(hasSnapshot).toBe(true);
@@ -543,7 +537,7 @@ describe("FileSynchronizer", () => {
     let checkpointPath: string;
 
     beforeEach(async () => {
-      checkpointPath = join(snapshotsDir(), `${collectionName}.checkpoint.json`);
+      checkpointPath = join(snapshotDir, `${collectionName}.checkpoint.json`);
     });
 
     afterEach(async () => {
@@ -615,7 +609,7 @@ describe("FileSynchronizer", () => {
           timestamp: Date.now() - 25 * 60 * 60 * 1000, // 25 hours ago
           phase: "indexing",
         };
-        await fs.mkdir(join(snapshotsDir()), { recursive: true });
+        await fs.mkdir(join(snapshotDir), { recursive: true });
         await fs.writeFile(checkpointPath, JSON.stringify(staleCheckpoint));
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -623,7 +617,7 @@ describe("FileSynchronizer", () => {
       });
 
       it("should return null for corrupted JSON", async () => {
-        await fs.mkdir(join(snapshotsDir()), { recursive: true });
+        await fs.mkdir(join(snapshotDir), { recursive: true });
         await fs.writeFile(checkpointPath, "{ invalid json }");
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -636,7 +630,7 @@ describe("FileSynchronizer", () => {
           timestamp: Date.now(),
           phase: "indexing",
         };
-        await fs.mkdir(join(snapshotsDir()), { recursive: true });
+        await fs.mkdir(join(snapshotDir), { recursive: true });
         await fs.writeFile(checkpointPath, JSON.stringify(invalidCheckpoint));
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -649,7 +643,7 @@ describe("FileSynchronizer", () => {
           timestamp: Date.now(),
           phase: "indexing",
         };
-        await fs.mkdir(join(snapshotsDir()), { recursive: true });
+        await fs.mkdir(join(snapshotDir), { recursive: true });
         await fs.writeFile(checkpointPath, JSON.stringify(invalidCheckpoint));
 
         const checkpoint = await synchronizer.loadCheckpoint();
@@ -771,7 +765,7 @@ describe("FileSynchronizer", () => {
         await synchronizer.saveCheckpoint(["file1.ts", "file2.ts"], 4, "indexing");
 
         // Simulate restart - create new synchronizer instance
-        const newSync = new FileSynchronizer(codebaseDir, collectionName);
+        const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
 
         // Load checkpoint
         const checkpoint = await newSync.loadCheckpoint();
@@ -886,11 +880,11 @@ describe("FileSynchronizer", () => {
       await synchronizer.updateSnapshot(["file1.ts"]);
 
       // Corrupt the snapshot file
-      const snapshotPath = join(snapshotsDir(), `${collectionName}.json`);
+      const snapshotPath = join(snapshotDir, `${collectionName}.json`);
       await fs.writeFile(snapshotPath, "{ invalid json }", "utf-8");
 
       // Create new synchronizer and try to initialize
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       const hasSnapshot = await newSync.initialize();
 
       // Should return false and not throw
@@ -955,7 +949,7 @@ describe("FileSynchronizer", () => {
   describe("snapshot v1 to v2 migration", () => {
     it("should migrate v1 snapshot to v2 with metadata", async () => {
       // Manually create a v1 snapshot (without metadata)
-      const snapshotPath = join(snapshotsDir(), `${collectionName}.json`);
+      const snapshotPath = join(snapshotDir, `${collectionName}.json`);
 
       await createFile(codebaseDir, "file1.ts", "content1");
       await createFile(codebaseDir, "file2.ts", "content2");
@@ -975,11 +969,11 @@ describe("FileSynchronizer", () => {
         }),
       };
 
-      await fs.mkdir(join(snapshotsDir()), { recursive: true });
+      await fs.mkdir(join(snapshotDir), { recursive: true });
       await fs.writeFile(snapshotPath, JSON.stringify(v1Snapshot), "utf-8");
 
       // Create a new synchronizer and initialize (loads v1 snapshot)
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       await newSync.initialize();
 
       // Call ensureSnapshotV2 to trigger migration
@@ -998,7 +992,7 @@ describe("FileSynchronizer", () => {
       await fs.unlink(join(codebaseDir, "file2.ts"));
 
       // Create new synchronizer and ensure v2
-      const newSync = new FileSynchronizer(codebaseDir, collectionName);
+      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
       await newSync.initialize();
       await newSync.ensureSnapshotV2();
 
@@ -1093,10 +1087,10 @@ describe("FileSynchronizer", () => {
     });
 
     it("should handle checkpoint load errors for invalid JSON", async () => {
-      const checkpointPath = join(snapshotsDir(), `${collectionName}.checkpoint.json`);
+      const checkpointPath = join(snapshotDir, `${collectionName}.checkpoint.json`);
 
       // Create invalid checkpoint file
-      await fs.mkdir(join(snapshotsDir()), { recursive: true });
+      await fs.mkdir(join(snapshotDir), { recursive: true });
       await fs.writeFile(checkpointPath, "invalid json {", "utf-8");
 
       const checkpoint = await synchronizer.loadCheckpoint();
@@ -1104,7 +1098,7 @@ describe("FileSynchronizer", () => {
     });
 
     it("should delete stale checkpoints automatically", async () => {
-      const checkpointPath = join(snapshotsDir(), `${collectionName}.checkpoint.json`);
+      const checkpointPath = join(snapshotDir, `${collectionName}.checkpoint.json`);
 
       // Create stale checkpoint (> 24 hours old)
       const staleCheckpoint = {
@@ -1114,7 +1108,7 @@ describe("FileSynchronizer", () => {
         phase: "indexing",
       };
 
-      await fs.mkdir(join(snapshotsDir()), { recursive: true });
+      await fs.mkdir(join(snapshotDir), { recursive: true });
       await fs.writeFile(checkpointPath, JSON.stringify(staleCheckpoint), "utf-8");
 
       const checkpoint = await synchronizer.loadCheckpoint();

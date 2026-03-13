@@ -1,12 +1,22 @@
 import type { IngestCodeConfig, TrajectoryIngestConfig } from "../../core/types.js";
 import { DEFAULT_CODE_EXTENSIONS, DEFAULT_IGNORE_PATTERNS } from "./defaults.js";
 import { parseAppConfigZod } from "./parse.js";
+import { appDataDir, daemonPidFile, daemonSocketPath, logsDir, modelsDir, snapshotsDir } from "./paths.js";
 
 export * from "./defaults.js";
 export * from "./paths.js";
 export * from "./utils.js";
 export * from "./schemas.js";
 export * from "./parse.js";
+
+export interface ResolvedPaths {
+  appData: string;
+  snapshots: string;
+  logs: string;
+  models: string;
+  daemonSocket: string;
+  daemonPid: string;
+}
 
 export interface AppConfig {
   qdrantUrl?: string;
@@ -18,6 +28,7 @@ export interface AppConfig {
   promptsConfigFile: string;
   ingestCode: IngestCodeConfig;
   trajectoryIngest: TrajectoryIngestConfig;
+  paths: ResolvedPaths;
 }
 
 let _lastZodConfig: ReturnType<typeof parseAppConfigZod> | null = null;
@@ -31,6 +42,15 @@ export function getZodConfig(): ReturnType<typeof parseAppConfigZod> {
 export function parseAppConfig(): AppConfig {
   const zodConfig = parseAppConfigZod();
   _lastZodConfig = zodConfig;
+
+  const paths: ResolvedPaths = {
+    appData: appDataDir(),
+    snapshots: snapshotsDir(),
+    logs: logsDir(),
+    models: modelsDir(),
+    daemonSocket: daemonSocketPath(),
+    daemonPid: daemonPidFile(),
+  };
 
   // Bridge Zod slices to typed AppConfig for consumers
   return {
@@ -51,6 +71,7 @@ export function parseAppConfig(): AppConfig {
       maxChunksPerFile: undefined,
       maxTotalChunks: undefined,
     },
+    paths,
     trajectoryIngest: {
       enableGitMetadata: zodConfig.trajectoryGit.enabled,
       squashAwareSessions: zodConfig.trajectoryGit.squashAwareSessions,

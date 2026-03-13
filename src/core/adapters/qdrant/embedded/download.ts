@@ -1,11 +1,15 @@
 import { execSync } from "node:child_process";
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { get } from "node:https";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { appDataDir } from "../../../../bootstrap/config/paths.js";
-
 export const QDRANT_VERSION = "1.17.0";
+
+/* v8 ignore next 3 -- fallback for backward compat when DI paths not provided */
+function fallbackAppDataDir(): string {
+  return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+}
 
 const PLATFORM_MAP: Record<string, Record<string, string>> = {
   darwin: {
@@ -29,47 +33,51 @@ export function getPlatformAsset(platform: string, arch: string): string {
   return archMap[arch];
 }
 
-export function getQdrantBinaryDir(): string {
-  return join(appDataDir(), "qdrant", "bin");
+export function getQdrantBinaryDir(appDataPath?: string): string {
+  return join(appDataPath ?? fallbackAppDataDir(), "qdrant", "bin");
 }
 
-export function getBinaryPath(platform = process.platform): string {
+export function getBinaryPath(platform = process.platform, appDataPath?: string): string {
   const name = platform === "win32" ? "qdrant.exe" : "qdrant";
-  return join(getQdrantBinaryDir(), name);
+  return join(getQdrantBinaryDir(appDataPath), name);
 }
 
 export function getDownloadUrl(asset: string): string {
   return `https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VERSION}/${asset}`;
 }
 
-function getVersionPath(): string {
-  return join(dirname(getBinaryPath()), "qdrant.version");
+function getVersionPath(appDataPath?: string): string {
+  return join(dirname(getBinaryPath(undefined, appDataPath)), "qdrant.version");
 }
 
-function getInstalledVersion(): string | null {
+function getInstalledVersion(appDataPath?: string): string | null {
   try {
-    return readFileSync(getVersionPath(), "utf-8").trim();
+    return readFileSync(getVersionPath(appDataPath), "utf-8").trim();
   } catch {
     return null;
   }
 }
 
-function writeInstalledVersion(): void {
-  writeFileSync(getVersionPath(), QDRANT_VERSION, "utf-8");
+function writeInstalledVersion(appDataPath?: string): void {
+  writeFileSync(getVersionPath(appDataPath), QDRANT_VERSION, "utf-8");
 }
 
-export function isBinaryPresent(): boolean {
-  return existsSync(getBinaryPath());
+export function isBinaryPresent(appDataPath?: string): boolean {
+  return existsSync(getBinaryPath(undefined, appDataPath));
 }
 
-export function isBinaryUpToDate(): boolean {
-  return isBinaryPresent() && getInstalledVersion() === QDRANT_VERSION;
+export function isBinaryUpToDate(appDataPath?: string): boolean {
+  return isBinaryPresent(appDataPath) && getInstalledVersion(appDataPath) === QDRANT_VERSION;
 }
 
-export async function downloadQdrant(platform = process.platform, arch = process.arch): Promise<string> {
+export async function downloadQdrant(
+  platform = process.platform,
+  arch = process.arch,
+  appDataPath?: string,
+): Promise<string> {
   const asset = getPlatformAsset(platform, arch);
   const url = getDownloadUrl(asset);
-  const binaryPath = getBinaryPath(platform);
+  const binaryPath = getBinaryPath(platform, appDataPath);
   const cacheDir = dirname(binaryPath);
 
   mkdirSync(cacheDir, { recursive: true });
@@ -95,7 +103,7 @@ export async function downloadQdrant(platform = process.platform, arch = process
     chmodSync(binaryPath, 0o755);
   }
 
-  writeInstalledVersion();
+  writeInstalledVersion(appDataPath);
   return binaryPath;
 }
 

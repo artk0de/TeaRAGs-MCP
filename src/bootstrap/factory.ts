@@ -16,13 +16,14 @@ import { IngestFacade } from "../core/api/ingest-facade.js";
 import { SchemaBuilder } from "../core/api/schema-builder.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
+import { initDebugLogger } from "../core/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/ingest/pipeline/types.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
-import { getZodConfig, snapshotsDir, type AppConfig } from "./config/index.js";
+import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -41,12 +42,31 @@ export interface AppContext {
 }
 
 export async function createAppContext(config: AppConfig): Promise<AppContext> {
-  const resolution = await resolveQdrantUrl(config.qdrantUrl);
+  const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData);
   const qdrant = new QdrantManager(resolution.url, config.qdrantApiKey);
   const embeddedRelease = resolution.mode === "embedded" ? resolution.release : undefined;
   const zodConfig = getZodConfig();
   setDebug(zodConfig.core.debug);
-  const embeddings = EmbeddingProviderFactory.create(zodConfig.embedding);
+
+  // Initialize debug logger with DI paths before any pipeline work
+  initDebugLogger({
+    logsDir: config.paths.logs,
+    getConfigDump: () => {
+      const { deprecations: _, ...configSections } = zodConfig;
+      return getConfigDump(configSections);
+    },
+    getConcurrency: () => ({
+      pipelineConcurrency: zodConfig.ingest.tune.pipelineConcurrency,
+      chunkerPoolSize: zodConfig.ingest.tune.chunkerPoolSize,
+      gitChunkConcurrency: zodConfig.trajectoryGit.chunkConcurrency,
+    }),
+  });
+
+  const embeddings = EmbeddingProviderFactory.create(zodConfig.embedding, {
+    models: config.paths.models,
+    daemonSocket: config.paths.daemonSocket,
+    daemonPid: config.paths.daemonPid,
+  });
 
   // Eagerly init ONNX to get calibrated batch size before pipeline config
   if ("initialize" in embeddings && typeof embeddings.initialize === "function") {
@@ -65,7 +85,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
   const essentialTrajectoryFields = registry.getEssentialPayloadKeys();
   const schemaBuilder = new SchemaBuilder(reranker);
-  const statsCache = new StatsCache(snapshotsDir());
+  const statsCache = new StatsCache(config.paths.snapshots);
   const deleteConfig = {
     batchSize: zodConfig.qdrantTune.deleteBatchSize,
     concurrency: zodConfig.qdrantTune.deleteConcurrency,
@@ -95,6 +115,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     deleteConfig,
     pipelineTuning,
     syncTuning,
+    config.paths.snapshots,
   );
   const schemaDriftMonitor = new SchemaDriftMonitor(
     statsCache,

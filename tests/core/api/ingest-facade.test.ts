@@ -9,10 +9,6 @@ const { mockIndexCodebase, mockReindexChanges, mockScrollAllPoints, mockComputeS
   mockComputeStats: vi.fn().mockReturnValue({ computedAt: Date.now(), perSignal: new Map() }),
 }));
 
-vi.mock("../../../src/bootstrap/config/paths.js", () => ({
-  snapshotsDir: () => "/tmp/snapshots-test",
-}));
-
 vi.mock("../../../src/core/ingest/indexing.js", () => ({
   IndexPipeline: class {
     indexCodebase = mockIndexCodebase;

@@ -125,6 +125,14 @@ function makeConfig(): AppConfig {
       defaultSearchLimit: 5,
     },
     trajectoryIngest: {},
+    paths: {
+      appData: "/tmp/test-tea-rags",
+      snapshots: "/tmp/test-tea-rags/snapshots",
+      logs: "/tmp/test-tea-rags/logs",
+      models: "/tmp/test-tea-rags/models",
+      daemonSocket: "/tmp/test-tea-rags/onnx.sock",
+      daemonPid: "/tmp/test-tea-rags/onnx-daemon.pid",
+    },
   };
 }
 

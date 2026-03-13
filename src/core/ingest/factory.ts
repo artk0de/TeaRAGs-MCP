@@ -24,6 +24,7 @@ export interface IngestDependencies {
   createSynchronizer: (codebasePath: string, collectionName: string) => ParallelFileSynchronizer;
   createMigrator: (collectionName: string, codebasePath: string) => SnapshotMigrator;
   payloadBuilder: PayloadBuilder;
+  snapshotDir: string;
 }
 
 // ── Default factory ──────────────────────────────────────────────
@@ -46,5 +47,6 @@ export function createIngestDependencies(
       ),
     createMigrator: (collectionName, codebasePath) => new SnapshotMigrator(snapshotDir, collectionName, codebasePath),
     payloadBuilder,
+    snapshotDir,
   };
 }

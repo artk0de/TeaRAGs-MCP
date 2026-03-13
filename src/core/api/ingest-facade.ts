@@ -10,7 +10,9 @@
  * Post-index: recomputes collection stats and saves to cache.
  */
 
-import { snapshotsDir } from "../../bootstrap/config/paths.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
 import type { QdrantManager } from "../adapters/qdrant/client.js";
 import { scrollAllPoints } from "../adapters/qdrant/scroll.js";
@@ -55,9 +57,12 @@ export class IngestFacade {
     deleteConfig?: DeletionConfig,
     pipelineTuning?: PipelineTuning,
     syncTuning?: SynchronizerTuning,
+    snapshotDir?: string,
   ) {
-    const snapshotDir = snapshotsDir();
-    const deps = createIngestDependencies(qdrant, snapshotDir, new StaticPayloadBuilder(), syncTuning);
+    /* v8 ignore next 2 -- fallback for backward compat */
+    const resolvedSnapshotDir =
+      snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
+    const deps = createIngestDependencies(qdrant, resolvedSnapshotDir, new StaticPayloadBuilder(), syncTuning);
 
     const squashOpts = trajectoryConfig.squashAwareSessions
       ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
@@ -67,7 +72,7 @@ export class IngestFacade {
       : [];
     this.enrichment = new EnrichmentCoordinator(qdrant, providers);
     this.indexing = new IndexPipeline(qdrant, embeddings, ingestConfig, this.enrichment, deps, pipelineTuning);
-    this.status = new StatusModule(qdrant);
+    this.status = new StatusModule(qdrant, resolvedSnapshotDir);
     this.reindex = new ReindexPipeline(
       qdrant,
       embeddings,
