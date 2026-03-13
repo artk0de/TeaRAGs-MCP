@@ -6,7 +6,7 @@
  * typed filter output with raw user-provided filters.
  */
 
-import type { QdrantFilter, QdrantFilterCondition } from "./types.js";
+import type { QdrantFilter, QdrantFilterCondition } from "../types.js";
 
 /**
  * Merge two Qdrant filters by concatenating must/must_not arrays.

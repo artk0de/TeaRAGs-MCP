@@ -281,7 +281,8 @@ core/
   adapters/                            # Foundation: external system types
     qdrant/
       types.ts                         # QdrantFilter, QdrantFilterCondition
-      filter-utils.ts                  # mergeQdrantFilters (pure filter merge)
+      filters/
+        utils.ts                       # mergeQdrantFilters (pure filter merge)
       client.ts                        # QdrantManager (REST client wrapper)
       embedded/                        # Embedded Qdrant daemon
         daemon.ts                      # Process manager with refcounting

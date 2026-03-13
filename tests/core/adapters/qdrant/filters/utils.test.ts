@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeQdrantFilters } from "../../../../src/core/adapters/qdrant/filter-utils.js";
+import { mergeQdrantFilters } from "../../../../../src/core/adapters/qdrant/filters/utils.js";
 
 describe("mergeQdrantFilters", () => {
   it("returns undefined when both are undefined", () => {
