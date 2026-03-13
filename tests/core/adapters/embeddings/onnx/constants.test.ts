@@ -1,12 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import {
   DEFAULT_GPU_BATCH_SIZE,
+  MIN_BATCH_SIZE,
   PROBE_BATCH_SIZES,
   PROBE_PRESSURE_THRESHOLD,
+  ROLLING_WINDOW,
   RUNTIME_PRESSURE_THRESHOLD,
   RUNTIME_STABLE_THRESHOLD,
-  ROLLING_WINDOW,
-  MIN_BATCH_SIZE,
 } from "../../../../../src/core/adapters/embeddings/onnx/constants.js";
 
 describe("ONNX constants", () => {

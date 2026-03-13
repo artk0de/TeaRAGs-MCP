@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+
 import { BatchSizeController } from "../../../../../src/core/adapters/embeddings/onnx/batch-size-controller.js";
 
 describe("BatchSizeController", () => {

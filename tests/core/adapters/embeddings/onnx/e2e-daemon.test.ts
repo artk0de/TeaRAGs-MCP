@@ -1,16 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { OnnxDaemon } from "../../../../../src/core/adapters/embeddings/onnx/daemon.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { OnnxEmbeddings } from "../../../../../src/core/adapters/embeddings/onnx.js";
-import type {
-  WorkerRequest,
-  WorkerResponse,
-} from "../../../../../src/core/adapters/embeddings/onnx/worker-types.js";
+import { OnnxDaemon } from "../../../../../src/core/adapters/embeddings/onnx/daemon.js";
+import type { WorkerRequest, WorkerResponse } from "../../../../../src/core/adapters/embeddings/onnx/worker-types.js";
 
 // ---------------------------------------------------------------------------
 // Mock worker — same pattern as daemon.test.ts
@@ -20,9 +18,7 @@ class MockWorker extends EventEmitter {
   postMessage(msg: WorkerRequest): void {
     switch (msg.type) {
       case "init":
-        setImmediate(() =>
-          this.emit("message", { type: "ready" } satisfies WorkerResponse),
-        );
+        setImmediate(() => this.emit("message", { type: "ready" } satisfies WorkerResponse));
         break;
       case "embed":
         setImmediate(() =>
@@ -74,13 +70,13 @@ describe("OnnxDaemon E2E", () => {
    */
   function createClient(model = "test-model"): OnnxEmbeddings {
     return new OnnxEmbeddings(
-      model,       // model
-      3,           // dimensions (MockWorker returns [1,2,3])
-      undefined,   // cacheDir
-      "cpu",       // device
-      socketPath,  // socketPath — daemon is already listening
-      undefined,   // pidFile
-      5_000,       // spawnTimeoutMs (unused since daemon already exists)
+      model, // model
+      3, // dimensions (MockWorker returns [1,2,3])
+      undefined, // cacheDir
+      "cpu", // device
+      socketPath, // socketPath — daemon is already listening
+      undefined, // pidFile
+      5_000, // spawnTimeoutMs (unused since daemon already exists)
     );
   }
 

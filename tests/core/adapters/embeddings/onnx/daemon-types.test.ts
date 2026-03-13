@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+
 import {
-  type DaemonRequest,
   parseLine,
   serialize,
+  type DaemonRequest,
 } from "../../../../../src/core/adapters/embeddings/onnx/daemon-types.js";
 
 describe("daemon-types", () => {
@@ -27,5 +28,4 @@ describe("daemon-types", () => {
       expect(parseLine("{broken")).toBeNull();
     });
   });
-
 });
