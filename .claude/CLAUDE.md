@@ -25,6 +25,32 @@
 | Confidence dampening | Quadratic per-signal dampening for unreliable statistical signals: `(n/k)^2` where k is signal-specific threshold.                     |
 | Adaptive bounds      | Per-query normalization bounds computed from result set (p95), floored with defaults.                                                  |
 
+### Path Shortcuts
+
+All paths relative to `src/core/`.
+
+| Alias              | Path                                             |
+| ------------------ | ------------------------------------------------ |
+| `api-public`       | `api/public/`                                    |
+| `api-internal`     | `api/internal/`                                  |
+| `dto`              | `api/public/dto/`                                |
+| `explore`          | `domains/explore/`                               |
+| `explore-strats`   | `domains/explore/strategies/`                    |
+| `explore-presets`  | `domains/explore/rerank/presets/`                |
+| `ingest`           | `domains/ingest/`                                |
+| `pipeline`         | `domains/ingest/pipeline/`                       |
+| `chunker`          | `domains/ingest/pipeline/chunker/`               |
+| `chunker-hooks`    | `domains/ingest/pipeline/chunker/hooks/`         |
+| `enrichment`       | `domains/ingest/pipeline/enrichment/`            |
+| `sync`             | `domains/ingest/sync/`                           |
+| `traj-git`         | `domains/trajectory/git/`                        |
+| `traj-git-signals` | `domains/trajectory/git/rerank/derived-signals/` |
+| `traj-git-presets` | `domains/trajectory/git/rerank/presets/`         |
+| `traj-static`      | `domains/trajectory/static/`                     |
+| `contracts`        | `contracts/`                                     |
+| `infra`            | `infra/`                                         |
+| `bootstrap`        | `bootstrap/`                                     |
+
 ### Naming Conventions
 
 - `buildFileSignals` / `buildChunkSignals` (NOT
