@@ -79,6 +79,17 @@ function makeMockDriftMonitor(overrides: Record<string, any> = {}) {
   } as any;
 }
 
+function makeMockRegistry() {
+  return {
+    buildFilter: vi.fn().mockReturnValue(undefined),
+    // Default: pass through the raw filter (2nd arg) like the real implementation
+    buildMergedFilter: vi.fn().mockImplementation((_typed: any, rawFilter?: any) => rawFilter),
+    getAllFilters: vi.fn().mockReturnValue([]),
+    getAllPayloadSignalDescriptors: vi.fn().mockReturnValue([]),
+    getEssentialPayloadKeys: vi.fn().mockReturnValue([]),
+  } as any;
+}
+
 function makeFacade(
   overrides: {
     qdrant?: any;
@@ -86,6 +97,7 @@ function makeFacade(
     reranker?: any;
     driftMonitor?: any;
     statsCache?: any;
+    registry?: any;
     essentialTrajectoryFields?: string[];
   } = {},
 ) {
@@ -94,19 +106,20 @@ function makeFacade(
   const reranker = overrides.reranker ?? makeMockReranker();
   const driftMonitor = overrides.driftMonitor ?? makeMockDriftMonitor();
   const statsCache = overrides.statsCache ?? undefined;
+  const registry = overrides.registry ?? makeMockRegistry();
   const essentialFields = overrides.essentialTrajectoryFields ?? ["git.file.ageDays"];
 
   return {
-    facade: new ExploreFacade(
+    facade: new ExploreFacade({
       qdrant,
       embeddings,
       reranker,
-      undefined, // registry
+      registry,
       statsCache,
-      [], // payloadSignals
-      essentialFields, // essentialKeys
-      driftMonitor,
-    ),
+      schemaDriftMonitor: driftMonitor,
+      payloadSignals: [],
+      essentialKeys: essentialFields,
+    }),
     qdrant,
     embeddings,
     reranker,

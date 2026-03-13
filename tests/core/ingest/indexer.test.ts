@@ -72,7 +72,7 @@ describe("IngestFacade + ExploreFacade", () => {
     const reranker = new Reranker([...gitDerivedSignals, ...staticDerivedSignals], resolvedPresets);
     const registry = new TrajectoryRegistry();
     registry.register(new GitTrajectory());
-    explore = new ExploreFacade(qdrant as any, embeddings, reranker, registry);
+    explore = new ExploreFacade({ qdrant: qdrant as any, embeddings, reranker, registry });
   });
 
   afterEach(async () => {

@@ -62,6 +62,7 @@ function makeMockReranker() {
 function makeMockRegistry() {
   return {
     buildFilter: vi.fn().mockReturnValue(undefined),
+    buildMergedFilter: vi.fn().mockReturnValue(undefined),
     getAllFilters: vi.fn().mockReturnValue([]),
     getAllPayloadSignalDescriptors: vi.fn().mockReturnValue([]),
     getEssentialPayloadKeys: vi.fn().mockReturnValue([]),
@@ -71,16 +72,12 @@ function makeMockRegistry() {
 function makeFacade(overrides: { qdrant?: any; registry?: any } = {}) {
   const qdrant = overrides.qdrant ?? makeMockQdrant();
   return {
-    facade: new ExploreFacade(
+    facade: new ExploreFacade({
       qdrant,
-      makeMockEmbeddings(),
-      makeMockReranker(),
-      overrides.registry ?? makeMockRegistry(),
-      undefined,
-      [],
-      [],
-      undefined,
-    ),
+      embeddings: makeMockEmbeddings(),
+      reranker: makeMockReranker(),
+      registry: overrides.registry ?? makeMockRegistry(),
+    }),
     qdrant,
   };
 }
@@ -89,14 +86,14 @@ function makeFacade(overrides: { qdrant?: any; registry?: any } = {}) {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("ExploreFacade.buildMergedFilter", () => {
+describe("ExploreFacade filter delegation to registry.buildMergedFilter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("passes typed params to registry.buildFilter", async () => {
+  it("delegates typed params and raw filter to registry.buildMergedFilter", async () => {
     const registry = makeMockRegistry();
-    registry.buildFilter.mockReturnValue({
+    registry.buildMergedFilter.mockReturnValue({
       must: [{ key: "language", match: { value: "typescript" } }],
     });
     const qdrant = makeMockQdrant();
@@ -108,7 +105,10 @@ describe("ExploreFacade.buildMergedFilter", () => {
       language: "typescript",
     });
 
-    expect(registry.buildFilter).toHaveBeenCalledWith(expect.objectContaining({ language: "typescript" }), "chunk");
+    expect(registry.buildMergedFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "typescript" }),
+      undefined, // no raw filter
+    );
     expect(qdrant.search).toHaveBeenCalledWith(
       "test",
       expect.any(Array),
@@ -119,55 +119,38 @@ describe("ExploreFacade.buildMergedFilter", () => {
     );
   });
 
-  it("merges typed filter with raw filter", async () => {
+  it("passes raw filter to registry.buildMergedFilter alongside typed params", async () => {
+    const mergedResult = {
+      must: [
+        { key: "relativePath", match: { text: "src/" } },
+        { key: "language", match: { value: "typescript" } },
+      ],
+    };
     const registry = makeMockRegistry();
-    registry.buildFilter.mockReturnValue({
-      must: [{ key: "language", match: { value: "typescript" } }],
-    });
+    registry.buildMergedFilter.mockReturnValue(mergedResult);
     const qdrant = makeMockQdrant();
     const { facade } = makeFacade({ qdrant, registry });
 
+    const rawFilter = { must: [{ key: "relativePath", match: { text: "src/" } }] };
     await facade.semanticSearch({
       collection: "test",
       query: "test query",
       language: "typescript",
-      filter: {
-        must: [{ key: "relativePath", match: { text: "src/" } }],
-      },
+      filter: rawFilter,
     });
 
+    expect(registry.buildMergedFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "typescript" }),
+      rawFilter,
+    );
     const filterArg = qdrant.search.mock.calls[0][3] as Record<string, unknown>;
     const must = filterArg.must as unknown[];
     expect(must).toHaveLength(2);
-    expect(must).toContainEqual({ key: "relativePath", match: { text: "src/" } });
-    expect(must).toContainEqual({ key: "language", match: { value: "typescript" } });
   });
 
-  it("preserves raw filter's should and merges must_not", async () => {
+  it("returns undefined when registry.buildMergedFilter returns undefined", async () => {
     const registry = makeMockRegistry();
-    registry.buildFilter.mockReturnValue({
-      must_not: [{ key: "isDocumentation", match: { value: true } }],
-    });
-    const qdrant = makeMockQdrant();
-    const { facade } = makeFacade({ qdrant, registry });
-
-    await facade.semanticSearch({
-      collection: "test",
-      query: "test query",
-      excludeDocumentation: true,
-      filter: {
-        should: [{ key: "chunkType", match: { value: "function" } }],
-      },
-    });
-
-    const filterArg = qdrant.search.mock.calls[0][3] as Record<string, unknown>;
-    expect(filterArg.must_not).toEqual([{ key: "isDocumentation", match: { value: true } }]);
-    expect(filterArg.should).toEqual([{ key: "chunkType", match: { value: "function" } }]);
-  });
-
-  it("returns undefined when no typed or raw filter", async () => {
-    const registry = makeMockRegistry();
-    registry.buildFilter.mockReturnValue(undefined);
+    registry.buildMergedFilter.mockReturnValue(undefined);
     const qdrant = makeMockQdrant();
     const { facade } = makeFacade({ qdrant, registry });
 
@@ -179,13 +162,13 @@ describe("ExploreFacade.buildMergedFilter", () => {
     expect(qdrant.search).toHaveBeenCalledWith("test", expect.any(Array), expect.any(Number), undefined);
   });
 
-  it("returns raw filter when no typed params match", async () => {
+  it("passes raw filter through when registry returns it unchanged", async () => {
+    const rawFilter = { must: [{ key: "language", match: { value: "python" } }] };
     const registry = makeMockRegistry();
-    registry.buildFilter.mockReturnValue(undefined);
+    registry.buildMergedFilter.mockReturnValue(rawFilter);
     const qdrant = makeMockQdrant();
     const { facade } = makeFacade({ qdrant, registry });
 
-    const rawFilter = { must: [{ key: "language", match: { value: "python" } }] };
     await facade.semanticSearch({
       collection: "test",
       query: "test query",
@@ -195,9 +178,9 @@ describe("ExploreFacade.buildMergedFilter", () => {
     expect(qdrant.search).toHaveBeenCalledWith("test", expect.any(Array), expect.any(Number), rawFilter);
   });
 
-  it("passes level to registry.buildFilter for rankChunks", async () => {
+  it("passes level to registry.buildMergedFilter for rankChunks", async () => {
     const registry = makeMockRegistry();
-    registry.buildFilter.mockReturnValue(undefined);
+    registry.buildMergedFilter.mockReturnValue(undefined);
     const qdrant = makeMockQdrant();
     const { facade } = makeFacade({ qdrant, registry });
 
@@ -208,6 +191,10 @@ describe("ExploreFacade.buildMergedFilter", () => {
       language: "typescript",
     });
 
-    expect(registry.buildFilter).toHaveBeenCalledWith(expect.objectContaining({ language: "typescript" }), "file");
+    expect(registry.buildMergedFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "typescript" }),
+      undefined, // no raw filter
+      "file",
+    );
   });
 });
