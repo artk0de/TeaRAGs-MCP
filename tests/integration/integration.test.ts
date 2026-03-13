@@ -7,14 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EmbeddingProvider } from "../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../src/core/adapters/qdrant/client.js";
 import { ExploreFacade, IngestFacade } from "../../src/core/api/index.js";
-import { resolvePresets } from "../../src/core/explore/rerank/presets/index.js";
-import { Reranker } from "../../src/core/explore/reranker.js";
-import { GitTrajectory } from "../../src/core/trajectory/git.js";
-import { gitDerivedSignals } from "../../src/core/trajectory/git/rerank/derived-signals/index.js";
-import { GIT_PRESETS } from "../../src/core/trajectory/git/rerank/presets/index.js";
-import { TrajectoryRegistry } from "../../src/core/trajectory/index.js";
-import { staticDerivedSignals } from "../../src/core/trajectory/static/rerank/derived-signals/index.js";
-import { STATIC_PRESETS } from "../../src/core/trajectory/static/rerank/presets/index.js";
+import { resolvePresets } from "../../src/core/domains/explore/rerank/presets/index.js";
+import { Reranker } from "../../src/core/domains/explore/reranker.js";
+import { GitTrajectory } from "../../src/core/domains/trajectory/git.js";
+import { gitDerivedSignals } from "../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
+import { GIT_PRESETS } from "../../src/core/domains/trajectory/git/rerank/presets/index.js";
+import { TrajectoryRegistry } from "../../src/core/domains/trajectory/index.js";
+import { staticDerivedSignals } from "../../src/core/domains/trajectory/static/rerank/derived-signals/index.js";
+import { STATIC_PRESETS } from "../../src/core/domains/trajectory/static/rerank/presets/index.js";
 import type { IngestCodeConfig } from "../../src/core/types.js";
 
 // Mock tree-sitter modules to prevent native binding crashes in integration tests

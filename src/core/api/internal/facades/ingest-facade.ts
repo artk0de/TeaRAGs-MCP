@@ -17,19 +17,19 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import type { Reranker } from "../../../explore/reranker.js";
+import type { Reranker } from "../../../domains/explore/reranker.js";
+import { computeCollectionStats } from "../../../domains/ingest/collection-stats.js";
+import { createIngestDependencies, type SynchronizerTuning } from "../../../domains/ingest/factory.js";
+import { IndexPipeline } from "../../../domains/ingest/indexing.js";
+import type { PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
+import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
+import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
+import { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
+import type { DeletionConfig } from "../../../domains/ingest/sync/deletion-strategy.js";
+import { GitEnrichmentProvider } from "../../../domains/trajectory/git/provider.js";
+import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
-import { computeCollectionStats } from "../../../ingest/collection-stats.js";
-import { createIngestDependencies, type SynchronizerTuning } from "../../../ingest/factory.js";
-import { IndexPipeline } from "../../../ingest/indexing.js";
-import type { PipelineTuning } from "../../../ingest/pipeline/base.js";
-import { EnrichmentCoordinator } from "../../../ingest/pipeline/enrichment/coordinator.js";
-import { StatusModule } from "../../../ingest/pipeline/status-module.js";
-import { ReindexPipeline } from "../../../ingest/reindexing.js";
-import type { DeletionConfig } from "../../../ingest/sync/deletion-strategy.js";
-import { GitEnrichmentProvider } from "../../../trajectory/git/provider.js";
-import { StaticPayloadBuilder } from "../../../trajectory/static/provider.js";
 import type {
   ChangeStats,
   IndexOptions,

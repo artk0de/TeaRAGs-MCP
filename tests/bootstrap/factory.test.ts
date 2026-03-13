@@ -22,13 +22,13 @@ vi.mock("../../src/core/api/internal/facades/ingest-facade.js", () => ({
 vi.mock("../../src/core/api/internal/facades/explore-facade.js", () => ({
   ExploreFacade: vi.fn().mockImplementation(function () {}),
 }));
-vi.mock("../../src/core/explore/reranker.js", () => ({
+vi.mock("../../src/core/domains/explore/reranker.js", () => ({
   Reranker: vi.fn().mockImplementation(function () {}),
 }));
-vi.mock("../../src/core/explore/rerank/presets/index.js", () => ({
+vi.mock("../../src/core/domains/explore/rerank/presets/index.js", () => ({
   resolvePresets: vi.fn().mockReturnValue([]),
 }));
-vi.mock("../../src/core/trajectory/static/index.js", () => ({
+vi.mock("../../src/core/domains/trajectory/static/index.js", () => ({
   StaticTrajectory: vi.fn().mockImplementation(function () {
     this.key = "static";
     this.payloadSignals = [];
@@ -37,10 +37,10 @@ vi.mock("../../src/core/trajectory/static/index.js", () => ({
     this.presets = [];
   }),
 }));
-vi.mock("../../src/core/trajectory/git/rerank/derived-signals/index.js", () => ({
+vi.mock("../../src/core/domains/trajectory/git/rerank/derived-signals/index.js", () => ({
   gitDerivedSignals: [],
 }));
-vi.mock("../../src/core/trajectory/git/rerank/presets/index.js", () => ({
+vi.mock("../../src/core/domains/trajectory/git/rerank/presets/index.js", () => ({
   GIT_PRESETS: [],
 }));
 vi.mock("../../src/mcp/tools/index.js", () => ({

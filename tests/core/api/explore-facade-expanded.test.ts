@@ -7,7 +7,7 @@ import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-fa
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock("../../../src/core/explore/post-process.js", () => ({
+vi.mock("../../../src/core/domains/explore/post-process.js", () => ({
   computeFetchLimit: vi.fn((limit?: number, _pp?: string, _r?: unknown) => ({
     requestedLimit: limit || 5,
     fetchLimit: (limit || 5) * 3,
@@ -24,7 +24,7 @@ vi.mock("../../../src/core/adapters/qdrant/sparse.js", () => ({
   },
 }));
 
-vi.mock("../../../src/core/explore/rank-module.js", () => ({
+vi.mock("../../../src/core/domains/explore/rank-module.js", () => ({
   RankModule: class {
     constructor(_reranker: any, _descriptors: any) {}
     rankChunks = vi.fn().mockResolvedValue([
@@ -186,7 +186,7 @@ describe("ExploreFacade — expanded methods", () => {
 
     it("applies metaOnly formatting when requested", async () => {
       const { facade } = makeFacade();
-      const { filterMetaOnly } = await import("../../../src/core/explore/post-process.js");
+      const { filterMetaOnly } = await import("../../../src/core/domains/explore/post-process.js");
 
       const result = await facade.semanticSearch({
         collection: "test_col",
@@ -305,7 +305,7 @@ describe("ExploreFacade — expanded methods", () => {
 
     it("applies metaOnly formatting when requested", async () => {
       const { facade } = makeFacade();
-      const { filterMetaOnly } = await import("../../../src/core/explore/post-process.js");
+      const { filterMetaOnly } = await import("../../../src/core/domains/explore/post-process.js");
 
       await facade.hybridSearch({
         collection: "test_col",
@@ -410,7 +410,7 @@ describe("ExploreFacade — expanded methods", () => {
 
     it("defaults metaOnly to true for rank_chunks", async () => {
       const { facade } = makeFacade();
-      const { filterMetaOnly } = await import("../../../src/core/explore/post-process.js");
+      const { filterMetaOnly } = await import("../../../src/core/domains/explore/post-process.js");
 
       await facade.rankChunks({
         collection: "test_col",
@@ -438,7 +438,7 @@ describe("ExploreFacade — expanded methods", () => {
 
     it("skips metaOnly when explicitly false", async () => {
       const { facade } = makeFacade();
-      const { filterMetaOnly } = await import("../../../src/core/explore/post-process.js");
+      const { filterMetaOnly } = await import("../../../src/core/domains/explore/post-process.js");
       vi.mocked(filterMetaOnly).mockClear();
 
       await facade.rankChunks({

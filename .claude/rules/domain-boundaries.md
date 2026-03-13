@@ -13,23 +13,23 @@ paths:
                   api/                            <- Composition root
                /   |   \                           Imports from: everything (assembles DI)
              /     |     \
-          explore/ trajectory/ ingest/            <- Domain modules
-             \     |     /                          Import from: contracts/, infra/
+      domains/explore  domains/trajectory  domains/ingest  <- Domain modules
+             \     |     /                          Import from: contracts/, adapters/, infra/
               \    |    /                           NOT from each other
           contracts/   adapters/   infra/         <- Foundation (lowest level)
 ```
 
 **Dependency rules:**
 
-| Layer              | Imports from                                        | Exports to             |
-| ------------------ | --------------------------------------------------- | ---------------------- |
-| `core/api/`        | domain modules, `contracts/`, `adapters/`, `infra/` | external consumers     |
-| `core/explore/`    | `contracts/`, `infra/`                              | `api/`                 |
-| `core/trajectory/` | `contracts/`, `adapters/`, `infra/`                 | `api/`                 |
-| `core/ingest/`     | `contracts/`, `adapters/`, `infra/`                 | `api/`                 |
-| `core/contracts/`  | `infra/`                                            | domain modules, `api/` |
-| `core/adapters/`   | `infra/`                                            | domain modules, `api/` |
-| `core/infra/`      | nothing                                             | all layers             |
+| Layer                      | Imports from                                        | Exports to             |
+| -------------------------- | --------------------------------------------------- | ---------------------- |
+| `core/api/`                | domain modules, `contracts/`, `adapters/`, `infra/` | external consumers     |
+| `core/domains/explore/`    | `contracts/`, `infra/`                              | `api/`                 |
+| `core/domains/trajectory/` | `contracts/`, `adapters/`, `infra/`                 | `api/`                 |
+| `core/domains/ingest/`     | `contracts/`, `adapters/`, `infra/`                 | `api/`                 |
+| `core/contracts/`          | `infra/`                                            | domain modules, `api/` |
+| `core/adapters/`           | `infra/`                                            | domain modules, `api/` |
+| `core/infra/`              | nothing                                             | all layers             |
 
 **api/ is the composition root:** it assembles dependencies from all layers,
 creates instances, and wires them together via DI.
@@ -56,7 +56,7 @@ creates instances, and wires them together via DI.
 - **index.ts**: barrel exports public/ + SchemaBuilder + createComposition
 - Imports from all layers (composition root assembles DI)
 
-**core/explore/** — Query-time exploration engine (domain module)
+**core/domains/explore/** — Query-time exploration engine (domain module)
 
 - Reranker (orchestrator: derived signals -> adaptive bounds -> scoring ->
   ranking overlay)
@@ -69,7 +69,7 @@ creates instances, and wires them together via DI.
 - Presets: 2-level hierarchy (registry -> composite), resolved at composition
   root
 
-**core/trajectory/** — Trajectory implementations (domain module)
+**core/domains/trajectory/** — Trajectory implementations (domain module)
 
 - Static trajectory: base payload signals, structural derived signals, generic
   presets, static filters
@@ -80,11 +80,10 @@ creates instances, and wires them together via DI.
 - Provider implementations (EnrichmentProvider — optional, not all trajectories
   have ingest enrichment)
 
-**core/ingest/** — Indexing pipeline (domain module)
+**core/domains/ingest/** — Indexing pipeline (domain module)
 
 - Chunking, embedding, enrichment coordination
-- Collection utilities (resolveCollectionName, validatePath,
-  computeCollectionStats)
+- Collection utilities (computeCollectionStats)
 - Depends on PayloadBuilder and EnrichmentProvider interfaces from contracts,
   NOT from trajectory
 
@@ -111,12 +110,12 @@ creates instances, and wires them together via DI.
 **All new code MUST be placed within the existing layer structure.** Never
 create top-level directories under `src/` — all code goes into `core/`.
 
-| New code type         | Correct location            | WRONG location       |
-| --------------------- | --------------------------- | -------------------- |
-| Qdrant adapter/daemon | `core/adapters/qdrant/`     | `src/embedded/`      |
-| Embedding adapter     | `core/adapters/embeddings/` | `src/providers/`     |
-| New domain module     | `core/<module-name>/`       | `src/<module-name>/` |
-| Bootstrap/config      | `bootstrap/`                | `src/config/`        |
+| New code type         | Correct location              | WRONG location       |
+| --------------------- | ----------------------------- | -------------------- |
+| Qdrant adapter/daemon | `core/adapters/qdrant/`       | `src/embedded/`      |
+| Embedding adapter     | `core/adapters/embeddings/`   | `src/providers/`     |
+| New domain module     | `core/domains/<module-name>/` | `src/<module-name>/` |
+| Bootstrap/config      | `bootstrap/`                  | `src/config/`        |
 
 Tests mirror source structure: `tests/core/adapters/qdrant/` for
 `src/core/adapters/qdrant/`.
@@ -134,11 +133,12 @@ module facades, not by importing from contracts/ directly.
 Example flow:
 
 - `EnrichmentProvider` interface -> `core/contracts/types/provider.ts`
-- `GitEnrichmentProvider` implementation -> `core/trajectory/git/provider.ts`
-- `EnrichmentCoordinator` in `core/ingest/` imports only the interface from
-  `core/contracts/`
-- `TrajectoryRegistry` in `trajectory/` aggregates trajectory implementations
-- `trajectory/` exposes its query contract through public API
-- `explore/` receives resolved data via DI (constructor params), never imports
-  trajectory/
-- `api/` creates registry from trajectory/, extracts data, passes to explore/
+- `GitEnrichmentProvider` implementation ->
+  `core/domains/trajectory/git/provider.ts`
+- `EnrichmentCoordinator` in `core/domains/ingest/` imports only the interface
+  from `core/contracts/`
+- `TrajectoryRegistry` in `domains/trajectory/` aggregates implementations
+- `domains/trajectory/` exposes its query contract through public API
+- `domains/explore/` receives resolved data via DI (constructor params), never
+  imports trajectory/
+- `api/` creates registry from domains/trajectory/, passes to domains/explore/

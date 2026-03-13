@@ -19,12 +19,13 @@
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
-import type { Reranker } from "../../../explore/reranker.js";
+import type { Reranker } from "../../../domains/explore/reranker.js";
 import {
   createExploreStrategy,
   type BaseExploreStrategy,
   type ExploreContext,
-} from "../../../explore/strategies/index.js";
+} from "../../../domains/explore/strategies/index.js";
+import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import {
   CollectionRefError,
   resolveCollection,
@@ -33,7 +34,6 @@ import {
 } from "../../../infra/collection-name.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
-import type { TrajectoryRegistry } from "../../../trajectory/index.js";
 import type {
   ExploreCodeRequest,
   ExploreResponse,

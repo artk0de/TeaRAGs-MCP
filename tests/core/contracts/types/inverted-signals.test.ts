@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { AgeSignal } from "../../../../src/core/trajectory/git/rerank/derived-signals/age.js";
-import { BlockPenaltySignal } from "../../../../src/core/trajectory/git/rerank/derived-signals/block-penalty.js";
-import { ChurnSignal } from "../../../../src/core/trajectory/git/rerank/derived-signals/churn.js";
-import { RecencySignal } from "../../../../src/core/trajectory/git/rerank/derived-signals/recency.js";
-import { StabilitySignal } from "../../../../src/core/trajectory/git/rerank/derived-signals/stability.js";
-import { ChunkSizeSignal } from "../../../../src/core/trajectory/static/rerank/derived-signals/chunk-size.js";
+import { AgeSignal } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/age.js";
+import { BlockPenaltySignal } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/block-penalty.js";
+import { ChurnSignal } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/churn.js";
+import { RecencySignal } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/recency.js";
+import { StabilitySignal } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/stability.js";
+import { ChunkSizeSignal } from "../../../../src/core/domains/trajectory/static/rerank/derived-signals/chunk-size.js";
 
 describe("DerivedSignalDescriptor.inverted", () => {
   it("RecencySignal is inverted (1 - normalize)", () => {

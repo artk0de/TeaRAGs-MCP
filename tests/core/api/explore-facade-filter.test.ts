@@ -6,7 +6,7 @@ import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-fa
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock("../../../src/core/explore/post-process.js", () => ({
+vi.mock("../../../src/core/domains/explore/post-process.js", () => ({
   computeFetchLimit: vi.fn((limit?: number) => ({
     requestedLimit: limit || 5,
     fetchLimit: (limit || 5) * 3,
@@ -21,7 +21,7 @@ vi.mock("../../../src/core/adapters/qdrant/sparse.js", () => ({
   },
 }));
 
-vi.mock("../../../src/core/explore/rank-module.js", () => ({
+vi.mock("../../../src/core/domains/explore/rank-module.js", () => ({
   RankModule: class {
     constructor(_reranker: any, _descriptors: any) {}
     rankChunks = vi.fn().mockResolvedValue([]);

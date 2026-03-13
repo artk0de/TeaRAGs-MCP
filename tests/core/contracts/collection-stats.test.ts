@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
-import { computeCollectionStats } from "../../../src/core/ingest/collection-stats.js";
+import { computeCollectionStats } from "../../../src/core/domains/ingest/collection-stats.js";
 
 describe("computeCollectionStats", () => {
   // 100 values: 1, 2, 3, ..., 100

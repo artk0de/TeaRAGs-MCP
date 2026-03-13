@@ -16,7 +16,7 @@
 
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import type { Reranker } from "../../explore/reranker.js";
+import type { Reranker } from "../../domains/explore/reranker.js";
 import type { SchemaDriftMonitor } from "../../infra/schema-drift-monitor.js";
 import type { ExploreFacade } from "../internal/facades/explore-facade.js";
 import type { IngestFacade } from "../internal/facades/ingest-facade.js";

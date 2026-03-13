@@ -8,11 +8,11 @@
 
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
-import { resolvePresets } from "../../explore/rerank/presets/index.js";
-import { Reranker } from "../../explore/reranker.js";
-import { GitTrajectory } from "../../trajectory/git.js";
-import { TrajectoryRegistry } from "../../trajectory/index.js";
-import { StaticTrajectory } from "../../trajectory/static/index.js";
+import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
+import { Reranker } from "../../domains/explore/reranker.js";
+import { GitTrajectory } from "../../domains/trajectory/git.js";
+import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
+import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
 
 export interface CompositionResult {
   registry: TrajectoryRegistry;

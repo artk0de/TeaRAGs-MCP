@@ -9,38 +9,38 @@ const { mockIndexCodebase, mockReindexChanges, mockScrollAllPoints, mockComputeS
   mockComputeStats: vi.fn().mockReturnValue({ computedAt: Date.now(), perSignal: new Map() }),
 }));
 
-vi.mock("../../../src/core/ingest/indexing.js", () => ({
+vi.mock("../../../src/core/domains/ingest/indexing.js", () => ({
   IndexPipeline: class {
     indexCodebase = mockIndexCodebase;
   },
 }));
 
-vi.mock("../../../src/core/ingest/reindexing.js", () => ({
+vi.mock("../../../src/core/domains/ingest/reindexing.js", () => ({
   ReindexPipeline: class {
     reindexChanges = mockReindexChanges;
   },
 }));
 
-vi.mock("../../../src/core/ingest/pipeline/status-module.js", () => ({
+vi.mock("../../../src/core/domains/ingest/pipeline/status-module.js", () => ({
   StatusModule: class {
     getIndexStatus = vi.fn().mockResolvedValue({ indexed: true });
     clearIndex = vi.fn().mockResolvedValue(undefined);
   },
 }));
 
-vi.mock("../../../src/core/ingest/pipeline/enrichment/coordinator.js", () => ({
+vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js", () => ({
   EnrichmentCoordinator: class {},
 }));
 
-vi.mock("../../../src/core/ingest/factory.js", () => ({
+vi.mock("../../../src/core/domains/ingest/factory.js", () => ({
   createIngestDependencies: vi.fn().mockReturnValue({}),
 }));
 
-vi.mock("../../../src/core/trajectory/git/provider.js", () => ({
+vi.mock("../../../src/core/domains/trajectory/git/provider.js", () => ({
   GitEnrichmentProvider: class {},
 }));
 
-vi.mock("../../../src/core/trajectory/static/provider.js", () => ({
+vi.mock("../../../src/core/domains/trajectory/static/provider.js", () => ({
   StaticPayloadBuilder: class {},
 }));
 
@@ -48,7 +48,7 @@ vi.mock("../../../src/core/adapters/qdrant/scroll.js", () => ({
   scrollAllPoints: (...args: any[]) => mockScrollAllPoints(...args),
 }));
 
-vi.mock("../../../src/core/ingest/collection-stats.js", () => ({
+vi.mock("../../../src/core/domains/ingest/collection-stats.js", () => ({
   computeCollectionStats: (...args: any[]) => mockComputeStats(...args),
 }));
 
