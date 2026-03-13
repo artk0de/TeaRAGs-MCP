@@ -10,7 +10,7 @@
  * The ingest layer uses getAllEnrichmentProviders() to obtain providers.
  */
 
-import { mergeQdrantFilters } from "../adapters/qdrant/filter-utils.js";
+import { mergeQdrantFilters } from "../adapters/qdrant/filters/utils.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../contracts/types/reranker.js";
