@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
 import { createApp, type AppDeps, type ExploreFacade, type IngestFacade } from "../../../src/core/api/index.js";
-import type { Reranker } from "../../../src/core/explore/reranker.js";
+import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
 import type { SchemaDriftMonitor } from "../../../src/core/infra/schema-drift-monitor.js";
 
 // ---------------------------------------------------------------------------

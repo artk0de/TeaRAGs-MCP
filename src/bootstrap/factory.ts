@@ -16,11 +16,11 @@ import {
   SchemaBuilder,
   type App,
 } from "../core/api/index.js";
+import { initDebugLogger } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
+import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
+import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
-import { initDebugLogger } from "../core/ingest/pipeline/infra/debug-logger.js";
-import { setDebug } from "../core/ingest/pipeline/infra/runtime.js";
-import { buildPipelineConfig } from "../core/ingest/pipeline/types.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";

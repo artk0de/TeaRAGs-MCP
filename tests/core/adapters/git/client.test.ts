@@ -1,5 +1,9 @@
+import { execFile } from "node:child_process";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { getCommitsByPathspec, getCommitsByPathspecBatched } from "../../../../src/core/adapters/git/client.js";
+import { parsePathspecOutput } from "../../../../src/core/adapters/git/parsers.js";
 import type { CommitInfo } from "../../../../src/core/adapters/git/types.js";
 
 // Mock child_process before imports
@@ -23,17 +27,9 @@ vi.mock("../../../../src/core/adapters/git/parsers.js", () => ({
 }));
 
 // Mock runtime
-vi.mock("../../../../src/core/ingest/pipeline/infra/runtime.js", () => ({
+vi.mock("../../../../src/core/domains/ingest/pipeline/infra/runtime.js", () => ({
   isDebug: vi.fn(() => true),
 }));
-
-import { execFile } from "node:child_process";
-
-import { parsePathspecOutput } from "../../../../src/core/adapters/git/parsers.js";
-import {
-  getCommitsByPathspec,
-  getCommitsByPathspecBatched,
-} from "../../../../src/core/adapters/git/client.js";
 
 // Helper to create a mock execFile that resolves with stdout
 function mockExecFileResolving(stdout: string) {

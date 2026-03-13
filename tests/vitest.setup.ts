@@ -6,10 +6,12 @@
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterAll } from "vitest";
-import { setDebug } from "../src/core/ingest/pipeline/infra/runtime.js";
+
+import { setDebug } from "../src/core/domains/ingest/pipeline/infra/runtime.js";
 
 // Set test-specific environment variables
 // Enable DEBUG to cover debug logging branches across all modules

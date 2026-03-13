@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { SchemaBuilder } from "../../../src/core/api/internal/infra/schema-builder.js";
-import type { Reranker } from "../../../src/core/explore/reranker.js";
+import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
 
 /**
  * Minimal mock implementing only the Reranker methods SchemaBuilder depends on:
