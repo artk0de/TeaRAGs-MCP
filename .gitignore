@@ -22,6 +22,7 @@ coverage/
 .claude/**/*.local.json
 .claude/*.local.*
 .claude/**/*.local.*
+.claude/**/.local/
 *.swp
 *.swo
 *~
