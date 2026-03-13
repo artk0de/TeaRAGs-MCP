@@ -32,7 +32,7 @@ import type {
   SearchResult,
   SemanticSearchRequest,
   SignalDescriptor,
-} from "../../../src/core/api/app.js";
+} from "../../../src/core/api/index.js";
 
 // ---------------------------------------------------------------------------
 // Helpers: compile-time type assertions

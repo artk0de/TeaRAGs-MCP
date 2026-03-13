@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { HybridSearchRequest, RankChunksRequest, SemanticSearchRequest } from "../../../src/core/api/app.js";
-import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
+import type { HybridSearchRequest, RankChunksRequest, SemanticSearchRequest } from "../../../src/core/api/index.js";
+import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
 
 // ---------------------------------------------------------------------------
 // Mocks

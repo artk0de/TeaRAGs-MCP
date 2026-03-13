@@ -13,7 +13,7 @@
 
 import { z } from "zod";
 
-import type { SchemaBuilder } from "../../core/api/schema-builder.js";
+import type { SchemaBuilder } from "../../core/api/index.js";
 
 /** Coerce string→number for MCP params (agents sometimes send "5" instead of 5) */
 const coerceNumber = () => z.preprocess((v) => (typeof v === "string" ? Number(v) : v), z.number());

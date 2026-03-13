@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-facade.js";
 
 const { mockIndexCodebase, mockReindexChanges, mockScrollAllPoints, mockComputeStats } = vi.hoisted(() => ({
   mockIndexCodebase: vi.fn().mockResolvedValue({ chunksIndexed: 10 }),

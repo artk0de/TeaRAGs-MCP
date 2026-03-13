@@ -16,10 +16,10 @@ vi.mock("../../src/core/adapters/embeddings/factory.js", () => ({
     create: vi.fn().mockReturnValue({ getDimensions: () => 768 }),
   },
 }));
-vi.mock("../../src/core/api/ingest-facade.js", () => ({
+vi.mock("../../src/core/api/internal/facades/ingest-facade.js", () => ({
   IngestFacade: vi.fn().mockImplementation(function () {}),
 }));
-vi.mock("../../src/core/api/explore-facade.js", () => ({
+vi.mock("../../src/core/api/internal/facades/explore-facade.js", () => ({
   ExploreFacade: vi.fn().mockImplementation(function () {}),
 }));
 vi.mock("../../src/core/explore/reranker.js", () => ({

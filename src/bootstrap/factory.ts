@@ -8,12 +8,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
-import type { App } from "../core/api/app.js";
-import { createComposition } from "../core/api/composition.js";
-import { createApp } from "../core/api/create-app.js";
-import { ExploreFacade } from "../core/api/explore-facade.js";
-import { IngestFacade } from "../core/api/ingest-facade.js";
-import { SchemaBuilder } from "../core/api/schema-builder.js";
+import {
+  createApp,
+  createComposition,
+  ExploreFacade,
+  IngestFacade,
+  SchemaBuilder,
+  type App,
+} from "../core/api/index.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import { initDebugLogger } from "../core/ingest/pipeline/infra/debug-logger.js";

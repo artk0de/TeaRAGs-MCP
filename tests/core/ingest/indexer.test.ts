@@ -5,8 +5,7 @@ import { join } from "node:path";
 // Note: vi.mock() is hoisted, so all values must be inline (no external references)
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
-import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import { ExploreFacade, IngestFacade } from "../../../src/core/api/index.js";
 import { resolvePresets } from "../../../src/core/explore/rerank/presets/index.js";
 import { Reranker } from "../../../src/core/explore/reranker.js";
 import { GitTrajectory } from "../../../src/core/trajectory/git.js";

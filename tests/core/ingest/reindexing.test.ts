@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SchemaManager } from "../../../src/core/adapters/qdrant/schema-migration.js";
-import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import { IngestFacade } from "../../../src/core/api/index.js";
 import { ParallelFileSynchronizer } from "../../../src/core/ingest/sync/parallel-synchronizer.js";
 import type { IngestCodeConfig } from "../../../src/core/types.js";
 import {
@@ -337,14 +337,12 @@ console.log('This file has secrets');`,
       await ingest.indexCodebase(codebaseDir);
 
       // Spy on ensureCurrentSchema to return migrations applied
-      const ensureCurrentSchemaSpy = vi
-        .spyOn(SchemaManager.prototype, "ensureCurrentSchema")
-        .mockResolvedValueOnce({
-          success: true,
-          fromVersion: 1,
-          toVersion: 2,
-          migrationsApplied: ["add_chunk_type_index"],
-        });
+      const ensureCurrentSchemaSpy = vi.spyOn(SchemaManager.prototype, "ensureCurrentSchema").mockResolvedValueOnce({
+        success: true,
+        fromVersion: 1,
+        toVersion: 2,
+        migrationsApplied: ["add_chunk_type_index"],
+      });
 
       await createTestFile(codebaseDir, "file2.ts", "export const v2 = 2;\nconsole.log('Added');");
 
@@ -363,13 +361,9 @@ console.log('This file has secrets');`,
       await ingest.indexCodebase(codebaseDir);
 
       // Spy on initialize to return false (no snapshot found)
-      const initializeSpy = vi
-        .spyOn(ParallelFileSynchronizer.prototype, "initialize")
-        .mockResolvedValueOnce(false);
+      const initializeSpy = vi.spyOn(ParallelFileSynchronizer.prototype, "initialize").mockResolvedValueOnce(false);
 
-      await expect(ingest.reindexChanges(codebaseDir)).rejects.toThrow(
-        "No previous snapshot found",
-      );
+      await expect(ingest.reindexChanges(codebaseDir)).rejects.toThrow("No previous snapshot found");
 
       initializeSpy.mockRestore();
     });
@@ -381,13 +375,11 @@ console.log('This file has secrets');`,
       await ingest.indexCodebase(codebaseDir);
 
       // Spy on loadCheckpoint to return a valid checkpoint
-      const loadCheckpointSpy = vi
-        .spyOn(ParallelFileSynchronizer.prototype, "loadCheckpoint")
-        .mockResolvedValueOnce({
-          processedFiles: ["file1.ts"],
-          totalFiles: 2,
-          timestamp: Date.now(),
-        });
+      const loadCheckpointSpy = vi.spyOn(ParallelFileSynchronizer.prototype, "loadCheckpoint").mockResolvedValueOnce({
+        processedFiles: ["file1.ts"],
+        totalFiles: 2,
+        timestamp: Date.now(),
+      });
 
       await createTestFile(codebaseDir, "file2.ts", "export const v2 = 2;\nconsole.log('Added');");
 

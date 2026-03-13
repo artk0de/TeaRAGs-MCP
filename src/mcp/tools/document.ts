@@ -4,7 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App } from "../../core/api/app.js";
+import type { App } from "../../core/api/index.js";
 import { formatMcpError, formatMcpText } from "../format.js";
 import * as schemas from "./schemas.js";
 

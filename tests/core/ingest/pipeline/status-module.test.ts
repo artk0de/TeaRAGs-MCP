@@ -12,7 +12,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
-import { IngestFacade } from "../../../../src/core/api/ingest-facade.js";
+import { IngestFacade } from "../../../../src/core/api/index.js";
 import type { IngestCodeConfig } from "../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({

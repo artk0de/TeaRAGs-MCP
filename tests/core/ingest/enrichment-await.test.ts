@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import { IngestFacade } from "../../../src/core/api/index.js";
 import { createIngestDependencies } from "../../../src/core/ingest/factory.js";
 import type { IngestCodeConfig } from "../../../src/core/types.js";
 import {

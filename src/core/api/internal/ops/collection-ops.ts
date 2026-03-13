@@ -2,9 +2,9 @@
  * Collection CRUD operations — business logic extracted from MCP handlers.
  */
 
-import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
-import type { QdrantManager } from "../adapters/qdrant/client.js";
-import type { CollectionInfo, CreateCollectionRequest } from "./app.js";
+import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { CollectionInfo, CreateCollectionRequest } from "../../public/dto/index.js";
 
 export class CollectionOps {
   constructor(

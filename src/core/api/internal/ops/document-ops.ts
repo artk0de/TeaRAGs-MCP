@@ -2,10 +2,10 @@
  * Document add/delete operations — business logic extracted from MCP handlers.
  */
 
-import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
-import type { QdrantManager } from "../adapters/qdrant/client.js";
-import { BM25SparseVectorGenerator } from "../adapters/qdrant/sparse.js";
-import type { AddDocumentsRequest, DeleteDocumentsRequest } from "./app.js";
+import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { BM25SparseVectorGenerator } from "../../../adapters/qdrant/sparse.js";
+import type { AddDocumentsRequest, DeleteDocumentsRequest } from "../../public/dto/index.js";
 
 export class DocumentOps {
   constructor(

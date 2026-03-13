@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ExploreFacade } from "../../../src/core/api/explore-facade.js";
+import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
 
 // ---------------------------------------------------------------------------
 // Mocks

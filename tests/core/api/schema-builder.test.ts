@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { SchemaBuilder } from "../../../src/core/api/schema-builder.js";
+import { SchemaBuilder } from "../../../src/core/api/internal/infra/schema-builder.js";
 import type { Reranker } from "../../../src/core/explore/reranker.js";
 
 /**
