@@ -10,6 +10,7 @@
  * The ingest layer uses getAllEnrichmentProviders() to obtain providers.
  */
 
+import { mergeQdrantFilters } from "../adapters/qdrant/filter-utils.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../adapters/qdrant/types.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../contracts/types/reranker.js";
@@ -133,5 +134,20 @@ export class TrajectoryRegistry {
     if (mustConditions.length > 0) filter.must = mustConditions;
     if (mustNotConditions.length > 0) filter.must_not = mustNotConditions;
     return filter;
+  }
+
+  /**
+   * Build typed filter from params and merge with raw Qdrant filter.
+   *
+   * Combines registry's typed filter output with a user-provided raw filter.
+   * Used by ExploreFacade to avoid owning merge logic.
+   */
+  buildMergedFilter(
+    typedParams: Record<string, unknown>,
+    rawFilter?: Record<string, unknown>,
+    level: FilterLevel = "chunk",
+  ): Record<string, unknown> | undefined {
+    const typed = this.buildFilter(typedParams, level);
+    return mergeQdrantFilters(typed, rawFilter as QdrantFilter | undefined) as Record<string, unknown> | undefined;
   }
 }
