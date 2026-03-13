@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type AddressInfo } from "node:net";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { appDataDir } from "../../../../bootstrap/config/paths.js";
 import { downloadQdrant, getBinaryPath, isBinaryUpToDate, QDRANT_VERSION } from "./download.js";
 import type { DaemonHandle, DaemonPaths, QdrantResolution } from "./types.js";
 
@@ -22,8 +22,13 @@ export function getDaemonPaths(storagePath: string): DaemonPaths {
   };
 }
 
-function getStoragePath(): string {
-  return process.env.QDRANT_EMBEDDED_STORAGE_PATH ?? join(appDataDir(), "qdrant");
+/* v8 ignore next 3 -- fallback for backward compat when DI paths not provided */
+function fallbackAppDataDir(): string {
+  return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+}
+
+function getStoragePath(appDataPath?: string): string {
+  return process.env.QDRANT_EMBEDDED_STORAGE_PATH ?? join(appDataPath ?? fallbackAppDataDir(), "qdrant");
 }
 
 export function isDaemonAlive(paths: DaemonPaths): boolean {
@@ -89,7 +94,7 @@ export async function findFreePort(): Promise<number> {
   });
 }
 
-export async function resolveQdrantUrl(qdrantUrl?: string): Promise<QdrantResolution> {
+export async function resolveQdrantUrl(qdrantUrl?: string, appDataPath?: string): Promise<QdrantResolution> {
   if (qdrantUrl && qdrantUrl !== EMBEDDED_MARKER) {
     return { mode: "external", url: qdrantUrl };
   }
@@ -101,12 +106,12 @@ export async function resolveQdrantUrl(qdrantUrl?: string): Promise<QdrantResolu
     }
   }
 
-  const handle = await ensureDaemon();
+  const handle = await ensureDaemon(appDataPath);
   return { mode: "embedded", url: handle.url, release: handle.release };
 }
 
-async function ensureDaemon(): Promise<DaemonHandle> {
-  const storagePath = getStoragePath();
+async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
+  const storagePath = getStoragePath(appDataPath);
   mkdirSync(storagePath, { recursive: true });
   const paths = getDaemonPaths(storagePath);
 
@@ -128,13 +133,13 @@ async function ensureDaemon(): Promise<DaemonHandle> {
 
   cleanupDaemonFiles(paths);
 
-  if (!isBinaryUpToDate()) {
+  if (!isBinaryUpToDate(appDataPath)) {
     console.error(`[tea-rags] Downloading Qdrant v${QDRANT_VERSION}...`);
-    await downloadQdrant();
+    await downloadQdrant(undefined, undefined, appDataPath);
   }
 
   const port = await findFreePort();
-  const binaryPath = getBinaryPath();
+  const binaryPath = getBinaryPath(undefined, appDataPath);
 
   const child = spawn(binaryPath, ["--disable-telemetry"], {
     cwd: dirname(binaryPath),

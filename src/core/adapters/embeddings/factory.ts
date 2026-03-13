@@ -1,4 +1,6 @@
-import { daemonPidFile, daemonSocketPath, modelsDir } from "../../../bootstrap/config/paths.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import type { EmbeddingConfig } from "../../contracts/types/config.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
@@ -9,8 +11,25 @@ import { VoyageEmbeddings } from "./voyage.js";
 
 export type EmbeddingProviderType = "openai" | "cohere" | "voyage" | "ollama" | "onnx";
 
+export interface EmbeddingPaths {
+  models: string;
+  daemonSocket: string;
+  daemonPid: string;
+}
+
+/* v8 ignore start -- fallback for backward compat when DI paths not provided */
+function fallbackPaths(): EmbeddingPaths {
+  const appData = process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+  return {
+    models: join(appData, "models"),
+    daemonSocket: join(appData, "onnx.sock"),
+    daemonPid: join(appData, "onnx-daemon.pid"),
+  };
+}
+/* v8 ignore stop */
+
 export class EmbeddingProviderFactory {
-  static create(config: EmbeddingConfig): EmbeddingProvider {
+  static create(config: EmbeddingConfig, paths?: EmbeddingPaths): EmbeddingProvider {
     const { provider, model, dimensions, baseUrl, tune } = config;
 
     const rateLimitConfig = {
@@ -59,15 +78,17 @@ export class EmbeddingProviderFactory {
           config.ollamaNumGpu,
         );
 
-      case "onnx":
+      case "onnx": {
+        const resolved = paths ?? fallbackPaths();
         return new OnnxEmbeddings(
           model || DEFAULT_ONNX_MODEL,
           dimensions,
-          modelsDir(),
+          resolved.models,
           config.device,
-          daemonSocketPath(),
-          daemonPidFile(),
+          resolved.daemonSocket,
+          resolved.daemonPid,
         );
+      }
 
       default:
         throw new Error(

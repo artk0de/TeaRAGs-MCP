@@ -13,10 +13,28 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { getConfigDump, getZodConfig, logsDir } from "../../../../bootstrap/config/index.js";
 import { isDebug } from "./runtime.js";
 
-const LOG_DIR = logsDir();
+/** Module-level state populated via initDebugLogger() from bootstrap */
+let _logsDir: string | null = null;
+let _configDumpFn: (() => Record<string, unknown>) | null = null;
+let _concurrencyFn:
+  | (() => { pipelineConcurrency: number; chunkerPoolSize: number; gitChunkConcurrency: number })
+  | null = null;
+
+/**
+ * Initialize debug logger with injected dependencies (call once from bootstrap).
+ * If not called, the logger still works but skips config dump header and concurrency stats.
+ */
+export function initDebugLogger(opts: {
+  logsDir: string;
+  getConfigDump: () => Record<string, unknown>;
+  getConcurrency: () => { pipelineConcurrency: number; chunkerPoolSize: number; gitChunkConcurrency: number };
+}): void {
+  _logsDir = opts.logsDir;
+  _configDumpFn = opts.getConfigDump;
+  _concurrencyFn = opts.getConcurrency;
+}
 
 /** Filesystem-safe local timestamp: 2026-03-06T01-23-45 */
 function localTimestamp(): string {
@@ -185,21 +203,26 @@ class DebugLogger {
 
   private initLogFile(): void {
     try {
-      if (!existsSync(LOG_DIR)) {
-        mkdirSync(LOG_DIR, { recursive: true });
+      const logDir = _logsDir;
+      if (!logDir) {
+        // No logsDir configured — skip file logging
+        return;
+      }
+
+      if (!existsSync(logDir)) {
+        mkdirSync(logDir, { recursive: true });
       }
 
       const timestamp = localTimestamp();
-      this.logFile = join(LOG_DIR, `pipeline-${timestamp}.log`);
+      this.logFile = join(logDir, `pipeline-${timestamp}.log`);
 
       let dump: Record<string, unknown> = {};
       try {
-        const zodConfig = getZodConfig();
-        // Exclude deprecations array from dump — not useful in log header
-        const { deprecations: _, ...configSections } = zodConfig;
-        dump = getConfigDump(configSections);
+        if (_configDumpFn) {
+          dump = _configDumpFn();
+        }
       } catch {
-        // Config not yet parsed — fall back to empty dump
+        // Config not available — fall back to empty dump
       }
 
       // Format config dump as aligned key=value pairs
@@ -429,12 +452,11 @@ DERIVED:
       let chunkerPoolSize = 4;
       let gitChunkConcurrency = 10;
       try {
-        const zodConfig = getZodConfig();
-        ({ pipelineConcurrency } = zodConfig.ingest.tune);
-        ({ chunkerPoolSize } = zodConfig.ingest.tune);
-        gitChunkConcurrency = zodConfig.trajectoryGit.chunkConcurrency;
+        if (_concurrencyFn) {
+          ({ pipelineConcurrency, chunkerPoolSize, gitChunkConcurrency } = _concurrencyFn());
+        }
       } catch {
-        // Config not yet parsed — use defaults
+        // Config not available — use defaults
       }
       const concurrency: Record<PipelineStage, number> = {
         scan: 1, // Serial file scanning

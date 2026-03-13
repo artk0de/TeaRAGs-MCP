@@ -8,7 +8,6 @@
 
 import type { Ignore } from "ignore";
 
-import { snapshotsDir } from "../../../bootstrap/config/paths.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
@@ -61,7 +60,7 @@ export abstract class BaseIndexingPipeline {
   // ── Shared context ─────────────────────────────────────────
 
   protected get snapshotDir(): string {
-    return snapshotsDir();
+    return this.deps.snapshotDir;
   }
 
   protected async resolveContext(path: string): Promise<{

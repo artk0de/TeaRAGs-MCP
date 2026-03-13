@@ -16,8 +16,15 @@ process.env.DEBUG = "true";
 
 setDebug(true);
 
-const { pipelineLog } = await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
+const { pipelineLog, initDebugLogger } = await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
 const fs = await import("node:fs");
+
+// Initialize debug logger with test logsDir so file logging works
+initDebugLogger({
+  logsDir: "/tmp/test-logs",
+  getConfigDump: () => ({}),
+  getConcurrency: () => ({ pipelineConcurrency: 1, chunkerPoolSize: 4, gitChunkConcurrency: 10 }),
+});
 
 describe("DebugLogger", () => {
   let consoleErrorSpy: any;
@@ -678,8 +685,16 @@ describe("DebugLogger - lazy initialization", () => {
     const { setDebug: freshSetDebug } = await import("../../../../src/core/ingest/pipeline/infra/runtime.js");
     freshSetDebug(true);
 
-    const { pipelineLog: freshLogger } = await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
+    const { pipelineLog: freshLogger, initDebugLogger: freshInit } =
+      await import("../../../../src/core/ingest/pipeline/infra/debug-logger.js");
     const fsModule = await import("node:fs");
+
+    // Initialize with test logsDir
+    freshInit({
+      logsDir: "/tmp/test-logs",
+      getConfigDump: () => ({}),
+      getConcurrency: () => ({ pipelineConcurrency: 1, chunkerPoolSize: 4, gitChunkConcurrency: 10 }),
+    });
 
     // Clear initialization calls
     vi.mocked(fsModule.appendFileSync).mockClear();
