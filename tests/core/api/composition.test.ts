@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createComposition } from "../../../src/core/api/composition.js";
+import { createComposition } from "../../../src/core/api/index.js";
 
 describe("createComposition", () => {
   it("builds registry with GitTrajectory", () => {

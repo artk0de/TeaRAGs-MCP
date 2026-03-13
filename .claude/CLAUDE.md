@@ -39,15 +39,16 @@ creates instances, and wires them together via DI.
 
 **core/api/** — Composition root + unified App interface
 
-- App interface (app.ts): unified public contract for all external consumers
-  (MCP, CLI)
-- createApp() factory (create-app.ts): wires facades into App implementation
-- ExploreFacade: orchestrates explore/ domain for search operations
-- IngestFacade: orchestrates ingest/ domain for indexing operations
-- CollectionOps, DocumentOps: CRUD operations on collections and documents
-- SchemaBuilder (dynamic MCP schema generation via domain module APIs)
-- SchemaDriftMonitor, StatsCache: cross-cutting concerns
-- composition.ts: trajectory registry assembly (which trajectories exist)
+- **public/**: App interface, createApp() factory, DTOs by domain
+  - App interface (public/app.ts): unified public contract for MCP/CLI
+  - createApp() + AppDeps: factory that wires internal classes into App
+  - DTOs grouped by domain: explore, ingest, collection, document
+- **internal/**: orchestration + wiring (not exported to MCP consumers)
+  - facades/: ExploreFacade, IngestFacade (search/indexing orchestration)
+  - ops/: CollectionOps, DocumentOps (CRUD operations)
+  - infra/: SchemaBuilder (dynamic MCP schema generation via Reranker API)
+  - composition.ts: trajectory registry assembly (which trajectories exist)
+- **index.ts**: barrel exports public/ + SchemaBuilder + createComposition
 - Imports from all layers (composition root assembles DI)
 
 **core/explore/** — Query-time exploration engine (domain module)
@@ -178,16 +179,26 @@ Example flow:
 ```
 core/
   api/                                 # Composition root + unified App interface
-    app.ts                             # App interface + request/response DTOs
-    create-app.ts                      # createApp() factory: wires deps into App
-    explore-facade.ts                  # ExploreFacade: orchestrates explore/ domain
-    ingest-facade.ts                   # IngestFacade: orchestrates ingest/ domain
-    collection-ops.ts                  # CollectionOps: CRUD on collections
-    document-ops.ts                    # DocumentOps: add/delete documents
-    composition.ts                     # Trajectory registry assembly
-    schema-builder.ts                  # SchemaBuilder: dynamic MCP schemas via Reranker API (DIP)
-    schema-drift-monitor.ts            # SchemaDriftMonitor: payload version tracking
-    stats-cache.ts                     # StatsCache: collection signal stats persistence
+    index.ts                           # Barrel: re-exports public/ + selected internal
+    public/
+      app.ts                           # App interface + createApp() + AppDeps
+      dto/
+        explore.ts                     # Search request/response DTOs
+        ingest.ts                      # Indexing DTOs (IndexOptions, IndexStats, etc.)
+        collection.ts                  # Collection CRUD DTOs
+        document.ts                    # Document add/delete DTOs
+        index.ts                       # DTO barrel
+      index.ts                         # Public barrel (App + DTOs)
+    internal/
+      composition.ts                   # createComposition(): trajectory registry assembly
+      facades/
+        explore-facade.ts              # ExploreFacade: orchestrates explore/ domain
+        ingest-facade.ts               # IngestFacade: orchestrates ingest/ domain
+      ops/
+        collection-ops.ts              # CollectionOps: CRUD on collections
+        document-ops.ts                # DocumentOps: add/delete documents
+      infra/
+        schema-builder.ts              # SchemaBuilder: dynamic MCP schemas via Reranker API (DIP)
 
   explore/                             # Domain module: query-time exploration engine
     reranker.ts                        # Reranker: scoring, overlay mask, adaptive bounds

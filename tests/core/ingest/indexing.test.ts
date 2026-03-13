@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { IngestFacade } from "../../../src/core/api/ingest-facade.js";
+import { IngestFacade } from "../../../src/core/api/index.js";
 import type { IngestCodeConfig } from "../../../src/core/types.js";
 import {
   cleanupTempDir,
@@ -301,9 +301,7 @@ function third() {
 
       // Now force reindex with a broken synchronizer
       // We mock the ParallelFileSynchronizer's updateSnapshot to throw
-      const { ParallelFileSynchronizer } = await import(
-        "../../../src/core/ingest/sync/parallel-synchronizer.js"
-      );
+      const { ParallelFileSynchronizer } = await import("../../../src/core/ingest/sync/parallel-synchronizer.js");
       const origUpdateSnapshot = ParallelFileSynchronizer.prototype.updateSnapshot;
       ParallelFileSynchronizer.prototype.updateSnapshot = async function () {
         throw new Error("Disk full: cannot save snapshot");

@@ -1,168 +1,22 @@
 /**
- * App-level DTOs — request/response types for the unified public API.
+ * App-level DTOs — re-exported from api/public/dto/ for backward compatibility.
  *
- * Lives in contracts/ because these types are shared across layers:
- * api/ (implementation), mcp/ (consumers), bootstrap/ (wiring).
+ * Canonical source: core/api/public/dto/
  */
 
-import type { RankingOverlay } from "./reranker.js";
+export type {
+  CollectionRef,
+  TypedFilterParams,
+  SemanticSearchRequest,
+  HybridSearchRequest,
+  RankChunksRequest,
+  ExploreCodeRequest,
+  SearchResult,
+  ExploreResponse,
+  SignalDescriptor,
+  PresetDescriptors,
+} from "../../api/public/dto/explore.js";
 
-// ---------------------------------------------------------------------------
-// Collection reference (shared by search requests)
-// ---------------------------------------------------------------------------
+export type { CreateCollectionRequest, CollectionInfo } from "../../api/public/dto/collection.js";
 
-/**
- * Identifies a collection by name or by codebase path (resolved to collection name internally).
- * At least one of collection or path must be provided. Runtime validation enforces this.
- */
-export interface CollectionRef {
-  collection?: string;
-  path?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Typed filter params (shared across all search requests)
-// ---------------------------------------------------------------------------
-
-/** Typed filter params resolved via TrajectoryRegistry.buildFilter(). */
-export interface TypedFilterParams {
-  // Static trajectory filters
-  language?: string;
-  fileExtension?: string;
-  chunkType?: string;
-  isDocumentation?: boolean;
-  excludeDocumentation?: boolean;
-  fileTypes?: string[];
-  documentationOnly?: boolean;
-  // Git trajectory filters
-  author?: string;
-  modifiedAfter?: string | Date;
-  modifiedBefore?: string | Date;
-  minAgeDays?: number;
-  maxAgeDays?: number;
-  minCommitCount?: number;
-  taskId?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Search request types
-// ---------------------------------------------------------------------------
-
-/**
- * Semantic (dense vector) search request.
- * Intentionally separate from HybridSearchRequest to allow future divergence
- * (e.g., hybrid may gain fusionWeight, sparse boosting params).
- */
-export interface SemanticSearchRequest extends CollectionRef, TypedFilterParams {
-  query: string;
-  limit?: number;
-  filter?: Record<string, unknown>;
-  pathPattern?: string;
-  rerank?: string | { custom: Record<string, number> };
-  metaOnly?: boolean;
-}
-
-/**
- * Hybrid (dense + BM25 sparse) search request.
- * Intentionally separate from SemanticSearchRequest to allow future divergence
- * (e.g., fusionWeight, sparse boosting params).
- */
-export interface HybridSearchRequest extends CollectionRef, TypedFilterParams {
-  query: string;
-  limit?: number;
-  filter?: Record<string, unknown>;
-  pathPattern?: string;
-  rerank?: string | { custom: Record<string, number> };
-  metaOnly?: boolean;
-}
-
-export interface RankChunksRequest extends CollectionRef, TypedFilterParams {
-  rerank: string | { custom: Record<string, number> };
-  level: "chunk" | "file";
-  limit?: number;
-  offset?: number;
-  filter?: Record<string, unknown>;
-  pathPattern?: string;
-  metaOnly?: boolean;
-}
-
-export interface ExploreCodeRequest extends TypedFilterParams {
-  path: string;
-  query: string;
-  limit?: number;
-  pathPattern?: string;
-  rerank?: string | { custom: Record<string, number> };
-  filter?: Record<string, unknown>;
-}
-
-// ---------------------------------------------------------------------------
-// Search result types
-// ---------------------------------------------------------------------------
-
-export interface SearchResult {
-  id: string | number;
-  score: number;
-  payload?: Record<string, unknown>;
-  rankingOverlay?: RankingOverlay;
-}
-
-// ---------------------------------------------------------------------------
-// Search response types
-// ---------------------------------------------------------------------------
-
-export interface ExploreResponse {
-  results: SearchResult[];
-  driftWarning: string | null;
-}
-
-// ---------------------------------------------------------------------------
-// Collection types
-// ---------------------------------------------------------------------------
-
-export interface CreateCollectionRequest {
-  name: string;
-  distance?: "Cosine" | "Euclid" | "Dot";
-  enableHybrid?: boolean;
-}
-
-export interface CollectionInfo {
-  name: string;
-  vectorSize: number;
-  pointsCount: number;
-  distance: "Cosine" | "Euclid" | "Dot";
-  hybridEnabled?: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Document types
-// ---------------------------------------------------------------------------
-
-export interface AddDocumentsRequest {
-  collection: string;
-  documents: {
-    id: string | number;
-    text: string;
-    metadata?: Record<string, unknown>;
-  }[];
-}
-
-export interface DeleteDocumentsRequest {
-  collection: string;
-  ids: (string | number)[];
-}
-
-// ---------------------------------------------------------------------------
-// Schema descriptor types (for MCP Zod schema generation)
-// ---------------------------------------------------------------------------
-
-export interface SignalDescriptor {
-  name: string;
-  description: string;
-}
-
-export interface PresetDescriptors {
-  /** Preset names keyed by tool name (e.g. { semantic_search: ["relevance", "techDebt"] }) */
-  presetNames: Record<string, string[]>;
-  /** All derived signal descriptors available for custom weights */
-  signalDescriptors: SignalDescriptor[];
-}
+export type { AddDocumentsRequest, DeleteDocumentsRequest } from "../../api/public/dto/document.js";

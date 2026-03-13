@@ -13,23 +13,23 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { EmbeddingProvider } from "../adapters/embeddings/base.js";
-import type { QdrantManager } from "../adapters/qdrant/client.js";
-import { scrollAllPoints } from "../adapters/qdrant/scroll.js";
-import type { PayloadSignalDescriptor } from "../contracts/types/trajectory.js";
-import type { Reranker } from "../explore/reranker.js";
-import { resolveCollectionName, validatePath } from "../infra/collection-name.js";
-import type { StatsCache } from "../infra/stats-cache.js";
-import { computeCollectionStats } from "../ingest/collection-stats.js";
-import { createIngestDependencies, type SynchronizerTuning } from "../ingest/factory.js";
-import { IndexPipeline } from "../ingest/indexing.js";
-import type { PipelineTuning } from "../ingest/pipeline/base.js";
-import { EnrichmentCoordinator } from "../ingest/pipeline/enrichment/coordinator.js";
-import { StatusModule } from "../ingest/pipeline/status-module.js";
-import { ReindexPipeline } from "../ingest/reindexing.js";
-import type { DeletionConfig } from "../ingest/sync/deletion-strategy.js";
-import { GitEnrichmentProvider } from "../trajectory/git/provider.js";
-import { StaticPayloadBuilder } from "../trajectory/static/provider.js";
+import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
+import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
+import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import type { Reranker } from "../../../explore/reranker.js";
+import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import type { StatsCache } from "../../../infra/stats-cache.js";
+import { computeCollectionStats } from "../../../ingest/collection-stats.js";
+import { createIngestDependencies, type SynchronizerTuning } from "../../../ingest/factory.js";
+import { IndexPipeline } from "../../../ingest/indexing.js";
+import type { PipelineTuning } from "../../../ingest/pipeline/base.js";
+import { EnrichmentCoordinator } from "../../../ingest/pipeline/enrichment/coordinator.js";
+import { StatusModule } from "../../../ingest/pipeline/status-module.js";
+import { ReindexPipeline } from "../../../ingest/reindexing.js";
+import type { DeletionConfig } from "../../../ingest/sync/deletion-strategy.js";
+import { GitEnrichmentProvider } from "../../../trajectory/git/provider.js";
+import { StaticPayloadBuilder } from "../../../trajectory/static/provider.js";
 import type {
   ChangeStats,
   IndexOptions,
@@ -38,7 +38,7 @@ import type {
   IngestCodeConfig,
   ProgressCallback,
   TrajectoryIngestConfig,
-} from "../types.js";
+} from "../../../types.js";
 
 export class IngestFacade {
   private readonly enrichment: EnrichmentCoordinator;

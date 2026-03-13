@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import type { SchemaBuilder } from "../../../src/core/api/schema-builder.js";
+import type { SchemaBuilder } from "../../../src/core/api/index.js";
 import { CreateCollectionSchema, createSearchSchemas, IndexCodebaseSchema } from "../../../src/mcp/tools/schemas.js";
 
 // Minimal mock SchemaBuilder — returns a simple string schema for rerank

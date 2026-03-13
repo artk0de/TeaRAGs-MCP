@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
-import { CollectionOps } from "../../../src/core/api/collection-ops.js";
+import { CollectionOps } from "../../../src/core/api/internal/ops/collection-ops.js";
 
 function createMockQdrant(): QdrantManager {
   return {

@@ -4,7 +4,7 @@
 
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App } from "../../core/api/app.js";
+import type { App } from "../../core/api/index.js";
 
 /**
  * Register all MCP resources on the server
