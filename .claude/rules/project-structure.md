@@ -1,42 +1,11 @@
-# tea-rags — Project Rules
+---
+paths:
+  - "src/core/**"
+  - "src/bootstrap/**"
+  - "src/mcp/**"
+---
 
-## Terminology (MANDATORY)
-
-### Signal Taxonomy
-
-| Term                             | Definition                                                                                                                                     | Example                                                                                   | Where                                                       |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| **Signal** (raw)                 | Value stored in Qdrant payload. Defined by Provider. Not normalized.                                                                           | `ageDays=142`, `commitCount=23`, `bugFixRate=35`                                          | `payload.git.file.*`, `payload.git.chunk.*`                 |
-| **Derived Signal**               | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets.                  | `recency` (from ageDays), `ownership` (from dominantAuthorPct+authors)                    | `DerivedSignalDescriptor` in provider                       |
-| **Structural Signal**            | Derived signal from payload structure, not from any trajectory provider.                                                                       | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk`                         | Reranker built-in                                           |
-| **Preset** (`RerankPreset`)      | Class with name, description, tools[], weights, overlayMask. 3-level hierarchy: Generic → Trajectory → Composite. Each preset is a class file. | `class TechDebtPreset { tools: ["semantic_search"], weights: {...}, overlayMask: {...} }` | `trajectory/git/rerank/presets/`, `explore/rerank/presets/` |
-| **Overlay Mask** (`OverlayMask`) | Curates which signals appear in ranking overlay for a preset. `derived: string[]` + optional `raw: { file?, chunk? }`.                         | `{ derived: ["age", "churn"], raw: { file: ["ageDays"] } }`                               | Each preset class                                           |
-| **Ranking Overlay**              | Subset of raw + derived signals filtered by OverlayMask (or weight keys for custom), attached to each reranked result.                         | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }`                         | Reranker response                                           |
-
-### Domain Terms
-
-| Term                 | Meaning                                                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Provider             | Trajectory that defines signals, derived signals, filters, and builds signal data.                                                     |
-| Filter               | Qdrant filter condition builder. Defined by Provider.                                                                                  |
-| Reranker             | Orchestrates derived signal extraction, adaptive bounds, scoring, and ranking overlay. Receives descriptors + resolved presets via DI. |
-| SchemaBuilder        | Generates Zod schemas for MCP tools from Reranker's public API (DIP). Lives in api/.                                                   |
-| Alpha-blending       | L3 confidence-weighted blending of file vs chunk signals: `effective = alpha * chunk + (1-alpha) * file`.                              |
-| Confidence dampening | Quadratic per-signal dampening for unreliable statistical signals: `(n/k)^2` where k is signal-specific threshold.                     |
-| Adaptive bounds      | Per-query normalization bounds computed from result set (p95), floored with defaults.                                                  |
-
-### Naming Conventions
-
-- `buildFileSignals` / `buildChunkSignals` (NOT
-  buildFileMetadata/buildChunkMetadata)
-- `GitFileSignals` / `GitChunkSignals` (NOT GitFileMetadata/ChunkChurnOverlay)
-- `computeFileSignals` / `computeChunkSignals` (NOT
-  computeFileMetadata/computeChunkOverlay)
-- `fileSignalTransform` (NOT fileTransform)
-- `Signal` type (NOT FieldDoc)
-- `gitSignals: Signal[]` (NOT gitPayloadFields: FieldDoc[])
-
-## Project Structure
+# Project Structure
 
 ```
 core/
@@ -163,69 +132,4 @@ core/
         types.ts                       # DaemonPaths, QdrantResolution
     git/
     embeddings/
-```
-
-## Commit Rules
-
-### Commit Types (MANDATORY)
-
-| Type       | When to use                             | Default bump |
-| ---------- | --------------------------------------- | ------------ |
-| `feat`     | New capability that didn't exist before | minor        |
-| `improve`  | Enhancement to existing functionality   | patch        |
-| `fix`      | Bug fix                                 | patch        |
-| `perf`     | Performance improvement                 | patch        |
-| `refactor` | Code restructuring, no behavior change  | patch        |
-| `docs`     | Documentation only                      | patch        |
-| `test`     | Adding/updating tests                   | none         |
-| `chore`    | Build, dependencies, tooling            | none         |
-| `ci`       | CI/CD changes                           | none         |
-| `style`    | Code style/formatting                   | none         |
-| `build`    | Build system changes                    | none         |
-
-**feat vs improve**: `feat` = new capability. `improve` = enhancement to
-existing.
-
-### Scope-Based Versioning (MANDATORY)
-
-Scope determines version bump. **Always use a scope.**
-
-**Public + Functional** (feat → minor): `api`, `mcp`, `contracts`, `types`,
-`drift`, `explore`, `rerank`, `hybrid`, `trajectory`, `signals`, `presets`,
-`filters`, `ingest`, `pipeline`, `chunker`
-
-**Infrastructure** (feat → patch): `onnx`, `embedding`, `embedded`, `adapters`,
-`qdrant`, `git`, `config`, `factory`, `bootstrap`, `debug`, `logs`
-
-**Non-release** (always none): `test`, `beads`, `scripts`, `ci`, `website`,
-`deps`
-
-A PostToolUse hook (`check-release-scope.sh`) warns when a commit uses an
-unknown scope. When adding a new scope, update `.releaserc.json` and the scope
-tables in `CONTRIBUTING.md`.
-
-### BREAKING CHANGE footer (MANDATORY)
-
-Add `BREAKING CHANGE:` footer to commit messages when:
-
-- Environment variable names, defaults, or semantics change
-- Configuration file format or location changes
-- CLI flags or arguments change
-- Package name changes
-- Data directory paths change
-- Any change that **requires user action** (update config, re-run setup, etc.)
-
-Do NOT use BREAKING CHANGE for:
-
-- Internal refactoring that doesn't affect user-facing behavior
-- New features that are additive (no existing behavior changes)
-- Bug fixes (unless the buggy behavior was documented/relied upon)
-
-Format:
-
-```text
-feat(config): add embedded Qdrant support
-
-BREAKING CHANGE: QDRANT_URL default changed from http://localhost:6333 to autodetect.
-Users with Docker Qdrant should set QDRANT_URL=http://localhost:6333 explicitly.
 ```
