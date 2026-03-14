@@ -25,6 +25,7 @@ import {
   type BaseExploreStrategy,
   type ExploreContext,
 } from "../../../domains/explore/strategies/index.js";
+import { SimilarSearchStrategy } from "../../../domains/explore/strategies/similar.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import {
   CollectionRefError,
@@ -37,6 +38,7 @@ import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ExploreCodeRequest,
   ExploreResponse,
+  FindSimilarRequest,
   HybridSearchRequest,
   RankChunksRequest,
   SemanticSearchRequest,
@@ -79,6 +81,8 @@ export class ExploreFacade {
   private readonly registry: TrajectoryRegistry;
   private readonly statsCache?: StatsCache;
   private readonly schemaDriftMonitor?: SchemaDriftMonitor;
+  private readonly payloadSignals: PayloadSignalDescriptor[];
+  private readonly essentialKeys: string[];
   private readonly vectorStrategy: BaseExploreStrategy;
   private readonly hybridStrategy: BaseExploreStrategy;
   private readonly scrollRankStrategy: BaseExploreStrategy;
@@ -90,11 +94,29 @@ export class ExploreFacade {
     this.registry = deps.registry;
     this.statsCache = deps.statsCache;
     this.schemaDriftMonitor = deps.schemaDriftMonitor;
-    const signals = deps.payloadSignals ?? [];
-    const keys = deps.essentialKeys ?? [];
-    this.vectorStrategy = createExploreStrategy("vector", deps.qdrant, deps.reranker, signals, keys);
-    this.hybridStrategy = createExploreStrategy("hybrid", deps.qdrant, deps.reranker, signals, keys);
-    this.scrollRankStrategy = createExploreStrategy("scroll-rank", deps.qdrant, deps.reranker, signals, keys);
+    this.payloadSignals = deps.payloadSignals ?? [];
+    this.essentialKeys = deps.essentialKeys ?? [];
+    this.vectorStrategy = createExploreStrategy(
+      "vector",
+      deps.qdrant,
+      deps.reranker,
+      this.payloadSignals,
+      this.essentialKeys,
+    );
+    this.hybridStrategy = createExploreStrategy(
+      "hybrid",
+      deps.qdrant,
+      deps.reranker,
+      this.payloadSignals,
+      this.essentialKeys,
+    );
+    this.scrollRankStrategy = createExploreStrategy(
+      "scroll-rank",
+      deps.qdrant,
+      deps.reranker,
+      this.payloadSignals,
+      this.essentialKeys,
+    );
   }
 
   // =========================================================================
@@ -185,6 +207,60 @@ export class ExploreFacade {
         rerank: request.rerank,
       },
       absolutePath,
+    );
+  }
+
+  /** Find similar chunks by ID or code block (find_similar MCP tool). */
+  async findSimilar(request: FindSimilarRequest): Promise<ExploreResponse> {
+    // Count meaningful inputs
+    const hasPositive =
+      (request.positiveIds?.length ?? 0) > 0 ||
+      (request.positiveCode?.filter((c) => c.trim().length > 0).length ?? 0) > 0;
+    const hasNegative =
+      (request.negativeIds?.length ?? 0) > 0 ||
+      (request.negativeCode?.filter((c) => c.trim().length > 0).length ?? 0) > 0;
+
+    // Validate: strategy-specific constraints
+    const strategy = request.strategy ?? "best_score";
+    if (strategy !== "best_score" && !hasPositive) {
+      throw new Error(`Strategy '${strategy}' requires at least one positive input`);
+    }
+    // best_score allows negative-only, but must have at least something
+    if (!hasPositive && !hasNegative) {
+      throw new Error("At least one positive or negative input is required");
+    }
+
+    const { collectionName, path } = resolveCollection(request.collection, request.path);
+
+    // Create per-request strategy
+    const similarStrategy = new SimilarSearchStrategy(
+      this.qdrant,
+      this.reranker,
+      this.payloadSignals,
+      this.essentialKeys,
+      this.embeddings,
+      {
+        positiveIds: request.positiveIds,
+        positiveCode: request.positiveCode,
+        negativeIds: request.negativeIds,
+        negativeCode: request.negativeCode,
+        strategy,
+        fileExtensions: request.fileExtensions,
+      },
+    );
+
+    return this.executeExplore(
+      similarStrategy,
+      {
+        collectionName,
+        limit: request.limit ?? 10,
+        offset: request.offset,
+        filter: request.filter,
+        pathPattern: request.pathPattern,
+        rerank: request.rerank,
+        metaOnly: request.metaOnly,
+      },
+      path,
     );
   }
 
