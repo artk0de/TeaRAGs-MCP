@@ -47,6 +47,7 @@ collection-with-*
 
 # Git worktrees
 .worktrees/
+.claude/worktrees/
 
 # Performance tuning results
 tuned_environment_variables.env
