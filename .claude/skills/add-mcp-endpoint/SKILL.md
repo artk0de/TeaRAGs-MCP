@@ -214,11 +214,15 @@ After code changes, request MCP server reconnect before integration testing with
 ## Checklist
 
 - [ ] DTO created in `public/dto/<domain>.ts` (via add-dto skill)
+- [ ] DTO re-exported via barrel chain: `dto/<domain>.ts` → `dto/index.ts` →
+      `public/index.ts` → `api/index.ts`
 - [ ] App interface method added in `public/app.ts`
-- [ ] createApp() wiring added in `public/app.ts`
+- [ ] `createApp()` wiring added in `public/app.ts` (delegate to facade/ops)
 - [ ] Internal implementation in `internal/facades/` or `internal/ops/`
 - [ ] Zod schema in `mcp/tools/schemas.ts`
 - [ ] Tool registered in `mcp/tools/<domain>.ts`
+- [ ] If reranking supported: tool name added to preset `tools[]` arrays and
+      `getSchemaDescriptors` list
 - [ ] Tests written and passing
 - [ ] Docusaurus docs updated (`website/docs/api/tools.md` + relevant pages)
 - [ ] `CLAUDE.local.md` updated
