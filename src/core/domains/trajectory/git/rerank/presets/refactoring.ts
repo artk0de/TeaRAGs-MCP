@@ -4,7 +4,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
 export class RefactoringPreset implements RerankPreset {
   readonly name = "refactoring";
   readonly description = "Large, churning, volatile code — candidates for refactoring";
-  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks"];
+  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
   readonly weights: ScoringWeights = {
     similarity: 0.15,
     chunkSize: 0.3,
