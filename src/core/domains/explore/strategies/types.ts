@@ -31,7 +31,7 @@ export interface ExploreResult<P = Record<string, unknown>> {
 }
 
 export interface ExploreStrategy {
-  readonly type: "vector" | "hybrid" | "scroll-rank";
+  readonly type: "vector" | "hybrid" | "scroll-rank" | "similar";
   execute: (ctx: ExploreContext) => Promise<ExploreResult[]>;
 }
 
