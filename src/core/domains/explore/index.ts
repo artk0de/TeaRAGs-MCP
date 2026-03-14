@@ -16,7 +16,14 @@ export {
   HybridSearchStrategy,
   ScrollRankStrategy,
   BaseExploreStrategy,
+  SimilarSearchStrategy,
   VectorSearchStrategy,
   HybridNotEnabledError,
 } from "./strategies/index.js";
-export type { ExploreStrategyType, ExploreContext, ExploreResult, ExploreStrategy } from "./strategies/index.js";
+export type {
+  ExploreStrategyType,
+  ExploreContext,
+  ExploreResult,
+  ExploreStrategy,
+  SimilarSearchInput,
+} from "./strategies/index.js";

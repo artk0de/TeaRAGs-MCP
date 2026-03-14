@@ -15,7 +15,7 @@ import type { Reranker, RerankMode } from "../reranker.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
 export abstract class BaseExploreStrategy implements ExploreStrategy {
-  abstract readonly type: "vector" | "hybrid" | "scroll-rank";
+  abstract readonly type: "vector" | "hybrid" | "scroll-rank" | "similar";
 
   constructor(
     protected readonly qdrant: QdrantManager,
