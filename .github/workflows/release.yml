@@ -63,8 +63,9 @@ jobs:
   deploy-docs:
     name: Deploy Documentation
     runs-on: ubuntu-latest
-    # Only deploy on chore(release) commits — changelog is already updated
-    if: startsWith(github.event.head_commit.message, 'chore(release)')
+    # Run on every push: when release runs, wait for it; when skipped, run immediately
+    if: always() && !failure() && !cancelled()
+    needs: release
     concurrency:
       group: "pages"
       cancel-in-progress: false
