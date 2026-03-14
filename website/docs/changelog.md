@@ -3,6 +3,14 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>1.0.2 (2026-03-14)</small>
+
+- fix(ci): deploy docs on every push, not just release commits
+  ([94630db](https://github.com/artk0de/TeaRAGs-MCP/commit/94630db))
+- fix(ci): deploy docs only on chore(release) commits
+  ([dbb7b89](https://github.com/artk0de/TeaRAGs-MCP/commit/dbb7b89))
+- ([682622b](https://github.com/artk0de/TeaRAGs-MCP/commit/682622b))
+
 ## <small>1.0.1 (2026-03-13)</small>
 
 - ci(docs): make deploy-docs a self-contained job with own checkout
