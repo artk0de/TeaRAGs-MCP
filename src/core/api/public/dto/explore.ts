@@ -92,6 +92,25 @@ export interface ExploreCodeRequest extends TypedFilterParams {
   filter?: Record<string, unknown>;
 }
 
+/**
+ * Find similar chunks using Qdrant recommend sub-query.
+ * At least one positiveIds or positiveCode entry is required.
+ */
+export interface FindSimilarRequest extends CollectionRef {
+  positiveIds?: string[];
+  positiveCode?: string[];
+  negativeIds?: string[];
+  negativeCode?: string[];
+  strategy?: "best_score" | "average_vector" | "sum_scores";
+  filter?: Record<string, unknown>;
+  pathPattern?: string;
+  fileExtensions?: string[];
+  rerank?: string | { custom: Record<string, number> };
+  limit?: number;
+  offset?: number;
+  metaOnly?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Search result types
 // ---------------------------------------------------------------------------
