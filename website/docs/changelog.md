@@ -3,6 +3,14 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>1.0.4 (2026-03-14)</small>
+
+- ([5c4ff7c](https://github.com/artk0de/TeaRAGs-MCP/commit/5c4ff7c))
+- fix(ci): escape angle brackets in changelog for MDX compatibility
+  ([ba48aae](https://github.com/artk0de/TeaRAGs-MCP/commit/ba48aae))
+- docs(dx): add parallel-sessions rule and .claudeignore
+  ([3640992](https://github.com/artk0de/TeaRAGs-MCP/commit/3640992))
+
 ## <small>1.0.3 (2026-03-14)</small>
 
 - ([c70b1a2](https://github.com/artk0de/TeaRAGs-MCP/commit/c70b1a2))
