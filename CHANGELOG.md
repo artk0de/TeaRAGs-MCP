@@ -1,3 +1,24 @@
+## 1.1.0 (2026-03-14)
+
+- chore(dx): add .claude/worktrees to gitignore
+  ([438e09b](https://github.com/artk0de/TeaRAGs-MCP/commit/438e09b))
+- docs(api): add find_similar tool documentation
+  ([43fa7e2](https://github.com/artk0de/TeaRAGs-MCP/commit/43fa7e2))
+- docs(explore): add find_similar spec, plan, update add-mcp-endpoint skill
+  ([15877f5](https://github.com/artk0de/TeaRAGs-MCP/commit/15877f5))
+- feat(api): add FindSimilarRequest DTO for find_similar tool
+  ([2a07f30](https://github.com/artk0de/TeaRAGs-MCP/commit/2a07f30))
+- feat(explore): add ExploreFacade.findSimilar() and App wiring
+  ([77f78ca](https://github.com/artk0de/TeaRAGs-MCP/commit/77f78ca))
+- feat(explore): add QdrantManager.query() for recommend API
+  ([9626a15](https://github.com/artk0de/TeaRAGs-MCP/commit/9626a15))
+- feat(explore): add SimilarSearchStrategy for find_similar tool
+  ([b2c7cd1](https://github.com/artk0de/TeaRAGs-MCP/commit/b2c7cd1))
+- feat(mcp): register find_similar tool with Zod schema
+  ([9f6faa3](https://github.com/artk0de/TeaRAGs-MCP/commit/9f6faa3))
+- feat(presets): add find_similar to preset tools[] arrays
+  ([e9d64ba](https://github.com/artk0de/TeaRAGs-MCP/commit/e9d64ba))
+
 ## <small>1.0.4 (2026-03-14)</small>
 
 - ([5c4ff7c](https://github.com/artk0de/TeaRAGs-MCP/commit/5c4ff7c))
