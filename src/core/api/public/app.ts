@@ -30,6 +30,7 @@ import type {
   DeleteDocumentsRequest,
   ExploreCodeRequest,
   ExploreResponse,
+  FindSimilarRequest,
   HybridSearchRequest,
   IndexOptions,
   IndexStats,
@@ -50,6 +51,7 @@ export interface App {
   hybridSearch: (request: HybridSearchRequest) => Promise<ExploreResponse>;
   rankChunks: (request: RankChunksRequest) => Promise<ExploreResponse>;
   searchCode: (request: ExploreCodeRequest) => Promise<ExploreResponse>;
+  findSimilar: (request: FindSimilarRequest) => Promise<ExploreResponse>;
 
   // -- Indexing (→ internal/facades/ingest-facade.ts) --
   indexCodebase: (path: string, options?: IndexOptions, progress?: ProgressCallback) => Promise<IndexStats>;
@@ -101,6 +103,7 @@ export function createApp(deps: AppDeps): App {
     hybridSearch: async (req) => deps.explore.hybridSearch(req),
     rankChunks: async (req) => deps.explore.rankChunks(req),
     searchCode: async (req) => deps.explore.searchCode(req),
+    findSimilar: async (req) => deps.explore.findSimilar(req),
 
     // -- Indexing — delegate to IngestFacade --
     indexCodebase: async (path, options, progress) => deps.ingest.indexCodebase(path, options, progress),
@@ -121,7 +124,7 @@ export function createApp(deps: AppDeps): App {
     // -- Schema descriptors --
     getSchemaDescriptors: () => {
       const info = deps.reranker.getDescriptorInfo();
-      const tools = ["semantic_search", "hybrid_search", "search_code", "rank_chunks"];
+      const tools = ["semantic_search", "hybrid_search", "search_code", "rank_chunks", "find_similar"];
       const presetNames: Record<string, string[]> = {};
       for (const tool of tools) {
         presetNames[tool] = deps.reranker.getPresetNames(tool);
