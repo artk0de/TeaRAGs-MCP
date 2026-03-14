@@ -79,4 +79,28 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
       }
     },
   );
+
+  // find_similar
+  server.registerTool(
+    "find_similar",
+    {
+      title: "Find Similar",
+      description:
+        "Find code similar to given chunks or code blocks. Uses Qdrant recommend API. " +
+        "Provide chunk IDs from previous search results and/or raw code blocks as positive (find more like this) " +
+        "or negative (find less like this) examples. At least one positive or negative input is required.",
+      inputSchema: searchSchemas.FindSimilarSchema,
+    },
+    async ({ rerank, ...rest }) => {
+      try {
+        const response = await app.findSimilar({
+          ...rest,
+          rerank: sanitizeRerank(rerank),
+        });
+        return appendDriftWarning(formatMcpResponse(response.results), response.driftWarning);
+      } catch (error) {
+        return formatMcpError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
 }
