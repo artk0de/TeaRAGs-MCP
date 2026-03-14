@@ -91,7 +91,15 @@
             { "type": "ci", "section": "CI/CD", "hidden": true },
             { "type": "build", "section": "Build System", "hidden": true }
           ],
-          "commitGroupsSort": ["Breaking Changes", "Features", "Improvements", "Bug Fixes", "Performance Improvements", "Documentation", "Code Refactoring"]
+          "commitGroupsSort": [
+            "Breaking Changes",
+            "Features",
+            "Improvements",
+            "Bug Fixes",
+            "Performance Improvements",
+            "Documentation",
+            "Code Refactoring"
+          ]
         }
       }
     ],
@@ -104,7 +112,7 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "printf '%s\\n\\n%s' '---\ntitle: Changelog\nsidebar_position: 99\n---' \"$(cat CHANGELOG.md)\" > website/docs/changelog.md"
+        "prepareCmd": "bash scripts/prepare-changelog.sh"
       }
     ],
     [
@@ -118,7 +126,12 @@
     [
       "@semantic-release/git",
       {
-        "assets": ["package.json", "package-lock.json", "CHANGELOG.md", "website/docs/changelog.md"],
+        "assets": [
+          "package.json",
+          "package-lock.json",
+          "CHANGELOG.md",
+          "website/docs/changelog.md"
+        ],
         "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
       }
     ],
