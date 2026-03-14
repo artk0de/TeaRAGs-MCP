@@ -3,6 +3,12 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>1.0.3 (2026-03-14)</small>
+
+- ([c70b1a2](https://github.com/artk0de/TeaRAGs-MCP/commit/c70b1a2))
+- fix(ci): use markdown format: detect to fix changelog MDX parse errors
+  ([db47186](https://github.com/artk0de/TeaRAGs-MCP/commit/db47186))
+
 ## <small>1.0.2 (2026-03-14)</small>
 
 - fix(ci): deploy docs on every push, not just release commits
