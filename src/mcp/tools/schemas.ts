@@ -327,7 +327,34 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .describe("Return only metadata (path, lines, git info) without content. Default: true."),
   };
 
-  return { SemanticSearchSchema, HybridSearchSchema, SearchCodeSchema, RankChunksSchema };
+  const findSimilarRerankSchema = schemaBuilder.buildRerankSchema("find_similar");
+
+  const FindSimilarSchema = {
+    ...collectionPathFields(),
+    positiveIds: z.array(z.string()).optional().describe("Chunk IDs from previous search results to find similar code"),
+    positiveCode: z.array(z.string()).optional().describe("Raw code blocks to find similar code (embedded on-the-fly)"),
+    negativeIds: z.array(z.string()).optional().describe("Chunk IDs to push results away from"),
+    negativeCode: z.array(z.string()).optional().describe("Raw code blocks to push results away from"),
+    strategy: z
+      .enum(["best_score", "average_vector", "sum_scores"])
+      .optional()
+      .describe(
+        "Recommend strategy. best_score (default): scores each candidate against every example, " +
+          "supports negative-only. average_vector: averages all positive vectors, fastest. " +
+          "sum_scores: sums scores across examples, middle ground.",
+      ),
+    filter: z.record(z.any()).optional().describe("Qdrant filter object with must/should/must_not conditions"),
+    pathPattern: z.string().optional().describe("Glob pattern for filtering by file path (e.g. 'src/**/*.ts')"),
+    fileExtensions: z.array(z.string()).optional().describe("Filter by file extensions (e.g. ['.ts', '.js'])"),
+    rerank: findSimilarRerankSchema
+      .optional()
+      .describe("Reranking mode. Same presets as semantic_search: 'relevance' | 'techDebt' | 'hotspots' | etc."),
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
+    offset: coerceNumber().optional().describe("Offset for pagination (default: 0)"),
+    metaOnly: coerceBoolean().optional().describe("Return only metadata without content (default: false)"),
+  };
+
+  return { SemanticSearchSchema, HybridSearchSchema, SearchCodeSchema, RankChunksSchema, FindSimilarSchema };
 }
 
 /** Return type of createSearchSchemas for typing in tool registrations. */
