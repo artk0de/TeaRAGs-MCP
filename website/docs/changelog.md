@@ -94,7 +94,7 @@ sidebar_position: 99
   ([da56f75](https://github.com/artk0de/TeaRAGs-MCP/commit/da56f75))
 - refactor(explore): remove excludeDocumentation from ScrollRankStrategy
   ([13f4286](https://github.com/artk0de/TeaRAGs-MCP/commit/13f4286))
-- refactor(explore): rename RawResult → ExploreResult<P>, executeSearch →
+- refactor(explore): rename RawResult → ExploreResult&lt;P&gt;, executeSearch →
   executeExplore
   ([0cfdc8e](https://github.com/artk0de/TeaRAGs-MCP/commit/0cfdc8e))
 - refactor(explore): rename search domain to explore
@@ -196,12 +196,12 @@ sidebar_position: 99
 - package renamed from @artk0de/tea-rags-mcp to tea-rags. Binary command renamed
   from qdrant-mcp-server to tea-rags.
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.6 &lt;noreply@anthropic.com&gt;
 
 - QDRANT_URL default changed from http://localhost:6333 to autodetect. Set
   QDRANT_URL explicitly if using external Qdrant.
 
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.6 &lt;noreply@anthropic.com&gt;
 
 ## 0.9.0 (2026-03-08)
 
