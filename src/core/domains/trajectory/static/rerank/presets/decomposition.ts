@@ -4,7 +4,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
 export class DecompositionPreset implements RerankPreset {
   readonly name = "decomposition";
   readonly description = "Find large, dense methods and blocks — candidates for decomposition";
-  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks"];
+  readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
   readonly weights: ScoringWeights = {
     similarity: 0.4,
     chunkSize: 0.4,
