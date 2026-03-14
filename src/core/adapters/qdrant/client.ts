@@ -371,6 +371,49 @@ export class QdrantManager {
     }
   }
 
+  /**
+   * Query using Qdrant's universal query() API with recommend sub-query.
+   * Used by find_similar to find chunks similar to given IDs or vectors.
+   */
+  async query(
+    collectionName: string,
+    options: {
+      positive: (string | number | number[])[];
+      negative?: (string | number | number[])[];
+      strategy?: "best_score" | "average_vector" | "sum_scores";
+      limit: number;
+      offset?: number;
+      filter?: Record<string, unknown>;
+    },
+  ): Promise<{ id: string | number; score: number; payload?: Record<string, unknown> }[]> {
+    const collectionInfo = await this.getCollectionInfo(collectionName);
+
+    const recommend: Record<string, unknown> = {
+      positive: options.positive,
+    };
+    if (options.negative?.length) recommend.negative = options.negative;
+    if (options.strategy) recommend.strategy = options.strategy;
+
+    const queryParams: Record<string, unknown> = {
+      query: { recommend },
+      limit: options.limit,
+      with_payload: true,
+      with_vector: false,
+    };
+
+    if (options.offset !== undefined) queryParams.offset = options.offset;
+    if (options.filter) queryParams.filter = options.filter;
+    if (collectionInfo.hybridEnabled) queryParams.using = "dense";
+
+    const response = await this.client.query(collectionName, queryParams as Parameters<QdrantClient["query"]>[1]);
+
+    return (response.points ?? []).map((point) => ({
+      id: point.id,
+      score: point.score,
+      payload: (point.payload as Record<string, unknown>) || undefined,
+    }));
+  }
+
   async deletePoints(collectionName: string, ids: (string | number)[]): Promise<void> {
     // Normalize IDs to ensure string IDs are in UUID format
     const normalizedIds = ids.map((id) => this.normalizeId(id));

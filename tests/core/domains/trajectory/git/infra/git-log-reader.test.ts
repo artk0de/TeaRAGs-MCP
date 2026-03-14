@@ -432,8 +432,10 @@ describe("GitLogReader", () => {
   }, 15_000);
 
   it("should handle non-git directory gracefully (falls back to CLI, which also fails)", async () => {
-    // Non-git dir → isomorphic-git fails → CLI fallback also fails → throws
-    await expect(reader.buildFileSignalMap("/tmp")).rejects.toThrow();
+    // Use a path guaranteed to not be inside any git repo
+    // /tmp can behave unexpectedly during lint-staged (stash affects git state)
+    const nonGitDir = "/nonexistent_dir_for_test";
+    await expect(reader.buildFileSignalMap(nonGitDir)).rejects.toThrow();
   });
 
   it("should accept maxAgeMonths parameter and limit commits by date", async () => {
