@@ -140,6 +140,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     explore,
     reranker,
     schemaDriftMonitor,
+    quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
   });
 
   const cleanup = () => {
