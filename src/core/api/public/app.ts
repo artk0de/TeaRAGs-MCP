@@ -36,6 +36,7 @@ import type {
   IndexStats,
   IndexStatus,
   PresetDescriptors,
+  PresetDetail,
   ProgressCallback,
   RankChunksRequest,
   SemanticSearchRequest,
@@ -126,11 +127,14 @@ export function createApp(deps: AppDeps): App {
       const info = deps.reranker.getDescriptorInfo();
       const tools = ["semantic_search", "hybrid_search", "search_code", "rank_chunks", "find_similar"];
       const presetNames: Record<string, string[]> = {};
+      const presetDetails: Record<string, PresetDetail[]> = {};
       for (const tool of tools) {
         presetNames[tool] = deps.reranker.getPresetNames(tool);
+        presetDetails[tool] = deps.reranker.getPresetDetails(tool);
       }
       return {
         presetNames,
+        presetDetails,
         signalDescriptors: info.map((d) => ({ name: d.name, description: d.description })),
       };
     },

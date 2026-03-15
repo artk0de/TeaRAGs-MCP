@@ -14,6 +14,7 @@ export type {
   SearchResult,
   ExploreResponse,
   SignalDescriptor,
+  PresetDetail,
   PresetDescriptors,
 } from "./explore.js";
 

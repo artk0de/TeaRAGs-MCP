@@ -1147,6 +1147,18 @@ describe("Reranker (v2 class)", () => {
     expect(techDebt!.description).toBeTruthy();
   });
 
+  it("getPresetDetails returns name, description, weights, and tools", () => {
+    const details = reranker.getPresetDetails("semantic_search");
+    expect(details.length).toBeGreaterThan(0);
+    const techDebt = details.find((d) => d.name === "techDebt");
+    expect(techDebt).toBeDefined();
+    expect(techDebt!.description).toBeTruthy();
+    expect(Array.isArray(techDebt!.weights)).toBe(true);
+    expect(techDebt!.weights.length).toBeGreaterThan(0);
+    expect(Array.isArray(techDebt!.tools)).toBe(true);
+    expect(techDebt!.tools).toContain("semantic_search");
+  });
+
   it("search_code presets work", () => {
     const results = [makeResult(0.8, { file: { ageDays: 200 } }), makeResult(0.8, { file: { ageDays: 5 } })];
     const ranked = reranker.rerank(results, "recent", "search_code");

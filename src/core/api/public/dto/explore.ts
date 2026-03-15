@@ -142,9 +142,20 @@ export interface SignalDescriptor {
   description: string;
 }
 
+export interface PresetDetail {
+  name: string;
+  description: string;
+  /** Weight key names available in this preset. */
+  weights: string[];
+  /** Tool names this preset is available for. */
+  tools: string[];
+}
+
 export interface PresetDescriptors {
   /** Preset names keyed by tool name (e.g. { semantic_search: ["relevance", "techDebt"] }) */
   presetNames: Record<string, string[]>;
+  /** Full preset details keyed by tool name */
+  presetDetails: Record<string, PresetDetail[]>;
   /** All derived signal descriptors available for custom weights */
   signalDescriptors: SignalDescriptor[];
 }
