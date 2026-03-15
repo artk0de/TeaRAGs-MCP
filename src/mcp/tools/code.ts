@@ -83,7 +83,8 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         "- 'What did John work on last week?' → author='John', maxAgeDays=7\n" +
         "- 'High-churn authentication code' → query='authentication', minCommitCount=5\n" +
         "- 'Code related to ticket TD-1234' → taskId='TD-1234'\n" +
-        "- 'Legacy code that might need documentation' → query='service', minAgeDays=60",
+        "- 'Legacy code that might need documentation' → query='service', minAgeDays=60\n\n" +
+        "Returns human-readable formatted text with code snippets.",
       inputSchema: searchSchemas.SearchCodeSchema,
       annotations: { readOnlyHint: true },
     },
