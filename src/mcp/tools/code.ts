@@ -28,6 +28,7 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         "- Filter by churn (frequently changed code)\n" +
         "- Filter by task/ticket IDs (JIRA, GitHub issues, etc.)",
       inputSchema: schemas.IndexCodebaseSchema,
+      annotations: { idempotentHint: true },
     },
     async ({ path, forceReindex, extensions, ignorePatterns }) => {
       try {
@@ -84,12 +85,13 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         "- 'Code related to ticket TD-1234' → taskId='TD-1234'\n" +
         "- 'Legacy code that might need documentation' → query='service', minAgeDays=60",
       inputSchema: searchSchemas.SearchCodeSchema,
+      annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
       try {
         const response = await app.searchCode({
           ...rest,
-          rerank: sanitizeRerank(rerank),
+          rerank: sanitizeRerank(rerank as string | { custom: Record<string, number | undefined> } | undefined),
         });
 
         if (response.results.length === 0) {
@@ -131,6 +133,7 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       description:
         "Incrementally re-index only changed files. Detects added, modified, and deleted files since last index. Requires previous indexing with index_codebase.",
       inputSchema: schemas.ReindexChangesSchema,
+      annotations: { idempotentHint: true },
     },
     async ({ path }) => {
       try {
@@ -177,6 +180,7 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         "Git enrichment runs in the background after indexing completes — " +
         "check this tool periodically until enrichment is complete before using git-based filters or rerank presets.",
       inputSchema: schemas.GetIndexStatusSchema,
+      annotations: { readOnlyHint: true },
     },
     async ({ path }) => {
       try {
@@ -227,6 +231,7 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       description:
         "Delete all indexed data for a codebase. This is irreversible and will remove the entire collection.",
       inputSchema: schemas.ClearIndexSchema,
+      annotations: { destructiveHint: true },
     },
     async ({ path }) => {
       try {

@@ -19,6 +19,7 @@ export function registerDocumentTools(server: McpServer, deps: { app: App }): vo
       description:
         "Add documents to a collection. Documents will be automatically embedded using the configured embedding provider.",
       inputSchema: schemas.AddDocumentsSchema,
+      annotations: {},
     },
     async ({ collection, documents }) => {
       try {
@@ -37,6 +38,7 @@ export function registerDocumentTools(server: McpServer, deps: { app: App }): vo
       title: "Delete Documents",
       description: "Delete specific documents from a collection by their IDs.",
       inputSchema: schemas.DeleteDocumentsSchema,
+      annotations: { destructiveHint: true },
     },
     async ({ collection, ids }) => {
       try {
