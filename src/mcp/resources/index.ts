@@ -21,6 +21,10 @@ export function buildOverview(): string {
 - hybrid_search — semantic + BM25, best for mixed intent
 - rank_chunks — rank by signals without query
 - find_similar — find code similar to examples
+
+## Guides
+- tea-rags://schema/search-guide — search tool routing, use cases, examples
+- tea-rags://schema/indexing-guide — indexing options, git metadata guide
 `;
 }
 
@@ -278,6 +282,34 @@ export function registerAllResources(server: McpServer, app: App): void {
     },
     async (uri) => ({
       contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildFiltersDoc() }],
+    }),
+  );
+
+  // Static resource: search guide
+  server.registerResource(
+    "schema-search-guide",
+    "tea-rags://schema/search-guide",
+    {
+      title: "Search Guide",
+      description: "Tool routing, use cases, and examples for all search tools",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildSearchGuide() }],
+    }),
+  );
+
+  // Static resource: indexing guide
+  server.registerResource(
+    "schema-indexing-guide",
+    "tea-rags://schema/indexing-guide",
+    {
+      title: "Indexing Guide",
+      description: "Indexing options, git metadata guide, and reindex workflow",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildIndexingGuide() }],
     }),
   );
 }
