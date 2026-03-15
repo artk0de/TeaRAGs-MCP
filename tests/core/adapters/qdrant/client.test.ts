@@ -1944,7 +1944,7 @@ describe("QdrantManager", () => {
 
       expect(mockClient.queryGroups).toHaveBeenCalledWith(
         "hybrid-col",
-        expect.objectContaining({ query: { name: "dense", vector: [0.1] } }),
+        expect.objectContaining({ query: [0.1], using: "dense" }),
       );
     });
 

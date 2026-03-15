@@ -129,7 +129,11 @@ export class ExploreFacade {
     const { collectionName, path } = resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
-    const filter = this.registry.buildMergedFilter(request as unknown as Record<string, unknown>, request.filter);
+    const filter = this.registry.buildMergedFilter(
+      request as unknown as Record<string, unknown>,
+      request.filter,
+      level,
+    );
     return this.executeExplore(
       this.vectorStrategy,
       {
@@ -152,7 +156,11 @@ export class ExploreFacade {
     const { collectionName, path } = resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
-    const filter = this.registry.buildMergedFilter(request as unknown as Record<string, unknown>, request.filter);
+    const filter = this.registry.buildMergedFilter(
+      request as unknown as Record<string, unknown>,
+      request.filter,
+      level,
+    );
     return this.executeExplore(
       this.hybridStrategy,
       {
