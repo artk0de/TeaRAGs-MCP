@@ -85,12 +85,11 @@ describe("SchemaBuilder", () => {
       expect(() => schema.parse({ recency: "high" })).toThrow();
     });
 
-    it("includes description from descriptor", () => {
+    it("does not include descriptions on weight fields", () => {
       const builder = new SchemaBuilder(createMockReranker() as Reranker);
       const schema = builder.buildScoringWeightsSchema();
-      // Access the inner ZodOptional -> ZodNumber to check description
       const recencyField = schema.shape.recency;
-      expect(recencyField.description).toBe("Inverse of age");
+      expect(recencyField.description).toBeUndefined();
     });
 
     it("handles empty descriptor list", () => {
@@ -122,13 +121,9 @@ describe("SchemaBuilder", () => {
       expect(() => schema.parse("techDebt")).toThrow();
     });
 
-    it("returns z.union with per-preset descriptions (not ZodEnum)", () => {
+    it("returns z.enum for multiple presets (no per-value descriptions)", () => {
       const mock = createMockReranker({
         presets: { semantic_search: ["relevance", "techDebt"] },
-        presetDescriptions: {
-          relevance: "Pure semantic similarity ranking",
-          techDebt: "Find legacy code with high churn and old age",
-        },
       });
       const builder = new SchemaBuilder(mock as Reranker);
       const schema = builder.buildPresetSchema("semantic_search");
@@ -136,13 +131,13 @@ describe("SchemaBuilder", () => {
       expect(schema.parse("relevance")).toBe("relevance");
       expect(schema.parse("techDebt")).toBe("techDebt");
       expect(() => schema.parse("nonexistent")).toThrow();
-      expect(schema).not.toBeInstanceOf(z.ZodEnum);
+      // Now uses ZodEnum instead of z.union(z.literal)
+      expect(schema).toBeInstanceOf(z.ZodEnum);
     });
 
-    it("returns z.literal for single preset", () => {
+    it("returns z.literal for single preset (no description)", () => {
       const mock = createMockReranker({
         presets: { single_tool: ["only"] },
-        presetDescriptions: { only: "The only preset" },
       });
       const builder = new SchemaBuilder(mock as Reranker);
       const schema = builder.buildPresetSchema("single_tool");
