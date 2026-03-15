@@ -108,6 +108,7 @@ describe("ExploreFacade filter delegation to registry.buildMergedFilter", () => 
     expect(registry.buildMergedFilter).toHaveBeenCalledWith(
       expect.objectContaining({ language: "typescript" }),
       undefined, // no raw filter
+      undefined, // no level override → chunk default
     );
     expect(qdrant.search).toHaveBeenCalledWith(
       "test",
@@ -142,6 +143,7 @@ describe("ExploreFacade filter delegation to registry.buildMergedFilter", () => 
     expect(registry.buildMergedFilter).toHaveBeenCalledWith(
       expect.objectContaining({ language: "typescript" }),
       rawFilter,
+      undefined, // no level override → chunk default
     );
     const filterArg = qdrant.search.mock.calls[0][3] as Record<string, unknown>;
     const must = filterArg.must as unknown[];

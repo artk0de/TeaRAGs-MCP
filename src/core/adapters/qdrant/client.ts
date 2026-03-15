@@ -432,7 +432,7 @@ export class QdrantManager {
     const collectionInfo = await this.getCollectionInfo(collectionName);
 
     const params: Record<string, unknown> = {
-      query: collectionInfo.hybridEnabled ? { name: "dense", vector } : vector,
+      query: vector,
       group_by: options.groupBy,
       group_size: options.groupSize ?? 1,
       limit: options.limit,
@@ -441,6 +441,7 @@ export class QdrantManager {
     };
 
     if (options.filter) params.filter = options.filter;
+    if (collectionInfo.hybridEnabled) params.using = "dense";
 
     const response = await this.client.queryGroups(
       collectionName,

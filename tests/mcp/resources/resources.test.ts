@@ -1,0 +1,127 @@
+import { describe, expect, it } from "vitest";
+
+import type { PresetDescriptors } from "../../../src/core/api/public/dto/explore.js";
+import { buildFiltersDoc, buildOverview, buildPresetsDoc, buildSignalsDoc } from "../../../src/mcp/resources/index.js";
+
+const mockDescriptors: PresetDescriptors = {
+  presetNames: {
+    semantic_search: ["relevance", "techDebt"],
+    search_code: ["relevance", "recent"],
+  },
+  presetDetails: {
+    semantic_search: [
+      {
+        name: "relevance",
+        description: "Pure similarity",
+        weights: ["similarity"],
+        tools: ["semantic_search", "hybrid_search"],
+      },
+      {
+        name: "techDebt",
+        description: "Legacy code finder",
+        weights: ["age", "churn", "similarity"],
+        tools: ["semantic_search", "hybrid_search"],
+      },
+    ],
+    search_code: [
+      { name: "relevance", description: "Pure similarity", weights: ["similarity"], tools: ["search_code"] },
+      { name: "recent", description: "Recent code", weights: ["recency", "similarity"], tools: ["search_code"] },
+    ],
+  },
+  signalDescriptors: [
+    { name: "similarity", description: "Semantic similarity score" },
+    { name: "recency", description: "Inverse of age" },
+    { name: "age", description: "Direct age signal" },
+    { name: "churn", description: "Commit frequency" },
+  ],
+};
+
+describe("Resource builders", () => {
+  describe("buildOverview", () => {
+    it("lists all schema resource URIs", () => {
+      const md = buildOverview();
+      expect(md).toContain("tea-rags://schema/presets");
+      expect(md).toContain("tea-rags://schema/signals");
+      expect(md).toContain("tea-rags://schema/filters");
+    });
+
+    it("lists all tools in quick reference", () => {
+      const md = buildOverview();
+      expect(md).toContain("search_code");
+      expect(md).toContain("semantic_search");
+      expect(md).toContain("hybrid_search");
+      expect(md).toContain("rank_chunks");
+      expect(md).toContain("find_similar");
+    });
+  });
+
+  describe("buildPresetsDoc", () => {
+    it("contains all preset names with descriptions", () => {
+      const md = buildPresetsDoc(mockDescriptors);
+      expect(md).toContain("relevance");
+      expect(md).toContain("Pure similarity");
+      expect(md).toContain("techDebt");
+      expect(md).toContain("Legacy code finder");
+      expect(md).toContain("recent");
+      expect(md).toContain("Recent code");
+    });
+
+    it("lists weight keys for each preset", () => {
+      const md = buildPresetsDoc(mockDescriptors);
+      expect(md).toContain("age");
+      expect(md).toContain("churn");
+      expect(md).toContain("similarity");
+    });
+
+    it("lists available tools for each preset", () => {
+      const md = buildPresetsDoc(mockDescriptors);
+      expect(md).toContain("semantic_search");
+      expect(md).toContain("search_code");
+    });
+
+    it("handles empty presets for a tool gracefully", () => {
+      const empty: PresetDescriptors = {
+        presetNames: { some_tool: [] },
+        presetDetails: { some_tool: [] },
+        signalDescriptors: [],
+      };
+      const md = buildPresetsDoc(empty);
+      expect(md).toBeDefined();
+      expect(typeof md).toBe("string");
+    });
+  });
+
+  describe("buildSignalsDoc", () => {
+    it("contains all signal names with descriptions", () => {
+      const md = buildSignalsDoc(mockDescriptors);
+      expect(md).toContain("similarity");
+      expect(md).toContain("Semantic similarity score");
+      expect(md).toContain("recency");
+      expect(md).toContain("Inverse of age");
+    });
+  });
+
+  describe("buildFiltersDoc", () => {
+    it("contains Qdrant operator syntax", () => {
+      const md = buildFiltersDoc();
+      expect(md).toContain("match");
+      expect(md).toContain("range");
+      expect(md).toContain("must");
+      expect(md).toContain("should");
+      expect(md).toContain("must_not");
+    });
+
+    it("contains threshold guidance", () => {
+      const md = buildFiltersDoc();
+      expect(md).toContain("minCommitCount");
+      expect(md).toContain("minAgeDays");
+    });
+
+    it("contains available fields", () => {
+      const md = buildFiltersDoc();
+      expect(md).toContain("relativePath");
+      expect(md).toContain("git.dominantAuthor");
+      expect(md).toContain("imports");
+    });
+  });
+});
