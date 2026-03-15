@@ -45,21 +45,22 @@ blocks.
 
 **Parameters:**
 
-| Parameter             | Type               | Required | Default      | Description                                                      |
-| --------------------- | ------------------ | -------- | ------------ | ---------------------------------------------------------------- |
-| `positiveIds`         | `string[]`         | no\*     | `[]`         | Chunk IDs from previous search results to find similar code      |
-| `positiveCode`        | `string[]`         | no\*     | `[]`         | Raw code blocks to find similar code (embedded on-the-fly)       |
-| `negativeIds`         | `string[]`         | no       | `[]`         | Chunk IDs to push results away from                              |
-| `negativeCode`        | `string[]`         | no       | `[]`         | Raw code blocks to push results away from                        |
-| `strategy`            | `string`           | no       | `best_score` | Recommend strategy: `best_score`, `average_vector`, `sum_scores` |
-| `filter`              | `object`           | no       | —            | Qdrant native filter (must/should/must_not)                      |
-| `pathPattern`         | `string`           | no       | —            | Glob pattern to filter results by file path                      |
-| `fileExtensions`      | `string[]`         | no       | —            | Filter by file extensions (e.g. `[".ts", ".js"]`)                |
-| `rerank`              | `string \| object` | no       | `relevance`  | Rerank preset or custom weights                                  |
-| `limit`               | `number`           | no       | `10`         | Max results to return                                            |
-| `offset`              | `number`           | no       | `0`          | Offset for pagination                                            |
-| `metaOnly`            | `boolean`          | no       | `false`      | Return metadata only (no content)                                |
-| `collection` / `path` | `string`           | yes      | —            | Project path or collection name                                  |
+| Parameter             | Type               | Required | Default      | Description                                                         |
+| --------------------- | ------------------ | -------- | ------------ | ------------------------------------------------------------------- |
+| `positiveIds`         | `string[]`         | no\*     | `[]`         | Chunk IDs from previous search results to find similar code         |
+| `positiveCode`        | `string[]`         | no\*     | `[]`         | Raw code blocks to find similar code (embedded on-the-fly)          |
+| `negativeIds`         | `string[]`         | no       | `[]`         | Chunk IDs to push results away from                                 |
+| `negativeCode`        | `string[]`         | no       | `[]`         | Raw code blocks to push results away from                           |
+| `strategy`            | `string`           | no       | `best_score` | Recommend strategy: `best_score`, `average_vector`, `sum_scores`    |
+| `filter`              | `object`           | no       | —            | Qdrant native filter (must/should/must_not)                         |
+| `pathPattern`         | `string`           | no       | —            | Glob pattern to filter results by file path                         |
+| `fileExtensions`      | `string[]`         | no       | —            | Filter by file extensions (e.g. `[".ts", ".js"]`)                   |
+| `rerank`              | `string \| object` | no       | `relevance`  | Rerank preset or custom weights                                     |
+| `limit`               | `number`           | no       | `10`         | Max results to return                                               |
+| `offset`              | `number`           | no       | `0`          | Offset for pagination                                               |
+| `level`               | `string`           | no       | by preset    | `chunk` (alpha-blended) or `file` (file signals only, one per file) |
+| `metaOnly`            | `boolean`          | no       | `false`      | Return metadata only (no content)                                   |
+| `collection` / `path` | `string`           | yes      | —            | Project path or collection name                                     |
 
 \*At least one positive or negative input is required. `average_vector` and
 `sum_scores` strategies require at least one positive input.
@@ -96,6 +97,31 @@ blocks.
 ```
 
 ## Search Parameters
+
+### `level` — Analysis Level
+
+Controls scoring granularity and result grouping. Available on
+`semantic_search`, `hybrid_search`, `find_similar`, and `rank_chunks`.
+
+| Value   | Scoring                                   | Grouping                |
+| ------- | ----------------------------------------- | ----------------------- |
+| `chunk` | Alpha-blended file + chunk signals        | All chunks returned     |
+| `file`  | Pure file signals only (alpha forced = 0) | One best chunk per file |
+
+**Default:** determined by the preset's `signalLevel`. Explicit value overrides
+the preset. If no preset and no explicit value — defaults to `chunk`.
+
+**File-level presets** (default to `level: "file"`): `securityAudit`,
+`ownership`, `onboarding`.
+
+```json
+{
+  "collection": "code_abc123",
+  "query": "authentication",
+  "rerank": "securityAudit",
+  "level": "file"
+}
+```
 
 ### `rerank` — Result Reranking
 
