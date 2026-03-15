@@ -66,6 +66,15 @@ function createMockReranker(): Reranker {
       if (tool === "rank_chunks") return ["relevance", "techDebt"];
       return ["relevance", "recent", "stable"];
     }),
+    getPresetDetails: vi.fn().mockImplementation((tool: string) => {
+      const names = tool === "rank_chunks" ? ["relevance", "techDebt"] : ["relevance", "recent", "stable"];
+      return names.map((name) => ({
+        name,
+        description: `${name} preset`,
+        weights: ["similarity"],
+        tools: [tool],
+      }));
+    }),
   } as unknown as Reranker;
 }
 

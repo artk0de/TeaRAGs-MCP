@@ -20,7 +20,8 @@ function createMockReranker(overrides?: {
   descriptors?: { name: string; description: string }[];
   presets?: Record<string, string[]>;
   presetDescriptions?: Record<string, string>;
-}): Pick<Reranker, "getDescriptorInfo" | "getPresetNames" | "getPresetDescriptions"> {
+  presetWeights?: Record<string, Record<string, number>>;
+}): Pick<Reranker, "getDescriptorInfo" | "getPresetNames" | "getPresetDescriptions" | "getPresetDetails"> {
   const descriptors = overrides?.descriptors ?? [
     { name: "recency", description: "Inverse of age" },
     { name: "similarity", description: "Semantic similarity score" },
@@ -39,6 +40,15 @@ function createMockReranker(overrides?: {
       (presets[tool] ?? []).map((name) => ({
         name,
         description: descriptions[name] ?? `${name} preset`,
+      })),
+    getPresetDetails: (tool: string) =>
+      (presets[tool] ?? []).map((name) => ({
+        name,
+        description: descriptions[name] ?? `${name} preset`,
+        weights: Object.keys(overrides?.presetWeights?.[name] ?? { similarity: 1 }),
+        tools: Object.entries(presets)
+          .filter(([, names]) => names.includes(name))
+          .map(([t]) => t),
       })),
   };
 }
@@ -144,6 +154,31 @@ describe("SchemaBuilder", () => {
     it("throws when tool has no presets", () => {
       const builder = new SchemaBuilder(createMockReranker() as Reranker);
       expect(() => builder.buildPresetSchema("unknown_tool")).toThrow(/No presets/);
+    });
+  });
+
+  describe("getPresetDetails (via mock)", () => {
+    it("returns preset details with weight keys and tools", () => {
+      const mock = createMockReranker({
+        presets: { semantic_search: ["relevance", "techDebt"] },
+        presetDescriptions: {
+          relevance: "Pure similarity",
+          techDebt: "Legacy code finder",
+        },
+        presetWeights: {
+          relevance: { similarity: 1 },
+          techDebt: { age: 0.5, churn: 0.3, similarity: 0.2 },
+        },
+      });
+      const details = mock.getPresetDetails("semantic_search");
+      expect(details).toHaveLength(2);
+      expect(details[0]).toEqual({
+        name: "relevance",
+        description: "Pure similarity",
+        weights: ["similarity"],
+        tools: ["semantic_search"],
+      });
+      expect(details[1].weights).toEqual(["age", "churn", "similarity"]);
     });
   });
 

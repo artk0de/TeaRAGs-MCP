@@ -190,6 +190,18 @@ export class Reranker {
       .map((p) => ({ name: p.name, description: p.description }));
   }
 
+  /** Full preset details for resource documentation. */
+  getPresetDetails(tool: string): { name: string; description: string; weights: string[]; tools: string[] }[] {
+    return this.resolvedPresets
+      .filter((p) => this.matchesTool(p, tool))
+      .map((p) => ({
+        name: p.name,
+        description: p.description,
+        weights: Object.keys(p.weights).filter((k) => p.weights[k as keyof typeof p.weights] !== undefined),
+        tools: [...p.tools],
+      }));
+  }
+
   // -- Private methods --
 
   /** Check if a preset serves the given tool. */
