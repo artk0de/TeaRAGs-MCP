@@ -3,6 +3,25 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## 1.4.0 (2026-03-15)
+
+- feat(config): add QDRANT_QUANTIZATION_SCALAR env flag
+  ([a767bc8](https://github.com/artk0de/TeaRAGs-MCP/commit/a767bc8))
+- feat(ingest): pass quantizationScalar to collection creation in IndexPipeline
+  ([5efd311](https://github.com/artk0de/TeaRAGs-MCP/commit/5efd311))
+- feat(qdrant): add scalar quantization support to createCollection
+  ([d83b9f2](https://github.com/artk0de/TeaRAGs-MCP/commit/d83b9f2))
+- feat(qdrant): wire quantizationScalar through CollectionOps and AppDeps
+  ([679c219](https://github.com/artk0de/TeaRAGs-MCP/commit/679c219))
+- refactor(infra): move signal-utils from contracts/ to infra/
+  ([5fae09c](https://github.com/artk0de/TeaRAGs-MCP/commit/5fae09c))
+- docs(plans): add scalar quantization implementation plan
+  ([d76ca6f](https://github.com/artk0de/TeaRAGs-MCP/commit/d76ca6f))
+- docs(specs): add scalar quantization design spec
+  ([1587b5b](https://github.com/artk0de/TeaRAGs-MCP/commit/1587b5b))
+- style(mcp): fix no-useless-concat in schema descriptions
+  ([cb6b5a1](https://github.com/artk0de/TeaRAGs-MCP/commit/cb6b5a1))
+
 ## 1.3.0 (2026-03-15)
 
 - fix(api): fix schema inconsistencies and incorrect resource examples
