@@ -88,11 +88,10 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
     {
       title: "Rank Chunks",
       description:
-        "Rank all chunks in a collection by rerank signals without vector search. " +
-        "Use for: finding decomposition candidates, tech debt analysis, hotspot detection, " +
-        "ownership reports — any analysis where you need top-N chunks by signal, not by query similarity.\n\n" +
-        "Returns structured JSON array of results with explained metadata.\n\n" +
-        "For detailed parameter docs (presets, signals, filters) see tea-rags://schema/overview",
+        "Rank all chunks by rerank signals without vector search. " +
+        "Top-N by signal, not by query similarity.\n\n" +
+        "For examples see tea-rags://schema/search-guide\n" +
+        "For parameter docs see tea-rags://schema/overview",
       inputSchema: searchSchemas.RankChunksSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
@@ -116,10 +115,9 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
     {
       title: "Find Similar",
       description:
-        "Find code similar to given chunks or code blocks. Uses Qdrant recommend API. " +
-        "Provide chunk IDs from previous search results and/or raw code blocks as positive (find more like this) " +
-        "or negative (find less like this) examples. At least one positive or negative input is required.\n\n" +
-        "For detailed parameter docs (presets, signals, filters) see tea-rags://schema/overview",
+        "Find code similar to given chunks or code blocks. Provide chunk IDs and/or raw code as " +
+        "positive (more like this) or negative (less like this) examples.\n\n" +
+        "For parameter docs see tea-rags://schema/overview",
       inputSchema: searchSchemas.FindSimilarSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },

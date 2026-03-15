@@ -210,13 +210,11 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...levelField(),
     rerank: semanticSearchRerankSchema
       .optional()
-      .describe("Reranking preset or {custom: weights}. See preset descriptions for details."),
+      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
     metaOnly: coerceBoolean()
       .optional()
       .describe(
-        "For code analytics: return only metadata (path, lines, git info) without content. " +
-          "Use for: file discovery, codebase structure analysis, ownership reports, churn analysis. " +
-          "Significantly reduces response size. Default: false.",
+        "Return only metadata (path, lines, git info) without content. " + "Reduces response size. Default: false.",
       ),
   };
 
@@ -227,13 +225,11 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...levelField(),
     rerank: semanticSearchRerankSchema
       .optional()
-      .describe("Reranking preset or {custom: weights}. See preset descriptions for details."),
+      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
     metaOnly: coerceBoolean()
       .optional()
       .describe(
-        "For code analytics: return only metadata (path, lines, git info) without content. " +
-          "Use for: file discovery, codebase structure analysis, ownership reports, churn analysis. " +
-          "Significantly reduces response size. Default: false.",
+        "Return only metadata (path, lines, git info) without content. " + "Reduces response size. Default: false.",
       ),
   };
 
@@ -251,7 +247,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...typedFilterFields(),
     rerank: searchCodeRerankSchema
       .optional()
-      .describe("Reranking preset or {custom: weights}. See preset descriptions for details."),
+      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
   };
 
   const rankChunksRerankSchema = schemaBuilder.buildRerankSchema("rank_chunks");
@@ -261,7 +257,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...typedFilterFields(),
     rerank: rankChunksRerankSchema.describe(
       "Reranking preset or {custom: weights} (REQUIRED). " +
-        "similarity weight is ignored (no vector search). See preset descriptions for details.",
+        "similarity weight is ignored (no vector search). See tea-rags://schema/presets for details.",
     ),
     ...levelField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
@@ -270,8 +266,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .optional()
       .describe(
         "Qdrant filter object with must/should/must_not conditions. " +
-          "Available fields: relativePath, fileExtension, language, chunkType, " +
-          "git.commitCount, git.ageDays, etc.",
+          "See tea-rags://schema/filters for syntax and available fields.",
       ),
     pathPattern: z
       .string()
@@ -313,12 +308,18 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
           "supports negative-only. average_vector: averages all positive vectors, fastest. " +
           "sum_scores: sums scores across examples, middle ground.",
       ),
-    filter: z.record(z.any()).optional().describe("Qdrant filter object with must/should/must_not conditions"),
+    filter: z
+      .record(z.any())
+      .optional()
+      .describe(
+        "Qdrant filter object with must/should/must_not conditions. " +
+          "See tea-rags://schema/filters for syntax and available fields.",
+      ),
     pathPattern: z.string().optional().describe("Glob pattern for filtering by file path (e.g. 'src/**/*.ts')"),
     fileExtensions: z.array(z.string()).optional().describe("Filter by file extensions (e.g. ['.ts', '.js'])"),
     rerank: findSimilarRerankSchema
       .optional()
-      .describe("Reranking preset or {custom: weights}. See preset descriptions for details."),
+      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     offset: coerceNumber().optional().describe("Offset for pagination (default: 0)"),
     metaOnly: coerceBoolean().optional().describe("Return only metadata without content (default: false)"),

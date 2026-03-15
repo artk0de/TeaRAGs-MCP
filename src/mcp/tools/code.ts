@@ -158,11 +158,8 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
     {
       title: "Get Index Status",
       description:
-        "Get indexing status and statistics for a codebase. " +
-        "When CODE_ENABLE_GIT_METADATA=true, also shows git enrichment progress " +
-        "(in_progress with percentage, completed, or failed). " +
-        "Git enrichment runs in the background after indexing completes — " +
-        "check this tool periodically until enrichment is complete before using git-based filters or rerank presets.",
+        "Get indexing status, statistics, and git enrichment progress for a codebase.\n\n" +
+        "For indexing workflow see tea-rags://schema/indexing-guide",
       inputSchema: schemas.GetIndexStatusSchema,
       annotations: { readOnlyHint: true },
     },

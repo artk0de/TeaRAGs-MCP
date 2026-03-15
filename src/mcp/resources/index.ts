@@ -78,8 +78,8 @@ export function buildSearchGuide(): string {
 ## semantic_search Examples
 
 - Ownership analysis → rerank="ownership", metaOnly=true
-- Tech debt discovery → rerank="techDebt", filter by ageDays
-- Impact analysis → rerank="impactAnalysis", metaOnly=true
+- Tech debt discovery → rerank="techDebt", minAgeDays=90
+- Security audit → rerank="securityAudit", pathPattern="**/auth/**"
 
 ## hybrid_search Examples
 
