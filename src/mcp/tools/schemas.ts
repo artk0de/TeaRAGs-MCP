@@ -27,7 +27,15 @@ const coerceBoolean = () => z.preprocess((v) => (typeof v === "string" ? v === "
 
 export const CreateCollectionSchema = {
   name: z.string().describe("Name of the collection"),
-  distance: z.enum(["Cosine", "Euclid", "Dot"]).optional().describe("Distance metric (default: Cosine)"),
+  distance: z
+    .enum(["Cosine", "Euclid", "Dot"])
+    .optional()
+    .describe(
+      "Distance metric (default: Cosine). " +
+        "Cosine: recommended, works with all embedding providers. " +
+        "Dot: equivalent to Cosine for normalized embeddings. " +
+        "Euclid: absolute vector distance, rarely needed for text embeddings.",
+    ),
   enableHybrid: coerceBoolean().optional().describe("Enable hybrid search with sparse vectors (default: false)"),
 };
 
@@ -96,13 +104,12 @@ export const ClearIndexSchema = {
  */
 function collectionPathFields() {
   return {
-    collection: z.string().optional().describe("Name of the collection to search. Required if 'path' not provided."),
+    collection: z.string().optional().describe("Collection name. Provide either 'collection' or 'path', not both."),
     path: z
       .string()
       .optional()
       .describe(
-        "Path to indexed codebase (alternative to 'collection'). " +
-          "Collection name is auto-resolved from path. Required if 'collection' not provided.",
+        "Path to indexed codebase (auto-resolves collection name). Provide either 'path' or 'collection', not both.",
       ),
   };
 }
@@ -183,7 +190,7 @@ function typedFilterFields() {
 function searchCommonFields() {
   return {
     query: z.string().describe("Search query text"),
-    limit: coerceNumber().optional().describe("Maximum number of results (default: 5)"),
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     filter: z
       .record(z.any())
       .optional()
@@ -198,7 +205,8 @@ function searchCommonFields() {
           "git.lastModifiedAt (unix timestamp), git.firstCreatedAt (unix timestamp), " +
           "git.commitCount (number), git.ageDays (number), git.taskIds (string[]), " +
           "imports (string[] - file-level imports for structural signal). " +
-          "For generic documents (add_documents): user-defined metadata fields.",
+          "For generic documents (add_documents): user-defined metadata fields. " +
+          'Example: {"must": [{"key": "language", "match": {"value": "typescript"}}, {"key": "git.commitCount", "range": {"gte": 5}}]}',
       ),
     pathPattern: z
       .string()
@@ -221,8 +229,9 @@ function levelField() {
       .enum(["chunk", "file"])
       .optional()
       .describe(
-        "Analysis level. 'chunk' (default): alpha-blended scoring, all chunks returned. " +
-          "'file': pure file signals (alpha=0), one best chunk per file. " +
+        "Analysis level. 'chunk' = rank individual code chunks (functions, classes, blocks) — " +
+          "use for decomposition candidates, hotspot detection. " +
+          "'file' = rank files as aggregated units — use for tech debt and ownership analysis. " +
           "Default: determined by preset signalLevel. Explicit value overrides preset.",
       ),
   };
@@ -269,7 +278,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
   const SearchCodeSchema = {
     path: z.string().describe("Path to codebase (must be indexed first)"),
     query: z.string().describe("Natural language search query (e.g., 'authentication logic')"),
-    limit: coerceNumber().optional().describe("Maximum number of results (default: 5, max: 100)"),
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 10, max: 100)"),
     pathPattern: z
       .string()
       .optional()
@@ -319,7 +328,10 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     metaOnly: coerceBoolean()
       .optional()
       .default(true)
-      .describe("Return only metadata (path, lines, git info) without content. Default: true."),
+      .describe(
+        "Return only metadata (path, lines, git info) without content. " +
+          "Default: true (rank_chunks is analytics-oriented; use false to include code content).",
+      ),
   };
 
   const findSimilarRerankSchema = schemaBuilder.buildRerankSchema("find_similar");

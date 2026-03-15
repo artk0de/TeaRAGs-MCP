@@ -34,7 +34,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
     {
       title: "Semantic Search",
       description:
-        "Search for documents using natural language queries. Returns the most semantically similar documents.",
+        "Search for documents using natural language queries. Returns the most semantically similar documents.\n\n" +
+        "Returns structured JSON array of results with explained metadata.",
       inputSchema: searchSchemas.SemanticSearchSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
@@ -58,7 +59,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
     {
       title: "Hybrid Search",
       description:
-        "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid set to true.",
+        "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid=true (see create_collection).\n\n" +
+        "Returns structured JSON array of results with explained metadata.",
       inputSchema: searchSchemas.HybridSearchSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
@@ -84,7 +86,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
       description:
         "Rank all chunks in a collection by rerank signals without vector search. " +
         "Use for: finding decomposition candidates, tech debt analysis, hotspot detection, " +
-        "ownership reports — any analysis where you need top-N chunks by signal, not by query similarity.",
+        "ownership reports — any analysis where you need top-N chunks by signal, not by query similarity.\n\n" +
+        "Returns structured JSON array of results with explained metadata.",
       inputSchema: searchSchemas.RankChunksSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
