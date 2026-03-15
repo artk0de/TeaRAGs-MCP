@@ -6,9 +6,10 @@ export class TechDebtPreset implements RerankPreset {
   readonly description = "Find legacy code with high churn, old age, and frequent bug fixes";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
   readonly weights: ScoringWeights = {
-    similarity: 0.2,
+    similarity: 0.15,
     age: 0.15,
-    churn: 0.15,
+    churn: 0.1,
+    chunkChurn: 0.1,
     bugFix: 0.15,
     volatility: 0.1,
     knowledgeSilo: 0.1,
@@ -17,5 +18,6 @@ export class TechDebtPreset implements RerankPreset {
   };
   readonly overlayMask: OverlayMask = {
     file: ["ageDays", "commitCount", "bugFixRate", "churnVolatility", "changeDensity"],
+    chunk: ["commitCount", "churnRatio"],
   };
 }
