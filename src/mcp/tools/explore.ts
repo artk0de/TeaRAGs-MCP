@@ -34,9 +34,10 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
     {
       title: "Semantic Search",
       description:
-        "Search for documents using natural language queries. Returns the most semantically similar documents.\n\n" +
-        "Returns structured JSON array of results with explained metadata.\n\n" +
-        "For detailed parameter docs (presets, signals, filters) see tea-rags://schema/overview",
+        "Analytical search returning structured JSON with full metadata. " +
+        "For agentic workflows: analytics, reports, downstream processing.\n\n" +
+        "For examples see tea-rags://schema/search-guide\n" +
+        "For parameter docs see tea-rags://schema/overview",
       inputSchema: searchSchemas.SemanticSearchSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
@@ -60,9 +61,10 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
     {
       title: "Hybrid Search",
       description:
-        "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid=true (see create_collection).\n\n" +
-        "Returns structured JSON array of results with explained metadata.\n\n" +
-        "For detailed parameter docs (presets, signals, filters) see tea-rags://schema/overview",
+        "Semantic + BM25 keyword search. Use when query contains exact symbols, identifiers, " +
+        "or markers (TODO, FIXME, specific names). Collection must be created with enableHybrid=true.\n\n" +
+        "For examples see tea-rags://schema/search-guide\n" +
+        "For parameter docs see tea-rags://schema/overview",
       inputSchema: searchSchemas.HybridSearchSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
