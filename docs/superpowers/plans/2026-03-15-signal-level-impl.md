@@ -338,11 +338,9 @@ git commit -m "feat(signals): payloadAlpha respects signalLevel — file forces 
 
 **Files:**
 
-- Modify: `src/core/domains/trajectory/git/rerank/presets/tech-debt.ts`
 - Modify: `src/core/domains/trajectory/git/rerank/presets/security-audit.ts`
 - Modify: `src/core/domains/trajectory/git/rerank/presets/ownership.ts`
 - Modify: `src/core/domains/trajectory/git/rerank/presets/onboarding.ts`
-- Modify: `src/core/domains/trajectory/git/rerank/presets/stable.ts`
 - Modify: `src/core/domains/trajectory/git/rerank/presets/recent.ts`
 - Modify: `src/core/domains/trajectory/static/rerank/presets/` (check if
   impactAnalysis exists here)
@@ -367,11 +365,9 @@ import { TechDebtPreset } from "../../../../../../src/core/domains/trajectory/gi
 
 describe("preset signalLevel", () => {
   it.each([
-    ["techDebt", new TechDebtPreset()],
     ["securityAudit", new SecurityAuditPreset()],
     ["ownership", new OwnershipPreset()],
     ["onboarding", new OnboardingPreset()],
-    ["stable", new StablePreset()],
     ["recent", new RecentPreset()],
   ])("%s should have signalLevel file", (_name, preset) => {
     expect(preset.signalLevel).toBe("file");
@@ -381,7 +377,9 @@ describe("preset signalLevel", () => {
     ["hotspots", new HotspotsPreset()],
     ["codeReview", new CodeReviewPreset()],
     ["refactoring", new RefactoringPreset()],
-  ])("%s should not have signalLevel (defaults to auto)", (_name, preset) => {
+    ["stable", new StablePreset()],
+    ["techDebt", new TechDebtPreset()],
+  ])("%s should not have signalLevel (defaults to chunk)", (_name, preset) => {
     expect(preset.signalLevel).toBeUndefined();
   });
 });
@@ -404,11 +402,10 @@ import type { SignalLevel } from "../../../../../contracts/types/reranker.js";
 readonly signalLevel: SignalLevel = "file";
 ```
 
-Files: `tech-debt.ts`, `security-audit.ts`, `ownership.ts`, `onboarding.ts`,
-`stable.ts`, `recent.ts`.
+Files: `security-audit.ts`, `ownership.ts`, `onboarding.ts`, `recent.ts`.
 
-Do NOT add `signalLevel` to `hotspots.ts`, `code-review.ts`, `refactoring.ts`
-(they default to `auto` by being undefined).
+Do NOT add `signalLevel` to `hotspots.ts`, `code-review.ts`, `refactoring.ts`,
+`stable.ts`, `tech-debt.ts` (they default to `"chunk"` by being undefined).
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1087,9 +1084,9 @@ Controls whether results represent individual chunks or whole files.
 | `"file"`  | Pure file signals (alpha=0)          | One best chunk per file | File-level analytics, ownership, tech debt |
 
 **Default:** Determined by preset's `signalLevel`. File-oriented presets
-(`techDebt`, `securityAudit`, `ownership`, `onboarding`, `stable`, `recent`)
-default to `"file"`. Chunk-oriented presets (`hotspots`, `codeReview`,
-`refactoring`, `relevance`) default to `"chunk"`.
+(`securityAudit`, `ownership`, `onboarding`, `recent`) default to `"file"`.
+Chunk-oriented presets (`hotspots`, `codeReview`, `refactoring`, `relevance`)
+default to `"chunk"`.
 
 **Override:** Explicit `level` always wins over preset default.
 

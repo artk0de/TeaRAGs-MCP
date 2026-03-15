@@ -12,7 +12,7 @@ export class DensitySignal implements DerivedSignalDescriptor {
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.changeDensity"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.changeDensity"] ?? this.defaultBound;
-    let value = blendNormalized(rawSignals, "changeDensity", fb, cb);
+    let value = blendNormalized(rawSignals, "changeDensity", fb, cb, ctx?.signalLevel);
     const k = ctx?.dampeningThreshold ?? DensitySignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
     return value;

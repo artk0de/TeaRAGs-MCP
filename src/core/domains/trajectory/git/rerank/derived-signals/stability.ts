@@ -12,6 +12,6 @@ export class StabilitySignal implements DerivedSignalDescriptor {
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.commitCount"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.commitCount"] ?? this.defaultBound;
-    return 1 - blendNormalized(rawSignals, "commitCount", fb, cb);
+    return 1 - blendNormalized(rawSignals, "commitCount", fb, cb, ctx?.signalLevel);
   }
 }

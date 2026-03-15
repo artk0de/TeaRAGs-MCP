@@ -18,6 +18,7 @@ const mockClient = {
   setPayload: vi.fn().mockResolvedValue({}),
   batchUpdate: vi.fn().mockResolvedValue({}),
   scroll: vi.fn().mockResolvedValue({ points: [] }),
+  queryGroups: vi.fn().mockResolvedValue({ groups: [] }),
 };
 
 vi.mock("@qdrant/js-client-rest", () => ({
@@ -44,6 +45,7 @@ describe("QdrantManager", () => {
     mockClient.updateCollection.mockReset().mockResolvedValue({});
     mockClient.setPayload.mockReset().mockResolvedValue({});
     mockClient.batchUpdate.mockReset().mockResolvedValue({});
+    mockClient.queryGroups.mockReset().mockResolvedValue({ groups: [] });
     vi.mocked(QdrantClient).mockClear();
     manager = new QdrantManager("http://localhost:6333");
   });
@@ -1872,6 +1874,89 @@ describe("QdrantManager", () => {
       await expect(manager.scrollOrdered("test", { key: "methodLines", direction: "desc" }, 10)).rejects.toThrow(
         /scrollOrdered failed.*connection refused/,
       );
+    });
+  });
+
+  describe("queryGroups", () => {
+    it("should group results by payload field and return one hit per group", async () => {
+      mockClient.getCollection.mockResolvedValueOnce({
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+        points_count: 100,
+      });
+      mockClient.queryGroups.mockResolvedValueOnce({
+        groups: [
+          {
+            id: "src/auth.ts",
+            hits: [{ id: "id1", score: 0.9, payload: { relativePath: "src/auth.ts" } }],
+          },
+          {
+            id: "src/db.ts",
+            hits: [
+              { id: "id2", score: 0.8, payload: { relativePath: "src/db.ts" } },
+              { id: "id3", score: 0.7, payload: { relativePath: "src/db.ts" } },
+            ],
+          },
+        ],
+      });
+
+      const results = await manager.queryGroups("test", [0.1, 0.2], {
+        groupBy: "relativePath",
+        groupSize: 1,
+        limit: 10,
+      });
+
+      expect(results).toHaveLength(2);
+      expect(results[0]).toEqual({ id: "id1", score: 0.9, payload: { relativePath: "src/auth.ts" } });
+      expect(results[1]).toEqual({ id: "id2", score: 0.8, payload: { relativePath: "src/db.ts" } });
+    });
+
+    it("should pass filter to queryGroups", async () => {
+      mockClient.getCollection.mockResolvedValueOnce({
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+        points_count: 10,
+      });
+      mockClient.queryGroups.mockResolvedValueOnce({ groups: [] });
+
+      const filter = { must: [{ key: "language", match: { value: "typescript" } }] };
+      await manager.queryGroups("test", [0.1], { groupBy: "relativePath", limit: 5, filter });
+
+      expect(mockClient.queryGroups).toHaveBeenCalledWith(
+        "test",
+        expect.objectContaining({ filter, group_by: "relativePath", group_size: 1, limit: 5 }),
+      );
+    });
+
+    it("should use named vector for hybrid collections", async () => {
+      mockClient.getCollection.mockResolvedValueOnce({
+        config: {
+          params: {
+            vectors: {
+              dense: { size: 384, distance: "Cosine" },
+            },
+            sparse_vectors: { bm25: {} },
+          },
+        },
+        points_count: 10,
+      });
+      mockClient.queryGroups.mockResolvedValueOnce({ groups: [] });
+
+      await manager.queryGroups("hybrid-col", [0.1], { groupBy: "relativePath", limit: 5 });
+
+      expect(mockClient.queryGroups).toHaveBeenCalledWith(
+        "hybrid-col",
+        expect.objectContaining({ query: { name: "dense", vector: [0.1] } }),
+      );
+    });
+
+    it("should handle empty groups", async () => {
+      mockClient.getCollection.mockResolvedValueOnce({
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+        points_count: 0,
+      });
+      mockClient.queryGroups.mockResolvedValueOnce({ groups: [] });
+
+      const results = await manager.queryGroups("test", [0.1], { groupBy: "relativePath", limit: 10 });
+      expect(results).toHaveLength(0);
     });
   });
 });

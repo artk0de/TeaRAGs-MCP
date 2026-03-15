@@ -12,7 +12,7 @@ export class BugFixSignal implements DerivedSignalDescriptor {
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.bugFixRate"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.bugFixRate"] ?? this.defaultBound;
-    let value = blendNormalized(rawSignals, "bugFixRate", fb, cb);
+    let value = blendNormalized(rawSignals, "bugFixRate", fb, cb, ctx?.signalLevel);
     const k = ctx?.dampeningThreshold ?? BugFixSignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
     return value;

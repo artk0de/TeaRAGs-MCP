@@ -9,6 +9,7 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { calculateFetchLimit, filterResultsByGlob } from "../../../adapters/qdrant/filters/index.js";
+import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
@@ -66,7 +67,12 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
 
     // 2. Rerank
     if (rerank && rerank !== "relevance") {
-      filtered = this.reranker.rerank(filtered, rerank, "semantic_search");
+      filtered = this.reranker.rerank(
+        filtered,
+        rerank,
+        "semantic_search",
+        originalCtx.level as SignalLevel | undefined,
+      );
     }
 
     // 3. Trim to requested limit
@@ -90,5 +96,15 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
       score: meta.score as number,
       payload: meta,
     }));
+  }
+
+  /** Client-side dedup: keep highest-scored hit per file (for file-level grouping). */
+  protected groupByFile(results: ExploreResult[], limit: number): ExploreResult[] {
+    const seen = new Map<string, ExploreResult>();
+    for (const r of results) {
+      const path = (r.payload?.relativePath as string) ?? "";
+      if (!seen.has(path)) seen.set(path, r);
+    }
+    return [...seen.values()].slice(0, limit);
   }
 }

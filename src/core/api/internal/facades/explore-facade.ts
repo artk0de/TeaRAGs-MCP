@@ -18,6 +18,7 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import {
@@ -127,6 +128,7 @@ export class ExploreFacade {
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
     const { collectionName, path } = resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
+    const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     const filter = this.registry.buildMergedFilter(request as unknown as Record<string, unknown>, request.filter);
     return this.executeExplore(
       this.vectorStrategy,
@@ -139,6 +141,7 @@ export class ExploreFacade {
         pathPattern: request.pathPattern,
         rerank: request.rerank,
         metaOnly: request.metaOnly,
+        level,
       },
       path,
     );
@@ -148,6 +151,7 @@ export class ExploreFacade {
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
     const { collectionName, path } = resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
+    const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     const filter = this.registry.buildMergedFilter(request as unknown as Record<string, unknown>, request.filter);
     return this.executeExplore(
       this.hybridStrategy,
@@ -160,6 +164,7 @@ export class ExploreFacade {
         pathPattern: request.pathPattern,
         rerank: request.rerank,
         metaOnly: request.metaOnly,
+        level,
       },
       path,
     );
@@ -168,10 +173,11 @@ export class ExploreFacade {
   /** Rank all chunks by rerank signals without vector search. */
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
     const { collectionName, path } = resolveCollection(request.collection, request.path);
+    const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "rank_chunks");
     const filter = this.registry.buildMergedFilter(
       request as unknown as Record<string, unknown>,
       request.filter,
-      request.level,
+      level,
     );
     return this.executeExplore(
       this.scrollRankStrategy,
@@ -179,7 +185,7 @@ export class ExploreFacade {
         collectionName,
         limit: request.limit ?? 10,
         offset: request.offset,
-        level: request.level,
+        level,
         filter,
         pathPattern: request.pathPattern,
         rerank: request.rerank,
@@ -249,6 +255,7 @@ export class ExploreFacade {
       },
     );
 
+    const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     return this.executeExplore(
       similarStrategy,
       {
@@ -259,6 +266,7 @@ export class ExploreFacade {
         pathPattern: request.pathPattern,
         rerank: request.rerank,
         metaOnly: request.metaOnly,
+        level,
       },
       path,
     );
@@ -286,6 +294,7 @@ export class ExploreFacade {
         rankingOverlay: r.rankingOverlay,
       })),
       driftWarning,
+      ...(ctx.level ? { level: ctx.level } : {}),
     };
   }
 
@@ -315,6 +324,23 @@ export class ExploreFacade {
     if (collectionName) return this.schemaDriftMonitor.checkByCollectionName(collectionName);
     return null;
   }
+}
+
+/**
+ * Resolve effective signal level: user override > preset signalLevel > "chunk" default.
+ */
+function resolveEffectiveLevel(
+  userLevel: SignalLevel | undefined,
+  rerank: string | { custom: Record<string, number> } | undefined,
+  reranker: Reranker,
+  tool: "semantic_search" | "search_code" | "rank_chunks",
+): SignalLevel | undefined {
+  if (userLevel) return userLevel;
+  if (typeof rerank === "string") {
+    const preset = reranker.getFullPreset(rerank, tool);
+    return preset?.signalLevel;
+  }
+  return undefined;
 }
 
 export { CollectionRefError, CollectionNotFoundError };

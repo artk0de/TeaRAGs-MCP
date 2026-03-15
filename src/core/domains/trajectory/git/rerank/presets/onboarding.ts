@@ -1,9 +1,10 @@
 import type { ScoringWeights } from "../../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/reranker.js";
+import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../../contracts/types/reranker.js";
 
 export class OnboardingPreset implements RerankPreset {
   readonly name = "onboarding";
   readonly description = "Well-documented, stable, mature code with shared ownership — ideal for new team members";
+  readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar"];
   readonly weights: ScoringWeights = {
     similarity: 0.3,

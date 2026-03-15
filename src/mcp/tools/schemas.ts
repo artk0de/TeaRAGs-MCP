@@ -206,6 +206,20 @@ function searchCommonFields() {
  * Create dynamic search schemas from SchemaBuilder.
  * Replaces hardcoded imports from trajectory/ and search/structural-signals.
  */
+/** Shared level field for all structured search tools. */
+function levelField() {
+  return {
+    level: z
+      .enum(["chunk", "file"])
+      .optional()
+      .describe(
+        "Analysis level. 'chunk' (default): alpha-blended scoring, all chunks returned. " +
+          "'file': pure file signals (alpha=0), one best chunk per file. " +
+          "Default: determined by preset signalLevel. Explicit value overrides preset.",
+      ),
+  };
+}
+
 export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
   const semanticSearchRerankSchema = schemaBuilder.buildRerankSchema("semantic_search");
   const searchCodeRerankSchema = schemaBuilder.buildRerankSchema("search_code");
@@ -214,6 +228,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...collectionPathFields(),
     ...searchCommonFields(),
     ...typedFilterFields(),
+    ...levelField(),
     rerank: semanticSearchRerankSchema
       .optional()
       .describe(
@@ -236,6 +251,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...collectionPathFields(),
     ...searchCommonFields(),
     ...typedFilterFields(),
+    ...levelField(),
     rerank: semanticSearchRerankSchema
       .optional()
       .describe(
@@ -292,12 +308,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
         "Use decomposition for large chunks, techDebt for old+churned, " +
         "hotspots for high-churn, refactoring for large+churned, ownership for single-author.",
     ),
-    level: z
-      .enum(["chunk", "file"])
-      .describe(
-        "Analysis level. 'chunk' for active work (decomposition, hotspots). " +
-          "'file' for tech debt and ownership analysis.",
-      ),
+    ...levelField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     filter: z
       .record(z.any())
@@ -331,6 +342,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
 
   const FindSimilarSchema = {
     ...collectionPathFields(),
+    ...levelField(),
     positiveIds: z.array(z.string()).optional().describe("Chunk IDs from previous search results to find similar code"),
     positiveCode: z.array(z.string()).optional().describe("Raw code blocks to find similar code (embedded on-the-fly)"),
     negativeIds: z.array(z.string()).optional().describe("Chunk IDs to push results away from"),

@@ -2,7 +2,7 @@
  * Explore domain DTOs — search request/response types.
  */
 
-import type { RankingOverlay } from "../../../contracts/types/reranker.js";
+import type { RankingOverlay, SignalLevel } from "../../../contracts/types/reranker.js";
 
 // ---------------------------------------------------------------------------
 // Collection reference (shared by search requests)
@@ -57,6 +57,7 @@ export interface SemanticSearchRequest extends CollectionRef, TypedFilterParams 
   pathPattern?: string;
   rerank?: string | { custom: Record<string, number> };
   metaOnly?: boolean;
+  level?: SignalLevel;
 }
 
 /**
@@ -71,11 +72,12 @@ export interface HybridSearchRequest extends CollectionRef, TypedFilterParams {
   pathPattern?: string;
   rerank?: string | { custom: Record<string, number> };
   metaOnly?: boolean;
+  level?: SignalLevel;
 }
 
 export interface RankChunksRequest extends CollectionRef, TypedFilterParams {
   rerank: string | { custom: Record<string, number> };
-  level: "chunk" | "file";
+  level?: SignalLevel;
   limit?: number;
   offset?: number;
   filter?: Record<string, unknown>;
@@ -109,6 +111,7 @@ export interface FindSimilarRequest extends CollectionRef {
   limit?: number;
   offset?: number;
   metaOnly?: boolean;
+  level?: SignalLevel;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +132,8 @@ export interface SearchResult {
 export interface ExploreResponse {
   results: SearchResult[];
   driftWarning: string | null;
+  /** Effective signal level used for scoring and grouping. Present when level was explicitly resolved. */
+  level?: SignalLevel;
 }
 
 // ---------------------------------------------------------------------------

@@ -107,7 +107,7 @@ export class RankModule {
 
     // Rerank: use cleaned weights (no similarity) with preset overlay mask
     const rerankMode = presetName ? { custom: cleanWeights, preset: presetName } : { custom: cleanWeights };
-    const reranked = this.reranker.rerank(rerankable, rerankMode, "rank_chunks");
+    const reranked = this.reranker.rerank(rerankable, rerankMode, "rank_chunks", level);
 
     return reranked.slice(0, limit);
   }
