@@ -7,7 +7,7 @@ import {
   DEFAULT_CHUNK_MATURITY_THRESHOLD,
   normalize,
   p95,
-} from "../../../src/core/contracts/signal-utils.js";
+} from "../../../src/core/infra/signal-utils.js";
 
 describe("normalize", () => {
   it("returns value/max clamped to [0, 1]", () => {

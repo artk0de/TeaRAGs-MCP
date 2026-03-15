@@ -3,14 +3,14 @@
  *
  * Supports both nested (git.file.*, git.chunk.*) and flat (git.*) payload formats.
  * Generic algorithms (computeAlpha, blend, normalize, confidenceDampening)
- * live in contracts/signal-utils.
+ * live in infra/signal-utils.
  */
 
-import { blend, computeAlpha, normalize } from "../../../../../contracts/signal-utils.js";
 import type { SignalLevel } from "../../../../../contracts/types/reranker.js";
+import { blend, computeAlpha, normalize } from "../../../../../infra/signal-utils.js";
 
 // Re-export generic functions used directly by signal classes
-export { blend, computeAlpha, confidenceDampening, normalize } from "../../../../../contracts/signal-utils.js";
+export { blend, computeAlpha, confidenceDampening, normalize } from "../../../../../infra/signal-utils.js";
 // Re-export git constants
 export { GIT_FILE_DAMPENING } from "../constants.js";
 

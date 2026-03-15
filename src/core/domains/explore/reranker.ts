@@ -9,7 +9,6 @@
  * 4. Attaches ranking overlay (raw file/chunk signals for transparency)
  */
 
-import { p95 } from "../../contracts/signal-utils.js";
 import type { ScoringWeights } from "../../contracts/types/provider.js";
 import type {
   DerivedSignalDescriptor,
@@ -21,6 +20,7 @@ import type {
   SignalLevel,
 } from "../../contracts/types/reranker.js";
 import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
+import { p95 } from "../../infra/signal-utils.js";
 
 // Re-export types as part of search module's public API
 export type { ScoringWeights } from "../../contracts/types/provider.js";

@@ -1,6 +1,6 @@
-import { normalize } from "../../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
+import { normalize } from "../../../../../infra/signal-utils.js";
 
 export class ChunkDensitySignal implements DerivedSignalDescriptor {
   readonly name = "chunkDensity";
