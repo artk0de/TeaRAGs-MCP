@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type { PresetDescriptors } from "../../../src/core/api/public/dto/explore.js";
-import { buildFiltersDoc, buildOverview, buildPresetsDoc, buildSignalsDoc } from "../../../src/mcp/resources/index.js";
+import {
+  buildFiltersDoc,
+  buildIndexingGuide,
+  buildOverview,
+  buildPresetsDoc,
+  buildSearchGuide,
+  buildSignalsDoc,
+} from "../../../src/mcp/resources/index.js";
 
 const mockDescriptors: PresetDescriptors = {
   presetNames: {
@@ -98,6 +105,62 @@ describe("Resource builders", () => {
       expect(md).toContain("Semantic similarity score");
       expect(md).toContain("recency");
       expect(md).toContain("Inverse of age");
+    });
+  });
+
+  describe("buildSearchGuide", () => {
+    it("contains tool routing table", () => {
+      const md = buildSearchGuide();
+      expect(md).toContain("search_code");
+      expect(md).toContain("semantic_search");
+      expect(md).toContain("hybrid_search");
+      expect(md).toContain("rank_chunks");
+      expect(md).toContain("find_similar");
+    });
+
+    it("contains search_code examples", () => {
+      const md = buildSearchGuide();
+      expect(md).toContain("minAgeDays");
+      expect(md).toContain("author");
+      expect(md).toContain("taskId");
+    });
+
+    it("contains semantic_search examples", () => {
+      const md = buildSearchGuide();
+      expect(md).toContain("ownership");
+      expect(md).toContain("techDebt");
+      expect(md).toContain("metaOnly");
+    });
+
+    it("contains hybrid_search examples", () => {
+      const md = buildSearchGuide();
+      expect(md).toContain("TODO");
+      expect(md).toContain("FIXME");
+    });
+  });
+
+  describe("buildIndexingGuide", () => {
+    it("contains index_codebase options", () => {
+      const md = buildIndexingGuide();
+      expect(md).toContain("path");
+      expect(md).toContain("forceReindex");
+      expect(md).toContain("extensions");
+      expect(md).toContain("ignorePatterns");
+    });
+
+    it("contains git metadata section", () => {
+      const md = buildIndexingGuide();
+      expect(md).toContain("CODE_ENABLE_GIT_METADATA");
+      expect(md).toContain("dominantAuthor");
+      expect(md).toContain("ISO 8601");
+    });
+
+    it("contains reindex workflow", () => {
+      const md = buildIndexingGuide();
+      expect(md).toContain("index_codebase");
+      expect(md).toContain("reindex_changes");
+      expect(md).toContain("get_index_status");
+      expect(md).toContain("clear_index");
     });
   });
 

@@ -51,6 +51,78 @@ export function buildSignalsDoc(descriptors: PresetDescriptors): string {
   return md;
 }
 
+export function buildSearchGuide(): string {
+  return `# Search Guide
+
+## Tool Routing
+
+| Need | Tool |
+| --- | --- |
+| Quick lookup for user request | \`search_code\` |
+| Structured JSON for analytics/reports | \`semantic_search\` |
+| Query with exact symbols, markers, identifiers | \`hybrid_search\` |
+| Top-N by signal without query | \`rank_chunks\` |
+| Find code similar to examples | \`find_similar\` |
+
+## search_code Examples
+
+- "Complex code not touched in 30+ days" → query="complex logic", minAgeDays=30
+- "What did John work on last week?" → author="John", maxAgeDays=7
+- "High-churn authentication code" → query="authentication", minCommitCount=5
+- "Code related to ticket TD-1234" → taskId="TD-1234"
+
+## semantic_search Examples
+
+- Ownership analysis → rerank="ownership", metaOnly=true
+- Tech debt discovery → rerank="techDebt", filter by ageDays
+- Impact analysis → rerank="impactAnalysis", metaOnly=true
+
+## hybrid_search Examples
+
+- Find TODOs/FIXMEs semantically → query="TODO FIXME technical debt"
+- Code duplication → query="retry backoff duplicate"
+- Security audit markers → query="secret token credential unsafe"
+
+## rank_chunks Examples
+
+- Decomposition candidates → rerank="refactoring"
+- Hotspot detection → rerank="hotspots"
+- Ownership reports → rerank="ownership", metaOnly=true
+`;
+}
+
+export function buildIndexingGuide(): string {
+  return `# Indexing Guide
+
+## index_codebase Options
+
+- \`path\` — root directory to index
+- \`forceReindex\` — delete existing index and rebuild
+- \`extensions\` — file extensions to include (default: auto-detect)
+- \`ignorePatterns\` — additional ignore patterns beyond .gitignore
+
+## Git Metadata
+
+Set \`CODE_ENABLE_GIT_METADATA=true\` before indexing.
+
+Enables filters:
+- author — filter by dominantAuthor per chunk
+- modifiedAfter/modifiedBefore — date range (ISO 8601 format)
+- minAgeDays/maxAgeDays — code age
+- minCommitCount — churn frequency
+- taskId — extracted from commit messages (JIRA, GitHub issues)
+
+Git enrichment runs in background after indexing. Check \`get_index_status\` for enrichment progress.
+
+## Reindex Workflow
+
+1. \`index_codebase\` — full initial index
+2. \`reindex_changes\` — incremental update (changed files only)
+3. \`get_index_status\` — check status and enrichment progress
+4. \`clear_index\` — delete all indexed data (irreversible)
+`;
+}
+
 export function buildFiltersDoc(): string {
   let md = "# Qdrant Filter Syntax\n\n";
   md += "## Operators\n\n";
