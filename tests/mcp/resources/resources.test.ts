@@ -60,6 +60,13 @@ describe("Resource builders", () => {
       expect(md).toContain("rank_chunks");
       expect(md).toContain("find_similar");
     });
+
+    it("lists guide resource URIs in Guides section", () => {
+      const md = buildOverview();
+      expect(md).toContain("## Guides");
+      expect(md).toContain("tea-rags://schema/search-guide");
+      expect(md).toContain("tea-rags://schema/indexing-guide");
+    });
   });
 
   describe("buildPresetsDoc", () => {
