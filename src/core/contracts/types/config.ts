@@ -40,4 +40,5 @@ export interface QdrantTuneConfig {
   deleteBatchSize: number;
   deleteConcurrency: number;
   deleteFlushTimeoutMs: number;
+  quantizationScalar: boolean;
 }

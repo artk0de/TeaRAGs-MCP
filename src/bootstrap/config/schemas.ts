@@ -81,6 +81,7 @@ export const qdrantTuneSchema = z.object({
   deleteBatchSize: intWithDefault(500),
   deleteConcurrency: intWithDefault(8),
   deleteFlushTimeoutMs: intWithDefault(1000),
+  quantizationScalar: booleanFromEnv,
 });
 
 export type CoreConfig = z.infer<typeof coreSchema>;
