@@ -88,6 +88,7 @@ export interface AppDeps {
   explore: ExploreFacade;
   reranker: Reranker;
   schemaDriftMonitor: SchemaDriftMonitor;
+  quantizationScalar: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +96,7 @@ export interface AppDeps {
 // ---------------------------------------------------------------------------
 
 export function createApp(deps: AppDeps): App {
-  const collectionOps = new CollectionOps(deps.qdrant, deps.embeddings);
+  const collectionOps = new CollectionOps(deps.qdrant, deps.embeddings, deps.quantizationScalar);
   const documentOps = new DocumentOps(deps.qdrant, deps.embeddings);
 
   return {

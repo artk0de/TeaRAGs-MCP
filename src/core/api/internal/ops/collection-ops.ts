@@ -10,13 +10,20 @@ export class CollectionOps {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
+    private readonly quantizationScalar: boolean,
   ) {}
 
   async create(request: CreateCollectionRequest): Promise<CollectionInfo> {
     const vectorSize = this.embeddings.getDimensions();
     const enableHybrid = request.enableHybrid || false;
 
-    await this.qdrant.createCollection(request.name, vectorSize, request.distance, enableHybrid);
+    await this.qdrant.createCollection(
+      request.name,
+      vectorSize,
+      request.distance,
+      enableHybrid,
+      this.quantizationScalar,
+    );
 
     return {
       name: request.name,

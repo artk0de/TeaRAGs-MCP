@@ -37,14 +37,14 @@ describe("CollectionOps", () => {
   beforeEach(() => {
     qdrant = createMockQdrant();
     embeddings = createMockEmbeddings();
-    ops = new CollectionOps(qdrant, embeddings);
+    ops = new CollectionOps(qdrant, embeddings, false);
   });
 
   describe("create", () => {
     it("creates collection with embedding dimensions", async () => {
       const result = await ops.create({ name: "my-col" });
 
-      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 384, undefined, false);
+      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 384, undefined, false, false);
       expect(result).toEqual({
         name: "my-col",
         vectorSize: 384,
@@ -57,25 +57,32 @@ describe("CollectionOps", () => {
     it("passes distance metric when provided", async () => {
       const result = await ops.create({ name: "my-col", distance: "Dot" });
 
-      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 384, "Dot", false);
+      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 384, "Dot", false, false);
       expect(result.distance).toBe("Dot");
     });
 
     it("passes enableHybrid flag", async () => {
       const result = await ops.create({ name: "my-col", enableHybrid: true });
 
-      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 384, undefined, true);
+      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 384, undefined, true, false);
       expect(result.hybridEnabled).toBe(true);
     });
 
     it("uses embedding provider dimensions", async () => {
       embeddings = createMockEmbeddings(768);
-      ops = new CollectionOps(qdrant, embeddings);
+      ops = new CollectionOps(qdrant, embeddings, false);
 
       const result = await ops.create({ name: "my-col" });
 
-      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 768, undefined, false);
+      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 768, undefined, false, false);
       expect(result.vectorSize).toBe(768);
+    });
+
+    it("passes quantizationScalar to qdrant.createCollection", async () => {
+      ops = new CollectionOps(qdrant, embeddings, true);
+      await ops.create({ name: "my-col" });
+
+      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 384, undefined, false, true);
     });
   });
 
