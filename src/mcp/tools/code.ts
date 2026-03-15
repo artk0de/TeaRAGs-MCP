@@ -84,7 +84,8 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         "- 'High-churn authentication code' → query='authentication', minCommitCount=5\n" +
         "- 'Code related to ticket TD-1234' → taskId='TD-1234'\n" +
         "- 'Legacy code that might need documentation' → query='service', minAgeDays=60\n\n" +
-        "Returns human-readable formatted text with code snippets.",
+        "Returns human-readable formatted text with code snippets.\n\n" +
+        "For detailed parameter docs (presets, signals, filters) see tea-rags://schema/overview",
       inputSchema: searchSchemas.SearchCodeSchema,
       annotations: { readOnlyHint: true },
     },

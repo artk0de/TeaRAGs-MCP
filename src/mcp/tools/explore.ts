@@ -35,7 +35,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
       title: "Semantic Search",
       description:
         "Search for documents using natural language queries. Returns the most semantically similar documents.\n\n" +
-        "Returns structured JSON array of results with explained metadata.",
+        "Returns structured JSON array of results with explained metadata.\n\n" +
+        "For detailed parameter docs (presets, signals, filters) see tea-rags://schema/overview",
       inputSchema: searchSchemas.SemanticSearchSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
@@ -60,7 +61,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
       title: "Hybrid Search",
       description:
         "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid=true (see create_collection).\n\n" +
-        "Returns structured JSON array of results with explained metadata.",
+        "Returns structured JSON array of results with explained metadata.\n\n" +
+        "For detailed parameter docs (presets, signals, filters) see tea-rags://schema/overview",
       inputSchema: searchSchemas.HybridSearchSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
@@ -87,7 +89,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
         "Rank all chunks in a collection by rerank signals without vector search. " +
         "Use for: finding decomposition candidates, tech debt analysis, hotspot detection, " +
         "ownership reports — any analysis where you need top-N chunks by signal, not by query similarity.\n\n" +
-        "Returns structured JSON array of results with explained metadata.",
+        "Returns structured JSON array of results with explained metadata.\n\n" +
+        "For detailed parameter docs (presets, signals, filters) see tea-rags://schema/overview",
       inputSchema: searchSchemas.RankChunksSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
@@ -113,7 +116,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
       description:
         "Find code similar to given chunks or code blocks. Uses Qdrant recommend API. " +
         "Provide chunk IDs from previous search results and/or raw code blocks as positive (find more like this) " +
-        "or negative (find less like this) examples. At least one positive or negative input is required.",
+        "or negative (find less like this) examples. At least one positive or negative input is required.\n\n" +
+        "For detailed parameter docs (presets, signals, filters) see tea-rags://schema/overview",
       inputSchema: searchSchemas.FindSimilarSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
