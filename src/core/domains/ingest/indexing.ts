@@ -64,7 +64,13 @@ export class IndexPipeline extends BaseIndexingPipeline {
       }
 
       const vectorSize = this.embeddings.getDimensions();
-      await this.qdrant.createCollection(collectionName, vectorSize, "Cosine", this.config.enableHybridSearch);
+      await this.qdrant.createCollection(
+        collectionName,
+        vectorSize,
+        "Cosine",
+        this.config.enableHybridSearch,
+        this.config.quantizationScalar,
+      );
 
       const schemaManager = this.deps.createSchemaManager();
       await schemaManager.initializeSchema(collectionName);

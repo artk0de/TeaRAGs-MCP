@@ -108,7 +108,25 @@ describe("IndexPipeline", () => {
 
       await ingest.indexCodebase(codebaseDir);
 
-      expect(createCollectionSpy).toHaveBeenCalledWith(expect.stringContaining("code_"), 384, "Cosine", false);
+      expect(createCollectionSpy).toHaveBeenCalledWith(
+        expect.stringContaining("code_"),
+        384,
+        "Cosine",
+        false,
+        undefined,
+      );
+    });
+
+    it("should pass quantizationScalar to createCollection", async () => {
+      config = { ...defaultTestConfig(), quantizationScalar: true };
+      ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
+
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+
+      const createCollectionSpy = vi.spyOn(qdrant, "createCollection");
+      await ingest.indexCodebase(codebaseDir);
+
+      expect(createCollectionSpy).toHaveBeenCalledWith(expect.stringContaining("code_"), 384, "Cosine", false, true);
     });
 
     it("should force re-index when option is set", async () => {
@@ -176,7 +194,13 @@ describe("IndexPipeline", () => {
 
       await hybridIndexer.indexCodebase(codebaseDir);
 
-      expect(createCollectionSpy).toHaveBeenCalledWith(expect.stringContaining("code_"), 384, "Cosine", true);
+      expect(createCollectionSpy).toHaveBeenCalledWith(
+        expect.stringContaining("code_"),
+        384,
+        "Cosine",
+        true,
+        undefined,
+      );
     });
 
     it("should handle file read errors", async () => {
