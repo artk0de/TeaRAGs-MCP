@@ -37,6 +37,7 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
         "Search for documents using natural language queries. Returns the most semantically similar documents.",
       inputSchema: searchSchemas.SemanticSearchSchema,
       outputSchema: SearchResultOutputSchema,
+      annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
       try {
@@ -60,6 +61,7 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
         "Perform hybrid search combining semantic vector search with keyword search using BM25. This provides better results by combining the strengths of both approaches. The collection must be created with enableHybrid set to true.",
       inputSchema: searchSchemas.HybridSearchSchema,
       outputSchema: SearchResultOutputSchema,
+      annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
       try {
@@ -85,6 +87,7 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
         "ownership reports — any analysis where you need top-N chunks by signal, not by query similarity.",
       inputSchema: searchSchemas.RankChunksSchema,
       outputSchema: SearchResultOutputSchema,
+      annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
       try {
@@ -110,6 +113,7 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
         "or negative (find less like this) examples. At least one positive or negative input is required.",
       inputSchema: searchSchemas.FindSimilarSchema,
       outputSchema: SearchResultOutputSchema,
+      annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
       try {
