@@ -28,6 +28,8 @@ const ENV_VARS = [
   // Delete flush timeout
   "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS",
   "DELETE_FLUSH_TIMEOUT_MS",
+  // Scalar quantization
+  "QDRANT_QUANTIZATION_SCALAR",
 ] as const;
 
 function cleanEnv() {
@@ -248,6 +250,23 @@ describe("QDRANT_TUNE_* env var rename (backwards compat)", () => {
       const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
       const config = parseAppConfigZod();
       expect(config.qdrantTune.upsertBatchSize).toBe(42);
+      cleanEnv();
+    });
+
+    it("parseAppConfigZod reads QDRANT_QUANTIZATION_SCALAR", async () => {
+      process.env.QDRANT_QUANTIZATION_SCALAR = "true";
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.quantizationScalar).toBe(true);
+      cleanEnv();
+    });
+
+    it("QDRANT_QUANTIZATION_SCALAR defaults to false", async () => {
+      vi.resetModules();
+      const { parseAppConfigZod } = await import("../../src/bootstrap/config/index.js");
+      const config = parseAppConfigZod();
+      expect(config.qdrantTune.quantizationScalar).toBe(false);
       cleanEnv();
     });
   });

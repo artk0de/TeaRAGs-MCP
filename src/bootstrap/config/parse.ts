@@ -93,6 +93,7 @@ export function parseAppConfigZod(): {
     deleteBatchSize: env("QDRANT_TUNE_DELETE_BATCH_SIZE", "QDRANT_DELETE_BATCH_SIZE", "DELETE_BATCH_SIZE"),
     deleteConcurrency: env("QDRANT_TUNE_DELETE_CONCURRENCY", "QDRANT_DELETE_CONCURRENCY", "DELETE_CONCURRENCY"),
     deleteFlushTimeoutMs: env("QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS", "DELETE_FLUSH_TIMEOUT_MS"),
+    quantizationScalar: env("QDRANT_QUANTIZATION_SCALAR"),
   };
 
   const coreResult = coreSchema.safeParse(coreInput);

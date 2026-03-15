@@ -19,6 +19,7 @@ export interface IngestCodeConfig {
 
   // Search (used at collection creation time)
   enableHybridSearch: boolean;
+  quantizationScalar: boolean;
 
   // Git metadata (optional, adds author/commit info to chunks)
   enableGitMetadata?: boolean;
