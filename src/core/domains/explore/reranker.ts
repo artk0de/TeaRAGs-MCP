@@ -183,6 +183,13 @@ export class Reranker {
     return this.resolvedPresets.filter((p) => this.matchesTool(p, tool)).map((p) => p.name);
   }
 
+  /** Preset names + descriptions for a specific tool (for MCP schema generation). */
+  getPresetDescriptions(tool: string): { name: string; description: string }[] {
+    return this.resolvedPresets
+      .filter((p) => this.matchesTool(p, tool))
+      .map((p) => ({ name: p.name, description: p.description }));
+  }
+
   // -- Private methods --
 
   /** Check if a preset serves the given tool. */

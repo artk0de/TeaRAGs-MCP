@@ -231,13 +231,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...levelField(),
     rerank: semanticSearchRerankSchema
       .optional()
-      .describe(
-        "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
-          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'recent' | 'stable' | {custom: weights}. " +
-          "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
-          "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
-          "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
-      ),
+      .describe("Reranking preset or {custom: weights}. See preset descriptions for details."),
     metaOnly: coerceBoolean()
       .optional()
       .describe(
@@ -254,13 +248,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...levelField(),
     rerank: semanticSearchRerankSchema
       .optional()
-      .describe(
-        "Reranking mode. Enum: 'relevance' | 'techDebt' | 'hotspots' | 'codeReview' | " +
-          "'onboarding' | 'securityAudit' | 'refactoring' | 'ownership' | 'recent' | 'stable' | {custom: weights}. " +
-          "relevance=default similarity, techDebt=old+churn, hotspots=churn+recent, " +
-          "codeReview=recent, onboarding=docs+stable, securityAudit=old+auth paths, " +
-          "refactoring=large+churn, ownership=single author, recent=boost new, stable=boost stable.",
-      ),
+      .describe("Reranking preset or {custom: weights}. See preset descriptions for details."),
     metaOnly: coerceBoolean()
       .optional()
       .describe(
@@ -291,10 +279,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       ),
     rerank: searchCodeRerankSchema
       .optional()
-      .describe(
-        "Reranking mode. Enum: 'relevance' | 'recent' | 'stable' | {custom: weights}. " +
-          "relevance=default similarity, recent=boost recently modified, stable=boost low-churn code.",
-      ),
+      .describe("Reranking preset or {custom: weights}. See preset descriptions for details."),
   };
 
   const rankChunksRerankSchema = schemaBuilder.buildRerankSchema("rank_chunks");
@@ -303,10 +288,8 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...collectionPathFields(),
     ...typedFilterFields(),
     rerank: rankChunksRerankSchema.describe(
-      "Reranking mode (REQUIRED). Determines how chunks are scored and sorted. " +
-        "similarity weight is ignored (no vector search). " +
-        "Use decomposition for large chunks, techDebt for old+churned, " +
-        "hotspots for high-churn, refactoring for large+churned, ownership for single-author.",
+      "Reranking preset or {custom: weights} (REQUIRED). " +
+        "similarity weight is ignored (no vector search). See preset descriptions for details.",
     ),
     ...levelField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
@@ -360,7 +343,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     fileExtensions: z.array(z.string()).optional().describe("Filter by file extensions (e.g. ['.ts', '.js'])"),
     rerank: findSimilarRerankSchema
       .optional()
-      .describe("Reranking mode. Same presets as semantic_search: 'relevance' | 'techDebt' | 'hotspots' | etc."),
+      .describe("Reranking preset or {custom: weights}. See preset descriptions for details."),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     offset: coerceNumber().optional().describe("Offset for pagination (default: 0)"),
     metaOnly: coerceBoolean().optional().describe("Return only metadata without content (default: false)"),

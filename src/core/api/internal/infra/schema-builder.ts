@@ -26,15 +26,20 @@ export class SchemaBuilder {
   }
 
   /**
-   * Build Zod enum schema for preset names by tool.
-   * Throws if the tool has no registered presets (z.enum requires >= 1 element).
+   * Build Zod schema for preset names by tool.
+   * Uses z.union(z.literal().describe()) so each preset value carries its
+   * description in the MCP JSON Schema.
    */
-  buildPresetSchema(tool: string): z.ZodEnum<[string, ...string[]]> {
-    const names = this.reranker.getPresetNames(tool);
-    if (names.length === 0) {
+  buildPresetSchema(tool: string): z.ZodTypeAny {
+    const presets = this.reranker.getPresetDescriptions(tool);
+    if (presets.length === 0) {
       throw new Error(`No presets registered for tool "${tool}"`);
     }
-    return z.enum(names as [string, ...string[]]);
+    if (presets.length === 1) {
+      return z.literal(presets[0].name).describe(presets[0].description);
+    }
+    const [first, second, ...rest] = presets.map((p) => z.literal(p.name).describe(p.description));
+    return z.union([first, second, ...rest]);
   }
 
   /**
