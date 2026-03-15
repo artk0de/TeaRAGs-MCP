@@ -136,50 +136,22 @@ function typedFilterFields() {
     author: z
       .string()
       .optional()
-      .describe(
-        "Filter by dominant author (the author with most lines in chunk). " +
-          "Use for: code review, ownership questions, team onboarding, finding expert for code area. " +
-          "Example: 'John Doe'",
-      ),
+      .describe("Filter by dominant author (the author with most lines in chunk). Example: 'John Doe'"),
     modifiedAfter: z
       .string()
       .optional()
-      .describe(
-        "Filter code modified after this date. Use for: sprint review, release analysis, incident debugging. " +
-          "ISO format: '2024-01-01' or '2024-01-01T00:00:00Z'",
-      ),
-    modifiedBefore: z
-      .string()
-      .optional()
-      .describe(
-        "Filter code modified before this date. Use for: finding old code, historical debugging, compliance audits. " +
-          "ISO format: '2024-12-31'",
-      ),
-    minAgeDays: coerceNumber()
-      .optional()
-      .describe(
-        "Filter code older than N days (since last modification). " +
-          "Use for: finding legacy/stale code, tech debt assessment, documentation needs, refactoring candidates.",
-      ),
-    maxAgeDays: coerceNumber()
-      .optional()
-      .describe(
-        "Filter code newer than N days (since last modification). " +
-          "Use for: recent changes review, sprint work, incident response, release notes.",
-      ),
+      .describe("Filter code modified after this date. ISO format: '2024-01-01' or '2024-01-01T00:00:00Z'"),
+    modifiedBefore: z.string().optional().describe("Filter code modified before this date. ISO format: '2024-12-31'"),
+    minAgeDays: coerceNumber().optional().describe("Filter code older than N days (since last modification)."),
+    maxAgeDays: coerceNumber().optional().describe("Filter code newer than N days (since last modification)."),
     minCommitCount: coerceNumber()
       .optional()
-      .describe(
-        "Filter by minimum number of commits touching the chunk (churn indicator). " +
-          "High churn = problematic areas, bugs, complex requirements. " +
-          "Use for: risk assessment, code quality issues, refactoring priorities.",
-      ),
+      .describe("Filter by minimum number of commits touching the chunk (churn indicator)."),
     taskId: z
       .string()
       .optional()
       .describe(
-        "Filter by task/issue ID from commit messages. Supports JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890). " +
-          "Use for: requirements tracing, impact analysis, audit, compliance, 'what code was written for this ticket?'",
+        "Filter by task/issue ID from commit messages. Supports JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890).",
       ),
   };
 }
@@ -196,17 +168,7 @@ function searchCommonFields() {
       .optional()
       .describe(
         "Qdrant filter object with must/should/must_not conditions. " +
-          "Available fields for code chunks (index_codebase): " +
-          "relativePath (string), fileExtension (string), language (string), " +
-          "startLine (number), endLine (number), chunkIndex (number), " +
-          "isDocumentation (boolean), name (string), chunkType (string: function|class|interface|block), " +
-          "parentName (string), parentType (string), " +
-          "git.dominantAuthor (string), git.authors (string[]), " +
-          "git.lastModifiedAt (unix timestamp), git.firstCreatedAt (unix timestamp), " +
-          "git.commitCount (number), git.ageDays (number), git.taskIds (string[]), " +
-          "imports (string[] - file-level imports for structural signal). " +
-          "For generic documents (add_documents): user-defined metadata fields. " +
-          'Example: {"must": [{"key": "language", "match": {"value": "typescript"}}, {"key": "git.commitCount", "range": {"gte": 5}}]}',
+          "See tea-rags://schema/filters for syntax and available fields.",
       ),
     pathPattern: z
       .string()
