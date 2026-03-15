@@ -149,7 +149,7 @@ describe("Resource builders", () => {
   describe("buildIndexingGuide", () => {
     it("contains index_codebase options", () => {
       const md = buildIndexingGuide();
-      expect(md).toContain("path");
+      expect(md).toContain("`path`");
       expect(md).toContain("forceReindex");
       expect(md).toContain("extensions");
       expect(md).toContain("ignorePatterns");
