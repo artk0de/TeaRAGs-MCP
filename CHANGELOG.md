@@ -1,3 +1,9 @@
+## <small>1.1.1 (2026-03-15)</small>
+
+- improve(presets): add chunk-level signals to securityAudit, techDebt,
+  ownership presets
+  ([2883199](https://github.com/artk0de/TeaRAGs-MCP/commit/2883199))
+
 ## 1.1.0 (2026-03-14)
 
 - chore(dx): add .claude/worktrees to gitignore
