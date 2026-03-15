@@ -3,6 +3,11 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>1.2.1 (2026-03-15)</small>
+
+- docs(api): add level parameter and signalLevel docs to tools.md
+  ([22ac932](https://github.com/artk0de/TeaRAGs-MCP/commit/22ac932))
+
 ## 1.2.0 (2026-03-15)
 
 - feat(rerank): add signalLevel system for preset scoring granularity
