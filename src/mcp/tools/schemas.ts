@@ -213,9 +213,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
     metaOnly: coerceBoolean()
       .optional()
-      .describe(
-        "Return only metadata (path, lines, git info) without content. " + "Reduces response size. Default: false.",
-      ),
+      .describe("Return only metadata (path, lines, git info) without content. Reduces response size. Default: false."),
   };
 
   const HybridSearchSchema = {
@@ -228,9 +226,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
     metaOnly: coerceBoolean()
       .optional()
-      .describe(
-        "Return only metadata (path, lines, git info) without content. " + "Reduces response size. Default: false.",
-      ),
+      .describe("Return only metadata (path, lines, git info) without content. Reduces response size. Default: false."),
   };
 
   const SearchCodeSchema = {
