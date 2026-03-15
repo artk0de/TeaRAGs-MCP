@@ -25,12 +25,9 @@ export interface CollectionRef {
 export interface TypedFilterParams {
   // Static trajectory filters
   language?: string;
-  fileExtension?: string;
+  fileExtension?: string | string[];
   chunkType?: string;
-  isDocumentation?: boolean;
-  excludeDocumentation?: boolean;
-  fileTypes?: string[];
-  documentationOnly?: boolean;
+  documentation?: "only" | "exclude" | "include";
   // Git trajectory filters
   author?: string;
   modifiedAfter?: string | Date;
