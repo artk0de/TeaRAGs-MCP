@@ -25,18 +25,18 @@ Each preset declares its natural granularity:
 
 ```typescript
 // contracts/types/reranker.ts
-export type SignalLevel = "file" | "auto";
+export type SignalLevel = "file" | "chunk";
 
 export interface RerankPreset {
   // ... existing fields
-  readonly signalLevel?: SignalLevel; // default: "auto"
+  readonly signalLevel?: SignalLevel; // default: "chunk"
 }
 ```
 
-| signalLevel        | Alpha behavior                      | Presets                                                                                      |
-| ------------------ | ----------------------------------- | -------------------------------------------------------------------------------------------- |
-| `"file"`           | alpha = 0, pure file signals        | `techDebt`, `securityAudit`, `ownership`, `onboarding`, `stable`, `recent`, `impactAnalysis` |
-| `"auto"` (default) | alpha = computed (current blending) | `hotspots`, `codeReview`, `refactoring`, `relevance`, `decomposition`                        |
+| signalLevel         | Alpha behavior                      | Presets                                                                                      |
+| ------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------- |
+| `"file"`            | alpha = 0, pure file signals        | `techDebt`, `securityAudit`, `ownership`, `onboarding`, `stable`, `recent`, `impactAnalysis` |
+| `"chunk"` (default) | alpha = computed (current blending) | `hotspots`, `codeReview`, `refactoring`, `relevance`, `decomposition`                        |
 
 ### D2: `level` parameter on all structured search tools
 
@@ -56,7 +56,7 @@ Add optional `level?: "file" | "chunk"` to:
 
 ### D3: `level` affects three layers
 
-| Layer        | `level: "file"`                                                  | `level: "chunk"` (or auto)                     |
+| Layer        | `level: "file"`                                                  | `level: "chunk"` (default)                     |
 | ------------ | ---------------------------------------------------------------- | ---------------------------------------------- |
 | **Scoring**  | alpha = 0 in `ExtractContext`                                    | alpha = computed (current)                     |
 | **Grouping** | `queryGroups()` with `group_by: "relativePath"`, `group_size: 1` | `query()` as-is                                |
@@ -108,7 +108,7 @@ File-level (`signalLevel: "file"`):
   `stable.ts`, `recent.ts`
 - `impactAnalysis` — static preset, same pattern
 
-Auto (default, no change needed):
+Chunk (default, no change needed):
 
 - `hotspots.ts`, `code-review.ts`, `refactoring.ts`
 - `relevance.ts`, `decomposition.ts`

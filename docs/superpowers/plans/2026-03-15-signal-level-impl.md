@@ -66,9 +66,9 @@ import type {
 describe("SignalLevel type", () => {
   it("should accept file and auto as valid signal levels", () => {
     const file: SignalLevel = "file";
-    const auto: SignalLevel = "auto";
+    const auto: SignalLevel = "chunk";
     expect(file).toBe("file");
-    expect(auto).toBe("auto");
+    expect(auto).toBe("chunk");
   });
 
   it("should allow signalLevel on RerankPreset", () => {
@@ -106,7 +106,7 @@ Expected: FAIL — `SignalLevel` not exported
 In `src/core/contracts/types/reranker.ts`, add before `RerankPreset`:
 
 ```typescript
-export type SignalLevel = "file" | "auto";
+export type SignalLevel = "file" | "chunk"; // no "auto" — explicit is better
 ```
 
 Add to `RerankPreset` interface:
@@ -196,7 +196,7 @@ describe("payloadAlpha with signalLevel", () => {
   });
 
   it("should compute normally when signalLevel is auto", () => {
-    const alpha = payloadAlpha(payloadWithChunk, "auto");
+    const alpha = payloadAlpha(payloadWithChunk, "chunk");
     expect(alpha).toBeGreaterThan(0);
   });
 
@@ -221,7 +221,7 @@ describe("blendNormalized with signalLevel", () => {
   });
 
   it("should blend when signalLevel is auto", () => {
-    const blended = blendNormalized(payload, "ageDays", 365, 365, "auto");
+    const blended = blendNormalized(payload, "ageDays", 365, 365, "chunk");
     const fileOnly = blendNormalized(payload, "ageDays", 365, 365, "file");
     expect(blended).not.toBeCloseTo(fileOnly, 5);
   });
@@ -619,7 +619,7 @@ import { resolveEffectiveLevel } from "../../../src/core/api/internal/facades/ex
 
 describe("resolveEffectiveLevel", () => {
   it("user override wins over preset", () => {
-    expect(resolveEffectiveLevel("file", "auto")).toBe("file");
+    expect(resolveEffectiveLevel("file", "chunk")).toBe("file");
     expect(resolveEffectiveLevel("chunk", "file")).toBe("chunk");
   });
 
@@ -629,7 +629,7 @@ describe("resolveEffectiveLevel", () => {
 
   it("defaults to chunk when no user override and no preset signalLevel", () => {
     expect(resolveEffectiveLevel(undefined, undefined)).toBe("chunk");
-    expect(resolveEffectiveLevel(undefined, "auto")).toBe("chunk");
+    expect(resolveEffectiveLevel(undefined, "chunk")).toBe("chunk");
   });
 });
 ```
