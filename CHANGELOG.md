@@ -1,3 +1,14 @@
+## 1.2.0 (2026-03-15)
+
+- feat(rerank): add signalLevel system for preset scoring granularity
+  ([2d5d83c](https://github.com/artk0de/TeaRAGs-MCP/commit/2d5d83c))
+- docs(plans): signal level implementation plan — 11 tasks
+  ([50a2465](https://github.com/artk0de/TeaRAGs-MCP/commit/50a2465))
+- docs(specs): replace SignalLevel "auto" with "chunk" — explicit is better
+  ([a7df600](https://github.com/artk0de/TeaRAGs-MCP/commit/a7df600))
+- docs(specs): signal level & consistent level parameter design
+  ([394ebc6](https://github.com/artk0de/TeaRAGs-MCP/commit/394ebc6))
+
 ## <small>1.1.1 (2026-03-15)</small>
 
 - improve(presets): add chunk-level signals to securityAudit, techDebt,
