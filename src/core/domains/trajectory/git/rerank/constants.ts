@@ -2,7 +2,7 @@
  * Git trajectory reranking constants.
  *
  * Provider-specific configuration for dampening and alpha-blending thresholds.
- * Generic algorithms (computeAlpha, blend, confidenceDampening) live in contracts/signal-utils.
+ * Generic algorithms (computeAlpha, blend, confidenceDampening) live in infra/signal-utils.
  */
 
 import type { DampeningConfig } from "../../../../contracts/types/trajectory.js";
