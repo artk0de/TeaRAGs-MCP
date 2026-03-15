@@ -11,11 +11,15 @@ export const staticFilters: FilterDescriptor[] = [
   },
   {
     param: "fileExtension",
-    description: "Filter by file extension (e.g. '.ts')",
+    description: "Filter by file extension(s) — single string or array",
     type: "string",
-    toCondition: (value: unknown) => ({
-      must: [{ key: "fileExtension", match: { value: value as string } }],
-    }),
+    toCondition: (value: unknown) => {
+      if (Array.isArray(value)) {
+        if (value.length === 0) return {};
+        return { must: [{ key: "fileExtension", match: { any: value as string[] } }] };
+      }
+      return { must: [{ key: "fileExtension", match: { value: value as string } }] };
+    },
   },
   {
     param: "chunkType",
@@ -26,45 +30,13 @@ export const staticFilters: FilterDescriptor[] = [
     }),
   },
   {
-    param: "isDocumentation",
-    description: "Filter documentation chunks",
-    type: "boolean",
-    toCondition: (value: unknown) => ({
-      must: [{ key: "isDocumentation", match: { value: value as boolean } }],
-    }),
-  },
-  {
-    param: "excludeDocumentation",
-    description: "Exclude documentation chunks from results",
-    type: "boolean",
+    param: "documentation",
+    description: "Documentation filter: 'only' | 'exclude' | 'include'",
+    type: "string",
     toCondition: (value: unknown) => {
-      if (!value) return {};
-      return {
-        must_not: [{ key: "isDocumentation", match: { value: true } }],
-      };
-    },
-  },
-  {
-    param: "fileTypes",
-    description: "Filter by file extensions array (e.g. ['.ts', '.py'])",
-    type: "string[]",
-    toCondition: (value: unknown) => {
-      const arr = value as string[];
-      if (!arr || arr.length === 0) return {};
-      return {
-        must: [{ key: "fileExtension", match: { any: arr } }],
-      };
-    },
-  },
-  {
-    param: "documentationOnly",
-    description: "Search only in documentation files (markdown, READMEs)",
-    type: "boolean",
-    toCondition: (value: unknown) => {
-      if (!value) return {};
-      return {
-        must: [{ key: "isDocumentation", match: { value: true } }],
-      };
+      if (value === "only") return { must: [{ key: "isDocumentation", match: { value: true } }] };
+      if (value === "exclude") return { must_not: [{ key: "isDocumentation", match: { value: true } }] };
+      return {};
     },
   },
 ];

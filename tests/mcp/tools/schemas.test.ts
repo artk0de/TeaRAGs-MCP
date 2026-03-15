@@ -98,20 +98,36 @@ describe("SearchCodeSchema coercion", () => {
     });
   });
 
-  describe("boolean fields", () => {
-    it("coerces documentationOnly string 'true' → boolean true", () => {
-      const result = parseSearchCode({ ...base, documentationOnly: "true" });
-      expect(result.documentationOnly).toBe(true);
+  describe("documentation enum field", () => {
+    it("accepts 'only' value", () => {
+      const result = parseSearchCode({ ...base, documentation: "only" });
+      expect(result.documentation).toBe("only");
     });
 
-    it("coerces documentationOnly string 'false' → boolean false", () => {
-      const result = parseSearchCode({ ...base, documentationOnly: "false" });
-      expect(result.documentationOnly).toBe(false);
+    it("accepts 'exclude' value", () => {
+      const result = parseSearchCode({ ...base, documentation: "exclude" });
+      expect(result.documentation).toBe("exclude");
     });
 
-    it("passes native boolean through for documentationOnly", () => {
-      const result = parseSearchCode({ ...base, documentationOnly: true });
-      expect(result.documentationOnly).toBe(true);
+    it("accepts 'include' value", () => {
+      const result = parseSearchCode({ ...base, documentation: "include" });
+      expect(result.documentation).toBe("include");
+    });
+
+    it("rejects invalid value", () => {
+      expect(() => parseSearchCode({ ...base, documentation: "invalid" })).toThrow();
+    });
+  });
+
+  describe("fileExtension union field", () => {
+    it("accepts single string", () => {
+      const result = parseSearchCode({ ...base, fileExtension: ".ts" });
+      expect(result.fileExtension).toBe(".ts");
+    });
+
+    it("accepts array of strings", () => {
+      const result = parseSearchCode({ ...base, fileExtension: [".ts", ".py"] });
+      expect(result.fileExtension).toEqual([".ts", ".py"]);
     });
   });
 });

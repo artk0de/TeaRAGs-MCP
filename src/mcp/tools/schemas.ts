@@ -114,10 +114,18 @@ function collectionPathFields() {
 function typedFilterFields() {
   return {
     language: z.string().optional().describe("Filter by programming language"),
-    fileExtension: z.string().optional().describe("Filter by file extension (e.g. '.ts')"),
+    fileExtension: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .describe("Filter by file extension(s). Single string (e.g. '.ts') or array (e.g. ['.ts', '.py'])"),
     chunkType: z.string().optional().describe("Filter by chunk type (function, class, interface, block)"),
-    isDocumentation: coerceBoolean().optional().describe("Include only documentation chunks"),
-    excludeDocumentation: coerceBoolean().optional().describe("Exclude documentation chunks from results"),
+    documentation: z
+      .enum(["only", "exclude", "include"])
+      .optional()
+      .describe(
+        "Documentation filter mode. 'only' = documentation chunks only, " +
+          "'exclude' = no documentation chunks, 'include' = all chunks (default).",
+      ),
     author: z
       .string()
       .optional()
@@ -270,13 +278,6 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
           "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
       ),
     ...typedFilterFields(),
-    fileTypes: z.array(z.string()).optional().describe("Filter by file extensions (e.g., ['.ts', '.py'])"),
-    documentationOnly: coerceBoolean()
-      .optional()
-      .describe(
-        "Search only in documentation files (markdown, READMEs, etc.). " +
-          "Default: false (search in all files). Set to true to find information in docs only.",
-      ),
     rerank: searchCodeRerankSchema
       .optional()
       .describe("Reranking preset or {custom: weights}. See preset descriptions for details."),
