@@ -19,7 +19,8 @@ import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
 function createMockReranker(overrides?: {
   descriptors?: { name: string; description: string }[];
   presets?: Record<string, string[]>;
-}): Pick<Reranker, "getDescriptorInfo" | "getPresetNames"> {
+  presetDescriptions?: Record<string, string>;
+}): Pick<Reranker, "getDescriptorInfo" | "getPresetNames" | "getPresetDescriptions"> {
   const descriptors = overrides?.descriptors ?? [
     { name: "recency", description: "Inverse of age" },
     { name: "similarity", description: "Semantic similarity score" },
@@ -29,10 +30,16 @@ function createMockReranker(overrides?: {
     semantic_search: ["relevance", "techDebt", "hotspots"],
     search_code: ["relevance", "recent", "stable"],
   };
+  const descriptions = overrides?.presetDescriptions ?? {};
 
   return {
     getDescriptorInfo: () => descriptors,
     getPresetNames: (tool: string) => presets[tool] ?? [],
+    getPresetDescriptions: (tool: string) =>
+      (presets[tool] ?? []).map((name) => ({
+        name,
+        description: descriptions[name] ?? `${name} preset`,
+      })),
   };
 }
 
@@ -85,35 +92,58 @@ describe("SchemaBuilder", () => {
   });
 
   describe("buildPresetSchema", () => {
-    it("returns ZodEnum for semantic_search presets", () => {
-      const builder = new SchemaBuilder(createMockReranker() as Reranker);
-      const schema = builder.buildPresetSchema("semantic_search");
-
-      expect(schema).toBeInstanceOf(z.ZodEnum);
-      expect(schema.options).toEqual(["relevance", "techDebt", "hotspots"]);
-    });
-
-    it("returns ZodEnum for search_code presets", () => {
-      const builder = new SchemaBuilder(createMockReranker() as Reranker);
-      const schema = builder.buildPresetSchema("search_code");
-
-      expect(schema).toBeInstanceOf(z.ZodEnum);
-      expect(schema.options).toEqual(["relevance", "recent", "stable"]);
-    });
-
-    it("validates preset values", () => {
+    it("accepts valid preset names for semantic_search", () => {
       const builder = new SchemaBuilder(createMockReranker() as Reranker);
       const schema = builder.buildPresetSchema("semantic_search");
 
       expect(schema.parse("relevance")).toBe("relevance");
       expect(schema.parse("techDebt")).toBe("techDebt");
+      expect(schema.parse("hotspots")).toBe("hotspots");
       expect(() => schema.parse("nonexistent")).toThrow();
+    });
+
+    it("accepts valid preset names for search_code", () => {
+      const builder = new SchemaBuilder(createMockReranker() as Reranker);
+      const schema = builder.buildPresetSchema("search_code");
+
+      expect(schema.parse("relevance")).toBe("relevance");
+      expect(schema.parse("recent")).toBe("recent");
+      expect(schema.parse("stable")).toBe("stable");
+      expect(() => schema.parse("techDebt")).toThrow();
+    });
+
+    it("returns z.union with per-preset descriptions (not ZodEnum)", () => {
+      const mock = createMockReranker({
+        presets: { semantic_search: ["relevance", "techDebt"] },
+        presetDescriptions: {
+          relevance: "Pure semantic similarity ranking",
+          techDebt: "Find legacy code with high churn and old age",
+        },
+      });
+      const builder = new SchemaBuilder(mock as Reranker);
+      const schema = builder.buildPresetSchema("semantic_search");
+
+      expect(schema.parse("relevance")).toBe("relevance");
+      expect(schema.parse("techDebt")).toBe("techDebt");
+      expect(() => schema.parse("nonexistent")).toThrow();
+      expect(schema).not.toBeInstanceOf(z.ZodEnum);
+    });
+
+    it("returns z.literal for single preset", () => {
+      const mock = createMockReranker({
+        presets: { single_tool: ["only"] },
+        presetDescriptions: { only: "The only preset" },
+      });
+      const builder = new SchemaBuilder(mock as Reranker);
+      const schema = builder.buildPresetSchema("single_tool");
+
+      expect(schema.parse("only")).toBe("only");
+      expect(() => schema.parse("other")).toThrow();
     });
 
     it("throws when tool has no presets", () => {
       const builder = new SchemaBuilder(createMockReranker() as Reranker);
-      // z.enum requires at least one element
-      expect(() => builder.buildPresetSchema("unknown_tool")).toThrow();
+      expect(() => builder.buildPresetSchema("unknown_tool")).toThrow(/No presets/);
     });
   });
 
