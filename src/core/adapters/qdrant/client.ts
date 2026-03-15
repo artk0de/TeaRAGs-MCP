@@ -55,6 +55,7 @@ export class QdrantManager {
     vectorSize: number,
     distance: "Cosine" | "Euclid" | "Dot" = "Cosine",
     enableSparse = false,
+    quantizationScalar = false,
   ): Promise<void> {
     type DistanceType = "Cosine" | "Euclid" | "Dot" | "Manhattan";
     type VectorConfig =
@@ -74,6 +75,12 @@ export class QdrantManager {
       sparse_vectors?: {
         text: {
           modifier: "idf" | "none";
+        };
+      };
+      quantization_config?: {
+        scalar: {
+          type: "int8";
+          always_ram: boolean;
         };
       };
     }
@@ -98,6 +105,12 @@ export class QdrantManager {
             distance,
           },
         };
+
+    if (quantizationScalar) {
+      config.quantization_config = {
+        scalar: { type: "int8", always_ram: true },
+      };
+    }
 
     await this.client.createCollection(name, config);
   }
