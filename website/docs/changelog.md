@@ -3,6 +3,53 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## 1.3.0 (2026-03-15)
+
+- fix(api): fix schema inconsistencies and incorrect resource examples
+  ([b96bd97](https://github.com/artk0de/TeaRAGs-MCP/commit/b96bd97))
+- improve(api): compact search_code and index_codebase descriptions
+  ([10bfe54](https://github.com/artk0de/TeaRAGs-MCP/commit/10bfe54))
+- improve(api): compact semantic_search and hybrid_search descriptions
+  ([abaef5d](https://github.com/artk0de/TeaRAGs-MCP/commit/abaef5d))
+- improve(api): consolidate filter parameters in MCP schemas
+  ([908047a](https://github.com/artk0de/TeaRAGs-MCP/commit/908047a))
+- improve(api): trim 'Use for' from typed filter descriptions
+  ([e9e7846](https://github.com/artk0de/TeaRAGs-MCP/commit/e9e7846))
+- improve(mcp): add schema overview link to search tool descriptions
+  ([1581205](https://github.com/artk0de/TeaRAGs-MCP/commit/1581205))
+- improve(mcp): add ToolAnnotations to all tools
+  ([1714577](https://github.com/artk0de/TeaRAGs-MCP/commit/1714577))
+- improve(mcp): compact SchemaBuilder — remove per-value descriptions from tool
+  schema ([fc43880](https://github.com/artk0de/TeaRAGs-MCP/commit/fc43880))
+- improve(presets): add per-preset descriptions to MCP schema
+  ([076a93f](https://github.com/artk0de/TeaRAGs-MCP/commit/076a93f))
+- test(api): tighten path assertion in indexing guide test
+  ([703452a](https://github.com/artk0de/TeaRAGs-MCP/commit/703452a))
+- test(signals): add signal level tests for types, helpers, and blending
+  ([689cfaa](https://github.com/artk0de/TeaRAGs-MCP/commit/689cfaa))
+- feat(api): add search-guide and indexing-guide resource builders
+  ([fbb9597](https://github.com/artk0de/TeaRAGs-MCP/commit/fbb9597))
+- feat(api): extend PresetDescriptors with preset details for resource docs
+  ([af11e04](https://github.com/artk0de/TeaRAGs-MCP/commit/af11e04))
+- feat(api): register search-guide and indexing-guide resources, add Guides to
+  overview ([b2dfa26](https://github.com/artk0de/TeaRAGs-MCP/commit/b2dfa26))
+- feat(mcp): add schema documentation MCP Resource
+  ([3f99285](https://github.com/artk0de/TeaRAGs-MCP/commit/3f99285))
+- feat(mcp): add shared outputSchema for search tools
+  ([c436059](https://github.com/artk0de/TeaRAGs-MCP/commit/c436059))
+- feat(mcp): split schema documentation into 4 focused MCP resources
+  ([2ff993e](https://github.com/artk0de/TeaRAGs-MCP/commit/2ff993e))
+- docs(api): add schema compaction wave 2 design spec
+  ([b138140](https://github.com/artk0de/TeaRAGs-MCP/commit/b138140))
+- docs(api): add schema compaction wave 2 implementation plan
+  ([49d367f](https://github.com/artk0de/TeaRAGs-MCP/commit/49d367f))
+- docs(mcp): add per-resource schema docs implementation plan
+  ([07c09f5](https://github.com/artk0de/TeaRAGs-MCP/commit/07c09f5))
+- docs(mcp): add per-resource schema documentation design spec
+  ([16ae541](https://github.com/artk0de/TeaRAGs-MCP/commit/16ae541))
+- docs(mcp): improve tool and parameter descriptions
+  ([6796bf6](https://github.com/artk0de/TeaRAGs-MCP/commit/6796bf6))
+
 ## <small>1.2.1 (2026-03-15)</small>
 
 - docs(api): add level parameter and signalLevel docs to tools.md
