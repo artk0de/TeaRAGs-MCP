@@ -11,7 +11,7 @@ export class ChunkRelativeChurnSignal implements DerivedSignalDescriptor {
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const b = ctx?.bounds?.["chunk.churnRatio"] ?? this.defaultBound;
     const chunkCR = chunkNum(rawSignals, "churnRatio");
-    const alpha = payloadAlpha(rawSignals);
+    const alpha = payloadAlpha(rawSignals, ctx?.signalLevel);
     return normalize(chunkCR, b) * alpha;
   }
 }

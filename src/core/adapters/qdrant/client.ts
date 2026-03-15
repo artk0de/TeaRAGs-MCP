@@ -414,6 +414,54 @@ export class QdrantManager {
     }));
   }
 
+  /**
+   * Query using Qdrant's queryGroups() API — server-side grouping.
+   * Groups results by a payload field (e.g. "relativePath") and returns
+   * the top hit per group. Used for file-level dedup (one best chunk per file).
+   */
+  async queryGroups(
+    collectionName: string,
+    vector: number[],
+    options: {
+      groupBy: string;
+      groupSize?: number;
+      limit: number;
+      filter?: Record<string, unknown>;
+    },
+  ): Promise<SearchResult[]> {
+    const collectionInfo = await this.getCollectionInfo(collectionName);
+
+    const params: Record<string, unknown> = {
+      query: collectionInfo.hybridEnabled ? { name: "dense", vector } : vector,
+      group_by: options.groupBy,
+      group_size: options.groupSize ?? 1,
+      limit: options.limit,
+      with_payload: true,
+      with_vector: false,
+    };
+
+    if (options.filter) params.filter = options.filter;
+
+    const response = await this.client.queryGroups(
+      collectionName,
+      params as Parameters<QdrantClient["queryGroups"]>[1],
+    );
+
+    // Flatten groups: take first hit from each group
+    const results: SearchResult[] = [];
+    for (const group of response.groups ?? []) {
+      const hit = group.hits?.[0];
+      if (hit) {
+        results.push({
+          id: hit.id,
+          score: hit.score ?? 0,
+          payload: (hit.payload as Record<string, unknown>) || undefined,
+        });
+      }
+    }
+    return results;
+  }
+
   async deletePoints(collectionName: string, ids: (string | number)[]): Promise<void> {
     // Normalize IDs to ensure string IDs are in UUID format
     const normalizedIds = ids.map((id) => this.normalizeId(id));

@@ -1586,3 +1586,71 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     expect(ranked[0].score).toBeGreaterThan(0.8);
   });
 });
+
+describe("signalLevel: file-level preset suppresses chunk overlay", () => {
+  const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+
+  it("ownership (file-level preset) should not include chunk in overlay", () => {
+    const results: RerankableResult[] = [
+      {
+        score: 0.8,
+        payload: {
+          relativePath: "src/auth.ts",
+          startLine: 1,
+          endLine: 50,
+          language: "typescript",
+          git: {
+            file: { ageDays: 30, commitCount: 10, dominantAuthorPct: 90, contributorCount: 2 },
+            chunk: { contributorCount: 1, commitCount: 8 },
+          },
+        },
+      },
+    ];
+    const reranked = reranker.rerank(results, "ownership", "semantic_search");
+    expect(reranked[0].rankingOverlay).toBeDefined();
+    expect(reranked[0].rankingOverlay!.chunk).toBeUndefined();
+    expect(reranked[0].rankingOverlay!.file).toBeDefined();
+  });
+
+  it("hotspots (chunk-level preset) should include chunk in overlay", () => {
+    const results: RerankableResult[] = [
+      {
+        score: 0.8,
+        payload: {
+          relativePath: "src/hot.ts",
+          startLine: 1,
+          endLine: 50,
+          language: "typescript",
+          git: {
+            file: { ageDays: 5, commitCount: 20, recencyWeightedFreq: 8, changeDensity: 15 },
+            chunk: { commitCount: 15, churnRatio: 0.8 },
+          },
+        },
+      },
+    ];
+    const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+    expect(reranked[0].rankingOverlay).toBeDefined();
+    expect(reranked[0].rankingOverlay!.chunk).toBeDefined();
+  });
+
+  it("overrideSignalLevel=file should suppress chunk overlay even for chunk-level preset", () => {
+    const results: RerankableResult[] = [
+      {
+        score: 0.8,
+        payload: {
+          relativePath: "src/hot.ts",
+          startLine: 1,
+          endLine: 50,
+          language: "typescript",
+          git: {
+            file: { ageDays: 5, commitCount: 20, recencyWeightedFreq: 8, changeDensity: 15 },
+            chunk: { commitCount: 15 },
+          },
+        },
+      },
+    ];
+    const reranked = reranker.rerank(results, "hotspots", "semantic_search", "file");
+    expect(reranked[0].rankingOverlay).toBeDefined();
+    expect(reranked[0].rankingOverlay!.chunk).toBeUndefined();
+  });
+});

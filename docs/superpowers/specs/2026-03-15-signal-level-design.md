@@ -9,8 +9,8 @@ retain current alpha-blending behavior.
 
 ## Problem
 
-1. **Alpha-blending always runs** — even for file-oriented presets (`techDebt`,
-   `ownership`) where chunk signals are noise.
+1. **Alpha-blending always runs** — even for file-oriented presets (`ownership`,
+   `onboarding`) where chunk signals are noise.
 2. **`level` parameter exists only on `rank_chunks`** — `semantic_search`,
    `hybrid_search`, and `find_similar` have no way to express file vs chunk
    intent.
@@ -33,10 +33,10 @@ export interface RerankPreset {
 }
 ```
 
-| signalLevel         | Alpha behavior                      | Presets                                                                                      |
-| ------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------- |
-| `"file"`            | alpha = 0, pure file signals        | `techDebt`, `securityAudit`, `ownership`, `onboarding`, `stable`, `recent`, `impactAnalysis` |
-| `"chunk"` (default) | alpha = computed (current blending) | `hotspots`, `codeReview`, `refactoring`, `relevance`, `decomposition`                        |
+| signalLevel         | Alpha behavior                      | Presets                                                                                     |
+| ------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------- |
+| `"file"`            | alpha = 0, pure file signals        | `securityAudit`, `ownership`, `onboarding`, `recent`, `impactAnalysis`                      |
+| `"chunk"` (default) | alpha = computed (current blending) | `hotspots`, `codeReview`, `refactoring`, `relevance`, `decomposition`, `stable`, `techDebt` |
 
 ### D2: `level` parameter on all structured search tools
 
@@ -104,14 +104,13 @@ Closes `tea-rags-mcp-35e` (Grouping API) and aligns with decision
 
 File-level (`signalLevel: "file"`):
 
-- `tech-debt.ts`, `security-audit.ts`, `ownership.ts`, `onboarding.ts`,
-  `stable.ts`, `recent.ts`
+- `security-audit.ts`, `ownership.ts`, `onboarding.ts`, `recent.ts`
 - `impactAnalysis` — static preset, same pattern
 
 Chunk (default, no change needed):
 
 - `hotspots.ts`, `code-review.ts`, `refactoring.ts`
-- `relevance.ts`, `decomposition.ts`
+- `relevance.ts`, `decomposition.ts`, `stable.ts`, `tech-debt.ts`
 
 ### DTOs
 

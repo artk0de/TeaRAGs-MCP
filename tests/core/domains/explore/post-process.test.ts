@@ -78,7 +78,7 @@ describe("postProcess", () => {
 
   it("applies reranking for non-relevance preset", () => {
     postProcess(sampleResults, { limit: 10, rerank: "hotspots", reranker: mockReranker });
-    expect(mockReranker.rerank).toHaveBeenCalledWith(sampleResults, "hotspots", "semantic_search");
+    expect(mockReranker.rerank).toHaveBeenCalledWith(sampleResults, "hotspots", "semantic_search", undefined);
   });
 
   it("skips reranking for relevance preset", () => {

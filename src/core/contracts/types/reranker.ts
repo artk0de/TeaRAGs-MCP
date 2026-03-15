@@ -51,6 +51,9 @@ export interface OverlayMask {
   readonly derived?: string[];
 }
 
+/** Granularity level for reranking signals. */
+export type SignalLevel = "file" | "chunk";
+
 /** Typed preset definition with description for schema generation and DI. */
 export interface RerankPreset {
   readonly name: string;
@@ -60,6 +63,8 @@ export interface RerankPreset {
   readonly overlayMask: OverlayMask;
   /** Payload field to group results by (keep highest-scored per group). Used by rank_chunks. */
   readonly groupBy?: string;
+  /** Signal granularity: "file" forces alpha=0 (pure file signals), "chunk" uses blending (default). */
+  readonly signalLevel?: SignalLevel;
 }
 
 export type RerankMode<T extends string> = T | { custom: ScoringWeights; preset?: T };

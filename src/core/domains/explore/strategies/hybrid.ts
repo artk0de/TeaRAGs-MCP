@@ -25,6 +25,19 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
 
     const sparseVector = ctx.sparseVector ?? BM25SparseVectorGenerator.generateSimple(ctx.query ?? "");
 
-    return this.qdrant.hybridSearch(ctx.collectionName, ctx.embedding, sparseVector, ctx.limit, ctx.filter);
+    const results = await this.qdrant.hybridSearch(
+      ctx.collectionName,
+      ctx.embedding,
+      sparseVector,
+      ctx.level === "file" ? ctx.limit * 3 : ctx.limit,
+      ctx.filter,
+    );
+
+    // Client-side grouping for file level (queryGroups doesn't support RRF fusion)
+    if (ctx.level === "file") {
+      return this.groupByFile(results, ctx.limit);
+    }
+
+    return results;
   }
 }

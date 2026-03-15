@@ -10,6 +10,6 @@ export class AgeSignal implements DerivedSignalDescriptor {
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.ageDays"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.ageDays"] ?? this.defaultBound;
-    return blendNormalized(rawSignals, "ageDays", fb, cb);
+    return blendNormalized(rawSignals, "ageDays", fb, cb, ctx?.signalLevel);
   }
 }

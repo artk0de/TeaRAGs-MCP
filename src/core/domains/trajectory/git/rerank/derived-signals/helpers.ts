@@ -7,6 +7,7 @@
  */
 
 import { blend, computeAlpha, normalize } from "../../../../../contracts/signal-utils.js";
+import type { SignalLevel } from "../../../../../contracts/types/reranker.js";
 
 // Re-export generic functions used directly by signal classes
 export { blend, computeAlpha, confidenceDampening, normalize } from "../../../../../contracts/signal-utils.js";
@@ -85,8 +86,9 @@ export function hasChunkData(payload: Record<string, unknown>): boolean {
 // Blending helpers (compute alpha from payload)
 // ---------------------------------------------------------------------------
 
-/** Get alpha from payload's chunk and file commit counts. */
-export function payloadAlpha(payload: Record<string, unknown>): number {
+/** Get alpha from payload's chunk and file commit counts. Returns 0 when signalLevel is "file". */
+export function payloadAlpha(payload: Record<string, unknown>, signalLevel?: SignalLevel): number {
+  if (signalLevel === "file") return 0;
   const chunkCC = chunkField(payload, "commitCount");
   if (chunkCC === undefined || chunkCC <= 0) return 0;
 
@@ -104,9 +106,9 @@ export function payloadAlpha(payload: Record<string, unknown>): number {
  * Blend a file+chunk numeric signal using payload alpha.
  * For signals where chunk-level data may not exist (e.g., ageDays, bugFixRate).
  */
-export function blendSignal(payload: Record<string, unknown>, field: string): number {
+export function blendSignal(payload: Record<string, unknown>, field: string, signalLevel?: SignalLevel): number {
   const fileVal = fileNum(payload, field);
-  const alpha = payloadAlpha(payload);
+  const alpha = payloadAlpha(payload, signalLevel);
   if (alpha === 0) return fileVal;
   const chunkVal = chunkField(payload, field);
   return blend(chunkVal, fileVal, alpha);
@@ -121,9 +123,10 @@ export function blendNormalized(
   field: string,
   fileBound: number,
   chunkBound: number,
+  signalLevel?: SignalLevel,
 ): number {
   const fileVal = normalize(fileNum(payload, field), fileBound);
-  const alpha = payloadAlpha(payload);
+  const alpha = payloadAlpha(payload, signalLevel);
   if (alpha === 0) return fileVal;
   const chunkVal = chunkField(payload, field);
   const normalizedChunk = chunkVal !== undefined ? normalize(chunkVal, chunkBound) : fileVal;

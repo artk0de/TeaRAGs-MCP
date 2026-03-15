@@ -27,7 +27,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
           ...rest,
           rerank: sanitizeRerank(rerank),
         });
-        return appendDriftWarning(formatMcpResponse(response.results), response.driftWarning);
+        const body = response.level ? { results: response.results, level: response.level } : response.results;
+        return appendDriftWarning(formatMcpResponse(body), response.driftWarning);
       } catch (error) {
         return formatMcpError(error instanceof Error ? error.message : String(error));
       }
@@ -49,7 +50,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
           ...rest,
           rerank: sanitizeRerank(rerank),
         });
-        return appendDriftWarning(formatMcpResponse(response.results), response.driftWarning);
+        const body = response.level ? { results: response.results, level: response.level } : response.results;
+        return appendDriftWarning(formatMcpResponse(body), response.driftWarning);
       } catch (error) {
         return formatMcpError(error instanceof Error ? error.message : String(error));
       }
@@ -73,7 +75,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
           ...rest,
           rerank: sanitizeRerank(rerank) as string | { custom: Record<string, number> },
         });
-        return appendDriftWarning(formatMcpResponse(response.results), response.driftWarning);
+        const body = response.level ? { results: response.results, level: response.level } : response.results;
+        return appendDriftWarning(formatMcpResponse(body), response.driftWarning);
       } catch (error) {
         return formatMcpError(error instanceof Error ? error.message : String(error));
       }
@@ -97,7 +100,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
           ...rest,
           rerank: sanitizeRerank(rerank),
         });
-        return appendDriftWarning(formatMcpResponse(response.results), response.driftWarning);
+        const body = response.level ? { results: response.results, level: response.level } : response.results;
+        return appendDriftWarning(formatMcpResponse(body), response.driftWarning);
       } catch (error) {
         return formatMcpError(error instanceof Error ? error.message : String(error));
       }

@@ -18,6 +18,7 @@ import type {
   RerankableResult,
   RerankMode,
   RerankPreset,
+  SignalLevel,
 } from "../../contracts/types/reranker.js";
 import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 
@@ -76,18 +77,21 @@ export class Reranker {
     results: T[],
     mode: RerankMode<string>,
     presetSet: "semantic_search" | "search_code" | "rank_chunks",
+    overrideSignalLevel?: SignalLevel,
   ): (T & { rankingOverlay?: RankingOverlay })[] {
-    // Resolve weights, overlay mask, and groupBy
+    // Resolve weights, overlay mask, groupBy, and signalLevel
     let weights: ScoringWeights;
     let presetName: string;
     let mask: OverlayMask | undefined;
     let groupBy: string | undefined;
+    let signalLevel: SignalLevel | undefined;
     if (typeof mode === "string") {
       presetName = mode;
       const fullPreset = this.resolvedPresets.find((p) => p.name === mode && this.matchesTool(p, presetSet));
       weights = fullPreset?.weights ?? { similarity: 1.0 };
       mask = fullPreset?.overlayMask;
       groupBy = fullPreset?.groupBy;
+      signalLevel = fullPreset?.signalLevel;
     } else if (mode.preset) {
       // Custom weights with preset overlay mask (used by rank_chunks)
       presetName = mode.preset;
@@ -95,10 +99,14 @@ export class Reranker {
       const fullPreset = this.resolvedPresets.find((p) => p.name === mode.preset && this.matchesTool(p, presetSet));
       mask = fullPreset?.overlayMask;
       groupBy = fullPreset?.groupBy;
+      signalLevel = fullPreset?.signalLevel;
     } else {
       presetName = "custom";
       weights = mode.custom;
     }
+
+    // User override wins over preset signalLevel
+    if (overrideSignalLevel) signalLevel = overrideSignalLevel;
 
     // Fast path: similarity-only -> no reranking, no overlay
     const activeKeys = Object.keys(weights).filter((k) => {
@@ -115,9 +123,9 @@ export class Reranker {
     // Score each result and attach overlay
     const scored = results.map((result) => {
       const payload = this.buildExtractPayload(result);
-      const signals = this.extractAllDerived(payload, bounds);
+      const signals = this.extractAllDerived(payload, bounds, signalLevel);
       const score = calculateScore(signals, weights);
-      const overlay = this.buildOverlay(result, presetName, weights, signals, mask);
+      const overlay = this.buildOverlay(result, presetName, weights, signals, mask, signalLevel);
       return { ...result, score, rankingOverlay: overlay };
     });
 
@@ -236,6 +244,7 @@ export class Reranker {
   private extractAllDerived(
     payload: Record<string, unknown>,
     sourceBounds: Map<string, number>,
+    signalLevel?: SignalLevel,
   ): Record<string, number> {
     const signals: Record<string, number> = {};
 
@@ -249,7 +258,12 @@ export class Reranker {
         bounds[source] = Math.max(sourceBound, floor);
       }
       const dampeningThreshold = this.resolveDampeningThreshold(d);
-      signals[d.name] = d.extract(payload, { bounds, dampeningThreshold, collectionStats: this.collectionStats });
+      signals[d.name] = d.extract(payload, {
+        bounds,
+        dampeningThreshold,
+        collectionStats: this.collectionStats,
+        signalLevel,
+      });
     }
 
     return signals;
@@ -309,9 +323,11 @@ export class Reranker {
     weights: ScoringWeights,
     derivedValues: Record<string, number>,
     mask?: OverlayMask,
+    signalLevel?: SignalLevel,
   ): RankingOverlay {
     const rawFile: Record<string, unknown> = {};
     const rawChunk: Record<string, unknown> = {};
+    const skipChunk = signalLevel === "file";
 
     if (mask) {
       if (mask.file) {
@@ -319,7 +335,7 @@ export class Reranker {
           this.extractRawSource(result, field, rawFile, rawChunk);
         }
       }
-      if (mask.chunk) {
+      if (mask.chunk && !skipChunk) {
         for (const field of mask.chunk) {
           this.extractRawSource(result, `chunk.${field}`, rawFile, rawChunk);
         }

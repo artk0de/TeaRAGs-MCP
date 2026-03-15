@@ -3,7 +3,7 @@
  */
 
 import type { EnrichmentProvider, FilterDescriptor } from "./provider.js";
-import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
+import type { DerivedSignalDescriptor, RerankPreset, SignalLevel } from "./reranker.js";
 
 /** What statistics to compute for this signal at collection level. */
 export interface SignalStatsRequest {
@@ -52,6 +52,8 @@ export interface ExtractContext {
   dampeningThreshold?: number;
   /** Collection-level signal statistics for signals needing specific percentiles (p50, p25, etc.) */
   collectionStats?: CollectionSignalStats;
+  /** Signal level from preset — when "file", forces alpha=0 (pure file signals). */
+  signalLevel?: SignalLevel;
 }
 
 /**

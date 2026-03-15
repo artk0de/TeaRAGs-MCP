@@ -59,15 +59,22 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
     // 5. Build filter (merge user filter + fileExtensions)
     const filter = this.buildFilter(ctx.filter, this.input.fileExtensions);
 
-    // 6. Call Qdrant query
-    return this.qdrant.query(ctx.collectionName, {
+    // 6. Call Qdrant query (overfetch for file-level dedup)
+    const fetchLimit = ctx.level === "file" ? ctx.limit * 3 : ctx.limit;
+    const results = await this.qdrant.query(ctx.collectionName, {
       positive,
       negative: negative.length > 0 ? negative : undefined,
       strategy: this.input.strategy ?? "best_score",
-      limit: ctx.limit,
+      limit: fetchLimit,
       offset: ctx.offset,
       filter,
     });
+
+    // Client-side grouping for file level
+    if (ctx.level === "file") {
+      return this.groupByFile(results, ctx.limit);
+    }
+    return results;
   }
 
   private buildFilter(

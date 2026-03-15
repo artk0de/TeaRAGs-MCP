@@ -13,7 +13,7 @@ export class VolatilitySignal implements DerivedSignalDescriptor {
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.churnVolatility"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.churnVolatility"] ?? this.defaultBound;
-    let value = blendNormalized(rawSignals, "churnVolatility", fb, cb);
+    let value = blendNormalized(rawSignals, "churnVolatility", fb, cb, ctx?.signalLevel);
     const k = ctx?.dampeningThreshold ?? VolatilitySignal.FALLBACK_THRESHOLD;
     value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
     return value;

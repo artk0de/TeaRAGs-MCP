@@ -36,6 +36,7 @@ export interface PostProcessOptions {
   rerank?: RerankMode<string>;
   limit: number;
   reranker: Reranker;
+  level?: "file" | "chunk";
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +68,7 @@ export function postProcess(results: SearchResult[], options: PostProcessOptions
   let filtered: SearchResult[] = options.pathPattern ? filterResultsByGlob(results, options.pathPattern) : results;
 
   if (options.rerank && options.rerank !== "relevance") {
-    filtered = options.reranker.rerank(filtered, options.rerank, "semantic_search");
+    filtered = options.reranker.rerank(filtered, options.rerank, "semantic_search", options.level);
   }
 
   return filtered.slice(0, options.limit);

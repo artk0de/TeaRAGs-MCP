@@ -256,6 +256,50 @@ describe("BaseExploreStrategy", () => {
     });
   });
 
+  describe("groupByFile", () => {
+    it("deduplicates by relativePath, keeping highest-scored per file", async () => {
+      const results = [
+        { id: "1", score: 0.9, payload: { relativePath: "src/a.ts", content: "chunk1" } },
+        { id: "2", score: 0.8, payload: { relativePath: "src/a.ts", content: "chunk2" } },
+        { id: "3", score: 0.7, payload: { relativePath: "src/b.ts", content: "chunk3" } },
+        { id: "4", score: 0.6, payload: { relativePath: "src/c.ts", content: "chunk4" } },
+      ];
+
+      // Access groupByFile via a subclass that exposes it
+      class GroupTestStrategy extends TestStrategy {
+        callGroupByFile(r: ExploreResult[], limit: number) {
+          return this.groupByFile(r, limit);
+        }
+      }
+
+      const strategy = new GroupTestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS);
+      const grouped = strategy.callGroupByFile(results, 10);
+
+      expect(grouped).toHaveLength(3); // a.ts, b.ts, c.ts
+      expect(grouped[0].payload?.relativePath).toBe("src/a.ts");
+      expect(grouped[0].score).toBe(0.9); // highest score for a.ts
+    });
+
+    it("respects limit parameter", async () => {
+      const results = [
+        { id: "1", score: 0.9, payload: { relativePath: "src/a.ts" } },
+        { id: "2", score: 0.8, payload: { relativePath: "src/b.ts" } },
+        { id: "3", score: 0.7, payload: { relativePath: "src/c.ts" } },
+      ];
+
+      class GroupTestStrategy extends TestStrategy {
+        callGroupByFile(r: ExploreResult[], limit: number) {
+          return this.groupByFile(r, limit);
+        }
+      }
+
+      const strategy = new GroupTestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS);
+      const grouped = strategy.callGroupByFile(results, 2);
+
+      expect(grouped).toHaveLength(2);
+    });
+  });
+
   describe("reranking", () => {
     it("skips reranker when rerank is 'relevance'", async () => {
       const reranker = createMockReranker();

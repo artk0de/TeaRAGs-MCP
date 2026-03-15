@@ -45,6 +45,9 @@ function makeMockQdrant(overrides: Record<string, any> = {}) {
       { id: "1", score: 0.95, payload: { relativePath: "src/a.ts", content: "hello" } },
       { id: "2", score: 0.85, payload: { relativePath: "src/b.ts", content: "world" } },
     ]),
+    queryGroups: vi
+      .fn()
+      .mockResolvedValue([{ id: "1", score: 0.95, payload: { relativePath: "src/a.ts", content: "hello" } }]),
     hybridSearch: vi
       .fn()
       .mockResolvedValue([{ id: "1", score: 0.9, payload: { relativePath: "src/a.ts", content: "hello" } }]),
@@ -249,6 +252,65 @@ describe("ExploreFacade — expanded methods", () => {
 
       expect(statsCache.load).toHaveBeenCalled();
       expect(reranker.setCollectionStats).toHaveBeenCalled();
+    });
+
+    it("uses queryGroups when level is file", async () => {
+      const { facade, qdrant } = makeFacade();
+
+      const result = await facade.semanticSearch({
+        collection: "test_col",
+        query: "test",
+        level: "file",
+      });
+
+      expect(qdrant.queryGroups).toHaveBeenCalledWith("test_col", [0.1, 0.2, 0.3], {
+        groupBy: "relativePath",
+        groupSize: 1,
+        limit: expect.any(Number),
+        filter: undefined,
+      });
+      expect(qdrant.search).not.toHaveBeenCalled();
+      expect(result.results).toHaveLength(1);
+    });
+
+    it("resolves level from preset signalLevel when rerank is a string", async () => {
+      const reranker = makeMockReranker({
+        getFullPreset: vi.fn().mockReturnValue({ signalLevel: "file" }),
+      });
+      const { facade, qdrant } = makeFacade({ reranker });
+
+      await facade.semanticSearch({
+        collection: "test_col",
+        query: "test",
+        rerank: "securityAudit",
+      });
+
+      expect(reranker.getFullPreset).toHaveBeenCalledWith("securityAudit", "semantic_search");
+      expect(qdrant.queryGroups).toHaveBeenCalled();
+      expect(qdrant.search).not.toHaveBeenCalled();
+    });
+
+    it("includes level in response when set", async () => {
+      const { facade } = makeFacade();
+
+      const result = await facade.semanticSearch({
+        collection: "test_col",
+        query: "test",
+        level: "file",
+      });
+
+      expect(result.level).toBe("file");
+    });
+
+    it("omits level from response when not set", async () => {
+      const { facade } = makeFacade();
+
+      const result = await facade.semanticSearch({
+        collection: "test_col",
+        query: "test",
+      });
+
+      expect(result.level).toBeUndefined();
     });
   });
 

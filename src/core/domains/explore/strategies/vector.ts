@@ -15,6 +15,14 @@ export class VectorSearchStrategy extends BaseExploreStrategy {
     if (!ctx.embedding) {
       throw new Error("VectorSearchStrategy requires an embedding in the context.");
     }
+    if (ctx.level === "file") {
+      return this.qdrant.queryGroups(ctx.collectionName, ctx.embedding, {
+        groupBy: "relativePath",
+        groupSize: 1,
+        limit: ctx.limit,
+        filter: ctx.filter,
+      });
+    }
     return this.qdrant.search(ctx.collectionName, ctx.embedding, ctx.limit, ctx.filter);
   }
 }
