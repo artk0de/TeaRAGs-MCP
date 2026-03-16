@@ -211,7 +211,8 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       title: "Get Index Metrics",
       description:
         "Get collection statistics and signal distributions. Returns percentile-based thresholds for git signals, " +
-        "language/author/chunkType distributions. Use to discover appropriate filter values for your codebase.",
+        "language/author/chunkType distributions. Use to discover appropriate filter values for your codebase. " +
+        "For signal label definitions see tea-rags://schema/signal-labels.",
       inputSchema: schemas.GetIndexMetricsSchema,
       annotations: { readOnlyHint: true },
     },

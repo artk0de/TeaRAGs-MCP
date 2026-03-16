@@ -18,13 +18,13 @@ export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
     key: "methodLines",
     type: "number",
     description: "Original method/block line count before splitting",
-    stats: { labels: { p50: "typical", p95: "extreme" } },
+    stats: { labels: { p50: "small", p75: "large", p95: "decomposition_candidate" } },
   },
   {
     key: "methodDensity",
     type: "number",
     description: "Code density: characters per line (contentSize / methodLines)",
-    stats: { labels: { p95: "extreme" } },
+    stats: { labels: { p50: "sparse", p95: "dense" } },
   },
   { key: "contentSize", type: "number", description: "Character count of chunk content" },
 ];
