@@ -18,51 +18,45 @@ Do NOT substitute presets (e.g. do NOT use `hotspots` when `bugHunt` is specifie
 
 **Fallback chain:** ripgrep MCP → Grep tool (only if ripgrep MCP unavailable).
 
-## Step 1: SEMANTIC DISCOVER
+## Step 1: DISCOVER
 
 `semantic_search` query=$ARGUMENTS — find area by symptom meaning.
 Verify per search-cascade rule (tree-sitter structure → ripgrep call-sites).
-Discard unverified candidates.
+Discard unverified candidates. Note the pathPattern for discovered area.
 
-## Step 2: SIGNAL-RANKED CANDIDATES
+## Step 2: HUNT (parallel)
 
-**MUST use:** `rank_chunks` with `rerank="bugHunt"`, pathPattern=<discovered area from Step 1>.
-Do NOT use `hotspots` — it weights differently (chunkSize, chunkChurn). `bugHunt` specifically weights burstActivity + volatility + bugFix + relativeChurn.
+Run both searches at the same time on the discovered area:
 
-Top results = functions that historically broke in this area.
+1. `rank_chunks` with `rerank="bugHunt"`, pathPattern=<area> — find functions with worst bug history regardless of symptom similarity
+2. `hybrid_search` query=$ARGUMENTS + "error exception retry duplicate fail crash timeout", rerank="bugHunt", pathPattern=<area> — find functions matching symptom AND markers
 
-## Step 3: MARKER SEARCH
+Fallback: `semantic_search` with same query if hybrid_search unavailable (hybrid requires enableHybrid=true).
 
-`hybrid_search` query=$ARGUMENTS + "error exception retry duplicate fail crash timeout", pathPattern=<area>.
-Fallback: `semantic_search` with same query if hybrid_search unavailable (hybrid requires index with enableHybrid=true).
+Merge results from both, deduplicate by file path + function name.
 
-Catches both semantic relevance and exact error markers that pure vector search misses.
+## Step 3: ANALYZE
 
-## Step 4: CHUNK-LEVEL TRIAGE
+For merged candidates, read chunk-level overlay labels and code in one pass:
 
-For top candidates from Steps 2+3, read chunk-level overlay labels:
+**Triage by signals:**
 
 | chunk.bugFixRate | chunk.churnRatio | Classification |
 |------------------|------------------|----------------|
 | "critical" | "concentrated" | **Prime suspect** — absorbs most bugs in the file |
-| "concerning" | any | **Secondary suspect** — elevated fix rate, worth investigating |
-| "critical" | "normal" | **Distributed problem** — bugs spread across file, not localized |
-| "healthy" | any | Unlikely root cause — deprioritize |
+| "concerning" | any | **Secondary suspect** — elevated fix rate |
+| "critical" | "normal" | **Distributed problem** — bugs spread, not localized |
+| "healthy" | any | Deprioritize |
 
-Also consider:
-- chunk.commitCount "extreme" + chunk.churnVolatility "erratic" = reactive patching pattern
-- chunk.ageDays "legacy" + chunk.bugFixRate "critical" = long-standing fragile code
+Also: commitCount "extreme" + churnVolatility "erratic" = reactive patching.
 
-## Step 5: ROOT CAUSE ANALYSIS
-
-Read code of prime and secondary suspects. Analyze:
-- What patterns correlate with the described symptom
-- Edge cases in control flow (missing guards, off-by-one)
-- Missing validation or error handling
+**Root cause analysis** — read code of prime and secondary suspects:
+- Patterns correlating with described symptom
+- Missing guards, off-by-one, missing validation
 - Race conditions, duplicate processing, stale state
 - Retry logic without idempotency
 
-Present findings as prioritized list:
+Present as prioritized list:
 
 ```
 Root cause candidates (ranked by signal confidence):
@@ -76,8 +70,8 @@ Root cause candidates (ranked by signal confidence):
    Observation: async callback may fire twice on timeout
 ```
 
-## Step 6: VERIFY + FIX
+## Step 4: VERIFY + FIX
 
-Verify analysis per search-cascade rule — ripgrep confirm the identified patterns actually exist.
+Verify analysis per search-cascade rule — ripgrep confirm the identified patterns actually exist in current code, not just in git history.
 
 If fix needed → invoke `/tea-rags:data-driven-generation` for the target function. It will run its own danger check and select appropriate strategy (likely DEFENSIVE for code with "critical" bugFixRate).
