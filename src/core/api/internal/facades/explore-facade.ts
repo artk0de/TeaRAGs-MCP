@@ -41,8 +41,10 @@ import type {
   ExploreResponse,
   FindSimilarRequest,
   HybridSearchRequest,
+  IndexMetrics,
   RankChunksRequest,
   SemanticSearchRequest,
+  SignalMetrics,
 } from "../../public/dto/index.js";
 
 // ---------------------------------------------------------------------------
@@ -278,6 +280,61 @@ export class ExploreFacade {
       },
       path,
     );
+  }
+
+  // =========================================================================
+  // Index metrics
+  // =========================================================================
+
+  /** Return collection-level signal statistics and distributions. */
+  async getIndexMetrics(path: string): Promise<IndexMetrics> {
+    const absolutePath = await validatePath(path);
+    const collectionName = resolveCollectionName(absolutePath);
+
+    if (!(await this.qdrant.collectionExists(collectionName))) {
+      throw new Error("Collection not found. Index the codebase first.");
+    }
+
+    await this.ensureStats(collectionName);
+
+    const stats = this.statsCache?.load(collectionName);
+    if (!stats) {
+      throw new Error("No statistics available. Re-index the codebase.");
+    }
+
+    const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
+    const descriptors = this.payloadSignals;
+
+    const signals: Record<string, SignalMetrics> = {};
+    for (const [key, signalStats] of stats.perSignal) {
+      const descriptor = descriptors.find((d) => d.key === key);
+      if (!descriptor?.stats?.labels) continue;
+
+      const labelMap: Record<string, number> = {};
+      for (const [pKey, labelName] of Object.entries(descriptor.stats.labels)) {
+        const p = Number(pKey.slice(1));
+        const threshold = signalStats.percentiles[p];
+        if (threshold !== undefined) {
+          labelMap[labelName] = threshold;
+        }
+      }
+
+      signals[key] = {
+        min: signalStats.min,
+        max: signalStats.max,
+        mean: signalStats.mean,
+        count: signalStats.count,
+        labelMap,
+      };
+    }
+
+    return {
+      collection: collectionName,
+      totalChunks: collectionInfo.pointsCount,
+      totalFiles: stats.distributions.totalFiles,
+      distributions: stats.distributions,
+      signals,
+    };
   }
 
   // =========================================================================

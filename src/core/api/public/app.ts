@@ -32,6 +32,7 @@ import type {
   ExploreResponse,
   FindSimilarRequest,
   HybridSearchRequest,
+  IndexMetrics,
   IndexOptions,
   IndexStats,
   IndexStatus,
@@ -69,6 +70,9 @@ export interface App {
   // -- Documents (→ internal/ops/document-ops.ts) --
   addDocuments: (request: AddDocumentsRequest) => Promise<{ count: number }>;
   deleteDocuments: (request: DeleteDocumentsRequest) => Promise<{ count: number }>;
+
+  // -- Index metrics (→ internal/facades/explore-facade.ts) --
+  getIndexMetrics: (path: string) => Promise<IndexMetrics>;
 
   // -- Schema descriptors (→ Reranker via deps) --
   getSchemaDescriptors: () => PresetDescriptors;
@@ -122,6 +126,9 @@ export function createApp(deps: AppDeps): App {
     // -- Documents — delegate to DocumentOps --
     addDocuments: async (req) => documentOps.add(req),
     deleteDocuments: async (req) => documentOps.delete(req),
+
+    // -- Index metrics --
+    getIndexMetrics: async (path) => deps.explore.getIndexMetrics(path),
 
     // -- Schema descriptors --
     getSchemaDescriptors: () => {
