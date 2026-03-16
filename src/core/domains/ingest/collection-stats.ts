@@ -13,6 +13,9 @@ import type { CollectionSignalStats, PayloadSignalDescriptor, SignalStats } from
  * Returns undefined if any segment is missing.
  */
 function readPayloadPath(payload: Record<string, unknown>, path: string): unknown {
+  // Try flat key first (Qdrant stores dot-notation paths as flat keys)
+  if (path in payload) return payload[path];
+  // Fall back to nested traversal
   const parts = path.split(".");
   let current: unknown = payload;
   for (const part of parts) {
@@ -57,6 +60,13 @@ export function computeCollectionStats(
     valueArrays.set(signal.key, []);
   }
 
+  const languageCounts: Record<string, number> = {};
+  const chunkTypeCounts: Record<string, number> = {};
+  let docsCount = 0;
+  let codeCount = 0;
+  const distinctPaths = new Set<string>();
+  const authorCounts = new Map<string, number>();
+
   for (const point of points) {
     for (const signal of statsSignals) {
       const val = readPayloadPath(point.payload, signal.key);
@@ -64,6 +74,33 @@ export function computeCollectionStats(
         const arr = valueArrays.get(signal.key);
         if (arr) arr.push(val);
       }
+    }
+
+    const lang = point.payload["language"];
+    if (typeof lang === "string") {
+      languageCounts[lang] = (languageCounts[lang] ?? 0) + 1;
+    }
+
+    const { chunkType } = point.payload as { chunkType?: unknown };
+    if (typeof chunkType === "string") {
+      chunkTypeCounts[chunkType] = (chunkTypeCounts[chunkType] ?? 0) + 1;
+    }
+
+    const isDoc = point.payload["isDocumentation"];
+    if (isDoc === true) {
+      docsCount++;
+    } else {
+      codeCount++;
+    }
+
+    const relPath = point.payload["relativePath"];
+    if (typeof relPath === "string") {
+      distinctPaths.add(relPath);
+    }
+
+    const author = point.payload["git.file.dominantAuthor"];
+    if (typeof author === "string") {
+      authorCounts.set(author, (authorCounts.get(author) ?? 0) + 1);
     }
   }
 
@@ -107,15 +144,19 @@ export function computeCollectionStats(
     perSignal.set(signal.key, result);
   }
 
+  const sortedAuthors = Array.from(authorCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const topAuthors = sortedAuthors.slice(0, 10).map(([name, chunks]) => ({ name, chunks }));
+  const othersCount = sortedAuthors.slice(10).reduce((sum, [, chunks]) => sum + chunks, 0);
+
   return {
     perSignal,
     distributions: {
-      totalFiles: 0,
-      language: {},
-      chunkType: {},
-      documentation: { docs: 0, code: 0 },
-      topAuthors: [],
-      othersCount: 0,
+      totalFiles: distinctPaths.size,
+      language: languageCounts,
+      chunkType: chunkTypeCounts,
+      documentation: { docs: docsCount, code: codeCount },
+      topAuthors,
+      othersCount,
     },
     computedAt: Date.now(),
   };
