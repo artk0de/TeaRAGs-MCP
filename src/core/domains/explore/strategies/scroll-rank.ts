@@ -25,7 +25,9 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     const metaOnly = ctx.metaOnly !== false; // defaults to true for rank_chunks
     const effectiveOffset = ctx.offset || 0;
     const requestedLimit = ctx.limit || 10;
-    const fetchLimit = requestedLimit + effectiveOffset;
+    const baseLimit = requestedLimit + effectiveOffset;
+    // Overfetch when pathPattern will filter results in postProcess
+    const fetchLimit = ctx.pathPattern ? baseLimit * 10 : baseLimit;
     // Resolve preset → weights (Reranker is Information Expert)
     let { weights } = ctx;
     let { presetName } = ctx;
