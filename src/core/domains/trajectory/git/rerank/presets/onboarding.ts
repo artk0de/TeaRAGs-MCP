@@ -1,6 +1,17 @@
 import type { ScoringWeights } from "../../../../../contracts/types/provider.js";
 import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../../contracts/types/reranker.js";
 
+/**
+ * Surface well-documented, stable code ideal for new team members.
+ *
+ * Use when: onboarding developers, finding reference implementations,
+ *   looking for "how things should be done" examples.
+ * Query examples: "API patterns", "testing approach", "configuration".
+ * Key signals: documentation (boost docs), stability (low churn = reliable),
+ *   age (mature = proven). Penalizes ownership (single-author = less reviewed)
+ *   and volatility (erratic = confusing for newcomers).
+ * SignalLevel: file — groups results by file for broad orientation.
+ */
 export class OnboardingPreset implements RerankPreset {
   readonly name = "onboarding";
   readonly description = "Well-documented, stable, mature code with shared ownership — ideal for new team members";

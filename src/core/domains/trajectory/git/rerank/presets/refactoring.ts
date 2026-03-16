@@ -1,6 +1,17 @@
 import type { ScoringWeights } from "../../../../../contracts/types/provider.js";
 import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/reranker.js";
 
+/**
+ * Find large, churning, volatile code — candidates for refactoring.
+ *
+ * Use when: planning refactoring sprints, identifying god classes/methods,
+ *   finding complex code that's hard to maintain.
+ * Query examples: "data transformation", "request handler", "business logic".
+ * Key signals: chunkSize (large methods = split candidates), chunkDensity (dense code),
+ *   chunkChurn + chunkRelativeChurn (frequently patched chunks).
+ * Groups results by parentName — shows which classes contain the worst methods.
+ * Works well with rank_chunks + level:"chunk" for project-wide refactoring inventory.
+ */
 export class RefactoringPreset implements RerankPreset {
   readonly name = "refactoring";
   readonly description = "Large, churning, volatile code — candidates for refactoring";
