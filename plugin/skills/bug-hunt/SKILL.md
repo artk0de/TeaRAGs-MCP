@@ -17,8 +17,6 @@ Do NOT substitute presets (e.g. do NOT use `hotspots` when `bugHunt` is specifie
 ## Step 1: SEMANTIC DISCOVER
 
 `semantic_search` query=$ARGUMENTS — find area by symptom meaning.
-Verify per search-cascade rule (tree-sitter structure → ripgrep call-sites).
-Discard unverified candidates.
 
 ## Step 2: SIGNAL-RANKED CANDIDATES
 
@@ -72,11 +70,15 @@ Root cause candidates (ranked by signal confidence):
    Observation: async callback may fire twice on timeout
 ```
 
-## Step 6: VERIFY + FIX
+## Step 6: VERIFY
 
-Verify that the suspect function is actually connected to the symptom:
-1. **ripgrep** — search for symptom-related patterns (DB writes, API calls, error strings) inside the suspect function. 0 matches = false positive, re-evaluate.
-2. **tree-sitter** — trace callers of the suspect function. Is it reachable from the code path described in the bug?
-3. **ripgrep** — confirm the specific mechanism (missing guard, duplicate call, race condition) exists in code, not just in git history.
+Validate ALL findings from Steps 1-5 before presenting to developer:
 
-If analysis confirms root cause → invoke `/tea-rags:data-driven-generation` for the target function. It will run its own danger check and select appropriate strategy (likely DEFENSIVE for code with "critical" bugFixRate).
+1. **tree-sitter** — structural overview of suspect functions (signatures, callers). Confirm they are reachable from the code path described in the bug.
+2. **ripgrep** — search for symptom-related patterns (DB writes, API calls, error strings) inside suspects. 0 matches = false positive, remove from candidate list.
+3. **ripgrep** — confirm the specific mechanism identified in Step 5 (missing guard, duplicate call, race condition) actually exists in current code, not just in git history.
+4. **Fallback** — Grep/Glob if ripgrep/tree-sitter unavailable.
+
+Discard any candidate that fails verification. Only present verified suspects to the developer.
+
+If fix needed → invoke `/tea-rags:data-driven-generation` for the target function.
