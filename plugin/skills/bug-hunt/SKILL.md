@@ -74,6 +74,9 @@ Root cause candidates (ranked by signal confidence):
 
 ## Step 6: VERIFY + FIX
 
-Verify analysis per search-cascade rule — ripgrep confirm the identified patterns actually exist.
+Verify that the suspect function is actually connected to the symptom:
+1. **ripgrep** — search for symptom-related patterns (DB writes, API calls, error strings) inside the suspect function. 0 matches = false positive, re-evaluate.
+2. **tree-sitter** — trace callers of the suspect function. Is it reachable from the code path described in the bug?
+3. **ripgrep** — confirm the specific mechanism (missing guard, duplicate call, race condition) exists in code, not just in git history.
 
-If fix needed → invoke `/tea-rags:data-driven-generation` for the target function. It will run its own danger check and select appropriate strategy (likely DEFENSIVE for code with "critical" bugFixRate).
+If analysis confirms root cause → invoke `/tea-rags:data-driven-generation` for the target function. It will run its own danger check and select appropriate strategy (likely DEFENSIVE for code with "critical" bugFixRate).
