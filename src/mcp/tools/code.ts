@@ -204,6 +204,29 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
     },
   );
 
+  // get_index_metrics
+  server.registerTool(
+    "get_index_metrics",
+    {
+      title: "Get Index Metrics",
+      description:
+        "Get collection statistics and signal distributions. Returns percentile-based thresholds for git signals, " +
+        "language/author/chunkType distributions. Use to discover appropriate filter values for your codebase.",
+      inputSchema: schemas.GetIndexMetricsSchema,
+      annotations: { readOnlyHint: true },
+    },
+    async ({ path }) => {
+      try {
+        const metrics = await app.getIndexMetrics(path);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(metrics, null, 2) }],
+        };
+      } catch (error) {
+        return formatMcpError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  );
+
   // clear_index
   server.registerTool(
     "clear_index",

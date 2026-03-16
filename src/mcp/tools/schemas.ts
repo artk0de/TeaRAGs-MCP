@@ -95,6 +95,10 @@ export const ClearIndexSchema = {
   path: z.string().describe("Path to codebase"),
 };
 
+export const GetIndexMetricsSchema = {
+  path: z.string().describe("Path to codebase"),
+};
+
 // ---------------------------------------------------------------------------
 // Search schemas (dynamic — generated from SchemaBuilder via DIP)
 // ---------------------------------------------------------------------------
