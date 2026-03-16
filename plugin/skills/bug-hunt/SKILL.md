@@ -22,9 +22,12 @@ Do NOT substitute presets (e.g. do NOT use `hotspots` when `bugHunt` is specifie
 
 `semantic_search` query=$ARGUMENTS — find area by symptom meaning.
 
-## Step 2: VERIFY DISCOVER
+## Step 2: VERIFY DISCOVER (parallel)
 
-Verify per search-cascade rule (tree-sitter structure → ripgrep call-sites).
+Run both at the same time:
+1. **tree-sitter** — structural overview of found files (methods, signatures)
+2. **ripgrep** — confirm call-sites, exports exist
+
 Discard unverified candidates. Note the pathPattern for discovered area.
 
 ## Step 3: HUNT (parallel)
