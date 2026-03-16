@@ -10,45 +10,46 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 
 ## MANDATORY RULES
 
-1. **Execute this skill YOURSELF** — do NOT delegate to a subagent.
-2. **Use `rank_chunks` with `rerank="bugHunt"`** — PRIMARY tool. You MUST call it.
-3. **Do NOT use `git log`, `git diff`, `git blame`** — overlay already has git signals.
-4. **Max 2 `semantic_search` calls** total.
-5. **Overlay labels are your triage tool.** bugFixRate "healthy" → SKIP. Trust the label.
-6. **Max 3 file reads** — only prime suspects from triage.
-7. **Do NOT ripgrep a file you already read.** If you read it, you have the content.
-8. **ripgrep is optional** — use only if you need to find something across files you haven't read. Always scope to discovered area.
+1. **Execute YOURSELF** — no subagents.
+2. **`rank_chunks` rerank="bugHunt"** is the PRIMARY tool. You MUST call it.
+3. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
+4. **No built-in Search/Grep for code discovery** — use only TeaRAGs tools (semantic_search, hybrid_search, rank_chunks, find_similar) and ripgrep MCP. Built-in Search is prohibited for finding code.
+5. **Labels are triage.** bugFixRate "healthy" → SKIP. Trust it.
+6. **Max 3 file reads** total. Read only prime suspects.
 
 ## Steps
 
-### 1. DISCOVER
+### 1. DISCOVER (parallel, 2-3 queries)
 
-ONE `semantic_search` query=$ARGUMENTS, rerank="bugHunt", limit=10 → find area + pre-filter by bug signals. Note top 3-5 file paths.
+Run 2-3 `semantic_search` calls **in parallel**, NO rerank (pure relevance), limit=10 each:
+
+1. **Technical query** — implementation terms from the symptom (e.g. "batch create jobs pipeline automation")
+2. **Behavioral query** — what the code does wrong (e.g. "send email unavailable offline client validation")
+3. **Error path query** (optional) — error handling related to symptom (e.g. "disabled automation check fail")
+
+Intersect results: files appearing in 2+ queries = high-confidence area. Use those file paths for step 2.
 
 ### 2. DRILL DOWN (parallel)
 
-Run both at the same time, scoped to files from step 1:
+Scoped to intersection files from step 1:
 
-1. `rank_chunks` rerank="bugHunt", pathPattern for specific files, limit=10.
+1. `rank_chunks` rerank="bugHunt", pathPattern=\<intersection files\>, limit=10.
 2. `hybrid_search` query=$ARGUMENTS + "error exception fail", rerank="bugHunt", same scope, limit=10. Fallback: `semantic_search` if hybrid unavailable.
-
-Need more results? Use offset, not higher limit.
 
 ### 3. TRIAGE + ANALYZE
 
-**STOP and read overlay labels before doing anything else.**
+**STOP. Read overlay labels first.**
 
-Merge step 2 results. For each check `rankingOverlay`:
 - chunk.bugFixRate "critical" + chunk.churnRatio "concentrated" → **prime suspect**
 - chunk.bugFixRate "concerning" → **secondary suspect**
 - chunk.bugFixRate "healthy" → **SKIP**
 
-Read code of prime suspects ONLY (max 3 files). Look for: missing guards, race conditions, duplicate processing, retry without idempotency.
+Read code of prime suspects ONLY (max 3 files).
 
-### 4. PRESENT + SPREAD CHECK
+### 4. PRESENT
 
 Present ranked list with signals + observation per suspect.
 
-If root cause pattern found → `find_similar` from prime suspect chunk ID to catch copy-paste bugs.
+If root cause pattern found → `find_similar` from chunk ID for copy-paste bugs.
 
 If fix needed → `/tea-rags:data-driven-generation`.
