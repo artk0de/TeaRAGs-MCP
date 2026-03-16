@@ -11,7 +11,12 @@ describe("computeCollectionStats", () => {
 
   it("only computes stats for signals with stats declaration", () => {
     const signals: PayloadSignalDescriptor[] = [
-      { key: "git.file.commitCount", type: "number", description: "commits", stats: { percentiles: [25, 95] } },
+      {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "commits",
+        stats: { labels: { p25: "low", p95: "extreme" } },
+      },
       { key: "git.file.ageDays", type: "number", description: "age" }, // no stats → skipped
       { key: "relativePath", type: "string", description: "path" }, // non-numeric → skipped
     ];
@@ -25,7 +30,12 @@ describe("computeCollectionStats", () => {
 
   it("computes requested percentiles as Record<number, number>", () => {
     const signals: PayloadSignalDescriptor[] = [
-      { key: "git.file.commitCount", type: "number", description: "commits", stats: { percentiles: [25, 50, 75, 95] } },
+      {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "commits",
+        stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
+      },
     ];
     const stats = computeCollectionStats(hundredPoints, signals);
     const s = stats.perSignal.get("git.file.commitCount")!;
@@ -40,7 +50,7 @@ describe("computeCollectionStats", () => {
 
   it("computes only requested percentiles (subset)", () => {
     const signals: PayloadSignalDescriptor[] = [
-      { key: "git.file.commitCount", type: "number", description: "commits", stats: { percentiles: [95] } },
+      { key: "git.file.commitCount", type: "number", description: "commits", stats: { labels: { p95: "extreme" } } },
     ];
     const stats = computeCollectionStats(hundredPoints, signals);
     const s = stats.perSignal.get("git.file.commitCount")!;
@@ -78,7 +88,7 @@ describe("computeCollectionStats", () => {
         key: "git.file.commitCount",
         type: "number",
         description: "commits",
-        stats: { percentiles: [25, 50, 75, 95], mean: true, stddev: true },
+        stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }, mean: true, stddev: true },
       },
     ];
     const stats = computeCollectionStats(hundredPoints, signals);
@@ -93,7 +103,7 @@ describe("computeCollectionStats", () => {
   it("handles empty payload gracefully", () => {
     const points = [{ payload: {} }, { payload: { git: { file: { commitCount: 10 } } } }];
     const signals: PayloadSignalDescriptor[] = [
-      { key: "git.file.commitCount", type: "number", description: "commits", stats: { percentiles: [50] } },
+      { key: "git.file.commitCount", type: "number", description: "commits", stats: { labels: { p50: "typical" } } },
     ];
     const stats = computeCollectionStats(points, signals);
     const s = stats.perSignal.get("git.file.commitCount")!;
@@ -102,7 +112,7 @@ describe("computeCollectionStats", () => {
 
   it("returns empty map for empty points array", () => {
     const signals: PayloadSignalDescriptor[] = [
-      { key: "git.file.commitCount", type: "number", description: "commits", stats: { percentiles: [50] } },
+      { key: "git.file.commitCount", type: "number", description: "commits", stats: { labels: { p50: "typical" } } },
     ];
     const stats = computeCollectionStats([], signals);
     expect(stats.perSignal.size).toBe(0);

@@ -7,8 +7,12 @@ import type { DerivedSignalDescriptor, RerankPreset, SignalLevel } from "./reran
 
 /** What statistics to compute for this signal at collection level. */
 export interface SignalStatsRequest {
-  /** Which percentiles to compute (e.g. [25, 50, 75, 95]) */
-  percentiles?: number[];
+  /**
+   * Percentile-to-label mapping. Keys are pNN (e.g. p25, p50, p75, p95).
+   * Percentiles to collect are derived from keys.
+   * Labels are used in ranking overlay and get_index_metrics labelMap.
+   */
+  labels?: Record<string, string>;
   /** Compute arithmetic mean */
   mean?: boolean;
   /** Compute standard deviation */
