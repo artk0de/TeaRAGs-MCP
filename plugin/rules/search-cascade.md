@@ -10,33 +10,36 @@ Order: **intent → structure → exact match**.
 | Structure / shape | tree-sitter (`analyze_code_structure`, `query_code`) | Classes, methods, signatures — without reading full files |
 | Exact text / tokens | ripgrep (`search`, `count-matches`) | Call-sites, identifiers, TODOs, config keys |
 
+## When to Use What
+
+- **Understanding code** → read the file. Don't ripgrep 10 patterns — just read the function.
+- **Confirming something exists** → ripgrep. One call, specific pattern.
+- **Finding where something is used** → ripgrep. Call-sites, imports.
+- **Finding code by meaning** → TeaRAGs. Not ripgrep, not file reading.
+- **Structural overview** → tree-sitter. Methods, signatures without full read.
+
 ## Verification After Semantic Search
 
 Semantic search is a **candidate zone generator**, not proof.
 
-**Prefer ripgrep over reading files.** ripgrep finds exact lines without loading entire files. Read full file only when ripgrep context is insufficient.
-
-After TeaRAGs call:
-1. **ripgrep** — confirm identifiers exist. 0 matches = false candidate, discard.
-2. **tree-sitter** (if available) — structural overview without reading full files.
-3. **Read file** — only the specific function/section, only if needed for more context.
-
-**Fallback:** Grep/Glob if ripgrep/tree-sitter MCP unavailable.
+After TeaRAGs call, verify candidates exist:
+1. **ripgrep** — ONE call to confirm key identifier exists. 0 matches = discard.
+2. If confirmed → **read the function** to understand it. Don't ripgrep 5 more patterns.
 
 ## Anti-Patterns
 
 | Anti-pattern | Correct approach |
 |-------------|-----------------|
-| Reading full files after semantic search | ripgrep for specific identifiers, read only needed section |
+| 10+ ripgrep calls instead of reading a file | Read the file — it's faster |
 | ripgrep for "how does X work" | TeaRAGs semantic_search |
-| TeaRAGs for exact method names | ripgrep |
-| Multiple semantic_search calls for same area | One call, then ripgrep to narrow |
-| `git log` / `git diff` for code history | TeaRAGs already has git signals in overlay |
+| TeaRAGs for exact method names | ONE ripgrep call |
+| Multiple semantic_search for same area | One call, then read results |
+| `git log` / `git diff` for code history | TeaRAGs overlay has git signals |
 
 ## search_code Prohibition
 
-Agents MUST use `semantic_search`, `hybrid_search`, `find_similar`, or `rank_chunks` — these return structured JSON with overlay labels. `search_code` is for human-readable output only.
+Agents MUST use `semantic_search`, `hybrid_search`, `find_similar`, or `rank_chunks` — these return structured JSON with overlay labels.
 
 ## hybrid_search Fallback
 
-If `hybrid_search` fails (needs `enableHybrid=true`), fall back to `semantic_search` with same parameters.
+If `hybrid_search` fails (needs `enableHybrid=true`), fall back to `semantic_search`.
