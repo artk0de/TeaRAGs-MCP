@@ -21,10 +21,13 @@ Do NOT substitute presets (e.g. do NOT use `hotspots` when `bugHunt` is specifie
 ## Step 1: DISCOVER
 
 `semantic_search` query=$ARGUMENTS — find area by symptom meaning.
+
+## Step 2: VERIFY DISCOVER
+
 Verify per search-cascade rule (tree-sitter structure → ripgrep call-sites).
 Discard unverified candidates. Note the pathPattern for discovered area.
 
-## Step 2: HUNT (parallel)
+## Step 3: HUNT (parallel)
 
 Run both searches at the same time on the discovered area:
 
@@ -35,7 +38,7 @@ Fallback: `semantic_search` with same query if hybrid_search unavailable (hybrid
 
 Merge results from both, deduplicate by file path + function name.
 
-## Step 3: ANALYZE
+## Step 4: ANALYZE
 
 For merged candidates, read chunk-level overlay labels and code in one pass:
 
@@ -70,7 +73,7 @@ Root cause candidates (ranked by signal confidence):
    Observation: async callback may fire twice on timeout
 ```
 
-## Step 4: VERIFY + FIX
+## Step 5: VERIFY + FIX
 
 Verify analysis per search-cascade rule — ripgrep confirm the identified patterns actually exist in current code, not just in git history.
 
