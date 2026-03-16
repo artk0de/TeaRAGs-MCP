@@ -38,3 +38,5 @@ export type {
   AddDocumentsRequest,
   DeleteDocumentsRequest,
 } from "./document.js";
+
+export type { IndexMetrics, SignalMetrics } from "./metrics.js";
