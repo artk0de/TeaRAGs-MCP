@@ -2,6 +2,17 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
 import { blendSignal, confidenceDampening, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
 
+/**
+ * Measures bus factor risk — code known by only one or two people.
+ *
+ * Purpose: surface knowledge silos where a single contributor departure
+ *   would leave the team without expertise.
+ * Detects: single-author modules, pair-only code, undocumented tribal knowledge.
+ * Scoring: 1 contributor → 1.0, 2 contributors → 0.5, 3+ → 0.0.
+ *   Confidence-dampened by commitCount (low-commit files may simply be new).
+ * Compare: OwnershipSignal measures author concentration (dominantAuthorPct);
+ *   KnowledgeSiloSignal measures absolute contributor count.
+ */
 export class KnowledgeSiloSignal implements DerivedSignalDescriptor {
   readonly name = "knowledgeSilo";
   readonly description = "Knowledge silo risk: 1 contributor=1.0, 2=0.5, 3+=0. L3 blends effective contributorCount.";

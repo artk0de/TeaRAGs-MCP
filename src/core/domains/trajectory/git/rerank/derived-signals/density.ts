@@ -2,6 +2,16 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
 import { blendNormalized, confidenceDampening, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
 
+/**
+ * Measures commit frequency normalized by time — commits per month.
+ *
+ * Purpose: distinguish sustained activity from one-time bursts.
+ * Detects: persistently problematic areas (high density = constant fixes),
+ *   vs one-off large changes (high churn but low density).
+ * Scoring: more commits/month → higher score. Confidence-dampened by commitCount.
+ * Compare: ChurnSignal measures absolute count; DensitySignal normalizes by age.
+ *   BurstActivitySignal weights recent commits exponentially; this treats all months equally.
+ */
 export class DensitySignal implements DerivedSignalDescriptor {
   readonly name = "density";
   readonly description = "Change density: commits per month. L3 blends chunk+file changeDensity.";

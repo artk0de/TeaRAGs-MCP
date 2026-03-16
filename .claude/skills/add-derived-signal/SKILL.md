@@ -14,9 +14,22 @@ Add a new normalized (0-1) signal computed from raw payload data at rerank time.
   alpha-blending.
 - **Static trajectory** (`domains/trajectory/static/rerank/derived-signals/`):
   signals from code structure (chunk size, imports, documentation). Use
-  `normalize()` from `contracts/signal-utils.ts`.
+  `normalize()` from `infra/signal-utils.ts`.
 
-## Step 2: Create the signal file
+## Step 2: Create the signal file (with JSDoc)
+
+Every derived signal class MUST have a JSDoc comment above the class declaration
+covering:
+
+- **Purpose**: what question this signal answers
+- **Detects**: what code patterns it surfaces
+- **Scoring**: how the score is computed, direction (higher = what?)
+- **Used in**: which presets reference this signal
+- **Compare**: how it differs from similar signals (if any)
+- **Inverse**: paired signal if applicable (e.g., age ↔ recency)
+
+See existing signals for reference style. This applies to new signals AND
+modifications to existing ones (update the comment if behavior changes).
 
 Create `<signal-name>.ts` in the appropriate derived-signals directory.
 
@@ -44,9 +57,9 @@ export class MySignal implements DerivedSignalDescriptor {
 **Static signal template:**
 
 ```typescript
-import { normalize } from "../../../../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
+import { normalize } from "../../../../../infra/signal-utils.js";
 
 export class MySignal implements DerivedSignalDescriptor {
   readonly name = "mySignal";

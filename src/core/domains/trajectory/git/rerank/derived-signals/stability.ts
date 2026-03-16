@@ -2,6 +2,15 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
 import { blendNormalized } from "./helpers.js";
 
+/**
+ * Measures how rarely code changes — low churn indicates stable, mature code.
+ *
+ * Purpose: surface battle-tested code suitable for onboarding, reference, or reuse.
+ * Detects: stable APIs, well-established patterns, production-proven modules.
+ * Scoring: fewer commits → higher score (1 − normalized commitCount).
+ * Used in: onboarding preset.
+ * Inverse: ChurnSignal (same raw data, opposite direction).
+ */
 export class StabilitySignal implements DerivedSignalDescriptor {
   readonly name = "stability";
   readonly description =
