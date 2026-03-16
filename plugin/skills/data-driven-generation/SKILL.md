@@ -36,6 +36,7 @@ Verify per search-cascade rule (tree-sitter → ripgrep). Discard unverified can
 **Stage 1 — File-level scan:**
 - `semantic_search` rerank=hotspots, metaOnly=true, pathPattern=<area>
 - `hybrid_search` query="TODO FIXME HACK deprecated" pathPattern=<area>
+  (fallback: `semantic_search` with same query if hybrid_search unavailable — hybrid requires index with enableHybrid=true)
 
 Read file-level overlay labels for broad risk picture.
 

@@ -23,6 +23,7 @@ bugHunt preset ranks by burst activity + volatility + bugFix history. Top result
 ## Step 3: MARKER SEARCH
 
 `hybrid_search` query=$ARGUMENTS + "error exception retry duplicate fail crash timeout", pathPattern=<area>.
+Fallback: `semantic_search` with same query if hybrid_search unavailable (hybrid requires index with enableHybrid=true).
 
 Catches both semantic relevance and exact error markers that pure vector search misses.
 
