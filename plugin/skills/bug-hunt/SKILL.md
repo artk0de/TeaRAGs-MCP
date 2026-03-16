@@ -17,7 +17,7 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 5. **Overlay labels are your triage tool.** bugFixRate "healthy" → SKIP. Trust the label.
 6. **Max 3 file reads** — only prime suspects from triage.
 7. **Do NOT ripgrep a file you already read.** If you read it, you have the content.
-8. **Use ripgrep MCP** (`mcp__ripgrep__search`) when needed. Always scope to discovered area.
+8. **ripgrep is optional** — use only if you need to find something across files you haven't read. Always scope to discovered area.
 
 ## Steps
 
