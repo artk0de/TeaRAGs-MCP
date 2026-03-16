@@ -1,3 +1,14 @@
+## 1.7.0 (2026-03-16)
+
+- improve(plugin): add hybrid_search fallback to semantic_search
+  ([2d076b2](https://github.com/artk0de/TeaRAGs-MCP/commit/2d076b2))
+- feat(plugin): create tea-rags Claude Code plugin
+  ([2d70a06](https://github.com/artk0de/TeaRAGs-MCP/commit/2d70a06))
+- docs(plans): add data-driven generation plugin implementation plan
+  ([9b96737](https://github.com/artk0de/TeaRAGs-MCP/commit/9b96737))
+- docs(specs): add data-driven generation Claude plugin design spec
+  ([1952a42](https://github.com/artk0de/TeaRAGs-MCP/commit/1952a42))
+
 ## 1.6.0 (2026-03-16)
 
 - feat(mcp): add signal-labels schema resource, fix label declarations
