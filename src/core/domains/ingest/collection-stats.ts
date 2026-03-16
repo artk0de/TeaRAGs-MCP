@@ -98,7 +98,7 @@ export function computeCollectionStats(
       distinctPaths.add(relPath);
     }
 
-    const author = point.payload["git.file.dominantAuthor"];
+    const author = readPayloadPath(point.payload, "git.file.dominantAuthor");
     if (typeof author === "string") {
       authorCounts.set(author, (authorCounts.get(author) ?? 0) + 1);
     }
