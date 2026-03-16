@@ -25,6 +25,7 @@ export function buildOverview(): string {
 ## Guides
 - tea-rags://schema/search-guide — search tool routing, use cases, examples
 - tea-rags://schema/indexing-guide — indexing options, git metadata guide
+- tea-rags://schema/signal-labels — human-readable label mappings for numeric signals
 `;
 }
 
@@ -154,6 +155,75 @@ export function buildFiltersDoc(): string {
   md += "- `maxAgeDays: 7` — last week's changes\n";
   md += "- `maxAgeDays: 30` — last month's changes\n";
   return md;
+}
+
+export function buildSignalLabelsGuide(): string {
+  return `# Signal Labels
+
+Signal labels provide human-readable interpretation of numeric signal values
+relative to the current codebase distribution. Labels are computed from
+percentile thresholds via \`get_index_metrics\` and attached to ranking overlay
+results automatically.
+
+## How Labels Work
+
+Each numeric signal declares percentile-to-label mappings. When a search result
+has a ranking overlay, numeric values are enriched with labels:
+
+\`\`\`json
+{ "commitCount": { "value": 12, "label": "high" } }
+\`\`\`
+
+The label is determined by which percentile bucket the value falls into.
+Use \`get_index_metrics\` to see actual threshold values for your codebase.
+
+## Git File Signals
+
+| Signal | Labels (percentile → name) |
+|--------|---------------------------|
+| \`git.file.commitCount\` | p25: low, p50: typical, p75: high, p95: extreme |
+| \`git.file.ageDays\` | p25: recent, p50: typical, p75: old, p95: legacy |
+| \`git.file.bugFixRate\` | p50: healthy, p75: concerning, p95: critical |
+| \`git.file.dominantAuthorPct\` | p25: shared, p50: mixed, p75: concentrated, p95: silo |
+| \`git.file.contributorCount\` | p50: solo, p75: team, p95: crowd |
+| \`git.file.relativeChurn\` | p75: normal, p95: high |
+| \`git.file.changeDensity\` | p50: calm, p75: active, p95: intense |
+| \`git.file.churnVolatility\` | p75: stable, p95: erratic |
+| \`git.file.recencyWeightedFreq\` | p75: normal, p95: burst |
+
+## Git Chunk Signals
+
+| Signal | Labels (percentile → name) |
+|--------|---------------------------|
+| \`git.chunk.commitCount\` | p25: low, p50: typical, p75: high, p95: extreme |
+| \`git.chunk.ageDays\` | p25: recent, p50: typical, p75: old, p95: legacy |
+| \`git.chunk.bugFixRate\` | p50: healthy, p75: concerning, p95: critical |
+| \`git.chunk.churnRatio\` | p75: normal, p95: concentrated |
+| \`git.chunk.contributorCount\` | p50: solo, p95: crowd |
+| \`git.chunk.relativeChurn\` | p75: normal, p95: high |
+| \`git.chunk.changeDensity\` | p75: active, p95: intense |
+| \`git.chunk.churnVolatility\` | p75: stable, p95: erratic |
+| \`git.chunk.recencyWeightedFreq\` | p75: normal, p95: burst |
+
+## Static Signals
+
+| Signal | Labels (percentile → name) |
+|--------|---------------------------|
+| \`methodLines\` | p50: small, p75: large, p95: decomposition_candidate |
+| \`methodDensity\` | p50: sparse, p95: dense |
+
+## Label Resolution Algorithm
+
+1. Thresholds are walked in ascending percentile order
+2. Each label covers [its threshold, next threshold)
+3. First label covers everything below its threshold
+4. Last label covers everything at or above its threshold
+
+Example: commitCount with thresholds p25=2, p50=5, p75=12, p95=30
+- value 1 → "low" (below p25)
+- value 8 → "typical" (between p50 and p75)
+- value 35 → "extreme" (above p95)
+`;
 }
 
 /**
@@ -310,6 +380,20 @@ export function registerAllResources(server: McpServer, app: App): void {
     },
     async (uri) => ({
       contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildIndexingGuide() }],
+    }),
+  );
+
+  // Static resource: signal labels
+  server.registerResource(
+    "schema-signal-labels",
+    "tea-rags://schema/signal-labels",
+    {
+      title: "Signal Labels",
+      description: "Human-readable label mappings for all numeric signals in ranking overlays",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildSignalLabelsGuide() }],
     }),
   );
 }

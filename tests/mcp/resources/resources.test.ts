@@ -7,6 +7,7 @@ import {
   buildOverview,
   buildPresetsDoc,
   buildSearchGuide,
+  buildSignalLabelsGuide,
   buildSignalsDoc,
 } from "../../../src/mcp/resources/index.js";
 
@@ -168,6 +169,45 @@ describe("Resource builders", () => {
       expect(md).toContain("reindex_changes");
       expect(md).toContain("get_index_status");
       expect(md).toContain("clear_index");
+    });
+  });
+
+  describe("buildSignalLabelsGuide", () => {
+    it("contains header and how-it-works section", () => {
+      const md = buildSignalLabelsGuide();
+      expect(md).toContain("# Signal Labels");
+      expect(md).toContain("get_index_metrics");
+      expect(md).toContain("ranking overlay");
+    });
+
+    it("contains git file signal table", () => {
+      const md = buildSignalLabelsGuide();
+      expect(md).toContain("## Git File Signals");
+      expect(md).toContain("git.file.commitCount");
+      expect(md).toContain("git.file.ageDays");
+      expect(md).toContain("git.file.bugFixRate");
+      expect(md).toContain("git.file.dominantAuthorPct");
+    });
+
+    it("contains git chunk signal table", () => {
+      const md = buildSignalLabelsGuide();
+      expect(md).toContain("## Git Chunk Signals");
+      expect(md).toContain("git.chunk.commitCount");
+      expect(md).toContain("git.chunk.churnRatio");
+    });
+
+    it("contains static signal table", () => {
+      const md = buildSignalLabelsGuide();
+      expect(md).toContain("## Static Signals");
+      expect(md).toContain("methodLines");
+      expect(md).toContain("methodDensity");
+      expect(md).toContain("decomposition_candidate");
+    });
+
+    it("contains label resolution algorithm", () => {
+      const md = buildSignalLabelsGuide();
+      expect(md).toContain("## Label Resolution Algorithm");
+      expect(md).toContain("ascending percentile order");
     });
   });
 
