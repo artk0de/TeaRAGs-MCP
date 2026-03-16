@@ -36,15 +36,28 @@ export interface PayloadSignalDescriptor {
 /** Computed statistics for a single signal across the collection. */
 export interface SignalStats {
   count: number;
+  min: number;
+  max: number;
   /** Keyed by percentile number: { 25: 4.2, 50: 8.1, 75: 15.3, 95: 42.0 } */
-  percentiles?: Record<number, number>;
+  percentiles: Record<number, number>;
   mean?: number;
   stddev?: number;
+}
+
+/** Distribution breakdowns across the collection. */
+export interface Distributions {
+  totalFiles: number;
+  language: Record<string, number>;
+  chunkType: Record<string, number>;
+  documentation: { docs: number; code: number };
+  topAuthors: { name: string; chunks: number }[];
+  othersCount: number;
 }
 
 /** Collection-wide signal statistics, cached between reindexes. */
 export interface CollectionSignalStats {
   perSignal: Map<string, SignalStats>;
+  distributions: Distributions;
   computedAt: number;
 }
 
