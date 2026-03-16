@@ -1,3 +1,8 @@
+## <small>1.7.3 (2026-03-16)</small>
+
+- improve(plugin): move validation to single verify step in bug-hunt
+  ([366bcd4](https://github.com/artk0de/TeaRAGs-MCP/commit/366bcd4))
+
 ## <small>1.7.2 (2026-03-16)</small>
 
 - improve(plugin): make bug-hunt verify step concrete
