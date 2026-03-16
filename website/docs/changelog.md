@@ -3,6 +3,17 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>1.7.1 (2026-03-16)</small>
+
+- improve(ingest): add .contextignore.local support and raise test coverage to
+  96.9% ([f98323c](https://github.com/artk0de/TeaRAGs-MCP/commit/f98323c))
+- improve(plugin): enforce strict tool parameters in bug-hunt skill
+  ([51a843e](https://github.com/artk0de/TeaRAGs-MCP/commit/51a843e))
+- fix(explore): overfetch in scroll-rank when pathPattern is set
+  ([35164ce](https://github.com/artk0de/TeaRAGs-MCP/commit/35164ce))
+- chore(plugin): add marketplace.json for local and remote installation
+  ([434d02a](https://github.com/artk0de/TeaRAGs-MCP/commit/434d02a))
+
 ## 1.7.0 (2026-03-16)
 
 - improve(plugin): add hybrid_search fallback to semantic_search
