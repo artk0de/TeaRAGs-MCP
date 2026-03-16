@@ -1,3 +1,8 @@
+## <small>1.7.2 (2026-03-16)</small>
+
+- improve(plugin): make bug-hunt verify step concrete
+  ([94501b3](https://github.com/artk0de/TeaRAGs-MCP/commit/94501b3))
+
 ## <small>1.7.1 (2026-03-16)</small>
 
 - improve(ingest): add .contextignore.local support and raise test coverage to
