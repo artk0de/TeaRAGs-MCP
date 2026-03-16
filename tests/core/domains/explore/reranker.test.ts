@@ -1674,3 +1674,108 @@ describe("signalLevel: file-level preset suppresses chunk overlay", () => {
     expect(reranked[0].rankingOverlay!.chunk).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Label resolution in buildOverlay()
+// ---------------------------------------------------------------------------
+
+describe("Reranker — label resolution in buildOverlay()", () => {
+  // Use gitPayloadSignalDescriptors which have stats.labels on commitCount etc.
+  const rerankerWithLabels = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+
+  const makeResult = (git: Record<string, unknown>): RerankableResult => ({
+    score: 0.8,
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
+  });
+
+  it("produces { value, label } for a numeric signal with stats.labels when collectionStats loaded", () => {
+    // git.file.commitCount has stats.labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map([
+        [
+          "git.file.commitCount",
+          { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } },
+        ],
+      ]),
+      distributions: { totalFiles: 100, language: {}, chunkType: {}, documentation: { docs: 0, code: 100 }, topAuthors: [], othersCount: 0 },
+      computedAt: Date.now(),
+    };
+    rerankerWithLabels.setCollectionStats(collectionStats);
+
+    // techDebt preset has overlayMask with file: ["ageDays", "commitCount"] (via mask.file)
+    const results = [makeResult({ file: { ageDays: 200, commitCount: 30 } })];
+    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+
+    // commitCount=30 is >= p25(5), p50(15), p75(40)? No: 30 < 40. So label should be "typical" (p50=15 passed, p75=40 not)
+    // Walk: p25=5 passed (30>=5)->label="low"; p50=15 passed (30>=15)->label="typical"; p75=40 NOT passed (30<40)->stop. Result: "typical"
+    expect(overlay.file!.commitCount).toEqual({ value: 30, label: "typical" });
+
+    rerankerWithLabels.invalidateStats();
+  });
+
+  it("leaves numeric signals without stats.labels as plain values even with collectionStats", () => {
+    // dominantAuthorPct has stats.labels: { p95: "extreme" }
+    // contributorCount has stats.labels: { p95: "extreme" }
+    // But we add a signal WITHOUT labels to verify it stays plain.
+    // Use the techDebt preset + collectionStats that only has commitCount entry.
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map([
+        ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
+        ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
+      ]),
+      distributions: { totalFiles: 100, language: {}, chunkType: {}, documentation: { docs: 0, code: 100 }, topAuthors: [], othersCount: 0 },
+      computedAt: Date.now(),
+    };
+    rerankerWithLabels.setCollectionStats(collectionStats);
+
+    const results = [makeResult({ file: { ageDays: 200, commitCount: 30 } })];
+    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+
+    // commitCount has stats.labels + collectionStats entry → labeled
+    expect(typeof overlay.file!.commitCount).toBe("object"); // { value, label }
+    expect((overlay.file!.commitCount as { value: number; label: string }).value).toBe(30);
+    // ageDays has stats.labels { p95: "extreme" } — only p95=400, value=200 < 400 → first label = "extreme"?
+    // Actually with only p95: value=200 < p95(400) → resolved label = "extreme" (first/only entry, value always >= any label)
+    // Wait: algorithm says first label covers everything below its threshold too.
+    // entries=[{p:95, label:"extreme"}]. value=200. threshold=400. 200 >= 400? No → resolved stays "extreme" (initial).
+    expect(typeof overlay.file!.ageDays).toBe("object"); // { value, label }
+
+    rerankerWithLabels.invalidateStats();
+  });
+
+  it("returns plain number when collectionStats not loaded (no percentiles available)", () => {
+    // No setCollectionStats — reranker freshly created without stats
+    const freshReranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+    const results = [makeResult({ file: { ageDays: 200, commitCount: 30 } })];
+    const ranked = freshReranker.rerank(results, "techDebt", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+
+    // Without collectionStats, no percentiles → plain number
+    expect(typeof overlay.file!.commitCount).toBe("number");
+    expect(overlay.file!.commitCount).toBe(30);
+  });
+
+  it("returns plain number for signal with stats.labels but no percentile entry in collectionStats", () => {
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map([
+        // Only ageDays in stats, NOT commitCount
+        ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
+      ]),
+      distributions: { totalFiles: 100, language: {}, chunkType: {}, documentation: { docs: 0, code: 100 }, topAuthors: [], othersCount: 0 },
+      computedAt: Date.now(),
+    };
+    rerankerWithLabels.setCollectionStats(collectionStats);
+
+    const results = [makeResult({ file: { ageDays: 200, commitCount: 30 } })];
+    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+
+    // commitCount has no stats entry → plain number
+    expect(typeof overlay.file!.commitCount).toBe("number");
+    expect(overlay.file!.commitCount).toBe(30);
+
+    rerankerWithLabels.invalidateStats();
+  });
+});

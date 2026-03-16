@@ -1,17 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { CollectionSignalStats, SignalStats } from "../contracts/types/trajectory.js";
+import type { CollectionSignalStats, Distributions, SignalStats } from "../contracts/types/trajectory.js";
 
 interface StatsFileContent {
-  version: 2;
+  version: 3;
   collectionName: string;
   computedAt: number;
   perSignal: Record<string, SignalStats>;
+  distributions: Distributions;
   payloadFieldKeys?: string[];
 }
 
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 export interface SchemaDrift {
   added: string[];
@@ -31,14 +32,7 @@ export class StatsCache {
       if (data.version !== CURRENT_VERSION) return null;
       return {
         perSignal: new Map(Object.entries(data.perSignal)),
-        distributions: {
-          totalFiles: 0,
-          language: {},
-          chunkType: {},
-          documentation: { docs: 0, code: 0 },
-          topAuthors: [],
-          othersCount: 0,
-        },
+        distributions: data.distributions,
         computedAt: data.computedAt,
         payloadFieldKeys: data.payloadFieldKeys,
       };
@@ -55,6 +49,7 @@ export class StatsCache {
       collectionName,
       computedAt: stats.computedAt,
       perSignal: Object.fromEntries(stats.perSignal),
+      distributions: stats.distributions,
       payloadFieldKeys,
     };
     writeFileSync(this.filePath(collectionName), JSON.stringify(content, null, 2), "utf-8");
