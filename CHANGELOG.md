@@ -1,3 +1,12 @@
+## 1.6.0 (2026-03-16)
+
+- feat(mcp): add signal-labels schema resource, fix label declarations
+  ([05d2a58](https://github.com/artk0de/TeaRAGs-MCP/commit/05d2a58))
+- fix(ingest): use readPayloadPath for dominantAuthor in distributions
+  ([057d32a](https://github.com/artk0de/TeaRAGs-MCP/commit/057d32a))
+- fix(onnx): detect stale daemon socket and respawn automatically
+  ([88321c7](https://github.com/artk0de/TeaRAGs-MCP/commit/88321c7))
+
 ## 1.5.0 (2026-03-16)
 
 - feat(api): add getIndexMetrics to App interface and ExploreFacade
