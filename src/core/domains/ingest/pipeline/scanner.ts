@@ -18,10 +18,10 @@ export class FileScanner {
   }
 
   /**
-   * Load ignore patterns from .gitignore, .dockerignore, .npmignore, and .contextignore
+   * Load ignore patterns from .gitignore, .dockerignore, .npmignore, .contextignore, and .contextignore.local
    */
   async loadIgnorePatterns(rootPath: string): Promise<void> {
-    const ignoreFiles = [".gitignore", ".dockerignore", ".npmignore", ".contextignore"];
+    const ignoreFiles = [".gitignore", ".dockerignore", ".npmignore", ".contextignore", ".contextignore.local"];
 
     for (const ignoreFile of ignoreFiles) {
       const ignorePath = join(rootPath, ignoreFile);

@@ -669,6 +669,89 @@ describe("Stage Profiling", () => {
   });
 });
 
+describe("DebugLogger - initLogFile branches", () => {
+  it("should create directory when it does not exist", async () => {
+    vi.resetModules();
+    vi.doMock("node:fs", () => ({
+      appendFileSync: vi.fn(),
+      existsSync: vi.fn(() => false),
+      mkdirSync: vi.fn(),
+    }));
+
+    const originalDebug = process.env.DEBUG;
+    process.env.DEBUG = "true";
+
+    const { setDebug: freshSetDebug } =
+      await import("../../../../../src/core/domains/ingest/pipeline/infra/runtime.js");
+    freshSetDebug(true);
+
+    const { pipelineLog: freshLogger, initDebugLogger: freshInit } =
+      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js");
+    const fsModule = await import("node:fs");
+
+    freshInit({
+      logsDir: "/tmp/nonexistent-dir",
+      getConfigDump: () => ({}),
+      getConcurrency: () => ({ pipelineConcurrency: 1, chunkerPoolSize: 4, gitChunkConcurrency: 10 }),
+    });
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // First write triggers lazy init → existsSync returns false → mkdirSync called
+    freshLogger.step({ component: "Test" }, "trigger init");
+
+    expect(fsModule.mkdirSync).toHaveBeenCalledWith("/tmp/nonexistent-dir", { recursive: true });
+
+    consoleErrorSpy.mockRestore();
+    process.env.DEBUG = originalDebug;
+    setDebug(originalDebug === "true" || originalDebug === "1");
+  });
+
+  it("should handle initLogFile errors gracefully", async () => {
+    vi.resetModules();
+    vi.doMock("node:fs", () => ({
+      appendFileSync: vi.fn(),
+      existsSync: vi.fn(() => {
+        throw new Error("permission denied");
+      }),
+      mkdirSync: vi.fn(),
+    }));
+
+    const originalDebug = process.env.DEBUG;
+    process.env.DEBUG = "true";
+
+    const { setDebug: freshSetDebug } =
+      await import("../../../../../src/core/domains/ingest/pipeline/infra/runtime.js");
+    freshSetDebug(true);
+
+    const { pipelineLog: freshLogger, initDebugLogger: freshInit } =
+      await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js");
+
+    freshInit({
+      logsDir: "/tmp/broken-dir",
+      getConfigDump: () => ({}),
+      getConcurrency: () => ({ pipelineConcurrency: 1, chunkerPoolSize: 4, gitChunkConcurrency: 10 }),
+    });
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    // Should not throw — error is caught in initLogFile's catch block (line 250)
+    expect(() => {
+      freshLogger.step({ component: "Test" }, "trigger broken init");
+    }).not.toThrow();
+
+    // Console should report the init failure
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[DebugLogger] Failed to init log file:"),
+      expect.any(Error),
+    );
+
+    consoleErrorSpy.mockRestore();
+    process.env.DEBUG = originalDebug;
+    setDebug(originalDebug === "true" || originalDebug === "1");
+  });
+});
+
 describe("DebugLogger - lazy initialization", () => {
   it("should not create log file until first write", async () => {
     vi.resetModules();

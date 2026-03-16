@@ -130,6 +130,15 @@ describe("groupIntoSessions", () => {
     expect(sessions[0].commitCount).toBe(2);
   });
 
+  it("returns empty when all commits are merges", () => {
+    const commits: CommitInfo[] = [
+      commit({ timestamp: BASE_TS, body: "Merge branch 'feature-a' into main" }),
+      commit({ timestamp: BASE_TS + 5 * MIN, body: "Merge pull request #42 from org/branch" }),
+    ];
+    const sessions = groupIntoSessions(commits, GAP);
+    expect(sessions).toHaveLength(0);
+  });
+
   it("handles unsorted commits correctly", () => {
     const commits: CommitInfo[] = [
       commit({ timestamp: BASE_TS + 10 * MIN }),

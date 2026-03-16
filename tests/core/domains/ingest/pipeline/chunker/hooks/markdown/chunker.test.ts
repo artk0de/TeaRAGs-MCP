@@ -206,6 +206,14 @@ describe("MarkdownChunker", () => {
       // Frontmatter stripped, only a short HTML comment remains — under 50 chars
       expect(chunks.length).toBe(0);
     });
+
+    it("should return empty for pure frontmatter-only documents", async () => {
+      const code = ["---", "title: Placeholder", "draft: true", "---"].join("\n");
+
+      const chunks = await chunker.chunk(code, "only-fm.md", "markdown");
+      // No content after frontmatter at all — findFirstContentLine returns 0
+      expect(chunks.length).toBe(0);
+    });
   });
 
   describe("code block deduplication", () => {
