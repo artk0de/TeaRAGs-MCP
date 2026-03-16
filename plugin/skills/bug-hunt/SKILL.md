@@ -72,12 +72,17 @@ Root cause candidates (ranked by signal confidence):
 
 ## Step 6: VERIFY
 
-Validate ALL findings from Steps 1-5 before presenting to developer:
+Validate ALL findings from Steps 1-5 before presenting to developer.
 
-1. **tree-sitter** — structural overview of suspect functions (signatures, callers). Confirm they are reachable from the code path described in the bug.
-2. **ripgrep** — search for symptom-related patterns (DB writes, API calls, error strings) inside suspects. 0 matches = false positive, remove from candidate list.
+**MANDATORY: Use ripgrep MCP if available.** Check for `mcp__ripgrep__search` tool. If present — use it for ALL verification searches below. ripgrep MCP provides exact pattern matching with file type filters and context lines. Do NOT fall back to Grep when ripgrep MCP is installed.
+
+**Fallback chain:** ripgrep MCP → Grep tool (only if ripgrep MCP unavailable).
+
+### Verification steps:
+
+1. **ripgrep** — search for symptom-related patterns (DB writes, API calls, error strings) inside each suspect file. 0 matches = false positive, remove from candidate list.
+2. **tree-sitter** (if available) — structural overview of suspect functions. Confirm they are reachable from the code path described in the bug.
 3. **ripgrep** — confirm the specific mechanism identified in Step 5 (missing guard, duplicate call, race condition) actually exists in current code, not just in git history.
-4. **Fallback** — Grep/Glob if ripgrep/tree-sitter unavailable.
 
 Discard any candidate that fails verification. Only present verified suspects to the developer.
 
