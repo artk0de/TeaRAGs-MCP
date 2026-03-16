@@ -8,6 +8,12 @@ argument-hint: [bug description or symptom]
 
 Finds probable root cause of a specific bug by combining semantic search with git signal analysis. Developer passes the symptom — the skill directs search toward historically buggy code in the relevant area.
 
+## STRICT: Tool Parameters
+
+Use EXACTLY the tool names, presets, and parameters specified in each step.
+Do NOT substitute presets (e.g. do NOT use `hotspots` when `bugHunt` is specified).
+`bugHunt` and `hotspots` are different presets with different weight distributions.
+
 ## Step 1: SEMANTIC DISCOVER
 
 `semantic_search` query=$ARGUMENTS — find area by symptom meaning.
@@ -16,9 +22,10 @@ Discard unverified candidates.
 
 ## Step 2: SIGNAL-RANKED CANDIDATES
 
-`rank_chunks` rerank=bugHunt, pathPattern=<discovered area from Step 1>.
+**MUST use:** `rank_chunks` with `rerank="bugHunt"`, pathPattern=<discovered area from Step 1>.
+Do NOT use `hotspots` — it weights differently (chunkSize, chunkChurn). `bugHunt` specifically weights burstActivity + volatility + bugFix + relativeChurn.
 
-bugHunt preset ranks by burst activity + volatility + bugFix history. Top results = functions that historically broke in this area.
+Top results = functions that historically broke in this area.
 
 ## Step 3: MARKER SEARCH
 
