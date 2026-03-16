@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-facade.js";
 
@@ -28,8 +28,13 @@ vi.mock("../../../src/core/domains/ingest/pipeline/status-module.js", () => ({
   },
 }));
 
+const mockCoordinatorInstances: any[] = [];
 vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js", () => ({
-  EnrichmentCoordinator: class {},
+  EnrichmentCoordinator: class {
+    constructor() {
+      mockCoordinatorInstances.push(this);
+    }
+  },
 }));
 
 vi.mock("../../../src/core/domains/ingest/factory.js", () => ({
@@ -53,6 +58,10 @@ vi.mock("../../../src/core/domains/ingest/collection-stats.js", () => ({
 }));
 
 describe("IngestFacade", () => {
+  beforeEach(() => {
+    mockCoordinatorInstances.length = 0;
+  });
+
   function makeFacade(opts: { withStats?: boolean; withReranker?: boolean } = {}) {
     const statsCache = opts.withStats ? { save: vi.fn(), load: vi.fn() } : undefined;
     const reranker = opts.withReranker ? { invalidateStats: vi.fn() } : undefined;
@@ -109,5 +118,40 @@ describe("IngestFacade", () => {
   it("delegates clearIndex", async () => {
     const { facade } = makeFacade();
     await expect(facade.clearIndex("/tmp/test-project")).resolves.toBeUndefined();
+  });
+
+  it("wires onChunkEnrichmentComplete to refresh stats by collection", async () => {
+    mockScrollAllPoints.mockClear();
+    mockComputeStats.mockClear();
+    const { statsCache, reranker } = makeFacade({ withStats: true, withReranker: true });
+
+    const coordinator = mockCoordinatorInstances[0];
+    expect(coordinator.onChunkEnrichmentComplete).toBeTypeOf("function");
+
+    // Simulate chunk enrichment completing
+    await coordinator.onChunkEnrichmentComplete("test_collection_abc");
+
+    expect(mockScrollAllPoints).toHaveBeenCalledWith(expect.anything(), "test_collection_abc");
+    expect(mockComputeStats).toHaveBeenCalled();
+    expect(statsCache!.save).toHaveBeenCalled();
+    expect(reranker!.invalidateStats).toHaveBeenCalled();
+  });
+
+  it("onChunkEnrichmentComplete does not throw when scroll fails", async () => {
+    mockScrollAllPoints.mockClear();
+    mockScrollAllPoints.mockRejectedValueOnce(new Error("qdrant down"));
+    makeFacade({ withStats: true });
+
+    const coordinator = mockCoordinatorInstances[0];
+    await expect(coordinator.onChunkEnrichmentComplete("test_col")).resolves.toBeUndefined();
+  });
+
+  it("onChunkEnrichmentComplete is no-op without statsCache", async () => {
+    mockScrollAllPoints.mockClear();
+    makeFacade({ withStats: false });
+
+    const coordinator = mockCoordinatorInstances[0];
+    await coordinator.onChunkEnrichmentComplete("test_col");
+    expect(mockScrollAllPoints).not.toHaveBeenCalled();
   });
 });
