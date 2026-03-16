@@ -1,83 +1,64 @@
 ---
 name: bug-hunt
-description: Use when debugging a specific bug — finds probable root cause locations using git signal analysis and symptom-driven search
+description: Use when debugging a specific bug or unexpected behavior — developer describes the symptom, skill directs search toward historically buggy code in the relevant area
 argument-hint: [bug description or symptom]
 ---
 
 # Bug Hunt
 
-Finds probable root cause of a specific bug by combining semantic search with git signal analysis. Developer passes the symptom — the skill directs search toward historically buggy code in the relevant area.
+Signal-driven root cause investigation. Developer provides symptom → skill finds historically problematic code in that area.
 
-## STRICT: Tool Parameters
+## Tool Rules
 
-Use EXACTLY the tool names, presets, and parameters specified in each step.
-Do NOT substitute presets (e.g. do NOT use `hotspots` when `bugHunt` is specified).
-`bugHunt` and `hotspots` are different presets with different weight distributions.
+- Presets: use `bugHunt` exactly. NOT `hotspots` (different weights).
+- Verification: use ripgrep MCP (`mcp__ripgrep__search`) if available. Grep only as fallback.
+- Hybrid fallback: `semantic_search` if `hybrid_search` unavailable.
 
-**MANDATORY: Use ripgrep MCP if available.** Check for `mcp__ripgrep__search` tool. If present — use it for ALL verification searches. Do NOT fall back to Grep when ripgrep MCP is installed.
+## Workflow
 
-**Fallback chain:** ripgrep MCP → Grep tool (only if ripgrep MCP unavailable).
+### 1. DISCOVER
 
-## Step 1: DISCOVER
+`semantic_search` query=$ARGUMENTS → find area by symptom.
+Verify candidates: tree-sitter (structure) + ripgrep (call-sites) in parallel.
 
-`semantic_search` query=$ARGUMENTS — find area by symptom meaning.
+### 2. RANK
 
-## Step 2: VERIFY DISCOVER (parallel)
+`rank_chunks` rerank=bugHunt, pathPattern=\<area from step 1\>.
 
-Run both at the same time:
-1. **tree-sitter** — structural overview of found files (methods, signatures)
-2. **ripgrep** — confirm call-sites, exports exist
+Returns functions ranked by burstActivity + volatility + bugFix + relativeChurn — worst bug history first, independent of symptom similarity.
 
-Discard unverified candidates. Note the pathPattern for discovered area.
+### 3. MATCH
 
-## Step 3: HUNT (parallel)
+`hybrid_search` query=$ARGUMENTS + "error exception retry duplicate fail crash timeout", pathPattern=\<area\>.
 
-Run both searches at the same time on the discovered area:
+Catches symptom-related code that rank_chunks misses (semantic + keyword).
 
-1. `rank_chunks` with `rerank="bugHunt"`, pathPattern=<area> — find functions with worst bug history regardless of symptom similarity
-2. `hybrid_search` query=$ARGUMENTS + "error exception retry duplicate fail crash timeout", rerank="bugHunt", pathPattern=<area> — find functions matching symptom AND markers
+### 4. TRIAGE + ANALYZE
 
-Fallback: `semantic_search` with same query if hybrid_search unavailable (hybrid requires enableHybrid=true).
+Merge results from steps 2+3. Read chunk-level overlay labels + code:
 
-Merge results from both, deduplicate by file path + function name.
+| chunk.bugFixRate | chunk.churnRatio | Verdict |
+|------------------|------------------|---------|
+| "critical" | "concentrated" | **Prime suspect** |
+| "concerning" | any | **Secondary suspect** |
+| "healthy" | any | Skip |
 
-## Step 4: ANALYZE
+Read code of suspects. Look for: missing guards, race conditions, duplicate processing, retry without idempotency, stale state.
 
-For merged candidates, read chunk-level overlay labels and code in one pass:
-
-**Triage by signals:**
-
-| chunk.bugFixRate | chunk.churnRatio | Classification |
-|------------------|------------------|----------------|
-| "critical" | "concentrated" | **Prime suspect** — absorbs most bugs in the file |
-| "concerning" | any | **Secondary suspect** — elevated fix rate |
-| "critical" | "normal" | **Distributed problem** — bugs spread, not localized |
-| "healthy" | any | Deprioritize |
-
-Also: commitCount "extreme" + churnVolatility "erratic" = reactive patching.
-
-**Root cause analysis** — read code of prime and secondary suspects:
-- Patterns correlating with described symptom
-- Missing guards, off-by-one, missing validation
-- Race conditions, duplicate processing, stale state
-- Retry logic without idempotency
-
-Present as prioritized list:
+Present:
 
 ```
-Root cause candidates (ranked by signal confidence):
-
 1. processPayment() [src/payment/processor.ts:45-89]
-   chunk.bugFixRate: "critical", chunk.churnRatio: "concentrated"
-   Observation: no idempotency check, retry logic re-enters without guard
+   bugFixRate: "critical", churnRatio: "concentrated"
+   → no idempotency check, retry re-enters without guard
 
 2. handleWebhook() [src/webhook/handler.ts:12-34]
-   chunk.bugFixRate: "concerning", chunk.commitCount: "high"
-   Observation: async callback may fire twice on timeout
+   bugFixRate: "concerning", commitCount: "high"
+   → async callback may fire twice on timeout
 ```
 
-## Step 5: VERIFY + FIX
+### 5. VERIFY + FIX
 
-Verify analysis per search-cascade rule — ripgrep confirm the identified patterns actually exist in current code, not just in git history.
+ripgrep: confirm identified mechanism exists in current code (not just git history).
 
-If fix needed → invoke `/tea-rags:data-driven-generation` for the target function. It will run its own danger check and select appropriate strategy (likely DEFENSIVE for code with "critical" bugFixRate).
+Fix → invoke `/tea-rags:data-driven-generation` for target function.
