@@ -2,53 +2,41 @@
 
 ## Three-Tool Cascade
 
-Use the right tool for each axis of code understanding. Order: **intent → structure → exact match**.
+Order: **intent → structure → exact match**.
 
 | Axis | Tool | Use for |
 |------|------|---------|
-| Meaning / intent | TeaRAGs (`semantic_search`, `hybrid_search`, `find_similar`, `rank_chunks`) | "How does X work?", discovery, pattern finding, signal-based ranking |
-| Structure / shape | tree-sitter (`analyze_code_structure`, `query_code`) | Classes, methods, signatures, inheritance, structural overview |
-| Exact text / tokens | ripgrep (`search`, `count-matches`) | Call-sites, exports, identifiers, TODOs, config keys, feature flags |
+| Meaning / intent | TeaRAGs (`semantic_search`, `hybrid_search`, `find_similar`, `rank_chunks`) | Discovery, pattern finding, signal-based ranking |
+| Structure / shape | tree-sitter (`analyze_code_structure`, `query_code`) | Classes, methods, signatures — without reading full files |
+| Exact text / tokens | ripgrep (`search`, `count-matches`) | Call-sites, identifiers, TODOs, config keys |
 
-## Mandatory Verify
+## Verification After Semantic Search
 
-Semantic search is a **candidate zone generator**, not proof. After EVERY TeaRAGs call:
+Semantic search is a **candidate zone generator**, not proof.
 
-1. **tree-sitter** — structural overview of found files (methods, signatures, class hierarchy). Understand layout without reading entire files.
-2. **ripgrep** — confirm call-sites, exports, actual identifiers exist. `ClassName.methodName` → N matches = real. 0 matches = false candidate, discard.
-3. **filesystem** — read specific methods/sections confirmed by steps 1-2.
+**Prefer ripgrep over reading files.** ripgrep finds exact lines without loading entire files. Read full file only when ripgrep context is insufficient.
 
-**Fallback:** If tree-sitter or ripgrep MCP unavailable, use built-in Grep and Glob tools.
+After TeaRAGs call:
+1. **ripgrep** — confirm identifiers exist. 0 matches = false candidate, discard.
+2. **tree-sitter** (if available) — structural overview without reading full files.
+3. **Read file** — only the specific function/section, only if needed for more context.
 
-Never trust semantic search results without verification. Generated code referencing unverified identifiers will contain hallucinated function names, import paths, or type names.
-
-## Decision Shortcut
-
-1. **Meaning / intent / behavior?** → TeaRAGs
-2. **Classes / methods / signatures?** → tree-sitter
-3. **Exact text / flags / TODO / config?** → ripgrep
-4. **Need to read actual code?** → filesystem (read file)
+**Fallback:** Grep/Glob if ripgrep/tree-sitter MCP unavailable.
 
 ## Anti-Patterns
 
-| Anti-pattern | Why it's wrong | Correct approach |
-|-------------|---------------|-----------------|
-| ripgrep for "how does X work" | Grep matches syntax, not meaning | Use TeaRAGs semantic_search |
-| TeaRAGs for exact method names | Semantic search may miss exact tokens | Use ripgrep for `"ClassName.method_name"` |
-| tree-sitter for text search | Tree-sitter parses structure, not content | Use ripgrep for strings, comments, flags |
-| Skipping tree-sitter, reading full files | Wastes tokens on large files | Use tree-sitter for structure overview first |
-| Skipping verify after semantic search | Hallucinated identifiers in generated code | Always verify with ripgrep + tree-sitter |
+| Anti-pattern | Correct approach |
+|-------------|-----------------|
+| Reading full files after semantic search | ripgrep for specific identifiers, read only needed section |
+| ripgrep for "how does X work" | TeaRAGs semantic_search |
+| TeaRAGs for exact method names | ripgrep |
+| Multiple semantic_search calls for same area | One call, then ripgrep to narrow |
+| `git log` / `git diff` for code history | TeaRAGs already has git signals in overlay |
 
 ## search_code Prohibition
 
-`search_code` returns human-readable text without structured metadata or overlay labels. Agents MUST use:
-- `semantic_search` — structured JSON with full git metadata and overlay labels
-- `hybrid_search` — semantic + keyword matching (BM25), catches exact markers
-- `find_similar` — find code similar to a known example
-- `rank_chunks` — rank by signals without query (top-N by churn, bugs, etc.)
-
-These tools return `rankingOverlay` with `{ value, label }` pairs that drive strategy selection.
+Agents MUST use `semantic_search`, `hybrid_search`, `find_similar`, or `rank_chunks` — these return structured JSON with overlay labels. `search_code` is for human-readable output only.
 
 ## hybrid_search Fallback
 
-`hybrid_search` requires the index to be built with `enableHybrid=true` (sparse vectors). If `hybrid_search` returns an error about missing sparse vectors, fall back to `semantic_search` with the same query and parameters. Semantic search covers the meaning axis; keyword markers (TODO, FIXME) may be missed but the search still works.
+If `hybrid_search` fails (needs `enableHybrid=true`), fall back to `semantic_search` with same parameters.

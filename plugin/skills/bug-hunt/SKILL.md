@@ -42,12 +42,8 @@ Merge steps 2+3. Triage by overlay labels:
 - chunk.bugFixRate "concerning" → **secondary suspect**
 - chunk.bugFixRate "healthy" → skip
 
-Read code of prime suspects ONLY. Look for: missing guards, race conditions, duplicate processing, retry without idempotency.
+Read code of prime suspects ONLY (use ripgrep to find specific lines, not full file reads). Look for: missing guards, race conditions, duplicate processing, retry without idempotency.
 
 Present ranked list with signals + observation per suspect.
 
-### 5. VERIFY + FIX
-
-ripgrep: confirm mechanism exists in current code.
-
-Fix → `/tea-rags:data-driven-generation`.
+If fix needed → `/tea-rags:data-driven-generation`.
