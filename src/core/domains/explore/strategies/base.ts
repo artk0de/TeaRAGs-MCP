@@ -8,7 +8,6 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { calculateFetchLimit, filterResultsByGlob } from "../../../adapters/qdrant/filters/index.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { filterMetaOnly } from "../post-process.js";
@@ -38,47 +37,37 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   /**
    * Apply defaults to context before passing to executeExplore.
    * - Enforces minimum limit of 5
-   * - Computes overfetch limit when pathPattern or non-relevance rerank present
-   * Returns a new context with adjusted limit (fetchLimit for Qdrant).
+   * - Computes overfetch limit when non-relevance rerank present
    */
   protected applyDefaults(ctx: ExploreContext): ExploreContext {
     const requestedLimit = Math.max(ctx.limit ?? 0, 5);
     const rerank = ctx.rerank as RerankMode<string> | undefined;
-    const needsOverfetch = Boolean(ctx.pathPattern) || Boolean(rerank && rerank !== "relevance");
-    const fetchLimit = calculateFetchLimit(requestedLimit, needsOverfetch);
+    const needsOverfetch = Boolean(rerank && rerank !== "relevance");
+    const multiplier = needsOverfetch ? 4 : 2;
+    const fetchLimit = Math.max(20, requestedLimit * multiplier);
     return { ...ctx, limit: fetchLimit };
   }
 
   /**
    * Post-process raw results:
-   *   1. Glob filter (if pathPattern present)
-   *   2. Rerank (if non-relevance preset)
-   *   3. Trim to requested limit
-   *   4. metaOnly formatting (if ctx.metaOnly)
+   *   1. Rerank (if non-relevance preset)
+   *   2. Trim to requested limit
+   *   3. metaOnly formatting (if ctx.metaOnly)
    */
   protected postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
     const requestedLimit = Math.max(originalCtx.limit ?? 0, 5);
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
 
-    // 1. Glob filter
-    let filtered: ExploreResult[] = originalCtx.pathPattern
-      ? filterResultsByGlob(results, originalCtx.pathPattern)
-      : results;
+    // 1. Rerank
+    let filtered =
+      rerank && rerank !== "relevance"
+        ? this.reranker.rerank(results, rerank, "semantic_search", originalCtx.level as SignalLevel | undefined)
+        : results;
 
-    // 2. Rerank
-    if (rerank && rerank !== "relevance") {
-      filtered = this.reranker.rerank(
-        filtered,
-        rerank,
-        "semantic_search",
-        originalCtx.level as SignalLevel | undefined,
-      );
-    }
-
-    // 3. Trim to requested limit
+    // 2. Trim to requested limit
     filtered = filtered.slice(0, requestedLimit);
 
-    // 4. metaOnly formatting
+    // 3. metaOnly formatting
     if (originalCtx.metaOnly) {
       return this.applyMetaOnly(filtered);
     }

@@ -12,7 +12,7 @@
 import type { QdrantManager } from "../qdrant/client.js";
 
 /** Current schema version */
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 /** Reserved ID for storing schema metadata in the collection */
 const SCHEMA_METADATA_ID = "__schema_metadata__";
@@ -142,8 +142,15 @@ export class SchemaManager {
         }
       }
 
-      // Future migrations can be added here:
-      // if (currentVersion < 5) { ... }
+      // v5: Add relativePath full-text index for glob pre-filter
+      if (currentVersion < 5) {
+        const created = await this.qdrant.ensurePayloadIndex(collectionName, "relativePath", "text");
+        if (created) {
+          migrationsApplied.push("v5: Created text index on relativePath for glob filtering");
+        } else {
+          migrationsApplied.push("v5: relativePath text index already exists");
+        }
+      }
 
       // Store updated schema metadata
       await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);

@@ -1,71 +1,101 @@
 /**
- * Glob pattern matching for Qdrant search results
+ * Glob-based Qdrant pre-filter.
  *
- * Provides client-side glob filtering since Qdrant doesn't support
- * glob patterns natively. Uses picomatch for full glob support.
+ * Converts glob patterns to Qdrant full-text `match: { text }` filter conditions.
+ * Requires `relativePath` indexed as "text" with "word" tokenizer
+ * (splits on `/`, `.`, `-` → path segments become searchable tokens).
  */
 
-import picomatch from "picomatch";
+import type { FilterConditionResult } from "../../../contracts/types/provider.js";
 
 /**
- * Creates a matcher function for a glob pattern
+ * Convert a glob pattern to Qdrant full-text filter conditions on `relativePath`.
  *
- * @param pattern - Glob pattern (e.g., "**\/workflow/**", "src/**\/*.ts")
- * @returns Matcher function that tests if a path matches the pattern
- *
- * @example
- * const isMatch = createGlobMatcher("**\/workflow/**");
- * isMatch("models/workflow/task.ts"); // true
- * isMatch("src/utils/helper.ts"); // false
+ * Extracts literal path segments from the glob:
+ * Examples: see tests/qdrant/filters/glob.test.ts
  */
-export function createGlobMatcher(pattern: string): (path: string) => boolean {
-  return picomatch(pattern, { bash: true });
+export function globToTextFilter(pattern: string): FilterConditionResult {
+  // Handle negation: !pattern → must_not
+  if (pattern.startsWith("!")) {
+    const inner = pattern.slice(1);
+    const textQuery = extractTextQuery(inner);
+    if (textQuery.length === 0) return {};
+    return { must_not: [{ key: "relativePath", match: { text: textQuery } }] };
+  }
+
+  // Handle brace expansion: {a,b,!c} → positive as should (OR), negative as must_not
+  const braceMatch = pattern.match(/^\{(.+)\}$/);
+  if (braceMatch) {
+    const alternatives = splitBraceAlternatives(braceMatch[1]);
+    const positive: { key: string; match: { text: string } }[] = [];
+    const negative: { key: string; match: { text: string } }[] = [];
+
+    for (const alt of alternatives) {
+      if (alt.startsWith("!")) {
+        const q = extractTextQuery(alt.slice(1));
+        if (q.length > 0) negative.push({ key: "relativePath", match: { text: q } });
+      } else {
+        const q = extractTextQuery(alt);
+        if (q.length > 0) positive.push({ key: "relativePath", match: { text: q } });
+      }
+    }
+
+    if (positive.length === 0 && negative.length === 0) return {};
+
+    const result: FilterConditionResult = {};
+    if (positive.length === 1) {
+      result.must = positive;
+    } else if (positive.length > 1) {
+      result.must = [{ should: positive } as unknown as FilterConditionResult["must"] extends (infer T)[] ? T : never];
+    }
+    if (negative.length > 0) {
+      result.must_not = negative;
+    }
+    return result;
+  }
+
+  const textQuery = extractTextQuery(pattern);
+  if (textQuery.length === 0) return {};
+
+  return { must: [{ key: "relativePath", match: { text: textQuery } }] };
 }
 
 /**
- * Result type with optional payload containing relativePath
- * Compatible with Qdrant SearchResult type
+ * Strip glob wildcards from a pattern, keep literal path with slashes.
+ * Word tokenizer splits on "/" natively — pass path segments as-is.
+ * Preserves trailing "/" to avoid prefix false positives
+ * (e.g. "domains/" won't match "domains_bad").
  */
-export interface ResultWithPath {
-  id?: string | number;
-  score?: number;
-  payload?: Record<string, unknown>;
+function extractTextQuery(pattern: string): string {
+  return pattern
+    .replace(/\*+/g, "") // strip * and **
+    .replace(/[?[\]{}!@#]/g, "") // strip glob special chars
+    .replace(/\/+/g, "/") // collapse multiple slashes
+    .replace(/^\//, "") // trim leading slash only, keep trailing
+    .trim();
 }
 
-/**
- * Filters search results by glob pattern on relativePath
- *
- * Used for post-filtering Qdrant results when glob patterns
- * are not supported natively by Qdrant filters.
- *
- * @param results - Array of search results with payload.relativePath
- * @param pattern - Glob pattern to match against relativePath
- * @returns Filtered results matching the pattern
- *
- * @example
- * const results = await qdrant.search(...);
- * const filtered = filterResultsByGlob(results, "**\/workflow/**");
- */
-export function filterResultsByGlob<T extends ResultWithPath>(results: T[], pattern: string): T[] {
-  const isMatch = createGlobMatcher(pattern);
-  return results.filter((item) => {
-    const path = item.payload?.relativePath;
-    return typeof path === "string" && isMatch(path);
-  });
-}
+/** Split brace alternatives respecting nested braces. */
+function splitBraceAlternatives(inner: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
 
-/**
- * Calculates fetch limit for Qdrant queries.
- *
- * Always overfetches to ensure enough candidates for post-processing
- * (glob filtering, reranking). Uses higher multiplier when client-side
- * filtering or reranking will further reduce the result set.
- *
- * @param requestedLimit - The number of results the user wants
- * @param needsOverfetch - Whether extra overfetch is needed (pathPattern, rerank)
- * @returns The limit to use when querying Qdrant (minimum 20)
- */
-export function calculateFetchLimit(requestedLimit: number, needsOverfetch: boolean): number {
-  const multiplier = needsOverfetch ? 6 : 4;
-  return Math.max(20, requestedLimit * multiplier);
+  for (const ch of inner) {
+    if (ch === "{") {
+      depth++;
+      current += ch;
+    } else if (ch === "}") {
+      depth--;
+      current += ch;
+    } else if (ch === "," && depth === 0) {
+      parts.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+
+  if (current) parts.push(current);
+  return parts;
 }

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { staticFilters } from "../../../../../src/core/domains/trajectory/static/filters.js";
 
 describe("staticFilters", () => {
-  it("has 4 filters", () => {
-    expect(staticFilters).toHaveLength(4);
+  it("has 5 filters", () => {
+    expect(staticFilters).toHaveLength(5);
   });
 
   it("language filter produces must condition", () => {
@@ -55,5 +55,17 @@ describe("staticFilters", () => {
     const result = f.toCondition("include");
     expect(result.must).toBeUndefined();
     expect(result.must_not).toBeUndefined();
+  });
+
+  it("pathPattern filter produces text match condition from glob", () => {
+    const f = staticFilters.find((f) => f.param === "pathPattern")!;
+    const result = f.toCondition("src/core/domains/**");
+    expect(result.must).toEqual([{ key: "relativePath", match: { text: "src/core/domains/" } }]);
+  });
+
+  it("pathPattern filter with pure wildcard produces no conditions", () => {
+    const f = staticFilters.find((f) => f.param === "pathPattern")!;
+    const result = f.toCondition("**/*");
+    expect(result.must).toBeUndefined();
   });
 });

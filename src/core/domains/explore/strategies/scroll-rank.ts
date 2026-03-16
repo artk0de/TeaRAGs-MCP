@@ -5,7 +5,6 @@
  * and postProcess (offset slicing, own limit logic — no overfetch).
  */
 
-import { filterResultsByGlob } from "../../../adapters/qdrant/filters/index.js";
 import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
 import type { RerankableResult } from "../../../contracts/types/reranker.js";
 import { RankModule } from "../rank-module.js";
@@ -26,8 +25,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     const effectiveOffset = ctx.offset || 0;
     const requestedLimit = ctx.limit || 10;
     const baseLimit = requestedLimit + effectiveOffset;
-    // Overfetch when pathPattern will filter results in postProcess
-    const fetchLimit = ctx.pathPattern ? baseLimit * 10 : baseLimit;
+
     // Resolve preset → weights (Reranker is Information Expert)
     let { weights } = ctx;
     let { presetName } = ctx;
@@ -46,7 +44,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
 
     return {
       ...ctx,
-      limit: fetchLimit,
+      limit: baseLimit,
       filter: ctx.filter,
       metaOnly,
       offset: effectiveOffset,
@@ -91,10 +89,6 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
 
   protected override postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
     let processed = results;
-
-    if (originalCtx.pathPattern) {
-      processed = filterResultsByGlob(processed, originalCtx.pathPattern);
-    }
 
     const effectiveOffset = originalCtx.offset || 0;
     if (effectiveOffset > 0) {

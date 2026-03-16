@@ -46,6 +46,7 @@ describe("QdrantManager", () => {
     mockClient.setPayload.mockReset().mockResolvedValue({});
     mockClient.batchUpdate.mockReset().mockResolvedValue({});
     mockClient.queryGroups.mockReset().mockResolvedValue({ groups: [] });
+    mockClient.scroll.mockReset().mockResolvedValue({ points: [], next_page_offset: null });
     vi.mocked(QdrantClient).mockClear();
     manager = new QdrantManager("http://localhost:6333");
   });
@@ -1957,6 +1958,51 @@ describe("QdrantManager", () => {
 
       const results = await manager.queryGroups("test", [0.1], { groupBy: "relativePath", limit: 10 });
       expect(results).toHaveLength(0);
+    });
+  });
+
+  describe("scrollFieldValues", () => {
+    it("should return unique field values from all pages", async () => {
+      mockClient.scroll
+        .mockResolvedValueOnce({
+          points: [
+            { payload: { relativePath: "src/a.ts" } },
+            { payload: { relativePath: "src/b.ts" } },
+            { payload: { relativePath: "src/a.ts" } }, // duplicate
+          ],
+          next_page_offset: "page2",
+        })
+        .mockResolvedValueOnce({
+          points: [{ payload: { relativePath: "src/c.ts" } }],
+          next_page_offset: null,
+        });
+
+      const values = await manager.scrollFieldValues("test-col", "relativePath");
+      expect(values).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+      expect(mockClient.scroll).toHaveBeenCalledTimes(2);
+      expect(mockClient.scroll).toHaveBeenCalledWith("test-col", {
+        limit: 1000,
+        offset: undefined,
+        with_payload: { include: ["relativePath"] },
+        with_vector: false,
+      });
+    });
+
+    it("should handle empty collection", async () => {
+      mockClient.scroll.mockResolvedValueOnce({ points: [], next_page_offset: null });
+
+      const values = await manager.scrollFieldValues("test-col", "relativePath");
+      expect(values).toEqual([]);
+    });
+
+    it("should skip non-string values", async () => {
+      mockClient.scroll.mockResolvedValueOnce({
+        points: [{ payload: { relativePath: "src/a.ts" } }, { payload: { relativePath: 123 } }, { payload: {} }],
+        next_page_offset: null,
+      });
+
+      const values = await manager.scrollFieldValues("test-col", "relativePath");
+      expect(values).toEqual(["src/a.ts"]);
     });
   });
 });

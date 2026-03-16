@@ -196,8 +196,8 @@ describe("SchemaManager", () => {
   });
 
   describe("CURRENT_SCHEMA_VERSION", () => {
-    it("should be 4", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe(4);
+    it("should be 5", () => {
+      expect(CURRENT_SCHEMA_VERSION).toBe(5);
     });
   });
 });
