@@ -21,6 +21,7 @@ import type {
 } from "../../contracts/types/reranker.js";
 import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { p95 } from "../../infra/signal-utils.js";
+import { resolveLabel } from "./label-resolver.js";
 
 // Re-export types as part of search module's public API
 export type { ScoringWeights } from "../../contracts/types/provider.js";
@@ -41,6 +42,7 @@ export type { RerankableResult, RerankMode } from "../../contracts/types/reranke
 export class Reranker {
   private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
   private readonly signalKeyMap: Map<string, string>;
+  private readonly payloadSignals: PayloadSignalDescriptor[];
   private collectionStats?: CollectionSignalStats;
 
   constructor(
@@ -52,6 +54,7 @@ export class Reranker {
     for (const d of this.descriptors) {
       this.descriptorMap.set(d.name, d);
     }
+    this.payloadSignals = payloadSignals;
     this.signalKeyMap = buildSignalKeyMap(payloadSignals);
   }
 
@@ -374,11 +377,46 @@ export class Reranker {
       }
     }
 
+    // Post-process: resolve labels for numeric signals with stats.labels
+    this.applyLabelResolution(rawFile);
+    this.applyLabelResolution(rawChunk);
+
     return {
       preset: presetName,
       ...(Object.keys(rawFile).length > 0 ? { file: rawFile } : {}),
       ...(Object.keys(rawChunk).length > 0 ? { chunk: rawChunk } : {}),
     };
+  }
+
+  /**
+   * Resolve human-readable labels for numeric overlay values.
+   * For each entry in the overlay object: if value is a number,
+   * find the signal descriptor via signalKeyMap, and if it has
+   * stats.labels AND collectionStats has percentile data for that signal,
+   * replace the plain number with { value, label }.
+   */
+  private applyLabelResolution(overlay: Record<string, unknown>): void {
+    if (!this.collectionStats) return;
+
+    for (const field of Object.keys(overlay)) {
+      const value = overlay[field];
+      if (typeof value !== "number") continue;
+
+      // Resolve full payload key from short name
+      const fullKey = this.signalKeyMap.get(field) ?? null;
+      if (!fullKey) continue;
+
+      // Find descriptor with stats.labels
+      const descriptor = this.payloadSignals.find((ps) => ps.key === fullKey);
+      if (!descriptor?.stats?.labels) continue;
+
+      // Get percentiles from collectionStats
+      const signalStats = this.collectionStats.perSignal.get(fullKey);
+      if (!signalStats?.percentiles) continue;
+
+      const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles);
+      overlay[field] = { value, label };
+    }
   }
 
   /**

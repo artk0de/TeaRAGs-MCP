@@ -17,7 +17,15 @@ function makeTmpDir(): string {
 
 const SAMPLE_STATS: CollectionSignalStats = {
   computedAt: 1_700_000_000_000,
-  perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 95: 90 } }]]),
+  perSignal: new Map([["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 95: 90 } }]]),
+  distributions: {
+    totalFiles: 0,
+    language: {},
+    chunkType: {},
+    documentation: { docs: 0, code: 0 },
+    topAuthors: [],
+    othersCount: 0,
+  },
 };
 
 describe("StatsCache payloadFieldKeys", () => {
@@ -50,16 +58,24 @@ describe("StatsCache payloadFieldKeys", () => {
     expect(loaded!.payloadFieldKeys).toBeUndefined();
   });
 
-  it("load() returns payloadFieldKeys as undefined for v1 cache files", () => {
-    // Simulate a v2 file written without payloadFieldKeys
+  it("load() returns payloadFieldKeys as undefined for v3 cache files without payloadFieldKeys", () => {
+    // Simulate a v3 file written without payloadFieldKeys
     const filePath = join(snapshotsDir, "legacy-col.stats.json");
     writeFileSync(
       filePath,
       JSON.stringify({
-        version: 2,
+        version: 3,
         collectionName: "legacy-col",
         computedAt: 1_700_000_000_000,
-        perSignal: { "git.file.commitCount": { count: 10 } },
+        perSignal: { "git.file.commitCount": { count: 10, min: 1, max: 50, percentiles: { 95: 42 } } },
+        distributions: {
+          totalFiles: 0,
+          language: {},
+          chunkType: {},
+          documentation: { docs: 0, code: 0 },
+          topAuthors: [],
+          othersCount: 0,
+        },
         // no payloadFieldKeys field
       }),
       "utf-8",
