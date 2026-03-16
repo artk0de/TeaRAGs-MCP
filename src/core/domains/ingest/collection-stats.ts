@@ -73,12 +73,17 @@ export function computeCollectionStats(
     if (!values || values.length === 0) continue;
     values.sort((a, b) => a - b);
 
-    const result: SignalStats = { count: values.length };
     const req = signal.stats;
     if (!req) continue;
 
+    const result: SignalStats = {
+      count: values.length,
+      min: values[0],
+      max: values[values.length - 1],
+      percentiles: {},
+    };
+
     if (req.labels && Object.keys(req.labels).length > 0) {
-      result.percentiles = {};
       for (const key of Object.keys(req.labels)) {
         const p = parseInt(key.slice(1), 10);
         if (!isNaN(p)) {
@@ -102,5 +107,16 @@ export function computeCollectionStats(
     perSignal.set(signal.key, result);
   }
 
-  return { perSignal, computedAt: Date.now() };
+  return {
+    perSignal,
+    distributions: {
+      totalFiles: 0,
+      language: {},
+      chunkType: {},
+      documentation: { docs: 0, code: 0 },
+      topAuthors: [],
+      othersCount: 0,
+    },
+    computedAt: Date.now(),
+  };
 }

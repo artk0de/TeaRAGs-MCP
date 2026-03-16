@@ -31,6 +31,14 @@ export class StatsCache {
       if (data.version !== CURRENT_VERSION) return null;
       return {
         perSignal: new Map(Object.entries(data.perSignal)),
+        distributions: {
+          totalFiles: 0,
+          language: {},
+          chunkType: {},
+          documentation: { docs: 0, code: 0 },
+          topAuthors: [],
+          othersCount: 0,
+        },
         computedAt: data.computedAt,
         payloadFieldKeys: data.payloadFieldKeys,
       };

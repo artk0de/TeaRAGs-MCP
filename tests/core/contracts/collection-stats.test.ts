@@ -42,10 +42,10 @@ describe("computeCollectionStats", () => {
 
     expect(s.count).toBe(100);
     expect(s.percentiles).toBeDefined();
-    expect(s.percentiles![25]).toBeCloseTo(25.75, 1);
-    expect(s.percentiles![50]).toBeCloseTo(50.5, 1);
-    expect(s.percentiles![75]).toBeCloseTo(75.25, 1);
-    expect(s.percentiles![95]).toBeCloseTo(95.05, 1);
+    expect(s.percentiles[25]).toBeCloseTo(25.75, 1);
+    expect(s.percentiles[50]).toBeCloseTo(50.5, 1);
+    expect(s.percentiles[75]).toBeCloseTo(75.25, 1);
+    expect(s.percentiles[95]).toBeCloseTo(95.05, 1);
   });
 
   it("computes only requested percentiles (subset)", () => {
@@ -56,8 +56,8 @@ describe("computeCollectionStats", () => {
     const s = stats.perSignal.get("git.file.commitCount")!;
 
     expect(s.percentiles).toBeDefined();
-    expect(s.percentiles![95]).toBeCloseTo(95.05, 1);
-    expect(s.percentiles![25]).toBeUndefined(); // not requested
+    expect(s.percentiles[95]).toBeCloseTo(95.05, 1);
+    expect(s.percentiles[25]).toBeUndefined(); // not requested
   });
 
   it("computes mean when requested", () => {
@@ -68,7 +68,7 @@ describe("computeCollectionStats", () => {
     const s = stats.perSignal.get("git.file.commitCount")!;
 
     expect(s.mean).toBeCloseTo(50.5, 1); // mean of 1..100
-    expect(s.percentiles).toBeUndefined(); // not requested
+    expect(s.percentiles).toEqual({}); // required field, empty when no labels requested
   });
 
   it("computes stddev when requested", () => {
@@ -95,7 +95,7 @@ describe("computeCollectionStats", () => {
     const s = stats.perSignal.get("git.file.commitCount")!;
 
     expect(s.count).toBe(100);
-    expect(s.percentiles![25]).toBeCloseTo(25.75, 1);
+    expect(s.percentiles[25]).toBeCloseTo(25.75, 1);
     expect(s.mean).toBeCloseTo(50.5, 1);
     expect(s.stddev).toBeCloseTo(28.87, 0);
   });
