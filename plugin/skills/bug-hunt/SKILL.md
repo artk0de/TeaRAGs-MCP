@@ -14,6 +14,10 @@ Use EXACTLY the tool names, presets, and parameters specified in each step.
 Do NOT substitute presets (e.g. do NOT use `hotspots` when `bugHunt` is specified).
 `bugHunt` and `hotspots` are different presets with different weight distributions.
 
+**MANDATORY: Use ripgrep MCP if available.** Check for `mcp__ripgrep__search` tool. If present — use it for ALL verification searches. Do NOT fall back to Grep when ripgrep MCP is installed.
+
+**Fallback chain:** ripgrep MCP → Grep tool (only if ripgrep MCP unavailable).
+
 ## Step 1: SEMANTIC DISCOVER
 
 `semantic_search` query=$ARGUMENTS — find area by symptom meaning.
@@ -72,6 +76,8 @@ Root cause candidates (ranked by signal confidence):
    Observation: async callback may fire twice on timeout
 ```
 
-## Step 6: FIX
+## Step 6: VERIFY + FIX
 
-If fix needed → invoke `/tea-rags:data-driven-generation` for the target function. It will run its own danger check and select appropriate strategy.
+Verify analysis per search-cascade rule — ripgrep confirm the identified patterns actually exist.
+
+If fix needed → invoke `/tea-rags:data-driven-generation` for the target function. It will run its own danger check and select appropriate strategy (likely DEFENSIVE for code with "critical" bugFixRate).
