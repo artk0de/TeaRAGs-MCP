@@ -1,3 +1,4 @@
+import { globToTextFilter } from "../../../adapters/qdrant/filters/glob.js";
 import type { FilterDescriptor } from "../../../contracts/types/provider.js";
 
 export const staticFilters: FilterDescriptor[] = [
@@ -38,5 +39,11 @@ export const staticFilters: FilterDescriptor[] = [
       if (value === "exclude") return { must_not: [{ key: "isDocumentation", match: { value: true } }] };
       return {};
     },
+  },
+  {
+    param: "pathPattern",
+    description: "Glob pattern for filtering by file path — converts to Qdrant text filter",
+    type: "string",
+    toCondition: (value: unknown) => globToTextFilter(value as string),
   },
 ];

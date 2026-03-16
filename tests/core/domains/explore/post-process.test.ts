@@ -25,10 +25,10 @@ describe("computeFetchLimit", () => {
     expect(result.requestedLimit).toBe(10);
   });
 
-  it("applies higher overfetch with pathPattern", () => {
+  it("pathPattern no longer affects overfetch (pre-filter now)", () => {
     const without = computeFetchLimit(10);
     const withPattern = computeFetchLimit(10, "src/**");
-    expect(withPattern.fetchLimit).toBeGreaterThan(without.fetchLimit);
+    expect(withPattern.fetchLimit).toBe(without.fetchLimit);
   });
 
   it("applies higher overfetch with rerank (non-relevance)", () => {
@@ -66,14 +66,14 @@ describe("postProcess", () => {
     expect(result).toHaveLength(2);
   });
 
-  it("filters by pathPattern", () => {
+  it("pathPattern in postProcess is a no-op (pre-filter handles it)", () => {
     const result = postProcess(sampleResults, {
       limit: 10,
       pathPattern: "src/**",
       reranker: mockReranker,
     });
-    expect(result).toHaveLength(2);
-    expect(result.every((r) => (r.payload?.relativePath as string).startsWith("src/"))).toBe(true);
+    // All 3 results pass through — pathPattern is handled as Qdrant pre-filter, not post-filter
+    expect(result).toHaveLength(3);
   });
 
   it("applies reranking for non-relevance preset", () => {

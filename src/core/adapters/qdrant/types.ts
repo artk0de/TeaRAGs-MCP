@@ -8,7 +8,7 @@
 
 export interface QdrantMatchCondition {
   key: string;
-  match: { value: unknown } | { any: unknown[] };
+  match: { value: unknown } | { any: unknown[] } | { text: string };
 }
 
 export interface QdrantRangeCondition {

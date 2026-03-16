@@ -865,6 +865,34 @@ export class QdrantManager {
     }
   }
   /**
+   * Scroll all unique values of a payload field. Lightweight — selective payload only.
+   * Used by glob pre-filter to resolve patterns against indexed paths.
+   */
+  async scrollFieldValues(collectionName: string, fieldName: string): Promise<string[]> {
+    const values = new Set<string>();
+    let offset: string | number | undefined;
+
+    do {
+      const result = await this.client.scroll(collectionName, {
+        limit: 1000,
+        offset,
+        with_payload: { include: [fieldName] },
+        with_vector: false,
+      });
+
+      for (const point of result.points) {
+        const val = point.payload?.[fieldName];
+        if (typeof val === "string") values.add(val);
+      }
+
+      const next = result.next_page_offset;
+      offset = typeof next === "string" || typeof next === "number" ? next : undefined;
+    } while (offset !== undefined);
+
+    return [...values];
+  }
+
+  /**
    * Scroll points ordered by a payload field. Returns points with IDs and payloads.
    * Requires Qdrant 1.8+. The field should have a payload index for performance.
    */

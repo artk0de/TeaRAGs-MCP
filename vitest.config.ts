@@ -8,6 +8,8 @@ export default defineConfig({
     environment: "node",
     // CI: retry flaky tests up to 2 times, increase timeout for slow runners
     ...(isCI && { retry: 2, testTimeout: 30_000 }),
+    // Local: use all CPU cores for faster runs
+    ...(!isCI && { pool: "forks" }),
     // Give worker_threads (ChunkerPool) time to terminate before fork exits
     teardownTimeout: isCI ? 10_000 : 5_000,
     // Setup file mocks tree-sitter native modules to prevent crashes

@@ -10,7 +10,6 @@
  * BASE_PAYLOAD_SIGNALS is injected via payloadSignals parameter.
  */
 
-import { calculateFetchLimit, filterResultsByGlob } from "../../adapters/qdrant/filters/index.js";
 import type { RankingOverlay } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import type { Reranker, RerankMode } from "./reranker.js";
@@ -45,16 +44,18 @@ export interface PostProcessOptions {
 
 /**
  * Compute fetch limit for Qdrant queries, accounting for overfetch
- * needed by client-side glob filtering and reranking.
+ * needed by reranking (glob is now a pre-filter, no overfetch needed for it).
  */
 export function computeFetchLimit(
   requestedLimit: number | undefined,
-  pathPattern?: string,
+  _pathPattern?: string,
   rerank?: RerankMode<string>,
 ): FetchLimits {
   const limit = requestedLimit || 5;
-  const needsOverfetch = Boolean(pathPattern) || Boolean(rerank && rerank !== "relevance");
-  return { requestedLimit: limit, fetchLimit: calculateFetchLimit(limit, needsOverfetch) };
+  const needsOverfetch = Boolean(rerank && rerank !== "relevance");
+  const multiplier = needsOverfetch ? 4 : 2;
+  const fetchLimit = Math.max(20, limit * multiplier);
+  return { requestedLimit: limit, fetchLimit };
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +66,9 @@ export function computeFetchLimit(
  * Apply post-processing pipeline: glob filter → rerank → trim to limit.
  */
 export function postProcess(results: SearchResult[], options: PostProcessOptions): SearchResult[] {
-  let filtered: SearchResult[] = options.pathPattern ? filterResultsByGlob(results, options.pathPattern) : results;
+  // pathPattern is now resolved as a Qdrant pre-filter BEFORE the query.
+  // No client-side glob filtering needed here.
+  let filtered: SearchResult[] = results;
 
   if (options.rerank && options.rerank !== "relevance") {
     filtered = options.reranker.rerank(filtered, options.rerank, "semantic_search", options.level);

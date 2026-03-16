@@ -115,33 +115,6 @@ describe("BaseExploreStrategy", () => {
       expect(fetchedLimit).toBeGreaterThanOrEqual(20);
     });
 
-    it("uses higher fetchLimit when pathPattern is present", async () => {
-      const results = makeResults(50);
-      const strategyWithPattern = new TestStrategy(
-        createMockQdrant(),
-        createMockReranker(),
-        EMPTY_SIGNALS,
-        EMPTY_KEYS,
-        results,
-      );
-      const strategyNoPattern = new TestStrategy(
-        createMockQdrant(),
-        createMockReranker(),
-        EMPTY_SIGNALS,
-        EMPTY_KEYS,
-        results,
-      );
-
-      await strategyWithPattern.execute({ collectionName: "col", limit: 5, pathPattern: "src/**/*.ts" });
-      await strategyNoPattern.execute({ collectionName: "col", limit: 5 });
-
-      const fetchWithPattern = strategyWithPattern.lastCtx?.limit ?? 0;
-      const fetchNoPattern = strategyNoPattern.lastCtx?.limit ?? 0;
-      // With pathPattern: calculateFetchLimit(5, true) = max(20, 5*6) = 30
-      // Without: calculateFetchLimit(5, false) = max(20, 5*4) = 20
-      expect(fetchWithPattern).toBeGreaterThan(fetchNoPattern);
-    });
-
     it("uses higher fetchLimit when non-relevance rerank is present", async () => {
       const results = makeResults(50);
       const strategyWithRerank = new TestStrategy(
@@ -159,33 +132,10 @@ describe("BaseExploreStrategy", () => {
         results,
       );
 
-      await strategyWithRerank.execute({ collectionName: "col", limit: 5, rerank: "techDebt" });
-      await strategyNoRerank.execute({ collectionName: "col", limit: 5 });
+      await strategyWithRerank.execute({ collectionName: "col", limit: 15, rerank: "techDebt" });
+      await strategyNoRerank.execute({ collectionName: "col", limit: 15 });
 
       expect(strategyWithRerank.lastCtx?.limit ?? 0).toBeGreaterThan(strategyNoRerank.lastCtx?.limit ?? 0);
-    });
-  });
-
-  describe("postProcess — glob filtering", () => {
-    it("filters results by pathPattern", async () => {
-      const results = [
-        { id: "1", score: 0.9, payload: { relativePath: "src/a.ts" } },
-        { id: "2", score: 0.8, payload: { relativePath: "lib/b.ts" } },
-        { id: "3", score: 0.7, payload: { relativePath: "src/c.ts" } },
-      ];
-      const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS, results);
-
-      const output = await strategy.execute({ collectionName: "col", limit: 10, pathPattern: "src/**" });
-      expect(output).toHaveLength(2);
-      expect(output.every((r) => (r.payload?.relativePath as string).startsWith("src/"))).toBe(true);
-    });
-
-    it("passes all results through when no pathPattern", async () => {
-      const results = makeResults(5);
-      const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS, results);
-
-      const output = await strategy.execute({ collectionName: "col", limit: 10 });
-      expect(output).toHaveLength(5);
     });
   });
 

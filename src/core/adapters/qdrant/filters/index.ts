@@ -1,8 +1,8 @@
 /**
  * Qdrant filters module
  *
- * Provides client-side filtering utilities for Qdrant search results
- * when native Qdrant filters don't support the required functionality.
+ * Provides glob-based pre-filtering and filter merge utilities.
  */
 
-export { createGlobMatcher, filterResultsByGlob, calculateFetchLimit, type ResultWithPath } from "./glob.js";
+export { globToTextFilter } from "./glob.js";
+export { mergeQdrantFilters } from "./utils.js";
