@@ -22,7 +22,7 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 
 ### 1. DISCOVER
 
-ONE `semantic_search` query=$ARGUMENTS → find area. Note top 3-5 file paths.
+ONE `semantic_search` query=$ARGUMENTS, **no rerank** (pure similarity) → find area. Note top 3-5 file paths. Do NOT use rerank="bugHunt" here — discovery is about finding the right area, not ranking by signals.
 
 ### 2. DRILL DOWN (parallel)
 
