@@ -16,7 +16,7 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 4. **Max 2 `semantic_search` calls** total.
 5. **Overlay labels are your triage tool.** After step 2, look at `chunk.bugFixRate` and `chunk.churnRatio` labels in results. If label is "healthy" → SKIP that result. Do not read the file. Do not search further. Trust the label.
 6. **Max 3 file reads** — only prime suspects from triage. Not 15 files.
-7. **Use ripgrep MCP** (`mcp__ripgrep__search`) for ALL text searches. Do NOT use built-in Search/Grep when ripgrep MCP is available. Max 3 calls after triage.
+7. **Use ripgrep MCP** (`mcp__ripgrep__search`) for ALL text searches. Do NOT use built-in Search/Grep when ripgrep MCP is available. Max 3 calls after triage. **Always scope ripgrep to the discovered area** (pathPattern from step 1) — never search the entire project.
 
 ## Steps
 
