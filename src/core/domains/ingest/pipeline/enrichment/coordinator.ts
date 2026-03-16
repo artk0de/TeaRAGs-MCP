@@ -77,6 +77,13 @@ export class EnrichmentCoordinator {
   // Delegates
   private readonly applier: EnrichmentApplier;
 
+  /**
+   * Optional callback fired after ALL providers complete chunk enrichment.
+   * Receives the collectionName. Only fires if at least one provider succeeded.
+   * Errors in the callback are caught and logged — they do not affect enrichment.
+   */
+  onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
+
   /** All provider keys managed by this coordinator. */
   get providerKeys(): string[] {
     return [...this.states.keys()];
@@ -222,6 +229,8 @@ export class EnrichmentCoordinator {
    * Each provider runs independently.
    */
   startChunkEnrichment(collectionName: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
+    const providerPromises: Promise<boolean>[] = [];
+
     for (const state of this.states.values()) {
       if (state.prefetchFailed) continue;
 
@@ -256,7 +265,7 @@ export class EnrichmentCoordinator {
 
       const chunkStart = Date.now();
 
-      state.provider
+      const providerDone = state.provider
         .buildChunkSignals(root, effectiveChunkMap)
         .then(async (chunkMetadata) => {
           const applied = await this.applier.applyChunkSignals(collectionName, state.provider.key, chunkMetadata);
@@ -285,6 +294,7 @@ export class EnrichmentCoordinator {
             overlaysApplied: applied,
             durationMs: state.chunkEnrichmentDurationMs,
           });
+          return true;
         })
         .catch((error) => {
           state.chunkEnrichmentDurationMs = Date.now() - chunkStart;
@@ -293,7 +303,24 @@ export class EnrichmentCoordinator {
             provider: state.provider.key,
             error: error instanceof Error ? error.message : String(error),
           });
+          return false;
         });
+
+      providerPromises.push(providerDone);
+    }
+
+    // Fire callback after ALL providers complete (if at least one succeeded)
+    if (providerPromises.length > 0 && this.onChunkEnrichmentComplete) {
+      const callback = this.onChunkEnrichmentComplete;
+      void Promise.allSettled(providerPromises).then(async (results) => {
+        const anySucceeded = results.some((r) => r.status === "fulfilled" && r.value === true);
+        if (!anySucceeded) return;
+        try {
+          await callback(collectionName);
+        } catch (error) {
+          console.error("[Enrichment] onChunkEnrichmentComplete callback failed:", error);
+        }
+      });
     }
   }
 

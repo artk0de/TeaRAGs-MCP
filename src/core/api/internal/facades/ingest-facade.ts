@@ -71,6 +71,7 @@ export class IngestFacade {
       ? [new GitEnrichmentProvider(trajectoryConfig.trajectoryGit ?? undefined, squashOpts)]
       : [];
     this.enrichment = new EnrichmentCoordinator(qdrant, providers);
+    this.enrichment.onChunkEnrichmentComplete = async (collectionName) => this.refreshStatsByCollection(collectionName);
     this.indexing = new IndexPipeline(qdrant, embeddings, ingestConfig, this.enrichment, deps, pipelineTuning);
     this.status = new StatusModule(qdrant, resolvedSnapshotDir);
     this.reindex = new ReindexPipeline(
@@ -114,14 +115,23 @@ export class IngestFacade {
     try {
       const absolutePath = await validatePath(path);
       const collectionName = resolveCollectionName(absolutePath);
+      await this.refreshStatsByCollection(collectionName);
+    } catch (error) {
+      console.error("[StatsCache] Failed to refresh collection stats:", error);
+    }
+  }
+
+  /** Recompute stats by collection name (used by enrichment callback). */
+  private async refreshStatsByCollection(collectionName: string): Promise<void> {
+    if (!this.statsCache || !this.allPayloadSignals) return;
+    try {
       const points = await scrollAllPoints(this.qdrant, collectionName);
       const stats = computeCollectionStats(points, this.allPayloadSignals);
       const payloadFieldKeys = this.allPayloadSignals.map((d) => d.key);
       this.statsCache.save(collectionName, stats, payloadFieldKeys);
       this.reranker?.invalidateStats();
     } catch (error) {
-      // Stats refresh failure should not fail the indexing operation
-      console.error("[StatsCache] Failed to refresh collection stats:", error);
+      console.error("[StatsCache] Failed to refresh collection stats after chunk enrichment:", error);
     }
   }
 }

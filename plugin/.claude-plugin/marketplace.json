@@ -1,0 +1,21 @@
+{
+  "name": "artk0de",
+  "owner": {
+    "name": "Artur Korochanskii",
+    "email": "art2rik.desperado@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "tea-rags",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/artk0de/TeaRAGs-MCP.git",
+        "path": "plugin",
+        "ref": "main"
+      },
+      "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
+      "version": "0.1.0",
+      "keywords": ["code-generation", "git-signals", "strategies", "search", "tea-rags"]
+    }
+  ]
+}

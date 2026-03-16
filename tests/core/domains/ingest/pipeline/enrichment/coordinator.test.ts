@@ -450,6 +450,167 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
   });
 });
 
+describe("EnrichmentCoordinator — onChunkEnrichmentComplete callback", () => {
+  let mockQdrant: any;
+
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+    };
+  });
+
+  it("fires callback with collectionName after all providers complete chunk enrichment", async () => {
+    const callback = vi.fn().mockResolvedValue(undefined);
+    const provider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { commitCount: 5 }]])]])),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
+    coordinator.onChunkEnrichmentComplete = callback;
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 10));
+
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith("test-col");
+  });
+
+  it("fires callback after ALL providers finish (not just the first)", async () => {
+    const callback = vi.fn().mockResolvedValue(undefined);
+    const callOrder: string[] = [];
+
+    const slowProvider: any = {
+      key: "slow",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockImplementation(
+        async () =>
+          new Promise((resolve) =>
+            setTimeout(() => {
+              callOrder.push("slow");
+              resolve(new Map());
+            }, 30),
+          ),
+      ),
+    };
+    const fastProvider: any = {
+      key: "fast",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockImplementation(async () => {
+        callOrder.push("fast");
+        return Promise.resolve(new Map());
+      }),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, [slowProvider, fastProvider]);
+    coordinator.onChunkEnrichmentComplete = async () => {
+      callOrder.push("callback");
+      await callback();
+    };
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 10));
+
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
+
+    await new Promise((r) => setTimeout(r, 80));
+    expect(callback).toHaveBeenCalledOnce();
+    // Callback must fire AFTER both providers
+    expect(callOrder.indexOf("callback")).toBeGreaterThan(callOrder.indexOf("slow"));
+    expect(callOrder.indexOf("callback")).toBeGreaterThan(callOrder.indexOf("fast"));
+  });
+
+  it("does not fire callback when no providers exist", async () => {
+    const callback = vi.fn().mockResolvedValue(undefined);
+    const coordinator = new EnrichmentCoordinator(mockQdrant, []);
+    coordinator.onChunkEnrichmentComplete = callback;
+
+    coordinator.startChunkEnrichment("test-col", "/repo", new Map());
+    await new Promise((r) => setTimeout(r, 30));
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("does not fire callback when all providers fail", async () => {
+    const callback = vi.fn().mockResolvedValue(undefined);
+    const provider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockRejectedValue(new Error("chunk fail")),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
+    coordinator.onChunkEnrichmentComplete = callback;
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 10));
+
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("fires callback even when some providers fail and others succeed", async () => {
+    const callback = vi.fn().mockResolvedValue(undefined);
+    const goodProvider: any = {
+      key: "good",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { x: 1 }]])]])),
+    };
+    const badProvider: any = {
+      key: "bad",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockRejectedValue(new Error("fail")),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, [goodProvider, badProvider]);
+    coordinator.onChunkEnrichmentComplete = callback;
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 10));
+
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
+
+    await new Promise((r) => setTimeout(r, 50));
+    // At least one succeeded → callback should fire
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith("test-col");
+  });
+
+  it("does not crash if callback throws", async () => {
+    const provider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { x: 1 }]])]])),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
+    coordinator.onChunkEnrichmentComplete = vi.fn().mockRejectedValue(new Error("callback crash"));
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 10));
+
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+
+    // Should not throw
+    expect(() => {
+      coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
+    }).not.toThrow();
+    await new Promise((r) => setTimeout(r, 50));
+  });
+});
+
 describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
   it("returns aggregated metrics across multiple providers", async () => {
     const mockQdrant: any = {
