@@ -123,6 +123,62 @@ describe("StatsCache", () => {
     expect(loaded!.perSignal.size).toBe(1);
   });
 
+  it("save() persists payloadFieldKeys and load() returns them", () => {
+    const stats: CollectionSignalStats = {
+      computedAt: Date.now(),
+      perSignal: new Map([["a", { count: 1 }]]),
+    };
+    cache.save("key-test", stats, ["git.file.ageDays", "git.file.commitCount"]);
+    const loaded = cache.load("key-test");
+    expect(loaded!.payloadFieldKeys).toEqual(["git.file.ageDays", "git.file.commitCount"]);
+  });
+
+  describe("checkSchemaDrift", () => {
+    it("returns null when no cached keys", () => {
+      expect(StatsCache.checkSchemaDrift(undefined, ["a"])).toBeNull();
+    });
+
+    it("returns null when no drift", () => {
+      expect(StatsCache.checkSchemaDrift(["a", "b"], ["a", "b"])).toBeNull();
+    });
+
+    it("detects added fields", () => {
+      const drift = StatsCache.checkSchemaDrift(["a"], ["a", "b"]);
+      expect(drift).toEqual({ added: ["b"], removed: [] });
+    });
+
+    it("detects removed fields", () => {
+      const drift = StatsCache.checkSchemaDrift(["a", "b"], ["a"]);
+      expect(drift).toEqual({ added: [], removed: ["b"] });
+    });
+
+    it("detects both added and removed", () => {
+      const drift = StatsCache.checkSchemaDrift(["a", "b"], ["b", "c"]);
+      expect(drift).toEqual({ added: ["c"], removed: ["a"] });
+    });
+  });
+
+  describe("formatSchemaDriftWarning", () => {
+    it("formats added fields", () => {
+      const msg = StatsCache.formatSchemaDriftWarning({ added: ["x"], removed: [] });
+      expect(msg).toContain("New fields: x");
+      expect(msg).not.toContain("Removed fields");
+    });
+
+    it("formats removed fields", () => {
+      const msg = StatsCache.formatSchemaDriftWarning({ added: [], removed: ["y"] });
+      expect(msg).toContain("Removed fields: y");
+      expect(msg).not.toContain("New fields");
+    });
+
+    it("formats both added and removed", () => {
+      const msg = StatsCache.formatSchemaDriftWarning({ added: ["x"], removed: ["y"] });
+      expect(msg).toContain("New fields: x");
+      expect(msg).toContain("Removed fields: y");
+      expect(msg).toContain("forceReindex=true");
+    });
+  });
+
   it("round-trip preserves Map→Record→Map conversion correctly", () => {
     const perSignal = new Map([
       ["alpha", { count: 10, percentiles: { 50: 5.0, 95: 9.5 } }],
@@ -139,7 +195,7 @@ describe("StatsCache", () => {
     // All original keys present
     expect([...loaded!.perSignal.keys()].sort()).toEqual(["alpha", "beta", "gamma"]);
     // Values intact
-    expect(loaded!.perSignal.get("alpha")!.percentiles![50]).toBe(5.0);
+    expect(loaded!.perSignal.get("alpha")!.percentiles[50]).toBe(5.0);
     expect(loaded!.perSignal.get("beta")!.mean).toBe(7.7);
     expect(loaded!.perSignal.get("gamma")!.stddev).toBe(3.14);
   });

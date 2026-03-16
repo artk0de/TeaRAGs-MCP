@@ -1134,6 +1134,16 @@ describe("Reranker (v2 class)", () => {
     expect(reranker.getPreset("nonexistent", "semantic_search")).toBeUndefined();
   });
 
+  it("getFullPreset returns full preset object or undefined", () => {
+    const preset = reranker.getFullPreset("techDebt", "semantic_search");
+    expect(preset).toBeDefined();
+    expect(preset!.name).toBe("techDebt");
+    expect(preset!.weights).toBeDefined();
+
+    const missing = reranker.getFullPreset("nonexistent", "semantic_search");
+    expect(missing).toBeUndefined();
+  });
+
   it("getAvailablePresets returns preset names", () => {
     expect(reranker.getAvailablePresets("semantic_search")).toContain("techDebt");
     expect(reranker.getAvailablePresets("search_code")).toContain("recent");

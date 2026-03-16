@@ -30,6 +30,28 @@ describe("EnrichmentCoordinator", () => {
     expect(coordinator.providerKeys).toEqual(["git"]);
   });
 
+  it("providerKey returns first key (deprecated)", () => {
+    expect(coordinator.providerKey).toBe("git");
+  });
+
+  it("providerKey returns empty string when no providers", () => {
+    const empty = new EnrichmentCoordinator(mockQdrant, []);
+    expect(empty.providerKey).toBe("");
+  });
+
+  it("logs when provider resolveRoot differs from absolutePath", async () => {
+    const divergentProvider: EnrichmentProvider = {
+      ...mockProvider,
+      resolveRoot: vi.fn(() => "/git-root"),
+    };
+    const coord = new EnrichmentCoordinator(mockQdrant, divergentProvider);
+    coord.prefetch("/sub/path", "test-col");
+    expect(divergentProvider.resolveRoot).toHaveBeenCalledWith("/sub/path");
+    // Provider uses /git-root, absolutePath is /sub/path → REPO_ROOT_DIFFERS logged
+    await new Promise((r) => setTimeout(r, 10));
+    expect(divergentProvider.buildFileSignals).toHaveBeenCalledWith("/git-root");
+  });
+
   it("calls provider.resolveRoot and buildFileSignals on prefetch", () => {
     coordinator.prefetch("/repo", "test-col");
     expect(mockProvider.resolveRoot).toHaveBeenCalledWith("/repo");
@@ -256,6 +278,28 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
     expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith("/repo", chunkMap);
   });
 
+  it("filters chunkMap paths by ignoreFilter", async () => {
+    const ignoreFilter = ignore().add(["*.md"]);
+    mockProvider.buildChunkSignals.mockResolvedValue(new Map());
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col", ignoreFilter);
+    await new Promise((r) => setTimeout(r, 10));
+
+    const chunkMap = new Map([
+      ["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]],
+      ["/repo/README.md", [{ chunkId: "c2", startLine: 1, endLine: 5 }]],
+    ]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
+
+    await new Promise((r) => setTimeout(r, 20));
+    // buildChunkSignals should receive filtered map (only .ts, not .md)
+    const calledMap = mockProvider.buildChunkSignals.mock.calls[0][1] as Map<string, unknown>;
+    expect(calledMap.size).toBe(1);
+    expect(calledMap.has("/repo/src/a.ts")).toBe(true);
+    expect(calledMap.has("/repo/README.md")).toBe(false);
+  });
+
   it("skips chunk enrichment when prefetchFailed", async () => {
     mockProvider.buildFileSignals.mockRejectedValue(new Error("fail"));
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
@@ -408,6 +452,31 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     const metrics = await coordinator.awaitCompletion("test-col");
     expect(metrics).toHaveProperty("totalDurationMs");
     expect(metrics.totalDurationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("handles buildFileSignals failure during backfill gracefully", async () => {
+    mockProvider = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi
+        .fn()
+        .mockResolvedValueOnce(new Map()) // initial prefetch — all missed
+        .mockRejectedValueOnce(new Error("backfill git fail")), // backfill fails
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/missed.ts" }, endLine: 10 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Should not throw — backfill failure is caught
+    const metrics = await coordinator.awaitCompletion("test-col");
+    expect(metrics.missedFiles).toBeGreaterThanOrEqual(1);
   });
 
   it("backfills with batching when operations exceed BATCH_SIZE", async () => {

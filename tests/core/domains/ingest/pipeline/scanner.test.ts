@@ -1,3 +1,5 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -62,14 +64,31 @@ describe("FileScanner", () => {
   describe("loadIgnorePatterns", () => {
     it("should load .gitignore patterns", async () => {
       await scanner.loadIgnorePatterns(join(fixturesDir, "sample-ts"));
-      // .gitignore should be loaded, but we can't directly test internal state
-      // Instead, we test the effect through scanDirectory
       const files = await scanner.scanDirectory(join(fixturesDir, "sample-ts"));
       expect(files.some((f) => f.includes("node_modules"))).toBe(false);
     });
 
     it("should handle missing ignore files gracefully", async () => {
       await expect(scanner.loadIgnorePatterns("/nonexistent/path")).resolves.not.toThrow();
+    });
+
+    it("should load .contextignore.local patterns", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-test-"));
+      // Create .contextignore.local that ignores *.secret.ts
+      writeFileSync(join(tmpDir, ".contextignore.local"), "*.secret.ts\n");
+      // Create files
+      writeFileSync(join(tmpDir, "app.ts"), "export const app = 1;");
+      writeFileSync(join(tmpDir, "keys.secret.ts"), "export const key = 'x';");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      expect(files.some((f) => f.endsWith("app.ts"))).toBe(true);
+      expect(files.some((f) => f.endsWith("keys.secret.ts"))).toBe(false);
     });
   });
 
