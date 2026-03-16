@@ -77,10 +77,13 @@ export function computeCollectionStats(
     const req = signal.stats;
     if (!req) continue;
 
-    if (req.percentiles && req.percentiles.length > 0) {
+    if (req.labels && Object.keys(req.labels).length > 0) {
       result.percentiles = {};
-      for (const p of req.percentiles) {
-        result.percentiles[p] = percentile(values, p);
+      for (const key of Object.keys(req.labels)) {
+        const p = parseInt(key.slice(1), 10);
+        if (!isNaN(p)) {
+          result.percentiles[p] = percentile(values, p);
+        }
       }
     }
 
