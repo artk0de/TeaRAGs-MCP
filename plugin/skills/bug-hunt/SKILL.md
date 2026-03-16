@@ -1,64 +1,53 @@
 ---
 name: bug-hunt
-description: Use when debugging a specific bug or unexpected behavior — developer describes the symptom, skill directs search toward historically buggy code in the relevant area
+description: Use when debugging a specific bug or unexpected behavior — developer describes the symptom, skill directs search toward historically buggy code
 argument-hint: [bug description or symptom]
 ---
 
 # Bug Hunt
 
-Signal-driven root cause investigation. Developer provides symptom → skill finds historically problematic code in that area.
+Signal-driven root cause investigation using TeaRAGs git signals.
 
-## Tool Rules
+## MANDATORY RULES
 
-- Presets: use `bugHunt` exactly. NOT `hotspots` (different weights).
-- Verification: use ripgrep MCP (`mcp__ripgrep__search`) if available. Grep only as fallback.
-- Hybrid fallback: `semantic_search` if `hybrid_search` unavailable.
+1. **Use `rank_chunks` with `rerank="bugHunt"`** — this is the PRIMARY tool of this skill. It ranks functions by bug history signals. You MUST call it.
+2. **Do NOT use `git log`, `git diff`, `git blame`** — TeaRAGs already has all git signals indexed. Reading git directly wastes time.
+3. **Do NOT make more than 2 `semantic_search` calls** — one to discover area, one optional refinement. Not 5.
+4. **Do NOT read files before triage** — read overlay labels first, then read ONLY prime suspects.
+5. **Use ripgrep MCP** (`mcp__ripgrep__search`) for verification if available. Grep only as last fallback.
 
-## Workflow
+## Steps
 
 ### 1. DISCOVER
 
-`semantic_search` query=$ARGUMENTS → find area by symptom.
-Verify candidates: tree-sitter (structure) + ripgrep (call-sites) in parallel.
+ONE `semantic_search` query=$ARGUMENTS → find area. Note pathPattern from top results.
 
-### 2. RANK
+### 2. RANK (most important step)
 
-`rank_chunks` rerank=bugHunt, pathPattern=\<area from step 1\>.
+`rank_chunks` rerank="bugHunt", pathPattern=\<area\>, limit=15.
 
-Returns functions ranked by burstActivity + volatility + bugFix + relativeChurn — worst bug history first, independent of symptom similarity.
+This returns functions ranked by burstActivity + volatility + bugFix + relativeChurn. The top results are the most historically problematic functions in this area. Read their overlay labels — chunk.bugFixRate, chunk.churnRatio, chunk.commitCount.
 
 ### 3. MATCH
 
-`hybrid_search` query=$ARGUMENTS + "error exception retry duplicate fail crash timeout", pathPattern=\<area\>.
+`hybrid_search` query=$ARGUMENTS + "error exception fail", rerank="bugHunt", pathPattern=\<area\>.
 
-Catches symptom-related code that rank_chunks misses (semantic + keyword).
+Fallback: `semantic_search` if hybrid unavailable.
 
 ### 4. TRIAGE + ANALYZE
 
-Merge results from steps 2+3. Read chunk-level overlay labels + code:
+Merge steps 2+3. Triage by overlay labels:
 
-| chunk.bugFixRate | chunk.churnRatio | Verdict |
-|------------------|------------------|---------|
-| "critical" | "concentrated" | **Prime suspect** |
-| "concerning" | any | **Secondary suspect** |
-| "healthy" | any | Skip |
+- chunk.bugFixRate "critical" + chunk.churnRatio "concentrated" → **prime suspect**
+- chunk.bugFixRate "concerning" → **secondary suspect**
+- chunk.bugFixRate "healthy" → skip
 
-Read code of suspects. Look for: missing guards, race conditions, duplicate processing, retry without idempotency, stale state.
+Read code of prime suspects ONLY. Look for: missing guards, race conditions, duplicate processing, retry without idempotency.
 
-Present:
-
-```
-1. processPayment() [src/payment/processor.ts:45-89]
-   bugFixRate: "critical", churnRatio: "concentrated"
-   → no idempotency check, retry re-enters without guard
-
-2. handleWebhook() [src/webhook/handler.ts:12-34]
-   bugFixRate: "concerning", commitCount: "high"
-   → async callback may fire twice on timeout
-```
+Present ranked list with signals + observation per suspect.
 
 ### 5. VERIFY + FIX
 
-ripgrep: confirm identified mechanism exists in current code (not just git history).
+ripgrep: confirm mechanism exists in current code.
 
-Fix → invoke `/tea-rags:data-driven-generation` for target function.
+Fix → `/tea-rags:data-driven-generation`.
