@@ -48,3 +48,7 @@ Never trust semantic search results without verification. Generated code referen
 - `rank_chunks` — rank by signals without query (top-N by churn, bugs, etc.)
 
 These tools return `rankingOverlay` with `{ value, label }` pairs that drive strategy selection.
+
+## hybrid_search Fallback
+
+`hybrid_search` requires the index to be built with `enableHybrid=true` (sparse vectors). If `hybrid_search` returns an error about missing sparse vectors, fall back to `semantic_search` with the same query and parameters. Semantic search covers the meaning axis; keyword markers (TODO, FIXME) may be missed but the search still works.
