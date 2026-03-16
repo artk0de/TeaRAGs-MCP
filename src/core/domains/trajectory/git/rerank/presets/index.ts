@@ -5,6 +5,7 @@
  */
 
 import type { RerankPreset } from "../../../../../contracts/types/reranker.js";
+import { BugHuntPreset } from "./bug-hunt.js";
 import { CodeReviewPreset } from "./code-review.js";
 import { HotspotsPreset } from "./hotspots.js";
 import { OnboardingPreset } from "./onboarding.js";
@@ -15,6 +16,7 @@ import { SecurityAuditPreset } from "./security-audit.js";
 import { StablePreset } from "./stable.js";
 import { TechDebtPreset } from "./tech-debt.js";
 
+export { BugHuntPreset } from "./bug-hunt.js";
 export { CodeReviewPreset } from "./code-review.js";
 export { HotspotsPreset } from "./hotspots.js";
 export { OnboardingPreset } from "./onboarding.js";
@@ -26,6 +28,7 @@ export { StablePreset } from "./stable.js";
 export { TechDebtPreset } from "./tech-debt.js";
 
 export const GIT_PRESETS: RerankPreset[] = [
+  new BugHuntPreset(),
   new TechDebtPreset(),
   new HotspotsPreset(),
   new CodeReviewPreset(),
