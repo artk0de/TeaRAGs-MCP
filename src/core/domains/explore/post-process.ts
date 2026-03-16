@@ -81,9 +81,7 @@ export function postProcess(results: SearchResult[], options: PostProcessOptions
 /** Check if overlay has any meaningful data. */
 function hasOverlayData(overlay: RankingOverlay): boolean {
   return Boolean(
-    (overlay.file && Object.keys(overlay.file).length > 0) ||
-    (overlay.chunk && Object.keys(overlay.chunk).length > 0) ||
-    (overlay.derived && Object.keys(overlay.derived).length > 0),
+    (overlay.file && Object.keys(overlay.file).length > 0) || (overlay.chunk && Object.keys(overlay.chunk).length > 0),
   );
 }
 
@@ -146,7 +144,6 @@ export function filterMetaOnly(
     if (overlay && hasOverlayData(overlay)) {
       const gitFromOverlay = buildGitFromOverlay(overlay);
       if (Object.keys(gitFromOverlay).length > 0) meta.git = gitFromOverlay;
-      if (overlay.derived && Object.keys(overlay.derived).length > 0) meta.derived = overlay.derived;
       meta.preset = overlay.preset;
     } else if (fullGit) {
       const filtered = filterGitByEssential(fullGit, essentialTrajectoryFields);

@@ -126,13 +126,12 @@ describe("filterMetaOnly", () => {
         rankingOverlay: {
           preset: "techDebt",
           file: { ageDays: 100, commitCount: 5 },
-          derived: { recency: 0.3 },
         },
       },
     ];
     const meta = filterMetaOnly(results, payloadSignals, []);
     expect(meta[0].git).toEqual({ file: { ageDays: 100, commitCount: 5 } });
-    expect(meta[0].derived).toEqual({ recency: 0.3 });
+    expect(meta[0].derived).toBeUndefined();
     expect(meta[0].preset).toBe("techDebt");
   });
 
