@@ -2,6 +2,15 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
 import { normalize } from "../../../../../infra/signal-utils.js";
 
+/**
+ * Measures the size of a code chunk in lines.
+ *
+ * Purpose: boost or penalize results by code volume.
+ * Detects: large methods/classes (refactoring candidates when weighted positively),
+ *   or small focused functions (when weighted negatively / used inversely).
+ * Scoring: normalized methodLines to p95 bound. Larger chunks → higher score.
+ * Used in: refactoring preset (large chunks = split candidates).
+ */
 export class ChunkSizeSignal implements DerivedSignalDescriptor {
   readonly name = "chunkSize";
   readonly description = "Normalized method/block size in lines (from methodLines payload field)";

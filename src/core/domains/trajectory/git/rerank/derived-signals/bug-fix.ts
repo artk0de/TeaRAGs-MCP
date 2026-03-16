@@ -2,6 +2,16 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
 import { blendNormalized, confidenceDampening, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
 
+/**
+ * Measures the proportion of commits that were bug fixes.
+ *
+ * Purpose: identify code areas with high defect history.
+ * Detects: error-prone modules, fragile logic, areas needing hardening or rewrite.
+ * Scoring: higher bugFixRate → higher score. Confidence-dampened by commitCount
+ *   (low-commit files produce unreliable fix ratios).
+ * Used in: hotspots, bugHunt presets.
+ * Raw source: bugFixRate — percentage of commits matching fix/bug patterns in messages.
+ */
 export class BugFixSignal implements DerivedSignalDescriptor {
   readonly name = "bugFix";
   readonly description = "Bug fix rate: code with more fix commits scores higher. L3 blends chunk+file bugFixRate.";

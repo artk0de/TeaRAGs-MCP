@@ -2,6 +2,17 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
 import { normalize } from "../../../../../infra/signal-utils.js";
 
+/**
+ * Measures code density — characters per line within a method/function.
+ *
+ * Purpose: surface overly dense code that may be hard to read or maintain.
+ * Detects: minified code, one-liner chains, deeply nested expressions,
+ *   complex ternary/boolean logic packed into few lines.
+ * Scoring: normalized methodDensity (chars/line). Only meaningful for methods
+ *   above the size floor (p50 of methodLines). Returns 0 for small snippets
+ *   where density is irrelevant.
+ * Used in: refactoring preset (dense code = readability improvement candidates).
+ */
 export class ChunkDensitySignal implements DerivedSignalDescriptor {
   readonly name = "chunkDensity";
   readonly description = "Code density: characters per line (from methodDensity payload field)";

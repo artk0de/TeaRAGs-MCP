@@ -2,6 +2,17 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
 import { confidenceDampening, fileField, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
 
+/**
+ * Measures author concentration — how much one person dominates the code.
+ *
+ * Purpose: identify strongly owned code for knowledge transfer or review assignment.
+ * Detects: single-owner modules (high score), collaboratively maintained code (low score).
+ * Scoring: dominantAuthorPct/100 when available, otherwise 1/authorCount.
+ *   Confidence-dampened by commitCount.
+ * Used in: ownership preset.
+ * Compare: KnowledgeSiloSignal uses discrete contributor count (1→1.0, 2→0.5);
+ *   OwnershipSignal uses continuous concentration percentage.
+ */
 export class OwnershipSignal implements DerivedSignalDescriptor {
   readonly name = "ownership";
   readonly description = "Author concentration: single-owner code scores higher (dominantAuthorPct or 1/authors)";

@@ -2,6 +2,17 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
 import { hasChunkData, payloadAlpha } from "./helpers.js";
 
+/**
+ * Data quality correction for "block" chunks (catch-all code outside functions/classes).
+ *
+ * Purpose: penalize block chunks that lack reliable chunk-level git data.
+ * Detects: low-confidence results where git signals are inherited from the file level
+ *   rather than computed for the specific code range.
+ * Scoring: 1.0 = full penalty (no chunk data), 0.0 = no penalty (reliable chunk data).
+ *   Non-block chunks always get 0 penalty. Applied as an inverted weight (subtracted).
+ * Used in: any preset — ensures block chunks don't rank artificially high from
+ *   borrowed file-level signals.
+ */
 export class BlockPenaltySignal implements DerivedSignalDescriptor {
   readonly name = "blockPenalty";
   readonly description =
