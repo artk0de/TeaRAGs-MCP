@@ -22,14 +22,16 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 
 ### 1. DISCOVER
 
-ONE `semantic_search` query=$ARGUMENTS, **no rerank** (pure similarity) → find area. Note top 3-5 file paths. Do NOT use rerank="bugHunt" here — discovery is about finding the right area, not ranking by signals.
+ONE `semantic_search` query=$ARGUMENTS, **no rerank** (pure similarity), limit=10 → find area. Note top 3-5 file paths. Do NOT use rerank="bugHunt" here — discovery is about finding the right area, not ranking by signals.
 
 ### 2. DRILL DOWN (parallel)
 
 Run both at the same time, scoped to files from step 1:
 
-1. `rank_chunks` rerank="bugHunt", pathPattern for specific files, limit=15.
-2. `hybrid_search` query=$ARGUMENTS + "error exception fail", rerank="bugHunt", same scope. Fallback: `semantic_search` if hybrid unavailable.
+1. `rank_chunks` rerank="bugHunt", pathPattern for specific files, limit=10.
+2. `hybrid_search` query=$ARGUMENTS + "error exception fail", rerank="bugHunt", same scope, limit=10. Fallback: `semantic_search` if hybrid unavailable.
+
+Need more results? Use offset for pagination, not higher limit.
 
 ### 3. TRIAGE + ANALYZE
 
