@@ -3,6 +3,39 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## 1.5.0 (2026-03-16)
+
+- feat(api): add getIndexMetrics to App interface and ExploreFacade
+  ([6657cb2](https://github.com/artk0de/TeaRAGs-MCP/commit/6657cb2))
+- feat(dto): add IndexMetrics DTO for get_index_metrics
+  ([2d66e68](https://github.com/artk0de/TeaRAGs-MCP/commit/2d66e68))
+- feat(infra): bump StatsCache to v3 with distributions support
+  ([b0f5cab](https://github.com/artk0de/TeaRAGs-MCP/commit/b0f5cab))
+- feat(ingest): compute distributions and min/max in computeCollectionStats
+  ([f8ceb71](https://github.com/artk0de/TeaRAGs-MCP/commit/f8ceb71))
+- feat(mcp): register get_index_metrics tool
+  ([ec42101](https://github.com/artk0de/TeaRAGs-MCP/commit/ec42101))
+- feat(presets): add bugHunt preset for finding potential bug locations
+  ([65d13b3](https://github.com/artk0de/TeaRAGs-MCP/commit/65d13b3))
+- feat(reranker): add label-resolver for overlay value labeling
+  ([68daa7f](https://github.com/artk0de/TeaRAGs-MCP/commit/68daa7f))
+- feat(reranker): integrate label resolution into buildOverlay()
+  ([26c80e3](https://github.com/artk0de/TeaRAGs-MCP/commit/26c80e3))
+- refactor(contracts): add min/max to SignalStats, add Distributions
+  ([72d7863](https://github.com/artk0de/TeaRAGs-MCP/commit/72d7863))
+- refactor(contracts): replace percentiles with labels in SignalStatsRequest
+  ([6979647](https://github.com/artk0de/TeaRAGs-MCP/commit/6979647))
+- refactor(reranker): remove derived from OverlayMask and RankingOverlay
+  ([7f764b5](https://github.com/artk0de/TeaRAGs-MCP/commit/7f764b5))
+- docs(plans): add index-metrics + overlay labels implementation plan
+  ([780aae7](https://github.com/artk0de/TeaRAGs-MCP/commit/780aae7))
+- docs(presets): add JSDoc to all 11 rerank presets
+  ([9da1aaf](https://github.com/artk0de/TeaRAGs-MCP/commit/9da1aaf))
+- docs(signals): add JSDoc to all 20 derived signals and enforce in rules
+  ([85ec69e](https://github.com/artk0de/TeaRAGs-MCP/commit/85ec69e))
+- docs(specs): add get_index_metrics + overlay labels design spec
+  ([d608e82](https://github.com/artk0de/TeaRAGs-MCP/commit/d608e82))
+
 ## 1.4.0 (2026-03-15)
 
 - feat(config): add QDRANT_QUANTIZATION_SCALAR env flag
