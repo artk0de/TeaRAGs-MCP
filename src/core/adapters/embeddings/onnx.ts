@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { createConnection, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,8 +65,10 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private async ensureInitialized(): Promise<void> {
     if (this.connectPromise) return this.connectPromise;
 
-    // Spawn daemon if socket does not exist yet
     if (!existsSync(this.socketPath)) {
+      await this.spawnDaemon();
+    } else if (this.isSocketStale()) {
+      this.cleanupStaleSocket();
       await this.spawnDaemon();
     }
 
@@ -77,6 +79,37 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     } catch (err) {
       this.connectPromise = null;
       throw err;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Stale socket detection
+  // ---------------------------------------------------------------------------
+
+  /** Check if socket file exists but the daemon process is dead. */
+  private isSocketStale(): boolean {
+    if (!this.pidFile) return false; // no pid tracking — assume alive
+    if (!existsSync(this.pidFile)) return true;
+    try {
+      const pid = parseInt(readFileSync(this.pidFile, "utf-8").trim(), 10);
+      if (isNaN(pid)) return true;
+      process.kill(pid, 0); // signal 0 = check if alive
+      return false;
+    } catch {
+      return true; // process not found
+    }
+  }
+
+  private cleanupStaleSocket(): void {
+    try {
+      if (existsSync(this.socketPath)) unlinkSync(this.socketPath);
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (this.pidFile && existsSync(this.pidFile)) unlinkSync(this.pidFile);
+    } catch {
+      /* ignore */
     }
   }
 
