@@ -1692,12 +1692,16 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     // git.file.commitCount has stats.labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([
-        [
-          "git.file.commitCount",
-          { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } },
-        ],
+        ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
       ]),
-      distributions: { totalFiles: 100, language: {}, chunkType: {}, documentation: { docs: 0, code: 100 }, topAuthors: [], othersCount: 0 },
+      distributions: {
+        totalFiles: 100,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     rerankerWithLabels.setCollectionStats(collectionStats);
@@ -1724,7 +1728,14 @@ describe("Reranker — label resolution in buildOverlay()", () => {
         ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
         ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
       ]),
-      distributions: { totalFiles: 100, language: {}, chunkType: {}, documentation: { docs: 0, code: 100 }, topAuthors: [], othersCount: 0 },
+      distributions: {
+        totalFiles: 100,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     rerankerWithLabels.setCollectionStats(collectionStats);
@@ -1763,7 +1774,14 @@ describe("Reranker — label resolution in buildOverlay()", () => {
         // Only ageDays in stats, NOT commitCount
         ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
       ]),
-      distributions: { totalFiles: 100, language: {}, chunkType: {}, documentation: { docs: 0, code: 100 }, topAuthors: [], othersCount: 0 },
+      distributions: {
+        totalFiles: 100,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     rerankerWithLabels.setCollectionStats(collectionStats);
