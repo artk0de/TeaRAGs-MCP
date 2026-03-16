@@ -31,10 +31,10 @@ describe("rank_chunks scoring fixes", () => {
     // With fix, only chunkSize+chunkDensity contribute, scores ~0.49 for methodLines=200/bound=500
     expect(ranked[0].score).toBeGreaterThan(0.4);
 
-    // Overlay should use preset's derived mask
+    // Overlay should use preset's file mask
     expect(ranked[0].rankingOverlay?.preset).toBe("decomposition");
-    expect(ranked[0].rankingOverlay?.derived?.chunkSize).toBeGreaterThan(0);
-    expect(ranked[0].rankingOverlay?.derived?.chunkDensity).toBeGreaterThan(0);
+    expect(ranked[0].rankingOverlay).not.toHaveProperty("derived");
+    expect(ranked[0].rankingOverlay?.file?.methodLines).toBeGreaterThan(0);
   });
 
   it("scores large methods near 1.0 when similarity is excluded", () => {
@@ -48,10 +48,10 @@ describe("rank_chunks scoring fixes", () => {
   });
 });
 
-describe("overlay derived values visibility", () => {
-  it("hasOverlayData returns true when only derived values exist", () => {
+describe("overlay raw values visibility", () => {
+  it("overlay includes file.methodLines when decomposition mask is applied", () => {
     // This tests the formatSearchResults metaOnly path
-    // When overlay has only derived (no file/chunk), it should still be included
+    // When overlay has file signals, it should be included
     const reranker = new Reranker(staticDerivedSignals, [new DecompositionPreset()]);
 
     const results = [{ score: 0, payload: { methodLines: 100, methodDensity: 60 } }];
@@ -64,9 +64,9 @@ describe("overlay derived values visibility", () => {
 
     const overlay = ranked[0].rankingOverlay;
     expect(overlay).toBeDefined();
-    expect(overlay?.derived).toBeDefined();
-    expect(Object.keys(overlay?.derived ?? {})).toContain("chunkSize");
-    expect(Object.keys(overlay?.derived ?? {})).toContain("chunkDensity");
+    expect(overlay).not.toHaveProperty("derived");
+    expect(overlay?.file).toBeDefined();
+    expect(overlay?.file?.methodLines).toBeGreaterThan(0);
   });
 });
 

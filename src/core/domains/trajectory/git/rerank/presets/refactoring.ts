@@ -29,7 +29,6 @@ export class RefactoringPreset implements RerankPreset {
   };
   readonly groupBy = "parentName";
   readonly overlayMask: OverlayMask = {
-    derived: ["chunkSize", "chunkDensity", "chunkChurn", "volatility"],
     file: ["ageDays", "commitCount", "relativeChurn", "bugFixRate", "churnVolatility"],
     chunk: ["commitCount", "churnRatio"],
   };

@@ -1085,7 +1085,7 @@ describe("Reranker (v2 class)", () => {
     expect(ranked[0].rankingOverlay).toBeUndefined();
   });
 
-  it("decomposition preset includes derived values in overlay", () => {
+  it("decomposition preset includes file.methodLines in overlay", () => {
     const results = [
       makeResult(0.8, undefined, {
         contentSize: 5000,
@@ -1099,9 +1099,9 @@ describe("Reranker (v2 class)", () => {
     const ranked = reranker.rerank(results, "decomposition", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
     expect(overlay.preset).toBe("decomposition");
-    expect(overlay.derived).toBeDefined();
-    expect(overlay.derived!.chunkSize).toBeGreaterThan(0);
-    expect(overlay.derived!.chunkDensity).toBeGreaterThan(0);
+    expect(overlay).not.toHaveProperty("derived");
+    expect(overlay.file).toBeDefined();
+    expect(overlay.file!.methodLines).toBeGreaterThan(0);
   });
 
   it("supports custom weights with overlay", () => {

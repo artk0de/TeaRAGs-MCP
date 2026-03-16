@@ -23,7 +23,7 @@ export class DecompositionPreset implements RerankPreset {
     chunkDensity: 0.2,
   };
   readonly overlayMask: OverlayMask = {
-    derived: ["chunkSize", "chunkDensity"],
+    file: ["methodLines"],
   };
   readonly groupBy = "parentName";
 }

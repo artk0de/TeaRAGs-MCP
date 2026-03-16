@@ -29,10 +29,8 @@ describe("DecompositionPreset", () => {
     expect(sum).toBeCloseTo(1.0, 5);
   });
 
-  it("has derived overlay mask with chunkSize and chunkDensity", () => {
-    expect(preset.overlayMask.derived).toContain("chunkSize");
-    expect(preset.overlayMask.derived).toContain("chunkDensity");
-    expect(preset.overlayMask.file).toBeUndefined();
+  it("has file overlay mask with methodLines", () => {
+    expect(preset.overlayMask.file).toContain("methodLines");
     expect(preset.overlayMask.chunk).toBeUndefined();
   });
 });
@@ -69,7 +67,7 @@ describe("Decomposition reranking produces scores in 0-1", () => {
     expect(ranked[0].score).toBeCloseTo(ranked[1].score, 5);
   });
 
-  it("ranking overlay includes chunkSize and chunkDensity derived values", () => {
+  it("ranking overlay includes file.methodLines raw value", () => {
     const results = [{ score: 0.8, payload: { methodLines: 100, methodDensity: 60 } }];
 
     const ranked = reranker.rerank(results, "decomposition", "semantic_search");
@@ -77,7 +75,7 @@ describe("Decomposition reranking produces scores in 0-1", () => {
 
     expect(overlay).toBeDefined();
     expect(overlay?.preset).toBe("decomposition");
-    expect(overlay?.derived?.chunkSize).toBeGreaterThan(0);
-    expect(overlay?.derived?.chunkDensity).toBeGreaterThan(0);
+    expect(overlay).not.toHaveProperty("derived");
+    expect(overlay?.file?.methodLines).toBeGreaterThan(0);
   });
 });

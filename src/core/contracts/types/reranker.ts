@@ -48,7 +48,6 @@ export interface RerankableResult {
 export interface OverlayMask {
   readonly file?: string[];
   readonly chunk?: string[];
-  readonly derived?: string[];
 }
 
 /** Granularity level for reranking signals. */
@@ -74,7 +73,6 @@ export interface RankingOverlay {
   preset: string;
   file?: Record<string, unknown>;
   chunk?: Record<string, unknown>;
-  derived?: Record<string, number>;
 }
 
 /** Search result with ranking overlay from reranker. */
