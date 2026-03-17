@@ -9,6 +9,8 @@ On session start, call `get_index_status` for the current project:
 - **Indexed + drift detected** → run `reindex_changes` before searching.
 - **Not indexed** → run `index_codebase` first.
 
+After indexing or reindexing, call `get_index_metrics` and **memorize the label thresholds**. Example: if commitCount labels are `{ low: 1, typical: 3, high: 8, extreme: 20 }` — remember that in THIS codebase, 8 commits = "high". This context is needed to interpret overlay labels during searches.
+
 ## TeaRAGs Tool Selection
 
 | Tool | When | Example |
