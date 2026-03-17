@@ -57,7 +57,7 @@ the answer. They only waste time.
 
 | What you need                | Tool                                  | Notes                                                                                                                                                         |
 | ---------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Find code by intent/behavior | `semantic_search` NO rerank, limit=10 | First call. Most specific query from symptom                                                                                                                  |
+| Find code by intent/behavior | `semantic_search` NO rerank, limit=15 | First call. Most specific query from symptom                                                                                                                  |
 | Rank suspects by git signals | `rank_chunks` rerank="bugHunt"        | ≤5 files: level="chunk" first. >5 files: level="file" first. Fallback to other level if empty                                                                 |
 | Find exact symbol definition | `hybrid_search`                       | One symbol per query with definition keyword (`def`, `function`, `class`)                                                                                     |
 | Find similar patterns        | `find_similar` from chunk ID          | After root cause found — copy-paste bugs                                                                                                                      |
