@@ -1,71 +1,87 @@
 ---
 name: research
-description: Use when researching code before generating or modifying it — pre-generation investigation with index verification, symbol validation, and overlay labels for strategy selection
+description: Use when researching code before generating or modifying it — pre-generation investigation that identifies problematic zones, risk areas, and ownership for strategy selection
 argument-hint: [area or feature to research before coding]
 ---
 
 # Research
 
-Pre-generation investigation. Produces verified area analysis with overlay labels for `/tea-rags:data-driven-generation`.
+Pre-generation investigation. Discovers code area AND identifies problematic zones — high churn, bug-prone functions, ownership silos. Feeds into `/tea-rags:data-driven-generation`.
 
-**This skill feeds into code generation.** Results must be verified — unverified symbols in generated code = compilation errors.
+**Key difference from explore:** explore explains how code works. Research flags **where the risks are** for safe modification.
 
 ## Pre-checks
 
-1. `get_index_status` → if drift or stale → `reindex_changes`.
-2. Confirm overlay labels are loaded (from session start `get_index_metrics`).
+1. `get_index_status` → if indexed → `reindex_changes`. If not → `index_codebase`.
+2. Confirm label thresholds loaded (`get_index_metrics` from session start).
 
 ## Flow
 
 ```
-DISCOVER (semantic_search) → ASSESS signals (rank_chunks) →
-  output: area + overlay labels + strategy recommendation
+DISCOVER (semantic_search) → ASSESS (rank_chunks) → FLAG problematic zones →
+  output: area + risk map + strategy recommendation
 ```
 
 ### 1. DISCOVER
 
-`semantic_search` query=$ARGUMENTS, limit=10. NO rerank — pure relevance for discovery.
+`semantic_search` query=$ARGUMENTS, limit=10.
 
-Note top 3-5 file paths from results.
+**Use filters to narrow scope:**
+- `pathPattern` — if you know the module: `"**/workflow/pipelines/**"`
+- `language` — if project is polyglot: `"ruby"`, `"typescript"`
+
+Note top 3-5 file paths. These become pathPattern for step 2.
 
 ### 2. ASSESS SIGNALS
 
 `rank_chunks` pathPattern=<files from step 1>, metaOnly=false.
 
-Choose rerank by what you need to understand:
-- **Balanced research** (default): `rerank={ "custom": { "bugFix": 0.25, "age": 0.2, "volatility": 0.2, "ownership": 0.15, "churn": 0.1, "stability": 0.1 } }`
+**Use filters:**
+- `pathPattern` — exact relativePath from step 1: `"{file1.rb,file2.rb}"`
+- `language` — same as step 1
+- `level` — "chunk" for ≤5 files, "file" for >5 files
+
+Choose rerank by what you need:
+- **Balanced** (default): `rerank={ "custom": { "bugFix": 0.25, "age": 0.2, "volatility": 0.2, "ownership": 0.15, "churn": 0.1, "stability": 0.1 } }`
 - Risk-focused: `rerank="hotspots"` or `rerank="techDebt"`
-- Bug investigation: `rerank="bugHunt"` (use `/tea-rags:bug-hunt` skill instead)
 
-Read overlay labels:
-- file.bugFixRate → risk level
-- file.ageDays → maturity
-- file.churnVolatility → stability
-- chunk.commitCount, chunk.churnRatio → granular risk
+### 3. FLAG PROBLEMATIC ZONES
 
-**Output for data-driven-generation:**
-- File paths
-- Overlay labels per suspect
-- Recommended strategy (DEFENSIVE / STABILIZATION / CONSERVATIVE / STANDARD)
-- Domain owner (from dominantAuthor in overlay)
+Read overlay labels and **explicitly note** risk areas:
 
-### 3. OPTIONAL: DEEP TRACE
+| Label combination | Flag |
+|---|---|
+| bugFixRate "critical" | HIGH RISK — frequent bug fixes |
+| bugFixRate "concerning" + churnVolatility "erratic" | UNSTABLE — erratic patching |
+| ageDays "legacy" + commitCount "low" | FRAGILE — old untouched code |
+| dominantAuthorPct "silo" | OWNERSHIP RISK — single owner |
+| churnRatio "concentrated" | HOTSPOT — one function absorbs churn |
 
-If step 1 results show method calls that need tracing:
-- `hybrid_search` query="def method_name" — one symbol per query.
-- Or Read file if file already known.
+Don't skip "healthy" signals — note them too. They indicate safe areas for modification.
 
-## Output Format
+### 4. OPTIONAL: DEEP TRACE
+
+If step 1 results show method calls to trace:
+- `hybrid_search` query="def method_name" — one symbol per query
+- Or Read file if already known
+
+## Output
 
 ```
 Research complete for: [area]
-Files: [list]
-Strategy recommendation: [mode] because [signals]
+
+Files: [list with pathPattern-ready format]
+Language: [detected language]
+
+Risk map:
+  - file1.rb: bugFixRate "critical", ageDays "old" → HIGH RISK
+  - file2.rb: bugFixRate "healthy", ageDays "legacy" → SAFE, stable
+  - file1.rb#method_x: churnRatio "concentrated" → HOTSPOT
+
+Strategy recommendation: [DEFENSIVE/STABILIZATION/CONSERVATIVE/STANDARD]
+  because: [which signals drove the decision]
+
 Domain owner: [author] ([dominantAuthorPct]%)
-Key signals:
-  - file.bugFixRate: [label] ([value])
-  - file.ageDays: [label] ([value])
-  - chunk.commitCount: [label] ([value])
 ```
 
 Invoke `/tea-rags:data-driven-generation` with these results.
