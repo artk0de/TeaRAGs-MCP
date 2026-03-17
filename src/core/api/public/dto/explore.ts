@@ -50,6 +50,7 @@ export interface TypedFilterParams {
 export interface SemanticSearchRequest extends CollectionRef, TypedFilterParams {
   query: string;
   limit?: number;
+  offset?: number;
   filter?: Record<string, unknown>;
   pathPattern?: string;
   rerank?: string | { custom: Record<string, number> };
@@ -65,6 +66,7 @@ export interface SemanticSearchRequest extends CollectionRef, TypedFilterParams 
 export interface HybridSearchRequest extends CollectionRef, TypedFilterParams {
   query: string;
   limit?: number;
+  offset?: number;
   filter?: Record<string, unknown>;
   pathPattern?: string;
   rerank?: string | { custom: Record<string, number> };
@@ -86,6 +88,7 @@ export interface ExploreCodeRequest extends TypedFilterParams {
   path: string;
   query: string;
   limit?: number;
+  offset?: number;
   pathPattern?: string;
   rerank?: string | { custom: Record<string, number> };
   filter?: Record<string, unknown>;
