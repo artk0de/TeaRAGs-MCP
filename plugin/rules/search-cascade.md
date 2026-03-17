@@ -71,6 +71,12 @@ For full preset details: `tea-rags://schema/presets`
 For full filter syntax: `tea-rags://schema/filters`
 For signal labels: `tea-rags://schema/signal-labels`
 
+## Pagination
+
+All tools default to limit=10. Need more results → use offset (offset=10 for page 2, offset=20 for page 3). Same query, same pathPattern — just next page.
+
+Different area or angle → new query, not offset.
+
 ## External Tools (priority: LSP → ripgrep → tree-sitter)
 
 | Task | Best tool | Fallback |
