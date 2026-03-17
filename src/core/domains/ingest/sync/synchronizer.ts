@@ -255,7 +255,11 @@ export class FileSynchronizer {
     const currentHashes = await this.computeFileHashes(currentFiles);
 
     // Compare with previous snapshot
-    const changes = MerkleTree.compare(this.previousHashes, currentHashes);
+    const changes: FileChanges = {
+      ...MerkleTree.compare(this.previousHashes, currentHashes),
+      newlyIgnored: [],
+      newlyUnignored: [],
+    };
 
     // DEBUG: Log change detection results
     if (isDebug()) {

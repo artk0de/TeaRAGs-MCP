@@ -11,7 +11,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { existsSync, promises as fs } from "node:fs";
 import { join, relative } from "node:path";
 
 import type { FileChanges } from "../../../types.js";
@@ -171,6 +171,11 @@ export class ParallelFileSynchronizer {
     const changes = this.mergeShardResults(shardResults, currentFiles);
     timings.merging = Date.now() - mergeStart;
 
+    // Classify ignore pattern changes
+    const classifyStart = Date.now();
+    await this.classifyIgnoreChanges(changes);
+    timings.classifying = Date.now() - classifyStart;
+
     // OPTIMIZATION: Cache computed hashes for reuse in updateSnapshot
     const cacheStart = Date.now();
     this.lastComputedHashes = new Map<string, FileMetadata>();
@@ -189,7 +194,7 @@ export class ParallelFileSynchronizer {
       console.error(
         `[Sync] detectChanges: ${currentFiles.length} files in ${total}ms ` +
           `(group: ${timings.grouping}ms, process: ${timings.processing}ms, ` +
-          `merge: ${timings.merging}ms, cache: ${timings.caching}ms)`,
+          `merge: ${timings.merging}ms, classify: ${timings.classifying}ms, cache: ${timings.caching}ms)`,
       );
       console.error(
         `[Sync] detectChanges result: ${changes.added.length} added, ` +
@@ -476,7 +481,49 @@ export class ParallelFileSynchronizer {
       }
     }
 
-    return { added, modified, deleted };
+    return { added, modified, deleted, newlyIgnored: [], newlyUnignored: [] };
+  }
+
+  /**
+   * Classify which added/deleted files are due to ignore pattern changes.
+   *
+   * - newlyIgnored: files in `deleted` that still exist on disk
+   *   (file wasn't removed, scanner excluded it due to new ignore rules)
+   * - newlyUnignored: files in `added` whose birthtime predates the
+   *   previous snapshot (file existed before but was previously excluded)
+   */
+  private async classifyIgnoreChanges(changes: FileChanges): Promise<void> {
+    // Deleted files that still exist on disk → newly ignored
+    for (const relativePath of changes.deleted) {
+      const fullPath = join(this.codebasePath, relativePath);
+      if (existsSync(fullPath)) {
+        changes.newlyIgnored.push(relativePath);
+      }
+    }
+
+    // Added files that existed before the snapshot → newly unignored
+    const snapshotTimestamp = this.previousSnapshot?.timestamp ?? null;
+    if (snapshotTimestamp !== null && changes.added.length > 0) {
+      const results = await Promise.all(
+        changes.added.map(async (relativePath) => {
+          try {
+            const fileStat = await fs.stat(join(this.codebasePath, relativePath));
+            return fileStat.birthtimeMs < snapshotTimestamp ? relativePath : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      for (const path of results) {
+        if (path !== null) changes.newlyUnignored.push(path);
+      }
+    }
+
+    if (isDebug() && (changes.newlyIgnored.length > 0 || changes.newlyUnignored.length > 0)) {
+      console.error(
+        `[Sync] Ignore pattern changes: ${changes.newlyIgnored.length} newly ignored, ${changes.newlyUnignored.length} newly unignored`,
+      );
+    }
   }
 
   /**
