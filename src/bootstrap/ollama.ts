@@ -6,7 +6,7 @@ export async function checkOllamaAvailability(
   if (embeddingProvider !== "ollama") return;
 
   const url = baseUrl || "http://localhost:11434";
-  const model = modelName || "jina-embeddings-v2-base-code";
+  const model = modelName || "unclemusclez/jina-embeddings-v2-base-code:latest";
   const isLocalhost = url.includes("localhost") || url.includes("127.0.0.1");
 
   try {
@@ -49,13 +49,13 @@ export async function checkOllamaAvailability(
         `  - Using Docker: docker compose up -d\n` +
         `  - Or install locally: curl -fsSL https://ollama.ai/install.sh | sh\n` +
         `\nThen pull the embedding model:\n` +
-        `  ollama pull jina-embeddings-v2-base-code`;
+        `  ollama pull unclemusclez/jina-embeddings-v2-base-code:latest`;
     } else {
       helpText =
         `Please ensure:\n` +
         `  - Ollama is running at the specified URL\n` +
         `  - The URL is accessible from this machine\n` +
-        `  - The embedding model is available (e.g., jina-embeddings-v2-base-code)`;
+        `  - The embedding model is available (e.g., unclemusclez/jina-embeddings-v2-base-code:latest)`;
     }
 
     throw new Error(`${errorMessage}\n${helpText}`);
