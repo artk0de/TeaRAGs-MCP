@@ -3,6 +3,27 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## 1.11.0 (2026-03-17)
+
+- test(explore): add offset pagination tests for BaseExploreStrategy
+  ([e9846da](https://github.com/artk0de/TeaRAGs-MCP/commit/e9846da))
+- fix(dx): deny commit instead of ask when plugin version not bumped
+  ([448e611](https://github.com/artk0de/TeaRAGs-MCP/commit/448e611))
+- feat(api): add offset parameter to semantic_search, hybrid_search, search_code
+  ([95f6119](https://github.com/artk0de/TeaRAGs-MCP/commit/95f6119))
+- feat(dx): add PreToolUse hook to check plugin version bump before commit
+  ([84b0ace](https://github.com/artk0de/TeaRAGs-MCP/commit/84b0ace))
+- refactor(plugin): move pagination to cascade rule — applies to all tools
+  ([2c96c0e](https://github.com/artk0de/TeaRAGs-MCP/commit/2c96c0e))
+- improve(plugin): remove hard limits from research — agent decides iteration
+  ([e3ecc40](https://github.com/artk0de/TeaRAGs-MCP/commit/e3ecc40))
+- improve(plugin): remove symbol verification from research, add balanced rerank
+  ([6e97f55](https://github.com/artk0de/TeaRAGs-MCP/commit/6e97f55))
+- improve(plugin): research outputs facts not strategy, adds iteration budget
+  ([3791215](https://github.com/artk0de/TeaRAGs-MCP/commit/3791215))
+- improve(plugin): research skill flags problematic zones, uses filters
+  ([81d307e](https://github.com/artk0de/TeaRAGs-MCP/commit/81d307e))
+
 ## 1.10.0 (2026-03-17)
 
 - feat(plugin): add explore + research skills, refactor data-driven-generation
