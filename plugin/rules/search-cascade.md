@@ -5,7 +5,7 @@
 ## Session Start
 
 **1. Check index:**
-- `get_index_status` → indexed + no drift → ready. Drift → `reindex_changes`. Not indexed → `index_codebase`.
+- `get_index_status` → indexed → `reindex_changes` (always, picks up recent changes). Not indexed → `index_codebase`.
 
 **2. Memorize label thresholds:**
 - `get_index_metrics` → remember label values. Example: commitCount `{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" in THIS codebase.
