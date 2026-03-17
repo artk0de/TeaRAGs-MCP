@@ -4,12 +4,15 @@
 
 ## Session Start
 
-On session start, call `get_index_status` for the current project:
-- **Indexed + no drift** → ready to search.
-- **Indexed + drift detected** → run `reindex_changes` before searching.
-- **Not indexed** → run `index_codebase` first.
+**1. Check index:**
+- `get_index_status` → indexed + no drift → ready. Drift → `reindex_changes`. Not indexed → `index_codebase`.
 
-After indexing or reindexing, call `get_index_metrics` and **memorize the label thresholds**. Example: if commitCount labels are `{ low: 1, typical: 3, high: 8, extreme: 20 }` — remember that in THIS codebase, 8 commits = "high". This context is needed to interpret overlay labels during searches.
+**2. Memorize label thresholds:**
+- `get_index_metrics` → remember label values. Example: commitCount `{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" in THIS codebase.
+
+**3. Detect available tools:**
+- Check which LSP/structural tools are available in this session (e.g. `mcp__ruby-lsp__*`, `mcp__ide__*`, `mcp__typescript-language-server__*`, tree-sitter, ripgrep MCP).
+- Remember what's available. Use LSP for references and structure when present. Fallback to ripgrep + tree-sitter if no LSP.
 
 ## TeaRAGs Tool Selection
 
@@ -57,13 +60,17 @@ For full preset details: `tea-rags://schema/presets`
 For full filter syntax: `tea-rags://schema/filters`
 For signal labels: `tea-rags://schema/signal-labels`
 
-## External Tools
+## External Tools (priority: LSP → ripgrep → tree-sitter)
 
-| Tool | When | Example |
-|------|------|---------|
-| ripgrep MCP | Find call-sites, imports. ONE call, specific pattern. | "who calls BatchCreate?" → pattern="BatchCreate.call" |
-| tree-sitter | Structural overview without reading files. | "what methods does this class have?" → `analyze_code_structure` |
-| Read file | Understand code after finding it. | Found suspect → Read the function |
+| Task | Best tool | Fallback |
+|------|-----------|----------|
+| Find call-sites / references | LSP "Find References" on file:line from search results | ripgrep pattern="ClassName.method" |
+| Find implementations | LSP "Go to Implementation" | ripgrep pattern="class ClassName" |
+| Structural overview (methods, signatures) | LSP "Document Symbols" | tree-sitter `analyze_code_structure` |
+| Find pattern across project (TODO, flags) | ripgrep — LSP doesn't do text search | — |
+| Understand code | Read file | — |
+
+**TeaRAGs results contain `relativePath` + `startLine`** — direct input for LSP calls. No need to search for the file first.
 
 ## Trust the Index
 
