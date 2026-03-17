@@ -59,6 +59,7 @@ export class EnrichmentApplier {
     const operations: {
       payload: Record<string, unknown>;
       points: (string | number)[];
+      key?: string;
     }[] = [];
 
     for (const [filePath, fileItems] of byFile) {
@@ -80,10 +81,13 @@ export class EnrichmentApplier {
 
       const maxEndLine = fileItems.reduce((max, item) => Math.max(max, item.chunk.endLine), 0);
       const finalData = transform ? transform(data, maxEndLine) : data;
-      const payload = { [providerKey]: { file: finalData } };
 
       for (const item of fileItems) {
-        operations.push({ payload, points: [item.chunkId] });
+        operations.push({
+          payload: finalData as Record<string, unknown>,
+          points: [item.chunkId],
+          key: `${providerKey}.file`,
+        });
       }
     }
 
@@ -115,14 +119,16 @@ export class EnrichmentApplier {
     let batch: {
       payload: Record<string, unknown>;
       points: (string | number)[];
+      key?: string;
     }[] = [];
     let applied = 0;
 
     for (const [, overlayMap] of chunkMetadata) {
       for (const [chunkId, overlay] of overlayMap) {
         batch.push({
-          payload: { [providerKey]: { chunk: overlay } },
+          payload: overlay as Record<string, unknown>,
           points: [chunkId],
+          key: `${providerKey}.chunk`,
         });
 
         if (batch.length >= BATCH_SIZE) {

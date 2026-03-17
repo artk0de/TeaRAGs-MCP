@@ -7,9 +7,14 @@
 
 import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
 import type { RerankableResult } from "../../../contracts/types/reranker.js";
-import { RankModule } from "../rank-module.js";
+import { RankModule, type RankOptions } from "../rank-module.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
+
+/** Initial overfetch multiplier for file-level dedup. */
+const FILE_OVERFETCH_INITIAL = 3;
+/** Max adaptive re-fetch rounds before giving up. */
+const FILE_OVERFETCH_MAX_ROUNDS = 3;
 
 export class ScrollRankStrategy extends BaseExploreStrategy {
   readonly type = "scroll-rank" as const;
@@ -71,16 +76,42 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       await this.qdrant.ensurePayloadIndex(col, fieldName, isInteger ? "integer" : "float");
     };
 
-    const results: RerankableResult[] = await this.rankModule.rankChunks(ctx.collectionName, {
+    const baseOpts = {
       weights,
       level: ctx.level ?? "chunk",
-      limit: ctx.limit,
       scrollFn,
       ensureIndexFn,
       filter: ctx.filter,
       presetName: ctx.presetName,
-    });
+    };
 
+    // Chunk-level: single fetch, no dedup needed
+    if (ctx.level !== "file") {
+      return this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit: ctx.limit });
+    }
+
+    // File-level: adaptive fetch — increase limit until enough unique files
+    const targetFiles = ctx.limit;
+    let fetchLimit = targetFiles * FILE_OVERFETCH_INITIAL;
+    let prevChunkCount = 0;
+
+    for (let attempt = 0; attempt < FILE_OVERFETCH_MAX_ROUNDS; attempt++) {
+      const results = await this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit: fetchLimit });
+      const uniqueFiles = new Set(results.map((r) => r.payload?.relativePath)).size;
+
+      if (uniqueFiles >= targetFiles || results.length <= prevChunkCount) {
+        return results;
+      }
+
+      prevChunkCount = results.length;
+      fetchLimit *= 2;
+    }
+
+    return this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit: fetchLimit });
+  }
+
+  private async fetchAndMap(collectionName: string, opts: RankOptions): Promise<ExploreResult[]> {
+    const results: RerankableResult[] = await this.rankModule.rankChunks(collectionName, opts);
     return results.map((r) => ({
       score: r.score,
       payload: r.payload as Record<string, unknown> | undefined,
@@ -89,6 +120,11 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
 
   protected override postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
     let processed = results;
+
+    // File-level dedup: keep highest-scored chunk per file
+    if (originalCtx.level === "file") {
+      processed = this.groupByFile(processed, processed.length);
+    }
 
     const effectiveOffset = originalCtx.offset || 0;
     if (effectiveOffset > 0) {

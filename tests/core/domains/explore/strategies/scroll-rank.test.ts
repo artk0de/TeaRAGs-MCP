@@ -142,4 +142,115 @@ describe("ScrollRankStrategy", () => {
     // metaOnly=false preserves raw payload
     expect(results.length).toBeGreaterThan(0);
   });
+
+  it("groups by file when level='file' — one result per unique relativePath", async () => {
+    // Two chunks from same file "src/a.ts", one from "src/b.ts"
+    const qdrant = {
+      scrollOrdered: vi.fn().mockResolvedValue([
+        { id: "1", payload: { methodLines: 200, relativePath: "src/a.ts" } },
+        { id: "2", payload: { methodLines: 100, relativePath: "src/a.ts" } },
+        { id: "3", payload: { methodLines: 50, relativePath: "src/b.ts" } },
+      ]),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
+    } as unknown as QdrantManager;
+
+    const strategy = createStrategy(qdrant, undefined);
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "file",
+      limit: 10,
+      metaOnly: false,
+    });
+
+    const paths = results.map((r) => r.payload?.relativePath);
+    // Must have exactly 2 unique files, not 3 chunks
+    expect(paths).toHaveLength(2);
+    expect(new Set(paths).size).toBe(2);
+    expect(paths).toContain("src/a.ts");
+    expect(paths).toContain("src/b.ts");
+  });
+
+  it("adaptively fetches more chunks when first batch has too few unique files", async () => {
+    // 5 chunks per file × 4 files = 20 chunks total, limit=4 unique files requested.
+    // First fetch (limit * 3 = 12 chunks) likely covers only ~2-3 files.
+    // Strategy must detect shortage and re-fetch with higher limit.
+    let callCount = 0;
+    const allChunks = [
+      // File A: 5 chunks (ids 1-5)
+      ...Array.from({ length: 5 }, (_, i) => ({
+        id: `a${i}`,
+        payload: { methodLines: 300 - i * 10, relativePath: "src/a.ts" },
+      })),
+      // File B: 5 chunks (ids 6-10)
+      ...Array.from({ length: 5 }, (_, i) => ({
+        id: `b${i}`,
+        payload: { methodLines: 250 - i * 10, relativePath: "src/b.ts" },
+      })),
+      // File C: 5 chunks (ids 11-15)
+      ...Array.from({ length: 5 }, (_, i) => ({
+        id: `c${i}`,
+        payload: { methodLines: 200 - i * 10, relativePath: "src/c.ts" },
+      })),
+      // File D: 5 chunks (ids 16-20)
+      ...Array.from({ length: 5 }, (_, i) => ({
+        id: `d${i}`,
+        payload: { methodLines: 150 - i * 10, relativePath: "src/d.ts" },
+      })),
+    ];
+
+    const qdrant = {
+      scrollOrdered: vi.fn().mockImplementation(async (_col: string, _orderBy: unknown, limit: number) => {
+        callCount++;
+        // Return up to `limit` chunks (simulates Qdrant scroll with limit)
+        return Promise.resolve(allChunks.slice(0, limit));
+      }),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
+    } as unknown as QdrantManager;
+
+    const strategy = createStrategy(qdrant, undefined);
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "file",
+      limit: 4,
+      metaOnly: false,
+    });
+
+    const paths = results.map((r) => r.payload?.relativePath);
+    expect(new Set(paths).size).toBe(4);
+    expect(results).toHaveLength(4);
+    // Must have called rankChunks more than once (adaptive re-fetch)
+    expect(callCount).toBeGreaterThan(1);
+  });
+
+  it("stops re-fetching when data is exhausted (fewer unique files than limit)", async () => {
+    // Only 2 files exist, but limit=5. Should return 2, not loop forever.
+    const chunks = [
+      { id: "1", payload: { methodLines: 200, relativePath: "src/a.ts" } },
+      { id: "2", payload: { methodLines: 150, relativePath: "src/a.ts" } },
+      { id: "3", payload: { methodLines: 100, relativePath: "src/b.ts" } },
+    ];
+    const qdrant = {
+      scrollOrdered: vi.fn().mockResolvedValue(chunks),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
+    } as unknown as QdrantManager;
+
+    const strategy = createStrategy(qdrant, undefined);
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "file",
+      limit: 5,
+      metaOnly: false,
+    });
+
+    // Only 2 unique files exist — should return all available, not hang
+    expect(results).toHaveLength(2);
+    const paths = results.map((r) => r.payload?.relativePath);
+    expect(new Set(paths).size).toBe(2);
+  });
 });

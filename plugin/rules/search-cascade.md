@@ -1,5 +1,8 @@
 # Search Cascade
 
+**MANDATORY:** ALWAYS prefer TeaRAGs and ripgrep MCP over built-in Search/Grep.
+This is not optional.
+
 ## Three-Tool Cascade
 
 Order: **intent → structure → exact match**.

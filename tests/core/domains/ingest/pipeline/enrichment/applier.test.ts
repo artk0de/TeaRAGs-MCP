@@ -32,8 +32,9 @@ describe("EnrichmentApplier", () => {
         "test-collection",
         expect.arrayContaining([
           expect.objectContaining({
-            payload: { git: { file: { commitCount: 5 } } },
+            payload: { commitCount: 5 },
             points: ["chunk-1"],
+            key: "git.file",
           }),
         ]),
       );
@@ -64,11 +65,26 @@ describe("EnrichmentApplier", () => {
         "test-collection",
         expect.arrayContaining([
           expect.objectContaining({
-            payload: { git: { file: { computed: true, lines: 42 } } },
+            payload: { computed: true, lines: 42 },
             points: ["chunk-1"],
+            key: "git.file",
           }),
         ]),
       );
+    });
+
+    it("uses nested key path so file signals don't overwrite chunk signals", async () => {
+      // This test prevents regression: without key="git.file", set_payload({ git: { file: ... } })
+      // would overwrite the entire git object, destroying previously written git.chunk signals.
+      await applier.applyFileSignals("test-collection", "git", new Map([["src/index.ts", { ageDays: 30 }]]), "/repo", [
+        { chunkId: "chunk-1", chunk: { metadata: { filePath: "/repo/src/index.ts" }, endLine: 100 } } as any,
+      ]);
+
+      const ops = mockQdrant.batchSetPayload.mock.calls[0][1];
+      // MUST have key="git.file" — not payload={ git: { file: ... } }
+      expect(ops[0].key).toBe("git.file");
+      expect(ops[0].payload).toEqual({ ageDays: 30 });
+      expect(ops[0].payload).not.toHaveProperty("git");
     });
 
     it("tracks missed files for backfill", async () => {
@@ -115,8 +131,9 @@ describe("EnrichmentApplier", () => {
         "test-collection",
         expect.arrayContaining([
           expect.objectContaining({
-            payload: { git: { chunk: { commitCount: 3, churnRatio: 0.5 } } },
+            payload: { commitCount: 3, churnRatio: 0.5 },
             points: ["chunk-1"],
+            key: "git.chunk",
           }),
         ]),
       );
@@ -146,9 +163,9 @@ describe("EnrichmentApplier", () => {
       expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(1);
       const batch = mockQdrant.batchSetPayload.mock.calls[0][1];
       expect(batch).toHaveLength(3);
-      expect(batch[0]).toEqual({ payload: { git: { chunk: { churn: 0.3 } } }, points: ["chunk-a1"] });
-      expect(batch[1]).toEqual({ payload: { git: { chunk: { churn: 0.5 } } }, points: ["chunk-a2"] });
-      expect(batch[2]).toEqual({ payload: { git: { chunk: { churn: 0.1 } } }, points: ["chunk-b1"] });
+      expect(batch[0]).toEqual({ payload: { churn: 0.3 }, points: ["chunk-a1"], key: "git.chunk" });
+      expect(batch[1]).toEqual({ payload: { churn: 0.5 }, points: ["chunk-a2"], key: "git.chunk" });
+      expect(batch[2]).toEqual({ payload: { churn: 0.1 }, points: ["chunk-b1"], key: "git.chunk" });
     });
 
     it("flushes batch when chunk count exceeds BATCH_SIZE (100)", async () => {
@@ -183,6 +200,22 @@ describe("EnrichmentApplier", () => {
       // First batch of 100 failed (not counted), remainder of 10 succeeded
       expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(2);
       expect(applied).toBe(10);
+    });
+
+    it("uses nested key path so chunk signals don't overwrite file signals", async () => {
+      // This test prevents regression: without key="git.chunk", set_payload({ git: { chunk: ... } })
+      // would overwrite the entire git object, destroying previously written git.file signals.
+      const chunkMetadata = new Map([["src/a.ts", new Map([["chunk-1", { commitCount: 3 }]])]]);
+
+      await applier.applyChunkSignals("test-collection", "git", chunkMetadata);
+
+      const ops = mockQdrant.batchSetPayload.mock.calls[0][1];
+      // MUST have key="git.chunk" — not payload={ git: { chunk: ... } }
+      expect(ops[0].key).toBe("git.chunk");
+      // Payload is the overlay itself, not nested under git.chunk
+      expect(ops[0].payload).toEqual({ commitCount: 3 });
+      // If payload had { git: { chunk: ... } } without key, it would overwrite git.file
+      expect(ops[0].payload).not.toHaveProperty("git");
     });
 
     it("handles error in final chunk batch gracefully", async () => {
