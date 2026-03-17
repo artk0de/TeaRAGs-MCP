@@ -129,6 +129,12 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         message += `- Files added: ${stats.filesAdded}\n`;
         message += `- Files modified: ${stats.filesModified}\n`;
         message += `- Files deleted: ${stats.filesDeleted}\n`;
+        if (stats.filesNewlyIgnored > 0) {
+          message += `- Files newly ignored: ${stats.filesNewlyIgnored}\n`;
+        }
+        if (stats.filesNewlyUnignored > 0) {
+          message += `- Files newly unignored: ${stats.filesNewlyUnignored}\n`;
+        }
         message += `- Chunks added: ${stats.chunksAdded}\n`;
         message += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
 

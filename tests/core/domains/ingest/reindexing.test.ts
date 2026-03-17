@@ -392,6 +392,68 @@ console.log('This file has secrets');`,
     });
   });
 
+  describe("ignore pattern changes", () => {
+    it("should remove file from index when added to .contextignore", async () => {
+      await createTestFile(codebaseDir, "keep.ts", "export const keep = 1;\nconsole.log('Keep this');");
+      await createTestFile(codebaseDir, "ignored.ts", "export const ignored = 2;\nconsole.log('Will be ignored');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Add ignored.ts to .contextignore
+      await fs.writeFile(join(codebaseDir, ".contextignore"), "ignored.ts\n");
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesDeleted).toBe(1);
+      expect(stats.filesNewlyIgnored).toBe(1);
+    });
+
+    it("should add file to index when removed from .contextignore", async () => {
+      // Create .contextignore BEFORE indexing so the file is excluded
+      await fs.writeFile(join(codebaseDir, ".contextignore"), "unignored.ts\n");
+      await createTestFile(codebaseDir, "keep.ts", "export const keep = 1;\nconsole.log('Keep this');");
+      await createTestFile(codebaseDir, "unignored.ts", "export const unignored = 2;\nconsole.log('Was ignored');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Remove the ignore pattern
+      await fs.writeFile(join(codebaseDir, ".contextignore"), "\n");
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesAdded).toBe(1);
+      expect(stats.filesNewlyUnignored).toBe(1);
+    });
+
+    it("should handle both ignored and unignored files in same reindex", async () => {
+      await fs.writeFile(join(codebaseDir, ".contextignore"), "was-ignored.ts\n");
+      await createTestFile(codebaseDir, "will-be-ignored.ts", "export const a = 1;\nconsole.log('Will be ignored');");
+      await createTestFile(codebaseDir, "was-ignored.ts", "export const b = 2;\nconsole.log('Was ignored');");
+      await createTestFile(codebaseDir, "stable.ts", "export const c = 3;\nconsole.log('Stays');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Swap ignore patterns: ignore will-be-ignored.ts, unignore was-ignored.ts
+      await fs.writeFile(join(codebaseDir, ".contextignore"), "will-be-ignored.ts\n");
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesNewlyIgnored).toBe(1);
+      expect(stats.filesNewlyUnignored).toBe(1);
+    });
+
+    it("should not count truly deleted files as newly ignored", async () => {
+      await createTestFile(codebaseDir, "keep.ts", "export const keep = 1;\nconsole.log('Keep');");
+      await createTestFile(codebaseDir, "deleted.ts", "export const del = 2;\nconsole.log('Delete');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Actually delete the file (not just ignore it)
+      await fs.unlink(join(codebaseDir, "deleted.ts"));
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesDeleted).toBe(1);
+      expect(stats.filesNewlyIgnored).toBe(0);
+    });
+  });
+
   describe("performDeletion fallback levels", () => {
     it("should fall through to L2 individual deletions when both batched and single delete fail", async () => {
       await createTestFile(

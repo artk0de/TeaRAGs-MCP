@@ -36,6 +36,10 @@ export interface ChangeStats {
   filesAdded: number;
   filesModified: number;
   filesDeleted: number;
+  /** Files removed from index because they now match ignore patterns */
+  filesNewlyIgnored: number;
+  /** Files added to index because they no longer match ignore patterns */
+  filesNewlyUnignored: number;
   chunksAdded: number;
   chunksDeleted: number;
   durationMs: number;

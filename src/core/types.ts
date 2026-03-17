@@ -74,6 +74,10 @@ export interface ChangeStats {
   filesAdded: number;
   filesModified: number;
   filesDeleted: number;
+  /** Files removed from index because they now match ignore patterns */
+  filesNewlyIgnored: number;
+  /** Files added to index because they no longer match ignore patterns */
+  filesNewlyUnignored: number;
   chunksAdded: number;
   chunksDeleted: number;
   durationMs: number;
@@ -203,6 +207,10 @@ export interface FileChanges {
   added: string[];
   modified: string[];
   deleted: string[];
+  /** Files in `deleted` that still exist on disk (removed due to ignore pattern changes) */
+  newlyIgnored: string[];
+  /** Files in `added` that existed before the previous snapshot (added due to ignore pattern changes) */
+  newlyUnignored: string[];
 }
 
 /** Maps a chunk to its point ID for Phase 2 git enrichment */
