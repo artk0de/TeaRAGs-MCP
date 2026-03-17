@@ -18,8 +18,8 @@ Pre-generation investigation. Produces verified area analysis with overlay label
 ## Flow
 
 ```
-DISCOVER (semantic_search) → VERIFY symbols → ASSESS signals (rank_chunks) →
-  output: verified area + overlay labels + suspects
+DISCOVER (semantic_search) → ASSESS signals (rank_chunks) →
+  output: area + overlay labels + strategy recommendation
 ```
 
 ### 1. DISCOVER
@@ -28,17 +28,14 @@ DISCOVER (semantic_search) → VERIFY symbols → ASSESS signals (rank_chunks) �
 
 Note top 3-5 file paths from results.
 
-### 2. VERIFY SYMBOLS
+### 2. ASSESS SIGNALS
 
-For key identifiers found in step 1 (class names, method names, imports):
-- **LSP** "Find References" if available — confirms symbol is real and used.
-- **ripgrep** as fallback — `pattern="ClassName.method"`. 0 matches = stale result, discard.
+`rank_chunks` pathPattern=<files from step 1>, metaOnly=false.
 
-**Only verified files proceed to step 3.**
-
-### 3. ASSESS SIGNALS
-
-`rank_chunks` rerank="bugHunt", pathPattern=<verified files from step 2>, metaOnly=false.
+Choose rerank by what you need to understand:
+- **Balanced research** (default): `rerank={ "custom": { "bugFix": 0.25, "age": 0.2, "volatility": 0.2, "ownership": 0.15, "churn": 0.1, "stability": 0.1 } }`
+- Risk-focused: `rerank="hotspots"` or `rerank="techDebt"`
+- Bug investigation: `rerank="bugHunt"` (use `/tea-rags:bug-hunt` skill instead)
 
 Read overlay labels:
 - file.bugFixRate → risk level
@@ -47,12 +44,12 @@ Read overlay labels:
 - chunk.commitCount, chunk.churnRatio → granular risk
 
 **Output for data-driven-generation:**
-- Verified file paths
+- File paths
 - Overlay labels per suspect
 - Recommended strategy (DEFENSIVE / STABILIZATION / CONSERVATIVE / STANDARD)
 - Domain owner (from dominantAuthor in overlay)
 
-### 4. OPTIONAL: DEEP TRACE
+### 3. OPTIONAL: DEEP TRACE
 
 If step 1 results show method calls that need tracing:
 - `hybrid_search` query="def method_name" — one symbol per query.
@@ -62,7 +59,7 @@ If step 1 results show method calls that need tracing:
 
 ```
 Research complete for: [area]
-Verified files: [list]
+Files: [list]
 Strategy recommendation: [mode] because [signals]
 Domain owner: [author] ([dominantAuthorPct]%)
 Key signals:
