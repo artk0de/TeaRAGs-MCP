@@ -22,11 +22,18 @@
 
 | Tool | When | Example |
 |------|------|---------|
-| `semantic_search` | Find code by intent, behavior, concept. First discovery call. | "how does batch job creation work" → query="batch create jobs pipeline", limit=10 |
+| `search_code` | **Exploration only.** Broad discovery, human-readable. NOT for generation/bug-hunt. | "show me everything related to pipeline jobs" → query="pipeline job creation", limit=10 |
+| `semantic_search` | Analytics, structured JSON with overlay labels. Generation/bug-hunt context. | "batch create jobs pipeline" → query="...", limit=10 |
 | `hybrid_search` | Find exact symbol definition. BM25 catches tokens semantic misses. | "where is disabled_reasons defined?" → query="def automations_disabled_reasons" |
 | `rank_chunks` | Rank by git signals, no query. Top-N by churn, bugs, etc. | "most buggy functions here?" → rerank="bugHunt", pathPattern=\<files\> |
 | `find_similar` | Find structurally similar code. Copy-paste bugs. | "same pattern elsewhere?" → from chunk ID of known result |
 | `get_index_metrics` | Codebase signal thresholds and distributions. Once per session. | "what counts as high churn here?" → returns labelMap per signal |
+
+**Skills for specific workflows:**
+- `/tea-rags:explore` — understand how code works (breadth-first, human consumption)
+- `/tea-rags:research` — investigate code before generating/modifying (verified, with overlay labels)
+- `/tea-rags:bug-hunt` — find root cause of a specific bug (signal-driven)
+- `/tea-rags:data-driven-generation` — generate code with strategy selection (requires research first)
 
 **Key distinctions:**
 - `semantic_search` — finds by **meaning**. Use for discovery.
@@ -85,7 +92,7 @@ If results seem stale → check `driftWarning` in response → `reindex_changes`
 ## PROHIBITED
 
 - **Built-in Search/Grep** for code discovery — no git signals, no overlay labels
-- **search_code** — human-readable only, use `semantic_search` instead
+- **search_code** in generation/bug-hunt/research context — use `semantic_search` instead (need overlay labels + verification). `search_code` is fine for pure exploration (`/tea-rags:explore`).
 - **git log / git diff** for code history — overlay already has git signals
 - **Multiple semantic_search** for same area — one call, then read results
 - **10+ ripgrep calls** instead of reading a file — just read it
