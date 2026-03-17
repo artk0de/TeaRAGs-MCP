@@ -1,3 +1,24 @@
+## 1.9.0 (2026-03-17)
+
+- fix(plugin): always reindex_changes on session start, not only on drift
+  ([b9abfb6](https://github.com/artk0de/TeaRAGs-MCP/commit/b9abfb6))
+- fix(plugin): prepare for marketplace install with working hooks
+  ([80a4699](https://github.com/artk0de/TeaRAGs-MCP/commit/80a4699))
+- fix(plugin): use script for hook instead of inline cat with env var
+  ([5f14117](https://github.com/artk0de/TeaRAGs-MCP/commit/5f14117))
+- improve(plugin): add session start check, presets/filters reference to cascade
+  ([c18e422](https://github.com/artk0de/TeaRAGs-MCP/commit/c18e422))
+- improve(plugin): add tool selection examples to search-cascade rule
+  ([ea046f9](https://github.com/artk0de/TeaRAGs-MCP/commit/ea046f9))
+- improve(plugin): LSP-first cascade, auto-detect tools on session start
+  ([6c5c349](https://github.com/artk0de/TeaRAGs-MCP/commit/6c5c349))
+- improve(plugin): memorize label thresholds after indexing
+  ([066abf4](https://github.com/artk0de/TeaRAGs-MCP/commit/066abf4))
+- improve(plugin): remove mandatory verify — trust the index
+  ([014f606](https://github.com/artk0de/TeaRAGs-MCP/commit/014f606))
+- feat(plugin): inject search-cascade rules via SessionStart hook
+  ([37e2176](https://github.com/artk0de/TeaRAGs-MCP/commit/37e2176))
+
 ## 1.8.0 (2026-03-17)
 
 - improve(plugin): drill-down + spread check in bug-hunt
