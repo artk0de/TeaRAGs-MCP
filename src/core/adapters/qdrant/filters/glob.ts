@@ -23,14 +23,13 @@ export function globToTextFilter(pattern: string): FilterConditionResult {
     return { must_not: [{ key: "relativePath", match: { text: textQuery } }] };
   }
 
-  // Handle brace expansion: {a,b,!c} → positive as should (OR), negative as must_not
-  const braceMatch = pattern.match(/^\{(.+)\}$/);
-  if (braceMatch) {
-    const alternatives = splitBraceAlternatives(braceMatch[1]);
+  // Expand braces (top-level or inline) into alternatives
+  const expanded = expandBraces(pattern);
+  if (expanded.length > 1) {
     const positive: { key: string; match: { text: string } }[] = [];
     const negative: { key: string; match: { text: string } }[] = [];
 
-    for (const alt of alternatives) {
+    for (const alt of expanded) {
       if (alt.startsWith("!")) {
         const q = extractTextQuery(alt.slice(1));
         if (q.length > 0) negative.push({ key: "relativePath", match: { text: q } });
@@ -73,6 +72,44 @@ function extractTextQuery(pattern: string): string {
     .replace(/\/+/g, "/") // collapse multiple slashes
     .replace(/^\//, "") // trim leading slash only, keep trailing
     .trim();
+}
+
+/**
+ * Expand brace groups anywhere in a pattern into fully-formed alternatives.
+ * "prefix/{a,b}/suffix" → ["prefix/a/suffix", "prefix/b/suffix"]
+ * "{a,b}" → ["a", "b"]  (top-level)
+ * "no/braces" → ["no/braces"]  (passthrough)
+ */
+function expandBraces(pattern: string): string[] {
+  const openIdx = pattern.indexOf("{");
+  if (openIdx === -1) return [pattern];
+
+  // Find matching close brace (respecting nesting)
+  let depth = 0;
+  let closeIdx = -1;
+  for (let i = openIdx; i < pattern.length; i++) {
+    if (pattern[i] === "{") depth++;
+    else if (pattern[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        closeIdx = i;
+        break;
+      }
+    }
+  }
+  if (closeIdx === -1) return [pattern]; // unmatched brace, treat as literal
+
+  const prefix = pattern.slice(0, openIdx);
+  const inner = pattern.slice(openIdx + 1, closeIdx);
+  const suffix = pattern.slice(closeIdx + 1);
+  const alternatives = splitBraceAlternatives(inner);
+
+  // Recursively expand in case of multiple brace groups in suffix
+  const results: string[] = [];
+  for (const alt of alternatives) {
+    results.push(...expandBraces(`${prefix}${alt}${suffix}`));
+  }
+  return results;
 }
 
 /** Split brace alternatives respecting nested braces. */

@@ -76,4 +76,30 @@ describe("globToTextFilter", () => {
   it("brace with all-wildcard alternatives returns empty", () => {
     expect(globToTextFilter("{**,**/*}")).toEqual({});
   });
+
+  it("handles inline brace expansion mid-path → should (OR)", () => {
+    // **/pipelines/{batch_create,jobs/create}** → OR of two path queries
+    const result = globToTextFilter("**/pipelines/{batch_create,jobs/create}**");
+    expect(result.must).toBeDefined();
+    expect(result.must).toHaveLength(1);
+    // Should contain a `should` OR clause with 2 alternatives
+    const shouldClause = (result.must as unknown[])[0] as { should: unknown[] };
+    expect(shouldClause.should).toHaveLength(2);
+  });
+
+  it("handles inline brace with 3 alternatives", () => {
+    const result = globToTextFilter("**/workflow/{stage_clients/batch_create,jobs/create,automations}/**");
+    expect(result.must).toBeDefined();
+    const shouldClause = (result.must as unknown[])[0] as { should: unknown[] };
+    expect(shouldClause.should).toHaveLength(3);
+    // Each alternative should include the common prefix "workflow/"
+    for (const cond of shouldClause.should as { key: string; match: { text: string } }[]) {
+      expect(cond.match.text).toContain("workflow/");
+    }
+  });
+
+  it("handles inline brace with single alternative (no OR needed)", () => {
+    const result = globToTextFilter("src/{core}/**");
+    expect(result.must).toEqual([{ key: "relativePath", match: { text: "src/core/" } }]);
+  });
 });
