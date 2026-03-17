@@ -3,6 +3,13 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## 1.10.0 (2026-03-17)
+
+- feat(plugin): add explore + research skills, refactor data-driven-generation
+  ([467fa49](https://github.com/artk0de/TeaRAGs-MCP/commit/467fa49))
+- chore(plugin): bump version to 0.1.1
+  ([88ed825](https://github.com/artk0de/TeaRAGs-MCP/commit/88ed825))
+
 ## <small>1.9.1 (2026-03-17)</small>
 
 - improve(plugin): make session start instructions imperative
