@@ -29,18 +29,11 @@ SEARCH → CHECKPOINT → area fully mapped?
 
 Both filled → **OUTPUT.** One empty → state what's missing, pick next tool.
 
-## Budget
+## Pagination
 
-| Tool | Max calls | When to use offset |
-|------|-----------|-------------------|
-| `semantic_search` | 3 (discover + 1-2 refinements) | Different area/angle → new query |
-| `rank_chunks` | 2 (limit=10 each, offset for page 2) | Same files, need more functions → offset=10 |
-| `hybrid_search` | 2 (trace symbols) | One symbol per query |
-| Read file | 3 | Only when code snippets from search insufficient |
+All tools default to limit=10. Need more → use offset (offset=10 for page 2, offset=20 for page 3). Same pathPattern, same query — just next page.
 
-**Total: max 10 tool calls.** If area not mapped after 10 calls → scope is too wide, narrow pathPattern.
-
-**rank_chunks pagination:** start with limit=10. If top-10 doesn't cover key files → offset=10, limit=10 for second page. >20 results = scope too broad.
+Different area or angle → new query, not offset.
 
 ## Steps
 
