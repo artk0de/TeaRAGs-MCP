@@ -49,10 +49,12 @@ interface TeaRagsErrorContract {
 
 ```
 TeaRagsError (base)                          src/core/infra/errors.ts
+  ├─ CollectionRefError                      src/core/infra/errors.ts
   ├─ InfraError                              src/core/adapters/errors.ts
   │   ├─ QdrantUnavailableError              src/core/adapters/qdrant/errors.ts
   │   ├─ QdrantTimeoutError                  src/core/adapters/qdrant/errors.ts
-  │   ├─ EmbeddingFailedError                src/core/adapters/embeddings/errors.ts
+  │   ├─ QdrantOperationError                src/core/adapters/qdrant/errors.ts
+  │   ├─ EmbeddingFailedError (base)         src/core/adapters/embeddings/errors.ts
   │   ├─ OllamaUnavailableError              src/core/adapters/embeddings/ollama/errors.ts
   │   ├─ OllamaModelMissingError             src/core/adapters/embeddings/ollama/errors.ts
   │   ├─ OnnxModelLoadError                  src/core/adapters/embeddings/onnx/errors.ts
@@ -81,17 +83,29 @@ TeaRagsError (base)                          src/core/infra/errors.ts
       └─ MissingConfigError
 ```
 
+### Key design decisions
+
+- **`CollectionRefError`** extends `TeaRagsError` directly (infra level) — used
+  by shared `resolveCollection()` which serves both Explore and Ingest domains.
+- **`QdrantOperationError`** — for failures on a reachable Qdrant server (upsert
+  failures, sparse vector errors, etc.), distinct from `QdrantUnavailableError`.
+- **`EmbeddingFailedError`** — base class for provider-specific errors. Never
+  thrown directly; each provider throws its own subclass.
+
 ### Error Code Naming Convention
 
 `DOMAIN_SPECIFIC_ERROR` — prefix is domain, suffix is problem.
 
 ```
 INFRA_QDRANT_UNAVAILABLE
+INFRA_QDRANT_OPERATION_FAILED
 INFRA_OLLAMA_MODEL_MISSING
+INFRA_COLLECTION_REF_INVALID
 INGEST_NOT_INDEXED
 EXPLORE_HYBRID_NOT_ENABLED
 TRAJECTORY_GIT_BLAME_FAILED
 CONFIG_INVALID
+CONFIG_MISSING_API_KEY
 ```
 
 ### Concrete Class Pattern
@@ -127,7 +141,7 @@ class OllamaModelMissingError extends InfraError {
 
 | Domain            | Default | Override examples               |
 | ----------------- | ------- | ------------------------------- |
-| `InfraError`      | 503     | —                               |
+| `InfraError`      | 503     | `QdrantOperationError` → 502    |
 | `IngestError`     | 400     | `NotIndexedError` → 404         |
 | `ExploreError`    | 400     | `CollectionNotFoundError` → 404 |
 | `TrajectoryError` | 500     | `GitLogTimeoutError` → 504      |
@@ -188,14 +202,19 @@ MCP client                   → sees [CODE] message + Hint
 **File:** `src/mcp/format.ts`
 
 Wraps every MCP tool handler. Removes duplicated try/catch from individual
-tools.
+tools. Logs full error with cause to stderr before returning formatted response.
 
 ```typescript
-function withErrorHandling(handler: ToolHandler): ToolHandler {
-  return async (params) => {
+function withErrorHandling<T>(
+  handler: (args: T, extra: RequestHandlerExtra) => Promise<McpToolResult>,
+): (args: T, extra: RequestHandlerExtra) => Promise<McpToolResult> {
+  return async (args, extra) => {
     try {
-      return await handler(params);
+      return await handler(args, extra);
     } catch (e) {
+      // Log full error with cause chain to stderr for debugging
+      console.error(`[MCP] Tool error:`, e);
+
       if (e instanceof TeaRagsError) {
         return {
           content: [{ type: "text", text: e.toUserMessage() }],
@@ -317,14 +336,17 @@ Replace scattered error classes with new hierarchy:
 
 | Current                                        | Location                                          | New class                 |
 | ---------------------------------------------- | ------------------------------------------------- | ------------------------- |
-| `CollectionRefError`                           | `src/core/infra/collection-name.ts`               | `InvalidQueryError`       |
+| `CollectionRefError`                           | `src/core/infra/collection-name.ts`               | `CollectionRefError`      |
 | `CollectionNotFoundError`                      | `src/core/api/internal/facades/explore-facade.ts` | `CollectionNotFoundError` |
 | `HybridNotEnabledError`                        | `src/core/domains/explore/strategies/types.ts`    | `HybridNotEnabledError`   |
 | `throw new Error("Codebase not indexed")`      | `src/core/domains/ingest/reindexing.ts`           | `NotIndexedError`         |
 | `throw new Error("No previous snapshot")`      | `src/core/domains/ingest/reindexing.ts`           | `SnapshotMissingError`    |
 | `throw new Error("Collection already exists")` | `src/core/domains/ingest/indexing.ts`             | `CollectionExistsError`   |
 | Ollama fetch failures                          | `src/core/adapters/embeddings/ollama.ts`          | `OllamaUnavailableError`  |
-| Qdrant operation failures                      | `src/core/adapters/qdrant/client.ts`              | `QdrantUnavailableError`  |
+| Qdrant connection failures                     | `src/core/adapters/qdrant/client.ts`              | `QdrantUnavailableError`  |
+| Qdrant operation failures                      | `src/core/adapters/qdrant/client.ts`              | `QdrantOperationError`    |
+| Missing API keys in factory                    | `src/core/adapters/embeddings/factory.ts`         | `MissingConfigError`      |
+| Unknown provider in factory                    | `src/core/adapters/embeddings/factory.ts`         | `InvalidConfigError`      |
 
 ---
 
@@ -335,10 +357,10 @@ Replace scattered error classes with new hierarchy:
 | File                                            | Contents                                                                                  |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `src/core/contracts/errors.ts`                  | `TeaRagsErrorContract` interface, `ErrorCode` type union                                  |
-| `src/core/infra/errors.ts`                      | `TeaRagsError` base class                                                                 |
+| `src/core/infra/errors.ts`                      | `TeaRagsError` base class, `CollectionRefError`                                           |
 | `src/core/adapters/errors.ts`                   | `InfraError` base class                                                                   |
-| `src/core/adapters/qdrant/errors.ts`            | `QdrantUnavailableError`, `QdrantTimeoutError`                                            |
-| `src/core/adapters/embeddings/errors.ts`        | `EmbeddingFailedError` base class                                                         |
+| `src/core/adapters/qdrant/errors.ts`            | `QdrantUnavailableError`, `QdrantTimeoutError`, `QdrantOperationError`                    |
+| `src/core/adapters/embeddings/errors.ts`        | `EmbeddingFailedError` base class (never thrown directly)                                 |
 | `src/core/adapters/embeddings/ollama/errors.ts` | `OllamaUnavailableError`, `OllamaModelMissingError`                                       |
 | `src/core/adapters/embeddings/onnx/errors.ts`   | `OnnxModelLoadError`, `OnnxInferenceError`                                                |
 | `src/core/adapters/embeddings/openai/errors.ts` | `OpenAIRateLimitError`, `OpenAIAuthError`                                                 |
@@ -360,15 +382,17 @@ Replace scattered error classes with new hierarchy:
 | `src/mcp/tools/code.ts`                           | Wrap handlers with `withErrorHandling()`, remove try/catch       |
 | `src/mcp/tools/explore.ts`                        | Same                                                             |
 | `src/mcp/tools/collection.ts`                     | Same                                                             |
+| `src/mcp/tools/document.ts`                       | Same                                                             |
 | `src/core/adapters/embeddings/ollama.ts`          | Throw `OllamaUnavailableError` / `OllamaModelMissingError`       |
 | `src/core/adapters/embeddings/onnx.ts`            | Throw `OnnxModelLoadError` / `OnnxInferenceError`                |
 | `src/core/adapters/embeddings/openai.ts`          | Throw `OpenAIRateLimitError` / `OpenAIAuthError`                 |
 | `src/core/adapters/embeddings/cohere.ts`          | Throw `CohereRateLimitError`                                     |
 | `src/core/adapters/embeddings/voyage.ts`          | Throw `VoyageRateLimitError`                                     |
-| `src/core/adapters/qdrant/client.ts`              | Throw `QdrantUnavailableError` / `QdrantTimeoutError`            |
+| `src/core/adapters/embeddings/factory.ts`         | Throw `MissingConfigError` / `InvalidConfigError`                |
+| `src/core/adapters/qdrant/client.ts`              | Throw `QdrantUnavailableError` / `QdrantOperationError`          |
 | `src/core/domains/ingest/reindexing.ts`           | Use `NotIndexedError`, `SnapshotMissingError`                    |
 | `src/core/domains/ingest/indexing.ts`             | Use `CollectionExistsError`                                      |
 | `src/core/domains/explore/strategies/types.ts`    | Remove old `HybridNotEnabledError`, use new one                  |
 | `src/core/api/internal/facades/explore-facade.ts` | Remove old `CollectionNotFoundError`, use new one                |
-| `src/core/infra/collection-name.ts`               | Remove old `CollectionRefError`, use `InvalidQueryError`         |
+| `src/core/infra/collection-name.ts`               | Remove old `CollectionRefError`, use new one from infra/errors   |
 | `website/docs/operations/troubleshooting.md`      | Rename + add error codes reference                               |
