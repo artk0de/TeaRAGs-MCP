@@ -157,6 +157,51 @@ describe("BaseExploreStrategy", () => {
     });
   });
 
+  describe("postProcess — offset", () => {
+    it("skips first N results when offset is set", async () => {
+      const results = makeResults(20);
+      const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS, results);
+
+      const output = await strategy.execute({ collectionName: "col", limit: 5, offset: 3 });
+      expect(output).toHaveLength(5);
+      // First result should be the 4th item (index 3)
+      expect(output[0].payload?.content).toBe("content-3");
+    });
+
+    it("returns remaining results when offset + limit exceeds total", async () => {
+      const results = makeResults(10);
+      const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS, results);
+
+      const output = await strategy.execute({ collectionName: "col", limit: 10, offset: 7 });
+      expect(output.length).toBeLessThanOrEqual(3);
+    });
+
+    it("returns empty when offset exceeds total results", async () => {
+      const results = makeResults(5);
+      const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS, results);
+
+      const output = await strategy.execute({ collectionName: "col", limit: 5, offset: 100 });
+      expect(output).toHaveLength(0);
+    });
+
+    it("accounts for offset in overfetch calculation", async () => {
+      const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS);
+
+      await strategy.execute({ collectionName: "col", limit: 10, offset: 5 });
+      // fetchLimit should account for offset: (10 + 5) * multiplier
+      expect(strategy.lastCtx?.limit).toBeGreaterThanOrEqual(30);
+    });
+
+    it("works with offset=0 (no skip)", async () => {
+      const results = makeResults(10);
+      const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS, results);
+
+      const output = await strategy.execute({ collectionName: "col", limit: 5, offset: 0 });
+      expect(output).toHaveLength(5);
+      expect(output[0].payload?.content).toBe("content-0");
+    });
+  });
+
   describe("postProcess — metaOnly", () => {
     it("preserves content when metaOnly is false (default)", async () => {
       const results = [
