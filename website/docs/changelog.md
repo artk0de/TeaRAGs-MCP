@@ -3,6 +3,11 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>1.9.1 (2026-03-17)</small>
+
+- improve(plugin): make session start instructions imperative
+  ([3bdbd17](https://github.com/artk0de/TeaRAGs-MCP/commit/3bdbd17))
+
 ## 1.9.0 (2026-03-17)
 
 - fix(plugin): always reindex_changes on session start, not only on drift
