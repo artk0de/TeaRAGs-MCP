@@ -2,10 +2,14 @@
 
 **MANDATORY:** ALWAYS prefer TeaRAGs and ripgrep MCP over built-in Search/Grep.
 
-## Session Start
+## Session Start (EXECUTE IMMEDIATELY)
 
-**1. Check index:**
-- `get_index_status` → indexed → `reindex_changes` (always, picks up recent changes). Not indexed → `index_codebase`.
+**BEFORE responding to the user's first message**, run these tools:
+
+**1. Check and update index:**
+- Call `get_index_status` for the current project path.
+- If indexed → call `reindex_changes` (always, picks up recent changes).
+- If not indexed → call `index_codebase`.
 
 **2. Memorize label thresholds:**
 - `get_index_metrics` → remember label values. Example: commitCount `{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" in THIS codebase.
