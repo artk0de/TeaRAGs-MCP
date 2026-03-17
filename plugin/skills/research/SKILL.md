@@ -29,12 +29,6 @@ SEARCH → CHECKPOINT → area fully mapped?
 
 Both filled → **OUTPUT.** One empty → state what's missing, pick next tool.
 
-## Pagination
-
-All tools default to limit=10. Need more → use offset (offset=10 for page 2, offset=20 for page 3). Same pathPattern, same query — just next page.
-
-Different area or angle → new query, not offset.
-
 ## Steps
 
 ### 1. DISCOVER
