@@ -74,7 +74,7 @@ Apply selected strategy + style. Generate code.
 ### Step 5: VERIFY GENERATED
 
 Verify ALL referenced identifiers:
-1. LSP "Find References" if available. ripgrep as fallback.
+1. ripgrep for every function name, import path, type name.
 2. 0 matches = hallucinated identifier → fix before committing.
 
 ### Step 6: IMPACT

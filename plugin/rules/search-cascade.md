@@ -15,8 +15,8 @@
 - `get_index_metrics` → remember label values. Example: commitCount `{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" in THIS codebase.
 
 **3. Detect available tools:**
-- Check which LSP/structural tools are available in this session (e.g. `mcp__ruby-lsp__*`, `mcp__ide__*`, `mcp__typescript-language-server__*`, tree-sitter, ripgrep MCP).
-- Remember what's available. Use LSP for references and structure when present. Fallback to ripgrep + tree-sitter if no LSP.
+- Check which structural tools are available (tree-sitter, ripgrep MCP).
+- Remember what's available for this session.
 
 ## TeaRAGs Tool Selection
 
@@ -77,17 +77,15 @@ All tools default to limit=10. Need more results → use offset (offset=10 for p
 
 Different area or angle → new query, not offset.
 
-## External Tools (priority: LSP → ripgrep → tree-sitter)
+## External Tools
 
-| Task | Best tool | Fallback |
-|------|-----------|----------|
-| Find call-sites / references | LSP "Find References" on file:line from search results | ripgrep pattern="ClassName.method" |
-| Find implementations | LSP "Go to Implementation" | ripgrep pattern="class ClassName" |
-| Structural overview (methods, signatures) | LSP "Document Symbols" | tree-sitter `analyze_code_structure` |
-| Find pattern across project (TODO, flags) | ripgrep — LSP doesn't do text search | — |
-| Understand code | Read file | — |
-
-**TeaRAGs results contain `relativePath` + `startLine`** — direct input for LSP calls. No need to search for the file first.
+| Task | Tool |
+|------|------|
+| Find call-sites / references | ripgrep pattern="ClassName.method" |
+| Find implementations | ripgrep pattern="class ClassName" |
+| Structural overview (methods, signatures) | tree-sitter `analyze_code_structure` |
+| Find pattern across project (TODO, flags) | ripgrep |
+| Understand code | Read file |
 
 ## Trust the Index
 
