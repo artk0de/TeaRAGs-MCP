@@ -11,7 +11,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat ${CLAUDE_PLUGIN_ROOT}/rules/search-cascade.md"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh"
           }
         ]
       }
@@ -22,7 +22,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat ${CLAUDE_PLUGIN_ROOT}/rules/search-cascade.md"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh"
           }
         ]
       }
