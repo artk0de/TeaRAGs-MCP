@@ -1,3 +1,48 @@
+## 1.8.0 (2026-03-17)
+
+- improve(plugin): drill-down + spread check in bug-hunt
+  ([415ea7d](https://github.com/artk0de/TeaRAGs-MCP/commit/415ea7d))
+- improve(plugin): enforce self-execution and label trust in bug-hunt
+  ([10b10dc](https://github.com/artk0de/TeaRAGs-MCP/commit/10b10dc))
+- improve(plugin): force ripgrep MCP in bug-hunt verify step
+  ([ecbe63d](https://github.com/artk0de/TeaRAGs-MCP/commit/ecbe63d))
+- improve(plugin): make ripgrep optional in bug-hunt — agent decides
+  ([381cf73](https://github.com/artk0de/TeaRAGs-MCP/commit/381cf73))
+- improve(plugin): multi-query discovery with intersection in bug-hunt
+  ([f75e7b5](https://github.com/artk0de/TeaRAGs-MCP/commit/f75e7b5))
+- improve(plugin): optimize bug-hunt to 4 steps with parallel tool calls
+  ([4bfe45e](https://github.com/artk0de/TeaRAGs-MCP/commit/4bfe45e))
+- improve(plugin): parallel tree-sitter + ripgrep in verify discover step
+  ([7e70c92](https://github.com/artk0de/TeaRAGs-MCP/commit/7e70c92))
+- improve(plugin): restructure bug-hunt skill as checkpoint loop + fix applier
+  overwrite ([63eabd5](https://github.com/artk0de/TeaRAGs-MCP/commit/63eabd5))
+- feat(filters): glob pre-filter via Qdrant full-text index on relativePath
+  ([1f06e5b](https://github.com/artk0de/TeaRAGs-MCP/commit/1f06e5b))
+- fix(plugin): consolidate bug-hunt skill — original structure + mandatory
+  ripgrep ([b8c67ae](https://github.com/artk0de/TeaRAGs-MCP/commit/b8c67ae))
+- fix(plugin): fix cascade rule — read files for understanding, ripgrep for
+  confirming ([7ff01f6](https://github.com/artk0de/TeaRAGs-MCP/commit/7ff01f6))
+- fix(plugin): limit=10 default, use offset for pagination
+  ([c089f64](https://github.com/artk0de/TeaRAGs-MCP/commit/c089f64))
+- fix(plugin): make ripgrep MCP mandatory in bug-hunt
+  ([c9377b2](https://github.com/artk0de/TeaRAGs-MCP/commit/c9377b2))
+- fix(plugin): no rerank on discover step — pure similarity for area finding
+  ([4d6e274](https://github.com/artk0de/TeaRAGs-MCP/commit/4d6e274))
+- fix(plugin): scope ripgrep to discovered area, not entire project
+  ([aa902e9](https://github.com/artk0de/TeaRAGs-MCP/commit/aa902e9))
+- fix(plugin): split discover + verify into separate steps in bug-hunt
+  ([547b314](https://github.com/artk0de/TeaRAGs-MCP/commit/547b314))
+- fix(presets): add rank_chunks to bugHunt preset tools list
+  ([dd23c4b](https://github.com/artk0de/TeaRAGs-MCP/commit/dd23c4b))
+- refactor(plugin): enforce strict tool discipline in bug-hunt skill
+  ([62d7408](https://github.com/artk0de/TeaRAGs-MCP/commit/62d7408))
+- refactor(plugin): remove redundant verify, prefer ripgrep over file reads
+  ([d0d525c](https://github.com/artk0de/TeaRAGs-MCP/commit/d0d525c))
+- refactor(plugin): rewrite bug-hunt skill per writing-skills best practices
+  ([8b2c05c](https://github.com/artk0de/TeaRAGs-MCP/commit/8b2c05c))
+- revert(plugin): restore per-step verify in bug-hunt skill
+  ([14b8429](https://github.com/artk0de/TeaRAGs-MCP/commit/14b8429))
+
 ## <small>1.7.3 (2026-03-16)</small>
 
 - improve(plugin): move validation to single verify step in bug-hunt
