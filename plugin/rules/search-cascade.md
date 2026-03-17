@@ -1,70 +1,46 @@
 # Search Cascade
 
 **MANDATORY:** ALWAYS prefer TeaRAGs and ripgrep MCP over built-in Search/Grep.
-This is not optional.
 
-## Three-Tool Cascade
+## TeaRAGs Tool Selection
 
-Order: **intent → structure → exact match**.
+| Tool | When | Example |
+|------|------|---------|
+| `semantic_search` | Find code by intent, behavior, concept. First discovery call. | "how does batch job creation work" → `semantic_search` query="batch create jobs pipeline", limit=10 |
+| `hybrid_search` | Find exact symbol definition. BM25 catches tokens semantic misses. | "where is automations_disabled_reasons defined?" → `hybrid_search` query="def automations_disabled_reasons" |
+| `rank_chunks` | Rank code by git signals without query. Top-N by churn, bugs, etc. | "which functions are most buggy here?" → `rank_chunks` rerank="bugHunt", pathPattern=\<files\> |
+| `find_similar` | Find code structurally similar to a known chunk. Copy-paste bugs. | "are there other places with the same pattern?" → `find_similar` from chunk ID |
 
-| Axis                | Tool                                                                        | Use for                                                   |
-| ------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Meaning / intent    | TeaRAGs (`semantic_search`, `hybrid_search`, `find_similar`, `rank_chunks`) | Discovery, pattern finding, signal-based ranking          |
-| Structure / shape   | tree-sitter (`analyze_code_structure`, `query_code`)                        | Classes, methods, signatures — without reading full files |
-| Exact text / tokens | ripgrep (`search`, `count-matches`)                                         | Call-sites, identifiers, TODOs, config keys               |
+**Key distinctions:**
+- `semantic_search` — finds by **meaning**. "authentication logic" finds login code even if word "authentication" isn't there.
+- `hybrid_search` — finds by **meaning + exact tokens**. Use when you know the symbol name. One symbol per query with definition keyword (`def`, `function`, `class`).
+- `rank_chunks` — **no query needed**. Pure signal-based ranking. Use rerank presets: `bugHunt`, `hotspots`, `techDebt`, `ownership`, etc.
+- `find_similar` — needs a **chunk ID** from previous search results. Finds structurally similar code.
 
-## When to Use What
+## External Tools
 
-- **Understanding code** → read the file. Don't ripgrep 10 patterns — just read
-  the function.
-- **Confirming something exists** → ripgrep. One call, specific pattern.
-- **Finding where something is used** → ripgrep. Call-sites, imports.
-- **Finding code by meaning** → TeaRAGs. Not ripgrep, not file reading.
-- **Structural overview** → tree-sitter. Methods, signatures without full read.
+| Tool | When | Example |
+|------|------|---------|
+| ripgrep MCP | Confirm identifier exists. Find call-sites. ONE call, specific pattern. | "who calls BatchCreate?" → `ripgrep` pattern="BatchCreate.call" |
+| tree-sitter | Structural overview without reading files. Methods, signatures. | "what methods does this class have?" → `analyze_code_structure` |
+| Read file | Understand code after finding it. Don't ripgrep 10 patterns — just read. | Found suspect via search → Read the function |
 
 ## Verification After Semantic Search
 
 Semantic search is a **candidate zone generator**, not proof.
 
 After TeaRAGs call, verify candidates exist:
+1. **ripgrep** — ONE call to confirm key identifier. 0 matches = discard.
+2. If confirmed → **read the function** to understand it.
 
-1. **ripgrep** — ONE call to confirm key identifier exists. 0 matches = discard.
-2. If confirmed → **read the function** to understand it. Don't ripgrep 5 more
-   patterns.
+## PROHIBITED
 
-## PROHIBITED: Built-in Search/Grep
-
-**NEVER use built-in `Search` or `Grep` tools for code discovery.** These tools
-bypass the cascade and return raw text without git signals or overlay labels.
-
-Use ONLY:
-
-- **TeaRAGs** (`semantic_search`, `hybrid_search`, `find_similar`,
-  `rank_chunks`) — for discovery
-- **ripgrep MCP** (`search`, `count-matches`) — for exact text confirmation
-- **tree-sitter** — for structural analysis
-
-Built-in Search/Grep exist in the agent runtime but are NOT part of this
-workflow. If you catch yourself reaching for them — stop and use the cascade
-above.
-
-## Anti-Patterns
-
-| Anti-pattern                                 | Correct approach                        |
-| -------------------------------------------- | --------------------------------------- |
-| Built-in `Search` or `Grep` for finding code | TeaRAGs or ripgrep MCP — NEVER built-in |
-| 10+ ripgrep calls instead of reading a file  | Read the file — it's faster             |
-| ripgrep for "how does X work"                | TeaRAGs semantic_search                 |
-| TeaRAGs for exact method names               | ONE ripgrep call                        |
-| Multiple semantic_search for same area       | One call, then read results             |
-| `git log` / `git diff` for code history      | TeaRAGs overlay has git signals         |
-
-## search_code Prohibition
-
-Agents MUST use `semantic_search`, `hybrid_search`, `find_similar`, or
-`rank_chunks` — these return structured JSON with overlay labels.
+- **Built-in Search/Grep** for code discovery — no git signals, no overlay labels
+- **search_code** — human-readable output only, use `semantic_search` instead
+- **git log / git diff** for code history — TeaRAGs overlay already has git signals
+- **Multiple semantic_search** for same area — one call, then read results
+- **10+ ripgrep calls** instead of reading a file — read the file, it's faster
 
 ## hybrid_search Fallback
 
-If `hybrid_search` fails (needs `enableHybrid=true`), fall back to
-`semantic_search`.
+If `hybrid_search` fails (needs `enableHybrid=true`), fall back to `semantic_search`.
