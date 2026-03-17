@@ -25,13 +25,11 @@
 | tree-sitter | Structural overview without reading files. Methods, signatures. | "what methods does this class have?" → `analyze_code_structure` |
 | Read file | Understand code after finding it. Don't ripgrep 10 patterns — just read. | Found suspect via search → Read the function |
 
-## Verification After Semantic Search
+## Trust the Index
 
-Semantic search is a **candidate zone generator**, not proof.
+If the codebase is indexed — search results are real code. Don't ripgrep to "verify" every search result. Use ripgrep when you **need** it (call-sites, imports), not as ritual after every search.
 
-After TeaRAGs call, verify candidates exist:
-1. **ripgrep** — ONE call to confirm key identifier. 0 matches = discard.
-2. If confirmed → **read the function** to understand it.
+If results seem stale → `reindex_changes` to update the index. Check `driftWarning` in search response.
 
 ## PROHIBITED
 
