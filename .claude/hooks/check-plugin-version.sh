@@ -40,7 +40,7 @@ if [ "$PLUGIN_MD_STAGED" -gt 0 ]; then
     jq -n --arg bump "$BUMP_TYPE" '{
       "hookSpecificOutput": {
         "hookEventName": "PreToolUse",
-        "permissionDecision": "ask",
+        "permissionDecision": "deny",
         "permissionDecisionReason": ("Plugin .md files staged but version not bumped. Bump " + $bump + " in plugin/.claude-plugin/plugin.json before committing.")
       }
     }'
