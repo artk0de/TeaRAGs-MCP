@@ -22,7 +22,7 @@ describe("checkOllamaAvailability", () => {
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => Promise.resolve({ models: [{ name: "jina-embeddings-v2-base-code:latest" }] }),
+        json: async () => Promise.resolve({ models: [{ name: "unclemusclez/jina-embeddings-v2-base-code:latest" }] }),
       });
     vi.stubGlobal("fetch", mockFetch);
 
