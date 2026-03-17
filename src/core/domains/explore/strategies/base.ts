@@ -41,10 +41,11 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    */
   protected applyDefaults(ctx: ExploreContext): ExploreContext {
     const requestedLimit = Math.max(ctx.limit ?? 0, 5);
+    const effectiveOffset = ctx.offset || 0;
     const rerank = ctx.rerank as RerankMode<string> | undefined;
     const needsOverfetch = Boolean(rerank && rerank !== "relevance");
     const multiplier = needsOverfetch ? 4 : 2;
-    const fetchLimit = Math.max(20, requestedLimit * multiplier);
+    const fetchLimit = Math.max(20, (requestedLimit + effectiveOffset) * multiplier);
     return { ...ctx, limit: fetchLimit };
   }
 
@@ -64,7 +65,11 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
         ? this.reranker.rerank(results, rerank, "semantic_search", originalCtx.level as SignalLevel | undefined)
         : results;
 
-    // 2. Trim to requested limit
+    // 2. Offset + trim to requested limit
+    const effectiveOffset = originalCtx.offset || 0;
+    if (effectiveOffset > 0) {
+      filtered = filtered.slice(effectiveOffset);
+    }
     filtered = filtered.slice(0, requestedLimit);
 
     // 3. metaOnly formatting

@@ -215,6 +215,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     rerank: semanticSearchRerankSchema
       .optional()
       .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
+    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
     metaOnly: coerceBoolean()
       .optional()
       .describe("Return only metadata (path, lines, git info) without content. Reduces response size. Default: false."),
@@ -228,6 +229,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     rerank: semanticSearchRerankSchema
       .optional()
       .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
+    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
     metaOnly: coerceBoolean()
       .optional()
       .describe("Return only metadata (path, lines, git info) without content. Reduces response size. Default: false."),
@@ -248,6 +250,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     rerank: searchCodeRerankSchema
       .optional()
       .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
+    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
   };
 
   const rankChunksRerankSchema = schemaBuilder.buildRerankSchema("rank_chunks");
