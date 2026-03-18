@@ -23,6 +23,7 @@ sidebar_position: 3
 | **API key errors**             | `INFRA_EMBEDDING_OPENAI_AUTH`          | Verify correct API key in environment configuration                                                                |
 | **Git CLI not found**          | `INFRA_GIT_NOT_FOUND`                  | Install git                                                                                                        |
 | **Git command timed out**      | `INFRA_GIT_TIMEOUT`                    | Reduce scope or increase timeout                                                                                   |
+| **Alias operation failed**     | `INFRA_ALIAS_OPERATION`                | Check Qdrant server status and collection names                                                                    |
 
 ## Indexing Issues
 
@@ -87,6 +88,7 @@ Full table of all structured error codes returned by the MCP server.
 | `INFRA_EMBEDDING_VOYAGE_RATE_LIMIT`    | `VoyageRateLimitError`       | 429  | Voyage API rate limit exceeded                               | Wait and retry                                                     |
 | `INFRA_GIT_NOT_FOUND`                  | `GitCliNotFoundError`        | 503  | Git CLI is not installed                                     | Install git                                                        |
 | `INFRA_GIT_TIMEOUT`                    | `GitCliTimeoutError`         | 504  | Git command "{command}" timed out after {timeoutMs}ms        | Reduce scope or increase timeout                                   |
+| `INFRA_ALIAS_OPERATION`                | `AliasOperationError`        | 500  | Alias operation "{operation}" failed: {detail}               | Check Qdrant server status and collection names                    |
 | `INGEST_NOT_INDEXED`                   | `NotIndexedError`            | 404  | Codebase at "{path}" is not indexed                          | Run `index_codebase` first                                         |
 | `INGEST_COLLECTION_EXISTS`             | `CollectionExistsError`      | 409  | Collection "{collectionName}" already exists                 | Use `forceReindex=true` or delete first                            |
 | `INGEST_SNAPSHOT_MISSING`              | `SnapshotMissingError`       | 404  | Snapshot not found at "{path}"                               | Ensure the snapshot file exists                                    |
@@ -148,6 +150,13 @@ Enable debug logging with `DEBUG=1` to get full stack traces in the server logs.
 ---
 
 ## FAQ
+
+### Does reindexing cause downtime?
+
+No. `forceReindex` uses zero-downtime collection aliases. A new versioned
+collection is built in the background while search continues on the current one.
+When indexing completes, the alias is switched atomically. Search is available
+100% of the time during reindexing.
 
 ### How do I know when indexing is complete?
 
