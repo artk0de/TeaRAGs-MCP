@@ -37,6 +37,9 @@ export function resolveCollectionName(path: string): string {
  * before calling this function (throw CollectionNotProvidedError from api/errors).
  */
 export function resolveCollection(collection?: string, path?: string): { collectionName: string; path?: string } {
+  if (!collection && !path) {
+    throw new Error("resolveCollection called without collection or path (programming error)");
+  }
   const collectionName = collection || resolveCollectionName(path as string);
   return { collectionName, path };
 }
