@@ -6,8 +6,9 @@
  * File processing logic is delegated to FileProcessor.
  */
 
+import { TeaRagsError } from "../../infra/errors.js";
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../types.js";
-import { NotIndexedError, SnapshotMissingError } from "./errors.js";
+import { NotIndexedError, ReindexFailedError, SnapshotMissingError } from "./errors.js";
 import { BaseIndexingPipeline, type PipelineTuning, type ProcessingContext } from "./pipeline/base.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
 import { pipelineLog } from "./pipeline/infra/debug-logger.js";
@@ -80,11 +81,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime);
       return stats;
     } catch (error) {
-      if (error instanceof NotIndexedError || error instanceof SnapshotMissingError) {
+      if (error instanceof TeaRagsError) {
         throw error;
       }
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Incremental re-indexing failed: ${errorMessage}`);
+      throw new ReindexFailedError(errorMessage, error instanceof Error ? error : undefined);
     }
   }
 

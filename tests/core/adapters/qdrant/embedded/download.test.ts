@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ConfigValueInvalidError } from "../../../../../src/bootstrap/errors.js";
 import {
   getBinaryPath,
   getPlatformAsset,
@@ -30,11 +31,11 @@ describe("getPlatformAsset", () => {
   });
 
   it("throws for unsupported platform", () => {
-    expect(() => getPlatformAsset("freebsd", "x64")).toThrow(/unsupported platform/i);
+    expect(() => getPlatformAsset("freebsd", "x64")).toThrow(ConfigValueInvalidError);
   });
 
   it("throws for unsupported arch", () => {
-    expect(() => getPlatformAsset("win32", "arm64")).toThrow(/unsupported platform/i);
+    expect(() => getPlatformAsset("win32", "arm64")).toThrow(ConfigValueInvalidError);
   });
 });
 

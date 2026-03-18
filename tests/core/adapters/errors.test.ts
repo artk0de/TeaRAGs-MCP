@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CohereRateLimitError } from "../../../src/core/adapters/embeddings/cohere/errors.js";
+import { CohereApiError, CohereRateLimitError } from "../../../src/core/adapters/embeddings/cohere/errors.js";
 import { EmbeddingError } from "../../../src/core/adapters/embeddings/errors.js";
 import {
   OllamaModelMissingError,
@@ -8,7 +8,7 @@ import {
 } from "../../../src/core/adapters/embeddings/ollama/errors.js";
 import { OnnxInferenceError, OnnxModelLoadError } from "../../../src/core/adapters/embeddings/onnx/errors.js";
 import { OpenAIAuthError, OpenAIRateLimitError } from "../../../src/core/adapters/embeddings/openai/errors.js";
-import { VoyageRateLimitError } from "../../../src/core/adapters/embeddings/voyage/errors.js";
+import { VoyageApiError, VoyageRateLimitError } from "../../../src/core/adapters/embeddings/voyage/errors.js";
 import { InfraError } from "../../../src/core/adapters/errors.js";
 import { GitCliNotFoundError, GitCliTimeoutError } from "../../../src/core/adapters/git/errors.js";
 import {
@@ -485,5 +485,25 @@ describe("GitCliTimeoutError", () => {
     const cause = new Error("SIGTERM");
     const err = new GitCliTimeoutError(command, timeoutMs, cause);
     expect(err.cause).toBe(cause);
+  });
+});
+
+describe("CohereApiError", () => {
+  it("has correct code and httpStatus", () => {
+    const err = new CohereApiError("empty response");
+    expect(err.code).toBe("INFRA_COHERE_API");
+    expect(err.httpStatus).toBe(502);
+    expect(err.message).toContain("empty response");
+    expect(err).toBeInstanceOf(TeaRagsError);
+  });
+});
+
+describe("VoyageApiError", () => {
+  it("has correct code and httpStatus", () => {
+    const err = new VoyageApiError("timeout");
+    expect(err.code).toBe("INFRA_VOYAGE_API");
+    expect(err.httpStatus).toBe(502);
+    expect(err.message).toContain("timeout");
+    expect(err).toBeInstanceOf(TeaRagsError);
   });
 });

@@ -2,7 +2,7 @@ import Bottleneck from "bottleneck";
 import { CohereClient } from "cohere-ai";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
-import { CohereRateLimitError } from "./cohere/errors.js";
+import { CohereApiError, CohereRateLimitError } from "./cohere/errors.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface CohereError {
@@ -72,7 +72,8 @@ export class CohereEmbeddings implements EmbeddingProvider {
         throw new CohereRateLimitError(error instanceof Error ? error : undefined);
       }
 
-      throw error;
+      const cause = error instanceof Error ? error : undefined;
+      throw new CohereApiError(cause?.message ?? String(error), cause);
     }
   }
 
@@ -89,7 +90,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
         // Cohere v7+ returns embeddings as number[][]
         const embeddings = response.embeddings as number[][];
         if (!embeddings || embeddings.length === 0) {
-          throw new Error("No embedding returned from Cohere API");
+          throw new CohereApiError("No embedding returned from Cohere API");
         }
 
         return {
@@ -113,7 +114,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
         // Cohere v7+ returns embeddings as number[][]
         const embeddings = response.embeddings as number[][];
         if (!embeddings) {
-          throw new Error("No embeddings returned from Cohere API");
+          throw new CohereApiError("No embeddings returned from Cohere API");
         }
 
         return embeddings.map((embedding: number[]) => ({

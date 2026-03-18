@@ -73,3 +73,16 @@ export class MigrationFailedError extends IngestError {
     });
   }
 }
+
+/** Incremental re-indexing failed unexpectedly. */
+export class ReindexFailedError extends IngestError {
+  constructor(detail: string, cause?: Error) {
+    super({
+      code: "INGEST_REINDEX_FAILED",
+      message: `Incremental re-indexing failed: ${detail}`,
+      hint: "Check server logs for details, or re-index with forceReindex=true",
+      httpStatus: 500,
+      cause,
+    });
+  }
+}

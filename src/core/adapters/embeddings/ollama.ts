@@ -105,7 +105,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined);
       }
 
-      throw error;
+      throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined);
     }
   }
 
@@ -208,7 +208,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         if (this.useNativeBatch) {
           const response = await this.callBatchApi([text]);
           if (!response.embeddings || response.embeddings.length === 0) {
-            throw new Error("No embeddings returned from Ollama API");
+            throw new OllamaUnavailableError(this.baseUrl);
           }
           return {
             embedding: response.embeddings[0],
@@ -220,7 +220,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         const response = await this.callApi(text);
 
         if (!response.embedding) {
-          throw new Error("No embedding returned from Ollama API");
+          throw new OllamaUnavailableError(this.baseUrl);
         }
 
         return {
@@ -267,7 +267,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
           const response = await this.callBatchApi(texts);
 
           if (response.embeddings?.length !== texts.length) {
-            throw new Error(`Ollama returned ${response.embeddings?.length || 0} embeddings for ${texts.length} texts`);
+            throw new OllamaUnavailableError(this.baseUrl);
           }
 
           return response.embeddings.map((embedding: number[]) => ({
