@@ -3,14 +3,40 @@
  *
  * Orchestrates: scan → collection setup → file processing → snapshot → marker.
  * File processing logic is delegated to FileProcessor.
+ *
+ * Uses versioned collections with aliases for zero-downtime reindexing:
+ * - First index: creates `_v1` collection + alias
+ * - forceReindex: creates `_v(N+1)`, switches alias atomically, deletes old
+ * - Migration: converts real collection to alias scheme
  */
 
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../types.js";
+import { cleanupOrphanedVersions } from "./alias-cleanup.js";
 import { BaseIndexingPipeline, type ProcessingContext } from "./pipeline/base.js";
 import { processFiles } from "./pipeline/file-processor.js";
 import { storeIndexingMarker } from "./pipeline/indexing-marker.js";
 import { isDebug } from "./pipeline/infra/runtime.js";
 import type { FileScanner } from "./pipeline/scanner.js";
+import { ShardedSnapshotManager } from "./sync/sharded-snapshot.js";
+
+/**
+ * Result of collection setup phase.
+ * Carries alias context needed for finalization.
+ */
+export interface SetupResult {
+  /** Whether indexing should proceed */
+  ready: boolean;
+  /** Versioned collection name to index into (e.g. "code_abc_v2") */
+  targetCollection: string;
+  /** Previous versioned collection (e.g. "code_abc_v1"), undefined on first index */
+  previousCollection?: string;
+  /** New alias version number */
+  aliasVersion: number;
+  /** True if no previous version exists */
+  isFirstIndex: boolean;
+  /** True if migrating from a real collection to alias scheme */
+  isMigration: boolean;
+}
 
 export class IndexPipeline extends BaseIndexingPipeline {
   async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
@@ -35,8 +61,8 @@ export class IndexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
-      const collectionReady = await this.setupCollection(collectionName, options);
-      if (!collectionReady) {
+      const setup = await this.setupCollection(collectionName, absolutePath, options);
+      if (!setup.ready) {
         stats.durationMs = Date.now() - startTime;
         stats.errors?.push(
           `Collection already exists. Use forceReindex=true to re-index from scratch, or use reindexChanges for incremental updates.`,
@@ -44,7 +70,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
-      const ctx = this.initProcessing(collectionName, absolutePath, scanner);
+      const ctx = this.initProcessing(setup.targetCollection, absolutePath, scanner);
 
       const result = await this.processAndTrack(files, absolutePath, ctx, progressCallback);
       stats.filesIndexed = result.filesProcessed;
@@ -61,11 +87,17 @@ export class IndexPipeline extends BaseIndexingPipeline {
         message: "Finalizing embeddings and storage...",
       });
 
-      const getEnrichmentStatus = await this.finalizeProcessing(ctx, result.chunkMap, collectionName, absolutePath);
+      const getEnrichmentStatus = await this.finalizeProcessing(
+        ctx,
+        result.chunkMap,
+        setup.targetCollection,
+        absolutePath,
+      );
       this.logPipelineCompletion(ctx);
 
-      await this.saveSnapshot(absolutePath, collectionName, files, stats);
-      await storeIndexingMarker(this.qdrant, this.embeddings, collectionName, true);
+      await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true);
+      await this.finalizeAlias(collectionName, setup);
+      await this.saveSnapshot(absolutePath, collectionName, files, stats, setup.aliasVersion);
 
       stats.enrichmentStatus = getEnrichmentStatus();
       stats.durationMs = Date.now() - startTime;
@@ -104,20 +136,51 @@ export class IndexPipeline extends BaseIndexingPipeline {
 
   // ── Collection setup ───────────────────────────────────
 
-  private async setupCollection(collectionName: string, options?: IndexOptions): Promise<boolean> {
-    const collectionExists = await this.qdrant.collectionExists(collectionName);
+  private async setupCollection(
+    collectionName: string,
+    absolutePath: string,
+    options?: IndexOptions,
+  ): Promise<SetupResult> {
+    const exists = await this.qdrant.collectionExists(collectionName);
 
-    if (collectionExists && !options?.forceReindex) {
-      return false;
+    if (exists && !options?.forceReindex) {
+      return {
+        ready: false,
+        targetCollection: collectionName,
+        aliasVersion: 0,
+        isFirstIndex: false,
+        isMigration: false,
+      };
     }
 
-    if (options?.forceReindex && collectionExists) {
-      await this.qdrant.deleteCollection(collectionName);
+    // Load aliasVersion from snapshot
+    const snapshotManager = new ShardedSnapshotManager(this.snapshotDir, collectionName);
+    const loaded = await snapshotManager.load().catch(() => null);
+    const currentAliasVersion = loaded?.aliasVersion ?? 0;
+
+    // Detect migration: real collection exists but is not an alias
+    const isAlias = exists ? await this.qdrant.aliases.isAlias(collectionName) : false;
+    const isMigration = currentAliasVersion === 0 && exists && !isAlias;
+
+    // Compute new version
+    const newVersion = isMigration ? 2 : currentAliasVersion + 1;
+    const versionedName = `${collectionName}_v${newVersion}`;
+    const previousCollection = currentAliasVersion > 0 ? `${collectionName}_v${currentAliasVersion}` : undefined;
+
+    // Orphan cleanup before creating new version
+    await cleanupOrphanedVersions(this.qdrant, collectionName);
+
+    if (isDebug()) {
+      console.error(
+        `[Index] Setup: version=${newVersion}, target=${versionedName}, ` +
+          `previous=${previousCollection ?? "none"}, migration=${isMigration}`,
+      );
     }
 
+    // Create new versioned collection
     const vectorSize = this.embeddings.getDimensions();
     await this.qdrant.createCollection(
-      collectionName,
+      versionedName,
       vectorSize,
       "Cosine",
       this.config.enableHybridSearch,
@@ -125,10 +188,35 @@ export class IndexPipeline extends BaseIndexingPipeline {
     );
 
     const schemaManager = this.deps.createSchemaManager();
-    await schemaManager.initializeSchema(collectionName);
+    await schemaManager.initializeSchema(versionedName);
+    await storeIndexingMarker(this.qdrant, this.embeddings, versionedName, false);
 
-    await storeIndexingMarker(this.qdrant, this.embeddings, collectionName, false);
-    return true;
+    return {
+      ready: true,
+      targetCollection: versionedName,
+      previousCollection,
+      aliasVersion: newVersion,
+      isFirstIndex: currentAliasVersion === 0 && !isMigration,
+      isMigration,
+    };
+  }
+
+  // ── Alias finalization ─────────────────────────────────
+
+  private async finalizeAlias(collectionName: string, setup: SetupResult): Promise<void> {
+    if (setup.isFirstIndex) {
+      // First time: create alias pointing to _v1
+      await this.qdrant.aliases.createAlias(collectionName, setup.targetCollection);
+    } else if (setup.isMigration) {
+      // Migration: delete real collection, create alias to new versioned one
+      // Brief ~100ms downtime (one-time migration cost)
+      await this.qdrant.deleteCollection(collectionName);
+      await this.qdrant.aliases.createAlias(collectionName, setup.targetCollection);
+    } else if (setup.previousCollection) {
+      // Atomic switch — zero downtime
+      await this.qdrant.aliases.switchAlias(collectionName, setup.previousCollection, setup.targetCollection);
+      await this.qdrant.deleteCollection(setup.previousCollection);
+    }
   }
 
   // ── File processing ────────────────────────────────────
@@ -189,10 +277,11 @@ export class IndexPipeline extends BaseIndexingPipeline {
     collectionName: string,
     files: string[],
     stats: IndexStats,
+    aliasVersion?: number,
   ): Promise<void> {
     try {
       const synchronizer = this.deps.createSynchronizer(absolutePath, collectionName);
-      await synchronizer.updateSnapshot(files);
+      await synchronizer.updateSnapshot(files, undefined, aliasVersion ? { aliasVersion } : undefined);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("Failed to save snapshot:", errorMessage);

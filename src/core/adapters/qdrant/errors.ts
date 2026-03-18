@@ -28,6 +28,18 @@ export class QdrantTimeoutError extends InfraError {
   }
 }
 
+export class AliasOperationError extends InfraError {
+  constructor(operation: string, detail: string, cause?: Error) {
+    super({
+      code: "INFRA_ALIAS_OPERATION",
+      message: `Alias operation "${operation}" failed: ${detail}`,
+      hint: "Check Qdrant server status and collection names",
+      httpStatus: 500,
+      cause,
+    });
+  }
+}
+
 export class QdrantOperationError extends InfraError {
   constructor(operation: string, detail: string, cause?: Error) {
     super({

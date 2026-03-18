@@ -86,6 +86,16 @@ describe("IndexPipeline", () => {
       expect(stats.status).toBe("completed");
     });
 
+    it("should return error when collection exists without forceReindex", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Second index without forceReindex
+      const stats = await ingest.indexCodebase(codebaseDir);
+      expect(stats.errors?.length).toBeGreaterThan(0);
+      expect(stats.errors?.[0]).toContain("already exists");
+    });
+
     it("should index multiple files", async () => {
       await createTestFile(codebaseDir, "file1.ts", "function test1() {}");
       await createTestFile(codebaseDir, "file2.js", "function test2() {}");
@@ -396,6 +406,132 @@ function third() {
       } finally {
         fs.readFile = originalReadFile;
       }
+    });
+  });
+
+  describe("Versioned collections with aliases", () => {
+    it("should create _v1 collection and alias on first index", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+
+      const createCollectionSpy = vi.spyOn(qdrant, "createCollection");
+      const createAliasSpy = vi.spyOn(qdrant.aliases, "createAlias");
+
+      const stats = await ingest.indexCodebase(codebaseDir);
+
+      expect(stats.status).toBe("completed");
+
+      // Should create a versioned collection (_v1)
+      const createCall = createCollectionSpy.mock.calls[0];
+      expect(createCall[0]).toMatch(/_v1$/);
+
+      // Should create alias pointing to _v1
+      expect(createAliasSpy).toHaveBeenCalledTimes(1);
+      const aliasCall = createAliasSpy.mock.calls[0];
+      expect(aliasCall[0]).toMatch(/^code_/); // alias name = collection name
+      expect(aliasCall[1]).toMatch(/_v1$/); // points to _v1
+      expect(aliasCall[1]).toBe(createCall[0]); // alias points to created collection
+    });
+
+    it("should create _v2 and switch alias on forceReindex", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+
+      // First index: creates _v1 + alias
+      await ingest.indexCodebase(codebaseDir);
+
+      const createCollectionSpy = vi.spyOn(qdrant, "createCollection");
+      const switchAliasSpy = vi.spyOn(qdrant.aliases, "switchAlias");
+      const deleteCollectionSpy = vi.spyOn(qdrant, "deleteCollection");
+
+      // Force reindex: should create _v2, switch alias, delete _v1
+      const stats = await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      expect(stats.status).toBe("completed");
+
+      // Should create _v2
+      const createCall = createCollectionSpy.mock.calls[0];
+      expect(createCall[0]).toMatch(/_v2$/);
+
+      // Should switch alias atomically
+      expect(switchAliasSpy).toHaveBeenCalledTimes(1);
+      const switchCall = switchAliasSpy.mock.calls[0];
+      expect(switchCall[1]).toMatch(/_v1$/); // from _v1
+      expect(switchCall[2]).toMatch(/_v2$/); // to _v2
+
+      // Should delete old _v1
+      expect(deleteCollectionSpy).toHaveBeenCalledWith(expect.stringMatching(/_v1$/));
+    });
+
+    it("should migrate real collection to alias scheme", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const y = 2;");
+
+      // Simulate legacy: create a real collection (not via indexCodebase to avoid alias)
+      const { resolveCollectionName, validatePath } =
+        await import("../../../../src/core/domains/ingest/pipeline/../../../infra/collection-name.js");
+      const absPath = await validatePath(codebaseDir);
+      const collName = resolveCollectionName(absPath);
+      await qdrant.createCollection(collName, 384, "Cosine");
+
+      const createCollectionSpy = vi.spyOn(qdrant, "createCollection");
+      const deleteCollectionSpy = vi.spyOn(qdrant, "deleteCollection");
+      const createAliasSpy = vi.spyOn(qdrant.aliases, "createAlias");
+
+      // Force reindex should detect migration
+      const stats = await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      expect(stats.status).toBe("completed");
+
+      // Should create _v2 (migration starts at v2)
+      expect(createCollectionSpy).toHaveBeenCalledWith(expect.stringMatching(/_v2$/), 384, "Cosine", false, undefined);
+
+      // Should delete real collection and create alias
+      expect(deleteCollectionSpy).toHaveBeenCalledWith(collName);
+      expect(createAliasSpy).toHaveBeenCalledWith(collName, expect.stringMatching(/_v2$/));
+    });
+
+    it("should clean up incomplete versioned collection on failure", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const z = 3;");
+
+      // First index succeeds
+      await ingest.indexCodebase(codebaseDir);
+
+      // Make chunk pipeline fail during second indexing
+      const origCreateCollection = qdrant.createCollection.bind(qdrant);
+      let createCallCount = 0;
+      vi.spyOn(qdrant, "createCollection").mockImplementation(async (...args: any[]) => {
+        createCallCount++;
+        // Let the versioned collection be created, but then the pipeline will fail
+        await origCreateCollection(...args);
+        // Throw after collection is created to simulate mid-indexing failure
+        if (createCallCount === 1) {
+          throw new Error("Simulated pipeline failure");
+        }
+      });
+
+      const stats = await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      expect(stats.status).toBe("failed");
+      expect(stats.errors?.some((e) => e.includes("Simulated pipeline failure"))).toBe(true);
+
+      vi.restoreAllMocks();
+    });
+
+    it("should run orphan cleanup before forceReindex", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const w = 4;");
+
+      // First index
+      await ingest.indexCodebase(codebaseDir);
+
+      // Import and spy on cleanup
+      const aliasCleanup = await import("../../../../src/core/domains/ingest/alias-cleanup.js");
+      const cleanupSpy = vi.spyOn(aliasCleanup, "cleanupOrphanedVersions");
+
+      // Force reindex
+      await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      expect(cleanupSpy).toHaveBeenCalledTimes(1);
+      expect(cleanupSpy).toHaveBeenCalledWith(qdrant, expect.stringContaining("code_"));
+
+      vi.restoreAllMocks();
     });
   });
 });

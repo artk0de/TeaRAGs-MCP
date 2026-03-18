@@ -19,7 +19,12 @@ import { parallelLimit } from "../pipeline/infra/parallel.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
 import { ConsistentHash } from "./consistent-hash.js";
 import { MerkleTree } from "./merkle.js";
-import { ShardedSnapshotManager, type FileMetadata, type LoadedSnapshot } from "./sharded-snapshot.js";
+import {
+  ShardedSnapshotManager,
+  type FileMetadata,
+  type LoadedSnapshot,
+  type SnapshotSaveOptions,
+} from "./sharded-snapshot.js";
 
 export { parallelLimit };
 
@@ -111,7 +116,11 @@ export class ParallelFileSynchronizer {
    * Update snapshot with current files
    * OPTIMIZED: Reuses hashes from detectChanges if available
    */
-  async updateSnapshot(files: string[], precomputedHashes?: Map<string, FileMetadata>): Promise<void> {
+  async updateSnapshot(
+    files: string[],
+    precomputedHashes?: Map<string, FileMetadata>,
+    options?: SnapshotSaveOptions,
+  ): Promise<void> {
     const startTime = Date.now();
 
     let fileMetadata: Map<string, FileMetadata>;
@@ -136,7 +145,7 @@ export class ParallelFileSynchronizer {
       fileMetadata = await this.computeAllFileMetadata(files);
     }
 
-    await this.snapshotManager.save(this.codebasePath, fileMetadata);
+    await this.snapshotManager.save(this.codebasePath, fileMetadata, options);
 
     // Clear cache after use
     this.lastComputedHashes = null;

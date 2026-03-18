@@ -32,6 +32,7 @@ interface SnapshotMeta {
   version: "3";
   codebasePath: string;
   timestamp: number;
+  aliasVersion?: number;
   hashRing: {
     algorithm: "consistent";
     virtualNodesPerShard: number;
@@ -58,9 +59,20 @@ interface ShardData {
 /**
  * Loaded snapshot result
  */
+/**
+ * Options for saving a snapshot
+ */
+export interface SnapshotSaveOptions {
+  aliasVersion?: number;
+}
+
+/**
+ * Loaded snapshot result
+ */
 export interface LoadedSnapshot {
   codebasePath: string;
   timestamp: number;
+  aliasVersion: number;
   files: Map<string, FileMetadata>;
   shardMerkleRoots: string[];
   metaRootHash: string;
@@ -80,7 +92,7 @@ export class ShardedSnapshotManager {
   /**
    * Save files to sharded snapshot
    */
-  async save(codebasePath: string, files: Map<string, FileMetadata>): Promise<void> {
+  async save(codebasePath: string, files: Map<string, FileMetadata>, options?: SnapshotSaveOptions): Promise<void> {
     const timestamp = Date.now();
     const tempDir = `${this.snapshotDir}.tmp.${timestamp}`;
 
@@ -162,6 +174,7 @@ export class ShardedSnapshotManager {
         version: "3",
         codebasePath,
         timestamp,
+        ...(options?.aliasVersion !== undefined && { aliasVersion: options.aliasVersion }),
         hashRing: {
           algorithm: "consistent",
           virtualNodesPerShard: this.virtualNodesPerShard,
@@ -252,6 +265,7 @@ export class ShardedSnapshotManager {
     return {
       codebasePath: meta.codebasePath,
       timestamp: meta.timestamp,
+      aliasVersion: meta.aliasVersion ?? 0,
       files,
       shardMerkleRoots,
       metaRootHash: meta.metaRootHash,
