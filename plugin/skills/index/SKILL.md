@@ -1,15 +1,18 @@
 ---
 name: index
 description:
-  Index a codebase for the first time. Runs in background — search and other
-  tools remain available during indexing.
+  Index or reindex a codebase. First time — full index. Already indexed —
+  incremental reindex (only changed files). Runs in background, does not block
+  conversation.
 argument-hint: [path to codebase]
 ---
 
 # Index Codebase (Background)
 
-Indexes a codebase in a background subagent so the main conversation is not
-blocked.
+Smart indexing in a background subagent:
+
+- **Not indexed** → full index
+- **Already indexed** → incremental reindex (only changed files)
 
 ## Instructions
 
