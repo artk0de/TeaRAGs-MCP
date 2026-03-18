@@ -109,14 +109,14 @@ describe("parseAppConfig (Zod bridge)", () => {
     process.env.SERVER_TRANSPORT = "grpc";
     const { parseAppConfig } = await freshImport();
 
-    expect(() => parseAppConfig()).toThrow(/transport/i);
+    expect(() => parseAppConfig()).toThrow(/Invalid value.*for configuration field "core"/i);
   });
 
   it("should throw for unknown embedding provider via Zod", async () => {
     process.env.EMBEDDING_PROVIDER = "unknown";
     const { parseAppConfig } = await freshImport();
 
-    expect(() => parseAppConfig()).toThrow(/provider/i);
+    expect(() => parseAppConfig()).toThrow(/Invalid value.*for configuration field "embedding"/i);
   });
 
   it("should throw when non-ollama provider has no API key", async () => {
@@ -124,7 +124,7 @@ describe("parseAppConfig (Zod bridge)", () => {
     delete process.env.OPENAI_API_KEY;
     const { parseAppConfig } = await freshImport();
 
-    expect(() => parseAppConfig()).toThrow(/OPENAI_API_KEY/);
+    expect(() => parseAppConfig()).toThrow(/Required configuration field "openaiApiKey"/i);
   });
 
   it("should not throw when non-ollama provider has API key", async () => {

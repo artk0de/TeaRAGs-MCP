@@ -16,6 +16,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { BM25SparseVectorGenerator } from "../../../adapters/qdrant/sparse.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
+import { PipelineNotStartedError } from "../errors.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { isDebug } from "./infra/runtime.js";
@@ -148,7 +149,7 @@ export class ChunkPipeline {
    */
   addChunk(chunk: ChunkItem["chunk"], chunkId: string, codebasePath: string): boolean {
     if (!this.isRunning) {
-      throw new Error("ChunkPipeline not started");
+      throw new PipelineNotStartedError("ChunkPipeline");
     }
 
     const item: ChunkItem = {

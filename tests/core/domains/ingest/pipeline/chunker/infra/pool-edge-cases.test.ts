@@ -237,7 +237,7 @@ describe("ChunkerPool (edge cases with mocked workers)", () => {
       emitExit(0, 0);
       await shutdownPromise;
 
-      await expect(pool.processFile("test.ts", "code", "typescript")).rejects.toThrow("ChunkerPool is shut down");
+      await expect(pool.processFile("test.ts", "code", "typescript")).rejects.toThrow("ChunkerPool not started");
     });
   });
 

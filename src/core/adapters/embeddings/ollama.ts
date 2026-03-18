@@ -79,18 +79,24 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     return typeof e === "object" && e !== null && ("status" in e || "message" in e);
   }
 
+  private isRateLimit(error: unknown): boolean {
+    // Check responseStatus on OllamaUnavailableError (from callApi/callBatchApi HTTP errors)
+    if (error instanceof OllamaUnavailableError && error.responseStatus === 429) return true;
+    // Check OllamaError-shaped objects (from rejected fetch with rate limit message)
+    const apiError = this.isOllamaError(error) ? error : { status: 0, message: String(error) };
+    return (
+      apiError.status === 429 ||
+      (typeof apiError.message === "string" && apiError.message.toLowerCase().includes("rate limit"))
+    );
+  }
+
   private async retryWithBackoff<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {
-      // Type guard for OllamaError
-      const apiError = this.isOllamaError(error) ? error : { status: 0, message: String(error) };
+      const rateLimited = this.isRateLimit(error);
 
-      const isRateLimitError =
-        apiError.status === 429 ||
-        (typeof apiError.message === "string" && apiError.message.toLowerCase().includes("rate limit"));
-
-      if (isRateLimitError && attempt < this.retryAttempts) {
+      if (rateLimited && attempt < this.retryAttempts) {
         const delayMs = this.retryDelayMs * Math.pow(2, attempt);
         const waitTimeSeconds = (delayMs / 1000).toFixed(1);
         console.error(
@@ -99,10 +105,6 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         return this.retryWithBackoff(fn, attempt + 1);
-      }
-
-      if (isRateLimitError) {
-        throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined);
       }
 
       throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined);
@@ -133,7 +135,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       if (response.status === 404 || errorBody.includes("not found")) {
         throw new OllamaModelMissingError(this.model, this.baseUrl);
       }
-      throw new Error(`Ollama batch API error (${response.status}): ${errorBody}`);
+      throw new OllamaUnavailableError(this.baseUrl, undefined, response.status);
     }
 
     return response.json() as Promise<OllamaEmbedBatchResponse>;
@@ -164,40 +166,26 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         if (response.status === 404 || errorBody.includes("not found")) {
           throw new OllamaModelMissingError(this.model, this.baseUrl);
         }
-        const textPreview = text.length > 100 ? `${text.substring(0, 100)}...` : text;
-        throw new Error(
-          `Ollama API error (${response.status}) for model "${this.model}": ${errorBody}. Text preview: "${textPreview}"`,
-        );
+        throw new OllamaUnavailableError(this.baseUrl, undefined, response.status);
       }
 
       return response.json() as Promise<OllamaEmbedResponse>;
     } catch (error) {
-      // Re-throw if it's already an OllamaError from the !response.ok block
-      if (error && typeof error === "object" && "status" in error) {
+      // Re-throw typed errors (from !response.ok block)
+      if (error instanceof OllamaModelMissingError || error instanceof OllamaUnavailableError) {
         throw error;
       }
 
-      // For Error instances (like network errors), enhance the message
-      if (error instanceof Error) {
-        const textPreview = text.length > 100 ? `${text.substring(0, 100)}...` : text;
-        throw new Error(
-          `Failed to call Ollama API at ${this.baseUrl} with model ${this.model}: ${error.message}. Text preview: "${textPreview}"`,
-        );
-      }
+      // Detect rate limit from rejected fetch (network-level errors with rate limit message)
+      const rateLimitStatus =
+        this.isOllamaError(error) &&
+        typeof error.message === "string" &&
+        error.message.toLowerCase().includes("rate limit")
+          ? 429
+          : undefined;
 
-      // Handle objects with 'message' property - preserve the original error structure
-      if (this.isOllamaError(error)) {
-        const ollamaErrMsg = error.message ? String(error.message) : "Unknown error";
-        throw new Error(ollamaErrMsg);
-      }
-
-      // For other types, create a descriptive error message
-      const textPreview = text.length > 100 ? `${text.substring(0, 100)}...` : text;
-      const errorMessage = JSON.stringify(error);
-
-      throw new Error(
-        `Failed to call Ollama API at ${this.baseUrl} with model ${this.model}: ${errorMessage}. Text preview: "${textPreview}"`,
-      );
+      // Wrap network errors and unknown errors
+      throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined, rateLimitStatus);
     }
   }
 

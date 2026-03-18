@@ -1,4 +1,5 @@
 import type { IngestCodeConfig, TrajectoryIngestConfig } from "../../core/types.js";
+import { ConfigNotInitializedError } from "../errors.js";
 import { DEFAULT_CODE_EXTENSIONS, DEFAULT_IGNORE_PATTERNS } from "./defaults.js";
 import { parseAppConfigZod } from "./parse.js";
 import { appDataDir, daemonPidFile, daemonSocketPath, logsDir, modelsDir, snapshotsDir } from "./paths.js";
@@ -35,7 +36,7 @@ let _lastZodConfig: ReturnType<typeof parseAppConfigZod> | null = null;
 
 /** Get the full Zod config from the last parseAppConfig() call */
 export function getZodConfig(): ReturnType<typeof parseAppConfigZod> {
-  if (!_lastZodConfig) throw new Error("parseAppConfig() must be called first");
+  if (!_lastZodConfig) throw new ConfigNotInitializedError("zodConfig", "parseAppConfig");
   return _lastZodConfig;
 }
 

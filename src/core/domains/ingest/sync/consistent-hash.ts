@@ -7,6 +7,8 @@
 
 import { createHash } from "node:crypto";
 
+import { IngestInvariantError } from "../errors.js";
+
 export interface ConsistentHashOptions {
   virtualNodesPerShard?: number;
 }
@@ -19,7 +21,7 @@ export class ConsistentHash {
 
   constructor(shardCount: number, options?: ConsistentHashOptions) {
     if (shardCount < 1) {
-      throw new Error("Shard count must be at least 1");
+      throw new IngestInvariantError("Shard count must be at least 1");
     }
 
     this.shardCount = shardCount;
@@ -56,7 +58,7 @@ export class ConsistentHash {
     const position = this.sortedPositions[idx];
     const shard = this.ring.get(position);
     if (shard === undefined) {
-      throw new Error(`No shard found for position ${position}`);
+      throw new IngestInvariantError(`No shard found for position ${position}`);
     }
     return shard;
   }

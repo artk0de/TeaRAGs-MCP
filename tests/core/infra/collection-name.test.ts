@@ -56,7 +56,7 @@ describe("collection-name utilities", () => {
     });
 
     it("throws programming error when neither provided", () => {
-      expect(() => resolveCollection(undefined, undefined)).toThrow("programming error");
+      expect(() => resolveCollection(undefined, undefined)).toThrow(/collection.*or.*path.*required/i);
     });
   });
 });

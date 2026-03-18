@@ -20,6 +20,7 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { PipelineNotStartedError } from "../errors.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { isDebug } from "./infra/runtime.js";
 import { WorkerPool } from "./infra/worker-pool.js";
@@ -113,7 +114,7 @@ export class PipelineManager {
    */
   addUpsert(point: UpsertItem["point"]): boolean {
     if (!this.isRunning) {
-      throw new Error("Pipeline not started");
+      throw new PipelineNotStartedError("PipelineManager");
     }
 
     const item: UpsertItem = {
@@ -147,7 +148,7 @@ export class PipelineManager {
    */
   addDelete(relativePath: string): boolean {
     if (!this.isRunning) {
-      throw new Error("Pipeline not started");
+      throw new PipelineNotStartedError("PipelineManager");
     }
 
     const item: DeleteItem = {

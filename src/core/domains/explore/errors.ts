@@ -50,3 +50,15 @@ export class InvalidQueryError extends ExploreError {
     });
   }
 }
+
+/** Unknown search strategy type requested. */
+export class InvalidStrategyError extends ExploreError {
+  constructor(type: string) {
+    super({
+      code: "EXPLORE_INVALID_STRATEGY",
+      message: `Unknown search strategy type: ${type}`,
+      hint: "Use one of: vector, hybrid, scroll-rank",
+      httpStatus: 400,
+    });
+  }
+}

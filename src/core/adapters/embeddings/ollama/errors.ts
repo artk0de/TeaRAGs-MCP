@@ -5,7 +5,10 @@
 import { EmbeddingError } from "../errors.js";
 
 export class OllamaUnavailableError extends EmbeddingError {
-  constructor(url: string, cause?: Error) {
+  /** HTTP response status from Ollama API (e.g. 429 for rate limit). Undefined for network errors. */
+  readonly responseStatus?: number;
+
+  constructor(url: string, cause?: Error, responseStatus?: number) {
     super({
       code: "INFRA_OLLAMA_UNAVAILABLE",
       message: `Ollama is not reachable at ${url}`,
@@ -13,6 +16,7 @@ export class OllamaUnavailableError extends EmbeddingError {
       httpStatus: 503,
       cause,
     });
+    this.responseStatus = responseStatus;
   }
 }
 

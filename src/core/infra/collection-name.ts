@@ -9,6 +9,8 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { resolve } from "node:path";
 
+import { CollectionNotProvidedError } from "../api/errors.js";
+
 /**
  * Validate path — resolves to realpath if exists, absolute path otherwise.
  */
@@ -38,7 +40,7 @@ export function resolveCollectionName(path: string): string {
  */
 export function resolveCollection(collection?: string, path?: string): { collectionName: string; path?: string } {
   if (!collection && !path) {
-    throw new Error("resolveCollection called without collection or path (programming error)");
+    throw new CollectionNotProvidedError();
   }
   const collectionName = collection || resolveCollectionName(path as string);
   return { collectionName, path };

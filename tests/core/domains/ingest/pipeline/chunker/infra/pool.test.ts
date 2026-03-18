@@ -137,7 +137,9 @@ describe("ChunkerPool", () => {
       pool = new ChunkerPool(1, CHUNKER_CONFIG);
       await pool.shutdown();
 
-      await expect(pool.processFile("test.ts", TYPESCRIPT_CODE, "typescript")).rejects.toThrow("shut down");
+      await expect(pool.processFile("test.ts", TYPESCRIPT_CODE, "typescript")).rejects.toThrow(
+        "ChunkerPool not started",
+      );
     });
   });
 

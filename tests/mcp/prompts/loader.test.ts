@@ -4,8 +4,18 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import type { ConfigValueInvalidError } from "../../../src/bootstrap/errors.js";
 import { getPrompt, listPrompts, loadPromptsConfig } from "../../../src/mcp/prompts/loader.js";
 import type { PromptsConfig } from "../../../src/mcp/prompts/types.js";
+
+function getThrown(fn: () => void): ConfigValueInvalidError {
+  try {
+    fn();
+    throw new Error("Expected function to throw");
+  } catch (e) {
+    return e as ConfigValueInvalidError;
+  }
+}
 
 describe("loadPromptsConfig", () => {
   let testDir: string;
@@ -130,7 +140,7 @@ describe("loadPromptsConfig", () => {
     const filePath = join(testDir, "missing-prompts.json");
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
-    expect(() => loadPromptsConfig(filePath)).toThrow("Invalid prompts configuration");
+    expect(() => loadPromptsConfig(filePath)).toThrow(/Invalid value "invalid" for configuration field "prompts"/);
   });
 
   it("should throw error for empty prompt name", () => {
@@ -148,7 +158,7 @@ describe("loadPromptsConfig", () => {
     const filePath = join(testDir, "empty-name.json");
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
-    expect(() => loadPromptsConfig(filePath)).toThrow("Invalid prompts configuration");
+    expect(() => loadPromptsConfig(filePath)).toThrow(/Invalid value "invalid" for configuration field "prompts"/);
   });
 
   it("should throw error for invalid prompt name format", () => {
@@ -166,8 +176,9 @@ describe("loadPromptsConfig", () => {
     const filePath = join(testDir, "invalid-name.json");
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
-    expect(() => loadPromptsConfig(filePath)).toThrow("Invalid prompts configuration");
-    expect(() => loadPromptsConfig(filePath)).toThrow("lowercase letters, numbers, and underscores");
+    const err = getThrown(() => loadPromptsConfig(filePath));
+    expect(err.message).toMatch(/Invalid value "invalid" for configuration field "prompts"/);
+    expect(err.hint).toMatch(/lowercase letters, numbers, and underscores/);
   });
 
   it("should accept valid prompt name formats", () => {
@@ -215,7 +226,9 @@ describe("loadPromptsConfig", () => {
     const filePath = join(testDir, "duplicate-names.json");
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
-    expect(() => loadPromptsConfig(filePath)).toThrow("Duplicate prompt name: test_prompt");
+    expect(() => loadPromptsConfig(filePath)).toThrow(
+      /Invalid value "test_prompt" for configuration field "promptName"/,
+    );
   });
 
   it("should throw error for duplicate argument names within a prompt", () => {
@@ -244,7 +257,7 @@ describe("loadPromptsConfig", () => {
     const filePath = join(testDir, "duplicate-args.json");
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
-    expect(() => loadPromptsConfig(filePath)).toThrow('Duplicate argument name in prompt "test_prompt": arg1');
+    expect(() => loadPromptsConfig(filePath)).toThrow(/Invalid value "arg1" for configuration field "argumentName"/);
   });
 
   it("should allow same argument name in different prompts", () => {
@@ -304,7 +317,7 @@ describe("loadPromptsConfig", () => {
     const filePath = join(testDir, "empty-arg-name.json");
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
-    expect(() => loadPromptsConfig(filePath)).toThrow("Invalid prompts configuration");
+    expect(() => loadPromptsConfig(filePath)).toThrow(/Invalid value "invalid" for configuration field "prompts"/);
   });
 
   it("should throw error for missing argument description", () => {
@@ -328,7 +341,7 @@ describe("loadPromptsConfig", () => {
     const filePath = join(testDir, "empty-arg-description.json");
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
-    expect(() => loadPromptsConfig(filePath)).toThrow("Invalid prompts configuration");
+    expect(() => loadPromptsConfig(filePath)).toThrow(/Invalid value "invalid" for configuration field "prompts"/);
   });
 
   it("should throw error for missing template", () => {
@@ -346,7 +359,7 @@ describe("loadPromptsConfig", () => {
     const filePath = join(testDir, "empty-template.json");
     writeFileSync(filePath, JSON.stringify(config, null, 2));
 
-    expect(() => loadPromptsConfig(filePath)).toThrow("Invalid prompts configuration");
+    expect(() => loadPromptsConfig(filePath)).toThrow(/Invalid value "invalid" for configuration field "prompts"/);
   });
 
   it("should load empty prompts array", () => {

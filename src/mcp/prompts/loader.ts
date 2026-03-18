@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 
 import { z } from "zod";
 
+import { ConfigValueInvalidError } from "../../bootstrap/errors.js";
 import type { PromptDefinition, PromptsConfig } from "./types.js";
 
 // Zod schema for validation
@@ -48,7 +49,7 @@ export function loadPromptsConfig(filePath: string): PromptsConfig {
     const names = new Set<string>();
     for (const prompt of validated.prompts) {
       if (names.has(prompt.name)) {
-        throw new Error(`Duplicate prompt name: ${prompt.name}`);
+        throw new ConfigValueInvalidError("promptName", prompt.name, "unique prompt names");
       }
       names.add(prompt.name);
 
@@ -56,7 +57,11 @@ export function loadPromptsConfig(filePath: string): PromptsConfig {
       const argNames = new Set<string>();
       for (const arg of prompt.arguments) {
         if (argNames.has(arg.name)) {
-          throw new Error(`Duplicate argument name in prompt "${prompt.name}": ${arg.name}`);
+          throw new ConfigValueInvalidError(
+            "argumentName",
+            arg.name,
+            `unique argument names in prompt "${prompt.name}"`,
+          );
         }
         argNames.add(arg.name);
       }
@@ -66,7 +71,7 @@ export function loadPromptsConfig(filePath: string): PromptsConfig {
   } catch (error) {
     if (error instanceof z.ZodError) {
       const issues = error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
-      throw new Error(`Invalid prompts configuration:\n${issues.join("\n")}`);
+      throw new ConfigValueInvalidError("prompts", "invalid", issues.join("; "));
     }
     throw error;
   }

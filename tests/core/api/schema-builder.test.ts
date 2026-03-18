@@ -148,7 +148,9 @@ describe("SchemaBuilder", () => {
 
     it("throws when tool has no presets", () => {
       const builder = new SchemaBuilder(createMockReranker() as Reranker);
-      expect(() => builder.buildPresetSchema("unknown_tool")).toThrow(/No presets/);
+      expect(() => builder.buildPresetSchema("unknown_tool")).toThrow(
+        /Invalid value "none" for configuration field "presets"/,
+      );
     });
   });
 
