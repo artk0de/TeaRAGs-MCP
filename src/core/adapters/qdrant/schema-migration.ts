@@ -7,12 +7,14 @@
  * Schema versions:
  * - v1-v3: No payload indexes (implicit)
  * - v4: Added keyword index on `relativePath` for faster filter-based deletes
+ * - v5: Added text index on `relativePath` for glob pre-filter
+ * - v6: Added keyword indexes on `language`, `fileExtension`, `chunkType`
  */
 
 import type { QdrantManager } from "../qdrant/client.js";
 
 /** Current schema version */
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 /** Reserved ID for storing schema metadata in the collection */
 const SCHEMA_METADATA_ID = "__schema_metadata__";
@@ -152,6 +154,18 @@ export class SchemaManager {
         }
       }
 
+      // v6: Add keyword indexes on frequently filtered fields
+      if (currentVersion < 6) {
+        for (const field of ["language", "fileExtension", "chunkType"] as const) {
+          const created = await this.qdrant.ensurePayloadIndex(collectionName, field, "keyword");
+          if (created) {
+            migrationsApplied.push(`v6: Created keyword index on ${field}`);
+          } else {
+            migrationsApplied.push(`v6: ${field} keyword index already exists`);
+          }
+        }
+      }
+
       // Store updated schema metadata
       await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);
 
@@ -182,6 +196,15 @@ export class SchemaManager {
     // Create relativePath keyword index for fast filter-based operations
     await this.qdrant.createPayloadIndex(collectionName, "relativePath", "keyword");
     indexes.push("relativePath");
+
+    // Create relativePath text index for glob pre-filter (was missing for new collections)
+    await this.qdrant.createPayloadIndex(collectionName, "relativePath", "text");
+
+    // Create keyword indexes on frequently filtered fields
+    for (const field of ["language", "fileExtension", "chunkType"] as const) {
+      await this.qdrant.createPayloadIndex(collectionName, field, "keyword");
+      indexes.push(field);
+    }
 
     // Store schema metadata
     await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);
