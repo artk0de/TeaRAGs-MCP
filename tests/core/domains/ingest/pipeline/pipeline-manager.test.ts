@@ -81,7 +81,7 @@ describe("PipelineManager", () => {
         handleDeleteBatch: vi.fn(),
       });
 
-      expect(() => notStartedPipeline.addUpsert(createPoint(1))).toThrow("Pipeline not started");
+      expect(() => notStartedPipeline.addUpsert(createPoint(1))).toThrow("PipelineManager not started");
     });
 
     it("should accept items after start", () => {
@@ -629,7 +629,7 @@ describe("PipelineManager", () => {
         handleDeleteBatch: vi.fn(),
       });
 
-      expect(() => notStartedPipeline.addDelete("path.ts")).toThrow("Pipeline not started");
+      expect(() => notStartedPipeline.addDelete("path.ts")).toThrow("PipelineManager not started");
     });
   });
 

@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 
 import type { ChunkerConfig, CodeChunk } from "../../../../../types.js";
+import { PipelineNotStartedError } from "../../../errors.js";
 import { isDebug } from "../../infra/runtime.js";
 import type { WorkerRequest, WorkerResponse } from "./worker.js";
 
@@ -107,7 +108,7 @@ export class ChunkerPool {
    */
   async processFile(filePath: string, code: string, language: string): Promise<FileChunkResult> {
     if (this.isShutdown) {
-      throw new Error("ChunkerPool is shut down");
+      throw new PipelineNotStartedError("ChunkerPool");
     }
 
     const request: WorkerRequest = { filePath, code, language };

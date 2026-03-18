@@ -4,6 +4,7 @@
 
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import { InvalidParameterError } from "../../core/api/errors.js";
 import type { App } from "../../core/api/index.js";
 import type { PresetDescriptors } from "../../core/api/public/dto/explore.js";
 
@@ -278,7 +279,7 @@ export function registerAllResources(server: McpServer, app: App): void {
     async (uri, params) => {
       const { name } = params;
       if (typeof name !== "string" || !name) {
-        throw new Error("Invalid collection name parameter");
+        throw new InvalidParameterError("name", "collection name must be a non-empty string");
       }
       const info = await app.getCollectionInfo(name);
       return {

@@ -37,3 +37,17 @@ export class ConfigValueMissingError extends ConfigError {
     });
   }
 }
+
+/**
+ * Thrown when a config subsystem is accessed before initialization.
+ */
+export class ConfigNotInitializedError extends ConfigError {
+  constructor(subsystem: string, initMethod: string) {
+    super({
+      code: "CONFIG_NOT_INITIALIZED",
+      message: `Configuration subsystem "${subsystem}" is not initialized`,
+      hint: `Call ${initMethod}() before accessing this configuration`,
+      httpStatus: 500,
+    });
+  }
+}

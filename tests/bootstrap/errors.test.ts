@@ -81,4 +81,15 @@ describe("ConfigError hierarchy", () => {
       expect(msg).toContain("OPENAI_API_KEY");
     });
   });
+
+  describe("ConfigNotInitializedError", () => {
+    it("has correct code and message", async () => {
+      const { ConfigNotInitializedError } = await import("../../src/bootstrap/errors.js");
+      const err = new ConfigNotInitializedError("zodConfig", "parseAppConfig");
+      expect(err.code).toBe("CONFIG_NOT_INITIALIZED");
+      expect(err.message).toContain("zodConfig");
+      expect(err.hint).toContain("parseAppConfig");
+      expect(err.httpStatus).toBe(500);
+    });
+  });
 });

@@ -63,4 +63,25 @@ describe("InputValidationError hierarchy", () => {
       expect(err).toBeInstanceOf(InputValidationError);
     });
   });
+
+  describe("MissingArgumentError", () => {
+    it("has correct code and message", async () => {
+      const { MissingArgumentError } = await import("../../../src/core/api/errors.js");
+      const err = new MissingArgumentError(["name", "path"]);
+      expect(err.code).toBe("INPUT_MISSING_ARGUMENT");
+      expect(err.message).toContain("name");
+      expect(err.message).toContain("path");
+      expect(err).toBeInstanceOf(InputValidationError);
+    });
+  });
+
+  describe("InvalidParameterError", () => {
+    it("has correct code and message", async () => {
+      const { InvalidParameterError } = await import("../../../src/core/api/errors.js");
+      const err = new InvalidParameterError("collection", "must be a string");
+      expect(err.code).toBe("INPUT_INVALID_PARAMETER");
+      expect(err.message).toContain("collection");
+      expect(err).toBeInstanceOf(InputValidationError);
+    });
+  });
 });

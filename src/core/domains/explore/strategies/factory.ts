@@ -4,6 +4,7 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import { InvalidStrategyError } from "../errors.js";
 import type { Reranker } from "../reranker.js";
 import type { BaseExploreStrategy } from "./base.js";
 import { HybridSearchStrategy } from "./hybrid.js";
@@ -27,6 +28,6 @@ export function createExploreStrategy(
     case "scroll-rank":
       return new ScrollRankStrategy(qdrant, reranker, payloadSignals, essentialKeys);
     default:
-      throw new Error(`Unknown search strategy type: ${type as string}`);
+      throw new InvalidStrategyError(type as string);
   }
 }

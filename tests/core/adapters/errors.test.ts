@@ -498,6 +498,16 @@ describe("CohereApiError", () => {
   });
 });
 
+describe("OnnxPackageMissingError", () => {
+  it("has correct code and httpStatus", async () => {
+    const { OnnxPackageMissingError } = await import("../../../src/core/adapters/embeddings/onnx/errors.js");
+    const err = new OnnxPackageMissingError();
+    expect(err.code).toBe("INFRA_ONNX_PACKAGE_MISSING");
+    expect(err.httpStatus).toBe(503);
+    expect(err).toBeInstanceOf(TeaRagsError);
+  });
+});
+
 describe("VoyageApiError", () => {
   it("has correct code and httpStatus", () => {
     const err = new VoyageApiError("timeout");

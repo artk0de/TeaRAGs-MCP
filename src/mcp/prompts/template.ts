@@ -2,6 +2,7 @@
  * Simple template rendering engine for prompts
  */
 
+import { MissingArgumentError } from "../../core/api/errors.js";
 import type { PromptArgument, RenderedPrompt } from "./types.js";
 
 /**
@@ -63,6 +64,6 @@ export function validateArguments(args: Record<string, string>, definitions: Pro
   }
 
   if (missing.length > 0) {
-    throw new Error(`Missing required arguments: ${missing.join(", ")}`);
+    throw new MissingArgumentError(missing);
   }
 }

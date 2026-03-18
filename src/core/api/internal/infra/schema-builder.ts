@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 
+import { ConfigValueInvalidError } from "../../../../bootstrap/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 
 export class SchemaBuilder {
@@ -35,7 +36,7 @@ export class SchemaBuilder {
   buildPresetSchema(tool: string): z.ZodTypeAny {
     const names = this.reranker.getPresetNames(tool);
     if (names.length === 0) {
-      throw new Error(`No presets registered for tool "${tool}"`);
+      throw new ConfigValueInvalidError("presets", "none", `at least one preset for tool "${tool}"`);
     }
     if (names.length === 1) {
       return z.literal(names[0]);

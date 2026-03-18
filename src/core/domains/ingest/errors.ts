@@ -74,6 +74,30 @@ export class MigrationFailedError extends IngestError {
   }
 }
 
+/** Pipeline method called before start(). */
+export class PipelineNotStartedError extends IngestError {
+  constructor(component: string) {
+    super({
+      code: "INGEST_PIPELINE_NOT_STARTED",
+      message: `${component} not started`,
+      hint: "Call start() before using the pipeline",
+      httpStatus: 500,
+    });
+  }
+}
+
+/** Programming invariant violated in ingest domain. */
+export class IngestInvariantError extends IngestError {
+  constructor(detail: string) {
+    super({
+      code: "INGEST_INVARIANT_VIOLATED",
+      message: `Invariant violated: ${detail}`,
+      hint: "This is a programming error — report it as a bug",
+      httpStatus: 500,
+    });
+  }
+}
+
 /** Incremental re-indexing failed unexpectedly. */
 export class ReindexFailedError extends IngestError {
   constructor(detail: string, cause?: Error) {

@@ -27,3 +27,14 @@ export class OnnxInferenceError extends EmbeddingError {
     });
   }
 }
+
+export class OnnxPackageMissingError extends EmbeddingError {
+  constructor() {
+    super({
+      code: "INFRA_ONNX_PACKAGE_MISSING",
+      message: "ONNX provider requires additional packages",
+      hint: "Install them with: npm install @huggingface/transformers@next",
+      httpStatus: 503,
+    });
+  }
+}

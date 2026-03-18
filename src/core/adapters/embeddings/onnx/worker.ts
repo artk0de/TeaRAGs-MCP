@@ -13,6 +13,7 @@ import { parentPort } from "node:worker_threads";
 
 import { DEFAULT_GPU_BATCH_SIZE, PROBE_BATCH_SIZES, PROBE_PRESSURE_THRESHOLD } from "./constants.js";
 import { detectDevice } from "./device.js";
+import { OnnxPackageMissingError } from "./errors.js";
 import type { WorkerRequest, WorkerResponse } from "./worker-types.js";
 
 // Sequential lock: ensures only one embed runs at a time on GPU
@@ -56,10 +57,7 @@ async function importTransformers(): Promise<TransformersModule> {
   try {
     return (await import("@huggingface/transformers")) as unknown as TransformersModule;
   } catch {
-    throw new Error(
-      "ONNX provider requires additional packages. Install them with:\n" +
-        "  npm install @huggingface/transformers@next",
-    );
+    throw new OnnxPackageMissingError();
   }
 }
 

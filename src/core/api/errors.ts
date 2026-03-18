@@ -30,3 +30,29 @@ export class CollectionNotProvidedError extends InputValidationError {
     });
   }
 }
+
+/**
+ * Thrown when required arguments are missing from a request.
+ */
+export class MissingArgumentError extends InputValidationError {
+  constructor(args: string[]) {
+    super({
+      code: "INPUT_MISSING_ARGUMENT",
+      message: `Missing required arguments: ${args.join(", ")}`,
+      hint: "Provide all required arguments",
+    });
+  }
+}
+
+/**
+ * Thrown when a parameter has an invalid value.
+ */
+export class InvalidParameterError extends InputValidationError {
+  constructor(parameter: string, detail: string) {
+    super({
+      code: "INPUT_INVALID_PARAMETER",
+      message: `Invalid parameter "${parameter}": ${detail}`,
+      hint: "Check the parameter value and try again",
+    });
+  }
+}

@@ -278,7 +278,7 @@ describe("parseAppConfigZod", () => {
       process.env.SERVER_TRANSPORT = "grpc";
       const { parseAppConfigZod } = await freshImport();
 
-      expect(() => parseAppConfigZod()).toThrow(/transport/i);
+      expect(() => parseAppConfigZod()).toThrow(/Invalid value.*for configuration field "core"/i);
     });
 
     it("throws readable error for invalid port (non-numeric)", async () => {
@@ -292,21 +292,21 @@ describe("parseAppConfigZod", () => {
       process.env.EMBEDDING_PROVIDER = "invalid";
       const { parseAppConfigZod } = await freshImport();
 
-      expect(() => parseAppConfigZod()).toThrow(/provider/i);
+      expect(() => parseAppConfigZod()).toThrow(/Invalid value.*for configuration field "embedding"/i);
     });
 
     it("throws readable error for invalid ingest config (non-numeric chunk size)", async () => {
       process.env.INGEST_CHUNK_SIZE = "abc";
       const { parseAppConfigZod } = await freshImport();
 
-      expect(() => parseAppConfigZod()).toThrow(/Invalid config \(ingest\)/);
+      expect(() => parseAppConfigZod()).toThrow(/Invalid value.*for configuration field "ingest"/i);
     });
 
     it("throws readable error for invalid trajectoryGit config (non-numeric timeout)", async () => {
       process.env.TRAJECTORY_GIT_LOG_TIMEOUT_MS = "abc";
       const { parseAppConfigZod } = await freshImport();
 
-      expect(() => parseAppConfigZod()).toThrow(/Invalid config \(trajectoryGit\)/);
+      expect(() => parseAppConfigZod()).toThrow(/Invalid value.*for configuration field "trajectoryGit"/i);
     });
   });
 
@@ -316,7 +316,7 @@ describe("parseAppConfigZod", () => {
       delete process.env.OPENAI_API_KEY;
       const { parseAppConfigZod } = await freshImport();
 
-      expect(() => parseAppConfigZod()).toThrow(/OPENAI_API_KEY.*required.*openai/i);
+      expect(() => parseAppConfigZod()).toThrow(/Required configuration field "openaiApiKey"/i);
     });
 
     it("throws when cohere provider has no API key", async () => {
@@ -324,7 +324,7 @@ describe("parseAppConfigZod", () => {
       delete process.env.COHERE_API_KEY;
       const { parseAppConfigZod } = await freshImport();
 
-      expect(() => parseAppConfigZod()).toThrow(/COHERE_API_KEY.*required.*cohere/i);
+      expect(() => parseAppConfigZod()).toThrow(/Required configuration field "cohereApiKey"/i);
     });
 
     it("throws when voyage provider has no API key", async () => {
@@ -332,7 +332,7 @@ describe("parseAppConfigZod", () => {
       delete process.env.VOYAGE_API_KEY;
       const { parseAppConfigZod } = await freshImport();
 
-      expect(() => parseAppConfigZod()).toThrow(/VOYAGE_API_KEY.*required.*voyage/i);
+      expect(() => parseAppConfigZod()).toThrow(/Required configuration field "voyageApiKey"/i);
     });
 
     it("does not throw when openai provider has API key", async () => {

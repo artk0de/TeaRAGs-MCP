@@ -1,3 +1,4 @@
+import { ConfigValueInvalidError, ConfigValueMissingError } from "../errors.js";
 import {
   coreSchema,
   embeddingSchema,
@@ -99,31 +100,31 @@ export function parseAppConfigZod(): {
   const coreResult = coreSchema.safeParse(coreInput);
   if (!coreResult.success) {
     const issues = coreResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    throw new Error(`Invalid config (core): ${issues}`);
+    throw new ConfigValueInvalidError("core", "invalid", issues);
   }
 
   const embeddingResult = embeddingSchema.safeParse(embeddingInput);
   if (!embeddingResult.success) {
     const issues = embeddingResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    throw new Error(`Invalid config (embedding): ${issues}`);
+    throw new ConfigValueInvalidError("embedding", "invalid", issues);
   }
 
   const ingestResult = ingestSchema.safeParse(ingestInput);
   if (!ingestResult.success) {
     const issues = ingestResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    throw new Error(`Invalid config (ingest): ${issues}`);
+    throw new ConfigValueInvalidError("ingest", "invalid", issues);
   }
 
   const trajectoryGitResult = trajectoryGitSchema.safeParse(trajectoryGitInput);
   if (!trajectoryGitResult.success) {
     const issues = trajectoryGitResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    throw new Error(`Invalid config (trajectoryGit): ${issues}`);
+    throw new ConfigValueInvalidError("trajectoryGit", "invalid", issues);
   }
 
   const qdrantTuneResult = qdrantTuneSchema.safeParse(qdrantTuneInput);
   if (!qdrantTuneResult.success) {
     const issues = qdrantTuneResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    throw new Error(`Invalid config (qdrantTune): ${issues}`);
+    throw new ConfigValueInvalidError("qdrantTune", "invalid", issues);
   }
 
   // Validate API keys for non-ollama providers
@@ -141,7 +142,7 @@ export function parseAppConfigZod(): {
     };
     const keyField = keyMap[embedding.provider];
     if (keyField && !embedding[keyField]) {
-      throw new Error(`${envMap[embedding.provider]} is required for ${embedding.provider} provider.`);
+      throw new ConfigValueMissingError(keyField, envMap[embedding.provider]);
     }
   }
 
