@@ -9,13 +9,6 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { resolve } from "node:path";
 
-export class CollectionRefError extends Error {
-  constructor() {
-    super("Either 'collection' or 'path' parameter is required.");
-    this.name = "CollectionRefError";
-  }
-}
-
 /**
  * Validate path — resolves to realpath if exists, absolute path otherwise.
  */
@@ -39,10 +32,11 @@ export function resolveCollectionName(path: string): string {
 
 /**
  * Resolve collection name from either explicit name or path.
- * @throws CollectionRefError if neither is provided.
+ *
+ * Callers must validate that at least one of collection/path is provided
+ * before calling this function (throw CollectionNotProvidedError from api/errors).
  */
 export function resolveCollection(collection?: string, path?: string): { collectionName: string; path?: string } {
-  if (!collection && !path) throw new CollectionRefError();
   const collectionName = collection || resolveCollectionName(path as string);
   return { collectionName, path };
 }

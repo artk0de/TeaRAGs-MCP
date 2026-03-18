@@ -28,14 +28,10 @@ import {
 } from "../../../domains/explore/strategies/index.js";
 import { SimilarSearchStrategy } from "../../../domains/explore/strategies/similar.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
-import {
-  CollectionRefError,
-  resolveCollection,
-  resolveCollectionName,
-  validatePath,
-} from "../../../infra/collection-name.js";
+import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
+import { CollectionNotProvidedError } from "../../errors.js";
 import type {
   ExploreCodeRequest,
   ExploreResponse,
@@ -128,6 +124,7 @@ export class ExploreFacade {
 
   /** Semantic (dense vector) search over a collection. */
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
+    if (!request.collection && !request.path) throw new CollectionNotProvidedError();
     const { collectionName, path } = resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
@@ -156,6 +153,7 @@ export class ExploreFacade {
 
   /** Hybrid (dense + BM25 sparse) search over a collection. */
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
+    if (!request.collection && !request.path) throw new CollectionNotProvidedError();
     const { collectionName, path } = resolveCollection(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
@@ -184,6 +182,7 @@ export class ExploreFacade {
 
   /** Rank all chunks by rerank signals without vector search. */
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
+    if (!request.collection && !request.path) throw new CollectionNotProvidedError();
     const { collectionName, path } = resolveCollection(request.collection, request.path);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "rank_chunks");
     const filter = this.registry.buildMergedFilter(
@@ -249,6 +248,7 @@ export class ExploreFacade {
       throw new Error("At least one positive or negative input is required");
     }
 
+    if (!request.collection && !request.path) throw new CollectionNotProvidedError();
     const { collectionName, path } = resolveCollection(request.collection, request.path);
 
     // Create per-request strategy
@@ -411,4 +411,4 @@ function resolveEffectiveLevel(
   return undefined;
 }
 
-export { CollectionRefError, CollectionNotFoundError };
+export { CollectionNotFoundError };
