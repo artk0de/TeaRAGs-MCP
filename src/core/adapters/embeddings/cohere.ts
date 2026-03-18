@@ -69,11 +69,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
       }
 
       if (isRateLimitError) {
-        throw new CohereRateLimitError(
-          new Error(
-            `Cohere API rate limit exceeded after ${this.retryAttempts} retry attempts. Please try again later or reduce request frequency.`,
-          ),
-        );
+        throw new CohereRateLimitError(error instanceof Error ? error : undefined);
       }
 
       throw error;
