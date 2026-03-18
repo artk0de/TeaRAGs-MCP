@@ -104,13 +104,14 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
     },
   );
 
-  // reindex_changes
+  // reindex_changes (deprecated — use index_codebase which auto-detects)
   registerToolSafe(
     server,
     "reindex_changes",
     {
       title: "Reindex Changes",
       description:
+        "Deprecated: use index_codebase instead — it automatically detects changes and does incremental reindex.\n\n" +
         "Incrementally re-index only changed files. Detects added, modified, and deleted files since last index. Requires previous indexing with index_codebase.",
       inputSchema: schemas.ReindexChangesSchema,
       annotations: { idempotentHint: true },
