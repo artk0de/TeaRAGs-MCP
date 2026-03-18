@@ -5,6 +5,7 @@ import {
   IngestError,
   MigrationFailedError,
   NotIndexedError,
+  ReindexFailedError,
   SnapshotCorruptedError,
   SnapshotMissingError,
 } from "../../../../src/core/domains/ingest/errors.js";
@@ -97,6 +98,18 @@ describe("IngestError hierarchy", () => {
       const err = new MigrationFailedError("schema version mismatch");
       expect(err.code).toBe("INGEST_MIGRATION_FAILED");
       expect(err.message).toContain("schema version mismatch");
+      expect(err).toBeInstanceOf(IngestError);
+    });
+  });
+
+  describe("ReindexFailedError", () => {
+    it("has correct code and preserves cause", () => {
+      const cause = new Error("disk full");
+      const err = new ReindexFailedError("/path", cause);
+      expect(err.code).toBe("INGEST_REINDEX_FAILED");
+      expect(err.httpStatus).toBe(500);
+      expect(err.message).toContain("/path");
+      expect(err.cause).toBe(cause);
       expect(err).toBeInstanceOf(IngestError);
     });
   });

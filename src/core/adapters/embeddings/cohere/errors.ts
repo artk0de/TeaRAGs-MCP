@@ -15,3 +15,15 @@ export class CohereRateLimitError extends EmbeddingError {
     });
   }
 }
+
+export class CohereApiError extends EmbeddingError {
+  constructor(detail: string, cause?: Error) {
+    super({
+      code: "INFRA_COHERE_API",
+      message: `Cohere API error: ${detail}`,
+      hint: "Check Cohere API status and configuration",
+      httpStatus: 502,
+      cause,
+    });
+  }
+}

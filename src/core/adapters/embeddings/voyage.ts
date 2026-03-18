@@ -2,7 +2,7 @@ import Bottleneck from "bottleneck";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
-import { VoyageRateLimitError } from "./voyage/errors.js";
+import { VoyageApiError, VoyageRateLimitError } from "./voyage/errors.js";
 
 interface VoyageError {
   status?: number;
@@ -78,7 +78,8 @@ export class VoyageEmbeddings implements EmbeddingProvider {
         throw new VoyageRateLimitError(error instanceof Error ? error : undefined);
       }
 
-      throw error;
+      const cause = error instanceof Error ? error : undefined;
+      throw new VoyageApiError(cause?.message ?? String(error), cause);
     }
   }
 
@@ -103,7 +104,7 @@ export class VoyageEmbeddings implements EmbeddingProvider {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Voyage AI API error (${response.status}): ${errorText}`);
+      throw new VoyageApiError(`(${response.status}): ${errorText}`);
     }
 
     return response.json() as Promise<VoyageEmbedResponse>;
@@ -115,7 +116,7 @@ export class VoyageEmbeddings implements EmbeddingProvider {
         const response = await this.callApi([text]);
 
         if (!response.data || response.data.length === 0) {
-          throw new Error("No embedding returned from Voyage AI API");
+          throw new VoyageApiError("No embedding returned from Voyage AI API");
         }
 
         return {
@@ -132,7 +133,7 @@ export class VoyageEmbeddings implements EmbeddingProvider {
         const response = await this.callApi(texts);
 
         if (!response.data) {
-          throw new Error("No embeddings returned from Voyage AI API");
+          throw new VoyageApiError("No embeddings returned from Voyage AI API");
         }
 
         return response.data.map((item) => ({

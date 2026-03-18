@@ -10,6 +10,7 @@
  * The ingest layer uses getAllEnrichmentProviders() to obtain providers.
  */
 
+import { ConfigValueInvalidError } from "../../../bootstrap/errors.js";
 import { mergeQdrantFilters } from "../../adapters/qdrant/filters/utils.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../../adapters/qdrant/types.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../../contracts/types/provider.js";
@@ -46,9 +47,10 @@ export class TrajectoryRegistry {
     }
     for (const d of trajectory.derivedSignals) {
       if (existingNames.has(d.name)) {
-        throw new Error(
-          `Derived signal name conflict: "${d.name}" is already registered by another trajectory. ` +
-            `Trajectory "${trajectory.key}" cannot register a duplicate.`,
+        throw new ConfigValueInvalidError(
+          "derivedSignal.name",
+          d.name,
+          `unique signal names (conflict: "${d.name}" already registered by another trajectory, "${trajectory.key}" cannot register a duplicate)`,
         );
       }
     }

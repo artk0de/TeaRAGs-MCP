@@ -146,7 +146,7 @@ describe("OllamaEmbeddings", () => {
         json: async () => ({}),
       });
 
-      await expect(embeddings.embed("test")).rejects.toThrow("No embedding returned from Ollama API");
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
 
     it("should handle API errors", async () => {
@@ -159,13 +159,13 @@ describe("OllamaEmbeddings", () => {
       await expect(embeddings.embed("test")).rejects.toThrow();
     });
 
-    it("should propagate network errors", async () => {
+    it("should propagate network errors as OllamaUnavailableError", async () => {
       mockFetch.mockRejectedValue(new Error("Network Error"));
 
-      await expect(embeddings.embed("test")).rejects.toThrow("Network Error");
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
 
-    it("should include text preview in API error for long text", async () => {
+    it("should wrap API error for long text in OllamaUnavailableError", async () => {
       const longText = "a".repeat(150);
       mockFetch.mockResolvedValue({
         ok: false,
@@ -173,35 +173,27 @@ describe("OllamaEmbeddings", () => {
         text: async () => "Server error",
       });
 
-      await expect(embeddings.embed(longText)).rejects.toThrow(
-        expect.objectContaining({
-          message: expect.stringContaining("Text preview:"),
-        }),
-      );
+      await expect(embeddings.embed(longText)).rejects.toThrow(OllamaUnavailableError);
     });
 
-    it("should include model and URL in network error messages for non-Error objects", async () => {
+    it("should wrap non-Error objects in OllamaUnavailableError", async () => {
       mockFetch.mockRejectedValue("Connection refused");
 
-      await expect(embeddings.embed("test")).rejects.toThrow(
-        "Failed to call Ollama API at http://localhost:11434 with model nomic-embed-text",
-      );
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
 
-    it("should handle errors with message property", async () => {
+    it("should handle errors with message property as OllamaUnavailableError", async () => {
       mockFetch.mockRejectedValue({
         message: "Custom error message",
       });
 
-      await expect(embeddings.embed("test")).rejects.toThrow("Custom error message");
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
 
-    it("should handle non-Error objects in catch block", async () => {
+    it("should handle non-Error objects in catch block as OllamaUnavailableError", async () => {
       mockFetch.mockRejectedValue({ code: "ERR_UNKNOWN", details: "info" });
 
-      await expect(embeddings.embed("test")).rejects.toThrow(
-        "Failed to call Ollama API at http://localhost:11434 with model nomic-embed-text",
-      );
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
   });
 
@@ -279,7 +271,7 @@ describe("OllamaEmbeddings", () => {
         })
         .mockRejectedValueOnce(new Error("Batch API Error"));
 
-      await expect(embeddings.embedBatch(["text1", "text2"])).rejects.toThrow("Batch API Error");
+      await expect(embeddings.embedBatch(["text1", "text2"])).rejects.toThrow(OllamaUnavailableError);
     });
 
     it("should handle partial failures in batch", async () => {
@@ -523,23 +515,21 @@ describe("OllamaEmbeddings", () => {
       expect(mockFetch).toHaveBeenCalledTimes(1); // No retries
     });
 
-    it("should handle Error instance in retry logic", async () => {
+    it("should handle Error instance in retry logic as OllamaUnavailableError", async () => {
       const testError = new Error("Connection timeout");
       mockFetch.mockRejectedValue(testError);
 
-      await expect(embeddings.embed("test")).rejects.toThrow("Connection timeout");
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
 
-    it("should handle Error instance from network error with enhanced message", async () => {
+    it("should handle Error instance from network error as OllamaUnavailableError", async () => {
       const networkError = new Error("ECONNREFUSED");
       mockFetch.mockRejectedValue(networkError);
 
-      await expect(embeddings.embed("test")).rejects.toThrow(
-        "Failed to call Ollama API at http://localhost:11434 with model nomic-embed-text: ECONNREFUSED. Text preview:",
-      );
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
 
-    it("should handle object with string message property", async () => {
+    it("should handle object with string message property as OllamaUnavailableError", async () => {
       const customError = {
         code: "API_ERROR",
         message: "Custom API failure",
@@ -547,7 +537,7 @@ describe("OllamaEmbeddings", () => {
       };
       mockFetch.mockRejectedValue(customError);
 
-      await expect(embeddings.embed("test")).rejects.toThrow("Custom API failure");
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
   });
 
@@ -628,7 +618,7 @@ describe("OllamaEmbeddings", () => {
         }),
       });
 
-      await expect(batchEmbeddings.embed("test")).rejects.toThrow("No embeddings returned");
+      await expect(batchEmbeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
 
     it("should handle API error in batch mode", async () => {
@@ -717,9 +707,7 @@ describe("OllamaEmbeddings", () => {
         }),
       });
 
-      await expect(batchEmbeddings.embedBatch(["text1", "text2", "text3"])).rejects.toThrow(
-        "Ollama returned 2 embeddings for 3 texts",
-      );
+      await expect(batchEmbeddings.embedBatch(["text1", "text2", "text3"])).rejects.toThrow(OllamaUnavailableError);
     });
 
     it("should throw when embedBatch response has no embeddings field", async () => {
@@ -730,7 +718,7 @@ describe("OllamaEmbeddings", () => {
         }),
       });
 
-      await expect(batchEmbeddings.embedBatch(["text1"])).rejects.toThrow("Ollama returned 0 embeddings for 1 texts");
+      await expect(batchEmbeddings.embedBatch(["text1"])).rejects.toThrow(OllamaUnavailableError);
     });
 
     it("should detect batch support via checkBatchSupport", async () => {

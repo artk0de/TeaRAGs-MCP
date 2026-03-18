@@ -324,7 +324,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
 
     const id = this.nextId++;
     const { socket } = this;
-    if (!socket) throw new Error("Socket not connected");
+    if (!socket) throw new OnnxInferenceError("Socket not connected");
 
     const embeddings = await new Promise<number[][]>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
@@ -343,7 +343,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     await this.ensureInitialized();
 
     const { socket } = this;
-    if (!socket) throw new Error("Socket not connected");
+    if (!socket) throw new OnnxInferenceError("Socket not connected");
 
     const id = this.nextId++;
     const embeddings = await new Promise<number[][]>((resolve, reject) => {

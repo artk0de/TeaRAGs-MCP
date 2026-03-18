@@ -15,3 +15,15 @@ export class VoyageRateLimitError extends EmbeddingError {
     });
   }
 }
+
+export class VoyageApiError extends EmbeddingError {
+  constructor(detail: string, cause?: Error) {
+    super({
+      code: "INFRA_VOYAGE_API",
+      message: `Voyage AI API error: ${detail}`,
+      hint: "Check Voyage AI API status and configuration",
+      httpStatus: 502,
+      cause,
+    });
+  }
+}

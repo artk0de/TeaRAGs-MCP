@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { QdrantUnavailableError } from "../errors.js";
+import { QdrantOperationError, QdrantUnavailableError } from "../errors.js";
 import { downloadQdrant, getBinaryPath, isBinaryUpToDate, QDRANT_VERSION } from "./download.js";
 import type { DaemonHandle, DaemonPaths, QdrantResolution } from "./types.js";
 
@@ -157,7 +157,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
 
   const { pid } = child;
   if (pid === undefined) {
-    throw new Error("Qdrant daemon failed to spawn — no PID assigned");
+    throw new QdrantOperationError("spawn", "daemon failed to spawn — no PID assigned");
   }
 
   writeFileSync(paths.pidFile, String(pid), "utf-8");

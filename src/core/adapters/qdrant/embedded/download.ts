@@ -4,6 +4,7 @@ import { get } from "node:https";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { ConfigValueInvalidError } from "../../../../bootstrap/errors.js";
 import { QdrantOperationError } from "../errors.js";
 
 export const QDRANT_VERSION = "1.17.0";
@@ -30,7 +31,11 @@ const PLATFORM_MAP: Record<string, Record<string, string>> = {
 export function getPlatformAsset(platform: string, arch: string): string {
   const archMap = PLATFORM_MAP[platform];
   if (!archMap?.[arch]) {
-    throw new Error(`Unsupported platform: ${platform}-${arch}`);
+    throw new ConfigValueInvalidError(
+      "platform",
+      `${platform}-${arch}`,
+      "linux-x64, linux-arm64, darwin-x64, darwin-arm64",
+    );
   }
   return archMap[arch];
 }
