@@ -11,6 +11,17 @@
 - Call `get_index_status` for the current project path.
 - If indexed → call `reindex_changes` (always, picks up recent changes).
 - If not indexed → call `index_codebase`.
+- If `get_index_status` returns an error (`isError: true`):
+  1. Parse `[CODE]` from the response text (e.g. `[QDRANT_UNAVAILABLE]`,
+     `[OLLAMA_UNAVAILABLE]`).
+  2. Read the `Hint:` section — it contains the concrete fix action.
+  3. Propose the fix to the user with confirmation before executing. Example:
+     "Qdrant is not running. Hint suggests: `docker compose up -d qdrant`.
+     Proceed?"
+  4. After user confirms, execute the fix.
+  5. Retry `get_index_status`.
+  6. Reconnect MCP only if a config change was made (e.g. switched embedding
+     provider).
 
 **2. Memorize label thresholds:**
 
