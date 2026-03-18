@@ -187,7 +187,118 @@ describe("SchemaManager", () => {
             payload: expect.objectContaining({
               _type: "schema_metadata",
               schemaVersion: CURRENT_SCHEMA_VERSION,
-              indexes: ["relativePath"],
+              indexes: expect.arrayContaining(["relativePath", "language", "fileExtension", "chunkType"]),
+            }),
+          }),
+        ]),
+      );
+    });
+  });
+
+  describe("v6 migration: static payload indexes", () => {
+    it("should create keyword indexes on language, fileExtension, chunkType when migrating from v5", async () => {
+      mockQdrant.getPoint.mockResolvedValue({
+        payload: {
+          _type: "schema_metadata",
+          schemaVersion: 5,
+          indexes: ["relativePath"],
+        },
+      });
+      mockQdrant.ensurePayloadIndex.mockResolvedValue(true);
+
+      const result = await schemaManager.ensureCurrentSchema("test-collection");
+
+      expect(result.success).toBe(true);
+      expect(result.fromVersion).toBe(5);
+      expect(result.toVersion).toBe(CURRENT_SCHEMA_VERSION);
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "language", "keyword");
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "fileExtension", "keyword");
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "chunkType", "keyword");
+    });
+
+    it("should apply v6 indexes alongside v4+v5 when migrating from v0", async () => {
+      mockQdrant.getPoint.mockResolvedValue(null);
+      mockQdrant.hasPayloadIndex.mockResolvedValue(false);
+      mockQdrant.ensurePayloadIndex.mockResolvedValue(true);
+
+      const result = await schemaManager.ensureCurrentSchema("test-collection");
+
+      expect(result.success).toBe(true);
+      expect(result.fromVersion).toBe(0);
+      // v4 + v5
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "relativePath", "keyword");
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "relativePath", "text");
+      // v6
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "language", "keyword");
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "fileExtension", "keyword");
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "chunkType", "keyword");
+    });
+
+    it("should report v6 migration messages", async () => {
+      mockQdrant.getPoint.mockResolvedValue({
+        payload: {
+          _type: "schema_metadata",
+          schemaVersion: 5,
+          indexes: ["relativePath"],
+        },
+      });
+      mockQdrant.ensurePayloadIndex.mockResolvedValue(true);
+
+      const result = await schemaManager.ensureCurrentSchema("test-collection");
+
+      expect(result.migrationsApplied).toContain("v6: Created keyword index on language");
+      expect(result.migrationsApplied).toContain("v6: Created keyword index on fileExtension");
+      expect(result.migrationsApplied).toContain("v6: Created keyword index on chunkType");
+    });
+
+    it("should report when v6 indexes already exist", async () => {
+      mockQdrant.getPoint.mockResolvedValue({
+        payload: {
+          _type: "schema_metadata",
+          schemaVersion: 5,
+          indexes: ["relativePath"],
+        },
+      });
+      mockQdrant.ensurePayloadIndex.mockResolvedValue(false); // already existed
+
+      const result = await schemaManager.ensureCurrentSchema("test-collection");
+
+      expect(result.migrationsApplied).toContain("v6: language keyword index already exists");
+      expect(result.migrationsApplied).toContain("v6: fileExtension keyword index already exists");
+      expect(result.migrationsApplied).toContain("v6: chunkType keyword index already exists");
+    });
+  });
+
+  describe("initializeSchema: v6 indexes + text index fix", () => {
+    it("should create text index on relativePath for new collections", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "relativePath", "text");
+    });
+
+    it("should create keyword indexes on language, fileExtension, chunkType for new collections", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "language", "keyword");
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "fileExtension", "keyword");
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "chunkType", "keyword");
+    });
+
+    it("should store all index names in schema metadata", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      expect(mockQdrant.addPoints).toHaveBeenCalledWith(
+        "new-collection",
+        expect.arrayContaining([
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              indexes: expect.arrayContaining(["relativePath", "language", "fileExtension", "chunkType"]),
             }),
           }),
         ]),
@@ -196,8 +307,8 @@ describe("SchemaManager", () => {
   });
 
   describe("CURRENT_SCHEMA_VERSION", () => {
-    it("should be 5", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe(5);
+    it("should be 6", () => {
+      expect(CURRENT_SCHEMA_VERSION).toBe(6);
     });
   });
 });
