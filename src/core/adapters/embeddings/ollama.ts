@@ -16,6 +16,7 @@ import Bottleneck from "bottleneck";
 
 import { isDebug } from "../../infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import { OllamaModelMissingError, OllamaUnavailableError } from "./ollama/errors.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface OllamaError {
@@ -101,9 +102,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       }
 
       if (isRateLimitError) {
-        throw new Error(
-          `Ollama API rate limit exceeded after ${this.retryAttempts} retry attempts. Please try again later or reduce request frequency.`,
-        );
+        throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined);
       }
 
       throw error;
@@ -131,11 +130,10 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      const error: OllamaError = {
-        status: response.status,
-        message: `Ollama batch API error (${response.status}): ${errorBody}`,
-      };
-      throw new Error(JSON.stringify(error));
+      if (response.status === 404 || errorBody.includes("not found")) {
+        throw new OllamaModelMissingError(this.model, this.baseUrl);
+      }
+      throw new Error(`Ollama batch API error (${response.status}): ${errorBody}`);
     }
 
     return response.json() as Promise<OllamaEmbedBatchResponse>;
@@ -163,6 +161,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
       if (!response.ok) {
         const errorBody = await response.text();
+        if (response.status === 404 || errorBody.includes("not found")) {
+          throw new OllamaModelMissingError(this.model, this.baseUrl);
+        }
         const textPreview = text.length > 100 ? `${text.substring(0, 100)}...` : text;
         throw new Error(
           `Ollama API error (${response.status}) for model "${this.model}": ${errorBody}. Text preview: "${textPreview}"`,
@@ -185,7 +186,6 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       }
 
       // Handle objects with 'message' property - preserve the original error structure
-      // This ensures objects with 'message' property work correctly in tests
       if (this.isOllamaError(error)) {
         const ollamaErrMsg = error.message ? String(error.message) : "Unknown error";
         throw new Error(ollamaErrMsg);

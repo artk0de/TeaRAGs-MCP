@@ -51,6 +51,12 @@ export default defineConfig({
         "src/core/adapters/qdrant/embedded/daemon.ts",
         "src/core/adapters/qdrant/embedded/download.ts",
         "src/core/adapters/qdrant/embedded/types.ts",
+        // Abstract-only error base classes (no logic, just class declaration)
+        "src/core/adapters/errors.ts",
+        "src/core/adapters/embeddings/errors.ts",
+        // Error re-export files (no logic, just re-export from parent)
+        "src/core/domains/trajectory/git/errors.ts",
+        "src/core/domains/trajectory/static/errors.ts",
         // Type-only files (no executable code to test)
         "src/core/types.ts",
         "src/core/ingest/pipeline/enrichment/types.ts",

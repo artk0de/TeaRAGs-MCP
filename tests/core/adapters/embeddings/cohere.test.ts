@@ -2,6 +2,7 @@ import { CohereClient } from "cohere-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CohereEmbeddings } from "../../../../src/core/adapters/embeddings/cohere.js";
+import { CohereRateLimitError } from "../../../../src/core/adapters/embeddings/cohere/errors.js";
 
 const mockClient = {
   embed: vi.fn().mockResolvedValue({ embeddings: [[]] }),
@@ -351,7 +352,7 @@ describe("CohereEmbeddings", () => {
       promise.catch(() => {}); // prevent unhandled rejection detection
       await vi.advanceTimersByTimeAsync(10_000);
 
-      await expect(promise).rejects.toThrow("Cohere API rate limit exceeded after 2 retry attempts");
+      await expect(promise).rejects.toThrow(CohereRateLimitError);
 
       expect(mockClient.embed).toHaveBeenCalledTimes(3);
     });

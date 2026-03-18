@@ -2,6 +2,7 @@ import { QdrantClient } from "@qdrant/js-client-rest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
+import { QdrantOperationError } from "../../../../src/core/adapters/qdrant/errors.js";
 
 const mockClient = {
   createCollection: vi.fn().mockResolvedValue({}),
@@ -416,9 +417,7 @@ describe("QdrantManager", () => {
         },
       });
 
-      await expect(manager.addPoints("test-collection", points)).rejects.toThrow(
-        'Failed to add points to collection "test-collection": Vector dimension mismatch',
-      );
+      await expect(manager.addPoints("test-collection", points)).rejects.toThrow(QdrantOperationError);
     });
 
     it("should throw error with error.message fallback", async () => {
@@ -426,9 +425,7 @@ describe("QdrantManager", () => {
 
       mockClient.upsert.mockRejectedValue(new Error("Network error"));
 
-      await expect(manager.addPoints("test-collection", points)).rejects.toThrow(
-        'Failed to add points to collection "test-collection": Network error',
-      );
+      await expect(manager.addPoints("test-collection", points)).rejects.toThrow(QdrantOperationError);
     });
 
     it("should throw error with String(error) fallback", async () => {
@@ -436,9 +433,7 @@ describe("QdrantManager", () => {
 
       mockClient.upsert.mockRejectedValue("Unknown error");
 
-      await expect(manager.addPoints("test-collection", points)).rejects.toThrow(
-        'Failed to add points to collection "test-collection": Unknown error',
-      );
+      await expect(manager.addPoints("test-collection", points)).rejects.toThrow(QdrantOperationError);
     });
 
     it("should handle empty points array gracefully", async () => {
@@ -508,9 +503,7 @@ describe("QdrantManager", () => {
         },
       });
 
-      await expect(manager.addPointsOptimized("test-collection", points)).rejects.toThrow(
-        'Failed to add points (optimized) to collection "test-collection": Dimension mismatch',
-      );
+      await expect(manager.addPointsOptimized("test-collection", points)).rejects.toThrow(QdrantOperationError);
     });
 
     it("should throw error with error.message fallback", async () => {
@@ -518,9 +511,7 @@ describe("QdrantManager", () => {
 
       mockClient.upsert.mockRejectedValue(new Error("Connection lost"));
 
-      await expect(manager.addPointsOptimized("test-collection", points)).rejects.toThrow(
-        'Failed to add points (optimized) to collection "test-collection": Connection lost',
-      );
+      await expect(manager.addPointsOptimized("test-collection", points)).rejects.toThrow(QdrantOperationError);
     });
 
     it("should throw error with String(error) fallback", async () => {
@@ -528,9 +519,7 @@ describe("QdrantManager", () => {
 
       mockClient.upsert.mockRejectedValue("Server error");
 
-      await expect(manager.addPointsOptimized("test-collection", points)).rejects.toThrow(
-        'Failed to add points (optimized) to collection "test-collection": Server error',
-      );
+      await expect(manager.addPointsOptimized("test-collection", points)).rejects.toThrow(QdrantOperationError);
     });
   });
 
@@ -1086,7 +1075,7 @@ describe("QdrantManager", () => {
       });
 
       await expect(manager.hybridSearch("test-collection", denseVector, sparseVector, 20)).rejects.toThrow(
-        'Hybrid search failed on collection "test-collection": Named vector not found',
+        QdrantOperationError,
       );
     });
 
@@ -1094,7 +1083,7 @@ describe("QdrantManager", () => {
       mockClient.search.mockRejectedValue(new Error("Network timeout"));
 
       await expect(manager.hybridSearch("test-collection", denseVector, sparseVector, 20)).rejects.toThrow(
-        'Hybrid search failed on collection "test-collection": Network timeout',
+        QdrantOperationError,
       );
     });
 
@@ -1102,7 +1091,7 @@ describe("QdrantManager", () => {
       mockClient.search.mockRejectedValue("Unknown error");
 
       await expect(manager.hybridSearch("test-collection", denseVector, sparseVector, 20)).rejects.toThrow(
-        'Hybrid search failed on collection "test-collection": Unknown error',
+        QdrantOperationError,
       );
     });
   });
@@ -1242,9 +1231,7 @@ describe("QdrantManager", () => {
         },
       });
 
-      await expect(manager.addPointsWithSparse("test-collection", points)).rejects.toThrow(
-        'Failed to add points with sparse vectors to collection "test-collection": Sparse vector not configured',
-      );
+      await expect(manager.addPointsWithSparse("test-collection", points)).rejects.toThrow(QdrantOperationError);
     });
 
     it("should throw error with error.message fallback", async () => {
@@ -1258,9 +1245,7 @@ describe("QdrantManager", () => {
 
       mockClient.upsert.mockRejectedValue(new Error("Connection refused"));
 
-      await expect(manager.addPointsWithSparse("test-collection", points)).rejects.toThrow(
-        'Failed to add points with sparse vectors to collection "test-collection": Connection refused',
-      );
+      await expect(manager.addPointsWithSparse("test-collection", points)).rejects.toThrow(QdrantOperationError);
     });
 
     it("should throw error with String(error) fallback", async () => {
@@ -1274,9 +1259,7 @@ describe("QdrantManager", () => {
 
       mockClient.upsert.mockRejectedValue("Unexpected error");
 
-      await expect(manager.addPointsWithSparse("test-collection", points)).rejects.toThrow(
-        'Failed to add points with sparse vectors to collection "test-collection": Unexpected error',
-      );
+      await expect(manager.addPointsWithSparse("test-collection", points)).rejects.toThrow(QdrantOperationError);
     });
 
     it("should handle empty points array gracefully", async () => {
@@ -1385,7 +1368,7 @@ describe("QdrantManager", () => {
       });
 
       await expect(manager.addPointsWithSparseOptimized("test-collection", points)).rejects.toThrow(
-        'Failed to add points with sparse vectors (optimized) to collection "test-collection": Sparse vector dimension mismatch',
+        QdrantOperationError,
       );
     });
 
@@ -1401,7 +1384,7 @@ describe("QdrantManager", () => {
       mockClient.upsert.mockRejectedValue(new Error("Network timeout"));
 
       await expect(manager.addPointsWithSparseOptimized("test-collection", points)).rejects.toThrow(
-        'Failed to add points with sparse vectors (optimized) to collection "test-collection": Network timeout',
+        QdrantOperationError,
       );
     });
 
@@ -1417,7 +1400,7 @@ describe("QdrantManager", () => {
       mockClient.upsert.mockRejectedValue("Unknown error occurred");
 
       await expect(manager.addPointsWithSparseOptimized("test-collection", points)).rejects.toThrow(
-        'Failed to add points with sparse vectors (optimized) to collection "test-collection": Unknown error occurred',
+        QdrantOperationError,
       );
     });
   });
@@ -1873,7 +1856,7 @@ describe("QdrantManager", () => {
       mockClient.scroll.mockRejectedValueOnce(new Error("connection refused"));
 
       await expect(manager.scrollOrdered("test", { key: "methodLines", direction: "desc" }, 10)).rejects.toThrow(
-        /scrollOrdered failed.*connection refused/,
+        QdrantOperationError,
       );
     });
   });

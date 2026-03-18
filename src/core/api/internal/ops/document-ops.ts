@@ -5,6 +5,7 @@
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { BM25SparseVectorGenerator } from "../../../adapters/qdrant/sparse.js";
+import { CollectionNotFoundError } from "../../../domains/explore/errors.js";
 import type { AddDocumentsRequest, DeleteDocumentsRequest } from "../../public/dto/index.js";
 
 export class DocumentOps {
@@ -19,7 +20,7 @@ export class DocumentOps {
     // 1. Check collection exists
     const exists = await this.qdrant.collectionExists(collection);
     if (!exists) {
-      throw new Error(`Collection "${collection}" does not exist. Create it first using create_collection.`);
+      throw new CollectionNotFoundError(collection);
     }
 
     // 2. Get collection info for hybrid check

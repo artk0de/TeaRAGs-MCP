@@ -182,9 +182,7 @@ describe("ExploreFacade — expanded methods", () => {
       const qdrant = makeMockQdrant({ collectionExists: vi.fn().mockResolvedValue(false) });
       const { facade } = makeFacade({ qdrant });
 
-      await expect(facade.semanticSearch({ collection: "missing_col", query: "test" })).rejects.toThrow(
-        /does not exist/,
-      );
+      await expect(facade.semanticSearch({ collection: "missing_col", query: "test" })).rejects.toThrow(/not found/);
     });
 
     it("applies metaOnly formatting when requested", async () => {
@@ -362,7 +360,7 @@ describe("ExploreFacade — expanded methods", () => {
       const qdrant = makeMockQdrant({ collectionExists: vi.fn().mockResolvedValue(false) });
       const { facade } = makeFacade({ qdrant });
 
-      await expect(facade.hybridSearch({ collection: "missing_col", query: "test" })).rejects.toThrow(/does not exist/);
+      await expect(facade.hybridSearch({ collection: "missing_col", query: "test" })).rejects.toThrow(/not found/);
     });
 
     it("applies metaOnly formatting when requested", async () => {

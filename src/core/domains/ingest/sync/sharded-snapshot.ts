@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { SnapshotCorruptedError } from "../errors.js";
 import { ConsistentHash } from "./consistent-hash.js";
 import { MerkleTree } from "./merkle.js";
 
@@ -203,7 +204,10 @@ export class ShardedSnapshotManager {
       const metaContent = await fs.readFile(metaPath, "utf-8");
       meta = JSON.parse(metaContent) as SnapshotMeta;
     } catch (error) {
-      throw new Error(`Failed to read meta.json: ${String(error)}`);
+      throw new SnapshotCorruptedError(
+        `Failed to read meta.json: ${String(error)}`,
+        error instanceof Error ? error : undefined,
+      );
     }
 
     // Load all shards IN PARALLEL for faster initialization
@@ -220,7 +224,7 @@ export class ShardedSnapshotManager {
       // Validate checksum
       const actualChecksum = createHash("sha256").update(shardContent).digest("hex");
       if (actualChecksum !== shardInfo.checksum) {
-        throw new Error(
+        throw new SnapshotCorruptedError(
           `Checksum mismatch for shard ${shardInfo.index}: expected ${shardInfo.checksum}, got ${actualChecksum}`,
         );
       }

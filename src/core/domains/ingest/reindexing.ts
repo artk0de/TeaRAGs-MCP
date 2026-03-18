@@ -7,6 +7,7 @@
  */
 
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../types.js";
+import { NotIndexedError, SnapshotMissingError } from "./errors.js";
 import { BaseIndexingPipeline, type PipelineTuning, type ProcessingContext } from "./pipeline/base.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
 import { pipelineLog } from "./pipeline/infra/debug-logger.js";
@@ -79,6 +80,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime);
       return stats;
     } catch (error) {
+      if (error instanceof NotIndexedError || error instanceof SnapshotMissingError) {
+        throw error;
+      }
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Incremental re-indexing failed: ${errorMessage}`);
     }
@@ -91,7 +95,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     const exists = await this.qdrant.collectionExists(collectionName);
     if (!exists) {
-      throw new Error(`Codebase not indexed: ${path}`);
+      throw new NotIndexedError(path);
     }
 
     await this.runMigrations(collectionName, absolutePath);
@@ -99,7 +103,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const synchronizer = this.deps.createSynchronizer(absolutePath, collectionName);
     const hasSnapshot = await synchronizer.initialize();
     if (!hasSnapshot) {
-      throw new Error("No previous snapshot found. Use index_codebase for initial indexing.");
+      throw new SnapshotMissingError(path);
     }
 
     const scanner = this.createScanner();

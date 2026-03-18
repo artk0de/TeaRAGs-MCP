@@ -13,6 +13,7 @@ import {
   OnnxEmbeddings,
 } from "../../../../src/core/adapters/embeddings/onnx.js";
 import { OnnxDaemon } from "../../../../src/core/adapters/embeddings/onnx/daemon.js";
+import { OnnxInferenceError, OnnxModelLoadError } from "../../../../src/core/adapters/embeddings/onnx/errors.js";
 import type { WorkerRequest, WorkerResponse } from "../../../../src/core/adapters/embeddings/onnx/worker-types.js";
 
 // ---------------------------------------------------------------------------
@@ -142,7 +143,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
         undefined, // pidFile
         500, // spawnTimeoutMs — short for test
       );
-      await expect(badProvider.embed("test")).rejects.toThrow(/Timed out waiting for ONNX daemon to start/);
+      await expect(badProvider.embed("test")).rejects.toThrow(OnnxModelLoadError);
     }, 5_000);
 
     it("should propagate daemon error responses", async () => {
@@ -420,7 +421,7 @@ describe("OnnxEmbeddings (daemon client)", () => {
             reject(new Error("Should not resolve"));
           },
           reject: (err) => {
-            expect(err.message).toBe("Daemon error");
+            expect(err).toBeInstanceOf(OnnxInferenceError);
             resolve();
           },
         });
@@ -540,7 +541,7 @@ describe("OnnxEmbeddings (raw server edge cases)", () => {
     // createConnection will emit "error" (ENOTSOCK or ECONNREFUSED)
     const provider = new OnnxEmbeddings("test-model", 3, undefined, "cpu", rawSocketPath);
 
-    await expect(provider.embed("test")).rejects.toThrow(/Cannot connect to ONNX daemon/);
+    await expect(provider.embed("test")).rejects.toThrow(OnnxModelLoadError);
   });
 
   it("should handle socket close after handshake completes", async () => {

@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import { QdrantClient } from "@qdrant/js-client-rest";
 
+import { QdrantOperationError } from "./errors.js";
+
 type QdrantPayload = Record<string, unknown>;
 
 export interface CollectionInfo {
@@ -245,7 +247,11 @@ export class QdrantManager {
     } catch (error: unknown) {
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new Error(`Failed to add points to collection "${collectionName}": ${errorMessage}`);
+      throw new QdrantOperationError(
+        "addPoints",
+        `collection "${collectionName}": ${errorMessage}`,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 
@@ -290,7 +296,11 @@ export class QdrantManager {
     } catch (error: unknown) {
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new Error(`Failed to add points (optimized) to collection "${collectionName}": ${errorMessage}`);
+      throw new QdrantOperationError(
+        "addPointsOptimized",
+        `collection "${collectionName}": ${errorMessage}`,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 
@@ -770,7 +780,11 @@ export class QdrantManager {
     } catch (error: unknown) {
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new Error(`Hybrid search failed on collection "${collectionName}": ${errorMessage}`);
+      throw new QdrantOperationError(
+        "hybridSearch",
+        `collection "${collectionName}": ${errorMessage}`,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 
@@ -809,7 +823,11 @@ export class QdrantManager {
     } catch (error: unknown) {
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new Error(`Failed to add points with sparse vectors to collection "${collectionName}": ${errorMessage}`);
+      throw new QdrantOperationError(
+        "addPointsWithSparse",
+        `collection "${collectionName}": ${errorMessage}`,
+        error instanceof Error ? error : undefined,
+      );
     }
   }
 
@@ -859,8 +877,10 @@ export class QdrantManager {
     } catch (error: unknown) {
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new Error(
-        `Failed to add points with sparse vectors (optimized) to collection "${collectionName}": ${errorMessage}`,
+      throw new QdrantOperationError(
+        "addPointsWithSparseOptimized",
+        `collection "${collectionName}": ${errorMessage}`,
+        error instanceof Error ? error : undefined,
       );
     }
   }
@@ -920,8 +940,10 @@ export class QdrantManager {
     } catch (error: unknown) {
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new Error(
-        `scrollOrdered failed on "${collectionName}" order_by=${JSON.stringify(orderBy)}: ${errorMessage}`,
+      throw new QdrantOperationError(
+        "scrollOrdered",
+        `"${collectionName}" order_by=${JSON.stringify(orderBy)}: ${errorMessage}`,
+        error instanceof Error ? error : undefined,
       );
     }
   }

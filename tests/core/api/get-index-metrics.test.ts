@@ -121,12 +121,12 @@ describe("getIndexMetrics", () => {
   it("throws if collection does not exist", async () => {
     const { facade, qdrant } = makeExploreFacade();
     qdrant.collectionExists.mockResolvedValue(false);
-    await expect(facade.getIndexMetrics("/project")).rejects.toThrow("Collection not found");
+    await expect(facade.getIndexMetrics("/project")).rejects.toThrow("not found");
   });
 
   it("throws if stats not available", async () => {
     const { facade, statsCache } = makeExploreFacade();
     statsCache.load.mockReturnValue(null);
-    await expect(facade.getIndexMetrics("/project")).rejects.toThrow("No statistics available");
+    await expect(facade.getIndexMetrics("/project")).rejects.toThrow("is not indexed");
   });
 });

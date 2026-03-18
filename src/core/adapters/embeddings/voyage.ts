@@ -2,6 +2,7 @@ import Bottleneck from "bottleneck";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
+import { VoyageRateLimitError } from "./voyage/errors.js";
 
 interface VoyageError {
   status?: number;
@@ -74,8 +75,10 @@ export class VoyageEmbeddings implements EmbeddingProvider {
       }
 
       if (isRateLimitError) {
-        throw new Error(
-          `Voyage AI API rate limit exceeded after ${this.retryAttempts} retry attempts. Please try again later or reduce request frequency.`,
+        throw new VoyageRateLimitError(
+          new Error(
+            `Voyage AI API rate limit exceeded after ${this.retryAttempts} retry attempts. Please try again later or reduce request frequency.`,
+          ),
         );
       }
 

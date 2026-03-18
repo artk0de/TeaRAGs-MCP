@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { QdrantUnavailableError } from "../errors.js";
 import { downloadQdrant, getBinaryPath, isBinaryUpToDate, QDRANT_VERSION } from "./download.js";
 import type { DaemonHandle, DaemonPaths, QdrantResolution } from "./types.js";
 
@@ -186,7 +187,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
     /* ignore */
   }
   cleanupDaemonFiles(paths);
-  throw new Error(`Qdrant daemon failed to start within ${HEALTH_CHECK_TIMEOUT_MS}ms`);
+  throw new QdrantUnavailableError(url, new Error(`Qdrant daemon failed to start within ${HEALTH_CHECK_TIMEOUT_MS}ms`));
 }
 
 function scheduleIdleWatcher(paths: DaemonPaths, pid: number): void {

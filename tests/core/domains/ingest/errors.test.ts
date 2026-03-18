@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   CollectionExistsError,
   IngestError,
+  MigrationFailedError,
   NotIndexedError,
+  SnapshotCorruptedError,
   SnapshotMissingError,
 } from "../../../../src/core/domains/ingest/errors.js";
 import { TeaRagsError } from "../../../../src/core/infra/errors.js";
@@ -78,6 +80,24 @@ describe("IngestError hierarchy", () => {
       expect(err).toBeInstanceOf(IngestError);
       expect(err).toBeInstanceOf(TeaRagsError);
       expect(err).toBeInstanceOf(Error);
+    });
+  });
+
+  describe("SnapshotCorruptedError", () => {
+    it("has correct code and message", () => {
+      const err = new SnapshotCorruptedError("/data/snapshot.bin");
+      expect(err.code).toBe("INGEST_SNAPSHOT_CORRUPTED");
+      expect(err.message).toContain("/data/snapshot.bin");
+      expect(err).toBeInstanceOf(IngestError);
+    });
+  });
+
+  describe("MigrationFailedError", () => {
+    it("has correct code and message", () => {
+      const err = new MigrationFailedError("schema version mismatch");
+      expect(err.code).toBe("INGEST_MIGRATION_FAILED");
+      expect(err.message).toContain("schema version mismatch");
+      expect(err).toBeInstanceOf(IngestError);
     });
   });
 });
