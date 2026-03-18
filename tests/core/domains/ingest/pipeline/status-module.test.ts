@@ -357,6 +357,18 @@ describe("StatusModule", () => {
       expect(status.isIndexed).toBe(false);
     });
 
+    it("should clean up orphaned versioned collections on clear", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const v = 1;");
+      await ingest.indexCodebase(codebaseDir);
+      // Force reindex to create v2
+      await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      await ingest.clearIndex(codebaseDir);
+
+      const status = await ingest.getIndexStatus(codebaseDir);
+      expect(status.isIndexed).toBe(false);
+    });
+
     it("should handle clearing non-indexed codebase", async () => {
       await expect(ingest.clearIndex(codebaseDir)).resolves.not.toThrow();
     });

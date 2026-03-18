@@ -10,26 +10,69 @@ import type { EmbeddingProvider } from "../../../../../src/core/adapters/embeddi
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import type { ExploreCodeConfig, IngestCodeConfig, TrajectoryIngestConfig } from "../../../../../src/core/types.js";
 
-/** Mock QdrantManager — mirrors all public methods */
+/** Mock alias manager for QdrantManager */
+class MockAliasManager {
+  private aliasMap = new Map<string, string>(); // aliasName -> collectionName
+
+  async createAlias(alias: string, collection: string): Promise<void> {
+    this.aliasMap.set(alias, collection);
+  }
+
+  async switchAlias(alias: string, _fromCollection: string, toCollection: string): Promise<void> {
+    this.aliasMap.set(alias, toCollection);
+  }
+
+  async deleteAlias(alias: string): Promise<void> {
+    this.aliasMap.delete(alias);
+  }
+
+  async isAlias(name: string): Promise<boolean> {
+    return this.aliasMap.has(name);
+  }
+
+  async listAliases(): Promise<{ aliasName: string; collectionName: string }[]> {
+    return Array.from(this.aliasMap.entries()).map(([aliasName, collectionName]) => ({
+      aliasName,
+      collectionName,
+    }));
+  }
+
+  /** Resolve alias to real collection name (sync for internal use) */
+  resolve(name: string): string {
+    return this.aliasMap.get(name) ?? name;
+  }
+}
+
+/** Mock QdrantManager — mirrors all public methods with alias resolution */
 export class MockQdrantManager implements Partial<QdrantManager> {
   private collections = new Map<string, any>();
   private points = new Map<string, any[]>();
   private payloadIndexes = new Map<string, Set<string>>();
+  readonly aliases = new MockAliasManager();
+
+  /** Resolve alias to real collection name (like real Qdrant does transparently) */
+  private resolve(name: string): string {
+    return this.aliases.resolve(name);
+  }
 
   async collectionExists(name: string): Promise<boolean> {
-    return this.collections.has(name);
+    // Real Qdrant returns true for both collections and aliases
+    if (this.collections.has(name)) return true;
+    return this.aliases.isAlias(name);
   }
 
   async hasPayloadIndex(collectionName: string, fieldName: string): Promise<boolean> {
-    const indexes = this.payloadIndexes.get(collectionName);
+    const resolved = this.resolve(collectionName);
+    const indexes = this.payloadIndexes.get(resolved);
     return indexes?.has(fieldName) ?? false;
   }
 
   async createPayloadIndex(collectionName: string, fieldName: string, _fieldSchema: string): Promise<void> {
-    if (!this.payloadIndexes.has(collectionName)) {
-      this.payloadIndexes.set(collectionName, new Set());
+    const resolved = this.resolve(collectionName);
+    if (!this.payloadIndexes.has(resolved)) {
+      this.payloadIndexes.set(resolved, new Set());
     }
-    this.payloadIndexes.get(collectionName)!.add(fieldName);
+    this.payloadIndexes.get(resolved)!.add(fieldName);
   }
 
   async ensurePayloadIndex(collectionName: string, fieldName: string, fieldSchema: string): Promise<boolean> {
@@ -66,10 +109,11 @@ export class MockQdrantManager implements Partial<QdrantManager> {
   }
 
   async getCollectionInfo(name: string): Promise<any> {
-    const collection = this.collections.get(name);
-    const points = this.points.get(name) || [];
+    const resolved = this.resolve(name);
+    const collection = this.collections.get(resolved);
+    const points = this.points.get(resolved) || [];
     return {
-      name,
+      name: resolved,
       pointsCount: points.length,
       hybridEnabled: collection?.hybridEnabled || false,
       vectorSize: collection?.vectorSize || 384,
@@ -79,10 +123,11 @@ export class MockQdrantManager implements Partial<QdrantManager> {
 
   async addPoints(collectionName: string, points: any[]): Promise<void> {
     if (points.length === 0) return;
-    const existing = this.points.get(collectionName) || [];
+    const resolved = this.resolve(collectionName);
+    const existing = this.points.get(resolved) || [];
     const newIds = new Set(points.map((p) => p.id));
     const filtered = existing.filter((p) => !newIds.has(p.id));
-    this.points.set(collectionName, [...filtered, ...points]);
+    this.points.set(resolved, [...filtered, ...points]);
   }
 
   async addPointsOptimized(
@@ -106,7 +151,8 @@ export class MockQdrantManager implements Partial<QdrantManager> {
   }
 
   async search(collectionName: string, _vector: number[], limit: number, filter?: any): Promise<any[]> {
-    let points = this.points.get(collectionName) || [];
+    const resolved = this.resolve(collectionName);
+    let points = this.points.get(resolved) || [];
 
     if (filter?.must) {
       for (const condition of filter.must) {
@@ -137,26 +183,29 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     collectionName: string,
     id: string | number,
   ): Promise<{ id: string | number; payload?: Record<string, any> } | null> {
-    const points = this.points.get(collectionName) || [];
+    const resolved = this.resolve(collectionName);
+    const points = this.points.get(resolved) || [];
     const point = points.find((p) => p.id === id);
     return point ? { id: point.id, payload: point.payload } : null;
   }
 
   async deletePoints(collectionName: string, ids: (string | number)[]): Promise<void> {
-    const points = this.points.get(collectionName) || [];
+    const resolved = this.resolve(collectionName);
+    const points = this.points.get(resolved) || [];
     const idsSet = new Set(ids);
     this.points.set(
-      collectionName,
+      resolved,
       points.filter((p) => !idsSet.has(p.id)),
     );
   }
 
   async deletePointsByFilter(collectionName: string, filter: Record<string, any>): Promise<void> {
-    const points = this.points.get(collectionName) || [];
+    const resolved = this.resolve(collectionName);
+    const points = this.points.get(resolved) || [];
     const pathToDelete = filter?.must?.[0]?.match?.value;
     if (pathToDelete) {
       this.points.set(
-        collectionName,
+        resolved,
         points.filter((p) => p.payload?.relativePath !== pathToDelete),
       );
     }
@@ -164,10 +213,11 @@ export class MockQdrantManager implements Partial<QdrantManager> {
 
   async deletePointsByPaths(collectionName: string, relativePaths: string[]): Promise<void> {
     if (relativePaths.length === 0) return;
-    const points = this.points.get(collectionName) || [];
+    const resolved = this.resolve(collectionName);
+    const points = this.points.get(resolved) || [];
     const pathsSet = new Set(relativePaths);
     this.points.set(
-      collectionName,
+      resolved,
       points.filter((p) => !pathsSet.has(p.payload?.relativePath)),
     );
   }
@@ -185,7 +235,8 @@ export class MockQdrantManager implements Partial<QdrantManager> {
   batchSetPayloadCalls: { collectionName: string; operations: any[] }[] = [];
 
   async setPayload(collectionName: string, payload: Record<string, any>, options: any): Promise<void> {
-    const points = this.points.get(collectionName);
+    const resolved = this.resolve(collectionName);
+    const points = this.points.get(resolved);
     if (!points || !options?.points) return;
     for (const id of options.points) {
       const point = points.find((p) => p.id === id);

@@ -44,7 +44,7 @@ export default defineConfig({
         "tests/**/__fixtures__/**",
         "tests/integration/**",
         // Re-export files (no executable code to test)
-        "src/core/ingest/pipeline/index.ts",
+        "src/core/domains/ingest/pipeline/index.ts",
         "src/core/adapters/qdrant/filters/index.ts",
         "src/mcp/prompts/index.ts",
         // I/O-heavy runtime (child process spawn, HTTP download — tested via integration)
@@ -57,14 +57,20 @@ export default defineConfig({
         // Error re-export files (no logic, just re-export from parent)
         "src/core/domains/trajectory/git/errors.ts",
         "src/core/domains/trajectory/static/errors.ts",
+        // Type-only + re-export (no executable logic)
+        "src/core/domains/explore/strategies/types.ts",
+        // Barrel re-exports with 0% coverage (no executable code)
+        "src/core/api/index.ts",
+        "src/core/domains/explore/strategies/index.ts",
+        "src/core/domains/ingest/pipeline/index.ts",
         // Type-only files (no executable code to test)
         "src/core/types.ts",
-        "src/core/ingest/pipeline/enrichment/types.ts",
-        "src/core/ingest/pipeline/enrichment/trajectory/git/types.ts",
-        "src/core/ingest/pipeline/types.ts",
-        "src/core/ingest/pipeline/chunker/hooks/types.ts",
+        "src/core/domains/ingest/pipeline/enrichment/types.ts",
+        "src/core/domains/ingest/pipeline/enrichment/trajectory/git/types.ts",
+        "src/core/domains/ingest/pipeline/types.ts",
+        "src/core/domains/ingest/pipeline/chunker/hooks/types.ts",
         // Barrel re-exports (no logic, just re-export)
-        "src/core/ingest/pipeline/chunker/hooks/*/index.ts",
+        "src/core/domains/ingest/pipeline/chunker/hooks/*/index.ts",
         // Test utilities (not production code)
         "tests/**/test-helpers.ts",
       ],

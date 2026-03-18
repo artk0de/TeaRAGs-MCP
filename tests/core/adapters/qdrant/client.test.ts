@@ -1,6 +1,7 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { QdrantAliasManager } from "../../../../src/core/adapters/qdrant/aliases.js";
 import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
 import { QdrantOperationError } from "../../../../src/core/adapters/qdrant/errors.js";
 
@@ -50,6 +51,16 @@ describe("QdrantManager", () => {
     mockClient.scroll.mockReset().mockResolvedValue({ points: [], next_page_offset: null });
     vi.mocked(QdrantClient).mockClear();
     manager = new QdrantManager("http://localhost:6333");
+  });
+
+  describe("aliases", () => {
+    it("returns a QdrantAliasManager instance", () => {
+      expect(manager.aliases).toBeInstanceOf(QdrantAliasManager);
+    });
+
+    it("returns the same instance on repeated access", () => {
+      expect(manager.aliases).toBe(manager.aliases);
+    });
   });
 
   describe("constructor", () => {

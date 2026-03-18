@@ -101,7 +101,8 @@ export class StatusModule {
   }
 
   /**
-   * Clear all indexed data for a codebase
+   * Clear all indexed data for a codebase.
+   * Handles both legacy (real collection) and alias-based setups.
    */
   async clearIndex(path: string): Promise<void> {
     const absolutePath = await validatePath(path);
@@ -109,7 +110,26 @@ export class StatusModule {
     const exists = await this.qdrant.collectionExists(collectionName);
 
     if (exists) {
-      await this.qdrant.deleteCollection(collectionName);
+      const isAlias = await this.qdrant.aliases.isAlias(collectionName);
+      if (isAlias) {
+        // Alias-based: find underlying collection, delete alias + collection + orphans
+        const aliases = await this.qdrant.aliases.listAliases();
+        const activeCollection = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
+        await this.qdrant.aliases.deleteAlias(collectionName);
+        if (activeCollection) {
+          await this.qdrant.deleteCollection(activeCollection);
+        }
+        // Clean up any orphaned versioned collections
+        const allCollections = await this.qdrant.listCollections();
+        for (const c of allCollections) {
+          if (c.startsWith(`${collectionName}_v`)) {
+            await this.qdrant.deleteCollection(c);
+          }
+        }
+      } else {
+        // Legacy: real collection, just delete it
+        await this.qdrant.deleteCollection(collectionName);
+      }
     }
 
     // Also delete snapshot

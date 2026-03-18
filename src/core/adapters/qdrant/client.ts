@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { QdrantClient } from "@qdrant/js-client-rest";
 
+import { QdrantAliasManager } from "./aliases.js";
 import { QdrantOperationError } from "./errors.js";
 
 type QdrantPayload = Record<string, unknown>;
@@ -27,9 +28,14 @@ export interface SparseVector {
 
 export class QdrantManager {
   private readonly client: QdrantClient;
+  private _aliases?: QdrantAliasManager;
 
   constructor(url = "http://localhost:6333", apiKey?: string) {
     this.client = new QdrantClient({ url, apiKey });
+  }
+
+  get aliases(): QdrantAliasManager {
+    return (this._aliases ??= new QdrantAliasManager(this.client));
   }
 
   /**

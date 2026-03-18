@@ -369,6 +369,41 @@ describe("ShardedSnapshotManager", () => {
     });
   });
 
+  describe("Alias Version Support", () => {
+    it("saves and loads aliasVersion in snapshot meta", async () => {
+      const files = createTestFiles(10);
+      await manager.save("/test/project", files, { aliasVersion: 3 });
+
+      const loaded = await manager.load();
+      expect(loaded).not.toBeNull();
+      expect(loaded!.aliasVersion).toBe(3);
+    });
+
+    it("defaults aliasVersion to 0 when not present in meta", async () => {
+      const files = createTestFiles(10);
+      // Save WITHOUT aliasVersion (backward compat)
+      await manager.save("/test/project", files);
+
+      const loaded = await manager.load();
+      expect(loaded).not.toBeNull();
+      expect(loaded!.aliasVersion).toBe(0);
+    });
+
+    it("preserves aliasVersion across save/load cycles", async () => {
+      const files = createTestFiles(5);
+
+      // Save with version 1
+      await manager.save("/test", files, { aliasVersion: 1 });
+      let loaded = await manager.load();
+      expect(loaded!.aliasVersion).toBe(1);
+
+      // Overwrite with version 2
+      await manager.save("/test", files, { aliasVersion: 2 });
+      loaded = await manager.load();
+      expect(loaded!.aliasVersion).toBe(2);
+    });
+  });
+
   describe("Error Handling", () => {
     it("should throw when meta.json is corrupted", async () => {
       const files = createTestFiles(5);
