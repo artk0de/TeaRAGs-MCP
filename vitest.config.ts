@@ -59,10 +59,15 @@ export default defineConfig({
         "src/core/domains/trajectory/static/errors.ts",
         // Type-only + re-export (no executable logic)
         "src/core/domains/explore/strategies/types.ts",
-        // Barrel re-exports with 0% coverage (no executable code)
+        // Barrel re-exports (no executable logic)
         "src/core/api/index.ts",
         "src/core/domains/explore/strategies/index.ts",
         "src/core/domains/ingest/pipeline/index.ts",
+        "src/core/domains/trajectory/index.ts",
+        "src/bootstrap/config/index.ts",
+        "src/mcp/resources/index.ts",
+        // Deprecated re-export (backward compat shim)
+        "src/core/domains/ingest/pipeline/infra/runtime.ts",
         // Type-only files (no executable code to test)
         "src/core/types.ts",
         "src/core/domains/ingest/pipeline/enrichment/types.ts",

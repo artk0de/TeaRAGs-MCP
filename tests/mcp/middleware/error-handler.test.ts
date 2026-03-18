@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ErrorCode } from "../../../src/core/contracts/errors.js";
 import { TeaRagsError, UnknownError } from "../../../src/core/infra/errors.js";
 import type { McpToolResult } from "../../../src/mcp/format.js";
-import { errorHandlerMiddleware } from "../../../src/mcp/middleware/error-handler.js";
+import { errorHandlerMiddleware, registerToolSafe } from "../../../src/mcp/middleware/error-handler.js";
 
 /** Concrete TeaRagsError subclass for testing. */
 class TestError extends TeaRagsError {
@@ -87,5 +87,20 @@ describe("errorHandlerMiddleware", () => {
     });
 
     stderrSpy.mockRestore();
+  });
+});
+
+describe("registerToolSafe", () => {
+  it("wraps handler with error middleware and registers on server", () => {
+    const mockRegisterTool = vi.fn();
+    const server = { registerTool: mockRegisterTool } as any;
+    const handler = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
+
+    registerToolSafe(server, "test_tool", { description: "test" } as any, handler);
+
+    expect(mockRegisterTool).toHaveBeenCalledTimes(1);
+    expect(mockRegisterTool.mock.calls[0][0]).toBe("test_tool");
+    // Handler should be wrapped (not the original)
+    expect(mockRegisterTool.mock.calls[0][2]).not.toBe(handler);
   });
 });

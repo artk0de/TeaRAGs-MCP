@@ -85,8 +85,29 @@ export class IngestFacade {
     );
   }
 
-  /** Index a codebase from scratch or force re-index */
+  /** Index a codebase — first index, force re-index, or incremental fallback */
   async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
+    // If collection exists and no forceReindex → incremental reindex
+    if (!options?.forceReindex) {
+      const absolutePath = await validatePath(path);
+      const collectionName = resolveCollectionName(absolutePath);
+      const exists = await this.qdrant.collectionExists(collectionName);
+      if (exists) {
+        const changeStats = await this.reindex.reindexChanges(path, progressCallback);
+        await this.refreshStats(path);
+        return {
+          filesScanned: changeStats.filesAdded + changeStats.filesModified + changeStats.filesDeleted,
+          filesIndexed: changeStats.filesAdded + changeStats.filesModified,
+          chunksCreated: changeStats.chunksAdded,
+          durationMs: changeStats.durationMs,
+          status: "completed",
+          errors: [],
+          enrichmentStatus: changeStats.enrichmentStatus,
+          enrichmentDurationMs: changeStats.enrichmentDurationMs,
+        };
+      }
+    }
+
     const result = await this.indexing.indexCodebase(path, options, progressCallback);
     await this.refreshStats(path);
     return result;

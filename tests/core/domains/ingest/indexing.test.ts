@@ -86,14 +86,14 @@ describe("IndexPipeline", () => {
       expect(stats.status).toBe("completed");
     });
 
-    it("should return error when collection exists without forceReindex", async () => {
+    it("should fallback to incremental reindex when collection exists without forceReindex", async () => {
       await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
       await ingest.indexCodebase(codebaseDir);
 
-      // Second index without forceReindex
+      // Second index without forceReindex → incremental reindex (no error)
       const stats = await ingest.indexCodebase(codebaseDir);
-      expect(stats.errors?.length).toBeGreaterThan(0);
-      expect(stats.errors?.[0]).toContain("already exists");
+      expect(stats.status).toBe("completed");
+      expect(stats.errors?.length ?? 0).toBe(0);
     });
 
     it("should index multiple files", async () => {

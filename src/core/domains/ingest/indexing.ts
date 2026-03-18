@@ -62,7 +62,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
       }
 
       const setup = await this.setupCollection(collectionName, absolutePath, options);
+      /* v8 ignore next 7 -- defensive guard: facade handles exists-without-force via reindexChanges */
       if (!setup.ready) {
+        stats.status = "failed";
         stats.durationMs = Date.now() - startTime;
         stats.errors?.push(
           `Collection already exists. Use forceReindex=true to re-index from scratch, or use reindexChanges for incremental updates.`,
@@ -143,6 +145,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
   ): Promise<SetupResult> {
     const exists = await this.qdrant.collectionExists(collectionName);
 
+    /* v8 ignore next 8 -- defensive guard: facade handles exists-without-force via reindexChanges */
     if (exists && !options?.forceReindex) {
       return {
         ready: false,
