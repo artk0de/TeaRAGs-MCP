@@ -16,6 +16,16 @@ import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../../co
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor, Trajectory } from "../../contracts/types/trajectory.js";
 
+export {
+  TrajectoryError,
+  TrajectoryGitError,
+  TrajectoryStaticError,
+  GitBlameFailedError,
+  GitLogTimeoutError,
+  GitNotAvailableError,
+  StaticParseFailedError,
+} from "./errors.js";
+
 export class TrajectoryRegistry {
   private readonly trajectories: Map<string, Trajectory> = new Map();
 

@@ -1,3 +1,4 @@
+export { ExploreError, CollectionNotFoundError, HybridNotEnabledError, InvalidQueryError } from "./errors.js";
 export { Reranker } from "./reranker.js";
 export type { ScoringWeights, RerankableResult, RerankMode } from "./reranker.js";
 export { RankModule, type RankOptions } from "./rank-module.js";
@@ -18,7 +19,6 @@ export {
   BaseExploreStrategy,
   SimilarSearchStrategy,
   VectorSearchStrategy,
-  HybridNotEnabledError,
 } from "./strategies/index.js";
 export type {
   ExploreStrategyType,

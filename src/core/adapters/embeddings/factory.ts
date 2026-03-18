@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { ConfigValueInvalidError, ConfigValueMissingError } from "../../../bootstrap/errors.js";
 import type { EmbeddingConfig } from "../../contracts/types/config.js";
 import type { EmbeddingProvider } from "./base.js";
 import { CohereEmbeddings } from "./cohere.js";
@@ -41,7 +42,7 @@ export class EmbeddingProviderFactory {
     switch (provider) {
       case "openai":
         if (!config.openaiApiKey) {
-          throw new Error("API key is required for OpenAI provider");
+          throw new ConfigValueMissingError("apiKey", "OPENAI_API_KEY");
         }
         return new OpenAIEmbeddings(
           config.openaiApiKey,
@@ -52,13 +53,13 @@ export class EmbeddingProviderFactory {
 
       case "cohere":
         if (!config.cohereApiKey) {
-          throw new Error("API key is required for Cohere provider");
+          throw new ConfigValueMissingError("apiKey", "COHERE_API_KEY");
         }
         return new CohereEmbeddings(config.cohereApiKey, model || "embed-english-v3.0", dimensions, rateLimitConfig);
 
       case "voyage":
         if (!config.voyageApiKey) {
-          throw new Error("API key is required for Voyage AI provider");
+          throw new ConfigValueMissingError("apiKey", "VOYAGE_API_KEY");
         }
         return new VoyageEmbeddings(
           config.voyageApiKey,
@@ -91,8 +92,10 @@ export class EmbeddingProviderFactory {
       }
 
       default:
-        throw new Error(
-          `Unknown embedding provider: ${String(provider)}. Supported providers: openai, cohere, voyage, ollama, onnx`,
+        throw new ConfigValueInvalidError(
+          "embeddingProvider",
+          String(provider),
+          "ollama | onnx | openai | cohere | voyage",
         );
     }
   }
