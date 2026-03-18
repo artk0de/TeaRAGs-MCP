@@ -68,7 +68,7 @@ describe("IngestFacade", () => {
     const payloadSignals = opts.withStats ? [{ key: "language", label: "Language" }] : undefined;
 
     const facade = new IngestFacade(
-      {} as any,
+      { collectionExists: vi.fn().mockResolvedValue(false) } as any,
       {} as any,
       {} as any,
       { enableGitMetadata: false } as any,
