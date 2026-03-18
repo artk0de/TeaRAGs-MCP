@@ -63,14 +63,14 @@ abstract TeaRagsError (base)                     src/core/infra/errors.ts
   │   ├─ QdrantTimeoutError                      src/core/adapters/qdrant/errors.ts
   │   ├─ QdrantOperationError                    src/core/adapters/qdrant/errors.ts
   │   ├─ abstract EmbeddingError                 src/core/adapters/embeddings/errors.ts
-  │   ├─ OllamaUnavailableError                  src/core/adapters/embeddings/ollama/errors.ts
-  │   ├─ OllamaModelMissingError                 src/core/adapters/embeddings/ollama/errors.ts
-  │   ├─ OnnxModelLoadError                      src/core/adapters/embeddings/onnx/errors.ts
-  │   ├─ OnnxInferenceError                      src/core/adapters/embeddings/onnx/errors.ts
-  │   ├─ OpenAIRateLimitError                    src/core/adapters/embeddings/openai/errors.ts
-  │   ├─ OpenAIAuthError                         src/core/adapters/embeddings/openai/errors.ts
-  │   ├─ CohereRateLimitError                    src/core/adapters/embeddings/cohere/errors.ts
-  │   ├─ VoyageRateLimitError                    src/core/adapters/embeddings/voyage/errors.ts
+  │   │   ├─ OllamaUnavailableError              src/core/adapters/embeddings/ollama/errors.ts
+  │   │   ├─ OllamaModelMissingError             src/core/adapters/embeddings/ollama/errors.ts
+  │   │   ├─ OnnxModelLoadError                  src/core/adapters/embeddings/onnx/errors.ts
+  │   │   ├─ OnnxInferenceError                  src/core/adapters/embeddings/onnx/errors.ts
+  │   │   ├─ OpenAIRateLimitError                src/core/adapters/embeddings/openai/errors.ts
+  │   │   ├─ OpenAIAuthError                     src/core/adapters/embeddings/openai/errors.ts
+  │   │   ├─ CohereRateLimitError                src/core/adapters/embeddings/cohere/errors.ts
+  │   │   └─ VoyageRateLimitError                src/core/adapters/embeddings/voyage/errors.ts
   │   ├─ GitCliNotFoundError                     src/core/adapters/git/errors.ts
   │   └─ GitCliTimeoutError                      src/core/adapters/git/errors.ts
   ├─ abstract IngestError                        src/core/domains/ingest/errors.ts
@@ -139,7 +139,7 @@ class OllamaModelMissingError extends InfraError {
 
 | Domain                 | Default | Override examples               |
 | ---------------------- | ------- | ------------------------------- |
-| `InfraError`           | 503     | `QdrantOperationError` → 502    |
+| `InfraError`           | 503     | `QdrantOperationError` → 500    |
 | `InputValidationError` | 400     | —                               |
 | `IngestError`          | 400     | `NotIndexedError` → 404         |
 | `ExploreError`         | 400     | `CollectionNotFoundError` → 404 |
@@ -232,6 +232,25 @@ function errorHandlerMiddleware<T>(
 
 HTTP transport uses `httpStatus` from the error as response status code.
 
+### Middleware wiring
+
+A helper function `registerToolSafe` applies the middleware automatically:
+
+```typescript
+function registerToolSafe(
+  server: McpServer,
+  name: string,
+  metadata: ToolMetadata,
+  handler: ToolHandler,
+): void {
+  server.registerTool(name, metadata, errorHandlerMiddleware(handler));
+}
+```
+
+All tool registration files (`code.ts`, `explore.ts`, `collection.ts`,
+`document.ts`) use `registerToolSafe` instead of `server.registerTool` directly.
+No tool file contains try/catch.
+
 ---
 
 ## 5. MCP Response Format
@@ -315,6 +334,27 @@ Replace scattered error classes with new hierarchy:
 | Missing API keys in factory                    | `src/core/adapters/embeddings/factory.ts`         | `ConfigValueMissingError`    |
 | Unknown provider in factory                    | `src/core/adapters/embeddings/factory.ts`         | `ConfigValueInvalidError`    |
 
+### Additional explore facade throw sites
+
+| Current throw                                           | New class                            |
+| ------------------------------------------------------- | ------------------------------------ |
+| `"Strategy requires at least one positive input"`       | `InvalidQueryError`                  |
+| `"At least one positive or negative input is required"` | `InvalidQueryError`                  |
+| `"Collection not found. Index the codebase first."`     | `CollectionNotFoundError`            |
+| `"No statistics available. Re-index the codebase."`     | `NotIndexedError` (from IngestError) |
+
+### Intentionally excluded (programming errors)
+
+These `throw new Error(...)` sites are **programming errors** (invariant
+violations), not user-facing errors. They are intentionally left as plain
+`Error` — the MCP middleware catches them as `UnknownError`.
+
+| Location                               | Message                            | Why excluded          |
+| -------------------------------------- | ---------------------------------- | --------------------- |
+| `sync/consistent-hash.ts:22`           | `"Shard count must be at least 1"` | Constructor invariant |
+| `pipeline/pipeline-manager.ts:116,150` | `"Pipeline not started"`           | Caller bug            |
+| `pipeline/chunk-pipeline.ts:151`       | `"ChunkPipeline not started"`      | Caller bug            |
+
 Validation `!collection && !path` moves from `resolveCollection()` (infra) to
 facades (api layer). `CollectionRefError` is deleted from infra, replaced by
 `CollectionNotProvidedError` thrown from facades.
@@ -345,7 +385,8 @@ facades (api layer). `CollectionRefError` is deleted from infra, replaced by
 | `src/core/domains/trajectory/git/errors.ts`     | `abstract TrajectoryGitError`, `GitBlameFailedError`, `GitLogTimeoutError`, `GitNotAvailableError` |
 | `src/core/domains/trajectory/static/errors.ts`  | `abstract TrajectoryStaticError`, `StaticParseFailedError`                                         |
 | `src/bootstrap/errors.ts`                       | `abstract ConfigError`, `ConfigValueInvalidError`, `ConfigValueMissingError`                       |
-| `src/mcp/middleware/error-handler.ts`           | `errorHandlerMiddleware()`                                                                         |
+| `src/mcp/middleware/error-handler.ts`           | `errorHandlerMiddleware()`, `registerToolSafe()`                                                   |
+| `.claude/rules/typed-errors.md`                 | Mandatory typed errors rule                                                                        |
 
 ### Modified files
 
@@ -392,3 +433,23 @@ facades (api layer). `CollectionRefError` is deleted from infra, replaced by
 | `src/core/infra/collection-name.ts`                          | Remove `CollectionRefError`, remove validation from `resolveCollection()` |
 | `website/docs/operations/troubleshooting.md`                 | Rename + add error codes reference by domain                              |
 | `plugin/rules/search-cascade.md`                             | Update error handling: agent proposes fix, executes after confirmation    |
+| `.claude/rules/typed-errors.md`                              | New rule: mandatory typed errors                                          |
+
+---
+
+## 9. Typed Errors Rule
+
+**File:** `.claude/rules/typed-errors.md`
+
+A project rule enforcing that all new code uses typed errors from the hierarchy.
+
+Key points:
+
+- NEVER `throw new Error("message")` — always use a concrete error class
+- Each adapter catches raw errors and throws typed errors with external API
+  messages in `cause`
+- Each domain throws domain-specific errors
+- Facades validate input and throw `InputValidationError` subclasses
+- Programming errors (invariant violations) are the only exception — plain
+  `Error` is acceptable
+- MCP tool handlers NEVER contain try/catch — middleware handles all errors
