@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { EmbeddingConfig } from "../../../../src/bootstrap/config/index.js";
+import { ConfigValueInvalidError, ConfigValueMissingError } from "../../../../src/bootstrap/errors.js";
 import { CohereEmbeddings } from "../../../../src/core/adapters/embeddings/cohere.js";
 import { EmbeddingProviderFactory } from "../../../../src/core/adapters/embeddings/factory.js";
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
@@ -36,23 +37,21 @@ function makeConfig(overrides: Partial<EmbeddingConfig> = {}): EmbeddingConfig {
 describe("EmbeddingProviderFactory", () => {
   describe("create", () => {
     describe("Unknown provider", () => {
-      it("should throw error for unknown provider", () => {
+      it("should throw ConfigValueInvalidError for unknown provider", () => {
         expect(() => EmbeddingProviderFactory.create(makeConfig({ provider: "unknown" as any }))).toThrow(
-          "Unknown embedding provider: unknown",
+          ConfigValueInvalidError,
         );
       });
 
-      it("should list supported providers in error message", () => {
-        expect(() => EmbeddingProviderFactory.create(makeConfig({ provider: "invalid" as any }))).toThrow(
-          "openai, cohere, voyage, ollama, onnx",
-        );
+      it("should include provider value in error message", () => {
+        expect(() => EmbeddingProviderFactory.create(makeConfig({ provider: "invalid" as any }))).toThrow(/invalid/);
       });
     });
 
     describe("OpenAI provider", () => {
-      it("should throw error if API key is missing", () => {
+      it("should throw ConfigValueMissingError if API key is missing", () => {
         expect(() => EmbeddingProviderFactory.create(makeConfig({ provider: "openai" }))).toThrow(
-          "API key is required for OpenAI provider",
+          ConfigValueMissingError,
         );
       });
 
@@ -103,9 +102,9 @@ describe("EmbeddingProviderFactory", () => {
     });
 
     describe("Cohere provider", () => {
-      it("should throw error if API key is missing", () => {
+      it("should throw ConfigValueMissingError if API key is missing", () => {
         expect(() => EmbeddingProviderFactory.create(makeConfig({ provider: "cohere" }))).toThrow(
-          "API key is required for Cohere provider",
+          ConfigValueMissingError,
         );
       });
 
@@ -135,9 +134,9 @@ describe("EmbeddingProviderFactory", () => {
     });
 
     describe("Voyage provider", () => {
-      it("should throw error if API key is missing", () => {
+      it("should throw ConfigValueMissingError if API key is missing", () => {
         expect(() => EmbeddingProviderFactory.create(makeConfig({ provider: "voyage" }))).toThrow(
-          "API key is required for Voyage AI provider",
+          ConfigValueMissingError,
         );
       });
 

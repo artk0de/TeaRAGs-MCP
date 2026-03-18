@@ -1,3 +1,4 @@
+export { IngestError, NotIndexedError, CollectionExistsError, SnapshotMissingError } from "./errors.js";
 export { IndexPipeline } from "./indexing.js";
 export { ReindexPipeline } from "./reindexing.js";
 export { computeCollectionStats } from "./collection-stats.js";

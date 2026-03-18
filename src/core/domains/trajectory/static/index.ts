@@ -4,6 +4,8 @@ import { BASE_PAYLOAD_SIGNALS } from "./payload-signals.js";
 import { staticDerivedSignals } from "./rerank/derived-signals/index.js";
 import { STATIC_PRESETS } from "./rerank/presets/index.js";
 
+export { TrajectoryStaticError, StaticParseFailedError } from "./errors.js";
+
 export class StaticTrajectory implements Trajectory {
   readonly key = "static";
   readonly name = "Static";
