@@ -5,7 +5,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { App, SchemaBuilder } from "../../core/api/index.js";
-import { appendDriftWarning, formatMcpError, formatMcpText, sanitizeRerank } from "../format.js";
+import { appendDriftWarning, formatMcpText, sanitizeRerank } from "../format.js";
+import { registerToolSafe } from "../middleware/error-handler.js";
 import { formatEnrichmentStatus } from "./formatters/enrichment.js";
 import { createSearchSchemas } from "./schemas.js";
 import * as schemas from "./schemas.js";
@@ -15,7 +16,8 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);
 
   // index_codebase
-  server.registerTool(
+  registerToolSafe(
+    server,
     "index_codebase",
     {
       title: "Index Codebase",
@@ -27,39 +29,36 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       annotations: { idempotentHint: true },
     },
     async ({ path, forceReindex, extensions, ignorePatterns }) => {
-      try {
-        const stats = await app.indexCodebase(path, { forceReindex, extensions, ignorePatterns }, (progress) => {
-          console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
-        });
+      const stats = await app.indexCodebase(path, { forceReindex, extensions, ignorePatterns }, (progress) => {
+        console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
+      });
 
-        let statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
+      let statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
 
-        const enrichmentMessage = await formatEnrichmentStatus(
-          stats.enrichmentStatus,
-          stats.enrichmentDurationMs,
-          async (p) => app.getIndexStatus(p),
-          path,
-        );
-        statusMessage += enrichmentMessage;
+      const enrichmentMessage = await formatEnrichmentStatus(
+        stats.enrichmentStatus,
+        stats.enrichmentDurationMs,
+        async (p) => app.getIndexStatus(p),
+        path,
+      );
+      statusMessage += enrichmentMessage;
 
-        if (stats.status === "partial") {
-          statusMessage += `\n\nWarnings:\n${stats.errors?.join("\n")}`;
-        } else if (stats.status === "failed") {
-          statusMessage = `Indexing failed:\n${stats.errors?.join("\n")}`;
-        }
-
-        return {
-          content: [{ type: "text" as const, text: statusMessage }],
-          isError: stats.status === "failed",
-        };
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
+      if (stats.status === "partial") {
+        statusMessage += `\n\nWarnings:\n${stats.errors?.join("\n")}`;
+      } else if (stats.status === "failed") {
+        statusMessage = `Indexing failed:\n${stats.errors?.join("\n")}`;
       }
+
+      return {
+        content: [{ type: "text" as const, text: statusMessage }],
+        isError: stats.status === "failed",
+      };
     },
   );
 
   // search_code
-  server.registerTool(
+  registerToolSafe(
+    server,
     "search_code",
     {
       title: "Search Code",
@@ -72,45 +71,42 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
-      try {
-        const response = await app.searchCode({
-          ...rest,
-          rerank: sanitizeRerank(rerank as string | { custom: Record<string, number | undefined> } | undefined),
-        });
+      const response = await app.searchCode({
+        ...rest,
+        rerank: sanitizeRerank(rerank as string | { custom: Record<string, number | undefined> } | undefined),
+      });
 
-        if (response.results.length === 0) {
-          return formatMcpText(`No results found for query: "${rest.query}"`);
-        }
-
-        // Format ExploreResult payload → human-readable text (MCP layer responsibility)
-        const formattedResults = response.results
-          .map((r, idx) => {
-            const p = r.payload ?? {};
-            const file = typeof p.relativePath === "string" ? p.relativePath : "unknown";
-            const startLine = typeof p.startLine === "number" ? p.startLine : 0;
-            const endLine = typeof p.endLine === "number" ? p.endLine : 0;
-            const lang = typeof p.language === "string" ? p.language : "unknown";
-            const content = typeof p.content === "string" ? p.content : "";
-
-            return (
-              `\n--- Result ${idx + 1} (score: ${r.score.toFixed(3)}) ---\n` +
-              `File: ${file}:${startLine}-${endLine}\n` +
-              `Language: ${lang}\n\n` +
-              `${content}\n`
-            );
-          })
-          .join("\n");
-
-        const text = `Found ${response.results.length} result(s):\n${formattedResults}`;
-        return appendDriftWarning(formatMcpText(text), response.driftWarning);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
+      if (response.results.length === 0) {
+        return formatMcpText(`No results found for query: "${rest.query}"`);
       }
+
+      // Format ExploreResult payload → human-readable text (MCP layer responsibility)
+      const formattedResults = response.results
+        .map((r, idx) => {
+          const p = r.payload ?? {};
+          const file = typeof p.relativePath === "string" ? p.relativePath : "unknown";
+          const startLine = typeof p.startLine === "number" ? p.startLine : 0;
+          const endLine = typeof p.endLine === "number" ? p.endLine : 0;
+          const lang = typeof p.language === "string" ? p.language : "unknown";
+          const content = typeof p.content === "string" ? p.content : "";
+
+          return (
+            `\n--- Result ${idx + 1} (score: ${r.score.toFixed(3)}) ---\n` +
+            `File: ${file}:${startLine}-${endLine}\n` +
+            `Language: ${lang}\n\n` +
+            `${content}\n`
+          );
+        })
+        .join("\n");
+
+      const text = `Found ${response.results.length} result(s):\n${formattedResults}`;
+      return appendDriftWarning(formatMcpText(text), response.driftWarning);
     },
   );
 
   // reindex_changes
-  server.registerTool(
+  registerToolSafe(
+    server,
     "reindex_changes",
     {
       title: "Reindex Changes",
@@ -120,46 +116,43 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       annotations: { idempotentHint: true },
     },
     async ({ path }) => {
-      try {
-        const stats = await app.reindexChanges(path, (progress) => {
-          console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
-        });
+      const stats = await app.reindexChanges(path, (progress) => {
+        console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
+      });
 
-        let message = `Incremental re-index complete:\n`;
-        message += `- Files added: ${stats.filesAdded}\n`;
-        message += `- Files modified: ${stats.filesModified}\n`;
-        message += `- Files deleted: ${stats.filesDeleted}\n`;
-        if (stats.filesNewlyIgnored > 0) {
-          message += `- Files newly ignored: ${stats.filesNewlyIgnored}\n`;
-        }
-        if (stats.filesNewlyUnignored > 0) {
-          message += `- Files newly unignored: ${stats.filesNewlyUnignored}\n`;
-        }
-        message += `- Chunks added: ${stats.chunksAdded}\n`;
-        message += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
-
-        const enrichmentMessage = await formatEnrichmentStatus(
-          stats.enrichmentStatus,
-          stats.enrichmentDurationMs,
-          async (p) => app.getIndexStatus(p),
-          path,
-        );
-        message += enrichmentMessage;
-
-        if (stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0) {
-          message = `No changes detected. Codebase is up to date.`;
-        }
-
-        const driftWarning = await app.checkSchemaDrift({ path });
-        return appendDriftWarning(formatMcpText(message), driftWarning);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
+      let message = `Incremental re-index complete:\n`;
+      message += `- Files added: ${stats.filesAdded}\n`;
+      message += `- Files modified: ${stats.filesModified}\n`;
+      message += `- Files deleted: ${stats.filesDeleted}\n`;
+      if (stats.filesNewlyIgnored > 0) {
+        message += `- Files newly ignored: ${stats.filesNewlyIgnored}\n`;
       }
+      if (stats.filesNewlyUnignored > 0) {
+        message += `- Files newly unignored: ${stats.filesNewlyUnignored}\n`;
+      }
+      message += `- Chunks added: ${stats.chunksAdded}\n`;
+      message += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
+
+      const enrichmentMessage = await formatEnrichmentStatus(
+        stats.enrichmentStatus,
+        stats.enrichmentDurationMs,
+        async (p) => app.getIndexStatus(p),
+        path,
+      );
+      message += enrichmentMessage;
+
+      if (stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0) {
+        message = `No changes detected. Codebase is up to date.`;
+      }
+
+      const driftWarning = await app.checkSchemaDrift({ path });
+      return appendDriftWarning(formatMcpText(message), driftWarning);
     },
   );
 
   // get_index_status
-  server.registerTool(
+  registerToolSafe(
+    server,
     "get_index_status",
     {
       title: "Get Index Status",
@@ -170,48 +163,45 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       annotations: { readOnlyHint: true },
     },
     async ({ path }) => {
-      try {
-        const status = await app.getIndexStatus(path);
+      const status = await app.getIndexStatus(path);
 
-        if (status.status === "not_indexed") {
-          return formatMcpText(`Codebase at "${path}" is not indexed. Use index_codebase to index it first.`);
-        }
-
-        if (status.status === "indexing") {
-          let text = `Codebase at "${path}" is currently being indexed. ${status.chunksCount || 0} chunks processed so far.`;
-          if (status.enrichment) {
-            text += `\nGit enrichment: ${status.enrichment.status}`;
-            if (status.enrichment.percentage !== undefined) {
-              text += ` (${status.enrichment.percentage}%)`;
-            }
-          }
-          return formatMcpText(text);
-        }
-
-        // Include enrichment info in the response
-        const response: Record<string, unknown> = { ...status };
-        if (status.enrichment) {
-          response.enrichment = status.enrichment;
-        }
-
-        let text = JSON.stringify(response, null, 2);
-
-        // Add visible enrichment status line so agents notice it
-        if (status.enrichment?.status === "in_progress") {
-          const pct = status.enrichment.percentage ?? 0;
-          text += `\n\n⏳ Git enrichment is still running (${pct}% — ${status.enrichment.processedFiles ?? 0}/${status.enrichment.totalFiles ?? "?"} files). Git-based filters and rerank presets will not work until enrichment completes.`;
-        }
-
-        const driftWarning = await app.checkSchemaDrift({ path });
-        return appendDriftWarning(formatMcpText(text), driftWarning);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
+      if (status.status === "not_indexed") {
+        return formatMcpText(`Codebase at "${path}" is not indexed. Use index_codebase to index it first.`);
       }
+
+      if (status.status === "indexing") {
+        let text = `Codebase at "${path}" is currently being indexed. ${status.chunksCount || 0} chunks processed so far.`;
+        if (status.enrichment) {
+          text += `\nGit enrichment: ${status.enrichment.status}`;
+          if (status.enrichment.percentage !== undefined) {
+            text += ` (${status.enrichment.percentage}%)`;
+          }
+        }
+        return formatMcpText(text);
+      }
+
+      // Include enrichment info in the response
+      const response: Record<string, unknown> = { ...status };
+      if (status.enrichment) {
+        response.enrichment = status.enrichment;
+      }
+
+      let text = JSON.stringify(response, null, 2);
+
+      // Add visible enrichment status line so agents notice it
+      if (status.enrichment?.status === "in_progress") {
+        const pct = status.enrichment.percentage ?? 0;
+        text += `\n\n⏳ Git enrichment is still running (${pct}% — ${status.enrichment.processedFiles ?? 0}/${status.enrichment.totalFiles ?? "?"} files). Git-based filters and rerank presets will not work until enrichment completes.`;
+      }
+
+      const driftWarning = await app.checkSchemaDrift({ path });
+      return appendDriftWarning(formatMcpText(text), driftWarning);
     },
   );
 
   // get_index_metrics
-  server.registerTool(
+  registerToolSafe(
+    server,
     "get_index_metrics",
     {
       title: "Get Index Metrics",
@@ -223,19 +213,16 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       annotations: { readOnlyHint: true },
     },
     async ({ path }) => {
-      try {
-        const metrics = await app.getIndexMetrics(path);
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(metrics, null, 2) }],
-        };
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
-      }
+      const metrics = await app.getIndexMetrics(path);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(metrics, null, 2) }],
+      };
     },
   );
 
   // clear_index
-  server.registerTool(
+  registerToolSafe(
+    server,
     "clear_index",
     {
       title: "Clear Index",
@@ -245,12 +232,8 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       annotations: { destructiveHint: true },
     },
     async ({ path }) => {
-      try {
-        await app.clearIndex(path);
-        return formatMcpText(`Index cleared for codebase at "${path}".`);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
-      }
+      await app.clearIndex(path);
+      return formatMcpText(`Index cleared for codebase at "${path}".`);
     },
   );
 }

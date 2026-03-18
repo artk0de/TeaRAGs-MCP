@@ -5,14 +5,16 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { App } from "../../core/api/index.js";
-import { formatMcpError, formatMcpResponse, formatMcpText } from "../format.js";
+import { formatMcpResponse, formatMcpText } from "../format.js";
+import { registerToolSafe } from "../middleware/error-handler.js";
 import * as schemas from "./schemas.js";
 
 export function registerCollectionTools(server: McpServer, deps: { app: App }): void {
   const { app } = deps;
 
   // create_collection
-  server.registerTool(
+  registerToolSafe(
+    server,
     "create_collection",
     {
       title: "Create Collection",
@@ -22,21 +24,18 @@ export function registerCollectionTools(server: McpServer, deps: { app: App }): 
       annotations: { idempotentHint: true },
     },
     async ({ name, distance, enableHybrid }) => {
-      try {
-        const info = await app.createCollection({ name, distance, enableHybrid });
-        let message = `Collection "${info.name}" created successfully with ${info.vectorSize} dimensions and ${info.distance} distance metric.`;
-        if (info.hybridEnabled) {
-          message += " Hybrid search is enabled for this collection.";
-        }
-        return formatMcpText(message);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
+      const info = await app.createCollection({ name, distance, enableHybrid });
+      let message = `Collection "${info.name}" created successfully with ${info.vectorSize} dimensions and ${info.distance} distance metric.`;
+      if (info.hybridEnabled) {
+        message += " Hybrid search is enabled for this collection.";
       }
+      return formatMcpText(message);
     },
   );
 
   // list_collections
-  server.registerTool(
+  registerToolSafe(
+    server,
     "list_collections",
     {
       title: "List Collections",
@@ -45,17 +44,14 @@ export function registerCollectionTools(server: McpServer, deps: { app: App }): 
       annotations: { readOnlyHint: true },
     },
     async () => {
-      try {
-        const collections = await app.listCollections();
-        return formatMcpResponse(collections);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
-      }
+      const collections = await app.listCollections();
+      return formatMcpResponse(collections);
     },
   );
 
   // get_collection_info
-  server.registerTool(
+  registerToolSafe(
+    server,
     "get_collection_info",
     {
       title: "Get Collection Info",
@@ -65,17 +61,14 @@ export function registerCollectionTools(server: McpServer, deps: { app: App }): 
       annotations: { readOnlyHint: true },
     },
     async ({ name }) => {
-      try {
-        const info = await app.getCollectionInfo(name);
-        return formatMcpResponse(info);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
-      }
+      const info = await app.getCollectionInfo(name);
+      return formatMcpResponse(info);
     },
   );
 
   // delete_collection
-  server.registerTool(
+  registerToolSafe(
+    server,
     "delete_collection",
     {
       title: "Delete Collection",
@@ -84,12 +77,8 @@ export function registerCollectionTools(server: McpServer, deps: { app: App }): 
       annotations: { destructiveHint: true },
     },
     async ({ name }) => {
-      try {
-        await app.deleteCollection(name);
-        return formatMcpText(`Collection "${name}" deleted successfully.`);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
-      }
+      await app.deleteCollection(name);
+      return formatMcpText(`Collection "${name}" deleted successfully.`);
     },
   );
 }
