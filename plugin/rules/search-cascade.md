@@ -9,12 +9,11 @@
 **1. Check and update index:**
 
 - Call `get_index_status` for the current project path.
-- If indexed → use `/tea-rags:reindex-changes` (runs in background, picks up
-  recent changes).
-- If not indexed → use `/tea-rags:index` (runs in background, does not block
-  conversation).
-- For full re-index → use `/tea-rags:force-reindex` (zero-downtime, search stays
-  available).
+- Use `/tea-rags:index` — handles both cases automatically:
+  - Not indexed → full index in background
+  - Already indexed → incremental reindex (only changed files) in background
+- For full re-index from scratch → use `/tea-rags:force-reindex` (zero-downtime,
+  search stays available).
 - If `get_index_status` returns an error (`isError: true`):
   1. Parse `[CODE]` from the response text (e.g. `[QDRANT_UNAVAILABLE]`,
      `[OLLAMA_UNAVAILABLE]`).
