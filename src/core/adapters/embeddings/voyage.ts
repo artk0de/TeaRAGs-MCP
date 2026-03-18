@@ -75,11 +75,7 @@ export class VoyageEmbeddings implements EmbeddingProvider {
       }
 
       if (isRateLimitError) {
-        throw new VoyageRateLimitError(
-          new Error(
-            `Voyage AI API rate limit exceeded after ${this.retryAttempts} retry attempts. Please try again later or reduce request frequency.`,
-          ),
-        );
+        throw new VoyageRateLimitError(error instanceof Error ? error : undefined);
       }
 
       throw error;
