@@ -16,8 +16,8 @@ describe("rank_chunks scoring fixes", () => {
 
   it("supports preset+custom combo: custom weights for scoring, preset mask for overlay", () => {
     const results = [
-      { score: 0, payload: { methodLines: 200, methodDensity: 80 } },
-      { score: 0, payload: { methodLines: 50, methodDensity: 40 } },
+      { score: 0, payload: { chunkType: "function", methodLines: 200, methodDensity: 80 } },
+      { score: 0, payload: { chunkType: "function", methodLines: 50, methodDensity: 40 } },
     ];
 
     // Pass custom weights without similarity, but reference preset for overlay mask
@@ -38,7 +38,7 @@ describe("rank_chunks scoring fixes", () => {
   });
 
   it("scores large methods near 1.0 when similarity is excluded", () => {
-    const results = [{ score: 0, payload: { methodLines: 500, methodDensity: 120 } }];
+    const results = [{ score: 0, payload: { chunkType: "function", methodLines: 500, methodDensity: 120 } }];
 
     const ranked = reranker.rerank(results, { custom: { chunkSize: 0.667, chunkDensity: 0.333 } }, "rank_chunks");
 
@@ -54,7 +54,7 @@ describe("overlay raw values visibility", () => {
     // When overlay has file signals, it should be included
     const reranker = new Reranker(staticDerivedSignals, [new DecompositionPreset()]);
 
-    const results = [{ score: 0, payload: { methodLines: 100, methodDensity: 60 } }];
+    const results = [{ score: 0, payload: { chunkType: "function", methodLines: 100, methodDensity: 60 } }];
 
     const ranked = reranker.rerank(
       results,
@@ -76,7 +76,7 @@ describe("chunkDensity requires methodLines", () => {
 
     const results = [
       { score: 0, payload: { methodDensity: 250 } }, // markdown table, no methodLines
-      { score: 0, payload: { methodLines: 100, methodDensity: 60 } }, // real method
+      { score: 0, payload: { chunkType: "function", methodLines: 100, methodDensity: 60 } }, // real method
     ];
 
     const ranked = reranker.rerank(results, { custom: { chunkSize: 0.667, chunkDensity: 0.333 } }, "rank_chunks");
