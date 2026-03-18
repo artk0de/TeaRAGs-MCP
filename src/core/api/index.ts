@@ -42,4 +42,4 @@ export type { CompositionResult } from "./internal/composition.js";
 export { ExploreFacade } from "./internal/facades/explore-facade.js";
 export type { ExploreFacadeDeps } from "./internal/facades/explore-facade.js";
 export { IngestFacade } from "./internal/facades/ingest-facade.js";
-export { CollectionRefError } from "./internal/facades/explore-facade.js";
+export { InputValidationError, CollectionNotProvidedError } from "./errors.js";

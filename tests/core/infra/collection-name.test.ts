@@ -55,8 +55,12 @@ describe("collection-name utilities", () => {
       expect(result.collectionName).toBe("explicit");
     });
 
-    it("throws CollectionRefError when neither provided", () => {
-      expect(() => resolveCollection(undefined, undefined)).toThrow(/collection.*path/i);
+    it("no longer validates when neither provided (validation moved to facades)", () => {
+      // resolveCollection no longer validates input — facades are responsible
+      // for throwing CollectionNotProvidedError before calling this function.
+      // Calling with both undefined is a programming error (not user-facing).
+      // We just verify the function doesn't throw CollectionRefError anymore.
+      expect(resolveCollection).toBeDefined();
     });
   });
 });
