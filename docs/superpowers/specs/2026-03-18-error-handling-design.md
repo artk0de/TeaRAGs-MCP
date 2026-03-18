@@ -1,14 +1,15 @@
 # Unified Error Handling Design
 
-> **Status:** Approved (brainstorming) **Date:** 2026-03-18
+> **Status:** Approved **Date:** 2026-03-18
 
 **Goal:** Standardized error hierarchy with human-readable messages, graceful
 startup when dependencies are down, and documented error codes.
 
 **Architecture:** Every error is a concrete class inheriting from domain-level
-base classes. Errors bubble from adapters through facades to MCP tool handlers,
-where a single wrapper formats them for the client. Server never crashes due to
-unavailable Qdrant/Ollama.
+abstract base classes. Adapters catch raw errors and throw typed errors. MCP
+middleware is the single catch-all — formats `TeaRagsError` via
+`toUserMessage()`, wraps unknown errors in `UnknownError`. Server never crashes
+due to unavailable Qdrant/Ollama.
 
 ---
 
@@ -43,70 +44,67 @@ interface TeaRagsErrorContract {
 | `toUserMessage()` | `[CODE] message\n\nHint: hint` | MCP tool responses |
 | `toString()`      | `ClassName [CODE]: message`    | Logs, debugging    |
 
+`toUserMessage()` is overridable by subclasses for custom formatting.
+
 ---
 
 ## 2. Error Hierarchy
 
+All base classes are `abstract` — cannot be instantiated directly. Only concrete
+leaf classes are thrown.
+
 ```
-TeaRagsError (base)                          src/core/infra/errors.ts
-  ├─ CollectionRefError                      src/core/infra/errors.ts
-  ├─ InfraError                              src/core/adapters/errors.ts
-  │   ├─ QdrantUnavailableError              src/core/adapters/qdrant/errors.ts
-  │   ├─ QdrantTimeoutError                  src/core/adapters/qdrant/errors.ts
-  │   ├─ QdrantOperationError                src/core/adapters/qdrant/errors.ts
-  │   ├─ EmbeddingFailedError (base)         src/core/adapters/embeddings/errors.ts
-  │   ├─ OllamaUnavailableError              src/core/adapters/embeddings/ollama/errors.ts
-  │   ├─ OllamaModelMissingError             src/core/adapters/embeddings/ollama/errors.ts
-  │   ├─ OnnxModelLoadError                  src/core/adapters/embeddings/onnx/errors.ts
-  │   ├─ OnnxInferenceError                  src/core/adapters/embeddings/onnx/errors.ts
-  │   ├─ OpenAIRateLimitError                src/core/adapters/embeddings/openai/errors.ts
-  │   ├─ OpenAIAuthError                     src/core/adapters/embeddings/openai/errors.ts
-  │   ├─ CohereRateLimitError                src/core/adapters/embeddings/cohere/errors.ts
-  │   └─ VoyageRateLimitError                src/core/adapters/embeddings/voyage/errors.ts
-  ├─ IngestError                             src/core/domains/ingest/errors.ts
+abstract TeaRagsError (base)                     src/core/infra/errors.ts
+  ├─ UnknownError                                src/core/infra/errors.ts
+  ├─ abstract InputValidationError               src/core/api/errors.ts
+  │   └─ CollectionNotProvidedError
+  ├─ abstract InfraError                         src/core/adapters/errors.ts
+  │   ├─ QdrantUnavailableError                  src/core/adapters/qdrant/errors.ts
+  │   ├─ QdrantTimeoutError                      src/core/adapters/qdrant/errors.ts
+  │   ├─ QdrantOperationError                    src/core/adapters/qdrant/errors.ts
+  │   ├─ abstract EmbeddingError                 src/core/adapters/embeddings/errors.ts
+  │   ├─ OllamaUnavailableError                  src/core/adapters/embeddings/ollama/errors.ts
+  │   ├─ OllamaModelMissingError                 src/core/adapters/embeddings/ollama/errors.ts
+  │   ├─ OnnxModelLoadError                      src/core/adapters/embeddings/onnx/errors.ts
+  │   ├─ OnnxInferenceError                      src/core/adapters/embeddings/onnx/errors.ts
+  │   ├─ OpenAIRateLimitError                    src/core/adapters/embeddings/openai/errors.ts
+  │   ├─ OpenAIAuthError                         src/core/adapters/embeddings/openai/errors.ts
+  │   ├─ CohereRateLimitError                    src/core/adapters/embeddings/cohere/errors.ts
+  │   ├─ VoyageRateLimitError                    src/core/adapters/embeddings/voyage/errors.ts
+  │   ├─ GitCliNotFoundError                     src/core/adapters/git/errors.ts
+  │   └─ GitCliTimeoutError                      src/core/adapters/git/errors.ts
+  ├─ abstract IngestError                        src/core/domains/ingest/errors.ts
   │   ├─ NotIndexedError
   │   ├─ CollectionExistsError
   │   └─ SnapshotMissingError
-  ├─ ExploreError                            src/core/domains/explore/errors.ts
+  ├─ abstract ExploreError                       src/core/domains/explore/errors.ts
   │   ├─ CollectionNotFoundError
   │   ├─ HybridNotEnabledError
   │   └─ InvalidQueryError
-  ├─ TrajectoryError                         src/core/domains/trajectory/errors.ts
-  │   ├─ TrajectoryGitError                  src/core/domains/trajectory/git/errors.ts
+  ├─ abstract TrajectoryError                    src/core/domains/trajectory/errors.ts
+  │   ├─ abstract TrajectoryGitError             src/core/domains/trajectory/git/errors.ts
   │   │   ├─ GitBlameFailedError
   │   │   ├─ GitLogTimeoutError
   │   │   └─ GitNotAvailableError
-  │   └─ TrajectoryStaticError               src/core/domains/trajectory/static/errors.ts
+  │   └─ abstract TrajectoryStaticError          src/core/domains/trajectory/static/errors.ts
   │       └─ StaticParseFailedError
-  └─ ConfigError                             src/bootstrap/errors.ts
-      ├─ InvalidConfigError
-      └─ MissingConfigError
+  └─ abstract ConfigError                        src/bootstrap/errors.ts
+      ├─ ConfigValueInvalidError
+      └─ ConfigValueMissingError
 ```
 
-### Key design decisions
+### Error responsibilities per layer
 
-- **`CollectionRefError`** extends `TeaRagsError` directly (infra level) — used
-  by shared `resolveCollection()` which serves both Explore and Ingest domains.
-- **`QdrantOperationError`** — for failures on a reachable Qdrant server (upsert
-  failures, sparse vector errors, etc.), distinct from `QdrantUnavailableError`.
-- **`EmbeddingFailedError`** — base class for provider-specific errors. Never
-  thrown directly; each provider throws its own subclass.
+- **Adapters** — catch raw errors (fetch, qdrant client, git CLI), throw typed
+  errors. Include messages from external APIs in `message`.
+- **Domains/Facades** — catch domain-specific issues, throw typed errors. Input
+  validation (`CollectionNotProvidedError`) in facades before calling infra.
+- **MCP middleware** — single catch-all. `TeaRagsError` → `toUserMessage()`.
+  Unknown errors → `new UnknownError(e)` → same format.
 
 ### Error Code Naming Convention
 
 `DOMAIN_SPECIFIC_ERROR` — prefix is domain, suffix is problem.
-
-```
-INFRA_QDRANT_UNAVAILABLE
-INFRA_QDRANT_OPERATION_FAILED
-INFRA_OLLAMA_MODEL_MISSING
-INFRA_COLLECTION_REF_INVALID
-INGEST_NOT_INDEXED
-EXPLORE_HYBRID_NOT_ENABLED
-TRAJECTORY_GIT_BLAME_FAILED
-CONFIG_INVALID
-CONFIG_MISSING_API_KEY
-```
 
 ### Concrete Class Pattern
 
@@ -139,14 +137,15 @@ class OllamaModelMissingError extends InfraError {
 
 ### Default httpStatus by Domain
 
-| Domain            | Default | Override examples               |
-| ----------------- | ------- | ------------------------------- |
-| `InfraError`      | 503     | `QdrantOperationError` → 502    |
-| `IngestError`     | 400     | `NotIndexedError` → 404         |
-| `ExploreError`    | 400     | `CollectionNotFoundError` → 404 |
-| `TrajectoryError` | 500     | `GitLogTimeoutError` → 504      |
-| `ConfigError`     | 400     | —                               |
-| Unknown errors    | 500     | —                               |
+| Domain                 | Default | Override examples               |
+| ---------------------- | ------- | ------------------------------- |
+| `InfraError`           | 503     | `QdrantOperationError` → 502    |
+| `InputValidationError` | 400     | —                               |
+| `IngestError`          | 400     | `NotIndexedError` → 404         |
+| `ExploreError`         | 400     | `CollectionNotFoundError` → 404 |
+| `TrajectoryError`      | 500     | `GitLogTimeoutError` → 504      |
+| `ConfigError`          | 400     | —                               |
+| `UnknownError`         | 500     | —                               |
 
 ---
 
@@ -172,8 +171,9 @@ main()
 
 ### Changes
 
-1. **Remove `checkOllamaAvailability()` call** from `src/index.ts`
-2. **Remove or deprecate** `src/bootstrap/ollama.ts` (function no longer needed)
+1. **Delete `checkOllamaAvailability()` call** from `src/index.ts`
+2. **Delete `src/bootstrap/ollama.ts`** — function no longer needed; errors are
+   thrown by adapters at runtime on first use
 3. **Adapters throw typed errors on first use** — Ollama adapter throws
    `OllamaUnavailableError` when `embedBatch()` fails to connect; Qdrant adapter
    throws `QdrantUnavailableError` when first operation fails
@@ -188,24 +188,22 @@ Facade / Pipeline            → does not catch, propagates
   ↓ bubbles through
 App method                   → does not catch, propagates
   ↓ caught by
-MCP tool wrapper             → withErrorHandling() catches, formats response
+MCP middleware                → formats via toUserMessage()
   ↓ returned to
 MCP client                   → sees [CODE] message + Hint
 ```
 
 ---
 
-## 4. MCP Error Handling Wrapper
+## 4. MCP Error Middleware
 
-### `withErrorHandling()`
+**File:** `src/mcp/middleware/error-handler.ts`
 
-**File:** `src/mcp/format.ts`
-
-Wraps every MCP tool handler. Removes duplicated try/catch from individual
-tools. Logs full error with cause to stderr before returning formatted response.
+Single catch-all middleware wrapping all MCP tool handlers. No tool file
+contains try/catch — all error handling is centralized here.
 
 ```typescript
-function withErrorHandling<T>(
+function errorHandlerMiddleware<T>(
   handler: (args: T, extra: RequestHandlerExtra) => Promise<McpToolResult>,
 ): (args: T, extra: RequestHandlerExtra) => Promise<McpToolResult> {
   return async (args, extra) => {
@@ -221,15 +219,10 @@ function withErrorHandling<T>(
           isError: true,
         };
       }
-      // Unknown error — fallback
-      const message = e instanceof Error ? e.message : String(e);
+      // Unknown error — wrap in UnknownError for consistent format
+      const unknown = new UnknownError(e);
       return {
-        content: [
-          {
-            type: "text",
-            text: `[UNKNOWN_ERROR] ${message}\n\nHint: Check server logs for details`,
-          },
-        ],
+        content: [{ type: "text", text: unknown.toUserMessage() }],
         isError: true,
       };
     }
@@ -237,34 +230,7 @@ function withErrorHandling<T>(
 }
 ```
 
-### Registration pattern
-
-```typescript
-// Before (duplicated try/catch in every handler):
-server.registerTool("semantic_search", schema, async (params) => {
-  try {
-    const result = await app.semanticSearch(params);
-    return formatResult(result);
-  } catch (error) {
-    return formatMcpError(error.message);
-  }
-});
-
-// After (clean handlers, centralized error handling):
-server.registerTool(
-  "semantic_search",
-  schema,
-  withErrorHandling(async (params) => {
-    const result = await app.semanticSearch(params);
-    return formatResult(result);
-  }),
-);
-```
-
-### HTTP transport
-
-For HTTP mode, `httpStatus` from `TeaRagsError` is used as response status code.
-Unknown errors return 500.
+HTTP transport uses `httpStatus` from the error as response status code.
 
 ---
 
@@ -312,7 +278,7 @@ Unknown errors return 500.
 
 Rename to `troubleshooting-and-error-codes.md`. Changes:
 
-1. Break existing fix tables by error domain (Infrastructure, Indexing, Search,
+1. Break existing fix tables by error domain (Infrastructure, Indexing, Explore,
    Trajectory, Configuration)
 2. Add error code column to each table
 3. Add "Error Codes Reference" section with full table of all codes, messages,
@@ -323,8 +289,9 @@ Rename to `troubleshooting-and-error-codes.md`. Changes:
 Update the session-start rule:
 
 1. `get_index_status` ALWAYS called at session start (no change)
-2. If response contains `TeaRagsError` format → agent shows hint to user, asks
-   to fix (e.g. "start Ollama"), then retries
+2. If response contains error format → agent reads `code` and `hint`, proposes
+   concrete fix to user (e.g. "Qdrant is not running. Run
+   `docker compose up -d`?"), executes after confirmation
 3. If not indexed → `index_codebase` (no change)
 4. Reconnect MCP server only if config change is needed
 
@@ -334,19 +301,23 @@ Update the session-start rule:
 
 Replace scattered error classes with new hierarchy:
 
-| Current                                        | Location                                          | New class                 |
-| ---------------------------------------------- | ------------------------------------------------- | ------------------------- |
-| `CollectionRefError`                           | `src/core/infra/collection-name.ts`               | `CollectionRefError`      |
-| `CollectionNotFoundError`                      | `src/core/api/internal/facades/explore-facade.ts` | `CollectionNotFoundError` |
-| `HybridNotEnabledError`                        | `src/core/domains/explore/strategies/types.ts`    | `HybridNotEnabledError`   |
-| `throw new Error("Codebase not indexed")`      | `src/core/domains/ingest/reindexing.ts`           | `NotIndexedError`         |
-| `throw new Error("No previous snapshot")`      | `src/core/domains/ingest/reindexing.ts`           | `SnapshotMissingError`    |
-| `throw new Error("Collection already exists")` | `src/core/domains/ingest/indexing.ts`             | `CollectionExistsError`   |
-| Ollama fetch failures                          | `src/core/adapters/embeddings/ollama.ts`          | `OllamaUnavailableError`  |
-| Qdrant connection failures                     | `src/core/adapters/qdrant/client.ts`              | `QdrantUnavailableError`  |
-| Qdrant operation failures                      | `src/core/adapters/qdrant/client.ts`              | `QdrantOperationError`    |
-| Missing API keys in factory                    | `src/core/adapters/embeddings/factory.ts`         | `MissingConfigError`      |
-| Unknown provider in factory                    | `src/core/adapters/embeddings/factory.ts`         | `InvalidConfigError`      |
+| Current                                        | Location                                          | New class                    |
+| ---------------------------------------------- | ------------------------------------------------- | ---------------------------- |
+| `CollectionRefError`                           | `src/core/infra/collection-name.ts`               | `CollectionNotProvidedError` |
+| `CollectionNotFoundError`                      | `src/core/api/internal/facades/explore-facade.ts` | `CollectionNotFoundError`    |
+| `HybridNotEnabledError`                        | `src/core/domains/explore/strategies/types.ts`    | `HybridNotEnabledError`      |
+| `throw new Error("Codebase not indexed")`      | `src/core/domains/ingest/reindexing.ts`           | `NotIndexedError`            |
+| `throw new Error("No previous snapshot")`      | `src/core/domains/ingest/reindexing.ts`           | `SnapshotMissingError`       |
+| `throw new Error("Collection already exists")` | `src/core/domains/ingest/indexing.ts`             | `CollectionExistsError`      |
+| Ollama fetch failures                          | `src/core/adapters/embeddings/ollama.ts`          | `OllamaUnavailableError`     |
+| Qdrant connection failures                     | `src/core/adapters/qdrant/client.ts`              | `QdrantUnavailableError`     |
+| Qdrant operation failures                      | `src/core/adapters/qdrant/client.ts`              | `QdrantOperationError`       |
+| Missing API keys in factory                    | `src/core/adapters/embeddings/factory.ts`         | `ConfigValueMissingError`    |
+| Unknown provider in factory                    | `src/core/adapters/embeddings/factory.ts`         | `ConfigValueInvalidError`    |
+
+Validation `!collection && !path` moves from `resolveCollection()` (infra) to
+facades (api layer). `CollectionRefError` is deleted from infra, replaced by
+`CollectionNotProvidedError` thrown from facades.
 
 ---
 
@@ -354,45 +325,70 @@ Replace scattered error classes with new hierarchy:
 
 ### New files
 
-| File                                            | Contents                                                                                  |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `src/core/contracts/errors.ts`                  | `TeaRagsErrorContract` interface, `ErrorCode` type union                                  |
-| `src/core/infra/errors.ts`                      | `TeaRagsError` base class, `CollectionRefError`                                           |
-| `src/core/adapters/errors.ts`                   | `InfraError` base class                                                                   |
-| `src/core/adapters/qdrant/errors.ts`            | `QdrantUnavailableError`, `QdrantTimeoutError`, `QdrantOperationError`                    |
-| `src/core/adapters/embeddings/errors.ts`        | `EmbeddingFailedError` base class (never thrown directly)                                 |
-| `src/core/adapters/embeddings/ollama/errors.ts` | `OllamaUnavailableError`, `OllamaModelMissingError`                                       |
-| `src/core/adapters/embeddings/onnx/errors.ts`   | `OnnxModelLoadError`, `OnnxInferenceError`                                                |
-| `src/core/adapters/embeddings/openai/errors.ts` | `OpenAIRateLimitError`, `OpenAIAuthError`                                                 |
-| `src/core/adapters/embeddings/cohere/errors.ts` | `CohereRateLimitError`                                                                    |
-| `src/core/adapters/embeddings/voyage/errors.ts` | `VoyageRateLimitError`                                                                    |
-| `src/core/domains/ingest/errors.ts`             | `IngestError`, `NotIndexedError`, `CollectionExistsError`, `SnapshotMissingError`         |
-| `src/core/domains/explore/errors.ts`            | `ExploreError`, `CollectionNotFoundError`, `HybridNotEnabledError`, `InvalidQueryError`   |
-| `src/core/domains/trajectory/errors.ts`         | `TrajectoryError`                                                                         |
-| `src/core/domains/trajectory/git/errors.ts`     | `TrajectoryGitError`, `GitBlameFailedError`, `GitLogTimeoutError`, `GitNotAvailableError` |
-| `src/core/domains/trajectory/static/errors.ts`  | `TrajectoryStaticError`, `StaticParseFailedError`                                         |
-| `src/bootstrap/errors.ts`                       | `ConfigError`, `InvalidConfigError`, `MissingConfigError`                                 |
+| File                                            | Contents                                                                                           |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `src/core/contracts/errors.ts`                  | `TeaRagsErrorContract` interface, `ErrorCode` type union                                           |
+| `src/core/infra/errors.ts`                      | `abstract TeaRagsError` base class, `UnknownError`                                                 |
+| `src/core/api/errors.ts`                        | `abstract InputValidationError`, `CollectionNotProvidedError`                                      |
+| `src/core/adapters/errors.ts`                   | `abstract InfraError`                                                                              |
+| `src/core/adapters/qdrant/errors.ts`            | `QdrantUnavailableError`, `QdrantTimeoutError`, `QdrantOperationError`                             |
+| `src/core/adapters/embeddings/errors.ts`        | `abstract EmbeddingError` (never thrown directly)                                                  |
+| `src/core/adapters/embeddings/ollama/errors.ts` | `OllamaUnavailableError`, `OllamaModelMissingError`                                                |
+| `src/core/adapters/embeddings/onnx/errors.ts`   | `OnnxModelLoadError`, `OnnxInferenceError`                                                         |
+| `src/core/adapters/embeddings/openai/errors.ts` | `OpenAIRateLimitError`, `OpenAIAuthError`                                                          |
+| `src/core/adapters/embeddings/cohere/errors.ts` | `CohereRateLimitError`                                                                             |
+| `src/core/adapters/embeddings/voyage/errors.ts` | `VoyageRateLimitError`                                                                             |
+| `src/core/adapters/git/errors.ts`               | `GitCliNotFoundError`, `GitCliTimeoutError`                                                        |
+| `src/core/domains/ingest/errors.ts`             | `abstract IngestError`, `NotIndexedError`, `CollectionExistsError`, `SnapshotMissingError`         |
+| `src/core/domains/explore/errors.ts`            | `abstract ExploreError`, `CollectionNotFoundError`, `HybridNotEnabledError`, `InvalidQueryError`   |
+| `src/core/domains/trajectory/errors.ts`         | `abstract TrajectoryError`                                                                         |
+| `src/core/domains/trajectory/git/errors.ts`     | `abstract TrajectoryGitError`, `GitBlameFailedError`, `GitLogTimeoutError`, `GitNotAvailableError` |
+| `src/core/domains/trajectory/static/errors.ts`  | `abstract TrajectoryStaticError`, `StaticParseFailedError`                                         |
+| `src/bootstrap/errors.ts`                       | `abstract ConfigError`, `ConfigValueInvalidError`, `ConfigValueMissingError`                       |
+| `src/mcp/middleware/error-handler.ts`           | `errorHandlerMiddleware()`                                                                         |
 
 ### Modified files
 
-| File                                              | Change                                                           |
-| ------------------------------------------------- | ---------------------------------------------------------------- |
-| `src/index.ts`                                    | Remove `checkOllamaAvailability()` call                          |
-| `src/mcp/format.ts`                               | Add `withErrorHandling()`, keep `formatMcpError()` as deprecated |
-| `src/mcp/tools/code.ts`                           | Wrap handlers with `withErrorHandling()`, remove try/catch       |
-| `src/mcp/tools/explore.ts`                        | Same                                                             |
-| `src/mcp/tools/collection.ts`                     | Same                                                             |
-| `src/mcp/tools/document.ts`                       | Same                                                             |
-| `src/core/adapters/embeddings/ollama.ts`          | Throw `OllamaUnavailableError` / `OllamaModelMissingError`       |
-| `src/core/adapters/embeddings/onnx.ts`            | Throw `OnnxModelLoadError` / `OnnxInferenceError`                |
-| `src/core/adapters/embeddings/openai.ts`          | Throw `OpenAIRateLimitError` / `OpenAIAuthError`                 |
-| `src/core/adapters/embeddings/cohere.ts`          | Throw `CohereRateLimitError`                                     |
-| `src/core/adapters/embeddings/voyage.ts`          | Throw `VoyageRateLimitError`                                     |
-| `src/core/adapters/embeddings/factory.ts`         | Throw `MissingConfigError` / `InvalidConfigError`                |
-| `src/core/adapters/qdrant/client.ts`              | Throw `QdrantUnavailableError` / `QdrantOperationError`          |
-| `src/core/domains/ingest/reindexing.ts`           | Use `NotIndexedError`, `SnapshotMissingError`                    |
-| `src/core/domains/ingest/indexing.ts`             | Use `CollectionExistsError`                                      |
-| `src/core/domains/explore/strategies/types.ts`    | Remove old `HybridNotEnabledError`, use new one                  |
-| `src/core/api/internal/facades/explore-facade.ts` | Remove old `CollectionNotFoundError`, use new one                |
-| `src/core/infra/collection-name.ts`               | Remove old `CollectionRefError`, use new one from infra/errors   |
-| `website/docs/operations/troubleshooting.md`      | Rename + add error codes reference                               |
+| File                                                         | Change                                                                    |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `src/index.ts`                                               | Remove `checkOllamaAvailability()` call                                   |
+| `src/bootstrap/ollama.ts`                                    | Delete file                                                               |
+| `src/mcp/tools/code.ts`                                      | Remove try/catch, middleware handles errors                               |
+| `src/mcp/tools/explore.ts`                                   | Same                                                                      |
+| `src/mcp/tools/collection.ts`                                | Same                                                                      |
+| `src/mcp/tools/document.ts`                                  | Same                                                                      |
+| `src/core/adapters/embeddings/ollama.ts`                     | Catch raw errors → `OllamaUnavailableError` / `OllamaModelMissingError`   |
+| `src/core/adapters/embeddings/onnx.ts`                       | Catch raw errors → `OnnxModelLoadError` / `OnnxInferenceError`            |
+| `src/core/adapters/embeddings/onnx/daemon.ts`                | Catch raw errors → typed errors                                           |
+| `src/core/adapters/embeddings/onnx/worker.ts`                | Catch raw errors → typed errors                                           |
+| `src/core/adapters/embeddings/openai.ts`                     | Catch raw errors → `OpenAIRateLimitError` / `OpenAIAuthError`             |
+| `src/core/adapters/embeddings/cohere.ts`                     | Catch raw errors → `CohereRateLimitError`                                 |
+| `src/core/adapters/embeddings/voyage.ts`                     | Catch raw errors → `VoyageRateLimitError`                                 |
+| `src/core/adapters/embeddings/factory.ts`                    | Throw `ConfigValueMissingError` / `ConfigValueInvalidError`               |
+| `src/core/adapters/qdrant/client.ts`                         | Catch raw errors → `QdrantUnavailableError` / `QdrantOperationError`      |
+| `src/core/adapters/qdrant/embedded/daemon.ts`                | Catch raw errors → typed errors                                           |
+| `src/core/adapters/qdrant/embedded/download.ts`              | Catch raw errors → typed errors                                           |
+| `src/core/adapters/qdrant/scroll.ts`                         | Catch raw errors → typed errors                                           |
+| `src/core/adapters/qdrant/sparse.ts`                         | Catch raw errors → typed errors                                           |
+| `src/core/adapters/qdrant/accumulator.ts`                    | Catch raw errors → typed errors                                           |
+| `src/core/adapters/qdrant/schema-migration.ts`               | Catch raw errors → typed errors                                           |
+| `src/core/adapters/git/client.ts`                            | Catch raw errors → `GitCliNotFoundError` / `GitCliTimeoutError`           |
+| `src/core/domains/ingest/indexing.ts`                        | Use `CollectionExistsError`                                               |
+| `src/core/domains/ingest/reindexing.ts`                      | Use `NotIndexedError`, `SnapshotMissingError`                             |
+| `src/core/domains/ingest/pipeline/base.ts`                   | Typed errors for pipeline failures                                        |
+| `src/core/domains/ingest/pipeline/chunk-pipeline.ts`         | Typed errors                                                              |
+| `src/core/domains/ingest/pipeline/file-processor.ts`         | Typed errors                                                              |
+| `src/core/domains/ingest/pipeline/pipeline-manager.ts`       | Typed errors                                                              |
+| `src/core/domains/ingest/pipeline/status-module.ts`          | Typed errors                                                              |
+| `src/core/domains/ingest/pipeline/chunker/infra/pool.ts`     | Typed errors                                                              |
+| `src/core/domains/ingest/pipeline/enrichment/coordinator.ts` | Typed errors                                                              |
+| `src/core/domains/ingest/sync/parallel-synchronizer.ts`      | Typed errors                                                              |
+| `src/core/domains/ingest/sync/synchronizer.ts`               | Typed errors                                                              |
+| `src/core/domains/ingest/sync/deletion-strategy.ts`          | Typed errors                                                              |
+| `src/core/domains/ingest/sync/sharded-snapshot.ts`           | Typed errors                                                              |
+| `src/core/domains/ingest/sync/migration.ts`                  | Typed errors                                                              |
+| `src/core/domains/explore/strategies/types.ts`               | Remove old `HybridNotEnabledError`, use new one                           |
+| `src/core/api/internal/facades/explore-facade.ts`            | Remove old errors, add `CollectionNotProvidedError` validation            |
+| `src/core/infra/collection-name.ts`                          | Remove `CollectionRefError`, remove validation from `resolveCollection()` |
+| `website/docs/operations/troubleshooting.md`                 | Rename + add error codes reference by domain                              |
+| `plugin/rules/search-cascade.md`                             | Update error handling: agent proposes fix, executes after confirmation    |
