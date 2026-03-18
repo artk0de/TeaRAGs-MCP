@@ -35,15 +35,5 @@ export interface ExploreStrategy {
   execute: (ctx: ExploreContext) => Promise<ExploreResult[]>;
 }
 
-/**
- * Error thrown when hybrid search is attempted on a collection
- * that does not have hybrid search enabled.
- */
-export class HybridNotEnabledError extends Error {
-  constructor(collectionName: string) {
-    super(
-      `Collection "${collectionName}" does not have hybrid search enabled. Create a new collection with enableHybrid set to true.`,
-    );
-    this.name = "HybridNotEnabledError";
-  }
-}
+// Re-export typed error for backward compatibility
+export { HybridNotEnabledError } from "../errors.js";

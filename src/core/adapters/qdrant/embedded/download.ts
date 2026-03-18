@@ -4,6 +4,8 @@ import { get } from "node:https";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { QdrantOperationError } from "../errors.js";
+
 export const QDRANT_VERSION = "1.17.0";
 
 /* v8 ignore next 3 -- fallback for backward compat when DI paths not provided */
@@ -115,14 +117,14 @@ async function downloadFile(url: string, dest: string): Promise<void> {
         if (res.statusCode === 301 || res.statusCode === 302) {
           const { location } = res.headers;
           if (!location) {
-            reject(new Error("Redirect without location"));
+            reject(new QdrantOperationError("download", "Redirect without location"));
             return;
           }
           request(location);
           return;
         }
         if (res.statusCode !== 200) {
-          reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          reject(new QdrantOperationError("download", `HTTP ${res.statusCode}`));
           return;
         }
         res.pipe(file);

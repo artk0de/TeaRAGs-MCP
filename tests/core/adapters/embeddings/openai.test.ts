@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OpenAIEmbeddings } from "../../../../src/core/adapters/embeddings/openai.js";
+import { OpenAIAuthError, OpenAIRateLimitError } from "../../../../src/core/adapters/embeddings/openai/errors.js";
 
 const mockOpenAI = {
   embeddings: {
@@ -336,7 +337,7 @@ describe("OpenAIEmbeddings", () => {
       promise.catch(() => {}); // prevent unhandled rejection detection
       await vi.advanceTimersByTimeAsync(10_000);
 
-      await expect(promise).rejects.toThrow("OpenAI API rate limit exceeded after 2 retry attempts");
+      await expect(promise).rejects.toThrow(OpenAIRateLimitError);
 
       // Should try initial + 2 retries = 3 total attempts
       expect(mockOpenAI.embeddings.create).toHaveBeenCalledTimes(3);
@@ -357,6 +358,20 @@ describe("OpenAIEmbeddings", () => {
 
       expect(results).toHaveLength(2);
       expect(mockOpenAI.embeddings.create).toHaveBeenCalledTimes(2);
+    });
+
+    it("should throw OpenAIAuthError on 401 status", async () => {
+      mockOpenAI.embeddings.create.mockRejectedValue({ status: 401, message: "Unauthorized" });
+
+      await expect(embeddings.embed("test text")).rejects.toThrow(OpenAIAuthError);
+      expect(mockOpenAI.embeddings.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("should throw OpenAIAuthError on 403 status", async () => {
+      mockOpenAI.embeddings.create.mockRejectedValue({ status: 403, message: "Forbidden" });
+
+      await expect(embeddings.embed("test text")).rejects.toThrow(OpenAIAuthError);
+      expect(mockOpenAI.embeddings.create).toHaveBeenCalledTimes(1);
     });
 
     it("should not retry on non-rate-limit errors", async () => {

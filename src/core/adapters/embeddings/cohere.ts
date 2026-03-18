@@ -2,6 +2,7 @@ import Bottleneck from "bottleneck";
 import { CohereClient } from "cohere-ai";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import { CohereRateLimitError } from "./cohere/errors.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface CohereError {
@@ -68,8 +69,10 @@ export class CohereEmbeddings implements EmbeddingProvider {
       }
 
       if (isRateLimitError) {
-        throw new Error(
-          `Cohere API rate limit exceeded after ${this.retryAttempts} retry attempts. Please try again later or reduce request frequency.`,
+        throw new CohereRateLimitError(
+          new Error(
+            `Cohere API rate limit exceeded after ${this.retryAttempts} retry attempts. Please try again later or reduce request frequency.`,
+          ),
         );
       }
 

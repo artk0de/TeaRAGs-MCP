@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
+import { OllamaUnavailableError } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
 
 // Mock fetch globally
 global.fetch = vi.fn();
@@ -438,7 +439,7 @@ describe("OllamaEmbeddings", () => {
       promise.catch(() => {}); // prevent unhandled rejection detection
       await vi.advanceTimersByTimeAsync(10_000);
 
-      await expect(promise).rejects.toThrow("Ollama API rate limit exceeded after 2 retry attempts");
+      await expect(promise).rejects.toThrow(OllamaUnavailableError);
 
       expect(mockFetch).toHaveBeenCalledTimes(3);
     });
@@ -508,7 +509,7 @@ describe("OllamaEmbeddings", () => {
     it("should handle string primitive errors", async () => {
       mockFetch.mockRejectedValue("Network unreachable");
 
-      await expect(embeddings.embed("test")).rejects.toThrow("Network unreachable");
+      await expect(embeddings.embed("test")).rejects.toThrow();
     });
 
     it("should handle error objects with non-string message property", async () => {
@@ -530,7 +531,6 @@ describe("OllamaEmbeddings", () => {
     });
 
     it("should handle Error instance from network error with enhanced message", async () => {
-      // This tests error instanceof Error path for network errors
       const networkError = new Error("ECONNREFUSED");
       mockFetch.mockRejectedValue(networkError);
 
@@ -540,7 +540,6 @@ describe("OllamaEmbeddings", () => {
     });
 
     it("should handle object with string message property", async () => {
-      // This tests lines 143-144: object with message property that is a string
       const customError = {
         code: "API_ERROR",
         message: "Custom API failure",

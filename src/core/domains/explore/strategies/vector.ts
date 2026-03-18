@@ -5,6 +5,7 @@
  * Extracted from MCP search.ts semantic_search handler.
  */
 
+import { InvalidQueryError } from "../errors.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
@@ -13,7 +14,7 @@ export class VectorSearchStrategy extends BaseExploreStrategy {
 
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     if (!ctx.embedding) {
-      throw new Error("VectorSearchStrategy requires an embedding in the context.");
+      throw new InvalidQueryError("VectorSearchStrategy requires an embedding in the context");
     }
     if (ctx.level === "file") {
       return this.qdrant.queryGroups(ctx.collectionName, ctx.embedding, {

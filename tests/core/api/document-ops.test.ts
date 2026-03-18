@@ -57,7 +57,7 @@ describe("DocumentOps", () => {
       qdrant = createMockQdrant({ collectionExists: vi.fn().mockResolvedValue(false) });
       ops = new DocumentOps(qdrant, embeddings);
 
-      await expect(ops.add(request)).rejects.toThrow('Collection "test" does not exist');
+      await expect(ops.add(request)).rejects.toThrow('Collection "test" not found');
     });
 
     it("embeds all document texts", async () => {

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
 import { parseLine, serialize, type DaemonRequest, type DaemonResponse } from "./onnx/daemon-types.js";
+import { OnnxInferenceError, OnnxModelLoadError } from "./onnx/errors.js";
 import { LineSplitter } from "./onnx/line-splitter.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
@@ -137,7 +138,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
       await new Promise((r) => setTimeout(r, pollMs));
     }
 
-    throw new Error(`Timed out waiting for ONNX daemon to start (socket: ${this.socketPath})`);
+    throw new OnnxModelLoadError(this.socketPath, new Error(`Timed out waiting for ONNX daemon to start`));
   }
 
   private async connectToDaemon(): Promise<void> {
@@ -149,7 +150,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
       /* v8 ignore start */
       const timeout = setTimeout(() => {
         socket.destroy();
-        reject(new Error(`Timeout connecting to ONNX daemon at ${this.socketPath}`));
+        reject(new OnnxModelLoadError(this.socketPath, new Error("Timeout connecting to ONNX daemon")));
       }, 10_000);
       /* v8 ignore stop */
 
@@ -157,7 +158,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
         clearTimeout(timeout);
         if (!handshakeDone) {
           handshakeDone = true;
-          reject(new Error(`Cannot connect to ONNX daemon at ${this.socketPath}: ${err.message}`));
+          reject(new OnnxModelLoadError(this.socketPath, err));
         } else {
           /* v8 ignore start */
           this.cleanup();
@@ -246,7 +247,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
         // Daemon-level error (not tied to a specific request id)
         // Could be a general error — reject oldest pending or log
         // For now, reject all pending since we don't have request id
-        this.rejectAllPending(new Error(msg.message));
+        this.rejectAllPending(new OnnxInferenceError(msg.message));
         break;
       }
 

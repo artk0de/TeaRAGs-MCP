@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { VoyageEmbeddings } from "../../../../src/core/adapters/embeddings/voyage.js";
+import { VoyageRateLimitError } from "../../../../src/core/adapters/embeddings/voyage/errors.js";
 
 // Mock fetch globally
 global.fetch = vi.fn();
@@ -451,7 +452,7 @@ describe("VoyageEmbeddings", () => {
       promise.catch(() => {}); // prevent unhandled rejection detection
       await vi.advanceTimersByTimeAsync(10_000);
 
-      await expect(promise).rejects.toThrow("Voyage AI API rate limit exceeded after 2 retry attempts");
+      await expect(promise).rejects.toThrow(VoyageRateLimitError);
 
       expect(mockFetch).toHaveBeenCalledTimes(3);
     });

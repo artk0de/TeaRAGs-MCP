@@ -50,3 +50,26 @@ export class SnapshotMissingError extends IngestError {
     });
   }
 }
+
+/** Snapshot data is corrupted (checksum mismatch, unparseable meta). */
+export class SnapshotCorruptedError extends IngestError {
+  constructor(detail: string, cause?: Error) {
+    super({
+      code: "INGEST_SNAPSHOT_CORRUPTED",
+      message: `Snapshot corrupted: ${detail}`,
+      hint: "Delete the snapshot and re-index the codebase with forceReindex=true",
+      cause,
+    });
+  }
+}
+
+/** Snapshot migration from old format failed. */
+export class MigrationFailedError extends IngestError {
+  constructor(reason: string) {
+    super({
+      code: "INGEST_MIGRATION_FAILED",
+      message: `Snapshot migration failed: ${reason}`,
+      hint: "Delete the old snapshot file and re-index with forceReindex=true",
+    });
+  }
+}

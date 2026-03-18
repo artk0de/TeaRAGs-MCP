@@ -7,6 +7,7 @@
 
 import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
 import type { RerankableResult } from "../../../contracts/types/reranker.js";
+import { InvalidQueryError } from "../errors.js";
 import { RankModule, type RankOptions } from "../rank-module.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
@@ -37,7 +38,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     if (!weights && ctx.rerank) {
       if (typeof ctx.rerank === "string") {
         const preset = this.reranker.getPreset(ctx.rerank, "rank_chunks");
-        if (!preset) throw new Error(`Unknown preset "${ctx.rerank}" for rank_chunks.`);
+        if (!preset) throw new InvalidQueryError(`Unknown preset "${ctx.rerank}" for rank_chunks`);
         weights = Object.fromEntries(
           Object.entries(preset).filter((e): e is [string, number] => typeof e[1] === "number"),
         );
@@ -61,7 +62,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
     const { weights } = ctx;
     if (!weights || Object.keys(weights).length === 0) {
-      throw new Error("ScrollRankStrategy requires weights in the context.");
+      throw new InvalidQueryError("ScrollRankStrategy requires weights in the context");
     }
 
     const scrollFn = async (

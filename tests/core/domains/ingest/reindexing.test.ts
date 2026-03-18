@@ -363,7 +363,7 @@ console.log('This file has secrets');`,
       // Spy on initialize to return false (no snapshot found)
       const initializeSpy = vi.spyOn(ParallelFileSynchronizer.prototype, "initialize").mockResolvedValueOnce(false);
 
-      await expect(ingest.reindexChanges(codebaseDir)).rejects.toThrow("No previous snapshot found");
+      await expect(ingest.reindexChanges(codebaseDir)).rejects.toThrow("Snapshot not found");
 
       initializeSpy.mockRestore();
     });

@@ -20,6 +20,10 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import {
+  CollectionNotFoundError as DomainCollectionNotFoundError,
+  InvalidQueryError,
+} from "../../../domains/explore/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import {
   createExploreStrategy,
@@ -27,6 +31,7 @@ import {
   type ExploreContext,
 } from "../../../domains/explore/strategies/index.js";
 import { SimilarSearchStrategy } from "../../../domains/explore/strategies/similar.js";
+import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
@@ -42,17 +47,6 @@ import type {
   SemanticSearchRequest,
   SignalMetrics,
 } from "../../public/dto/index.js";
-
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-class CollectionNotFoundError extends Error {
-  constructor(collectionName: string, path?: string) {
-    super(`Collection "${collectionName}" does not exist.${path ? ` Codebase at "${path}" may not be indexed.` : ""}`);
-    this.name = "CollectionNotFoundError";
-  }
-}
 
 // ---------------------------------------------------------------------------
 // ExploreFacadeDeps
@@ -241,11 +235,11 @@ export class ExploreFacade {
     // Validate: strategy-specific constraints
     const strategy = request.strategy ?? "best_score";
     if (strategy !== "best_score" && !hasPositive) {
-      throw new Error(`Strategy '${strategy}' requires at least one positive input`);
+      throw new InvalidQueryError(`Strategy '${strategy}' requires at least one positive input`);
     }
     // best_score allows negative-only, but must have at least something
     if (!hasPositive && !hasNegative) {
-      throw new Error("At least one positive or negative input is required");
+      throw new InvalidQueryError("At least one positive or negative input is required");
     }
 
     if (!request.collection && !request.path) throw new CollectionNotProvidedError();
@@ -295,14 +289,14 @@ export class ExploreFacade {
     const collectionName = resolveCollectionName(absolutePath);
 
     if (!(await this.qdrant.collectionExists(collectionName))) {
-      throw new Error("Collection not found. Index the codebase first.");
+      throw new DomainCollectionNotFoundError(collectionName);
     }
 
     await this.ensureStats(collectionName);
 
     const stats = this.statsCache?.load(collectionName);
     if (!stats) {
-      throw new Error("No statistics available. Re-index the codebase.");
+      throw new NotIndexedError(path);
     }
 
     const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
@@ -366,10 +360,10 @@ export class ExploreFacade {
     };
   }
 
-  private async validateCollectionExists(collectionName: string, path?: string): Promise<void> {
+  private async validateCollectionExists(collectionName: string, _path?: string): Promise<void> {
     const exists = await this.qdrant.collectionExists(collectionName);
     if (!exists) {
-      throw new CollectionNotFoundError(collectionName, path);
+      throw new DomainCollectionNotFoundError(collectionName);
     }
   }
 
@@ -411,4 +405,4 @@ function resolveEffectiveLevel(
   return undefined;
 }
 
-export { CollectionNotFoundError };
+export { DomainCollectionNotFoundError as CollectionNotFoundError };

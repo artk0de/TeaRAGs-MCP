@@ -12,6 +12,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
+import { MigrationFailedError } from "../errors.js";
 import { ShardedSnapshotManager, type FileMetadata } from "./sharded-snapshot.js";
 
 /**
@@ -166,7 +167,7 @@ export class SnapshotMigrator {
     if (await this.needsMigration()) {
       const result = await this.migrate();
       if (!result.success) {
-        throw new Error(`Migration failed: ${result.error}`);
+        throw new MigrationFailedError(result.error ?? "unknown error");
       }
     }
   }

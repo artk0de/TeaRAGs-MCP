@@ -2,6 +2,7 @@ import Bottleneck from "bottleneck";
 import OpenAI from "openai";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
+import { OpenAIAuthError, OpenAIRateLimitError } from "./openai/errors.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface OpenAIError {
@@ -87,9 +88,12 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
 
       // If not a rate limit error or max retries exceeded, throw
       if (isRateLimitError) {
-        throw new Error(
-          `OpenAI API rate limit exceeded after ${this.retryAttempts} retry attempts. Please try again later or reduce request frequency.`,
-        );
+        throw new OpenAIRateLimitError(error instanceof Error ? error : undefined);
+      }
+
+      // Check for auth errors (401/403)
+      if (apiError?.status === 401 || apiError?.status === 403) {
+        throw new OpenAIAuthError(error instanceof Error ? error : undefined);
       }
 
       throw error;
