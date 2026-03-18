@@ -300,9 +300,19 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...collectionPathFields(),
     ...levelField(),
     positiveIds: z.array(z.string()).optional().describe("Chunk IDs from previous search results to find similar code"),
-    positiveCode: z.array(z.string()).optional().describe("Raw code blocks to find similar code (embedded on-the-fly)"),
+    positiveCode: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Code snippets to find similar code for. Paste any code block (function, class, pattern) " +
+          "and the tool will find semantically similar code across the codebase. " +
+          "Each string is one code example. Embedded on-the-fly.",
+      ),
     negativeIds: z.array(z.string()).optional().describe("Chunk IDs to push results away from"),
-    negativeCode: z.array(z.string()).optional().describe("Raw code blocks to push results away from"),
+    negativeCode: z
+      .array(z.string())
+      .optional()
+      .describe("Code snippets to push results away from — exclude patterns you don't want in results"),
     strategy: z
       .enum(["best_score", "average_vector", "sum_scores"])
       .optional()

@@ -130,7 +130,7 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
     registry.register(mockTrajectory({ key: "git", derivedSignals: [mockDerived("recency")] }));
     expect(() => {
       registry.register(mockTrajectory({ key: "graph", derivedSignals: [mockDerived("recency")] }));
-    }).toThrow(/Derived signal name conflict: "recency"/);
+    }).toThrow(/Invalid value "recency" for configuration field "derivedSignal.name"/);
   });
 
   it("allows overriding same key without conflict", () => {

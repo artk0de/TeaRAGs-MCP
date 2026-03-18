@@ -17,6 +17,7 @@ export class ChunkSizeSignal implements DerivedSignalDescriptor {
   readonly sources = ["methodLines"];
   readonly defaultBound = 500;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
+    if (rawSignals.chunkType !== "function") return 0;
     const methodLines = (rawSignals.methodLines as number) || 0;
     if (methodLines <= 0) return 0;
     const bound = ctx?.bounds?.["methodLines"] ?? this.defaultBound;

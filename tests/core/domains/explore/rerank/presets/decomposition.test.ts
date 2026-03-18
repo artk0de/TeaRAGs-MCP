@@ -40,8 +40,8 @@ describe("Decomposition reranking produces scores in 0-1", () => {
 
   it("scores large dense methods higher than small sparse ones", () => {
     const results = [
-      { score: 0.8, payload: { methodLines: 200, methodDensity: 80 } },
-      { score: 0.9, payload: { methodLines: 10, methodDensity: 30 } },
+      { score: 0.8, payload: { chunkType: "function", methodLines: 200, methodDensity: 80 } },
+      { score: 0.9, payload: { chunkType: "function", methodLines: 10, methodDensity: 30 } },
     ];
 
     const ranked = reranker.rerank(results, "decomposition", "semantic_search");
@@ -57,8 +57,14 @@ describe("Decomposition reranking produces scores in 0-1", () => {
 
   it("split sub-chunks with same methodLines/methodDensity score equally on size/density", () => {
     const results = [
-      { score: 0.8, payload: { methodLines: 100, methodDensity: 60, startLine: 10, endLine: 50 } },
-      { score: 0.8, payload: { methodLines: 100, methodDensity: 60, startLine: 51, endLine: 110 } },
+      {
+        score: 0.8,
+        payload: { chunkType: "function", methodLines: 100, methodDensity: 60, startLine: 10, endLine: 50 },
+      },
+      {
+        score: 0.8,
+        payload: { chunkType: "function", methodLines: 100, methodDensity: 60, startLine: 51, endLine: 110 },
+      },
     ];
 
     const ranked = reranker.rerank(results, "decomposition", "semantic_search");
@@ -68,7 +74,7 @@ describe("Decomposition reranking produces scores in 0-1", () => {
   });
 
   it("ranking overlay includes file.methodLines raw value", () => {
-    const results = [{ score: 0.8, payload: { methodLines: 100, methodDensity: 60 } }];
+    const results = [{ score: 0.8, payload: { chunkType: "function", methodLines: 100, methodDensity: 60 } }];
 
     const ranked = reranker.rerank(results, "decomposition", "semantic_search");
     const overlay = ranked[0].rankingOverlay;

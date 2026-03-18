@@ -43,17 +43,17 @@ describe("structuralSignals", () => {
     it("normalizes methodLines against 500", () => {
       const d = structuralSignals.find((s) => s.name === "chunkSize")!;
       // 100 lines / 500 = 0.2
-      expect(d.extract({ methodLines: 100 })).toBeCloseTo(0.2, 2);
+      expect(d.extract({ chunkType: "function", methodLines: 100 })).toBeCloseTo(0.2, 2);
     });
 
     it("returns 0 when methodLines is missing", () => {
       const d = structuralSignals.find((s) => s.name === "chunkSize")!;
-      expect(d.extract({})).toBe(0);
+      expect(d.extract({ chunkType: "function" })).toBe(0);
     });
 
     it("clamps at 1.0 when methodLines exceeds bound", () => {
       const d = structuralSignals.find((s) => s.name === "chunkSize")!;
-      expect(d.extract({ methodLines: 1000 })).toBe(1);
+      expect(d.extract({ chunkType: "function", methodLines: 1000 })).toBe(1);
     });
   });
 

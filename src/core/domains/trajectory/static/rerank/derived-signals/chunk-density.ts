@@ -23,6 +23,7 @@ export class ChunkDensitySignal implements DerivedSignalDescriptor {
   private readonly sizeFloor = 20;
 
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
+    if (rawSignals.chunkType !== "function") return 0;
     const methodLines = (rawSignals.methodLines as number) || 0;
     if (methodLines <= 0) return 0; // density meaningless without a method/function
 
