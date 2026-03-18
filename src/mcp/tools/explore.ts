@@ -6,7 +6,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { App, SchemaBuilder } from "../../core/api/index.js";
 import type { ExploreResponse } from "../../core/api/public/dto/explore.js";
-import { formatMcpError, sanitizeRerank, type McpToolResult } from "../format.js";
+import { sanitizeRerank, type McpToolResult } from "../format.js";
+import { registerToolSafe } from "../middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
 import { createSearchSchemas } from "./schemas.js";
 
@@ -29,7 +30,8 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);
 
   // semantic_search
-  server.registerTool(
+  registerToolSafe(
+    server,
     "semantic_search",
     {
       title: "Semantic Search",
@@ -43,20 +45,17 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
       annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
-      try {
-        const response = await app.semanticSearch({
-          ...rest,
-          rerank: sanitizeRerank(rerank as RerankParam),
-        });
-        return formatStructuredResult(response);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
-      }
+      const response = await app.semanticSearch({
+        ...rest,
+        rerank: sanitizeRerank(rerank as RerankParam),
+      });
+      return formatStructuredResult(response);
     },
   );
 
   // hybrid_search
-  server.registerTool(
+  registerToolSafe(
+    server,
     "hybrid_search",
     {
       title: "Hybrid Search",
@@ -70,20 +69,17 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
       annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
-      try {
-        const response = await app.hybridSearch({
-          ...rest,
-          rerank: sanitizeRerank(rerank as RerankParam),
-        });
-        return formatStructuredResult(response);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
-      }
+      const response = await app.hybridSearch({
+        ...rest,
+        rerank: sanitizeRerank(rerank as RerankParam),
+      });
+      return formatStructuredResult(response);
     },
   );
 
   // rank_chunks
-  server.registerTool(
+  registerToolSafe(
+    server,
     "rank_chunks",
     {
       title: "Rank Chunks",
@@ -97,41 +93,37 @@ export function registerSearchTools(server: McpServer, deps: { app: App; schemaB
       annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
-      try {
-        const response = await app.rankChunks({
-          ...rest,
-          rerank: sanitizeRerank(rerank as RerankParam) as string | { custom: Record<string, number> },
-        });
-        return formatStructuredResult(response);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
-      }
+      const response = await app.rankChunks({
+        ...rest,
+        rerank: sanitizeRerank(rerank as RerankParam) as string | { custom: Record<string, number> },
+      });
+      return formatStructuredResult(response);
     },
   );
 
   // find_similar
-  server.registerTool(
+  registerToolSafe(
+    server,
     "find_similar",
     {
       title: "Find Similar",
       description:
-        "Find code similar to given chunks or code blocks. Provide chunk IDs and/or raw code as " +
-        "positive (more like this) or negative (less like this) examples.\n\n" +
+        "Find code similar to a given code snippet or previously found chunks. " +
+        "Primary use case: paste a code block into positiveCode to discover similar patterns, " +
+        "duplicates, or related implementations across the indexed codebase. " +
+        "Also accepts chunk IDs from previous search results. " +
+        "Supports negative examples to exclude unwanted patterns.\n\n" +
         "For parameter docs see tea-rags://schema/overview",
       inputSchema: searchSchemas.FindSimilarSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
     },
     async ({ rerank, ...rest }) => {
-      try {
-        const response = await app.findSimilar({
-          ...rest,
-          rerank: sanitizeRerank(rerank as RerankParam),
-        });
-        return formatStructuredResult(response);
-      } catch (error) {
-        return formatMcpError(error instanceof Error ? error.message : String(error));
-      }
+      const response = await app.findSimilar({
+        ...rest,
+        rerank: sanitizeRerank(rerank as RerankParam),
+      });
+      return formatStructuredResult(response);
     },
   );
 }
