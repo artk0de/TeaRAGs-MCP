@@ -12,8 +12,11 @@ across the codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 ## MANDATORY RULES
 
 1. **Execute YOURSELF** — no subagents.
-2. **No built-in Search/Grep for code discovery** — only TeaRAGs tools + ripgrep
-   MCP as fallback.
+2. **CRITICAL: search-cascade is the ONLY tool selection method.** Built-in
+   Search, Grep, Glob, `grep`, `rg`, `find` are PROHIBITED for code discovery.
+   If you catch yourself reaching for grep/search — STOP and use the
+   search-cascade decision tree instead. The ONLY acceptable fallback is ripgrep
+   MCP, and only after TeaRAGs tools returned no results.
 3. **Follow search-cascade decision tree** for SEED tool selection.
 4. **Always SEED then EXPAND** — never skip `find_similar` expansion.
 5. **Deduplicate by content overlap** — skip chunks with >80% content overlap
