@@ -35,7 +35,8 @@ all, every, each, find all, list all, show all, show me all,
 enumerate, gather, collect, inventory, catalog,
 all implementations, all uses, all instances, all occurrences,
 all places where, everywhere, wherever, anywhere,
-how many ways, how many places, what are the ways
+how many ways, how many places, what are the ways,
+what are, where are, list, show me
 ```
 
 **Spread** — compare across modules:
@@ -44,7 +45,9 @@ how many ways, how many places, what are the ways
 across, across modules, across domains, between modules,
 different approaches, different ways, how different modules,
 compare implementations, compare approaches, variations of,
-side by side, contrast, divergence, inconsistency between
+side by side, contrast, divergence, inconsistency between,
+differently, each module, per module,
+how does each, how do different
 ```
 
 **Antipattern** — find problematic code:
@@ -55,7 +58,14 @@ smell, code smell, problematic, ugly, messy, hacky, hack,
 debt, tech debt, violation, violates, inconsistent,
 deprecated usage, misuse, misused, abuse, abused,
 should not, shouldn't, not supposed to, dangerous,
-fragile, brittle, risky, suspicious, questionable
+fragile, brittle, risky, suspicious, questionable,
+refactor, refactoring, needs refactoring, what to refactor,
+cleanup, clean up, simplify, improve,
+too complex, too large, too long, overloaded, bloated,
+god class, god method, monolith, spaghetti, tangled, coupled, coupling,
+duplicate, duplication, duplicated, copy-paste, copied,
+unmaintainable, unreadable, confusing,
+decompose, extract, split, break up, break apart
 ```
 
 **Reference** — find best example:
@@ -65,7 +75,8 @@ best, correct, proper, canonical, exemplary, ideal,
 reference implementation, gold standard, cleanest,
 most readable, well-written, stable example,
 model, template, blueprint, pattern to follow,
-how should, how to properly, right way to, recommended way
+how should, how to properly, right way to, recommended way,
+good example, show me a good, well-designed
 ```
 
 **No match** → continue to explore flow (Step 1).
