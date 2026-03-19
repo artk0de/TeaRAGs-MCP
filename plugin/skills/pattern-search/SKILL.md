@@ -1,18 +1,13 @@
 ---
-name: pattern-search
-description:
-  Use when developer asks to find all implementations of a pattern, collect
-  examples across modules, find antipatterns, or locate the best reference
-  implementation — "find all X", "how is X done across modules", "antipatterns
-  in X", "best example of X"
-argument-hint:
-  [pattern to find — e.g. "retry logic", "error handling in adapters"]
+user-invocable: false
 ---
 
 # Pattern Search
 
-Find all implementations of a pattern across the codebase. SEED → EXPAND →
-DEDUPLICATE → GROUP.
+Internal strategy for explore skill. Find all implementations of a pattern
+across the codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
+
+**Invoked by explore when intent matches pattern-search triggers.**
 
 ## MANDATORY RULES
 
@@ -24,61 +19,43 @@ DEDUPLICATE → GROUP.
    from same domain/directory.
 5. **Group output by module/directory** — not flat list.
 
-## Strategy Selection
+## Intent Classification
 
-Classify $ARGUMENTS into exactly one strategy:
+Explore has already classified the intent and extracted scope before delegating
+here. Two values are passed:
 
-| Strategy        | Trigger keywords                                              | Seed tool                  | Seed rerank | Expand                                |
-| --------------- | ------------------------------------------------------------- | -------------------------- | ----------- | ------------------------------------- |
-| **Collect**     | "all", "every", "find all", "все", "каждый"                   | `semantic_search` limit=10 | `relevance` | `find_similar` from each unique seed  |
-| **Spread**      | "across", "different modules", "в разных", "compare"          | `search_code` limit=5      | `relevance` | `find_similar` from best seed         |
-| **Antipattern** | "antipattern", "bad", "wrong", "не так", "плохой"             | `hybrid_search` limit=10   | `techDebt`  | `find_similar` from problematic seeds |
-| **Reference**   | "best", "correct", "proper", "правильно", "лучший", "example" | `semantic_search` limit=5  | `stable`    | `find_similar` from best seed         |
+- **strategy**: collect | spread | antipattern | reference
+- **pathPattern**: glob string or none
 
-**Default:** Collect (if no keywords match).
+## Strategy → Tool Mapping
 
-## Scope Narrowing
-
-Extract `pathPattern` from $ARGUMENTS if a module, directory, or domain is
-mentioned:
-
-- "retry in ingest" → `pathPattern="**/ingest/**"`
-- "error handling in adapters" → `pathPattern="**/adapters/**"`
-- "signals across trajectories" → `pathPattern="**/trajectory/**"`
-- No scope mentioned → no pathPattern (search whole codebase)
-
-Pass `pathPattern` to ALL tool calls (seed + expand).
+| Strategy        | Seed tool                  | Seed rerank | Expand                                |
+| --------------- | -------------------------- | ----------- | ------------------------------------- |
+| **Collect**     | `semantic_search` limit=10 | `relevance` | `find_similar` from each unique seed  |
+| **Spread**      | `search_code` limit=5      | `relevance` | `find_similar` from best seed         |
+| **Antipattern** | `hybrid_search` limit=10   | `techDebt`  | `find_similar` from problematic seeds |
+| **Reference**   | `semantic_search` limit=5  | `stable`    | `find_similar` from best seed         |
 
 ## Flow
 
 ```
-1. CLASSIFY — pick strategy from $ARGUMENTS
-2. SCOPE — extract pathPattern if domain/module mentioned
-3. SEED — run strategy-specific search
-4. EXPAND — find_similar from seed results
-5. DEDUPLICATE — remove >80% content overlap within same directory
-6. GROUP — organize by module/directory
-7. OUTPUT — grouped list with citations + overlay labels
+1. SEED — strategy-specific search with rerank + pathPattern
+2. EXPAND — find_similar from seed results (skip already-seen chunks)
+3. DEDUPLICATE — skip chunks with >80% content overlap from same domain
+4. GROUP — by module/directory
+5. OUTPUT — grouped list with file:line citations + overlay labels
 ```
 
-### 1. CLASSIFY
-
-Read $ARGUMENTS. Match trigger keywords → strategy. State chosen strategy.
-
-### 2. SCOPE
-
-Extract pathPattern. State it or "no scope restriction".
-
-### 3. SEED
+### 1. SEED
 
 Run the strategy's seed tool with its rerank preset.
 
 Parameters always include: `metaOnly=false`, strategy-specific `limit` and
-`rerank`.
+`rerank`. Add `pathPattern` if scoped.
 
 Note chunk IDs from results for expansion step.
 
-### 4. EXPAND
+### 2. EXPAND
 
 For **Collect**: `find_similar` from each unique seed chunk (up to 5 seeds). For
 **Spread/Reference**: `find_similar` from the single best seed. For
@@ -89,21 +66,21 @@ Parameters: `limit=5` per find_similar call. Include `pathPattern` if scoped.
 
 Track seen chunk paths. Skip already-seen.
 
-### 5. DEDUPLICATE
+### 3. DEDUPLICATE
 
 Compare expanded results against seeds and each other:
 
 - Same directory + >80% content overlap → keep only the one with richer signals
 - Different directories → always keep both (that's the point of pattern search)
 
-### 6. GROUP
+### 4. GROUP
 
 Group results by top-level module directory (first 2 path segments after src/).
 
-### 7. OUTPUT
+### 5. OUTPUT
 
 ```
-Pattern: [pattern name from $ARGUMENTS]
+Pattern: [pattern name]
 Strategy: [collect|spread|antipattern|reference]
 Found: [N unique implementations across M modules]
 
