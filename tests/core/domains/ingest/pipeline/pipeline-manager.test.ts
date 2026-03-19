@@ -144,13 +144,6 @@ describe("PipelineManager", () => {
       expect(upsertBatches).toHaveLength(1);
       expect(upsertBatches[0].items).toHaveLength(2);
     });
-
-    it("should accept many upserts at once", async () => {
-      const points = Array.from({ length: 5 }, (_, i) => createPoint(i + 1));
-      const accepted = pipeline.addUpsertMany(points);
-
-      expect(accepted).toBe(5);
-    });
   });
 
   describe("Delete operations", () => {
@@ -174,13 +167,6 @@ describe("PipelineManager", () => {
 
       expect(deleteBatches).toHaveLength(1);
       expect(deleteBatches[0].items).toHaveLength(2);
-    });
-
-    it("should accept many deletes at once", () => {
-      const paths = Array.from({ length: 3 }, (_, i) => `path-${i + 1}.ts`);
-      const accepted = pipeline.addDeleteMany(paths);
-
-      expect(accepted).toBe(3);
     });
   });
 

@@ -127,22 +127,6 @@ export class PipelineManager {
   }
 
   /**
-   * Add multiple points for upsert
-   * @returns number of items accepted
-   */
-  addUpsertMany(points: UpsertItem["point"][]): number {
-    let accepted = 0;
-    for (const point of points) {
-      if (this.addUpsert(point)) {
-        accepted++;
-      } else {
-        break;
-      }
-    }
-    return accepted;
-  }
-
-  /**
    * Add a path for deletion
    * @returns true if accepted, false if backpressure active
    */
@@ -158,22 +142,6 @@ export class PipelineManager {
     };
 
     return this.deleteAccumulator.add(item);
-  }
-
-  /**
-   * Add multiple paths for deletion
-   * @returns number of items accepted
-   */
-  addDeleteMany(paths: string[]): number {
-    let accepted = 0;
-    for (const path of paths) {
-      if (this.addDelete(path)) {
-        accepted++;
-      } else {
-        break;
-      }
-    }
-    return accepted;
   }
 
   /**

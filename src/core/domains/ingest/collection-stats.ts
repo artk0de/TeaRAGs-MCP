@@ -40,22 +40,21 @@ function percentile(sorted: number[], p: number): number {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (idx - lower);
 }
 
-/**
- * Compute collection-wide stats for PayloadSignalDescriptors that declare a `stats` field.
- *
- * - Filters to signals WITH `stats` request (not just numeric type)
- * - Resolves dot-notation paths against each point's payload
- * - Skips missing/non-numeric/zero-or-negative values
- * - Computes only what's declared: percentiles, mean, stddev
- * - Returns empty perSignal map for signals with no valid values
- */
-export function computeCollectionStats(
-  points: { payload: Record<string, unknown> }[],
-  signals: PayloadSignalDescriptor[],
-): CollectionSignalStats {
-  const statsSignals = signals.filter((s) => s.stats !== undefined);
-  const valueArrays = new Map<string, number[]>();
+interface ExtractedValues {
+  valueArrays: Map<string, number[]>;
+  languageCounts: Record<string, number>;
+  chunkTypeCounts: Record<string, number>;
+  docsCount: number;
+  codeCount: number;
+  distinctPaths: Set<string>;
+  authorCounts: Map<string, number>;
+}
 
+function extractSignalValues(
+  points: { payload: Record<string, unknown> }[],
+  statsSignals: PayloadSignalDescriptor[],
+): ExtractedValues {
+  const valueArrays = new Map<string, number[]>();
   for (const signal of statsSignals) {
     valueArrays.set(signal.key, []);
   }
@@ -104,6 +103,13 @@ export function computeCollectionStats(
     }
   }
 
+  return { valueArrays, languageCounts, chunkTypeCounts, docsCount, codeCount, distinctPaths, authorCounts };
+}
+
+function computePerSignalStats(
+  valueArrays: Map<string, number[]>,
+  statsSignals: PayloadSignalDescriptor[],
+): Map<string, SignalStats> {
   const perSignal = new Map<string, SignalStats>();
   for (const signal of statsSignals) {
     const values = valueArrays.get(signal.key);
@@ -143,21 +149,45 @@ export function computeCollectionStats(
 
     perSignal.set(signal.key, result);
   }
+  return perSignal;
+}
 
-  const sortedAuthors = Array.from(authorCounts.entries()).sort((a, b) => b[1] - a[1]);
+function buildDistributions(extracted: ExtractedValues): CollectionSignalStats["distributions"] {
+  const sortedAuthors = Array.from(extracted.authorCounts.entries()).sort((a, b) => b[1] - a[1]);
   const topAuthors = sortedAuthors.slice(0, 10).map(([name, chunks]) => ({ name, chunks }));
   const othersCount = sortedAuthors.slice(10).reduce((sum, [, chunks]) => sum + chunks, 0);
 
   return {
+    totalFiles: extracted.distinctPaths.size,
+    language: extracted.languageCounts,
+    chunkType: extracted.chunkTypeCounts,
+    documentation: { docs: extracted.docsCount, code: extracted.codeCount },
+    topAuthors,
+    othersCount,
+  };
+}
+
+/**
+ * Compute collection-wide stats for PayloadSignalDescriptors that declare a `stats` field.
+ *
+ * - Filters to signals WITH `stats` request (not just numeric type)
+ * - Resolves dot-notation paths against each point's payload
+ * - Skips missing/non-numeric/zero-or-negative values
+ * - Computes only what's declared: percentiles, mean, stddev
+ * - Returns empty perSignal map for signals with no valid values
+ */
+export function computeCollectionStats(
+  points: { payload: Record<string, unknown> }[],
+  signals: PayloadSignalDescriptor[],
+): CollectionSignalStats {
+  const statsSignals = signals.filter((s) => s.stats !== undefined);
+  const extracted = extractSignalValues(points, statsSignals);
+  const perSignal = computePerSignalStats(extracted.valueArrays, statsSignals);
+  const distributions = buildDistributions(extracted);
+
+  return {
     perSignal,
-    distributions: {
-      totalFiles: distinctPaths.size,
-      language: languageCounts,
-      chunkType: chunkTypeCounts,
-      documentation: { docs: docsCount, code: codeCount },
-      topAuthors,
-      othersCount,
-    },
+    distributions,
     computedAt: Date.now(),
   };
 }

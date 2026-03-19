@@ -70,6 +70,62 @@ function createProviderState(provider: EnrichmentProvider): ProviderState {
   };
 }
 
+function extractErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function filterByIgnore<T>(
+  input: Map<string, T>,
+  ignoreFilter: Ignore | null,
+  root?: string,
+): { result: Map<string, T>; filtered: number } {
+  if (!ignoreFilter) return { result: input, filtered: 0 };
+
+  let filtered = 0;
+  const result = new Map<string, T>();
+  for (const [path, value] of input) {
+    const relPath = root !== undefined ? relative(root, path) : path;
+    if (ignoreFilter.ignores(relPath)) {
+      filtered++;
+    } else {
+      result.set(path, value);
+    }
+  }
+  return { result, filtered };
+}
+
+interface AggregatedMetrics {
+  totalStreamingApplies: number;
+  totalFlushApplies: number;
+  totalChunkEnrichmentDurationMs: number;
+  maxPrefetchDurationMs: number;
+  totalFileMetadataCount: number;
+}
+
+function aggregateProviderMetrics(states: Map<string, ProviderState>): AggregatedMetrics {
+  let totalStreamingApplies = 0;
+  let totalFlushApplies = 0;
+  let totalChunkEnrichmentDurationMs = 0;
+  let maxPrefetchDurationMs = 0;
+  let totalFileMetadataCount = 0;
+
+  for (const state of states.values()) {
+    totalStreamingApplies += state.streamingApplies;
+    totalFlushApplies += state.flushApplies;
+    totalChunkEnrichmentDurationMs += state.chunkEnrichmentDurationMs;
+    maxPrefetchDurationMs = Math.max(maxPrefetchDurationMs, state.prefetchDurationMs);
+    totalFileMetadataCount += state.fileMetadataCount;
+  }
+
+  return {
+    totalStreamingApplies,
+    totalFlushApplies,
+    totalChunkEnrichmentDurationMs,
+    maxPrefetchDurationMs,
+    totalFileMetadataCount,
+  };
+}
+
 export class EnrichmentCoordinator {
   private readonly states: Map<string, ProviderState>;
   private startTime = 0;
@@ -144,25 +200,17 @@ export class EnrichmentCoordinator {
           state.fileMetadata = result;
           state.prefetchDurationMs = state.prefetchEndTime - state.prefetchStartTime;
 
-          // Filter by ignore patterns
-          if (state.ignoreFilter) {
-            let filtered = 0;
-            for (const [path] of result) {
-              if (state.ignoreFilter.ignores(path)) {
-                result.delete(path);
-                filtered++;
-              }
-            }
-            if (filtered > 0) {
-              pipelineLog.enrichmentPhase("PREFETCH_FILTERED", {
-                provider: state.provider.key,
-                filtered,
-                remainingFiles: result.size,
-              });
-            }
+          const { result: filteredResult, filtered } = filterByIgnore(result, state.ignoreFilter);
+          state.fileMetadata = filteredResult;
+          if (filtered > 0) {
+            pipelineLog.enrichmentPhase("PREFETCH_FILTERED", {
+              provider: state.provider.key,
+              filtered,
+              remainingFiles: filteredResult.size,
+            });
           }
 
-          state.fileMetadataCount = result.size;
+          state.fileMetadataCount = filteredResult.size;
 
           pipelineLog.enrichmentPhase("PREFETCH_COMPLETE", {
             provider: state.provider.key,
@@ -178,13 +226,10 @@ export class EnrichmentCoordinator {
           state.prefetchFailed = true;
           state.prefetchEndTime = Date.now();
           state.prefetchDurationMs = state.prefetchEndTime - state.prefetchStartTime;
-          console.error(
-            `[Enrichment:${state.provider.key}] Prefetch failed:`,
-            error instanceof Error ? error.message : error,
-          );
+          console.error(`[Enrichment:${state.provider.key}] Prefetch failed:`, extractErrorMessage(error));
           pipelineLog.enrichmentPhase("PREFETCH_FAILED", {
             provider: state.provider.key,
-            error: error instanceof Error ? error.message : String(error),
+            error: extractErrorMessage(error),
             durationMs: state.prefetchDurationMs,
           });
           state.pendingBatches = [];
@@ -237,25 +282,13 @@ export class EnrichmentCoordinator {
       const root = state.effectiveRoot || absolutePath;
 
       // Filter chunkMap by ignore patterns
-      let effectiveChunkMap = chunkMap;
-      if (state.ignoreFilter) {
-        effectiveChunkMap = new Map();
-        let filtered = 0;
-        for (const [filePath, entries] of chunkMap) {
-          const relPath = relative(root, filePath);
-          if (state.ignoreFilter.ignores(relPath)) {
-            filtered++;
-          } else {
-            effectiveChunkMap.set(filePath, entries);
-          }
-        }
-        if (filtered > 0) {
-          pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_FILTERED", {
-            provider: state.provider.key,
-            filtered,
-            remaining: effectiveChunkMap.size,
-          });
-        }
+      const { result: effectiveChunkMap, filtered } = filterByIgnore(chunkMap, state.ignoreFilter, root);
+      if (filtered > 0) {
+        pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_FILTERED", {
+          provider: state.provider.key,
+          filtered,
+          remaining: effectiveChunkMap.size,
+        });
       }
 
       pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_START", {
@@ -301,7 +334,7 @@ export class EnrichmentCoordinator {
           console.error(`[Enrichment:${state.provider.key}] Chunk enrichment failed:`, error);
           pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_FAILED", {
             provider: state.provider.key,
-            error: error instanceof Error ? error.message : String(error),
+            error: extractErrorMessage(error),
           });
           return false;
         });
@@ -374,32 +407,20 @@ export class EnrichmentCoordinator {
     // 4. Chunk enrichment runs in background — do NOT await here.
 
     // 5. Aggregate metrics across all providers
-    let totalStreamingApplies = 0;
-    let totalFlushApplies = 0;
-    let totalChunkEnrichmentDurationMs = 0;
-    let maxPrefetchDurationMs = 0;
-    let totalFileMetadataCount = 0;
-
-    for (const state of this.states.values()) {
-      totalStreamingApplies += state.streamingApplies;
-      totalFlushApplies += state.flushApplies;
-      totalChunkEnrichmentDurationMs += state.chunkEnrichmentDurationMs;
-      maxPrefetchDurationMs = Math.max(maxPrefetchDurationMs, state.prefetchDurationMs);
-      totalFileMetadataCount += state.fileMetadataCount;
-    }
+    const agg = aggregateProviderMetrics(this.states);
 
     const metrics: EnrichmentMetrics = {
-      prefetchDurationMs: maxPrefetchDurationMs,
+      prefetchDurationMs: agg.maxPrefetchDurationMs,
       overlapMs: 0,
       overlapRatio: 0,
-      streamingApplies: totalStreamingApplies,
-      flushApplies: totalFlushApplies,
-      chunkChurnDurationMs: totalChunkEnrichmentDurationMs,
+      streamingApplies: agg.totalStreamingApplies,
+      flushApplies: agg.totalFlushApplies,
+      chunkChurnDurationMs: agg.totalChunkEnrichmentDurationMs,
       totalDurationMs: Date.now() - (this.startTime || Date.now()),
       matchedFiles: this.applier.matchedFiles,
       missedFiles: this.applier.missedFiles,
       missedPathSamples: [...this.applier.missedPathSamples],
-      gitLogFileCount: totalFileMetadataCount,
+      gitLogFileCount: agg.totalFileMetadataCount,
       estimatedSavedMs: 0,
     };
 
@@ -420,7 +441,7 @@ export class EnrichmentCoordinator {
       durationMs: metrics.totalDurationMs,
       matchedFiles: metrics.matchedFiles,
       missedFiles: metrics.missedFiles,
-      gitLogFileCount: totalFileMetadataCount,
+      gitLogFileCount: agg.totalFileMetadataCount,
     });
 
     pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
@@ -491,7 +512,7 @@ export class EnrichmentCoordinator {
     } catch (error) {
       pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
         provider: state.provider.key,
-        error: error instanceof Error ? error.message : String(error),
+        error: extractErrorMessage(error),
       });
       return;
     }
