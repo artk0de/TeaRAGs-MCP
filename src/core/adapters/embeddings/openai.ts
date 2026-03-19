@@ -3,6 +3,7 @@ import OpenAI from "openai";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { OpenAIAuthError, OpenAIRateLimitError } from "./openai/errors.js";
+import { withRateLimitRetry } from "./retry.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface OpenAIError {
@@ -13,6 +14,23 @@ interface OpenAIError {
   response?: {
     headers?: Record<string, string>;
   };
+}
+
+function isOpenAIRateLimit(error: unknown): boolean {
+  const apiError = error as OpenAIError;
+  return (
+    apiError?.status === 429 ||
+    apiError?.code === "rate_limit_exceeded" ||
+    apiError?.message?.toLowerCase().includes("rate limit") === true
+  );
+}
+
+function getOpenAIRetryAfterMs(error: unknown): number | undefined {
+  const apiError = error as OpenAIError;
+  const retryAfter = apiError?.response?.headers?.["retry-after"] || apiError?.headers?.["retry-after"];
+  if (!retryAfter) return undefined;
+  const parsed = parseInt(retryAfter, 10);
+  return !isNaN(parsed) && parsed > 0 ? parsed * 1000 : undefined;
 }
 
 export class OpenAIEmbeddings implements EmbeddingProvider {
@@ -53,49 +71,22 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
     });
   }
 
-  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>): Promise<T> {
     try {
-      return await fn();
-    } catch (error: unknown) {
-      const apiError = error as OpenAIError;
-      const isRateLimitError =
-        apiError?.status === 429 ||
-        apiError?.code === "rate_limit_exceeded" ||
-        apiError?.message?.toLowerCase().includes("rate limit");
-
-      if (isRateLimitError && attempt < this.retryAttempts) {
-        // Check for Retry-After header (different HTTP clients may nest differently)
-        const retryAfter = apiError?.response?.headers?.["retry-after"] || apiError?.headers?.["retry-after"];
-        let delayMs: number;
-
-        if (retryAfter) {
-          // Use Retry-After header if available (in seconds)
-          const parsed = parseInt(retryAfter, 10);
-          delayMs = !isNaN(parsed) && parsed > 0 ? parsed * 1000 : this.retryDelayMs * Math.pow(2, attempt);
-        } else {
-          // Exponential backoff: 1s, 2s, 4s, 8s...
-          delayMs = this.retryDelayMs * Math.pow(2, attempt);
-        }
-
-        const waitTimeSeconds = (delayMs / 1000).toFixed(1);
-        console.error(
-          `Rate limit reached. Retrying in ${waitTimeSeconds}s (attempt ${attempt + 1}/${this.retryAttempts})...`,
-        );
-
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        return this.retryWithBackoff(fn, attempt + 1);
-      }
-
-      // If not a rate limit error or max retries exceeded, throw
-      if (isRateLimitError) {
+      return await withRateLimitRetry(fn, {
+        maxAttempts: this.retryAttempts,
+        baseDelayMs: this.retryDelayMs,
+        isRetryable: isOpenAIRateLimit,
+        getRetryAfterMs: getOpenAIRetryAfterMs,
+      });
+    } catch (error) {
+      if (isOpenAIRateLimit(error)) {
         throw new OpenAIRateLimitError(error instanceof Error ? error : undefined);
       }
-
-      // Check for auth errors (401/403)
+      const apiError = error as OpenAIError;
       if (apiError?.status === 401 || apiError?.status === 403) {
         throw new OpenAIAuthError(error instanceof Error ? error : undefined);
       }
-
       throw error;
     }
   }

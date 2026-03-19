@@ -203,37 +203,44 @@ function levelField() {
   };
 }
 
+/** Shared pagination + meta fields for search results. */
+function paginationFields(metaOnlyDefault?: boolean) {
+  return {
+    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
+    metaOnly: coerceBoolean()
+      .optional()
+      .default(metaOnlyDefault ?? false)
+      .describe(
+        metaOnlyDefault
+          ? "Return only metadata (path, lines, git info) without content. " +
+              "Default: true (rank_chunks is analytics-oriented; use false to include code content)."
+          : "Return only metadata (path, lines, git info) without content. Reduces response size. Default: false.",
+      ),
+  };
+}
+
+/** Build the shared schema structure used by both semantic_search and hybrid_search. */
+function vectorSearchSchema(rerankSchema: z.ZodTypeAny) {
+  return {
+    ...collectionPathFields(),
+    ...searchCommonFields(),
+    ...typedFilterFields(),
+    ...levelField(),
+    rerank: rerankSchema
+      .optional()
+      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
+    ...paginationFields(),
+  };
+}
+
 export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
   const semanticSearchRerankSchema = schemaBuilder.buildRerankSchema("semantic_search");
   const searchCodeRerankSchema = schemaBuilder.buildRerankSchema("search_code");
+  const rankChunksRerankSchema = schemaBuilder.buildRerankSchema("rank_chunks");
+  const findSimilarRerankSchema = schemaBuilder.buildRerankSchema("find_similar");
 
-  const SemanticSearchSchema = {
-    ...collectionPathFields(),
-    ...searchCommonFields(),
-    ...typedFilterFields(),
-    ...levelField(),
-    rerank: semanticSearchRerankSchema
-      .optional()
-      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
-    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
-    metaOnly: coerceBoolean()
-      .optional()
-      .describe("Return only metadata (path, lines, git info) without content. Reduces response size. Default: false."),
-  };
-
-  const HybridSearchSchema = {
-    ...collectionPathFields(),
-    ...searchCommonFields(),
-    ...typedFilterFields(),
-    ...levelField(),
-    rerank: semanticSearchRerankSchema
-      .optional()
-      .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
-    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
-    metaOnly: coerceBoolean()
-      .optional()
-      .describe("Return only metadata (path, lines, git info) without content. Reduces response size. Default: false."),
-  };
+  const SemanticSearchSchema = vectorSearchSchema(semanticSearchRerankSchema);
+  const HybridSearchSchema = vectorSearchSchema(semanticSearchRerankSchema);
 
   const SearchCodeSchema = {
     path: z.string().describe("Path to codebase (must be indexed first)"),
@@ -252,8 +259,6 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
     offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
   };
-
-  const rankChunksRerankSchema = schemaBuilder.buildRerankSchema("rank_chunks");
 
   const RankChunksSchema = {
     ...collectionPathFields(),
@@ -278,6 +283,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
         "Glob pattern for filtering by file path (client-side via picomatch). " +
           "Examples: 'src/core/ingest/**', '**/*.ts'",
       ),
+    ...paginationFields(true),
     offset: z.coerce
       .number()
       .int()
@@ -285,16 +291,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .optional()
       .default(0)
       .describe("Skip first N results (for pagination). Default: 0."),
-    metaOnly: coerceBoolean()
-      .optional()
-      .default(true)
-      .describe(
-        "Return only metadata (path, lines, git info) without content. " +
-          "Default: true (rank_chunks is analytics-oriented; use false to include code content).",
-      ),
   };
-
-  const findSimilarRerankSchema = schemaBuilder.buildRerankSchema("find_similar");
 
   const FindSimilarSchema = {
     ...collectionPathFields(),
@@ -334,8 +331,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .optional()
       .describe("Reranking preset or {custom: weights}. See tea-rags://schema/presets for details."),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
-    offset: coerceNumber().optional().describe("Offset for pagination (default: 0)"),
-    metaOnly: coerceBoolean().optional().describe("Return only metadata without content (default: false)"),
+    ...paginationFields(),
   };
 
   return { SemanticSearchSchema, HybridSearchSchema, SearchCodeSchema, RankChunksSchema, FindSimilarSchema };
