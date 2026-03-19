@@ -4,7 +4,7 @@
   "description": "MCP server for semantic search using local Qdrant and Ollama (default) with support for OpenAI, Cohere, and Voyage AI",
   "type": "module",
   "bin": {
-    "tea-rags": "build/index.js"
+    "tea-rags": "build/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
