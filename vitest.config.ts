@@ -76,6 +76,17 @@ export default defineConfig({
         "src/core/domains/ingest/pipeline/chunker/hooks/types.ts",
         // Barrel re-exports (no logic, just re-export)
         "src/core/domains/ingest/pipeline/chunker/hooks/*/index.ts",
+        // I/O-heavy bootstrap (DI wiring, path resolution, transport — tested via integration)
+        "src/bootstrap/transport/**",
+        "src/bootstrap/factory.ts",
+        "src/bootstrap/paths.ts",
+        // MCP tool handlers and infra (I/O glue — tested via integration)
+        "src/mcp/tools/**",
+        "src/mcp/format.ts",
+        "src/mcp/register.ts",
+        "src/mcp/prompts/register.ts",
+        // CLI entrypoint (I/O, like src/index.ts)
+        "src/cli/index.ts",
         // Test utilities (not production code)
         "tests/**/test-helpers.ts",
       ],
