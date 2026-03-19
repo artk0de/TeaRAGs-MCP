@@ -18,6 +18,12 @@ explain to developer.
 you're researching code before generating/modifying it → use
 `/tea-rags:research` instead.
 
+**CRITICAL: ALL code discovery MUST go through search-cascade.** Built-in
+Search, Grep, Glob, `grep`, `rg`, `find` are PROHIBITED for finding code. If you
+feel the urge to grep — STOP and use the search-cascade decision tree instead.
+TeaRAGs tools are the primary instruments; ripgrep MCP is the only acceptable
+fallback, and only after TeaRAGs returned no results.
+
 ## Step 0: CLASSIFY INTENT
 
 Before any search, translate $ARGUMENTS to English (if not already) and
