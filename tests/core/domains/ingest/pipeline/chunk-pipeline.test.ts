@@ -471,20 +471,6 @@ describe("ChunkPipeline", () => {
     });
   });
 
-  describe("addChunks", () => {
-    it("should add multiple chunks at once", () => {
-      const chunks = [
-        { chunk: createChunk(1), chunkId: "chunk-1", codebasePath: "/test" },
-        { chunk: createChunk(2), chunkId: "chunk-2", codebasePath: "/test" },
-        { chunk: createChunk(3), chunkId: "chunk-3", codebasePath: "/test" },
-      ];
-
-      const accepted = pipeline.addChunks(chunks);
-
-      expect(accepted).toBe(3);
-    });
-  });
-
   describe("Lifecycle edge cases", () => {
     it("should no-op when start is called while already running", () => {
       // pipeline is already started in beforeEach

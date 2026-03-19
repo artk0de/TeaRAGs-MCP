@@ -164,28 +164,6 @@ export class ChunkPipeline {
   }
 
   /**
-   * Add multiple chunks for processing
-   * @returns number of items accepted
-   */
-  addChunks(
-    chunks: {
-      chunk: ChunkItem["chunk"];
-      chunkId: string;
-      codebasePath: string;
-    }[],
-  ): number {
-    let accepted = 0;
-    for (const { chunk, chunkId, codebasePath } of chunks) {
-      if (this.addChunk(chunk, chunkId, codebasePath)) {
-        accepted++;
-      } else {
-        break;
-      }
-    }
-    return accepted;
-  }
-
-  /**
    * Check if backpressure is active
    */
   isBackpressured(): boolean {
