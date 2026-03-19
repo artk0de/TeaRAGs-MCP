@@ -134,7 +134,10 @@ everything conceptually related (any direction). Use findReferences only for
 exhaustive refactoring impact, not for discovery.
 
 **Rule 3: metaOnly=false returns code — Read often unnecessary.** Search results
-contain content. Read only when you need context beyond the chunk boundaries.
+contain content with startLine/endLine. For symbols visible in results — use
+startLine/endLine for partial Read. For symbols called inside a chunk but
+defined elsewhere — LSP goToDefinition gives exact file:line, then partial Read
+from that position.
 
 **Rule 4: Cross-layer via semantic_search + language filter.** Not grep chains
 (controller → route → grep frontend). One call:
@@ -187,23 +190,33 @@ Organized by agent task. Each references a decision tree branch.
 
 **Full profile (LSP available):**
 
-| Task             | Primary                           | Fallback                         |
-| ---------------- | --------------------------------- | -------------------------------- |
-| File structure   | LSP documentSymbol                | tree-sitter → Read               |
-| Navigate to call | LSP goToDefinition                | hybrid_search (symbol) → ripgrep |
-| All usages       | LSP findReferences                | ripgrep (class/method name)      |
-| Cross-layer      | semantic_search + language filter | same                             |
-| Exact text       | ripgrep MCP                       | built-in Grep                    |
+| Task                                | Primary                                                                                      | Fallback                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------- |
+| File structure                      | LSP documentSymbol                                                                           | tree-sitter → Read                 |
+| Navigate to definition              | partial Read (startLine/endLine from chunks) → LSP goToDefinition (if symbol not in results) | hybrid_search (symbol) → ripgrep   |
+| Call chain (who calls / what calls) | LSP incomingCalls / outgoingCalls                                                            | semantic_search (subsystem slice)  |
+| All usages                          | LSP findReferences                                                                           | ripgrep (class/method name)        |
+| Type / signature                    | LSP hover                                                                                    | Read (partial)                     |
+| Find symbol by name                 | LSP workspaceSymbol                                                                          | hybrid_search                      |
+| Find implementations                | LSP goToImplementation                                                                       | hybrid_search ("class SymbolName") |
+| Cross-layer                         | semantic_search + language filter                                                            | same                               |
+| Exact text                          | ripgrep MCP                                                                                  | built-in Grep                      |
+
+**LSP performance warning:** `incomingCalls`, `outgoingCalls`, and
+`findReferences` can be slow or hang on large codebases (especially Ruby).
+Prefer semantic_search for call chain discovery — it returns the whole subsystem
+slice in one call. Use LSP call hierarchy only for small, focused scopes (single
+file or known module).
 
 **No-LSP profile:**
 
-| Task             | Primary                            | Fallback 1        | Fallback 2 |
-| ---------------- | ---------------------------------- | ----------------- | ---------- |
-| File structure   | tree-sitter analyze_code_structure | Read (whole file) | —          |
-| Navigate to call | hybrid_search (symbol)             | ripgrep           | Read       |
-| All usages       | ripgrep (class/method name)        | built-in Grep     | —          |
-| Cross-layer      | semantic_search + language filter  | same              | —          |
-| Exact text       | ripgrep MCP                        | built-in Grep     | —          |
+| Task             | Primary                                                                          | Fallback 1        | Fallback 2 |
+| ---------------- | -------------------------------------------------------------------------------- | ----------------- | ---------- |
+| File structure   | tree-sitter analyze_code_structure                                               | Read (whole file) | —          |
+| Navigate to call | partial Read (startLine/endLine from chunks) → hybrid_search (if not in results) | ripgrep           | Read       |
+| All usages       | ripgrep (class/method name)                                                      | built-in Grep     | —          |
+| Cross-layer      | semantic_search + language filter                                                | same              | —          |
+| Exact text       | ripgrep MCP                                                                      | built-in Grep     | —          |
 
 Each fallback activates when the tool to its left is unavailable. If tree-sitter
 is absent, "File structure" falls directly to Read. If ripgrep MCP is absent,
