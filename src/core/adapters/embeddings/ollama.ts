@@ -17,6 +17,7 @@ import Bottleneck from "bottleneck";
 import { isDebug } from "../../infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { OllamaModelMissingError, OllamaUnavailableError } from "./ollama/errors.js";
+import { withRateLimitRetry } from "./retry.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface OllamaError {
@@ -90,23 +91,14 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     );
   }
 
-  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>): Promise<T> {
     try {
-      return await fn();
-    } catch (error: unknown) {
-      const rateLimited = this.isRateLimit(error);
-
-      if (rateLimited && attempt < this.retryAttempts) {
-        const delayMs = this.retryDelayMs * Math.pow(2, attempt);
-        const waitTimeSeconds = (delayMs / 1000).toFixed(1);
-        console.error(
-          `Rate limit reached. Retrying in ${waitTimeSeconds}s (attempt ${attempt + 1}/${this.retryAttempts})...`,
-        );
-
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        return this.retryWithBackoff(fn, attempt + 1);
-      }
-
+      return await withRateLimitRetry(fn, {
+        maxAttempts: this.retryAttempts,
+        baseDelayMs: this.retryDelayMs,
+        isRetryable: (error) => this.isRateLimit(error),
+      });
+    } catch (error) {
       throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined);
     }
   }

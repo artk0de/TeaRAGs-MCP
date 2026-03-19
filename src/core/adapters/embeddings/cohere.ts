@@ -3,12 +3,22 @@ import { CohereClient } from "cohere-ai";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { CohereApiError, CohereRateLimitError } from "./cohere/errors.js";
+import { withRateLimitRetry } from "./retry.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
 interface CohereError {
   status?: number;
   statusCode?: number;
   message?: string;
+}
+
+function isCohereRateLimit(error: unknown): boolean {
+  const apiError = error as CohereError;
+  return (
+    apiError?.status === 429 ||
+    apiError?.statusCode === 429 ||
+    apiError?.message?.toLowerCase().includes("rate limit") === true
+  );
 }
 
 export class CohereEmbeddings implements EmbeddingProvider {
@@ -47,31 +57,17 @@ export class CohereEmbeddings implements EmbeddingProvider {
     });
   }
 
-  private async retryWithBackoff<T>(fn: () => Promise<T>, attempt = 0): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>): Promise<T> {
     try {
-      return await fn();
-    } catch (error: unknown) {
-      const apiError = error as CohereError;
-      const isRateLimitError =
-        apiError?.status === 429 ||
-        apiError?.statusCode === 429 ||
-        apiError?.message?.toLowerCase().includes("rate limit");
-
-      if (isRateLimitError && attempt < this.retryAttempts) {
-        const delayMs = this.retryDelayMs * Math.pow(2, attempt);
-        const waitTimeSeconds = (delayMs / 1000).toFixed(1);
-        console.error(
-          `Rate limit reached. Retrying in ${waitTimeSeconds}s (attempt ${attempt + 1}/${this.retryAttempts})...`,
-        );
-
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        return this.retryWithBackoff(fn, attempt + 1);
-      }
-
-      if (isRateLimitError) {
+      return await withRateLimitRetry(fn, {
+        maxAttempts: this.retryAttempts,
+        baseDelayMs: this.retryDelayMs,
+        isRetryable: isCohereRateLimit,
+      });
+    } catch (error) {
+      if (isCohereRateLimit(error)) {
         throw new CohereRateLimitError(error instanceof Error ? error : undefined);
       }
-
       const cause = error instanceof Error ? error : undefined;
       throw new CohereApiError(cause?.message ?? String(error), cause);
     }
