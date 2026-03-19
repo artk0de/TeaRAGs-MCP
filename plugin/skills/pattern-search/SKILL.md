@@ -14,10 +14,11 @@ across the codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 1. **Execute YOURSELF** — no subagents.
 2. **No built-in Search/Grep for code discovery** — only TeaRAGs tools + ripgrep
    MCP as fallback.
-3. **Always SEED then EXPAND** — never skip `find_similar` expansion.
-4. **Deduplicate by content overlap** — skip chunks with >80% content overlap
+3. **Follow search-cascade decision tree** for SEED tool selection.
+4. **Always SEED then EXPAND** — never skip `find_similar` expansion.
+5. **Deduplicate by content overlap** — skip chunks with >80% content overlap
    from same domain/directory.
-5. **Group output by module/directory** — not flat list.
+6. **Group output by module/directory** — not flat list.
 
 ## Intent Classification
 
@@ -26,20 +27,53 @@ here. Two values are passed:
 
 - **strategy**: collect | spread | antipattern | reference
 - **pathPattern**: glob string or none
+- **query subject**: specific entity/pattern, or broad domain-level
 
-## Strategy → Tool Mapping
+## SEED Tool Selection (search-cascade)
 
-| Strategy        | Seed tool                  | Seed rerank | Expand                                |
-| --------------- | -------------------------- | ----------- | ------------------------------------- |
-| **Collect**     | `semantic_search` limit=10 | `relevance` | `find_similar` from each unique seed  |
-| **Spread**      | `search_code` limit=5      | `relevance` | `find_similar` from best seed         |
-| **Antipattern** | `hybrid_search` limit=10   | `techDebt`  | `find_similar` from problematic seeds |
-| **Reference**   | `semantic_search` limit=5  | `stable`    | `find_similar` from best seed         |
+Follow the search-cascade decision tree to pick the right SEED tool. The
+strategy provides the rerank preset; the cascade provides the tool.
+
+```
+Has specific entity/pattern in query?
+│
+├─ NO (broad scope query, e.g. "what to refactor in ingest")
+│  └─ rank_chunks
+│     + pathPattern (required — scope defines what to rank)
+│     + rerank from strategy table
+│     + limit=15, metaOnly=false
+│
+└─ YES (named pattern, e.g. "error handling", "retry logic")
+   │
+   ├─ Have symbol name? (e.g. "retryWithBackoff", "EnrichmentCoordinator")
+   │  └─ hybrid_search + rerank from strategy table
+   │
+   ├─ Strategy = Antipattern AND query has marker words?
+   │  (TODO, FIXME, deprecated, hack, any, cast)
+   │  └─ hybrid_search (BM25 catches markers + semantic catches patterns)
+   │     + rerank from strategy table
+   │
+   └─ Describing behavior/intent (e.g. "error handling", "retry logic")
+      └─ semantic_search + rerank from strategy table
+```
+
+## Strategy → Rerank Mapping
+
+| Strategy        | Rerank preset | Expand                                |
+| --------------- | ------------- | ------------------------------------- |
+| **Collect**     | `relevance`   | `find_similar` from each unique seed  |
+| **Spread**      | `relevance`   | `find_similar` from best seed         |
+| **Antipattern** | `techDebt`    | `find_similar` from problematic seeds |
+| **Reference**   | `stable`      | `find_similar` from best seed         |
+
+**Antipattern rerank override:** for broad scope queries (rank_chunks path), use
+`refactoring` instead of `techDebt` — refactoring preset is tuned for large
+chunks + churn, while techDebt favors age.
 
 ## Flow
 
 ```
-1. SEED — strategy-specific search with rerank + pathPattern
+1. SEED — search-cascade tool + strategy rerank + pathPattern
 2. EXPAND — find_similar from seed results (skip already-seen chunks)
 3. DEDUPLICATE — skip chunks with >80% content overlap from same domain
 4. GROUP — by module/directory
@@ -48,10 +82,16 @@ here. Two values are passed:
 
 ### 1. SEED
 
-Run the strategy's seed tool with its rerank preset.
+Apply search-cascade decision tree to determine tool. Use strategy's rerank
+preset. Set limit based on tool:
 
-Parameters always include: `metaOnly=false`, strategy-specific `limit` and
-`rerank`. Add `pathPattern` if scoped.
+- `rank_chunks`: limit=15
+- `semantic_search`: limit=10
+- `hybrid_search`: limit=10
+- `search_code`: limit=5
+
+Parameters always include: `metaOnly=false`, rerank from strategy table. Add
+`pathPattern` if scoped.
 
 Note chunk IDs from results for expansion step.
 
@@ -82,6 +122,7 @@ Group results by top-level module directory (first 2 path segments after src/).
 ```
 Pattern: [pattern name]
 Strategy: [collect|spread|antipattern|reference]
+Seed tool: [rank_chunks|semantic_search|hybrid_search|search_code]
 Found: [N unique implementations across M modules]
 
 ## module-a/
