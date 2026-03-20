@@ -70,7 +70,7 @@ describe("IngestFacade", () => {
 
     const facade = new IngestFacade(
       { collectionExists: vi.fn().mockResolvedValue(false) } as any,
-      {} as any,
+      { embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }) } as any,
       {} as any,
       { enableGitMetadata: false } as any,
       statsCache as any,

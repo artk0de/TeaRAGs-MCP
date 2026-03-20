@@ -48,7 +48,7 @@ export class IngestFacade {
 
   constructor(
     private readonly qdrant: QdrantManager,
-    embeddings: EmbeddingProvider,
+    private readonly embeddings: EmbeddingProvider,
     ingestConfig: IngestCodeConfig,
     trajectoryConfig: TrajectoryIngestConfig,
     private readonly statsCache?: StatsCache,
@@ -85,8 +85,15 @@ export class IngestFacade {
     );
   }
 
+  /** Verify embedding provider is reachable before starting work. */
+  private async checkEmbeddingHealth(): Promise<void> {
+    await this.embeddings.embed("health");
+  }
+
   /** Index a codebase — first index, force re-index, or incremental fallback */
   async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
+    await this.checkEmbeddingHealth();
+
     // If collection exists and no forceReindex → incremental reindex
     if (!options?.forceReindex) {
       const absolutePath = await validatePath(path);
@@ -115,6 +122,7 @@ export class IngestFacade {
 
   /** Incrementally re-index only changed files */
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
+    await this.checkEmbeddingHealth();
     const result = await this.reindex.reindexChanges(path, progressCallback);
     await this.refreshStats(path);
     return result;
@@ -122,6 +130,7 @@ export class IngestFacade {
 
   /** Get indexing status for a codebase */
   async getIndexStatus(path: string): Promise<IndexStatus> {
+    await this.checkEmbeddingHealth();
     return this.status.getIndexStatus(path);
   }
 
