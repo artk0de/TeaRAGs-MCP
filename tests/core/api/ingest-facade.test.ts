@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { OllamaUnavailableError } from "../../../src/core/adapters/embeddings/ollama/errors.js";
 import { IngestFacade } from "../../../src/core/api/internal/facades/ingest-facade.js";
 
 const { mockIndexCodebase, mockReindexChanges, mockScrollAllPoints, mockComputeStats } = vi.hoisted(() => ({
@@ -153,5 +154,35 @@ describe("IngestFacade", () => {
     const coordinator = mockCoordinatorInstances[0];
     await coordinator.onChunkEnrichmentComplete("test_col");
     expect(mockScrollAllPoints).not.toHaveBeenCalled();
+  });
+
+  describe("Error propagation", () => {
+    it("propagates OllamaUnavailableError from indexCodebase", async () => {
+      const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
+      mockIndexCodebase.mockRejectedValueOnce(ollamaError);
+
+      const { facade } = makeFacade();
+      await expect(facade.indexCodebase("/tmp/test-project", { forceReindex: true })).rejects.toThrow(
+        OllamaUnavailableError,
+      );
+    });
+
+    it("propagates OllamaUnavailableError from reindexChanges (via indexCodebase auto-detect)", async () => {
+      const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
+      mockReindexChanges.mockRejectedValueOnce(ollamaError);
+
+      const { facade } = makeFacade();
+      // collectionExists=true → goes to reindexChanges path
+      (facade as any).qdrant = { collectionExists: vi.fn().mockResolvedValue(true) };
+      await expect(facade.indexCodebase("/tmp/test-project")).rejects.toThrow(OllamaUnavailableError);
+    });
+
+    it("propagates OllamaUnavailableError from reindexChanges", async () => {
+      const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
+      mockReindexChanges.mockRejectedValueOnce(ollamaError);
+
+      const { facade } = makeFacade();
+      await expect(facade.reindexChanges("/tmp/test-project")).rejects.toThrow(OllamaUnavailableError);
+    });
   });
 });
