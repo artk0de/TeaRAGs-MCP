@@ -32,33 +32,18 @@ here. Two values are passed:
 - **pathPattern**: glob string or none
 - **query subject**: specific entity/pattern, or broad domain-level
 
-## SEED Tool Selection (search-cascade)
+## SEED Tool Selection
 
-Follow the search-cascade decision tree to pick the right SEED tool. The
-strategy provides the rerank preset; the cascade provides the tool.
+**Follow search-cascade decision tree** for tool selection. Do NOT hard-code
+tool choice — search-cascade determines the tool based on query shape.
 
-```
-Has specific entity/pattern in query?
-│
-├─ NO (broad scope query, e.g. "what to refactor in ingest")
-│  └─ rank_chunks
-│     + pathPattern (required — scope defines what to rank)
-│     + rerank from strategy table
-│     + limit=15, metaOnly=false
-│
-└─ YES (named pattern, e.g. "error handling", "retry logic")
-   │
-   ├─ Have symbol name? (e.g. "retryWithBackoff", "EnrichmentCoordinator")
-   │  └─ hybrid_search + rerank from strategy table
-   │
-   ├─ Strategy = Antipattern AND query has marker words?
-   │  (TODO, FIXME, deprecated, hack, any, cast)
-   │  └─ hybrid_search (BM25 catches markers + semantic catches patterns)
-   │     + rerank from strategy table
-   │
-   └─ Describing behavior/intent (e.g. "error handling", "retry logic")
-      └─ semantic_search + rerank from strategy table
-```
+This skill provides to search-cascade:
+
+- **query**: extracted pattern/entity from $ARGUMENTS
+- **rerank**: from strategy table below
+- **pathPattern**: from scope extraction
+- **limit**: 15 for analytics tools, 10 for search tools
+- **metaOnly**: false (need content for dedup + grouping)
 
 ## Strategy → Rerank Mapping
 

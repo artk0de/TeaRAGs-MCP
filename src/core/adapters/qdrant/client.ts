@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 import { QdrantAliasManager } from "./aliases.js";
-import { QdrantOperationError } from "./errors.js";
+import { QdrantOperationError, QdrantUnavailableError } from "./errors.js";
 
 type QdrantPayload = Record<string, unknown>;
 
@@ -28,9 +28,11 @@ export interface SparseVector {
 
 export class QdrantManager {
   private readonly client: QdrantClient;
+  private readonly qdrantUrl: string;
   private _aliases?: QdrantAliasManager;
 
   constructor(url = "http://localhost:6333", apiKey?: string) {
+    this.qdrantUrl = url;
     this.client = new QdrantClient({ url, apiKey });
   }
 
@@ -176,8 +178,12 @@ export class QdrantManager {
     try {
       await this.client.getCollection(name);
       return true;
-    } catch {
-      return false;
+    } catch (error: unknown) {
+      // Qdrant client throws with status property for HTTP errors (404 = not found)
+      const { status } = error as { status?: number };
+      if (status === 404 || status === 400) return false;
+      // Connection errors (ECONNREFUSED, fetch failed, network errors) → typed error
+      throw new QdrantUnavailableError(this.qdrantUrl, error instanceof Error ? error : undefined);
     }
   }
 
