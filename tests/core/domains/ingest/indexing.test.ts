@@ -537,12 +537,10 @@ function third() {
   });
 
   describe("Error propagation", () => {
-    it("should propagate OllamaUnavailableError through indexCodebase", async () => {
-      // Create enough content to trigger embedding
+    it("should propagate OllamaUnavailableError through indexCodebase when embedding fails", async () => {
       const code = Array.from({ length: 20 }, (_, i) => `export function fn${i}() { return ${i}; }`).join("\n\n");
       await createTestFile(codebaseDir, "test.ts", code);
 
-      // Create facade with failing embedding provider
       const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
       const failingEmbeddings = new MockEmbeddingProvider();
       vi.spyOn(failingEmbeddings, "embedBatch").mockRejectedValue(ollamaError);
@@ -554,22 +552,30 @@ function third() {
       );
     });
 
-    it("should propagate OllamaUnavailableError through reindexChanges", async () => {
-      const code = Array.from({ length: 20 }, (_, i) => `export function fn${i}() { return ${i}; }`).join("\n\n");
-      await createTestFile(codebaseDir, "test.ts", code);
-      // First index succeeds with working embeddings
-      await ingest.indexCodebase(codebaseDir);
-
-      // Modify file to trigger reindex
-      const code2 = Array.from({ length: 20 }, (_, i) => `export function fn${i}() { return ${i + 100}; }`).join(
-        "\n\n",
-      );
-      await createTestFile(codebaseDir, "test.ts", code2);
-
-      // Create facade with failing embedding provider for reindex
+    it("should fail health check before indexing when embedding provider is unreachable", async () => {
+      // Even with NO files to embed, indexCodebase should fail early
+      // if the embedding provider is unreachable (health check)
       const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
       const failingEmbeddings = new MockEmbeddingProvider();
-      vi.spyOn(failingEmbeddings, "embedBatch").mockRejectedValue(ollamaError);
+      vi.spyOn(failingEmbeddings, "embed").mockRejectedValue(ollamaError);
+
+      const failingIngest = new IngestFacade(qdrant as any, failingEmbeddings, config, defaultTrajectoryConfig());
+
+      await expect(failingIngest.indexCodebase(codebaseDir, { forceReindex: true })).rejects.toThrow(
+        OllamaUnavailableError,
+      );
+    });
+
+    it("should fail health check before reindex when embedding provider is unreachable", async () => {
+      // First index succeeds
+      const code = Array.from({ length: 20 }, (_, i) => `export function fn${i}() { return ${i}; }`).join("\n\n");
+      await createTestFile(codebaseDir, "test.ts", code);
+      await ingest.indexCodebase(codebaseDir);
+
+      // Now embed is broken — reindex should fail at health check, even with 0 changes
+      const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
+      const failingEmbeddings = new MockEmbeddingProvider();
+      vi.spyOn(failingEmbeddings, "embed").mockRejectedValue(ollamaError);
 
       const failingIngest = new IngestFacade(qdrant as any, failingEmbeddings, config, defaultTrajectoryConfig());
 
