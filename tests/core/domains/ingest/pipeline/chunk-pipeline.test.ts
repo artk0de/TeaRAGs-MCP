@@ -431,7 +431,7 @@ describe("ChunkPipeline", () => {
 
   describe("Error handling", () => {
     it("should track errors from embedding failures", async () => {
-      mockEmbeddings.embedBatch.mockRejectedValueOnce(new Error("Embedding failed"));
+      mockEmbeddings.embedBatch.mockRejectedValue(new Error("Embedding failed"));
 
       pipeline.addChunk(createChunk(1), "chunk-1", "/test/path");
       pipeline.addChunk(createChunk(2), "chunk-2", "/test/path");
@@ -442,10 +442,10 @@ describe("ChunkPipeline", () => {
         await vi.advanceTimersByTimeAsync(500);
       }
       await vi.runAllTimersAsync();
+      await expect(pipeline.flush()).rejects.toThrow("Embedding failed");
 
       const stats = pipeline.getStats();
-      // May have errors depending on retry behavior
-      expect(stats.errors).toBeGreaterThanOrEqual(0);
+      expect(stats.errors).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -537,7 +537,7 @@ describe("ChunkPipeline", () => {
         await vi.advanceTimersByTimeAsync(600);
       }
       await vi.runAllTimersAsync();
-      await pipeline.flush();
+      await expect(pipeline.flush()).rejects.toThrow("embed fail");
 
       expect(callback).not.toHaveBeenCalled();
     });
@@ -593,11 +593,10 @@ describe("ChunkPipeline", () => {
         await vi.advanceTimersByTimeAsync(600);
       }
       await vi.runAllTimersAsync();
-      await pipeline.flush();
+      await expect(pipeline.flush()).rejects.toThrow("Persistent embedding failure");
 
       const stats = pipeline.getStats();
       expect(stats.errors).toBeGreaterThanOrEqual(1);
-      expect(stats.batchesProcessed).toBeGreaterThanOrEqual(1);
     });
   });
 

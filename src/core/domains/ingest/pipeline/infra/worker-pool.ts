@@ -237,7 +237,7 @@ export class WorkerPool {
           this.tryProcessNext();
         }, delay);
       } else {
-        // Max retries exceeded
+        // Max retries exceeded — reject so callers see the error
         this.totalErrors++;
 
         const durationMs = Date.now() - startTime;
@@ -254,7 +254,7 @@ export class WorkerPool {
         console.error(`[WorkerPool] Batch ${batch.id} failed after ${queuedBatch.retryCount} retries: ${errorMessage}`);
 
         this.onCompletion?.(result);
-        resolve(result); // Resolve with failure result (don't reject)
+        queuedBatch.reject(error instanceof Error ? error : new Error(errorMessage));
       }
     } finally {
       this.activeWorkers--;
