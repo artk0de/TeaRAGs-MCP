@@ -78,7 +78,7 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     model: env("EMBEDDING_MODEL"),
     dimensions: env("EMBEDDING_DIMENSIONS"),
     device: env("EMBEDDING_DEVICE"),
-    baseUrl: env("EMBEDDING_BASE_URL"),
+    baseUrl: env("EMBEDDING_BASE_URL", "OLLAMA_URL"),
     ollamaLegacyApi: env("OLLAMA_LEGACY_API"),
     ollamaNumGpu: env("OLLAMA_NUM_GPU"),
     openaiApiKey: env("OPENAI_API_KEY"),
