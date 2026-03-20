@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { OllamaUnavailableError } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { IngestFacade } from "../../../../src/core/api/index.js";
 import type { IngestCodeConfig } from "../../../../src/core/types.js";
 import {
@@ -532,6 +533,47 @@ function third() {
       expect(cleanupSpy).toHaveBeenCalledWith(qdrant, expect.stringContaining("code_"));
 
       vi.restoreAllMocks();
+    });
+  });
+
+  describe("Error propagation", () => {
+    it("should propagate OllamaUnavailableError through indexCodebase", async () => {
+      // Create enough content to trigger embedding
+      const code = Array.from({ length: 20 }, (_, i) => `export function fn${i}() { return ${i}; }`).join("\n\n");
+      await createTestFile(codebaseDir, "test.ts", code);
+
+      // Create facade with failing embedding provider
+      const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
+      const failingEmbeddings = new MockEmbeddingProvider();
+      vi.spyOn(failingEmbeddings, "embedBatch").mockRejectedValue(ollamaError);
+
+      const failingIngest = new IngestFacade(qdrant as any, failingEmbeddings, config, defaultTrajectoryConfig());
+
+      await expect(failingIngest.indexCodebase(codebaseDir, { forceReindex: true })).rejects.toThrow(
+        OllamaUnavailableError,
+      );
+    });
+
+    it("should propagate OllamaUnavailableError through reindexChanges", async () => {
+      const code = Array.from({ length: 20 }, (_, i) => `export function fn${i}() { return ${i}; }`).join("\n\n");
+      await createTestFile(codebaseDir, "test.ts", code);
+      // First index succeeds with working embeddings
+      await ingest.indexCodebase(codebaseDir);
+
+      // Modify file to trigger reindex
+      const code2 = Array.from({ length: 20 }, (_, i) => `export function fn${i}() { return ${i + 100}; }`).join(
+        "\n\n",
+      );
+      await createTestFile(codebaseDir, "test.ts", code2);
+
+      // Create facade with failing embedding provider for reindex
+      const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
+      const failingEmbeddings = new MockEmbeddingProvider();
+      vi.spyOn(failingEmbeddings, "embedBatch").mockRejectedValue(ollamaError);
+
+      const failingIngest = new IngestFacade(qdrant as any, failingEmbeddings, config, defaultTrajectoryConfig());
+
+      await expect(failingIngest.reindexChanges(codebaseDir)).rejects.toThrow(OllamaUnavailableError);
     });
   });
 });
