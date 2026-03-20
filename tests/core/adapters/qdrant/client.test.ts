@@ -135,12 +135,19 @@ describe("QdrantManager", () => {
       expect(mockClient.getCollection).toHaveBeenCalledWith("test");
     });
 
-    it("should return false if collection does not exist", async () => {
-      mockClient.getCollection.mockRejectedValue(new Error("Not found"));
+    it("should return false if collection does not exist (404)", async () => {
+      const notFoundError = Object.assign(new Error("Not found"), { status: 404 });
+      mockClient.getCollection.mockRejectedValue(notFoundError);
 
       const exists = await manager.collectionExists("test");
 
       expect(exists).toBe(false);
+    });
+
+    it("should throw QdrantUnavailableError on connection failure", async () => {
+      mockClient.getCollection.mockRejectedValue(new Error("fetch failed"));
+
+      await expect(manager.collectionExists("test")).rejects.toThrow("Qdrant is not reachable");
     });
   });
 

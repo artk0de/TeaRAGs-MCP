@@ -120,40 +120,49 @@ Match → `**/<alias>/**`
 If pattern-search intent detected:
 
 1. State: `Pattern search: strategy=[X], scope=[pathPattern or "all"]`
-2. Read and follow `pattern-search/SKILL.md`
-3. Do NOT return to explore flow — pattern-search handles output
+2. **Antipattern + broad scope** (refactoring/cleanup without specific entity):
+   - Read and follow `refactoring-scan/SKILL.md`
+   - Examples: "what to refactor in explore", "cleanup ingest domain"
+3. **All other pattern-search intents**:
+   - Read and follow `pattern-search/SKILL.md`
+4. Do NOT return to explore flow — delegated skill handles output
 
 ## Tools
 
-| Strategy    | Tool                         | Purpose                                                    |
-| ----------- | ---------------------------- | ---------------------------------------------------------- |
-| **Breadth** | `search_code`                | Broad discovery, human-readable. "Everything related to X" |
-| **Lateral** | `find_similar` from chunk ID | Same pattern in other modules                              |
-| **Depth**   | `hybrid_search`              | Exact symbol lookup: `"def method_name"`                   |
-| **Read**    | Read file                    | Focused range around function, not whole file              |
+**Follow search-cascade decision tree** for tool selection. Do NOT hard-code
+tool choice. The cascade determines the tool based on query shape.
+
+Explore strategies map to cascade inputs:
+
+| Strategy    | What to pass to search-cascade                   |
+| ----------- | ------------------------------------------------ |
+| **Breadth** | query=$ARGUMENTS (cascade picks search tool)     |
+| **Lateral** | code/chunk from results (cascade → find_similar) |
+| **Depth**   | symbol name from results (cascade → hybrid)      |
+| **Read**    | Read file — focused range, not whole file        |
 
 ## Flow
 
 ```
-BREADTH (search_code) → pick interesting results →
+BREADTH (search-cascade picks tool) → pick interesting results →
   LATERAL (find_similar) — same pattern elsewhere?
-  DEPTH (hybrid_search) — trace specific symbol?
+  DEPTH (search-cascade for symbol) — trace specific symbol?
   READ — understand the code?
 → explain to developer
 ```
 
 ### 1. BREADTH
 
-`search_code` query=$ARGUMENTS, limit=10.
+Follow search-cascade with query=$ARGUMENTS. Cascade determines the tool.
 
 Scan results: which files, which modules, what patterns. Note domain boundaries.
 
 ### 2. PICK + EXPLORE
 
-For each interesting result:
+For each interesting result, follow search-cascade:
 
-- **"Same thing elsewhere?"** → `find_similar` from chunk ID
-- **"What is this method?"** → `hybrid_search` query="def method_name"
+- **"Same thing elsewhere?"** → pass code/chunk ID to cascade (→ find_similar)
+- **"What is this method?"** → pass symbol name to cascade (→ hybrid_search)
 - **"Need to understand this"** → Read file (focused range)
 
 Repeat as needed. Prefer fewer deep dives over many shallow ones.

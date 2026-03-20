@@ -60,7 +60,7 @@ test("Factory rejects unknown provider", () => {
     EmbeddingProviderFactory.create(makeConfig({ provider: "unknown-provider" }));
     throw new Error("Should have thrown error for unknown provider");
   } catch (error) {
-    if (!error.message.includes("Unknown embedding provider")) {
+    if (!error.message.includes("Invalid value") && !error.message.includes("Unknown embedding provider")) {
       throw error;
     }
   }
@@ -72,7 +72,7 @@ test("OpenAI provider requires API key", () => {
     EmbeddingProviderFactory.create(makeConfig({ provider: "openai" }));
     throw new Error("Should have thrown error for missing API key");
   } catch (error) {
-    if (!error.message.includes("API key is required")) {
+    if (!error.message.includes("is not set") && !error.message.includes("API key is required")) {
       throw error;
     }
   }
@@ -84,7 +84,7 @@ test("Cohere provider requires API key", () => {
     EmbeddingProviderFactory.create(makeConfig({ provider: "cohere" }));
     throw new Error("Should have thrown error for missing API key");
   } catch (error) {
-    if (!error.message.includes("API key is required")) {
+    if (!error.message.includes("is not set") && !error.message.includes("API key is required")) {
       throw error;
     }
   }
@@ -96,7 +96,7 @@ test("Voyage AI provider requires API key", () => {
     EmbeddingProviderFactory.create(makeConfig({ provider: "voyage" }));
     throw new Error("Should have thrown error for missing API key");
   } catch (error) {
-    if (!error.message.includes("API key is required")) {
+    if (!error.message.includes("is not set") && !error.message.includes("API key is required")) {
       throw error;
     }
   }
@@ -120,9 +120,7 @@ test("Ollama provider does not require API key", () => {
 
 // Test 6: OpenAI provider with valid config
 test("OpenAI provider instantiates with API key", () => {
-  const provider = EmbeddingProviderFactory.create(
-    makeConfig({ provider: "openai", openaiApiKey: "test-key-123" }),
-  );
+  const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "openai", openaiApiKey: "test-key-123" }));
   if (!provider) {
     throw new Error("Failed to create OpenAI provider");
   }
@@ -136,9 +134,7 @@ test("OpenAI provider instantiates with API key", () => {
 
 // Test 7: Cohere provider with valid config
 test("Cohere provider instantiates with API key", () => {
-  const provider = EmbeddingProviderFactory.create(
-    makeConfig({ provider: "cohere", cohereApiKey: "test-key-123" }),
-  );
+  const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "cohere", cohereApiKey: "test-key-123" }));
   if (!provider) {
     throw new Error("Failed to create Cohere provider");
   }
@@ -152,9 +148,7 @@ test("Cohere provider instantiates with API key", () => {
 
 // Test 8: Voyage AI provider with valid config
 test("Voyage AI provider instantiates with API key", () => {
-  const provider = EmbeddingProviderFactory.create(
-    makeConfig({ provider: "voyage", voyageApiKey: "test-key-123" }),
-  );
+  const provider = EmbeddingProviderFactory.create(makeConfig({ provider: "voyage", voyageApiKey: "test-key-123" }));
   if (!provider) {
     throw new Error("Failed to create Voyage AI provider");
   }

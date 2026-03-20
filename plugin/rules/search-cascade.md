@@ -122,6 +122,34 @@ After 3: report "could not find, here's the best match"
 
 Can paginate indefinitely. Can reformulate max 3 times.
 
+## Stop Conditions
+
+When to stop paginating. Score is a ranking signal, not a cutoff threshold —
+absolute score values are meaningless across different presets, collections, and
+queries. Stop conditions are based on **information gain**, not score magnitude.
+
+**Score-driven (rank_chunks, rerank-driven analytics):**
+
+- **Gradient drop:** if gap between last result of current page and first result
+  of next page > 2× the average gap between adjacent results on current page →
+  stop (signal cliff, not gradual decline)
+- **Diminishing returns:** page contains < 3 new unique files not seen in
+  previous pages → stop
+- **Hard cap:** 3 pages max (offset 0, 15, 30 = 45 results) as safety net
+
+**Query-driven (semantic_search, hybrid_search):**
+
+- **Relevance judgment:** evaluate result content against query intent — stop
+  when results are clearly unrelated to what was asked (agent judgment, not
+  score-based)
+- Reformulation rules apply (max 3 attempts per above)
+
+**Multi-preset scans (multiple calls with different presets):**
+
+- Per-preset: apply score-driven rules independently
+- Cross-preset: stop when merge produces < 2 new candidates appearing in 2+
+  presets per additional page
+
 ## Combo Strategy Rules
 
 **Rule 1: tea-rags for discovery, LSP for navigation.** One semantic_search
