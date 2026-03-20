@@ -10,6 +10,7 @@
  * - Migration: converts real collection to alias scheme
  */
 
+import { TeaRagsError } from "../../infra/errors.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../types.js";
 import { cleanupOrphanedVersions } from "./alias-cleanup.js";
 import { BaseIndexingPipeline, type ProcessingContext } from "./pipeline/base.js";
@@ -105,6 +106,10 @@ export class IndexPipeline extends BaseIndexingPipeline {
       stats.durationMs = Date.now() - startTime;
       return stats;
     } catch (error) {
+      // Typed errors (infra, domain) must propagate to MCP error handler
+      if (error instanceof TeaRagsError) {
+        throw error;
+      }
       const errorMessage = error instanceof Error ? error.message : String(error);
       stats.status = "failed";
       stats.errors?.push(`Indexing failed: ${errorMessage}`);
