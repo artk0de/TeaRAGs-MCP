@@ -194,8 +194,12 @@ export class ChunkPipeline {
   async flush(): Promise<void> {
     this.accumulator.drain();
     await this.workerPool.drain();
-    await Promise.all(this.pendingBatches);
+    const settled = await Promise.allSettled(this.pendingBatches);
     this.pendingBatches = [];
+    const firstRejection = settled.find((r) => r.status === "rejected");
+    if (firstRejection?.status === "rejected") {
+      throw firstRejection.reason;
+    }
   }
 
   /**
@@ -268,6 +272,8 @@ export class ChunkPipeline {
   private submitBatch(batch: Batch<ChunkItem>): void {
     const handler = this.createBatchHandler();
     const promise = this.workerPool.submit(batch, handler);
+    // Prevent unhandled rejection — errors are collected in flush() via allSettled
+    promise.catch(() => {});
     this.pendingBatches.push(promise);
 
     // Cleanup completed promises periodically

@@ -305,7 +305,7 @@ describe("PipelineManager", () => {
       errorPipeline.addUpsert(createPoint(1));
 
       await vi.runAllTimersAsync();
-      await errorPipeline.flush();
+      await expect(errorPipeline.flush()).rejects.toThrow("Test error");
 
       const stats = errorPipeline.getStats();
       expect(stats.errors).toBe(1);

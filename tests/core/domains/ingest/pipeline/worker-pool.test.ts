@@ -192,6 +192,7 @@ describe("WorkerPool", () => {
       const handler = vi.fn().mockRejectedValue(new Error("Always fails"));
 
       const resultPromise = pool.submit(createBatch("batch-1"), handler);
+      resultPromise.catch(() => {}); // Prevent unhandled rejection during timer advance
 
       // Advance through all retries
       for (let i = 0; i < 4; i++) {
@@ -199,12 +200,8 @@ describe("WorkerPool", () => {
       }
       await vi.runAllTimersAsync();
 
-      const result = await resultPromise;
-
+      await expect(resultPromise).rejects.toThrow("Always fails");
       expect(handler).toHaveBeenCalledTimes(4); // Initial + 3 retries
-      expect(result.success).toBe(false);
-      expect(result.error).toBe("Always fails");
-      expect(result.retryCount).toBe(3);
     });
 
     it("should use exponential backoff", async () => {
@@ -267,12 +264,13 @@ describe("WorkerPool", () => {
       const handler = vi.fn().mockRejectedValue(new Error("Test error"));
 
       const resultPromise = callbackPool.submit(createBatch("batch-1"), handler);
+      resultPromise.catch(() => {}); // Prevent unhandled rejection during timer advance
 
       for (let i = 0; i < 5; i++) {
         await vi.advanceTimersByTimeAsync(1000);
       }
 
-      await resultPromise;
+      await expect(resultPromise).rejects.toThrow("Test error");
 
       expect(callback).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -300,12 +298,13 @@ describe("WorkerPool", () => {
       const handler = vi.fn().mockRejectedValue(new Error("Fail"));
 
       const p1 = pool.submit(createBatch("batch-1"), handler);
+      p1.catch(() => {}); // Prevent unhandled rejection during timer advance
 
       for (let i = 0; i < 5; i++) {
         await vi.advanceTimersByTimeAsync(1000);
       }
 
-      await p1;
+      await expect(p1).rejects.toThrow("Fail");
 
       const stats = pool.getStats();
       expect(stats.errors).toBe(1);

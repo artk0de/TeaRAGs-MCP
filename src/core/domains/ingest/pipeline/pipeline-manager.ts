@@ -151,8 +151,12 @@ export class PipelineManager {
     this.upsertAccumulator.drain();
     this.deleteAccumulator.drain();
     await this.workerPool.drain();
-    await Promise.all(this.pendingBatches);
+    const settled = await Promise.allSettled(this.pendingBatches);
     this.pendingBatches = [];
+    const firstRejection = settled.find((r) => r.status === "rejected");
+    if (firstRejection?.status === "rejected") {
+      throw firstRejection.reason;
+    }
   }
 
   /**
@@ -240,6 +244,8 @@ export class PipelineManager {
 
   private submitBatch<T extends WorkItem>(batch: Batch<T>, handler: (batch: Batch<T>) => Promise<void>): void {
     const promise = this.workerPool.submit(batch, handler);
+    // Prevent unhandled rejection — errors are collected in flush() via allSettled
+    promise.catch(() => {});
     this.pendingBatches.push(promise);
 
     // Cleanup completed promises periodically
