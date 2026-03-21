@@ -1,5 +1,5 @@
 // src/mcp/tools/formatters/enrichment.ts
-import type { EnrichmentInfo, IndexStatus } from "../../../core/types.js";
+import type { EnrichmentInfo, EnrichmentMetrics, IndexStatus } from "../../../core/types.js";
 
 type GetIndexStatusFn = (path: string) => Promise<IndexStatus>;
 
@@ -8,20 +8,36 @@ export async function formatEnrichmentStatus(
   enrichmentDurationMs: number | undefined,
   getIndexStatus: GetIndexStatusFn | undefined,
   path: string,
+  metrics?: EnrichmentMetrics,
 ): Promise<string> {
   if (!enrichmentStatus || enrichmentStatus === "skipped") {
     return "";
   }
 
   if (enrichmentStatus === "background") {
-    return formatBackgroundEnrichment(getIndexStatus, path);
+    let message = await formatBackgroundEnrichment(getIndexStatus, path);
+    if (metrics) {
+      message += formatMetricsBreakdown(metrics);
+    }
+    return message;
   }
 
   let message = `\nGit enrichment: ${enrichmentStatus}`;
   if (enrichmentDurationMs) {
     message += ` (${(enrichmentDurationMs / 1000).toFixed(1)}s)`;
   }
+  if (metrics) {
+    message += formatMetricsBreakdown(metrics);
+  }
   return message;
+}
+
+function formatMetricsBreakdown(metrics: EnrichmentMetrics): string {
+  let result = `\n  File signals: ${metrics.matchedFiles} files, prefetch ${(metrics.prefetchDurationMs / 1000).toFixed(1)}s`;
+  if (metrics.chunkChurnDurationMs > 0) {
+    result += `\n  Chunk signals: ${(metrics.chunkChurnDurationMs / 1000).toFixed(1)}s`;
+  }
+  return result;
 }
 
 async function formatBackgroundEnrichment(getIndexStatus: GetIndexStatusFn | undefined, path: string): Promise<string> {

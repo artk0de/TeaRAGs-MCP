@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SchemaManager } from "../../../../src/core/adapters/qdrant/schema-migration.js";
 import { IngestFacade } from "../../../../src/core/api/index.js";
+import { EnrichmentCoordinator } from "../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { ParallelFileSynchronizer } from "../../../../src/core/domains/ingest/sync/parallel-synchronizer.js";
 import type { IngestCodeConfig } from "../../../../src/core/types.js";
 import {
@@ -494,6 +495,137 @@ console.log('This file has secrets');`,
 
       expect(stats.filesDeleted).toBe(1);
       expect(stats.filesNewlyIgnored).toBe(0);
+    });
+  });
+
+  describe("deletion-only reindex", () => {
+    it("should skip enrichment and complete quickly when only files are deleted", async () => {
+      await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('File one');");
+      await createTestFile(codebaseDir, "file2.ts", "export const v2 = 2;\nconsole.log('File two');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Delete both files — deletion-only scenario
+      await fs.unlink(join(codebaseDir, "file1.ts"));
+      await fs.unlink(join(codebaseDir, "file2.ts"));
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesDeleted).toBe(2);
+      expect(stats.filesAdded).toBe(0);
+      expect(stats.filesModified).toBe(0);
+      expect(stats.enrichmentStatus).toBe("skipped");
+      expect(stats.status).toBe("completed");
+    });
+
+    it("should not call enrichment prefetch when only deleting files", async () => {
+      await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('File one');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Spy on enrichment coordinator prefetch — must NOT be called for deletion-only
+      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "prefetch");
+
+      await fs.unlink(join(codebaseDir, "file1.ts"));
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      // Deletion should complete
+      expect(stats.filesDeleted).toBe(1);
+      // Enrichment prefetch must NOT have been called (no pipeline init for deletion-only)
+      expect(prefetchSpy).not.toHaveBeenCalled();
+
+      prefetchSpy.mockRestore();
+    });
+
+    it("should update snapshot after deletion-only reindex", async () => {
+      await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('File one');");
+      await createTestFile(codebaseDir, "keep.ts", "export const keep = 1;\nconsole.log('Keep this');");
+      await ingest.indexCodebase(codebaseDir);
+
+      await fs.unlink(join(codebaseDir, "file1.ts"));
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+      expect(stats.filesDeleted).toBe(1);
+
+      // Second reindex should see no changes (snapshot updated correctly)
+      const stats2 = await ingest.reindexChanges(codebaseDir);
+      expect(stats2.filesDeleted).toBe(0);
+      expect(stats2.filesAdded).toBe(0);
+    });
+
+    it("should handle ignore-only changes as deletion-only", async () => {
+      await createTestFile(codebaseDir, "keep.ts", "export const keep = 1;\nconsole.log('Keep');");
+      await createTestFile(codebaseDir, "ignored.ts", "export const ignored = 2;\nconsole.log('Will be ignored');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Add to .contextignore — this moves ignored.ts to deleted, nothing added
+      await fs.writeFile(join(codebaseDir, ".contextignore"), "ignored.ts\n");
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesDeleted).toBe(1);
+      expect(stats.filesNewlyIgnored).toBe(1);
+      expect(stats.filesAdded).toBe(0);
+      expect(stats.enrichmentStatus).toBe("skipped");
+    });
+  });
+
+  describe("enrichment scope during reindex", () => {
+    it("should pass changed file paths to enrichment prefetch", async () => {
+      await createTestFile(codebaseDir, "existing.ts", "export const v1 = 1;\nconsole.log('Existing');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "prefetch");
+
+      // Add a new file — enrichment should only prefetch for this file
+      await createTestFile(
+        codebaseDir,
+        "newfile.ts",
+        "export const v2 = 2;\nconsole.log('New');\nfunction helper() { return true; }",
+      );
+
+      await ingest.reindexChanges(codebaseDir);
+
+      expect(prefetchSpy).toHaveBeenCalledTimes(1);
+      // 4th argument should be the changedPaths array containing only the new file
+      const changedPaths = prefetchSpy.mock.calls[0]?.[3];
+      expect(changedPaths).toBeDefined();
+      expect(changedPaths).toContain("newfile.ts");
+      expect(changedPaths).not.toContain("existing.ts");
+
+      prefetchSpy.mockRestore();
+    });
+
+    it("should pass both added and modified files to enrichment prefetch", async () => {
+      await createTestFile(
+        codebaseDir,
+        "modify-me.ts",
+        "export const v1 = 1;\nconsole.log('Original version of the file');\nconst padding = 'extra content to ensure hash differs';",
+      );
+      await ingest.indexCodebase(codebaseDir);
+
+      const prefetchSpy = vi.spyOn(EnrichmentCoordinator.prototype, "prefetch");
+
+      // Modify existing (different content = different hash) + add new
+      await createTestFile(
+        codebaseDir,
+        "modify-me.ts",
+        "export const v2 = 2;\nconsole.log('Modified version of the file');\nconst padding = 'completely different content for hash change';",
+      );
+      await createTestFile(
+        codebaseDir,
+        "added.ts",
+        "export const v3 = 3;\nconsole.log('Added');\nfunction helper() { return true; }",
+      );
+
+      await ingest.reindexChanges(codebaseDir);
+
+      expect(prefetchSpy).toHaveBeenCalledTimes(1);
+      const changedPaths = prefetchSpy.mock.calls[0]?.[3];
+      expect(changedPaths).toBeDefined();
+      expect(changedPaths).toContain("modify-me.ts");
+      expect(changedPaths).toContain("added.ts");
+
+      prefetchSpy.mockRestore();
     });
   });
 

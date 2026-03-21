@@ -73,6 +73,17 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
+      // Deletion-only: no files to add/modify → skip pipeline init and enrichment
+      if (changes.added.length === 0 && changes.modified.length === 0) {
+        await this.executeDeletionOnly(ctx, changes, stats, progressCallback);
+        await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
+        await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
+        await ctx.synchronizer.deleteCheckpoint();
+        stats.enrichmentStatus = "skipped";
+        stats.durationMs = Date.now() - startTime;
+        return stats;
+      }
+
       const { chunksAdded, processingCtx, chunkMap } = await this.executeParallelPipelines(
         ctx,
         changes,
@@ -155,7 +166,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     changes: FileChanges,
     progressCallback?: ProgressCallback,
   ): Promise<{ chunksAdded: number; processingCtx: ProcessingContext; chunkMap: Map<string, ChunkLookupEntry[]> }> {
-    const pCtx = this.initProcessing(ctx.collectionName, ctx.absolutePath, ctx.scanner);
+    const changedPaths = [...changes.added, ...changes.modified];
+    const pCtx = this.initProcessing(ctx.collectionName, ctx.absolutePath, ctx.scanner, changedPaths);
     const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
     const filesToDelete = [...changes.modified, ...changes.deleted];
@@ -256,7 +268,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
     await ctx.synchronizer.deleteCheckpoint();
 
-    stats.enrichmentStatus = getEnrichmentStatus();
+    const enrichmentResult = getEnrichmentStatus();
+    stats.enrichmentStatus = enrichmentResult.status;
+    stats.enrichmentMetrics = enrichmentResult.metrics;
     stats.durationMs = Date.now() - startTime;
 
     if (isDebug()) {
@@ -268,6 +282,27 @@ export class ReindexPipeline extends BaseIndexingPipeline {
             stats.filesNewlyUnignored > 0 ? `, ${stats.filesNewlyUnignored} newly unignored` : ""
           }. Created ${stats.chunksAdded} chunks in ${(stats.durationMs / 1000).toFixed(1)}s`,
       );
+    }
+  }
+
+  // ── Deletion-only fast path ─────────────────────────────
+
+  private async executeDeletionOnly(
+    ctx: ReindexContext,
+    changes: FileChanges,
+    stats: ChangeStats,
+    progressCallback?: ProgressCallback,
+  ): Promise<void> {
+    const filesToDelete = [...changes.deleted];
+
+    pipelineLog.reindexPhase("DELETE_ONLY_START", { files: filesToDelete.length });
+
+    await performDeletion(this.qdrant, ctx.collectionName, filesToDelete, this.deleteConfig, progressCallback);
+
+    pipelineLog.reindexPhase("DELETE_ONLY_COMPLETE", { files: filesToDelete.length });
+
+    if (isDebug()) {
+      console.error(`[Reindex] Deletion-only: removed ${filesToDelete.length} files, skipping enrichment`);
     }
   }
 

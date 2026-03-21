@@ -11,7 +11,7 @@ import type { Ignore } from "ignore";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
-import type { ChunkLookupEntry, IngestCodeConfig } from "../../../types.js";
+import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
@@ -23,6 +23,11 @@ import type { PipelineConfig } from "./types.js";
 export interface ProcessingContext {
   chunkerPool: ChunkerPool;
   chunkPipeline: ChunkPipeline;
+}
+
+export interface EnrichmentStatusResult {
+  status: "completed" | "background" | "skipped";
+  metrics?: EnrichmentMetrics;
 }
 
 export interface PipelineTuning {
@@ -93,10 +98,15 @@ export abstract class BaseIndexingPipeline {
 
   // ── Processing lifecycle ─────────────────────────────────
 
-  protected initProcessing(collectionName: string, absolutePath: string, scanner: FileScanner): ProcessingContext {
+  protected initProcessing(
+    collectionName: string,
+    absolutePath: string,
+    scanner: FileScanner,
+    changedPaths?: string[],
+  ): ProcessingContext {
     const chunkerPool = this.createChunkerPool();
     const chunkPipeline = this.createChunkPipeline(collectionName);
-    this.setupEnrichmentHooks(chunkPipeline, absolutePath, collectionName, scanner.getIgnoreFilter());
+    this.setupEnrichmentHooks(chunkPipeline, absolutePath, collectionName, scanner.getIgnoreFilter(), changedPaths);
     chunkPipeline.start();
     return { chunkerPool, chunkPipeline };
   }
@@ -106,7 +116,7 @@ export abstract class BaseIndexingPipeline {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     collectionName: string,
     absolutePath: string,
-  ): Promise<() => "completed" | "background" | "skipped"> {
+  ): Promise<() => EnrichmentStatusResult> {
     await this.flushAndShutdown(ctx.chunkPipeline, ctx.chunkerPool);
     return this.startEnrichment(chunkMap, collectionName, absolutePath);
   }
@@ -134,8 +144,9 @@ export abstract class BaseIndexingPipeline {
     absolutePath: string,
     collectionName: string,
     ignoreFilter: Ignore,
+    changedPaths?: string[],
   ): void {
-    this.enrichment.prefetch(absolutePath, collectionName, ignoreFilter);
+    this.enrichment.prefetch(absolutePath, collectionName, ignoreFilter, changedPaths);
     chunkPipeline.setOnBatchUpserted((items) => {
       this.enrichment.onChunksStored(collectionName, absolutePath, items);
     });
@@ -156,20 +167,22 @@ export abstract class BaseIndexingPipeline {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     collectionName: string,
     absolutePath: string,
-  ): () => "completed" | "background" | "skipped" {
-    if (chunkMap.size === 0) return () => "skipped";
+  ): () => EnrichmentStatusResult {
+    if (chunkMap.size === 0) return () => ({ status: "skipped" });
 
     let done = false;
+    let enrichmentMetrics: EnrichmentMetrics | undefined;
     this.enrichment.startChunkEnrichment(collectionName, absolutePath, chunkMap);
     this.enrichment
       .awaitCompletion(collectionName)
-      .then(() => {
+      .then((m) => {
         done = true;
+        enrichmentMetrics = m;
       })
       .catch((error) => {
         console.error("[Pipeline] Background enrichment failed:", error);
       });
 
-    return () => (done ? "completed" : "background");
+    return () => ({ status: done ? "completed" : "background", metrics: enrichmentMetrics });
   }
 }

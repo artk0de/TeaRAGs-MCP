@@ -4,7 +4,13 @@
  * App-facing types only. Internal pipeline types stay in core/types.ts.
  */
 
-import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexingStatus, ProgressUpdate } from "../../../types.js";
+import type {
+  ChunkEnrichmentInfo,
+  EnrichmentInfo,
+  EnrichmentMetrics,
+  IndexingStatus,
+  ProgressUpdate,
+} from "../../../types.js";
 
 // ---------------------------------------------------------------------------
 // Indexing options
@@ -30,6 +36,14 @@ export interface IndexStats {
   /** Git enrichment status */
   enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
   enrichmentDurationMs?: number;
+  /** Detailed enrichment metrics (file/chunk signal breakdown) */
+  enrichmentMetrics?: EnrichmentMetrics;
+  /** Present only during auto-reindex via index_codebase */
+  changeDetails?: {
+    filesDeleted: number;
+    filesNewlyIgnored: number;
+    filesNewlyUnignored: number;
+  };
 }
 
 export interface ChangeStats {
@@ -47,6 +61,8 @@ export interface ChangeStats {
   /** Git enrichment status */
   enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
   enrichmentDurationMs?: number;
+  /** Detailed enrichment metrics (file/chunk signal breakdown) */
+  enrichmentMetrics?: EnrichmentMetrics;
 }
 
 // ---------------------------------------------------------------------------
