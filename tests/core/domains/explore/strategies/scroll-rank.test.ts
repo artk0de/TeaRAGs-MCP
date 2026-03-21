@@ -226,6 +226,34 @@ describe("ScrollRankStrategy", () => {
     expect(callCount).toBeGreaterThan(1);
   });
 
+  it("preserves rankingOverlay from reranker in results", async () => {
+    const mockOverlay = {
+      preset: "decomposition",
+      derived: { chunkSize: { value: 0.8, label: "large" } },
+      raw: { file: { ageDays: { value: 42, label: "typical" } } },
+    };
+    const reranker = createMockReranker();
+    vi.mocked(reranker.rerank).mockImplementation((results: RerankableResult[]) =>
+      results.map((r, i) => ({ ...r, score: 1 - i * 0.1, rankingOverlay: mockOverlay })),
+    );
+
+    const strategy = createStrategy(undefined, reranker);
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "chunk",
+      limit: 3,
+      metaOnly: false,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      expect(r.rankingOverlay).toBeDefined();
+      expect(r.rankingOverlay?.preset).toBe("decomposition");
+    }
+  });
+
   it("stops re-fetching when data is exhausted (fewer unique files than limit)", async () => {
     // Only 2 files exist, but limit=5. Should return 2, not loop forever.
     const chunks = [
