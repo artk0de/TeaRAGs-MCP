@@ -60,6 +60,8 @@ Signal-driven root cause investigation using TeaRAGs git signals.
    If rank_chunks insufficient:
    - Know symbol → hybrid_search with exact symbol
    - Need similar pattern → find_similar (code or chunk ID)
+   - Need deeper analytics → rank_chunks with different rerank preset
+   - Results relevant but insufficient → offset pagination (no limit)
    - Results not relevant → reformulate (max 3 attempts per cascade rules)
    → back to CHECKPOINT
 
