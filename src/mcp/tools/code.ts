@@ -200,10 +200,16 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         return formatMcpText(text);
       }
 
-      // Include enrichment info in the response
-      const response: Record<string, unknown> = { ...status };
-      if (status.enrichment) {
-        response.enrichment = status.enrichment;
+      // Regroup enrichment into trajectory.git.{file, chunk} structure
+      const { enrichment, chunkEnrichment, ...rest } = status;
+      const response: Record<string, unknown> = { ...rest };
+      if (enrichment || chunkEnrichment) {
+        response.trajectory = {
+          git: {
+            ...(enrichment ? { file: enrichment } : {}),
+            ...(chunkEnrichment ? { chunk: chunkEnrichment } : {}),
+          },
+        };
       }
 
       let text = JSON.stringify(response, null, 2);

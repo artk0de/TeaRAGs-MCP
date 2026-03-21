@@ -33,9 +33,9 @@ export async function formatEnrichmentStatus(
 }
 
 function formatMetricsBreakdown(metrics: EnrichmentMetrics): string {
-  let result = `\n  File signals: ${metrics.matchedFiles} files, prefetch ${(metrics.prefetchDurationMs / 1000).toFixed(1)}s`;
+  let result = `\n  trajectory.git.file: ${metrics.matchedFiles} files, prefetch ${(metrics.prefetchDurationMs / 1000).toFixed(1)}s`;
   if (metrics.chunkChurnDurationMs > 0) {
-    result += `\n  Chunk signals: ${(metrics.chunkChurnDurationMs / 1000).toFixed(1)}s`;
+    result += `\n  trajectory.git.chunk: ${(metrics.chunkChurnDurationMs / 1000).toFixed(1)}s`;
   }
   return result;
 }

@@ -129,6 +129,7 @@ function aggregateProviderMetrics(states: Map<string, ProviderState>): Aggregate
 export class EnrichmentCoordinator {
   private readonly states: Map<string, ProviderState>;
   private startTime = 0;
+  private scopedPrefetch = false;
 
   // Delegates
   private readonly applier: EnrichmentApplier;
@@ -167,6 +168,7 @@ export class EnrichmentCoordinator {
    */
   prefetch(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore, changedPaths?: string[]): void {
     this.startTime = Date.now();
+    this.scopedPrefetch = changedPaths !== undefined;
 
     // Set enrichment marker to "in_progress" (once for all providers)
     if (collectionName) {
@@ -435,14 +437,20 @@ export class EnrichmentCoordinator {
     metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
 
     // 6. Update enrichment marker (once for all providers)
-    await this.updateEnrichmentMarker(collectionName, {
+    // Scoped prefetch (incremental reindex): only update status/timing, not coverage stats.
+    // Coverage stats (matchedFiles, missedFiles, gitLogFileCount) reflect only changed files
+    // and would overwrite the accurate full-index values from the previous run.
+    const markerUpdate: Partial<EnrichmentInfo> = {
       status: "completed",
       completedAt: new Date().toISOString(),
       durationMs: metrics.totalDurationMs,
-      matchedFiles: metrics.matchedFiles,
-      missedFiles: metrics.missedFiles,
-      gitLogFileCount: agg.totalFileMetadataCount,
-    });
+    };
+    if (!this.scopedPrefetch) {
+      markerUpdate.matchedFiles = metrics.matchedFiles;
+      markerUpdate.missedFiles = metrics.missedFiles;
+      markerUpdate.gitLogFileCount = agg.totalFileMetadataCount;
+    }
+    await this.updateEnrichmentMarker(collectionName, markerUpdate);
 
     pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
 
@@ -451,10 +459,18 @@ export class EnrichmentCoordinator {
 
   /**
    * Update enrichment progress marker in Qdrant.
+   * Merges with existing marker to preserve fields not in the update.
    */
   async updateEnrichmentMarker(collectionName: string, info: Partial<EnrichmentInfo>): Promise<void> {
     try {
-      const enrichment: Record<string, unknown> = { ...info };
+      let enrichment: Record<string, unknown> = { ...info };
+
+      // Read existing marker and merge to preserve coverage stats from previous runs
+      const existing = await this.readExistingMarker(collectionName);
+      if (existing) {
+        enrichment = { ...existing, ...enrichment };
+      }
+
       if (info.totalFiles && info.processedFiles !== undefined) {
         enrichment.percentage = Math.round((info.processedFiles / info.totalFiles) * 100);
       }
@@ -464,6 +480,18 @@ export class EnrichmentCoordinator {
         console.error("[Enrichment] Failed to update marker:", error);
       }
     }
+  }
+
+  private async readExistingMarker(collectionName: string): Promise<Record<string, unknown> | null> {
+    try {
+      const point = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID);
+      if (point?.payload && typeof point.payload.enrichment === "object" && point.payload.enrichment !== null) {
+        return point.payload.enrichment as Record<string, unknown>;
+      }
+    } catch {
+      // ignore — marker may not exist yet
+    }
+    return null;
   }
 
   // ── Private ─────────────────────────────────────────────────
