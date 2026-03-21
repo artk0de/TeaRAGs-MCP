@@ -1,3 +1,10 @@
+## <small>1.12.3 (2026-03-21)</small>
+
+- improve(ingest): update lastUpdated on no-change incremental reindex
+  ([4b46a3f](https://github.com/artk0de/TeaRAGs-MCP/commit/4b46a3f))
+- fix(ingest): update completedAt marker on incremental reindex
+  ([1c27125](https://github.com/artk0de/TeaRAGs-MCP/commit/1c27125))
+
 ## <small>1.12.2 (2026-03-21)</small>
 
 - fix(website): escape MDX placeholders and fix broken links in troubleshooting
