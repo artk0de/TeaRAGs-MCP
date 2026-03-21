@@ -1,3 +1,9 @@
+## <small>1.14.2 (2026-03-21)</small>
+
+- improve(embedding): platform-aware Ollama hints and RFC1918 local IP detection
+  ([0574942](https://github.com/artk0de/TeaRAGs-MCP/commit/0574942))
+- ([7cb6705](https://github.com/artk0de/TeaRAGs-MCP/commit/7cb6705))
+
 ## <small>1.14.1 (2026-03-21)</small>
 
 - fix(ingest): clear enrichment in_progress marker when no chunks produced
