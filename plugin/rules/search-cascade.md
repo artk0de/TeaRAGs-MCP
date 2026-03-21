@@ -26,11 +26,15 @@
   6. Reconnect MCP only if a config change was made (e.g. switched embedding
      provider).
 
-**2. Memorize label thresholds:**
+**2. Memorize label thresholds + detect polyglot:**
 
 - `get_index_metrics` → remember label values. Example: commitCount
   `{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" in
   THIS codebase.
+- Check language distribution in metrics. If 2+ languages each have >10% of
+  chunks → **polyglot codebase**. Remember:
+  `Polyglot: yes | ruby: 66%, typescript: 34%` This triggers mandatory
+  per-language splitting (see Polyglot Rule below).
 
 **3. Load resource references:**
 
@@ -75,7 +79,8 @@ Has query?
    │
    ├─ Have a symbol name + semantic context? → hybrid_search
    │   Example: "PaymentService validate card expiration"
-   │   BM25 catches PaymentService, semantic catches validation logic
+   │   ⚠ BM25 component currently degraded (see Known Limitations).
+   │   Dense vectors still provide value for symbol+context queries.
    │   Fallback: if hybrid_search unavailable (enableHybrid=false) → semantic_search
    │
    ├─ Have a bare symbol name (no context)? → semantic_search
@@ -95,6 +100,50 @@ Has query?
    If no preset fits → custom weights via tea-rags://schema/signals
 ```
 
+## Polyglot Rule (MANDATORY)
+
+**Applies when:** codebase detected as polyglot at session start (2+ languages
+each >10% of chunks).
+
+**Problem:** Unfiltered semantic_search returns 100% dominant language. On a
+Ruby(66%)+TypeScript(34%) codebase, TypeScript is completely invisible without
+language filter.
+
+**Rule:** Every search call that could span languages MUST be split into
+per-language calls. This applies to ALL skills — explore, bug-hunt, research,
+pattern-search, refactoring-scan, data-driven-generation.
+
+```
+Is codebase polyglot? (detected at session start)
+├─ No → single search call (no splitting needed)
+│
+└─ Yes
+   ├─ Query targets specific language? (e.g., "Ruby models", "TS hooks")
+   │   → single call with language filter
+   │
+   ├─ Query is cross-layer or language-neutral?
+   │   → issue ONE call per major language, merge results
+   │   Example: semantic_search("batch create", language="ruby")
+   │          + semantic_search("batch create", language="typescript")
+   │
+   └─ find_similar from a seed?
+       → seed is language-locked; if cross-layer needed,
+         also search with language filter for other languages
+```
+
+**Enforcement checkpoints:**
+
+- After any semantic_search/hybrid_search: verify result languages match query
+  intent. If results are 100% one language on a polyglot codebase → re-search
+  with explicit language filters.
+- Pattern-search EXPAND: if seed is from language A and codebase has language B,
+  also run find_similar with `language` filter for B.
+- Research/bug-hunt: validate risk map / suspect list covers all relevant
+  layers.
+
+**Exception:** rank_chunks with pathPattern already scopes by directory —
+language filter not needed if path already constrains to one language layer.
+
 ## Rerank Decision
 
 When the user asks an analytical question:
@@ -111,6 +160,26 @@ Existing preset fits?
     - But "dangerous" = bugs + instability + single owner →
       custom: { bugFix: 0.4, volatility: 0.3, knowledgeSilo: 0.3 }
 ```
+
+## Filter Level: file vs chunk
+
+Filters apply to different payload levels depending on the `level` parameter:
+
+- **`level: "chunk"`** (default) — filters against `git.chunk.*` fields
+- **`level: "file"`** — filters against `git.file.*` fields
+
+This matters because chunk-level and file-level signals can diverge:
+
+| Signal           | file-level                      | chunk-level                      | Note       |
+| ---------------- | ------------------------------- | -------------------------------- | ---------- |
+| `ageDays`        | Reliable (file has git history) | Often 0 (no chunk-level commits) | ⚠          |
+| `commitCount`    | Total file commits              | Commits touching this chunk      | Can differ |
+| `dominantAuthor` | File-level author               | Chunk-level author               | May differ |
+
+**⚠ maxAgeDays/minAgeDays warning:** At chunk level, `ageDays=0` means "no git
+history for this chunk" (not "just created"). `maxAgeDays=7` at chunk level
+matches these zero-value chunks as false positives. **Use `level: "file"` for
+time-based filters until this is fixed** (tracked: tea-rags-mcp-7fx3).
 
 ## Pagination and Reformulation
 
@@ -195,18 +264,20 @@ returns direct callers (backward in call chain). semantic_search returns
 everything conceptually related (any direction). Use findReferences only for
 exhaustive refactoring impact, not for discovery.
 
-**Rule 3: metaOnly=false returns code — Read often unnecessary.** Search results
-contain content with startLine/endLine. For symbols visible in results — use
-startLine/endLine for partial Read. For symbols called inside a chunk but
-defined elsewhere — LSP goToDefinition gives exact file:line, then partial Read
-from that position.
+**Rule 3: metaOnly and content access.**
 
-**Rule 4: Cross-layer via separate per-language calls.** Not grep chains
-(controller → route → grep frontend). Not one unfiltered call (dominant language
-takes 100% of slots). Issue one call per language layer:
-`semantic_search("batch create jobs", language="ruby")` +
-`semantic_search("batch create jobs", language="typescript")`. Merge results.
-This is a workaround — stratified retrieval in MCP is planned.
+- `metaOnly=false` → results contain code content + startLine/endLine. Read
+  often unnecessary. For symbols called inside a chunk but defined elsewhere —
+  LSP goToDefinition gives exact file:line, then partial Read.
+- `metaOnly=true` → results contain only metadata (path, signals, overlay). To
+  read code: `Read(relativePath, offset=startLine, limit=endLine-startLine)`.
+- **When to use which:** prefer `metaOnly=false` when content is needed for
+  classification or comparison (saves tool calls). Use `metaOnly=true` for pure
+  analytics (ownership reports, risk maps) where only signals matter.
+
+**Rule 4: Polyglot splitting is mandatory.** See Polyglot Rule above. Never
+issue an unfiltered search on a polyglot codebase — dominant language takes 100%
+of slots. Stratified retrieval in MCP is planned (tea-rags-mcp-hcmo).
 
 **Rule 5: Resources on demand.** `tea-rags://schema/overview` and
 `tea-rags://schema/search-guide` loaded at session start. Other resources
@@ -254,11 +325,11 @@ Organized by agent task. Each references a decision tree branch.
 
 **Code context for generation**
 
-| Task                 | Tool + rerank                    | Example                        |
-| -------------------- | -------------------------------- | ------------------------------ |
-| Find stable template | semantic_search + stable         | Low churn = proven pattern     |
-| Find fresh example   | semantic_search + recent         | Latest changes = current style |
-| Assess change impact | semantic_search + impactAnalysis | Files with most imports        |
+| Task                 | Tool + rerank                    | Example                                  |
+| -------------------- | -------------------------------- | ---------------------------------------- |
+| Find stable template | semantic_search + stable         | Low churn = proven pattern               |
+| Find fresh example   | semantic_search + recent         | Latest changes = current style           |
+| Assess change impact | semantic_search + custom weights | imports: 0.5, churn: 0.3, ownership: 0.2 |
 
 ## Fallback Chains by Profile
 
@@ -337,3 +408,19 @@ If results seem stale → check `driftWarning` in response → `reindex_changes`
 
 If `hybrid_search` fails (needs `enableHybrid=true`), fall back to
 `semantic_search`.
+
+## Known Limitations (temporary)
+
+**hybrid_search BM25 component is degraded** (tracked: tea-rags-mcp-xqfh epic).
+Current BM25 implementation has vocabulary isolation and no code-aware
+tokenization — the sparse vector component adds noise rather than signal.
+Practical impact:
+
+- hybrid_search ≈ semantic_search in result quality (BM25 contribution ≈ 0)
+- For bare symbol names, semantic_search is cleaner (no BM25 noise)
+- For TODO/FIXME/HACK markers, hybrid recall ≈ 0% — use ripgrep only
+- hybrid_search still works via its dense vector component (0.7 weight)
+
+Until the epic is resolved, prefer semantic_search over hybrid_search for all
+cases except exhaustive usage queries (where hybrid is step 1 of the two-step
+hybrid→ripgrep flow and dense vectors alone provide sufficient initial context).

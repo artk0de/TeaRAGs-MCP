@@ -27,7 +27,9 @@ fallback, and only after TeaRAGs returned no results.
 ## Step 0: CLASSIFY INTENT
 
 Before any search, translate $ARGUMENTS to English (if not already) and
-classify.
+classify. If the user's language differs from English, optionally run a
+secondary query in the user's language to surface non-English documentation that
+English queries miss.
 
 ### Pattern-search intents → delegate to pattern-search/SKILL.md
 
@@ -103,17 +105,19 @@ under <X>         → **/X/**
 from <X>          → **/X/**
 ```
 
-**Known domain aliases** — if found anywhere in $ARGUMENTS:
+**Directory name matching** — if a word in $ARGUMENTS looks like a directory
+name (not a generic English word):
 
-```
-pipeline, ingest, explore, trajectory, adapters, contracts,
-infra, mcp, api, bootstrap, chunker, enrichment, sync,
-rerank, presets, signals, hooks
-```
+1. Search for matching directories: `**/<word>/**` and `**/<word>s/**` (plural).
+2. If exactly one match → use it as pathPattern.
+3. If multiple matches → pick the deepest (most specific) path, or ask user.
+4. If zero matches → no pathPattern (search whole codebase).
 
-Match → `**/<alias>/**`
+Do NOT hardcode alias lists — they are project-specific and go stale. Let the
+filesystem be the source of truth.
 
-**No scope markers or aliases** → no pathPattern (search whole codebase).
+**No scope markers or directory matches** → no pathPattern (search whole
+codebase).
 
 ### Delegation
 
@@ -138,7 +142,7 @@ Explore strategies map to cascade inputs:
 | ----------- | ------------------------------------------------ |
 | **Breadth** | query=$ARGUMENTS (cascade picks search tool)     |
 | **Lateral** | code/chunk from results (cascade → find_similar) |
-| **Depth**   | symbol name from results (cascade → hybrid)      |
+| **Depth**   | symbol name from results (cascade → semantic)    |
 | **Read**    | Read file — focused range, not whole file        |
 
 ## Flow
@@ -162,7 +166,9 @@ Scan results: which files, which modules, what patterns. Note domain boundaries.
 For each interesting result, follow search-cascade:
 
 - **"Same thing elsewhere?"** → pass code/chunk ID to cascade (→ find_similar)
-- **"What is this method?"** → pass symbol name to cascade (→ hybrid_search)
+- **"What is this method?"** → pass symbol name to cascade (→ semantic_search
+  preferred over hybrid_search for bare symbols — see Known Limitations in
+  search-cascade)
 - **"Need to understand this"** → Read file (focused range)
 
 Repeat as needed. Prefer fewer deep dives over many shallow ones.
@@ -174,7 +180,18 @@ Structure by what was asked:
 - **"How does X work?"** → flow: entry → processing → output. Key files + roles.
 - **"Architecture of X?"** → components, responsibilities, connections,
   boundaries.
-- **"Where is X used?"** → call-sites with context (why each caller uses it).
-- **"How is X different from Y?"** → side-by-side with code citations.
+- **"Where is X used?"** → follow search-cascade exhaustive usage branch:
+  semantic_search to verify naming, then ripgrep MCP for exhaustive call-site
+  list. semantic_search alone gives ~13% recall for usage queries.
+- **"How is X different from Y?"** → always use contrastive decomposition. Run
+  in parallel: (1) ONE semantic_search for the shared concept (e.g.,
+  "preloading" for lazy_preload vs includes), (2) ripgrep for files containing X
+  but not Y, (3) ripgrep for files containing Y but not X. Present as three
+  groups: only-X, only-Y, both. Do NOT run two separate semantic searches —
+  close concepts produce 80%+ overlap, wasting calls.
+- **Legacy/generic model names** (e.g., `Contact`, `Client` at top-level) may
+  score lower than namespaced alternatives. Supplement with ripgrep:
+  `rg 'class Contact < ' app/models/` when core entities are missing from
+  semantic results.
 
 Code citations: `file:line`. Quote 3-5 relevant lines, don't dump functions.

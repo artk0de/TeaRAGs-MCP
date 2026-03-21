@@ -221,17 +221,24 @@ describe("Resource builders", () => {
       expect(md).toContain("must_not");
     });
 
-    it("contains threshold guidance", () => {
+    it("contains threshold guidance referencing get_index_metrics", () => {
       const md = buildFiltersDoc();
-      expect(md).toContain("minCommitCount");
-      expect(md).toContain("minAgeDays");
+      expect(md).toContain("get_index_metrics");
+      expect(md).toContain("signal-labels");
     });
 
-    it("contains available fields", () => {
+    it("contains available fields with level prefix", () => {
       const md = buildFiltersDoc();
       expect(md).toContain("relativePath");
-      expect(md).toContain("git.dominantAuthor");
+      expect(md).toContain("git.file.");
+      expect(md).toContain("git.chunk.");
       expect(md).toContain("imports");
+    });
+
+    it("warns about filter level for time-based filters", () => {
+      const md = buildFiltersDoc();
+      expect(md).toContain("level");
+      expect(md).toContain("ageDays=0");
     });
   });
 });
