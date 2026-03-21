@@ -20,11 +20,17 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 5. **Tool selection via search-cascade decision tree** — do not hard-code tool
    choice. Follow the tree: symbol name → hybrid_search, behavior description →
    semantic_search.
-6. **Parallel reads.** When reading 2+ suspect files, use a single message with
+6. **Max 3 file reads total.** Only prime suspects from triage. Not 10 files.
+7. **Parallel reads.** When reading 2+ suspect files, use a single message with
    multiple Read calls. Never read files one-by-one.
-7. **No persisted output parsing.** If a search result is persisted (>10KB),
+8. **No persisted output parsing.** If a search result is persisted (>10KB),
    re-run the same query with `metaOnly=true`. Do NOT attempt to Read the
    persisted file.
+9. **Short queries.** Keep semantic_search queries to 3-5 meaningful tokens.
+   BAD:
+   `"batch create job automations perform false unavailable disabled offline client"`
+   (10 tokens → noise). GOOD:
+   `"batch create stage clients automations disabled"`.
 
 ## Flow
 
@@ -44,17 +50,16 @@ Signal-driven root cause investigation using TeaRAGs git signals.
    Not all? → step 2 (REFINE)
 
 2. REFINE — drill down into suspects with signals
-   semantic_search or hybrid_search: rerank="bugHunt", metaOnly=false,
-   limit=10, pathPattern="{file1.rb,file2.rb}" (from step 1 paths)
+   rank_chunks: rerank="bugHunt", pathPattern="{file1.rb,file2.rb}"
+   (from step 1 paths), limit=10. This ranks suspects by git signals
+   without a query — pure signal-driven triage.
 
-   Read top 2-3 suspect files IN PARALLEL (single message, multiple Read
-   calls with offset+limit for partial reads).
+   Read top 2-3 prime suspects IN PARALLEL (single message, multiple
+   Read calls with offset+limit for partial reads).
 
-   Additional tools via cascade rules:
-   - Know symbol → hybrid_search
+   If rank_chunks insufficient:
+   - Know symbol → hybrid_search with exact symbol
    - Need similar pattern → find_similar (code or chunk ID)
-   - Need analytics → rank_chunks + rerank
-   - Results relevant but insufficient → offset pagination (no limit)
    - Results not relevant → reformulate (max 3 attempts per cascade rules)
    → back to CHECKPOINT
 
