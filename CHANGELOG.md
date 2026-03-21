@@ -1,3 +1,10 @@
+## 1.14.0 (2026-03-21)
+
+- feat(embedding): add EMBEDDING_FALLBACK_URL for Ollama provider failover
+  ([0fe1a88](https://github.com/artk0de/TeaRAGs-MCP/commit/0fe1a88))
+- chore(dx): bump plugin version to 0.5.0
+  ([bb915ff](https://github.com/artk0de/TeaRAGs-MCP/commit/bb915ff))
+
 ## <small>1.13.1 (2026-03-21)</small>
 
 - fix(ingest): preserve enrichment coverage stats on scoped reindex and regroup
