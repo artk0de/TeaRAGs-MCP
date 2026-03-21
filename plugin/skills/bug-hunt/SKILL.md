@@ -40,7 +40,7 @@ Signal-driven root cause investigation using TeaRAGs git signals.
    - Buggy line/method: ___
    - Why it breaks: ___
 
-   All filled? → step 3 (VERIFY)
+   All filled? → step 5 (PRESENT). Do NOT verify or refine further.
    Not all? → step 2 (REFINE)
 
 2. REFINE — drill down into suspects with signals
