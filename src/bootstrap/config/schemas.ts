@@ -39,6 +39,7 @@ export const embeddingSchema = z.object({
   dimensions: optionalPositiveInt,
   device: z.string().optional().default("auto"),
   baseUrl: z.string().optional(),
+  fallbackBaseUrl: z.string().optional(),
   ollamaLegacyApi: booleanFromEnv,
   ollamaNumGpu: intWithDefault(999),
   openaiApiKey: z.string().optional(),

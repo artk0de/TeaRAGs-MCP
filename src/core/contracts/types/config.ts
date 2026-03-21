@@ -13,6 +13,7 @@ export interface EmbeddingConfig {
   dimensions?: number;
   device: string;
   baseUrl?: string;
+  fallbackBaseUrl?: string;
   ollamaLegacyApi: boolean;
   ollamaNumGpu: number;
   openaiApiKey?: string;

@@ -77,6 +77,7 @@ export class EmbeddingProviderFactory {
           baseUrl || "http://localhost:11434",
           config.ollamaLegacyApi,
           config.ollamaNumGpu,
+          config.fallbackBaseUrl,
         );
 
       case "onnx": {
