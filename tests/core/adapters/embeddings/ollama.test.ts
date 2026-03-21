@@ -847,7 +847,8 @@ describe("OllamaEmbeddings", () => {
         expect.unreachable("should have thrown");
       } catch (error) {
         expect(error).toBeInstanceOf(OllamaUnavailableError);
-        expect((error as OllamaUnavailableError).hint).toContain("ollama serve");
+        const expectedStart = process.platform === "darwin" ? "open -a Ollama" : "ollama serve";
+        expect((error as OllamaUnavailableError).hint).toContain(expectedStart);
       }
     });
 
