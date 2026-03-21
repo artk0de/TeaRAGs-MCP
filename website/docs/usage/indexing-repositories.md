@@ -29,54 +29,69 @@ to the MCP server.
 | `CODE_DEFAULT_LIMIT`       | Default number of search results returned when the caller does not specify a limit.                                                       | 5       |
 | `CODE_ENABLE_GIT_METADATA` | Enrich every chunk with git blame data: authors, commit count, code age, and task IDs extracted from commit messages.                     | false   |
 
-See also the full [Configuration Variables](/config/environment-variables) page for embedding,
-Qdrant batch pipeline, and performance variables.
+See also the full [Configuration Variables](/config/environment-variables) page
+for embedding, Qdrant batch pipeline, and performance variables.
 
 </details>
 
 ## How Chunking Works
 
-TeaRAGs splits source files into **chunks** — self-contained code fragments that become individual vectors in the search index. The chunking strategy directly affects search quality: well-bounded chunks return precise, meaningful results; poorly split chunks return noisy, incomplete fragments.
+TeaRAGs splits source files into **chunks** — self-contained code fragments that
+become individual vectors in the search index. The chunking strategy directly
+affects search quality: well-bounded chunks return precise, meaningful results;
+poorly split chunks return noisy, incomplete fragments.
 
 ### AST-Aware Chunking (default)
 
-Enabled by default (`CODE_ENABLE_AST=true`). Uses [tree-sitter](https://tree-sitter.github.io/tree-sitter/) to parse the code into an Abstract Syntax Tree, then splits along **semantic boundaries** — functions, classes, methods, interfaces.
+Enabled by default (`CODE_ENABLE_AST=true`). Uses
+[tree-sitter](https://tree-sitter.github.io/tree-sitter/) to parse the code into
+an Abstract Syntax Tree, then splits along **semantic boundaries** — functions,
+classes, methods, interfaces.
 
 **Why it matters:**
 
 - A function stays as one chunk, not split in the middle of a loop
-- Class methods are extracted as individual chunks with parent class context preserved (`parentName`, `parentType` metadata)
+- Class methods are extracted as individual chunks with parent class context
+  preserved (`parentName`, `parentType` metadata)
 - Comments and decorators stay attached to the code they describe
-- Large classes are automatically decomposed: methods become individual chunks, non-method body code is extracted separately
+- Large classes are automatically decomposed: methods become individual chunks,
+  non-method body code is extracted separately
 
 **Two-level extraction:**
 
-1. **Top-level nodes** — functions, classes, modules, interfaces are identified as chunk candidates
-2. **Child extraction** — if a container (class/module) exceeds `2x CODE_CHUNK_SIZE`, its methods are extracted as individual chunks while preserving parent context in metadata
+1. **Top-level nodes** — functions, classes, modules, interfaces are identified
+   as chunk candidates
+2. **Child extraction** — if a container (class/module) exceeds
+   `2x CODE_CHUNK_SIZE`, its methods are extracted as individual chunks while
+   preserving parent context in metadata
 
-**Fallback:** If a language has no tree-sitter grammar, or a node is still too large after child extraction, TeaRAGs falls back to character-based splitting with overlap — trying to break at empty lines or closing braces.
+**Fallback:** If a language has no tree-sitter grammar, or a node is still too
+large after child extraction, TeaRAGs falls back to character-based splitting
+with overlap — trying to break at empty lines or closing braces.
 
-:::tip
-AST-aware chunking is the recommended mode for all code. Disable it (`CODE_ENABLE_AST=false`) only for plain-text or unstructured files where tree-sitter adds no value.
-:::
+:::tip AST-aware chunking is the recommended mode for all code. Disable it
+(`CODE_ENABLE_AST=false`) only for plain-text or unstructured files where
+tree-sitter adds no value. :::
 
 ### Embedding Dimensions
 
-The embedding dimension is determined automatically based on your model — no configuration needed in most cases.
+The embedding dimension is determined automatically based on your model — no
+configuration needed in most cases.
 
-| Provider | Model | Dimensions |
-|----------|-------|------------|
-| Ollama | `unclemusclez/jina-embeddings-v2-base-code` (default) | 768 |
-| Ollama | `nomic-embed-text` | 768 |
-| Ollama | `mxbai-embed-large` | 1024 |
-| OpenAI | `text-embedding-3-small` | 1536 |
-| Cohere | `embed-english-v3.0` | 1024 |
-| Voyage | `voyage-code-2` | 1536 |
+| Provider | Model                                                 | Dimensions |
+| -------- | ----------------------------------------------------- | ---------- |
+| Ollama   | `unclemusclez/jina-embeddings-v2-base-code` (default) | 768        |
+| Ollama   | `nomic-embed-text`                                    | 768        |
+| Ollama   | `mxbai-embed-large`                                   | 1024       |
+| OpenAI   | `text-embedding-3-small`                              | 1536       |
+| Cohere   | `embed-english-v3.0`                                  | 1024       |
+| Voyage   | `voyage-code-2`                                       | 1536       |
 
-Override with `EMBEDDING_DIMENSIONS` only if your model is not in the built-in registry.
+Override with `EMBEDDING_DIMENSIONS` only if your model is not in the built-in
+registry.
 
-:::warning
-Changing the embedding model or dimensions after indexing requires a **full reindex** — existing vectors are incompatible with a different dimension.
+:::warning Changing the embedding model or dimensions after indexing requires a
+**full reindex** — existing vectors are incompatible with a different dimension.
 :::
 
 ## File Filtering
@@ -164,7 +179,8 @@ the existing chunks are no longer compatible. Force a complete re-index:
 
 <AiQuery>Reindex the entire codebase from scratch</AiQuery>
 
-This drops the existing collection and rebuilds from scratch. Time to brew a fresh cup.
+This drops the existing collection and rebuilds from scratch. Time to brew a
+fresh cup.
 
 ### Check Index Status
 
@@ -261,16 +277,17 @@ codebases (10k+ files).
 ### 6. Enable Git Metadata When Needed
 
 Git metadata enrichment (`CODE_ENABLE_GIT_METADATA=true`) adds significant value
-for analytics — ownership reports, tech debt detection, hotspot analysis. Enrichment
-runs concurrently with embedding and does not increase indexing time. Enable it
-when you plan to use rerank presets like `techDebt`, `hotspots`, `ownership`, or
-`codeReview`.
+for analytics — ownership reports, tech debt detection, hotspot analysis.
+Enrichment runs concurrently with embedding and does not increase indexing time.
+Enable it when you plan to use rerank presets like `techDebt`, `hotspots`,
+`ownership`, or `codeReview`.
 
 ## Troubleshooting
 
 ### Search Returns No Results
 
-1. **Check index status**: ask your agent to show index stats and confirm the status is `indexed` (not `indexing` or `not_indexed`)
+1. **Check index status**: ask your agent to show index stats and confirm the
+   status is `indexed` (not `indexing` or `not_indexed`)
 2. **Verify files are not ignored**: check `.gitignore`, `.contextignore`, and
    `CODE_CUSTOM_IGNORE` for overly broad patterns
 3. **Broaden your query**: semantic search works best with natural language;
@@ -307,7 +324,8 @@ when you plan to use rerank presets like `techDebt`, `hotspots`, `ownership`, or
    ```bash
    export CODE_BATCH_SIZE=50
    ```
-3. **Index subdirectories separately** for very large monorepos — ask your agent to index each service path individually
+3. **Index subdirectories separately** for very large monorepos — ask your agent
+   to index each service path individually
 
 ### Files Not Being Indexed
 
@@ -317,4 +335,6 @@ when you plan to use rerank presets like `techDebt`, `hotspots`, `ownership`, or
    `CODE_CUSTOM_IGNORE`
 3. Ensure the file is not empty or binary
 
-For more troubleshooting scenarios see [Troubleshooting](/operations/troubleshooting) and [Recovery & Reindexing](/operations/recovery-reindexing).
+For more troubleshooting scenarios see
+[Troubleshooting](/operations/troubleshooting-and-error-codes) and
+[Recovery & Reindexing](/operations/recovery-reindexing).
