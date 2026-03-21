@@ -779,4 +779,83 @@ describe("OllamaEmbeddings", () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe("fallback URL", () => {
+    it("should fall back to fallbackBaseUrl when primary fails", async () => {
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768)
+        .fill(0)
+        .map((_, i) => i * 0.001);
+
+      // Primary fails, fallback succeeds
+      mockFetch.mockRejectedValueOnce(new Error("connection refused")).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ embedding: mockEmbedding }),
+      });
+
+      const result = await fallbackEmbeddings.embed("test");
+      expect(result.embedding).toEqual(mockEmbedding);
+
+      // Second call should have been to fallback URL
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const fallbackCall = mockFetch.mock.calls[1];
+      expect(fallbackCall[0]).toContain("http://fallback:11434");
+    });
+
+    it("should throw with both URLs when primary and fallback fail", async () => {
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      // Both fail
+      mockFetch.mockRejectedValueOnce(new Error("primary down")).mockRejectedValueOnce(new Error("fallback down"));
+
+      await expect(fallbackEmbeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
+      await expect(fallbackEmbeddings.embed("test")).rejects.toThrow(/primary.*fallback|fallback.*primary/i);
+    });
+
+    it("should include localhost hint when fallback URL is localhost", async () => {
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://remote-gpu:11434",
+        true,
+        999,
+        "http://localhost:11434",
+      );
+
+      mockFetch.mockRejectedValueOnce(new Error("remote down")).mockRejectedValueOnce(new Error("local down"));
+
+      try {
+        await fallbackEmbeddings.embed("test");
+        expect.unreachable("should have thrown");
+      } catch (error) {
+        expect(error).toBeInstanceOf(OllamaUnavailableError);
+        expect((error as OllamaUnavailableError).hint).toContain("ollama serve");
+      }
+    });
+
+    it("should work without fallback URL (existing behavior)", async () => {
+      // No fallback URL — standard OllamaUnavailableError
+      mockFetch.mockRejectedValue(new Error("connection refused"));
+
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
+    });
+  });
 });

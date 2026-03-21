@@ -43,6 +43,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly retryAttempts: number;
   private readonly retryDelayMs: number;
   private readonly baseUrl: string;
+  private readonly fallbackBaseUrl?: string;
   private readonly numGpu: number;
   private useNativeBatch: boolean;
 
@@ -53,9 +54,11 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     baseUrl = "http://localhost:11434",
     legacyApi = false,
     numGpu = 999,
+    fallbackBaseUrl?: string,
   ) {
     this.model = model;
     this.baseUrl = baseUrl;
+    this.fallbackBaseUrl = fallbackBaseUrl;
     this.numGpu = numGpu;
     // Enable native batch by default unless legacyApi is true
     this.useNativeBatch = !legacyApi;
@@ -91,15 +94,31 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     );
   }
 
-  private async retryWithBackoff<T>(fn: () => Promise<T>): Promise<T> {
+  private async retryWithBackoff<T>(fn: () => Promise<T>, fallbackFn?: () => Promise<T>): Promise<T> {
     try {
       return await withRateLimitRetry(fn, {
         maxAttempts: this.retryAttempts,
         baseDelayMs: this.retryDelayMs,
         isRetryable: (error) => this.isRateLimit(error),
       });
-    } catch (error) {
-      throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined);
+    } catch (primaryError) {
+      if (!fallbackFn || !this.fallbackBaseUrl) {
+        throw new OllamaUnavailableError(this.baseUrl, primaryError instanceof Error ? primaryError : undefined);
+      }
+
+      if (isDebug()) {
+        console.error(`[Ollama] Primary ${this.baseUrl} failed, trying fallback ${this.fallbackBaseUrl}`);
+      }
+
+      try {
+        return await fallbackFn();
+      } catch (_fallbackError) {
+        throw OllamaUnavailableError.withFallback(
+          this.baseUrl,
+          this.fallbackBaseUrl,
+          primaryError instanceof Error ? primaryError : undefined,
+        );
+      }
     }
   }
 
@@ -107,8 +126,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * NEW: Native batch embedding using /api/embed
    * Sends all texts in ONE request instead of N separate requests
    */
-  private async callBatchApi(texts: string[]): Promise<OllamaEmbedBatchResponse> {
-    const response = await fetch(`${this.baseUrl}/api/embed`, {
+  private async callBatchApi(texts: string[], url?: string): Promise<OllamaEmbedBatchResponse> {
+    const baseUrl = url ?? this.baseUrl;
+    const response = await fetch(`${baseUrl}/api/embed`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -125,9 +145,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     if (!response.ok) {
       const errorBody = await response.text();
       if (response.status === 404 || errorBody.includes("not found")) {
-        throw new OllamaModelMissingError(this.model, this.baseUrl);
+        throw new OllamaModelMissingError(this.model, baseUrl);
       }
-      throw new OllamaUnavailableError(this.baseUrl, undefined, response.status);
+      throw new OllamaUnavailableError(baseUrl, undefined, response.status);
     }
 
     return response.json() as Promise<OllamaEmbedBatchResponse>;
@@ -137,9 +157,10 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * Legacy single embedding using /api/embeddings
    * Fallback for older Ollama versions
    */
-  private async callApi(text: string): Promise<OllamaEmbedResponse> {
+  private async callApi(text: string, url?: string): Promise<OllamaEmbedResponse> {
+    const baseUrl = url ?? this.baseUrl;
     try {
-      const response = await fetch(`${this.baseUrl}/api/embeddings`, {
+      const response = await fetch(`${baseUrl}/api/embeddings`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -156,9 +177,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       if (!response.ok) {
         const errorBody = await response.text();
         if (response.status === 404 || errorBody.includes("not found")) {
-          throw new OllamaModelMissingError(this.model, this.baseUrl);
+          throw new OllamaModelMissingError(this.model, baseUrl);
         }
-        throw new OllamaUnavailableError(this.baseUrl, undefined, response.status);
+        throw new OllamaUnavailableError(baseUrl, undefined, response.status);
       }
 
       return response.json() as Promise<OllamaEmbedResponse>;
@@ -177,37 +198,33 @@ export class OllamaEmbeddings implements EmbeddingProvider {
           : undefined;
 
       // Wrap network errors and unknown errors
-      throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined, rateLimitStatus);
+      throw new OllamaUnavailableError(baseUrl, error instanceof Error ? error : undefined, rateLimitStatus);
     }
+  }
+
+  private async embedSingle(text: string, url: string): Promise<EmbeddingResult> {
+    return (async () => {
+      if (this.useNativeBatch) {
+        const response = await this.callBatchApi([text], url);
+        if (!response.embeddings || response.embeddings.length === 0) {
+          throw new OllamaUnavailableError(url);
+        }
+        return { embedding: response.embeddings[0], dimensions: this.dimensions };
+      }
+      const response = await this.callApi(text, url);
+      if (!response.embedding) {
+        throw new OllamaUnavailableError(url);
+      }
+      return { embedding: response.embedding, dimensions: this.dimensions };
+    })();
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
     return this.limiter.schedule(async () =>
-      this.retryWithBackoff(async () => {
-        // Use batch API even for single text (more efficient API path)
-        if (this.useNativeBatch) {
-          const response = await this.callBatchApi([text]);
-          if (!response.embeddings || response.embeddings.length === 0) {
-            throw new OllamaUnavailableError(this.baseUrl);
-          }
-          return {
-            embedding: response.embeddings[0],
-            dimensions: this.dimensions,
-          };
-        }
-
-        // Fallback to legacy API
-        const response = await this.callApi(text);
-
-        if (!response.embedding) {
-          throw new OllamaUnavailableError(this.baseUrl);
-        }
-
-        return {
-          embedding: response.embedding,
-          dimensions: this.dimensions,
-        };
-      }),
+      this.retryWithBackoff(
+        async () => this.embedSingle(text, this.baseUrl),
+        this.fallbackBaseUrl ? async () => this.embedSingle(text, this.fallbackBaseUrl as string) : undefined,
+      ),
     );
   }
 
@@ -238,23 +255,25 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
     // Use native batch API - ONE request for ALL texts
     if (this.useNativeBatch) {
+      const batchEmbed = async (url: string): Promise<EmbeddingResult[]> => {
+        if (isDebug()) {
+          console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request to ${url}`);
+        }
+        const response = await this.callBatchApi(texts, url);
+        if (response.embeddings?.length !== texts.length) {
+          throw new OllamaUnavailableError(url);
+        }
+        return response.embeddings.map((embedding: number[]) => ({
+          embedding,
+          dimensions: this.dimensions,
+        }));
+      };
+
       return this.limiter.schedule(async () =>
-        this.retryWithBackoff(async () => {
-          if (isDebug()) {
-            console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request`);
-          }
-
-          const response = await this.callBatchApi(texts);
-
-          if (response.embeddings?.length !== texts.length) {
-            throw new OllamaUnavailableError(this.baseUrl);
-          }
-
-          return response.embeddings.map((embedding: number[]) => ({
-            embedding,
-            dimensions: this.dimensions,
-          }));
-        }),
+        this.retryWithBackoff(
+          async () => batchEmbed(this.baseUrl),
+          this.fallbackBaseUrl ? async () => batchEmbed(this.fallbackBaseUrl as string) : undefined,
+        ),
       );
     }
 
