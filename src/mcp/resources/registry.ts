@@ -19,7 +19,7 @@ export function buildOverview(): string {
 ## Tools Quick Reference
 - search_code — quick semantic lookup, human-readable output
 - semantic_search — analytical, structured JSON, full metadata
-- hybrid_search — semantic + BM25, best for mixed intent
+- hybrid_search — semantic + BM25, best for symbol name + context
 - rank_chunks — rank by signals without query
 - find_similar — find code similar to examples
 
@@ -66,9 +66,12 @@ export function buildSearchGuide(): string {
 | --- | --- |
 | Quick lookup for user request | \`search_code\` |
 | Structured JSON for analytics/reports | \`semantic_search\` |
-| Query with exact symbols, markers, identifiers | \`hybrid_search\` |
+| Symbol name + semantic context | \`hybrid_search\` |
 | Top-N by signal without query | \`rank_chunks\` |
 | Find code similar to examples | \`find_similar\` |
+| Exact text, markers (TODO/FIXME) | ripgrep MCP |
+
+For full decision logic (when to use which tool), consult the search-cascade rule.
 
 ## search_code Examples
 
@@ -85,9 +88,9 @@ export function buildSearchGuide(): string {
 
 ## hybrid_search Examples
 
-- Find TODOs/FIXMEs semantically → query="TODO FIXME technical debt"
-- Code duplication → query="retry backoff duplicate"
-- Security audit markers → query="secret token credential unsafe"
+- Symbol + context → query="PaymentService validate card expiration"
+- Class definition → query="def automations_disabled_reasons"
+- Note: BM25 component currently degraded — see search-cascade Known Limitations
 
 ## rank_chunks Examples
 
@@ -143,18 +146,21 @@ export function buildFiltersDoc(): string {
   md += "## Available fields\n\n";
   md += "**Chunk metadata:** relativePath, fileExtension, language, startLine, endLine, ";
   md += "chunkIndex, isDocumentation, name, chunkType, parentName, parentType\n\n";
-  md += "**Git metadata** (requires CODE_ENABLE_GIT_METADATA=true):\n";
-  md += "git.dominantAuthor, git.authors[], git.lastModifiedAt, git.firstCreatedAt, ";
-  md += "git.commitCount, git.ageDays, git.taskIds[]\n\n";
+  md += "**Git metadata** (requires enrichment, two levels):\n\n";
+  md += "File-level (`git.file.*`): ageDays, commitCount, dominantAuthor, dominantAuthorPct, ";
+  md += "contributorCount, authors[], lastModifiedAt, firstCreatedAt, taskIds[], ";
+  md += "bugFixRate, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq\n\n";
+  md += "Chunk-level (`git.chunk.*`): ageDays, commitCount, bugFixRate, churnRatio, ";
+  md += "contributorCount, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq\n\n";
+  md += '**⚠ Filter level:** Filters apply to `git.chunk.*` by default. Use `level: "file"` ';
+  md += "parameter for file-level filters. For time-based filters (maxAgeDays/minAgeDays), ";
+  md += "prefer `level: \"file\"` — chunk-level ageDays=0 means 'no data', not 'recent'.\n\n";
   md += "**Imports:** imports[] — file-level imports\n\n";
   md += "## Filter Thresholds\n\n";
-  md += "Typical values (vary by codebase):\n\n";
-  md += "- `minCommitCount: 5` — high churn threshold\n";
-  md += "- `minCommitCount: 10` — very high churn\n";
-  md += "- `minAgeDays: 30` — older than a month\n";
-  md += "- `minAgeDays: 90` — legacy code\n";
-  md += "- `maxAgeDays: 7` — last week's changes\n";
-  md += "- `maxAgeDays: 30` — last month's changes\n";
+  md += "Thresholds vary by codebase. Use `get_index_metrics` to get actual percentile-based ";
+  md += "label boundaries for your indexed collection. Example: commitCount ";
+  md += '`{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" in that codebase.\n\n';
+  md += "See `tea-rags://schema/signal-labels` for all label mappings.\n";
   return md;
 }
 

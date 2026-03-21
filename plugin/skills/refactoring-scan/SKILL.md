@@ -40,7 +40,8 @@ Run search-cascade **3 times** with different rerank presets. For each:
 
 - Pass query (from $ARGUMENTS) + pathPattern (from scope extraction) to
   search-cascade — it determines the tool
-- limit=15, metaOnly=false
+- limit=10, metaOnly=false (content needed for ENRICH classification; 3 × 10 =
+  30 chunks ≈ 30-60KB — fits comfortably in 1M context)
 - Apply search-cascade stop conditions per-preset
 
 | Preset          | What it surfaces                                           |
@@ -64,7 +65,7 @@ Cross-reference results from all 3 presets by `symbolId` (or `relativePath` +
 
 For **Tier 1 candidates only** (skip Tier 2/3 enrichment):
 
-- Read actual code (use startLine/endLine from results, not whole file)
+- Code content is already in results (metaOnly=false). Use it directly.
 - Classify refactoring type:
 
 | Type              | Indicator                                           |

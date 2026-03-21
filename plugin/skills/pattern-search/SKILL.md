@@ -92,6 +92,18 @@ churn/age/bugFixRate (up to 3 problematic seeds).
 
 Parameters: `limit=5` per find_similar call. Include `pathPattern` if scoped.
 
+**Cross-domain diversification (Spread):** `find_similar` is vector-locked —
+seed from domain A returns structurally similar code in domain A. To ensure
+cross-domain coverage:
+
+1. Check if EXPAND results span multiple top-level modules.
+2. If results cluster in ≤2 modules → run an additional `semantic_search` with
+   the pattern description (not code) + `pathPattern` excluding already-found
+   modules. This finds semantically similar implementations in other domains
+   that are structurally different.
+3. On polyglot codebases: also run `find_similar` with `language` filter for
+   each non-seed language (see Polyglot Rule in search-cascade).
+
 Track seen chunk paths. Skip already-seen.
 
 ### 3. DEDUPLICATE
@@ -126,9 +138,10 @@ Found: [N unique implementations across M modules]
 
 **Label mapping from overlay signals:**
 
-- ageDays < 30 → "recent", 30-90 → "stable", > 90 → "legacy"
-- commitCount < 3 → "low churn", 3-10 → "moderate", > 10 → "high churn"
-- dominantAuthorPct > 80% → show single owner name
+Use labelMap from `get_index_metrics` (loaded at session start by
+search-cascade). If absent in context, call `get_index_metrics` yourself. Map
+raw signal values to the nearest labelMap threshold. See
+`tea-rags://schema/signal-labels` for all label definitions.
 
 If **Antipattern** strategy: add `⚠️` prefix to problematic implementations. If
 **Reference** strategy: add `✓` prefix to the best example.
