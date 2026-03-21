@@ -3,6 +3,11 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>1.12.2 (2026-03-21)</small>
+
+- fix(website): escape MDX placeholders and fix broken links in troubleshooting
+  page ([7666b6b](https://github.com/artk0de/TeaRAGs-MCP/commit/7666b6b))
+
 ## <small>1.12.1 (2026-03-21)</small>
 
 - fix(dx): move marketplace.json to repo root for plugin discovery
