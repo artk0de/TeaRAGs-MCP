@@ -67,6 +67,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       stats.filesNewlyUnignored = changes.newlyUnignored.length;
 
       if (this.hasNoChanges(stats)) {
+        await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
         await ctx.synchronizer.deleteCheckpoint();
         stats.durationMs = Date.now() - startTime;
         return stats;
