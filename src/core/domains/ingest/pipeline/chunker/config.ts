@@ -36,6 +36,8 @@ export interface LanguageDefinition {
   isDocumentation?: boolean;
   /** Language-specific chunking hooks */
   hooks?: ChunkingHook[];
+  /** Custom name extraction for language-specific node types (e.g., RSpec call nodes) */
+  nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined;
 }
 
 export interface LanguageConfig {
@@ -45,6 +47,7 @@ export interface LanguageConfig {
   alwaysExtractChildren?: boolean;
   isDocumentation?: boolean;
   hooks?: ChunkingHook[];
+  nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined;
 }
 
 /**
@@ -110,11 +113,24 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
       "class", // class Foo ... end (small classes kept whole)
       "module", // module Bar ... end (small modules kept whole)
       "singleton_class", // class << self ... end
+      "call", // RSpec describe/context/it (filtered by rspec-filter hook)
     ],
     // When class/module is too large, recursively look for these smaller units
     // NOTE: "singleton_class" removed from childChunkTypes - we traverse THROUGH it
     // to find the methods inside (class << self ... end contains methods)
-    childChunkTypes: ["method", "singleton_method"],
+    childChunkTypes: ["method", "singleton_method", "call"],
+    nameExtractor: (node: Parser.SyntaxNode, code: string): string | undefined => {
+      if (node.type !== "call") return undefined;
+      const id = node.children.find((c) => c.type === "identifier");
+      const methodName = id ? code.substring(id.startIndex, id.endIndex) : "";
+      const args = node.childForFieldName("arguments");
+      if (args && args.namedChildren.length > 0) {
+        const firstArg = args.namedChildren[0];
+        const argText = code.substring(firstArg.startIndex, firstArg.endIndex);
+        return `${methodName} ${argText}`;
+      }
+      return methodName || undefined;
+    },
     // In Ruby, virtually all code lives inside class/module. Without this flag,
     // small classes become a single chunk and individual methods are not searchable.
     alwaysExtractChildren: true,

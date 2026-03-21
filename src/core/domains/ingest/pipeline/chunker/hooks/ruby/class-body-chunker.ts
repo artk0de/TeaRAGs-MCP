@@ -11,6 +11,7 @@
 import type Parser from "tree-sitter";
 
 import type { BodyChunkResult, ChunkingHook } from "../types.js";
+import { isRspecFile } from "./rspec-filter.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
 
@@ -129,6 +130,26 @@ const DECLARATION_KEYWORDS: Record<string, string> = {
   // serialization
   serialize: "other",
   store_accessor: "other",
+
+  // RSpec setup
+  let: "setup",
+  subject: "setup",
+
+  // RSpec hooks
+  before: "hooks",
+  after: "hooks",
+  around: "hooks",
+
+  // RSpec shared examples
+  shared_examples: "shared",
+  shared_context: "shared",
+  include_examples: "shared",
+  it_behaves_like: "shared",
+  include_context: "shared",
+
+  // FactoryBot
+  factory: "factory",
+  trait: "factory",
 };
 
 /**
@@ -561,12 +582,45 @@ export function extractBodyChunks(
   return results;
 }
 
+// ── RSpec body extraction ─────────────────────────────────────────
+
+/**
+ * For RSpec files: collect all body lines into a single chunk.
+ * No semantic grouping — let/before/subject/shared all belong together.
+ */
+function extractRspecBodyChunk(
+  containerNode: Parser.SyntaxNode,
+  childNodes: Parser.SyntaxNode[],
+  code: string,
+  excludedRows: Set<number>,
+): BodyChunkResult[] {
+  const bodyLines = extractContainerBodyLines(containerNode, childNodes, code, excludedRows);
+  if (bodyLines.length === 0) return [];
+
+  const content = bodyLines
+    .map((l) => l.text)
+    .join("\n")
+    .trim();
+  if (content.length === 0) return [];
+
+  const lineRanges = computeLineRanges(bodyLines);
+  const minLine = Math.min(...lineRanges.map((r) => r.start));
+  const maxLine = Math.max(...lineRanges.map((r) => r.end));
+
+  return [{ content, startLine: minLine, endLine: maxLine, lineRanges }];
+}
+
 // ── ChunkingHook export ────────────────────────────────────────────
 
 export const rubyBodyChunkingHook: ChunkingHook = {
   name: "rubyBodyChunking",
   process(ctx) {
-    ctx.bodyChunks = extractBodyChunks(ctx.containerNode, ctx.validChildren, ctx.code, ctx.excludedRows, ctx.config);
+    if (isRspecFile(ctx.filePath)) {
+      // RSpec: merge all body lines into one chunk (let/before/subject together)
+      ctx.bodyChunks = extractRspecBodyChunk(ctx.containerNode, ctx.validChildren, ctx.code, ctx.excludedRows);
+    } else {
+      ctx.bodyChunks = extractBodyChunks(ctx.containerNode, ctx.validChildren, ctx.code, ctx.excludedRows, ctx.config);
+    }
   },
 };
 
