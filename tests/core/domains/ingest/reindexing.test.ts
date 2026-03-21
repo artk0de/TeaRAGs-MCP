@@ -277,6 +277,25 @@ function helper(param: string): boolean {
       expect(statusAfter.lastUpdated).toBeDefined();
       expect(statusAfter.lastUpdated!.getTime()).toBeGreaterThan(completedAtBefore);
     });
+
+    it("should update completedAt even when no changes detected", async () => {
+      await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('Initial');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const status = await ingest.getIndexStatus(codebaseDir);
+      const completedAtBefore = status.lastUpdated!.getTime();
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Reindex with no changes
+      const stats = await ingest.reindexChanges(codebaseDir);
+      expect(stats.filesAdded).toBe(0);
+      expect(stats.filesModified).toBe(0);
+      expect(stats.filesDeleted).toBe(0);
+
+      const statusAfter = await ingest.getIndexStatus(codebaseDir);
+      expect(statusAfter.lastUpdated!.getTime()).toBeGreaterThan(completedAtBefore);
+    });
   });
 
   describe("Progress callback coverage", () => {
