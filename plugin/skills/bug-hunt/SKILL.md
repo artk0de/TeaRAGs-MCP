@@ -30,9 +30,10 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 
 ```
 1. DISCOVER — find the area (pure similarity, NO rerank)
-   ONE semantic_search: query=symptom description, metaOnly=true, limit=10
+   ONE semantic_search: query=symptom description, limit=10
    Do NOT use rerank="bugHunt" here — discovery is about finding the right
-   area, not ranking by signals. Note top 3-5 file paths from results.
+   area, not ranking by signals. Read the returned code to understand the
+   area. Note top 3-5 file paths from results.
 
    CHECKPOINT: fill three fields:
    - Suspect file(s): ___
