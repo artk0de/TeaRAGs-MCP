@@ -24,9 +24,10 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 ## Flow
 
 ```
-1. SEARCH — choose tool via search-cascade decision tree
-   Parameters: metaOnly=false, limit=15
-   + rerank="bugHunt" unless a more precise preset fits
+1. DISCOVER — find the area (pure similarity, NO rerank)
+   ONE semantic_search: query=symptom description, metaOnly=true, limit=10
+   Do NOT use rerank="bugHunt" here — discovery is about finding the right
+   area, not ranking by signals. Note top 3-5 file paths from results.
 
    CHECKPOINT: fill three fields:
    - Suspect file(s): ___
@@ -36,7 +37,11 @@ Signal-driven root cause investigation using TeaRAGs git signals.
    All filled? → step 3 (VERIFY)
    Not all? → step 2 (REFINE)
 
-2. REFINE — uses cascade pagination/reformulation rules:
+2. REFINE — drill down into suspects with signals
+   semantic_search or hybrid_search: rerank="bugHunt", metaOnly=false,
+   limit=10, pathPattern="{file1.rb,file2.rb}" (from step 1 paths)
+
+   Additional tools via cascade rules:
    - Know symbol → hybrid_search
    - Need similar pattern → find_similar (code or chunk ID)
    - Need analytics → rank_chunks + rerank
