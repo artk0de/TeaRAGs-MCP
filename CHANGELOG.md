@@ -1,3 +1,23 @@
+## <small>1.14.3 (2026-03-21)</small>
+
+- improve(dx): skill audit fixes — polyglot rule, filter levels, stable preset,
+  resource DRY
+  ([ae9eb9a](https://github.com/artk0de/TeaRAGs-MCP/commit/ae9eb9a))
+- improve(plugin): optimize bug-hunt skill for speed and token efficiency
+  ([9c2fcf4](https://github.com/artk0de/TeaRAGs-MCP/commit/9c2fcf4))
+- fix(dx): add plugin versioning rule and bump to 0.5.1
+  ([71d4584](https://github.com/artk0de/TeaRAGs-MCP/commit/71d4584))
+- fix(plugin): restore lost rules from bug-hunt pre-cascade version
+  ([29a5153](https://github.com/artk0de/TeaRAGs-MCP/commit/29a5153))
+- fix(plugin): restore pagination and analytics options in bug-hunt REFINE
+  ([32c5390](https://github.com/artk0de/TeaRAGs-MCP/commit/32c5390))
+- fix(plugin): restore two-phase search in bug-hunt skill
+  ([9280400](https://github.com/artk0de/TeaRAGs-MCP/commit/9280400))
+- fix(plugin): skip VERIFY when all checkpoint fields filled in DISCOVER
+  ([3e25974](https://github.com/artk0de/TeaRAGs-MCP/commit/3e25974))
+- fix(plugin): use metaOnly=false in bug-hunt DISCOVER step
+  ([840e892](https://github.com/artk0de/TeaRAGs-MCP/commit/840e892))
+
 ## <small>1.14.2 (2026-03-21)</small>
 
 - improve(embedding): platform-aware Ollama hints and RFC1918 local IP detection
