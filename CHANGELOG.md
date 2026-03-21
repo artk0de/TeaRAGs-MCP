@@ -1,3 +1,118 @@
+## 1.12.0 (2026-03-21)
+
+- fix(adapters): pass original error as cause instead of wrapping in new Error
+  ([b3b1855](https://github.com/artk0de/TeaRAGs-MCP/commit/b3b1855))
+- fix(all): replace every remaining plain Error with typed errors
+  ([35d2e41](https://github.com/artk0de/TeaRAGs-MCP/commit/35d2e41))
+- fix(bootstrap): update default Ollama model to
+  unclemusclez/jina-embeddings-v2-base-code
+  ([e15e209](https://github.com/artk0de/TeaRAGs-MCP/commit/e15e209))
+- fix(config): add OLLAMA_URL as fallback for EMBEDDING_BASE_URL
+  ([3421332](https://github.com/artk0de/TeaRAGs-MCP/commit/3421332))
+- fix(infra): add defensive assertion in resolveCollection, fix no-op test
+  ([41c5095](https://github.com/artk0de/TeaRAGs-MCP/commit/41c5095))
+- fix(ingest): add embedding health check before indexing and status queries
+  ([2d559a3](https://github.com/artk0de/TeaRAGs-MCP/commit/2d559a3))
+- fix(ingest): propagate TeaRagsError from indexCodebase instead of swallowing
+  ([0245241](https://github.com/artk0de/TeaRAGs-MCP/commit/0245241))
+- fix(pipeline): propagate batch errors instead of silently swallowing them
+  ([ad376cf](https://github.com/artk0de/TeaRAGs-MCP/commit/ad376cf))
+- test(ingest): add TDD tests for OllamaUnavailableError propagation
+  ([681e41b](https://github.com/artk0de/TeaRAGs-MCP/commit/681e41b))
+- improve(bootstrap): graceful startup — remove pre-flight Ollama check
+  ([d17ca83](https://github.com/artk0de/TeaRAGs-MCP/commit/d17ca83))
+- improve(dx): merge reindex-changes into index skill
+  ([5b3bbc1](https://github.com/artk0de/TeaRAGs-MCP/commit/5b3bbc1))
+- improve(mcp): deprecate reindex_changes — index_codebase handles both
+  ([d49ad79](https://github.com/artk0de/TeaRAGs-MCP/commit/d49ad79))
+- improve(plugin): delegate tool selection to search-cascade, add
+  refactoring-scan skill
+  ([5cc8cee](https://github.com/artk0de/TeaRAGs-MCP/commit/5cc8cee))
+- improve(plugin): enforce search-cascade as critical tool selection rule
+  ([ec84096](https://github.com/artk0de/TeaRAGs-MCP/commit/ec84096))
+- improve(plugin): expand LSP profile with call chain, implementations,
+  performance warning
+  ([0290e74](https://github.com/artk0de/TeaRAGs-MCP/commit/0290e74))
+- improve(plugin): expand pattern-search intent triggers in explore skill
+  ([4e10504](https://github.com/artk0de/TeaRAGs-MCP/commit/4e10504))
+- improve(plugin): integrate pattern-search as internal explore strategy
+  ([7917a0b](https://github.com/artk0de/TeaRAGs-MCP/commit/7917a0b))
+- improve(plugin): integrate search-cascade into pattern-search SEED step
+  ([f0362d9](https://github.com/artk0de/TeaRAGs-MCP/commit/f0362d9))
+- improve(plugin): remove LSP references — causes hangs, use ripgrep/tree-sitter
+  ([01ffd96](https://github.com/artk0de/TeaRAGs-MCP/commit/01ffd96))
+- improve(plugin): rewrite search-cascade with combo strategy and profiles
+  ([0d2dcad](https://github.com/artk0de/TeaRAGs-MCP/commit/0d2dcad))
+- refactor(adapters): extract shared retry utility and deduplicate config/schema
+  builders ([b507faf](https://github.com/artk0de/TeaRAGs-MCP/commit/b507faf))
+- refactor(all): extract logic from barrel index.ts files
+  ([b67ffb4](https://github.com/artk0de/TeaRAGs-MCP/commit/b67ffb4))
+- refactor(ingest): extract helpers and remove unused for+break duplicates
+  ([aaa2211](https://github.com/artk0de/TeaRAGs-MCP/commit/aaa2211))
+- feat(adapters): add InfraError hierarchy with adapter-specific errors
+  ([e0924fe](https://github.com/artk0de/TeaRAGs-MCP/commit/e0924fe))
+- feat(cli): add CLI entrypoint and update bin to cli/index.js
+  ([0d55a84](https://github.com/artk0de/TeaRAGs-MCP/commit/0d55a84))
+- feat(cli): add YAML config loader with project/global merge
+  ([7f65da5](https://github.com/artk0de/TeaRAGs-MCP/commit/7f65da5))
+- feat(cli): add yargs entrypoint with server command stub
+  ([81cfbb6](https://github.com/artk0de/TeaRAGs-MCP/commit/81cfbb6))
+- feat(cli): implement tea-rags server command
+  ([f86f762](https://github.com/artk0de/TeaRAGs-MCP/commit/f86f762))
+- feat(contracts): add TeaRagsError hierarchy, InputValidationError, migrate
+  CollectionRefError
+  ([e915bd7](https://github.com/artk0de/TeaRAGs-MCP/commit/e915bd7))
+- feat(dx): add background indexing skills and update search-cascade
+  ([4847cf7](https://github.com/artk0de/TeaRAGs-MCP/commit/4847cf7))
+- feat(ingest): track ignore pattern changes in reindex + decompose pipelines
+  ([2ee3843](https://github.com/artk0de/TeaRAGs-MCP/commit/2ee3843))
+- feat(ingest): zero-downtime forceReindex via Qdrant collection aliases
+  ([414781c](https://github.com/artk0de/TeaRAGs-MCP/commit/414781c))
+- feat(mcp): add errorHandlerMiddleware, migrate all tools to registerToolSafe
+  ([e5be47f](https://github.com/artk0de/TeaRAGs-MCP/commit/e5be47f))
+- feat(plugin): add pattern-search skill for cross-codebase pattern discovery
+  ([4ac2ed0](https://github.com/artk0de/TeaRAGs-MCP/commit/4ac2ed0))
+- feat(qdrant): add static payload indexes for language, fileExtension,
+  chunkType ([24266d4](https://github.com/artk0de/TeaRAGs-MCP/commit/24266d4))
+- docs(cli): add CLI executable design spec
+  ([86811d2](https://github.com/artk0de/TeaRAGs-MCP/commit/86811d2))
+- docs(dx): add typed-errors rule for mandatory error hierarchy usage
+  ([e646922](https://github.com/artk0de/TeaRAGs-MCP/commit/e646922))
+- docs(dx): update search-cascade for typed error handling
+  ([9dc91bc](https://github.com/artk0de/TeaRAGs-MCP/commit/9dc91bc))
+- docs(operations): add AliasOperationError and zero-downtime reindex FAQ
+  ([31ccecc](https://github.com/artk0de/TeaRAGs-MCP/commit/31ccecc))
+- docs(operations): add error codes reference, rename troubleshooting page
+  ([51b41e3](https://github.com/artk0de/TeaRAGs-MCP/commit/51b41e3))
+- docs(plans): add collection aliases implementation plan
+  ([41143cf](https://github.com/artk0de/TeaRAGs-MCP/commit/41143cf))
+- docs(plans): add error handling implementation plan
+  ([6c7ca33](https://github.com/artk0de/TeaRAGs-MCP/commit/6c7ca33))
+- docs(plans): add streaming chunk enrichment plan
+  ([e86701c](https://github.com/artk0de/TeaRAGs-MCP/commit/e86701c))
+- docs(specs): add collection aliases and project registry design specs
+  ([bbecbe9](https://github.com/artk0de/TeaRAGs-MCP/commit/bbecbe9))
+- docs(specs): add unified error handling design spec
+  ([3ed02fd](https://github.com/artk0de/TeaRAGs-MCP/commit/3ed02fd))
+- docs(specs): fix error handling spec after review
+  ([f10c8fc](https://github.com/artk0de/TeaRAGs-MCP/commit/f10c8fc))
+- docs(specs): fix review issues, add typed-errors rule, complete migration
+  ([1425c23](https://github.com/artk0de/TeaRAGs-MCP/commit/1425c23))
+- docs(specs): update error handling spec with brainstorming decisions
+  ([926982f](https://github.com/artk0de/TeaRAGs-MCP/commit/926982f))
+- docs(usage): add Ignoring Files page with dynamic ignore tracking
+  ([5a16536](https://github.com/artk0de/TeaRAGs-MCP/commit/5a16536))
+- chore(deps): add yargs and yaml for CLI
+  ([2daa77e](https://github.com/artk0de/TeaRAGs-MCP/commit/2daa77e))
+- chore(plugin): bump version to 0.3.1 for new indexing skills
+  ([5534a4c](https://github.com/artk0de/TeaRAGs-MCP/commit/5534a4c))
+- feat(adapters,domains): migrate all throw sites to typed errors
+  ([5c500df](https://github.com/artk0de/TeaRAGs-MCP/commit/5c500df))
+- fix(adapters,domains): replace all remaining plain Error throws with typed
+  errors ([0b5fe9c](https://github.com/artk0de/TeaRAGs-MCP/commit/0b5fe9c))
+- style(rerank,schemas): apply eslint auto-fixes
+  ([9e2ae4d](https://github.com/artk0de/TeaRAGs-MCP/commit/9e2ae4d))
+
 ## 1.11.0 (2026-03-17)
 
 - test(explore): add offset pagination tests for BaseExploreStrategy
