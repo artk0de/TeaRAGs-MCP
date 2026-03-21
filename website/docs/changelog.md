@@ -3,6 +3,11 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## <small>1.12.1 (2026-03-21)</small>
+
+- fix(dx): move marketplace.json to repo root for plugin discovery
+  ([28f0b04](https://github.com/artk0de/TeaRAGs-MCP/commit/28f0b04))
+
 ## 1.12.0 (2026-03-21)
 
 - fix(adapters): pass original error as cause instead of wrapping in new Error
