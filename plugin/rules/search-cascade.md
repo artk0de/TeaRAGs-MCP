@@ -63,13 +63,24 @@ Has query?
 │       + rerank preset for analytics
 │
 └─ Yes
+   ├─ Exhaustive usage intent? ("where is X used", "all callers",
+   │   "who imports X", "can I delete X", "all references")
+   │   → TWO-STEP:
+   │     1. hybrid_search (verify naming in domain + get initial context)
+   │     2. ripgrep MCP (exhaustive search by verified symbol names)
+   │   Combine: ripgrep list for completeness + semantic context from step 1.
+   │   semantic_search alone gives ~13% recall — NOT sufficient for usage queries.
+   │
    ├─ Have code/chunk as example? → find_similar (code or chunk ID)
    │
-   ├─ Have a symbol name? → hybrid_search
-   │   (symbol + semantic context around it)
+   ├─ Have a symbol name + semantic context? → hybrid_search
    │   Example: "PaymentService validate card expiration"
    │   BM25 catches PaymentService, semantic catches validation logic
    │   Fallback: if hybrid_search unavailable (enableHybrid=false) → semantic_search
+   │
+   ├─ Have a bare symbol name (no context)? → semantic_search
+   │   hybrid_search adds BM25 noise for short symbol names.
+   │   semantic_search gives tighter, cleaner results.
    │
    ├─ Pure exploration, human-readable output? → search_code
    │   Quick lookup, no structured metadata needed
@@ -150,6 +161,29 @@ queries. Stop conditions are based on **information gain**, not score magnitude.
 - Cross-preset: stop when merge produces < 2 new candidates appearing in 2+
   presets per additional page
 
+## No-Match Detection
+
+Absolute similarity scores are meaningless — a nonsensical query can score 0.55
+while legitimate reranked results score 0.36. Detect "no relevant results" using
+relative patterns within the result set:
+
+**Check after every search call:**
+
+1. **Score spread:** `(max_score - min_score) / max_score`. If < 0.06 across
+   top-10 → flat distribution, query has no discriminative power → likely noise.
+2. **Lexical overlap:** Do any query terms appear in top-5 file paths, symbol
+   names, or chunk content? Zero overlap → strong no-match signal.
+3. **Path clustering:** Do top-10 results cluster in ≤3 directories? If
+   scattered across >7 unrelated directories → noise, not a coherent area.
+
+**Decision:**
+
+- Any 2 of 3 triggered → warn: "results may not be relevant." Validate key
+  findings with ripgrep before reasoning about them.
+- All 3 triggered → treat as "no match." Report to user, do not reason about
+  irrelevant results.
+- 0 or 1 triggered → proceed normally.
+
 ## Combo Strategy Rules
 
 **Rule 1: tea-rags for discovery, LSP for navigation.** One semantic_search
@@ -167,9 +201,12 @@ startLine/endLine for partial Read. For symbols called inside a chunk but
 defined elsewhere — LSP goToDefinition gives exact file:line, then partial Read
 from that position.
 
-**Rule 4: Cross-layer via semantic_search + language filter.** Not grep chains
-(controller → route → grep frontend). One call:
-`semantic_search("batch create jobs", language="typescript")`.
+**Rule 4: Cross-layer via separate per-language calls.** Not grep chains
+(controller → route → grep frontend). Not one unfiltered call (dominant language
+takes 100% of slots). Issue one call per language layer:
+`semantic_search("batch create jobs", language="ruby")` +
+`semantic_search("batch create jobs", language="typescript")`. Merge results.
+This is a workaround — stratified retrieval in MCP is planned.
 
 **Rule 5: Resources on demand.** `tea-rags://schema/overview` and
 `tea-rags://schema/search-guide` loaded at session start. Other resources
@@ -181,11 +218,11 @@ Organized by agent task. Each references a decision tree branch.
 
 **Discovery (don't know the naming)**
 
-| Task                              | Tool (via tree)            | Example                                                |
-| --------------------------------- | -------------------------- | ------------------------------------------------------ |
-| Find subsystem by description     | semantic_search            | "retry logic after failure" → retryWithBackoff         |
-| Find frontend for backend concept | semantic_search + language | "batch create jobs", language="typescript"             |
-| Find similar pattern              | find_similar               | Found retry in cohere → find_similar → retry in ollama |
+| Task                              | Tool (via tree)                | Example                                                |
+| --------------------------------- | ------------------------------ | ------------------------------------------------------ |
+| Find subsystem by description     | semantic_search                | "retry logic after failure" → retryWithBackoff         |
+| Find frontend for backend concept | semantic_search × per language | "batch create jobs" → one call per language layer      |
+| Find similar pattern              | find_similar                   | Found retry in cohere → find_similar → retry in ollama |
 
 **Analytics (rerank-driven)**
 
@@ -198,13 +235,22 @@ Organized by agent task. Each references a decision tree branch.
 | Most unstable code in domain | semantic_search + hotspots or custom  | pathPattern for domain scope                           |
 | Recent changes for review    | semantic_search + codeReview          | maxAgeDays=7                                           |
 
+**Exhaustive usage (need ALL references)**
+
+| Task                     | Tool (via tree)             | Example                                              |
+| ------------------------ | --------------------------- | ---------------------------------------------------- |
+| All callers / all usages | hybrid_search → ripgrep MCP | hybrid verifies naming, ripgrep finds all call-sites |
+| Safe to delete / rename  | hybrid_search → ripgrep MCP | hybrid for context, ripgrep for exhaustive check     |
+| Impact of change         | hybrid_search → ripgrep MCP | hybrid finds domain, ripgrep finds all dependents    |
+
 **Exact symbol search**
 
-| Task                         | Tool (via tree)          | Example                                        |
-| ---------------------------- | ------------------------ | ---------------------------------------------- |
-| Class/method definition      | hybrid_search            | "def automations_disabled_reasons"             |
-| TODO/FIXME markers + context | hybrid_search + techDebt | BM25 catches markers, semantic catches context |
-| Symbol + semantic context    | hybrid_search            | "PaymentService validate card expiration"      |
+| Task                      | Tool (via tree) | Example                                              |
+| ------------------------- | --------------- | ---------------------------------------------------- |
+| Bare symbol name          | semantic_search | "batch_create" → cleaner than hybrid for short names |
+| Symbol + semantic context | hybrid_search   | "PaymentService validate card expiration"            |
+| TODO/FIXME markers        | ripgrep MCP     | Exact string match, not hybrid (see Prohibited)      |
+| Class/method definition   | hybrid_search   | "def automations_disabled_reasons"                   |
 
 **Code context for generation**
 
@@ -227,7 +273,7 @@ Organized by agent task. Each references a decision tree branch.
 | Type / signature                    | LSP hover                                                                                    | Read (partial)                     |
 | Find symbol by name                 | LSP workspaceSymbol                                                                          | hybrid_search                      |
 | Find implementations                | LSP goToImplementation                                                                       | hybrid_search ("class SymbolName") |
-| Cross-layer                         | semantic_search + language filter                                                            | same                               |
+| Cross-layer                         | semantic_search × per language (one call per layer)                                          | same                               |
 | Exact text                          | ripgrep MCP                                                                                  | built-in Grep                      |
 
 **LSP performance warning:** `incomingCalls`, `outgoingCalls`, and
@@ -267,13 +313,18 @@ These complement tea-rags. See Fallback Chains for profile-specific guidance.
   reserve findReferences for exhaustive refactoring impact only
 - **Read whole file when search returned code** — content is in search results
   (Rule 3)
-- **Grep chains for cross-layer** — use semantic_search + language filter
-  (Rule 4)
+- **Grep chains for cross-layer** — use semantic_search × per language (Rule 4)
+- **Unfiltered semantic_search for cross-layer** — dominant language takes 100%
+  of slots. Always use language filter (Rule 4)
 - **git log/diff for code history** — overlay already has git signals
 - **10+ ripgrep calls instead of reading a file** — just read it
 - **search_code in generation/bug-hunt/research context** — use semantic_search
   (needs overlay labels + structured metadata). search_code is for pure
   exploration only (/tea-rags:explore)
+- **semantic_search alone for "find all usages"** — ~13% recall. Always follow
+  with ripgrep MCP for exhaustive usage queries
+- **hybrid_search for TODO/FIXME/HACK markers** — BM25 does not reliably surface
+  literal markers. Use ripgrep MCP for exact string matching
 
 ## Trust the Index
 
