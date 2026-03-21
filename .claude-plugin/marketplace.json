@@ -15,7 +15,13 @@
       },
       "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
       "version": "0.1.0",
-      "keywords": ["code-generation", "git-signals", "strategies", "search", "tea-rags"]
+      "keywords": [
+        "code-generation",
+        "git-signals",
+        "strategies",
+        "search",
+        "tea-rags"
+      ]
     }
   ]
 }
