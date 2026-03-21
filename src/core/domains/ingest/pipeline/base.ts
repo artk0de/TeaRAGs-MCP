@@ -168,7 +168,11 @@ export abstract class BaseIndexingPipeline {
     collectionName: string,
     absolutePath: string,
   ): () => EnrichmentStatusResult {
-    if (chunkMap.size === 0) return () => ({ status: "skipped" });
+    if (chunkMap.size === 0) {
+      // Prefetch may have set marker to "in_progress" — clear it
+      this.enrichment.updateEnrichmentMarker(collectionName, { status: "completed" }).catch(() => {});
+      return () => ({ status: "skipped" });
+    }
 
     let done = false;
     let enrichmentMetrics: EnrichmentMetrics | undefined;
