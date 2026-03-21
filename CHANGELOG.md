@@ -1,3 +1,8 @@
+## <small>1.14.1 (2026-03-21)</small>
+
+- fix(ingest): clear enrichment in_progress marker when no chunks produced
+  ([1230e45](https://github.com/artk0de/TeaRAGs-MCP/commit/1230e45))
+
 ## 1.14.0 (2026-03-21)
 
 - feat(embedding): add EMBEDDING_FALLBACK_URL for Ollama provider failover
