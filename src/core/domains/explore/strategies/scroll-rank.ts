@@ -6,7 +6,7 @@
  */
 
 import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
-import type { RerankableResult } from "../../../contracts/types/reranker.js";
+import type { RankingOverlay, RerankableResult } from "../../../contracts/types/reranker.js";
 import { InvalidQueryError } from "../errors.js";
 import { RankModule, type RankOptions } from "../rank-module.js";
 import { BaseExploreStrategy } from "./base.js";
@@ -112,11 +112,15 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
   }
 
   private async fetchAndMap(collectionName: string, opts: RankOptions): Promise<ExploreResult[]> {
-    const results: RerankableResult[] = await this.rankModule.rankChunks(collectionName, opts);
-    return results.map((r) => ({
-      score: r.score,
-      payload: r.payload as Record<string, unknown> | undefined,
-    }));
+    const results = await this.rankModule.rankChunks(collectionName, opts);
+    return results.map((r) => {
+      const withOverlay = r as RerankableResult & { rankingOverlay?: RankingOverlay };
+      return {
+        score: r.score,
+        payload: r.payload as Record<string, unknown> | undefined,
+        rankingOverlay: withOverlay.rankingOverlay,
+      };
+    });
   }
 
   protected override postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
