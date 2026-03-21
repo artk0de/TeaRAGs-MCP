@@ -113,9 +113,13 @@ export class IngestFacade {
           enrichmentDurationMs: changeStats.enrichmentDurationMs,
           enrichmentMetrics: changeStats.enrichmentMetrics,
           changeDetails: {
+            filesAdded: changeStats.filesAdded,
+            filesModified: changeStats.filesModified,
             filesDeleted: changeStats.filesDeleted,
             filesNewlyIgnored: changeStats.filesNewlyIgnored,
             filesNewlyUnignored: changeStats.filesNewlyUnignored,
+            chunksAdded: changeStats.chunksAdded,
+            chunksDeleted: changeStats.chunksDeleted,
           },
         };
       }
@@ -126,7 +130,7 @@ export class IngestFacade {
     return result;
   }
 
-  /** Incrementally re-index only changed files */
+  /** @deprecated Use indexCodebase — it auto-detects incremental reindex */
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
     await this.checkEmbeddingHealth();
     const result = await this.reindex.reindexChanges(path, progressCallback);

@@ -57,6 +57,7 @@ export interface App {
 
   // -- Indexing (→ internal/facades/ingest-facade.ts) --
   indexCodebase: (path: string, options?: IndexOptions, progress?: ProgressCallback) => Promise<IndexStats>;
+  /** @deprecated Use indexCodebase — it auto-detects incremental reindex */
   reindexChanges: (path: string, progress?: ProgressCallback) => Promise<ChangeStats>;
   getIndexStatus: (path: string) => Promise<IndexStatus>;
   clearIndex: (path: string) => Promise<void>;

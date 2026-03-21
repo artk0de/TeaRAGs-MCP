@@ -72,9 +72,13 @@ export interface IndexStats {
   enrichmentMetrics?: EnrichmentMetrics;
   /** Present only during auto-reindex via index_codebase */
   changeDetails?: {
+    filesAdded: number;
+    filesModified: number;
     filesDeleted: number;
     filesNewlyIgnored: number;
     filesNewlyUnignored: number;
+    chunksAdded: number;
+    chunksDeleted: number;
   };
 }
 

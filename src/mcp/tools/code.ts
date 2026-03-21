@@ -36,9 +36,18 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       let statusMessage: string;
       if (stats.changeDetails) {
         const d = stats.changeDetails;
-        statusMessage = `Reindexed: +${stats.filesIndexed} ~0 -${d.filesDeleted} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
-        if (d.filesNewlyIgnored > 0) statusMessage += `\n  Newly ignored: ${d.filesNewlyIgnored}`;
-        if (d.filesNewlyUnignored > 0) statusMessage += `\n  Newly unignored: ${d.filesNewlyUnignored}`;
+        if (d.filesAdded === 0 && d.filesModified === 0 && d.filesDeleted === 0) {
+          statusMessage = `No changes detected. Codebase is up to date.`;
+        } else {
+          statusMessage = `Incremental re-index complete:\n`;
+          statusMessage += `- Files: +${d.filesAdded} ~${d.filesModified} -${d.filesDeleted}\n`;
+          if (d.filesNewlyIgnored > 0) statusMessage += `  Newly ignored: ${d.filesNewlyIgnored}\n`;
+          if (d.filesNewlyUnignored > 0) statusMessage += `  Newly unignored: ${d.filesNewlyUnignored}\n`;
+          const chunkDiff = d.chunksAdded - d.chunksDeleted;
+          const sign = chunkDiff >= 0 ? "+" : "";
+          statusMessage += `- Chunks: +${d.chunksAdded} -${d.chunksDeleted} (net: ${sign}${chunkDiff})\n`;
+          statusMessage += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
+        }
       } else {
         statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
       }
