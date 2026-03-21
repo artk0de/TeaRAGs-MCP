@@ -15,6 +15,7 @@ export interface HookContext {
   readonly code: string;
   readonly codeLines: string[];
   readonly config: { maxChunkSize: number };
+  readonly filePath: string;
 
   // Mutable state — hooks modify these
   excludedRows: Set<number>;
@@ -27,6 +28,10 @@ export interface HookContext {
 export interface ChunkingHook {
   name: string;
   process: (ctx: HookContext) => void;
+  /** Filter nodes during chunkable/child node discovery.
+   *  Return true to include, false to exclude, undefined for no opinion.
+   *  Called for EACH candidate node by findChunkableNodes/findChildChunkableNodes. */
+  filterNode?: (node: Parser.SyntaxNode, code: string, filePath: string) => boolean | undefined;
 }
 
 export function createHookContext(
@@ -34,6 +39,7 @@ export function createHookContext(
   validChildren: Parser.SyntaxNode[],
   code: string,
   config: { maxChunkSize: number },
+  filePath = "",
 ): HookContext {
   return {
     containerNode,
@@ -41,6 +47,7 @@ export function createHookContext(
     code,
     codeLines: code.split("\n"),
     config,
+    filePath,
     excludedRows: new Set(),
     methodPrefixes: new Map(),
     methodStartLines: new Map(),

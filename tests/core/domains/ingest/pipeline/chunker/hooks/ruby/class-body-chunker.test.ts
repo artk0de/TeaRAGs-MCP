@@ -745,4 +745,63 @@ describe("RubyClassBodyChunker", () => {
       expect(groups[1].lines).toHaveLength(4);
     });
   });
+
+  describe("RSpec keyword classification", () => {
+    it("should group let and subject as setup", () => {
+      const lines = makeLines([
+        "  let(:user) { create(:user) }",
+        "  let(:admin) { create(:user, role: 'admin') }",
+        "  subject { described_class.new(user) }",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("setup");
+      expect(groups[0].lines).toHaveLength(3);
+    });
+
+    it("should group before and after as hooks", () => {
+      const lines = makeLines([
+        "  before { setup_database }",
+        "  after { cleanup_database }",
+        "  around { |example| Timecop.freeze { example.run } }",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("hooks");
+      expect(groups[0].lines).toHaveLength(3);
+    });
+
+    it("should group shared examples as shared", () => {
+      const lines = makeLines([
+        "  it_behaves_like 'authenticable'",
+        "  include_examples 'has timestamps'",
+        "  include_context 'with admin user'",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("shared");
+      expect(groups[0].lines).toHaveLength(3);
+    });
+
+    it("should group factory and trait as factory", () => {
+      const lines = makeLines(["  factory :user do", "    name { 'Test' }", "  end"]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].type).toBe("factory");
+      expect(groups[0].lines).toHaveLength(3);
+    });
+
+    it("should separate RSpec groups from each other", () => {
+      const lines = makeLines([
+        "  let(:user) { create(:user) }",
+        "  before { setup }",
+        "  it_behaves_like 'authenticable'",
+      ]);
+      const groups = grouper.groupLines(lines);
+      expect(groups).toHaveLength(3);
+      expect(groups[0].type).toBe("setup");
+      expect(groups[1].type).toBe("hooks");
+      expect(groups[2].type).toBe("shared");
+    });
+  });
 });

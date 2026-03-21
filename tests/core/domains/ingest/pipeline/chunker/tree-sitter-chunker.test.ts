@@ -2350,4 +2350,188 @@ class MyService {
       }
     });
   });
+
+  describe("chunk - Ruby RSpec", () => {
+    it("should extract describe as a container with it blocks as children", async () => {
+      const code = `RSpec.describe User do
+  it 'is valid with valid attributes' do
+    user = build(:user, name: 'Test', email: 'test@example.com')
+    expect(user).to be_valid
+  end
+
+  it 'is invalid without a name' do
+    user = build(:user, name: nil, email: 'test@example.com')
+    expect(user).not_to be_valid
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
+      expect(chunks.length).toBeGreaterThanOrEqual(2);
+      // Should have individual it blocks as chunks
+      const itChunks = chunks.filter((c) => c.metadata.name?.startsWith("it"));
+      expect(itChunks.length).toBe(2);
+      expect(itChunks[0].metadata.parentName).toContain("describe");
+    });
+
+    it("should not treat call nodes as chunkable in non-spec Ruby files", async () => {
+      const code = `class UserService
+  def initialize(repo)
+    @repo = repo
+    puts 'initialized'
+    Rails.logger.info('UserService created')
+  end
+
+  def find_user(id)
+    user = @repo.find(id)
+    Rails.logger.info("Found user: #{id}")
+    user
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "app/services/user_service.rb", "ruby");
+      // `puts` and `Rails.logger.info` should NOT become chunks
+      const callChunks = chunks.filter(
+        (c) => c.metadata.name?.startsWith("puts") || c.metadata.name?.startsWith("Rails"),
+      );
+      expect(callChunks.length).toBe(0);
+    });
+
+    it("should extract it blocks at every nesting level with sibling contexts", async () => {
+      const code = `RSpec.describe PaymentService do
+  it 'initializes with a gateway and configuration' do
+    service = PaymentService.new(gateway: stripe, config: default_config)
+    expect(service.gateway).to eq(stripe)
+  end
+
+  context 'when processing a charge' do
+    it 'creates a charge record in the local database' do
+      result = subject.charge(amount: 1000, currency: 'usd')
+      expect(result).to be_persisted
+      expect(result.amount).to eq(1000)
+    end
+
+    context 'when the card is declined by the gateway' do
+      it 'raises a PaymentDeclinedError with decline code' do
+        expect { subject.charge(amount: 9999, currency: 'usd') }
+          .to raise_error(PaymentDeclinedError)
+          .with_message(/insufficient_funds/)
+      end
+
+      context 'when retry policy is enabled in config' do
+        it 'retries the charge up to three times before failing' do
+          expect(gateway).to receive(:charge).exactly(3).times
+          expect { subject.charge(amount: 9999, currency: 'usd') }
+            .to raise_error(PaymentDeclinedError)
+        end
+      end
+    end
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
+
+      // Depth 1: it inside top-level describe
+      const depth1 = chunks.find((c) => c.metadata.name?.includes("initializes with a gateway"));
+      expect(depth1).toBeDefined();
+      expect(depth1!.metadata.parentName).toContain("describe");
+
+      // Depth 2: it inside first context
+      const depth2 = chunks.find((c) => c.metadata.name?.includes("creates a charge record"));
+      expect(depth2).toBeDefined();
+      expect(depth2!.metadata.parentName).toContain("when processing a charge");
+
+      // Depth 3: it inside nested context
+      const depth3 = chunks.find((c) => c.metadata.name?.includes("raises a PaymentDeclinedError"));
+      expect(depth3).toBeDefined();
+      expect(depth3!.metadata.parentName).toContain("when the card is declined");
+
+      // Depth 4: it inside third-level context
+      const depth4 = chunks.find((c) => c.metadata.name?.includes("retries the charge"));
+      expect(depth4).toBeDefined();
+      expect(depth4!.metadata.parentName).toContain("when retry policy is enabled");
+    });
+
+    it("should prepend hierarchy context to it blocks", async () => {
+      const code = `RSpec.describe PaymentService do
+  context 'when processing a charge' do
+    context 'when the card is declined by the gateway' do
+      it 'raises a PaymentDeclinedError with decline code' do
+        expect { subject.charge(amount: 9999, currency: 'usd') }
+          .to raise_error(PaymentDeclinedError)
+          .with_message(/insufficient_funds/)
+      end
+    end
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
+      const itChunk = chunks.find((c) => c.metadata.name?.includes("raises a PaymentDeclinedError"));
+      expect(itChunk).toBeDefined();
+      // Content should include the full describe/context hierarchy
+      expect(itChunk!.content).toContain("RSpec.describe PaymentService do");
+      expect(itChunk!.content).toContain("context 'when processing a charge' do");
+      expect(itChunk!.content).toContain("context 'when the card is declined by the gateway' do");
+      expect(itChunk!.content).toContain("it 'raises a PaymentDeclinedError");
+    });
+
+    it("should prepend hierarchy context to body chunks (let/before)", async () => {
+      const code = `RSpec.describe PaymentService do
+  let(:gateway) { instance_double(PaymentGateway, name: 'stripe') }
+  let(:config) { PaymentConfig.new(retries: 3, timeout: 30) }
+  subject { described_class.new(gateway: gateway, config: config) }
+  before { allow(gateway).to receive(:ping).and_return(true) }
+
+  it 'initializes with a gateway and configuration' do
+    service = PaymentService.new(gateway: gateway, config: default_config)
+    expect(service.gateway).to eq(gateway)
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
+      // Find a body chunk containing let/subject/before
+      const bodyChunk = chunks.find((c) => c.metadata.chunkType === "block" && c.content.includes("let(:gateway)"));
+      expect(bodyChunk).toBeDefined();
+      // Should include the container header
+      expect(bodyChunk!.content).toContain("RSpec.describe PaymentService do");
+    });
+
+    it("should build full parentName path", async () => {
+      const code = `RSpec.describe PaymentService do
+  context 'when processing a charge' do
+    context 'when the card is declined by the gateway' do
+      it 'raises a PaymentDeclinedError with decline code' do
+        expect { subject.charge(amount: 9999, currency: 'usd') }
+          .to raise_error(PaymentDeclinedError)
+          .with_message(/insufficient_funds/)
+      end
+    end
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
+      const itChunk = chunks.find((c) => c.metadata.name?.includes("raises a PaymentDeclinedError"));
+      expect(itChunk).toBeDefined();
+      // parentName should contain the full path
+      expect(itChunk!.metadata.parentName).toContain("PaymentService");
+      expect(itChunk!.metadata.parentName).toContain("when processing");
+      expect(itChunk!.metadata.parentName).toContain("when the card is declined");
+    });
+
+    it("should extract name as describe + first argument", async () => {
+      const code = `describe '#full_name' do
+  it 'returns full name' do
+    user = build(:user, first: 'John', last: 'Doe')
+    expect(user.full_name).to eq('John Doe')
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
+      // Either the describe itself or its children should reference the name
+      const itChunk = chunks.find((c) => c.metadata.name?.startsWith("it"));
+      expect(itChunk).toBeDefined();
+      if (itChunk?.metadata.parentName) {
+        expect(itChunk.metadata.parentName).toContain("#full_name");
+      }
+    });
+  });
 });

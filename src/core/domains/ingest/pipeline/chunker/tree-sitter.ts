@@ -15,7 +15,7 @@ import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import { LANGUAGE_DEFINITIONS, type LanguageConfig, type LanguageDefinition } from "./config.js";
 import { MarkdownChunker } from "./hooks/markdown/index.js";
-import { createHookContext } from "./hooks/types.js";
+import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 
 export class TreeSitterChunker implements CodeChunker {
   /** Cache of initialized parsers (lazy-loaded) */
@@ -122,6 +122,7 @@ export class TreeSitterChunker implements CodeChunker {
         alwaysExtractChildren: definition.alwaysExtractChildren,
         isDocumentation: definition.isDocumentation,
         hooks: definition.hooks,
+        nameExtractor: definition.nameExtractor,
       };
     } catch (error) {
       console.error(`[TreeSitter] Failed to load parser for ${language}:`, error);
@@ -153,7 +154,7 @@ export class TreeSitterChunker implements CodeChunker {
       const chunks: CodeChunk[] = [];
 
       // Find all chunkable nodes
-      const nodes = this.findChunkableNodes(tree.rootNode, langConfig.chunkableTypes);
+      const nodes = this.findChunkableNodes(tree.rootNode, langConfig.chunkableTypes, langConfig.hooks, code, filePath);
 
       for (const [index, node] of nodes.entries()) {
         const content = code.substring(node.startIndex, node.endIndex);
@@ -171,82 +172,49 @@ export class TreeSitterChunker implements CodeChunker {
         const shouldExtractChildren = hasChildTypes && (isTooLarge || langConfig.alwaysExtractChildren);
 
         if (shouldExtractChildren) {
-          const parentName = this.extractName(node, code);
+          const parentName = this.extractName(node, code, langConfig.nameExtractor);
           const parentType = node.type;
 
-          const childNodes = this.findChildChunkableNodes(node, langConfig.childChunkTypes ?? []);
+          const childNodes = this.findChildChunkableNodes(
+            node,
+            langConfig.childChunkTypes ?? [],
+            langConfig.hooks,
+            code,
+            filePath,
+          );
 
           // Filter to children that meet minimum size
           const validChildren = childNodes.filter((c) => code.substring(c.startIndex, c.endIndex).length >= 50);
 
           if (validChildren.length > 0) {
             // Run hook chain
-            const ctx = createHookContext(node, validChildren, code, {
-              maxChunkSize: this.config.maxChunkSize,
-            });
+            const ctx = createHookContext(
+              node,
+              validChildren,
+              code,
+              {
+                maxChunkSize: this.config.maxChunkSize,
+              },
+              filePath,
+            );
             for (const hook of langConfig.hooks ?? []) {
               hook.process(ctx);
             }
 
-            // Extract each child (method) as individual chunk
-            for (let ci = 0; ci < validChildren.length; ci++) {
-              const childNode = validChildren[ci];
-              const childContent = code.substring(childNode.startIndex, childNode.endIndex);
-
-              // If child is also too large, use character fallback
-              if (childContent.length > this.config.maxChunkSize * 2) {
-                const childMethodLines = childNode.endPosition.row - childNode.startPosition.row + 1;
-                const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
-                for (const subChunk of subChunks) {
-                  chunks.push({
-                    ...subChunk,
-                    // Offset arithmetic — not a direct endLine assignment, so computeEndLine not needed.
-                    // The fallback chunker produces its own relative line offsets within the sub-content.
-                    startLine: childNode.startPosition.row + 1 + subChunk.startLine - 1,
-                    endLine: childNode.endPosition.row + 1 + subChunk.endLine - 1,
-                    metadata: {
-                      ...subChunk.metadata,
-                      chunkIndex: chunks.length,
-                      parentName,
-                      parentType,
-                      methodLines: childMethodLines,
-                    },
-                  });
-                }
-                continue;
-              }
-
-              let finalContent = childContent.trim();
-              let startLine = childNode.startPosition.row + 1;
-
-              // Apply hook-provided prefix (e.g., preceding comments)
-              const prefix = ctx.methodPrefixes.get(ci);
-              if (prefix) {
-                finalContent = `${prefix}\n${finalContent}`;
-              }
-              const overrideStart = ctx.methodStartLines.get(ci);
-              if (overrideStart !== undefined) {
-                startLine = overrideStart;
-              }
-
-              const childName = this.extractName(childNode, code);
-              chunks.push({
-                content: finalContent,
-                startLine,
-                endLine: this.computeEndLine(childNode),
-                metadata: {
-                  filePath,
-                  language,
-                  chunkIndex: chunks.length,
-                  chunkType: this.getChunkType(childNode.type),
-                  name: childName,
-                  parentName,
-                  parentType,
-                  symbolId: this.buildSymbolId(childName, parentName),
-                  methodLines: this.computeEndLine(childNode) - (childNode.startPosition.row + 1),
-                },
-              });
-            }
+            // Extract each child as individual chunk, recursing into nested containers
+            const containerHeader = this.extractContainerHeader(node, code);
+            await this.processChildren(
+              validChildren,
+              ctx,
+              langConfig,
+              code,
+              filePath,
+              language,
+              parentName,
+              parentType,
+              chunks,
+              [containerHeader],
+            );
 
             // Extract class-level code (everything outside methods) as body chunk(s)
             if (langConfig.alwaysExtractChildren) {
@@ -254,8 +222,9 @@ export class TreeSitterChunker implements CodeChunker {
               if (hasHookChain) {
                 // Hook chain ran — use hook-provided body chunks (may be empty)
                 for (const result of ctx.bodyChunks) {
+                  const bodyContent = `${containerHeader}\n${result.content}`;
                   chunks.push({
-                    content: result.content,
+                    content: bodyContent,
                     startLine: result.startLine,
                     endLine: result.endLine,
                     metadata: {
@@ -322,7 +291,7 @@ export class TreeSitterChunker implements CodeChunker {
           // alwaysExtractChildren but no valid children — fall through to single chunk
         }
 
-        const nodeName = this.extractName(node, code);
+        const nodeName = this.extractName(node, code, langConfig.nameExtractor);
         chunks.push({
           content: content.trim(),
           startLine: node.startPosition.row + 1,
@@ -458,11 +427,201 @@ export class TreeSitterChunker implements CodeChunker {
   /**
    * Find all chunkable nodes in the AST
    */
-  private findChunkableNodes(node: Parser.SyntaxNode, chunkableTypes: string[]): Parser.SyntaxNode[] {
+  /**
+   * Extract the opening line of a container node (e.g., "RSpec.describe User do").
+   * Used to build hierarchy context for nested chunks.
+   */
+  private extractContainerHeader(node: Parser.SyntaxNode, code: string): string {
+    const lines = code.substring(node.startIndex, node.endIndex).split("\n");
+    return lines[0].trim();
+  }
+
+  /**
+   * Build hierarchy prefix string from container headers.
+   * Each level is indented to show nesting.
+   */
+  private buildHierarchyPrefix(headers: string[]): string {
+    if (headers.length === 0) return "";
+    return `${headers.map((h, i) => "  ".repeat(i) + h).join("\n")}\n`;
+  }
+
+  /**
+   * Build full parent name path from hierarchy names.
+   */
+  private buildParentPath(hierarchyNames: string[]): string | undefined {
+    if (hierarchyNames.length === 0) return undefined;
+    return hierarchyNames.join(" > ");
+  }
+
+  /**
+   * Process child nodes of a container, recursing into nested containers.
+   * Handles the child extraction loop with support for arbitrary nesting depth.
+   */
+  private async processChildren(
+    validChildren: Parser.SyntaxNode[],
+    ctx: HookContext,
+    langConfig: LanguageConfig,
+    code: string,
+    filePath: string,
+    language: string,
+    parentName: string | undefined,
+    parentType: string,
+    chunks: CodeChunk[],
+    hierarchyHeaders: string[] = [],
+  ): Promise<void> {
+    for (let ci = 0; ci < validChildren.length; ci++) {
+      const childNode = validChildren[ci];
+      const childContent = code.substring(childNode.startIndex, childNode.endIndex);
+
+      // If child is too large, use character fallback
+      if (childContent.length > this.config.maxChunkSize * 2) {
+        const childMethodLines = childNode.endPosition.row - childNode.startPosition.row + 1;
+        const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
+        for (const subChunk of subChunks) {
+          chunks.push({
+            ...subChunk,
+            startLine: childNode.startPosition.row + 1 + subChunk.startLine - 1,
+            endLine: childNode.endPosition.row + 1 + subChunk.endLine - 1,
+            metadata: {
+              ...subChunk.metadata,
+              chunkIndex: chunks.length,
+              parentName,
+              parentType,
+              methodLines: childMethodLines,
+            },
+          });
+        }
+        continue;
+      }
+
+      // Check if child is itself a container (e.g., nested describe/context)
+      const grandChildren = this.findChildChunkableNodes(
+        childNode,
+        langConfig.childChunkTypes ?? [],
+        langConfig.hooks,
+        code,
+        filePath,
+      );
+      const validGrandChildren = grandChildren.filter((c) => code.substring(c.startIndex, c.endIndex).length >= 50);
+
+      if (validGrandChildren.length > 0 && langConfig.alwaysExtractChildren) {
+        // Recurse: treat this child as a container
+        const childName = this.extractName(childNode, code, langConfig.nameExtractor);
+        const childHeader = this.extractContainerHeader(childNode, code);
+        const childCtx = createHookContext(
+          childNode,
+          validGrandChildren,
+          code,
+          {
+            maxChunkSize: this.config.maxChunkSize,
+          },
+          filePath,
+        );
+        for (const hook of langConfig.hooks ?? []) {
+          hook.process(childCtx);
+        }
+
+        const fullParentName = this.buildParentPath([
+          ...(parentName ? [parentName] : []),
+          ...(childName ? [childName] : []),
+        ]);
+
+        await this.processChildren(
+          validGrandChildren,
+          childCtx,
+          langConfig,
+          code,
+          filePath,
+          language,
+          fullParentName,
+          childNode.type,
+          chunks,
+          [...hierarchyHeaders, childHeader],
+        );
+
+        // Body chunks from hook chain for this nested container
+        const hierarchyPrefix = this.buildHierarchyPrefix(hierarchyHeaders);
+        for (const result of childCtx.bodyChunks) {
+          const bodyContent =
+            hierarchyHeaders.length > 0 ? `${hierarchyPrefix}${childHeader}\n${result.content}` : result.content;
+          chunks.push({
+            content: bodyContent,
+            startLine: result.startLine,
+            endLine: result.endLine,
+            metadata: {
+              filePath,
+              language,
+              chunkIndex: chunks.length,
+              chunkType: "block",
+              name: childName,
+              parentName: fullParentName ?? parentName,
+              parentType,
+              symbolId: this.buildSymbolId(childName),
+              lineRanges: result.lineRanges,
+            },
+          });
+        }
+        continue;
+      }
+
+      // Leaf child — emit as chunk with hierarchy context
+      let finalContent = childContent.trim();
+      let startLine = childNode.startPosition.row + 1;
+
+      const prefix = ctx.methodPrefixes.get(ci);
+      if (prefix) {
+        finalContent = `${prefix}\n${finalContent}`;
+      }
+      const overrideStart = ctx.methodStartLines.get(ci);
+      if (overrideStart !== undefined) {
+        startLine = overrideStart;
+      }
+
+      // Prepend hierarchy headers for context (e.g., describe > context > context)
+      if (hierarchyHeaders.length > 0) {
+        const hierarchyPrefix = this.buildHierarchyPrefix(hierarchyHeaders);
+        finalContent = `${hierarchyPrefix}${finalContent}`;
+      }
+
+      const childName = this.extractName(childNode, code, langConfig.nameExtractor);
+      chunks.push({
+        content: finalContent,
+        startLine,
+        endLine: this.computeEndLine(childNode),
+        metadata: {
+          filePath,
+          language,
+          chunkIndex: chunks.length,
+          chunkType: this.getChunkType(childNode.type),
+          name: childName,
+          parentName,
+          parentType,
+          symbolId: this.buildSymbolId(childName, parentName),
+          methodLines: this.computeEndLine(childNode) - (childNode.startPosition.row + 1),
+        },
+      });
+    }
+  }
+
+  private findChunkableNodes(
+    node: Parser.SyntaxNode,
+    chunkableTypes: string[],
+    hooks?: ChunkingHook[],
+    code?: string,
+    filePath?: string,
+  ): Parser.SyntaxNode[] {
     const nodes: Parser.SyntaxNode[] = [];
 
     const traverse = (n: Parser.SyntaxNode) => {
       if (chunkableTypes.includes(n.type)) {
+        // Consult hooks for filtering (e.g., RSpec filter rejects non-DSL call nodes)
+        if (hooks && code && filePath) {
+          const verdict = this.consultFilterHooks(hooks, n, code, filePath);
+          if (verdict === false) {
+            for (const child of n.children) traverse(child);
+            return;
+          }
+        }
         nodes.push(n);
         // Don't traverse children of chunkable nodes to avoid nested chunks
         return;
@@ -482,7 +641,13 @@ export class TreeSitterChunker implements CodeChunker {
    * Unlike findChunkableNodes, this DOES traverse into the parent's children
    * even if the parent is a chunkable type.
    */
-  private findChildChunkableNodes(parentNode: Parser.SyntaxNode, childChunkTypes: string[]): Parser.SyntaxNode[] {
+  private findChildChunkableNodes(
+    parentNode: Parser.SyntaxNode,
+    childChunkTypes: string[],
+    hooks?: ChunkingHook[],
+    code?: string,
+    filePath?: string,
+  ): Parser.SyntaxNode[] {
     const nodes: Parser.SyntaxNode[] = [];
 
     const traverse = (n: Parser.SyntaxNode) => {
@@ -495,6 +660,14 @@ export class TreeSitterChunker implements CodeChunker {
       }
 
       if (childChunkTypes.includes(n.type)) {
+        // Consult hooks for filtering
+        if (hooks && code && filePath) {
+          const verdict = this.consultFilterHooks(hooks, n, code, filePath);
+          if (verdict === false) {
+            for (const child of n.children) traverse(child);
+            return;
+          }
+        }
         nodes.push(n);
         // Don't traverse into this node's children
         return;
@@ -544,9 +717,38 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
+   * Consult hook filterNode methods for a verdict on whether to include a node.
+   * Returns true (include), false (exclude), or undefined (no opinion).
+   */
+  private consultFilterHooks(
+    hooks: ChunkingHook[],
+    node: Parser.SyntaxNode,
+    code: string,
+    filePath: string,
+  ): boolean | undefined {
+    for (const hook of hooks) {
+      if (hook.filterNode) {
+        const result = hook.filterNode(node, code, filePath);
+        if (result !== undefined) return result;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Extract function/class name from AST node
    */
-  private extractName(node: Parser.SyntaxNode, code: string): string | undefined {
+  private extractName(
+    node: Parser.SyntaxNode,
+    code: string,
+    nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined,
+  ): string | undefined {
+    // Try custom extractor first (e.g., for RSpec call nodes)
+    if (nameExtractor) {
+      const name = nameExtractor(node, code);
+      if (name) return name;
+    }
+
     // Try to find name node
     const nameNode = node.childForFieldName("name");
     if (nameNode) {
