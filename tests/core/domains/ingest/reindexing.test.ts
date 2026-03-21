@@ -255,6 +255,30 @@ function helper(param: string): boolean {
     });
   });
 
+  describe("indexing marker update", () => {
+    it("should update completedAt timestamp after incremental reindex", async () => {
+      await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('Initial');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Record the completedAt from initial indexing
+      const status = await ingest.getIndexStatus(codebaseDir);
+      expect(status.lastUpdated).toBeDefined();
+      const completedAtBefore = status.lastUpdated!.getTime();
+
+      // Wait 10ms to ensure timestamp differs
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Add a new file and reindex
+      await createTestFile(codebaseDir, "file2.ts", "export const v2 = 2;\nconsole.log('Added');");
+      await ingest.reindexChanges(codebaseDir);
+
+      // Verify completedAt was updated
+      const statusAfter = await ingest.getIndexStatus(codebaseDir);
+      expect(statusAfter.lastUpdated).toBeDefined();
+      expect(statusAfter.lastUpdated!.getTime()).toBeGreaterThan(completedAtBefore);
+    });
+  });
+
   describe("Progress callback coverage", () => {
     it("should call progress callback during reindexChanges", async () => {
       await createTestFile(codebaseDir, "file1.ts", "export const initial = 1;\nconsole.log('Initial');");
