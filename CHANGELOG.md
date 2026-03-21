@@ -1,3 +1,8 @@
+## <small>1.13.1 (2026-03-21)</small>
+
+- fix(ingest): preserve enrichment coverage stats on scoped reindex and regroup
+  output ([2e73825](https://github.com/artk0de/TeaRAGs-MCP/commit/2e73825))
+
 ## 1.13.0 (2026-03-21)
 
 - improve(explore): address 12 skill audit findings in search-cascade
