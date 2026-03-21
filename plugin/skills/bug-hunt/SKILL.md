@@ -20,6 +20,11 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 5. **Tool selection via search-cascade decision tree** — do not hard-code tool
    choice. Follow the tree: symbol name → hybrid_search, behavior description →
    semantic_search.
+6. **Parallel reads.** When reading 2+ suspect files, use a single message with
+   multiple Read calls. Never read files one-by-one.
+7. **No persisted output parsing.** If a search result is persisted (>10KB),
+   re-run the same query with `metaOnly=true`. Do NOT attempt to Read the
+   persisted file.
 
 ## Flow
 
@@ -41,6 +46,9 @@ Signal-driven root cause investigation using TeaRAGs git signals.
    semantic_search or hybrid_search: rerank="bugHunt", metaOnly=false,
    limit=10, pathPattern="{file1.rb,file2.rb}" (from step 1 paths)
 
+   Read top 2-3 suspect files IN PARALLEL (single message, multiple Read
+   calls with offset+limit for partial reads).
+
    Additional tools via cascade rules:
    - Know symbol → hybrid_search
    - Need similar pattern → find_similar (code or chunk ID)
@@ -51,10 +59,11 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 
 3. VERIFY — confirm root cause:
    Full profile:   LSP goToDefinition/documentSymbol + partial Read
-   No-LSP profile: tree-sitter/ripgrep + partial Read
+   No-LSP profile: ripgrep MCP (scoped to suspect dirs) + partial Read
 
    Read only when context beyond chunk boundaries needed.
-   Use LSP partial read (documentSymbol → offset + limit) over whole-file Read.
+   Use startLine/endLine from chunks for partial Read (offset + limit).
+   Scope ripgrep to suspect directories, not entire project.
 
 4. CROSS-LAYER — if bug spans layers:
    semantic_search + language filter — one call, not grep chains.
@@ -73,6 +82,12 @@ fill it.
 **"Not sure" ≠ "don't know."** If you have a candidate but aren't 100% confident
 — present it with a confidence note. Confirmatory searches almost never change
 the answer.
+
+## Bug pattern hints
+
+**"works single, fails batch"** — compare both paths immediately. Search for the
+single-create AND batch-create service in one step. The bug is almost always:
+batch path skips a check that single path does.
 
 ## pathPattern rules
 
