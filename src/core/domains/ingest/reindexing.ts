@@ -11,6 +11,7 @@ import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } fro
 import { NotIndexedError, ReindexFailedError, SnapshotMissingError } from "./errors.js";
 import { BaseIndexingPipeline, type PipelineTuning, type ProcessingContext } from "./pipeline/base.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
+import { storeIndexingMarker } from "./pipeline/indexing-marker.js";
 import { pipelineLog } from "./pipeline/infra/debug-logger.js";
 import { isDebug } from "./pipeline/infra/runtime.js";
 import type { FileScanner } from "./pipeline/scanner.js";
@@ -250,6 +251,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       ctx.absolutePath,
     );
 
+    await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
     await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
     await ctx.synchronizer.deleteCheckpoint();
 
