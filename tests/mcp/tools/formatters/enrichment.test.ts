@@ -115,17 +115,17 @@ describe("formatEnrichmentStatus", () => {
 
     it("should show file and chunk signal breakdown when metrics provided", async () => {
       const result = await formatEnrichmentStatus("completed", 5200, undefined, "", metrics);
-      expect(result).toContain("File signals:");
+      expect(result).toContain("trajectory.git.file:");
       expect(result).toContain("1234");
       expect(result).toContain("3.1s");
-      expect(result).toContain("Chunk signals:");
+      expect(result).toContain("trajectory.git.chunk:");
       expect(result).toContain("2.1s");
     });
 
     it("should omit chunk signals line when chunkChurnDurationMs is 0", async () => {
       const noChunkMetrics = { ...metrics, chunkChurnDurationMs: 0 };
       const result = await formatEnrichmentStatus("completed", 5200, undefined, "", noChunkMetrics);
-      expect(result).toContain("File signals:");
+      expect(result).toContain("trajectory.git.file:");
       expect(result).not.toContain("Chunk signals:");
     });
 
@@ -134,7 +134,7 @@ describe("formatEnrichmentStatus", () => {
         enrichment: { status: "in_progress", percentage: 50 },
       });
       const result = await formatEnrichmentStatus("background", undefined, mockGetStatus, "/path", metrics);
-      expect(result).toContain("File signals:");
+      expect(result).toContain("trajectory.git.file:");
     });
   });
 });
