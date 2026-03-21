@@ -3,6 +3,21 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## 1.13.0 (2026-03-21)
+
+- improve(explore): address 12 skill audit findings in search-cascade
+  ([fc3f6a9](https://github.com/artk0de/TeaRAGs-MCP/commit/fc3f6a9))
+- improve(explore): complete search-cascade audit fixes
+  ([eeec0a3](https://github.com/artk0de/TeaRAGs-MCP/commit/eeec0a3))
+- improve(mcp): unify index_codebase and reindex_changes output format
+  ([63bdd06](https://github.com/artk0de/TeaRAGs-MCP/commit/63bdd06))
+- fix(explore): preserve rankingOverlay in rank_chunks results
+  ([284a496](https://github.com/artk0de/TeaRAGs-MCP/commit/284a496))
+- fix(ingest): scope enrichment to changed files and skip for deletion-only
+  reindex ([6b5da2d](https://github.com/artk0de/TeaRAGs-MCP/commit/6b5da2d))
+- feat(chunker): add RSpec-aware chunking for Ruby spec files
+  ([6e7389c](https://github.com/artk0de/TeaRAGs-MCP/commit/6e7389c))
+
 ## <small>1.12.3 (2026-03-21)</small>
 
 - improve(ingest): update lastUpdated on no-change incremental reindex
