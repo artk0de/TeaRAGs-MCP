@@ -1,6 +1,7 @@
 // src/tools/formatters/enrichment.test.ts
 import { describe, expect, it, vi } from "vitest";
 
+import type { EnrichmentMetrics } from "../../../../src/core/types.js";
 import { formatEnrichmentStatus } from "../../../../src/mcp/tools/formatters/enrichment.js";
 
 describe("formatEnrichmentStatus", () => {
@@ -94,5 +95,46 @@ describe("formatEnrichmentStatus", () => {
     const result = await formatEnrichmentStatus("background", undefined, mockGetStatus, "/my/path");
     expect(result).toContain("background");
     expect(result).toContain("get_index_status");
+  });
+
+  describe("enrichment metrics breakdown", () => {
+    const metrics: EnrichmentMetrics = {
+      prefetchDurationMs: 3100,
+      overlapMs: 2000,
+      overlapRatio: 0.65,
+      streamingApplies: 5,
+      flushApplies: 2,
+      chunkChurnDurationMs: 2100,
+      totalDurationMs: 5200,
+      matchedFiles: 1234,
+      missedFiles: 56,
+      missedPathSamples: [],
+      gitLogFileCount: 1500,
+      estimatedSavedMs: 1500,
+    };
+
+    it("should show file and chunk signal breakdown when metrics provided", async () => {
+      const result = await formatEnrichmentStatus("completed", 5200, undefined, "", metrics);
+      expect(result).toContain("File signals:");
+      expect(result).toContain("1234");
+      expect(result).toContain("3.1s");
+      expect(result).toContain("Chunk signals:");
+      expect(result).toContain("2.1s");
+    });
+
+    it("should omit chunk signals line when chunkChurnDurationMs is 0", async () => {
+      const noChunkMetrics = { ...metrics, chunkChurnDurationMs: 0 };
+      const result = await formatEnrichmentStatus("completed", 5200, undefined, "", noChunkMetrics);
+      expect(result).toContain("File signals:");
+      expect(result).not.toContain("Chunk signals:");
+    });
+
+    it("should show metrics for background status too", async () => {
+      const mockGetStatus = vi.fn().mockResolvedValue({
+        enrichment: { status: "in_progress", percentage: 50 },
+      });
+      const result = await formatEnrichmentStatus("background", undefined, mockGetStatus, "/path", metrics);
+      expect(result).toContain("File signals:");
+    });
   });
 });

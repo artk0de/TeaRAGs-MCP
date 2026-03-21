@@ -68,6 +68,14 @@ export interface IndexStats {
   /** Git enrichment status */
   enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
   enrichmentDurationMs?: number;
+  /** Detailed enrichment metrics (file/chunk signal breakdown) */
+  enrichmentMetrics?: EnrichmentMetrics;
+  /** Present only during auto-reindex via index_codebase */
+  changeDetails?: {
+    filesDeleted: number;
+    filesNewlyIgnored: number;
+    filesNewlyUnignored: number;
+  };
 }
 
 export interface ChangeStats {
@@ -85,6 +93,8 @@ export interface ChangeStats {
   /** Git enrichment status */
   enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
   enrichmentDurationMs?: number;
+  /** Detailed enrichment metrics (file/chunk signal breakdown) */
+  enrichmentMetrics?: EnrichmentMetrics;
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed";

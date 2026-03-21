@@ -111,6 +111,12 @@ export class IngestFacade {
           errors: [],
           enrichmentStatus: changeStats.enrichmentStatus,
           enrichmentDurationMs: changeStats.enrichmentDurationMs,
+          enrichmentMetrics: changeStats.enrichmentMetrics,
+          changeDetails: {
+            filesDeleted: changeStats.filesDeleted,
+            filesNewlyIgnored: changeStats.filesNewlyIgnored,
+            filesNewlyUnignored: changeStats.filesNewlyUnignored,
+          },
         };
       }
     }

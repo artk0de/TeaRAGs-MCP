@@ -33,13 +33,22 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
       });
 
-      let statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
+      let statusMessage: string;
+      if (stats.changeDetails) {
+        const d = stats.changeDetails;
+        statusMessage = `Reindexed: +${stats.filesIndexed} ~0 -${d.filesDeleted} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
+        if (d.filesNewlyIgnored > 0) statusMessage += `\n  Newly ignored: ${d.filesNewlyIgnored}`;
+        if (d.filesNewlyUnignored > 0) statusMessage += `\n  Newly unignored: ${d.filesNewlyUnignored}`;
+      } else {
+        statusMessage = `Indexed ${stats.filesIndexed}/${stats.filesScanned} files (${stats.chunksCreated} chunks) in ${(stats.durationMs / 1000).toFixed(1)}s`;
+      }
 
       const enrichmentMessage = await formatEnrichmentStatus(
         stats.enrichmentStatus,
         stats.enrichmentDurationMs,
         async (p) => app.getIndexStatus(p),
         path,
+        stats.enrichmentMetrics,
       );
       statusMessage += enrichmentMessage;
 
@@ -122,16 +131,16 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       });
 
       let message = `Incremental re-index complete:\n`;
-      message += `- Files added: ${stats.filesAdded}\n`;
-      message += `- Files modified: ${stats.filesModified}\n`;
-      message += `- Files deleted: ${stats.filesDeleted}\n`;
+      message += `- Files: +${stats.filesAdded} ~${stats.filesModified} -${stats.filesDeleted}\n`;
       if (stats.filesNewlyIgnored > 0) {
-        message += `- Files newly ignored: ${stats.filesNewlyIgnored}\n`;
+        message += `  Newly ignored: ${stats.filesNewlyIgnored}\n`;
       }
       if (stats.filesNewlyUnignored > 0) {
-        message += `- Files newly unignored: ${stats.filesNewlyUnignored}\n`;
+        message += `  Newly unignored: ${stats.filesNewlyUnignored}\n`;
       }
-      message += `- Chunks added: ${stats.chunksAdded}\n`;
+      const chunkDiff = stats.chunksAdded - stats.chunksDeleted;
+      const sign = chunkDiff >= 0 ? "+" : "";
+      message += `- Chunks: +${stats.chunksAdded} -${stats.chunksDeleted} (net: ${sign}${chunkDiff})\n`;
       message += `- Duration: ${(stats.durationMs / 1000).toFixed(1)}s`;
 
       const enrichmentMessage = await formatEnrichmentStatus(
@@ -139,6 +148,7 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         stats.enrichmentDurationMs,
         async (p) => app.getIndexStatus(p),
         path,
+        stats.enrichmentMetrics,
       );
       message += enrichmentMessage;
 

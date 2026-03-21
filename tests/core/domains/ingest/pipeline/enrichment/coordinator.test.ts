@@ -49,13 +49,13 @@ describe("EnrichmentCoordinator", () => {
     expect(divergentProvider.resolveRoot).toHaveBeenCalledWith("/sub/path");
     // Provider uses /git-root, absolutePath is /sub/path → REPO_ROOT_DIFFERS logged
     await new Promise((r) => setTimeout(r, 10));
-    expect(divergentProvider.buildFileSignals).toHaveBeenCalledWith("/git-root");
+    expect(divergentProvider.buildFileSignals).toHaveBeenCalledWith("/git-root", undefined);
   });
 
   it("calls provider.resolveRoot and buildFileSignals on prefetch", () => {
     coordinator.prefetch("/repo", "test-col");
     expect(mockProvider.resolveRoot).toHaveBeenCalledWith("/repo");
-    expect(mockProvider.buildFileSignals).toHaveBeenCalledWith("/repo");
+    expect(mockProvider.buildFileSignals).toHaveBeenCalledWith("/repo", undefined);
   });
 
   it("delegates .git check to provider (coordinator is generic)", () => {
@@ -153,8 +153,8 @@ describe("EnrichmentCoordinator", () => {
     multi.prefetch("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(providerA.buildFileSignals).toHaveBeenCalledWith("/repo");
-    expect(providerB.buildFileSignals).toHaveBeenCalledWith("/repo");
+    expect(providerA.buildFileSignals).toHaveBeenCalledWith("/repo", undefined);
+    expect(providerB.buildFileSignals).toHaveBeenCalledWith("/repo", undefined);
     expect(multi.providerKeys).toEqual(["alpha", "beta"]);
   });
 

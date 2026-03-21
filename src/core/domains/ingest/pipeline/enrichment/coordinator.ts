@@ -165,7 +165,7 @@ export class EnrichmentCoordinator {
    * Call before pipeline.start() to maximize overlap.
    * All providers prefetch in parallel.
    */
-  prefetch(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore): void {
+  prefetch(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore, changedPaths?: string[]): void {
     this.startTime = Date.now();
 
     // Set enrichment marker to "in_progress" (once for all providers)
@@ -194,7 +194,7 @@ export class EnrichmentCoordinator {
       pipelineLog.enrichmentPhase("PREFETCH_START", { provider: state.provider.key, path: root });
 
       state.prefetchPromise = state.provider
-        .buildFileSignals(root)
+        .buildFileSignals(root, changedPaths ? { paths: changedPaths } : undefined)
         .then((result) => {
           state.prefetchEndTime = Date.now();
           state.fileMetadata = result;

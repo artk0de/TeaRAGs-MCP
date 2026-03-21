@@ -102,7 +102,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
       await this.finalizeAlias(collectionName, setup);
       await this.saveSnapshot(absolutePath, collectionName, files, stats, setup.aliasVersion);
 
-      stats.enrichmentStatus = getEnrichmentStatus();
+      const enrichmentResult = getEnrichmentStatus();
+      stats.enrichmentStatus = enrichmentResult.status;
+      stats.enrichmentMetrics = enrichmentResult.metrics;
       stats.durationMs = Date.now() - startTime;
       return stats;
     } catch (error) {
