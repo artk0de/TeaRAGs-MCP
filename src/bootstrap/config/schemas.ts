@@ -59,7 +59,7 @@ export const ingestSchema = z.object({
   chunkSize: intWithDefault(2500),
   chunkOverlap: intWithDefault(300),
   enableAST: booleanFromEnvWithDefault(true),
-  enableHybrid: booleanFromEnv,
+  enableHybrid: booleanFromEnvWithDefault(true),
   tune: ingestTuneSchema,
 });
 
