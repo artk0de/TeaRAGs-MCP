@@ -142,6 +142,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         migrations: schemaMigration.migrationsApplied,
       });
     }
+
+    // Sparse vector data migration (independent of schema version)
+    const sparseResult = await schemaManager.checkSparseVectorVersion(collectionName);
+    if (sparseResult.rebuilt) {
+      pipelineLog.reindexPhase("sparse_vector_rebuild", {
+        message: sparseResult.message,
+      });
+    }
   }
 
   private async checkForCheckpoint(synchronizer: ParallelFileSynchronizer): Promise<boolean> {
