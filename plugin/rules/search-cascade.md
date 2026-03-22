@@ -46,8 +46,11 @@
 
 **4. Detect available tools and assign profile:**
 
-- Check tool prefixes in available tools list:
-  - `LSP` or `mcp__*-lsp__*` or `mcp__ide__*` → LSP available
+- Check **both regular AND deferred tools** (deferred tools appear in
+  `<system-reminder>` as "The following deferred tools are now available via
+  ToolSearch"). Match by name or prefix:
+  - `LSP` (deferred tool name) or `mcp__*-lsp__*` or `mcp__ide__*` → LSP
+    available
   - `mcp__tree-sitter__*` → tree-sitter available
   - `mcp__ripgrep__*` → ripgrep available
 - Assign profile:
@@ -65,6 +68,8 @@ Has query?
 ├─ No → rank_chunks
 │       + pathPattern if directory known
 │       + rerank preset for analytics
+│       + minCommitCount from labelMap (commitCount.low threshold)
+│         to filter one-off scripts with unreliable signal ratios
 │
 └─ Yes
    ├─ Exhaustive usage intent? ("where is X used", "all callers",
@@ -98,6 +103,11 @@ Has query?
    All except find_similar and search_code: + rerank preset if analytics needed
    Choosing rerank: preset or custom — consult tea-rags://schema/presets
    If no preset fits → custom weights via tea-rags://schema/signals
+
+   Code-only filtering: when searching for code (not docs/config), add
+   language filter (e.g., language="typescript") or pathPattern to exclude
+   non-code files (markdown, yaml, config). Documentation results dilute
+   code search — filter proactively, don't clean up after.
 ```
 
 ## Polyglot Rule (MANDATORY)
@@ -201,6 +211,14 @@ After 3: report "could not find, here's the best match"
 ```
 
 Can paginate indefinitely. Can reformulate max 3 times.
+
+**Disambiguation** — results are relevant but mixed:
+
+After the first search, scan result paths and symbol names. If results clearly
+split into unrelated areas (e.g., "client" → CRM contacts vs integration API
+clients), don't silently pick one. Present the clusters to the user: "Found
+results in two areas: [area A] and [area B]. Which context?" Then re-search with
+pathPattern or refined query for the chosen area.
 
 ## Stop Conditions
 
@@ -372,6 +390,10 @@ is absent, "File structure" falls directly to Read. If ripgrep MCP is absent,
 - **Call-sites, imports, exact patterns** → ripgrep MCP (not tea-rags)
 - **File structure (methods, classes)** → LSP documentSymbol or tree-sitter
 - **Read specific lines** → Read with offset + limit (not whole file)
+- **Spec/test files** → first try tea-rags with `pathPattern` targeting test
+  directories (`**/spec/**`, `**/tests/**`, `**/__tests__/**`, `**/*.test.ts`,
+  `**/*_spec.rb`). If index returns 0 chunks (specs excluded via
+  `.contextignore`), fall back to ripgrep MCP with same path patterns.
 
 These complement tea-rags. See Fallback Chains for profile-specific guidance.
 

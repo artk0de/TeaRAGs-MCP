@@ -152,6 +152,33 @@ describe("filterMetaOnly", () => {
     expect(git.file.authors).toBeUndefined(); // not essential
   });
 
+  it("includes taskIds in essential fields", () => {
+    const results: SearchResult[] = [
+      {
+        score: 0.7,
+        payload: {
+          relativePath: "src/c.ts",
+          git: {
+            file: { ageDays: 200, taskIds: ["TD-123", "TD-456"], authors: ["Alice"] },
+            chunk: { commitCount: 5, taskIds: ["TD-123"] },
+          },
+        },
+      },
+    ];
+    const meta = filterMetaOnly(results, payloadSignals, [
+      "git.file.ageDays",
+      "git.file.taskIds",
+      "git.chunk.commitCount",
+      "git.chunk.taskIds",
+    ]);
+    const git = meta[0].git as Record<string, Record<string, unknown>>;
+    expect(git.file.ageDays).toBe(200);
+    expect(git.file.taskIds).toEqual(["TD-123", "TD-456"]);
+    expect(git.file.authors).toBeUndefined(); // not essential
+    expect(git.chunk.commitCount).toBe(5);
+    expect(git.chunk.taskIds).toEqual(["TD-123"]);
+  });
+
   it("returns empty git when no essential fields match", () => {
     const results: SearchResult[] = [
       {
