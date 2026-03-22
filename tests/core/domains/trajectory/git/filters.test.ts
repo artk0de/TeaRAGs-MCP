@@ -59,11 +59,11 @@ describe("git filter descriptors", () => {
 });
 
 describe("level-aware filters", () => {
-  it("minAgeDays defaults to chunk level", () => {
+  it("minAgeDays defaults to chunk level and excludes zero-age", () => {
     const result = findFilter("minAgeDays").toCondition(30);
     expect(result.must![0]).toEqual({
       key: "git.chunk.ageDays",
-      range: { gte: 30 },
+      range: { gt: 0, gte: 30 },
     });
   });
 
@@ -72,11 +72,11 @@ describe("level-aware filters", () => {
     expect(result.must![0].key).toBe("git.file.ageDays");
   });
 
-  it("maxAgeDays defaults to chunk level", () => {
+  it("maxAgeDays defaults to chunk level and excludes zero-age", () => {
     const result = findFilter("maxAgeDays").toCondition(90);
     expect(result.must![0]).toEqual({
       key: "git.chunk.ageDays",
-      range: { lte: 90 },
+      range: { gt: 0, lte: 90 },
     });
   });
 

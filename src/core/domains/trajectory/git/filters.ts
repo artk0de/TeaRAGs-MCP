@@ -43,7 +43,7 @@ export const gitFilters: FilterDescriptor[] = [
     description: "Filter code older than N days",
     type: "number",
     toCondition: (value: unknown, level: FilterLevel = "chunk") => ({
-      must: [{ key: `git.${level}.ageDays`, range: { gte: value as number } }],
+      must: [{ key: `git.${level}.ageDays`, range: { gt: 0, gte: value as number } }],
     }),
   },
   {
@@ -51,7 +51,7 @@ export const gitFilters: FilterDescriptor[] = [
     description: "Filter code newer than N days",
     type: "number",
     toCondition: (value: unknown, level: FilterLevel = "chunk") => ({
-      must: [{ key: `git.${level}.ageDays`, range: { lte: value as number } }],
+      must: [{ key: `git.${level}.ageDays`, range: { gt: 0, lte: value as number } }],
     }),
   },
   {

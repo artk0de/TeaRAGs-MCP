@@ -205,7 +205,12 @@ export class ExploreFacade {
     const absolutePath = await validatePath(request.path);
     const collectionName = resolveCollectionName(absolutePath);
     const { embedding } = await this.embeddings.embed(request.query);
-    const filter = this.registry.buildMergedFilter(request as unknown as Record<string, unknown>, request.filter);
+    const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
+    const filter = this.registry.buildMergedFilter(
+      request as unknown as Record<string, unknown>,
+      request.filter,
+      level,
+    );
     return this.executeExplore(
       this.vectorStrategy,
       {

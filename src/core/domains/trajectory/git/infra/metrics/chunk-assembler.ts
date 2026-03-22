@@ -70,7 +70,7 @@ export function assembleChunkSignals(
         ? Math.round(((acc.bugFixCount + SMOOTHING_ALPHA) / (commitCount + 2 * SMOOTHING_ALPHA)) * 100)
         : 0,
     lastModifiedAt: acc.lastModifiedAt,
-    ageDays: acc.lastModifiedAt > 0 ? Math.max(0, Math.floor((nowSec - acc.lastModifiedAt) / 86400)) : 0,
+    ageDays: acc.lastModifiedAt > 0 ? Math.max(0, Math.floor((nowSec - acc.lastModifiedAt) / 86400)) : undefined,
     relativeChurn: Math.round((totalChurn / lineCount) * (1 - Math.exp(-lineCount / 30)) * 100) / 100,
     recencyWeightedFreq,
     changeDensity,

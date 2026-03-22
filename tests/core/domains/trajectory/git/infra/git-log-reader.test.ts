@@ -571,7 +571,9 @@ describe("buildChunkChurnMap", () => {
           expect(overlay.contributorCount).toBeGreaterThanOrEqual(0);
           expect(overlay.bugFixRate).toBeGreaterThanOrEqual(0);
           expect(overlay.bugFixRate).toBeLessThanOrEqual(100);
-          expect(overlay.ageDays).toBeGreaterThanOrEqual(0);
+          if (overlay.ageDays !== undefined) {
+            expect(overlay.ageDays).toBeGreaterThanOrEqual(0);
+          }
         }
       }
     }
