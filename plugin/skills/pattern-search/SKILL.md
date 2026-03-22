@@ -47,12 +47,12 @@ This skill provides to search-cascade:
 
 ## Strategy → Rerank Mapping
 
-| Strategy        | Rerank preset | Expand                                |
-| --------------- | ------------- | ------------------------------------- |
-| **Collect**     | `relevance`   | `find_similar` from each unique seed  |
-| **Spread**      | `relevance`   | `find_similar` from best seed         |
-| **Antipattern** | `techDebt`    | `find_similar` from problematic seeds |
-| **Reference**   | `stable`      | `find_similar` from best seed         |
+| Strategy        | Rerank preset                                                                                     | Expand                                |
+| --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| **Collect**     | `relevance`                                                                                       | `find_similar` from each unique seed  |
+| **Spread**      | `relevance`                                                                                       | `find_similar` from best seed         |
+| **Antipattern** | `techDebt`                                                                                        | `find_similar` from problematic seeds |
+| **Reference**   | custom "proven": `{ similarity: 0.2, stability: 0.3, age: 0.3, bugFix: -0.15, ownership: -0.05 }` | `find_similar` from best seed         |
 
 **Antipattern rerank override:** for broad scope queries (rank_chunks path), use
 `refactoring` instead of `techDebt` — refactoring preset is tuned for large

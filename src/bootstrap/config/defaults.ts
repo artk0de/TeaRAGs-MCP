@@ -57,6 +57,7 @@ export const DEFAULT_IGNORE_PATTERNS = [
   ".hg/**",
   ".vscode/**",
   ".idea/**",
+  ".claude/**",
   "*.min.js",
   "*.min.css",
   "*.bundle.js",

@@ -34,12 +34,12 @@ For label definitions: `tea-rags://schema/signal-labels`. For thresholds:
 
 Use overlay labels from research output. Apply **hard rules** first:
 
-| Condition                                                    | Strategy      |
-| ------------------------------------------------------------ | ------------- |
-| chunk.bugFixRate "critical" + file.ageDays "old"/"legacy"    | DEFENSIVE     |
-| chunk.commitCount "extreme" + file.churnVolatility "erratic" | STABILIZATION |
-| file.ageDays "legacy" + chunk.commitCount "low"              | CONSERVATIVE  |
-| No match                                                     | STANDARD      |
+| Condition                                                  | Strategy      |
+| ---------------------------------------------------------- | ------------- |
+| chunk.bugFixRate "critical" + file.ageDays "old"/"legacy"  | DEFENSIVE     |
+| chunk.commitCount "high"+ + file.churnVolatility "erratic" | STABILIZATION |
+| file.ageDays "legacy" + chunk.commitCount "low"            | CONSERVATIVE  |
+| No match                                                   | STANDARD      |
 
 **Autonomous Judgment Protocol** — when no hard rule matches:
 
@@ -63,8 +63,10 @@ Read `## When` section. Custom conditions evaluated before hard rules.
 ### Step 2: TEMPLATE
 
 Follow search-cascade: pass best verified result as code/chunk example (cascade
-→ find_similar) + rerank=stable. Fallback: follow search-cascade with behavior
-query + custom weights `{ similarity: 0.3, stability: 0.4, age: 0.3 }`.
+→ find_similar) + custom "proven" rerank:
+`{ similarity: 0.2, stability: 0.3, age: 0.3, bugFix: -0.15, ownership: -0.05 }`.
+This finds battle-tested code: long-lived, low-churn, low-bug, multi-author.
+Fallback: follow search-cascade with behavior query + same custom weights.
 
 Quality gate by labels:
 

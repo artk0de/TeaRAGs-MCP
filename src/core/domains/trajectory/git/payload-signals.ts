@@ -83,6 +83,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.taskIds",
     type: "string[]",
     description: "Task/ticket IDs extracted from commit messages",
+    essential: true,
   },
 
   // ── Chunk-level signals ──
@@ -146,5 +147,6 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.taskIds",
     type: "string[]",
     description: "Task/ticket IDs extracted from commit messages touching this chunk",
+    essential: true,
   },
 ];
