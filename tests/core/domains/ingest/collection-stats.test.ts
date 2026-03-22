@@ -12,6 +12,22 @@ const testSignals: PayloadSignalDescriptor[] = [
   },
 ];
 
+const signalsWithChunkFilter: PayloadSignalDescriptor[] = [
+  ...testSignals,
+  {
+    key: "methodLines",
+    type: "number",
+    description: "Original method/block line count",
+    stats: { labels: { p50: "small", p75: "large", p95: "decomposition_candidate" }, chunkTypeFilter: "function" },
+  },
+  {
+    key: "methodDensity",
+    type: "number",
+    description: "Code density",
+    stats: { labels: { p50: "sparse", p95: "dense" }, chunkTypeFilter: "function" },
+  },
+];
+
 function makePoints(values: number[]) {
   return values.map((v, i) => ({
     payload: {
@@ -83,5 +99,218 @@ describe("computeCollectionStats distributions", () => {
     const result = computeCollectionStats(points, testSignals);
     expect(result.distributions.topAuthors).toHaveLength(10);
     expect(result.distributions.othersCount).toBe(12);
+  });
+
+  describe("chunkTypeFilter", () => {
+    it("should compute methodLines stats only from function chunks", () => {
+      const points = [
+        {
+          payload: {
+            "git.file.commitCount": 5,
+            methodLines: 100,
+            methodDensity: 50,
+            chunkType: "class",
+            language: "typescript",
+            isDocumentation: false,
+            relativePath: "a.ts",
+          },
+        },
+        {
+          payload: {
+            "git.file.commitCount": 3,
+            methodLines: 20,
+            methodDensity: 30,
+            chunkType: "function",
+            language: "typescript",
+            isDocumentation: false,
+            relativePath: "a.ts",
+          },
+        },
+        {
+          payload: {
+            "git.file.commitCount": 7,
+            methodLines: 40,
+            methodDensity: 60,
+            chunkType: "function",
+            language: "typescript",
+            isDocumentation: false,
+            relativePath: "b.ts",
+          },
+        },
+        {
+          payload: {
+            "git.file.commitCount": 2,
+            methodLines: 200,
+            methodDensity: 80,
+            chunkType: "block",
+            language: "typescript",
+            isDocumentation: false,
+            relativePath: "b.ts",
+          },
+        },
+      ];
+      const result = computeCollectionStats(points, signalsWithChunkFilter);
+
+      // methodLines: only function chunks → [20, 40]
+      const mlStats = result.perSignal.get("methodLines")!;
+      expect(mlStats.count).toBe(2);
+      expect(mlStats.min).toBe(20);
+      expect(mlStats.max).toBe(40);
+
+      // methodDensity: only function chunks → [30, 60]
+      const mdStats = result.perSignal.get("methodDensity")!;
+      expect(mdStats.count).toBe(2);
+      expect(mdStats.min).toBe(30);
+      expect(mdStats.max).toBe(60);
+
+      // commitCount: no filter → all 4 points
+      const ccStats = result.perSignal.get("git.file.commitCount")!;
+      expect(ccStats.count).toBe(4);
+    });
+  });
+
+  describe("enrichment time range", () => {
+    it("should compute file-level time range from git.file timestamps", () => {
+      const now = 1700000000;
+      const day = 86400;
+      const points = [
+        {
+          payload: {
+            "git.file.commitCount": 1,
+            "git.file.lastModifiedAt": now - 2 * day,
+            "git.file.firstCreatedAt": now - 30 * day,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: "a.ts",
+          },
+        },
+        {
+          payload: {
+            "git.file.commitCount": 2,
+            "git.file.lastModifiedAt": now - 1 * day,
+            "git.file.firstCreatedAt": now - 60 * day,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: "b.ts",
+          },
+        },
+      ];
+      const result = computeCollectionStats(points, testSignals);
+
+      expect(result.distributions.enrichmentTimeRange).toBeDefined();
+      expect(result.distributions.enrichmentTimeRange!.file.oldest).toBe(now - 60 * day);
+      expect(result.distributions.enrichmentTimeRange!.file.newest).toBe(now - 1 * day);
+      expect(result.distributions.enrichmentTimeRange!.filesWithGitData).toBe(2);
+    });
+
+    it("should compute chunk-level time range from git.chunk.lastModifiedAt", () => {
+      const now = 1700000000;
+      const day = 86400;
+      const points = [
+        {
+          payload: {
+            "git.file.commitCount": 1,
+            "git.file.lastModifiedAt": now - 2 * day,
+            "git.file.firstCreatedAt": now - 30 * day,
+            "git.chunk.lastModifiedAt": now - 5 * day,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: "a.ts",
+          },
+        },
+        {
+          payload: {
+            "git.file.commitCount": 2,
+            "git.file.lastModifiedAt": now - 1 * day,
+            "git.file.firstCreatedAt": now - 60 * day,
+            "git.chunk.lastModifiedAt": now - 3 * day,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: "b.ts",
+          },
+        },
+      ];
+      const result = computeCollectionStats(points, testSignals);
+
+      expect(result.distributions.enrichmentTimeRange!.chunk).toBeDefined();
+      expect(result.distributions.enrichmentTimeRange!.chunk!.oldest).toBe(now - 5 * day);
+      expect(result.distributions.enrichmentTimeRange!.chunk!.newest).toBe(now - 3 * day);
+    });
+
+    it("should omit chunk range when no chunk timestamps present", () => {
+      const now = 1700000000;
+      const day = 86400;
+      const points = [
+        {
+          payload: {
+            "git.file.commitCount": 1,
+            "git.file.lastModifiedAt": now - 2 * day,
+            "git.file.firstCreatedAt": now - 30 * day,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: "a.ts",
+          },
+        },
+      ];
+      const result = computeCollectionStats(points, testSignals);
+
+      expect(result.distributions.enrichmentTimeRange).toBeDefined();
+      expect(result.distributions.enrichmentTimeRange!.chunk).toBeUndefined();
+    });
+
+    it("should include configTimePeriodMonths when gitTimePeriods provided", () => {
+      const now = 1700000000;
+      const day = 86400;
+      const points = [
+        {
+          payload: {
+            "git.file.commitCount": 1,
+            "git.file.lastModifiedAt": now - 2 * day,
+            "git.file.firstCreatedAt": now - 30 * day,
+            "git.chunk.lastModifiedAt": now - 5 * day,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: "a.ts",
+          },
+        },
+      ];
+      const result = computeCollectionStats(points, testSignals, { fileMonths: 12, chunkMonths: 6 });
+
+      expect(result.distributions.enrichmentTimeRange!.file.configTimePeriodMonths).toBe(12);
+      expect(result.distributions.enrichmentTimeRange!.chunk!.configTimePeriodMonths).toBe(6);
+    });
+
+    it("should omit configTimePeriodMonths when gitTimePeriods not provided", () => {
+      const now = 1700000000;
+      const day = 86400;
+      const points = [
+        {
+          payload: {
+            "git.file.commitCount": 1,
+            "git.file.lastModifiedAt": now - 2 * day,
+            "git.file.firstCreatedAt": now - 30 * day,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: "a.ts",
+          },
+        },
+      ];
+      const result = computeCollectionStats(points, testSignals);
+
+      expect(result.distributions.enrichmentTimeRange!.file.configTimePeriodMonths).toBeUndefined();
+    });
+
+    it("should return undefined enrichmentTimeRange when no git timestamps", () => {
+      const points = makePoints([1, 2, 3]);
+      const result = computeCollectionStats(points, testSignals);
+      expect(result.distributions.enrichmentTimeRange).toBeUndefined();
+    });
   });
 });

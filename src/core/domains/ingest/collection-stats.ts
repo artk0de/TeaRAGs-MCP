@@ -48,6 +48,16 @@ interface ExtractedValues {
   codeCount: number;
   distinctPaths: Set<string>;
   authorCounts: Map<string, number>;
+  /** File-level: min firstCreatedAt */
+  fileOldest: number | undefined;
+  /** File-level: max lastModifiedAt */
+  fileNewest: number | undefined;
+  /** Chunk-level: min lastModifiedAt */
+  chunkOldest: number | undefined;
+  /** Chunk-level: max lastModifiedAt */
+  chunkNewest: number | undefined;
+  /** Distinct files that have git timestamp data */
+  gitDataPaths: Set<string>;
 }
 
 function extractSignalValues(
@@ -65,9 +75,17 @@ function extractSignalValues(
   let codeCount = 0;
   const distinctPaths = new Set<string>();
   const authorCounts = new Map<string, number>();
+  let fileOldest: number | undefined;
+  let fileNewest: number | undefined;
+  let chunkOldest: number | undefined;
+  let chunkNewest: number | undefined;
+  const gitDataPaths = new Set<string>();
 
   for (const point of points) {
+    const pointChunkType = point.payload["chunkType"];
     for (const signal of statsSignals) {
+      const filter = signal.stats?.chunkTypeFilter;
+      if (filter && pointChunkType !== filter) continue;
       const val = readPayloadPath(point.payload, signal.key);
       if (typeof val === "number" && val > 0) {
         const arr = valueArrays.get(signal.key);
@@ -101,9 +119,39 @@ function extractSignalValues(
     if (typeof author === "string") {
       authorCounts.set(author, (authorCounts.get(author) ?? 0) + 1);
     }
+
+    const fileFirstCreated = readPayloadPath(point.payload, "git.file.firstCreatedAt");
+    const fileLastModified = readPayloadPath(point.payload, "git.file.lastModifiedAt");
+    const chunkLastModified = readPayloadPath(point.payload, "git.chunk.lastModifiedAt");
+
+    if (typeof fileFirstCreated === "number" && fileFirstCreated > 0) {
+      fileOldest = fileOldest === undefined ? fileFirstCreated : Math.min(fileOldest, fileFirstCreated);
+      const relPath = point.payload["relativePath"];
+      if (typeof relPath === "string") gitDataPaths.add(relPath);
+    }
+    if (typeof fileLastModified === "number" && fileLastModified > 0) {
+      fileNewest = fileNewest === undefined ? fileLastModified : Math.max(fileNewest, fileLastModified);
+    }
+    if (typeof chunkLastModified === "number" && chunkLastModified > 0) {
+      chunkOldest = chunkOldest === undefined ? chunkLastModified : Math.min(chunkOldest, chunkLastModified);
+      chunkNewest = chunkNewest === undefined ? chunkLastModified : Math.max(chunkNewest, chunkLastModified);
+    }
   }
 
-  return { valueArrays, languageCounts, chunkTypeCounts, docsCount, codeCount, distinctPaths, authorCounts };
+  return {
+    valueArrays,
+    languageCounts,
+    chunkTypeCounts,
+    docsCount,
+    codeCount,
+    distinctPaths,
+    authorCounts,
+    fileOldest,
+    fileNewest,
+    chunkOldest,
+    chunkNewest,
+    gitDataPaths,
+  };
 }
 
 function computePerSignalStats(
@@ -152,10 +200,33 @@ function computePerSignalStats(
   return perSignal;
 }
 
-function buildDistributions(extracted: ExtractedValues): CollectionSignalStats["distributions"] {
+function buildDistributions(
+  extracted: ExtractedValues,
+  gitTimePeriods?: { fileMonths: number; chunkMonths: number },
+): CollectionSignalStats["distributions"] {
   const sortedAuthors = Array.from(extracted.authorCounts.entries()).sort((a, b) => b[1] - a[1]);
   const topAuthors = sortedAuthors.slice(0, 10).map(([name, chunks]) => ({ name, chunks }));
   const othersCount = sortedAuthors.slice(10).reduce((sum, [, chunks]) => sum + chunks, 0);
+
+  const hasFileRange = extracted.fileOldest !== undefined && extracted.fileNewest !== undefined;
+  const enrichmentTimeRange = hasFileRange
+    ? {
+        file: {
+          oldest: extracted.fileOldest as number,
+          newest: extracted.fileNewest as number,
+          configTimePeriodMonths: gitTimePeriods?.fileMonths,
+        },
+        chunk:
+          extracted.chunkOldest !== undefined && extracted.chunkNewest !== undefined
+            ? {
+                oldest: extracted.chunkOldest,
+                newest: extracted.chunkNewest,
+                configTimePeriodMonths: gitTimePeriods?.chunkMonths,
+              }
+            : undefined,
+        filesWithGitData: extracted.gitDataPaths.size,
+      }
+    : undefined;
 
   return {
     totalFiles: extracted.distinctPaths.size,
@@ -164,6 +235,7 @@ function buildDistributions(extracted: ExtractedValues): CollectionSignalStats["
     documentation: { docs: extracted.docsCount, code: extracted.codeCount },
     topAuthors,
     othersCount,
+    enrichmentTimeRange,
   };
 }
 
@@ -179,11 +251,12 @@ function buildDistributions(extracted: ExtractedValues): CollectionSignalStats["
 export function computeCollectionStats(
   points: { payload: Record<string, unknown> }[],
   signals: PayloadSignalDescriptor[],
+  gitTimePeriods?: { fileMonths: number; chunkMonths: number },
 ): CollectionSignalStats {
   const statsSignals = signals.filter((s) => s.stats !== undefined);
   const extracted = extractSignalValues(points, statsSignals);
   const perSignal = computePerSignalStats(extracted.valueArrays, statsSignals);
-  const distributions = buildDistributions(extracted);
+  const distributions = buildDistributions(extracted, gitTimePeriods);
 
   return {
     perSignal,
