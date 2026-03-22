@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,7 +11,7 @@ describe("SnapshotCleaner", () => {
   const collectionName = "code_test1234";
 
   beforeEach(async () => {
-    tempDir = join(process.env.TEA_RAGS_DATA_DIR!, "snapshots-cleaner-test");
+    tempDir = join(tmpdir(), `snapshot-cleaner-test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
     await fs.mkdir(tempDir, { recursive: true });
   });
 

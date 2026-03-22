@@ -33,9 +33,9 @@ export class SnapshotCleaner {
     const removed: string[] = [];
 
     for (const artifact of artifacts) {
-      const path = join(this.snapshotDir, artifact);
+      const filePath = join(this.snapshotDir, artifact);
       try {
-        await fs.unlink(path);
+        await fs.unlink(filePath);
         removed.push(artifact);
       } catch {
         // File doesn't exist — expected for most runs
