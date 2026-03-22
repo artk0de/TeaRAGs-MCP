@@ -60,5 +60,14 @@ fi
 
 if [ -n "$RUN_TESTS" ]; then
   echo "📦 Running tests with coverage check..."
-  npm test -- --run --coverage --reporter=dot 2>/dev/null || { echo "❌ Tests or coverage threshold failed. Run 'npx vitest run' for details."; exit 1; }
+  TEST_OUTPUT=$(npm test -- --run --coverage --reporter=verbose 2>&1)
+  TEST_EXIT=$?
+  if [ $TEST_EXIT -ne 0 ]; then
+    echo "$TEST_OUTPUT" | grep -E "FAIL|×|Error|failed|threshold"
+    echo ""
+    echo "❌ Tests or coverage threshold failed. Run 'npx vitest run' for details."
+    exit 1
+  else
+    echo "$TEST_OUTPUT" | tail -3
+  fi
 fi
