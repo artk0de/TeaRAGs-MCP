@@ -11,6 +11,9 @@ Selects code generation strategy based on git signal labels. Uses overlay labels
 from TeaRAGs search results — not hardcoded thresholds — so strategies adapt to
 each codebase automatically.
 
+**MANDATORY: After every search call, run @post-search-validation.md checks
+(no-match detection + disambiguation). Do NOT skip.**
+
 ## Prerequisites
 
 **Run `/tea-rags:research` first** to get verified area, overlay labels, and

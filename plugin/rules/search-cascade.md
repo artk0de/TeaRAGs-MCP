@@ -211,13 +211,15 @@ After 3: report "could not find, here's the best match"
 
 Can paginate indefinitely. Can reformulate max 3 times.
 
-**Disambiguation** — results are relevant but mixed:
+**Disambiguation (MANDATORY after every search)** — results are relevant but
+mixed:
 
-After the first search, scan result paths and symbol names. If results clearly
-split into unrelated areas (e.g., "client" → CRM contacts vs integration API
-clients), don't silently pick one. Present the clusters to the user: "Found
-results in two areas: [area A] and [area B]. Which context?" Then re-search with
-pathPattern or refined query for the chosen area.
+After EVERY search, scan result paths for domain clustering. If top-10 results
+split into 2+ unrelated directory groups (e.g., `services/qbo/` vs
+`services/crm/`) with no single group holding >70% of results — you MUST NOT
+silently pick one. Present clusters to the user: "Found results in two areas:
+[area A] and [area B]. Which context?" Then re-search with `pathPattern` for the
+chosen area. Do NOT reason about mixed results as if they belong to one domain.
 
 ## Stop Conditions
 
