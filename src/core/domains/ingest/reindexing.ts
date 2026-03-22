@@ -17,6 +17,7 @@ import { isDebug } from "./pipeline/infra/runtime.js";
 import type { FileScanner } from "./pipeline/scanner.js";
 import { performDeletion, type DeletionConfig } from "./sync/deletion-strategy.js";
 import type { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
+import { SnapshotCleaner } from "./sync/snapshot-cleaner.js";
 
 interface ReindexContext {
   absolutePath: string;
@@ -41,6 +42,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
   async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
     const startTime = Date.now();
+    const { absolutePath, collectionName } = await this.resolveContext(path);
     const stats: ChangeStats = {
       filesAdded: 0,
       filesModified: 0,
@@ -54,7 +56,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     };
 
     try {
-      const ctx = await this.prepareReindexContext(path);
+      const ctx = await this.prepareReindexContext(absolutePath, collectionName);
       const resumeFromCheckpoint = await this.checkForCheckpoint(ctx.synchronizer);
 
       this.reportScanProgress(progressCallback, resumeFromCheckpoint);
@@ -99,17 +101,18 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new ReindexFailedError(errorMessage, error instanceof Error ? error : undefined);
+    } finally {
+      const cleaner = new SnapshotCleaner(this.snapshotDir, collectionName);
+      await cleaner.cleanupAfterIndexing();
     }
   }
 
   // ── Preparation ──────────────────────────────────────────
 
-  private async prepareReindexContext(path: string): Promise<ReindexContext> {
-    const { absolutePath, collectionName } = await this.resolveContext(path);
-
+  private async prepareReindexContext(absolutePath: string, collectionName: string): Promise<ReindexContext> {
     const exists = await this.qdrant.collectionExists(collectionName);
     if (!exists) {
-      throw new NotIndexedError(path);
+      throw new NotIndexedError(absolutePath);
     }
 
     await this.runMigrations(collectionName, absolutePath);
@@ -117,7 +120,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const synchronizer = this.deps.createSynchronizer(absolutePath, collectionName);
     const hasSnapshot = await synchronizer.initialize();
     if (!hasSnapshot) {
-      throw new SnapshotMissingError(path);
+      throw new SnapshotMissingError(absolutePath);
     }
 
     const scanner = this.createScanner();
