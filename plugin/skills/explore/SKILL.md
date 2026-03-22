@@ -166,9 +166,8 @@ Scan results: which files, which modules, what patterns. Note domain boundaries.
 For each interesting result, follow search-cascade:
 
 - **"Same thing elsewhere?"** → pass code/chunk ID to cascade (→ find_similar)
-- **"What is this method?"** → pass symbol name to cascade (→ semantic_search
-  preferred over hybrid_search for bare symbols — see Known Limitations in
-  search-cascade)
+- **"What is this method?"** → pass symbol name to cascade (→ hybrid_search for
+  symbol + context, semantic_search for bare symbol names)
 - **"Need to understand this"** → Read file (focused range)
 
 Repeat as needed. Prefer fewer deep dives over many shallow ones.

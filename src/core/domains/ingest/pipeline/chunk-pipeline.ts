@@ -14,7 +14,7 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { BM25SparseVectorGenerator } from "../../../adapters/qdrant/sparse.js";
+import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import { PipelineNotStartedError } from "../errors.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
@@ -47,7 +47,7 @@ export class ChunkPipeline {
   private readonly embeddings: EmbeddingProvider;
   private readonly collectionName: string;
   private readonly payloadBuilder: PayloadBuilder;
-  private readonly sparseGenerator: BM25SparseVectorGenerator | null;
+  private readonly enableHybrid: boolean;
 
   private readonly workerPool: WorkerPool;
   private readonly accumulator: BatchAccumulator<ChunkItem>;
@@ -89,7 +89,7 @@ export class ChunkPipeline {
       enableHybrid: config?.enableHybrid ?? false,
     };
 
-    this.sparseGenerator = this.config.enableHybrid ? new BM25SparseVectorGenerator() : null;
+    this.enableHybrid = this.config.enableHybrid;
 
     // Initialize worker pool
     this.workerPool = new WorkerPool(
@@ -310,10 +310,10 @@ export class ChunkPipeline {
 
       // 4. Store to Qdrant
       const qdrantStart = Date.now();
-      if (this.sparseGenerator) {
+      if (this.enableHybrid) {
         const hybridPoints = points.map((point, idx) => ({
           ...point,
-          sparseVector: this.sparseGenerator?.generate(batch.items[idx].chunk.content) ?? { indices: [], values: [] },
+          sparseVector: generateSparseVector(batch.items[idx].chunk.content),
         }));
         await this.qdrant.addPointsWithSparse(this.collectionName, hybridPoints);
         const qdrantDurationHybrid = Date.now() - qdrantStart;

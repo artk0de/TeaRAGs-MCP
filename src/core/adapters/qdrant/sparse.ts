@@ -1,128 +1,167 @@
 /**
- * BM25 Sparse Vector Generator
+ * BM25 Sparse Vector Generator — stateless, code-aware.
  *
- * This module provides a simple BM25-like sparse vector generation for keyword search.
- * For production use, consider using a proper BM25 implementation or Qdrant's built-in
- * sparse vector generation via FastEmbed.
+ * Generates sparse vectors for Qdrant hybrid search using:
+ * - Code-aware tokenization (camelCase, snake_case, PascalCase splitting)
+ * - Feature hashing (FNV-1a) for deterministic token→index mapping
+ * - BM25 TF-only scoring (Qdrant applies IDF server-side via modifier:"idf")
+ *
+ * No vocabulary state, no training needed. Same input → same output always.
  */
 
 import type { SparseVector } from "../qdrant/client.js";
 
-interface TokenFrequency {
-  [token: string]: number;
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const HASH_SPACE = 65536; // 2^16
+
+const STOP_WORDS = new Set([
+  "the",
+  "a",
+  "an",
+  "is",
+  "in",
+  "of",
+  "to",
+  "and",
+  "or",
+  "for",
+  "it",
+  "this",
+  "that",
+  "with",
+  "as",
+  "by",
+  "on",
+  "at",
+  "be",
+  "are",
+  "was",
+  "were",
+  "been",
+  "has",
+  "have",
+  "had",
+  "not",
+  "but",
+  "from",
+  "will",
+  "do",
+  "if",
+  "no",
+  "so",
+  "we",
+  "he",
+  "she",
+  "my",
+  "your",
+]);
+
+const MIN_TOKEN_LENGTH = 2;
+
+// ---------------------------------------------------------------------------
+// Code Tokenizer
+// ---------------------------------------------------------------------------
+
+/**
+ * Tokenize text with code-aware splitting.
+ *
+ * Handles: camelCase, PascalCase, snake_case, SCREAMING_CASE,
+ * dot.notation, acronyms (XMLParser → xml, parser).
+ * Removes stop words and tokens shorter than 2 chars.
+ */
+export function codeTokenize(text: string): string[] {
+  if (!text) return [];
+
+  return (
+    text
+      // Split on non-alphanumeric (dots, underscores, spaces, punctuation)
+      .replace(/[^a-zA-Z0-9]/g, " ")
+      // Insert space before uppercase after lowercase (camelCase)
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      // Insert space between acronym and next word (XMLParser → XML Parser)
+      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+      // Insert space at digit↔letter boundaries (retry3Times → retry 3 Times)
+      .replace(/([a-zA-Z])(\d)/g, "$1 $2")
+      .replace(/(\d)([a-zA-Z])/g, "$1 $2")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length >= MIN_TOKEN_LENGTH && !STOP_WORDS.has(t))
+  );
 }
 
+// ---------------------------------------------------------------------------
+// Feature Hashing (FNV-1a)
+// ---------------------------------------------------------------------------
+
+const FNV_OFFSET = 2166136261;
+const FNV_PRIME = 16777619;
+
+/**
+ * Deterministic hash: token → index in [0, HASH_SPACE).
+ * Uses FNV-1a for good distribution with minimal code.
+ */
+export function featureHash(token: string): number {
+  let hash = FNV_OFFSET;
+  for (let i = 0; i < token.length; i++) {
+    hash ^= token.charCodeAt(i);
+    hash = Math.imul(hash, FNV_PRIME);
+  }
+  return (hash >>> 0) & (HASH_SPACE - 1);
+}
+
+// ---------------------------------------------------------------------------
+// Sparse Vector Generator
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a BM25 TF-only sparse vector for text.
+ *
+ * Stateless: same input always produces same output regardless of context.
+ * IDF is NOT applied — Qdrant handles it server-side via collection modifier:"idf".
+ *
+ * @param text - Code content or query string
+ * @param k1 - BM25 term saturation parameter (default 1.2)
+ * @param b - BM25 length normalization parameter (default 0.75)
+ * @param avgDocLength - Average document length in tokens (default 50)
+ */
+export function generateSparseVector(text: string, k1 = 1.2, b = 0.75, avgDocLength = 50): SparseVector {
+  const tokens = codeTokenize(text);
+  if (tokens.length === 0) return { indices: [], values: [] };
+
+  // Accumulate term frequency per hash bucket
+  const bucketFreq = new Map<number, number>();
+  for (const token of tokens) {
+    const bucket = featureHash(token);
+    bucketFreq.set(bucket, (bucketFreq.get(bucket) ?? 0) + 1);
+  }
+
+  const docLength = tokens.length;
+  const indices: number[] = [];
+  const values: number[] = [];
+
+  for (const [bucket, freq] of bucketFreq) {
+    // BM25 TF component only (no IDF — Qdrant applies it server-side)
+    const tf = (freq * (k1 + 1)) / (freq + k1 * (1 - b + b * (docLength / avgDocLength)));
+    indices.push(bucket);
+    values.push(tf);
+  }
+
+  return { indices, values };
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compatible class wrapper
+// ---------------------------------------------------------------------------
+
+/**
+ * @deprecated Use `generateSparseVector()` directly.
+ * Kept for backward compatibility at call sites.
+ */
 export class BM25SparseVectorGenerator {
-  private readonly vocabulary: Map<string, number>;
-  private readonly idfScores: Map<string, number>;
-  private documentCount: number;
-  private readonly k1: number;
-  private readonly b: number;
-
-  constructor(k1 = 1.2, b = 0.75) {
-    this.vocabulary = new Map();
-    this.idfScores = new Map();
-    this.documentCount = 0;
-    this.k1 = k1;
-    this.b = b;
-  }
-
-  /**
-   * Tokenize text into words (simple whitespace tokenization + lowercase)
-   */
-  private tokenize(text: string): string[] {
-    return text
-      .toLowerCase()
-      .replace(/[^\w\s]/g, " ")
-      .split(/\s+/)
-      .filter((token) => token.length > 0);
-  }
-
-  /**
-   * Calculate term frequency for a document
-   */
-  private getTermFrequency(tokens: string[]): TokenFrequency {
-    const tf: TokenFrequency = {};
-    for (const token of tokens) {
-      tf[token] = (tf[token] || 0) + 1;
-    }
-    return tf;
-  }
-
-  /**
-   * Build vocabulary from training documents (optional pre-training step)
-   * In a simple implementation, we can skip this and use on-the-fly vocabulary
-   */
-  train(documents: string[]): void {
-    this.documentCount = documents.length;
-    const documentFrequency = new Map<string, number>();
-
-    // Calculate document frequency for each term
-    for (const doc of documents) {
-      const tokens = this.tokenize(doc);
-      const uniqueTokens = new Set(tokens);
-
-      for (const token of uniqueTokens) {
-        if (!this.vocabulary.has(token)) {
-          this.vocabulary.set(token, this.vocabulary.size);
-        }
-        documentFrequency.set(token, (documentFrequency.get(token) || 0) + 1);
-      }
-    }
-
-    // Calculate IDF scores
-    for (const [token, df] of documentFrequency.entries()) {
-      const idf = Math.log((this.documentCount - df + 0.5) / (df + 0.5) + 1.0);
-      this.idfScores.set(token, idf);
-    }
-  }
-
-  /**
-   * Generate sparse vector for a query or document
-   * Returns indices and values for non-zero dimensions
-   */
-  generate(text: string, avgDocLength = 50): SparseVector {
-    const tokens = this.tokenize(text);
-    const tf = this.getTermFrequency(tokens);
-    const docLength = tokens.length;
-
-    const indices: number[] = [];
-    const values: number[] = [];
-
-    // Calculate BM25 score for each term
-    for (const [token, freq] of Object.entries(tf)) {
-      // Ensure token is in vocabulary
-      if (!this.vocabulary.has(token)) {
-        // For unseen tokens, add them to vocabulary dynamically
-        this.vocabulary.set(token, this.vocabulary.size);
-      }
-
-      const index = this.vocabulary.get(token);
-      if (index === undefined) continue;
-
-      // Use a default IDF if not trained
-      const idf = this.idfScores.get(token) || 1.0;
-
-      // BM25 formula
-      const numerator = freq * (this.k1 + 1);
-      const denominator = freq + this.k1 * (1 - this.b + this.b * (docLength / avgDocLength));
-      const score = idf * (numerator / denominator);
-
-      if (score > 0) {
-        indices.push(index);
-        values.push(score);
-      }
-    }
-
-    return { indices, values };
-  }
-
-  /**
-   * Simple static method for generating sparse vectors without training
-   * Useful for quick implementation
-   */
   static generateSimple(text: string): SparseVector {
-    const generator = new BM25SparseVectorGenerator();
-    return generator.generate(text);
+    return generateSparseVector(text);
   }
 }

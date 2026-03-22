@@ -19,6 +19,7 @@ vi.mock("../../../src/core/domains/explore/post-process.js", () => ({
 }));
 
 vi.mock("../../../src/core/adapters/qdrant/sparse.js", () => ({
+  generateSparseVector: vi.fn(() => ({ indices: [1, 2], values: [0.5, 0.5] })),
   BM25SparseVectorGenerator: {
     generateSimple: vi.fn(() => ({ indices: [1, 2], values: [0.5, 0.5] })),
   },
