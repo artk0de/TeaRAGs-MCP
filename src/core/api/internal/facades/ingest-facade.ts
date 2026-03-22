@@ -101,6 +101,17 @@ export class IngestFacade {
 
   /** Index a codebase — first index, force re-index, or incremental fallback */
   async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
+    // Model guard before health check — guard reads Qdrant (no embed),
+    // health check calls embed() which fails with wrong model name
+    if (!options?.forceReindex) {
+      const absolutePath = await validatePath(path);
+      const collectionName = resolveCollectionName(absolutePath);
+      const exists = await this.qdrant.collectionExists(collectionName);
+      if (exists) {
+        await this.modelGuard?.ensureMatch(collectionName);
+      }
+    }
+
     await this.checkEmbeddingHealth();
 
     // If collection exists and no forceReindex → incremental reindex
@@ -109,7 +120,6 @@ export class IngestFacade {
       const collectionName = resolveCollectionName(absolutePath);
       const exists = await this.qdrant.collectionExists(collectionName);
       if (exists) {
-        await this.modelGuard?.ensureMatch(collectionName);
         const changeStats = await this.reindex.reindexChanges(path, progressCallback);
         await this.refreshStats(path);
         return {
