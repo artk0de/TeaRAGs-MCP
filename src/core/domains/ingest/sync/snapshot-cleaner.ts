@@ -43,7 +43,16 @@ export class SnapshotCleaner {
     }
 
     if (removed.length > 0 && isDebug()) {
-      const labels = removed.map((a) => a.replace(`${this.collectionName}.`, "").replace(".json", ""));
+      const labelMap: Record<string, string> = {
+        "checkpoint.json": "checkpoint",
+        "checkpoint.json.tmp": "checkpoint tmp",
+        json: "legacy snapshot",
+        "json.backup": "migration backup",
+      };
+      const labels = removed.map((a) => {
+        const suffix = a.replace(`${this.collectionName}.`, "");
+        return labelMap[suffix] ?? suffix;
+      });
       console.error(`[Cleanup] Removed ${removed.length} artifact(s) for ${this.collectionName}: ${labels.join(", ")}`);
     }
   }
