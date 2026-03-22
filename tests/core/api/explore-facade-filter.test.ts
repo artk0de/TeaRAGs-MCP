@@ -199,4 +199,23 @@ describe("ExploreFacade filter delegation to registry.buildMergedFilter", () => 
       "file",
     );
   });
+
+  it("passes resolved level to registry.buildMergedFilter for searchCode", async () => {
+    const registry = makeMockRegistry();
+    registry.buildMergedFilter.mockReturnValue(undefined);
+    const qdrant = makeMockQdrant();
+    const { facade } = makeFacade({ qdrant, registry });
+
+    await facade.searchCode({
+      path: "/tmp/test-project",
+      query: "test query",
+      language: "typescript",
+    });
+
+    // searchCode passes level as 3rd argument (undefined when no preset signalLevel)
+    const call = registry.buildMergedFilter.mock.calls[0];
+    expect(call).toHaveLength(3);
+    expect(call[0]).toEqual(expect.objectContaining({ language: "typescript" }));
+    expect(call[2]).toBeUndefined(); // no preset → no level override
+  });
 });

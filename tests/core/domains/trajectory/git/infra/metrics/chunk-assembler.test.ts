@@ -53,7 +53,7 @@ describe("assembleChunkSignals", () => {
     expect(result.bugFixRate).toBe(0);
     expect(result.recencyWeightedFreq).toBe(0);
     expect(result.changeDensity).toBe(0);
-    expect(result.ageDays).toBe(0);
+    expect(result.ageDays).toBeUndefined();
   });
 
   it("caps contributorCount at file-level when provided", () => {

@@ -79,8 +79,8 @@ export interface ChunkChurnOverlay extends ChunkSignalOverlay {
   bugFixRate: number;
   /** Unix timestamp of last modification to this chunk */
   lastModifiedAt: number;
-  /** Days since last modification to this chunk */
-  ageDays: number;
+  /** Days since last modification to this chunk. Undefined when no git history. */
+  ageDays?: number;
   /** (linesAdded + linesDeleted) / chunkLineCount — relative churn within chunk */
   relativeChurn: number;
   /** Σ exp(-0.1 × daysAgo) — recency-weighted commit frequency for chunk */
