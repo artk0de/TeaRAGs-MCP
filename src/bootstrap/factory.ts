@@ -19,6 +19,7 @@ import {
 import { initDebugLogger } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
+import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
@@ -84,6 +85,8 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     zodConfig.embedding.tune.batchSize = embeddings.recommendedBatchSize;
   }
 
+  const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions());
+
   const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
   const essentialTrajectoryFields = registry.getEssentialPayloadKeys();
   const schemaBuilder = new SchemaBuilder(reranker);
@@ -118,6 +121,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     pipelineTuning,
     syncTuning,
     config.paths.snapshots,
+    modelGuard,
   );
   const schemaDriftMonitor = new SchemaDriftMonitor(
     statsCache,
@@ -132,6 +136,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     schemaDriftMonitor,
     payloadSignals: allPayloadSignalDescriptors,
     essentialKeys: essentialTrajectoryFields,
+    modelGuard,
   });
   const app = createApp({
     qdrant,
@@ -141,6 +146,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     reranker,
     schemaDriftMonitor,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
+    modelGuard,
   });
 
   const cleanup = () => {

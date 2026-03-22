@@ -13,7 +13,7 @@ vi.mock("../../src/core/adapters/qdrant/client.js", () => ({
 }));
 vi.mock("../../src/core/adapters/embeddings/factory.js", () => ({
   EmbeddingProviderFactory: {
-    create: vi.fn().mockReturnValue({ getDimensions: () => 768 }),
+    create: vi.fn().mockReturnValue({ getDimensions: () => 768, getModel: () => "test-model" }),
   },
 }));
 vi.mock("../../src/core/api/internal/facades/ingest-facade.js", () => ({

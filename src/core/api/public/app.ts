@@ -17,6 +17,7 @@
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
+import type { EmbeddingModelGuard } from "../../infra/embedding-model-guard.js";
 import type { SchemaDriftMonitor } from "../../infra/schema-drift-monitor.js";
 import type { ExploreFacade } from "../internal/facades/explore-facade.js";
 import type { IngestFacade } from "../internal/facades/ingest-facade.js";
@@ -94,6 +95,7 @@ export interface AppDeps {
   reranker: Reranker;
   schemaDriftMonitor: SchemaDriftMonitor;
   quantizationScalar: boolean;
+  modelGuard?: EmbeddingModelGuard;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,8 +103,8 @@ export interface AppDeps {
 // ---------------------------------------------------------------------------
 
 export function createApp(deps: AppDeps): App {
-  const collectionOps = new CollectionOps(deps.qdrant, deps.embeddings, deps.quantizationScalar);
-  const documentOps = new DocumentOps(deps.qdrant, deps.embeddings);
+  const collectionOps = new CollectionOps(deps.qdrant, deps.embeddings, deps.quantizationScalar, deps.modelGuard);
+  const documentOps = new DocumentOps(deps.qdrant, deps.embeddings, deps.modelGuard);
 
   return {
     // -- Search — delegate to ExploreFacade --
