@@ -17,6 +17,8 @@ export interface SignalStatsRequest {
   mean?: boolean;
   /** Compute standard deviation */
   stddev?: boolean;
+  /** Only include points where payload.chunkType matches this value. */
+  chunkTypeFilter?: string;
 }
 
 /** Raw Qdrant payload field descriptor — key + type + description. */
@@ -44,6 +46,26 @@ export interface SignalStats {
   stddev?: number;
 }
 
+/** Time range covered by git enrichment data at a specific level. */
+export interface LevelTimeRange {
+  /** Earliest timestamp (file: firstCreatedAt, chunk: lastModifiedAt). */
+  oldest: number;
+  /** Latest lastModifiedAt timestamp. */
+  newest: number;
+  /** Configured time window for this level (months). */
+  configTimePeriodMonths?: number;
+}
+
+/** Time range covered by git enrichment data, separated by signal level. */
+export interface EnrichmentTimeRange {
+  /** File-level: min firstCreatedAt → max lastModifiedAt. */
+  file: LevelTimeRange;
+  /** Chunk-level: min lastModifiedAt → max lastModifiedAt. */
+  chunk?: LevelTimeRange;
+  /** Number of distinct files that have git enrichment data. */
+  filesWithGitData: number;
+}
+
 /** Distribution breakdowns across the collection. */
 export interface Distributions {
   totalFiles: number;
@@ -52,6 +74,8 @@ export interface Distributions {
   documentation: { docs: number; code: number };
   topAuthors: { name: string; chunks: number }[];
   othersCount: number;
+  /** Time range of git enrichment data. Undefined when no git data present. */
+  enrichmentTimeRange?: EnrichmentTimeRange;
 }
 
 /** Collection-wide signal statistics, cached between reindexes. */

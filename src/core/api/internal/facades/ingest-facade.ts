@@ -45,6 +45,7 @@ export class IngestFacade {
   private readonly indexing: IndexPipeline;
   private readonly status: StatusModule;
   private readonly reindex: ReindexPipeline;
+  private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
 
   constructor(
     private readonly qdrant: QdrantManager,
@@ -70,6 +71,12 @@ export class IngestFacade {
     const providers = trajectoryConfig.enableGitMetadata
       ? [new GitEnrichmentProvider(trajectoryConfig.trajectoryGit ?? undefined, squashOpts)]
       : [];
+    if (trajectoryConfig.trajectoryGit) {
+      this.gitTimePeriods = {
+        fileMonths: trajectoryConfig.trajectoryGit.logMaxAgeMonths,
+        chunkMonths: trajectoryConfig.trajectoryGit.chunkMaxAgeMonths,
+      };
+    }
     this.enrichment = new EnrichmentCoordinator(qdrant, providers);
     this.enrichment.onChunkEnrichmentComplete = async (collectionName) => this.refreshStatsByCollection(collectionName);
     this.indexing = new IndexPipeline(qdrant, embeddings, ingestConfig, this.enrichment, deps, pipelineTuning);
@@ -166,7 +173,7 @@ export class IngestFacade {
     if (!this.statsCache || !this.allPayloadSignals) return;
     try {
       const points = await scrollAllPoints(this.qdrant, collectionName);
-      const stats = computeCollectionStats(points, this.allPayloadSignals);
+      const stats = computeCollectionStats(points, this.allPayloadSignals, this.gitTimePeriods);
       const payloadFieldKeys = this.allPayloadSignals.map((d) => d.key);
       this.statsCache.save(collectionName, stats, payloadFieldKeys);
       this.reranker?.invalidateStats();
