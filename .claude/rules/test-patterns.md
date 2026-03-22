@@ -1,5 +1,11 @@
 # Test Patterns
 
+## Golden Rule
+
+**Do NOT rewrite existing tests** unless the business logic they cover has
+changed or the test itself is failing. Existing passing tests are proven correct
+— touching them risks regressions and wastes review time.
+
 ## Setup
 
 - Runner: `npx vitest run`
