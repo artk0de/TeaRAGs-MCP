@@ -44,7 +44,7 @@ sidebar_position: 3
 | ----------------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
 | **Collection not found**            | `EXPLORE_COLLECTION_NOT_FOUND`  | Index the codebase first with `index_codebase`                            |
 | **Collection or path not provided** | `INPUT_COLLECTION_NOT_PROVIDED` | Provide a `collection` name or a `path` to the codebase                   |
-| **Hybrid search not enabled**       | `EXPLORE_HYBRID_NOT_ENABLED`    | Re-create collection with `enableHybrid=true`                             |
+| **Hybrid search not enabled**       | `EXPLORE_HYBRID_NOT_ENABLED`    | Run `reindex_changes` — hybrid is enabled by default and auto-migrates    |
 | **Invalid query**                   | `EXPLORE_INVALID_QUERY`         | Fix query parameters                                                      |
 | **Search returns no results**       | —                               | Try broader queries, check if codebase is indexed with `get_index_status` |
 | **Filter errors**                   | —                               | Ensure Qdrant filter format, check field names match metadata             |
@@ -71,38 +71,38 @@ sidebar_position: 3
 
 Full table of all structured error codes returned by the MCP server.
 
-| Code                                   | Class                        | HTTP | Message Template                                               | Hint Template                                                      |
-| -------------------------------------- | ---------------------------- | ---- | -------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `UNKNOWN_ERROR`                        | `UnknownError`               | 500  | Unexpected error: `{detail}`                                   | Check server logs for details                                      |
-| `INPUT_COLLECTION_NOT_PROVIDED`        | `CollectionNotProvidedError` | 400  | Either 'collection' or 'path' parameter is required.           | Provide a 'collection' name or a 'path' to the codebase.           |
-| `INFRA_QDRANT_UNAVAILABLE`             | `QdrantUnavailableError`     | 503  | Qdrant is not reachable at `{url}`                             | Start Qdrant: `docker compose up -d`, or verify `QDRANT_URL={url}` |
-| `INFRA_QDRANT_TIMEOUT`                 | `QdrantTimeoutError`         | 504  | Qdrant operation "`{operation}`" timed out at `{url}`          | Check Qdrant server load or increase timeout                       |
-| `INFRA_QDRANT_OPERATION`               | `QdrantOperationError`       | 500  | Qdrant operation "`{operation}`" failed: `{detail}`            | Check Qdrant logs for details                                      |
-| `INFRA_EMBEDDING_OLLAMA_UNAVAILABLE`   | `OllamaUnavailableError`     | 503  | Ollama is not reachable at `{url}`                             | Start Ollama or verify `OLLAMA_BASE_URL={url}`                     |
-| `INFRA_EMBEDDING_OLLAMA_MODEL_MISSING` | `OllamaModelMissingError`    | 503  | Model "`{model}`" is not available on Ollama at `{url}`        | Pull the model: `ollama pull {model}`                              |
-| `INFRA_EMBEDDING_ONNX_LOAD`            | `OnnxModelLoadError`         | 503  | Failed to load ONNX model from "`{modelPath}`"                 | Check that the model file exists and is valid                      |
-| `INFRA_EMBEDDING_ONNX_INFERENCE`       | `OnnxInferenceError`         | 500  | ONNX inference failed: `{detail}`                              | Check model compatibility and input data                           |
-| `INFRA_EMBEDDING_OPENAI_RATE_LIMIT`    | `OpenAIRateLimitError`       | 429  | OpenAI API rate limit exceeded                                 | Wait and retry, or increase rate limits                            |
-| `INFRA_EMBEDDING_OPENAI_AUTH`          | `OpenAIAuthError`            | 401  | OpenAI API authentication failed                               | Check `OPENAI_API_KEY` is set correctly                            |
-| `INFRA_EMBEDDING_COHERE_RATE_LIMIT`    | `CohereRateLimitError`       | 429  | Cohere API rate limit exceeded                                 | Wait and retry                                                     |
-| `INFRA_EMBEDDING_VOYAGE_RATE_LIMIT`    | `VoyageRateLimitError`       | 429  | Voyage API rate limit exceeded                                 | Wait and retry                                                     |
-| `INFRA_GIT_NOT_FOUND`                  | `GitCliNotFoundError`        | 503  | Git CLI is not installed                                       | Install git                                                        |
-| `INFRA_GIT_TIMEOUT`                    | `GitCliTimeoutError`         | 504  | Git command "`{command}`" timed out after `{timeoutMs}`ms      | Reduce scope or increase timeout                                   |
-| `INFRA_ALIAS_OPERATION`                | `AliasOperationError`        | 500  | Alias operation "`{operation}`" failed: `{detail}`             | Check Qdrant server status and collection names                    |
-| `INGEST_NOT_INDEXED`                   | `NotIndexedError`            | 404  | Codebase at "`{path}`" is not indexed                          | Run `index_codebase` first                                         |
-| `INGEST_COLLECTION_EXISTS`             | `CollectionExistsError`      | 409  | Collection "`{collectionName}`" already exists                 | Use `forceReindex=true` or delete first                            |
-| `INGEST_SNAPSHOT_MISSING`              | `SnapshotMissingError`       | 404  | Snapshot not found at "`{path}`"                               | Ensure the snapshot file exists                                    |
-| `INGEST_SNAPSHOT_CORRUPTED`            | `SnapshotCorruptedError`     | 400  | Snapshot corrupted: `{detail}`                                 | Delete and re-index with `forceReindex=true`                       |
-| `INGEST_MIGRATION_FAILED`              | `MigrationFailedError`       | 400  | Snapshot migration failed: `{reason}`                          | Delete old snapshot and re-index                                   |
-| `EXPLORE_COLLECTION_NOT_FOUND`         | `CollectionNotFoundError`    | 404  | Collection "`{collectionName}`" does not exist                 | Index the codebase first                                           |
-| `EXPLORE_HYBRID_NOT_ENABLED`           | `HybridNotEnabledError`      | 400  | Collection "`{collectionName}`" does not support hybrid search | Re-create collection with `enableHybrid=true`                      |
-| `EXPLORE_INVALID_QUERY`                | `InvalidQueryError`          | 400  | Invalid query: `{reason}`                                      | Fix query parameters                                               |
-| `TRAJECTORY_GIT_BLAME_FAILED`          | `GitBlameFailedError`        | 500  | Git blame failed for "`{file}`"                                | Ensure file is tracked by git                                      |
-| `TRAJECTORY_GIT_LOG_TIMEOUT`           | `GitLogTimeoutError`         | 504  | Git log timed out after `{timeoutMs}`ms                        | Reduce scope or increase timeout                                   |
-| `TRAJECTORY_GIT_NOT_AVAILABLE`         | `GitNotAvailableError`       | 503  | Git is not available                                           | Ensure git is installed and in PATH                                |
-| `TRAJECTORY_STATIC_PARSE_FAILED`       | `StaticParseFailedError`     | 500  | Failed to parse "`{file}`"                                     | File may have syntax errors                                        |
-| `CONFIG_VALUE_INVALID`                 | `ConfigValueInvalidError`    | 400  | Invalid value "`{value}`" for field "`{field}`"                | Expected one of: `{expected}`                                      |
-| `CONFIG_VALUE_MISSING`                 | `ConfigValueMissingError`    | 400  | Required field "`{field}`" is not set                          | Set the `{envVar}` environment variable                            |
+| Code                                   | Class                        | HTTP | Message Template                                               | Hint Template                                                          |
+| -------------------------------------- | ---------------------------- | ---- | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `UNKNOWN_ERROR`                        | `UnknownError`               | 500  | Unexpected error: `{detail}`                                   | Check server logs for details                                          |
+| `INPUT_COLLECTION_NOT_PROVIDED`        | `CollectionNotProvidedError` | 400  | Either 'collection' or 'path' parameter is required.           | Provide a 'collection' name or a 'path' to the codebase.               |
+| `INFRA_QDRANT_UNAVAILABLE`             | `QdrantUnavailableError`     | 503  | Qdrant is not reachable at `{url}`                             | Start Qdrant: `docker compose up -d`, or verify `QDRANT_URL={url}`     |
+| `INFRA_QDRANT_TIMEOUT`                 | `QdrantTimeoutError`         | 504  | Qdrant operation "`{operation}`" timed out at `{url}`          | Check Qdrant server load or increase timeout                           |
+| `INFRA_QDRANT_OPERATION`               | `QdrantOperationError`       | 500  | Qdrant operation "`{operation}`" failed: `{detail}`            | Check Qdrant logs for details                                          |
+| `INFRA_EMBEDDING_OLLAMA_UNAVAILABLE`   | `OllamaUnavailableError`     | 503  | Ollama is not reachable at `{url}`                             | Start Ollama or verify `OLLAMA_BASE_URL={url}`                         |
+| `INFRA_EMBEDDING_OLLAMA_MODEL_MISSING` | `OllamaModelMissingError`    | 503  | Model "`{model}`" is not available on Ollama at `{url}`        | Pull the model: `ollama pull {model}`                                  |
+| `INFRA_EMBEDDING_ONNX_LOAD`            | `OnnxModelLoadError`         | 503  | Failed to load ONNX model from "`{modelPath}`"                 | Check that the model file exists and is valid                          |
+| `INFRA_EMBEDDING_ONNX_INFERENCE`       | `OnnxInferenceError`         | 500  | ONNX inference failed: `{detail}`                              | Check model compatibility and input data                               |
+| `INFRA_EMBEDDING_OPENAI_RATE_LIMIT`    | `OpenAIRateLimitError`       | 429  | OpenAI API rate limit exceeded                                 | Wait and retry, or increase rate limits                                |
+| `INFRA_EMBEDDING_OPENAI_AUTH`          | `OpenAIAuthError`            | 401  | OpenAI API authentication failed                               | Check `OPENAI_API_KEY` is set correctly                                |
+| `INFRA_EMBEDDING_COHERE_RATE_LIMIT`    | `CohereRateLimitError`       | 429  | Cohere API rate limit exceeded                                 | Wait and retry                                                         |
+| `INFRA_EMBEDDING_VOYAGE_RATE_LIMIT`    | `VoyageRateLimitError`       | 429  | Voyage API rate limit exceeded                                 | Wait and retry                                                         |
+| `INFRA_GIT_NOT_FOUND`                  | `GitCliNotFoundError`        | 503  | Git CLI is not installed                                       | Install git                                                            |
+| `INFRA_GIT_TIMEOUT`                    | `GitCliTimeoutError`         | 504  | Git command "`{command}`" timed out after `{timeoutMs}`ms      | Reduce scope or increase timeout                                       |
+| `INFRA_ALIAS_OPERATION`                | `AliasOperationError`        | 500  | Alias operation "`{operation}`" failed: `{detail}`             | Check Qdrant server status and collection names                        |
+| `INGEST_NOT_INDEXED`                   | `NotIndexedError`            | 404  | Codebase at "`{path}`" is not indexed                          | Run `index_codebase` first                                             |
+| `INGEST_COLLECTION_EXISTS`             | `CollectionExistsError`      | 409  | Collection "`{collectionName}`" already exists                 | Use `forceReindex=true` or delete first                                |
+| `INGEST_SNAPSHOT_MISSING`              | `SnapshotMissingError`       | 404  | Snapshot not found at "`{path}`"                               | Ensure the snapshot file exists                                        |
+| `INGEST_SNAPSHOT_CORRUPTED`            | `SnapshotCorruptedError`     | 400  | Snapshot corrupted: `{detail}`                                 | Delete and re-index with `forceReindex=true`                           |
+| `INGEST_MIGRATION_FAILED`              | `MigrationFailedError`       | 400  | Snapshot migration failed: `{reason}`                          | Delete old snapshot and re-index                                       |
+| `EXPLORE_COLLECTION_NOT_FOUND`         | `CollectionNotFoundError`    | 404  | Collection "`{collectionName}`" does not exist                 | Index the codebase first                                               |
+| `EXPLORE_HYBRID_NOT_ENABLED`           | `HybridNotEnabledError`      | 400  | Collection "`{collectionName}`" does not support hybrid search | Run `reindex_changes` — hybrid is enabled by default and auto-migrates |
+| `EXPLORE_INVALID_QUERY`                | `InvalidQueryError`          | 400  | Invalid query: `{reason}`                                      | Fix query parameters                                                   |
+| `TRAJECTORY_GIT_BLAME_FAILED`          | `GitBlameFailedError`        | 500  | Git blame failed for "`{file}`"                                | Ensure file is tracked by git                                          |
+| `TRAJECTORY_GIT_LOG_TIMEOUT`           | `GitLogTimeoutError`         | 504  | Git log timed out after `{timeoutMs}`ms                        | Reduce scope or increase timeout                                       |
+| `TRAJECTORY_GIT_NOT_AVAILABLE`         | `GitNotAvailableError`       | 503  | Git is not available                                           | Ensure git is installed and in PATH                                    |
+| `TRAJECTORY_STATIC_PARSE_FAILED`       | `StaticParseFailedError`     | 500  | Failed to parse "`{file}`"                                     | File may have syntax errors                                            |
+| `CONFIG_VALUE_INVALID`                 | `ConfigValueInvalidError`    | 400  | Invalid value "`{value}`" for field "`{field}`"                | Expected one of: `{expected}`                                          |
+| `CONFIG_VALUE_MISSING`                 | `ConfigValueMissingError`    | 400  | Required field "`{field}`" is not set                          | Set the `{envVar}` environment variable                                |
 
 ---
 
