@@ -901,6 +901,48 @@ export class QdrantManager {
     }
   }
   /**
+   * Adds sparse vector configuration (IDF-modified "text" sparse vector) to an existing collection.
+   * Used when migrating a legacy dense-only collection to hybrid search.
+   */
+  async updateCollectionSparseConfig(collectionName: string): Promise<void> {
+    await this.client.updateCollection(collectionName, {
+      sparse_vectors: { text: { modifier: "idf" } },
+    });
+  }
+
+  /**
+   * Async generator that scrolls all points in a collection with both payload and vectors.
+   * Yields batches of points. Points missing payload or vector are skipped.
+   */
+  async *scrollWithVectors(
+    collectionName: string,
+    batchSize = 100,
+  ): AsyncGenerator<{ id: string | number; payload: Record<string, unknown>; vector: unknown }[]> {
+    let offset: string | number | null = null;
+
+    do {
+      const result = await this.client.scroll(collectionName, {
+        limit: batchSize,
+        offset: offset ?? undefined,
+        with_payload: true,
+        with_vector: true,
+      });
+
+      const batch = result.points
+        .filter((p) => p.payload && p.vector)
+        .map((p) => ({
+          id: p.id,
+          payload: p.payload as Record<string, unknown>,
+          vector: p.vector,
+        }));
+
+      if (batch.length > 0) yield batch;
+      const next = result.next_page_offset;
+      offset = typeof next === "string" || typeof next === "number" ? next : null;
+    } while (offset !== null);
+  }
+
+  /**
    * Scroll all unique values of a payload field. Lightweight — selective payload only.
    * Used by glob pre-filter to resolve patterns against indexed paths.
    */

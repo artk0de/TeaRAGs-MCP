@@ -2012,4 +2012,111 @@ describe("QdrantManager", () => {
       expect(values).toEqual(["src/a.ts"]);
     });
   });
+
+  describe("updateCollectionSparseConfig", () => {
+    it("calls updateCollection with sparse_vectors idf config", async () => {
+      await manager.updateCollectionSparseConfig("my-collection");
+
+      expect(mockClient.updateCollection).toHaveBeenCalledWith("my-collection", {
+        sparse_vectors: { text: { modifier: "idf" } },
+      });
+    });
+  });
+
+  describe("scrollWithVectors", () => {
+    it("yields a batch with id, payload, and vector", async () => {
+      mockClient.scroll.mockResolvedValueOnce({
+        points: [
+          { id: "abc", payload: { lang: "ts" }, vector: [0.1, 0.2] },
+          { id: "def", payload: { lang: "js" }, vector: [0.3, 0.4] },
+        ],
+        next_page_offset: null,
+      });
+
+      const batches: { id: string | number; payload: Record<string, unknown>; vector: unknown }[][] = [];
+      for await (const batch of manager.scrollWithVectors("test-col")) {
+        batches.push(batch);
+      }
+
+      expect(batches).toHaveLength(1);
+      expect(batches[0]).toEqual([
+        { id: "abc", payload: { lang: "ts" }, vector: [0.1, 0.2] },
+        { id: "def", payload: { lang: "js" }, vector: [0.3, 0.4] },
+      ]);
+      expect(mockClient.scroll).toHaveBeenCalledWith("test-col", {
+        limit: 100,
+        offset: undefined,
+        with_payload: true,
+        with_vector: true,
+      });
+    });
+
+    it("handles pagination across multiple pages", async () => {
+      mockClient.scroll
+        .mockResolvedValueOnce({
+          points: [{ id: 1, payload: { x: "a" }, vector: [0.1] }],
+          next_page_offset: "cursor-1",
+        })
+        .mockResolvedValueOnce({
+          points: [{ id: 2, payload: { x: "b" }, vector: [0.2] }],
+          next_page_offset: null,
+        });
+
+      const batches: { id: string | number; payload: Record<string, unknown>; vector: unknown }[][] = [];
+      for await (const batch of manager.scrollWithVectors("test-col", 50)) {
+        batches.push(batch);
+      }
+
+      expect(batches).toHaveLength(2);
+      expect(batches[0][0].id).toBe(1);
+      expect(batches[1][0].id).toBe(2);
+      expect(mockClient.scroll).toHaveBeenCalledTimes(2);
+      expect(mockClient.scroll).toHaveBeenNthCalledWith(1, "test-col", {
+        limit: 50,
+        offset: undefined,
+        with_payload: true,
+        with_vector: true,
+      });
+      expect(mockClient.scroll).toHaveBeenNthCalledWith(2, "test-col", {
+        limit: 50,
+        offset: "cursor-1",
+        with_payload: true,
+        with_vector: true,
+      });
+    });
+
+    it("handles named vectors ({ dense: [...] })", async () => {
+      mockClient.scroll.mockResolvedValueOnce({
+        points: [{ id: "x", payload: { a: 1 }, vector: { dense: [0.5, 0.6] } }],
+        next_page_offset: null,
+      });
+
+      const batches: { id: string | number; payload: Record<string, unknown>; vector: unknown }[][] = [];
+      for await (const batch of manager.scrollWithVectors("test-col")) {
+        batches.push(batch);
+      }
+
+      expect(batches[0][0].vector).toEqual({ dense: [0.5, 0.6] });
+    });
+
+    it("skips points missing payload or vector", async () => {
+      mockClient.scroll.mockResolvedValueOnce({
+        points: [
+          { id: 1, payload: null, vector: [0.1] },
+          { id: 2, payload: { a: 1 }, vector: null },
+          { id: 3, payload: { b: 2 }, vector: [0.3] },
+        ],
+        next_page_offset: null,
+      });
+
+      const batches: { id: string | number; payload: Record<string, unknown>; vector: unknown }[][] = [];
+      for await (const batch of manager.scrollWithVectors("test-col")) {
+        batches.push(batch);
+      }
+
+      expect(batches).toHaveLength(1);
+      expect(batches[0]).toHaveLength(1);
+      expect(batches[0][0].id).toBe(3);
+    });
+  });
 });
