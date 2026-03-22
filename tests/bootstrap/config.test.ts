@@ -64,7 +64,7 @@ describe("parseAppConfig (Zod bridge)", () => {
     expect(config.requestTimeoutMs).toBe(300000);
     expect(config.ingestCode.chunkSize).toBe(2500);
     expect(config.ingestCode.chunkOverlap).toBe(300);
-    expect(config.ingestCode.enableHybridSearch).toBe(false);
+    expect(config.ingestCode.enableHybridSearch).toBe(true);
     expect(config.trajectoryIngest.enableGitMetadata).toBe(false);
     expect(config.trajectoryIngest.squashAwareSessions).toBe(false);
     expect(config.trajectoryIngest.sessionGapMinutes).toBe(30);

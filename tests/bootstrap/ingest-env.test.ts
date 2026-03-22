@@ -134,11 +134,29 @@ describe("INGEST env var naming", () => {
       expect(config.ingestCode.enableHybridSearch).toBe(false);
     });
 
-    it("should default to false when nothing set", async () => {
+    it("should default to true when nothing set", async () => {
       const { parseAppConfig } = await freshImport();
       const config = parseAppConfig();
 
-      expect(config.ingestCode.enableHybridSearch).toBe(false);
+      expect(config.ingestCode.enableHybridSearch).toBe(true);
+    });
+  });
+
+  describe("parseAppConfigZod — INGEST_ENABLE_HYBRID (Zod: default true)", () => {
+    it("should default to true (enabled) when nothing set", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { ingest } = parseAppConfigZod();
+
+      expect(ingest.enableHybrid).toBe(true);
+    });
+
+    it("should respect explicit false", async () => {
+      process.env[HYBRID_NEW] = "false";
+
+      const { parseAppConfigZod } = await freshImport();
+      const { ingest } = parseAppConfigZod();
+
+      expect(ingest.enableHybrid).toBe(false);
     });
   });
 
