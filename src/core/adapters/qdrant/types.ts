@@ -13,10 +13,14 @@ export interface QdrantMatchCondition {
 
 export interface QdrantRangeCondition {
   key: string;
-  range: { gte?: number; lte?: number };
+  range: { gt?: number; gte?: number; lt?: number; lte?: number };
 }
 
-export type QdrantFilterCondition = QdrantMatchCondition | QdrantRangeCondition;
+export interface QdrantIsEmptyCondition {
+  is_empty: { key: string };
+}
+
+export type QdrantFilterCondition = QdrantMatchCondition | QdrantRangeCondition | QdrantIsEmptyCondition;
 
 export interface QdrantFilter {
   must?: QdrantFilterCondition[];

@@ -59,27 +59,31 @@ describe("git filter descriptors", () => {
 });
 
 describe("level-aware filters", () => {
-  it("minAgeDays always uses file-level ageDays regardless of level param", () => {
-    // chunk-level ageDays is often undefined → Qdrant skips range filter on missing fields
-    const defaultLevel = findFilter("minAgeDays").toCondition(30);
-    expect(defaultLevel.must![0].key).toBe("git.file.ageDays");
+  it("minAgeDays uses level-aware key with is_empty guard", () => {
+    const chunkLevel = findFilter("minAgeDays").toCondition(30);
+    expect(chunkLevel.must![0]).toEqual({
+      key: "git.chunk.ageDays",
+      range: { gt: 0, gte: 30 },
+    });
+    // Guard: exclude points where field is missing (Qdrant skips range on undefined)
+    expect(chunkLevel.must_not![0]).toEqual({ is_empty: { key: "git.chunk.ageDays" } });
 
-    const explicitChunk = findFilter("minAgeDays").toCondition(30, "chunk");
-    expect(explicitChunk.must![0].key).toBe("git.file.ageDays");
-
-    const explicitFile = findFilter("minAgeDays").toCondition(30, "file");
-    expect(explicitFile.must![0].key).toBe("git.file.ageDays");
+    const fileLevel = findFilter("minAgeDays").toCondition(30, "file");
+    expect(fileLevel.must![0].key).toBe("git.file.ageDays");
+    expect(fileLevel.must_not![0]).toEqual({ is_empty: { key: "git.file.ageDays" } });
   });
 
-  it("maxAgeDays always uses file-level ageDays regardless of level param", () => {
-    const defaultLevel = findFilter("maxAgeDays").toCondition(90);
-    expect(defaultLevel.must![0].key).toBe("git.file.ageDays");
+  it("maxAgeDays uses level-aware key with is_empty guard", () => {
+    const chunkLevel = findFilter("maxAgeDays").toCondition(90);
+    expect(chunkLevel.must![0]).toEqual({
+      key: "git.chunk.ageDays",
+      range: { gt: 0, lte: 90 },
+    });
+    expect(chunkLevel.must_not![0]).toEqual({ is_empty: { key: "git.chunk.ageDays" } });
 
-    const explicitChunk = findFilter("maxAgeDays").toCondition(90, "chunk");
-    expect(explicitChunk.must![0].key).toBe("git.file.ageDays");
-
-    const explicitFile = findFilter("maxAgeDays").toCondition(7, "file");
-    expect(explicitFile.must![0].key).toBe("git.file.ageDays");
+    const fileLevel = findFilter("maxAgeDays").toCondition(7, "file");
+    expect(fileLevel.must![0].key).toBe("git.file.ageDays");
+    expect(fileLevel.must_not![0]).toEqual({ is_empty: { key: "git.file.ageDays" } });
   });
 
   it("minCommitCount defaults to chunk level", () => {
