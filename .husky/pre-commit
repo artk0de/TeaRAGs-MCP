@@ -60,5 +60,5 @@ fi
 
 if [ -n "$RUN_TESTS" ]; then
   echo "📦 Running tests with coverage check..."
-  npm test -- --run --coverage || { echo "❌ Tests or coverage threshold failed"; exit 1; }
+  npm test -- --run --coverage --reporter=dot 2>/dev/null || { echo "❌ Tests or coverage threshold failed. Run 'npx vitest run' for details."; exit 1; }
 fi
