@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
-import { OllamaUnavailableError } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
+import {
+  OllamaModelMissingError,
+  OllamaUnavailableError,
+} from "../../../../src/core/adapters/embeddings/ollama/errors.js";
 
 // Mock fetch globally
 global.fetch = vi.fn();
@@ -993,6 +996,60 @@ describe("OllamaEmbeddings", () => {
       // Second call: fallback also fails during cached state
       mockFetch.mockRejectedValueOnce(new Error("fallback also down"));
       await expect(fallbackEmbeddings.embed("both down")).rejects.toThrow(OllamaUnavailableError);
+    });
+
+    it("should throw OllamaModelMissingError from primary without trying fallback", async () => {
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nonexistent-model",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      // Primary returns 404 (model not found)
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: async () => "model not found",
+      });
+
+      await expect(fallbackEmbeddings.embed("test")).rejects.toThrow(OllamaModelMissingError);
+      // Only 1 call — no fallback attempted
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("should throw OllamaModelMissingError from fallback during cached failover", async () => {
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nonexistent-model",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768)
+        .fill(0)
+        .map((_, i) => i * 0.001);
+
+      // Trigger failover: primary connect fail, fallback ok
+      mockFetch
+        .mockRejectedValueOnce(new Error("primary down"))
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+      await fallbackEmbeddings.embed("trigger failover");
+
+      // Now cached on fallback — fallback returns model not found
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: async () => "model not found",
+      });
+
+      await expect(fallbackEmbeddings.embed("missing model")).rejects.toThrow(OllamaModelMissingError);
     });
   });
 });

@@ -159,8 +159,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     if (fallbackFn && this.fallbackBaseUrl && this.usingFallback) {
       try {
         return await fallbackFn();
-      } catch (_fallbackError) {
-        // Fallback also failed — reset and report both
+      } catch (fallbackError) {
+        if (fallbackError instanceof OllamaModelMissingError) throw fallbackError;
         this.usingFallback = false;
         this.stopPrimaryProbe();
         throw OllamaUnavailableError.withFallback(this.baseUrl, this.fallbackBaseUrl);
@@ -174,6 +174,11 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         isRetryable: (error) => this.isRateLimit(error),
       });
     } catch (primaryError) {
+      // Model errors propagate — fallback URL won't help with missing model
+      if (primaryError instanceof OllamaModelMissingError) {
+        throw primaryError;
+      }
+
       if (!fallbackFn || !this.fallbackBaseUrl) {
         throw new OllamaUnavailableError(this.baseUrl, primaryError instanceof Error ? primaryError : undefined);
       }
@@ -189,7 +194,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
       try {
         return await fallbackFn();
-      } catch (_fallbackError) {
+      } catch (fallbackError) {
+        if (fallbackError instanceof OllamaModelMissingError) throw fallbackError;
         this.usingFallback = false;
         this.stopPrimaryProbe();
         throw OllamaUnavailableError.withFallback(
