@@ -70,6 +70,8 @@ export interface IndexStats {
   enrichmentDurationMs?: number;
   /** Detailed enrichment metrics (file/chunk signal breakdown) */
   enrichmentMetrics?: EnrichmentMetrics;
+  /** Schema and sparse vector migrations applied during this operation */
+  migrations?: string[];
   /** Present only during auto-reindex via index_codebase */
   changeDetails?: {
     filesAdded: number;
@@ -99,6 +101,8 @@ export interface ChangeStats {
   enrichmentDurationMs?: number;
   /** Detailed enrichment metrics (file/chunk signal breakdown) */
   enrichmentMetrics?: EnrichmentMetrics;
+  /** Schema and sparse vector migrations applied during this operation */
+  migrations?: string[];
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed";
