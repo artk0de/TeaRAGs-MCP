@@ -19,6 +19,7 @@ import { storeIndexingMarker } from "./pipeline/indexing-marker.js";
 import { isDebug } from "./pipeline/infra/runtime.js";
 import type { FileScanner } from "./pipeline/scanner.js";
 import { ShardedSnapshotManager } from "./sync/sharded-snapshot.js";
+import { SnapshotCleaner } from "./sync/snapshot-cleaner.js";
 
 /**
  * Result of collection setup phase.
@@ -117,6 +118,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
       stats.errors?.push(`Indexing failed: ${errorMessage}`);
       stats.durationMs = Date.now() - startTime;
       return stats;
+    } finally {
+      const cleaner = new SnapshotCleaner(this.snapshotDir, collectionName);
+      await cleaner.cleanupAfterIndexing();
     }
   }
 
