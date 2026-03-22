@@ -63,6 +63,12 @@ describe("QdrantManager", () => {
     });
   });
 
+  describe("url", () => {
+    it("returns the Qdrant URL passed to constructor", () => {
+      expect(manager.url).toBe("http://localhost:6333");
+    });
+  });
+
   describe("constructor", () => {
     it("should pass apiKey to QdrantClient when provided", () => {
       new QdrantManager("http://localhost:6333", "test-api-key");

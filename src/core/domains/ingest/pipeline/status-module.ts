@@ -63,6 +63,7 @@ export class StatusModule {
         collectionName,
         chunksCount: actualChunksCount,
         embeddingModel,
+        qdrantUrl: this.qdrant.url,
         enrichment,
         chunkEnrichment,
       };
@@ -75,6 +76,7 @@ export class StatusModule {
         collectionName,
         chunksCount: actualChunksCount,
         embeddingModel,
+        qdrantUrl: this.qdrant.url,
         lastUpdated: indexingMarker.payload?.completedAt
           ? new Date(
               typeof indexingMarker.payload.completedAt === "string" ||
@@ -95,6 +97,7 @@ export class StatusModule {
         status: "indexed",
         collectionName,
         chunksCount: actualChunksCount,
+        qdrantUrl: this.qdrant.url,
       };
     }
 
@@ -103,6 +106,7 @@ export class StatusModule {
       status: "not_indexed",
       collectionName,
       chunksCount: 0,
+      qdrantUrl: this.qdrant.url,
     };
   }
 
