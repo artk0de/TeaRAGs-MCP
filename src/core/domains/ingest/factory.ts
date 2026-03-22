@@ -34,9 +34,10 @@ export function createIngestDependencies(
   snapshotDir: string,
   payloadBuilder: PayloadBuilder,
   syncTuning?: SynchronizerTuning,
+  enableHybrid = false,
 ): IngestDependencies {
   return {
-    createSchemaManager: () => new SchemaManager(qdrant),
+    createSchemaManager: () => new SchemaManager(qdrant, enableHybrid),
     createSynchronizer: (codebasePath, collectionName) =>
       new ParallelFileSynchronizer(
         codebasePath,

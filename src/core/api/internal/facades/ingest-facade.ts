@@ -65,7 +65,13 @@ export class IngestFacade {
     /* v8 ignore next 2 -- fallback for backward compat */
     const resolvedSnapshotDir =
       snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
-    const deps = createIngestDependencies(qdrant, resolvedSnapshotDir, new StaticPayloadBuilder(), syncTuning);
+    const deps = createIngestDependencies(
+      qdrant,
+      resolvedSnapshotDir,
+      new StaticPayloadBuilder(),
+      syncTuning,
+      ingestConfig.enableHybridSearch,
+    );
 
     const squashOpts = trajectoryConfig.squashAwareSessions
       ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }

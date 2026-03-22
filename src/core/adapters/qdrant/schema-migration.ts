@@ -14,7 +14,10 @@
 import type { QdrantManager } from "../qdrant/client.js";
 
 /** Current schema version */
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
+
+/** Current sparse vector version — bump when BM25 tokenizer or weighting changes */
+export const CURRENT_SPARSE_VERSION = 1;
 
 /** Reserved ID for storing schema metadata in the collection */
 const SCHEMA_METADATA_ID = "__schema_metadata__";
@@ -27,6 +30,7 @@ interface SchemaMetadata {
   schemaVersion: number;
   migratedAt: string;
   indexes: string[];
+  sparseVersion?: number;
 }
 
 /**
@@ -44,7 +48,10 @@ export interface SchemaMigrationResult {
  * SchemaManager - Handles collection schema versioning and migrations
  */
 export class SchemaManager {
-  constructor(private readonly qdrant: QdrantManager) {}
+  constructor(
+    private readonly qdrant: QdrantManager,
+    private readonly enableHybrid = false,
+  ) {}
 
   /**
    * Get current schema version from collection metadata
@@ -59,10 +66,11 @@ export class SchemaManager {
       }
 
       // No metadata point - check if collection has relativePath index
-      // If yes, it was manually migrated; treat as current version
+      // If yes, it was manually migrated; return 6 (not CURRENT_SCHEMA_VERSION)
+      // so that v7+ migrations still run for these collections
       const hasIndex = await this.qdrant.hasPayloadIndex(collectionName, "relativePath");
       if (hasIndex) {
-        return CURRENT_SCHEMA_VERSION;
+        return 6;
       }
 
       return 0; // Pre-v4 collection
@@ -166,6 +174,17 @@ export class SchemaManager {
         }
       }
 
+      // v7: Enable sparse vectors on non-hybrid collections when enableHybrid is true
+      if (currentVersion < 7) {
+        const info = await this.qdrant.getCollectionInfo(collectionName);
+        if (!info.hybridEnabled && this.enableHybrid) {
+          await this.qdrant.updateCollectionSparseConfig(collectionName);
+          migrationsApplied.push("v7: Enabled sparse vectors on collection");
+        } else {
+          migrationsApplied.push("v7: Sparse config already present or not requested");
+        }
+      }
+
       // Store updated schema metadata
       await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);
 
@@ -208,5 +227,141 @@ export class SchemaManager {
 
     // Store schema metadata
     await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);
+  }
+
+  /**
+   * Check if sparse vectors need rebuilding and rebuild if needed.
+   * Called after ensureCurrentSchema to handle sparse version upgrades.
+   */
+  async checkSparseVectorVersion(collectionName: string): Promise<{ rebuilt: boolean; message?: string }> {
+    if (!this.enableHybrid) return { rebuilt: false };
+
+    // Safety net: ensure sparse config exists (handles false→true toggle after v7)
+    const info = await this.qdrant.getCollectionInfo(collectionName);
+    if (!info.hybridEnabled) {
+      await this.qdrant.updateCollectionSparseConfig(collectionName);
+    }
+
+    const metadata = await this.getSchemaMetadata(collectionName);
+    const currentSparseVersion = metadata?.sparseVersion ?? 0;
+    if (currentSparseVersion >= CURRENT_SPARSE_VERSION) return { rebuilt: false };
+
+    await this.rebuildSparseVectors(collectionName);
+    await this.updateSparseVersion(collectionName, CURRENT_SPARSE_VERSION);
+    return {
+      rebuilt: true,
+      message: `Rebuilt sparse vectors (v${currentSparseVersion} → v${CURRENT_SPARSE_VERSION})`,
+    };
+  }
+
+  /**
+   * Rebuild sparse vectors for all content points in the collection.
+   */
+  private async rebuildSparseVectors(collectionName: string): Promise<void> {
+    const { generateSparseVector } = await import("../qdrant/sparse.js");
+    let totalRebuilt = 0;
+
+    for await (const batch of this.qdrant.scrollWithVectors(collectionName)) {
+      const updates: {
+        id: string | number;
+        vector: number[];
+        sparseVector: { indices: number[]; values: number[] };
+        payload: Record<string, unknown>;
+      }[] = [];
+
+      for (const point of batch) {
+        // Skip metadata points
+        const { payload } = point;
+        if (payload._type === "schema_metadata" || payload._type === "indexing_metadata") continue;
+
+        const { content } = payload;
+        if (typeof content !== "string") continue;
+
+        const denseVector = this.extractDenseVector(point.vector);
+        if (!denseVector) continue;
+
+        const sparseVector = generateSparseVector(content);
+        updates.push({ id: point.id, vector: denseVector, sparseVector, payload });
+      }
+
+      if (updates.length > 0) {
+        await this.qdrant.addPointsWithSparse(collectionName, updates);
+        totalRebuilt += updates.length;
+      }
+
+      if (totalRebuilt > 0 && totalRebuilt % 500 === 0) {
+        console.error(`[SparseRebuild] Progress: ${totalRebuilt} points rebuilt`);
+      }
+    }
+
+    if (totalRebuilt > 0) {
+      console.error(`[SparseRebuild] Complete: ${totalRebuilt} points rebuilt`);
+    }
+  }
+
+  /**
+   * Extract dense vector from either named or unnamed format.
+   */
+  private extractDenseVector(vector: unknown): number[] | null {
+    // Named vector format: { dense: number[] }
+    if (vector && typeof vector === "object" && "dense" in vector) {
+      const { dense } = vector as Record<string, unknown>;
+      if (Array.isArray(dense)) return dense as number[];
+    }
+    // Unnamed vector format: number[]
+    if (Array.isArray(vector)) return vector as number[];
+    return null;
+  }
+
+  /**
+   * Get schema metadata from collection.
+   */
+  private async getSchemaMetadata(collectionName: string): Promise<SchemaMetadata | null> {
+    try {
+      const point = await this.qdrant.getPoint(collectionName, SCHEMA_METADATA_ID);
+      if (point?.payload?._type === "schema_metadata") {
+        return point.payload as unknown as SchemaMetadata;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Update sparse version in schema metadata.
+   */
+  private async updateSparseVersion(collectionName: string, sparseVersion: number): Promise<void> {
+    const existing = await this.getSchemaMetadata(collectionName);
+    const metadata: SchemaMetadata = existing ?? {
+      _type: "schema_metadata",
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      migratedAt: new Date().toISOString(),
+      indexes: [],
+    };
+    metadata.sparseVersion = sparseVersion;
+    metadata.migratedAt = new Date().toISOString();
+
+    const info = await this.qdrant.getCollectionInfo(collectionName);
+    const zeroVector = new Array<number>(info.vectorSize).fill(0);
+
+    if (info.hybridEnabled) {
+      await this.qdrant.addPointsWithSparse(collectionName, [
+        {
+          id: SCHEMA_METADATA_ID,
+          vector: zeroVector,
+          sparseVector: { indices: [], values: [] },
+          payload: metadata as unknown as Record<string, unknown>,
+        },
+      ]);
+    } else {
+      await this.qdrant.addPoints(collectionName, [
+        {
+          id: SCHEMA_METADATA_ID,
+          vector: zeroVector,
+          payload: metadata as unknown as Record<string, unknown>,
+        },
+      ]);
+    }
   }
 }
