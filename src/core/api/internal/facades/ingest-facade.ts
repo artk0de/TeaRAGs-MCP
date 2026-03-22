@@ -138,6 +138,7 @@ export class IngestFacade {
           enrichmentStatus: changeStats.enrichmentStatus,
           enrichmentDurationMs: changeStats.enrichmentDurationMs,
           enrichmentMetrics: changeStats.enrichmentMetrics,
+          migrations: changeStats.migrations,
           changeDetails: {
             filesAdded: changeStats.filesAdded,
             filesModified: changeStats.filesModified,

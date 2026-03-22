@@ -87,9 +87,9 @@ Has query?
    │   BM25 catches exact symbol name, dense vectors catch semantic context.
    │   Fallback: if hybrid_search unavailable (enableHybrid=false) → semantic_search
    │
-   ├─ Have a bare symbol name (no context)? → semantic_search
-   │   hybrid_search adds BM25 noise for short symbol names.
-   │   semantic_search gives tighter, cleaner results.
+   ├─ Have a bare symbol name (no context)? → hybrid_search
+   │   BM25 now correctly matches exact symbol names (score up to 1.0).
+   │   Fallback: semantic_search if hybrid unavailable.
    │
    ├─ Pure exploration, human-readable output? → search_code
    │   Quick lookup, no structured metadata needed
@@ -438,5 +438,8 @@ If `hybrid_search` fails (needs `enableHybrid=true`), fall back to
   code-aware tokenization and feature hashing. Existing hybrid collections
   indexed before this change have incompatible sparse vectors. Reindex with
   `forceReindex=true` to get correct BM25 results.
-- **TODO/FIXME markers** — BM25 improves keyword recall but ripgrep remains more
-  reliable for exhaustive exact-string marker searches.
+- **TODO/FIXME markers** — BM25 catches markers in markdown docs but not
+  reliably in code comments. Use ripgrep MCP for exhaustive marker searches.
+- **BM25 floor score ~0.300** — hybrid results below this threshold come from
+  BM25 component matching partial tokens. Results are now thematically relevant
+  (not random noise), but low-score entries may still be tangential.
