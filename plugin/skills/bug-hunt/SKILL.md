@@ -25,14 +25,20 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 6. **Max 3 file reads total.** Only prime suspects from triage. Not 10 files.
 7. **Parallel reads.** When reading 2+ suspect files, use a single message with
    multiple Read calls. Never read files one-by-one.
-8. **No persisted output parsing.** If a search result is persisted (>10KB),
-   re-run the same query with `metaOnly=true`. Do NOT attempt to Read the
-   persisted file.
-9. **Short queries.** Keep semantic_search queries to 3-5 meaningful tokens.
-   BAD:
-   `"batch create job automations perform false unavailable disabled offline client"`
-   (10 tokens → noise). GOOD:
-   `"batch create stage clients automations disabled"`.
+8. **Partial reads ONLY.** Use startLine/endLine from search result chunks:
+   `Read(path, offset=startLine, limit=endLine-startLine)`. NEVER read full
+   files — chunk coordinates give you the exact code you need.
+9. **Search results contain code.** Default `metaOnly=false` returns chunk
+   content. Evaluate the CHECKPOINT using content in search results BEFORE doing
+   any Read. Read only when you need code BEYOND chunk boundaries.
+10. **No persisted output parsing.** If a search result is persisted (>10KB),
+    re-run the same query with `metaOnly=true`. Do NOT attempt to Read the
+    persisted file.
+11. **Short queries.** Keep semantic_search queries to 3-5 meaningful tokens.
+    BAD:
+    `"batch create job automations perform false unavailable disabled offline client"`
+    (10 tokens → noise). GOOD:
+    `"batch create stage clients automations disabled"`.
 
 ## Flow
 
@@ -40,8 +46,11 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 1. DISCOVER — find the area (pure similarity, NO rerank)
    ONE semantic_search: query=symptom description, limit=10
    Do NOT use rerank="bugHunt" here — discovery is about finding the right
-   area, not ranking by signals. Read the returned code to understand the
-   area. Note top 3-5 file paths from results.
+   area, not ranking by signals.
+
+   Evaluate chunk CONTENT from search results (metaOnly=false is default).
+   The code is already in the results — do NOT Read files yet.
+   Note top 3-5 file paths from results.
 
    CHECKPOINT: fill three fields:
    - Suspect file(s): ___
@@ -49,9 +58,14 @@ Signal-driven root cause investigation using TeaRAGs git signals.
    - Why it breaks: ___
 
    All filled? → step 5 (PRESENT). Do NOT verify or refine further.
-   Not all? → step 2 (REFINE)
+   Know suspect file but need more context? → partial Read using chunk
+   startLine/endLine. ONE Read call, not another search.
+   No suspects at all? → step 2 (REFINE)
 
 2. REFINE — drill down into suspects with signals
+   Use ONLY when step 1 found no suspects (not when you have suspects
+   but want "confirmation").
+
    rank_chunks: rerank="bugHunt", pathPattern="{file1.rb,file2.rb}"
    (from step 1 paths), limit=10. This ranks suspects by git signals
    without a query — pure signal-driven triage.
@@ -92,6 +106,11 @@ fill it.
 **"Not sure" ≠ "don't know."** If you have a candidate but aren't 100% confident
 — present it with a confidence note. Confirmatory searches almost never change
 the answer.
+
+**Anti-pattern: curiosity search.** If you have a suspect file and method but
+want to understand "how the other side works" — that's a Read, not a search.
+Search is for FINDING code. Read is for UNDERSTANDING code. Never use
+semantic_search to understand code you've already located.
 
 ## Bug pattern hints
 
