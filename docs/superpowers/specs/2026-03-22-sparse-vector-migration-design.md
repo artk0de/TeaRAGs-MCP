@@ -67,11 +67,18 @@ runMigrations(collectionName, absolutePath)
   → ensureCurrentSchema()                    // schema v7: structural changes
   → schemaManager.checkSparseVectorVersion() // data migration
     ├─ enableHybrid=false → skip
+    ├─ collection non-hybrid? → updateCollectionSparseConfig()  // safety net
     ├─ sparseVersion in metadata >= CURRENT_SPARSE_VERSION → skip
     └─ sparseVersion missing or < CURRENT_SPARSE_VERSION
        → rebuildSparseVectors(collectionName)
        → save sparseVersion = CURRENT_SPARSE_VERSION in metadata
 ```
+
+**Why sparse config check is in both places:** Schema v7 adds sparse config on
+first migration (optimization — runs once). `checkSparseVectorVersion()` also
+checks and adds sparse config as a safety net for the case where a user enables
+`enableHybrid=true` after schema v7 already ran as no-op (false→true toggle
+after v7).
 
 `CURRENT_SPARSE_VERSION` — a constant bumped whenever the BM25 tokenizer
 changes. Currently `1` (the `feb7f14` code tokenizer). Independent of schema
