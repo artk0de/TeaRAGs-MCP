@@ -1,3 +1,11 @@
+## <small>1.14.4 (2026-03-22)</small>
+
+- fix(dx): register check-plugin-version hook in settings.json
+  ([237a7c1](https://github.com/artk0de/TeaRAGs-MCP/commit/237a7c1))
+- improve(dx): skill audit round 2 — proven weights, taskIds essential,
+  disambiguation
+  ([b45f0f3](https://github.com/artk0de/TeaRAGs-MCP/commit/b45f0f3))
+
 ## <small>1.14.3 (2026-03-21)</small>
 
 - improve(dx): skill audit fixes — polyglot rule, filter levels, stable preset,
