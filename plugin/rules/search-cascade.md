@@ -84,8 +84,7 @@ Has query?
    │
    ├─ Have a symbol name + semantic context? → hybrid_search
    │   Example: "PaymentService validate card expiration"
-   │   ⚠ BM25 component currently degraded (see Known Limitations).
-   │   Dense vectors still provide value for symbol+context queries.
+   │   BM25 catches exact symbol name, dense vectors catch semantic context.
    │   Fallback: if hybrid_search unavailable (enableHybrid=false) → semantic_search
    │
    ├─ Have a bare symbol name (no context)? → semantic_search
@@ -431,18 +430,11 @@ If results seem stale → check `driftWarning` in response → `reindex_changes`
 If `hybrid_search` fails (needs `enableHybrid=true`), fall back to
 `semantic_search`.
 
-## Known Limitations (temporary)
+## Known Limitations
 
-**hybrid_search BM25 component is degraded** (tracked: tea-rags-mcp-xqfh epic).
-Current BM25 implementation has vocabulary isolation and no code-aware
-tokenization — the sparse vector component adds noise rather than signal.
-Practical impact:
-
-- hybrid_search ≈ semantic_search in result quality (BM25 contribution ≈ 0)
-- For bare symbol names, semantic_search is cleaner (no BM25 noise)
-- For TODO/FIXME/HACK markers, hybrid recall ≈ 0% — use ripgrep only
-- hybrid_search still works via its dense vector component (0.7 weight)
-
-Until the epic is resolved, prefer semantic_search over hybrid_search for all
-cases except exhaustive usage queries (where hybrid is step 1 of the two-step
-hybrid→ripgrep flow and dense vectors alone provide sufficient initial context).
+- **hybrid_search requires reindex** — BM25 sparse vectors were rebuilt with
+  code-aware tokenization and feature hashing. Existing hybrid collections
+  indexed before this change have incompatible sparse vectors. Reindex with
+  `forceReindex=true` to get correct BM25 results.
+- **TODO/FIXME markers** — BM25 improves keyword recall but ripgrep remains more
+  reliable for exhaustive exact-string marker searches.

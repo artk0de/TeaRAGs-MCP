@@ -6,7 +6,7 @@
  * Extracted from MCP search.ts hybrid_search handler.
  */
 
-import { BM25SparseVectorGenerator } from "../../../adapters/qdrant/sparse.js";
+import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { InvalidQueryError } from "../errors.js";
 import { BaseExploreStrategy } from "./base.js";
 import { HybridNotEnabledError, type ExploreContext, type ExploreResult } from "./types.js";
@@ -24,7 +24,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
       throw new HybridNotEnabledError(ctx.collectionName);
     }
 
-    const sparseVector = ctx.sparseVector ?? BM25SparseVectorGenerator.generateSimple(ctx.query ?? "");
+    const sparseVector = ctx.sparseVector ?? generateSparseVector(ctx.query ?? "");
 
     const results = await this.qdrant.hybridSearch(
       ctx.collectionName,

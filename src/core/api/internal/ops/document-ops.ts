@@ -4,7 +4,7 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { BM25SparseVectorGenerator } from "../../../adapters/qdrant/sparse.js";
+import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { CollectionNotFoundError } from "../../../domains/explore/errors.js";
 import type { AddDocumentsRequest, DeleteDocumentsRequest } from "../../public/dto/index.js";
 
@@ -32,12 +32,10 @@ export class DocumentOps {
 
     // 4. Add points — with or without sparse vectors
     if (collectionInfo.hybridEnabled) {
-      const sparseGenerator = new BM25SparseVectorGenerator();
-
       const points = documents.map((doc, index) => ({
         id: doc.id,
         vector: embeddingResults[index].embedding,
-        sparseVector: sparseGenerator.generate(doc.text),
+        sparseVector: generateSparseVector(doc.text),
         payload: {
           text: doc.text,
           ...doc.metadata,
