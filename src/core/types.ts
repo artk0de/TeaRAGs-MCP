@@ -170,6 +170,8 @@ export interface IndexStatus {
   languages?: string[];
   /** Embedding model used to index this collection */
   embeddingModel?: string;
+  /** Qdrant URL (useful for embedded Qdrant with dynamic ports) */
+  qdrantUrl?: string;
   /** Background git enrichment progress (file-level) */
   enrichment?: EnrichmentInfo;
   /** Background chunk-level git enrichment progress */

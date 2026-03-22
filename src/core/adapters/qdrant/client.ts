@@ -36,6 +36,10 @@ export class QdrantManager {
     this.client = new QdrantClient({ url, apiKey });
   }
 
+  get url(): string {
+    return this.qdrantUrl;
+  }
+
   get aliases(): QdrantAliasManager {
     return (this._aliases ??= new QdrantAliasManager(this.client));
   }
