@@ -28,7 +28,7 @@ Agent tool:
     - path: <extracted path>
     - forceReindex: true
     Report the COMPLETE response as-is — every field returned by the tool.
-    Do not cherry-pick or summarize. Whatever the endpoint returns, show it all.
+    Do not cherry-pick fields. Whatever the endpoint returns, summarize it all.
 ```
 
 3. Tell the user: "Force reindex started in background. Search continues on the
