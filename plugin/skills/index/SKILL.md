@@ -29,7 +29,7 @@ Agent tool:
     Call mcp__tea-rags__index_codebase with:
     - path: <extracted path>
     Report the COMPLETE response as-is — every field returned by the tool.
-    Do not cherry-pick or summarize. Whatever the endpoint returns, show it all.
+    Do not cherry-pick fields. Whatever the endpoint returns, summarize it all.
 ```
 
 3. Tell the user indexing has started and they will be notified when it
