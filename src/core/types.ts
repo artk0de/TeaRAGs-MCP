@@ -176,6 +176,8 @@ export interface IndexStatus {
   enrichment?: EnrichmentInfo;
   /** Background chunk-level git enrichment progress */
   chunkEnrichment?: ChunkEnrichmentInfo;
+  /** BM25 sparse vector version (from schema metadata) */
+  sparseVersion?: number;
 }
 
 export type ProgressCallback = (progress: ProgressUpdate) => void;

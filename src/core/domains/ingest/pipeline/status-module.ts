@@ -56,6 +56,11 @@ export class StatusModule {
     const embeddingModel =
       typeof indexingMarker?.payload?.embeddingModel === "string" ? indexingMarker.payload.embeddingModel : undefined;
 
+    // Read sparse version from schema metadata point (separate from indexing marker)
+    const schemaMetadata = await this.qdrant.getPoint(collectionName, "__schema_metadata__").catch(() => null);
+    const sparseVersion =
+      typeof schemaMetadata?.payload?.sparseVersion === "number" ? schemaMetadata.payload.sparseVersion : undefined;
+
     if (isInProgress) {
       return {
         isIndexed: false,
@@ -64,6 +69,7 @@ export class StatusModule {
         chunksCount: actualChunksCount,
         embeddingModel,
         qdrantUrl: this.qdrant.url,
+        sparseVersion,
         enrichment,
         chunkEnrichment,
       };
@@ -77,6 +83,7 @@ export class StatusModule {
         chunksCount: actualChunksCount,
         embeddingModel,
         qdrantUrl: this.qdrant.url,
+        sparseVersion,
         lastUpdated: indexingMarker.payload?.completedAt
           ? new Date(
               typeof indexingMarker.payload.completedAt === "string" ||
@@ -98,6 +105,7 @@ export class StatusModule {
         collectionName,
         chunksCount: actualChunksCount,
         qdrantUrl: this.qdrant.url,
+        sparseVersion,
       };
     }
 
@@ -107,6 +115,7 @@ export class StatusModule {
       collectionName,
       chunksCount: 0,
       qdrantUrl: this.qdrant.url,
+      sparseVersion,
     };
   }
 
