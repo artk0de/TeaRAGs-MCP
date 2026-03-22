@@ -9,7 +9,7 @@
           "mergePattern": "^Merge"
         },
         "releaseRules": [
-          { "breaking": true, "release": "major" },
+          { "breaking": true, "release": "minor" },
 
           { "type": "feat", "scope": "test", "release": false },
           { "type": "feat", "scope": "beads", "release": false },
