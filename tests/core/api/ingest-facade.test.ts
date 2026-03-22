@@ -156,6 +156,47 @@ describe("IngestFacade", () => {
     expect(mockScrollAllPoints).not.toHaveBeenCalled();
   });
 
+  it("passes migrations from reindexChanges through incremental indexCodebase", async () => {
+    mockReindexChanges.mockResolvedValueOnce({
+      filesAdded: 0,
+      filesModified: 1,
+      filesDeleted: 0,
+      filesNewlyIgnored: 0,
+      filesNewlyUnignored: 0,
+      chunksAdded: 5,
+      chunksDeleted: 0,
+      durationMs: 100,
+      status: "completed",
+      migrations: ["v7: Enabled sparse vectors on collection", "Rebuilt sparse vectors (v0 → v1)"],
+    });
+
+    const { facade } = makeFacade();
+    (facade as any).qdrant = { collectionExists: vi.fn().mockResolvedValue(true) };
+    const result = await facade.indexCodebase("/tmp/test-project");
+
+    expect(result.migrations).toEqual(["v7: Enabled sparse vectors on collection", "Rebuilt sparse vectors (v0 → v1)"]);
+  });
+
+  it("omits migrations from result when no migrations applied", async () => {
+    mockReindexChanges.mockResolvedValueOnce({
+      filesAdded: 0,
+      filesModified: 0,
+      filesDeleted: 0,
+      filesNewlyIgnored: 0,
+      filesNewlyUnignored: 0,
+      chunksAdded: 0,
+      chunksDeleted: 0,
+      durationMs: 50,
+      status: "completed",
+    });
+
+    const { facade } = makeFacade();
+    (facade as any).qdrant = { collectionExists: vi.fn().mockResolvedValue(true) };
+    const result = await facade.indexCodebase("/tmp/test-project");
+
+    expect(result.migrations).toBeUndefined();
+  });
+
   describe("Error propagation", () => {
     it("propagates OllamaUnavailableError from indexCodebase", async () => {
       const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
