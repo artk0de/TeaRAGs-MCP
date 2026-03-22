@@ -122,8 +122,7 @@ export class ExploreFacade {
 
   /** Semantic (dense vector) search over a collection. */
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
-    if (!request.collection && !request.path) throw new CollectionNotProvidedError();
-    const { collectionName, path } = resolveCollection(request.collection, request.path);
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     const filter = this.registry.buildMergedFilter(
@@ -151,8 +150,7 @@ export class ExploreFacade {
 
   /** Hybrid (dense + BM25 sparse) search over a collection. */
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
-    if (!request.collection && !request.path) throw new CollectionNotProvidedError();
-    const { collectionName, path } = resolveCollection(request.collection, request.path);
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     const filter = this.registry.buildMergedFilter(
@@ -180,8 +178,7 @@ export class ExploreFacade {
 
   /** Rank all chunks by rerank signals without vector search. */
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
-    if (!request.collection && !request.path) throw new CollectionNotProvidedError();
-    const { collectionName, path } = resolveCollection(request.collection, request.path);
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "rank_chunks");
     const filter = this.registry.buildMergedFilter(
       request as unknown as Record<string, unknown>,
@@ -208,6 +205,7 @@ export class ExploreFacade {
   async searchCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
     const absolutePath = await validatePath(request.path);
     const collectionName = resolveCollectionName(absolutePath);
+    await this.modelGuard?.ensureMatch(collectionName);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
     const filter = this.registry.buildMergedFilter(
@@ -251,8 +249,7 @@ export class ExploreFacade {
       throw new InvalidQueryError("At least one positive or negative input is required");
     }
 
-    if (!request.collection && !request.path) throw new CollectionNotProvidedError();
-    const { collectionName, path } = resolveCollection(request.collection, request.path);
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
 
     // Create per-request strategy
     const similarStrategy = new SimilarSearchStrategy(
@@ -369,12 +366,26 @@ export class ExploreFacade {
     };
   }
 
+  /**
+   * Resolve collection + check model guard. Call BEFORE embed(query).
+   * Guard reads Qdrant marker (no embed needed), so it catches model mismatch
+   * before the embed call fails with OllamaModelMissingError.
+   */
+  private async resolveAndGuard(
+    collection?: string,
+    path?: string,
+  ): Promise<{ collectionName: string; path?: string }> {
+    if (!collection && !path) throw new CollectionNotProvidedError();
+    const resolved = resolveCollection(collection, path);
+    await this.modelGuard?.ensureMatch(resolved.collectionName);
+    return resolved;
+  }
+
   private async validateCollectionExists(collectionName: string, _path?: string): Promise<void> {
     const exists = await this.qdrant.collectionExists(collectionName);
     if (!exists) {
       throw new DomainCollectionNotFoundError(collectionName);
     }
-    await this.modelGuard?.ensureMatch(collectionName);
   }
 
   private async ensureStats(collectionName: string): Promise<void> {
