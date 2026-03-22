@@ -8,6 +8,11 @@
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/confirm-git-commit.sh",
             "statusMessage": "Validating git commit (must show changes summary first)"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-plugin-version.sh",
+            "statusMessage": "Checking plugin version bump"
           }
         ]
       }
