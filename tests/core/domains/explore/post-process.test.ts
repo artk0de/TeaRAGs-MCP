@@ -207,4 +207,26 @@ describe("filterMetaOnly", () => {
     const meta = filterMetaOnly(results, payloadSignals, []);
     expect(meta[0].git).toEqual({ chunk: { commitCount: 3 } });
   });
+
+  it("includes imports when marked essential in payload signals", () => {
+    const signalsWithImports: PayloadSignalDescriptor[] = [
+      ...payloadSignals,
+      { key: "imports", type: "string[]", description: "File imports", essential: true },
+    ];
+    const results: SearchResult[] = [
+      {
+        score: 0.7,
+        payload: {
+          relativePath: "src/c.ts",
+          language: "typescript",
+          startLine: 1,
+          imports: ["./utils", "./types"],
+          content: "code...",
+        },
+      },
+    ];
+    const meta = filterMetaOnly(results, signalsWithImports, []);
+    expect(meta[0].imports).toEqual(["./utils", "./types"]);
+    expect(meta[0].content).toBeUndefined();
+  });
 });

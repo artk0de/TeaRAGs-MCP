@@ -42,16 +42,18 @@ export const gitFilters: FilterDescriptor[] = [
     param: "minAgeDays",
     description: "Filter code older than N days",
     type: "number",
-    toCondition: (value: unknown, level: FilterLevel = "chunk") => ({
-      must: [{ key: `git.${level}.ageDays`, range: { gt: 0, gte: value as number } }],
+    // Always file-level: chunk ageDays often undefined → Qdrant skips filter on missing fields
+    toCondition: (value: unknown, _level: FilterLevel = "chunk") => ({
+      must: [{ key: "git.file.ageDays", range: { gt: 0, gte: value as number } }],
     }),
   },
   {
     param: "maxAgeDays",
     description: "Filter code newer than N days",
     type: "number",
-    toCondition: (value: unknown, level: FilterLevel = "chunk") => ({
-      must: [{ key: `git.${level}.ageDays`, range: { gt: 0, lte: value as number } }],
+    // Always file-level: same reason as minAgeDays
+    toCondition: (value: unknown, _level: FilterLevel = "chunk") => ({
+      must: [{ key: "git.file.ageDays", range: { gt: 0, lte: value as number } }],
     }),
   },
   {
