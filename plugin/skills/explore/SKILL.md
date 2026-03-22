@@ -24,6 +24,9 @@ feel the urge to grep — STOP and use the search-cascade decision tree instead.
 TeaRAGs tools are the primary instruments; ripgrep MCP is the only acceptable
 fallback, and only after TeaRAGs returned no results.
 
+**MANDATORY: After every search call, run @post-search-validation.md checks
+(no-match detection + disambiguation). Do NOT skip.**
+
 ## Step 0: CLASSIFY INTENT
 
 Before any search, translate $ARGUMENTS to English (if not already) and

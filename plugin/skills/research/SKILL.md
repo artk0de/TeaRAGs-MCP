@@ -15,6 +15,9 @@ zones — high churn, bug-prone functions, ownership silos. Feeds into
 **Key difference from explore:** explore explains how code works. Research flags
 **where the risks are**.
 
+**MANDATORY: After every search call, run @post-search-validation.md checks
+(no-match detection + disambiguation). Do NOT skip.**
+
 ## Pre-checks
 
 1. `get_index_status` → if indexed → `reindex_changes`. If not →

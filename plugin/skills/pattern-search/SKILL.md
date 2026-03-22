@@ -11,6 +11,8 @@ across the codebase. SEED → EXPAND → DEDUPLICATE → GROUP.
 
 ## MANDATORY RULES
 
+0. **After every search call, run @post-search-validation.md checks (no-match
+   detection + disambiguation). Do NOT skip.**
 1. **Execute YOURSELF** — no subagents.
 2. **CRITICAL: search-cascade is the ONLY tool selection method.** Built-in
    Search, Grep, Glob, `grep`, `rg`, `find` are PROHIBITED for code discovery.

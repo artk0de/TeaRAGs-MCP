@@ -16,6 +16,8 @@ when antipattern/refactoring intent has broad scope (no specific entity).
 
 ## MANDATORY RULES
 
+0. **After every search call, run @post-search-validation.md checks (no-match
+   detection + disambiguation). Do NOT skip.**
 1. **Execute YOURSELF** — no subagents.
 2. **Tool selection via search-cascade decision tree** — do not hard-code tool
    choice. Pass query + rerank + pathPattern to search-cascade, it determines
