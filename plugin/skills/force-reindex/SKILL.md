@@ -27,14 +27,22 @@ Agent tool:
     Call mcp__tea-rags__index_codebase with:
     - path: <extracted path>
     - forceReindex: true
-    Report: files indexed, chunks created, duration.
+    Report ALL fields from the response:
+    - Files: indexed/scanned
+    - Chunks created
+    - Duration (seconds)
+    - Enrichment status + trajectory.git.file (files, prefetch time)
+    - trajectory.git.chunk (overlays, duration) if present
+    - embeddingModel (from get_index_status after indexing)
+    - Any warnings or errors
 ```
 
 3. Tell the user: "Force reindex started in background. Search continues on the
    current index — zero downtime. You'll be notified when the new index is
    ready."
 
-4. When the background agent completes, report the result to the user.
+4. When the background agent completes, report the **full result** to the user.
+   Include all metrics — do not summarize or omit fields.
 
 ## Do NOT
 

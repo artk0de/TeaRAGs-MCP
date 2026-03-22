@@ -28,13 +28,21 @@ Agent tool:
   prompt: |
     Call mcp__tea-rags__index_codebase with:
     - path: <extracted path>
-    Report: files indexed, chunks created, duration.
+    Report ALL fields from the response:
+    - Files: +added ~modified -deleted (for incremental) or indexed/scanned (for full)
+    - Chunks: +added -deleted (net: diff)
+    - Duration (seconds)
+    - Enrichment status + trajectory.git.file (files, prefetch time)
+    - trajectory.git.chunk (overlays, duration) if present
+    - embeddingModel (from get_index_status after indexing)
+    - Any warnings or errors
 ```
 
 3. Tell the user indexing has started and they will be notified when it
    completes. Continue with other work.
 
-4. When the background agent completes, report the result to the user.
+4. When the background agent completes, report the **full result** to the user.
+   Include all metrics — do not summarize or omit fields.
 
 ## Do NOT
 
