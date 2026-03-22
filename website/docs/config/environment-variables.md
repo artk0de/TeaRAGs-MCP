@@ -47,7 +47,7 @@ variables are optional unless specified otherwise.
 | `INGEST_CHUNK_SIZE`           | Maximum chunk size in characters              | `2500`  |
 | `INGEST_CHUNK_OVERLAP`        | Overlap between chunks in characters          | `300`   |
 | `INGEST_ENABLE_AST`           | Enable AST-aware chunking (tree-sitter)       | `true`  |
-| `INGEST_ENABLE_HYBRID`        | Enable hybrid search (dense + sparse vectors) | `false` |
+| `INGEST_ENABLE_HYBRID`        | Enable hybrid search (dense + sparse vectors) | `true`  |
 | `INGEST_DEFAULT_SEARCH_LIMIT` | Default search result limit                   | `5`     |
 
 ## Trajectory: Git
