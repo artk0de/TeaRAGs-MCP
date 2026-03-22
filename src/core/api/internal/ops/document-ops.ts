@@ -6,12 +6,14 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { CollectionNotFoundError } from "../../../domains/explore/errors.js";
+import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { AddDocumentsRequest, DeleteDocumentsRequest } from "../../public/dto/index.js";
 
 export class DocumentOps {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
+    private readonly modelGuard?: EmbeddingModelGuard,
   ) {}
 
   async add(request: AddDocumentsRequest): Promise<{ count: number }> {
@@ -22,6 +24,9 @@ export class DocumentOps {
     if (!exists) {
       throw new CollectionNotFoundError(collection);
     }
+
+    // 2. Verify embedding model matches
+    await this.modelGuard?.ensureMatch(collection);
 
     // 2. Get collection info for hybrid check
     const collectionInfo = await this.qdrant.getCollectionInfo(collection);

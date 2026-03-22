@@ -29,6 +29,7 @@ import type { DeletionConfig } from "../../../domains/ingest/sync/deletion-strat
 import { GitEnrichmentProvider } from "../../../domains/trajectory/git/provider.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
@@ -59,6 +60,7 @@ export class IngestFacade {
     pipelineTuning?: PipelineTuning,
     syncTuning?: SynchronizerTuning,
     snapshotDir?: string,
+    private readonly modelGuard?: EmbeddingModelGuard,
   ) {
     /* v8 ignore next 2 -- fallback for backward compat */
     const resolvedSnapshotDir =
@@ -107,6 +109,7 @@ export class IngestFacade {
       const collectionName = resolveCollectionName(absolutePath);
       const exists = await this.qdrant.collectionExists(collectionName);
       if (exists) {
+        await this.modelGuard?.ensureMatch(collectionName);
         const changeStats = await this.reindex.reindexChanges(path, progressCallback);
         await this.refreshStats(path);
         return {
@@ -153,6 +156,9 @@ export class IngestFacade {
 
   /** Clear all indexed data for a codebase */
   async clearIndex(path: string): Promise<void> {
+    const absolutePath = await validatePath(path);
+    const collectionName = resolveCollectionName(absolutePath);
+    this.modelGuard?.invalidate(collectionName);
     return this.status.clearIndex(path);
   }
 

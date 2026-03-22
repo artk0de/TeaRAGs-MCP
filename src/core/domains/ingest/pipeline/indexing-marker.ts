@@ -56,6 +56,7 @@ export async function storeIndexingMarker(
       _type: "indexing_metadata",
       indexingComplete: false,
       startedAt: new Date().toISOString(),
+      embeddingModel: embeddings.getModel(),
     };
 
     if (collectionInfo.hybridEnabled) {

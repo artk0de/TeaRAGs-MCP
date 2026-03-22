@@ -4,6 +4,7 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { CollectionInfo, CreateCollectionRequest } from "../../public/dto/index.js";
 
 export class CollectionOps {
@@ -11,6 +12,7 @@ export class CollectionOps {
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
     private readonly quantizationScalar: boolean,
+    private readonly modelGuard?: EmbeddingModelGuard,
   ) {}
 
   async create(request: CreateCollectionRequest): Promise<CollectionInfo> {
@@ -24,6 +26,8 @@ export class CollectionOps {
       enableHybrid,
       this.quantizationScalar,
     );
+
+    this.modelGuard?.recordModel(request.name);
 
     return {
       name: request.name,

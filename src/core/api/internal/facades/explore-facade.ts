@@ -34,6 +34,7 @@ import { SimilarSearchStrategy } from "../../../domains/explore/strategies/simil
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import { CollectionNotProvidedError } from "../../errors.js";
@@ -61,6 +62,7 @@ export interface ExploreFacadeDeps {
   schemaDriftMonitor?: SchemaDriftMonitor;
   payloadSignals?: PayloadSignalDescriptor[];
   essentialKeys?: string[];
+  modelGuard?: EmbeddingModelGuard;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,9 +81,11 @@ export class ExploreFacade {
   private readonly vectorStrategy: BaseExploreStrategy;
   private readonly hybridStrategy: BaseExploreStrategy;
   private readonly scrollRankStrategy: BaseExploreStrategy;
+  private readonly modelGuard?: EmbeddingModelGuard;
 
   constructor(deps: ExploreFacadeDeps) {
     this.qdrant = deps.qdrant;
+    this.modelGuard = deps.modelGuard;
     this.embeddings = deps.embeddings;
     this.reranker = deps.reranker;
     this.registry = deps.registry;
@@ -370,6 +374,7 @@ export class ExploreFacade {
     if (!exists) {
       throw new DomainCollectionNotFoundError(collectionName);
     }
+    await this.modelGuard?.ensureMatch(collectionName);
   }
 
   private async ensureStats(collectionName: string): Promise<void> {

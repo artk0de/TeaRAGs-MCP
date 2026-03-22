@@ -83,6 +83,8 @@ export interface IndexStatus {
   chunksCount?: number;
   lastUpdated?: Date;
   languages?: string[];
+  /** Embedding model used to index this collection */
+  embeddingModel?: string;
   /** Background git enrichment progress (file-level) */
   enrichment?: EnrichmentInfo;
   /** Background chunk-level git enrichment progress */

@@ -16,6 +16,7 @@ describe("storeIndexingMarker", () => {
     };
     mockEmbeddings = {
       getDimensions: vi.fn().mockReturnValue(4),
+      getModel: vi.fn().mockReturnValue("test-model"),
     };
     vi.spyOn(console, "error").mockImplementation(() => {});
   });

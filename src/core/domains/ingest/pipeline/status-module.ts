@@ -52,12 +52,17 @@ export class StatusModule {
       ? chunkEnrichmentPayload
       : undefined;
 
+    // Read embedding model from marker (if present)
+    const embeddingModel =
+      typeof indexingMarker?.payload?.embeddingModel === "string" ? indexingMarker.payload.embeddingModel : undefined;
+
     if (isInProgress) {
       return {
         isIndexed: false,
         status: "indexing",
         collectionName,
         chunksCount: actualChunksCount,
+        embeddingModel,
         enrichment,
         chunkEnrichment,
       };
@@ -69,6 +74,7 @@ export class StatusModule {
         status: "indexed",
         collectionName,
         chunksCount: actualChunksCount,
+        embeddingModel,
         lastUpdated: indexingMarker.payload?.completedAt
           ? new Date(
               typeof indexingMarker.payload.completedAt === "string" ||
