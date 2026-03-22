@@ -90,17 +90,17 @@ describe("OllamaEmbeddings", () => {
         embedding: mockEmbedding,
         dimensions: 768,
       });
-      expect(mockFetch).toHaveBeenCalledWith("http://localhost:11434/api/embeddings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "nomic-embed-text",
-          prompt: "test text",
-          options: { num_gpu: 999 },
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:11434/api/embeddings",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            model: "nomic-embed-text",
+            prompt: "test text",
+            options: { num_gpu: 999 },
+          }),
         }),
-      });
+      );
     });
 
     it("should handle long text", async () => {
@@ -857,6 +857,142 @@ describe("OllamaEmbeddings", () => {
       mockFetch.mockRejectedValue(new Error("connection refused"));
 
       await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
+    });
+
+    it("should use fallback on second call after primary fails (failover cache)", async () => {
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768)
+        .fill(0)
+        .map((_, i) => i * 0.001);
+
+      // First call: primary fails, fallback succeeds
+      mockFetch
+        .mockRejectedValueOnce(new Error("primary down"))
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await fallbackEmbeddings.embed("first");
+
+      // Second call: should go directly to fallback (skip primary)
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await fallbackEmbeddings.embed("second");
+
+      // 3 calls total: primary(fail) + fallback(ok) + fallback(ok, cached)
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      const thirdCallUrl = mockFetch.mock.calls[2][0] as string;
+      expect(thirdCallUrl).toContain("fallback");
+    });
+
+    it("should switch back to primary when probe succeeds", async () => {
+      vi.useFakeTimers();
+
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768)
+        .fill(0)
+        .map((_, i) => i * 0.001);
+
+      // First call: primary fails, fallback succeeds — triggers probe
+      mockFetch
+        .mockRejectedValueOnce(new Error("primary down"))
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await fallbackEmbeddings.embed("trigger failover");
+
+      // Probe fires after 30s — primary now responds
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      // Next embed call should go to primary (probe recovered it)
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await fallbackEmbeddings.embed("after recovery");
+
+      const lastCallUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+      expect(lastCallUrl).toContain("primary");
+
+      vi.useRealTimers();
+    });
+
+    it("should keep using fallback when probe fails", async () => {
+      vi.useFakeTimers();
+
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768)
+        .fill(0)
+        .map((_, i) => i * 0.001);
+
+      // Trigger failover
+      mockFetch
+        .mockRejectedValueOnce(new Error("primary down"))
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+      await fallbackEmbeddings.embed("trigger failover");
+
+      // Probe fires — primary still down
+      mockFetch.mockRejectedValueOnce(new Error("still down"));
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      // Next call should still use fallback
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+      await fallbackEmbeddings.embed("still on fallback");
+
+      const lastCallUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+      expect(lastCallUrl).toContain("fallback");
+
+      vi.useRealTimers();
+    });
+
+    it("should reset failover when both primary and fallback fail during cached state", async () => {
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768)
+        .fill(0)
+        .map((_, i) => i * 0.001);
+
+      // Trigger failover
+      mockFetch
+        .mockRejectedValueOnce(new Error("primary down"))
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+      await fallbackEmbeddings.embed("trigger failover");
+
+      // Second call: fallback also fails during cached state
+      mockFetch.mockRejectedValueOnce(new Error("fallback also down"));
+      await expect(fallbackEmbeddings.embed("both down")).rejects.toThrow(OllamaUnavailableError);
     });
   });
 });

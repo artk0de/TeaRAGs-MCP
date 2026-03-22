@@ -20,6 +20,23 @@ import { OllamaModelMissingError, OllamaUnavailableError } from "./ollama/errors
 import { withRateLimitRetry } from "./retry.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
+/** Connect timeout for fetch — fail fast when host is unreachable */
+const CONNECT_TIMEOUT_MS = 5000;
+/** Shorter connect timeout for initial probe when fallback is available */
+const CONNECT_TIMEOUT_WITH_FALLBACK_MS = 1000;
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = CONNECT_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 interface OllamaError {
   status?: number;
   message?: string;
@@ -36,6 +53,9 @@ interface OllamaEmbedBatchResponse {
   embeddings: number[][]; // Array of embedding vectors
 }
 
+/** How often to probe primary URL when operating on fallback */
+const PRIMARY_PROBE_INTERVAL_MS = 30_000;
+
 export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly model: string;
   private readonly dimensions: number;
@@ -46,6 +66,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly fallbackBaseUrl?: string;
   private readonly numGpu: number;
   private useNativeBatch: boolean;
+  private usingFallback = false;
+  private probeTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     model = "unclemusclez/jina-embeddings-v2-base-code:latest",
@@ -94,7 +116,57 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     );
   }
 
+  /** Start background probe that pings primary every 30s. On success, switch back. */
+  private startPrimaryProbe(): void {
+    if (this.probeTimer) return;
+    this.probeTimer = setInterval(() => {
+      void this.probePrimary();
+    }, PRIMARY_PROBE_INTERVAL_MS);
+    // Don't keep process alive just for the probe
+    if (this.probeTimer && typeof this.probeTimer === "object" && "unref" in this.probeTimer) {
+      this.probeTimer.unref();
+    }
+  }
+
+  private stopPrimaryProbe(): void {
+    if (this.probeTimer) {
+      clearInterval(this.probeTimer);
+      this.probeTimer = undefined;
+    }
+  }
+
+  private async probePrimary(): Promise<void> {
+    try {
+      const response = await fetchWithTimeout(
+        `${this.baseUrl}/api/tags`,
+        { method: "GET" },
+        CONNECT_TIMEOUT_WITH_FALLBACK_MS,
+      );
+      if (response.ok) {
+        this.usingFallback = false;
+        this.stopPrimaryProbe();
+        if (isDebug()) {
+          console.error(`[Ollama] Primary ${this.baseUrl} recovered, switching back from fallback`);
+        }
+      }
+    } catch {
+      // Still down — probe continues
+    }
+  }
+
   private async retryWithBackoff<T>(fn: () => Promise<T>, fallbackFn?: () => Promise<T>): Promise<T> {
+    // Quick path: if primary is down and fallback available, skip primary entirely
+    if (fallbackFn && this.fallbackBaseUrl && this.usingFallback) {
+      try {
+        return await fallbackFn();
+      } catch (_fallbackError) {
+        // Fallback also failed — reset and report both
+        this.usingFallback = false;
+        this.stopPrimaryProbe();
+        throw OllamaUnavailableError.withFallback(this.baseUrl, this.fallbackBaseUrl);
+      }
+    }
+
     try {
       return await withRateLimitRetry(fn, {
         maxAttempts: this.retryAttempts,
@@ -106,13 +178,20 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         throw new OllamaUnavailableError(this.baseUrl, primaryError instanceof Error ? primaryError : undefined);
       }
 
+      this.usingFallback = true;
+      this.startPrimaryProbe();
+
       if (isDebug()) {
-        console.error(`[Ollama] Primary ${this.baseUrl} failed, trying fallback ${this.fallbackBaseUrl}`);
+        console.error(
+          `[Ollama] Primary ${this.baseUrl} failed, switching to fallback ${this.fallbackBaseUrl}. Probing primary every ${PRIMARY_PROBE_INTERVAL_MS / 1000}s.`,
+        );
       }
 
       try {
         return await fallbackFn();
       } catch (_fallbackError) {
+        this.usingFallback = false;
+        this.stopPrimaryProbe();
         throw OllamaUnavailableError.withFallback(
           this.baseUrl,
           this.fallbackBaseUrl,
@@ -126,21 +205,21 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * NEW: Native batch embedding using /api/embed
    * Sends all texts in ONE request instead of N separate requests
    */
-  private async callBatchApi(texts: string[], url?: string): Promise<OllamaEmbedBatchResponse> {
+  private async callBatchApi(texts: string[], url?: string, timeoutMs?: number): Promise<OllamaEmbedBatchResponse> {
     const baseUrl = url ?? this.baseUrl;
-    const response = await fetch(`${baseUrl}/api/embed`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const response = await fetchWithTimeout(
+      `${baseUrl}/api/embed`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: this.model,
+          input: texts,
+          options: { num_gpu: this.numGpu },
+        }),
       },
-      body: JSON.stringify({
-        model: this.model,
-        input: texts, // Array of texts!
-        options: {
-          num_gpu: this.numGpu,
-        },
-      }),
-    });
+      timeoutMs,
+    );
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -160,17 +239,13 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private async callApi(text: string, url?: string): Promise<OllamaEmbedResponse> {
     const baseUrl = url ?? this.baseUrl;
     try {
-      const response = await fetch(`${baseUrl}/api/embeddings`, {
+      const response = await fetchWithTimeout(`${baseUrl}/api/embeddings`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: this.model,
           prompt: text,
-          options: {
-            num_gpu: this.numGpu,
-          },
+          options: { num_gpu: this.numGpu },
         }),
       });
 
@@ -202,10 +277,16 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     }
   }
 
+  /** Short timeout for primary when fallback exists; standard for fallback or no-fallback */
+  private connectTimeoutForUrl(url: string): number {
+    if (!this.fallbackBaseUrl) return CONNECT_TIMEOUT_MS;
+    return url === this.baseUrl ? CONNECT_TIMEOUT_WITH_FALLBACK_MS : CONNECT_TIMEOUT_MS;
+  }
+
   private async embedSingle(text: string, url: string): Promise<EmbeddingResult> {
     return (async () => {
       if (this.useNativeBatch) {
-        const response = await this.callBatchApi([text], url);
+        const response = await this.callBatchApi([text], url, this.connectTimeoutForUrl(url));
         if (!response.embeddings || response.embeddings.length === 0) {
           throw new OllamaUnavailableError(url);
         }
@@ -259,7 +340,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         if (isDebug()) {
           console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request to ${url}`);
         }
-        const response = await this.callBatchApi(texts, url);
+        const response = await this.callBatchApi(texts, url, this.connectTimeoutForUrl(url));
         if (response.embeddings?.length !== texts.length) {
           throw new OllamaUnavailableError(url);
         }
