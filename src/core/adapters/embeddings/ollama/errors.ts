@@ -91,7 +91,10 @@ export class OllamaModelMissingError extends EmbeddingError {
     super({
       code: "INFRA_OLLAMA_MODEL_MISSING",
       message: `Ollama model "${model}" is not available at ${url}`,
-      hint: `Pull the model: ollama pull ${model}`,
+      hint:
+        `Try: ollama pull ${model}\n` +
+        `If pull fails, the model name may be wrong — check EMBEDDING_MODEL in your config.\n` +
+        `Available models: ollama list | Browse: https://ollama.com/search?c=embedding`,
       httpStatus: 503,
     });
   }
