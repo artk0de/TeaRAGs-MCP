@@ -1,3 +1,102 @@
+## 1.15.0 (2026-03-22)
+
+- improve(api): expose qdrantUrl in get_index_status response
+  ([04ca10a](https://github.com/artk0de/TeaRAGs-MCP/commit/04ca10a))
+- improve(dx): optimize bug-hunt skill to reduce unnecessary tool calls
+  ([d5c6d8b](https://github.com/artk0de/TeaRAGs-MCP/commit/d5c6d8b))
+- improve(dx): require full metrics output in index/force-reindex skills
+  ([af8ec5f](https://github.com/artk0de/TeaRAGs-MCP/commit/af8ec5f))
+- improve(dx): simplify index/force-reindex skills — report complete response
+  as-is ([1d27adf](https://github.com/artk0de/TeaRAGs-MCP/commit/1d27adf))
+- improve(dx): update search-cascade with BM25 v3 audit results
+  ([6f4c084](https://github.com/artk0de/TeaRAGs-MCP/commit/6f4c084))
+- improve(embedding): background probe for primary URL recovery
+  ([29f1834](https://github.com/artk0de/TeaRAGs-MCP/commit/29f1834))
+- improve(embedding): better hint for OllamaModelMissingError
+  ([020195d](https://github.com/artk0de/TeaRAGs-MCP/commit/020195d))
+- improve(ingest): address code review — tmpdir() in tests, rename path variable
+  ([e828992](https://github.com/artk0de/TeaRAGs-MCP/commit/e828992))
+- improve(ingest): wire checkSparseVectorVersion() into runMigrations()
+  ([8b7f86c](https://github.com/artk0de/TeaRAGs-MCP/commit/8b7f86c))
+- improve(ingest): wire SnapshotCleaner into IndexPipeline.indexCodebase()
+  ([b5a0032](https://github.com/artk0de/TeaRAGs-MCP/commit/b5a0032))
+- improve(ingest): wire SnapshotCleaner into ReindexPipeline.reindexChanges()
+  ([338a29f](https://github.com/artk0de/TeaRAGs-MCP/commit/338a29f))
+- fix(api): expose sparseVersion in get_index_status response
+  ([ed927f5](https://github.com/artk0de/TeaRAGs-MCP/commit/ed927f5))
+- fix(api): pass migrations from reindexChanges through incremental
+  indexCodebase
+  ([008b6e8](https://github.com/artk0de/TeaRAGs-MCP/commit/008b6e8))
+- fix(config): treat BREAKING CHANGE as minor bump, not major
+  ([e00da12](https://github.com/artk0de/TeaRAGs-MCP/commit/e00da12))
+- fix(dx): add PreToolUse hook to block unauthorized git push
+  ([b22c1c4](https://github.com/artk0de/TeaRAGs-MCP/commit/b22c1c4))
+- fix(dx): allow summarize in index/force-reindex skill output
+  ([b490ffb](https://github.com/artk0de/TeaRAGs-MCP/commit/b490ffb))
+- fix(embedding): propagate OllamaModelMissingError without fallback attempt
+  ([838965c](https://github.com/artk0de/TeaRAGs-MCP/commit/838965c))
+- fix(embedding): run model guard before embed call in all facades
+  ([e291820](https://github.com/artk0de/TeaRAGs-MCP/commit/e291820))
+- fix(filters): add is_empty guard to age filters for missing chunk fields
+  ([49bb006](https://github.com/artk0de/TeaRAGs-MCP/commit/49bb006))
+- fix(filters): maxAgeDays/minAgeDays false positives from chunk ageDays=0
+  ([98cf09e](https://github.com/artk0de/TeaRAGs-MCP/commit/98cf09e))
+- fix(ingest): fix empty debug labels in SnapshotCleaner log output
+  ([3b90d4f](https://github.com/artk0de/TeaRAGs-MCP/commit/3b90d4f))
+- chore(ci): reduce pre-commit hook output — dot reporter, suppress stderr
+  ([c3da3f3](https://github.com/artk0de/TeaRAGs-MCP/commit/c3da3f3))
+- chore(ci): reduce pre-commit hook output — dot reporter, suppress stderr
+  ([c54e39f](https://github.com/artk0de/TeaRAGs-MCP/commit/c54e39f))
+- chore(dx): bump plugin version to 0.8.1
+  ([6c95e3b](https://github.com/artk0de/TeaRAGs-MCP/commit/6c95e3b))
+- feat(config): default enableHybrid to true
+  ([401a259](https://github.com/artk0de/TeaRAGs-MCP/commit/401a259))
+- feat(dx): add post-search-validation rule with no-match detection and
+  disambiguation
+  ([1111b4b](https://github.com/artk0de/TeaRAGs-MCP/commit/1111b4b))
+- feat(embedding): add EmbeddingModelGuard to detect model mismatch
+  ([27c20e2](https://github.com/artk0de/TeaRAGs-MCP/commit/27c20e2))
+- feat(hybrid): rebuild BM25 sparse vectors — code tokenizer, feature hashing,
+  TF-only ([e04a58e](https://github.com/artk0de/TeaRAGs-MCP/commit/e04a58e))
+- feat(ingest): add SnapshotCleaner for post-indexing artifact cleanup
+  ([ea552de](https://github.com/artk0de/TeaRAGs-MCP/commit/ea552de))
+- feat(metrics): add git enrichment time range to collection stats
+  ([c9d95b1](https://github.com/artk0de/TeaRAGs-MCP/commit/c9d95b1))
+- feat(qdrant): add checkSparseVectorVersion and v7 schema migration
+  ([1fa242f](https://github.com/artk0de/TeaRAGs-MCP/commit/1fa242f))
+- feat(qdrant): add updateCollectionSparseConfig() and scrollWithVectors()
+  ([2a90acc](https://github.com/artk0de/TeaRAGs-MCP/commit/2a90acc))
+- docs(dx): add embedding model guard spec and test golden rule
+  ([d7ed2d3](https://github.com/artk0de/TeaRAGs-MCP/commit/d7ed2d3))
+- docs(plans): add snapshot cleanup spec and plan
+  ([e656bbb](https://github.com/artk0de/TeaRAGs-MCP/commit/e656bbb))
+- docs(plans): add sparse vector migration implementation plan
+  ([8c018b8](https://github.com/artk0de/TeaRAGs-MCP/commit/8c018b8))
+- docs(specs): add safety net for enableHybrid toggle after schema v7
+  ([254ea54](https://github.com/artk0de/TeaRAGs-MCP/commit/254ea54))
+- docs(specs): add sparse vector migration and snapshot cleanup specs
+  ([eb4d4ca](https://github.com/artk0de/TeaRAGs-MCP/commit/eb4d4ca))
+- docs(website): update enableHybrid default to true and migration guidance
+  ([0b05b81](https://github.com/artk0de/TeaRAGs-MCP/commit/0b05b81))
+
+### BREAKING CHANGE
+
+- Existing hybrid collections must be reindexed — sparse vectors are
+  incompatible with previous vocabulary-based implementation.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- footer should not trigger major version bumps for this project. Internal data
+  format changes (sparse vectors, migrations) are handled automatically and
+  don't break the user-facing API.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- INGEST_ENABLE_HYBRID now defaults to true. Existing non-hybrid collections
+  auto-migrate on next reindex.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
 ## <small>1.14.4 (2026-03-22)</small>
 
 - fix(dx): register check-plugin-version hook in settings.json
