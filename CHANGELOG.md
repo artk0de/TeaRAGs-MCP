@@ -1,3 +1,9 @@
+## <small>1.15.1 (2026-03-23)</small>
+
+- ([a48e5b0](https://github.com/artk0de/TeaRAGs-MCP/commit/a48e5b0))
+- improve(dx): redesign bug-hunt skill + add navigation branch to search-cascade
+  ([65cd2ef](https://github.com/artk0de/TeaRAGs-MCP/commit/65cd2ef))
+
 ## 1.15.0 (2026-03-22)
 
 - improve(api): expose qdrantUrl in get_index_status response
