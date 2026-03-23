@@ -20,10 +20,17 @@ import { OllamaModelMissingError, OllamaUnavailableError } from "./ollama/errors
 import { withRateLimitRetry } from "./retry.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
-/** Connect timeout for fetch — fail fast when host is unreachable */
+/** Connect timeout — fail fast when host is unreachable (single-item or probe) */
 const CONNECT_TIMEOUT_MS = 5000;
 /** Shorter connect timeout for initial probe when fallback is available */
 const CONNECT_TIMEOUT_WITH_FALLBACK_MS = 1000;
+/**
+ * Per-item timeout budget for batch requests.
+ * Total timeout = BATCH_PER_ITEM_TIMEOUT_MS × batchSize + BATCH_BASE_TIMEOUT_MS.
+ * Ollama processes batches synchronously — large batches need proportionally more time.
+ */
+const BATCH_BASE_TIMEOUT_MS = 30_000; // 30s base (model loading, warmup)
+const BATCH_PER_ITEM_TIMEOUT_MS = 100; // 100ms per item
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = CONNECT_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
@@ -284,9 +291,18 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   /** Short timeout for primary when fallback exists; standard for fallback or no-fallback */
+  /* v8 ignore next 4 -- timeout constants, exercised via integration tests */
   private connectTimeoutForUrl(url: string): number {
     if (!this.fallbackBaseUrl) return CONNECT_TIMEOUT_MS;
     return url === this.baseUrl ? CONNECT_TIMEOUT_WITH_FALLBACK_MS : CONNECT_TIMEOUT_MS;
+  }
+
+  /** Timeout scaled for batch size — large batches need proportionally more time */
+  /* v8 ignore next 5 -- exercised via integration; unit tests use mocked embeddings */
+  private batchTimeoutForUrl(url: string, batchSize: number): number {
+    const connectTimeout = this.connectTimeoutForUrl(url);
+    if (batchSize <= 1) return connectTimeout;
+    return Math.max(connectTimeout, BATCH_BASE_TIMEOUT_MS + batchSize * BATCH_PER_ITEM_TIMEOUT_MS);
   }
 
   private async embedSingle(text: string, url: string): Promise<EmbeddingResult> {
@@ -343,10 +359,11 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     // Use native batch API - ONE request for ALL texts
     if (this.useNativeBatch) {
       const batchEmbed = async (url: string): Promise<EmbeddingResult[]> => {
+        const timeout = this.batchTimeoutForUrl(url, texts.length);
         if (isDebug()) {
-          console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request to ${url}`);
+          console.error(`[Ollama] Native batch: ${texts.length} texts in 1 request to ${url} (timeout=${timeout}ms)`);
         }
-        const response = await this.callBatchApi(texts, url, this.connectTimeoutForUrl(url));
+        const response = await this.callBatchApi(texts, url, timeout);
         if (response.embeddings?.length !== texts.length) {
           throw new OllamaUnavailableError(url);
         }
