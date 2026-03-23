@@ -282,6 +282,138 @@ describe("StatusModule", () => {
       });
     });
 
+    describe("versioned collection without alias", () => {
+      it("should detect indexing _v1 collection when alias does not exist yet", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+        const versionedName = `${collectionName}_v1`;
+
+        // Simulate first index in progress: _v1 exists with indexingComplete=false, no alias
+        await qdrant.createCollection(versionedName, 384, "Cosine", false);
+        await qdrant.addPoints(versionedName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: false, embeddingModel: "test-model" },
+          },
+          {
+            id: "chunk-1",
+            vector: new Array(384).fill(0.1),
+            payload: { relativePath: "test.ts", content: "code" },
+          },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.status).toBe("indexing");
+        expect(status.isIndexed).toBe(false);
+        expect(status.collectionName).toBe(collectionName);
+        expect(status.chunksCount).toBe(1);
+        expect(status.embeddingModel).toBe("test-model");
+      });
+
+      it("should report stale_indexing when marker is older than threshold", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+        const versionedName = `${collectionName}_v1`;
+
+        // Simulate stale indexing: startedAt is 15 minutes ago
+        const staleTime = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await qdrant.createCollection(versionedName, 384, "Cosine", false);
+        await qdrant.addPoints(versionedName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: false, startedAt: staleTime, embeddingModel: "test-model" },
+          },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.status).toBe("stale_indexing");
+        expect(status.isIndexed).toBe(false);
+        expect(status.collectionName).toBe(collectionName);
+      });
+
+      it("should detect completed _v1 collection when alias does not exist yet", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+        const versionedName = `${collectionName}_v1`;
+
+        // Simulate crash after indexing but before alias creation
+        await qdrant.createCollection(versionedName, 384, "Cosine", false);
+        await qdrant.addPoints(versionedName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: true, completedAt: new Date().toISOString() },
+          },
+          {
+            id: "chunk-1",
+            vector: new Array(384).fill(0.1),
+            payload: { relativePath: "test.ts", content: "code" },
+          },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.status).toBe("indexed");
+        expect(status.isIndexed).toBe(true);
+        expect(status.collectionName).toBe(collectionName);
+        expect(status.chunksCount).toBe(1);
+      });
+
+      it("should show latest version during forceReindex when alias points to old version", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+
+        // v1 is complete and aliased
+        await qdrant.createCollection(`${collectionName}_v1`, 384, "Cosine", false);
+        await qdrant.addPoints(`${collectionName}_v1`, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: true, completedAt: new Date().toISOString() },
+          },
+          { id: "chunk-old", vector: new Array(384).fill(0.1), payload: { relativePath: "old.ts" } },
+        ]);
+        await qdrant.aliases.createAlias(collectionName, `${collectionName}_v1`);
+
+        // v2 is being indexed (forceReindex in progress)
+        await qdrant.createCollection(`${collectionName}_v2`, 384, "Cosine", false);
+        await qdrant.addPoints(`${collectionName}_v2`, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: false, embeddingModel: "new-model" },
+          },
+          { id: "chunk-new-1", vector: new Array(384).fill(0.1), payload: { relativePath: "new.ts" } },
+          { id: "chunk-new-2", vector: new Array(384).fill(0.2), payload: { relativePath: "new2.ts" } },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        // Should report the newer v2 that is still indexing
+        expect(status.status).toBe("indexing");
+        expect(status.isIndexed).toBe(false);
+        expect(status.collectionName).toBe(collectionName);
+        expect(status.chunksCount).toBe(2);
+        expect(status.embeddingModel).toBe("new-model");
+      });
+    });
+
     describe("legacy collection handling", () => {
       it("should treat collection with chunks but no completion marker as indexed", async () => {
         await createTestFile(
