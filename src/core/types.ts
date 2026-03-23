@@ -105,7 +105,7 @@ export interface ChangeStats {
   migrations?: string[];
 }
 
-export type IndexingStatus = "not_indexed" | "indexing" | "indexed";
+export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing";
 
 /** Status of background git enrichment */
 export type EnrichmentStatusValue = "pending" | "in_progress" | "completed" | "partial" | "failed";

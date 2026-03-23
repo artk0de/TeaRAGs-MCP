@@ -184,6 +184,16 @@ export class IndexPipeline extends BaseIndexingPipeline {
     // Orphan cleanup before creating new version
     await cleanupOrphanedVersions(this.qdrant, collectionName);
 
+    // Clean up stale target from a previously failed attempt (e.g. crashed mid-index)
+    const targetAlreadyExists = await this.qdrant.collectionExists(versionedName);
+    /* v8 ignore next 6 -- defensive cleanup: hard to simulate in unit tests (requires mid-index crash) */
+    if (targetAlreadyExists) {
+      if (isDebug()) {
+        console.error(`[Index] Stale collection ${versionedName} found from failed attempt, deleting`);
+      }
+      await this.qdrant.deleteCollection(versionedName);
+    }
+
     if (isDebug()) {
       console.error(
         `[Index] Setup: version=${newVersion}, target=${versionedName}, ` +

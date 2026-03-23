@@ -27,6 +27,19 @@ export function buildOverview(): string {
 - tea-rags://schema/search-guide — search tool routing, use cases, examples
 - tea-rags://schema/indexing-guide — indexing options, git metadata guide
 - tea-rags://schema/signal-labels — human-readable label mappings for numeric signals
+
+## IMPORTANT: Destructive Tools
+
+**NEVER call these tools without explicit user confirmation:**
+- \`clear_index\` — deletes ALL indexed data for a codebase (chunks, git metadata, snapshots)
+- \`delete_collection\` — permanently deletes a Qdrant collection and all its data
+- \`delete_documents\` — permanently deletes specific documents from a collection
+
+These operations are **irreversible**. Re-indexing a large codebase can take minutes.
+Other sessions may depend on the same index — clearing it breaks their search.
+
+**If indexing fails with "Conflict":** another session is already indexing.
+Wait for it to finish or restart the MCP server. Do NOT clear the index to work around it.
 `;
 }
 
