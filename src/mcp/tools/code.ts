@@ -189,6 +189,13 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         return formatMcpText(`Codebase at "${path}" is not indexed. Use index_codebase to index it first.`);
       }
 
+      if (status.status === "stale_indexing") {
+        return formatMcpText(
+          `Codebase at "${path}" has a stale indexing marker (started but never completed — likely crashed). ` +
+            `Use index_codebase to re-index. The stale collection will be cleaned up automatically.`,
+        );
+      }
+
       if (status.status === "indexing") {
         let text = `Codebase at "${path}" is currently being indexed. ${status.chunksCount || 0} chunks processed so far.`;
         if (status.enrichment) {

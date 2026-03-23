@@ -129,6 +129,27 @@ describe("QdrantManager", () => {
         },
       });
     });
+
+    it("should throw CollectionAlreadyExistsError on 409 Conflict", async () => {
+      const conflictError = Object.assign(new Error("Conflict"), { status: 409 });
+      mockClient.createCollection.mockRejectedValue(conflictError);
+
+      const { CollectionAlreadyExistsError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      await expect(manager.createCollection("existing", 384)).rejects.toThrow(CollectionAlreadyExistsError);
+    });
+
+    it("should throw CollectionAlreadyExistsError when error message contains 'already exists'", async () => {
+      mockClient.createCollection.mockRejectedValue(new Error("Collection already exists"));
+
+      const { CollectionAlreadyExistsError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      await expect(manager.createCollection("existing", 384)).rejects.toThrow(CollectionAlreadyExistsError);
+    });
+
+    it("should rethrow non-conflict errors from createCollection", async () => {
+      mockClient.createCollection.mockRejectedValue(new Error("Network error"));
+
+      await expect(manager.createCollection("test", 384)).rejects.toThrow("Network error");
+    });
   });
 
   describe("collectionExists", () => {
