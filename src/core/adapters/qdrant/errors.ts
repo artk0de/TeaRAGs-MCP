@@ -51,3 +51,18 @@ export class QdrantOperationError extends InfraError {
     });
   }
 }
+
+export class CollectionAlreadyExistsError extends InfraError {
+  constructor(collectionName: string, cause?: Error) {
+    super({
+      code: "INFRA_COLLECTION_ALREADY_EXISTS",
+      message: `Collection "${collectionName}" already exists`,
+      hint:
+        `Another session may be indexing into this collection. ` +
+        `Wait for it to finish, or restart the MCP server to release stale locks. ` +
+        `If the collection is orphaned, use clear_index to remove it.`,
+      httpStatus: 409,
+      cause,
+    });
+  }
+}

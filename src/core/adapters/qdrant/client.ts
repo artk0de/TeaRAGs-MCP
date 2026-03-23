@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 import { QdrantAliasManager } from "./aliases.js";
-import { QdrantOperationError, QdrantUnavailableError } from "./errors.js";
+import { CollectionAlreadyExistsError, QdrantOperationError, QdrantUnavailableError } from "./errors.js";
 
 type QdrantPayload = Record<string, unknown>;
 
@@ -126,7 +126,14 @@ export class QdrantManager {
       };
     }
 
-    await this.client.createCollection(name, config);
+    try {
+      await this.client.createCollection(name, config);
+    } catch (error: unknown) {
+      if (isConflictError(error)) {
+        throw new CollectionAlreadyExistsError(name, error instanceof Error ? error : undefined);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -1005,6 +1012,18 @@ export class QdrantManager {
       );
     }
   }
+}
+
+/** Detect Qdrant 409 Conflict (collection already exists). */
+function isConflictError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("conflict") || msg.includes("already exists")) return true;
+  }
+  if (typeof error === "object" && error !== null && "status" in error) {
+    return (error as { status: number }).status === 409;
+  }
+  return false;
 }
 
 /** Min-max normalize an array of scores to [0, 1]. */
