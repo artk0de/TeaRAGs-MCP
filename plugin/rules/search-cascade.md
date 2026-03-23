@@ -64,6 +64,20 @@ Single point of tool selection. Follow top-to-bottom, take the first matching
 branch.
 
 ```
+Already have search results for this area?
+├─ Yes → NAVIGATE (do not search again)
+│   ├─ Need definition or call chain
+│   │     → LSP goToDefinition (preferred)
+│   │     → partial Read if LSP unavailable
+│   ├─ Need code beyond chunk boundaries
+│   │     → partial Read (offset=startLine, limit=endLine-startLine)
+│   ├─ Need all usages of known symbol
+│   │     → ripgrep MCP (scoped to suspect dirs)
+│   └─ Need file structure (methods, classes)
+│         → LSP documentSymbol → tree-sitter → Read
+│
+└─ No (need to search)
+
 Has query?
 ├─ No → rank_chunks
 │       + pathPattern if directory known

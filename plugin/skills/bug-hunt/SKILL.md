@@ -10,125 +10,69 @@ argument-hint: [bug description or symptom]
 
 Signal-driven root cause investigation using TeaRAGs git signals.
 
-## MANDATORY RULES
+## Rules
 
-0. **After every search call, run @post-search-validation.md checks (no-match
-   detection + disambiguation). Do NOT skip.**
+0. **@post-search-validation.md after every search call.** No-match detection +
+   disambiguation. Do NOT skip.
 1. **Execute YOURSELF** — no subagents.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
-3. **No built-in Search/Grep for code discovery** — only TeaRAGs tools + ripgrep
-   MCP.
-4. **Labels are triage.** bugFixRate "healthy" → SKIP. Trust it.
-5. **Tool selection via search-cascade decision tree** — do not hard-code tool
-   choice. Follow the tree: symbol name → hybrid_search, behavior description →
-   semantic_search.
-6. **Max 3 file reads total.** Only prime suspects from triage. Not 10 files.
-7. **Parallel reads.** When reading 2+ suspect files, use a single message with
-   multiple Read calls. Never read files one-by-one.
-8. **Partial reads ONLY.** Use startLine/endLine from search result chunks:
-   `Read(path, offset=startLine, limit=endLine-startLine)`. NEVER read full
-   files — chunk coordinates give you the exact code you need.
-9. **Search results contain code.** Default `metaOnly=false` returns chunk
-   content. Evaluate the CHECKPOINT using content in search results BEFORE doing
-   any Read. Read only when you need code BEYOND chunk boundaries.
-10. **No persisted output parsing.** If a search result is persisted (>10KB),
-    re-run the same query with `metaOnly=true`. Do NOT attempt to Read the
-    persisted file.
-11. **Short queries.** Keep semantic_search queries to 3-5 meaningful tokens.
-    BAD:
-    `"batch create job automations perform false unavailable disabled offline client"`
-    (10 tokens → noise). GOOD:
-    `"batch create stage clients automations disabled"`.
+3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only.
+4. **Search results contain code.** `metaOnly=false` (default) returns chunk
+   content + startLine/endLine. Evaluate checkpoint from search results BEFORE
+   any Read or navigation.
+5. **Partial reads only.**
+   `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
+   from search results. Never read full files.
+6. **Labels are triage.** bugFixRate "healthy" → SKIP. Trust it.
 
-## Flow
+## Loop
 
 ```
-1. DISCOVER — find the area (pure similarity, NO rerank)
-   ONE semantic_search: query=symptom description, limit=10
-   Do NOT use rerank="bugHunt" here — discovery is about finding the right
-   area, not ranking by signals.
+REPEAT:
+  1. CHECKPOINT — fill three fields from ALL available info
+     (search content, prior reads, LSP results):
+     - Suspect file(s): ___
+     - Buggy line/method: ___
+     - Why it breaks: ___
 
-   Evaluate chunk CONTENT from search results (metaOnly=false is default).
-   The code is already in the results — do NOT Read files yet.
-   Note top 3-5 file paths from results.
+     All filled? → PRESENT. Stop looping.
+     "Not sure" ≠ "don't know" — present with confidence note.
 
-   CHECKPOINT: fill three fields:
-   - Suspect file(s): ___
-   - Buggy line/method: ___
-   - Why it breaks: ___
-
-   All filled? → step 5 (PRESENT). Do NOT verify or refine further.
-   Know suspect file but need more context? → partial Read using chunk
-   startLine/endLine. ONE Read call, not another search.
-   No suspects at all? → step 2 (REFINE)
-
-2. REFINE — drill down into suspects with signals
-   Use ONLY when step 1 found no suspects (not when you have suspects
-   but want "confirmation").
-
-   rank_chunks: rerank="bugHunt", pathPattern="{file1.rb,file2.rb}"
-   (from step 1 paths), limit=10. This ranks suspects by git signals
-   without a query — pure signal-driven triage.
-
-   Read top 2-3 prime suspects IN PARALLEL (single message, multiple
-   Read calls with offset+limit for partial reads).
-
-   If rank_chunks insufficient:
-   - Know symbol → hybrid_search with exact symbol
-   - Need similar pattern → find_similar (code or chunk ID)
-   - Need deeper analytics → rank_chunks with different rerank preset
-   - Results relevant but insufficient → offset pagination (no limit)
-   - Results not relevant → reformulate (max 3 attempts per cascade rules)
-   → back to CHECKPOINT
-
-3. VERIFY — confirm root cause:
-   Full profile:   LSP goToDefinition/documentSymbol + partial Read
-   No-LSP profile: ripgrep MCP (scoped to suspect dirs) + partial Read
-
-   Read only when context beyond chunk boundaries needed.
-   Use startLine/endLine from chunks for partial Read (offset + limit).
-   Scope ripgrep to suspect directories, not entire project.
-
-4. CROSS-LAYER — if bug spans layers:
-   semantic_search + language filter — one call, not grep chains.
-
-5. PRESENT — ranked list with signals + observation per suspect.
+  2. Pick ONE action based on what's missing.
+     Follow search-cascade decision tree for tool selection.
+     Execute the ONE action. Go to step 1.
 ```
 
-**CHECKPOINT after EVERY tool call.** Fill the three fields above.
+## PRESENT
 
-All three filled → **PRESENT immediately.** Don't confirm, don't validate, don't
-search for "how the other flow works".
+Ranked suspect list. Per suspect: file:line, signal labels (bugFixRate,
+relativeChurn), and one-sentence observation of why it's the root cause.
 
-One or more empty → **state which field is missing**, then pick the next tool to
-fill it.
+## Anti-patterns
 
-**"Not sure" ≠ "don't know."** If you have a candidate but aren't 100% confident
-— present it with a confidence note. Confirmatory searches almost never change
-the answer.
-
-**Anti-pattern: curiosity search.** If you have a suspect file and method but
-want to understand "how the other side works" — that's a Read, not a search.
-Search is for FINDING code. Read is for UNDERSTANDING code. Never use
-semantic_search to understand code you've already located.
+- **Parallel searches in discovery.** ONE search finds the area. If it returns
+  batch_create AND jobs/create — both suspects are already found.
+- **Curiosity search.** "How does the other path work?" → Read or LSP, not
+  search. You already know WHERE the code is.
+- **Confirmatory search.** If checkpoint has a candidate — present it. Don't
+  search for "proof." Confirmatory searches almost never change the answer.
+- **Full file reads.** Chunk coordinates exist. Use them.
 
 ## Bug pattern hints
 
-**"works single, fails batch"** — compare both paths immediately. Search for the
-single-create AND batch-create service in one step. The bug is almost always:
-batch path skips a check that single path does.
+**"works single, fails batch"** — one search finds both paths. The bug is
+always: batch path skips a per-entity check that single path does. Read the
+batch method, find where it builds params uniformly for all entities.
 
 ## pathPattern rules
 
-Use exact `relativePath` values from search results joined with braces. Do NOT
-hand-craft globs.
+Use exact `relativePath` values from search results joined with braces:
 
-- GOOD:
-  `{app/services/workflow/pipelines/stage_clients/batch_create.rb,app/services/workflow/pipelines/jobs/create.rb}`
-- BAD: `**/workflow/pipelines/{stage_clients/batch_create,jobs/create}**`
-  (slashes inside braces = broken glob → empty results)
+- GOOD: `{app/services/batch_create.rb,app/services/jobs/create.rb}`
+- BAD: `**/services/{batch_create,jobs/create}**` (slashes inside braces =
+  broken glob)
 
-## Triage by signals
+## Signal triage
 
 When rank_chunks returns overlay labels:
 
@@ -138,7 +82,5 @@ When rank_chunks returns overlay labels:
 
 ## After root cause found
 
-If root cause pattern found → `find_similar` from code/chunk ID for copy-paste
-bugs.
-
-If fix needed → `/tea-rags:data-driven-generation`.
+Pattern found → `find_similar` from chunk ID for copy-paste bugs in other files.
+Fix needed → `/tea-rags:data-driven-generation`.
