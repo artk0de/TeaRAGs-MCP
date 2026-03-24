@@ -49,12 +49,13 @@
 - Check **both regular AND deferred tools** (deferred tools appear in
   `<system-reminder>` as "The following deferred tools are now available via
   ToolSearch"). Match by name or prefix:
-  - `LSP` (deferred tool name) or `mcp__*-lsp__*` or `mcp__ide__*` → LSP
-    available
+  - `LSP` (deferred tool name) or `mcp__*-lsp__*` → LSP available
+  - `mcp__ide__*` → IDE integration (diagnostics only), **NOT LSP**
   - `mcp__tree-sitter__*` → tree-sitter available
   - `mcp__ripgrep__*` → ripgrep available
 - Assign profile:
-  - LSP available → **Full** (combo: tea-rags discovery + LSP navigation)
+  - LSP navigation available → **Full** (combo: tea-rags discovery + LSP
+    navigation)
   - LSP not available → **No-LSP** (tea-rags discovery + fallbacks)
 - Remember: `Profile: Full | LSP ✓ | tree-sitter ✗ | ripgrep ✓`
 
@@ -445,6 +446,29 @@ If results seem stale → check `driftWarning` in response → `reindex_changes`
 
 If `hybrid_search` fails (needs `enableHybrid=true`), fall back to
 `semantic_search`.
+
+## Subagent Search Injection (MANDATORY)
+
+Subagents (Agent tool) do NOT inherit rules or CLAUDE.md. They will default to
+built-in Grep/Glob for code search, bypassing tea-rags entirely.
+
+**When spawning any subagent that will search code** (especially
+`subagent_type: "Explore"`), you MUST prepend this block to the prompt:
+
+```
+## Search Tools
+For code search in this project, use MCP tools instead of built-in Grep/Glob:
+- `mcp__tea-rags__semantic_search` — semantic/conceptual search (query + path)
+- `mcp__tea-rags__hybrid_search` — keyword + semantic search (query + path)
+- `mcp__ripgrep__search` — exact text/regex search
+- Do NOT use built-in Grep or Glob for code discovery.
+- All tea-rags calls require: path="<absolute-project-path>"
+```
+
+Replace `<absolute-project-path>` with the actual working directory path.
+
+**When NOT needed:** subagents that only read/write files, run tests, do git
+operations, or have no code search in their task.
 
 ## Known Limitations
 
