@@ -75,6 +75,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       }
 
       const ctx = this.initProcessing(setup.targetCollection, absolutePath, scanner);
+      this.startHeartbeat(setup.targetCollection);
 
       const result = await this.processAndTrack(files, absolutePath, ctx, progressCallback);
       stats.filesIndexed = result.filesProcessed;
@@ -99,6 +100,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       );
       this.logPipelineCompletion(ctx);
 
+      this.stopHeartbeat();
       await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true);
       await this.finalizeAlias(collectionName, setup);
       await this.saveSnapshot(absolutePath, collectionName, files, stats, setup.aliasVersion);
@@ -119,6 +121,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       stats.durationMs = Date.now() - startTime;
       return stats;
     } finally {
+      this.stopHeartbeat();
       const cleaner = new SnapshotCleaner(this.snapshotDir, collectionName);
       await cleaner.cleanupAfterIndexing();
     }
