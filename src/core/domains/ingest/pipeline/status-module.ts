@@ -169,10 +169,14 @@ export class StatusModule {
       typeof schemaMetadata?.payload?.sparseVersion === "number" ? schemaMetadata.payload.sparseVersion : undefined;
 
     if (isInProgress) {
-      // Detect stale indexing: marker says "in progress" but process likely crashed
+      // Detect stale indexing: prefer lastHeartbeat (updated periodically by live pipeline),
+      // fall back to startedAt for markers written before heartbeat was introduced.
+      const lastHeartbeat = indexingMarker?.payload?.lastHeartbeat;
       const startedAt = indexingMarker?.payload?.startedAt;
+      const referenceTime = typeof lastHeartbeat === "string" ? lastHeartbeat : startedAt;
       const isStale =
-        typeof startedAt === "string" && Date.now() - new Date(startedAt).getTime() > STALE_INDEXING_THRESHOLD_MS;
+        typeof referenceTime === "string" &&
+        Date.now() - new Date(referenceTime).getTime() > STALE_INDEXING_THRESHOLD_MS;
 
       return {
         isIndexed: false,

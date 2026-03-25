@@ -140,6 +140,36 @@ describe("StatusModule", () => {
       });
     });
 
+    describe("heartbeat during indexing", () => {
+      it("should write lastHeartbeat to marker during indexCodebase", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+
+        // Create files to trigger real indexing pipeline (not no-op)
+        for (let i = 0; i < 3; i++) {
+          await createTestFile(
+            codebaseDir,
+            `heartbeat${i}.ts`,
+            `export class HeartbeatTest${i} {\n  process(data: string): string {\n    return data.toUpperCase();\n  }\n}`,
+          );
+        }
+
+        await ingest.indexCodebase(codebaseDir);
+
+        // After indexing, marker should exist. The heartbeat fires immediately on
+        // startHeartbeat(), so even fast indexing should have written lastHeartbeat.
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+        // Read from the aliased collection (indexing finalized alias)
+        const marker = await qdrant.getPoint(collectionName, INDEXING_METADATA_ID);
+
+        // The marker should have lastHeartbeat set (written by pipeline heartbeat)
+        expect(marker).toBeDefined();
+        expect(typeof marker?.payload?.lastHeartbeat).toBe("string");
+      });
+    });
+
     describe("completion marker", () => {
       it("should store completion marker when indexing completes", async () => {
         await createTestFile(
@@ -315,7 +345,7 @@ describe("StatusModule", () => {
         expect(status.embeddingModel).toBe("test-model");
       });
 
-      it("should report stale_indexing when marker is older than threshold", async () => {
+      it("should report stale_indexing when marker has no recent heartbeat", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
         const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
@@ -323,7 +353,7 @@ describe("StatusModule", () => {
         const collectionName = resolveCollectionName(absolutePath);
         const versionedName = `${collectionName}_v1`;
 
-        // Simulate stale indexing: startedAt is 15 minutes ago
+        // Simulate stale indexing: startedAt is 15 minutes ago, NO lastHeartbeat
         const staleTime = new Date(Date.now() - 15 * 60 * 1000).toISOString();
         await qdrant.createCollection(versionedName, 384, "Cosine", false);
         await qdrant.addPoints(versionedName, [
@@ -339,6 +369,69 @@ describe("StatusModule", () => {
         expect(status.status).toBe("stale_indexing");
         expect(status.isIndexed).toBe(false);
         expect(status.collectionName).toBe(collectionName);
+      });
+
+      it("should report indexing (not stale) when lastHeartbeat is recent despite old startedAt", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+        const versionedName = `${collectionName}_v1`;
+
+        // startedAt is 30 minutes ago, but lastHeartbeat is 1 minute ago → still alive
+        const oldStart = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const recentHeartbeat = new Date(Date.now() - 60 * 1000).toISOString();
+        await qdrant.createCollection(versionedName, 384, "Cosine", false);
+        await qdrant.addPoints(versionedName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: {
+              indexingComplete: false,
+              startedAt: oldStart,
+              lastHeartbeat: recentHeartbeat,
+              embeddingModel: "test-model",
+            },
+          },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.status).toBe("indexing");
+        expect(status.isIndexed).toBe(false);
+        expect(status.collectionName).toBe(collectionName);
+      });
+
+      it("should report stale_indexing when lastHeartbeat is also old", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+        const versionedName = `${collectionName}_v1`;
+
+        // Both startedAt and lastHeartbeat are old → process is dead
+        const staleTime = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+        const staleHeartbeat = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await qdrant.createCollection(versionedName, 384, "Cosine", false);
+        await qdrant.addPoints(versionedName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: {
+              indexingComplete: false,
+              startedAt: staleTime,
+              lastHeartbeat: staleHeartbeat,
+              embeddingModel: "test-model",
+            },
+          },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.status).toBe("stale_indexing");
+        expect(status.isIndexed).toBe(false);
       });
 
       it("should detect completed _v1 collection when alias does not exist yet", async () => {

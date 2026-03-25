@@ -86,6 +86,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
+      this.startHeartbeat(ctx.collectionName);
       const { chunksAdded, processingCtx, chunkMap } = await this.executeParallelPipelines(
         ctx,
         changes,
@@ -93,6 +94,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       );
       stats.chunksAdded = chunksAdded;
 
+      this.stopHeartbeat();
       await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime);
       return stats;
     } catch (error) {
@@ -102,6 +104,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new ReindexFailedError(errorMessage, error instanceof Error ? error : undefined);
     } finally {
+      this.stopHeartbeat();
       const cleaner = new SnapshotCleaner(this.snapshotDir, collectionName);
       await cleaner.cleanupAfterIndexing();
     }

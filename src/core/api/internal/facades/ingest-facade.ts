@@ -165,9 +165,8 @@ export class IngestFacade {
     return result;
   }
 
-  /** Get indexing status for a codebase */
+  /** Get indexing status for a codebase (read-only — no embedding health check) */
   async getIndexStatus(path: string): Promise<IndexStatus> {
-    await this.checkEmbeddingHealth();
     return this.status.getIndexStatus(path);
   }
 
