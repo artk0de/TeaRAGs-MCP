@@ -81,3 +81,21 @@ export async function storeIndexingMarker(
     console.error("Failed to store indexing marker:", error);
   }
 }
+
+/**
+ * Update the heartbeat timestamp on an in-progress indexing marker.
+ * Called periodically during indexing to signal the process is still alive.
+ * Stale detection uses lastHeartbeat (or startedAt as fallback) to decide
+ * whether an "in progress" marker belongs to a live or crashed process.
+ */
+export async function updateHeartbeat(qdrant: QdrantManager, collectionName: string): Promise<void> {
+  try {
+    await qdrant.setPayload(
+      collectionName,
+      { lastHeartbeat: new Date().toISOString() },
+      { points: [INDEXING_METADATA_ID], wait: true },
+    );
+  } catch {
+    // Non-fatal: heartbeat failure should not abort indexing
+  }
+}
