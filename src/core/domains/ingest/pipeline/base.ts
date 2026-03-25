@@ -16,6 +16,7 @@ import type { IngestDependencies } from "../factory.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { ChunkPipeline } from "./index.js";
+import { updateHeartbeat } from "./indexing-marker.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { FileScanner } from "./scanner.js";
 import type { PipelineConfig } from "./types.js";
@@ -48,8 +49,12 @@ const DEFAULT_TUNING: PipelineTuning = {
   fileConcurrency: 50,
 };
 
+/** Heartbeat interval: how often (ms) to update lastHeartbeat in the indexing marker */
+const HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
+
 export abstract class BaseIndexingPipeline {
   protected readonly tuning: PipelineTuning;
+  private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     protected readonly qdrant: QdrantManager,
@@ -60,6 +65,29 @@ export abstract class BaseIndexingPipeline {
     tuning?: PipelineTuning,
   ) {
     this.tuning = tuning ?? DEFAULT_TUNING;
+  }
+
+  /**
+   * Start periodic heartbeat updates for a collection's indexing marker.
+   * Signals to `getIndexStatus` that the indexing process is still alive.
+   */
+  protected startHeartbeat(collectionName: string): void {
+    this.stopHeartbeat();
+    // Fire immediately, then repeat on interval
+    void updateHeartbeat(this.qdrant, collectionName);
+    this.heartbeatTimer = setInterval(
+      /* v8 ignore next -- interval callback: same as immediate call above, untestable without real timer */
+      () => void updateHeartbeat(this.qdrant, collectionName),
+      HEARTBEAT_INTERVAL_MS,
+    );
+  }
+
+  /** Stop periodic heartbeat updates. */
+  protected stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
   }
 
   // ── Shared context ─────────────────────────────────────────

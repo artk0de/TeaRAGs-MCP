@@ -197,6 +197,22 @@ describe("IngestFacade", () => {
     expect(result.migrations).toBeUndefined();
   });
 
+  describe("getIndexStatus does not require embeddings", () => {
+    it("returns status even when embedding provider is unreachable", async () => {
+      const { facade } = makeFacade();
+      // Sabotage embed() to simulate Ollama being down
+      (facade as any).embeddings = {
+        embed: vi.fn().mockRejectedValue(new OllamaUnavailableError("http://localhost:11434")),
+        getDimensions: vi.fn().mockReturnValue(384),
+        getModel: vi.fn().mockReturnValue("test-model"),
+      };
+
+      // Should NOT throw — getIndexStatus is read-only, no embeddings needed
+      const status = await facade.getIndexStatus("/tmp/test-project");
+      expect(status).toEqual({ indexed: true });
+    });
+  });
+
   describe("Error propagation", () => {
     it("propagates OllamaUnavailableError from indexCodebase", async () => {
       const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
