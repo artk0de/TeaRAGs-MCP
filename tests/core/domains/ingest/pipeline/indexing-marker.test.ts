@@ -100,6 +100,25 @@ describe("storeIndexingMarker", () => {
     });
   });
 
+  describe("updateHeartbeat", () => {
+    it("updates lastHeartbeat field via setPayload", async () => {
+      const { updateHeartbeat } = await import("../../../../../src/core/domains/ingest/pipeline/indexing-marker.js");
+      await updateHeartbeat(mockQdrant, "col");
+
+      expect(mockQdrant.setPayload).toHaveBeenCalledWith(
+        "col",
+        expect.objectContaining({ lastHeartbeat: expect.any(String) }),
+        expect.objectContaining({ points: [INDEXING_METADATA_ID] }),
+      );
+    });
+
+    it("does not throw when setPayload fails", async () => {
+      const { updateHeartbeat } = await import("../../../../../src/core/domains/ingest/pipeline/indexing-marker.js");
+      mockQdrant.setPayload.mockRejectedValueOnce(new Error("connection refused"));
+      await expect(updateHeartbeat(mockQdrant, "col")).resolves.toBeUndefined();
+    });
+  });
+
   describe("error resilience", () => {
     it("swallows outer errors and resolves to undefined", async () => {
       mockQdrant.getCollectionInfo.mockRejectedValue(new Error("connection refused"));
