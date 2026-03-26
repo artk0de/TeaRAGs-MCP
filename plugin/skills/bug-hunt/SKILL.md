@@ -28,19 +28,18 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 ## Loop
 
 ```
-REPEAT:
-  1. CHECKPOINT — fill three fields from ALL available info
-     (search content, prior reads, LSP results):
-     - Suspect file(s): ___
-     - Buggy line/method: ___
-     - Why it breaks: ___
+1. Search (search-cascade, rerank="bugHunt", limit=10).
 
-     All filled? → PRESENT. Stop looping.
-     "Not sure" ≠ "don't know" — present with confidence note.
+2. CHECKPOINT — fill from ALL available info:
+   - Suspect file(s): ___
+   - Buggy line/method: ___
+   - Why it breaks: ___
 
-  2. Pick ONE action based on what's missing.
-     Follow search-cascade decision tree for tool selection.
-     Execute the ONE action. Go to step 1.
+   All filled? → PRESENT. STOP.
+   "Not sure" ≠ "don't know" — present with confidence note.
+
+3. ONLY IF checkpoint incomplete — ONE action for what's missing.
+   Search-cascade for tool selection. Go to step 2.
 ```
 
 ## PRESENT
@@ -57,12 +56,6 @@ relativeChurn), and one-sentence observation of why it's the root cause.
 - **Confirmatory search.** If checkpoint has a candidate — present it. Don't
   search for "proof." Confirmatory searches almost never change the answer.
 - **Full file reads.** Chunk coordinates exist. Use them.
-
-## Bug pattern hints
-
-**"works single, fails batch"** — one search finds both paths. The bug is
-always: batch path skips a per-entity check that single path does. Read the
-batch method, find where it builds params uniformly for all entities.
 
 ## pathPattern rules
 
