@@ -18,6 +18,15 @@ describe("Reranker.hasCollectionStats", () => {
   it("returns true after setCollectionStats", () => {
     const stats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 5 } }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     reranker.setCollectionStats(stats);
@@ -48,6 +57,15 @@ describe("Stats lifecycle — cold start", () => {
     const reranker = new Reranker([], [], []);
     const stats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { count: 50, percentiles: { 25: 3, 95: 42 } }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
 
@@ -91,6 +109,15 @@ describe("Stats lifecycle — post-index refresh", () => {
     const reranker = new Reranker([], [], []);
     const oldStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { count: 50, percentiles: { 25: 3 } }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: 1000,
     };
     reranker.setCollectionStats(oldStats);
@@ -99,6 +126,15 @@ describe("Stats lifecycle — post-index refresh", () => {
     // Simulate post-index: save new stats + invalidate
     const newStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { count: 200, percentiles: { 25: 8, 95: 55 } }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     statsCache.save("test_collection", newStats);

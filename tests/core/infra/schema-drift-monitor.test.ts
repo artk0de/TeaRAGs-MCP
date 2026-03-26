@@ -19,6 +19,15 @@ function makeTmpDir(): string {
 const SAMPLE_STATS: CollectionSignalStats = {
   computedAt: 1_700_000_000_000,
   perSignal: new Map([["git.file.commitCount", { count: 100 }]]),
+  perLanguage: new Map(),
+  distributions: {
+    totalFiles: 0,
+    language: {},
+    chunkType: {},
+    documentation: { docs: 0, code: 0 },
+    topAuthors: [],
+    othersCount: 0,
+  },
 };
 
 describe("SchemaDriftMonitor", () => {
