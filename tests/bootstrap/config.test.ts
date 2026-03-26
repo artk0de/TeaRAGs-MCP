@@ -135,6 +135,11 @@ describe("parseAppConfig (Zod bridge)", () => {
     expect(() => parseAppConfig()).not.toThrow();
   });
 
+  it("should throw ConfigNotInitializedError from getZodConfig when parseAppConfig not yet called", async () => {
+    const { getZodConfig } = await freshImport();
+    expect(() => getZodConfig()).toThrow("zodConfig");
+  });
+
   it("bridges supportedExtensions and ignorePatterns from defaults", async () => {
     const { parseAppConfig } = await freshImport();
     const config = parseAppConfig();

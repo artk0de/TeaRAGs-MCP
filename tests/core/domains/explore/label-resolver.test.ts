@@ -38,6 +38,10 @@ describe("resolveLabel", () => {
     expect(resolveLabel(50, twoLabels, twoPercentiles)).toBe("high");
   });
 
+  it("should return empty string when labels map is empty", () => {
+    expect(resolveLabel(100, {}, { 50: 5 })).toBe("");
+  });
+
   it("should handle collapsed percentiles (identical values)", () => {
     const collapsed = { p25: "low", p50: "typical", p75: "high", p95: "extreme" };
     const sameValues = { 25: 5, 50: 5, 75: 5, 95: 5 };
