@@ -2322,4 +2322,23 @@ describe("QdrantManager", () => {
       );
     });
   });
+
+  describe("checkHealth", () => {
+    it("should return true when Qdrant is reachable", async () => {
+      mockClient.getCollections.mockResolvedValueOnce({ collections: [] });
+
+      const result = await manager.checkHealth();
+
+      expect(result).toBe(true);
+      expect(mockClient.getCollections).toHaveBeenCalled();
+    });
+
+    it("should return false when Qdrant is unreachable", async () => {
+      mockClient.getCollections.mockRejectedValueOnce(new TypeError("fetch failed"));
+
+      const result = await manager.checkHealth();
+
+      expect(result).toBe(false);
+    });
+  });
 });

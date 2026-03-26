@@ -416,4 +416,22 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   getModel(): string {
     return this.model;
   }
+
+  async checkHealth(): Promise<boolean> {
+    const url = this.usingFallback && this.fallbackBaseUrl ? this.fallbackBaseUrl : this.baseUrl;
+    try {
+      const response = await fetchWithTimeout(`${url}/api/tags`, { method: "GET" }, CONNECT_TIMEOUT_WITH_FALLBACK_MS);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  getProviderName(): string {
+    return "ollama";
+  }
+
+  getBaseUrl(): string {
+    return this.usingFallback && this.fallbackBaseUrl ? this.fallbackBaseUrl : this.baseUrl;
+  }
 }
