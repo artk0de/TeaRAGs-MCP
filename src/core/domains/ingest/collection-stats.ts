@@ -22,6 +22,7 @@ const CONFIG_LANGUAGES = new Set([
   "dockerfile",
   "bash",
   "powershell",
+  "code", // fenced code blocks extracted from markdown
 ]);
 
 const MIN_SAMPLE_SIZE = 10;
