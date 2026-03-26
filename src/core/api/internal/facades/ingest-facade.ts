@@ -165,9 +165,28 @@ export class IngestFacade {
     return result;
   }
 
-  /** Get indexing status for a codebase (read-only — no embedding health check) */
+  /** Get indexing status with infrastructure health checks. */
   async getIndexStatus(path: string): Promise<IndexStatus> {
-    return this.status.getIndexStatus(path);
+    const [qdrantHealthy, embeddingHealthy] = await Promise.all([
+      this.qdrant.checkHealth(),
+      this.embeddings.checkHealth(),
+    ]);
+
+    const infraHealth: IndexStatus["infraHealth"] = {
+      qdrant: { available: qdrantHealthy, url: this.qdrant.url },
+      embedding: {
+        available: embeddingHealthy,
+        provider: this.embeddings.getProviderName(),
+        ...(this.embeddings.getBaseUrl ? { url: this.embeddings.getBaseUrl() } : {}),
+      },
+    };
+
+    if (!qdrantHealthy) {
+      return { isIndexed: false, status: "unavailable", infraHealth };
+    }
+
+    const status = await this.status.getIndexStatus(path);
+    return { ...status, infraHealth };
   }
 
   /** Clear all indexed data for a codebase */

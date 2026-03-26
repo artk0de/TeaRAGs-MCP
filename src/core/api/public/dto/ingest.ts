@@ -76,7 +76,7 @@ export interface ChangeStats {
 export interface IndexStatus {
   /** @deprecated Use `status` instead. True only when status is 'indexed'. */
   isIndexed: boolean;
-  /** Current indexing status: 'not_indexed', 'indexing', or 'indexed' */
+  /** Current indexing status */
   status: IndexingStatus;
   collectionName?: string;
   filesCount?: number;
@@ -85,10 +85,19 @@ export interface IndexStatus {
   languages?: string[];
   /** Embedding model used to index this collection */
   embeddingModel?: string;
+  /** Qdrant URL (useful for embedded Qdrant with dynamic ports) */
+  qdrantUrl?: string;
   /** Background git enrichment progress (file-level) */
   enrichment?: EnrichmentInfo;
   /** Background chunk-level git enrichment progress */
   chunkEnrichment?: ChunkEnrichmentInfo;
+  /** BM25 sparse vector version (from schema metadata) */
+  sparseVersion?: number;
+  /** Infrastructure health status (Qdrant + embedding provider) */
+  infraHealth?: {
+    qdrant: { available: boolean; url: string };
+    embedding: { available: boolean; provider: string; url?: string };
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -132,4 +132,12 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
   getModel(): string {
     return this.model;
   }
+
+  async checkHealth(): Promise<boolean> {
+    return true;
+  }
+
+  getProviderName(): string {
+    return "openai";
+  }
 }

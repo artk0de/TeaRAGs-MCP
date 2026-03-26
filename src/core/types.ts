@@ -105,7 +105,7 @@ export interface ChangeStats {
   migrations?: string[];
 }
 
-export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing";
+export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing" | "unavailable";
 
 /** Status of background git enrichment */
 export type EnrichmentStatusValue = "pending" | "in_progress" | "completed" | "partial" | "failed";
@@ -182,6 +182,11 @@ export interface IndexStatus {
   chunkEnrichment?: ChunkEnrichmentInfo;
   /** BM25 sparse vector version (from schema metadata) */
   sparseVersion?: number;
+  /** Infrastructure health status (Qdrant + embedding provider) */
+  infraHealth?: {
+    qdrant: { available: boolean; url: string };
+    embedding: { available: boolean; provider: string; url?: string };
+  };
 }
 
 export type ProgressCallback = (progress: ProgressUpdate) => void;
