@@ -330,7 +330,7 @@ export class ExploreFacade {
     const seen = new Set(symbolChunks.map((c) => c.id));
     const allChunks = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
 
-    const results = resolveSymbols(allChunks, request.symbol);
+    const results = resolveSymbols(allChunks, request.symbol, request.metaOnly);
     const driftWarning = path ? await this.checkDrift(path) : null;
 
     return { results, driftWarning };

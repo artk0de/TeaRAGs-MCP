@@ -117,6 +117,10 @@ export const FindSymbolSchema = {
     .string()
     .optional()
     .describe("Glob pattern for filtering by file path (picomatch). Example: '**/services/**'"),
+  metaOnly: z
+    .boolean()
+    .optional()
+    .describe("Return only metadata (path, lines, git info) without content. Use for existence checks."),
 };
 
 // ---------------------------------------------------------------------------

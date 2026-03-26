@@ -21,8 +21,9 @@ interface ScrollChunk {
  *
  * @param chunks - raw Qdrant scroll results
  * @param query - original symbol query (for sort priority)
+ * @param metaOnly - strip content from results (existence check)
  */
-export function resolveSymbols(chunks: ScrollChunk[], query?: string): SearchResult[] {
+export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?: boolean): SearchResult[] {
   // Group by (symbolId, relativePath) for same-symbol merging
   const groups = groupChunks(chunks);
   const results: SearchResult[] = [];
@@ -59,7 +60,15 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string): SearchRes
     results.push(mergeChunks(unemitted));
   }
 
-  return sortResults(results, query);
+  const sorted = sortResults(results, query);
+
+  if (metaOnly) {
+    for (const r of sorted) {
+      if (r.payload) delete r.payload.content;
+    }
+  }
+
+  return sorted;
 }
 
 /** Group chunks by (symbolId, relativePath) composite key. */

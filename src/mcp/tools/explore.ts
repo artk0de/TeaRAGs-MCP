@@ -152,6 +152,7 @@ export function registerSearchTools(
         path: params.path,
         language: params.language,
         pathPattern: params.pathPattern,
+        metaOnly: params.metaOnly,
       });
       return formatStructuredResult(response);
     },

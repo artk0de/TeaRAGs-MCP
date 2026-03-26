@@ -145,7 +145,7 @@ Explore strategies map to cascade inputs:
 | ----------- | ------------------------------------------------ |
 | **Breadth** | query=$ARGUMENTS (cascade picks search tool)     |
 | **Lateral** | code/chunk from results (cascade → find_similar) |
-| **Depth**   | symbol name from results (cascade → semantic)    |
+| **Depth**   | symbol name from results (→ find_symbol)         |
 | **Read**    | Read file — focused range, not whole file        |
 
 ## Flow
@@ -169,8 +169,8 @@ Scan results: which files, which modules, what patterns. Note domain boundaries.
 For each interesting result, follow search-cascade:
 
 - **"Same thing elsewhere?"** → pass code/chunk ID to cascade (→ find_similar)
-- **"What is this method?"** → pass symbol name to cascade (→ hybrid_search for
-  symbol + context, semantic_search for bare symbol names)
+- **"What is this method?"** → find_symbol (instant definition, no embedding).
+  Fallback: hybrid_search if find_symbol returns 0 results.
 - **"Need to understand this"** → Read file (focused range)
 
 Repeat as needed. Prefer fewer deep dives over many shallow ones.
