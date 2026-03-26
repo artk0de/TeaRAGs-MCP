@@ -30,13 +30,14 @@ Agent tool:
     - path: <extracted path>
     Report the COMPLETE response as-is — every field returned by the tool.
     Do not cherry-pick fields. Whatever the endpoint returns, summarize it all.
+    ALWAYS include the duration field — users need to see how long indexing took.
 ```
 
 3. Tell the user indexing has started and they will be notified when it
    completes. Continue with other work.
 
 4. When the background agent completes, report the **full result** to the user.
-   Include all metrics — do not summarize or omit fields.
+   Include all metrics and duration — do not summarize or omit fields.
 
 ## Do NOT
 
