@@ -46,11 +46,14 @@ Agent tool:
   description: "Force reindex in background"
   run_in_background: true
   prompt: |
+    Record the current time before calling the tool.
     Call mcp__tea-rags__index_codebase with:
     - path: <extracted path>
     - forceReindex: true
+    Record the current time after the tool completes.
     Report the COMPLETE response as-is — every field returned by the tool.
     Do not cherry-pick fields. Whatever the endpoint returns, summarize it all.
+    At the end, report total wall-clock duration: "Indexing took X min Y sec".
 ```
 
 4. Tell the user: "Force reindex started in background. Search continues on the

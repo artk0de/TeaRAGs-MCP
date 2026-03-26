@@ -26,10 +26,13 @@ Agent tool:
   description: "Index codebase in background"
   run_in_background: true
   prompt: |
+    Record the current time before calling the tool.
     Call mcp__tea-rags__index_codebase with:
     - path: <extracted path>
+    Record the current time after the tool completes.
     Report the COMPLETE response as-is — every field returned by the tool.
     Do not cherry-pick fields. Whatever the endpoint returns, summarize it all.
+    At the end, report total wall-clock duration: "Indexing took X min Y sec".
 ```
 
 3. Tell the user indexing has started and they will be notified when it
