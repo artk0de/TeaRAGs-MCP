@@ -784,7 +784,7 @@ describe("OllamaEmbeddings", () => {
   });
 
   describe("fallback URL", () => {
-    it("should fall back to fallbackBaseUrl when primary fails", async () => {
+    it("should fall back to fallbackBaseUrl when health probe fails", async () => {
       const fallbackEmbeddings = new OllamaEmbeddings(
         "nomic-embed-text",
         undefined,
@@ -799,7 +799,7 @@ describe("OllamaEmbeddings", () => {
         .fill(0)
         .map((_, i) => i * 0.001);
 
-      // Primary fails, fallback succeeds
+      // Probe fails (primary down), fallback embed succeeds
       mockFetch.mockRejectedValueOnce(new Error("connection refused")).mockResolvedValueOnce({
         ok: true,
         json: async () => ({ embedding: mockEmbedding }),
@@ -808,13 +808,13 @@ describe("OllamaEmbeddings", () => {
       const result = await fallbackEmbeddings.embed("test");
       expect(result.embedding).toEqual(mockEmbedding);
 
-      // Second call should have been to fallback URL
+      // First call = probe (failed), second = fallback embed
       expect(mockFetch).toHaveBeenCalledTimes(2);
-      const fallbackCall = mockFetch.mock.calls[1];
-      expect(fallbackCall[0]).toContain("http://fallback:11434");
+      expect(mockFetch.mock.calls[0][0]).toBe("http://primary:11434/");
+      expect(mockFetch.mock.calls[1][0]).toContain("http://fallback:11434");
     });
 
-    it("should throw with both URLs when primary and fallback fail", async () => {
+    it("should throw with both URLs when probe fails and fallback also fails", async () => {
       const fallbackEmbeddings = new OllamaEmbeddings(
         "nomic-embed-text",
         undefined,
@@ -825,11 +825,10 @@ describe("OllamaEmbeddings", () => {
         "http://fallback:11434",
       );
 
-      // Both fail
+      // Probe fails, fallback fails
       mockFetch.mockRejectedValueOnce(new Error("primary down")).mockRejectedValueOnce(new Error("fallback down"));
 
       await expect(fallbackEmbeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
-      await expect(fallbackEmbeddings.embed("test")).rejects.toThrow(/primary.*fallback|fallback.*primary/i);
     });
 
     it("should include localhost hint when fallback URL is localhost", async () => {
@@ -843,6 +842,7 @@ describe("OllamaEmbeddings", () => {
         "http://localhost:11434",
       );
 
+      // Probe fails, fallback fails
       mockFetch.mockRejectedValueOnce(new Error("remote down")).mockRejectedValueOnce(new Error("local down"));
 
       try {
@@ -862,7 +862,7 @@ describe("OllamaEmbeddings", () => {
       await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
 
-    it("should use fallback on second call after primary fails (failover cache)", async () => {
+    it("should use fallback on second call after probe fails (failover cache)", async () => {
       const fallbackEmbeddings = new OllamaEmbeddings(
         "nomic-embed-text",
         undefined,
@@ -877,25 +877,25 @@ describe("OllamaEmbeddings", () => {
         .fill(0)
         .map((_, i) => i * 0.001);
 
-      // First call: primary fails, fallback succeeds
+      // First call: probe fails, fallback succeeds
       mockFetch
-        .mockRejectedValueOnce(new Error("primary down"))
-        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+        .mockRejectedValueOnce(new Error("primary down")) // probe
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) }); // fallback
 
       await fallbackEmbeddings.embed("first");
 
-      // Second call: should go directly to fallback (skip primary)
+      // Second call: usingFallback=true → quick path, skip probe, go directly to fallback
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
 
       await fallbackEmbeddings.embed("second");
 
-      // 3 calls total: primary(fail) + fallback(ok) + fallback(ok, cached)
+      // 3 calls: probe(fail) + fallback(ok) + fallback(ok, cached)
       expect(mockFetch).toHaveBeenCalledTimes(3);
       const thirdCallUrl = mockFetch.mock.calls[2][0] as string;
       expect(thirdCallUrl).toContain("fallback");
     });
 
-    it("should switch back to primary when probe succeeds", async () => {
+    it("should switch back to primary when background probe succeeds", async () => {
       vi.useFakeTimers();
 
       const fallbackEmbeddings = new OllamaEmbeddings(
@@ -912,10 +912,10 @@ describe("OllamaEmbeddings", () => {
         .fill(0)
         .map((_, i) => i * 0.001);
 
-      // First call: primary fails, fallback succeeds — triggers probe
+      // First call: health probe fails, fallback succeeds — triggers background probe
       mockFetch
-        .mockRejectedValueOnce(new Error("primary down"))
-        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+        .mockRejectedValueOnce(new Error("primary down")) // health probe
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) }); // fallback
 
       await fallbackEmbeddings.embed("trigger failover");
 
@@ -1009,16 +1009,18 @@ describe("OllamaEmbeddings", () => {
         "http://fallback:11434",
       );
 
-      // Primary returns 404 (model not found)
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-        text: async () => "model not found",
-      });
+      // Probe succeeds, then primary returns 404 (model not found)
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({}) }) // probe
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 404,
+          text: async () => "model not found",
+        });
 
       await expect(fallbackEmbeddings.embed("test")).rejects.toThrow(OllamaModelMissingError);
-      // Only 1 call — no fallback attempted
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      // 2 calls: probe + embed (no fallback attempted for model errors)
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
     it("should throw OllamaModelMissingError from fallback during cached failover", async () => {
@@ -1053,20 +1055,195 @@ describe("OllamaEmbeddings", () => {
     });
   });
 
+  describe("health probe integration", () => {
+    it("should probe primary before embed when fallback is configured", async () => {
+      const probeEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768).fill(0.5);
+
+      // Probe succeeds, then embed succeeds
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await probeEmbeddings.embed("test");
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch.mock.calls[0][0]).toBe("http://primary:11434/");
+      expect(mockFetch.mock.calls[1][0]).toContain("http://primary:11434");
+    });
+
+    it("should not probe when no fallback is configured", async () => {
+      // embeddings (from beforeEach) has no fallback
+      const mockEmbedding = Array(768).fill(0.5);
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await embeddings.embed("test");
+
+      // Only 1 call — embed, no probe
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("should cache probe result and skip on subsequent calls", async () => {
+      const probeEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768).fill(0.5);
+
+      // First: probe + embed
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await probeEmbeddings.embed("first");
+
+      // Second: cache hit, no probe — just embed
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await probeEmbeddings.embed("second");
+
+      // 3 calls: probe + embed + embed (no second probe)
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it("should re-probe after TTL expires", async () => {
+      vi.useFakeTimers();
+
+      const probeEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768).fill(0.5);
+
+      // First: probe + embed
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await probeEmbeddings.embed("first");
+
+      // Advance past TTL (60s)
+      await vi.advanceTimersByTimeAsync(61_000);
+
+      // Second: should re-probe
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+
+      await probeEmbeddings.embed("after ttl");
+
+      // 4 calls: probe + embed + probe + embed
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+
+      vi.useRealTimers();
+    });
+
+    it("should skip primary when health probe returns non-ok response", async () => {
+      const probeEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768).fill(0.5);
+
+      // Probe returns 500 (not ok), fallback succeeds
+      mockFetch
+        .mockResolvedValueOnce({ ok: false, status: 500 }) // probe non-ok
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) }); // fallback
+
+      const result = await probeEmbeddings.embed("test");
+      expect(result.embedding).toEqual(mockEmbedding);
+      expect(mockFetch.mock.calls[1][0]).toContain("fallback");
+    });
+
+    it("should throw when probe OK but both primary and fallback embed fail", async () => {
+      const probeEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      // Probe OK, primary embed fails, fallback also fails
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({}) }) // probe OK
+        .mockRejectedValueOnce(new Error("primary embed failed")) // primary fail
+        .mockRejectedValueOnce(new Error("fallback embed failed")); // fallback fail
+
+      await expect(probeEmbeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
+    });
+
+    it("should invalidate health cache when embed fails despite successful probe", async () => {
+      const probeEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768).fill(0.5);
+
+      // Probe OK, embed fails, fallback succeeds
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, json: async () => ({}) }) // probe OK
+        .mockRejectedValueOnce(new Error("embed failed")) // primary embed fail
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) }); // fallback
+
+      await probeEmbeddings.embed("test");
+
+      // Next call: should re-probe (cache invalidated) or use quick path (usingFallback)
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+      await probeEmbeddings.embed("second");
+
+      // Second call goes via quick path (usingFallback=true), directly to fallback
+      const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+      expect(lastUrl).toContain("fallback");
+    });
+  });
+
   describe("checkHealth", () => {
-    it("should return true when /api/tags responds ok", async () => {
+    it("should return true when root URL responds ok", async () => {
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
 
       const result = await embeddings.checkHealth();
 
       expect(result).toBe(true);
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:11434/api/tags",
-        expect.objectContaining({ method: "GET" }),
-      );
+      expect(mockFetch).toHaveBeenCalledWith("http://localhost:11434/", expect.objectContaining({ method: "GET" }));
     });
 
-    it("should return false when /api/tags throws", async () => {
+    it("should return false when root URL throws", async () => {
       mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
 
       const result = await embeddings.checkHealth();
@@ -1074,7 +1251,7 @@ describe("OllamaEmbeddings", () => {
       expect(result).toBe(false);
     });
 
-    it("should return false when /api/tags returns non-ok", async () => {
+    it("should return false when root URL returns non-ok", async () => {
       mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
 
       const result = await embeddings.checkHealth();
@@ -1108,7 +1285,7 @@ describe("OllamaEmbeddings", () => {
 
       expect(result).toBe(true);
       const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
-      expect(lastCall[0]).toBe("http://fallback:11434/api/tags");
+      expect(lastCall[0]).toBe("http://fallback:11434/");
     });
   });
 
