@@ -398,23 +398,42 @@ export class ExploreFacade {
       return result;
     };
 
-    const signals: Record<string, Record<string, SignalMetrics>> = {};
+    const signals: Record<string, Record<string, Record<string, SignalMetrics>>> = {};
 
     if (stats.perLanguage) {
       for (const [lang, langStats] of stats.perLanguage) {
-        // Extract source stats for metrics display (Task 6 will add scoped output)
-        const sourceOnly = new Map<string, SignalStats>();
-        for (const [key, scoped] of langStats) {
-          sourceOnly.set(key, scoped.source);
+        const langSignals: Record<string, Record<string, SignalMetrics>> = {};
+        for (const [key, scopedStats] of langStats) {
+          const scoped: Record<string, SignalMetrics> = {};
+          const sourceMetrics = buildSignalMetrics(new Map([[key, scopedStats.source]]));
+          if (sourceMetrics[key]) {
+            scoped["source"] = sourceMetrics[key];
+          }
+          if (scopedStats.test) {
+            const testMetrics = buildSignalMetrics(new Map([[key, scopedStats.test]]));
+            if (testMetrics[key]) {
+              scoped["test"] = testMetrics[key];
+            }
+          }
+          if (Object.keys(scoped).length > 0) {
+            langSignals[key] = scoped;
+          }
         }
-        signals[lang] = buildSignalMetrics(sourceOnly);
+        if (Object.keys(langSignals).length > 0) {
+          signals[lang] = langSignals;
+        }
       }
     }
 
     // Include global only for multi-language projects (>1 code language)
     const codeLanguageCount = stats.perLanguage?.size ?? 0;
     if (codeLanguageCount !== 1) {
-      signals["global"] = buildSignalMetrics(stats.perSignal);
+      const globalMetrics = buildSignalMetrics(stats.perSignal);
+      const globalScoped: Record<string, Record<string, SignalMetrics>> = {};
+      for (const [key, metrics] of Object.entries(globalMetrics)) {
+        globalScoped[key] = { source: metrics };
+      }
+      signals["global"] = globalScoped;
     }
 
     return {

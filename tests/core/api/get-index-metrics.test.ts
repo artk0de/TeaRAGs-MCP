@@ -129,10 +129,10 @@ describe("getIndexMetrics", () => {
     const { facade } = makeExploreFacade();
     const result = await facade.getIndexMetrics("/project");
     expect(result.signals["global"]).toBeUndefined();
-    // Only typescript key present
+    // Only typescript key present, with source scope
     const signal = result.signals["typescript"]["git.file.commitCount"];
     expect(signal).toBeDefined();
-    expect(signal.labelMap.low).toBe(3);
+    expect(signal["source"].labelMap.low).toBe(3);
   });
 
   it("includes global when multiple code languages in perLanguage", async () => {
@@ -181,9 +181,58 @@ describe("getIndexMetrics", () => {
     });
     const result = await facade.getIndexMetrics("/project");
     expect(result.signals["global"]).toBeDefined();
-    expect(result.signals["global"]["git.file.commitCount"].count).toBe(100);
+    expect(result.signals["global"]["git.file.commitCount"]["source"].count).toBe(100);
     expect(result.signals["typescript"]).toBeDefined();
     expect(result.signals["ruby"]).toBeDefined();
+  });
+
+  it("returns scoped signal metrics per language", async () => {
+    const { facade, statsCache } = makeExploreFacade();
+    statsCache.load.mockReturnValue({
+      perSignal: new Map([
+        [
+          "git.file.commitCount",
+          { count: 100, min: 1, max: 47, percentiles: { 25: 2, 50: 5, 75: 12, 95: 30 }, mean: 8.3 },
+        ],
+      ]),
+      perLanguage: new Map([
+        [
+          "ruby",
+          new Map([
+            [
+              "git.file.commitCount",
+              {
+                source: { count: 80, min: 1, max: 30, percentiles: { 25: 2, 50: 5, 75: 10, 95: 25 }, mean: 7.0 },
+                test: { count: 40, min: 1, max: 80, percentiles: { 25: 5, 50: 12, 75: 25, 95: 60 }, mean: 18.0 },
+              },
+            ],
+          ]),
+        ],
+      ]),
+      distributions: {
+        totalFiles: 50,
+        language: { ruby: 120 },
+        chunkType: {},
+        documentation: { docs: 0, code: 120 },
+        topAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    });
+
+    const result = await facade.getIndexMetrics("/project");
+    const rubySignals = result.signals["ruby"];
+    expect(rubySignals).toBeDefined();
+
+    const ccMetrics = rubySignals["git.file.commitCount"];
+    expect(ccMetrics).toBeDefined();
+    // Should have source and test scopes
+    expect(ccMetrics["source"]).toBeDefined();
+    expect(ccMetrics["source"].labelMap.low).toBe(2);
+    expect(ccMetrics["source"].mean).toBe(7.0);
+    expect(ccMetrics["test"]).toBeDefined();
+    expect(ccMetrics["test"].labelMap.low).toBe(5);
+    expect(ccMetrics["test"].mean).toBe(18.0);
   });
 
   it("throws if collection does not exist", async () => {
