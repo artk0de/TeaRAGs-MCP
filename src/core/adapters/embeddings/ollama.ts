@@ -20,10 +20,12 @@ import { OllamaModelMissingError, OllamaUnavailableError } from "./ollama/errors
 import { withRateLimitRetry } from "./retry.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
-/** Connect timeout — fail fast when host is unreachable (single-item or probe) */
+/** Full request timeout for embed calls (connect + model load + inference) */
 const CONNECT_TIMEOUT_MS = 5000;
-/** Shorter connect timeout for initial probe when fallback is available */
-const CONNECT_TIMEOUT_WITH_FALLBACK_MS = 1000;
+/** Timeout for lightweight health probe (GET /) */
+const HEALTH_PROBE_TIMEOUT_MS = 1000;
+/** How long to cache a successful health probe result */
+const HEALTH_TTL_MS = 60_000;
 /**
  * Per-item timeout budget for batch requests.
  * Total timeout = BATCH_PER_ITEM_TIMEOUT_MS × batchSize + BATCH_BASE_TIMEOUT_MS.
@@ -75,6 +77,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private useNativeBatch: boolean;
   private usingFallback = false;
   private probeTimer?: ReturnType<typeof setInterval>;
+  private primaryAlive = false;
+  private primaryAliveAt = 0;
 
   constructor(
     model = "unclemusclez/jina-embeddings-v2-base-code:latest",
@@ -142,15 +146,38 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     }
   }
 
+  /**
+   * Lightweight pre-flight check: GET / with short timeout.
+   * Cached for HEALTH_TTL_MS to avoid overhead on warm calls.
+   * Only called when fallback is configured — separates "server alive?"
+   * (fast, ~15ms) from "embed works?" (slow on cold model, ~2s).
+   */
+  private async checkPrimaryHealth(): Promise<boolean> {
+    if (this.primaryAlive && Date.now() - this.primaryAliveAt < HEALTH_TTL_MS) {
+      return true;
+    }
+    try {
+      const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
+      if (response.ok) {
+        this.primaryAlive = true;
+        this.primaryAliveAt = Date.now();
+        return true;
+      }
+      this.primaryAlive = false;
+      return false;
+    } catch {
+      this.primaryAlive = false;
+      return false;
+    }
+  }
+
   private async probePrimary(): Promise<void> {
     try {
-      const response = await fetchWithTimeout(
-        `${this.baseUrl}/api/tags`,
-        { method: "GET" },
-        CONNECT_TIMEOUT_WITH_FALLBACK_MS,
-      );
+      const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
       if (response.ok) {
         this.usingFallback = false;
+        this.primaryAlive = true;
+        this.primaryAliveAt = Date.now();
         this.stopPrimaryProbe();
         if (isDebug()) {
           console.error(`[Ollama] Primary ${this.baseUrl} recovered, switching back from fallback`);
@@ -174,6 +201,29 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       }
     }
 
+    // Health probe: if fallback exists, check primary is alive before attempting embed.
+    // This separates "server reachable?" (fast ~15ms via GET /) from
+    // "embed works?" (slow ~2s on cold model load). Without this, the 1s embed
+    // timeout would always fail on cold starts.
+    if (fallbackFn && this.fallbackBaseUrl) {
+      const healthy = await this.checkPrimaryHealth();
+      if (!healthy) {
+        this.usingFallback = true;
+        this.startPrimaryProbe();
+        if (isDebug()) {
+          console.error(`[Ollama] Primary ${this.baseUrl} health probe failed, using fallback ${this.fallbackBaseUrl}`);
+        }
+        try {
+          return await fallbackFn();
+        } catch (fallbackError) {
+          if (fallbackError instanceof OllamaModelMissingError) throw fallbackError;
+          this.usingFallback = false;
+          this.stopPrimaryProbe();
+          throw OllamaUnavailableError.withFallback(this.baseUrl, this.fallbackBaseUrl);
+        }
+      }
+    }
+
     try {
       return await withRateLimitRetry(fn, {
         maxAttempts: this.retryAttempts,
@@ -181,10 +231,12 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         isRetryable: (error) => this.isRateLimit(error),
       });
     } catch (primaryError) {
-      // Model errors propagate — fallback URL won't help with missing model
       if (primaryError instanceof OllamaModelMissingError) {
         throw primaryError;
       }
+
+      // Invalidate health cache — primary failed despite probe
+      this.primaryAlive = false;
 
       if (!fallbackFn || !this.fallbackBaseUrl) {
         throw new OllamaUnavailableError(this.baseUrl, primaryError instanceof Error ? primaryError : undefined);
@@ -236,6 +288,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
 
     if (!response.ok) {
       const errorBody = await response.text();
+      /* v8 ignore next 3 -- legacy API 404 path, tested via native batch */
       if (response.status === 404 || errorBody.includes("not found")) {
         throw new OllamaModelMissingError(this.model, baseUrl);
       }
@@ -290,11 +343,10 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     }
   }
 
-  /** Short timeout for primary when fallback exists; standard for fallback or no-fallback */
-  /* v8 ignore next 4 -- timeout constants, exercised via integration tests */
-  private connectTimeoutForUrl(url: string): number {
-    if (!this.fallbackBaseUrl) return CONNECT_TIMEOUT_MS;
-    return url === this.baseUrl ? CONNECT_TIMEOUT_WITH_FALLBACK_MS : CONNECT_TIMEOUT_MS;
+  /** Full request timeout — probe handles fast failover, embed gets full budget. */
+  /* v8 ignore next 3 -- timeout constant, exercised via integration tests */
+  private connectTimeoutForUrl(_url: string): number {
+    return CONNECT_TIMEOUT_MS;
   }
 
   /** Timeout scaled for batch size — large batches need proportionally more time */
@@ -376,6 +428,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       return this.limiter.schedule(async () =>
         this.retryWithBackoff(
           async () => batchEmbed(this.baseUrl),
+          /* v8 ignore next -- batch fallback exercised via integration tests */
           this.fallbackBaseUrl ? async () => batchEmbed(this.fallbackBaseUrl as string) : undefined,
         ),
       );
@@ -420,7 +473,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   async checkHealth(): Promise<boolean> {
     const url = this.usingFallback && this.fallbackBaseUrl ? this.fallbackBaseUrl : this.baseUrl;
     try {
-      const response = await fetchWithTimeout(`${url}/api/tags`, { method: "GET" }, CONNECT_TIMEOUT_WITH_FALLBACK_MS);
+      const response = await fetchWithTimeout(`${url}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
       return response.ok;
     } catch {
       return false;
