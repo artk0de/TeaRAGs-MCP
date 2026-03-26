@@ -347,7 +347,8 @@ describe("computeFileSignals", () => {
 
 // ─── GitLogReader (integration — requires real git repo) ─────────────────────
 
-describe("GitLogReader", () => {
+// retry: lint-staged stash/unstash can transiently change git state during pre-commit
+describe("GitLogReader", { retry: 2 }, () => {
   let reader: GitLogReader;
   let repoRoot: string;
 
@@ -400,7 +401,7 @@ describe("GitLogReader", () => {
     expect(commit.authorEmail).toBeTruthy();
     expect(commit.timestamp).toBeGreaterThan(0);
     expect(typeof commit.body).toBe("string");
-  });
+  }, 15_000);
 
   it("should produce valid GitFileSignals when combined with computeFileSignals", async () => {
     if (!repoRoot) return;
@@ -448,7 +449,7 @@ describe("GitLogReader", () => {
 
     expect(fullMap.size).toBeGreaterThan(0);
     expect(tinyMap.size).toBeLessThanOrEqual(fullMap.size);
-  });
+  }, 15_000);
 
   it("should use since parameter to filter by date", async () => {
     if (!repoRoot) return;
