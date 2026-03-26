@@ -46,4 +46,15 @@ export const staticFilters: FilterDescriptor[] = [
     type: "string",
     toCondition: (value: unknown) => globToTextFilter(value as string),
   },
+  {
+    param: "symbolId",
+    description:
+      "Filter by symbol ID (partial text match). Format: 'Class.method' for class methods, " +
+      "'functionName' for top-level functions. Supports partial match: 'ClassName' finds all " +
+      "methods of that class, 'methodName' finds that method in any class.",
+    type: "string",
+    toCondition: (value: unknown) => ({
+      must: [{ key: "symbolId", match: { text: value as string } }],
+    }),
+  },
 ];

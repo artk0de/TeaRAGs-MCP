@@ -36,10 +36,10 @@ describe("StaticTrajectory", () => {
     expect(trajectory.presets.map((p) => p.name)).toContain("decomposition");
   });
 
-  it("has 5 static filters", () => {
-    expect(trajectory.filters).toHaveLength(5);
+  it("has 6 static filters", () => {
+    expect(trajectory.filters).toHaveLength(6);
     expect(trajectory.filters.map((f) => f.param)).toEqual(
-      expect.arrayContaining(["language", "fileExtension", "chunkType", "documentation", "pathPattern"]),
+      expect.arrayContaining(["language", "fileExtension", "chunkType", "documentation", "pathPattern", "symbolId"]),
     );
   });
 });

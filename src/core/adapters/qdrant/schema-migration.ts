@@ -9,12 +9,14 @@
  * - v4: Added keyword index on `relativePath` for faster filter-based deletes
  * - v5: Added text index on `relativePath` for glob pre-filter
  * - v6: Added keyword indexes on `language`, `fileExtension`, `chunkType`
+ * - v7: Enable sparse vectors on non-hybrid collections (when enableHybrid=true)
+ * - v8: Added text index on `symbolId` for partial match filtering
  */
 
 import type { QdrantManager } from "../qdrant/client.js";
 
 /** Current schema version */
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 /** Current sparse vector version — bump when BM25 tokenizer or weighting changes */
 export const CURRENT_SPARSE_VERSION = 1;
@@ -185,6 +187,16 @@ export class SchemaManager {
         }
       }
 
+      // v8: Add text index on symbolId for partial match filtering
+      if (currentVersion < 8) {
+        const created = await this.qdrant.ensurePayloadIndex(collectionName, "symbolId", "text");
+        if (created) {
+          migrationsApplied.push("v8: Created text index on symbolId");
+        } else {
+          migrationsApplied.push("v8: symbolId text index already exists");
+        }
+      }
+
       // Store updated schema metadata
       await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);
 
@@ -224,6 +236,9 @@ export class SchemaManager {
       await this.qdrant.createPayloadIndex(collectionName, field, "keyword");
       indexes.push(field);
     }
+
+    // Create text index on symbolId for partial match filtering
+    await this.qdrant.createPayloadIndex(collectionName, "symbolId", "text");
 
     // Store schema metadata
     await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { staticFilters } from "../../../../../src/core/domains/trajectory/static/filters.js";
 
 describe("staticFilters", () => {
-  it("has 5 filters", () => {
-    expect(staticFilters).toHaveLength(5);
+  it("has 6 filters", () => {
+    expect(staticFilters).toHaveLength(6);
   });
 
   it("language filter produces must condition", () => {
@@ -67,5 +67,24 @@ describe("staticFilters", () => {
     const f = staticFilters.find((f) => f.param === "pathPattern")!;
     const result = f.toCondition("**/*");
     expect(result.must).toBeUndefined();
+  });
+
+  it("symbolId filter produces text match condition", () => {
+    const f = staticFilters.find((f) => f.param === "symbolId")!;
+    expect(f).toBeDefined();
+    const result = f.toCondition("ExploreFacade.semanticSearch");
+    expect(result.must).toEqual([{ key: "symbolId", match: { text: "ExploreFacade.semanticSearch" } }]);
+  });
+
+  it("symbolId filter works with partial class name", () => {
+    const f = staticFilters.find((f) => f.param === "symbolId")!;
+    const result = f.toCondition("ExploreFacade");
+    expect(result.must).toEqual([{ key: "symbolId", match: { text: "ExploreFacade" } }]);
+  });
+
+  it("symbolId filter works with method name only", () => {
+    const f = staticFilters.find((f) => f.param === "symbolId")!;
+    const result = f.toCondition("semanticSearch");
+    expect(result.must).toEqual([{ key: "symbolId", match: { text: "semanticSearch" } }]);
   });
 });
