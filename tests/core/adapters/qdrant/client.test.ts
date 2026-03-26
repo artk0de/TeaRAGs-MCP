@@ -130,6 +130,17 @@ describe("QdrantManager", () => {
       });
     });
 
+    it("should create collection with quantization when scalar flag is true", async () => {
+      await manager.createCollection("test-collection", 384, "Cosine", false, true);
+
+      expect(mockClient.createCollection).toHaveBeenCalledWith(
+        "test-collection",
+        expect.objectContaining({
+          quantization_config: { scalar: { type: "int8", always_ram: true } },
+        }),
+      );
+    });
+
     it("should throw CollectionAlreadyExistsError on 409 Conflict", async () => {
       const conflictError = Object.assign(new Error("Conflict"), { status: 409 });
       mockClient.createCollection.mockRejectedValue(conflictError);
@@ -146,9 +157,17 @@ describe("QdrantManager", () => {
     });
 
     it("should rethrow non-conflict errors from createCollection", async () => {
-      mockClient.createCollection.mockRejectedValue(new Error("Network error"));
+      const error = Object.assign(new Error("Internal server error"), { status: 500 });
+      mockClient.createCollection.mockRejectedValue(error);
 
-      await expect(manager.createCollection("test", 384)).rejects.toThrow("Network error");
+      await expect(manager.createCollection("test", 384)).rejects.toThrow("Internal server error");
+    });
+
+    it("should throw QdrantUnavailableError on connection failure", async () => {
+      mockClient.createCollection.mockRejectedValue(new Error("fetch failed"));
+
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      await expect(manager.createCollection("test", 384)).rejects.toThrow(QdrantUnavailableError);
     });
   });
 
@@ -175,6 +194,13 @@ describe("QdrantManager", () => {
       mockClient.getCollection.mockRejectedValue(new Error("fetch failed"));
 
       await expect(manager.collectionExists("test")).rejects.toThrow("Qdrant is not reachable");
+    });
+
+    it("should rethrow non-connection non-404 errors", async () => {
+      const serverError = Object.assign(new Error("Internal server error"), { status: 500 });
+      mockClient.getCollection.mockRejectedValue(serverError);
+
+      await expect(manager.collectionExists("test")).rejects.toThrow("Internal server error");
     });
   });
 
@@ -468,9 +494,19 @@ describe("QdrantManager", () => {
     it("should throw error with error.message fallback", async () => {
       const points = [{ id: 1, vector: [0.1, 0.2, 0.3] }];
 
-      mockClient.upsert.mockRejectedValue(new Error("Network error"));
+      const error = Object.assign(new Error("Payload validation failed"), { status: 422 });
+      mockClient.upsert.mockRejectedValue(error);
 
       await expect(manager.addPoints("test-collection", points)).rejects.toThrow(QdrantOperationError);
+    });
+
+    it("should throw QdrantUnavailableError on connection failure", async () => {
+      const points = [{ id: 1, vector: [0.1, 0.2, 0.3] }];
+
+      mockClient.upsert.mockRejectedValue(new Error("fetch failed"));
+
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      await expect(manager.addPoints("test-collection", points)).rejects.toThrow(QdrantUnavailableError);
     });
 
     it("should throw error with String(error) fallback", async () => {
@@ -922,6 +958,61 @@ describe("QdrantManager", () => {
         wait: true,
         filter,
       });
+    });
+  });
+
+  describe("query (recommend)", () => {
+    it("should return results from query API with recommend sub-query", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        config: { params: { vectors: { size: 3, distance: "Cosine" } } },
+        points_count: 10,
+      });
+      mockClient.query.mockResolvedValue({
+        points: [{ id: "abc-123", score: 0.95, payload: { relativePath: "test.ts" } }],
+      });
+
+      const results = await manager.query("test-col", {
+        positive: ["seed-id"],
+        limit: 5,
+      });
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe("abc-123");
+      expect(results[0].score).toBe(0.95);
+      expect(mockClient.query).toHaveBeenCalledWith(
+        "test-col",
+        expect.objectContaining({
+          query: { recommend: { positive: ["seed-id"] } },
+          limit: 5,
+        }),
+      );
+    });
+
+    it("should pass filter and offset when provided", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        config: { params: { vectors: { size: 3, distance: "Cosine" } } },
+        points_count: 10,
+      });
+      mockClient.query.mockResolvedValue({ points: [] });
+
+      await manager.query("test-col", {
+        positive: ["seed-id"],
+        negative: ["neg-id"],
+        strategy: "best_score",
+        limit: 10,
+        offset: 5,
+        filter: { must: [{ key: "language", match: { value: "typescript" } }] },
+      });
+
+      expect(mockClient.query).toHaveBeenCalledWith(
+        "test-col",
+        expect.objectContaining({
+          query: { recommend: { positive: ["seed-id"], negative: ["neg-id"], strategy: "best_score" } },
+          limit: 10,
+          offset: 5,
+          filter: { must: [{ key: "language", match: { value: "typescript" } }] },
+        }),
+      );
     });
   });
 
@@ -2138,6 +2229,97 @@ describe("QdrantManager", () => {
       expect(batches).toHaveLength(1);
       expect(batches[0]).toHaveLength(1);
       expect(batches[0][0].id).toBe(3);
+    });
+  });
+
+  describe("connection error propagation via call() guard", () => {
+    const connectionErrors = [
+      "fetch failed",
+      "connect ECONNREFUSED 127.0.0.1:6333",
+      "getaddrinfo ENOTFOUND qdrant",
+      "socket hang up",
+      "network error",
+      "connect ECONNRESET",
+      "connect ETIMEDOUT",
+    ];
+
+    for (const msg of connectionErrors) {
+      it(`converts "${msg}" to QdrantUnavailableError across methods`, async () => {
+        const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+        const error = new Error(msg);
+
+        // listCollections
+        mockClient.getCollections.mockRejectedValueOnce(error);
+        await expect(manager.listCollections()).rejects.toThrow(QdrantUnavailableError);
+
+        // deleteCollection
+        mockClient.deleteCollection.mockRejectedValueOnce(error);
+        await expect(manager.deleteCollection("col")).rejects.toThrow(QdrantUnavailableError);
+      });
+    }
+
+    it("does NOT treat non-Error non-object thrown values as connection errors", async () => {
+      mockClient.getCollections.mockRejectedValueOnce("string error");
+
+      await expect(manager.listCollections()).rejects.toBe("string error");
+    });
+
+    it("does NOT convert HTTP business errors (status > 0) to QdrantUnavailableError", async () => {
+      const httpError = Object.assign(new Error("Bad Request"), { status: 400 });
+      mockClient.getCollections.mockRejectedValueOnce(httpError);
+
+      // Should throw the original error, not QdrantUnavailableError
+      await expect(manager.listCollections()).rejects.toThrow("Bad Request");
+    });
+
+    it("propagates connection errors through search", async () => {
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      mockClient.getCollection.mockResolvedValueOnce({
+        config: { params: { vectors: { size: 3, distance: "Cosine" } } },
+        points_count: 0,
+      });
+      mockClient.search.mockRejectedValueOnce(new Error("fetch failed"));
+
+      await expect(manager.search("col", [0.1, 0.2, 0.3])).rejects.toThrow(QdrantUnavailableError);
+    });
+
+    it("propagates connection errors through scroll operations", async () => {
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      mockClient.scroll.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      await expect(manager.scrollFieldValues("col", "field")).rejects.toThrow(QdrantUnavailableError);
+    });
+
+    it("propagates connection errors through setPayload", async () => {
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      mockClient.setPayload.mockRejectedValueOnce(new Error("fetch failed"));
+
+      await expect(manager.setPayload("col", { key: "value" }, { points: ["id1"], wait: true })).rejects.toThrow(
+        QdrantUnavailableError,
+      );
+    });
+
+    it("propagates connection errors through updateCollection", async () => {
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      mockClient.updateCollection.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      await expect(manager.disableIndexing("col")).rejects.toThrow(QdrantUnavailableError);
+    });
+
+    it("propagates connection errors through deletePoints", async () => {
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      mockClient.delete.mockRejectedValueOnce(new Error("socket hang up"));
+
+      await expect(manager.deletePoints("col", ["id1"])).rejects.toThrow(QdrantUnavailableError);
+    });
+
+    it("propagates connection errors through batchUpdate", async () => {
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      mockClient.batchUpdate.mockRejectedValueOnce(new Error("ETIMEDOUT"));
+
+      await expect(manager.batchSetPayload("col", [{ payload: { k: "v" }, points: ["id1"] }])).rejects.toThrow(
+        QdrantUnavailableError,
+      );
     });
   });
 });

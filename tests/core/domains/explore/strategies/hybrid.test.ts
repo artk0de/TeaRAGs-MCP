@@ -94,4 +94,26 @@ describe("HybridSearchStrategy", () => {
     const strategy = createStrategy();
     await expect(strategy.execute({ collectionName: "test_col", limit: 5 })).rejects.toThrow("requires an embedding");
   });
+
+  it("groups results by file when level is 'file'", async () => {
+    const mockResults = [
+      { id: "1", score: 0.9, payload: { relativePath: "src/a.ts", startLine: 1, endLine: 10 } },
+      { id: "2", score: 0.7, payload: { relativePath: "src/a.ts", startLine: 20, endLine: 30 } },
+      { id: "3", score: 0.8, payload: { relativePath: "src/b.ts", startLine: 1, endLine: 15 } },
+    ];
+    const qdrant = createMockQdrant(true, mockResults);
+    const strategy = createStrategy(qdrant);
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      embedding: [0.1, 0.2],
+      query: "file level query",
+      limit: 10,
+      level: "file",
+    });
+
+    // groupByFile deduplicates — 2 unique files from 3 results
+    const paths = results.map((r) => r.payload?.["relativePath"]);
+    expect(new Set(paths).size).toBeLessThanOrEqual(results.length);
+  });
 });

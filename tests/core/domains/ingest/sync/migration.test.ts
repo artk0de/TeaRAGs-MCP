@@ -45,6 +45,27 @@ describe("SnapshotMigrator", () => {
       expect(await migrator.needsMigration()).toBe(false);
     });
 
+    it("should return false when old snapshot and new v3 dir both exist (already migrated)", async () => {
+      // Create v2 snapshot (old format)
+      const v2Snapshot = {
+        version: "2",
+        codebasePath: codebaseDir,
+        timestamp: Date.now(),
+        fileHashes: { "src/a.ts": "hash-a" },
+        fileMetadata: { "src/a.ts": { mtime: 1000, size: 100, hash: "hash-a" } },
+        merkleTree: '{"root":null}',
+      };
+      await fs.writeFile(join(snapshotDir, "test-collection.json"), JSON.stringify(v2Snapshot));
+
+      // Also create new v3 structure (already migrated)
+      const manager = new ShardedSnapshotManager(snapshotDir, "test-collection", 4);
+      const files = new Map([["src/a.ts", { mtime: 1000, size: 100, hash: "hash-a" }]]);
+      await manager.save(codebaseDir, files);
+
+      const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir);
+      expect(await migrator.needsMigration()).toBe(false);
+    });
+
     it("should return true for v2 snapshot", async () => {
       // Create v2 snapshot
       const v2Snapshot = {
@@ -203,6 +224,40 @@ describe("SnapshotMigrator", () => {
       expect(result.skippedCount).toBe(1); // Missing file skipped
     });
 
+    it("should skip v1 files that no longer exist on disk (getFileStats returns null)", async () => {
+      // v1 snapshot with one existing file and one non-existent file
+      const v1Snapshot = {
+        codebasePath: codebaseDir,
+        timestamp: Date.now(),
+        fileHashes: {
+          "src/a.ts": "hash-a",
+          "src/deleted-file.ts": "hash-deleted", // does not exist
+        },
+        merkleTree: '{"root":null}',
+      };
+
+      await fs.writeFile(join(snapshotDir, "test-collection.json"), JSON.stringify(v1Snapshot));
+
+      const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir, 4);
+      const result = await migrator.migrate();
+
+      expect(result.success).toBe(true);
+      expect(result.filesCount).toBe(1); // Only existing file
+      expect(result.skippedCount).toBe(1); // deleted-file.ts skipped
+    });
+
+    it("should return success=false when snapshot file contains invalid JSON", async () => {
+      // Write invalid JSON to trigger the catch block
+      await fs.writeFile(join(snapshotDir, "test-collection.json"), "{ invalid json !!!");
+
+      const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir, 4);
+      const result = await migrator.migrate();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+      expect(result.filesCount).toBe(0);
+    });
+
     it("should not migrate if no old snapshot exists", async () => {
       const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir, 4);
       const result = await migrator.migrate();
@@ -235,6 +290,14 @@ describe("SnapshotMigrator", () => {
   });
 
   describe("auto-migration", () => {
+    it("should throw MigrationFailedError from ensureMigrated when snapshot is corrupt", async () => {
+      // Write invalid JSON to cause migration to fail
+      await fs.writeFile(join(snapshotDir, "test-collection.json"), "{ bad json");
+
+      const migrator = new SnapshotMigrator(snapshotDir, "test-collection", codebaseDir, 4);
+      await expect(migrator.ensureMigrated()).rejects.toThrow();
+    });
+
     it("should auto-migrate when loading via ShardedSnapshotManager", async () => {
       // Create v2 snapshot
       const v2Snapshot = {

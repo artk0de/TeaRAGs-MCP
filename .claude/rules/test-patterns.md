@@ -6,6 +6,19 @@
 changed or the test itself is failing. Existing passing tests are proven correct
 — touching them risks regressions and wastes review time.
 
+## Coverage Strategy
+
+When coverage threshold is not met, **never chase individual uncovered lines**.
+Instead, write useful high-level integration or behavioral tests that cover
+meaningful scenarios. A single well-designed test covering a real user flow is
+worth more than 10 one-liner tests targeting individual branches.
+
+- Prefer tests that verify **end-to-end behavior** (e.g., "connection failure
+  propagates as typed error through the whole call chain")
+- Cover **whole methods or features** in one test, not individual lines
+- Use `/* v8 ignore next */` only for truly unreachable defensive code (e.g.,
+  thrown primitives), never as a shortcut to skip testing
+
 ## Setup
 
 - Runner: `npx vitest run`
