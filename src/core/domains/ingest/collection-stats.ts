@@ -7,25 +7,10 @@
  */
 
 import type { CollectionSignalStats, PayloadSignalDescriptor, SignalStats } from "../../contracts/types/trajectory.js";
-
-const CONFIG_LANGUAGES = new Set([
-  "json",
-  "yaml",
-  "markdown",
-  "text",
-  "gitignore",
-  "toml",
-  "xml",
-  "ini",
-  "env",
-  "csv",
-  "dockerfile",
-  "bash",
-  "powershell",
-  "code", // fenced code blocks extracted from markdown
-]);
+import { CODE_LANGUAGES } from "./pipeline/chunker/config.js";
 
 const MIN_SAMPLE_SIZE = 10;
+const MIN_LANGUAGE_SHARE = 0.05;
 
 /**
  * Read a value from a nested object using dot-notation path.
@@ -124,7 +109,7 @@ function extractSignalValues(
   for (const point of points) {
     const pointChunkType = point.payload["chunkType"];
     const lang = point.payload["language"];
-    const isCodeLanguage = typeof lang === "string" && !CONFIG_LANGUAGES.has(lang);
+    const isCodeLanguage = typeof lang === "string" && CODE_LANGUAGES.has(lang);
 
     // Global stats: only code languages contribute
     if (isCodeLanguage) {
@@ -311,11 +296,16 @@ export function computeCollectionStats(
   const perSignal = computePerSignalStats(extracted.valueArrays, statsSignals);
   const distributions = buildDistributions(extracted, gitTimePeriods);
 
+  const totalChunks = points.length;
   const perLanguage = new Map<string, Map<string, SignalStats>>();
 
   for (const [lang, langValueArrays] of extracted.perLanguageValues) {
-    // Config/non-code languages are always excluded from per-language stats
-    if (CONFIG_LANGUAGES.has(lang)) continue;
+    // Only code languages with AST support qualify
+    if (!CODE_LANGUAGES.has(lang)) continue;
+
+    // Must represent >= 5% of project chunks
+    const langCount = extracted.languageCounts[lang] ?? 0;
+    if (totalChunks > 0 && langCount / totalChunks < MIN_LANGUAGE_SHARE) continue;
 
     const hasEnoughSamples = statsSignals.some((s) => {
       const values = langValueArrays.get(s.key);
