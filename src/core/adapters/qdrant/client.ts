@@ -1092,7 +1092,7 @@ export class QdrantManager {
   /**
    * Scroll points matching a filter. Returns points with IDs and full payloads.
    * No ordering — results come in Qdrant internal order.
-   * Paginates automatically until all matching points are returned.
+   * Paginates automatically. Hard cap at `limit` total results to prevent runaway pagination.
    */
   async scrollFiltered(
     collectionName: string,
@@ -1100,12 +1100,13 @@ export class QdrantManager {
     limit: number,
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     const results: { id: string | number; payload: Record<string, unknown> }[] = [];
+    const pageSize = Math.min(limit, 200);
     let offset: string | number | undefined = undefined;
 
     do {
       const result = await this.call(async () =>
         this.client.scroll(collectionName, {
-          limit,
+          limit: pageSize,
           with_payload: true,
           with_vector: false,
           filter,
@@ -1121,6 +1122,8 @@ export class QdrantManager {
           });
         }
       }
+
+      if (results.length >= limit) break;
 
       const next = result.next_page_offset;
       offset = typeof next === "string" || typeof next === "number" ? next : undefined;
