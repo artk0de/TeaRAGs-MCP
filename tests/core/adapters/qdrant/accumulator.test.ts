@@ -200,6 +200,82 @@ describe("PointsAccumulator", () => {
 
       expect(mockQdrant.addPointsOptimized).toHaveBeenCalledTimes(1);
     });
+
+    it("should not start a second timer if one is already running", async () => {
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 100,
+        flushIntervalMs: 500,
+      });
+
+      // Two add() calls before timer fires — timer should only be started once
+      await acc.add(createPoints(10));
+      await acc.add(createPoints(10));
+
+      // Only one timer fires at 500ms, not two
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(mockQdrant.addPointsOptimized).toHaveBeenCalledTimes(1);
+    });
+
+    it("should restart timer after flush if buffer still has items from a concurrent add", async () => {
+      // Use a slow upsert that resolves after we add more items
+      let resolveUpsert!: () => void;
+      mockQdrant.addPointsOptimized.mockImplementationOnce(
+        async () => new Promise<void>((res) => (resolveUpsert = res)),
+      );
+
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 200,
+        flushIntervalMs: 100,
+      });
+
+      // Add 50 points — timer will fire at 100ms
+      await acc.add(createPoints(50));
+
+      // Fire the timer (starts the first flush in background)
+      vi.advanceTimersByTime(100);
+
+      // Add more points while flush is in flight
+      await acc.add(createPoints(20));
+
+      // Resolve the first flush
+      resolveUpsert();
+      await Promise.resolve();
+
+      // Advance time to let the restarted timer fire
+      await vi.advanceTimersByTimeAsync(200);
+
+      // Eventually the second batch gets flushed too
+      await acc.flush();
+      expect(acc.getStats().pendingPoints).toBe(0);
+    });
+
+    it("should wait for pending background flushes when explicit flush is called", async () => {
+      let resolveUpsert!: () => void;
+      mockQdrant.addPointsOptimized.mockImplementationOnce(
+        async () => new Promise<void>((res) => (resolveUpsert = res)),
+      );
+
+      const acc = new PointsAccumulator(mockQdrant as unknown as QdrantManager, "test-collection", false, {
+        bufferSize: 200,
+        flushIntervalMs: 100,
+      });
+
+      await acc.add(createPoints(30));
+
+      // Fire timer to start a background flush
+      vi.advanceTimersByTime(100);
+
+      // Start explicit flush (it will await the pending background flush)
+      const flushPromise = acc.flush();
+
+      // Resolve the background flush
+      resolveUpsert();
+
+      await flushPromise;
+
+      expect(mockQdrant.addPointsOptimized).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("error handling", () => {

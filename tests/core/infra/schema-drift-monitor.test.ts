@@ -129,6 +129,37 @@ describe("SchemaDriftMonitor", () => {
       const result = await monitor.checkAndConsume("");
       expect(result).toBeNull();
     });
+
+    it("returns null for already-checked collection via async path", async () => {
+      const { resolveCollectionName, validatePath } = await import("../../../src/core/infra/collection-name.js");
+      const absPath = await validatePath("/tmp/test-project");
+      const collName = resolveCollectionName(absPath);
+      const keys = ["git.file.commitCount"];
+      cache.save(collName, SAMPLE_STATS, keys);
+
+      const monitor = new SchemaDriftMonitor(cache, keys);
+
+      // First call — resolves to collectionName, no drift (keys match)
+      const first = await monitor.checkAndConsume("/tmp/test-project");
+      expect(first).toBeNull(); // no drift
+
+      // Second call — same collection, already checked, returns null immediately (line 29)
+      const second = await monitor.checkAndConsume("/tmp/test-project");
+      expect(second).toBeNull();
+    });
+
+    it("returns null when async drift check finds no drift (keys match)", async () => {
+      const { resolveCollectionName, validatePath } = await import("../../../src/core/infra/collection-name.js");
+      const absPath = await validatePath("/tmp/test-project-nodrift");
+      const collName = resolveCollectionName(absPath);
+      const keys = ["git.file.commitCount", "git.file.ageDays"];
+      cache.save(collName, SAMPLE_STATS, keys);
+
+      const monitor = new SchemaDriftMonitor(cache, keys);
+      // Keys match exactly — drift is null, hits line 36
+      const result = await monitor.checkAndConsume("/tmp/test-project-nodrift");
+      expect(result).toBeNull();
+    });
   });
 
   describe("detectDrift (static)", () => {

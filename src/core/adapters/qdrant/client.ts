@@ -36,6 +36,22 @@ export class QdrantManager {
     this.client = new QdrantClient({ url, apiKey });
   }
 
+  /**
+   * Guard all Qdrant client calls through a single entry point.
+   * Catches connection errors (fetch failed, ECONNREFUSED) and converts
+   * them to QdrantUnavailableError. Business errors (404, 409) pass through.
+   */
+  private async call<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      if (isConnectionError(error)) {
+        throw new QdrantUnavailableError(this.qdrantUrl, error instanceof Error ? error : undefined);
+      }
+      throw error;
+    }
+  }
+
   get url(): string {
     return this.qdrantUrl;
   }
@@ -127,8 +143,9 @@ export class QdrantManager {
     }
 
     try {
-      await this.client.createCollection(name, config);
+      await this.call(async () => this.client.createCollection(name, config));
     } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       if (isConflictError(error)) {
         throw new CollectionAlreadyExistsError(name, error instanceof Error ? error : undefined);
       }
@@ -148,11 +165,13 @@ export class QdrantManager {
     fieldName: string,
     fieldSchema: "keyword" | "integer" | "float" | "bool" | "geo" | "datetime" | "text" | "uuid",
   ): Promise<void> {
-    await this.client.createPayloadIndex(collectionName, {
-      field_name: fieldName,
-      field_schema: fieldSchema,
-      wait: true,
-    });
+    await this.call(async () =>
+      this.client.createPayloadIndex(collectionName, {
+        field_name: fieldName,
+        field_schema: fieldSchema,
+        wait: true,
+      }),
+    );
   }
 
   /**
@@ -160,10 +179,11 @@ export class QdrantManager {
    */
   async hasPayloadIndex(collectionName: string, fieldName: string): Promise<boolean> {
     try {
-      const info = await this.client.getCollection(collectionName);
+      const info = await this.call(async () => this.client.getCollection(collectionName));
       const indexes = info.payload_schema || {};
       return fieldName in indexes;
-    } catch {
+    } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       return false;
     }
   }
@@ -187,24 +207,24 @@ export class QdrantManager {
 
   async collectionExists(name: string): Promise<boolean> {
     try {
-      await this.client.getCollection(name);
+      await this.call(async () => this.client.getCollection(name));
       return true;
     } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       // Qdrant client throws with status property for HTTP errors (404 = not found)
       const { status } = error as { status?: number };
       if (status === 404 || status === 400) return false;
-      // Connection errors (ECONNREFUSED, fetch failed, network errors) → typed error
-      throw new QdrantUnavailableError(this.qdrantUrl, error instanceof Error ? error : undefined);
+      throw error;
     }
   }
 
   async listCollections(): Promise<string[]> {
-    const response = await this.client.getCollections();
+    const response = await this.call(async () => this.client.getCollections());
     return response.collections.map((c) => c.name);
   }
 
   async getCollectionInfo(name: string): Promise<CollectionInfo> {
-    const info = await this.client.getCollection(name);
+    const info = await this.call(async () => this.client.getCollection(name));
     const vectorConfig = info.config.params.vectors;
 
     // Handle both named and unnamed vector configurations
@@ -240,7 +260,7 @@ export class QdrantManager {
   }
 
   async deleteCollection(name: string): Promise<void> {
-    await this.client.deleteCollection(name);
+    await this.call(async () => this.client.deleteCollection(name));
   }
 
   async addPoints(
@@ -263,11 +283,14 @@ export class QdrantManager {
         id: this.normalizeId(point.id),
       }));
 
-      await this.client.upsert(collectionName, {
-        wait: true,
-        points: normalizedPoints,
-      });
+      await this.call(async () =>
+        this.client.upsert(collectionName, {
+          wait: true,
+          points: normalizedPoints,
+        }),
+      );
     } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new QdrantOperationError(
@@ -311,12 +334,15 @@ export class QdrantManager {
         id: this.normalizeId(point.id),
       }));
 
-      await this.client.upsert(collectionName, {
-        wait,
-        ordering,
-        points: normalizedPoints,
-      });
+      await this.call(async () =>
+        this.client.upsert(collectionName, {
+          wait,
+          ordering,
+          points: normalizedPoints,
+        }),
+      );
     } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new QdrantOperationError(
@@ -332,11 +358,13 @@ export class QdrantManager {
    * Call enableIndexing() after upload completes.
    */
   async disableIndexing(collectionName: string): Promise<void> {
-    await this.client.updateCollection(collectionName, {
-      optimizers_config: {
-        indexing_threshold: 0,
-      },
-    });
+    await this.call(async () =>
+      this.client.updateCollection(collectionName, {
+        optimizers_config: {
+          indexing_threshold: 0,
+        },
+      }),
+    );
   }
 
   /**
@@ -344,11 +372,13 @@ export class QdrantManager {
    * @param threshold - Default 20000 (Qdrant default)
    */
   async enableIndexing(collectionName: string, threshold = 20000): Promise<void> {
-    await this.client.updateCollection(collectionName, {
-      optimizers_config: {
-        indexing_threshold: threshold,
-      },
-    });
+    await this.call(async () =>
+      this.client.updateCollection(collectionName, {
+        optimizers_config: {
+          indexing_threshold: threshold,
+        },
+      }),
+    );
   }
 
   async search(
@@ -361,7 +391,7 @@ export class QdrantManager {
     // Accepts either:
     // 1. Simple format: {"category": "database"}
     // 2. Qdrant format: {must: [{key: "category", match: {value: "database"}}]}
-    let qdrantFilter;
+    let qdrantFilter: Record<string, unknown> | null | undefined;
     if (filter && Object.keys(filter).length > 0) {
       // Check if already in Qdrant format (has must/should/must_not keys)
       if (filter.must || filter.should || filter.must_not) {
@@ -380,12 +410,14 @@ export class QdrantManager {
     // Check if collection uses named vectors (hybrid mode)
     const collectionInfo = await this.getCollectionInfo(collectionName);
 
-    const results = await this.client.search(collectionName, {
-      vector: collectionInfo.hybridEnabled ? { name: "dense", vector } : vector,
-      limit,
-      filter: qdrantFilter,
-      with_payload: true, // Explicitly request payloads
-    });
+    const results = await this.call(async () =>
+      this.client.search(collectionName, {
+        vector: collectionInfo.hybridEnabled ? { name: "dense", vector } : vector,
+        limit,
+        filter: qdrantFilter,
+        with_payload: true, // Explicitly request payloads
+      }),
+    );
 
     return results.map((result) => ({
       id: result.id,
@@ -400,9 +432,11 @@ export class QdrantManager {
   ): Promise<{ id: string | number; payload?: Record<string, unknown> } | null> {
     try {
       const normalizedId = this.normalizeId(id);
-      const points = await this.client.retrieve(collectionName, {
-        ids: [normalizedId],
-      });
+      const points = await this.call(async () =>
+        this.client.retrieve(collectionName, {
+          ids: [normalizedId],
+        }),
+      );
 
       if (points.length === 0) {
         return null;
@@ -412,7 +446,8 @@ export class QdrantManager {
         id: points[0].id,
         payload: points[0].payload || undefined,
       };
-    } catch {
+    } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       return null;
     }
   }
@@ -451,7 +486,9 @@ export class QdrantManager {
     if (options.filter) queryParams.filter = options.filter;
     if (collectionInfo.hybridEnabled) queryParams.using = "dense";
 
-    const response = await this.client.query(collectionName, queryParams as Parameters<QdrantClient["query"]>[1]);
+    const response = await this.call(async () =>
+      this.client.query(collectionName, queryParams as Parameters<QdrantClient["query"]>[1]),
+    );
 
     return (response.points ?? []).map((point) => ({
       id: point.id,
@@ -489,9 +526,8 @@ export class QdrantManager {
     if (options.filter) params.filter = options.filter;
     if (collectionInfo.hybridEnabled) params.using = "dense";
 
-    const response = await this.client.queryGroups(
-      collectionName,
-      params as Parameters<QdrantClient["queryGroups"]>[1],
+    const response = await this.call(async () =>
+      this.client.queryGroups(collectionName, params as Parameters<QdrantClient["queryGroups"]>[1]),
     );
 
     // Flatten groups: take first hit from each group
@@ -513,10 +549,12 @@ export class QdrantManager {
     // Normalize IDs to ensure string IDs are in UUID format
     const normalizedIds = ids.map((id) => this.normalizeId(id));
 
-    await this.client.delete(collectionName, {
-      wait: true,
-      points: normalizedIds,
-    });
+    await this.call(async () =>
+      this.client.delete(collectionName, {
+        wait: true,
+        points: normalizedIds,
+      }),
+    );
   }
 
   /**
@@ -524,10 +562,12 @@ export class QdrantManager {
    * Useful for deleting all chunks associated with a specific file path.
    */
   async deletePointsByFilter(collectionName: string, filter: Record<string, unknown>): Promise<void> {
-    await this.client.delete(collectionName, {
-      wait: true,
-      filter,
-    });
+    await this.call(async () =>
+      this.client.delete(collectionName, {
+        wait: true,
+        filter,
+      }),
+    );
   }
 
   /**
@@ -541,15 +581,17 @@ export class QdrantManager {
     if (relativePaths.length === 0) return;
 
     // Single request with OR filter (should = any match)
-    await this.client.delete(collectionName, {
-      wait: true,
-      filter: {
-        should: relativePaths.map((path) => ({
-          key: "relativePath",
-          match: { value: path },
-        })),
-      },
-    });
+    await this.call(async () =>
+      this.client.delete(collectionName, {
+        wait: true,
+        filter: {
+          should: relativePaths.map((path) => ({
+            key: "relativePath",
+            match: { value: path },
+          })),
+        },
+      }),
+    );
   }
 
   /**
@@ -610,8 +652,8 @@ export class QdrantManager {
       }
 
       // Create delete promise
-      const deletePromise = this.client
-        .delete(collectionName, {
+      const deletePromise = this.call(async () =>
+        this.client.delete(collectionName, {
           wait: isLastBatch, // Only wait for final batch
           filter: {
             should: batch.map((path) => ({
@@ -619,11 +661,11 @@ export class QdrantManager {
               match: { value: path },
             })),
           },
-        })
-        .then(() => {
-          deletedCount += batch.length;
-          onProgress?.(deletedCount, relativePaths.length);
-        });
+        }),
+      ).then(() => {
+        deletedCount += batch.length;
+        onProgress?.(deletedCount, relativePaths.length);
+      });
 
       if (!isLastBatch) {
         pendingPromises.push(deletePromise);
@@ -663,13 +705,15 @@ export class QdrantManager {
   ): Promise<void> {
     const normalizedPoints = options.points?.map((id) => this.normalizeId(id));
 
-    await this.client.setPayload(collectionName, {
-      payload,
-      points: normalizedPoints,
-      filter: options.filter,
-      wait: options.wait ?? false,
-      ordering: options.ordering ?? "weak",
-    });
+    await this.call(async () =>
+      this.client.setPayload(collectionName, {
+        payload,
+        points: normalizedPoints,
+        filter: options.filter,
+        wait: options.wait ?? false,
+        ordering: options.ordering ?? "weak",
+      }),
+    );
   }
 
   /**
@@ -706,11 +750,13 @@ export class QdrantManager {
         },
       }));
 
-      await this.client.batchUpdate(collectionName, {
-        operations: updateOps,
-        wait: isLast ? wait : false,
-        ordering,
-      });
+      await this.call(async () =>
+        this.client.batchUpdate(collectionName, {
+          operations: updateOps,
+          wait: isLast ? wait : false,
+          ordering,
+        }),
+      );
     }
   }
 
@@ -727,7 +773,7 @@ export class QdrantManager {
     semanticWeight = 0.7,
   ): Promise<SearchResult[]> {
     // Convert simple key-value filter to Qdrant filter format
-    let qdrantFilter;
+    let qdrantFilter: Record<string, unknown> | null | undefined;
     if (filter && Object.keys(filter).length > 0) {
       if (filter.must || filter.should || filter.must_not) {
         qdrantFilter = filter;
@@ -746,18 +792,22 @@ export class QdrantManager {
     try {
       // Run dense and sparse searches in parallel
       const [denseResults, sparseResults] = await Promise.all([
-        this.client.search(collectionName, {
-          vector: { name: "dense", vector: denseVector },
-          limit: fetchLimit,
-          filter: qdrantFilter,
-          with_payload: true,
-        }),
-        this.client.search(collectionName, {
-          vector: { name: "text", vector: sparseVector },
-          limit: fetchLimit,
-          filter: qdrantFilter,
-          with_payload: true,
-        }),
+        this.call(async () =>
+          this.client.search(collectionName, {
+            vector: { name: "dense", vector: denseVector },
+            limit: fetchLimit,
+            filter: qdrantFilter,
+            with_payload: true,
+          }),
+        ),
+        this.call(async () =>
+          this.client.search(collectionName, {
+            vector: { name: "text", vector: sparseVector },
+            limit: fetchLimit,
+            filter: qdrantFilter,
+            with_payload: true,
+          }),
+        ),
       ]);
 
       // Min-max normalize scores per source
@@ -801,6 +851,7 @@ export class QdrantManager {
       merged.sort((a, b) => b.score - a.score);
       return merged;
     } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new QdrantOperationError(
@@ -839,11 +890,14 @@ export class QdrantManager {
         payload: point.payload,
       }));
 
-      await this.client.upsert(collectionName, {
-        wait: true,
-        points: normalizedPoints,
-      });
+      await this.call(async () =>
+        this.client.upsert(collectionName, {
+          wait: true,
+          points: normalizedPoints,
+        }),
+      );
     } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new QdrantOperationError(
@@ -892,12 +946,15 @@ export class QdrantManager {
         payload: point.payload,
       }));
 
-      await this.client.upsert(collectionName, {
-        wait,
-        ordering,
-        points: normalizedPoints,
-      });
+      await this.call(async () =>
+        this.client.upsert(collectionName, {
+          wait,
+          ordering,
+          points: normalizedPoints,
+        }),
+      );
     } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new QdrantOperationError(
@@ -912,9 +969,11 @@ export class QdrantManager {
    * Used when migrating a legacy dense-only collection to hybrid search.
    */
   async updateCollectionSparseConfig(collectionName: string): Promise<void> {
-    await this.client.updateCollection(collectionName, {
-      sparse_vectors: { text: { modifier: "idf" } },
-    });
+    await this.call(async () =>
+      this.client.updateCollection(collectionName, {
+        sparse_vectors: { text: { modifier: "idf" } },
+      }),
+    );
   }
 
   /**
@@ -928,12 +987,14 @@ export class QdrantManager {
     let offset: string | number | null = null;
 
     do {
-      const result = await this.client.scroll(collectionName, {
-        limit: batchSize,
-        offset: offset ?? undefined,
-        with_payload: true,
-        with_vector: true,
-      });
+      const result = await this.call(async () =>
+        this.client.scroll(collectionName, {
+          limit: batchSize,
+          offset: offset ?? undefined,
+          with_payload: true,
+          with_vector: true,
+        }),
+      );
 
       const batch = result.points
         .filter((p) => p.payload && p.vector)
@@ -958,12 +1019,14 @@ export class QdrantManager {
     let offset: string | number | undefined;
 
     do {
-      const result = await this.client.scroll(collectionName, {
-        limit: 1000,
-        offset,
-        with_payload: { include: [fieldName] },
-        with_vector: false,
-      });
+      const result = await this.call(async () =>
+        this.client.scroll(collectionName, {
+          limit: 1000,
+          offset,
+          with_payload: { include: [fieldName] },
+          with_vector: false,
+        }),
+      );
 
       for (const point of result.points) {
         const val = point.payload?.[fieldName];
@@ -988,13 +1051,15 @@ export class QdrantManager {
     filter?: Record<string, unknown>,
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     try {
-      const result = await this.client.scroll(collectionName, {
-        limit,
-        with_payload: true,
-        with_vector: false,
-        order_by: orderBy,
-        ...(filter ? { filter } : {}),
-      });
+      const result = await this.call(async () =>
+        this.client.scroll(collectionName, {
+          limit,
+          with_payload: true,
+          with_vector: false,
+          order_by: orderBy,
+          ...(filter ? { filter } : {}),
+        }),
+      );
 
       return result.points
         .filter(
@@ -1003,6 +1068,7 @@ export class QdrantManager {
         )
         .map((p) => ({ id: p.id, payload: p.payload }));
     } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new QdrantOperationError(
@@ -1023,6 +1089,35 @@ function isConflictError(error: unknown): boolean {
   if (typeof error === "object" && error !== null && "status" in error) {
     return (error as { status: number }).status === 409;
   }
+  return false;
+}
+
+/**
+ * Detect network/connection errors vs Qdrant business errors.
+ * Business errors (404, 400, 409) have an HTTP status — these are NOT connection errors.
+ * Connection errors: fetch failed, ECONNREFUSED, ENOTFOUND, socket hang up, etc.
+ */
+function isConnectionError(error: unknown): boolean {
+  // Qdrant client attaches `status` for HTTP errors — not a connection error
+  if (typeof error === "object" && error !== null && "status" in error) {
+    const { status } = error as { status: number };
+    if (typeof status === "number" && status > 0) return false;
+  }
+
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    return (
+      msg.includes("fetch failed") ||
+      msg.includes("econnrefused") ||
+      msg.includes("enotfound") ||
+      msg.includes("socket hang up") ||
+      msg.includes("network error") ||
+      msg.includes("failed to fetch") ||
+      msg.includes("econnreset") ||
+      msg.includes("etimedout")
+    );
+  }
+
   return false;
 }
 
