@@ -19,7 +19,7 @@
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
-import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import type { PayloadSignalDescriptor, SignalStats } from "../../../contracts/types/trajectory.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   InvalidQueryError,
@@ -308,27 +308,40 @@ export class ExploreFacade {
     const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
     const descriptors = this.payloadSignals;
 
-    const signals: Record<string, SignalMetrics> = {};
-    for (const [key, signalStats] of stats.perSignal) {
-      const descriptor = descriptors.find((d) => d.key === key);
-      if (!descriptor?.stats?.labels) continue;
+    const buildSignalMetrics = (perSignal: Map<string, SignalStats>): Record<string, SignalMetrics> => {
+      const result: Record<string, SignalMetrics> = {};
+      for (const [key, signalStats] of perSignal) {
+        const descriptor = descriptors.find((d) => d.key === key);
+        if (!descriptor?.stats?.labels) continue;
 
-      const labelMap: Record<string, number> = {};
-      for (const [pKey, labelName] of Object.entries(descriptor.stats.labels)) {
-        const p = Number(pKey.slice(1));
-        const threshold = signalStats.percentiles[p];
-        if (threshold !== undefined) {
-          labelMap[labelName] = threshold;
+        const labelMap: Record<string, number> = {};
+        for (const [pKey, labelName] of Object.entries(descriptor.stats.labels)) {
+          const p = Number(pKey.slice(1));
+          const threshold = signalStats.percentiles[p];
+          if (threshold !== undefined) {
+            labelMap[labelName] = threshold;
+          }
         }
-      }
 
-      signals[key] = {
-        min: signalStats.min,
-        max: signalStats.max,
-        mean: signalStats.mean,
-        count: signalStats.count,
-        labelMap,
-      };
+        result[key] = {
+          min: signalStats.min,
+          max: signalStats.max,
+          mean: signalStats.mean,
+          count: signalStats.count,
+          labelMap,
+        };
+      }
+      return result;
+    };
+
+    const signals: Record<string, Record<string, SignalMetrics>> = {
+      global: buildSignalMetrics(stats.perSignal),
+    };
+
+    if (stats.perLanguage) {
+      for (const [lang, langStats] of stats.perLanguage) {
+        signals[lang] = buildSignalMetrics(langStats);
+      }
     }
 
     return {
