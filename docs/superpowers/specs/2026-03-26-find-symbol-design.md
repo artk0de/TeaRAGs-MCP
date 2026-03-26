@@ -23,6 +23,8 @@ find_symbol({
   pathPattern?: string, // glob scope (picomatch)
   metaOnly?: boolean,   // strip content — existence check
   rerank?: string | { custom: Record<string, number> }, // attach ranking overlay
+  limit?: number,       // max results (default: 50)
+  offset?: number,      // pagination offset
 })
 ```
 
