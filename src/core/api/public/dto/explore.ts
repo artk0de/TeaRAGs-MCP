@@ -28,6 +28,7 @@ export interface TypedFilterParams {
   fileExtension?: string | string[];
   chunkType?: string;
   documentation?: "only" | "exclude" | "include";
+  symbolId?: string;
   // Git trajectory filters
   author?: string;
   modifiedAfter?: string | Date;
