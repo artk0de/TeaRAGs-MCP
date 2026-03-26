@@ -379,7 +379,7 @@ describe("computeCollectionStats distributions", () => {
       expect(result.perLanguage.has("python")).toBe(false);
     });
 
-    it("should always exclude config languages from per-language stats", () => {
+    it("should exclude non-code and low-share languages from per-language stats", () => {
       const points = [
         ...Array.from({ length: 50 }, (_, i) => ({
           payload: {
@@ -390,7 +390,7 @@ describe("computeCollectionStats distributions", () => {
             relativePath: `ts${i}.ts`,
           },
         })),
-        // json: 30/110 = 27% — still excluded (config language)
+        // json: not in CODE_LANGUAGES → excluded
         ...Array.from({ length: 30 }, (_, i) => ({
           payload: {
             "git.file.commitCount": i + 1,
@@ -400,7 +400,7 @@ describe("computeCollectionStats distributions", () => {
             relativePath: `cfg${i}.json`,
           },
         })),
-        // markdown: 20/110 = 18% — still excluded (config language)
+        // markdown: isDocumentation → not in CODE_LANGUAGES → excluded
         ...Array.from({ length: 20 }, (_, i) => ({
           payload: {
             "git.file.commitCount": i + 1,
@@ -410,23 +410,66 @@ describe("computeCollectionStats distributions", () => {
             relativePath: `doc${i}.md`,
           },
         })),
-        // bash: 10/110 = 9% — excluded (config language)
-        ...Array.from({ length: 10 }, (_, i) => ({
-          payload: {
-            "git.file.commitCount": i + 1,
-            language: "bash",
-            chunkType: "block",
-            isDocumentation: false,
-            relativePath: `script${i}.sh`,
-          },
-        })),
       ];
       const result = computeCollectionStats(points, testSignals);
 
       expect(result.perLanguage.has("typescript")).toBe(true);
       expect(result.perLanguage.has("json")).toBe(false);
       expect(result.perLanguage.has("markdown")).toBe(false);
+    });
+
+    it("should exclude code language below 5% share", () => {
+      // 480 typescript + 20 bash = 500 total, bash = 20/500 = 4% < 5%
+      const points = [
+        ...Array.from({ length: 480 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": (i % 50) + 1,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `ts${i}.ts`,
+          },
+        })),
+        ...Array.from({ length: 20 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "bash",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `script${i}.sh`,
+          },
+        })),
+      ];
+      const result = computeCollectionStats(points, testSignals);
+      expect(result.perLanguage.has("typescript")).toBe(true);
       expect(result.perLanguage.has("bash")).toBe(false);
+    });
+
+    it("should include code language at 10% share (above 5%)", () => {
+      // 90 typescript + 10 bash = 100 total, bash = 10%
+      const points = [
+        ...Array.from({ length: 90 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `ts${i}.ts`,
+          },
+        })),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "bash",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `script${i}.sh`,
+          },
+        })),
+      ];
+      const result = computeCollectionStats(points, testSignals);
+      expect(result.perLanguage.has("typescript")).toBe(true);
+      expect(result.perLanguage.has("bash")).toBe(true);
     });
 
     it("should exclude config languages from global perSignal stats", () => {
