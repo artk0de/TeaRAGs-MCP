@@ -574,4 +574,125 @@ describe("computeCollectionStats distributions", () => {
       expect(ccStats.count).toBe(20);
     });
   });
+
+  describe("scoped stats (source vs test)", () => {
+    const scopedSignals: PayloadSignalDescriptor[] = [
+      {
+        key: "methodLines",
+        type: "number",
+        description: "method lines",
+        stats: { labels: { p50: "small", p75: "large", p95: "decomposition_candidate" }, chunkTypeFilter: "function" },
+      },
+      {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "commit count",
+        stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }, mean: true },
+      },
+    ];
+
+    function makePoint(overrides: Record<string, unknown>) {
+      return {
+        payload: {
+          language: "ruby",
+          chunkType: "function",
+          relativePath: "app/models/user.rb",
+          methodLines: 30,
+          git: { file: { commitCount: 5 } },
+          ...overrides,
+        },
+      };
+    }
+
+    it("separates source and test stats in perLanguage", () => {
+      // Need >= 10 chunks for MIN_SAMPLE_SIZE
+      // Use commitCount (no chunkTypeFilter) — works for both chunkType=function and chunkType=test
+      const sourcePoints = Array.from({ length: 10 }, (_, i) =>
+        makePoint({ git: { file: { commitCount: 2 + i } }, relativePath: `app/models/m${i}.rb` }),
+      );
+      const testPoints = Array.from({ length: 10 }, (_, i) =>
+        makePoint({
+          git: { file: { commitCount: 20 + i * 5 } },
+          chunkType: "test",
+          relativePath: `spec/models/m${i}_spec.rb`,
+        }),
+      );
+      const points = [...sourcePoints, ...testPoints];
+
+      const result = computeCollectionStats(points, scopedSignals);
+      const rubyStats = result.perLanguage.get("ruby");
+      expect(rubyStats).toBeDefined();
+
+      const ccStats = rubyStats!.get("git.file.commitCount");
+      expect(ccStats).toBeDefined();
+      expect(ccStats!.source.count).toBe(10);
+      expect(ccStats!.test).toBeDefined();
+      expect(ccStats!.test!.count).toBe(10);
+      // Source median ~6, test median ~42 — source < test
+      expect(ccStats!.source.percentiles[50]).toBeLessThan(ccStats!.test!.percentiles[50]);
+    });
+
+    it("excludes test_setup from both scopes", () => {
+      // Use commitCount (no chunkTypeFilter)
+      const sourcePoints = Array.from({ length: 10 }, (_, i) =>
+        makePoint({ git: { file: { commitCount: 2 + i } }, relativePath: `app/models/m${i}.rb` }),
+      );
+      const testPoints = Array.from({ length: 10 }, (_, i) =>
+        makePoint({
+          git: { file: { commitCount: 20 + i } },
+          chunkType: "test",
+          relativePath: `spec/models/m${i}_spec.rb`,
+        }),
+      );
+      const setupPoints = Array.from({ length: 5 }, (_, i) =>
+        makePoint({
+          git: { file: { commitCount: 100 + i } },
+          chunkType: "test_setup",
+          relativePath: `spec/support/s${i}.rb`,
+        }),
+      );
+      const points = [...sourcePoints, ...testPoints, ...setupPoints];
+
+      const result = computeCollectionStats(points, scopedSignals);
+      const rubyStats = result.perLanguage.get("ruby");
+      const ccStats = rubyStats!.get("git.file.commitCount");
+      expect(ccStats!.source.count).toBe(10);
+      expect(ccStats!.test!.count).toBe(10); // test_setup excluded
+    });
+
+    it("uses path fallback when language has 0 test chunks", () => {
+      // Python with no chunkType=test — path fallback should detect tests/ dir
+      const sourcePoints = Array.from({ length: 10 }, (_, i) =>
+        makePoint({ language: "python", methodLines: 20 + i, relativePath: `src/app${i}.py` }),
+      );
+      const testPoints = Array.from({ length: 10 }, (_, i) =>
+        makePoint({ language: "python", methodLines: 90 + i, relativePath: `tests/test_app${i}.py` }),
+      );
+      const points = [...sourcePoints, ...testPoints];
+
+      const result = computeCollectionStats(points, scopedSignals);
+      const pyStats = result.perLanguage.get("python");
+      expect(pyStats).toBeDefined();
+      const mlStats = pyStats!.get("methodLines");
+      expect(mlStats!.source.count).toBe(10);
+      expect(mlStats!.test).toBeDefined();
+      expect(mlStats!.test!.count).toBe(10);
+    });
+
+    it("global perSignal excludes test chunks", () => {
+      const sourcePoints = Array.from({ length: 10 }, (_, i) =>
+        makePoint({ methodLines: 20 + i, relativePath: `app/m${i}.rb` }),
+      );
+      const testPoints = Array.from({ length: 5 }, (_, i) =>
+        makePoint({ methodLines: 200 + i, chunkType: "test", relativePath: `spec/m${i}_spec.rb` }),
+      );
+      const points = [...sourcePoints, ...testPoints];
+
+      const result = computeCollectionStats(points, scopedSignals);
+      const globalML = result.perSignal.get("methodLines");
+      expect(globalML).toBeDefined();
+      // Global should only have source values
+      expect(globalML!.count).toBe(10);
+    });
+  });
 });
