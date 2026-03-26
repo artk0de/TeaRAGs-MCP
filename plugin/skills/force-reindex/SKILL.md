@@ -51,6 +51,7 @@ Agent tool:
     - forceReindex: true
     Report the COMPLETE response as-is — every field returned by the tool.
     Do not cherry-pick fields. Whatever the endpoint returns, summarize it all.
+    ALWAYS include the duration field — users need to see how long indexing took.
 ```
 
 4. Tell the user: "Force reindex started in background. Search continues on the
@@ -58,7 +59,7 @@ Agent tool:
    ready."
 
 5. When the background agent completes, report the **full result** to the user.
-   Include all metrics — do not summarize or omit fields.
+   Include all metrics and duration — do not summarize or omit fields.
 
 ## Do NOT
 
