@@ -338,6 +338,12 @@ export class ExploreFacade {
       results = this.reranker.rerank(results, request.rerank, "semantic_search");
     }
 
+    // Pagination
+    const offset = request.offset ?? 0;
+    const limit = request.limit ?? 50;
+    if (offset > 0) results = results.slice(offset);
+    results = results.slice(0, limit);
+
     const driftWarning = path ? await this.checkDrift(path) : null;
 
     return { results, driftWarning };

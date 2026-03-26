@@ -125,6 +125,8 @@ export interface FindSymbolRequest extends CollectionRef {
   pathPattern?: string;
   metaOnly?: boolean;
   rerank?: string | { custom: Record<string, number> };
+  limit?: number;
+  offset?: number;
 }
 
 // ---------------------------------------------------------------------------

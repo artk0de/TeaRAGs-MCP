@@ -370,6 +370,8 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
         "Reranking preset or {custom: weights} — attaches ranking overlay with git signals. " +
           "See tea-rags://schema/presets for details.",
       ),
+    limit: coerceNumber().optional().describe("Maximum number of results (default: 50)"),
+    offset: coerceNumber().optional().describe("Skip first N results (for pagination). Default: 0."),
   };
 
   return {
