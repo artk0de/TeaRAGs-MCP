@@ -392,4 +392,16 @@ describe("OpenAIEmbeddings", () => {
       expect(customEmbeddings).toBeDefined();
     });
   });
+
+  describe("checkHealth", () => {
+    it("should always return true", async () => {
+      expect(await embeddings.checkHealth()).toBe(true);
+    });
+  });
+
+  describe("getProviderName", () => {
+    it("should return 'openai'", () => {
+      expect(embeddings.getProviderName()).toBe("openai");
+    });
+  });
 });

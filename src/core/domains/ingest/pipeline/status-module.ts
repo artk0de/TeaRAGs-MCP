@@ -178,6 +178,20 @@ export class StatusModule {
         typeof referenceTime === "string" &&
         Date.now() - new Date(referenceTime).getTime() > STALE_INDEXING_THRESHOLD_MS;
 
+      if (isStale && sourceCollection !== reportedName) {
+        // Versioned collection (_vN) with stale marker.
+        // Only auto-delete if it has no real data (just the metadata marker or empty).
+        // Collections with chunks may be partially indexed — let the user decide.
+        if (actualChunksCount === 0) {
+          await this.qdrant.deleteCollection(sourceCollection);
+          const aliasTarget = await this.getAliasTarget(reportedName);
+          if (aliasTarget) {
+            return this.getStatusFromCollection(aliasTarget, reportedName);
+          }
+          return { isIndexed: false, status: "not_indexed", collectionName: reportedName };
+        }
+      }
+
       return {
         isIndexed: false,
         status: isStale ? "stale_indexing" : "indexing",

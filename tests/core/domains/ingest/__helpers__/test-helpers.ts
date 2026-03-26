@@ -257,6 +257,10 @@ export class MockQdrantManager implements Partial<QdrantManager> {
   async disableIndexing(_collectionName: string): Promise<void> {}
 
   async enableIndexing(_collectionName: string, _threshold?: number): Promise<void> {}
+
+  async checkHealth(): Promise<boolean> {
+    return true;
+  }
 }
 
 /** Mock EmbeddingProvider — returns fixed 384-dim vectors */
@@ -278,6 +282,14 @@ export class MockEmbeddingProvider implements EmbeddingProvider {
       embedding: new Array(384).fill(0.1),
       dimensions: 384,
     }));
+  }
+
+  async checkHealth(): Promise<boolean> {
+    return true;
+  }
+
+  getProviderName(): string {
+    return "mock";
   }
 }
 

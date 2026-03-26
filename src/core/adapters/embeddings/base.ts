@@ -14,6 +14,12 @@ export interface EmbeddingProvider {
   embedBatch: (texts: string[]) => Promise<EmbeddingResult[]>;
   getDimensions: () => number;
   getModel: () => string;
+  /** Lightweight health check — returns true if provider is reachable. */
+  checkHealth: () => Promise<boolean>;
+  /** Provider identifier (e.g. "ollama", "onnx", "openai"). */
+  getProviderName: () => string;
+  /** Base URL for remote providers. Undefined for local (e.g. ONNX). */
+  getBaseUrl?: () => string;
 }
 
 export interface ProviderConfig {

@@ -345,7 +345,7 @@ describe("StatusModule", () => {
         expect(status.embeddingModel).toBe("test-model");
       });
 
-      it("should report stale_indexing when marker has no recent heartbeat", async () => {
+      it("should auto-cleanup stale _v1 and return not_indexed when marker has no recent heartbeat", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
         const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
@@ -366,9 +366,9 @@ describe("StatusModule", () => {
 
         const status = await ingest.getIndexStatus(codebaseDir);
 
-        expect(status.status).toBe("stale_indexing");
+        // Versioned stale collections are auto-cleaned → not_indexed
+        expect(status.status).toBe("not_indexed");
         expect(status.isIndexed).toBe(false);
-        expect(status.collectionName).toBe(collectionName);
       });
 
       it("should report indexing (not stale) when lastHeartbeat is recent despite old startedAt", async () => {
@@ -403,7 +403,7 @@ describe("StatusModule", () => {
         expect(status.collectionName).toBe(collectionName);
       });
 
-      it("should report stale_indexing when lastHeartbeat is also old", async () => {
+      it("should auto-cleanup stale _v1 when lastHeartbeat is also old", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
         const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
@@ -430,7 +430,8 @@ describe("StatusModule", () => {
 
         const status = await ingest.getIndexStatus(codebaseDir);
 
-        expect(status.status).toBe("stale_indexing");
+        // Versioned stale collections are auto-cleaned → not_indexed
+        expect(status.status).toBe("not_indexed");
         expect(status.isIndexed).toBe(false);
       });
 
@@ -504,6 +505,129 @@ describe("StatusModule", () => {
         expect(status.collectionName).toBe(collectionName);
         expect(status.chunksCount).toBe(2);
         expect(status.embeddingModel).toBe("new-model");
+      });
+    });
+
+    describe("stale marker auto-cleanup", () => {
+      it("should cleanup stale _v1 and return not_indexed when no valid alias exists", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+        const versionedName = `${collectionName}_v1`;
+
+        // Stale _v1: startedAt 15 min ago, no heartbeat, no alias
+        const staleTime = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await qdrant.createCollection(versionedName, 384, "Cosine", false);
+        await qdrant.addPoints(versionedName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: false, startedAt: staleTime },
+          },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        expect(status.status).toBe("not_indexed");
+        expect(status.isIndexed).toBe(false);
+        // Stale _v1 should have been deleted
+        expect(await qdrant.collectionExists(versionedName)).toBe(false);
+      });
+
+      it("should cleanup stale _v2 and return indexed from alias target _v1", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+
+        // _v1 is complete and aliased
+        await qdrant.createCollection(`${collectionName}_v1`, 384, "Cosine", false);
+        await qdrant.addPoints(`${collectionName}_v1`, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: true, completedAt: new Date().toISOString() },
+          },
+          { id: "chunk-1", vector: new Array(384).fill(0.1), payload: { relativePath: "test.ts" } },
+        ]);
+        await qdrant.aliases.createAlias(collectionName, `${collectionName}_v1`);
+
+        // _v2 is stale (crashed forceReindex)
+        const staleTime = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await qdrant.createCollection(`${collectionName}_v2`, 384, "Cosine", false);
+        await qdrant.addPoints(`${collectionName}_v2`, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: false, startedAt: staleTime },
+          },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        // Should return status from _v1 (the valid alias target)
+        expect(status.status).toBe("indexed");
+        expect(status.isIndexed).toBe(true);
+        expect(status.chunksCount).toBe(1);
+        // Stale _v2 should have been deleted
+        expect(await qdrant.collectionExists(`${collectionName}_v2`)).toBe(false);
+      });
+
+      it("should keep stale_indexing for _vN collection with real chunks (partial data)", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+        const versionedName = `${collectionName}_v1`;
+
+        // Stale _v1 with real chunks — partially indexed, don't delete
+        const staleTime = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await qdrant.createCollection(versionedName, 384, "Cosine", false);
+        await qdrant.addPoints(versionedName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: false, startedAt: staleTime },
+          },
+          { id: "chunk-1", vector: new Array(384).fill(0.1), payload: { relativePath: "partial.ts" } },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        // Has real data — keep stale_indexing, don't auto-delete
+        expect(status.status).toBe("stale_indexing");
+        expect(status.isIndexed).toBe(false);
+        expect(await qdrant.collectionExists(versionedName)).toBe(true);
+      });
+
+      it("should keep stale_indexing for legacy collection without _vN suffix", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+
+        // Legacy: real collection (not versioned), stale marker
+        const staleTime = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await qdrant.createCollection(collectionName, 384, "Cosine", false);
+        await qdrant.addPoints(collectionName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: false, startedAt: staleTime },
+          },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        // Legacy collection should NOT be deleted — keep stale_indexing
+        expect(status.status).toBe("stale_indexing");
+        expect(status.isIndexed).toBe(false);
+        expect(await qdrant.collectionExists(collectionName)).toBe(true);
       });
     });
 

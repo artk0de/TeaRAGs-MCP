@@ -1052,4 +1052,75 @@ describe("OllamaEmbeddings", () => {
       await expect(fallbackEmbeddings.embed("missing model")).rejects.toThrow(OllamaModelMissingError);
     });
   });
+
+  describe("checkHealth", () => {
+    it("should return true when /api/tags responds ok", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+      const result = await embeddings.checkHealth();
+
+      expect(result).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:11434/api/tags",
+        expect.objectContaining({ method: "GET" }),
+      );
+    });
+
+    it("should return false when /api/tags throws", async () => {
+      mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      const result = await embeddings.checkHealth();
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false when /api/tags returns non-ok", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+
+      const result = await embeddings.checkHealth();
+
+      expect(result).toBe(false);
+    });
+
+    it("should check fallback URL when using fallback", async () => {
+      const fallbackEmbeddings = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        "http://primary:11434",
+        true,
+        999,
+        "http://fallback:11434",
+      );
+
+      const mockEmbedding = Array(768).fill(0.5);
+
+      // Trigger failover: primary fails, fallback succeeds
+      mockFetch
+        .mockRejectedValueOnce(new Error("primary down"))
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+      await fallbackEmbeddings.embed("trigger failover");
+
+      // Now check health — should probe fallback URL
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+
+      const result = await fallbackEmbeddings.checkHealth();
+
+      expect(result).toBe(true);
+      const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+      expect(lastCall[0]).toBe("http://fallback:11434/api/tags");
+    });
+  });
+
+  describe("getProviderName", () => {
+    it("should return 'ollama'", () => {
+      expect(embeddings.getProviderName()).toBe("ollama");
+    });
+  });
+
+  describe("getBaseUrl", () => {
+    it("should return base URL", () => {
+      expect(embeddings.getBaseUrl()).toBe("http://localhost:11434");
+    });
+  });
 });
