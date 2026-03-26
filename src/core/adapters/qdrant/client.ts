@@ -60,6 +60,16 @@ export class QdrantManager {
     return (this._aliases ??= new QdrantAliasManager(this.client));
   }
 
+  /** Lightweight health check — returns true if Qdrant is reachable. */
+  async checkHealth(): Promise<boolean> {
+    try {
+      await this.call(async () => this.client.getCollections());
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Converts a string ID to UUID format if it's not already a UUID.
    * Qdrant requires string IDs to be in UUID format.

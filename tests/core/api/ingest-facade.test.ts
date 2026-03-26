@@ -69,8 +69,16 @@ describe("IngestFacade", () => {
     const payloadSignals = opts.withStats ? [{ key: "language", label: "Language" }] : undefined;
 
     const facade = new IngestFacade(
-      { collectionExists: vi.fn().mockResolvedValue(false) } as any,
-      { embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }) } as any,
+      {
+        collectionExists: vi.fn().mockResolvedValue(false),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        url: "http://localhost:6333",
+      } as any,
+      {
+        embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        getProviderName: vi.fn().mockReturnValue("mock"),
+      } as any,
       {} as any,
       { enableGitMetadata: false } as any,
       statsCache as any,
@@ -110,10 +118,14 @@ describe("IngestFacade", () => {
     expect(result).toEqual({ chunksIndexed: 10 });
   });
 
-  it("delegates getIndexStatus", async () => {
+  it("delegates getIndexStatus with infraHealth", async () => {
     const { facade } = makeFacade();
     const status = await facade.getIndexStatus("/tmp/test-project");
-    expect(status).toEqual({ indexed: true });
+    expect(status).toMatchObject({ indexed: true });
+    expect(status.infraHealth).toEqual({
+      qdrant: { available: true, url: "http://localhost:6333" },
+      embedding: { available: true, provider: "mock" },
+    });
   });
 
   it("delegates clearIndex", async () => {
@@ -198,18 +210,23 @@ describe("IngestFacade", () => {
   });
 
   describe("getIndexStatus does not require embeddings", () => {
-    it("returns status even when embedding provider is unreachable", async () => {
+    it("returns status with embedding unavailable when provider is unreachable", async () => {
       const { facade } = makeFacade();
-      // Sabotage embed() to simulate Ollama being down
+      // Sabotage embed() and checkHealth() to simulate Ollama being down
       (facade as any).embeddings = {
         embed: vi.fn().mockRejectedValue(new OllamaUnavailableError("http://localhost:11434")),
+        checkHealth: vi.fn().mockResolvedValue(false),
+        getProviderName: vi.fn().mockReturnValue("ollama"),
+        getBaseUrl: vi.fn().mockReturnValue("http://localhost:11434"),
         getDimensions: vi.fn().mockReturnValue(384),
         getModel: vi.fn().mockReturnValue("test-model"),
       };
 
-      // Should NOT throw — getIndexStatus is read-only, no embeddings needed
+      // Should NOT throw — returns status with infraHealth showing embedding down
       const status = await facade.getIndexStatus("/tmp/test-project");
-      expect(status).toEqual({ indexed: true });
+      expect(status).toMatchObject({ indexed: true });
+      expect(status.infraHealth?.embedding.available).toBe(false);
+      expect(status.infraHealth?.qdrant.available).toBe(true);
     });
   });
 

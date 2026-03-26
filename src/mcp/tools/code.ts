@@ -4,7 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App, SchemaBuilder } from "../../core/api/index.js";
+import type { App, IndexStatus, SchemaBuilder } from "../../core/api/index.js";
 import { appendDriftWarning, formatMcpText, sanitizeRerank } from "../format.js";
 import { registerToolSafe } from "../middleware/error-handler.js";
 import { formatEnrichmentStatus } from "./formatters/enrichment.js";
@@ -185,15 +185,27 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
     async ({ path }) => {
       const status = await app.getIndexStatus(path);
 
+      if (status.status === "unavailable") {
+        let text = `Infrastructure problem detected for "${path}".\n`;
+        if (status.infraHealth) {
+          text += formatInfraHealth(status.infraHealth);
+        }
+        text += `\nIndex state is unknown — Qdrant is not reachable.`;
+        return formatMcpText(text);
+      }
+
       if (status.status === "not_indexed") {
-        return formatMcpText(`Codebase at "${path}" is not indexed. Use index_codebase to index it first.`);
+        let text = `Codebase at "${path}" is not indexed. Use index_codebase to index it first.`;
+        if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth)}`;
+        return formatMcpText(text);
       }
 
       if (status.status === "stale_indexing") {
-        return formatMcpText(
+        let text =
           `Codebase at "${path}" has a stale indexing marker (started but never completed — likely crashed). ` +
-            `Use index_codebase to re-index. The stale collection will be cleaned up automatically.`,
-        );
+          `Use index_codebase to re-index. The stale collection will be cleaned up automatically.`;
+        if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth)}`;
+        return formatMcpText(text);
       }
 
       if (status.status === "indexing") {
@@ -204,11 +216,12 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
             text += ` (${status.enrichment.percentage}%)`;
           }
         }
+        if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth)}`;
         return formatMcpText(text);
       }
 
       // Regroup enrichment into trajectory.git.{file, chunk} structure
-      const { enrichment, chunkEnrichment, ...rest } = status;
+      const { enrichment, chunkEnrichment, infraHealth, ...rest } = status;
       const response: Record<string, unknown> = { ...rest };
       if (enrichment || chunkEnrichment) {
         response.trajectory = {
@@ -226,6 +239,8 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
         const pct = status.enrichment.percentage ?? 0;
         text += `\n\n⏳ Git enrichment is still running (${pct}% — ${status.enrichment.processedFiles ?? 0}/${status.enrichment.totalFiles ?? "?"} files). Git-based filters and rerank presets will not work until enrichment completes.`;
       }
+
+      if (infraHealth) text += `\n\n${formatInfraHealth(infraHealth)}`;
 
       const driftWarning = await app.checkSchemaDrift({ path });
       return appendDriftWarning(formatMcpText(text), driftWarning);
@@ -268,5 +283,16 @@ export function registerCodeTools(server: McpServer, deps: { app: App; schemaBui
       await app.clearIndex(path);
       return formatMcpText(`Index cleared for codebase at "${path}".`);
     },
+  );
+}
+
+function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {
+  const qdrantStatus = h.qdrant.available ? "available" : "unavailable";
+  const embeddingStatus = h.embedding.available ? "available" : "unavailable";
+  const embeddingUrl = h.embedding.url ? ` (${h.embedding.url})` : "";
+  return (
+    `Infrastructure:\n` +
+    `  Qdrant: ${qdrantStatus} (${h.qdrant.url})\n` +
+    `  Embedding (${h.embedding.provider}): ${embeddingStatus}${embeddingUrl}`
   );
 }

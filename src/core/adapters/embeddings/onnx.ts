@@ -365,6 +365,14 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     return this.model;
   }
 
+  async checkHealth(): Promise<boolean> {
+    return true;
+  }
+
+  getProviderName(): string {
+    return "onnx";
+  }
+
   /** Eagerly initialize connection to daemon (for batch size calibration) */
   async initialize(): Promise<void> {
     await this.ensureInitialized();
