@@ -211,17 +211,25 @@ describe("StatsCache", () => {
     expect(loaded!.perSignal.get("gamma")!.stddev).toBe(3.14);
   });
 
-  describe("perLanguage (v4)", () => {
-    it("should round-trip perLanguage through save/load", () => {
+  describe("perLanguage (v5 — scoped stats)", () => {
+    it("should round-trip ScopedSignalStats through save/load", () => {
       const tsSignals = new Map([
-        ["git.file.commitCount", { count: 50, mean: 12, percentiles: { 25: 3, 95: 30 } }],
-        ["git.file.ageDays", { count: 50, mean: 90 }],
+        [
+          "git.file.commitCount",
+          {
+            source: { count: 50, min: 1, max: 30, mean: 12, percentiles: { 25: 3, 95: 30 } },
+            test: { count: 20, min: 1, max: 80, mean: 25, percentiles: { 25: 5, 95: 60 } },
+          },
+        ],
+        ["git.file.ageDays", { source: { count: 50, min: 1, max: 365, mean: 90, percentiles: { 50: 60 } } }],
       ]);
-      const rubySignals = new Map([["git.file.commitCount", { count: 20, mean: 8 }]]);
+      const rubySignals = new Map([
+        ["git.file.commitCount", { source: { count: 20, min: 1, max: 15, mean: 8, percentiles: { 50: 7 } } }],
+      ]);
 
       const stats = makeStats({
         computedAt: 1_700_000_000_000,
-        perSignal: new Map([["git.file.commitCount", { count: 70, mean: 10 }]]),
+        perSignal: new Map([["git.file.commitCount", { count: 70, min: 1, max: 80, mean: 10, percentiles: {} }]]),
         perLanguage: new Map([
           ["typescript", tsSignals],
           ["ruby", rubySignals],
@@ -238,12 +246,37 @@ describe("StatsCache", () => {
       const loadedTs = loaded!.perLanguage.get("typescript");
       expect(loadedTs).toBeInstanceOf(Map);
       expect(loadedTs!.size).toBe(2);
-      expect(loadedTs!.get("git.file.commitCount")!.mean).toBe(12);
-      expect(loadedTs!.get("git.file.ageDays")!.mean).toBe(90);
+      expect(loadedTs!.get("git.file.commitCount")!.source.mean).toBe(12);
+      expect(loadedTs!.get("git.file.commitCount")!.test?.mean).toBe(25);
+      expect(loadedTs!.get("git.file.ageDays")!.source.mean).toBe(90);
+      expect(loadedTs!.get("git.file.ageDays")!.test).toBeUndefined();
 
       const loadedRuby = loaded!.perLanguage.get("ruby");
       expect(loadedRuby).toBeInstanceOf(Map);
-      expect(loadedRuby!.get("git.file.commitCount")!.mean).toBe(8);
+      expect(loadedRuby!.get("git.file.commitCount")!.source.mean).toBe(8);
+    });
+
+    it("should migrate v4 cache to ScopedSignalStats (source only, test undefined)", () => {
+      const filePath = join(snapshotsDir, "v4-collection.stats.json");
+      const v4Content = JSON.stringify({
+        version: 4,
+        collectionName: "v4-collection",
+        computedAt: 1_700_000_000_000,
+        perSignal: { "git.file.commitCount": { count: 70, min: 1, max: 80, mean: 10, percentiles: {} } },
+        perLanguage: {
+          typescript: { "git.file.commitCount": { count: 50, min: 1, max: 30, mean: 12, percentiles: { 25: 3 } } },
+        },
+        distributions: emptyDistributions,
+      });
+      writeFileSync(filePath, v4Content, "utf-8");
+
+      const loaded = cache.load("v4-collection");
+      expect(loaded).not.toBeNull();
+
+      const tsStats = loaded!.perLanguage.get("typescript")!.get("git.file.commitCount")!;
+      expect(tsStats.source.mean).toBe(12);
+      expect(tsStats.source.percentiles[25]).toBe(3);
+      expect(tsStats.test).toBeUndefined();
     });
 
     it("should discard v3 cache and return null", () => {

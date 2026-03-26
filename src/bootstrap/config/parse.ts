@@ -100,6 +100,7 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     chunkOverlap: env("INGEST_CHUNK_OVERLAP", "CODE_CHUNK_OVERLAP"),
     enableAST: env("INGEST_ENABLE_AST", "CODE_ENABLE_AST"),
     enableHybrid: env("INGEST_ENABLE_HYBRID", "CODE_ENABLE_HYBRID"),
+    testPaths: env("CODE_TEST_PATHS"),
     tune: ingestTune,
   };
 

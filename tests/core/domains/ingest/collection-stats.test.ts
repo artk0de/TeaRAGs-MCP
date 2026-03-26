@@ -341,12 +341,12 @@ describe("computeCollectionStats distributions", () => {
       expect(result.perLanguage.has("typescript")).toBe(true);
       expect(result.perLanguage.has("python")).toBe(true);
 
-      const tsStats = result.perLanguage.get("typescript")!.get("git.file.commitCount")!;
+      const tsStats = result.perLanguage.get("typescript")!.get("git.file.commitCount")!.source;
       expect(tsStats.count).toBe(10);
       expect(tsStats.min).toBe(1);
       expect(tsStats.max).toBe(10);
 
-      const pyStats = result.perLanguage.get("python")!.get("git.file.commitCount")!;
+      const pyStats = result.perLanguage.get("python")!.get("git.file.commitCount")!.source;
       expect(pyStats.count).toBe(10);
       expect(pyStats.min).toBe(11);
       expect(pyStats.max).toBe(20);
@@ -564,13 +564,13 @@ describe("computeCollectionStats distributions", () => {
       const tsStats = result.perLanguage.get("typescript")!;
 
       // methodLines has chunkTypeFilter: "function" — only function chunks
-      const mlStats = tsStats.get("methodLines")!;
+      const mlStats = tsStats.get("methodLines")!.source;
       expect(mlStats.count).toBe(10);
       expect(mlStats.min).toBe(10);
       expect(mlStats.max).toBe(100);
 
       // commitCount has no filter — all 20 chunks
-      const ccStats = tsStats.get("git.file.commitCount")!;
+      const ccStats = tsStats.get("git.file.commitCount")!.source;
       expect(ccStats.count).toBe(20);
     });
   });

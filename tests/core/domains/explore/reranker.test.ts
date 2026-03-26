@@ -1737,10 +1737,15 @@ describe("Reranker — label resolution in buildOverlay()", () => {
   it("produces { value, label } for a numeric signal with stats.labels when collectionStats loaded", () => {
     // git.file.commitCount has stats.labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }
     const tsSignals = new Map([
-      ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
+      [
+        "git.file.commitCount",
+        { source: { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } } },
+      ],
     ]);
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map(tsSignals),
+      perSignal: new Map([
+        ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
+      ]),
       perLanguage: new Map([["typescript", tsSignals]]),
       distributions: {
         totalFiles: 100,
@@ -1772,11 +1777,17 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     // But we add a signal WITHOUT labels to verify it stays plain.
     // Use the techDebt preset + collectionStats that only has commitCount entry.
     const tsSignals = new Map([
-      ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
-      ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
+      [
+        "git.file.commitCount",
+        { source: { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } } },
+      ],
+      ["git.file.ageDays", { source: { count: 100, min: 0, max: 500, percentiles: { 95: 400 } } }],
     ]);
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map(tsSignals),
+      perSignal: new Map([
+        ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
+        ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
+      ]),
       perLanguage: new Map([["typescript", tsSignals]]),
       distributions: {
         totalFiles: 100,
@@ -1826,7 +1837,10 @@ describe("Reranker — label resolution in buildOverlay()", () => {
       ]),
       perLanguage: new Map([
         // typescript perLanguage also only has ageDays, NOT commitCount
-        ["typescript", new Map([["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }]])],
+        [
+          "typescript",
+          new Map([["git.file.ageDays", { source: { count: 100, min: 0, max: 500, percentiles: { 95: 400 } } }]]),
+        ],
       ]),
       distributions: {
         totalFiles: 100,
@@ -1855,7 +1869,15 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 3, 50: 8, 75: 12, 95: 50 } }]]),
       perLanguage: new Map([
-        ["ruby", new Map([["git.file.commitCount", { count: 40, percentiles: { 25: 2, 50: 4, 75: 6, 95: 20 } }]])],
+        [
+          "ruby",
+          new Map([
+            [
+              "git.file.commitCount",
+              { source: { count: 40, min: 1, max: 20, percentiles: { 25: 2, 50: 4, 75: 6, 95: 20 } } },
+            ],
+          ]),
+        ],
       ]),
       distributions: {
         totalFiles: 100,
