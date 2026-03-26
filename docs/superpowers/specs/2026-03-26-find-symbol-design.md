@@ -50,7 +50,8 @@ symbol split across chunks by the chunker):
 - **Git stats**: file-level (chunk-level stats lose meaning when merged)
 - **Extra payload fields**:
   - `mergedChunkIds: string[]` — UUIDs of source chunks
-  - `mergedLineRange: { start: number, end: number }` — combined line range
+  - `startLine` / `endLine` — combined line range (reuses existing payload
+    shape)
 
 #### Strategy 2: Class (outline + members)
 
