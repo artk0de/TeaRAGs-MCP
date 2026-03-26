@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { resolveSymbols } from "../../../../src/core/domains/explore/symbol-resolve.js";
 
 describe("resolveSymbols", () => {
@@ -124,6 +125,46 @@ describe("resolveSymbols", () => {
       expect(classResult).toBeDefined();
       expect(classResult!.payload?.members).toEqual(["Reranker.score", "Reranker.rerank"]);
       expect(classResult!.payload?.git).toEqual({ file: { commitCount: 15, ageDays: 60 } });
+    });
+
+    it("detects class from residual block with parentType=class_declaration", () => {
+      const chunks = [
+        {
+          id: "residual-uuid",
+          payload: {
+            symbolId: "Reranker",
+            chunkType: "block",
+            parentType: "class_declaration",
+            name: "Reranker",
+            relativePath: "src/reranker.ts",
+            content: "export class Reranker {\n  private readonly descriptors;",
+            startLine: 43,
+            endLine: 46,
+            language: "typescript",
+            git: { file: { commitCount: 5, ageDays: 1 } },
+          },
+        },
+        {
+          id: "method-uuid",
+          payload: {
+            symbolId: "Reranker.rerank",
+            chunkType: "function",
+            parentName: "Reranker",
+            relativePath: "src/reranker.ts",
+            content: "rerank() { ... }",
+            startLine: 76,
+            endLine: 151,
+            language: "typescript",
+            git: { file: { commitCount: 5, ageDays: 1 } },
+          },
+        },
+      ];
+
+      const results = resolveSymbols(chunks);
+
+      const classResult = results.find((r) => r.payload?.symbolId === "Reranker");
+      expect(classResult).toBeDefined();
+      expect(classResult!.payload?.members).toEqual(["Reranker.rerank"]);
     });
   });
 

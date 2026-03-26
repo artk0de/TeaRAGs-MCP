@@ -30,7 +30,13 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string): SearchRes
 
   // First pass: find class chunks and collect their members from all chunks
   for (const group of groups.values()) {
-    const classChunk = group.find((c) => c.payload.chunkType === "class");
+    const classChunk = group.find(
+      (c) =>
+        c.payload.chunkType === "class" ||
+        (c.payload.chunkType === "block" &&
+          typeof c.payload.parentType === "string" &&
+          c.payload.parentType.includes("class")),
+    );
     if (!classChunk) continue;
 
     // Find all member chunks across all groups (same file, parentName matches class name)
