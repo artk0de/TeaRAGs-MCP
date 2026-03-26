@@ -180,8 +180,12 @@ export function buildFiltersDoc(): string {
   md += "**Imports:** imports[] — file-level imports\n\n";
   md += "## Filter Thresholds\n\n";
   md += "Thresholds vary by codebase. Use `get_index_metrics` to get actual percentile-based ";
-  md += "label boundaries for your indexed collection. Example: commitCount ";
-  md += '`{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" in that codebase.\n\n';
+  md += "label boundaries for your indexed collection. Signals are scoped by `source` and `test`:\n";
+  md += "```\n";
+  md += 'signals["typescript"]["git.file.commitCount"]["source"].labelMap\n';
+  md += "→ { low: 1, typical: 3, high: 8, extreme: 20 }\n";
+  md += "```\n";
+  md += 'means 8 commits = "high" for source code in that codebase. Test code has separate thresholds.\n\n';
   md += "See `tea-rags://schema/signal-labels` for all label mappings.\n";
   return md;
 }
@@ -205,6 +209,23 @@ has a ranking overlay, numeric values are enriched with labels:
 
 The label is determined by which percentile bucket the value falls into.
 Use \`get_index_metrics\` to see actual threshold values for your codebase.
+
+## Scoped Thresholds
+
+Signal stats are split into **source** (production code) and **test** scopes.
+Test code often has different churn/size patterns — separate thresholds prevent
+test noise from distorting production labels.
+
+\`get_index_metrics\` returns:
+\`\`\`
+signals[language][signal][scope].labelMap
+\`\`\`
+
+Example: \`signals["ruby"]["git.file.commitCount"]["source"].labelMap\`
+→ \`{ low: 2, typical: 5, high: 10, extreme: 25 }\`
+
+If a language has test chunks indexed, a \`"test"\` scope appears with separate
+thresholds. Reranker automatically uses the correct scope for label resolution.
 
 ## Git File Signals
 

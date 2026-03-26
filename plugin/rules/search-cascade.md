@@ -28,9 +28,11 @@
 
 **2. Memorize label thresholds + detect polyglot:**
 
-- `get_index_metrics` → remember label values. Example: commitCount
-  `{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" in
-  THIS codebase.
+- `get_index_metrics` → remember label values. Signals are scoped by
+  `source`/`test`:
+  `signals["typescript"]["git.file.commitCount"]["source"].labelMap` →
+  `{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" for
+  source code in THIS codebase. Test code has separate thresholds.
 - Check language distribution in metrics. If 2+ languages each have >10% of
   chunks → **polyglot codebase**. Remember:
   `Polyglot: yes | ruby: 66%, typescript: 34%` This triggers mandatory
