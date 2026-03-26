@@ -32,6 +32,15 @@ describe("CollectionSignalStats", () => {
   it("holds per-signal stats with timestamp", () => {
     const stats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { p25: 3, p50: 8, p75: 20, p95: 50, count: 100 }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     expect(stats.perSignal.get("git.file.commitCount")?.p50).toBe(8);
@@ -45,6 +54,15 @@ describe("ExtractContext", () => {
       bound: 365,
       collectionStats: {
         perSignal: new Map(),
+        perLanguage: new Map(),
+        distributions: {
+          totalFiles: 0,
+          language: {},
+          chunkType: {},
+          documentation: { docs: 0, code: 0 },
+          topAuthors: [],
+          othersCount: 0,
+        },
         computedAt: Date.now(),
       },
     };

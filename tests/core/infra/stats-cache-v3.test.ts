@@ -24,6 +24,7 @@ describe("StatsCache v3", () => {
         },
       ],
     ]),
+    perLanguage: new Map(),
     distributions: {
       totalFiles: 10,
       language: { typescript: 80, python: 20 },

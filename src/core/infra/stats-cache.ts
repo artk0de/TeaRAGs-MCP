@@ -4,15 +4,16 @@ import { join } from "node:path";
 import type { CollectionSignalStats, Distributions, SignalStats } from "../contracts/types/trajectory.js";
 
 interface StatsFileContent {
-  version: 3;
+  version: 4;
   collectionName: string;
   computedAt: number;
   perSignal: Record<string, SignalStats>;
+  perLanguage: Record<string, Record<string, SignalStats>>;
   distributions: Distributions;
   payloadFieldKeys?: string[];
 }
 
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 
 export interface SchemaDrift {
   added: string[];
@@ -32,6 +33,9 @@ export class StatsCache {
       if (data.version !== CURRENT_VERSION) return null;
       return {
         perSignal: new Map(Object.entries(data.perSignal)),
+        perLanguage: new Map(
+          Object.entries(data.perLanguage ?? {}).map(([lang, signals]) => [lang, new Map(Object.entries(signals))]),
+        ),
         distributions: data.distributions,
         computedAt: data.computedAt,
         payloadFieldKeys: data.payloadFieldKeys,
@@ -44,11 +48,16 @@ export class StatsCache {
   /** Save stats to JSON file. */
   save(collectionName: string, stats: CollectionSignalStats, payloadFieldKeys?: string[]): void {
     mkdirSync(this.snapshotsDir, { recursive: true });
+    const perLanguageObj: Record<string, Record<string, SignalStats>> = {};
+    for (const [lang, signals] of stats.perLanguage) {
+      perLanguageObj[lang] = Object.fromEntries(signals);
+    }
     const content: StatsFileContent = {
       version: CURRENT_VERSION,
       collectionName,
       computedAt: stats.computedAt,
       perSignal: Object.fromEntries(stats.perSignal),
+      perLanguage: perLanguageObj,
       distributions: stats.distributions,
       payloadFieldKeys,
     };

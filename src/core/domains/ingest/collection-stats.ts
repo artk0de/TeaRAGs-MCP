@@ -8,6 +8,22 @@
 
 import type { CollectionSignalStats, PayloadSignalDescriptor, SignalStats } from "../../contracts/types/trajectory.js";
 
+const CONFIG_LANGUAGES = new Set([
+  "json",
+  "yaml",
+  "markdown",
+  "text",
+  "gitignore",
+  "toml",
+  "xml",
+  "ini",
+  "env",
+  "csv",
+  "dockerfile",
+]);
+
+const MIN_SAMPLE_SIZE = 10;
+
 /**
  * Read a value from a nested object using dot-notation path.
  * Returns undefined if any segment is missing.
@@ -23,6 +39,24 @@ function readPayloadPath(payload: Record<string, unknown>, path: string): unknow
     current = (current as Record<string, unknown>)[part];
   }
   return current;
+}
+
+/**
+ * Push a signal value to target array if the point passes chunkType filter
+ * and the value is a positive number.
+ */
+function tryPushSignalValue(
+  point: { payload: Record<string, unknown> },
+  signal: PayloadSignalDescriptor,
+  pointChunkType: unknown,
+  target: number[],
+): void {
+  const filter = signal.stats?.chunkTypeFilter;
+  if (filter && pointChunkType !== filter) return;
+  const val = readPayloadPath(point.payload, signal.key);
+  if (typeof val === "number" && val > 0) {
+    target.push(val);
+  }
 }
 
 /**
@@ -58,6 +92,8 @@ interface ExtractedValues {
   chunkNewest: number | undefined;
   /** Distinct files that have git timestamp data */
   gitDataPaths: Set<string>;
+  /** Per-language signal value arrays. Key = language, value = signal key → values. */
+  perLanguageValues: Map<string, Map<string, number[]>>;
 }
 
 function extractSignalValues(
@@ -80,22 +116,31 @@ function extractSignalValues(
   let chunkOldest: number | undefined;
   let chunkNewest: number | undefined;
   const gitDataPaths = new Set<string>();
+  const perLanguageValues = new Map<string, Map<string, number[]>>();
 
   for (const point of points) {
     const pointChunkType = point.payload["chunkType"];
     for (const signal of statsSignals) {
-      const filter = signal.stats?.chunkTypeFilter;
-      if (filter && pointChunkType !== filter) continue;
-      const val = readPayloadPath(point.payload, signal.key);
-      if (typeof val === "number" && val > 0) {
-        const arr = valueArrays.get(signal.key);
-        if (arr) arr.push(val);
-      }
+      const arr = valueArrays.get(signal.key);
+      if (arr) tryPushSignalValue(point, signal, pointChunkType, arr);
     }
 
     const lang = point.payload["language"];
     if (typeof lang === "string") {
       languageCounts[lang] = (languageCounts[lang] ?? 0) + 1;
+
+      let langMap = perLanguageValues.get(lang);
+      if (!langMap) {
+        langMap = new Map<string, number[]>();
+        for (const signal of statsSignals) {
+          langMap.set(signal.key, []);
+        }
+        perLanguageValues.set(lang, langMap);
+      }
+      for (const signal of statsSignals) {
+        const langArr = langMap.get(signal.key);
+        if (langArr) tryPushSignalValue(point, signal, pointChunkType, langArr);
+      }
     }
 
     const { chunkType } = point.payload as { chunkType?: unknown };
@@ -151,6 +196,7 @@ function extractSignalValues(
     chunkOldest,
     chunkNewest,
     gitDataPaths,
+    perLanguageValues,
   };
 }
 
@@ -258,8 +304,30 @@ export function computeCollectionStats(
   const perSignal = computePerSignalStats(extracted.valueArrays, statsSignals);
   const distributions = buildDistributions(extracted, gitTimePeriods);
 
+  const totalChunks = points.length;
+  const perLanguage = new Map<string, Map<string, SignalStats>>();
+
+  for (const [lang, langValueArrays] of extracted.perLanguageValues) {
+    if (CONFIG_LANGUAGES.has(lang)) {
+      const langCount = extracted.languageCounts[lang] ?? 0;
+      if (totalChunks === 0 || langCount / totalChunks < 0.1) continue;
+    }
+
+    const hasEnoughSamples = statsSignals.some((s) => {
+      const values = langValueArrays.get(s.key);
+      return values !== undefined && values.length >= MIN_SAMPLE_SIZE;
+    });
+    if (!hasEnoughSamples) continue;
+
+    const langStats = computePerSignalStats(langValueArrays, statsSignals);
+    if (langStats.size > 0) {
+      perLanguage.set(lang, langStats);
+    }
+  }
+
   return {
     perSignal,
+    perLanguage,
     distributions,
     computedAt: Date.now(),
   };

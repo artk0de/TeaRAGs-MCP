@@ -1483,6 +1483,15 @@ describe("Reranker — per-signal dampeningSource", () => {
     // Collection: commitCount p25=20
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { count: 500, percentiles: { 25: 20, 95: 100 } }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     reranker.setCollectionStats(collectionStats);
@@ -1547,6 +1556,15 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     // Collection p95=2000 (much larger than defaultBound=365)
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.ageDays", { count: 1000, percentiles: { 95: 2000 } }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     reranker.setCollectionStats(collectionStats);
@@ -1567,6 +1585,15 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     // Collection p95=15 (young codebase, much less than defaultBound=365)
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.ageDays", { count: 100, percentiles: { 95: 15 } }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     reranker.setCollectionStats(collectionStats);
@@ -1601,6 +1628,15 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     // Collection p95=50 (small codebase)
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.ageDays", { count: 100, percentiles: { 95: 50 } }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        othersCount: 0,
+      },
       computedAt: Date.now(),
     };
     reranker.setCollectionStats(collectionStats);
@@ -1704,6 +1740,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
       perSignal: new Map([
         ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
       ]),
+      perLanguage: new Map(),
       distributions: {
         totalFiles: 100,
         language: {},
@@ -1738,6 +1775,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
         ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
         ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
       ]),
+      perLanguage: new Map(),
       distributions: {
         totalFiles: 100,
         language: {},
@@ -1784,6 +1822,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
         // Only ageDays in stats, NOT commitCount
         ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
       ]),
+      perLanguage: new Map(),
       distributions: {
         totalFiles: 100,
         language: {},
