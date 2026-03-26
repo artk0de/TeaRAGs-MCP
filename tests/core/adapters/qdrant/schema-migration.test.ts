@@ -316,11 +316,60 @@ describe("SchemaManager", () => {
         ]),
       );
     });
+
+    it("should create text index on symbolId for new collections", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "symbolId", "text");
+    });
   });
 
   describe("CURRENT_SCHEMA_VERSION", () => {
-    it("should be 7", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe(7);
+    it("should be 8", () => {
+      expect(CURRENT_SCHEMA_VERSION).toBe(8);
+    });
+  });
+
+  describe("v8 migration: symbolId text index", () => {
+    it("should create text index on symbolId when migrating from v7", async () => {
+      mockQdrant.getPoint.mockResolvedValue({
+        payload: { _type: "schema_metadata", schemaVersion: 7, indexes: ["relativePath"] },
+      });
+      mockQdrant.ensurePayloadIndex.mockResolvedValue(true);
+
+      const result = await schemaManager.ensureCurrentSchema("test-collection");
+
+      expect(result.success).toBe(true);
+      expect(result.fromVersion).toBe(7);
+      expect(result.toVersion).toBe(CURRENT_SCHEMA_VERSION);
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "symbolId", "text");
+      expect(result.migrationsApplied).toContain("v8: Created text index on symbolId");
+    });
+
+    it("should report when symbolId text index already exists", async () => {
+      mockQdrant.getPoint.mockResolvedValue({
+        payload: { _type: "schema_metadata", schemaVersion: 7, indexes: ["relativePath"] },
+      });
+      mockQdrant.ensurePayloadIndex.mockResolvedValue(false);
+
+      const result = await schemaManager.ensureCurrentSchema("test-collection");
+
+      expect(result.success).toBe(true);
+      expect(result.migrationsApplied).toContain("v8: symbolId text index already exists");
+    });
+
+    it("should apply v8 alongside earlier migrations when migrating from v0", async () => {
+      mockQdrant.getPoint.mockResolvedValue(null);
+      mockQdrant.hasPayloadIndex.mockResolvedValue(false);
+      mockQdrant.ensurePayloadIndex.mockResolvedValue(true);
+
+      const result = await schemaManager.ensureCurrentSchema("test-collection");
+
+      expect(result.success).toBe(true);
+      expect(result.fromVersion).toBe(0);
+      expect(mockQdrant.ensurePayloadIndex).toHaveBeenCalledWith("test-collection", "symbolId", "text");
     });
   });
 
