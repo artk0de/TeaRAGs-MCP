@@ -1845,4 +1845,82 @@ describe("Reranker — label resolution in buildOverlay()", () => {
 
     rerankerWithLabels.invalidateStats();
   });
+
+  it("uses per-language percentiles when available", () => {
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 3, 50: 8, 75: 12, 95: 50 } }]]),
+      perLanguage: new Map([
+        ["ruby", new Map([["git.file.commitCount", { count: 40, percentiles: { 25: 2, 50: 4, 75: 6, 95: 20 } }]])],
+      ]),
+      distributions: {
+        totalFiles: 100,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    };
+    rerankerWithLabels.setCollectionStats(collectionStats);
+
+    // commitCount=7: ruby p75=6 → 7>=6 → "high"; global p75=12 → 7<12 → "typical"
+    const results: RerankableResult[] = [
+      {
+        score: 0.8,
+        payload: {
+          relativePath: "src/a.rb",
+          startLine: 1,
+          endLine: 50,
+          language: "ruby",
+          git: { file: { ageDays: 200, commitCount: 7 } },
+        },
+      },
+    ];
+    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+
+    // Should use ruby stats: p75=6, value=7 >= 6 → "high"
+    expect(overlay.file!.commitCount).toEqual({ value: 7, label: "high" });
+
+    rerankerWithLabels.invalidateStats();
+  });
+
+  it("falls back to global when language not in perLanguage", () => {
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 5, 50: 8, 75: 12, 95: 50 } }]]),
+      perLanguage: new Map(),
+      distributions: {
+        totalFiles: 100,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    };
+    rerankerWithLabels.setCollectionStats(collectionStats);
+
+    // commitCount=7: global p50=8 → 7<8 → "low" (p25=5 passed, p50=8 not)
+    const results: RerankableResult[] = [
+      {
+        score: 0.8,
+        payload: {
+          relativePath: "src/a.go",
+          startLine: 1,
+          endLine: 50,
+          language: "go",
+          git: { file: { ageDays: 200, commitCount: 7 } },
+        },
+      },
+    ];
+    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+
+    // Should use global stats: p25=5 passed (7>=5), p50=8 NOT passed (7<8) → "low"
+    expect(overlay.file!.commitCount).toEqual({ value: 7, label: "low" });
+
+    rerankerWithLabels.invalidateStats();
+  });
 });
