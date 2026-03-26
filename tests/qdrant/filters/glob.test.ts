@@ -102,4 +102,22 @@ describe("globToTextFilter", () => {
     const result = globToTextFilter("src/{core}/**");
     expect(result.must).toEqual([{ key: "relativePath", match: { text: "src/core/" } }]);
   });
+
+  it("strips orphaned filename fragments after wildcard removal", () => {
+    // spec/services/workflow/**/*_spec.rb → should keep only directory prefix
+    const result = globToTextFilter("spec/services/workflow/**/*_spec.rb");
+    expect(result.must).toEqual([{ key: "relativePath", match: { text: "spec/services/workflow/" } }]);
+  });
+
+  it("keeps extension pattern after directory prefix", () => {
+    // src/core/**/*.test.ts → keeps ".test.ts" (pure extension, starts with ".")
+    const result = globToTextFilter("src/core/**/*.test.ts");
+    expect(result.must).toEqual([{ key: "relativePath", match: { text: "src/core/.test.ts" } }]);
+  });
+
+  it("preserves extension-only patterns like **/*.ts", () => {
+    // This existing behavior should remain — extension is the only useful part
+    const result = globToTextFilter("**/*.ts");
+    expect(result.must).toEqual([{ key: "relativePath", match: { text: ".ts" } }]);
+  });
 });
