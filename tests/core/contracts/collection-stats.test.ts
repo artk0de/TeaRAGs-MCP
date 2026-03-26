@@ -6,7 +6,7 @@ import { computeCollectionStats } from "../../../src/core/domains/ingest/collect
 describe("computeCollectionStats", () => {
   // 100 values: 1, 2, 3, ..., 100
   const hundredPoints = Array.from({ length: 100 }, (_, i) => ({
-    payload: { git: { file: { commitCount: i + 1, ageDays: (i + 1) * 2 } } },
+    payload: { git: { file: { commitCount: i + 1, ageDays: (i + 1) * 2 } }, language: "typescript" },
   }));
 
   it("only computes stats for signals with stats declaration", () => {
@@ -101,7 +101,7 @@ describe("computeCollectionStats", () => {
   });
 
   it("handles empty payload gracefully", () => {
-    const points = [{ payload: {} }, { payload: { git: { file: { commitCount: 10 } } } }];
+    const points = [{ payload: {} }, { payload: { git: { file: { commitCount: 10 } }, language: "typescript" } }];
     const signals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "commits", stats: { labels: { p50: "typical" } } },
     ];

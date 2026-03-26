@@ -334,14 +334,18 @@ export class ExploreFacade {
       return result;
     };
 
-    const signals: Record<string, Record<string, SignalMetrics>> = {
-      global: buildSignalMetrics(stats.perSignal),
-    };
+    const signals: Record<string, Record<string, SignalMetrics>> = {};
 
     if (stats.perLanguage) {
       for (const [lang, langStats] of stats.perLanguage) {
         signals[lang] = buildSignalMetrics(langStats);
       }
+    }
+
+    // Include global only for multi-language projects (>1 code language)
+    const codeLanguageCount = stats.perLanguage?.size ?? 0;
+    if (codeLanguageCount !== 1) {
+      signals["global"] = buildSignalMetrics(stats.perSignal);
     }
 
     return {

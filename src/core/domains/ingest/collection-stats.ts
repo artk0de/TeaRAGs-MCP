@@ -122,12 +122,16 @@ function extractSignalValues(
 
   for (const point of points) {
     const pointChunkType = point.payload["chunkType"];
-    for (const signal of statsSignals) {
-      const arr = valueArrays.get(signal.key);
-      if (arr) tryPushSignalValue(point, signal, pointChunkType, arr);
-    }
-
     const lang = point.payload["language"];
+    const isCodeLanguage = typeof lang === "string" && !CONFIG_LANGUAGES.has(lang);
+
+    // Global stats: only code languages contribute
+    if (isCodeLanguage) {
+      for (const signal of statsSignals) {
+        const arr = valueArrays.get(signal.key);
+        if (arr) tryPushSignalValue(point, signal, pointChunkType, arr);
+      }
+    }
     if (typeof lang === "string") {
       languageCounts[lang] = (languageCounts[lang] ?? 0) + 1;
 

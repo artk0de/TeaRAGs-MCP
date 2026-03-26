@@ -429,7 +429,7 @@ describe("computeCollectionStats distributions", () => {
       expect(result.perLanguage.has("bash")).toBe(false);
     });
 
-    it("should not include chunks without language in any per-language bucket", () => {
+    it("should exclude config languages from global perSignal stats", () => {
       const points = [
         ...Array.from({ length: 10 }, (_, i) => ({
           payload: {
@@ -440,6 +440,37 @@ describe("computeCollectionStats distributions", () => {
             relativePath: `ts${i}.ts`,
           },
         })),
+        // markdown (config) — should NOT contribute to global
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": 100 + i,
+            language: "markdown",
+            chunkType: "block",
+            isDocumentation: true,
+            relativePath: `doc${i}.md`,
+          },
+        })),
+      ];
+      const result = computeCollectionStats(points, testSignals);
+
+      // Global should only contain typescript values (10), not markdown
+      const globalStats = result.perSignal.get("git.file.commitCount")!;
+      expect(globalStats.count).toBe(10);
+      expect(globalStats.max).toBe(10); // not 109 from markdown
+    });
+
+    it("should not include chunks without language in global perSignal stats", () => {
+      const points = [
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `ts${i}.ts`,
+          },
+        })),
+        // No language field — should NOT contribute to global
         ...Array.from({ length: 5 }, (_, i) => ({
           payload: {
             "git.file.commitCount": i + 20,
@@ -451,17 +482,13 @@ describe("computeCollectionStats distributions", () => {
       ];
       const result = computeCollectionStats(points, testSignals);
 
-      // Global should have all 15
+      // Global should only have typescript (10), not the 5 language-less
       const globalStats = result.perSignal.get("git.file.commitCount")!;
-      expect(globalStats.count).toBe(15);
+      expect(globalStats.count).toBe(10);
 
-      // TS should have only 10
-      expect(result.perLanguage.has("typescript")).toBe(true);
-      const tsStats = result.perLanguage.get("typescript")!.get("git.file.commitCount")!;
-      expect(tsStats.count).toBe(10);
-
-      // No bucket for undefined language
+      // Per-language: only typescript
       expect(result.perLanguage.size).toBe(1);
+      expect(result.perLanguage.has("typescript")).toBe(true);
     });
 
     it("should respect chunkTypeFilter in per-language stats", () => {
