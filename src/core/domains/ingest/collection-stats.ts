@@ -6,7 +6,12 @@
  * Qdrant scrolling is handled at the API layer — this function is pure.
  */
 
-import type { CollectionSignalStats, PayloadSignalDescriptor, SignalStats } from "../../contracts/types/trajectory.js";
+import type {
+  CollectionSignalStats,
+  PayloadSignalDescriptor,
+  ScopedSignalStats,
+  SignalStats,
+} from "../../contracts/types/trajectory.js";
 import { CODE_LANGUAGES } from "./pipeline/chunker/config.js";
 
 const MIN_SAMPLE_SIZE = 10;
@@ -297,7 +302,7 @@ export function computeCollectionStats(
   const distributions = buildDistributions(extracted, gitTimePeriods);
 
   const totalChunks = points.length;
-  const perLanguage = new Map<string, Map<string, SignalStats>>();
+  const perLanguage = new Map<string, Map<string, ScopedSignalStats>>();
 
   for (const [lang, langValueArrays] of extracted.perLanguageValues) {
     // Only code languages with AST support qualify
@@ -315,7 +320,12 @@ export function computeCollectionStats(
 
     const langStats = computePerSignalStats(langValueArrays, statsSignals);
     if (langStats.size > 0) {
-      perLanguage.set(lang, langStats);
+      // Temporarily wrap as source-only — Task 3 will add scope-aware extraction
+      const scopedStats = new Map<string, ScopedSignalStats>();
+      for (const [key, stats] of langStats) {
+        scopedStats.set(key, { source: stats });
+      }
+      perLanguage.set(lang, scopedStats);
     }
   }
 

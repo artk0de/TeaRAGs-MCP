@@ -402,7 +402,12 @@ export class ExploreFacade {
 
     if (stats.perLanguage) {
       for (const [lang, langStats] of stats.perLanguage) {
-        signals[lang] = buildSignalMetrics(langStats);
+        // Extract source stats for metrics display (Task 6 will add scoped output)
+        const sourceOnly = new Map<string, SignalStats>();
+        for (const [key, scoped] of langStats) {
+          sourceOnly.set(key, scoped.source);
+        }
+        signals[lang] = buildSignalMetrics(sourceOnly);
       }
     }
 

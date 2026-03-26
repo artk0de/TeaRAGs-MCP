@@ -59,11 +59,13 @@ describe("getIndexMetrics", () => {
           [
             "git.file.commitCount",
             {
-              count: 80,
-              min: 1,
-              max: 40,
-              percentiles: { 25: 3, 50: 6, 75: 14, 95: 28 },
-              mean: 7.5,
+              source: {
+                count: 80,
+                min: 1,
+                max: 40,
+                percentiles: { 25: 3, 50: 6, 75: 14, 95: 28 },
+                mean: 7.5,
+              },
             },
           ],
         ]),
@@ -149,7 +151,9 @@ describe("getIndexMetrics", () => {
           new Map([
             [
               "git.file.commitCount",
-              { count: 80, min: 1, max: 40, percentiles: { 25: 3, 50: 6, 75: 14, 95: 28 }, mean: 7.5 },
+              {
+                source: { count: 80, min: 1, max: 40, percentiles: { 25: 3, 50: 6, 75: 14, 95: 28 }, mean: 7.5 },
+              },
             ],
           ]),
         ],
@@ -158,7 +162,9 @@ describe("getIndexMetrics", () => {
           new Map([
             [
               "git.file.commitCount",
-              { count: 20, min: 1, max: 10, percentiles: { 25: 1, 50: 3, 75: 5, 95: 8 }, mean: 3.2 },
+              {
+                source: { count: 20, min: 1, max: 10, percentiles: { 25: 1, 50: 3, 75: 5, 95: 8 }, mean: 3.2 },
+              },
             ],
           ]),
         ],

@@ -1,9 +1,24 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { CollectionSignalStats, Distributions, SignalStats } from "../contracts/types/trajectory.js";
+import type {
+  CollectionSignalStats,
+  Distributions,
+  ScopedSignalStats,
+  SignalStats,
+} from "../contracts/types/trajectory.js";
 
-interface StatsFileContent {
+interface StatsFileContentV5 {
+  version: 5;
+  collectionName: string;
+  computedAt: number;
+  perSignal: Record<string, SignalStats>;
+  perLanguage: Record<string, Record<string, { source: SignalStats; test?: SignalStats }>>;
+  distributions: Distributions;
+  payloadFieldKeys?: string[];
+}
+
+interface StatsFileContentV4 {
   version: 4;
   collectionName: string;
   computedAt: number;
@@ -13,7 +28,9 @@ interface StatsFileContent {
   payloadFieldKeys?: string[];
 }
 
-const CURRENT_VERSION = 4;
+type StatsFileContent = StatsFileContentV5 | StatsFileContentV4;
+
+const CURRENT_VERSION = 5;
 
 export interface SchemaDrift {
   added: string[];
@@ -30,12 +47,30 @@ export class StatsCache {
     try {
       const raw = readFileSync(filePath, "utf-8");
       const data = JSON.parse(raw) as StatsFileContent;
-      if (data.version !== CURRENT_VERSION) return null;
+      if (data.version !== 4 && data.version !== 5) return null;
+
+      const perLanguage = new Map<string, Map<string, ScopedSignalStats>>();
+      if (data.version === 4) {
+        for (const [lang, signals] of Object.entries(data.perLanguage ?? {})) {
+          const langMap = new Map<string, ScopedSignalStats>();
+          for (const [key, val] of Object.entries(signals)) {
+            langMap.set(key, { source: val });
+          }
+          perLanguage.set(lang, langMap);
+        }
+      } else {
+        for (const [lang, signals] of Object.entries(data.perLanguage ?? {})) {
+          const langMap = new Map<string, ScopedSignalStats>();
+          for (const [key, val] of Object.entries(signals)) {
+            langMap.set(key, val as ScopedSignalStats);
+          }
+          perLanguage.set(lang, langMap);
+        }
+      }
+
       return {
         perSignal: new Map(Object.entries(data.perSignal)),
-        perLanguage: new Map(
-          Object.entries(data.perLanguage ?? {}).map(([lang, signals]) => [lang, new Map(Object.entries(signals))]),
-        ),
+        perLanguage,
         distributions: data.distributions,
         computedAt: data.computedAt,
         payloadFieldKeys: data.payloadFieldKeys,
@@ -48,12 +83,16 @@ export class StatsCache {
   /** Save stats to JSON file. */
   save(collectionName: string, stats: CollectionSignalStats, payloadFieldKeys?: string[]): void {
     mkdirSync(this.snapshotsDir, { recursive: true });
-    const perLanguageObj: Record<string, Record<string, SignalStats>> = {};
+    const perLanguageObj: Record<string, Record<string, { source: SignalStats; test?: SignalStats }>> = {};
     for (const [lang, signals] of stats.perLanguage) {
-      perLanguageObj[lang] = Object.fromEntries(signals);
+      const signalObj: Record<string, { source: SignalStats; test?: SignalStats }> = {};
+      for (const [key, scoped] of signals) {
+        signalObj[key] = { source: scoped.source, ...(scoped.test ? { test: scoped.test } : {}) };
+      }
+      perLanguageObj[lang] = signalObj;
     }
-    const content: StatsFileContent = {
-      version: CURRENT_VERSION,
+    const content: StatsFileContentV5 = {
+      version: CURRENT_VERSION as 5,
       collectionName,
       computedAt: stats.computedAt,
       perSignal: Object.fromEntries(stats.perSignal),

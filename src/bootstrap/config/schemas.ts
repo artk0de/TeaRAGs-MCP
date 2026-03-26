@@ -55,11 +55,17 @@ export const ingestTuneSchema = z.object({
   ioConcurrency: intWithDefault(50),
 });
 
+const commaSeparatedList = z
+  .string()
+  .optional()
+  .transform((v) => (v ? v.split(",").map((s) => s.trim()) : undefined));
+
 export const ingestSchema = z.object({
   chunkSize: intWithDefault(2500),
   chunkOverlap: intWithDefault(300),
   enableAST: booleanFromEnvWithDefault(true),
   enableHybrid: booleanFromEnvWithDefault(true),
+  testPaths: commaSeparatedList,
   tune: ingestTuneSchema,
 });
 

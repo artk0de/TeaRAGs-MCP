@@ -46,6 +46,12 @@ export interface SignalStats {
   stddev?: number;
 }
 
+/** Signal stats split by scope (source code vs test code). */
+export interface ScopedSignalStats {
+  source: SignalStats;
+  test?: SignalStats;
+}
+
 /** Time range covered by git enrichment data at a specific level. */
 export interface LevelTimeRange {
   /** Earliest timestamp (file: firstCreatedAt, chunk: lastModifiedAt). */
@@ -81,8 +87,8 @@ export interface Distributions {
 /** Collection-wide signal statistics, cached between reindexes. */
 export interface CollectionSignalStats {
   perSignal: Map<string, SignalStats>;
-  /** Per-language signal stats. Key = language name, value = signal stats map. */
-  perLanguage: Map<string, Map<string, SignalStats>>;
+  /** Per-language signal stats, split by scope. Key = language name, value = signal → scoped stats. */
+  perLanguage: Map<string, Map<string, ScopedSignalStats>>;
   distributions: Distributions;
   computedAt: number;
 }

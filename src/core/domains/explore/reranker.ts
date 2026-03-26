@@ -417,7 +417,10 @@ export class Reranker {
       if (!language) continue;
       const langStats = this.collectionStats.perLanguage?.get(language);
       if (!langStats) continue;
-      const signalStats = langStats.get(fullKey);
+      const scopedStats = langStats.get(fullKey);
+      if (!scopedStats) continue;
+      // TODO(Task 5): scope-aware label resolution — use test thresholds for test chunks
+      const signalStats = scopedStats.source;
       if (!signalStats?.percentiles) continue;
 
       const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles);
