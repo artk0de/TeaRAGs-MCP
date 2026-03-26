@@ -257,8 +257,9 @@ export function registerCodeTools(
     {
       title: "Get Index Metrics",
       description:
-        "Get collection statistics and signal distributions. Returns percentile-based thresholds for git signals, " +
-        "language/author/chunkType distributions. Use to discover appropriate filter values for your codebase. " +
+        "Get collection statistics and signal distributions. Returns percentile-based thresholds for git signals " +
+        "scoped by source/test: signals[lang][signal][scope].labelMap. " +
+        "Use to discover appropriate filter values for your codebase. " +
         "For signal label definitions see tea-rags://schema/signal-labels.",
       inputSchema: schemas.GetIndexMetricsSchema,
       annotations: { readOnlyHint: true },
