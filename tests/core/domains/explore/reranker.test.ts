@@ -1923,4 +1923,48 @@ describe("Reranker — label resolution in buildOverlay()", () => {
 
     rerankerWithLabels.invalidateStats();
   });
+
+  it("skips labels for config languages not in perLanguage", () => {
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 5, 50: 8, 75: 12, 95: 50 } }]]),
+      perLanguage: new Map([
+        [
+          "typescript",
+          new Map([["git.file.commitCount", { count: 80, percentiles: { 25: 3, 50: 6, 75: 10, 95: 40 } }]]),
+        ],
+      ]),
+      distributions: {
+        totalFiles: 100,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    };
+    rerankerWithLabels.setCollectionStats(collectionStats);
+
+    // markdown chunk — language not in perLanguage → raw number, no label
+    const results: RerankableResult[] = [
+      {
+        score: 0.8,
+        payload: {
+          relativePath: "docs/README.md",
+          startLine: 1,
+          endLine: 50,
+          language: "markdown",
+          git: { file: { ageDays: 200, commitCount: 7 } },
+        },
+      },
+    ];
+    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const overlay = ranked[0].rankingOverlay!;
+
+    // Config language → plain number, no label resolution
+    expect(typeof overlay.file!.commitCount).toBe("number");
+    expect(overlay.file!.commitCount).toBe(7);
+
+    rerankerWithLabels.invalidateStats();
+  });
 });

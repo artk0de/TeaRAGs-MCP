@@ -412,10 +412,19 @@ export class Reranker {
       const descriptor = this.payloadSignals.find((ps) => ps.key === fullKey);
       if (!descriptor?.stats?.labels) continue;
 
-      // Get percentiles: prefer per-language stats, fall back to global
-      const signalStats =
-        (language && this.collectionStats.perLanguage?.get(language)?.get(fullKey)) ||
-        this.collectionStats.perSignal.get(fullKey);
+      // Get percentiles: per-language if available, global fallback for multi-lang.
+      // Skip label resolution entirely for languages not in perLanguage (config languages).
+      let signalStats;
+      if (language && this.collectionStats.perLanguage?.size) {
+        const langStats = this.collectionStats.perLanguage.get(language);
+        if (langStats) {
+          signalStats = langStats.get(fullKey);
+        } else {
+          // Language not in perLanguage → config language → no labels
+          continue;
+        }
+      }
+      signalStats ??= this.collectionStats.perSignal.get(fullKey);
       if (!signalStats?.percentiles) continue;
 
       const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles);
