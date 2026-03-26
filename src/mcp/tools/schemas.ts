@@ -157,6 +157,14 @@ function typedFilterFields() {
       .describe(
         "Filter by task/issue ID from commit messages. Supports JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890).",
       ),
+    symbolId: z
+      .string()
+      .optional()
+      .describe(
+        "Filter by symbol ID (partial text match). Format: 'Class.method' for class methods, " +
+          "'functionName' for top-level functions. Supports partial match: 'ClassName' finds all " +
+          "methods of that class, 'methodName' finds that method in any class.",
+      ),
   };
 }
 
