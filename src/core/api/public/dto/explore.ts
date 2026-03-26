@@ -115,6 +115,16 @@ export interface FindSimilarRequest extends CollectionRef {
   level?: SignalLevel;
 }
 
+/**
+ * Find symbol by name — direct Qdrant scroll, no embedding.
+ * Returns merged definition for functions, outline for classes.
+ */
+export interface FindSymbolRequest extends CollectionRef {
+  symbol: string;
+  language?: string;
+  pathPattern?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Search result types
 // ---------------------------------------------------------------------------

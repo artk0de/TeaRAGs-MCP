@@ -11,6 +11,7 @@ export type {
   RankChunksRequest,
   ExploreCodeRequest,
   FindSimilarRequest,
+  FindSymbolRequest,
   SearchResult,
   ExploreResponse,
   SignalDescriptor,
