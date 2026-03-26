@@ -66,12 +66,29 @@ export function globToTextFilter(pattern: string): FilterConditionResult {
  * (e.g. "domains/" won't match "domains_bad").
  */
 function extractTextQuery(pattern: string): string {
-  return pattern
+  let result = pattern
     .replace(/\*+/g, "") // strip * and **
     .replace(/[?[\]{}!@#]/g, "") // strip glob special chars
     .replace(/\/+/g, "/") // collapse multiple slashes
     .replace(/^\//, "") // trim leading slash only, keep trailing
     .trim();
+
+  // Strip orphaned filename fragments after wildcard removal.
+  // e.g. "spec/services/workflow/_spec.rb" → "spec/services/workflow/"
+  // A trailing segment with "." is a filename remnant, not a directory.
+  // Only strip when there's a directory prefix (lastSlash > 0),
+  // preserving extension-only patterns like ".ts".
+  const lastSlash = result.lastIndexOf("/");
+  if (lastSlash > 0) {
+    const trailing = result.slice(lastSlash + 1);
+    // Strip filename remnants (e.g. "_spec.rb") but keep pure extensions (".ts").
+    // A segment starting with "." is an extension pattern, not a filename remnant.
+    if (trailing.includes(".") && !trailing.startsWith(".")) {
+      result = result.slice(0, lastSlash + 1);
+    }
+  }
+
+  return result;
 }
 
 /**
