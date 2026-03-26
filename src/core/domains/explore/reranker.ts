@@ -20,6 +20,7 @@ import type {
   SignalLevel,
 } from "../../contracts/types/reranker.js";
 import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
+import { detectScope } from "../../infra/scope-detection.js";
 import { p95 } from "../../infra/signal-utils.js";
 import { resolveLabel } from "./label-resolver.js";
 
@@ -379,9 +380,11 @@ export class Reranker {
 
     // Post-process: resolve labels for numeric signals with stats.labels
     const language = typeof result.payload?.["language"] === "string" ? result.payload["language"] : undefined;
+    const chunkType = typeof result.payload?.["chunkType"] === "string" ? result.payload["chunkType"] : undefined;
+    const relativePath = typeof result.payload?.["relativePath"] === "string" ? result.payload["relativePath"] : "";
 
-    this.applyLabelResolution(rawFile, "file", language);
-    this.applyLabelResolution(rawChunk, "chunk", language);
+    this.applyLabelResolution(rawFile, "file", language, chunkType, relativePath);
+    this.applyLabelResolution(rawChunk, "chunk", language, chunkType, relativePath);
 
     return {
       preset: presetName,
@@ -397,7 +400,13 @@ export class Reranker {
    * stats.labels AND collectionStats has percentile data for that signal,
    * replace the plain number with { value, label }.
    */
-  private applyLabelResolution(overlay: Record<string, unknown>, level: "file" | "chunk", language?: string): void {
+  private applyLabelResolution(
+    overlay: Record<string, unknown>,
+    level: "file" | "chunk",
+    language?: string,
+    chunkType?: string,
+    relativePath?: string,
+  ): void {
     if (!this.collectionStats) return;
 
     for (const field of Object.keys(overlay)) {
@@ -413,14 +422,17 @@ export class Reranker {
       if (!descriptor?.stats?.labels) continue;
 
       // Labels only for code languages present in perLanguage — no global fallback.
-      // Config languages and unknown languages get raw numbers without labels.
       if (!language) continue;
       const langStats = this.collectionStats.perLanguage?.get(language);
       if (!langStats) continue;
       const scopedStats = langStats.get(fullKey);
       if (!scopedStats) continue;
-      // TODO(Task 5): scope-aware label resolution — use test thresholds for test chunks
-      const signalStats = scopedStats.source;
+
+      // Scope-aware: use test thresholds for test chunks, source for everything else
+      const scope = detectScope(chunkType, relativePath ?? "", language, {
+        languageTestChunkCounts: new Map(),
+      });
+      const signalStats = scope === "test" && scopedStats.test ? scopedStats.test : scopedStats.source;
       if (!signalStats?.percentiles) continue;
 
       const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles);

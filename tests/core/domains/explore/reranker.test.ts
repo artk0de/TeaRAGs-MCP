@@ -1950,4 +1950,136 @@ describe("Reranker — label resolution in buildOverlay()", () => {
 
     rerankerWithLabels.invalidateStats();
   });
+
+  it("uses test scope thresholds for test chunks", () => {
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map(),
+      perLanguage: new Map([
+        [
+          "ruby",
+          new Map([
+            [
+              "git.file.commitCount",
+              {
+                source: { count: 100, min: 1, max: 30, percentiles: { 25: 2, 50: 5, 75: 10, 95: 25 } },
+                test: { count: 50, min: 1, max: 80, percentiles: { 25: 5, 50: 12, 75: 25, 95: 60 } },
+              },
+            ],
+          ]),
+        ],
+      ]),
+      distributions: {
+        totalFiles: 100,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    };
+    rerankerWithLabels.setCollectionStats(collectionStats);
+
+    // Test chunk with commitCount: 10 should get "typical" (test p50=12, 10 < 12 → stays at p25 label "low")
+    // Actually: walk labels p25=5(passed,10>=5→"low"), p50=12(10<12→stop). Result: "low"
+    // With source thresholds: p75=10, 10>=10 → "high". Different result proves scope works.
+    const testResult = rerankerWithLabels.rerank(
+      [
+        {
+          score: 0.8,
+          payload: {
+            relativePath: "spec/models/user_spec.rb",
+            language: "ruby",
+            chunkType: "test",
+            git: { file: { commitCount: 10 } },
+            startLine: 1,
+            endLine: 50,
+          },
+        },
+      ],
+      "techDebt",
+      "semantic_search",
+    );
+    const testOverlay = testResult[0].rankingOverlay!;
+    // Test thresholds: p25=5(pass), p50=12(fail) → "low"
+    expect(testOverlay.file!.commitCount).toEqual({ value: 10, label: "low" });
+
+    // Source chunk with same commitCount: 10 should get "high" (source p75=10, 10>=10 → "high")
+    const sourceResult = rerankerWithLabels.rerank(
+      [
+        {
+          score: 0.8,
+          payload: {
+            relativePath: "app/models/user.rb",
+            language: "ruby",
+            chunkType: "function",
+            git: { file: { commitCount: 10 } },
+            startLine: 1,
+            endLine: 50,
+          },
+        },
+      ],
+      "techDebt",
+      "semantic_search",
+    );
+    const sourceOverlay = sourceResult[0].rankingOverlay!;
+    // Source thresholds: p25=2(pass), p50=5(pass), p75=10(pass, 10>=10) → "high"
+    expect(sourceOverlay.file!.commitCount).toEqual({ value: 10, label: "high" });
+
+    rerankerWithLabels.invalidateStats();
+  });
+
+  it("falls back to source thresholds when test stats undefined", () => {
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map(),
+      perLanguage: new Map([
+        [
+          "ruby",
+          new Map([
+            [
+              "git.file.commitCount",
+              {
+                source: { count: 100, min: 1, max: 30, percentiles: { 25: 2, 50: 5, 75: 10, 95: 25 } },
+                // No test stats
+              },
+            ],
+          ]),
+        ],
+      ]),
+      distributions: {
+        totalFiles: 100,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    };
+    rerankerWithLabels.setCollectionStats(collectionStats);
+
+    // Test chunk — no test stats, should fall back to source thresholds
+    const testResult = rerankerWithLabels.rerank(
+      [
+        {
+          score: 0.8,
+          payload: {
+            relativePath: "spec/models/user_spec.rb",
+            language: "ruby",
+            chunkType: "test",
+            git: { file: { commitCount: 10 } },
+            startLine: 1,
+            endLine: 50,
+          },
+        },
+      ],
+      "techDebt",
+      "semantic_search",
+    );
+    const overlay = testResult[0].rankingOverlay!;
+    // Falls back to source: p75=10, 10>=10 → "high"
+    expect(overlay.file!.commitCount).toEqual({ value: 10, label: "high" });
+
+    rerankerWithLabels.invalidateStats();
+  });
 });
