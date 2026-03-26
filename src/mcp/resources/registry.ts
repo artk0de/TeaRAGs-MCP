@@ -22,6 +22,7 @@ export function buildOverview(): string {
 - hybrid_search — semantic + BM25, best for symbol name + context
 - rank_chunks — rank by signals without query
 - find_similar — find code similar to examples
+- find_symbol — symbol definition by name, no embedding (LSP-like lookup)
 
 ## Guides
 - tea-rags://schema/search-guide — search tool routing, use cases, examples
@@ -80,6 +81,7 @@ export function buildSearchGuide(): string {
 | Quick lookup for user request | \`search_code\` |
 | Structured JSON for analytics/reports | \`semantic_search\` |
 | Symbol name + semantic context | \`hybrid_search\` |
+| Symbol definition by name (no embedding) | \`find_symbol\` |
 | Top-N by signal without query | \`rank_chunks\` |
 | Find code similar to examples | \`find_similar\` |
 | Exact text, markers (TODO/FIXME) | ripgrep MCP |
@@ -104,6 +106,13 @@ For full decision logic (when to use which tool), consult the search-cascade rul
 - Symbol + context → query="PaymentService validate card expiration"
 - Class definition → query="def automations_disabled_reasons"
 - Note: BM25 component currently degraded — see search-cascade Known Limitations
+
+## find_symbol Examples
+
+- Method definition → symbol="Reranker.rerank" (instant, no embedding)
+- Class outline → symbol="Reranker" (returns members list)
+- Existence check → symbol="myFunc", metaOnly=true (no content)
+- With signals → symbol="Reranker.score", rerank="hotspots" (ranking overlay)
 
 ## rank_chunks Examples
 
