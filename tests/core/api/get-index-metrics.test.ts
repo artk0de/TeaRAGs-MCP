@@ -122,36 +122,62 @@ describe("getIndexMetrics", () => {
     expect(result.distributions.topAuthors[0].name).toBe("Alice");
   });
 
-  it("returns global signals with labelMap built from percentile labels", async () => {
+  it("omits global when single code language in perLanguage", async () => {
+    // Default mock has only "typescript" in perLanguage → single language → no global
     const { facade } = makeExploreFacade();
     const result = await facade.getIndexMetrics("/project");
-    const signal = result.signals["global"]["git.file.commitCount"];
+    expect(result.signals["global"]).toBeUndefined();
+    // Only typescript key present
+    const signal = result.signals["typescript"]["git.file.commitCount"];
     expect(signal).toBeDefined();
-    expect(signal.min).toBe(1);
-    expect(signal.max).toBe(47);
-    expect(signal.mean).toBe(8.3);
-    expect(signal.count).toBe(100);
-    expect(signal.labelMap.low).toBe(2);
-    expect(signal.labelMap.typical).toBe(5);
-    expect(signal.labelMap.high).toBe(12);
-    expect(signal.labelMap.extreme).toBe(30);
+    expect(signal.labelMap.low).toBe(3);
   });
 
-  it("returns per-language signals", async () => {
-    const { facade } = makeExploreFacade();
+  it("includes global when multiple code languages in perLanguage", async () => {
+    const { facade, statsCache } = makeExploreFacade();
+    // Override with multi-language perLanguage
+    statsCache.load.mockReturnValue({
+      perSignal: new Map([
+        [
+          "git.file.commitCount",
+          { count: 100, min: 1, max: 47, percentiles: { 25: 2, 50: 5, 75: 12, 95: 30 }, mean: 8.3 },
+        ],
+      ]),
+      perLanguage: new Map([
+        [
+          "typescript",
+          new Map([
+            [
+              "git.file.commitCount",
+              { count: 80, min: 1, max: 40, percentiles: { 25: 3, 50: 6, 75: 14, 95: 28 }, mean: 7.5 },
+            ],
+          ]),
+        ],
+        [
+          "ruby",
+          new Map([
+            [
+              "git.file.commitCount",
+              { count: 20, min: 1, max: 10, percentiles: { 25: 1, 50: 3, 75: 5, 95: 8 }, mean: 3.2 },
+            ],
+          ]),
+        ],
+      ]),
+      distributions: {
+        totalFiles: 50,
+        language: { typescript: 80, ruby: 20 },
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    });
     const result = await facade.getIndexMetrics("/project");
-    const tsSignal = result.signals["typescript"];
-    expect(tsSignal).toBeDefined();
-    const commitSignal = tsSignal["git.file.commitCount"];
-    expect(commitSignal).toBeDefined();
-    expect(commitSignal.min).toBe(1);
-    expect(commitSignal.max).toBe(40);
-    expect(commitSignal.mean).toBe(7.5);
-    expect(commitSignal.count).toBe(80);
-    expect(commitSignal.labelMap.low).toBe(3);
-    expect(commitSignal.labelMap.typical).toBe(6);
-    expect(commitSignal.labelMap.high).toBe(14);
-    expect(commitSignal.labelMap.extreme).toBe(28);
+    expect(result.signals["global"]).toBeDefined();
+    expect(result.signals["global"]["git.file.commitCount"].count).toBe(100);
+    expect(result.signals["typescript"]).toBeDefined();
+    expect(result.signals["ruby"]).toBeDefined();
   });
 
   it("throws if collection does not exist", async () => {
