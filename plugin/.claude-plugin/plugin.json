@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "author": { "name": "TeaRAGs" },
   "keywords": ["code-generation", "git-signals", "strategies", "search"],
   "hooks": {
@@ -12,6 +12,17 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/enforce-tearags-search.sh"
           }
         ]
       }
