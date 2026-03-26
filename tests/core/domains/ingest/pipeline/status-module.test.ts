@@ -555,7 +555,7 @@ describe("StatusModule", () => {
         ]);
         await qdrant.aliases.createAlias(collectionName, `${collectionName}_v1`);
 
-        // _v2 is stale (crashed forceReindex)
+        // _v2 is stale (crashed forceReindex) — has partial chunks like real scenario
         const staleTime = new Date(Date.now() - 15 * 60 * 1000).toISOString();
         await qdrant.createCollection(`${collectionName}_v2`, 384, "Cosine", false);
         await qdrant.addPoints(`${collectionName}_v2`, [
@@ -564,6 +564,7 @@ describe("StatusModule", () => {
             vector: new Array(384).fill(0),
             payload: { indexingComplete: false, startedAt: staleTime },
           },
+          { id: "partial-chunk", vector: new Array(384).fill(0.1), payload: { relativePath: "partial.ts" } },
         ]);
 
         const status = await ingest.getIndexStatus(codebaseDir);
@@ -573,6 +574,46 @@ describe("StatusModule", () => {
         expect(status.isIndexed).toBe(true);
         expect(status.chunksCount).toBe(1);
         // Stale _v2 should have been deleted
+        expect(await qdrant.collectionExists(`${collectionName}_v2`)).toBe(false);
+      });
+
+      it("should cleanup stale _v2 and return indexed from legacy real collection (no alias)", async () => {
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+
+        // Legacy: real collection (no alias) with complete marker
+        await qdrant.createCollection(collectionName, 384, "Cosine", false);
+        await qdrant.addPoints(collectionName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: true, completedAt: new Date().toISOString() },
+          },
+          { id: "chunk-1", vector: new Array(384).fill(0.1), payload: { relativePath: "test.ts" } },
+        ]);
+
+        // _v2 crashed forceReindex with partial data
+        const staleTime = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await qdrant.createCollection(`${collectionName}_v2`, 384, "Cosine", false);
+        await qdrant.addPoints(`${collectionName}_v2`, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: { indexingComplete: false, startedAt: staleTime },
+          },
+          { id: "partial", vector: new Array(384).fill(0.1), payload: { relativePath: "partial.ts" } },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        // Should fall back to real collection
+        expect(status.status).toBe("indexed");
+        expect(status.isIndexed).toBe(true);
+        expect(status.chunksCount).toBe(1);
+        // Stale _v2 should be cleaned up
         expect(await qdrant.collectionExists(`${collectionName}_v2`)).toBe(false);
       });
 
