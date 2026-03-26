@@ -1088,6 +1088,49 @@ export class QdrantManager {
       );
     }
   }
+
+  /**
+   * Scroll points matching a filter. Returns points with IDs and full payloads.
+   * No ordering — results come in Qdrant internal order.
+   * Paginates automatically. Hard cap at `limit` total results to prevent runaway pagination.
+   */
+  async scrollFiltered(
+    collectionName: string,
+    filter: Record<string, unknown>,
+    limit: number,
+  ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
+    const results: { id: string | number; payload: Record<string, unknown> }[] = [];
+    const pageSize = Math.min(limit, 200);
+    let offset: string | number | undefined = undefined;
+
+    do {
+      const result = await this.call(async () =>
+        this.client.scroll(collectionName, {
+          limit: pageSize,
+          with_payload: true,
+          with_vector: false,
+          filter,
+          ...(offset !== undefined ? { offset } : {}),
+        }),
+      );
+
+      for (const point of result.points) {
+        if (point.payload !== null && point.payload !== undefined) {
+          results.push({
+            id: point.id,
+            payload: point.payload as Record<string, unknown>,
+          });
+        }
+      }
+
+      if (results.length >= limit) break;
+
+      const next = result.next_page_offset;
+      offset = typeof next === "string" || typeof next === "number" ? next : undefined;
+    } while (offset !== undefined);
+
+    return results;
+  }
 }
 
 /** Detect Qdrant 409 Conflict (collection already exists). */

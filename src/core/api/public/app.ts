@@ -32,6 +32,7 @@ import type {
   ExploreCodeRequest,
   ExploreResponse,
   FindSimilarRequest,
+  FindSymbolRequest,
   HybridSearchRequest,
   IndexMetrics,
   IndexOptions,
@@ -55,6 +56,7 @@ export interface App {
   rankChunks: (request: RankChunksRequest) => Promise<ExploreResponse>;
   searchCode: (request: ExploreCodeRequest) => Promise<ExploreResponse>;
   findSimilar: (request: FindSimilarRequest) => Promise<ExploreResponse>;
+  findSymbol: (request: FindSymbolRequest) => Promise<ExploreResponse>;
 
   // -- Indexing (→ internal/facades/ingest-facade.ts) --
   indexCodebase: (path: string, options?: IndexOptions, progress?: ProgressCallback) => Promise<IndexStats>;
@@ -113,6 +115,7 @@ export function createApp(deps: AppDeps): App {
     rankChunks: async (req) => deps.explore.rankChunks(req),
     searchCode: async (req) => deps.explore.searchCode(req),
     findSimilar: async (req) => deps.explore.findSimilar(req),
+    findSymbol: async (req) => deps.explore.findSymbol(req),
 
     // -- Indexing — delegate to IngestFacade --
     indexCodebase: async (path, options, progress) => deps.ingest.indexCodebase(path, options, progress),
