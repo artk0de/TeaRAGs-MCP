@@ -100,6 +100,26 @@ export const GetIndexMetricsSchema = {
 };
 
 // ---------------------------------------------------------------------------
+// Symbol lookup schema (static — no dynamic presets needed)
+// ---------------------------------------------------------------------------
+
+export const FindSymbolSchema = {
+  symbol: z
+    .string()
+    .describe(
+      "Symbol name or symbolId to find. Format: 'ClassName.methodName' for class methods, " +
+        "'functionName' for top-level functions, 'ClassName' for classes. " +
+        "Supports partial match: 'ClassName' finds the class and all its methods.",
+    ),
+  ...collectionPathFields(),
+  language: z.string().optional().describe("Filter by programming language (for disambiguation in polyglot codebases)"),
+  pathPattern: z
+    .string()
+    .optional()
+    .describe("Glob pattern for filtering by file path (picomatch). Example: '**/services/**'"),
+};
+
+// ---------------------------------------------------------------------------
 // Search schemas (dynamic — generated from SchemaBuilder via DIP)
 // ---------------------------------------------------------------------------
 
