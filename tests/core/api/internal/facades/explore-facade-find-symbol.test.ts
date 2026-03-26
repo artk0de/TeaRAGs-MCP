@@ -1,0 +1,114 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { ExploreFacade } from "../../../../../src/core/api/internal/facades/explore-facade.js";
+
+vi.mock("../../../../../src/core/domains/explore/rank-module.js", () => ({
+  RankModule: class {
+    constructor(_reranker: any, _descriptors: any) {}
+    rankChunks = vi.fn().mockResolvedValue([]);
+  },
+}));
+
+describe("ExploreFacade.findSymbol", () => {
+  let facade: ExploreFacade;
+  const mockScrollFiltered = vi.fn();
+  const mockCollectionExists = vi.fn().mockResolvedValue(true);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockScrollFiltered.mockResolvedValue([
+      {
+        id: "uuid-1",
+        payload: {
+          symbolId: "Reranker.score",
+          chunkType: "function",
+          relativePath: "src/reranker.ts",
+          content: "score() { return 42; }",
+          startLine: 30,
+          endLine: 50,
+          language: "typescript",
+          git: { file: { commitCount: 5 } },
+        },
+      },
+    ]);
+
+    facade = new ExploreFacade({
+      qdrant: {
+        scrollFiltered: mockScrollFiltered,
+        collectionExists: mockCollectionExists,
+      } as any,
+      embeddings: { embed: vi.fn().mockResolvedValue({ embedding: [] }) } as any,
+      reranker: {
+        rerank: vi.fn((r: any[]) => r),
+        hasCollectionStats: false,
+        setCollectionStats: vi.fn(),
+        getDescriptors: vi.fn().mockReturnValue([]),
+        getPreset: vi.fn(),
+        getPresetNames: vi.fn().mockReturnValue([]),
+        getFullPreset: vi.fn().mockReturnValue(undefined),
+      } as any,
+      registry: {
+        buildMergedFilter: vi.fn().mockReturnValue(undefined),
+        getAllFilters: vi.fn().mockReturnValue([]),
+        getAllPayloadSignalDescriptors: vi.fn().mockReturnValue([]),
+        getEssentialPayloadKeys: vi.fn().mockReturnValue([]),
+      } as any,
+    });
+  });
+
+  it("returns resolved symbols from scroll results", async () => {
+    const result = await facade.findSymbol({
+      symbol: "Reranker.score",
+      collection: "test_collection",
+    });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].payload?.symbolId).toBe("Reranker.score");
+    expect(result.results[0].score).toBe(1.0);
+  });
+
+  it("builds symbolId text match filter", async () => {
+    await facade.findSymbol({
+      symbol: "Reranker",
+      collection: "test_collection",
+    });
+
+    expect(mockScrollFiltered).toHaveBeenCalledWith(
+      "test_collection",
+      expect.objectContaining({
+        must: expect.arrayContaining([{ key: "symbolId", match: { text: "Reranker" } }]),
+      }),
+      expect.any(Number),
+    );
+  });
+
+  it("includes language filter when provided", async () => {
+    await facade.findSymbol({
+      symbol: "validate",
+      collection: "test_collection",
+      language: "typescript",
+    });
+
+    expect(mockScrollFiltered).toHaveBeenCalledWith(
+      "test_collection",
+      expect.objectContaining({
+        must: expect.arrayContaining([
+          { key: "symbolId", match: { text: "validate" } },
+          { key: "language", match: { value: "typescript" } },
+        ]),
+      }),
+      expect.any(Number),
+    );
+  });
+
+  it("returns empty results when no symbols match", async () => {
+    mockScrollFiltered.mockResolvedValue([]);
+
+    const result = await facade.findSymbol({
+      symbol: "nonexistent",
+      collection: "test_collection",
+    });
+
+    expect(result.results).toEqual([]);
+  });
+});

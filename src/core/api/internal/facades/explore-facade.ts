@@ -31,6 +31,7 @@ import {
   type ExploreContext,
 } from "../../../domains/explore/strategies/index.js";
 import { SimilarSearchStrategy } from "../../../domains/explore/strategies/similar.js";
+import { resolveSymbols } from "../../../domains/explore/symbol-resolve.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
@@ -42,6 +43,7 @@ import type {
   ExploreCodeRequest,
   ExploreResponse,
   FindSimilarRequest,
+  FindSymbolRequest,
   HybridSearchRequest,
   IndexMetrics,
   RankChunksRequest,
@@ -283,6 +285,55 @@ export class ExploreFacade {
       },
       path,
     );
+  }
+
+  /** Find symbol by name — direct Qdrant scroll, no embedding. */
+  async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
+
+    // Build filter: symbolId text match + optional language
+    const must: Record<string, unknown>[] = [{ key: "symbolId", match: { text: request.symbol } }];
+    if (request.language) {
+      must.push({ key: "language", match: { value: request.language } });
+    }
+
+    const filter: Record<string, unknown> = { must };
+
+    // Merge pathPattern filter if present
+    if (request.pathPattern) {
+      const pathFilter = this.registry.buildMergedFilter(
+        { pathPattern: request.pathPattern } as unknown as Record<string, unknown>,
+        undefined,
+        "chunk",
+      );
+      if (pathFilter) {
+        const extra = pathFilter.must as Record<string, unknown>[] | undefined;
+        if (extra) (filter.must as Record<string, unknown>[]).push(...extra);
+      }
+    }
+
+    // Also collect parentName matches for class outline (members)
+    const parentFilter: Record<string, unknown> = {
+      must: [
+        { key: "parentName", match: { text: request.symbol } },
+        ...(request.language ? [{ key: "language", match: { value: request.language } }] : []),
+      ],
+    };
+
+    // Execute both scrolls in parallel
+    const [symbolChunks, memberChunks] = await Promise.all([
+      this.qdrant.scrollFiltered(collectionName, filter, 200),
+      this.qdrant.scrollFiltered(collectionName, parentFilter, 200),
+    ]);
+
+    // Deduplicate (a chunk may appear in both if its symbolId and parentName both match)
+    const seen = new Set(symbolChunks.map((c) => c.id));
+    const allChunks = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
+
+    const results = resolveSymbols(allChunks, request.symbol);
+    const driftWarning = path ? await this.checkDrift(path) : null;
+
+    return { results, driftWarning };
   }
 
   // =========================================================================
