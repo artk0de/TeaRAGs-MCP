@@ -99,29 +99,7 @@ export const GetIndexMetricsSchema = {
   path: z.string().describe("Path to codebase"),
 };
 
-// ---------------------------------------------------------------------------
-// Symbol lookup schema (static — no dynamic presets needed)
-// ---------------------------------------------------------------------------
-
-export const FindSymbolSchema = {
-  symbol: z
-    .string()
-    .describe(
-      "Symbol name or symbolId to find. Format: 'ClassName.methodName' for class methods, " +
-        "'functionName' for top-level functions, 'ClassName' for classes. " +
-        "Supports partial match: 'ClassName' finds the class and all its methods.",
-    ),
-  ...collectionPathFields(),
-  language: z.string().optional().describe("Filter by programming language (for disambiguation in polyglot codebases)"),
-  pathPattern: z
-    .string()
-    .optional()
-    .describe("Glob pattern for filtering by file path (picomatch). Example: '**/services/**'"),
-  metaOnly: z
-    .boolean()
-    .optional()
-    .describe("Return only metadata (path, lines, git info) without content. Use for existence checks."),
-};
+// FindSymbolSchema is dynamic (needs rerank presets) — see createSearchSchemas()
 
 // ---------------------------------------------------------------------------
 // Search schemas (dynamic — generated from SchemaBuilder via DIP)
@@ -366,7 +344,42 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...paginationFields(),
   };
 
-  return { SemanticSearchSchema, HybridSearchSchema, SearchCodeSchema, RankChunksSchema, FindSimilarSchema };
+  const FindSymbolSchema = {
+    symbol: z
+      .string()
+      .describe(
+        "Symbol name or symbolId to find. Format: 'ClassName.methodName' for class methods, " +
+          "'functionName' for top-level functions, 'ClassName' for classes. " +
+          "Supports partial match: 'ClassName' finds the class and all its methods.",
+      ),
+    ...collectionPathFields(),
+    language: z
+      .string()
+      .optional()
+      .describe("Filter by programming language (for disambiguation in polyglot codebases)"),
+    pathPattern: z
+      .string()
+      .optional()
+      .describe("Glob pattern for filtering by file path (picomatch). Example: '**/services/**'"),
+    metaOnly: coerceBoolean()
+      .optional()
+      .describe("Return only metadata (path, lines, git info) without content. Use for existence checks."),
+    rerank: semanticSearchRerankSchema
+      .optional()
+      .describe(
+        "Reranking preset or {custom: weights} — attaches ranking overlay with git signals. " +
+          "See tea-rags://schema/presets for details.",
+      ),
+  };
+
+  return {
+    SemanticSearchSchema,
+    HybridSearchSchema,
+    SearchCodeSchema,
+    RankChunksSchema,
+    FindSimilarSchema,
+    FindSymbolSchema,
+  };
 }
 
 /** Return type of createSearchSchemas for typing in tool registrations. */

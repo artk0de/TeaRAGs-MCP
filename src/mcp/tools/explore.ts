@@ -9,7 +9,7 @@ import type { ExploreResponse } from "../../core/api/public/dto/explore.js";
 import { sanitizeRerank, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
-import { createSearchSchemas, FindSymbolSchema } from "./schemas.js";
+import { createSearchSchemas } from "./schemas.js";
 
 type RerankParam = string | { custom: Record<string, number | undefined> } | undefined;
 
@@ -141,18 +141,14 @@ export function registerSearchTools(
         "Returns merged definition for functions (chunks joined), outline + members for classes. " +
         "Uses Qdrant text match on symbolId field. Partial match supported: " +
         "'Reranker' finds the class and all its methods.",
-      inputSchema: FindSymbolSchema,
+      inputSchema: searchSchemas.FindSymbolSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
     },
-    async (params) => {
+    async ({ rerank, ...rest }) => {
       const response = await app.findSymbol({
-        symbol: params.symbol,
-        collection: params.collection,
-        path: params.path,
-        language: params.language,
-        pathPattern: params.pathPattern,
-        metaOnly: params.metaOnly,
+        ...rest,
+        rerank: sanitizeRerank(rerank as RerankParam),
       });
       return formatStructuredResult(response);
     },

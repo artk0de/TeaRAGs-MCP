@@ -330,7 +330,14 @@ export class ExploreFacade {
     const seen = new Set(symbolChunks.map((c) => c.id));
     const allChunks = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
 
-    const results = resolveSymbols(allChunks, request.symbol, request.metaOnly);
+    let results = resolveSymbols(allChunks, request.symbol, request.metaOnly);
+
+    // Optional reranking — attach ranking overlay with git signals
+    if (request.rerank) {
+      await this.ensureStats(collectionName);
+      results = this.reranker.rerank(results, request.rerank, "semantic_search");
+    }
+
     const driftWarning = path ? await this.checkDrift(path) : null;
 
     return { results, driftWarning };

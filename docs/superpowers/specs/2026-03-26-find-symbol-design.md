@@ -21,11 +21,14 @@ find_symbol({
   collection?: string,  // or direct collection name
   language?: string,    // disambiguation for polyglot codebases
   pathPattern?: string, // glob scope (picomatch)
+  metaOnly?: boolean,   // strip content — existence check
+  rerank?: string | { custom: Record<string, number> }, // attach ranking overlay
 })
 ```
 
 **No vector search.** Uses Qdrant scroll with `symbolId` text match filter. No
-embedding, no reranking — pure lookup.
+embedding. Optional reranking attaches ranking overlay with git signals per
+chunk.
 
 ### Matching
 
