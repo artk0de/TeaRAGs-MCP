@@ -19,7 +19,7 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
     structuredContent: {
       results: response.results,
       ...(response.level && { level: response.level }),
-      driftWarning: response.driftWarning,
+      ...(response.driftWarning && { driftWarning: response.driftWarning }),
     },
     content: [],
   };
