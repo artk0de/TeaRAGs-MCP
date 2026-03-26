@@ -16,6 +16,6 @@ export interface IndexMetrics {
   totalChunks: number;
   totalFiles: number;
   distributions: Distributions;
-  /** Signal stats grouped by language. "global" = all languages combined. */
-  signals: Record<string, Record<string, SignalMetrics>>;
+  /** Signal stats grouped by language → signal → scope → metrics. Scopes: "source", "test". */
+  signals: Record<string, Record<string, Record<string, SignalMetrics>>>;
 }
