@@ -378,8 +378,10 @@ export class Reranker {
     }
 
     // Post-process: resolve labels for numeric signals with stats.labels
-    this.applyLabelResolution(rawFile);
-    this.applyLabelResolution(rawChunk);
+    const language = typeof result.payload?.["language"] === "string" ? result.payload["language"] : undefined;
+
+    this.applyLabelResolution(rawFile, "file", language);
+    this.applyLabelResolution(rawChunk, "chunk", language);
 
     return {
       preset: presetName,
@@ -395,23 +397,25 @@ export class Reranker {
    * stats.labels AND collectionStats has percentile data for that signal,
    * replace the plain number with { value, label }.
    */
-  private applyLabelResolution(overlay: Record<string, unknown>): void {
+  private applyLabelResolution(overlay: Record<string, unknown>, level: "file" | "chunk", language?: string): void {
     if (!this.collectionStats) return;
 
     for (const field of Object.keys(overlay)) {
       const value = overlay[field];
       if (typeof value !== "number") continue;
 
-      // Resolve full payload key from short name
-      const fullKey = this.signalKeyMap.get(field) ?? null;
+      // Resolve full payload key from short name, preferring level-specific key
+      const fullKey = this.signalKeyMap.get(`${level}.${field}`) ?? this.signalKeyMap.get(field) ?? null;
       if (!fullKey) continue;
 
       // Find descriptor with stats.labels
       const descriptor = this.payloadSignals.find((ps) => ps.key === fullKey);
       if (!descriptor?.stats?.labels) continue;
 
-      // Get percentiles from collectionStats
-      const signalStats = this.collectionStats.perSignal.get(fullKey);
+      // Get percentiles: prefer per-language stats, fall back to global
+      const signalStats =
+        (language && this.collectionStats.perLanguage?.get(language)?.get(fullKey)) ||
+        this.collectionStats.perSignal.get(fullKey);
       if (!signalStats?.percentiles) continue;
 
       const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles);

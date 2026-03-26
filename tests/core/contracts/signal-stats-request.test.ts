@@ -65,6 +65,7 @@ describe("CollectionSignalStats", () => {
   it("should include distributions", () => {
     const stats: CollectionSignalStats = {
       perSignal: new Map(),
+      perLanguage: new Map(),
       distributions: {
         totalFiles: 0,
         language: {},

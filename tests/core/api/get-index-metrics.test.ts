@@ -52,9 +52,28 @@ describe("getIndexMetrics", () => {
       ],
     ]);
 
+    const perLanguage = new Map([
+      [
+        "typescript",
+        new Map([
+          [
+            "git.file.commitCount",
+            {
+              count: 80,
+              min: 1,
+              max: 40,
+              percentiles: { 25: 3, 50: 6, 75: 14, 95: 28 },
+              mean: 7.5,
+            },
+          ],
+        ]),
+      ],
+    ]);
+
     const statsCache = {
       load: vi.fn().mockReturnValue({
         perSignal,
+        perLanguage,
         distributions,
         computedAt: Date.now(),
       }),
@@ -103,10 +122,10 @@ describe("getIndexMetrics", () => {
     expect(result.distributions.topAuthors[0].name).toBe("Alice");
   });
 
-  it("returns signals with labelMap built from percentile labels", async () => {
+  it("returns global signals with labelMap built from percentile labels", async () => {
     const { facade } = makeExploreFacade();
     const result = await facade.getIndexMetrics("/project");
-    const signal = result.signals["git.file.commitCount"];
+    const signal = result.signals["global"]["git.file.commitCount"];
     expect(signal).toBeDefined();
     expect(signal.min).toBe(1);
     expect(signal.max).toBe(47);
@@ -116,6 +135,23 @@ describe("getIndexMetrics", () => {
     expect(signal.labelMap.typical).toBe(5);
     expect(signal.labelMap.high).toBe(12);
     expect(signal.labelMap.extreme).toBe(30);
+  });
+
+  it("returns per-language signals", async () => {
+    const { facade } = makeExploreFacade();
+    const result = await facade.getIndexMetrics("/project");
+    const tsSignal = result.signals["typescript"];
+    expect(tsSignal).toBeDefined();
+    const commitSignal = tsSignal["git.file.commitCount"];
+    expect(commitSignal).toBeDefined();
+    expect(commitSignal.min).toBe(1);
+    expect(commitSignal.max).toBe(40);
+    expect(commitSignal.mean).toBe(7.5);
+    expect(commitSignal.count).toBe(80);
+    expect(commitSignal.labelMap.low).toBe(3);
+    expect(commitSignal.labelMap.typical).toBe(6);
+    expect(commitSignal.labelMap.high).toBe(14);
+    expect(commitSignal.labelMap.extreme).toBe(28);
   });
 
   it("throws if collection does not exist", async () => {
