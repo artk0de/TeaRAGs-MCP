@@ -179,15 +179,22 @@ export class StatusModule {
         Date.now() - new Date(referenceTime).getTime() > STALE_INDEXING_THRESHOLD_MS;
 
       if (isStale && sourceCollection !== reportedName) {
-        // Versioned collection (_vN) with stale marker.
-        // Only auto-delete if it has no real data (just the metadata marker or empty).
-        // Collections with chunks may be partially indexed — let the user decide.
+        // Versioned _vN with stale marker — check if a working version exists.
+        const aliasTarget = await this.getAliasTarget(reportedName);
+        if (aliasTarget) {
+          // Alias points to a completed version — safe to delete stale _vN.
+          await this.qdrant.deleteCollection(sourceCollection);
+          return this.getStatusFromCollection(aliasTarget, reportedName);
+        }
+        // Legacy: no alias, but real collection may exist (pre-alias migration).
+        const realExists = await this.qdrant.collectionExists(reportedName);
+        if (realExists) {
+          await this.qdrant.deleteCollection(sourceCollection);
+          return this.getStatusFromCollection(reportedName, reportedName);
+        }
+        // No alias, no real collection (first index crashed). Delete only if empty.
         if (actualChunksCount === 0) {
           await this.qdrant.deleteCollection(sourceCollection);
-          const aliasTarget = await this.getAliasTarget(reportedName);
-          if (aliasTarget) {
-            return this.getStatusFromCollection(aliasTarget, reportedName);
-          }
           return { isIndexed: false, status: "not_indexed", collectionName: reportedName };
         }
       }
