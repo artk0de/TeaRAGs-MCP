@@ -412,19 +412,12 @@ export class Reranker {
       const descriptor = this.payloadSignals.find((ps) => ps.key === fullKey);
       if (!descriptor?.stats?.labels) continue;
 
-      // Get percentiles: per-language if available, global fallback for multi-lang.
-      // Skip label resolution entirely for languages not in perLanguage (config languages).
-      let signalStats;
-      if (language && this.collectionStats.perLanguage?.size) {
-        const langStats = this.collectionStats.perLanguage.get(language);
-        if (langStats) {
-          signalStats = langStats.get(fullKey);
-        } else {
-          // Language not in perLanguage → config language → no labels
-          continue;
-        }
-      }
-      signalStats ??= this.collectionStats.perSignal.get(fullKey);
+      // Labels only for code languages present in perLanguage — no global fallback.
+      // Config languages and unknown languages get raw numbers without labels.
+      if (!language) continue;
+      const langStats = this.collectionStats.perLanguage?.get(language);
+      if (!langStats) continue;
+      const signalStats = langStats.get(fullKey);
       if (!signalStats?.percentiles) continue;
 
       const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles);
