@@ -231,16 +231,16 @@ export class TreeSitterChunker implements CodeChunker {
                       filePath,
                       language,
                       chunkIndex: chunks.length,
-                      chunkType: "block",
-                      name: parentName,
-                      parentName,
+                      chunkType: (result.chunkType as CodeChunk["metadata"]["chunkType"]) ?? "block",
+                      name: result.name ?? parentName,
+                      parentName: result.parentName ?? parentName,
                       parentType,
-                      symbolId: this.buildSymbolId(parentName),
+                      symbolId: result.symbolId ?? this.buildSymbolId(parentName),
                       lineRanges: result.lineRanges,
                     },
                   });
                 }
-              } else {
+              } /* v8 ignore next 19 -- defensive: all languages with alwaysExtractChildren have hooks */ else {
                 // No hooks — generic fallback: single body chunk
                 const bodyContent = this.extractContainerBody(node, validChildren, code);
                 if (bodyContent && bodyContent.trim().length >= 50) {
@@ -469,6 +469,10 @@ export class TreeSitterChunker implements CodeChunker {
     chunks: CodeChunk[],
     hierarchyHeaders: string[] = [],
   ): Promise<void> {
+    // If hook chain has taken over chunking (e.g., RSpec scope chunker),
+    // skip child emission — all chunks are in ctx.bodyChunks
+    if (ctx.skipChildren) return;
+
     for (let ci = 0; ci < validChildren.length; ci++) {
       const childNode = validChildren[ci];
       const childContent = code.substring(childNode.startIndex, childNode.endIndex);
@@ -552,11 +556,11 @@ export class TreeSitterChunker implements CodeChunker {
               filePath,
               language,
               chunkIndex: chunks.length,
-              chunkType: "block",
-              name: childName,
-              parentName: fullParentName ?? parentName,
+              chunkType: (result.chunkType as CodeChunk["metadata"]["chunkType"]) ?? "block",
+              name: result.name ?? childName,
+              parentName: result.parentName ?? fullParentName ?? parentName,
               parentType,
-              symbolId: this.buildSymbolId(childName),
+              symbolId: result.symbolId ?? this.buildSymbolId(childName),
               lineRanges: result.lineRanges,
             },
           });
@@ -687,6 +691,7 @@ export class TreeSitterChunker implements CodeChunker {
    * Collects class-level code: includes, associations, scopes, validations, constants, etc.
    * Returns the collected lines as a string, or undefined if nothing remains.
    */
+  /* v8 ignore next 23 -- only called from no-hooks fallback, unreachable for current language configs */
   private extractContainerBody(
     containerNode: Parser.SyntaxNode,
     childNodes: Parser.SyntaxNode[],
@@ -696,7 +701,6 @@ export class TreeSitterChunker implements CodeChunker {
     const containerEndRow = containerNode.endPosition.row;
     const lines = code.split("\n");
 
-    // Build a set of line numbers occupied by child nodes (methods)
     const methodLines = new Set<number>();
     for (const child of childNodes) {
       for (let { row } = child.startPosition; row <= child.endPosition.row; row++) {
@@ -704,7 +708,6 @@ export class TreeSitterChunker implements CodeChunker {
       }
     }
 
-    // Collect lines from the container that are NOT inside any method
     const bodyLines: string[] = [];
     for (let row = containerStartRow; row <= containerEndRow; row++) {
       if (!methodLines.has(row)) {
@@ -768,7 +771,7 @@ export class TreeSitterChunker implements CodeChunker {
   /**
    * Map AST node type to chunk type
    */
-  private getChunkType(nodeType: string): "function" | "class" | "interface" | "block" {
+  private getChunkType(nodeType: string): "function" | "class" | "interface" | "block" | "test" | "test_setup" {
     if (nodeType.includes("function") || nodeType.includes("method")) {
       return "function";
     }

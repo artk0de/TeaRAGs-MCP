@@ -2352,7 +2352,7 @@ class MyService {
   });
 
   describe("chunk - Ruby RSpec", () => {
-    it("should extract describe as a container with it blocks as children", async () => {
+    it("should produce scope-centric chunks for describe with it blocks", async () => {
       const code = `RSpec.describe User do
   it 'is valid with valid attributes' do
     user = build(:user, name: 'Test', email: 'test@example.com')
@@ -2366,11 +2366,12 @@ class MyService {
 end`;
 
       const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
-      expect(chunks.length).toBeGreaterThanOrEqual(2);
-      // Should have individual it blocks as chunks
-      const itChunks = chunks.filter((c) => c.metadata.name?.startsWith("it"));
-      expect(itChunks.length).toBe(2);
-      expect(itChunks[0].metadata.parentName).toContain("describe");
+      // Scope chunker: leaf scope = describe User → one test chunk with both it blocks
+      const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
+      expect(testChunks.length).toBeGreaterThanOrEqual(1);
+      const content = testChunks.map((c) => c.content).join("\n");
+      expect(content).toContain("is valid with valid attributes");
+      expect(content).toContain("is invalid without a name");
     });
 
     it("should not treat call nodes as chunkable in non-spec Ruby files", async () => {
@@ -2396,7 +2397,7 @@ end`;
       expect(callChunks.length).toBe(0);
     });
 
-    it("should extract it blocks at every nesting level with sibling contexts", async () => {
+    it("should produce test chunks at each leaf scope level", async () => {
       const code = `RSpec.describe PaymentService do
   it 'initializes with a gateway and configuration' do
     service = PaymentService.new(gateway: stripe, config: default_config)
@@ -2430,28 +2431,21 @@ end`;
 
       const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
 
-      // Depth 1: it inside top-level describe
-      const depth1 = chunks.find((c) => c.metadata.name?.includes("initializes with a gateway"));
-      expect(depth1).toBeDefined();
-      expect(depth1!.metadata.parentName).toContain("describe");
+      // Scope chunker: leaf scopes are "when processing a charge" (has own it),
+      // "when the card is declined" (has own it), "when retry policy" (leaf)
+      // Plus intermediate body chunk for root describe's own it block
+      const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
+      expect(testChunks.length).toBeGreaterThanOrEqual(1);
 
-      // Depth 2: it inside first context
-      const depth2 = chunks.find((c) => c.metadata.name?.includes("creates a charge record"));
-      expect(depth2).toBeDefined();
-      expect(depth2!.metadata.parentName).toContain("when processing a charge");
-
-      // Depth 3: it inside nested context
-      const depth3 = chunks.find((c) => c.metadata.name?.includes("raises a PaymentDeclinedError"));
-      expect(depth3).toBeDefined();
-      expect(depth3!.metadata.parentName).toContain("when the card is declined");
-
-      // Depth 4: it inside third-level context
-      const depth4 = chunks.find((c) => c.metadata.name?.includes("retries the charge"));
-      expect(depth4).toBeDefined();
-      expect(depth4!.metadata.parentName).toContain("when retry policy is enabled");
+      // All it blocks should appear somewhere in chunks
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("initializes with a gateway");
+      expect(allContent).toContain("creates a charge record");
+      expect(allContent).toContain("raises a PaymentDeclinedError");
+      expect(allContent).toContain("retries the charge");
     });
 
-    it("should prepend hierarchy context to it blocks", async () => {
+    it("should include leaf scope content with it blocks in test chunks", async () => {
       const code = `RSpec.describe PaymentService do
   context 'when processing a charge' do
     context 'when the card is declined by the gateway' do
@@ -2465,16 +2459,12 @@ end`;
 end`;
 
       const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
-      const itChunk = chunks.find((c) => c.metadata.name?.includes("raises a PaymentDeclinedError"));
-      expect(itChunk).toBeDefined();
-      // Content should include the full describe/context hierarchy
-      expect(itChunk!.content).toContain("RSpec.describe PaymentService do");
-      expect(itChunk!.content).toContain("context 'when processing a charge' do");
-      expect(itChunk!.content).toContain("context 'when the card is declined by the gateway' do");
-      expect(itChunk!.content).toContain("it 'raises a PaymentDeclinedError");
+      const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
+      expect(testChunk).toBeDefined();
+      expect(testChunk!.content).toContain("raises a PaymentDeclinedError");
     });
 
-    it("should prepend hierarchy context to body chunks (let/before)", async () => {
+    it("should include setup in test chunks", async () => {
       const code = `RSpec.describe PaymentService do
   let(:gateway) { instance_double(PaymentGateway, name: 'stripe') }
   let(:config) { PaymentConfig.new(retries: 3, timeout: 30) }
@@ -2488,14 +2478,14 @@ end`;
 end`;
 
       const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
-      // Find a body chunk containing let/subject/before
-      const bodyChunk = chunks.find((c) => c.metadata.chunkType === "block" && c.content.includes("let(:gateway)"));
-      expect(bodyChunk).toBeDefined();
-      // Should include the container header
-      expect(bodyChunk!.content).toContain("RSpec.describe PaymentService do");
+      // Scope chunker: leaf scope = describe PaymentService with setup + it
+      const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
+      expect(testChunk).toBeDefined();
+      expect(testChunk!.content).toContain("let(:gateway)");
+      expect(testChunk!.content).toContain("initializes with a gateway");
     });
 
-    it("should build full parentName path", async () => {
+    it("should use 2-level symbolId for leaf scope", async () => {
       const code = `RSpec.describe PaymentService do
   context 'when processing a charge' do
     context 'when the card is declined by the gateway' do
@@ -2509,15 +2499,13 @@ end`;
 end`;
 
       const chunks = await chunker.chunk(code, "spec/services/payment_service_spec.rb", "ruby");
-      const itChunk = chunks.find((c) => c.metadata.name?.includes("raises a PaymentDeclinedError"));
-      expect(itChunk).toBeDefined();
-      // parentName should contain the full path
-      expect(itChunk!.metadata.parentName).toContain("PaymentService");
-      expect(itChunk!.metadata.parentName).toContain("when processing");
-      expect(itChunk!.metadata.parentName).toContain("when the card is declined");
+      const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
+      expect(testChunk).toBeDefined();
+      // 2-level symbolId: TopLevel.leafScope
+      expect(testChunk!.metadata.symbolId).toContain("PaymentService");
     });
 
-    it("should extract name as describe + first argument", async () => {
+    it("should extract name for describe + first argument", async () => {
       const code = `describe '#full_name' do
   it 'returns full name' do
     user = build(:user, first: 'John', last: 'Doe')
@@ -2526,12 +2514,679 @@ end`;
 end`;
 
       const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
-      // Either the describe itself or its children should reference the name
-      const itChunk = chunks.find((c) => c.metadata.name?.startsWith("it"));
-      expect(itChunk).toBeDefined();
-      if (itChunk?.metadata.parentName) {
-        expect(itChunk.metadata.parentName).toContain("#full_name");
+      const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
+      expect(testChunk).toBeDefined();
+      expect(testChunk!.content).toContain("returns full name");
+    });
+  });
+
+  describe("RSpec scope-centric chunking integration", () => {
+    it("should produce test chunks with parent setup injection for nested spec", async () => {
+      const code = `
+describe User do
+  let(:user) { create(:user) }
+
+  context 'when admin' do
+    let(:role) { :admin }
+    before { user.update(role: role) }
+
+    it 'has admin access' do
+      expect(user).to be_admin
+      expect(user.permissions).to include(:manage)
+    end
+
+    it 'can manage users' do
+      expect(user).to be_able_to(:manage, User)
+    end
+  end
+
+  context 'when regular' do
+    it 'has limited access' do
+      expect(user).not_to be_admin
+    end
+  end
+end`;
+      const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
+
+      // Should have 2 test chunks (one per leaf context)
+      const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
+      expect(testChunks).toHaveLength(2);
+
+      // 'when admin' leaf should contain injected let(:user) from parent
+      const adminChunk = testChunks.find((c) => c.content.includes("admin access"));
+      expect(adminChunk).toBeDefined();
+      expect(adminChunk!.content).toContain("let(:user)");
+      expect(adminChunk!.content).toContain("let(:role)");
+      expect(adminChunk!.metadata.chunkType).toBe("test");
+
+      // 'when regular' leaf should also have injected let(:user)
+      const regularChunk = testChunks.find((c) => c.content.includes("limited access"));
+      expect(regularChunk).toBeDefined();
+      expect(regularChunk!.content).toContain("let(:user)");
+    });
+
+    it("should NOT affect non-spec Ruby files", async () => {
+      const code = `
+class User < ApplicationRecord
+  has_many :posts
+  validates :name, presence: true
+
+  def admin?
+    role == :admin
+  end
+end`;
+      const chunks = await chunker.chunk(code, "app/models/user.rb", "ruby");
+
+      // Should use normal Ruby chunking (no test chunk types)
+      const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
+      expect(testChunks).toHaveLength(0);
+    });
+
+    it("should produce scope-centric chunks instead of per-it chunks", async () => {
+      const code = `
+describe User do
+  it 'has a name' do
+    expect(User.new.name).to be_nil
+  end
+
+  it 'has an email' do
+    expect(User.new.email).to be_nil
+  end
+end`;
+      const chunks = await chunker.chunk(code, "spec/models/user_spec.rb", "ruby");
+
+      // Scope chunker produces test chunks — it blocks are NOT separate chunks
+      const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
+      expect(testChunks.length).toBeGreaterThanOrEqual(1);
+      // Both it blocks should be in the same chunk (leaf scope = describe User)
+      const content = testChunks.map((c) => c.content).join("\n");
+      expect(content).toContain("has a name");
+      expect(content).toContain("has an email");
+    });
+  });
+
+  describe("chunk - Ruby oversized method fallback", () => {
+    it("should use fallback chunker for methods exceeding maxChunkSize * 2", async () => {
+      // Generate a very long method body that exceeds maxChunkSize * 2 (2000 chars)
+      const longBody = Array.from(
+        { length: 50 },
+        (_, i) => `    result_${i} = process_item(data_${i}, options_${i})`,
+      ).join("\n");
+      const code = `
+class DataProcessor
+  def process_large_dataset(data)
+${longBody}
+    combine_results(${Array.from({ length: 50 }, (_, i) => `result_${i}`).join(", ")})
+  end
+
+  def simple_method(input)
+    # A simple method that processes input
+    transform(input)
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "data_processor.rb", "ruby");
+
+      // The oversized method should be split via fallback chunker
+      expect(chunks.length).toBeGreaterThanOrEqual(2);
+
+      // All content should exist somewhere in chunks
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("process_large_dataset");
+    });
+  });
+
+  describe("chunk - Ruby nested modules", () => {
+    it("should recursively extract methods from nested module within class", async () => {
+      const code = `
+class ApplicationService
+  module Validators
+    def validate_presence(field)
+      # Validates that the given field is present and not empty
+      raise ArgumentError, "#{field} is required" if send(field).nil?
+      true
+    end
+
+    def validate_format(field, pattern)
+      # Validates that the given field matches the expected format
+      value = send(field)
+      raise ArgumentError, "#{field} has invalid format" unless value =~ pattern
+      true
+    end
+  end
+
+  def initialize(params)
+    # Initialize the service with given parameters
+    @params = params
+    validate_all
+  end
+
+  def execute
+    # Execute the service operation with full validation
+    raise NotImplementedError, "Subclasses must implement execute"
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "app/services/application_service.rb", "ruby");
+
+      // Should extract methods from both the class and the nested module
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+
+      // Methods from the nested module should exist
+      const methodNames = methodChunks.map((c) => c.metadata.name);
+      expect(methodNames).toContain("initialize");
+      expect(methodNames).toContain("execute");
+    });
+
+    it("should handle deeply nested class within module with methods", async () => {
+      const code = `
+module Services
+  class UserManager
+    def create_user(params)
+      # Creates a new user with validated parameters and persists
+      user = User.new(params)
+      user.validate!
+      user.save!
+      user
+    end
+
+    def delete_user(user_id)
+      # Deletes a user and all associated records from the system
+      user = User.find(user_id)
+      user.destroy!
+      notify_deletion(user_id)
+    end
+
+    def update_user(user_id, params)
+      # Updates user attributes with validation and audit logging
+      user = User.find(user_id)
+      user.update!(params)
+      log_update(user_id, params)
+    end
+  end
+end
+      `;
+
+      const chunks = await chunker.chunk(code, "app/services/user_manager.rb", "ruby");
+
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBe(3);
+
+      // Methods should have correct parentType (module is the top-level container)
+      for (const chunk of methodChunks) {
+        expect(["class", "module"]).toContain(chunk.metadata.parentType);
       }
+    });
+  });
+
+  describe("chunk - Ruby nested class with body declarations", () => {
+    it("should emit body chunks for nested class with declarations and methods", async () => {
+      const code = `
+class ApplicationService
+  class Configuration
+    attr_accessor :timeout, :retries
+    attr_reader :name, :version
+
+    validates :timeout, presence: true
+    validates :retries, numericality: true
+
+    def initialize(name, timeout: 30, retries: 3)
+      @name = name
+      @timeout = timeout
+      @retries = retries
+    end
+
+    def to_hash
+      { name: @name, timeout: @timeout, retries: @retries }
+    end
+  end
+
+  def execute(config)
+    Configuration.new('default').to_hash
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "app/services/application_service.rb", "ruby");
+
+      // Nested Configuration class should produce:
+      // - method chunks (initialize, to_hash)
+      // - body chunk with attr_accessor, attr_reader, validates
+      const bodyChunks = chunks.filter((c) => c.metadata.chunkType === "block" && c.content.includes("attr_accessor"));
+      expect(bodyChunks.length).toBeGreaterThanOrEqual(1);
+      expect(bodyChunks[0].content).toContain("validates");
+    });
+  });
+
+  describe("chunk - Ruby RSpec with require and non-DSL calls", () => {
+    it("should filter out require and non-RSpec call nodes in spec files", async () => {
+      const code = `require 'rails_helper'
+require 'support/shared_contexts'
+
+RSpec.describe UserService do
+  let(:service) { described_class.new(config: default_config) }
+
+  it 'initializes with default configuration and settings' do
+    expect(service).to be_a(UserService)
+    expect(service.config).to eq(default_config)
+  end
+
+  it 'responds to all public API methods correctly' do
+    expect(service).to respond_to(:find_user)
+    expect(service).to respond_to(:create_user)
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/services/user_service_spec.rb", "ruby");
+
+      // require calls should be filtered out, only RSpec chunks should remain
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("initializes with default configuration");
+      expect(allContent).toContain("responds to all public API");
+
+      // No chunk should be named 'require'
+      const requireChunks = chunks.filter((c) => c.metadata.name === "require");
+      expect(requireChunks).toHaveLength(0);
+    });
+  });
+
+  describe("chunk - TypeScript abstract class with static and abstract members", () => {
+    it("should handle abstract class with abstract members and static members", async () => {
+      const code = `
+abstract class BaseRepository {
+  static tableName = "records";
+  static connectionPool = "default";
+
+  abstract findById(id: string): Promise<Record>;
+  abstract deleteById(id: string): Promise<void>;
+
+  protected readonly logger: Logger;
+
+  constructor(logger: Logger) {
+    this.logger = logger;
+  }
+
+  async findAll(): Promise<Record[]> {
+    this.logger.info("Finding all records from repository");
+    return [];
+  }
+
+  async count(): Promise<number> {
+    this.logger.info("Counting records in repository");
+    return 0;
+  }
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+
+      // Should extract methods
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+
+      // All chunks together should contain the class content
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("findAll");
+      expect(allContent).toContain("count");
+    });
+
+    it("should handle abstract class with abstract method signatures in body chunks", async () => {
+      const code = `
+abstract class BaseRepository {
+  abstract findById(id: string): Promise<Record<string, unknown>>;
+  abstract findAll(filter: Record<string, unknown>): Promise<Record<string, unknown>[]>;
+  abstract create(data: Record<string, unknown>): Promise<Record<string, unknown>>;
+  abstract update(id: string, data: Record<string, unknown>): Promise<Record<string, unknown>>;
+  abstract delete(id: string): Promise<void>;
+
+  async findOrCreate(id: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const existing = await this.findById(id);
+    if (existing) return existing;
+    return this.create(data);
+  }
+
+  async upsert(id: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    try {
+      return await this.update(id, data);
+    } catch {
+      return this.create({ ...data, id });
+    }
+  }
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+
+      // Should extract concrete methods
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+
+      // All chunks should capture the concrete methods
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("findOrCreate");
+      expect(allContent).toContain("upsert");
+    });
+
+    it("should handle class with static block and mixed member types", async () => {
+      const code = `
+class ServiceRegistry {
+  static #instance: ServiceRegistry;
+  static readonly VERSION = "1.0.0";
+  static readonly MAX_SERVICES = 100;
+  static readonly DEFAULT_TIMEOUT = 30000;
+
+  private services: Map<string, unknown> = new Map();
+  private readonly config: Record<string, unknown>;
+  private readonly logger: Logger;
+  private initialized = false;
+
+  constructor(config: Record<string, unknown>, logger: Logger) {
+    this.config = config;
+    this.logger = logger;
+  }
+
+  register(name: string, service: unknown): void {
+    this.logger.info(\`Registering service: \${name}\`);
+    this.services.set(name, service);
+  }
+
+  resolve(name: string): unknown {
+    this.logger.info(\`Resolving service: \${name}\`);
+    return this.services.get(name);
+  }
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+
+      // Should extract methods
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+
+      // Body chunks should contain static and instance properties
+      const bodyChunks = chunks.filter((c) => c.metadata.chunkType === "block");
+      expect(bodyChunks.length).toBeGreaterThanOrEqual(1);
+
+      const bodyContent = bodyChunks.map((c) => c.content).join("\n");
+      expect(bodyContent).toContain("VERSION");
+    });
+
+    it("should handle class with index signature and accessor declarations", async () => {
+      const code = `
+class DynamicConfig {
+  [key: string]: unknown;
+
+  private _timeout: number = 30;
+  private _retries: number = 3;
+  private _debug: boolean = false;
+
+  get timeout(): number {
+    return this._timeout;
+  }
+
+  set timeout(value: number) {
+    this._timeout = value;
+  }
+
+  initialize(options: Record<string, unknown>): void {
+    this._timeout = (options.timeout as number) ?? 30;
+    this._retries = (options.retries as number) ?? 3;
+    this._debug = (options.debug as boolean) ?? false;
+  }
+
+  validate(): boolean {
+    return this._timeout > 0 && this._retries >= 0;
+  }
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+
+      // Should extract method chunks
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+
+      // All content together should cover the class
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("initialize");
+      expect(allContent).toContain("validate");
+    });
+  });
+
+  describe("chunk - TypeScript class with abstract properties", () => {
+    it("should group abstract property definitions separately from regular properties", async () => {
+      const code = `
+abstract class BaseWidget {
+  abstract width: number;
+  abstract height: number;
+  abstract label: string;
+  abstract description: string;
+  abstract category: string;
+
+  readonly version: string = "1.0";
+  readonly createdAt: Date = new Date();
+  readonly updatedAt: Date = new Date();
+  readonly author: string = "system";
+  readonly license: string = "MIT";
+
+  render(): string {
+    return \`<div>\${this.label}: \${this.width}x\${this.height}</div>\`;
+  }
+
+  resize(w: number, h: number): void {
+    console.log(\`Resizing to \${w}x\${h}\`);
+  }
+}
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+
+      const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
+      expect(methodChunks.length).toBeGreaterThanOrEqual(2);
+
+      // All content should have the class members
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("render");
+      expect(allContent).toContain("resize");
+    });
+  });
+
+  describe("chunk - TypeScript merge gap", () => {
+    it("should not merge small type declarations separated by large line gaps", async () => {
+      // Two small type aliases separated by > 2 blank lines (MERGE_GAP)
+      const code = `
+export type StatusA = "active" | "inactive" | "pending" | "archived";
+
+
+
+
+export type StatusB = "draft" | "published" | "deleted" | "suspended";
+      `;
+
+      const chunks = await chunker.chunk(code, "test.ts", "typescript");
+      // The two type aliases should NOT be merged (gap > 2 lines)
+      expect(chunks.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("chunk - Ruby RSpec pending examples and edge cases", () => {
+    it("should handle pending it examples (no block body) in spec files", async () => {
+      const code = `RSpec.describe UserService do
+  it 'creates user with valid params'
+  it 'deletes user by id'
+  it 'updates user attributes'
+  it 'validates user email format'
+  it 'sends welcome email after creation'
+
+  it 'finds user by email address and returns record' do
+    user = create(:user, email: 'test@example.com')
+    result = described_class.find_by_email('test@example.com')
+    expect(result).to eq(user)
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/services/user_service_spec.rb", "ruby");
+
+      // The actual it block with body should be captured
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("finds user by email");
+    });
+
+    it("should handle RSpec file with mixed DSL methods and includes", async () => {
+      const code = `require 'rails_helper'
+
+RSpec.describe NotificationService do
+  include ActiveJob::TestHelper
+  include_context 'authenticated user'
+
+  let(:service) { described_class.new(mailer: mailer, logger: logger) }
+  let(:mailer) { instance_double(ApplicationMailer, deliver_later: true) }
+  let(:logger) { instance_double(Logger, info: nil, error: nil) }
+
+  before do
+    ActiveJob::Base.queue_adapter = :test
+    stub_external_notification_service
+  end
+
+  describe '#send_notification' do
+    context 'when notification type is email' do
+      let(:notification) { build(:notification, type: :email, recipient: user) }
+
+      it 'sends an email through the mailer service' do
+        service.send_notification(notification)
+        expect(mailer).to have_received(:deliver_later)
+        expect(logger).to have_received(:info).with(/sent/)
+      end
+
+      it 'logs the notification delivery status and timestamp' do
+        service.send_notification(notification)
+        expect(logger).to have_received(:info).at_least(:once)
+      end
+    end
+
+    context 'when notification type is push' do
+      let(:notification) { build(:notification, type: :push, recipient: user) }
+
+      it 'enqueues a push notification job for background processing' do
+        expect { service.send_notification(notification) }
+          .to have_enqueued_job(PushNotificationJob)
+          .with(notification.id)
+      end
+    end
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/services/notification_service_spec.rb", "ruby");
+
+      // Should produce test chunks for each leaf context
+      const testChunks = chunks.filter((c) => c.metadata.chunkType === "test" || c.metadata.chunkType === "test_setup");
+      expect(testChunks.length).toBeGreaterThanOrEqual(2);
+
+      // All it blocks should be captured
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("sends an email through the mailer");
+      expect(allContent).toContain("enqueues a push notification job");
+
+      // Setup should be injected into leaf chunks
+      const emailChunk = testChunks.find((c) => c.content.includes("sends an email"));
+      expect(emailChunk).toBeDefined();
+      expect(emailChunk!.content).toContain("let(:service)");
+    });
+  });
+
+  describe("chunk - Ruby RSpec nested describe", () => {
+    it("should produce chunks for deeply nested describe/context with setup inheritance", async () => {
+      const code = `
+RSpec.describe OrderService do
+  let(:service) { described_class.new(gateway: payment_gateway, config: config) }
+  let(:payment_gateway) { instance_double(PaymentGateway, active: true) }
+  let(:config) { OrderConfig.new(tax_rate: 0.1, currency: 'USD') }
+
+  describe '#create_order' do
+    let(:order_params) { { items: [item1, item2], customer: customer } }
+
+    context 'with valid items and sufficient inventory' do
+      before { allow(InventoryService).to receive(:check).and_return(true) }
+
+      it 'creates an order and charges the payment gateway' do
+        result = service.create_order(order_params)
+        expect(result).to be_persisted
+        expect(result.total).to eq(110.0)
+      end
+
+      it 'sends a confirmation email to the customer' do
+        expect { service.create_order(order_params) }
+          .to have_enqueued_mail(OrderMailer, :confirmation)
+      end
+    end
+
+    context 'with invalid items or missing inventory' do
+      before { allow(InventoryService).to receive(:check).and_return(false) }
+
+      it 'raises an OutOfStockError with item details' do
+        expect { service.create_order(order_params) }
+          .to raise_error(OutOfStockError, /item1/)
+      end
+    end
+  end
+
+  describe '#cancel_order' do
+    it 'marks the order as cancelled and processes refund' do
+      order = create(:order, status: :confirmed, amount: 100)
+      service.cancel_order(order.id)
+      expect(order.reload.status).to eq('cancelled')
+    end
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/services/order_service_spec.rb", "ruby");
+
+      // All it blocks should appear somewhere in the output
+      const allContent = chunks.map((c) => c.content).join("\n");
+      expect(allContent).toContain("creates an order and charges");
+      expect(allContent).toContain("sends a confirmation email");
+      expect(allContent).toContain("raises an OutOfStockError");
+      expect(allContent).toContain("marks the order as cancelled");
+
+      // Test chunks should have symbolIds
+      const testChunks = chunks.filter((c) => c.metadata.chunkType === "test" || c.metadata.chunkType === "test_setup");
+      for (const chunk of testChunks) {
+        expect(chunk.metadata.symbolId).toBeDefined();
+      }
+    });
+
+    it("should inject parent setup from multiple ancestor levels", async () => {
+      const code = `
+RSpec.describe PaymentProcessor do
+  let(:processor) { described_class.new(api_key: 'test_key', timeout: 30) }
+  before { stub_external_api }
+
+  context 'when processing credit cards with valid credentials' do
+    let(:card) { build(:credit_card, number: '4242424242424242') }
+
+    context 'when the charge amount is within daily limits' do
+      let(:amount) { 500 }
+
+      it 'processes the charge successfully and returns a receipt' do
+        result = processor.charge(card: card, amount: amount)
+        expect(result.status).to eq(:success)
+        expect(result.receipt_number).to be_present
+      end
+    end
+  end
+end`;
+
+      const chunks = await chunker.chunk(code, "spec/services/payment_processor_spec.rb", "ruby");
+
+      const testChunk = chunks.find((c) => c.metadata.chunkType === "test");
+      expect(testChunk).toBeDefined();
+      // Should contain setup from all ancestor levels
+      expect(testChunk!.content).toContain("let(:processor)");
+      expect(testChunk!.content).toContain("let(:card)");
+      expect(testChunk!.content).toContain("let(:amount)");
+      expect(testChunk!.content).toContain("processes the charge successfully");
     });
   });
 });

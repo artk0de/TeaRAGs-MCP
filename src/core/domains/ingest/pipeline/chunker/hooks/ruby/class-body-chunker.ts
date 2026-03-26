@@ -11,7 +11,6 @@
 import type Parser from "tree-sitter";
 
 import type { BodyChunkResult, ChunkingHook } from "../types.js";
-import { isRspecFile } from "./rspec-filter.js";
 
 // ── Public interfaces ──────────────────────────────────────────────
 
@@ -582,45 +581,15 @@ export function extractBodyChunks(
   return results;
 }
 
-// ── RSpec body extraction ─────────────────────────────────────────
-
-/**
- * For RSpec files: collect all body lines into a single chunk.
- * No semantic grouping — let/before/subject/shared all belong together.
- */
-function extractRspecBodyChunk(
-  containerNode: Parser.SyntaxNode,
-  childNodes: Parser.SyntaxNode[],
-  code: string,
-  excludedRows: Set<number>,
-): BodyChunkResult[] {
-  const bodyLines = extractContainerBodyLines(containerNode, childNodes, code, excludedRows);
-  if (bodyLines.length === 0) return [];
-
-  const content = bodyLines
-    .map((l) => l.text)
-    .join("\n")
-    .trim();
-  if (content.length === 0) return [];
-
-  const lineRanges = computeLineRanges(bodyLines);
-  const minLine = Math.min(...lineRanges.map((r) => r.start));
-  const maxLine = Math.max(...lineRanges.map((r) => r.end));
-
-  return [{ content, startLine: minLine, endLine: maxLine, lineRanges }];
-}
-
 // ── ChunkingHook export ────────────────────────────────────────────
 
 export const rubyBodyChunkingHook: ChunkingHook = {
   name: "rubyBodyChunking",
   process(ctx) {
-    if (isRspecFile(ctx.filePath)) {
-      // RSpec: merge all body lines into one chunk (let/before/subject together)
-      ctx.bodyChunks = extractRspecBodyChunk(ctx.containerNode, ctx.validChildren, ctx.code, ctx.excludedRows);
-    } else {
-      ctx.bodyChunks = extractBodyChunks(ctx.containerNode, ctx.validChildren, ctx.code, ctx.excludedRows, ctx.config);
-    }
+    // Skip if another hook (e.g., rspec-scope-chunker) already produced body chunks
+    if (ctx.bodyChunks.length > 0) return;
+
+    ctx.bodyChunks = extractBodyChunks(ctx.containerNode, ctx.validChildren, ctx.code, ctx.excludedRows, ctx.config);
   },
 };
 
