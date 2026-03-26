@@ -1731,16 +1731,17 @@ describe("Reranker — label resolution in buildOverlay()", () => {
 
   const makeResult = (git: Record<string, unknown>): RerankableResult => ({
     score: 0.8,
-    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
+    payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, language: "typescript", git },
   });
 
   it("produces { value, label } for a numeric signal with stats.labels when collectionStats loaded", () => {
     // git.file.commitCount has stats.labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }
+    const tsSignals = new Map([
+      ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
+    ]);
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([
-        ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
-      ]),
-      perLanguage: new Map(),
+      perSignal: new Map(tsSignals),
+      perLanguage: new Map([["typescript", tsSignals]]),
       distributions: {
         totalFiles: 100,
         language: {},
@@ -1770,12 +1771,13 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     // contributorCount has stats.labels: { p95: "extreme" }
     // But we add a signal WITHOUT labels to verify it stays plain.
     // Use the techDebt preset + collectionStats that only has commitCount entry.
+    const tsSignals = new Map([
+      ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
+      ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
+    ]);
     const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([
-        ["git.file.commitCount", { count: 100, min: 0, max: 200, percentiles: { 25: 5, 50: 15, 75: 40, 95: 100 } }],
-        ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
-      ]),
-      perLanguage: new Map(),
+      perSignal: new Map(tsSignals),
+      perLanguage: new Map([["typescript", tsSignals]]),
       distributions: {
         totalFiles: 100,
         language: {},
@@ -1822,7 +1824,10 @@ describe("Reranker — label resolution in buildOverlay()", () => {
         // Only ageDays in stats, NOT commitCount
         ["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }],
       ]),
-      perLanguage: new Map(),
+      perLanguage: new Map([
+        // typescript perLanguage also only has ageDays, NOT commitCount
+        ["typescript", new Map([["git.file.ageDays", { count: 100, min: 0, max: 500, percentiles: { 95: 400 } }]])],
+      ]),
       distributions: {
         totalFiles: 100,
         language: {},
@@ -1886,7 +1891,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.invalidateStats();
   });
 
-  it("falls back to global when language not in perLanguage", () => {
+  it("returns raw number when language not in perLanguage (no global fallback)", () => {
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 5, 50: 8, 75: 12, 95: 50 } }]]),
       perLanguage: new Map(),
@@ -1902,7 +1907,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     };
     rerankerWithLabels.setCollectionStats(collectionStats);
 
-    // commitCount=7: global p50=8 → 7<8 → "low" (p25=5 passed, p50=8 not)
+    // Language "go" not in perLanguage → raw number, no label (no global fallback)
     const results: RerankableResult[] = [
       {
         score: 0.8,
@@ -1918,50 +1923,6 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
 
-    // Should use global stats: p25=5 passed (7>=5), p50=8 NOT passed (7<8) → "low"
-    expect(overlay.file!.commitCount).toEqual({ value: 7, label: "low" });
-
-    rerankerWithLabels.invalidateStats();
-  });
-
-  it("skips labels for config languages not in perLanguage", () => {
-    const collectionStats: CollectionSignalStats = {
-      perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 5, 50: 8, 75: 12, 95: 50 } }]]),
-      perLanguage: new Map([
-        [
-          "typescript",
-          new Map([["git.file.commitCount", { count: 80, percentiles: { 25: 3, 50: 6, 75: 10, 95: 40 } }]]),
-        ],
-      ]),
-      distributions: {
-        totalFiles: 100,
-        language: {},
-        chunkType: {},
-        documentation: { docs: 0, code: 100 },
-        topAuthors: [],
-        othersCount: 0,
-      },
-      computedAt: Date.now(),
-    };
-    rerankerWithLabels.setCollectionStats(collectionStats);
-
-    // markdown chunk — language not in perLanguage → raw number, no label
-    const results: RerankableResult[] = [
-      {
-        score: 0.8,
-        payload: {
-          relativePath: "docs/README.md",
-          startLine: 1,
-          endLine: 50,
-          language: "markdown",
-          git: { file: { ageDays: 200, commitCount: 7 } },
-        },
-      },
-    ];
-    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
-    const overlay = ranked[0].rankingOverlay!;
-
-    // Config language → plain number, no label resolution
     expect(typeof overlay.file!.commitCount).toBe("number");
     expect(overlay.file!.commitCount).toBe(7);
 
