@@ -12,6 +12,7 @@ import type {
   ScopedSignalStats,
   SignalStats,
 } from "../../contracts/types/trajectory.js";
+import { detectScope, type ScopeDetectionConfig } from "../../infra/scope-detection.js";
 import { CODE_LANGUAGES } from "./pipeline/chunker/config.js";
 
 const MIN_SAMPLE_SIZE = 10;
@@ -87,11 +88,14 @@ interface ExtractedValues {
   gitDataPaths: Set<string>;
   /** Per-language signal value arrays. Key = language, value = signal key → values. */
   perLanguageValues: Map<string, Map<string, number[]>>;
+  /** Per-language scoped signal values: lang → signal → { source: number[], test: number[] }. */
+  perLanguageScopedValues: Map<string, Map<string, { source: number[]; test: number[] }>>;
 }
 
 function extractSignalValues(
   points: { payload: Record<string, unknown> }[],
   statsSignals: PayloadSignalDescriptor[],
+  scopeConfig?: ScopeDetectionConfig,
 ): ExtractedValues {
   const valueArrays = new Map<string, number[]>();
   for (const signal of statsSignals) {
@@ -110,14 +114,38 @@ function extractSignalValues(
   let chunkNewest: number | undefined;
   const gitDataPaths = new Set<string>();
   const perLanguageValues = new Map<string, Map<string, number[]>>();
+  const perLanguageScopedValues = new Map<string, Map<string, { source: number[]; test: number[] }>>();
+
+  // Pre-pass: count test chunks per language for scope detection
+  const languageTestChunkCounts = new Map<string, number>();
+  for (const point of points) {
+    if (point.payload["chunkType"] === "test" && typeof point.payload["language"] === "string") {
+      const lang = point.payload["language"];
+      languageTestChunkCounts.set(lang, (languageTestChunkCounts.get(lang) ?? 0) + 1);
+    }
+  }
+
+  const effectiveScopeConfig: ScopeDetectionConfig = scopeConfig ?? { languageTestChunkCounts };
 
   for (const point of points) {
     const pointChunkType = point.payload["chunkType"];
     const lang = point.payload["language"];
     const isCodeLanguage = typeof lang === "string" && CODE_LANGUAGES.has(lang);
+    const relPath = typeof point.payload["relativePath"] === "string" ? point.payload["relativePath"] : "";
 
-    // Global stats: only code languages contribute
-    if (isCodeLanguage) {
+    // Determine scope for this chunk
+    const scope =
+      isCodeLanguage && typeof lang === "string"
+        ? detectScope(
+            typeof pointChunkType === "string" ? pointChunkType : undefined,
+            relPath,
+            lang,
+            effectiveScopeConfig,
+          )
+        : null;
+
+    // Global stats: only code languages, only source scope
+    if (isCodeLanguage && scope === "source") {
       for (const signal of statsSignals) {
         const arr = valueArrays.get(signal.key);
         if (arr) tryPushSignalValue(point, signal, pointChunkType, arr);
@@ -126,6 +154,7 @@ function extractSignalValues(
     if (typeof lang === "string") {
       languageCounts[lang] = (languageCounts[lang] ?? 0) + 1;
 
+      // Legacy per-language (all chunks, for backward compat)
       let langMap = perLanguageValues.get(lang);
       if (!langMap) {
         langMap = new Map<string, number[]>();
@@ -137,6 +166,25 @@ function extractSignalValues(
       for (const signal of statsSignals) {
         const langArr = langMap.get(signal.key);
         if (langArr) tryPushSignalValue(point, signal, pointChunkType, langArr);
+      }
+
+      // Scoped per-language values
+      if (scope !== null) {
+        let scopedMap = perLanguageScopedValues.get(lang);
+        if (!scopedMap) {
+          scopedMap = new Map<string, { source: number[]; test: number[] }>();
+          for (const signal of statsSignals) {
+            scopedMap.set(signal.key, { source: [], test: [] });
+          }
+          perLanguageScopedValues.set(lang, scopedMap);
+        }
+        for (const signal of statsSignals) {
+          const scopedArr = scopedMap.get(signal.key);
+          if (scopedArr) {
+            const target = scope === "test" ? scopedArr.test : scopedArr.source;
+            tryPushSignalValue(point, signal, pointChunkType, target);
+          }
+        }
       }
     }
 
@@ -152,7 +200,6 @@ function extractSignalValues(
       codeCount++;
     }
 
-    const relPath = point.payload["relativePath"];
     if (typeof relPath === "string") {
       distinctPaths.add(relPath);
     }
@@ -194,6 +241,7 @@ function extractSignalValues(
     chunkNewest,
     gitDataPaths,
     perLanguageValues,
+    perLanguageScopedValues,
   };
 }
 
@@ -318,13 +366,23 @@ export function computeCollectionStats(
     });
     if (!hasEnoughSamples) continue;
 
-    const langStats = computePerSignalStats(langValueArrays, statsSignals);
-    if (langStats.size > 0) {
-      // Temporarily wrap as source-only — Task 3 will add scope-aware extraction
-      const scopedStats = new Map<string, ScopedSignalStats>();
-      for (const [key, stats] of langStats) {
-        scopedStats.set(key, { source: stats });
-      }
+    // Build scoped stats from perLanguageScopedValues
+    const scopedMap = extracted.perLanguageScopedValues.get(lang);
+    if (!scopedMap) continue;
+
+    const scopedStats = new Map<string, ScopedSignalStats>();
+    for (const [key, { source: sourceValues, test: testValues }] of scopedMap) {
+      const sourceArr = new Map<string, number[]>([[key, sourceValues]]);
+      const sourceStats = computePerSignalStats(sourceArr, statsSignals).get(key);
+      if (!sourceStats) continue;
+
+      const testArr = new Map<string, number[]>([[key, testValues]]);
+      const testStats = testValues.length > 0 ? computePerSignalStats(testArr, statsSignals).get(key) : undefined;
+
+      scopedStats.set(key, { source: sourceStats, test: testStats });
+    }
+
+    if (scopedStats.size > 0) {
       perLanguage.set(lang, scopedStats);
     }
   }
