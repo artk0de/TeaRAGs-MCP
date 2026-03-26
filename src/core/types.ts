@@ -202,7 +202,7 @@ export interface CodeChunk {
     filePath: string;
     language: string;
     chunkIndex: number;
-    chunkType?: "function" | "class" | "interface" | "block";
+    chunkType?: "function" | "class" | "interface" | "block" | "test" | "test_setup";
     name?: string; // Function/class name if applicable
     parentName?: string; // Parent class/module name for methods extracted from large classes
     parentType?: string; // Parent AST node type (e.g., "class", "module")

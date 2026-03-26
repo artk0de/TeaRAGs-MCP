@@ -5,6 +5,14 @@ export interface BodyChunkResult {
   startLine: number;
   endLine: number;
   lineRanges?: { start: number; end: number }[];
+  /** Hook-provided chunk type. When present, chunker uses instead of "block". */
+  chunkType?: string;
+  /** Hook-provided symbolId. When present, chunker uses instead of buildSymbolId(). */
+  symbolId?: string;
+  /** Hook-provided chunk name. When present, chunker uses instead of parentName. */
+  name?: string;
+  /** Hook-provided parent name. */
+  parentName?: string;
 }
 
 /** Shared mutable context passed through the hook chain */
@@ -22,6 +30,8 @@ export interface HookContext {
   methodPrefixes: Map<number, string>;
   methodStartLines: Map<number, number>;
   bodyChunks: BodyChunkResult[];
+  /** When true, processChildren() skips child chunk emission. */
+  skipChildren?: boolean;
 }
 
 /** Single hook in the chain */
@@ -52,5 +62,6 @@ export function createHookContext(
     methodPrefixes: new Map(),
     methodStartLines: new Map(),
     bodyChunks: [],
+    skipChildren: false,
   };
 }
