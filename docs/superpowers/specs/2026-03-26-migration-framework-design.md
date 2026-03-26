@@ -12,48 +12,76 @@ Migration logic is scattered across 4 files in 3 different layers:
 | Snapshot → sharded      | `domains/ingest/sync/migration.ts`    | domains  |
 | Schema indexes v4→v8    | `adapters/qdrant/schema-migration.ts` | adapters |
 | Sparse vector rebuild   | `adapters/qdrant/schema-migration.ts` | adapters |
-| Stats cache version     | `infra/stats-cache.ts`                | infra    |
 
 No shared interface, no unified logging, no discoverability. Adding a new
 migration requires knowing which file in which layer to touch.
 
 ## Scope
 
-**In scope:** reindex-time + stats-load-time migrations (explicit data format
-upgrades).
+**In scope:** reindex-time migrations (explicit data format upgrades):
 
-**Out of scope:** runtime mechanisms that stay where they are:
+- Snapshot format (v1 → v2 → sharded)
+- Schema indexes (v4 → v8)
+- Sparse vector rebuild (v0 → v1)
 
+**Out of scope (stays where it is):**
+
+- `StatsCache` version handling — cache is rebuilt every reindex, no migration
+  needed
 - Lazy index creation for scroll rerank (`ScrollRankStrategy.ensureIndexFn`)
 - Schema drift detection (`SchemaDriftMonitor`)
+- `SchemaManager.initializeSchema()` — creates indexes from scratch for new
+  collections, not a migration
 
 ## Design
 
-### Framework: `core/infra/migration/`
+### File Structure
+
+```
+infra/migration/
+  types.ts                                — Migration, MigrationSummary, StepResult
+  migrator.ts                             — Migrator (single instance, named pipelines)
+  errors.ts                               — MigrationStepError
+  snapshot-migrator.ts                    — SnapshotMigrator (version-aware runner)
+  schema-migrator.ts                      — SchemaMigrator (version-aware runner)
+
+  snapshot_migrations/
+    snapshot-v1-to-v2.ts                  — adds mtime/size via stat()
+    snapshot-v2-to-sharded.ts             — single JSON → sharded format
+
+  schema_migrations/
+    schema-v4-relativepath-keyword.ts     — keyword index on relativePath
+    schema-v5-relativepath-text.ts        — text index on relativePath
+    schema-v6-filter-field-indexes.ts     — keyword on language, fileExtension, chunkType
+    schema-v7-sparse-config.ts            — enable sparse vectors on collection
+    schema-v8-symbolid-text.ts            — text index on symbolId
+    sparse-vector-rebuild.ts              — rebuild BM25 sparse vectors
+```
+
+### Framework Types
 
 ```typescript
 // types.ts
-interface MigrationStep {
-  /** Human-readable step name for logging. */
-  name: string;
-  /** Check if migration is needed. */
-  check(): Promise<boolean>;
-  /** Apply migration. Only called if check() returned true. */
+
+/** Single migration class. One migration = one class = one file. */
+interface Migration {
+  readonly name: string;
+  readonly version: number;
   apply(): Promise<StepResult>;
 }
 
 interface StepResult {
-  applied: string[];
-  skipped?: string[];
+  applied: string[]; // what was done
 }
 
 interface MigrationSummary {
   pipeline: string;
+  fromVersion: number;
+  toVersion: number;
   steps: Array<{
     name: string;
-    status: "applied" | "skipped" | "failed";
+    status: "applied" | "skipped";
     applied?: string[];
-    error?: string;
   }>;
 }
 ```
@@ -62,29 +90,42 @@ interface MigrationSummary {
 
 ```typescript
 // migrator.ts
-type PipelineName = "snapshot" | "schema" | "stats-cache";
+type PipelineName = "snapshot" | "schema";
 
 class Migrator {
-  private pipelines: Map<PipelineName, MigrationStep[]>;
-
-  constructor(pipelines: Record<PipelineName, MigrationStep[]>) {
-    this.pipelines = new Map(Object.entries(pipelines));
-  }
+  constructor(
+    private readonly pipelines: Record<
+      PipelineName,
+      SnapshotMigrator | SchemaMigrator
+    >,
+  ) {}
 
   async run(pipeline: PipelineName): Promise<MigrationSummary>;
-  async check(pipeline: PipelineName): Promise<PendingMigration[]>;
 }
 ```
 
-`run()` executes steps sequentially, logs each step, stops on first failure.
+Routes to the appropriate `*Migrator`. Single `deps.migrator` in pipelines.
 
-### Pipelines and Steps
+### Version-Aware Migrators
 
-| Pipeline      | Steps (ordered)                       | Replaces                                                                          |
-| ------------- | ------------------------------------- | --------------------------------------------------------------------------------- |
-| `snapshot`    | `SnapshotFormatStep`                  | `FileSynchronizer.ensureSnapshotV2()` + `SnapshotMigrator`                        |
-| `schema`      | `SchemaIndexStep`, `SparseVectorStep` | `SchemaManager.ensureCurrentSchema()`, `SchemaManager.checkSparseVectorVersion()` |
-| `stats-cache` | `StatsCacheStep`                      | `StatsCache.load()` version discard logic                                         |
+Each migrator reads version once, runs only applicable migrations:
+
+```typescript
+// snapshot-migrator.ts
+class SnapshotMigrator {
+  // detectFormat() → "v1" | "v2" | "sharded" | "none"
+  // runs migrations where migration.version > detected format
+  // v1→v2→sharded in sequence
+}
+
+// schema-migrator.ts
+class SchemaMigrator {
+  // getSchemaVersion() → number (reads SCHEMA_METADATA_ID once)
+  // runs migrations where migration.version > currentVersion
+  // stores new version once at the end
+  // then runs sparse-vector-rebuild (independent version)
+}
+```
 
 ### Entry Points
 
@@ -92,20 +133,15 @@ class Migrator {
 ReindexPipeline.runMigrations():
   await this.deps.migrator.run('snapshot');
   await this.deps.migrator.run('schema');
-
-StatsCache.load():
-  await this.deps.migrator.run('stats-cache');
 ```
 
 ### DIP for Dependencies
 
-Steps do not import from `adapters/` or `domains/`. Dependencies are injected
-via interfaces defined in `infra/migration/ports.ts`:
+Migrations do not import from `adapters/` or `domains/`. Dependencies injected
+via interfaces in `types.ts`:
 
 ```typescript
-// ports.ts — interfaces that steps depend on
-
-/** Snapshot storage operations for SnapshotFormatStep. */
+/** Filesystem operations for snapshot migrations. */
 interface SnapshotStore {
   getFormat(): Promise<"v1" | "v2" | "sharded" | "none">;
   readV1(): Promise<{
@@ -125,7 +161,7 @@ interface SnapshotStore {
   statFile(path: string): Promise<{ mtimeMs: number; size: number } | null>;
 }
 
-/** Qdrant index operations for SchemaIndexStep. */
+/** Qdrant operations for schema migrations. */
 interface IndexStore {
   getSchemaVersion(collection: string): Promise<number>;
   ensureIndex(
@@ -145,121 +181,92 @@ interface IndexStore {
   updateSparseConfig(collection: string): Promise<void>;
 }
 
-/** Sparse vector operations for SparseVectorStep. */
+/** Sparse vector operations. */
 interface SparseStore {
   getSparseVersion(collection: string): Promise<number>;
   rebuildSparseVectors(collection: string): Promise<void>;
   storeSparseVersion(collection: string, version: number): Promise<void>;
 }
-
-/** Stats cache operations for StatsCacheStep. */
-interface StatsCacheStore {
-  getVersion(collection: string): Promise<number | null>;
-  migrate(collection: string, fromVersion: number): Promise<void>;
-}
 ```
 
-Adapters implement these interfaces. Composition root wires implementations into
-steps.
+### Migration Classes
 
-### Step Implementations
+Each migration has `version` for ordering and `apply()` for execution:
 
-Each step lives in `infra/migration/steps/`:
+**Snapshot migrations:**
 
-```
-infra/migration/
-  types.ts              — MigrationStep, StepResult, MigrationSummary
-  ports.ts              — SnapshotStore, IndexStore, SparseStore, StatsCacheStore
-  migrator.ts           — Migrator class (pipeline runner)
-  steps/
-    snapshot-format.ts  — SnapshotFormatStep (v1→v2→sharded)
-    schema-index.ts     — SchemaIndexStep (v4→v8 payload indexes)
-    sparse-vector.ts    — SparseVectorStep (BM25 rebuild)
-    stats-cache.ts      — StatsCacheStep (stats file version upgrade)
-```
+| Class                 | Version | Logic                                                                        |
+| --------------------- | ------- | ---------------------------------------------------------------------------- |
+| `SnapshotV1ToV2`      | 2       | For each file in fileHashes: stat() → add mtime/size. Write v2 format.       |
+| `SnapshotV2ToSharded` | 3       | Read v2 JSON → backup → write sharded (meta.json + shard files) → delete old |
 
-### SnapshotFormatStep
+**Schema migrations:**
 
-Merges two existing migrators into one step with internal state machine:
-
-```
-check format:
-  "none"    → skip (no snapshot exists)
-  "v1"      → stat files → add mtime/size → write sharded
-  "v2"      → convert to sharded
-  "sharded" → skip (already current)
-```
-
-### SchemaIndexStep
-
-Sequential index creation (same logic as current `ensureCurrentSchema`):
-
-```
-get version → apply v4..v8 migrations → store version
-```
-
-Each version adds specific payload indexes. Idempotent — already-existing
-indexes are skipped.
-
-### SparseVectorStep
-
-```
-get sparse version → if outdated: rebuild all sparse vectors → store version
-```
-
-### StatsCacheStep
-
-```
-get file version → if outdated: transform data structure → write new version
-  null (no file) → skip
-  current version → skip
-  old version → migrate fields/structure → save
-```
+| Class                      | Version | Logic                                                                                    |
+| -------------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `RelativePathKeywordIndex` | 4       | `ensureIndex("relativePath", "keyword")`                                                 |
+| `RelativePathTextIndex`    | 5       | `ensureIndex("relativePath", "text")`                                                    |
+| `FilterFieldIndexes`       | 6       | `ensureIndex` for language, fileExtension, chunkType                                     |
+| `SparseConfig`             | 7       | Enable sparse vectors if `enableHybrid` and not already enabled                          |
+| `SymbolIdTextIndex`        | 8       | `ensureIndex("symbolId", "text")`                                                        |
+| `SparseVectorRebuild`      | —       | Independent versioning via `sparseVersion`. Rebuild BM25 vectors when tokenizer changes. |
 
 ### Wiring (composition root)
 
 ```typescript
-// bootstrap/factory.ts or api/internal/composition.ts
 const migrator = new Migrator({
-  snapshot: [new SnapshotFormatStep(snapshotStoreAdapter)],
-  schema: [
-    new SchemaIndexStep(indexStoreAdapter, { enableHybrid }),
-    new SparseVectorStep(sparseStoreAdapter, { enableHybrid }),
-  ],
-  "stats-cache": [new StatsCacheStep(statsCacheStoreAdapter)],
+  snapshot: new SnapshotMigrator(snapshotStoreAdapter, [
+    new SnapshotV1ToV2(snapshotStoreAdapter),
+    new SnapshotV2ToSharded(snapshotStoreAdapter),
+  ]),
+  schema: new SchemaMigrator(
+    indexStoreAdapter,
+    sparseStoreAdapter,
+    { enableHybrid },
+    [
+      new RelativePathKeywordIndex(indexStoreAdapter),
+      new RelativePathTextIndex(indexStoreAdapter),
+      new FilterFieldIndexes(indexStoreAdapter),
+      new SparseConfig(indexStoreAdapter, { enableHybrid }),
+      new SymbolIdTextIndex(indexStoreAdapter),
+    ],
+  ),
 });
 ```
 
 ### Logging
 
-`Migrator.run()` logs via existing `pipelineLog` pattern:
-
 ```
-[Migration] snapshot: SnapshotFormatStep → applied (v1→sharded, 150 files)
-[Migration] schema: SchemaIndexStep → applied (v6→v8: symbolId text index)
-[Migration] schema: SparseVectorStep → skipped (already v2)
+[Migration] snapshot: detecting format... v1
+[Migration] snapshot: SnapshotV1ToV2 → applied (150 files upgraded)
+[Migration] snapshot: SnapshotV2ToSharded → applied (150 files, 4 shards)
+[Migration] schema: version 6 → running v7, v8
+[Migration] schema: SparseConfig → applied (enabled sparse vectors)
+[Migration] schema: SymbolIdTextIndex → applied (text index on symbolId)
+[Migration] schema: SparseVectorRebuild → skipped (already v1)
 ```
 
 ### Error Handling
 
-- Steps throw typed errors from `infra/migration/errors.ts`
 - `MigrationStepError extends TeaRagsError` with step name, pipeline, cause
-- `Migrator.run()` catches, wraps in summary, re-throws
-- Callers (ReindexPipeline, StatsCache) handle as before
+- Migrator stops on first failure, returns summary with error
+- Callers (ReindexPipeline) handle as before
 
 ## What Gets Deleted
 
-| File                                  | What's removed                                |
-| ------------------------------------- | --------------------------------------------- |
-| `domains/ingest/sync/migration.ts`    | Entire file (`SnapshotMigrator` class)        |
-| `domains/ingest/sync/synchronizer.ts` | `ensureSnapshotV2()` method                   |
-| `adapters/qdrant/schema-migration.ts` | `SchemaManager` class (replaced by two steps) |
-| `infra/stats-cache.ts`                | Version discard logic in `load()`             |
-| `domains/ingest/reindexing.ts`        | `runMigrations()` inline calls                |
+| File                                  | What's removed                                    |
+| ------------------------------------- | ------------------------------------------------- |
+| `domains/ingest/sync/migration.ts`    | Entire file (`SnapshotMigrator` class)            |
+| `domains/ingest/sync/synchronizer.ts` | `ensureSnapshotV2()` method                       |
+| `adapters/qdrant/schema-migration.ts` | `SchemaManager` class (migration methods)         |
+| `domains/ingest/reindexing.ts`        | `runMigrations()` inline calls                    |
+| `domains/ingest/factory.ts`           | `createMigrator`, `createSchemaManager` factories |
 
-## What We Do NOT Change
+## What Stays
 
-- `SchemaDriftMonitor` — runtime detection, not a migration
+- `SchemaManager.initializeSchema()` — not a migration, creates indexes for new
+  collections. Moves to a standalone `SchemaInitializer` or stays as utility.
+- `SchemaDriftMonitor` — runtime detection
 - `ScrollRankStrategy.ensureIndexFn` — lazy runtime provisioning
-- `StatsCache.save()/load()` — data flow unchanged, just version handling moves
-- `ReindexPipeline` orchestration order — same sequence, cleaner API
+- `StatsCache` — version check stays inline (discard + rebuild, not worth
+  migrating)
