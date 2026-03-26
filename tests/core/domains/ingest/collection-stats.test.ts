@@ -379,9 +379,9 @@ describe("computeCollectionStats distributions", () => {
       expect(result.perLanguage.has("python")).toBe(false);
     });
 
-    it("should exclude config languages below 10% threshold", () => {
+    it("should always exclude config languages from per-language stats", () => {
       const points = [
-        ...Array.from({ length: 90 }, (_, i) => ({
+        ...Array.from({ length: 50 }, (_, i) => ({
           payload: {
             "git.file.commitCount": i + 1,
             language: "typescript",
@@ -390,7 +390,8 @@ describe("computeCollectionStats distributions", () => {
             relativePath: `ts${i}.ts`,
           },
         })),
-        ...Array.from({ length: 10 }, (_, i) => ({
+        // json: 30/110 = 27% — still excluded (config language)
+        ...Array.from({ length: 30 }, (_, i) => ({
           payload: {
             "git.file.commitCount": i + 1,
             language: "json",
@@ -399,7 +400,8 @@ describe("computeCollectionStats distributions", () => {
             relativePath: `cfg${i}.json`,
           },
         })),
-        ...Array.from({ length: 10 }, (_, i) => ({
+        // markdown: 20/110 = 18% — still excluded (config language)
+        ...Array.from({ length: 20 }, (_, i) => ({
           payload: {
             "git.file.commitCount": i + 1,
             language: "markdown",
@@ -408,42 +410,23 @@ describe("computeCollectionStats distributions", () => {
             relativePath: `doc${i}.md`,
           },
         })),
+        // bash: 10/110 = 9% — excluded (config language)
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "bash",
+            chunkType: "block",
+            isDocumentation: false,
+            relativePath: `script${i}.sh`,
+          },
+        })),
       ];
-      // json = 10/110 ≈ 9.1%, markdown = 10/110 ≈ 9.1% — both below 10%
       const result = computeCollectionStats(points, testSignals);
 
       expect(result.perLanguage.has("typescript")).toBe(true);
       expect(result.perLanguage.has("json")).toBe(false);
       expect(result.perLanguage.has("markdown")).toBe(false);
-    });
-
-    it("should include config language at exactly 10% threshold", () => {
-      const points = [
-        ...Array.from({ length: 90 }, (_, i) => ({
-          payload: {
-            "git.file.commitCount": i + 1,
-            language: "typescript",
-            chunkType: "function",
-            isDocumentation: false,
-            relativePath: `ts${i}.ts`,
-          },
-        })),
-        ...Array.from({ length: 10 }, (_, i) => ({
-          payload: {
-            "git.file.commitCount": i + 1,
-            language: "json",
-            chunkType: "block",
-            isDocumentation: false,
-            relativePath: `cfg${i}.json`,
-          },
-        })),
-      ];
-      // json = 10/100 = 10% — exactly at threshold
-      const result = computeCollectionStats(points, testSignals);
-
-      expect(result.perLanguage.has("json")).toBe(true);
-      const jsonStats = result.perLanguage.get("json")!.get("git.file.commitCount")!;
-      expect(jsonStats.count).toBe(10);
+      expect(result.perLanguage.has("bash")).toBe(false);
     });
 
     it("should not include chunks without language in any per-language bucket", () => {

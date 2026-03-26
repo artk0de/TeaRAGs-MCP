@@ -20,6 +20,8 @@ const CONFIG_LANGUAGES = new Set([
   "env",
   "csv",
   "dockerfile",
+  "bash",
+  "powershell",
 ]);
 
 const MIN_SAMPLE_SIZE = 10;
@@ -304,14 +306,11 @@ export function computeCollectionStats(
   const perSignal = computePerSignalStats(extracted.valueArrays, statsSignals);
   const distributions = buildDistributions(extracted, gitTimePeriods);
 
-  const totalChunks = points.length;
   const perLanguage = new Map<string, Map<string, SignalStats>>();
 
   for (const [lang, langValueArrays] of extracted.perLanguageValues) {
-    if (CONFIG_LANGUAGES.has(lang)) {
-      const langCount = extracted.languageCounts[lang] ?? 0;
-      if (totalChunks === 0 || langCount / totalChunks < 0.1) continue;
-    }
+    // Config/non-code languages are always excluded from per-language stats
+    if (CONFIG_LANGUAGES.has(lang)) continue;
 
     const hasEnoughSamples = statsSignals.some((s) => {
       const values = langValueArrays.get(s.key);
