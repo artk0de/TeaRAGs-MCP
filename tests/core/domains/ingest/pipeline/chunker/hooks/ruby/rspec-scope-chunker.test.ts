@@ -203,10 +203,13 @@ end`;
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].chunkType).toBe("test");
-    // Parent setup should be injected into the leaf chunk
+    // Parent setup should be injected into the leaf chunk content
     expect(chunks[0].content).toContain("let(:user)");
     expect(chunks[0].content).toContain("before");
     expect(chunks[0].content).toContain("has admin role");
+    // But line range should NOT span back to parent setup lines
+    // Parent setup is at lines 2-3, context starts at line 5
+    expect(chunks[0].startLine).toBeGreaterThanOrEqual(5);
   });
 
   it("should produce test_setup chunk for intermediate scope with own it blocks", () => {
@@ -661,6 +664,44 @@ end`;
     expect(chunks[0].chunkType).toBe("test_setup");
     expect(chunks[0].startLine).toBeGreaterThan(0);
     expect(chunks[0].endLine).toBeGreaterThan(chunks[0].startLine);
+  });
+
+  it("should classify leaf scope with include_examples as test, not test_setup", () => {
+    const code = `describe User do
+  context 'when using shared behavior for authentication and authorization' do
+    include_examples 'authenticable resource'
+    include_examples 'authorizable resource'
+    it_behaves_like 'a trackable entity with audit logging'
+  end
+end`;
+
+    const tree = parseRuby(code);
+    const node = findTopLevelCall(tree);
+    const scope = buildScopeTree(node, code);
+    const chunks = produceScopeChunks(scope, code, defaultConfig);
+
+    expect(chunks).toHaveLength(1);
+    // Should be "test" because include_examples/it_behaves_like delegate to actual tests
+    expect(chunks[0].chunkType).toBe("test");
+  });
+
+  it("should keep test_setup for leaf scope with only let/before (no shared examples)", () => {
+    const code = `describe User do
+  context 'comprehensive shared test configuration and helpers' do
+    let(:user) { create(:user, role: 'admin', active: true, verified: true) }
+    let(:config) { { timeout: 30, retries: 3, cache_enabled: true, debug: false } }
+    before { sign_in(user) }
+    subject { described_class.new(user: user, config: config) }
+  end
+end`;
+
+    const tree = parseRuby(code);
+    const node = findTopLevelCall(tree);
+    const scope = buildScopeTree(node, code);
+    const chunks = produceScopeChunks(scope, code, defaultConfig);
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].chunkType).toBe("test_setup");
   });
 
   it("should skip sub-chunks shorter than 50 chars during oversized split", () => {

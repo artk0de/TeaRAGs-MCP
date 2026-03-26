@@ -2,6 +2,9 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
 import { normalize } from "../../../../../infra/signal-utils.js";
 
+/** Chunk types where size/density signals are meaningful. */
+const SIZEABLE_TYPES = new Set(["function", "test", "test_setup"]);
+
 /**
  * Measures code density — characters per line within a method/function.
  *
@@ -23,7 +26,7 @@ export class ChunkDensitySignal implements DerivedSignalDescriptor {
   private readonly sizeFloor = 20;
 
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    if (rawSignals.chunkType !== "function") return 0;
+    if (!SIZEABLE_TYPES.has(rawSignals.chunkType as string)) return 0;
     const methodLines = (rawSignals.methodLines as number) || 0;
     if (methodLines <= 0) return 0; // density meaningless without a method/function
 

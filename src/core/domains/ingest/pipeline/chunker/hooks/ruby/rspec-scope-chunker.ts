@@ -75,6 +75,9 @@ const SETUP_METHODS = new Set([
   "include_examples",
 ]);
 
+/** Setup methods that delegate to actual tests (shared examples). */
+const DELEGATING_TEST_METHODS = new Set(["it_behaves_like", "include_examples"]);
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function getCallMethodName(node: Parser.SyntaxNode, code: string): string | null {
@@ -287,18 +290,14 @@ export function produceScopeChunks(
           return;
         }
 
-        // Compute line range
+        // Compute line range from this scope's own lines only.
+        // Ancestor setup is included in content for context but should NOT
+        // inflate the line range (causes git blame and Read offset issues).
         const allLines = [
           ...scope.setupLines.map((s) => s.sourceLine),
           ...scope.otherLines.map((o) => o.sourceLine),
           ...scope.ownItBlocks.flatMap((b) => [b.startLine, b.endLine]),
         ];
-        // Include parent setup lines in range
-        for (const ancestor of ancestors) {
-          for (const setup of ancestor.setupLines) {
-            allLines.push(setup.sourceLine);
-          }
-        }
         const startLine = allLines.length > 0 ? Math.min(...allLines) : scope.node.startPosition.row + 1;
         const endLine = allLines.length > 0 ? Math.max(...allLines) : scope.node.endPosition.row + 1;
 
@@ -323,11 +322,20 @@ export function produceScopeChunks(
         const startLine = allLines.length > 0 ? Math.min(...allLines) : scope.node.startPosition.row + 1;
         const endLine = allLines.length > 0 ? Math.max(...allLines) : scope.node.endPosition.row + 1;
 
+        // Classify: if setup contains delegating test methods (include_examples,
+        // it_behaves_like), these scopes execute actual tests via shared examples.
+        const hasDelegatingTests = scope.setupLines.some((s) => {
+          for (const method of DELEGATING_TEST_METHODS) {
+            if (s.text.includes(method)) return true;
+          }
+          return false;
+        });
+
         results.push({
           content,
           startLine,
           endLine,
-          chunkType: "test_setup",
+          chunkType: hasDelegatingTests ? "test" : "test_setup",
           symbolId: `${topLevelName}.${scope.name}`,
           name: scope.name,
           parentName: topLevelName,
