@@ -60,8 +60,8 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string): SearchRes
 function groupChunks(chunks: ScrollChunk[]): Map<string, ScrollChunk[]> {
   const groups = new Map<string, ScrollChunk[]>();
   for (const chunk of chunks) {
-    const symbolId = String(chunk.payload.symbolId ?? "");
-    const path = String(chunk.payload.relativePath ?? "");
+    const symbolId = (chunk.payload.symbolId as string | undefined) ?? "";
+    const path = (chunk.payload.relativePath as string | undefined) ?? "";
     const key = `${symbolId}::${path}`;
     const group = groups.get(key);
     if (group) {
@@ -75,13 +75,11 @@ function groupChunks(chunks: ScrollChunk[]): Map<string, ScrollChunk[]> {
 
 /** Merge multiple chunks of the same function into one result. */
 function mergeChunks(chunks: ScrollChunk[]): SearchResult {
-  const sorted = [...chunks].sort(
-    (a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0),
-  );
+  const sorted = [...chunks].sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0));
 
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
-  const content = sorted.map((c) => String(c.payload.content ?? "")).join("\n");
+  const content = sorted.map((c) => (c.payload.content as string | undefined) ?? "").join("\n");
 
   const payload: Record<string, unknown> = {
     ...first.payload,
@@ -102,13 +100,11 @@ function mergeChunks(chunks: ScrollChunk[]): SearchResult {
 function outlineClass(classChunk: ScrollChunk, memberChunks: ScrollChunk[]): SearchResult {
   const members = memberChunks
     .sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0))
-    .map((c) => String(c.payload.symbolId ?? ""));
+    .map((c) => (c.payload.symbolId as string | undefined) ?? "");
 
   const payload: Record<string, unknown> = {
     ...classChunk.payload,
-    git: classChunk.payload.git
-      ? { file: (classChunk.payload.git as Record<string, unknown>).file }
-      : undefined,
+    git: classChunk.payload.git ? { file: (classChunk.payload.git as Record<string, unknown>).file } : undefined,
     ...(members.length > 0 ? { members } : {}),
   };
 
@@ -120,11 +116,11 @@ function sortResults(results: SearchResult[], query?: string): SearchResult[] {
   if (!query) return results;
   const q = query.toLowerCase();
   return results.sort((a, b) => {
-    const aExact = String(a.payload?.symbolId ?? "").toLowerCase() === q ? 0 : 1;
-    const bExact = String(b.payload?.symbolId ?? "").toLowerCase() === q ? 0 : 1;
+    const aExact = ((a.payload?.symbolId as string | undefined) ?? "").toLowerCase() === q ? 0 : 1;
+    const bExact = ((b.payload?.symbolId as string | undefined) ?? "").toLowerCase() === q ? 0 : 1;
     if (aExact !== bExact) return aExact - bExact;
-    const aPath = String(a.payload?.relativePath ?? "");
-    const bPath = String(b.payload?.relativePath ?? "");
+    const aPath = (a.payload?.relativePath as string | undefined) ?? "";
+    const bPath = (b.payload?.relativePath as string | undefined) ?? "";
     return aPath.localeCompare(bPath);
   });
 }
