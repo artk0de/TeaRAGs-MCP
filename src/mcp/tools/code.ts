@@ -6,13 +6,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { App, IndexStatus, SchemaBuilder } from "../../core/api/index.js";
 import { appendDriftWarning, formatMcpText, sanitizeRerank } from "../format.js";
-import { registerToolSafe } from "../middleware/error-handler.js";
+import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { formatEnrichmentStatus } from "./formatters/enrichment.js";
 import { createSearchSchemas } from "./schemas.js";
 import * as schemas from "./schemas.js";
 
-export function registerCodeTools(server: McpServer, deps: { app: App; schemaBuilder: SchemaBuilder }): void {
-  const { app } = deps;
+export function registerCodeTools(
+  server: McpServer,
+  deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn },
+): void {
+  const { app, register: registerToolSafe } = deps;
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);
 
   // index_codebase

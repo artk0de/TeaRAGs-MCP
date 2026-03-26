@@ -9,11 +9,19 @@ import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
 
 // Mock heavy dependencies — use function() (not =>) so `new` works
 vi.mock("../../src/core/adapters/qdrant/client.js", () => ({
-  QdrantManager: vi.fn().mockImplementation(function () {}),
+  QdrantManager: vi.fn().mockImplementation(function () {
+    this.checkHealth = async () => Promise.resolve(true);
+    this.url = "http://localhost:6333";
+  }),
 }));
 vi.mock("../../src/core/adapters/embeddings/factory.js", () => ({
   EmbeddingProviderFactory: {
-    create: vi.fn().mockReturnValue({ getDimensions: () => 768, getModel: () => "test-model" }),
+    create: vi.fn().mockReturnValue({
+      getDimensions: () => 768,
+      getModel: () => "test-model",
+      checkHealth: async () => Promise.resolve(true),
+      getProviderName: () => "mock",
+    }),
   },
 }));
 vi.mock("../../src/core/api/internal/facades/ingest-facade.js", () => ({

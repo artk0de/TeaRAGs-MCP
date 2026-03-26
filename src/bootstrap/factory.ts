@@ -22,6 +22,7 @@ import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
+import type { HealthProbes } from "../mcp/middleware/error-handler.js";
 import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
@@ -39,6 +40,7 @@ export { pkg };
 export interface AppContext {
   app: App;
   schemaBuilder: SchemaBuilder;
+  healthProbes?: HealthProbes;
   embeddedRelease?: () => void;
   /** Graceful shutdown: terminate embedding provider + release embedded Qdrant. */
   cleanup?: () => void;
@@ -161,6 +163,13 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   return {
     app,
     schemaBuilder,
+    healthProbes: {
+      checkQdrant: async () => qdrant.checkHealth(),
+      checkEmbedding: async () => embeddings.checkHealth(),
+      qdrantUrl: qdrant.url,
+      embeddingProvider: embeddings.getProviderName(),
+      ...(embeddings.getBaseUrl ? { embeddingUrl: embeddings.getBaseUrl() } : {}),
+    },
     embeddedRelease,
     cleanup,
   };
@@ -184,7 +193,11 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
     version: pkg.version,
   });
 
-  registerAllTools(server, { app: ctx.app, schemaBuilder: ctx.schemaBuilder });
+  registerAllTools(server, {
+    app: ctx.app,
+    schemaBuilder: ctx.schemaBuilder,
+    healthProbes: ctx.healthProbes,
+  });
   registerAllResources(server, ctx.app);
   registerAllPrompts(server, promptsConfig);
 

@@ -6,11 +6,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { App } from "../../core/api/index.js";
 import { formatMcpText } from "../format.js";
-import { registerToolSafe } from "../middleware/error-handler.js";
+import type { RegisterToolFn } from "../middleware/error-handler.js";
 import * as schemas from "./schemas.js";
 
-export function registerDocumentTools(server: McpServer, deps: { app: App }): void {
-  const { app } = deps;
+export function registerDocumentTools(server: McpServer, deps: { app: App; register: RegisterToolFn }): void {
+  const { app, register: registerToolSafe } = deps;
 
   // add_documents
   registerToolSafe(
