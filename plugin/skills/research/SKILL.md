@@ -86,7 +86,7 @@ Read overlay labels. Note risk areas:
 
 If results show method calls to trace:
 
-- Follow search-cascade with symbol name (cascade → hybrid_search)
+- find_symbol for definition (instant, no embedding). Fallback: hybrid_search
 - Or Read file if already known
 
 ### 5. ITERATE OR OUTPUT

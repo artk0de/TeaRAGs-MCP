@@ -96,8 +96,9 @@ Apply selected strategy + style. Generate code.
 
 Verify ALL referenced identifiers:
 
-1. ripgrep for every function name, import path, type name.
-2. 0 matches = hallucinated identifier → fix before committing.
+1. find_symbol(metaOnly=true) for every function name, type name. ripgrep for
+   import paths (find_symbol doesn't cover imports).
+2. 0 results = hallucinated identifier → fix before committing.
 
 ### Step 6: IMPACT
 

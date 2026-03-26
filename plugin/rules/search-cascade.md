@@ -97,6 +97,12 @@ Has query?
    │
    ├─ Have code/chunk as example? → find_similar (code or chunk ID)
    │
+   ├─ Need definition of a known symbol? → find_symbol
+   │   "Show me Reranker.rerank", "what does mergeChunks do"
+   │   Direct Qdrant scroll — no embedding, instant. Returns merged definition.
+   │   Use metaOnly=true for existence checks ("does X exist?").
+   │   Fallback: hybrid_search if find_symbol returns 0 results.
+   │
    ├─ Have a symbol name + semantic context? → hybrid_search
    │   Example: "PaymentService validate card expiration"
    │   BM25 catches exact symbol name, dense vectors catch semantic context.
@@ -350,12 +356,13 @@ Organized by agent task. Each references a decision tree branch.
 
 **Exact symbol search**
 
-| Task                      | Tool (via tree) | Example                                              |
-| ------------------------- | --------------- | ---------------------------------------------------- |
-| Bare symbol name          | semantic_search | "batch_create" → cleaner than hybrid for short names |
-| Symbol + semantic context | hybrid_search   | "PaymentService validate card expiration"            |
-| TODO/FIXME markers        | ripgrep MCP     | Exact string match, not hybrid (see Prohibited)      |
-| Class/method definition   | hybrid_search   | "def automations_disabled_reasons"                   |
+| Task                      | Tool (via tree) | Example                                         |
+| ------------------------- | --------------- | ----------------------------------------------- |
+| Symbol definition         | find_symbol     | "Reranker.rerank" → instant, no embedding       |
+| Symbol exists?            | find_symbol     | metaOnly=true, 0 results = doesn't exist        |
+| Symbol + semantic context | hybrid_search   | "PaymentService validate card expiration"       |
+| Bare symbol name          | find_symbol     | "batch_create" → direct lookup by symbolId      |
+| TODO/FIXME markers        | ripgrep MCP     | Exact string match, not hybrid (see Prohibited) |
 
 **Code context for generation**
 
@@ -369,17 +376,17 @@ Organized by agent task. Each references a decision tree branch.
 
 **Full profile (LSP available):**
 
-| Task                                | Primary                                                                                      | Fallback                           |
-| ----------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------- |
-| File structure                      | LSP documentSymbol                                                                           | tree-sitter → Read                 |
-| Navigate to definition              | partial Read (startLine/endLine from chunks) → LSP goToDefinition (if symbol not in results) | hybrid_search (symbol) → ripgrep   |
-| Call chain (who calls / what calls) | LSP incomingCalls / outgoingCalls                                                            | semantic_search (subsystem slice)  |
-| All usages                          | LSP findReferences                                                                           | ripgrep (class/method name)        |
-| Type / signature                    | LSP hover                                                                                    | Read (partial)                     |
-| Find symbol by name                 | LSP workspaceSymbol                                                                          | hybrid_search                      |
-| Find implementations                | LSP goToImplementation                                                                       | hybrid_search ("class SymbolName") |
-| Cross-layer                         | semantic_search × per language (one call per layer)                                          | same                               |
-| Exact text                          | ripgrep MCP                                                                                  | built-in Grep                      |
+| Task                                | Primary                                                                                 | Fallback                            |
+| ----------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------- |
+| File structure                      | LSP documentSymbol                                                                      | tree-sitter → Read                  |
+| Navigate to definition              | find_symbol (instant, returns merged definition) → LSP goToDefinition (if not in index) | hybrid_search (symbol) → ripgrep    |
+| Call chain (who calls / what calls) | LSP incomingCalls / outgoingCalls                                                       | semantic_search (subsystem slice)   |
+| All usages                          | LSP findReferences                                                                      | ripgrep (class/method name)         |
+| Type / signature                    | LSP hover                                                                               | Read (partial)                      |
+| Find symbol by name                 | find_symbol (no LSP needed)                                                             | LSP workspaceSymbol → hybrid_search |
+| Find implementations                | LSP goToImplementation                                                                  | hybrid_search ("class SymbolName")  |
+| Cross-layer                         | semantic_search × per language (one call per layer)                                     | same                                |
+| Exact text                          | ripgrep MCP                                                                             | built-in Grep                       |
 
 **LSP performance warning:** `incomingCalls`, `outgoingCalls`, and
 `findReferences` can be slow or hang on large codebases (especially Ruby).
@@ -389,13 +396,13 @@ file or known module).
 
 **No-LSP profile:**
 
-| Task             | Primary                                                                          | Fallback 1        | Fallback 2 |
-| ---------------- | -------------------------------------------------------------------------------- | ----------------- | ---------- |
-| File structure   | tree-sitter analyze_code_structure                                               | Read (whole file) | —          |
-| Navigate to call | partial Read (startLine/endLine from chunks) → hybrid_search (if not in results) | ripgrep           | Read       |
-| All usages       | ripgrep (class/method name)                                                      | built-in Grep     | —          |
-| Cross-layer      | semantic_search + language filter                                                | same              | —          |
-| Exact text       | ripgrep MCP                                                                      | built-in Grep     | —          |
+| Task             | Primary                                                            | Fallback 1        | Fallback 2 |
+| ---------------- | ------------------------------------------------------------------ | ----------------- | ---------- |
+| File structure   | tree-sitter analyze_code_structure                                 | Read (whole file) | —          |
+| Navigate to call | find_symbol (instant definition) → hybrid_search (if not in index) | ripgrep           | Read       |
+| All usages       | ripgrep (class/method name)                                        | built-in Grep     | —          |
+| Cross-layer      | semantic_search + language filter                                  | same              | —          |
+| Exact text       | ripgrep MCP                                                        | built-in Grep     | —          |
 
 Each fallback activates when the tool to its left is unavailable. If tree-sitter
 is absent, "File structure" falls directly to Read. If ripgrep MCP is absent,
@@ -460,6 +467,7 @@ built-in Grep/Glob for code search, bypassing tea-rags entirely.
 For code search in this project, use MCP tools instead of built-in Grep/Glob:
 - `mcp__tea-rags__semantic_search` — semantic/conceptual search (query + path)
 - `mcp__tea-rags__hybrid_search` — keyword + semantic search (query + path)
+- `mcp__tea-rags__find_symbol` — symbol definition lookup (symbol + path, no embedding)
 - `mcp__ripgrep__search` — exact text/regex search
 - Do NOT use built-in Grep or Glob for code discovery.
 - All tea-rags calls require: path="<absolute-project-path>"

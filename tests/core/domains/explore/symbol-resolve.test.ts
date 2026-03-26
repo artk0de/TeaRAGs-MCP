@@ -70,6 +70,32 @@ describe("resolveSymbols", () => {
       expect(results).toHaveLength(1);
       expect(results[0].payload?.mergedChunkIds).toBeUndefined();
     });
+
+    it("strips content when metaOnly is true", () => {
+      const chunks = [
+        {
+          id: "uuid-1",
+          payload: {
+            symbolId: "myFunc",
+            chunkType: "function",
+            relativePath: "src/utils.ts",
+            content: "function myFunc() { return 42; }",
+            startLine: 1,
+            endLine: 1,
+            language: "typescript",
+            git: { file: { ageDays: 5 } },
+          },
+        },
+      ];
+
+      const results = resolveSymbols(chunks, undefined, true);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBeUndefined();
+      expect(results[0].payload?.symbolId).toBe("myFunc");
+      expect(results[0].payload?.relativePath).toBe("src/utils.ts");
+      expect(results[0].payload?.git).toBeDefined();
+    });
   });
 
   describe("class outline strategy", () => {

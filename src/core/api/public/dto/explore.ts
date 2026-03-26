@@ -123,6 +123,7 @@ export interface FindSymbolRequest extends CollectionRef {
   symbol: string;
   language?: string;
   pathPattern?: string;
+  metaOnly?: boolean;
 }
 
 // ---------------------------------------------------------------------------
