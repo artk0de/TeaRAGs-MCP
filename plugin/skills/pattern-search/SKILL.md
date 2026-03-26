@@ -141,9 +141,11 @@ Found: [N unique implementations across M modules]
 **Label mapping from overlay signals:**
 
 Use labelMap from `get_index_metrics` (loaded at session start by
-search-cascade). If absent in context, call `get_index_metrics` yourself. Map
-raw signal values to the nearest labelMap threshold. See
-`tea-rags://schema/signal-labels` for all label definitions.
+search-cascade). Signals are grouped by language: `signals["global"]` for
+project-wide, `signals["typescript"]` etc. for per-language. Prefer the chunk's
+language thresholds when available. If absent in context, call
+`get_index_metrics` yourself. Map raw signal values to the nearest labelMap
+threshold. See `tea-rags://schema/signal-labels` for all label definitions.
 
 If **Antipattern** strategy: add `⚠️` prefix to problematic implementations. If
 **Reference** strategy: add `✓` prefix to the best example.
