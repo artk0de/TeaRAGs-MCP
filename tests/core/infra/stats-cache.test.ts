@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { CollectionSignalStats } from "../../../src/core/contracts/types/trajectory.js";
+import type { CollectionSignalStats, Distributions } from "../../../src/core/contracts/types/trajectory.js";
 import { StatsCache } from "../../../src/core/infra/stats-cache.js";
 
 function makeTmpDir(): string {
@@ -13,6 +13,18 @@ function makeTmpDir(): string {
   const dir = join(tmpdir(), `stats-cache-test-${suffix}`);
   mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+const emptyDistributions: Distributions = { totalFiles: 0, language: {}, chunkType: {} };
+
+function makeStats(overrides?: Partial<CollectionSignalStats>): CollectionSignalStats {
+  return {
+    computedAt: Date.now(),
+    perSignal: new Map(),
+    perLanguage: new Map(),
+    distributions: emptyDistributions,
+    ...overrides,
+  };
 }
 
 describe("StatsCache", () => {
@@ -34,13 +46,13 @@ describe("StatsCache", () => {
   });
 
   it("save() writes valid JSON and load() reads it back (round-trip)", () => {
-    const stats: CollectionSignalStats = {
+    const stats = makeStats({
       computedAt: 1_700_000_000_000,
       perSignal: new Map([
         ["git.file.commitCount", { count: 100, percentiles: { 25: 10, 95: 90 }, mean: 50, stddev: 28.87 }],
         ["git.file.ageDays", { count: 80, mean: 120 }],
       ]),
-    };
+    });
 
     cache.save("my-collection", stats);
     const loaded = cache.load("my-collection");
@@ -78,6 +90,8 @@ describe("StatsCache", () => {
       collectionName: "old-collection",
       computedAt: 1_700_000_000_000,
       perSignal: {},
+      perLanguage: {},
+      distributions: emptyDistributions,
     });
     writeFileSync(filePath, content, "utf-8");
 
@@ -86,10 +100,9 @@ describe("StatsCache", () => {
   });
 
   it("invalidate() deletes the file and load() returns null after", () => {
-    const stats: CollectionSignalStats = {
-      computedAt: Date.now(),
+    const stats = makeStats({
       perSignal: new Map([["git.file.commitCount", { count: 5 }]]),
-    };
+    });
 
     cache.save("delete-me", stats);
     // File exists and is loadable
@@ -110,10 +123,9 @@ describe("StatsCache", () => {
     const nestedDir = join(snapshotsDir, "deep", "nested", "snapshots");
     const nestedCache = new StatsCache(nestedDir);
 
-    const stats: CollectionSignalStats = {
-      computedAt: Date.now(),
+    const stats = makeStats({
       perSignal: new Map([["signal.x", { count: 1 }]]),
-    };
+    });
 
     expect(() => {
       nestedCache.save("test-col", stats);
@@ -124,10 +136,9 @@ describe("StatsCache", () => {
   });
 
   it("save() persists payloadFieldKeys and load() returns them", () => {
-    const stats: CollectionSignalStats = {
-      computedAt: Date.now(),
+    const stats = makeStats({
       perSignal: new Map([["a", { count: 1 }]]),
-    };
+    });
     cache.save("key-test", stats, ["git.file.ageDays", "git.file.commitCount"]);
     const loaded = cache.load("key-test");
     expect(loaded!.payloadFieldKeys).toEqual(["git.file.ageDays", "git.file.commitCount"]);
@@ -185,7 +196,7 @@ describe("StatsCache", () => {
       ["beta", { count: 20, mean: 7.7 }],
       ["gamma", { count: 30, stddev: 3.14 }],
     ]);
-    const stats: CollectionSignalStats = { computedAt: 42, perSignal };
+    const stats = makeStats({ computedAt: 42, perSignal });
 
     cache.save("map-test", stats);
     const loaded = cache.load("map-test");
@@ -198,5 +209,70 @@ describe("StatsCache", () => {
     expect(loaded!.perSignal.get("alpha")!.percentiles[50]).toBe(5.0);
     expect(loaded!.perSignal.get("beta")!.mean).toBe(7.7);
     expect(loaded!.perSignal.get("gamma")!.stddev).toBe(3.14);
+  });
+
+  describe("perLanguage (v4)", () => {
+    it("should round-trip perLanguage through save/load", () => {
+      const tsSignals = new Map([
+        ["git.file.commitCount", { count: 50, mean: 12, percentiles: { 25: 3, 95: 30 } }],
+        ["git.file.ageDays", { count: 50, mean: 90 }],
+      ]);
+      const rubySignals = new Map([["git.file.commitCount", { count: 20, mean: 8 }]]);
+
+      const stats = makeStats({
+        computedAt: 1_700_000_000_000,
+        perSignal: new Map([["git.file.commitCount", { count: 70, mean: 10 }]]),
+        perLanguage: new Map([
+          ["typescript", tsSignals],
+          ["ruby", rubySignals],
+        ]),
+      });
+
+      cache.save("lang-test", stats);
+      const loaded = cache.load("lang-test");
+
+      expect(loaded).not.toBeNull();
+      expect(loaded!.perLanguage).toBeInstanceOf(Map);
+      expect(loaded!.perLanguage.size).toBe(2);
+
+      const loadedTs = loaded!.perLanguage.get("typescript");
+      expect(loadedTs).toBeInstanceOf(Map);
+      expect(loadedTs!.size).toBe(2);
+      expect(loadedTs!.get("git.file.commitCount")!.mean).toBe(12);
+      expect(loadedTs!.get("git.file.ageDays")!.mean).toBe(90);
+
+      const loadedRuby = loaded!.perLanguage.get("ruby");
+      expect(loadedRuby).toBeInstanceOf(Map);
+      expect(loadedRuby!.get("git.file.commitCount")!.mean).toBe(8);
+    });
+
+    it("should discard v3 cache and return null", () => {
+      const filePath = join(snapshotsDir, "v3-collection.stats.json");
+      const v3Content = JSON.stringify({
+        version: 3,
+        collectionName: "v3-collection",
+        computedAt: 1_700_000_000_000,
+        perSignal: { "git.file.commitCount": { count: 10, mean: 5 } },
+        distributions: emptyDistributions,
+      });
+      writeFileSync(filePath, v3Content, "utf-8");
+
+      const result = cache.load("v3-collection");
+      expect(result).toBeNull();
+    });
+
+    it("should handle empty perLanguage", () => {
+      const stats = makeStats({
+        perSignal: new Map([["git.file.commitCount", { count: 10 }]]),
+        perLanguage: new Map(),
+      });
+
+      cache.save("empty-lang", stats);
+      const loaded = cache.load("empty-lang");
+
+      expect(loaded).not.toBeNull();
+      expect(loaded!.perLanguage).toBeInstanceOf(Map);
+      expect(loaded!.perLanguage.size).toBe(0);
+    });
   });
 });

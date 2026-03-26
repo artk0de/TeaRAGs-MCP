@@ -81,6 +81,8 @@ export interface Distributions {
 /** Collection-wide signal statistics, cached between reindexes. */
 export interface CollectionSignalStats {
   perSignal: Map<string, SignalStats>;
+  /** Per-language signal stats. Key = language name, value = signal stats map. */
+  perLanguage: Map<string, Map<string, SignalStats>>;
   distributions: Distributions;
   computedAt: number;
 }

@@ -313,4 +313,212 @@ describe("computeCollectionStats distributions", () => {
       expect(result.distributions.enrichmentTimeRange).toBeUndefined();
     });
   });
+
+  describe("per-language stats", () => {
+    it("should compute per-language signal stats grouped by chunk language", () => {
+      const points = [
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `ts${i}.ts`,
+          },
+        })),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 11,
+            language: "python",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `py${i}.py`,
+          },
+        })),
+      ];
+      const result = computeCollectionStats(points, testSignals);
+
+      expect(result.perLanguage.has("typescript")).toBe(true);
+      expect(result.perLanguage.has("python")).toBe(true);
+
+      const tsStats = result.perLanguage.get("typescript")!.get("git.file.commitCount")!;
+      expect(tsStats.count).toBe(10);
+      expect(tsStats.min).toBe(1);
+      expect(tsStats.max).toBe(10);
+
+      const pyStats = result.perLanguage.get("python")!.get("git.file.commitCount")!;
+      expect(pyStats.count).toBe(10);
+      expect(pyStats.min).toBe(11);
+      expect(pyStats.max).toBe(20);
+    });
+
+    it("should exclude languages with fewer than 10 chunks", () => {
+      const points = [
+        ...Array.from({ length: 15 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `ts${i}.ts`,
+          },
+        })),
+        ...Array.from({ length: 5 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "python",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `py${i}.py`,
+          },
+        })),
+      ];
+      const result = computeCollectionStats(points, testSignals);
+
+      expect(result.perLanguage.has("typescript")).toBe(true);
+      expect(result.perLanguage.has("python")).toBe(false);
+    });
+
+    it("should exclude config languages below 10% threshold", () => {
+      const points = [
+        ...Array.from({ length: 90 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `ts${i}.ts`,
+          },
+        })),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "json",
+            chunkType: "block",
+            isDocumentation: false,
+            relativePath: `cfg${i}.json`,
+          },
+        })),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "markdown",
+            chunkType: "block",
+            isDocumentation: true,
+            relativePath: `doc${i}.md`,
+          },
+        })),
+      ];
+      // json = 10/110 ≈ 9.1%, markdown = 10/110 ≈ 9.1% — both below 10%
+      const result = computeCollectionStats(points, testSignals);
+
+      expect(result.perLanguage.has("typescript")).toBe(true);
+      expect(result.perLanguage.has("json")).toBe(false);
+      expect(result.perLanguage.has("markdown")).toBe(false);
+    });
+
+    it("should include config language at exactly 10% threshold", () => {
+      const points = [
+        ...Array.from({ length: 90 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `ts${i}.ts`,
+          },
+        })),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "json",
+            chunkType: "block",
+            isDocumentation: false,
+            relativePath: `cfg${i}.json`,
+          },
+        })),
+      ];
+      // json = 10/100 = 10% — exactly at threshold
+      const result = computeCollectionStats(points, testSignals);
+
+      expect(result.perLanguage.has("json")).toBe(true);
+      const jsonStats = result.perLanguage.get("json")!.get("git.file.commitCount")!;
+      expect(jsonStats.count).toBe(10);
+    });
+
+    it("should not include chunks without language in any per-language bucket", () => {
+      const points = [
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `ts${i}.ts`,
+          },
+        })),
+        ...Array.from({ length: 5 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 20,
+            chunkType: "block",
+            isDocumentation: false,
+            relativePath: `unknown${i}.txt`,
+          },
+        })),
+      ];
+      const result = computeCollectionStats(points, testSignals);
+
+      // Global should have all 15
+      const globalStats = result.perSignal.get("git.file.commitCount")!;
+      expect(globalStats.count).toBe(15);
+
+      // TS should have only 10
+      expect(result.perLanguage.has("typescript")).toBe(true);
+      const tsStats = result.perLanguage.get("typescript")!.get("git.file.commitCount")!;
+      expect(tsStats.count).toBe(10);
+
+      // No bucket for undefined language
+      expect(result.perLanguage.size).toBe(1);
+    });
+
+    it("should respect chunkTypeFilter in per-language stats", () => {
+      const points = [
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            methodLines: (i + 1) * 10,
+            methodDensity: (i + 1) * 5,
+            language: "typescript",
+            chunkType: "function",
+            isDocumentation: false,
+            relativePath: `fn${i}.ts`,
+          },
+        })),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          payload: {
+            "git.file.commitCount": i + 1,
+            methodLines: (i + 1) * 100,
+            methodDensity: (i + 1) * 50,
+            language: "typescript",
+            chunkType: "class",
+            isDocumentation: false,
+            relativePath: `cls${i}.ts`,
+          },
+        })),
+      ];
+      const result = computeCollectionStats(points, signalsWithChunkFilter);
+
+      const tsStats = result.perLanguage.get("typescript")!;
+
+      // methodLines has chunkTypeFilter: "function" — only function chunks
+      const mlStats = tsStats.get("methodLines")!;
+      expect(mlStats.count).toBe(10);
+      expect(mlStats.min).toBe(10);
+      expect(mlStats.max).toBe(100);
+
+      // commitCount has no filter — all 20 chunks
+      const ccStats = tsStats.get("git.file.commitCount")!;
+      expect(ccStats.count).toBe(20);
+    });
+  });
 });

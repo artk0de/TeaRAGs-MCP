@@ -18,6 +18,7 @@ function makeTmpDir(): string {
 const SAMPLE_STATS: CollectionSignalStats = {
   computedAt: 1_700_000_000_000,
   perSignal: new Map([["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 95: 90 } }]]),
+  perLanguage: new Map(),
   distributions: {
     totalFiles: 0,
     language: {},
@@ -58,8 +59,8 @@ describe("StatsCache payloadFieldKeys", () => {
     expect(loaded!.payloadFieldKeys).toBeUndefined();
   });
 
-  it("load() returns payloadFieldKeys as undefined for v3 cache files without payloadFieldKeys", () => {
-    // Simulate a v3 file written without payloadFieldKeys
+  it("load() returns null for v3 cache files (version mismatch)", () => {
+    // v3 files are rejected after v4 bump
     const filePath = join(snapshotsDir, "legacy-col.stats.json");
     writeFileSync(
       filePath,
@@ -76,14 +77,12 @@ describe("StatsCache payloadFieldKeys", () => {
           topAuthors: [],
           othersCount: 0,
         },
-        // no payloadFieldKeys field
       }),
       "utf-8",
     );
 
     const loaded = cache.load("legacy-col");
-    expect(loaded).not.toBeNull();
-    expect(loaded!.payloadFieldKeys).toBeUndefined();
+    expect(loaded).toBeNull();
   });
 });
 
