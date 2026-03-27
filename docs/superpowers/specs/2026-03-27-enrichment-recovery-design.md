@@ -75,6 +75,9 @@ interface EnrichmentLevelMarker {
   matchedFiles?: number;
   missedFiles?: number;
   unenrichedChunks: number; // cached count from post-enrichment scroll
+  // Heartbeat: written periodically during in_progress
+  lastProgressAt?: string;      // ISO timestamp of last progress update
+  lastProgressChunks?: number;  // enriched chunk count at last heartbeat
 }
 
 interface FileEnrichmentMarker extends EnrichmentLevelMarker {
@@ -113,6 +116,27 @@ Transitions recorded in marker at each phase boundary:
 | Chunk enrichment succeeded | (unchanged) | completed    |
 | Chunk enrichment partial   | (unchanged) | degraded     |
 | Chunk enrichment failed    | (unchanged) | failed       |
+
+### Stale Detection
+
+An `in_progress` status may indicate a crashed process. Detection uses
+progress-based heartbeat, not wall clock timeout:
+
+During enrichment, the coordinator periodically writes `lastProgressAt` and
+`lastProgressChunks` to the marker (every N chunks or every 30 seconds,
+whichever comes first).
+
+`get_index_status` detects stale by:
+
+1. Status is `in_progress`
+2. `lastProgressChunks` has not changed for > 2 minutes (comparing
+   `lastProgressAt` to now)
+
+If stale detected → report as warning: "Enrichment appears stalled — no progress
+in 2 minutes. May need reindex."
+
+Recovery step also uses this: if previous run left `in_progress` with stale
+heartbeat → treat as `failed` and attempt recovery.
 
 ### Recovery Step
 
@@ -312,6 +336,19 @@ Migration runs once per collection, is idempotent, uses batched `setPayload`.
 - Chunk enrichment partial → chunk `degraded`,
   `unenrichedChunks === actual count`
 
+### Unit Tests — Heartbeat and Stale Detection
+
+- During enrichment, `lastProgressAt` and `lastProgressChunks` update
+  periodically in marker
+- `get_index_status` with `in_progress` + `lastProgressChunks` unchanged +
+  `lastProgressAt` > 2 min ago → status "in_progress" with stale warning
+- `get_index_status` with `in_progress` + `lastProgressAt` < 2 min ago → status
+  "in_progress", no warning
+- Recovery step: previous run left `in_progress` with stale heartbeat → treated
+  as `failed`, recovery proceeds
+- Recovery step: previous run left `in_progress` with fresh heartbeat
+  (concurrent run) → skip recovery, do not interfere
+
 ### Unit Tests — unenrichedChunks Cache Accuracy
 
 **After every enrichment failure scenario, verify cached count matches
@@ -336,8 +373,8 @@ reality:**
 - Chunk degraded → `chunk.status === "degraded"`, `unenrichedChunks` shown,
   message present
 - In progress → `status === "in_progress"`, message present
-- Stale in_progress (startedAt older than 30 minutes) → warning message
-  indicating enrichment may have crashed
+- Stale in_progress (lastProgressChunks unchanged for > 2 minutes) → warning
+  message indicating enrichment may have stalled
 
 **get_index_metrics:**
 
