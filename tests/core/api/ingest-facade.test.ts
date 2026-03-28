@@ -43,10 +43,6 @@ vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/recovery.js", () =
   EnrichmentRecovery: class {},
 }));
 
-vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/migration.js", () => ({
-  EnrichmentMigration: class {},
-}));
-
 vi.mock("../../../src/core/domains/ingest/factory.js", () => ({
   createIngestDependencies: vi.fn().mockReturnValue({}),
 }));

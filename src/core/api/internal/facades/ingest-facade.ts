@@ -24,7 +24,6 @@ import { IndexPipeline } from "../../../domains/ingest/indexing.js";
 import type { PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
-import { EnrichmentMigration } from "../../../domains/ingest/pipeline/enrichment/migration.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
@@ -68,13 +67,6 @@ export class IngestFacade {
     /* v8 ignore next 2 -- fallback for backward compat */
     const resolvedSnapshotDir =
       snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
-    const deps = createIngestDependencies(
-      qdrant,
-      resolvedSnapshotDir,
-      new StaticPayloadBuilder(),
-      syncTuning,
-      ingestConfig.enableHybridSearch,
-    );
 
     const squashOpts = trajectoryConfig.squashAwareSessions
       ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
@@ -82,6 +74,16 @@ export class IngestFacade {
     const providers = trajectoryConfig.enableGitMetadata
       ? [new GitEnrichmentProvider(trajectoryConfig.trajectoryGit ?? undefined, squashOpts)]
       : [];
+    const enrichmentProviderKey = providers.length > 0 ? providers[0].key : undefined;
+
+    const deps = createIngestDependencies(
+      qdrant,
+      resolvedSnapshotDir,
+      new StaticPayloadBuilder(),
+      syncTuning,
+      ingestConfig.enableHybridSearch,
+      enrichmentProviderKey,
+    );
     if (trajectoryConfig.trajectoryGit) {
       this.gitTimePeriods = {
         fileMonths: trajectoryConfig.trajectoryGit.logMaxAgeMonths,
@@ -91,10 +93,7 @@ export class IngestFacade {
     const recovery = providers.length > 0
       ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant))
       : undefined;
-    const migration = providers.length > 0
-      ? new EnrichmentMigration(qdrant)
-      : undefined;
-    this.enrichment = new EnrichmentCoordinator(qdrant, providers, recovery, migration);
+    this.enrichment = new EnrichmentCoordinator(qdrant, providers, recovery);
     this.enrichment.onChunkEnrichmentComplete = async (collectionName) => this.refreshStatsByCollection(collectionName);
     this.indexing = new IndexPipeline(qdrant, embeddings, ingestConfig, this.enrichment, deps, pipelineTuning);
     this.status = new StatusModule(qdrant, resolvedSnapshotDir);

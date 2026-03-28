@@ -244,6 +244,16 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     return { deletedPaths: relativePaths.length, batchCount: 1, durationMs: 0 };
   }
 
+  async scrollFiltered(
+    collectionName: string,
+    _filter: Record<string, unknown>,
+    _limit: number,
+  ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
+    const resolved = this.resolve(collectionName);
+    const points = this.points.get(resolved) || [];
+    return points.map((p) => ({ id: p.id, payload: p.payload ?? {} }));
+  }
+
   batchSetPayloadCalls: { collectionName: string; operations: any[] }[] = [];
 
   async setPayload(collectionName: string, payload: Record<string, any>, options: any): Promise<void> {
