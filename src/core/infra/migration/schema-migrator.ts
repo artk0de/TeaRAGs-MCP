@@ -1,11 +1,10 @@
-import type { Migration, MigrationRunner, IndexStore, SparseStore, EnrichmentStore } from "./types.js";
 import { SchemaV4RelativePathKeyword } from "./schema_migrations/schema-v4-relativepath-keyword.js";
 import { SchemaV5RelativePathText } from "./schema_migrations/schema-v5-relativepath-text.js";
 import { SchemaV6FilterFieldIndexes } from "./schema_migrations/schema-v6-filter-field-indexes.js";
 import { SchemaV7SparseConfig } from "./schema_migrations/schema-v7-sparse-config.js";
 import { SchemaV8SymbolIdText } from "./schema_migrations/schema-v8-symbolid-text.js";
 import { SchemaV9EnrichedAtBackfill } from "./schema_migrations/schema-v9-enrichedat-backfill.js";
-import { SparseVectorRebuild } from "./schema_migrations/sparse-vector-rebuild.js";
+import type { EnrichmentStore, IndexStore, Migration, MigrationRunner } from "./types.js";
 
 export interface SchemaMigratorOptions {
   enableHybrid: boolean;
@@ -14,12 +13,11 @@ export interface SchemaMigratorOptions {
 
 export class SchemaMigrator implements MigrationRunner {
   private readonly migrations: Migration[];
-  private appliedIndexes: string[] = [];
+  private readonly appliedIndexes: string[] = [];
 
   constructor(
     private readonly collection: string,
     private readonly indexStore: IndexStore,
-    private readonly sparseStore: SparseStore,
     private readonly options: SchemaMigratorOptions,
     private readonly enrichmentStore?: EnrichmentStore,
   ) {
@@ -32,7 +30,6 @@ export class SchemaMigrator implements MigrationRunner {
       ...(enrichmentStore && options.providerKey
         ? [new SchemaV9EnrichedAtBackfill(collection, enrichmentStore, options.providerKey)]
         : []),
-      new SparseVectorRebuild(collection, sparseStore, options.enableHybrid),
     ];
   }
 

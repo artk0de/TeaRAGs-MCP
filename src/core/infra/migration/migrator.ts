@@ -9,7 +9,7 @@
 import { MigrationStepError } from "./errors.js";
 import type { MigrationRunner, MigrationSummary } from "./types.js";
 
-type PipelineName = "snapshot" | "schema";
+type PipelineName = "snapshot" | "schema" | "sparse";
 
 export class Migrator {
   private readonly pipelines: Map<PipelineName, MigrationRunner>;

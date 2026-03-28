@@ -1,10 +1,10 @@
-import type { Migration, StepResult, SparseStore } from "../types.js";
+import type { Migration, SparseStore, StepResult } from "../types.js";
 
 export const CURRENT_SPARSE_VERSION = 1;
 
 export class SparseVectorRebuild implements Migration {
   readonly name = "sparse-vector-rebuild";
-  readonly version = 100;
+  readonly version = 2;
 
   constructor(
     private readonly collection: string,

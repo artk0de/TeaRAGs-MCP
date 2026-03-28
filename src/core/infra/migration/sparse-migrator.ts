@@ -1,0 +1,26 @@
+import { SparseVectorRebuild } from "./schema_migrations/sparse-vector-rebuild.js";
+import type { Migration, MigrationRunner, SparseStore } from "./types.js";
+
+export class SparseMigrator implements MigrationRunner {
+  private readonly migrations: Migration[];
+
+  constructor(
+    private readonly collection: string,
+    private readonly store: SparseStore,
+    enableHybrid: boolean,
+  ) {
+    this.migrations = [new SparseVectorRebuild(collection, store, enableHybrid)];
+  }
+
+  getMigrations(): Migration[] {
+    return this.migrations;
+  }
+
+  async getVersion(): Promise<number> {
+    return this.store.getSparseVersion(this.collection);
+  }
+
+  async setVersion(version: number): Promise<void> {
+    await this.store.storeSparseVersion(this.collection, version);
+  }
+}
