@@ -412,11 +412,11 @@ export class OnnxDaemon {
       }
 
       case "log":
-        // Forward log to all connected clients
-        for (const [sock, state] of this.clients) {
-          if (state.connected) {
-            this.send(sock, { type: "log", level: msg.level, message: msg.message });
-          }
+        // Forward log to ALL clients (including those still in handshake).
+        // During model loading, clients are waiting for "connected" — log messages
+        // let them know the daemon is alive and reset their connect timeout.
+        for (const [sock] of this.clients) {
+          this.send(sock, { type: "log", level: msg.level, message: msg.message });
         }
         break;
     }

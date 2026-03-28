@@ -13,6 +13,7 @@ interface TuneArgs {
   "embedding-url"?: string;
   model?: string;
   provider?: string;
+  device?: string;
 }
 
 export const tuneCommand: CommandModule<object, TuneArgs> = {
@@ -41,6 +42,11 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
         describe: "Embedding provider: ollama or onnx (default: ollama)",
         choices: ["ollama", "onnx"],
       })
+      .option("device", {
+        type: "string",
+        describe: "ONNX device: cpu or webgpu (default: webgpu)",
+        choices: ["cpu", "webgpu"],
+      })
       .option("full", {
         type: "boolean",
         describe: "Run full calibration (slower, more accurate)",
@@ -58,6 +64,7 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
     if (argv["embedding-url"]) env.EMBEDDING_BASE_URL = argv["embedding-url"];
     if (argv.model) env.EMBEDDING_MODEL = argv.model;
     if (argv.provider) env.EMBEDDING_PROVIDER = argv.provider;
+    if (argv.device) env.EMBEDDING_DEVICE = argv.device;
 
     const child = spawn(process.execPath, [tunePath, ...args], {
       stdio: "inherit",
