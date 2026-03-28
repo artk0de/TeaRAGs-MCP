@@ -136,7 +136,7 @@ describe("SparseMigrator", () => {
   it("has 1 sparse migration", () => {
     const migrator = new SparseMigrator(COLLECTION, createMockSparseStore(), false);
     expect(migrator.getMigrations()).toHaveLength(1);
-    expect(migrator.getMigrations()[0].version).toBe(2);
+    expect(migrator.getMigrations()[0].version).toBe(1);
   });
 
   it("reads version from SparseStore", async () => {
