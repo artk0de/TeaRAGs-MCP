@@ -1,5 +1,5 @@
-import { SnapshotV1ToV2 } from "./snapshot_migrations/snapshot-v1-to-v2.js";
-import { SnapshotV2ToSharded } from "./snapshot_migrations/snapshot-v2-to-sharded.js";
+import { SnapshotV2MtimeSize } from "./snapshot_migrations/snapshot-v2-mtime-size.js";
+import { SnapshotV3Sharded } from "./snapshot_migrations/snapshot-v3-sharded.js";
 import type { Migration, MigrationRunner, SnapshotStore } from "./types.js";
 
 const FORMAT_VERSION: Record<"none" | "v1" | "v2" | "sharded", number> = {
@@ -18,8 +18,12 @@ const FORMAT_VERSION: Record<"none" | "v1" | "v2" | "sharded", number> = {
 export class SnapshotMigrator implements MigrationRunner {
   private readonly migrations: Migration[];
 
+  /** Latest snapshot version — computed from registered migrations. */
+  readonly latestVersion: number;
+
   constructor(private readonly store: SnapshotStore) {
-    this.migrations = [new SnapshotV1ToV2(store), new SnapshotV2ToSharded(store)];
+    this.migrations = [new SnapshotV2MtimeSize(store), new SnapshotV3Sharded(store)];
+    this.latestVersion = Math.max(...this.migrations.map((m) => m.version));
   }
 
   async getVersion(): Promise<number> {

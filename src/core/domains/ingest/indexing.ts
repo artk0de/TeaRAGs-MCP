@@ -214,7 +214,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       this.config.quantizationScalar,
     );
 
-    const schemaManager = this.deps.createSchemaManager();
+    const schemaManager = this.deps.createSchemaManager(versionedName);
     await schemaManager.initializeSchema(versionedName);
     await storeIndexingMarker(this.qdrant, this.embeddings, versionedName, false);
 

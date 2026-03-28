@@ -6,8 +6,8 @@ import type { Migration, SnapshotStore, StepResult } from "../types.js";
  * v1 stores only { fileHashes, codebasePath }.
  * This migration stats each file to get mtime/size, then writes sharded format.
  */
-export class SnapshotV1ToV2 implements Migration {
-  readonly name = "snapshot-v1-to-v2";
+export class SnapshotV2MtimeSize implements Migration {
+  readonly name = "snapshot-v2-mtime-size";
   readonly version = 2;
 
   constructor(private readonly store: SnapshotStore) {}

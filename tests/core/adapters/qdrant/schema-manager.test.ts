@@ -1,6 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CURRENT_SCHEMA_VERSION, SchemaManager } from "../../../../src/core/adapters/qdrant/schema-migration.js";
+import { SchemaManager } from "../../../../src/core/adapters/qdrant/schema-manager.js";
+import { SchemaMigrator } from "../../../../src/core/infra/migration/schema-migrator.js";
+
+const LATEST_SCHEMA_VERSION = new SchemaMigrator(
+  "",
+  {
+    getSchemaVersion: async () => Promise.resolve(0),
+    ensureIndex: async () => Promise.resolve(true),
+    storeSchemaVersion: async () => Promise.resolve(),
+    hasPayloadIndex: async () => Promise.resolve(false),
+    getCollectionInfo: async () => Promise.resolve({ hybridEnabled: false, vectorSize: 384 }),
+    updateSparseConfig: async () => Promise.resolve(),
+  },
+  { enableHybrid: false },
+).latestVersion;
 
 // Mock QdrantManager
 const mockQdrant = {
@@ -15,7 +29,7 @@ describe("SchemaManager", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    schemaManager = new SchemaManager(mockQdrant as any);
+    schemaManager = new SchemaManager(mockQdrant as any, LATEST_SCHEMA_VERSION);
 
     // Default mock implementations
     mockQdrant.getCollectionInfo.mockResolvedValue({
@@ -46,7 +60,7 @@ describe("SchemaManager", () => {
             id: "__schema_metadata__",
             payload: expect.objectContaining({
               _type: "schema_metadata",
-              schemaVersion: CURRENT_SCHEMA_VERSION,
+              schemaVersion: LATEST_SCHEMA_VERSION,
               indexes: expect.arrayContaining(["relativePath", "language", "fileExtension", "chunkType"]),
             }),
           }),
@@ -111,9 +125,9 @@ describe("SchemaManager", () => {
     });
   });
 
-  describe("CURRENT_SCHEMA_VERSION", () => {
-    it("should be 8", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe(8);
+  describe("LATEST_SCHEMA_VERSION", () => {
+    it("should be 8 without enrichment store", () => {
+      expect(LATEST_SCHEMA_VERSION).toBe(8);
     });
   });
 });

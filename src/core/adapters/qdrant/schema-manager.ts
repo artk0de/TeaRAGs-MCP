@@ -15,9 +15,6 @@
 
 import type { QdrantManager } from "../qdrant/client.js";
 
-/** Current schema version */
-export const CURRENT_SCHEMA_VERSION = 8;
-
 /** Reserved ID for storing schema metadata in the collection */
 const SCHEMA_METADATA_ID = "__schema_metadata__";
 
@@ -36,7 +33,10 @@ interface SchemaMetadata {
  * SchemaManager - Handles collection schema versioning and migrations
  */
 export class SchemaManager {
-  constructor(private readonly qdrant: QdrantManager) {}
+  constructor(
+    private readonly qdrant: QdrantManager,
+    private readonly schemaVersion: number,
+  ) {}
 
   /**
    * Store schema metadata in collection
@@ -102,6 +102,6 @@ export class SchemaManager {
     await this.qdrant.createPayloadIndex(collectionName, "symbolId", "text");
 
     // Store schema metadata
-    await this.storeSchemaMetadata(collectionName, CURRENT_SCHEMA_VERSION, indexes);
+    await this.storeSchemaMetadata(collectionName, this.schemaVersion, indexes);
   }
 }

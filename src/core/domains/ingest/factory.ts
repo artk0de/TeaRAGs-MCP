@@ -7,7 +7,7 @@
  */
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import { SchemaManager } from "../../adapters/qdrant/schema-migration.js";
+import { SchemaManager } from "../../adapters/qdrant/schema-manager.js";
 import type { PayloadBuilder } from "../../contracts/types/provider.js";
 import { EnrichmentStoreAdapter } from "../../infra/migration/adapters/enrichment-store-adapter.js";
 import { IndexStoreAdapter } from "../../infra/migration/adapters/index-store-adapter.js";
@@ -27,7 +27,7 @@ export interface SynchronizerTuning {
 }
 
 export interface IngestDependencies {
-  createSchemaManager: () => SchemaManager;
+  createSchemaManager: (collectionName: string) => SchemaManager;
   createSynchronizer: (codebasePath: string, collectionName: string) => ParallelFileSynchronizer;
   createMigrator: (collectionName: string, codebasePath: string) => Migrator;
   payloadBuilder: PayloadBuilder;
@@ -45,7 +45,17 @@ export function createIngestDependencies(
   providerKey?: string,
 ): IngestDependencies {
   return {
-    createSchemaManager: () => new SchemaManager(qdrant),
+    createSchemaManager: (collectionName: string) => {
+      const indexStore = new IndexStoreAdapter(qdrant);
+      const enrichmentStore = providerKey ? new EnrichmentStoreAdapter(qdrant) : undefined;
+      const schemaMigrator = new SchemaMigrator(
+        collectionName,
+        indexStore,
+        { enableHybrid, providerKey },
+        enrichmentStore,
+      );
+      return new SchemaManager(qdrant, schemaMigrator.latestVersion);
+    },
     createSynchronizer: (codebasePath, collectionName) =>
       new ParallelFileSynchronizer(
         codebasePath,

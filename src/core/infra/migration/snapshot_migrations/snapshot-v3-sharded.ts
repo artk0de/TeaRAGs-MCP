@@ -7,8 +7,8 @@ import type { Migration, SnapshotStore, StepResult } from "../types.js";
  * This migration backs up the old file, filters out missing files via statFile,
  * writes the sharded format, then deletes the old file.
  */
-export class SnapshotV2ToSharded implements Migration {
-  readonly name = "snapshot-v2-to-sharded";
+export class SnapshotV3Sharded implements Migration {
+  readonly name = "snapshot-v3-sharded";
   readonly version = 3;
 
   constructor(private readonly store: SnapshotStore) {}
