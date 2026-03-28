@@ -29,17 +29,20 @@ import {
   benchmarkDeleteFlushTimeout,
   benchmarkFileConcurrency,
   benchmarkFlushInterval,
+  benchmarkGitChunkConcurrency,
   benchmarkIoConcurrency,
   benchmarkMinBatchSize,
   benchmarkOrdering,
   generatePoints,
   generateTexts,
+  measureGitLogDuration,
 } from "./lib/benchmarks.mjs";
 import { cleanupAllCollections } from "./lib/cleanup.mjs";
 import { bar, c, formatRate, printBox, printHeader } from "./lib/colors.mjs";
 import {
   config,
   CRITERIA,
+  GIT_TEST_VALUES,
   isFullMode,
   PIPELINE_TEST_VALUES,
   PROJECT_PATH,
@@ -665,6 +668,59 @@ async function main() {
   console.log(
     `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_TUNE_MIN_BATCH_SIZE=${optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE}${c.reset}`,
   );
+
+  // ============ GIT TRAJECTORY BENCHMARKS ============
+
+  if (projectFiles && projectFiles.length >= 50) {
+    // ---- GIT_CHUNK_CONCURRENCY ----
+    printHeader("Git: Chunk Concurrency", "Finding optimal TRAJECTORY_GIT_CHUNK_CONCURRENCY");
+
+    const gitTestFiles = [...projectFiles]
+      .sort((a, b) => b.size - a.size)
+      .slice(0, 20)
+      .map((f) => f.relativePath);
+
+    console.log(`  ${c.dim}Testing with ${gitTestFiles.length} files from ${PROJECT_PATH}${c.reset}\n`);
+
+    const gitDecision = new StoppingDecision();
+    for (const conc of GIT_TEST_VALUES.CHUNK_CONCURRENCY) {
+      process.stdout.write(`  Testing GIT_CHUNK_CONCURRENCY=${c.bold}${conc.toString().padStart(2)}${c.reset} `);
+      const result = await benchmarkGitChunkConcurrency(PROJECT_PATH, gitTestFiles, conc);
+      const decision = gitDecision.addResult(result);
+      if (result.error) {
+        console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+      } else {
+        console.log(
+          `${bar(result.rate, gitDecision.bestRate)} ${formatRate(result.rate, "files/s")} ${c.dim}(${result.time}ms, ${result.filesProcessed} files)${c.reset}`,
+        );
+      }
+      if (decision.stop) {
+        console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+        break;
+      }
+    }
+    const bestGitConc = gitDecision.getBest();
+    optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY = bestGitConc?.concurrency || 10;
+    console.log(
+      `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: TRAJECTORY_GIT_CHUNK_CONCURRENCY=${optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY}${c.reset}`,
+    );
+
+    // ---- GIT_LOG_TIMEOUT (informational) ----
+    printHeader("Git: Log Duration", "Measuring git log duration at different depths");
+
+    for (const months of GIT_TEST_VALUES.LOG_DEPTHS_MONTHS) {
+      process.stdout.write(`  Testing --since="${months} months ago" `);
+      const result = await measureGitLogDuration(PROJECT_PATH, months);
+      if (result.error) {
+        console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+      } else {
+        console.log(`${c.dim}${result.durationMs}ms (${result.entries} commits)${c.reset}`);
+      }
+    }
+    console.log(
+      `\n  ${c.dim}ℹ Recommended: set TRAJECTORY_GIT_LOG_TIMEOUT_MS to 2× your target depth duration${c.reset}`,
+    );
+  }
 
   // ============ CLEANUP ============
 
