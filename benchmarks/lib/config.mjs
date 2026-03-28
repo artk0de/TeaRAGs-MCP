@@ -1,6 +1,7 @@
 /**
  * Benchmark Configuration
  */
+import { cpus } from "os";
 
 export const config = {
   QDRANT_URL: process.env.QDRANT_URL || "http://localhost:6333",
@@ -12,6 +13,15 @@ export const config = {
 
 // Check for --full flag
 export const isFullMode = process.argv.includes("--full");
+
+function parsePathArg() {
+  const idx = process.argv.indexOf("--path");
+  if (idx !== -1 && process.argv[idx + 1]) {
+    return process.argv[idx + 1];
+  }
+  return process.cwd();
+}
+export const PROJECT_PATH = parsePathArg();
 
 export const CRITERIA = {
   DEGRADATION_THRESHOLD: 0.2, // 20% drop from best = stop
@@ -88,3 +98,18 @@ export const AVG_LOC_PER_CHUNK = 50;
 // Benchmark uses MEDIAN_CODE_CHUNK_SIZE from real collections for realistic GPU load
 // Default 500 chars - matches median size in production collections
 export const MEDIAN_CODE_CHUNK_SIZE = parseInt(process.env.MEDIAN_CODE_CHUNK_SIZE || "500", 10);
+
+export const PIPELINE_TEST_VALUES = {
+  CHUNKER_POOL_SIZE: [1, 2, 4, Math.min(8, cpus().length), cpus().length]
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .sort((a, b) => a - b),
+  FILE_CONCURRENCY: [10, 25, 50, 100, 200],
+  IO_CONCURRENCY: [10, 25, 50, 100, 200],
+  DELETE_FLUSH_TIMEOUT_MS: [250, 500, 1000, 2000, 5000],
+  MIN_BATCH_RATIO: [0.125, 0.25, 0.5, 0.75],
+};
+
+export const GIT_TEST_VALUES = {
+  CHUNK_CONCURRENCY: [2, 5, 10, 20, 40],
+  LOG_DEPTHS_MONTHS: [3, 6, 12, 24],
+};
