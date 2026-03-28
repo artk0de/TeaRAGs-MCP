@@ -500,6 +500,223 @@ export async function benchmarkDeleteConcurrency(
   }
 }
 
+export async function benchmarkChunkerPoolSize(files, poolSize) {
+  const { ChunkerPool } = await import("../../build/core/domains/ingest/pipeline/chunker/infra/pool.js");
+  const chunkerConfig = { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 5000 };
+
+  try {
+    const pool = new ChunkerPool(poolSize, chunkerConfig);
+    const start = Date.now();
+    await Promise.all(files.map((f) => pool.processFile(f.path, f.content, f.language)));
+    const time = Date.now() - start;
+    await pool.shutdown();
+    const rate = Math.round((files.length * 1000) / time);
+    return { poolSize, time, rate, error: null };
+  } catch (error) {
+    return { poolSize, time: 0, rate: 0, error: error.message };
+  }
+}
+
+export async function benchmarkFileConcurrency(files, concurrency) {
+  const { readFile } = await import("fs/promises");
+
+  async function processOne(file) {
+    const content = await readFile(file.path, "utf-8");
+    const lines = content.split("\n");
+    const imports = lines.filter((l) => /^\s*(import|require|from)\b/.test(l));
+    return { size: content.length, imports: imports.length };
+  }
+
+  try {
+    const start = Date.now();
+    const results = [];
+    let index = 0;
+    async function worker() {
+      while (index < files.length) {
+        const i = index++;
+        results[i] = await processOne(files[i]);
+      }
+    }
+    await Promise.all(
+      Array(Math.min(concurrency, files.length))
+        .fill(null)
+        .map(() => worker()),
+    );
+    const time = Date.now() - start;
+    const rate = Math.round((files.length * 1000) / time);
+    return { concurrency, time, rate, error: null };
+  } catch (error) {
+    return { concurrency, time: 0, rate: 0, error: error.message };
+  }
+}
+
+export async function benchmarkIoConcurrency(files, concurrency) {
+  const { readFile } = await import("fs/promises");
+  const { createHash } = await import("crypto");
+
+  async function hashOne(file) {
+    const content = await readFile(file.path);
+    return createHash("sha256").update(content).digest("hex");
+  }
+
+  try {
+    const start = Date.now();
+    const results = [];
+    let index = 0;
+    async function worker() {
+      while (index < files.length) {
+        const i = index++;
+        results[i] = await hashOne(files[i]);
+      }
+    }
+    await Promise.all(
+      Array(Math.min(concurrency, files.length))
+        .fill(null)
+        .map(() => worker()),
+    );
+    const time = Date.now() - start;
+    const rate = Math.round((files.length * 1000) / time);
+    return { concurrency, time, rate, error: null };
+  } catch (error) {
+    return { concurrency, time: 0, rate: 0, error: error.message };
+  }
+}
+
+export async function benchmarkDeleteFlushTimeout(qdrant, points, timeoutMs, optimalDeleteBatch, optimalDeleteConc) {
+  const collection = `tune_dft_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  createdCollections.add(collection);
+
+  try {
+    await qdrant.createCollection(collection, config.EMBEDDING_DIMENSION, "Cosine");
+
+    for (let i = 0; i < points.length; i += 256) {
+      const batch = points.slice(i, i + 256);
+      await qdrant.addPointsOptimized(collection, batch, {
+        wait: i + 256 >= points.length,
+        ordering: "weak",
+      });
+    }
+
+    const partialBatch = Math.max(1, Math.round(optimalDeleteBatch * 0.3));
+    const pointIds = points.map((p) => p.id);
+
+    const start = Date.now();
+    const queue = [];
+    for (let i = 0; i < pointIds.length; i += partialBatch) {
+      queue.push(pointIds.slice(i, i + partialBatch));
+    }
+
+    let idx = 0;
+    async function worker() {
+      while (idx < queue.length) {
+        const batch = queue[idx++];
+        if (batch) {
+          await qdrant.client.delete(collection, { points: batch, wait: true });
+          if (batch.length < optimalDeleteBatch) {
+            await new Promise((r) => setTimeout(r, Math.min(timeoutMs, 100)));
+          }
+        }
+      }
+    }
+    await Promise.all(
+      Array(Math.min(optimalDeleteConc, queue.length))
+        .fill(null)
+        .map(() => worker()),
+    );
+
+    const time = Date.now() - start;
+    const rate = Math.round((pointIds.length * 1000) / time);
+    return { timeoutMs, time, rate, error: null };
+  } catch (error) {
+    return { timeoutMs, time: 0, rate: 0, error: error.message };
+  } finally {
+    try {
+      await qdrant.deleteCollection(collection);
+      createdCollections.delete(collection);
+    } catch {}
+  }
+}
+
+export async function benchmarkMinBatchSize(embeddings, texts, ratio, optimalBatchSize) {
+  const minBatchSize = Math.max(1, Math.round(optimalBatchSize * ratio));
+
+  try {
+    const tailTexts = texts.slice(0, minBatchSize);
+    const runs = 3;
+    const times = [];
+    for (let i = 0; i < runs; i++) {
+      const start = Date.now();
+      await embeddings.embedBatch(tailTexts);
+      times.push(Date.now() - start);
+    }
+
+    const latencyMs = median(times);
+    return { ratio, minBatchSize, latencyMs, error: null };
+  } catch (error) {
+    return { ratio, minBatchSize: 0, latencyMs: 0, error: error.message };
+  }
+}
+
+export async function benchmarkGitChunkConcurrency(repoPath, filePaths, concurrency) {
+  try {
+    const { execSync } = await import("child_process");
+
+    const start = Date.now();
+    let processed = 0;
+
+    let idx = 0;
+    async function worker() {
+      while (idx < filePaths.length) {
+        const file = filePaths[idx++];
+        if (!file) continue;
+        try {
+          execSync(`git log --oneline --follow --since="6 months ago" -- "${file}"`, {
+            cwd: repoPath,
+            encoding: "utf-8",
+            maxBuffer: 5 * 1024 * 1024,
+            timeout: 30000,
+          });
+          processed++;
+        } catch {
+          // Timeout or error — skip file
+        }
+      }
+    }
+    await Promise.all(
+      Array(Math.min(concurrency, filePaths.length))
+        .fill(null)
+        .map(() => worker()),
+    );
+
+    const time = Date.now() - start;
+    const rate = time > 0 ? Math.round((processed * 1000) / time) : 0;
+    return { concurrency, time, rate, filesProcessed: processed, error: null };
+  } catch (error) {
+    return { concurrency, time: 0, rate: 0, filesProcessed: 0, error: error.message };
+  }
+}
+
+export async function measureGitLogDuration(repoPath, months) {
+  try {
+    const { execSync } = await import("child_process");
+
+    const since = `${months} months ago`;
+    const start = Date.now();
+    const output = execSync(`git log --numstat --since="${since}" --format="%H"`, {
+      cwd: repoPath,
+      encoding: "utf-8",
+      maxBuffer: 50 * 1024 * 1024,
+      timeout: 120000,
+    });
+    const durationMs = Date.now() - start;
+    const entries = output.split("\n").filter((l) => /^[0-9a-f]{40}$/.test(l.trim())).length;
+
+    return { months, durationMs, entries, error: null };
+  } catch (error) {
+    return { months, durationMs: 0, entries: 0, error: error.message };
+  }
+}
+
 export function generatePoints(embeddingResults, texts) {
   return embeddingResults.map((r, i) => ({
     id: randomUUID(),

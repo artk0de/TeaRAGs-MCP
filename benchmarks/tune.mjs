@@ -118,10 +118,16 @@ async function main() {
   );
 
   // Print configuration (dimension will be shown after initialization)
+  const embeddingProviderType = process.env.EMBEDDING_PROVIDER || "ollama";
   console.log(`${c.bold}Configuration:${c.reset}`);
   console.log(`  ${c.dim}Qdrant:${c.reset}        ${config.QDRANT_URL}`);
-  console.log(`  ${c.dim}Ollama:${c.reset}        ${config.EMBEDDING_BASE_URL}`);
-  console.log(`  ${c.dim}Model:${c.reset}         ${config.EMBEDDING_MODEL}`);
+  console.log(`  ${c.dim}Provider:${c.reset}      ${embeddingProviderType}`);
+  if (embeddingProviderType === "ollama") {
+    console.log(`  ${c.dim}Ollama URL:${c.reset}    ${config.EMBEDDING_BASE_URL}`);
+  }
+  console.log(
+    `  ${c.dim}Model:${c.reset}         ${embeddingProviderType === "onnx" ? "jinaai/jina-embeddings-v2-base-code-fp16 (default)" : config.EMBEDDING_MODEL}`,
+  );
   console.log();
 
   console.log(`${c.bold}Embedding calibration:${c.reset}`);
@@ -726,6 +732,11 @@ async function main() {
 
   console.log(`${c.dim}Total tuning time: ${totalTime}s${c.reset}`);
   console.log();
+
+  // Terminate embedding provider (ONNX daemon socket keeps process alive)
+  if ("terminate" in embeddings && typeof embeddings.terminate === "function") {
+    await embeddings.terminate();
+  }
 }
 
 main().catch(async (error) => {

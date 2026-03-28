@@ -22,7 +22,7 @@ export type DaemonResponse =
       uptime: number;
     }
   | { type: "bye" }
-  | { type: "log"; level: "error"; message: string };
+  | { type: "log"; level: "error" | "info"; message: string };
 
 export function serialize(msg: DaemonRequest | DaemonResponse): string {
   return `${JSON.stringify(msg)}\n`;

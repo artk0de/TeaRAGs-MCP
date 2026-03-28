@@ -10,4 +10,4 @@ export type WorkerResponse =
   | { type: "calibrated"; batchSize: number }
   | { type: "result"; id: number; embeddings: number[][]; durationMs: number }
   | { type: "error"; id: number; message: string }
-  | { type: "log"; level: "error"; message: string };
+  | { type: "log"; level: "error" | "info"; message: string };

@@ -37,6 +37,16 @@ BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS}
 QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE}
 QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}
 
+# Pipeline concurrency
+${optimal.INGEST_TUNE_CHUNKER_POOL_SIZE !== null ? `INGEST_TUNE_CHUNKER_POOL_SIZE=${optimal.INGEST_TUNE_CHUNKER_POOL_SIZE}` : "# INGEST_TUNE_CHUNKER_POOL_SIZE=<skipped>"}
+${optimal.INGEST_TUNE_FILE_CONCURRENCY !== null ? `INGEST_TUNE_FILE_CONCURRENCY=${optimal.INGEST_TUNE_FILE_CONCURRENCY}` : "# INGEST_TUNE_FILE_CONCURRENCY=<skipped>"}
+${optimal.INGEST_TUNE_IO_CONCURRENCY !== null ? `INGEST_TUNE_IO_CONCURRENCY=${optimal.INGEST_TUNE_IO_CONCURRENCY}` : "# INGEST_TUNE_IO_CONCURRENCY=<skipped>"}
+${optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS !== null ? `QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS=${optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS}` : "# QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS=<skipped>"}
+${optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE !== null ? `EMBEDDING_TUNE_MIN_BATCH_SIZE=${optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE}` : "# EMBEDDING_TUNE_MIN_BATCH_SIZE=<skipped>"}
+
+# Git trajectory
+${optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY !== null ? `TRAJECTORY_GIT_CHUNK_CONCURRENCY=${optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY}` : "# TRAJECTORY_GIT_CHUNK_CONCURRENCY=<skipped>"}
+
 # Performance metrics (for reference)
 # Embedding rate: ${metrics.embeddingRate || "N/A"} chunks/s
 # Storage rate: ${metrics.storageRate || "N/A"} chunks/s
@@ -85,6 +95,36 @@ export function printSummary(optimal) {
   console.log(`  QDRANT_DELETE_BATCH_SIZE         = ${c.green}${c.bold}${optimal.QDRANT_DELETE_BATCH_SIZE}${c.reset}`);
   console.log(`  QDRANT_DELETE_CONCURRENCY        = ${c.green}${c.bold}${optimal.QDRANT_DELETE_CONCURRENCY}${c.reset}`);
   console.log();
+  if (optimal.INGEST_TUNE_CHUNKER_POOL_SIZE !== null) {
+    console.log(`  ${c.dim}# Pipeline${c.reset}`);
+    console.log(
+      `  INGEST_TUNE_CHUNKER_POOL_SIZE    = ${c.green}${c.bold}${optimal.INGEST_TUNE_CHUNKER_POOL_SIZE}${c.reset}`,
+    );
+    console.log(
+      `  INGEST_TUNE_FILE_CONCURRENCY     = ${c.green}${c.bold}${optimal.INGEST_TUNE_FILE_CONCURRENCY}${c.reset}`,
+    );
+    console.log(
+      `  INGEST_TUNE_IO_CONCURRENCY       = ${c.green}${c.bold}${optimal.INGEST_TUNE_IO_CONCURRENCY}${c.reset}`,
+    );
+    console.log();
+  }
+  if (optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS !== null) {
+    console.log(
+      `  QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS = ${c.green}${c.bold}${optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS}${c.reset}`,
+    );
+  }
+  if (optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE !== null) {
+    console.log(
+      `  EMBEDDING_TUNE_MIN_BATCH_SIZE    = ${c.green}${c.bold}${optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE}${c.reset}`,
+    );
+  }
+  if (optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY !== null) {
+    console.log();
+    console.log(`  ${c.dim}# Git trajectory${c.reset}`);
+    console.log(
+      `  TRAJECTORY_GIT_CHUNK_CONCURRENCY = ${c.green}${c.bold}${optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY}${c.reset}`,
+    );
+  }
 }
 
 /**
@@ -102,5 +142,19 @@ export function printUsage(optimal) {
   console.log(`    -e BATCH_FORMATION_TIMEOUT_MS=${optimal.BATCH_FORMATION_TIMEOUT_MS} \\`);
   console.log(`    -e QDRANT_DELETE_BATCH_SIZE=${optimal.QDRANT_DELETE_BATCH_SIZE} \\`);
   console.log(`    -e QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}`);
+  if (optimal.INGEST_TUNE_CHUNKER_POOL_SIZE !== null) {
+    console.log(`    -e INGEST_TUNE_CHUNKER_POOL_SIZE=${optimal.INGEST_TUNE_CHUNKER_POOL_SIZE} \\`);
+    console.log(`    -e INGEST_TUNE_FILE_CONCURRENCY=${optimal.INGEST_TUNE_FILE_CONCURRENCY} \\`);
+    console.log(`    -e INGEST_TUNE_IO_CONCURRENCY=${optimal.INGEST_TUNE_IO_CONCURRENCY} \\`);
+  }
+  if (optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS !== null) {
+    console.log(`    -e QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS=${optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS} \\`);
+  }
+  if (optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE !== null) {
+    console.log(`    -e EMBEDDING_TUNE_MIN_BATCH_SIZE=${optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE} \\`);
+  }
+  if (optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY !== null) {
+    console.log(`    -e TRAJECTORY_GIT_CHUNK_CONCURRENCY=${optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY}`);
+  }
   console.log();
 }

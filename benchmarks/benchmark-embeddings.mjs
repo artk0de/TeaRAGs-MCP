@@ -11,10 +11,10 @@
  *
  * Run: npm run benchmark-embeddings
  */
-import { OllamaEmbeddings } from "../build/core/adapters/embeddings/ollama.js";
 import { c, printBox } from "./lib/colors.mjs";
 import { AVG_LOC_PER_CHUNK, config, MEDIAN_CODE_CHUNK_SIZE } from "./lib/config.mjs";
 import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
+import { checkProviderConnectivity, createEmbeddingProvider } from "./lib/provider.mjs";
 
 /**
  * Format time in human readable format
@@ -25,29 +25,6 @@ function formatTime(ms) {
   const minutes = Math.floor(ms / 60000);
   const seconds = Math.round((ms % 60000) / 1000);
   return `${minutes}m ${seconds}s`;
-}
-
-/**
- * Check Ollama connectivity and model availability
- */
-async function checkOllama() {
-  try {
-    const response = await fetch(`${config.EMBEDDING_BASE_URL}/api/tags`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
-
-    const { models } = await response.json();
-    const modelNames = (models || []).map((m) => m.name.replace(/:latest$/, ""));
-    const target = config.EMBEDDING_MODEL.replace(/:latest$/, "");
-
-    if (!modelNames.some((n) => n === target || n === config.EMBEDDING_MODEL)) {
-      return { ok: false, error: `Model "${config.EMBEDDING_MODEL}" not found` };
-    }
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
 }
 
 async function main() {
@@ -61,18 +38,19 @@ async function main() {
   console.log(`  ${c.dim}Chunk size:${c.reset}    ${MEDIAN_CODE_CHUNK_SIZE} chars (median from production)`);
   console.log();
 
-  // Check Ollama
-  process.stdout.write(`${c.dim}Checking Ollama...${c.reset} `);
-  const ollamaCheck = await checkOllama();
-  if (!ollamaCheck.ok) {
+  // Check embedding provider
+  process.stdout.write(`${c.dim}Checking embedding provider...${c.reset} `);
+  const embeddingCheck = await checkProviderConnectivity();
+  if (!embeddingCheck.ok) {
     console.log(`${c.red}FAILED${c.reset}`);
-    console.log(`\n${c.red}Error:${c.reset} ${ollamaCheck.error}`);
+    console.log(`\n${c.red}Error:${c.reset} ${embeddingCheck.error}`);
     process.exit(1);
   }
   console.log(`${c.green}OK${c.reset}`);
 
   // Initialize embeddings
-  const embeddings = new OllamaEmbeddings(config.EMBEDDING_MODEL, undefined, undefined, config.EMBEDDING_BASE_URL);
+  const { provider: embeddings, name: providerName } = await createEmbeddingProvider();
+  console.log(`  ${c.green}✓${c.reset} Embedding provider: ${providerName}`);
   console.log(`  ${c.green}✓${c.reset} Vector dimension: ${embeddings.getDimensions()}`);
   console.log();
 
@@ -83,9 +61,11 @@ async function main() {
   console.log();
 
   // Detect setup type
-  const isRemote = !config.EMBEDDING_BASE_URL.includes("localhost") && !config.EMBEDDING_BASE_URL.includes("127.0.0.1");
-  const setupIcon = isRemote ? "🌐" : "🏠";
-  const setupName = isRemote ? "Remote GPU" : "Local GPU";
+  const isOnnx = providerName === "onnx";
+  const isRemote =
+    !isOnnx && !config.EMBEDDING_BASE_URL.includes("localhost") && !config.EMBEDDING_BASE_URL.includes("127.0.0.1");
+  const setupIcon = isOnnx ? "⚡" : isRemote ? "🌐" : "🏠";
+  const setupName = isOnnx ? "Local ONNX" : isRemote ? "Remote GPU" : "Local GPU";
 
   printBox(`${setupIcon} ${setupName.toUpperCase()} - OPTIMAL CONFIGURATION`, "");
 
@@ -102,7 +82,13 @@ async function main() {
 
   // Explain the choice
   console.log(`${c.bold}Why this configuration?${c.reset}`);
-  if (isRemote) {
+  if (isOnnx) {
+    console.log(`  ${c.dim}•${c.reset} Local ONNX runtime (${providerName})`);
+    console.log(`  ${c.dim}•${c.reset} In-process inference, no network overhead`);
+    if (result.EMBEDDING_BATCH_SIZE <= 16) {
+      console.log(`  ${c.dim}•${c.reset} Small batches optimal for ONNX memory management`);
+    }
+  } else if (isRemote) {
     console.log(`  ${c.dim}•${c.reset} Remote GPU detected (${config.EMBEDDING_BASE_URL})`);
     console.log(`  ${c.dim}•${c.reset} Lower batch + higher concurrency hides network latency`);
     console.log(`  ${c.dim}•${c.reset} While one batch transfers, GPU processes another`);
@@ -148,6 +134,11 @@ async function main() {
     `${c.dim}Configs tested: ${result.stable_configs_count} stable, ${result.discarded_configs_count} discarded${c.reset}`,
   );
   console.log(`${c.bold}Total benchmark time: ${formatTime(result.calibration_time_ms)}${c.reset}`);
+
+  // Terminate provider (ONNX keeps socket alive)
+  if ("terminate" in embeddings && typeof embeddings.terminate === "function") {
+    await embeddings.terminate();
+  }
 }
 
 main().catch((err) => {
