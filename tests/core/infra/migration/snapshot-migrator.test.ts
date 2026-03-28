@@ -46,6 +46,12 @@ describe("SnapshotMigrator", () => {
     expect(await migrator.getVersion()).toBe(0);
   });
 
+  it("computes latestVersion from registered migrations", () => {
+    const store = createMockStore();
+    const migrator = new SnapshotMigrator(store);
+    expect(migrator.latestVersion).toBe(3);
+  });
+
   it("has 2 migrations registered", () => {
     const store = createMockStore();
     const migrator = new SnapshotMigrator(store);

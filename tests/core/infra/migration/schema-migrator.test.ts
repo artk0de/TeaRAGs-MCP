@@ -59,6 +59,27 @@ describe("SchemaMigrator", () => {
     expect(store.getSchemaVersion).toHaveBeenCalledWith(COLLECTION);
   });
 
+  it("computes latestVersion from registered migrations", () => {
+    const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), { enableHybrid: false });
+    expect(migrator.latestVersion).toBe(8);
+  });
+
+  it("computes latestVersion=9 with enrichment store", () => {
+    const mockEnrichmentStore = {
+      isMigrated: vi.fn(),
+      scrollAllChunks: vi.fn(),
+      batchSetPayload: vi.fn(),
+      markMigrated: vi.fn(),
+    };
+    const migrator = new SchemaMigrator(
+      COLLECTION,
+      createMockIndexStore(),
+      { enableHybrid: false, providerKey: "git" },
+      mockEnrichmentStore as any,
+    );
+    expect(migrator.latestVersion).toBe(9);
+  });
+
   it("stores version via IndexStore after migrations", async () => {
     const store = createMockIndexStore(7);
     const migrator = new SchemaMigrator(COLLECTION, store, { enableHybrid: false });
@@ -137,6 +158,11 @@ describe("SparseMigrator", () => {
     const migrator = new SparseMigrator(COLLECTION, createMockSparseStore(), false);
     expect(migrator.getMigrations()).toHaveLength(1);
     expect(migrator.getMigrations()[0].version).toBe(1);
+  });
+
+  it("computes latestVersion from registered migrations", () => {
+    const migrator = new SparseMigrator(COLLECTION, createMockSparseStore(), false);
+    expect(migrator.latestVersion).toBe(1);
   });
 
   it("reads version from SparseStore", async () => {

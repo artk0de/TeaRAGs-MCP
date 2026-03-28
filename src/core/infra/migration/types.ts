@@ -19,6 +19,8 @@ export interface StepResult {
 
 /** Version-aware pipeline that runs a set of migrations. */
 export interface MigrationRunner {
+  /** Latest version — computed from registered migrations. */
+  readonly latestVersion: number;
   getVersion: () => Promise<number>;
   setVersion: (version: number) => Promise<void>;
   getMigrations: () => Migration[];

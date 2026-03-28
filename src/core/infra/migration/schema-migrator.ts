@@ -15,6 +15,9 @@ export class SchemaMigrator implements MigrationRunner {
   private readonly migrations: Migration[];
   private readonly appliedIndexes: string[] = [];
 
+  /** Latest schema version — computed from registered migrations. */
+  readonly latestVersion: number;
+
   constructor(
     private readonly collection: string,
     private readonly indexStore: IndexStore,
@@ -31,6 +34,7 @@ export class SchemaMigrator implements MigrationRunner {
         ? [new SchemaV9EnrichedAtBackfill(collection, enrichmentStore, options.providerKey)]
         : []),
     ];
+    this.latestVersion = Math.max(...this.migrations.map((m) => m.version));
   }
 
   getMigrations(): Migration[] {

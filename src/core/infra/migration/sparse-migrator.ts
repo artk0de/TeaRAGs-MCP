@@ -4,12 +4,16 @@ import type { Migration, MigrationRunner, SparseStore } from "./types.js";
 export class SparseMigrator implements MigrationRunner {
   private readonly migrations: Migration[];
 
+  /** Latest sparse version — computed from registered migrations. */
+  readonly latestVersion: number;
+
   constructor(
     private readonly collection: string,
     private readonly store: SparseStore,
     enableHybrid: boolean,
   ) {
     this.migrations = [new SparseVectorRebuild(collection, store, enableHybrid)];
+    this.latestVersion = Math.max(...this.migrations.map((m) => m.version));
   }
 
   getMigrations(): Migration[] {
