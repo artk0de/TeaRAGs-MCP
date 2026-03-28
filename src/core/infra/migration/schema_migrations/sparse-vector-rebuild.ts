@@ -4,7 +4,7 @@ export const CURRENT_SPARSE_VERSION = 1;
 
 export class SparseVectorRebuild implements Migration {
   readonly name = "sparse-vector-rebuild";
-  readonly version = 2;
+  readonly version = 1;
 
   constructor(
     private readonly collection: string,
