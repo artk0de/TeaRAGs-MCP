@@ -49,6 +49,7 @@ All paths relative to `src/core/`.
 | `traj-static`      | `domains/trajectory/static/`                     |
 | `contracts`        | `contracts/`                                     |
 | `infra`            | `infra/`                                         |
+| `migration`        | `infra/migration/`                               |
 | `bootstrap`        | `bootstrap/`                                     |
 
 ### Naming Conventions

@@ -33,6 +33,7 @@ createAppContext(config)          // src/bootstrap/factory.ts
 | New enrichment provider | Provider file + `pipeline/enrichment/trajectory/registry.ts` |
 | New DTO                 | `api/public/dto/` + barrel                                   |
 | New facade method       | Facade + `api/public/app.ts`                                 |
+| New migration           | `infra/migration/{pipeline}_migrations/` + register in migrator |
 
 ## Key contracts
 
