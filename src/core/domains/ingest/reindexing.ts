@@ -87,12 +87,13 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       this.startHeartbeat(ctx.collectionName);
-      const { chunksAdded, processingCtx, chunkMap } = await this.executeParallelPipelines(
+      const { chunksAdded, chunksDeleted, processingCtx, chunkMap } = await this.executeParallelPipelines(
         ctx,
         changes,
         progressCallback,
       );
       stats.chunksAdded = chunksAdded;
+      stats.chunksDeleted = chunksDeleted;
 
       this.stopHeartbeat();
       await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime);
@@ -134,23 +135,22 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
   private async runMigrations(collectionName: string, absolutePath: string): Promise<void> {
     const migrator = this.deps.createMigrator(collectionName, absolutePath);
-    await migrator.ensureMigrated();
 
-    const schemaManager = this.deps.createSchemaManager();
-    const schemaMigration = await schemaManager.ensureCurrentSchema(collectionName);
-    if (schemaMigration.migrationsApplied.length > 0) {
-      pipelineLog.reindexPhase("schema_migration", {
-        fromVersion: schemaMigration.fromVersion,
-        toVersion: schemaMigration.toVersion,
-        migrations: schemaMigration.migrationsApplied,
+    const snapshotResult = await migrator.run("snapshot");
+    if (snapshotResult.steps.length > 0) {
+      pipelineLog.reindexPhase("snapshot_migration", {
+        fromVersion: snapshotResult.fromVersion,
+        toVersion: snapshotResult.toVersion,
+        steps: snapshotResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
       });
     }
 
-    // Sparse vector data migration (independent of schema version)
-    const sparseResult = await schemaManager.checkSparseVectorVersion(collectionName);
-    if (sparseResult.rebuilt) {
-      pipelineLog.reindexPhase("sparse_vector_rebuild", {
-        message: sparseResult.message,
+    const schemaResult = await migrator.run("schema");
+    if (schemaResult.steps.length > 0) {
+      pipelineLog.reindexPhase("schema_migration", {
+        fromVersion: schemaResult.fromVersion,
+        toVersion: schemaResult.toVersion,
+        steps: schemaResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
       });
     }
   }
@@ -179,12 +179,17 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     ctx: ReindexContext,
     changes: FileChanges,
     progressCallback?: ProgressCallback,
-  ): Promise<{ chunksAdded: number; processingCtx: ProcessingContext; chunkMap: Map<string, ChunkLookupEntry[]> }> {
+  ): Promise<{
+    chunksAdded: number;
+    chunksDeleted: number;
+    processingCtx: ProcessingContext;
+    chunkMap: Map<string, ChunkLookupEntry[]>;
+  }> {
     const changedPaths = [...changes.added, ...changes.modified];
     const pCtx = this.initProcessing(ctx.collectionName, ctx.absolutePath, ctx.scanner, changedPaths);
     const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
-    const filesToDelete = [...changes.modified, ...changes.deleted];
+    const filesToDelete = [...changes.modified, ...changes.deleted, ...changes.newlyIgnored];
     const addedFiles = [...changes.added];
     const modifiedFiles = [...changes.modified];
 
@@ -198,13 +203,16 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     // Level 1: delete old chunks + process added files in parallel
     const deleteStartTime = Date.now();
+    let chunksDeleted = 0;
     const deletePromise = performDeletion(
       this.qdrant,
       ctx.collectionName,
       filesToDelete,
       this.deleteConfig,
       progressCallback,
-    );
+    ).then((count) => {
+      chunksDeleted = count;
+    });
     const addPromise = processRelativeFiles(
       addedFiles,
       ctx.absolutePath,
@@ -259,7 +267,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     this.logPipelineStats(pCtx, parallelStart);
 
-    return { chunksAdded: addedChunks + modifiedChunks, processingCtx: pCtx, chunkMap };
+    return { chunksAdded: addedChunks + modifiedChunks, chunksDeleted, processingCtx: pCtx, chunkMap };
   }
 
   // ── Finalization ─────────────────────────────────────────
@@ -307,23 +315,34 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     stats: ChangeStats,
     progressCallback?: ProgressCallback,
   ): Promise<void> {
-    const filesToDelete = [...changes.deleted];
+    const filesToDelete = [...changes.deleted, ...changes.newlyIgnored];
 
     pipelineLog.reindexPhase("DELETE_ONLY_START", { files: filesToDelete.length });
 
-    await performDeletion(this.qdrant, ctx.collectionName, filesToDelete, this.deleteConfig, progressCallback);
+    const chunksDeleted = await performDeletion(
+      this.qdrant,
+      ctx.collectionName,
+      filesToDelete,
+      this.deleteConfig,
+      progressCallback,
+    );
+    stats.chunksDeleted = chunksDeleted;
 
-    pipelineLog.reindexPhase("DELETE_ONLY_COMPLETE", { files: filesToDelete.length });
+    pipelineLog.reindexPhase("DELETE_ONLY_COMPLETE", { files: filesToDelete.length, chunksDeleted });
 
     if (isDebug()) {
-      console.error(`[Reindex] Deletion-only: removed ${filesToDelete.length} files, skipping enrichment`);
+      console.error(
+        `[Reindex] Deletion-only: removed ${filesToDelete.length} files (${chunksDeleted} chunks), skipping enrichment`,
+      );
     }
   }
 
   // ── Helpers ──────────────────────────────────────────────
 
   private hasNoChanges(stats: ChangeStats): boolean {
-    return stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0;
+    return (
+      stats.filesAdded === 0 && stats.filesModified === 0 && stats.filesDeleted === 0 && stats.filesNewlyIgnored === 0
+    );
   }
 
   private reportScanProgress(progressCallback: ProgressCallback | undefined, resume: boolean): void {
