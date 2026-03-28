@@ -23,6 +23,9 @@ import { createIngestDependencies, type SynchronizerTuning } from "../../../doma
 import { IndexPipeline } from "../../../domains/ingest/indexing.js";
 import type { PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
+import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
+import { EnrichmentMigration } from "../../../domains/ingest/pipeline/enrichment/migration.js";
+import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion-strategy.js";
@@ -85,7 +88,13 @@ export class IngestFacade {
         chunkMonths: trajectoryConfig.trajectoryGit.chunkMaxAgeMonths,
       };
     }
-    this.enrichment = new EnrichmentCoordinator(qdrant, providers);
+    const recovery = providers.length > 0
+      ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant))
+      : undefined;
+    const migration = providers.length > 0
+      ? new EnrichmentMigration(qdrant)
+      : undefined;
+    this.enrichment = new EnrichmentCoordinator(qdrant, providers, recovery, migration);
     this.enrichment.onChunkEnrichmentComplete = async (collectionName) => this.refreshStatsByCollection(collectionName);
     this.indexing = new IndexPipeline(qdrant, embeddings, ingestConfig, this.enrichment, deps, pipelineTuning);
     this.status = new StatusModule(qdrant, resolvedSnapshotDir);
@@ -126,6 +135,7 @@ export class IngestFacade {
       const collectionName = resolveCollectionName(absolutePath);
       const exists = await this.qdrant.collectionExists(collectionName);
       if (exists) {
+        await this.enrichment.runRecovery(collectionName, absolutePath);
         const changeStats = await this.reindex.reindexChanges(path, progressCallback);
         await this.refreshStats(path);
         return {
