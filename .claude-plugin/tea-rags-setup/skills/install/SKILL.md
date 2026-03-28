@@ -1,5 +1,5 @@
 ---
-name: setup
+name: install
 description:
   Automated TeaRAGs installation wizard. Detects environment, installs
   dependencies (Node.js, tea-rags, Ollama/ONNX, Qdrant), tunes performance,
