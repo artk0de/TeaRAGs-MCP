@@ -23,7 +23,6 @@ import { pipelineLog } from "../infra/debug-logger.js";
 import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
-import type { EnrichmentMigration } from "./migration.js";
 import type { EnrichmentRecovery } from "./recovery.js";
 import type { ChunkEnrichmentMarker, EnrichmentProvider, FileEnrichmentMarker, ProviderEnrichmentMarker } from "./types.js";
 
@@ -168,7 +167,6 @@ export class EnrichmentCoordinator {
     private readonly qdrant: QdrantManager,
     providers: EnrichmentProvider | EnrichmentProvider[],
     private readonly recovery?: EnrichmentRecovery,
-    private readonly migration?: EnrichmentMigration,
   ) {
     this.applier = new EnrichmentApplier(qdrant);
     const list = Array.isArray(providers) ? providers : [providers];
@@ -182,13 +180,6 @@ export class EnrichmentCoordinator {
    */
   async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
     if (!this.recovery) return;
-
-    // Run migration first (one-time, idempotent)
-    if (this.migration) {
-      for (const state of this.states.values()) {
-        await this.migration.migrateEnrichedAt(collectionName, state.provider.key);
-      }
-    }
 
     const enrichedAt = new Date().toISOString();
 

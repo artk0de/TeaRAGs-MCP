@@ -948,20 +948,15 @@ describe("EnrichmentCoordinator — recovery integration", () => {
       recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
       countUnenriched: vi.fn().mockResolvedValue(0),
     };
-    const mockMigration = {
-      migrateEnrichedAt: vi.fn().mockResolvedValue(undefined),
-    };
 
     const coordWithRecovery = new EnrichmentCoordinator(
       mockQdrant,
       mockProvider,
       mockRecovery as any,
-      mockMigration as any,
     );
 
     await coordWithRecovery.runRecovery("col", "/root");
 
-    expect(mockMigration.migrateEnrichedAt).toHaveBeenCalledWith("col", "git");
     expect(mockRecovery.recoverFileLevel).toHaveBeenCalledWith("col", "/root", mockProvider, expect.any(String));
     expect(mockRecovery.recoverChunkLevel).toHaveBeenCalledWith("col", "/root", mockProvider, expect.any(String));
     expect(mockRecovery.countUnenriched).toHaveBeenCalledWith("col", "git", "file");
@@ -998,27 +993,6 @@ describe("EnrichmentCoordinator — recovery integration", () => {
     expect(lastMarker.file.status).toBe("completed");
     expect(lastMarker.chunk.status).toBe("completed");
     expect(lastMarker.file.unenrichedChunks).toBe(0);
-  });
-
-  it("should skip migration when not provided", async () => {
-    const mockRecovery = {
-      recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
-      recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
-      countUnenriched: vi.fn().mockResolvedValue(0),
-    };
-
-    const coordWithRecoveryOnly = new EnrichmentCoordinator(
-      mockQdrant,
-      mockProvider,
-      mockRecovery as any,
-      // no migration
-    );
-
-    await coordWithRecoveryOnly.runRecovery("col", "/root");
-
-    // Recovery should still run
-    expect(mockRecovery.recoverFileLevel).toHaveBeenCalled();
-    expect(mockRecovery.recoverChunkLevel).toHaveBeenCalled();
   });
 
   it("should set degraded status when chunk-level unenriched remain", async () => {
