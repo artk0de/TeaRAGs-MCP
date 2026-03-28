@@ -208,33 +208,56 @@ Save choices to progress.
 
 ## Step 8: Configure MCP
 
-**8a: Assemble env vars JSON** from progress:
-
-```json
-{
-  "EMBEDDING_PROVIDER": "<from step 4>",
-  "QDRANT_URL": "<from step 5, omit if embedded>",
-  "EMBEDDING_BATCH_SIZE": "<from step 6>",
-  "QDRANT_UPSERT_BATCH_SIZE": "<from step 6>",
-  "INGEST_PIPELINE_CONCURRENCY": "<from step 6>",
-  "TRAJECTORY_GIT_ENABLED": "<from step 7>",
-  "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS": "<from step 7, if applicable>"
-}
-```
-
-**8b: Show to user for confirmation.** AskUserQuestion:
+**8a: Choose scope.** AskUserQuestion:
 
 ```
-question: "Confirm MCP configuration:\n\n<show full claude mcp add command>\n\nProceed?"
+question: "MCP server scope — where should tea-rags be available?"
 options: [
-  { label: "Confirm", description: "Apply this configuration" },
-  { label: "Modify", description: "I want to change something" }
+  { label: "Global (user)", description: "Available in all projects. Recommended for personal use." },
+  { label: "Project", description: "Only for the current project. Creates .mcp.json in project root." }
 ]
 ```
 
-If "Modify" → ask what to change, adjust, re-show.
+Save scope choice to progress (`mcpScope: "user"` or `"project"`).
 
-**8c: Execute.** Run: `$SCRIPTS/configure-mcp.sh '<env_json>'`
+**8b: Assemble env vars** from progress:
+
+- `EMBEDDING_PROVIDER` — from step 4
+- `QDRANT_URL` — from step 5 (omit if embedded)
+- `EMBEDDING_BATCH_SIZE` — from step 6
+- `QDRANT_UPSERT_BATCH_SIZE` — from step 6
+- `INGEST_PIPELINE_CONCURRENCY` — from step 6
+- `TRAJECTORY_GIT_ENABLED` — from step 7
+- `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` — from step 7 (if applicable)
+
+**8c: Dispatch MCP integrator agent.** Use the Agent tool to dispatch
+`${CLAUDE_PLUGIN_ROOT}/agents/mcp-server-integrator.md` with a prompt like:
+
+```
+Agent tool:
+  description: "Configure tea-rags MCP server"
+  prompt: |
+    Add the tea-rags MCP server with the following configuration:
+
+    Server name: tea-rags
+    Scope: <user|project>
+    Command: npx tea-rags server
+    Environment variables:
+      EMBEDDING_PROVIDER=<value>
+      QDRANT_URL=<value or omit>
+      EMBEDDING_BATCH_SIZE=<value>
+      QDRANT_UPSERT_BATCH_SIZE=<value>
+      INGEST_PIPELINE_CONCURRENCY=<value>
+      TRAJECTORY_GIT_ENABLED=<value>
+      TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=<value or omit>
+
+    Use `claude mcp add tea-rags -s <scope> ...` to configure.
+    After adding, verify with `claude mcp get tea-rags`.
+    Report the full verification output.
+```
+
+The agent handles: building the correct `claude mcp add` command, executing it,
+and verifying via `claude mcp get` that the server shows as connected.
 
 ## Step 9: Verify
 
