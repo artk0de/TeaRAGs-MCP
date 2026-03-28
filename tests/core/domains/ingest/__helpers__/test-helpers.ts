@@ -199,6 +199,18 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     );
   }
 
+  async countPoints(collectionName: string, filter?: Record<string, unknown>): Promise<number> {
+    const resolved = this.resolve(collectionName);
+    const points = this.points.get(resolved) || [];
+    if (!filter) return points.length;
+    const shouldConditions = (filter as any)?.should;
+    if (shouldConditions) {
+      const paths = new Set(shouldConditions.map((c: any) => c.match?.value));
+      return points.filter((p) => paths.has(p.payload?.relativePath)).length;
+    }
+    return points.length;
+  }
+
   async deletePointsByFilter(collectionName: string, filter: Record<string, any>): Promise<void> {
     const resolved = this.resolve(collectionName);
     const points = this.points.get(resolved) || [];
@@ -227,9 +239,9 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     relativePaths: string[],
     _options?: { batchSize?: number; concurrency?: number },
     _progressCallback?: (progress: { processed: number; total: number; batchNumber: number }) => void,
-  ): Promise<{ deletedCount: number; batchesProcessed: number }> {
+  ): Promise<{ deletedPaths: number; batchCount: number; durationMs: number }> {
     await this.deletePointsByPaths(collectionName, relativePaths);
-    return { deletedCount: relativePaths.length, batchesProcessed: 1 };
+    return { deletedPaths: relativePaths.length, batchCount: 1, durationMs: 0 };
   }
 
   batchSetPayloadCalls: { collectionName: string; operations: any[] }[] = [];

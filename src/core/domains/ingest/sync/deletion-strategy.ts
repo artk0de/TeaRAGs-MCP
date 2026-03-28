@@ -25,8 +25,15 @@ export async function performDeletion(
   filesToDelete: string[],
   deleteConfig: DeletionConfig,
   progressCallback?: ProgressCallback,
-): Promise<void> {
-  if (filesToDelete.length === 0) return;
+): Promise<number> {
+  if (filesToDelete.length === 0) return 0;
+
+  const chunkCountBefore = await qdrant.countPoints(collectionName, {
+    should: filesToDelete.map((path) => ({
+      key: "relativePath",
+      match: { value: path },
+    })),
+  });
 
   progressCallback?.({
     phase: "scanning",
@@ -109,4 +116,6 @@ export async function performDeletion(
       );
     }
   }
+
+  return chunkCountBefore;
 }
