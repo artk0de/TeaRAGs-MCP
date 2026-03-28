@@ -9,7 +9,12 @@
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { SchemaManager } from "../../adapters/qdrant/schema-migration.js";
 import type { PayloadBuilder } from "../../contracts/types/provider.js";
-import { SnapshotMigrator } from "./sync/migration.js";
+import { IndexStoreAdapter } from "../../infra/migration/adapters/index-store-adapter.js";
+import { SnapshotStoreAdapter } from "../../infra/migration/adapters/snapshot-store-adapter.js";
+import { SparseStoreAdapter } from "../../infra/migration/adapters/sparse-store-adapter.js";
+import { Migrator } from "../../infra/migration/migrator.js";
+import { SchemaMigrator } from "../../infra/migration/schema-migrator.js";
+import { SnapshotMigrator } from "../../infra/migration/snapshot-migrator.js";
 import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
 // ── Public interfaces ────────────────────────────────────────────
@@ -22,7 +27,7 @@ export interface SynchronizerTuning {
 export interface IngestDependencies {
   createSchemaManager: () => SchemaManager;
   createSynchronizer: (codebasePath: string, collectionName: string) => ParallelFileSynchronizer;
-  createMigrator: (collectionName: string, codebasePath: string) => SnapshotMigrator;
+  createMigrator: (collectionName: string, codebasePath: string) => Migrator;
   payloadBuilder: PayloadBuilder;
   snapshotDir: string;
 }
@@ -46,7 +51,16 @@ export function createIngestDependencies(
         syncTuning?.concurrency,
         syncTuning?.ioConcurrency,
       ),
-    createMigrator: (collectionName, codebasePath) => new SnapshotMigrator(snapshotDir, collectionName, codebasePath),
+    createMigrator: (collectionName, _codebasePath) => {
+      const snapshotStore = new SnapshotStoreAdapter(snapshotDir, collectionName);
+      const indexStore = new IndexStoreAdapter(qdrant);
+      const sparseStore = new SparseStoreAdapter(qdrant);
+
+      return new Migrator({
+        snapshot: new SnapshotMigrator(snapshotStore),
+        schema: new SchemaMigrator(collectionName, indexStore, sparseStore, { enableHybrid }),
+      });
+    },
     payloadBuilder,
     snapshotDir,
   };
