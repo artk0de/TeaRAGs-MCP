@@ -16,11 +16,42 @@ interface TuneArgs {
   device?: string;
 }
 
+/** Build env vars from shared CLI args */
+function buildEnv(argv: TuneArgs): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  if (argv["qdrant-url"]) env.QDRANT_URL = argv["qdrant-url"];
+  if (argv["embedding-url"]) env.EMBEDDING_BASE_URL = argv["embedding-url"];
+  if (argv.model) env.EMBEDDING_MODEL = argv.model;
+  if (argv.provider) env.EMBEDDING_PROVIDER = argv.provider;
+  if (argv.device) env.EMBEDDING_DEVICE = argv.device;
+  return env;
+}
+
+/** Run a benchmark script with forwarded args and env */
+function runScript(script: string, argv: TuneArgs): void {
+  const scriptPath = join(__dirname, "../../../benchmarks", script);
+  const args: string[] = [];
+  if (argv.path) args.push("--path", argv.path);
+  if (argv.full) args.push("--full");
+
+  const child = spawn(process.execPath, [scriptPath, ...args], {
+    stdio: "inherit",
+    env: buildEnv(argv),
+  });
+
+  child.on("exit", (code) => process.exit(code ?? 1));
+}
+
 export const tuneCommand: CommandModule<object, TuneArgs> = {
-  command: "tune",
+  command: "tune [subcommand]",
   describe: "Auto-tune performance parameters for your hardware",
   builder: (yargs) =>
     yargs
+      .positional("subcommand", {
+        type: "string",
+        describe: "Subcommand: embeddings (embedding-only tune)",
+        choices: ["embeddings"],
+      })
       .option("path", {
         type: "string",
         describe: "Path to project directory (uses source files as benchmark corpus)",
@@ -44,8 +75,7 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
       })
       .option("device", {
         type: "string",
-        describe: "ONNX device: cpu or webgpu (default: webgpu)",
-        choices: ["cpu", "webgpu"],
+        describe: "ONNX device (default: auto-detect). Examples: cpu, webgpu, cuda, dml, coreml",
       })
       .option("full", {
         type: "boolean",
@@ -53,24 +83,11 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
         default: false,
       }),
   handler: (argv) => {
-    const tunePath = join(__dirname, "../../../benchmarks/tune.mjs");
-    const args: string[] = [];
-    if (argv.path) args.push("--path", argv.path);
-    if (argv.full) args.push("--full");
-
-    // Forward CLI options as env vars for the benchmark script
-    const env = { ...process.env };
-    if (argv["qdrant-url"]) env.QDRANT_URL = argv["qdrant-url"];
-    if (argv["embedding-url"]) env.EMBEDDING_BASE_URL = argv["embedding-url"];
-    if (argv.model) env.EMBEDDING_MODEL = argv.model;
-    if (argv.provider) env.EMBEDDING_PROVIDER = argv.provider;
-    if (argv.device) env.EMBEDDING_DEVICE = argv.device;
-
-    const child = spawn(process.execPath, [tunePath, ...args], {
-      stdio: "inherit",
-      env,
-    });
-
-    child.on("exit", (code) => process.exit(code ?? 1));
+    const sub = argv.subcommand as string | undefined;
+    if (sub === "embeddings") {
+      runScript("benchmark-embeddings.mjs", argv);
+    } else {
+      runScript("tune.mjs", argv);
+    }
   },
 };
