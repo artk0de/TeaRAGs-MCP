@@ -18,6 +18,11 @@ export class SchemaV9EnrichedAtBackfill implements Migration {
     }
 
     const points = await this.store.scrollAllChunks(this.collection);
+    if (points.length === 0) {
+      await this.store.markMigrated(this.collection);
+      return { applied: ["no chunks to migrate"] };
+    }
+
     const now = new Date().toISOString();
     const operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[] = [];
 
