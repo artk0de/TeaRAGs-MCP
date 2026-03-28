@@ -18,24 +18,42 @@
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
-import { OllamaEmbeddings } from "../build/core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../build/core/adapters/qdrant/client.js";
 import {
   benchmarkBatchFormationTimeout,
+  benchmarkChunkerPoolSize,
   benchmarkCodeBatchSize,
   benchmarkDeleteBatchSize,
   benchmarkDeleteConcurrency,
+  benchmarkDeleteFlushTimeout,
+  benchmarkFileConcurrency,
   benchmarkFlushInterval,
+  benchmarkGitChunkConcurrency,
+  benchmarkIoConcurrency,
+  benchmarkMinBatchSize,
   benchmarkOrdering,
   generatePoints,
   generateTexts,
+  measureGitLogDuration,
 } from "./lib/benchmarks.mjs";
 import { cleanupAllCollections } from "./lib/cleanup.mjs";
 import { bar, c, formatRate, printBox, printHeader } from "./lib/colors.mjs";
-import { config, CRITERIA, isFullMode, SAMPLE_SIZE, SMART_STEPPING, TEST_VALUES } from "./lib/config.mjs";
+import {
+  config,
+  CRITERIA,
+  GIT_TEST_VALUES,
+  isFullMode,
+  PIPELINE_TEST_VALUES,
+  PROJECT_PATH,
+  SAMPLE_SIZE,
+  SMART_STEPPING,
+  TEST_VALUES,
+} from "./lib/config.mjs";
 import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
 import { printTimeEstimates } from "./lib/estimator.mjs";
+import { collectSourceFiles, preloadFiles } from "./lib/files.mjs";
 import { printSummary, printUsage, writeEnvFile } from "./lib/output.mjs";
+import { checkProviderConnectivity, createEmbeddingProvider } from "./lib/provider.mjs";
 import { smartSteppingSearch } from "./lib/smart-stepping.mjs";
 import { StoppingDecision } from "./lib/stopping.mjs";
 
@@ -74,46 +92,9 @@ async function checkConnectivity() {
     }
   })();
 
-  // Check Ollama connectivity and model availability
-  const ollamaCheck = await (async () => {
-    try {
-      // First check if Ollama is reachable
-      const tagsResponse = await fetch(`${config.EMBEDDING_BASE_URL}/api/tags`, {
-        method: "GET",
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!tagsResponse.ok) {
-        return `Ollama returned status ${tagsResponse.status}`;
-      }
-
-      // Check if the model exists
-      const tags = await tagsResponse.json();
-      const models = tags.models || [];
-      const modelNames = models.map((m) => m.name.replace(/:latest$/, ""));
-
-      // Check both with and without :latest suffix
-      const targetModel = config.EMBEDDING_MODEL.replace(/:latest$/, "");
-      const modelExists = modelNames.some((name) => name === targetModel || name === config.EMBEDDING_MODEL);
-
-      if (!modelExists) {
-        const availableModels =
-          modelNames.length > 0
-            ? `\n    Available models: ${modelNames.slice(0, 5).join(", ")}${modelNames.length > 5 ? "..." : ""}`
-            : `\n    No models found. Run: ollama pull ${config.EMBEDDING_MODEL}`;
-        return `Model "${config.EMBEDDING_MODEL}" not found on Ollama${availableModels}`;
-      }
-
-      return null;
-    } catch (err) {
-      if (err.cause?.code === "ECONNREFUSED") {
-        return `Cannot connect to Ollama at ${config.EMBEDDING_BASE_URL}`;
-      }
-      if (err.name === "TimeoutError") {
-        return `Connection to Ollama timed out (${config.EMBEDDING_BASE_URL})`;
-      }
-      return `Ollama error: ${err.message}`;
-    }
-  })();
+  // Check embedding provider connectivity
+  const embeddingCheck = await checkProviderConnectivity();
+  const ollamaCheck = embeddingCheck.ok ? null : embeddingCheck.error;
 
   if (qdrantCheck) errors.push(qdrantCheck);
   if (ollamaCheck) errors.push(ollamaCheck);
@@ -186,16 +167,12 @@ async function main() {
     process.exit(1);
   }
   console.log(`  ${c.green}✓${c.reset} Qdrant connected`);
-  console.log(`  ${c.green}✓${c.reset} Ollama connected (model: ${config.EMBEDDING_MODEL})`);
+  console.log(`  ${c.green}✓${c.reset} Embedding provider connected`);
   console.log();
 
   // Initialize clients
-  const embeddings = new OllamaEmbeddings(
-    config.EMBEDDING_MODEL,
-    config.EMBEDDING_DIMENSION, // undefined = auto-detect
-    undefined,
-    config.EMBEDDING_BASE_URL,
-  );
+  const { provider: embeddings, name: providerName } = await createEmbeddingProvider();
+  console.log(`  ${c.green}✓${c.reset} Embedding provider: ${providerName}`);
 
   // Get actual dimension (auto-detected if not specified)
   const actualDimension = embeddings.getDimensions();
@@ -240,6 +217,111 @@ async function main() {
 
   process.env.EMBEDDING_BATCH_SIZE = String(optimal.EMBEDDING_BATCH_SIZE);
   process.env.EMBEDDING_CONCURRENCY = String(optimal.EMBEDDING_CONCURRENCY);
+
+  // ============ PIPELINE BENCHMARKS ============
+
+  let projectFiles = null;
+  let preloadedFiles = null;
+  try {
+    console.log(`\n${c.dim}Collecting source files from ${PROJECT_PATH}...${c.reset}`);
+    projectFiles = collectSourceFiles(PROJECT_PATH);
+    if (projectFiles.length < 50) {
+      console.log(`  ${c.yellow}⚠${c.reset} Only ${projectFiles.length} files found (minimum 50 recommended)`);
+      console.log(`  ${c.dim}Skipping pipeline benchmarks. Use --path <project> with a larger codebase.${c.reset}\n`);
+    } else {
+      console.log(`  ${c.green}✓${c.reset} Found ${projectFiles.length} source files\n`);
+      preloadedFiles = preloadFiles(projectFiles);
+    }
+  } catch (err) {
+    console.log(`  ${c.yellow}⚠${c.reset} ${err.message}`);
+    console.log(`  ${c.dim}Skipping pipeline benchmarks.${c.reset}\n`);
+  }
+
+  if (preloadedFiles && preloadedFiles.length >= 50) {
+    // CHUNKER_POOL_SIZE
+    printHeader("Pipeline: Chunker Pool Size", "Finding optimal INGEST_TUNE_CHUNKER_POOL_SIZE");
+    console.log(`  ${c.dim}Warmup...${c.reset}`);
+    await benchmarkChunkerPoolSize(preloadedFiles, 2);
+
+    const poolDecision = new StoppingDecision();
+    for (const size of PIPELINE_TEST_VALUES.CHUNKER_POOL_SIZE) {
+      process.stdout.write(`  Testing CHUNKER_POOL_SIZE=${c.bold}${size.toString().padStart(2)}${c.reset} `);
+      const result = await benchmarkChunkerPoolSize(preloadedFiles, size);
+      const decision = poolDecision.addResult(result);
+      if (result.error) {
+        console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+      } else {
+        console.log(
+          `${bar(result.rate, poolDecision.bestRate)} ${formatRate(result.rate, "files/s")} ${c.dim}(${result.time}ms)${c.reset}`,
+        );
+      }
+      if (decision.stop) {
+        console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+        break;
+      }
+    }
+    const bestPool = poolDecision.getBest();
+    optimal.INGEST_TUNE_CHUNKER_POOL_SIZE = bestPool?.poolSize || 4;
+    console.log(
+      `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: INGEST_TUNE_CHUNKER_POOL_SIZE=${optimal.INGEST_TUNE_CHUNKER_POOL_SIZE}${c.reset}`,
+    );
+
+    // FILE_CONCURRENCY
+    printHeader("Pipeline: File Concurrency", "Finding optimal INGEST_TUNE_FILE_CONCURRENCY");
+    console.log(`  ${c.dim}Warmup...${c.reset}`);
+    await benchmarkFileConcurrency(preloadedFiles, 10);
+
+    const fileDecision = new StoppingDecision();
+    for (const conc of PIPELINE_TEST_VALUES.FILE_CONCURRENCY) {
+      process.stdout.write(`  Testing FILE_CONCURRENCY=${c.bold}${conc.toString().padStart(3)}${c.reset} `);
+      const result = await benchmarkFileConcurrency(preloadedFiles, conc);
+      const decision = fileDecision.addResult(result);
+      if (result.error) {
+        console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+      } else {
+        console.log(
+          `${bar(result.rate, fileDecision.bestRate)} ${formatRate(result.rate, "files/s")} ${c.dim}(${result.time}ms)${c.reset}`,
+        );
+      }
+      if (decision.stop) {
+        console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+        break;
+      }
+    }
+    const bestFile = fileDecision.getBest();
+    optimal.INGEST_TUNE_FILE_CONCURRENCY = bestFile?.concurrency || 50;
+    console.log(
+      `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: INGEST_TUNE_FILE_CONCURRENCY=${optimal.INGEST_TUNE_FILE_CONCURRENCY}${c.reset}`,
+    );
+
+    // IO_CONCURRENCY
+    printHeader("Pipeline: IO Concurrency", "Finding optimal INGEST_TUNE_IO_CONCURRENCY");
+    console.log(`  ${c.dim}Warmup...${c.reset}`);
+    await benchmarkIoConcurrency(preloadedFiles, 10);
+
+    const ioDecision = new StoppingDecision();
+    for (const conc of PIPELINE_TEST_VALUES.IO_CONCURRENCY) {
+      process.stdout.write(`  Testing IO_CONCURRENCY=${c.bold}${conc.toString().padStart(3)}${c.reset} `);
+      const result = await benchmarkIoConcurrency(preloadedFiles, conc);
+      const decision = ioDecision.addResult(result);
+      if (result.error) {
+        console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+      } else {
+        console.log(
+          `${bar(result.rate, ioDecision.bestRate)} ${formatRate(result.rate, "files/s")} ${c.dim}(${result.time}ms)${c.reset}`,
+        );
+      }
+      if (decision.stop) {
+        console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+        break;
+      }
+    }
+    const bestIo = ioDecision.getBest();
+    optimal.INGEST_TUNE_IO_CONCURRENCY = bestIo?.concurrency || 50;
+    console.log(
+      `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: INGEST_TUNE_IO_CONCURRENCY=${optimal.INGEST_TUNE_IO_CONCURRENCY}${c.reset}`,
+    );
+  }
 
   // ============ PHASE 3: QDRANT_UPSERT_BATCH_SIZE ============
 
@@ -474,6 +556,130 @@ async function main() {
     `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_DELETE_CONCURRENCY=${optimal.QDRANT_DELETE_CONCURRENCY}${c.reset}`,
   );
   if (bestDelConc) console.log(`    ${c.dim}Speed: ${bestDelConc.rate} deletions/sec${c.reset}`);
+
+  // ============ PHASE 9: DELETE_FLUSH_TIMEOUT ============
+
+  printHeader("Phase 9: Delete Flush Timeout", "Finding optimal QDRANT_DELETE_FLUSH_TIMEOUT_MS");
+
+  const dftDecision = new StoppingDecision();
+
+  for (const timeoutMs of PIPELINE_TEST_VALUES.DELETE_FLUSH_TIMEOUT_MS) {
+    process.stdout.write(`  Testing DELETE_FLUSH_TIMEOUT_MS=${c.bold}${timeoutMs.toString().padStart(4)}${c.reset} `);
+
+    const result = await benchmarkDeleteFlushTimeout(
+      qdrant,
+      points,
+      timeoutMs,
+      optimal.QDRANT_DELETE_BATCH_SIZE,
+      optimal.QDRANT_DELETE_CONCURRENCY,
+    );
+    const decision = dftDecision.addResult(result);
+
+    if (result.error) {
+      console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+    } else {
+      console.log(
+        `${bar(result.rate, dftDecision.bestRate)} ${formatRate(result.rate, "del/s")} ${c.dim}(${result.time}ms)${c.reset}`,
+      );
+    }
+
+    if (decision.stop) {
+      console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+      break;
+    }
+  }
+
+  const bestDft = dftDecision.getBest();
+  optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS = bestDft?.timeoutMs || 500;
+  console.log(
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS=${optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS}${c.reset}`,
+  );
+  if (bestDft) console.log(`    ${c.dim}Speed: ${bestDft.rate} deletions/sec${c.reset}`);
+
+  // ============ PHASE 10: MIN_BATCH_SIZE ============
+
+  printHeader("Phase 10: Min Batch Size", "Finding optimal EMBEDDING_TUNE_MIN_BATCH_SIZE (tail latency)");
+
+  const minBatchResults = [];
+  for (const ratio of PIPELINE_TEST_VALUES.MIN_BATCH_RATIO) {
+    const minSize = Math.max(1, Math.round(optimal.EMBEDDING_BATCH_SIZE * ratio));
+    process.stdout.write(
+      `  Testing MIN_BATCH_SIZE=${c.bold}${minSize.toString().padStart(4)}${c.reset} (${Math.round(ratio * 100)}% of batch) `,
+    );
+    const result = await benchmarkMinBatchSize(embeddings, qdrantTexts, ratio, optimal.EMBEDDING_BATCH_SIZE);
+    minBatchResults.push(result);
+    if (result.error) {
+      console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+    } else {
+      console.log(`${c.dim}${result.latencyMs}ms${c.reset}`);
+    }
+  }
+
+  const validResults = minBatchResults.filter((r) => !r.error);
+  if (validResults.length > 0) {
+    const minLatency = Math.min(...validResults.map((r) => r.latencyMs));
+    const acceptable = validResults.filter((r) => r.latencyMs <= minLatency * 1.2);
+    const best = acceptable.reduce((a, b) => (a.ratio < b.ratio ? a : b));
+    optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE = best.minBatchSize;
+  } else {
+    optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE = Math.round(optimal.EMBEDDING_BATCH_SIZE * 0.5);
+  }
+  console.log(
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: EMBEDDING_TUNE_MIN_BATCH_SIZE=${optimal.EMBEDDING_TUNE_MIN_BATCH_SIZE}${c.reset}`,
+  );
+
+  // ============ GIT TRAJECTORY BENCHMARKS ============
+
+  if (projectFiles && projectFiles.length >= 50) {
+    // ---- GIT_CHUNK_CONCURRENCY ----
+    printHeader("Git: Chunk Concurrency", "Finding optimal TRAJECTORY_GIT_CHUNK_CONCURRENCY");
+
+    const gitTestFiles = [...projectFiles]
+      .sort((a, b) => b.size - a.size)
+      .slice(0, 20)
+      .map((f) => f.relativePath);
+
+    console.log(`  ${c.dim}Testing with ${gitTestFiles.length} files from ${PROJECT_PATH}${c.reset}\n`);
+
+    const gitDecision = new StoppingDecision();
+    for (const conc of GIT_TEST_VALUES.CHUNK_CONCURRENCY) {
+      process.stdout.write(`  Testing GIT_CHUNK_CONCURRENCY=${c.bold}${conc.toString().padStart(2)}${c.reset} `);
+      const result = await benchmarkGitChunkConcurrency(PROJECT_PATH, gitTestFiles, conc);
+      const decision = gitDecision.addResult(result);
+      if (result.error) {
+        console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+      } else {
+        console.log(
+          `${bar(result.rate, gitDecision.bestRate)} ${formatRate(result.rate, "files/s")} ${c.dim}(${result.time}ms, ${result.filesProcessed} files)${c.reset}`,
+        );
+      }
+      if (decision.stop) {
+        console.log(`\n  ${c.yellow}↳ Stopping: ${decision.reason}${c.reset}`);
+        break;
+      }
+    }
+    const bestGitConc = gitDecision.getBest();
+    optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY = bestGitConc?.concurrency || 10;
+    console.log(
+      `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: TRAJECTORY_GIT_CHUNK_CONCURRENCY=${optimal.TRAJECTORY_GIT_CHUNK_CONCURRENCY}${c.reset}`,
+    );
+
+    // ---- GIT_LOG_TIMEOUT (informational) ----
+    printHeader("Git: Log Duration", "Measuring git log duration at different depths");
+
+    for (const months of GIT_TEST_VALUES.LOG_DEPTHS_MONTHS) {
+      process.stdout.write(`  Testing --since="${months} months ago" `);
+      const result = await measureGitLogDuration(PROJECT_PATH, months);
+      if (result.error) {
+        console.log(`${c.red}ERROR${c.reset} ${c.dim}${result.error}${c.reset}`);
+      } else {
+        console.log(`${c.dim}${result.durationMs}ms (${result.entries} commits)${c.reset}`);
+      }
+    }
+    console.log(
+      `\n  ${c.dim}ℹ Recommended: set TRAJECTORY_GIT_LOG_TIMEOUT_MS to 2× your target depth duration${c.reset}`,
+    );
+  }
 
   // ============ CLEANUP ============
 

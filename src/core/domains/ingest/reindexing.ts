@@ -135,23 +135,22 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
   private async runMigrations(collectionName: string, absolutePath: string): Promise<void> {
     const migrator = this.deps.createMigrator(collectionName, absolutePath);
-    await migrator.ensureMigrated();
 
-    const schemaManager = this.deps.createSchemaManager();
-    const schemaMigration = await schemaManager.ensureCurrentSchema(collectionName);
-    if (schemaMigration.migrationsApplied.length > 0) {
-      pipelineLog.reindexPhase("schema_migration", {
-        fromVersion: schemaMigration.fromVersion,
-        toVersion: schemaMigration.toVersion,
-        migrations: schemaMigration.migrationsApplied,
+    const snapshotResult = await migrator.run("snapshot");
+    if (snapshotResult.steps.length > 0) {
+      pipelineLog.reindexPhase("snapshot_migration", {
+        fromVersion: snapshotResult.fromVersion,
+        toVersion: snapshotResult.toVersion,
+        steps: snapshotResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
       });
     }
 
-    // Sparse vector data migration (independent of schema version)
-    const sparseResult = await schemaManager.checkSparseVectorVersion(collectionName);
-    if (sparseResult.rebuilt) {
-      pipelineLog.reindexPhase("sparse_vector_rebuild", {
-        message: sparseResult.message,
+    const schemaResult = await migrator.run("schema");
+    if (schemaResult.steps.length > 0) {
+      pipelineLog.reindexPhase("schema_migration", {
+        fromVersion: schemaResult.fromVersion,
+        toVersion: schemaResult.toVersion,
+        steps: schemaResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
       });
     }
   }
