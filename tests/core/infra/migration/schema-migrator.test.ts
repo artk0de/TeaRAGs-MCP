@@ -178,13 +178,13 @@ describe("SparseMigrator", () => {
     expect(store.storeSparseVersion).toHaveBeenCalledWith(COLLECTION, 2);
   });
 
-  it("sparse rebuild runs when version outdated and hybrid enabled", async () => {
+  it("sparse rebuild runs when hybrid enabled", async () => {
     const store = createMockSparseStore(0);
     const migrator = new SparseMigrator(COLLECTION, store, true);
     const sparse = migrator.getMigrations()[0];
     await sparse.apply();
     expect(store.rebuildSparseVectors).toHaveBeenCalledWith(COLLECTION);
-    expect(store.storeSparseVersion).toHaveBeenCalledWith(COLLECTION, 1);
+    // storeSparseVersion is NOT called by apply() — Migrator.setVersion() handles it
   });
 
   it("sparse rebuild skips when hybrid disabled", async () => {
@@ -196,11 +196,14 @@ describe("SparseMigrator", () => {
     expect(result.applied).toEqual(expect.arrayContaining([expect.stringContaining("skipped")]));
   });
 
-  it("sparse rebuild skips when already at current version", async () => {
+  it("version gating is handled by Migrator, not apply()", async () => {
+    // If Migrator calls apply(), version check already passed.
+    // apply() only checks enableHybrid flag.
     const store = createMockSparseStore(1);
     const migrator = new SparseMigrator(COLLECTION, store, true);
     const sparse = migrator.getMigrations()[0];
     await sparse.apply();
-    expect(store.rebuildSparseVectors).not.toHaveBeenCalled();
+    // Even with sparseVersion=1, apply() runs because Migrator already filtered
+    expect(store.rebuildSparseVectors).toHaveBeenCalledWith(COLLECTION);
   });
 });
