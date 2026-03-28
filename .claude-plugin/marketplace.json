@@ -24,11 +24,11 @@
       ]
     },
     {
-      "name": "setup",
+      "name": "tea-rags-setup",
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/artk0de/TeaRAGs-MCP.git",
-        "path": ".claude-plugin/setup",
+        "path": ".claude-plugin/tea-rags-setup",
         "ref": "main"
       },
       "description": "Automated TeaRAGs installation wizard",
