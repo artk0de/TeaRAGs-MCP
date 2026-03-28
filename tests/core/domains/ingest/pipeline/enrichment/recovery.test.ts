@@ -105,7 +105,9 @@ describe("EnrichmentRecovery", () => {
       expect(mockQdrant.scrollFiltered).toHaveBeenCalledWith(
         "test-collection",
         expect.objectContaining({
-          must_not: expect.arrayContaining([expect.objectContaining({ has_id: expect.any(Array) })]),
+          must_not: expect.arrayContaining([
+            expect.objectContaining({ key: "_type", match: { value: "indexing_metadata" } }),
+          ]),
         }),
         expect.any(Number),
       );
