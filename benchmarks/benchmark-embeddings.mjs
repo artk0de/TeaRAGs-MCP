@@ -61,9 +61,11 @@ async function main() {
   console.log();
 
   // Detect setup type
-  const isRemote = !config.EMBEDDING_BASE_URL.includes("localhost") && !config.EMBEDDING_BASE_URL.includes("127.0.0.1");
-  const setupIcon = isRemote ? "🌐" : "🏠";
-  const setupName = isRemote ? "Remote GPU" : "Local GPU";
+  const isOnnx = providerName === "onnx";
+  const isRemote =
+    !isOnnx && !config.EMBEDDING_BASE_URL.includes("localhost") && !config.EMBEDDING_BASE_URL.includes("127.0.0.1");
+  const setupIcon = isOnnx ? "⚡" : isRemote ? "🌐" : "🏠";
+  const setupName = isOnnx ? "Local ONNX" : isRemote ? "Remote GPU" : "Local GPU";
 
   printBox(`${setupIcon} ${setupName.toUpperCase()} - OPTIMAL CONFIGURATION`, "");
 
@@ -80,7 +82,13 @@ async function main() {
 
   // Explain the choice
   console.log(`${c.bold}Why this configuration?${c.reset}`);
-  if (isRemote) {
+  if (isOnnx) {
+    console.log(`  ${c.dim}•${c.reset} Local ONNX runtime (${providerName})`);
+    console.log(`  ${c.dim}•${c.reset} In-process inference, no network overhead`);
+    if (result.EMBEDDING_BATCH_SIZE <= 16) {
+      console.log(`  ${c.dim}•${c.reset} Small batches optimal for ONNX memory management`);
+    }
+  } else if (isRemote) {
     console.log(`  ${c.dim}•${c.reset} Remote GPU detected (${config.EMBEDDING_BASE_URL})`);
     console.log(`  ${c.dim}•${c.reset} Lower batch + higher concurrency hides network latency`);
     console.log(`  ${c.dim}•${c.reset} While one batch transfers, GPU processes another`);
@@ -126,6 +134,11 @@ async function main() {
     `${c.dim}Configs tested: ${result.stable_configs_count} stable, ${result.discarded_configs_count} discarded${c.reset}`,
   );
   console.log(`${c.bold}Total benchmark time: ${formatTime(result.calibration_time_ms)}${c.reset}`);
+
+  // Terminate provider (ONNX keeps socket alive)
+  if ("terminate" in embeddings && typeof embeddings.terminate === "function") {
+    await embeddings.terminate();
+  }
 }
 
 main().catch((err) => {

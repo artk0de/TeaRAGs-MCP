@@ -18,6 +18,7 @@
     "prepare": "husky",
     "test-integration": "node tests/integration/index.mjs",
     "tune": "node benchmarks/tune.mjs",
+    "tune:embeddings": "node benchmarks/benchmark-embeddings.mjs",
     "benchmark-embeddings": "node benchmarks/benchmark-embeddings.mjs",
     "benchmark-cpu": "node benchmarks/benchmark-cpu.mjs",
     "lint": "eslint src/ tests/",

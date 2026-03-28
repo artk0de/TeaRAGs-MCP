@@ -30,7 +30,7 @@ describe("tune command", () => {
   });
 
   it("has correct command name and description", () => {
-    expect(tuneCommand.command).toBe("tune");
+    expect(tuneCommand.command).toBe("tune [subcommand]");
     expect(tuneCommand.describe).toContain("Auto-tune");
   });
 
@@ -73,5 +73,62 @@ describe("tune command", () => {
 
     mockChild.emit("exit", null);
     expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("forwards qdrant-url as QDRANT_URL env var", () => {
+    (tuneCommand.handler as (args: object) => void)({ "qdrant-url": "http://qdrant:6333", full: false });
+
+    const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+    expect(opts.env?.QDRANT_URL).toBe("http://qdrant:6333");
+  });
+
+  it("forwards embedding-url as EMBEDDING_BASE_URL env var", () => {
+    (tuneCommand.handler as (args: object) => void)({ "embedding-url": "http://ollama:11434", full: false });
+
+    const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+    expect(opts.env?.EMBEDDING_BASE_URL).toBe("http://ollama:11434");
+  });
+
+  it("forwards model as EMBEDDING_MODEL env var", () => {
+    (tuneCommand.handler as (args: object) => void)({ model: "nomic-embed-text", full: false });
+
+    const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+    expect(opts.env?.EMBEDDING_MODEL).toBe("nomic-embed-text");
+  });
+
+  it("forwards provider as EMBEDDING_PROVIDER env var", () => {
+    (tuneCommand.handler as (args: object) => void)({ provider: "onnx", full: false });
+
+    const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+    expect(opts.env?.EMBEDDING_PROVIDER).toBe("onnx");
+  });
+
+  it("forwards all optional env vars together", () => {
+    (tuneCommand.handler as (args: object) => void)({
+      path: "/project",
+      "qdrant-url": "http://qdrant:6333",
+      "embedding-url": "http://ollama:11434",
+      model: "jina",
+      provider: "ollama",
+      full: true,
+    });
+
+    const [, args, opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+    expect(args).toContain("--path");
+    expect(args).toContain("--full");
+    expect(opts.env?.QDRANT_URL).toBe("http://qdrant:6333");
+    expect(opts.env?.EMBEDDING_BASE_URL).toBe("http://ollama:11434");
+    expect(opts.env?.EMBEDDING_MODEL).toBe("jina");
+    expect(opts.env?.EMBEDDING_PROVIDER).toBe("ollama");
+  });
+
+  it("does not set env vars when optional args are undefined", () => {
+    (tuneCommand.handler as (args: object) => void)({ full: false });
+
+    const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+    expect(opts.env?.QDRANT_URL).toBeUndefined();
+    expect(opts.env?.EMBEDDING_BASE_URL).toBeUndefined();
+    expect(opts.env?.EMBEDDING_MODEL).toBeUndefined();
+    expect(opts.env?.EMBEDDING_PROVIDER).toBeUndefined();
   });
 });
