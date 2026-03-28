@@ -10,19 +10,28 @@
  * Provider-agnostic — works with any EnrichmentProvider implementation.
  */
 
+import { randomUUID } from "node:crypto";
 import { relative } from "node:path";
 
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type { FileSignalOverlay } from "../../../../contracts/types/provider.js";
-import type { ChunkLookupEntry, EnrichmentInfo, EnrichmentMetrics } from "../../../../types.js";
+import type { ChunkLookupEntry, EnrichmentMetrics } from "../../../../types.js";
 import { INDEXING_METADATA_ID } from "../../constants.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
-import type { EnrichmentProvider } from "./types.js";
+import type { EnrichmentRecovery } from "./recovery.js";
+import type { ChunkEnrichmentMarker, EnrichmentProvider, FileEnrichmentMarker, ProviderEnrichmentMarker } from "./types.js";
+
+/** Deep-partial update for a provider marker — allows partial file/chunk sub-objects. */
+type ProviderMarkerUpdate = {
+  runId?: string;
+  file?: Partial<FileEnrichmentMarker>;
+  chunk?: Partial<ChunkEnrichmentMarker>;
+};
 
 interface PendingBatch {
   collectionName: string;
@@ -130,6 +139,8 @@ export class EnrichmentCoordinator {
   private readonly states: Map<string, ProviderState>;
   private startTime = 0;
   private scopedPrefetch = false;
+  private runId = "";
+  private runStartedAt = "";
 
   // Delegates
   private readonly applier: EnrichmentApplier;
@@ -155,10 +166,46 @@ export class EnrichmentCoordinator {
   constructor(
     private readonly qdrant: QdrantManager,
     providers: EnrichmentProvider | EnrichmentProvider[],
+    private readonly recovery?: EnrichmentRecovery,
   ) {
     this.applier = new EnrichmentApplier(qdrant);
     const list = Array.isArray(providers) ? providers : [providers];
     this.states = new Map(list.map((p) => [p.key, createProviderState(p)]));
+  }
+
+  /**
+   * Run recovery + migration before the main enrichment pipeline.
+   * Migration is one-time and idempotent. Recovery re-enriches chunks missing enrichedAt.
+   * No-op when recovery was not provided at construction time.
+   */
+  async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
+    if (!this.recovery) return;
+
+    const enrichedAt = new Date().toISOString();
+
+    for (const state of this.states.values()) {
+      const provider = state.provider;
+
+      await this.recovery.recoverFileLevel(collectionName, absolutePath, provider, enrichedAt);
+      await this.recovery.recoverChunkLevel(collectionName, absolutePath, provider, enrichedAt);
+
+      // Update marker with post-recovery counts
+      const fileCount = await this.recovery.countUnenriched(collectionName, provider.key, "file");
+      const chunkCount = await this.recovery.countUnenriched(collectionName, provider.key, "chunk");
+
+      await this.updateEnrichmentMarker(collectionName, {
+        [provider.key]: {
+          file: {
+            status: fileCount === 0 ? "completed" : "failed",
+            unenrichedChunks: fileCount,
+          },
+          chunk: {
+            status: chunkCount === 0 ? "completed" : chunkCount > 0 ? "degraded" : "completed",
+            unenrichedChunks: chunkCount,
+          },
+        },
+      });
+    }
   }
 
   /**
@@ -169,13 +216,20 @@ export class EnrichmentCoordinator {
   prefetch(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore, changedPaths?: string[]): void {
     this.startTime = Date.now();
     this.scopedPrefetch = changedPaths !== undefined;
+    this.runId = randomUUID().slice(0, 8);
+    this.runStartedAt = new Date().toISOString();
 
-    // Set enrichment marker to "in_progress" (once for all providers)
+    // Write per-provider initial marker: file=in_progress, chunk=pending
     if (collectionName) {
-      this.updateEnrichmentMarker(collectionName, {
-        status: "in_progress",
-        startedAt: new Date().toISOString(),
-      }).catch(() => {});
+      const initialMarker: Record<string, ProviderMarkerUpdate> = {};
+      for (const state of this.states.values()) {
+        initialMarker[state.provider.key] = {
+          runId: this.runId,
+          file: { status: "in_progress", startedAt: this.runStartedAt, unenrichedChunks: 0 },
+          chunk: { status: "pending", unenrichedChunks: 0 },
+        };
+      }
+      this.updateEnrichmentMarker(collectionName, initialMarker).catch(() => {});
     }
 
     for (const state of this.states.values()) {
@@ -235,6 +289,25 @@ export class EnrichmentCoordinator {
             durationMs: state.prefetchDurationMs,
           });
           state.pendingBatches = [];
+
+          // Write failed marker for both levels
+          if (collectionName) {
+            const now = new Date().toISOString();
+            this.updateEnrichmentMarker(collectionName, {
+              [state.provider.key]: {
+                runId: this.runId,
+                file: {
+                  status: "failed",
+                  startedAt: this.runStartedAt,
+                  completedAt: now,
+                  durationMs: state.prefetchDurationMs,
+                  unenrichedChunks: 0,
+                },
+                chunk: { status: "failed", unenrichedChunks: 0 },
+              },
+            }).catch(() => {});
+          }
+
           return new Map();
         });
     }
@@ -258,6 +331,7 @@ export class EnrichmentCoordinator {
           pathBase,
           items,
           state.provider.fileSignalTransform,
+          this.runStartedAt,
         );
         state.inFlightWork.push(work);
         state.streamingApplies++;
@@ -303,26 +377,25 @@ export class EnrichmentCoordinator {
       const providerDone = state.provider
         .buildChunkSignals(root, effectiveChunkMap)
         .then(async (chunkMetadata) => {
-          const applied = await this.applier.applyChunkSignals(collectionName, state.provider.key, chunkMetadata);
+          const applied = await this.applier.applyChunkSignals(
+            collectionName,
+            state.provider.key,
+            chunkMetadata,
+            this.runStartedAt,
+          );
           state.chunkEnrichmentDurationMs = Date.now() - chunkStart;
 
-          // Write chunk enrichment status to Qdrant
-          try {
-            await this.qdrant.setPayload(
-              collectionName,
-              {
-                chunkEnrichment: {
-                  status: "completed",
-                  provider: state.provider.key,
-                  overlaysApplied: applied,
-                  durationMs: state.chunkEnrichmentDurationMs,
-                },
+          // Write per-provider chunk marker
+          await this.updateEnrichmentMarker(collectionName, {
+            [state.provider.key]: {
+              chunk: {
+                status: "completed",
+                completedAt: new Date().toISOString(),
+                durationMs: state.chunkEnrichmentDurationMs,
+                unenrichedChunks: 0,
               },
-              { points: [INDEXING_METADATA_ID] },
-            );
-          } catch {
-            // non-fatal
-          }
+            },
+          });
 
           pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_COMPLETE", {
             provider: state.provider.key,
@@ -338,6 +411,19 @@ export class EnrichmentCoordinator {
             provider: state.provider.key,
             error: extractErrorMessage(error),
           });
+
+          // Write per-provider chunk failure marker
+          this.updateEnrichmentMarker(collectionName, {
+            [state.provider.key]: {
+              chunk: {
+                status: "failed",
+                completedAt: new Date().toISOString(),
+                durationMs: state.chunkEnrichmentDurationMs,
+                unenrichedChunks: 0,
+              },
+            },
+          }).catch(() => {});
+
           return false;
         });
 
@@ -436,21 +522,25 @@ export class EnrichmentCoordinator {
     }
     metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
 
-    // 6. Update enrichment marker (once for all providers)
+    // 6. Update per-provider file-level markers with final status
     // Scoped prefetch (incremental reindex): only update status/timing, not coverage stats.
-    // Coverage stats (matchedFiles, missedFiles, gitLogFileCount) reflect only changed files
+    // Coverage stats (matchedFiles, missedFiles) reflect only changed files
     // and would overwrite the accurate full-index values from the previous run.
-    const markerUpdate: Partial<EnrichmentInfo> = {
-      status: "completed",
-      completedAt: new Date().toISOString(),
-      durationMs: metrics.totalDurationMs,
-    };
-    if (!this.scopedPrefetch) {
-      markerUpdate.matchedFiles = metrics.matchedFiles;
-      markerUpdate.missedFiles = metrics.missedFiles;
-      markerUpdate.gitLogFileCount = agg.totalFileMetadataCount;
+    for (const state of this.states.values()) {
+      const fileMarker: Partial<FileEnrichmentMarker> = {
+        status: state.prefetchFailed ? "failed" : "completed",
+        completedAt: new Date().toISOString(),
+        durationMs: state.prefetchDurationMs,
+        unenrichedChunks: 0,
+      };
+      if (!this.scopedPrefetch) {
+        fileMarker.matchedFiles = this.applier.matchedFiles;
+        fileMarker.missedFiles = this.applier.missedFiles;
+      }
+      await this.updateEnrichmentMarker(collectionName, {
+        [state.provider.key]: { file: fileMarker },
+      });
     }
-    await this.updateEnrichmentMarker(collectionName, markerUpdate);
 
     pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
 
@@ -459,21 +549,32 @@ export class EnrichmentCoordinator {
 
   /**
    * Update enrichment progress marker in Qdrant.
-   * Merges with existing marker to preserve fields not in the update.
+   * Deep-merges per-provider markers, preserving file/chunk fields not in the update.
    */
-  async updateEnrichmentMarker(collectionName: string, info: Partial<EnrichmentInfo>): Promise<void> {
+  async updateEnrichmentMarker(
+    collectionName: string,
+    markerMap: Record<string, ProviderMarkerUpdate>,
+  ): Promise<void> {
     try {
-      let enrichment: Record<string, unknown> = { ...info };
-
-      // Read existing marker and merge to preserve coverage stats from previous runs
       const existing = await this.readExistingMarker(collectionName);
-      if (existing) {
-        enrichment = { ...existing, ...enrichment };
+      const enrichment: Record<string, unknown> = existing ? { ...existing } : {};
+
+      for (const [providerKey, update] of Object.entries(markerMap)) {
+        const prev = (enrichment[providerKey] as Record<string, unknown>) ?? {};
+        const merged: Record<string, unknown> = { ...prev };
+
+        if (update.runId !== undefined) merged.runId = update.runId;
+
+        if (update.file) {
+          merged.file = { ...(prev.file as Record<string, unknown> | undefined), ...update.file };
+        }
+        if (update.chunk) {
+          merged.chunk = { ...(prev.chunk as Record<string, unknown> | undefined), ...update.chunk };
+        }
+
+        enrichment[providerKey] = merged;
       }
 
-      if (info.totalFiles && info.processedFiles !== undefined) {
-        enrichment.percentage = Math.round((info.processedFiles / info.totalFiles) * 100);
-      }
       await this.qdrant.setPayload(collectionName, { enrichment }, { points: [INDEXING_METADATA_ID] });
     } catch (error) {
       if (isDebug()) {
@@ -518,6 +619,7 @@ export class EnrichmentCoordinator {
         pathBase,
         batch.items,
         state.provider.fileSignalTransform,
+        this.runStartedAt,
       );
       state.inFlightWork.push(work);
       state.flushApplies++;

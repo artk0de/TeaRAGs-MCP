@@ -2,6 +2,8 @@
  * Type definitions for code vectorization module
  */
 
+import type { EnrichmentHealthMap } from "./domains/ingest/pipeline/enrichment/types.js";
+
 /** Config for indexing pipelines (BaseIndexingPipeline, IndexPipeline, ReindexPipeline) */
 export interface IngestCodeConfig {
   // Chunking
@@ -66,7 +68,7 @@ export interface IndexStats {
   status: "completed" | "partial" | "failed";
   errors?: string[];
   /** Git enrichment status */
-  enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
+  enrichmentStatus?: "completed" | "partial" | "skipped" | "background" | "failed";
   enrichmentDurationMs?: number;
   /** Detailed enrichment metrics (file/chunk signal breakdown) */
   enrichmentMetrics?: EnrichmentMetrics;
@@ -97,7 +99,7 @@ export interface ChangeStats {
   durationMs: number;
   status: "completed" | "partial" | "failed";
   /** Git enrichment status */
-  enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
+  enrichmentStatus?: "completed" | "partial" | "skipped" | "background" | "failed";
   enrichmentDurationMs?: number;
   /** Detailed enrichment metrics (file/chunk signal breakdown) */
   enrichmentMetrics?: EnrichmentMetrics;
@@ -106,33 +108,6 @@ export interface ChangeStats {
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing" | "unavailable";
-
-/** Status of background git enrichment */
-export type EnrichmentStatusValue = "pending" | "in_progress" | "completed" | "partial" | "failed";
-
-export interface EnrichmentInfo {
-  status: EnrichmentStatusValue;
-  totalFiles?: number;
-  processedFiles?: number;
-  percentage?: number;
-  startedAt?: string;
-  completedAt?: string;
-  durationMs?: number;
-  failedFiles?: number;
-  /** Files that matched in the git log map */
-  matchedFiles?: number;
-  /** Files with no entry in git log (not modified within GIT_LOG_MAX_AGE_MONTHS) */
-  missedFiles?: number;
-  /** Total files present in git log (contextualizes matchedFiles/missedFiles) */
-  gitLogFileCount?: number;
-}
-
-/** Status of background chunk-level git enrichment */
-export interface ChunkEnrichmentInfo {
-  status: "in_progress" | "completed" | "failed";
-  overlaysApplied?: number;
-  durationMs?: number;
-}
 
 /** Metrics from streaming git enrichment (parallel with embedding) */
 export interface EnrichmentMetrics {
@@ -176,10 +151,8 @@ export interface IndexStatus {
   embeddingModel?: string;
   /** Qdrant URL (useful for embedded Qdrant with dynamic ports) */
   qdrantUrl?: string;
-  /** Background git enrichment progress (file-level) */
-  enrichment?: EnrichmentInfo;
-  /** Background chunk-level git enrichment progress */
-  chunkEnrichment?: ChunkEnrichmentInfo;
+  /** Per-provider enrichment health (e.g. { git: { file: ..., chunk: ... } }) */
+  enrichment?: EnrichmentHealthMap;
   /** BM25 sparse vector version (from schema metadata) */
   sparseVersion?: number;
   /** Infrastructure health status (Qdrant + embedding provider) */

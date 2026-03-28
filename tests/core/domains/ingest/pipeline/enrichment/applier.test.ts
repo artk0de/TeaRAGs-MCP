@@ -230,4 +230,64 @@ describe("EnrichmentApplier", () => {
       expect(applied).toBe(0); // Failed, so not counted
     });
   });
+
+  describe("enrichedAt timestamps", () => {
+    it("should include git.file.enrichedAt in file signal batch payload", async () => {
+      const ts = "2026-03-27T00:00:00.000Z";
+
+      await applier.applyFileSignals(
+        "test-collection",
+        "git",
+        new Map([["src/index.ts", { commitCount: 5 }]]),
+        "/repo",
+        [
+          {
+            chunkId: "chunk-1",
+            chunk: { metadata: { filePath: "/repo/src/index.ts" }, endLine: 100 },
+          } as any,
+        ],
+        undefined,
+        ts,
+      );
+
+      const ops = mockQdrant.batchSetPayload.mock.calls[0][1];
+      expect(ops[0].payload).toMatchObject({ commitCount: 5, enrichedAt: ts });
+    });
+
+    it("should include git.file.enrichedAt even for missed files (intentional skip)", async () => {
+      const ts = "2026-03-27T00:00:00.000Z";
+
+      await applier.applyFileSignals(
+        "test-collection",
+        "git",
+        new Map(), // empty — no file metadata, all chunks are "missed"
+        "/repo",
+        [
+          {
+            chunkId: "chunk-1",
+            chunk: { metadata: { filePath: "/repo/src/missing.ts" }, endLine: 50 },
+          } as any,
+        ],
+        undefined,
+        ts,
+      );
+
+      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(1);
+      const ops = mockQdrant.batchSetPayload.mock.calls[0][1];
+      expect(ops[0].payload).toEqual({ enrichedAt: ts });
+      expect(ops[0].key).toBe("git.file");
+      expect(ops[0].points).toEqual(["chunk-1"]);
+    });
+
+    it("should include git.chunk.enrichedAt in chunk signal batch payload", async () => {
+      const ts = "2026-03-27T00:00:00.000Z";
+
+      const chunkMetadata = new Map([["src/index.ts", new Map([["chunk-1", { commitCount: 3 }]])]]);
+
+      await applier.applyChunkSignals("test-collection", "git", chunkMetadata, ts);
+
+      const ops = mockQdrant.batchSetPayload.mock.calls[0][1];
+      expect(ops[0].payload).toMatchObject({ commitCount: 3, enrichedAt: ts });
+    });
+  });
 });

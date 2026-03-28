@@ -214,33 +214,29 @@ export function registerCodeTools(
       if (status.status === "indexing") {
         let text = `Codebase at "${path}" is currently being indexed. ${status.chunksCount || 0} chunks processed so far.`;
         if (status.enrichment) {
-          text += `\nGit enrichment: ${status.enrichment.status}`;
-          if (status.enrichment.percentage !== undefined) {
-            text += ` (${status.enrichment.percentage}%)`;
+          for (const [provider, health] of Object.entries(status.enrichment)) {
+            text += `\n${provider} enrichment: file=${health.file.status}, chunk=${health.chunk.status}`;
           }
         }
         if (status.infraHealth) text += `\n\n${formatInfraHealth(status.infraHealth)}`;
         return formatMcpText(text);
       }
 
-      // Regroup enrichment into trajectory.git.{file, chunk} structure
-      const { enrichment, chunkEnrichment, infraHealth, ...rest } = status;
+      const { enrichment, infraHealth, ...rest } = status;
       const response: Record<string, unknown> = { ...rest };
-      if (enrichment || chunkEnrichment) {
-        response.trajectory = {
-          git: {
-            ...(enrichment ? { file: enrichment } : {}),
-            ...(chunkEnrichment ? { chunk: chunkEnrichment } : {}),
-          },
-        };
+      if (enrichment) {
+        response.enrichment = enrichment;
       }
 
       let text = JSON.stringify(response, null, 2);
 
-      // Add visible enrichment status line so agents notice it
-      if (status.enrichment?.status === "in_progress") {
-        const pct = status.enrichment.percentage ?? 0;
-        text += `\n\n⏳ Git enrichment is still running (${pct}% — ${status.enrichment.processedFiles ?? 0}/${status.enrichment.totalFiles ?? "?"} files). Git-based filters and rerank presets will not work until enrichment completes.`;
+      // Add visible enrichment status line for any in-progress providers
+      if (enrichment) {
+        for (const [provider, health] of Object.entries(enrichment)) {
+          if (health.file.status === "in_progress" || health.chunk.status === "in_progress") {
+            text += `\n\n[${provider} enrichment is still running. Git-based filters and rerank presets may not work until enrichment completes.]`;
+          }
+        }
       }
 
       if (infraHealth) text += `\n\n${formatInfraHealth(infraHealth)}`;
