@@ -1,4 +1,4 @@
-import { SparseVectorRebuild } from "./schema_migrations/sparse-vector-rebuild.js";
+import { SparseVectorRebuild } from "./sparse_migrations/sparse-v1-vector-rebuild.js";
 import type { Migration, MigrationRunner, SparseStore } from "./types.js";
 
 export class SparseMigrator implements MigrationRunner {
