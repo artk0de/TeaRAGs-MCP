@@ -1,4 +1,4 @@
-import type { Migration, StepResult, EnrichmentStore } from "../types.js";
+import type { EnrichmentStore, Migration, StepResult } from "../types.js";
 
 const BATCH_SIZE = 100;
 
@@ -19,7 +19,7 @@ export class SchemaV9EnrichedAtBackfill implements Migration {
 
     const points = await this.store.scrollAllChunks(this.collection);
     const now = new Date().toISOString();
-    const operations: { payload: Record<string, unknown>; points: (string | number)[] }[] = [];
+    const operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[] = [];
 
     for (const point of points) {
       const gitPayload = point.payload?.[this.providerKey] as Record<string, unknown> | undefined;
@@ -28,14 +28,16 @@ export class SchemaV9EnrichedAtBackfill implements Migration {
 
       if (fileSignals?.commitCount !== undefined) {
         operations.push({
-          payload: { [`${this.providerKey}.file.enrichedAt`]: now },
+          payload: { enrichedAt: now },
           points: [point.id],
+          key: `${this.providerKey}.file`,
         });
       }
       if (chunkSignals?.commitCount !== undefined) {
         operations.push({
-          payload: { [`${this.providerKey}.chunk.enrichedAt`]: now },
+          payload: { enrichedAt: now },
           points: [point.id],
+          key: `${this.providerKey}.chunk`,
         });
       }
     }

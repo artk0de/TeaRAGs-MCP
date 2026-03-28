@@ -20,29 +20,23 @@ export class EnrichmentStoreAdapter implements EnrichmentStore {
     return metadata?.payload?.[MIGRATION_KEY] === true;
   }
 
-  async scrollAllChunks(
-    collection: string,
-  ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
+  async scrollAllChunks(collection: string): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     const filter = { must_not: [{ has_id: [INDEXING_METADATA_ID] }] };
     const points = await this.qdrant.scrollFiltered(collection, filter, SCROLL_LIMIT);
     return points.map((p) => ({
       id: p.id,
-      payload: (p.payload ?? {}) as Record<string, unknown>,
+      payload: p.payload ?? {},
     }));
   }
 
   async batchSetPayload(
     collection: string,
-    operations: { payload: Record<string, unknown>; points: (string | number)[] }[],
+    operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[],
   ): Promise<void> {
     await this.qdrant.batchSetPayload(collection, operations);
   }
 
   async markMigrated(collection: string): Promise<void> {
-    await this.qdrant.setPayload(
-      collection,
-      { [MIGRATION_KEY]: true },
-      { points: [INDEXING_METADATA_ID] },
-    );
+    await this.qdrant.setPayload(collection, { [MIGRATION_KEY]: true }, { points: [INDEXING_METADATA_ID] });
   }
 }

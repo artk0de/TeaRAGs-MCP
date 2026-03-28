@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mapMarkerToHealth } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/health-mapper.js";
 import type {
@@ -38,12 +38,15 @@ describe("mapMarkerToHealth", () => {
     };
 
     const result = mapMarkerToHealth(map);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       git: {
         file: { status: "healthy" },
         chunk: { status: "healthy" },
       },
     });
+    // No unenrichedChunks when healthy
+    expect(result!.git.file.unenrichedChunks).toBeUndefined();
+    expect(result!.git.chunk.unenrichedChunks).toBeUndefined();
   });
 
   it("maps failed file to failed status with message", () => {
@@ -55,10 +58,10 @@ describe("mapMarkerToHealth", () => {
     };
 
     const result = mapMarkerToHealth(map);
-    expect(result!.git.file).toEqual({
+    expect(result!.git.file).toMatchObject({
       status: "failed",
       unenrichedChunks: 5,
-      message: "Git file enrichment failed. Will recover on next reindex.",
+      message: "Git file enrichment failed. All file-level signals missing. Will recover on next reindex.",
     });
   });
 
@@ -71,7 +74,7 @@ describe("mapMarkerToHealth", () => {
     };
 
     const result = mapMarkerToHealth(map);
-    expect(result!.git.chunk).toEqual({
+    expect(result!.git.chunk).toMatchObject({
       status: "degraded",
       unenrichedChunks: 12,
       message: "12 chunks missing chunk-level signals. Will recover on next reindex.",
@@ -88,7 +91,7 @@ describe("mapMarkerToHealth", () => {
     };
 
     const result = mapMarkerToHealth(map);
-    expect(result!.git.file).toEqual({
+    expect(result!.git.file).toMatchObject({
       status: "in_progress",
       message: "Enrichment in progress...",
     });
@@ -104,7 +107,7 @@ describe("mapMarkerToHealth", () => {
     };
 
     const result = mapMarkerToHealth(map);
-    expect(result!.git.chunk).toEqual({
+    expect(result!.git.chunk).toMatchObject({
       status: "in_progress",
       message: "Enrichment appears stalled — no progress in 2 minutes. May need reindex.",
     });
@@ -119,7 +122,7 @@ describe("mapMarkerToHealth", () => {
     };
 
     const result = mapMarkerToHealth(map);
-    expect(result!.git.file).toEqual({
+    expect(result!.git.file).toMatchObject({
       status: "in_progress",
       message: "Enrichment in progress...",
     });
@@ -134,12 +137,15 @@ describe("mapMarkerToHealth", () => {
     };
 
     const result = mapMarkerToHealth(map);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       git: {
         file: { status: "healthy" },
         chunk: { status: "healthy" },
       },
     });
+    // No unenrichedChunks when healthy
+    expect(result!.git.file.unenrichedChunks).toBeUndefined();
+    expect(result!.git.chunk.unenrichedChunks).toBeUndefined();
   });
 
   it("handles multiple providers", () => {
@@ -158,5 +164,70 @@ describe("mapMarkerToHealth", () => {
     expect(result!.git.file.status).toBe("healthy");
     expect(result!.metrics.file.status).toBe("failed");
     expect(result!.metrics.chunk.status).toBe("degraded");
+  });
+
+  it("includes timing metadata fields (startedAt, completedAt, durationMs) in in_progress health output", () => {
+    const map: EnrichmentMarkerMap = {
+      git: makeMarker({
+        file: {
+          status: "in_progress",
+          unenrichedChunks: 0,
+          startedAt: "2026-01-01T00:00:00Z",
+          completedAt: "2026-01-01T00:01:00Z",
+          durationMs: 60000,
+        },
+        chunk: { status: "pending", unenrichedChunks: 0 },
+      }),
+    };
+
+    const result = mapMarkerToHealth(map);
+    expect(result!.git.file.startedAt).toBe("2026-01-01T00:00:00Z");
+    expect(result!.git.file.completedAt).toBe("2026-01-01T00:01:00Z");
+    expect(result!.git.file.durationMs).toBe(60000);
+  });
+
+  it("includes matchedFiles and missedFiles in completed health output", () => {
+    const map: EnrichmentMarkerMap = {
+      git: makeMarker({
+        file: {
+          status: "completed",
+          unenrichedChunks: 0,
+          matchedFiles: 42,
+          missedFiles: 3,
+        },
+        chunk: { status: "completed", unenrichedChunks: 0 },
+      }),
+    };
+
+    const result = mapMarkerToHealth(map);
+    expect(result!.git.file.matchedFiles).toBe(42);
+    expect(result!.git.file.missedFiles).toBe(3);
+  });
+
+  it("maps failed chunk to failed status with chunk-specific message", () => {
+    const map: EnrichmentMarkerMap = {
+      git: makeMarker({
+        file: { status: "completed", unenrichedChunks: 0 },
+        chunk: { status: "failed", unenrichedChunks: 0 },
+      }),
+    };
+
+    const result = mapMarkerToHealth(map);
+    expect(result!.git.chunk).toMatchObject({
+      status: "failed",
+      message: "Chunk enrichment failed. Will recover on next reindex.",
+    });
+  });
+
+  it("includes durationMs=0 in output when explicitly set to zero", () => {
+    const map: EnrichmentMarkerMap = {
+      git: makeMarker({
+        file: { status: "completed", unenrichedChunks: 0, durationMs: 0 },
+        chunk: { status: "completed", unenrichedChunks: 0 },
+      }),
+    };
+
+    const result = mapMarkerToHealth(map);
+    expect(result!.git.file.durationMs).toBe(0);
   });
 });

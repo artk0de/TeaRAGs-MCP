@@ -285,6 +285,86 @@ describe("IndexStoreAdapter", () => {
   });
 });
 
+// ── EnrichmentStoreAdapter ────────────────────────────────────────────────────
+
+describe("EnrichmentStoreAdapter", () => {
+  // Dynamically import to avoid issues with module resolution
+  async function makeAdapter(overrides: Record<string, unknown> = {}) {
+    const { EnrichmentStoreAdapter } =
+      await import("../../../../src/core/infra/migration/adapters/enrichment-store-adapter.js");
+    const qdrant = {
+      getPoint: vi.fn().mockResolvedValue(null),
+      scrollFiltered: vi.fn().mockResolvedValue([]),
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    };
+    return { adapter: new EnrichmentStoreAdapter(qdrant as any), qdrant };
+  }
+
+  describe("isMigrated", () => {
+    it("returns false when no metadata point exists", async () => {
+      const { adapter } = await makeAdapter();
+      expect(await adapter.isMigrated("col")).toBe(false);
+    });
+
+    it("returns true when enrichmentMigrationV1 flag is set", async () => {
+      const { adapter } = await makeAdapter({
+        getPoint: vi.fn().mockResolvedValue({ payload: { enrichmentMigrationV1: true } }),
+      });
+      expect(await adapter.isMigrated("col")).toBe(true);
+    });
+
+    it("returns false when flag is false", async () => {
+      const { adapter } = await makeAdapter({
+        getPoint: vi.fn().mockResolvedValue({ payload: { enrichmentMigrationV1: false } }),
+      });
+      expect(await adapter.isMigrated("col")).toBe(false);
+    });
+  });
+
+  describe("scrollAllChunks", () => {
+    it("returns chunks excluding metadata point", async () => {
+      const { adapter } = await makeAdapter({
+        scrollFiltered: vi.fn().mockResolvedValue([
+          { id: "chunk-1", payload: { content: "hello" } },
+          { id: "chunk-2", payload: null },
+        ]),
+      });
+
+      const result = await adapter.scrollAllChunks("col");
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({ id: "chunk-1", payload: { content: "hello" } });
+      expect(result[1]).toEqual({ id: "chunk-2", payload: {} }); // null payload defaults to {}
+    });
+  });
+
+  describe("batchSetPayload", () => {
+    it("delegates to qdrant.batchSetPayload", async () => {
+      const { adapter, qdrant } = await makeAdapter();
+      const operations = [{ payload: { enrichedAt: "2026-01-01" }, points: ["chunk-1"], key: "git.file" }];
+
+      await adapter.batchSetPayload("col", operations);
+
+      expect(qdrant.batchSetPayload).toHaveBeenCalledWith("col", operations);
+    });
+  });
+
+  describe("markMigrated", () => {
+    it("sets enrichmentMigrationV1=true on the metadata point", async () => {
+      const { adapter, qdrant } = await makeAdapter();
+
+      await adapter.markMigrated("col");
+
+      expect(qdrant.setPayload).toHaveBeenCalledWith(
+        "col",
+        { enrichmentMigrationV1: true },
+        expect.objectContaining({ points: expect.any(Array) }),
+      );
+    });
+  });
+});
+
 // ── SparseStoreAdapter ────────────────────────────────────────────────────────
 
 describe("SparseStoreAdapter", () => {

@@ -109,4 +109,21 @@ describe("ExploreFacade.findSimilar()", () => {
 
     expect(deps.embeddings.embedBatch).toHaveBeenCalledWith(["function foo() {}"]);
   });
+
+  it("recognizes negativeCode with non-empty strings as valid negative input", async () => {
+    const deps = createMockDeps();
+    (deps.embeddings.embedBatch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { embedding: [0.1, 0.2, 0.3], dimensions: 3 },
+    ]);
+    const facade = new ExploreFacade(deps);
+
+    // negativeCode with non-empty content + no positives should be valid for best_score
+    const response = await facade.findSimilar({
+      collection: "test_col",
+      negativeCode: ["bad pattern", "  ", "another bad"], // includes whitespace-only which is filtered out
+      strategy: "best_score",
+    });
+
+    expect(response.results).toBeDefined();
+  });
 });

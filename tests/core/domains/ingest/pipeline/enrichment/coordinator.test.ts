@@ -712,6 +712,189 @@ describe("EnrichmentCoordinator — onChunkEnrichmentComplete callback", () => {
   });
 });
 
+describe("EnrichmentCoordinator — fire-and-forget marker error paths", () => {
+  it("silently swallows setPayload error in initial prefetch marker write", async () => {
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockRejectedValue(new Error("qdrant down")),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const mockProvider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    // Should not throw even when initial marker write fails
+    expect(() => {
+      coordinator.prefetch("/repo", "test-col");
+    }).not.toThrow();
+    await new Promise((r) => setTimeout(r, 20));
+    // setPayload was attempted (and failed silently)
+    expect(mockQdrant.setPayload).toHaveBeenCalled();
+  });
+
+  it("silently swallows setPayload error in prefetch failure marker write", async () => {
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockRejectedValue(new Error("qdrant down")),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const mockProvider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockRejectedValue(new Error("git fail")),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 30));
+    // Both initial and failure marker writes attempted — both fail silently
+    expect(mockQdrant.setPayload).toHaveBeenCalled();
+  });
+
+  it("silently swallows setPayload error in chunk enrichment failure marker write", async () => {
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockRejectedValue(new Error("qdrant down")),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const mockProvider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockRejectedValue(new Error("chunk fail")),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 10));
+
+    coordinator.startChunkEnrichment(
+      "test-col",
+      "/repo",
+      new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]),
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    // Should not throw, setPayload was attempted
+    expect(mockQdrant.setPayload).toHaveBeenCalled();
+  });
+});
+
+describe("EnrichmentCoordinator — scoped prefetch (incremental reindex)", () => {
+  it("skips matchedFiles/missedFiles in awaitCompletion marker when changedPaths provided", async () => {
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const mockProvider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    // Pass changedPaths to trigger scopedPrefetch=true
+    coordinator.prefetch("/repo", "test-col", undefined, ["src/a.ts"]);
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    // Find the final file marker written by awaitCompletion
+    const { calls } = mockQdrant.setPayload.mock;
+    const lastCall = calls[calls.length - 1];
+    const marker = lastCall[1].enrichment;
+
+    // With scoped prefetch, matchedFiles/missedFiles should NOT be set
+    expect(marker.git.file.matchedFiles).toBeUndefined();
+    expect(marker.git.file.missedFiles).toBeUndefined();
+    // But status and timing should still be present
+    expect(marker.git.file.status).toBe("completed");
+    expect(marker.git.file.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("includes matchedFiles/missedFiles in awaitCompletion marker for full index (no changedPaths)", async () => {
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const mockProvider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    // No changedPaths → scopedPrefetch=false → should include coverage stats
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    const { calls } = mockQdrant.setPayload.mock;
+    const lastCall = calls[calls.length - 1];
+    const marker = lastCall[1].enrichment;
+
+    // Full index: matchedFiles and missedFiles MUST be present
+    expect(marker.git.file.matchedFiles).toBeDefined();
+    expect(marker.git.file.missedFiles).toBeDefined();
+  });
+});
+
+describe("EnrichmentCoordinator — backfill with fileSignalTransform", () => {
+  it("applies fileSignalTransform during backfill when provider has one", async () => {
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+
+    const transform = vi.fn((data: Record<string, unknown>, maxEndLine: number) => ({
+      transformed: true,
+      maxEndLine,
+      ...data,
+    }));
+
+    const mockProvider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi
+        .fn()
+        .mockResolvedValueOnce(new Map()) // prefetch: all missed
+        .mockResolvedValueOnce(new Map([["src/foo.ts", { rawData: 1 }]])), // backfill
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      fileSignalTransform: transform,
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/foo.ts" }, endLine: 25 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    // fileSignalTransform should have been called during backfill
+    expect(transform).toHaveBeenCalledWith({ rawData: 1 }, 25);
+
+    // The backfill batchSetPayload call should contain the transformed data
+    const backfillCalls = mockQdrant.batchSetPayload.mock.calls.filter((call: any[]) =>
+      call[1]?.some?.((op: any) => op?.payload?.git?.file?.transformed === true),
+    );
+    expect(backfillCalls.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
   it("returns aggregated metrics across multiple providers", async () => {
     const mockQdrant: any = {
@@ -818,7 +1001,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
     await coordinator.awaitCompletion("test-col");
 
     // Find the awaitCompletion marker write (last setPayload call)
-    const calls = mockQdrant.setPayload.mock.calls;
+    const { calls } = mockQdrant.setPayload.mock;
     const lastCall = calls[calls.length - 1];
     const marker = lastCall[1].enrichment;
 
@@ -836,7 +1019,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     // Find the failure marker write (after initial marker)
-    const calls = mockQdrant.setPayload.mock.calls;
+    const { calls } = mockQdrant.setPayload.mock;
     // Should have at least 2 calls: initial marker + failure marker
     expect(calls.length).toBeGreaterThanOrEqual(2);
 
@@ -885,7 +1068,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
     await new Promise((r) => setTimeout(r, 50));
 
     // Find the chunk completion marker
-    const calls = mockQdrant.setPayload.mock.calls;
+    const { calls } = mockQdrant.setPayload.mock;
     const chunkMarkerCall = calls.find((call: any[]) => {
       const enrichment = call[1]?.enrichment;
       return enrichment?.git?.chunk?.status === "completed";
@@ -909,7 +1092,7 @@ describe("EnrichmentCoordinator — per-level enrichment marker", () => {
     await new Promise((r) => setTimeout(r, 50));
 
     // Find the chunk failure marker
-    const calls = mockQdrant.setPayload.mock.calls;
+    const { calls } = mockQdrant.setPayload.mock;
     const chunkFailCall = calls.find((call: any[]) => {
       const enrichment = call[1]?.enrichment;
       return enrichment?.git?.chunk?.status === "failed";
@@ -949,11 +1132,7 @@ describe("EnrichmentCoordinator — recovery integration", () => {
       countUnenriched: vi.fn().mockResolvedValue(0),
     };
 
-    const coordWithRecovery = new EnrichmentCoordinator(
-      mockQdrant,
-      mockProvider,
-      mockRecovery as any,
-    );
+    const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, mockRecovery as any);
 
     await coordWithRecovery.runRecovery("col", "/root");
 
@@ -976,11 +1155,7 @@ describe("EnrichmentCoordinator — recovery integration", () => {
       countUnenriched: vi.fn().mockResolvedValue(0),
     };
 
-    const coordWithRecovery = new EnrichmentCoordinator(
-      mockQdrant,
-      mockProvider,
-      mockRecovery as any,
-    );
+    const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, mockRecovery as any);
 
     await coordWithRecovery.runRecovery("col", "/root");
 
@@ -999,16 +1174,13 @@ describe("EnrichmentCoordinator — recovery integration", () => {
     const mockRecovery = {
       recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
       recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 3 }),
-      countUnenriched: vi.fn()
-        .mockResolvedValueOnce(0)  // file count = 0
+      countUnenriched: vi
+        .fn()
+        .mockResolvedValueOnce(0) // file count = 0
         .mockResolvedValueOnce(3), // chunk count = 3
     };
 
-    const coordWithRecovery = new EnrichmentCoordinator(
-      mockQdrant,
-      mockProvider,
-      mockRecovery as any,
-    );
+    const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, mockRecovery as any);
 
     await coordWithRecovery.runRecovery("col", "/root");
 

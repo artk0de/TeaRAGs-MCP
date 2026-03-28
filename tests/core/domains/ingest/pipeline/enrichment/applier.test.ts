@@ -106,6 +106,22 @@ describe("EnrichmentApplier", () => {
       expect(applier.missedFileChunks.get("src/missing.ts")).toEqual([{ chunkId: "chunk-1", endLine: 50 }]);
     });
 
+    it("catches batchSetPayload error in applyFileSignals without throwing", async () => {
+      mockQdrant.batchSetPayload.mockRejectedValueOnce(new Error("qdrant unavailable"));
+
+      // Should not throw even when Qdrant fails
+      await expect(
+        applier.applyFileSignals("test-collection", "git", new Map([["src/index.ts", { commitCount: 5 }]]), "/repo", [
+          {
+            chunkId: "chunk-1",
+            chunk: { metadata: { filePath: "/repo/src/index.ts" }, endLine: 100 },
+          } as any,
+        ]),
+      ).resolves.toBeUndefined();
+
+      expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(1);
+    });
+
     it("groups chunks by file and batches Qdrant writes", async () => {
       await applier.applyFileSignals("test-collection", "git", new Map([["src/a.ts", { x: 1 }]]), "/repo", [
         { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,

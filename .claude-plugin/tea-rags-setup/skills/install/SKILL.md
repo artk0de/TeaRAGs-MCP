@@ -171,13 +171,14 @@ Run: `$SCRIPTS/setup-qdrant.sh <mode> <platform>`
 
 ## Step 6: Tune Performance
 
-Run: `$SCRIPTS/tune.sh <embeddingProvider>`
+Invoke the `/tea-rags-setup:tune` skill. It will:
 
-**Interpret result:**
+1. Run `npx tea-rags tune` with the provider from step 4
+2. Parse results and save to progress file
+3. Show summary to the user
 
-- `completed` → save tuned values to progress
-- `skipped` (ONNX beta) → save default values, inform user
-- `error` → save defaults, warn user, continue (non-critical)
+The tune skill reads `embeddingProvider` and `qdrantMode` from the progress file
+automatically. If tune fails — non-critical, continue with defaults.
 
 ## Step 7: Analyze Project (git recommendations)
 
