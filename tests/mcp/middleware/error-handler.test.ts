@@ -8,6 +8,7 @@ import type { ErrorCode } from "../../../src/core/contracts/errors.js";
 import { TeaRagsError, UnknownError } from "../../../src/core/infra/errors.js";
 import type { McpToolResult } from "../../../src/mcp/format.js";
 import {
+  createRegisterTool,
   errorHandlerMiddleware,
   registerToolSafe,
   type HealthProbes,
@@ -223,5 +224,33 @@ describe("registerToolSafe", () => {
     expect(mockRegisterTool.mock.calls[0][0]).toBe("test_tool");
     // Handler should be wrapped (not the original)
     expect(mockRegisterTool.mock.calls[0][2]).not.toBe(handler);
+  });
+});
+
+describe("createRegisterTool", () => {
+  it("returns a function that registers a tool with error handling", () => {
+    const mockRegisterTool = vi.fn();
+    const server = { registerTool: mockRegisterTool } as any;
+    const handler = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
+
+    const registerTool = createRegisterTool();
+    registerTool(server, "my_tool", { description: "my tool" } as any, handler);
+
+    expect(mockRegisterTool).toHaveBeenCalledTimes(1);
+    expect(mockRegisterTool.mock.calls[0][0]).toBe("my_tool");
+    // Handler should be wrapped
+    expect(mockRegisterTool.mock.calls[0][2]).not.toBe(handler);
+  });
+
+  it("binds health probes to the returned register function", () => {
+    const mockRegisterTool = vi.fn();
+    const server = { registerTool: mockRegisterTool } as any;
+    const handler = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
+    const healthProbes: HealthProbes = { isQdrantHealthy: vi.fn().mockReturnValue(true) };
+
+    const registerTool = createRegisterTool(healthProbes);
+    registerTool(server, "health_tool", { description: "health tool" } as any, handler);
+
+    expect(mockRegisterTool).toHaveBeenCalledTimes(1);
   });
 });

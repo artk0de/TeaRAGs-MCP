@@ -74,13 +74,11 @@ export interface EnrichmentStore {
   /** Check if migration already applied. */
   isMigrated: (collection: string) => Promise<boolean>;
   /** Scroll all non-metadata chunks with full payload. */
-  scrollAllChunks: (
-    collection: string,
-  ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
+  scrollAllChunks: (collection: string) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
   /** Batch set payload on multiple points. */
   batchSetPayload: (
     collection: string,
-    operations: { payload: Record<string, unknown>; points: (string | number)[] }[],
+    operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[],
   ) => Promise<void>;
   /** Mark migration as complete. */
   markMigrated: (collection: string) => Promise<void>;

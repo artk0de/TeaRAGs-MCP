@@ -40,6 +40,11 @@ export interface EnrichmentLevelHealth {
   status: "healthy" | "in_progress" | "degraded" | "failed";
   unenrichedChunks?: number;
   message?: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  matchedFiles?: number;
+  missedFiles?: number;
 }
 
 /** API-facing health per provider */

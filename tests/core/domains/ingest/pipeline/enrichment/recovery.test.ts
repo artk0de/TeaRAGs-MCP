@@ -42,6 +42,52 @@ describe("EnrichmentRecovery", () => {
   });
 
   describe("recoverFileLevel", () => {
+    it("builds filePath with trailing slash on root correctly", async () => {
+      mockQdrant.scrollFiltered.mockResolvedValue([
+        { id: "chunk-1", payload: { relativePath: "src/foo.ts", startLine: 1, endLine: 10 } },
+      ]);
+      // resolveRoot returns path with trailing slash
+      mockProvider.resolveRoot.mockReturnValue("/repo/");
+
+      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+
+      // applyFileSignals should be called with items containing filePath=/repo/src/foo.ts
+      const applierCall = mockApplier.applyFileSignals.mock.calls[0];
+      const items = applierCall[4];
+      expect(items[0].chunk.metadata.filePath).toBe("/repo/src/foo.ts");
+    });
+
+    it("builds filePath with slash joining when root has no trailing slash", async () => {
+      mockQdrant.scrollFiltered.mockResolvedValue([
+        { id: "chunk-1", payload: { relativePath: "src/foo.ts", startLine: 1, endLine: 10 } },
+      ]);
+      // resolveRoot returns path without trailing slash
+      mockProvider.resolveRoot.mockReturnValue("/repo");
+
+      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+
+      const applierCall = mockApplier.applyFileSignals.mock.calls[0];
+      const items = applierCall[4];
+      expect(items[0].chunk.metadata.filePath).toBe("/repo/src/foo.ts");
+    });
+
+    it("handles points missing relativePath (skips them)", async () => {
+      mockQdrant.scrollFiltered.mockResolvedValue([
+        { id: "chunk-1", payload: { relativePath: "src/foo.ts" } },
+        { id: "chunk-no-path", payload: {} }, // no relativePath — should be skipped
+      ]);
+
+      const result = await recovery.recoverFileLevel(
+        "test-collection",
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
+
+      // Only one valid chunk processed
+      expect(result.recoveredChunks).toBe(1);
+    });
+
     it("scrolls for chunks missing file enrichedAt, calls buildFileSignals with unique paths", async () => {
       mockQdrant.scrollFiltered.mockResolvedValue([
         { id: "chunk-1", payload: { relativePath: "src/foo.ts", startLine: 1, endLine: 10 } },
@@ -122,10 +168,7 @@ describe("EnrichmentRecovery", () => {
         "2026-01-01T00:00:00Z",
       );
 
-      expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith(
-        "/repo",
-        expect.any(Map),
-      );
+      expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith("/repo", expect.any(Map));
 
       const chunkMapArg: Map<string, { chunkId: string; startLine: number; endLine: number }[]> =
         mockProvider.buildChunkSignals.mock.calls[0][1];
@@ -167,6 +210,63 @@ describe("EnrichmentRecovery", () => {
       expect(result.remainingUnenriched).toBe(1);
       expect(result.recoveredChunks).toBe(0);
     });
+
+    it("groups multiple chunks from the same file into a single chunkMap entry", async () => {
+      mockQdrant.scrollFiltered.mockResolvedValue([
+        { id: "chunk-1", payload: { relativePath: "src/foo.ts", startLine: 1, endLine: 10 } },
+        { id: "chunk-2", payload: { relativePath: "src/foo.ts", startLine: 11, endLine: 20 } },
+        { id: "chunk-3", payload: { relativePath: "src/foo.ts", startLine: 21, endLine: 30 } },
+      ]);
+      mockApplier.applyChunkSignals.mockResolvedValue(3);
+
+      const result = await recovery.recoverChunkLevel(
+        "test-collection",
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
+
+      const chunkMapArg: Map<string, unknown[]> = mockProvider.buildChunkSignals.mock.calls[0][1];
+      // All 3 chunks are in one file → chunkMap has 1 entry with 3 chunks
+      expect(chunkMapArg.size).toBe(1);
+      expect(chunkMapArg.get("src/foo.ts")).toHaveLength(3);
+
+      expect(result.recoveredFiles).toBe(1);
+      expect(result.recoveredChunks).toBe(3);
+    });
+
+    it("tracks remainingUnenriched after successful recovery", async () => {
+      mockQdrant.scrollFiltered
+        .mockResolvedValueOnce([{ id: "chunk-1", payload: { relativePath: "src/foo.ts", startLine: 1, endLine: 10 } }])
+        // Second scroll (countUnenriched) returns empty → all recovered
+        .mockResolvedValueOnce([]);
+
+      mockApplier.applyChunkSignals.mockResolvedValue(1);
+
+      const result = await recovery.recoverChunkLevel(
+        "test-collection",
+        "/repo",
+        mockProvider as any,
+        "2026-01-01T00:00:00Z",
+      );
+
+      expect(result.remainingUnenriched).toBe(0);
+    });
+
+    it("handles chunks with undefined startLine/endLine (defaults to 0)", async () => {
+      mockQdrant.scrollFiltered.mockResolvedValue([
+        { id: "chunk-1", payload: { relativePath: "src/foo.ts" } }, // no startLine/endLine
+      ]);
+      mockApplier.applyChunkSignals.mockResolvedValue(1);
+
+      await recovery.recoverChunkLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+
+      const chunkMapArg: Map<string, { chunkId: string; startLine: number; endLine: number }[]> =
+        mockProvider.buildChunkSignals.mock.calls[0][1];
+      const chunks = chunkMapArg.get("src/foo.ts");
+      expect(chunks?.[0].startLine).toBe(0);
+      expect(chunks?.[0].endLine).toBe(0);
+    });
   });
 
   describe("countUnenriched", () => {
@@ -183,9 +283,7 @@ describe("EnrichmentRecovery", () => {
     });
 
     it("returns count of unenriched chunk-level chunks", async () => {
-      mockQdrant.scrollFiltered.mockResolvedValue([
-        { id: "chunk-1", payload: { relativePath: "src/foo.ts" } },
-      ]);
+      mockQdrant.scrollFiltered.mockResolvedValue([{ id: "chunk-1", payload: { relativePath: "src/foo.ts" } }]);
 
       const count = await recovery.countUnenriched("test-collection", "git", "chunk");
 

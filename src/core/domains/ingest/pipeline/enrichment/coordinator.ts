@@ -24,7 +24,7 @@ import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
 import type { EnrichmentRecovery } from "./recovery.js";
-import type { ChunkEnrichmentMarker, EnrichmentProvider, FileEnrichmentMarker, ProviderEnrichmentMarker } from "./types.js";
+import type { ChunkEnrichmentMarker, EnrichmentProvider, FileEnrichmentMarker } from "./types.js";
 
 /** Deep-partial update for a provider marker — allows partial file/chunk sub-objects. */
 type ProviderMarkerUpdate = {
@@ -184,7 +184,7 @@ export class EnrichmentCoordinator {
     const enrichedAt = new Date().toISOString();
 
     for (const state of this.states.values()) {
-      const provider = state.provider;
+      const { provider } = state;
 
       await this.recovery.recoverFileLevel(collectionName, absolutePath, provider, enrichedAt);
       await this.recovery.recoverChunkLevel(collectionName, absolutePath, provider, enrichedAt);
@@ -551,10 +551,7 @@ export class EnrichmentCoordinator {
    * Update enrichment progress marker in Qdrant.
    * Deep-merges per-provider markers, preserving file/chunk fields not in the update.
    */
-  async updateEnrichmentMarker(
-    collectionName: string,
-    markerMap: Record<string, ProviderMarkerUpdate>,
-  ): Promise<void> {
+  async updateEnrichmentMarker(collectionName: string, markerMap: Record<string, ProviderMarkerUpdate>): Promise<void> {
     try {
       const existing = await this.readExistingMarker(collectionName);
       const enrichment: Record<string, unknown> = existing ? { ...existing } : {};
@@ -661,7 +658,10 @@ export class EnrichmentCoordinator {
       const finalData = state.provider.fileSignalTransform
         ? state.provider.fileSignalTransform(data, maxEndLine)
         : data;
-      const payload = { [state.provider.key]: { file: finalData } };
+      const fileData = this.runStartedAt
+        ? { ...(finalData as Record<string, unknown>), enrichedAt: this.runStartedAt }
+        : (finalData as Record<string, unknown>);
+      const payload = { [state.provider.key]: { file: fileData } };
 
       for (const chunk of chunks) {
         operations.push({ payload, points: [chunk.chunkId] });

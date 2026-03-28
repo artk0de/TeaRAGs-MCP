@@ -28,10 +28,19 @@ function mapLevelHealth(level: EnrichmentLevelMarker | undefined, levelName: "fi
     return { status: "healthy" };
   }
 
+  const base: Record<string, unknown> = {};
+  if (level.unenrichedChunks) base.unenrichedChunks = level.unenrichedChunks;
+  if (level.startedAt) base.startedAt = level.startedAt;
+  if (level.completedAt) base.completedAt = level.completedAt;
+  if (level.durationMs !== undefined) base.durationMs = level.durationMs;
+  if (level.matchedFiles !== undefined) base.matchedFiles = level.matchedFiles;
+  if (level.missedFiles !== undefined) base.missedFiles = level.missedFiles;
+
   if (level.status === "in_progress") {
     const isStale =
       level.lastProgressAt !== undefined && Date.now() - Date.parse(level.lastProgressAt) > STALE_THRESHOLD_MS;
     return {
+      ...base,
       status: "in_progress",
       message: isStale
         ? "Enrichment appears stalled — no progress in 2 minutes. May need reindex."
@@ -40,21 +49,24 @@ function mapLevelHealth(level: EnrichmentLevelMarker | undefined, levelName: "fi
   }
 
   if (level.status === "completed") {
-    return { status: "healthy" };
+    return { ...base, status: "healthy" };
   }
 
   if (level.status === "degraded") {
     return {
+      ...base,
       status: "degraded",
-      unenrichedChunks: level.unenrichedChunks,
       message: `${level.unenrichedChunks} chunks missing ${levelName}-level signals. Will recover on next reindex.`,
     };
   }
 
   // failed
   return {
+    ...base,
     status: "failed",
-    unenrichedChunks: level.unenrichedChunks,
-    message: `Git ${levelName} enrichment failed. Will recover on next reindex.`,
+    message:
+      levelName === "file"
+        ? "Git file enrichment failed. All file-level signals missing. Will recover on next reindex."
+        : "Chunk enrichment failed. Will recover on next reindex.",
   };
 }

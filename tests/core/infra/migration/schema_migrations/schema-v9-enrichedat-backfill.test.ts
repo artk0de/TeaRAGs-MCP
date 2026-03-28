@@ -51,8 +51,9 @@ describe("SchemaV9EnrichedAtBackfill", () => {
     const calls = mockStore.batchSetPayload.mock.calls[0][1] as {
       payload: Record<string, unknown>;
       points: string[];
+      key?: string;
     }[];
-    const fileOps = calls.filter((op) => "git.file.enrichedAt" in op.payload);
+    const fileOps = calls.filter((op) => op.key === "git.file" && "enrichedAt" in op.payload);
     expect(fileOps.length).toBeGreaterThan(0);
     const allPoints = fileOps.flatMap((op) => op.points);
     expect(allPoints).toContain("chunk-1");
@@ -78,8 +79,9 @@ describe("SchemaV9EnrichedAtBackfill", () => {
     const calls = mockStore.batchSetPayload.mock.calls[0][1] as {
       payload: Record<string, unknown>;
       points: string[];
+      key?: string;
     }[];
-    const chunkOps = calls.filter((op) => "git.chunk.enrichedAt" in op.payload);
+    const chunkOps = calls.filter((op) => op.key === "git.chunk" && "enrichedAt" in op.payload);
     expect(chunkOps.length).toBeGreaterThan(0);
     const allPoints = chunkOps.flatMap((op) => op.points);
     expect(allPoints).toContain("chunk-3");
@@ -133,9 +135,7 @@ describe("SchemaV9EnrichedAtBackfill", () => {
   });
 
   it("marks migration even with zero operations (no chunks with signals)", async () => {
-    mockStore.scrollAllChunks.mockResolvedValue([
-      { id: "chunk-1", payload: { relativePath: "src/a.ts" } },
-    ]);
+    mockStore.scrollAllChunks.mockResolvedValue([{ id: "chunk-1", payload: { relativePath: "src/a.ts" } }]);
 
     await migration.apply();
 

@@ -1,46 +1,46 @@
 # Benchmark Expansion — Design Spec
 
-**Epic:** tea-rags-mcp-lpw3
-**Date:** 2026-03-27
+**Epic:** tea-rags-mcp-lpw3 **Date:** 2026-03-27
 
 ## Problem
 
 `npm run tune` benchmarks 8 variables (embedding batch/concurrency, qdrant
 upsert/ordering/flush/formation/delete). But the pipeline has 13+ more
 performance-sensitive parameters that are left at hardcoded defaults. Users on
-different hardware get suboptimal performance for CPU-bound (chunker pool), I/O-bound
-(file/sync concurrency), and git trajectory operations.
+different hardware get suboptimal performance for CPU-bound (chunker pool),
+I/O-bound (file/sync concurrency), and git trajectory operations.
 
 ## Scope
 
 Three phases, each additive to `tune.mjs`:
 
-| Phase | Parameters | Nature |
-|-------|-----------|--------|
-| 1 — Ingest/Qdrant | CHUNKER_POOL_SIZE, FILE_CONCURRENCY, IO_CONCURRENCY, DELETE_FLUSH_TIMEOUT_MS, EMBEDDING_MIN_BATCH_SIZE | CPU/IO-bound, uses real files |
-| 2 — Git Trajectory | GIT_CHUNK_CONCURRENCY, GIT_LOG_TIMEOUT_MS | Git I/O-bound, uses real repo |
-| 3 — ONNX Provider | Embedding provider abstraction | Provider-agnostic calibration |
+| Phase              | Parameters                                                                                             | Nature                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| 1 — Ingest/Qdrant  | CHUNKER_POOL_SIZE, FILE_CONCURRENCY, IO_CONCURRENCY, DELETE_FLUSH_TIMEOUT_MS, EMBEDDING_MIN_BATCH_SIZE | CPU/IO-bound, uses real files |
+| 2 — Git Trajectory | GIT_CHUNK_CONCURRENCY, GIT_LOG_TIMEOUT_MS                                                              | Git I/O-bound, uses real repo |
+| 3 — ONNX Provider  | Embedding provider abstraction                                                                         | Provider-agnostic calibration |
 
 ## Phase 1: Ingest / Qdrant Gaps
 
 ### Key Design Decision: Real Files vs Synthetic
 
-Current benchmarks use synthetic data (generated texts, pre-computed embeddings).
-Phase 1 parameters are **hardware-bound** — they depend on CPU cores, disk speed,
-and filesystem caching. Synthetic data would not produce meaningful results.
+Current benchmarks use synthetic data (generated texts, pre-computed
+embeddings). Phase 1 parameters are **hardware-bound** — they depend on CPU
+cores, disk speed, and filesystem caching. Synthetic data would not produce
+meaningful results.
 
 **Approach:** User specifies a real project path via `--path <dir>` argument.
-The benchmark collects source files from that project (respecting `.contextignore`
-/ `.gitignore`) and uses them as test corpus. This tunes for the user's actual
-workload — file sizes, language mix, AST complexity.
+The benchmark collects source files from that project (respecting
+`.contextignore` / `.gitignore`) and uses them as test corpus. This tunes for
+the user's actual workload — file sizes, language mix, AST complexity.
 
 ```bash
 npm run tune -- --path /Users/me/my-project
 ```
 
-If `--path` not provided, falls back to current working directory.
-Minimum file count required: 50 (below that, results are unreliable — warn and
-suggest a larger project).
+If `--path` not provided, falls back to current working directory. Minimum file
+count required: 50 (below that, results are unreliable — warn and suggest a
+larger project).
 
 ### 1.1 CHUNKER_POOL_SIZE
 
@@ -48,9 +48,12 @@ suggest a larger project).
 (`ChunkerPool` in `pipeline/chunker/infra/pool.ts`).
 
 **Benchmark design:**
+
 - Import `ChunkerPool` from build
-- Collect source files from target project (read content into memory first to isolate disk I/O)
-- For each pool size: create pool → process all files → measure wall time → shutdown
+- Collect source files from target project (read content into memory first to
+  isolate disk I/O)
+- For each pool size: create pool → process all files → measure wall time →
+  shutdown
 - Test values: `[1, 2, 4, Math.min(8, os.cpus().length), os.cpus().length]`
 - Metric: files/sec
 - Search: `linearSteppingSearch` with `StoppingDecision`
@@ -65,6 +68,7 @@ suggest a larger project).
 (`pipeline/file-processor.ts`). Uses custom `parallelLimit()`.
 
 **Benchmark design:**
+
 - Cannot easily isolate `processFiles()` without full pipeline
 - Instead: benchmark the `parallelLimit()` pattern directly with real file reads
 - Read N files from target project with varying concurrency
@@ -72,9 +76,9 @@ suggest a larger project).
 - Metric: files/sec (read + hash, simulating sync workload)
 - Search: `linearSteppingSearch`
 
-**Note:** FILE_CONCURRENCY and IO_CONCURRENCY gate different phases (chunking vs sync)
-but both are fs-bound. We benchmark them separately because optimal values may differ
-(chunking is CPU+IO, sync is pure IO).
+**Note:** FILE_CONCURRENCY and IO_CONCURRENCY gate different phases (chunking vs
+sync) but both are fs-bound. We benchmark them separately because optimal values
+may differ (chunking is CPU+IO, sync is pure IO).
 
 **Output:** `INGEST_TUNE_FILE_CONCURRENCY=<optimal>`
 
@@ -84,7 +88,9 @@ but both are fs-bound. We benchmark them separately because optimal values may d
 (`ParallelFileSynchronizer`). Gates hash computation + metadata reads.
 
 **Benchmark design:**
-- Simulate sync workload: read file + compute SHA256 hash (matches real sync behavior)
+
+- Simulate sync workload: read file + compute SHA256 hash (matches real sync
+  behavior)
 - Use all files from target project as corpus
 - Test values: `[10, 25, 50, 100, 200]`
 - Metric: files/sec (read + SHA256)
@@ -99,6 +105,7 @@ batch hasn't reached `minBatchSize`, waits up to this timeout before flushing.
 Has adaptive deferral (max 3 defers with halving timeout).
 
 **Benchmark design:**
+
 - Reuse existing Qdrant benchmark infrastructure (pre-generated points)
 - Insert points, then delete with varying flush timeouts
 - Simulate partial batches (queue size < batchSize to trigger timeout path)
@@ -111,12 +118,15 @@ Has adaptive deferral (max 3 defers with halving timeout).
 ### 1.5 EMBEDDING_MIN_BATCH_SIZE
 
 **What it controls:** Minimum items in batch before timeout flush triggers.
-Below this → defer (re-arm shorter timer, max 3 defers). Prevents tiny GPU batches.
+Below this → defer (re-arm shorter timer, max 3 defers). Prevents tiny GPU
+batches.
 
 **Benchmark design:**
+
 - Use Ollama/ONNX embeddings with small tail batches
 - Fix batch size at optimal (from Phase 1 of existing benchmark)
-- Simulate end-of-pipeline scenario: total chunks not evenly divisible by batch size
+- Simulate end-of-pipeline scenario: total chunks not evenly divisible by batch
+  size
 - Test ratios of batchSize: `[0.125, 0.25, 0.5, 0.75]`
 - Metric: ms per tail-batch flush (latency, not throughput)
 - Compare: eager flush (ratio=0) vs deferred flush at each ratio
@@ -125,17 +135,17 @@ Below this → defer (re-arm shorter timer, max 3 defers). Prevents tiny GPU bat
 
 ### Phase 1 Integration into tune.mjs
 
-New phases inserted **before** existing Qdrant phases (since they inform pipeline
-config):
+New phases inserted **before** existing Qdrant phases (since they inform
+pipeline config):
 
 ```
 Existing:  Embedding Calibration → Qdrant Batch → Ordering → Flush → Formation → Delete Batch → Delete Conc
 New order: Embedding Calibration → CHUNKER_POOL → FILE_CONC → IO_CONC → Qdrant Batch → ... → Delete Flush → MIN_BATCH
 ```
 
-CHUNKER_POOL/FILE_CONC/IO_CONC are independent of Qdrant — they run before Qdrant
-tests. DELETE_FLUSH_TIMEOUT and MIN_BATCH depend on optimal delete/embedding config
-so they run after their respective phases.
+CHUNKER_POOL/FILE_CONC/IO_CONC are independent of Qdrant — they run before
+Qdrant tests. DELETE_FLUSH_TIMEOUT and MIN_BATCH depend on optimal
+delete/embedding config so they run after their respective phases.
 
 ## Phase 2: Git Trajectory
 
@@ -145,6 +155,7 @@ so they run after their respective phases.
 `buildChunkChurnMapUncached()`. Each slot: read 2 blobs + structuredPatch diff.
 
 **Benchmark design:**
+
 - Use target project's git repo (real history)
 - Select ~20 files with highest commit count (most work for chunk churn)
 - For each concurrency: run chunk churn analysis → measure wall time
@@ -162,6 +173,7 @@ so they run after their respective phases.
 on large repos. Too high = long wait on failures.
 
 **Benchmark design:**
+
 - Run `git log --numstat` on current repo with varying `--since` depths
 - Measure actual execution time
 - Report: actual time at current depth + safety margin recommendation
@@ -201,6 +213,7 @@ async function createEmbeddingProvider(config) {
 ```
 
 **ONNX-specific calibration:**
+
 - ONNX already has its own probe (`worker.ts` tests `[1,4,8,16,32,64,128]`)
 - Benchmark should use `recommendedBatchSize` from ONNX as starting point
 - Then run same 3-phase calibration on top
@@ -209,6 +222,7 @@ async function createEmbeddingProvider(config) {
 provider-agnostic `checkHealth()` method (already exists on both providers).
 
 **Config additions:**
+
 ```
 EMBEDDING_PROVIDER=ollama|onnx    # Select provider
 EMBEDDING_MODEL=...                # Model name (provider-specific)
@@ -259,19 +273,21 @@ measureGitLogDuration(repoPath, sinceMonths)    → {months, durationMs, entries
 
 ## File Changes Summary
 
-| File | Change |
-|------|--------|
-| `benchmarks/tune.mjs` | Add phases 9-15 (pipeline, git, min-batch) |
-| `benchmarks/lib/benchmarks.mjs` | Add 7 new benchmark functions |
-| `benchmarks/lib/config.mjs` | Add test values for new params, `--path` arg parsing |
-| `benchmarks/lib/files.mjs` | **New** — collect source files from target project (gitignore-aware) |
-| `benchmarks/lib/output.mjs` | Add new vars to env output |
-| `benchmarks/lib/provider.mjs` | **New** — provider abstraction |
-| `benchmarks/benchmark-embeddings.mjs` | Use provider abstraction |
+| File                                  | Change                                                               |
+| ------------------------------------- | -------------------------------------------------------------------- |
+| `benchmarks/tune.mjs`                 | Add phases 9-15 (pipeline, git, min-batch)                           |
+| `benchmarks/lib/benchmarks.mjs`       | Add 7 new benchmark functions                                        |
+| `benchmarks/lib/config.mjs`           | Add test values for new params, `--path` arg parsing                 |
+| `benchmarks/lib/files.mjs`            | **New** — collect source files from target project (gitignore-aware) |
+| `benchmarks/lib/output.mjs`           | Add new vars to env output                                           |
+| `benchmarks/lib/provider.mjs`         | **New** — provider abstraction                                       |
+| `benchmarks/benchmark-embeddings.mjs` | Use provider abstraction                                             |
 
 ## Non-Goals
 
-- Benchmarking `QDRANT_QUANTIZATION_SCALAR` (requires search accuracy measurement, different kind of benchmark)
+- Benchmarking `QDRANT_QUANTIZATION_SCALAR` (requires search accuracy
+  measurement, different kind of benchmark)
 - Auto-tuning git timeouts (informational only)
-- Benchmarking `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` (behavioral, not performance)
+- Benchmarking `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` (behavioral, not
+  performance)
 - Benchmarking retry parameters (error handling, not throughput)

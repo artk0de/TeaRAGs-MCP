@@ -459,3 +459,41 @@ describe("parallelLimit utility", () => {
     }
   });
 });
+
+describe("ParallelFileSynchronizer — hasSnapshot", () => {
+  it("returns false before any snapshot is created", async () => {
+    const testDir = join(tmpdir(), `has-snapshot-test-${Date.now()}`);
+    const codebaseDir = join(testDir, "codebase");
+    const snapshotDir = join(testDir, "snapshots");
+
+    await fs.mkdir(codebaseDir, { recursive: true });
+    await fs.mkdir(snapshotDir, { recursive: true });
+
+    try {
+      const sync = new ParallelFileSynchronizer(codebaseDir, "test-col", snapshotDir, 4);
+      expect(await sync.hasSnapshot()).toBe(false);
+    } finally {
+      await fs.rm(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns true after snapshot is created", async () => {
+    const testDir = join(tmpdir(), `has-snapshot-test2-${Date.now()}`);
+    const codebaseDir = join(testDir, "codebase");
+    const snapshotDir = join(testDir, "snapshots");
+
+    await fs.mkdir(codebaseDir, { recursive: true });
+    await fs.mkdir(snapshotDir, { recursive: true });
+
+    try {
+      const sync = new ParallelFileSynchronizer(codebaseDir, "test-col", snapshotDir, 4);
+      await sync.initialize();
+      await sync.updateSnapshot([]);
+
+      const sync2 = new ParallelFileSynchronizer(codebaseDir, "test-col", snapshotDir, 4);
+      expect(await sync2.hasSnapshot()).toBe(true);
+    } finally {
+      await fs.rm(testDir, { recursive: true, force: true });
+    }
+  });
+});
