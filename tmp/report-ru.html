@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Claude Code — Аналитика</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #f8fafc; color: #334155; line-height: 1.65; padding: 48px 24px; }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { font-size: 32px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+    h2 { font-size: 20px; font-weight: 600; color: #0f172a; margin-top: 48px; margin-bottom: 16px; }
+    .subtitle { color: #64748b; font-size: 15px; margin-bottom: 32px; }
+    .nav-toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 32px 0; padding: 16px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .nav-toc a { font-size: 12px; color: #64748b; text-decoration: none; padding: 6px 12px; border-radius: 6px; background: #f1f5f9; transition: all 0.15s; }
+    .nav-toc a:hover { background: #e2e8f0; color: #334155; }
+    .stats-row { display: flex; gap: 24px; margin-bottom: 40px; padding: 20px 0; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }
+    .stat { text-align: center; }
+    .stat-value { font-size: 24px; font-weight: 700; color: #0f172a; }
+    .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; }
+    .at-a-glance { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #f59e0b; border-radius: 12px; padding: 20px 24px; margin-bottom: 32px; }
+    .glance-title { font-size: 16px; font-weight: 700; color: #92400e; margin-bottom: 16px; }
+    .glance-sections { display: flex; flex-direction: column; gap: 12px; }
+    .glance-section { font-size: 14px; color: #78350f; line-height: 1.6; }
+    .glance-section strong { color: #92400e; }
+    .see-more { color: #b45309; text-decoration: none; font-size: 13px; white-space: nowrap; }
+    .see-more:hover { text-decoration: underline; }
+    .project-areas { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+    .project-area { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }
+    .area-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .area-name { font-weight: 600; font-size: 15px; color: #0f172a; }
+    .area-count { font-size: 12px; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; }
+    .area-desc { font-size: 14px; color: #475569; line-height: 1.5; }
+    .narrative { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+    .narrative p { margin-bottom: 12px; font-size: 14px; color: #475569; line-height: 1.7; }
+    .key-insight { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 16px; margin-top: 12px; font-size: 14px; color: #166534; }
+    .section-intro { font-size: 14px; color: #64748b; margin-bottom: 16px; }
+    .big-wins { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+    .big-win { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; }
+    .big-win-title { font-weight: 600; font-size: 15px; color: #166534; margin-bottom: 8px; }
+    .big-win-desc { font-size: 14px; color: #15803d; line-height: 1.5; }
+    .friction-categories { display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }
+    .friction-category { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; }
+    .friction-title { font-weight: 600; font-size: 15px; color: #991b1b; margin-bottom: 6px; }
+    .friction-desc { font-size: 13px; color: #7f1d1d; margin-bottom: 10px; }
+    .friction-examples { margin: 0 0 0 20px; font-size: 13px; color: #334155; }
+    .friction-examples li { margin-bottom: 4px; }
+    .claude-md-section { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+    .claude-md-section h3 { font-size: 14px; font-weight: 600; color: #1e40af; margin: 0 0 12px 0; }
+    .claude-md-actions { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #dbeafe; }
+    .copy-all-btn { background: #2563eb; color: white; border: none; border-radius: 4px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-weight: 500; transition: all 0.2s; }
+    .copy-all-btn:hover { background: #1d4ed8; }
+    .copy-all-btn.copied { background: #16a34a; }
+    .claude-md-item { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; padding: 10px 0; border-bottom: 1px solid #dbeafe; }
+    .claude-md-item:last-child { border-bottom: none; }
+    .cmd-checkbox { margin-top: 2px; }
+    .cmd-code { background: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; color: #1e40af; border: 1px solid #bfdbfe; font-family: monospace; display: block; white-space: pre-wrap; word-break: break-word; flex: 1; }
+    .cmd-why { font-size: 12px; color: #64748b; width: 100%; padding-left: 24px; margin-top: 4px; }
+    .features-section, .patterns-section { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+    .feature-card { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 16px; }
+    .pattern-card { background: #f0f9ff; border: 1px solid #7dd3fc; border-radius: 8px; padding: 16px; }
+    .feature-title, .pattern-title { font-weight: 600; font-size: 15px; color: #0f172a; margin-bottom: 6px; }
+    .feature-oneliner { font-size: 14px; color: #475569; margin-bottom: 8px; }
+    .pattern-summary { font-size: 14px; color: #475569; margin-bottom: 8px; }
+    .feature-why, .pattern-detail { font-size: 13px; color: #334155; line-height: 1.5; }
+    .feature-examples { margin-top: 12px; }
+    .feature-example { padding: 8px 0; border-top: 1px solid #d1fae5; }
+    .feature-example:first-child { border-top: none; }
+    .example-desc { font-size: 13px; color: #334155; margin-bottom: 6px; }
+    .example-code-row { display: flex; align-items: flex-start; gap: 8px; }
+    .example-code { flex: 1; background: #f1f5f9; padding: 8px 12px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #334155; overflow-x: auto; white-space: pre-wrap; }
+    .copyable-prompt-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+    .copyable-prompt-row { display: flex; align-items: flex-start; gap: 8px; }
+    .copyable-prompt { flex: 1; background: #f8fafc; padding: 10px 12px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #334155; border: 1px solid #e2e8f0; white-space: pre-wrap; line-height: 1.5; }
+    .feature-code { background: #f8fafc; padding: 12px; border-radius: 6px; margin-top: 12px; border: 1px solid #e2e8f0; display: flex; align-items: flex-start; gap: 8px; }
+    .feature-code code { flex: 1; font-family: monospace; font-size: 12px; color: #334155; white-space: pre-wrap; }
+    .pattern-prompt { background: #f8fafc; padding: 12px; border-radius: 6px; margin-top: 12px; border: 1px solid #e2e8f0; }
+    .pattern-prompt code { font-family: monospace; font-size: 12px; color: #334155; display: block; white-space: pre-wrap; margin-bottom: 8px; }
+    .prompt-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; margin-bottom: 6px; }
+    .copy-btn { background: #e2e8f0; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; color: #475569; flex-shrink: 0; }
+    .copy-btn:hover { background: #cbd5e1; }
+    .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
+    .chart-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }
+    .chart-title { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 12px; }
+    .bar-row { display: flex; align-items: center; margin-bottom: 6px; }
+    .bar-label { width: 100px; font-size: 11px; color: #475569; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-track { flex: 1; height: 6px; background: #f1f5f9; border-radius: 3px; margin: 0 8px; }
+    .bar-fill { height: 100%; border-radius: 3px; }
+    .bar-value { width: 28px; font-size: 11px; font-weight: 500; color: #64748b; text-align: right; }
+    .empty { color: #94a3b8; font-size: 13px; }
+    .horizon-section { display: flex; flex-direction: column; gap: 16px; }
+    .horizon-card { background: linear-gradient(135deg, #faf5ff 0%, #f5f3ff 100%); border: 1px solid #c4b5fd; border-radius: 8px; padding: 16px; }
+    .horizon-title { font-weight: 600; font-size: 15px; color: #5b21b6; margin-bottom: 8px; }
+    .horizon-possible { font-size: 14px; color: #334155; margin-bottom: 10px; line-height: 1.5; }
+    .horizon-tip { font-size: 13px; color: #6b21a8; background: rgba(255,255,255,0.6); padding: 8px 12px; border-radius: 4px; }
+    .feedback-header { margin-top: 48px; color: #64748b; font-size: 16px; }
+    .feedback-intro { font-size: 13px; color: #94a3b8; margin-bottom: 16px; }
+    .feedback-section { margin-top: 16px; }
+    .feedback-section h3 { font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 12px; }
+    .feedback-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+    .feedback-card.team-card { background: #eff6ff; border-color: #bfdbfe; }
+    .feedback-card.model-card { background: #faf5ff; border-color: #e9d5ff; }
+    .feedback-title { font-weight: 600; font-size: 14px; color: #0f172a; margin-bottom: 6px; }
+    .feedback-detail { font-size: 13px; color: #475569; line-height: 1.5; }
+    .feedback-evidence { font-size: 12px; color: #64748b; margin-top: 8px; }
+    .fun-ending { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #fbbf24; border-radius: 12px; padding: 24px; margin-top: 40px; text-align: center; }
+    .fun-headline { font-size: 18px; font-weight: 600; color: #78350f; margin-bottom: 8px; }
+    .fun-detail { font-size: 14px; color: #92400e; }
+    .collapsible-section { margin-top: 16px; }
+    .collapsible-header { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+    .collapsible-header h3 { margin: 0; font-size: 14px; font-weight: 600; color: #475569; }
+    .collapsible-arrow { font-size: 12px; color: #94a3b8; transition: transform 0.2s; }
+    .collapsible-content { display: none; padding-top: 16px; }
+    .collapsible-content.open { display: block; }
+    .collapsible-header.open .collapsible-arrow { transform: rotate(90deg); }
+    @media (max-width: 640px) { .charts-row { grid-template-columns: 1fr; } .stats-row { justify-content: center; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Claude Code — Аналитика</h1>
+    <p class="subtitle">1 913 сообщений в 143 сессиях (226 всего) | 2026-02-23 — 2026-03-22</p>
+
+
+    <div class="at-a-glance">
+      <div class="glance-title">Общая картина</div>
+      <div class="glance-sections">
+        <div class="glance-section"><strong>Что работает:</strong> Ты выстроил дисциплинированный воркфлоу вокруг TDD и бенчмаркинга, что действительно впечатляет — замер времени нахождения корневой причины Claude до 44 секунд на реальных багах из Jira и поддержание тысяч проходящих тестов в экосистеме плагинов tea-rags. Ты эффективно используешь Claude как высокопроизводительного инженерного партнёра на стеках TypeScript и Ruby, доставляя сложные фичи от начала до конца — 173 коммита за месяц. <a href="#section-wins" class="see-more">Впечатляющие достижения →</a></div>
+        <div class="glance-section"><strong>Что мешает:</strong> Со стороны Claude — он часто начинает с неправильного пути: не те директории, неверные предположения, ошибочные начальные фиксы — вынуждая тебя в повторяющиеся циклы коррекций, которые съедают продуктивность. С твоей стороны — хрупкость инфраструктуры (падения Ollama/Qdrant/MCP) убила несколько сессий полностью, а сложные сессии с множеством целей часто заканчиваются на «частично достигнуто», хотя могли бы быть разбиты на фокусированные части. <a href="#section-friction" class="see-more">Где буксует →</a></div>
+        <div class="glance-section"><strong>Быстрые улучшения:</strong> Попробуй настроить <strong>hooks</strong> для автоматического запуска тестов перед коммитом — это поймает баги в правках Claude и висячие синтаксические ошибки до попадания в git-историю. Также можно определить <strong>кастомные slash-команды</strong>, кодирующие твой протокол бенчмаркинга охоты за багами, чтобы не объяснять стратегию поиска каждую сессию. <a href="#section-features" class="see-more">Фичи Claude Code →</a></div>
+        <div class="glance-section"><strong>Амбициозные воркфлоу:</strong> По мере роста надёжности моделей твой протокол охоты за багами становится автономным циклом: передай Claude тикет из Jira в <strong>headless-режиме</strong>, пусть найдёт корневую причину, напишет фикс, прогонит спеки и итерирует до зелёного — без присмотра. Твоя работа с мультифайловым рефакторингом тоже созрела для параллельных под-агентов, которые независимо обрабатывают спеки, реализацию и проверку интеграции, схлопывая циклы коррекций, на которые уходит больше всего времени сегодня. <a href="#section-horizon" class="see-more">На горизонте →</a></div>
+      </div>
+    </div>
+
+
+    <nav class="nav-toc">
+      <a href="#section-work">Над чем работаешь</a>
+      <a href="#section-usage">Как используешь CC</a>
+      <a href="#section-wins">Впечатляющие достижения</a>
+      <a href="#section-friction">Где буксует</a>
+      <a href="#section-features">Фичи Claude Code</a>
+      <a href="#section-patterns">Новые паттерны</a>
+      <a href="#section-horizon">На горизонте</a>
+      <a href="#section-feedback">Обратная связь</a>
+    </nav>
+
+    <div class="stats-row">
+      <div class="stat"><div class="stat-value">1 913</div><div class="stat-label">Сообщения</div></div>
+      <div class="stat"><div class="stat-value">+26 877/-2 283</div><div class="stat-label">Строки</div></div>
+      <div class="stat"><div class="stat-value">402</div><div class="stat-label">Файлы</div></div>
+      <div class="stat"><div class="stat-value">23</div><div class="stat-label">Дни</div></div>
+      <div class="stat"><div class="stat-value">83.2</div><div class="stat-label">Сообщ/день</div></div>
+    </div>
+
+
+    <h2 id="section-work">Над чем работаешь</h2>
+    <div class="project-areas">
+
+        <div class="project-area">
+          <div class="area-header">
+            <span class="area-name">Разработка плагина Tea-Rags MCP</span>
+            <span class="area-count">~35 сессий</span>
+          </div>
+          <div class="area-desc">Масштабная разработка и рефакторинг MCP-сервера tea-rags — плагина для индексации кода и семантического поиска на TypeScript. Работа включала реализацию обработки ошибок, переиндексацию без даунтайма, стратегии каскадного поиска, миграцию схемы Qdrant, CLI-системы и комплексные тест-сьюты. Claude использовался для мультифайлового рефакторинга, TDD-реализации, архитектурных ревью и дебага проблем инфраструктуры с Ollama и Qdrant.</div>
+        </div>
+
+        <div class="project-area">
+          <div class="area-header">
+            <span class="area-name">Бенчмаркинг поиска корневых причин багов</span>
+            <span class="area-count">~15 сессий</span>
+          </div>
+          <div class="area-desc">Систематический бенчмаркинг способности Claude находить корневые причины багов из Jira в большой Ruby-кодобазе (TaxDome) с использованием структурированных протоколов и замеров времени. Сессии включали итерации по стратегиям поиска, сравнение tea-rags vs LSP vs комбинированных подходов и оптимизацию протокола охоты за багами. Claude использовался как основной исследователь, а пользователь замерял скорость и точность по нескольким прогонам.</div>
+        </div>
+
+        <div class="project-area">
+          <div class="area-header">
+            <span class="area-name">Плагин Bookkeeping Toolkit и Ruby-сервисы</span>
+            <span class="area-count">~14 сессий</span>
+          </div>
+          <div class="area-desc">Разработка плагина bookkeeping-toolkit для Claude Code с кастомными правилами и навыками, а также написание RSpec-покрытия для сервисных слоёв QuickBooks Online (QBO) по строгим паттернам слоёной архитектуры. Claude использовался для создания и декомпозиции правил плагина, генерации спеков с достижением 100% покрытия и исправления конвенций тестирования вокруг стабов, матчеров и стратегий ветвления в git.</div>
+        </div>
+
+        <div class="project-area">
+          <div class="area-header">
+            <span class="area-name">Фичи и баг-фиксы приложения TaxDome</span>
+            <span class="area-count">~12 сессий</span>
+          </div>
+          <div class="area-desc">Реализация фич и исправление багов в большом Rails/Ruby-приложении: оптимизация SQL-запросов (4.2с→8мс), интеграция VK OAuth с PKCE в Django, генерация изображений с оверлейными лейблами и различные расследования багов из Jira. Claude использовался для сквозной TDD-реализации, добавления индексов в БД, дебага конфигурации хранилища и итеративной доработки фич.</div>
+        </div>
+
+        <div class="project-area">
+          <div class="area-header">
+            <span class="area-name">Индексация кодобазы и инфраструктура плагинов</span>
+            <span class="area-count">~12 сессий</span>
+          </div>
+          <div class="area-desc">Тестирование и траблшутинг установки плагина tea-rags, индексации кодобазы и MCP-подключения для реальных кодобаз. Сессии включали попытки установки через маркетплейс, запуск операций переиндексации, диагностику сбоев индексации 0/0 файлов и решение проблем с подключением к Ollama/Qdrant. Claude использовался для прямого вызова инструментов индексации и дебага инфраструктурных проблем, хотя несколько сессий были заблокированы недоступностью сервисов.</div>
+        </div>
+
+    </div>
+
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Что требовалось</div>
+        <div class="bar-row">
+        <div class="bar-label">Исправление багов</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#2563eb"></div></div>
+        <div class="bar-value">26</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Рефакторинг</div>
+        <div class="bar-track"><div class="bar-fill" style="width:53.84615384615385%;background:#2563eb"></div></div>
+        <div class="bar-value">14</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Управление задачами</div>
+        <div class="bar-track"><div class="bar-fill" style="width:46.15384615384615%;background:#2563eb"></div></div>
+        <div class="bar-value">12</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Реализация фич</div>
+        <div class="bar-track"><div class="bar-fill" style="width:38.46153846153847%;background:#2563eb"></div></div>
+        <div class="bar-value">10</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Индексация</div>
+        <div class="bar-track"><div class="bar-fill" style="width:34.61538461538461%;background:#2563eb"></div></div>
+        <div class="bar-value">9</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Концептуальные вопросы</div>
+        <div class="bar-track"><div class="bar-fill" style="width:30.76923076923077%;background:#2563eb"></div></div>
+        <div class="bar-value">8</div>
+      </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Топ инструментов</div>
+        <div class="bar-row">
+        <div class="bar-label">Bash</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#0891b2"></div></div>
+        <div class="bar-value">2018</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Read</div>
+        <div class="bar-track"><div class="bar-fill" style="width:64.42021803766104%;background:#0891b2"></div></div>
+        <div class="bar-value">1300</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Edit</div>
+        <div class="bar-track"><div class="bar-fill" style="width:41.52626362735381%;background:#0891b2"></div></div>
+        <div class="bar-value">838</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Grep</div>
+        <div class="bar-track"><div class="bar-fill" style="width:25.22299306243806%;background:#0891b2"></div></div>
+        <div class="bar-value">509</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">ToolSearch</div>
+        <div class="bar-track"><div class="bar-fill" style="width:13.429137760158572%;background:#0891b2"></div></div>
+        <div class="bar-value">271</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Write</div>
+        <div class="bar-track"><div class="bar-fill" style="width:9.167492566897918%;background:#0891b2"></div></div>
+        <div class="bar-value">185</div>
+      </div>
+      </div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Языки</div>
+        <div class="bar-row">
+        <div class="bar-label">TypeScript</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#10b981"></div></div>
+        <div class="bar-value">1116</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Markdown</div>
+        <div class="bar-track"><div class="bar-fill" style="width:47.22222222222222%;background:#10b981"></div></div>
+        <div class="bar-value">527</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Ruby</div>
+        <div class="bar-track"><div class="bar-fill" style="width:38.97849462365591%;background:#10b981"></div></div>
+        <div class="bar-value">435</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">JSON</div>
+        <div class="bar-track"><div class="bar-fill" style="width:5.913978494623656%;background:#10b981"></div></div>
+        <div class="bar-value">66</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">YAML</div>
+        <div class="bar-track"><div class="bar-fill" style="width:5.465949820788531%;background:#10b981"></div></div>
+        <div class="bar-value">61</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Python</div>
+        <div class="bar-track"><div class="bar-fill" style="width:4.121863799283155%;background:#10b981"></div></div>
+        <div class="bar-value">46</div>
+      </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Типы сессий</div>
+        <div class="bar-row">
+        <div class="bar-label">Итеративное улучшение</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#8b5cf6"></div></div>
+        <div class="bar-value">40</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Мульти-задачи</div>
+        <div class="bar-track"><div class="bar-fill" style="width:70%;background:#8b5cf6"></div></div>
+        <div class="bar-value">28</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Одна задача</div>
+        <div class="bar-track"><div class="bar-fill" style="width:45%;background:#8b5cf6"></div></div>
+        <div class="bar-value">18</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Исследование</div>
+        <div class="bar-track"><div class="bar-fill" style="width:20%;background:#8b5cf6"></div></div>
+        <div class="bar-value">8</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Быстрый вопрос</div>
+        <div class="bar-track"><div class="bar-fill" style="width:15%;background:#8b5cf6"></div></div>
+        <div class="bar-value">6</div>
+      </div>
+      </div>
+    </div>
+
+
+    <h2 id="section-usage">Как используешь Claude Code</h2>
+    <div class="narrative">
+      <p>Ты — <strong>продвинутый пользователь, который создаёт и стресс-тестирует инструменты разработчика</strong>, в основном вокруг экосистемы плагинов tea-rags MCP и Ruby/TypeScript-кодобазы. Твои сессии длинные (в среднем ~3 часа) и насыщенные, часто комбинируют исправление багов, рефакторинг, бенчмаркинг и реализацию фич за один присест. У тебя есть характерный паттерн — <strong>использование Claude как объекта бенчмаркинга</strong>: ты многократно замеряешь, как быстро он находит корневые причины багов из Jira, затем подкручиваешь протоколы и перезапускаешь для оптимизации процесса. Это говорит о человеке, глубоко заинтересованном в понимании и улучшении AI-воркфлоу, а не просто их использовании.</p>
+<p>Твой стиль взаимодействия — <strong>активно практический и корректирующий</strong>. С 76 случаями неверного подхода и 36 неправильно понятыми запросами на 100 сессий ты регулярно возвращаешь Claude на правильный путь — будь то коммит не в ту ветку, поиск не в тех директориях, преждевременное удаление стабов или отмахивание от багов, которые ты знаешь реальны. Ты не даёшь детальных спецификаций заранее; вместо этого <strong>итерируешь быстро и корректируешь на лету</strong>, ожидая, что Claude адаптируется. Тебе комфортно давать Claude мультифайловые изменения (27 успешных мультифайловых сессий) и даже реализации через под-агентов, но ты решительно вмешиваешься, когда что-то идёт не так — отклонял действия 11 раз и указывал на избыточные изменения 9 раз. Твоё активное использование Bash (2 018 вызовов, топ-инструмент) говорит о том, что ты часто проверяешь работу Claude, запуская тесты и команды самостоятельно, а не принимая вывод на веру.</p>
+<p>Несмотря на трение, ты извлекаешь огромную ценность: <strong>47 полностью достигнутых результатов и 173 коммита за месяц</strong>, с сессиями, оценёнными как необходимые или очень полезные в подавляющем большинстве случаев. Ты жёстко требуешь от Claude дисциплины TDD, пороги покрытия и гигиену git — области, в которых Claude постоянно ошибается, а ты постоянно исправляешь. Твои 55 моментов недовольства не мешают тебе возвращаться, потому что ты относишься к Claude как к <strong>высокопроизводительному, но неточному коллаборатору</strong>, которому нужен активный надзор, особенно в области Ruby-тестирования и инфраструктурных особенностей.</p>
+      <div class="key-insight"><strong>Ключевой паттерн:</strong> Ты работаешь как требовательный техлид, который итерирует быстро, систематически бенчмаркит производительность Claude и непрерывно корректирует его подход, вместо того чтобы специфицировать всё заранее.</div>
+    </div>
+
+
+    <!-- Response Time Distribution -->
+    <div class="chart-card" style="margin: 24px 0;">
+      <div class="chart-title">Распределение времени ответа</div>
+      <div class="bar-row">
+        <div class="bar-label">2-10с</div>
+        <div class="bar-track"><div class="bar-fill" style="width:64.22976501305483%;background:#6366f1"></div></div>
+        <div class="bar-value">246</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">10-30с</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#6366f1"></div></div>
+        <div class="bar-value">383</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">30с-1м</div>
+        <div class="bar-track"><div class="bar-fill" style="width:66.0574412532637%;background:#6366f1"></div></div>
+        <div class="bar-value">253</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">1-2м</div>
+        <div class="bar-track"><div class="bar-fill" style="width:44.12532637075718%;background:#6366f1"></div></div>
+        <div class="bar-value">169</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">2-5м</div>
+        <div class="bar-track"><div class="bar-fill" style="width:44.90861618798956%;background:#6366f1"></div></div>
+        <div class="bar-value">172</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">5-15м</div>
+        <div class="bar-track"><div class="bar-fill" style="width:26.370757180156655%;background:#6366f1"></div></div>
+        <div class="bar-value">101</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">>15м</div>
+        <div class="bar-track"><div class="bar-fill" style="width:19.5822454308094%;background:#6366f1"></div></div>
+        <div class="bar-value">75</div>
+      </div>
+      <div style="font-size: 12px; color: #64748b; margin-top: 8px;">
+        Медиана: 35.5с &bull; Среднее: 178.7с
+      </div>
+    </div>
+
+    <!-- Multi-clauding Section (matching Python reference) -->
+    <div class="chart-card" style="margin: 24px 0;">
+      <div class="chart-title">Параллельные сессии</div>
+
+        <div style="display: flex; gap: 24px; margin: 12px 0;">
+          <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: #7c3aed;">56</div>
+            <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Пересечения</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: #7c3aed;">69</div>
+            <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Сессий задействовано</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="font-size: 24px; font-weight: 700; color: #7c3aed;">16%</div>
+            <div style="font-size: 11px; color: #64748b; text-transform: uppercase;">Сообщений</div>
+          </div>
+        </div>
+        <p style="font-size: 13px; color: #475569; margin-top: 12px;">
+          Ты запускаешь несколько сессий Claude Code одновременно. Параллельная работа обнаруживается, когда сессии пересекаются по времени, что указывает на параллельные рабочие процессы.
+        </p>
+
+    </div>
+
+    <!-- Time of Day & Tool Errors -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title" style="display: flex; align-items: center; gap: 12px;">
+          Сообщения по времени суток
+          <select id="timezone-select" style="font-size: 12px; padding: 4px 8px; border-radius: 4px; border: 1px solid #e2e8f0;">
+            <option value="0">PT (UTC-8)</option>
+            <option value="3">ET (UTC-5)</option>
+            <option value="8">London (UTC)</option>
+            <option value="9">CET (UTC+1)</option>
+            <option value="17">Tokyo (UTC+9)</option>
+            <option value="custom">Custom offset...</option>
+          </select>
+          <input type="number" id="custom-offset" placeholder="UTC offset" style="display: none; width: 80px; font-size: 12px; padding: 4px; border-radius: 4px; border: 1px solid #e2e8f0;">
+        </div>
+        <div id="hour-histogram">
+      <div class="bar-row">
+        <div class="bar-label">Утро (6-12)</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0.9549795361527967%;background:#8b5cf6"></div></div>
+        <div class="bar-value">7</div>
+      </div>
+
+      <div class="bar-row">
+        <div class="bar-label">День (12-18)</div>
+        <div class="bar-track"><div class="bar-fill" style="width:98.36289222373806%;background:#8b5cf6"></div></div>
+        <div class="bar-value">721</div>
+      </div>
+
+      <div class="bar-row">
+        <div class="bar-label">Вечер (18-24)</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#8b5cf6"></div></div>
+        <div class="bar-value">733</div>
+      </div>
+
+      <div class="bar-row">
+        <div class="bar-label">Ночь (0-6)</div>
+        <div class="bar-track"><div class="bar-fill" style="width:61.66439290586631%;background:#8b5cf6"></div></div>
+        <div class="bar-value">452</div>
+      </div></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Ошибки инструментов</div>
+        <div class="bar-row">
+        <div class="bar-label">Команда не выполнена</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#dc2626"></div></div>
+        <div class="bar-value">98</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Другое</div>
+        <div class="bar-track"><div class="bar-fill" style="width:78.57142857142857%;background:#dc2626"></div></div>
+        <div class="bar-value">77</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Отклонено</div>
+        <div class="bar-track"><div class="bar-fill" style="width:42.857142857142854%;background:#dc2626"></div></div>
+        <div class="bar-value">42</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Файл не найден</div>
+        <div class="bar-track"><div class="bar-fill" style="width:21.428571428571427%;background:#dc2626"></div></div>
+        <div class="bar-value">21</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Файл слишком большой</div>
+        <div class="bar-track"><div class="bar-fill" style="width:14.285714285714285%;background:#dc2626"></div></div>
+        <div class="bar-value">14</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Файл изменён</div>
+        <div class="bar-track"><div class="bar-fill" style="width:7.142857142857142%;background:#dc2626"></div></div>
+        <div class="bar-value">7</div>
+      </div>
+      </div>
+    </div>
+
+
+    <h2 id="section-wins">Впечатляющие достижения</h2>
+    <p class="section-intro">За последний месяц ты был исключительно активным пользователем Claude Code — 143 сессии: создание MCP-плагинов, охота на баги и рефакторинг больших кодобаз на TypeScript и Ruby.</p>
+    <div class="big-wins">
+
+        <div class="big-win">
+          <div class="big-win-title">Систематический протокол бенчмаркинга охоты за багами</div>
+          <div class="big-win-desc">Ты разработал строгую методологию бенчмаркинга поиска корневых причин, многократно замеряя производительность Claude на реальных Jira-багах и итерируя по протоколам поиска между прогонами. Твой подход к использованию конкретных багов как скоростных бенчмарков — достигая времени 44 секунды — демонстрирует продвинутое понимание оптимизации AI-ассистированных воркфлоу дебага.</div>
+        </div>
+
+        <div class="big-win">
+          <div class="big-win-title">TDD-ориентированная разработка экосистемы плагинов</div>
+          <div class="big-win-desc">Ты создаёшь и поддерживаешь экосистему плагинов tea-rags MCP с дисциплинированным TDD, достигая таких вех как 2785 проходящих тестов и 100% покрытие сервисных спеков. Твоя настойчивость в строгом соблюдении правил, правильном ветвлении git и слоёных паттернах тестирования показывает, что ты относишься к AI-ассистированной разработке с продакшен-уровнем строгости.</div>
+        </div>
+
+        <div class="big-win">
+          <div class="big-win-title">Сквозная доставка фич на нескольких стеках</div>
+          <div class="big-win-desc">Ты стабильно доводишь сложные фичи от дизайна до деплоя на нескольких стеках — VK OAuth с PKCE в Django, оптимизация SQL-запросов (4.2с→8мс), миграции Qdrant и фиксы генерации изображений. С 173 коммитами за месяц и 73% полностью/в основном достигнутых результатов ты эффективно используешь Claude как высокопроизводительного инженерного партнёра.</div>
+        </div>
+
+    </div>
+
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Что помогло больше всего</div>
+        <div class="bar-row">
+        <div class="bar-label">Мультифайловые изменения</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#16a34a"></div></div>
+        <div class="bar-value">27</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Хороший дебаг</div>
+        <div class="bar-track"><div class="bar-fill" style="width:85.18518518518519%;background:#16a34a"></div></div>
+        <div class="bar-value">23</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Хорошие объяснения</div>
+        <div class="bar-track"><div class="bar-fill" style="width:81.48148148148148%;background:#16a34a"></div></div>
+        <div class="bar-value">22</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Быстрый/точный поиск</div>
+        <div class="bar-track"><div class="bar-fill" style="width:22.22222222222222%;background:#16a34a"></div></div>
+        <div class="bar-value">6</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Корректные правки</div>
+        <div class="bar-track"><div class="bar-fill" style="width:22.22222222222222%;background:#16a34a"></div></div>
+        <div class="bar-value">6</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Проактивная помощь</div>
+        <div class="bar-track"><div class="bar-fill" style="width:3.7037037037037033%;background:#16a34a"></div></div>
+        <div class="bar-value">1</div>
+      </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Результаты</div>
+        <div class="bar-row">
+        <div class="bar-label">Не достигнуто</div>
+        <div class="bar-track"><div class="bar-fill" style="width:27.659574468085108%;background:#8b5cf6"></div></div>
+        <div class="bar-value">13</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Частично</div>
+        <div class="bar-track"><div class="bar-fill" style="width:29.78723404255319%;background:#8b5cf6"></div></div>
+        <div class="bar-value">14</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">В основном</div>
+        <div class="bar-track"><div class="bar-fill" style="width:55.319148936170215%;background:#8b5cf6"></div></div>
+        <div class="bar-value">26</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Полностью</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#8b5cf6"></div></div>
+        <div class="bar-value">47</div>
+      </div>
+      </div>
+    </div>
+
+
+    <h2 id="section-friction">Где буксует</h2>
+    <p class="section-intro">Твои сессии показывают повторяющийся паттерн: Claude выбирает неверный начальный подход, борется с зависимостями инфраструктуры/инструментов и требует нескольких раундов коррекции для прихода к правильному решению.</p>
+    <div class="friction-categories">
+
+        <div class="friction-category">
+          <div class="friction-title">Неверный начальный подход, требующий коррекции курса</div>
+          <div class="friction-desc">Claude часто начинает с неверных предположений, не тех директорий или ошибочных решений, которые приходится исправлять вручную, тратя значительное время. Предоставление более явных ограничений заранее или использование правил CLAUDE.md для кодирования предпочтительных паттернов могло бы сократить эти циклы.</div>
+          <ul class="friction-examples"><li>Claude изначально отмахнулся от реального бага как решённого, перескочил к неправильным выводам о пресетах декомпозиции и сделал некорректные архитектурные замечания, от которых пришлось отбиваться — сжигая циклы на коррекции вместо прогресса</li><li>Claude предлагал неправильные методы установки (npm/clone) прежде чем найти правильный подход через маркетплейс, и коммитил не в те ветки или директории в нескольких сессиях</li></ul>
+        </div>
+
+        <div class="friction-category">
+          <div class="friction-title">Хрупкость инфраструктуры и инструментов</div>
+          <div class="friction-desc">Значительная часть неудачных или частично достигнутых сессий связана с проблемами подключения к Ollama, Qdrant или MCP, которые полностью блокируют прогресс. Настройка проверок здоровья или fallback-конфигураций перед началом работы предотвратила бы сессии с нулевым полезным результатом.</div>
+          <ul class="friction-examples"><li>Недоступность Ollama вызывала сбои search_code и вынуждала к повторным попыткам переподключения MCP, пока не приходилось полностью отказаться от сессии</li><li>Проблемы подключения Qdrant/MCP вызывали повторные сбои в нескольких сессиях индексации: фоновый агент убивался, а прямые вызовы также прерывались</li></ul>
+        </div>
+
+        <div class="friction-category">
+          <div class="friction-title">Баги в правках и ошибки git-воркфлоу</div>
+          <div class="friction-desc">Claude регулярно выдаёт сломанные правки (висячие скобки, синтаксические ошибки, преждевременное удаление стабов) и делает ошибки в git (не те ветки, подтягивание нерелевантной истории), которые приходится вычищать вручную. Стоит рассмотреть добавление явных правил git-воркфлоу и требования к Claude проверять компиляцию перед коммитом.</div>
+          <ul class="friction-examples"><li>replace_all оставлял висячие скобки, а git rebase подтянул нерелевантную историю, потребовав cherry-pick — превратив простую задачу в многораундовую сессию дебага</li><li>Claude преждевременно удалял стабы, что ломало тесты, сталкивался с проблемами порогов покрытия из непокрытых веток и требовал нескольких раундов коррекции конвенций тестирования</li></ul>
+        </div>
+
+    </div>
+
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Основные проблемы</div>
+        <div class="bar-row">
+        <div class="bar-label">Неверный подход</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#dc2626"></div></div>
+        <div class="bar-value">76</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Баги в коде</div>
+        <div class="bar-track"><div class="bar-fill" style="width:55.26315789473685%;background:#dc2626"></div></div>
+        <div class="bar-value">42</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Непонятый запрос</div>
+        <div class="bar-track"><div class="bar-fill" style="width:47.368421052631575%;background:#dc2626"></div></div>
+        <div class="bar-value">36</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Отклонено</div>
+        <div class="bar-track"><div class="bar-fill" style="width:14.473684210526317%;background:#dc2626"></div></div>
+        <div class="bar-value">11</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Избыточные изменения</div>
+        <div class="bar-track"><div class="bar-fill" style="width:11.842105263157894%;background:#dc2626"></div></div>
+        <div class="bar-value">9</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Сбой инструмента</div>
+        <div class="bar-track"><div class="bar-fill" style="width:5.263157894736842%;background:#dc2626"></div></div>
+        <div class="bar-value">4</div>
+      </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Оценка удовлетворённости (оценка модели)</div>
+        <div class="bar-row">
+        <div class="bar-label">Раздражён</div>
+        <div class="bar-track"><div class="bar-fill" style="width:4.932735426008969%;background:#eab308"></div></div>
+        <div class="bar-value">11</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Недоволен</div>
+        <div class="bar-track"><div class="bar-fill" style="width:24.663677130044842%;background:#eab308"></div></div>
+        <div class="bar-value">55</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Скорее доволен</div>
+        <div class="bar-track"><div class="bar-fill" style="width:100%;background:#eab308"></div></div>
+        <div class="bar-value">223</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Доволен</div>
+        <div class="bar-track"><div class="bar-fill" style="width:39.01345291479821%;background:#eab308"></div></div>
+        <div class="bar-value">87</div>
+      </div>
+<div class="bar-row">
+        <div class="bar-label">Счастлив</div>
+        <div class="bar-track"><div class="bar-fill" style="width:0.4484304932735426%;background:#eab308"></div></div>
+        <div class="bar-value">1</div>
+      </div>
+      </div>
+    </div>
+
+
+
+    <h2 id="section-features">Фичи Claude Code</h2>
+    <div class="claude-md-section">
+      <h3>Рекомендации для CLAUDE.md</h3>
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">Просто скопируй это в Claude Code, и оно добавится в твой CLAUDE.md.</p>
+      <div class="claude-md-actions">
+        <button class="copy-all-btn" onclick="copyAllCheckedClaudeMd()">Скопировать отмеченные</button>
+      </div>
+
+        <div class="claude-md-item">
+          <input type="checkbox" id="cmd-0" class="cmd-checkbox" checked data-text="Add under ## Testing section\n\nWhen running tests, never consider a test passing if it passes trivially (e.g., test environment disables the feature being tested). Always verify tests actually exercise the code path under test using spies, mocks, or assertions on side effects.">
+          <label for="cmd-0">
+            <code class="cmd-code">When running tests, never consider a test passing if it passes trivially (e.g., test environment disables the feature being tested). Always verify tests actually exercise the code path under test using spies, mocks, or assertions on side effects.</code>
+            <button class="copy-btn" onclick="copyCmdItem(0)">Копировать</button>
+          </label>
+          <div class="cmd-why">В нескольких сессиях тесты проходили тривиально из-за отключённых фич в тестовом окружении, что требовало переделки.</div>
+        </div>
+
+        <div class="claude-md-item">
+          <input type="checkbox" id="cmd-1" class="cmd-checkbox" checked data-text="Add under ## Git Workflow section\n\nAlways work on the correct git branch before making changes. Confirm the current branch before committing. Never commit to the wrong branch or pull unrelated history via rebase — prefer cherry-pick for moving commits between branches.">
+          <label for="cmd-1">
+            <code class="cmd-code">Always work on the correct git branch before making changes. Confirm the current branch before committing. Never commit to the wrong branch or pull unrelated history via rebase — prefer cherry-pick for moving commits between branches.</code>
+            <button class="copy-btn" onclick="copyCmdItem(1)">Копировать</button>
+          </label>
+          <div class="cmd-why">Путаница с git-ветками, коммиты не в ту ветку и rebase с подтягиванием нерелевантной истории встречались в нескольких сессиях, вызывая значительное трение.</div>
+        </div>
+
+        <div class="claude-md-item">
+          <input type="checkbox" id="cmd-2" class="cmd-checkbox" checked data-text="Add under ## Testing section\n\nDo not remove stubs or mocks from tests prematurely. When refactoring specs, preserve existing test isolation until explicitly told otherwise. Always run the full spec suite after stub changes.">
+          <label for="cmd-2">
+            <code class="cmd-code">Do not remove stubs or mocks from tests prematurely. When refactoring specs, preserve existing test isolation until explicitly told otherwise. Always run the full spec suite after stub changes.</code>
+            <button class="copy-btn" onclick="copyCmdItem(2)">Копировать</button>
+          </label>
+          <div class="cmd-why">Преждевременное удаление стабов ломало тесты в нескольких сессиях, каждый раз требуя коррекции.</div>
+        </div>
+
+        <div class="claude-md-item">
+          <input type="checkbox" id="cmd-3" class="cmd-checkbox" checked data-text="Add under ## Code Editing section\n\nWhen making code edits, verify the resulting syntax is valid — especially when refactoring blocks inline or using replace_all. Check for dangling parentheses, unclosed blocks, and syntax errors before moving on.">
+          <label for="cmd-3">
+            <code class="cmd-code">When making code edits, verify the resulting syntax is valid — especially when refactoring blocks inline or using replace_all. Check for dangling parentheses, unclosed blocks, and syntax errors before moving on.</code>
+            <button class="copy-btn" onclick="copyCmdItem(3)">Копировать</button>
+          </label>
+          <div class="cmd-why">В нескольких сессиях Claude выдавал синтаксические ошибки при replace_all и инлайн-рефакторинге, требуя повторных коррекций.</div>
+        </div>
+
+        <div class="claude-md-item">
+          <input type="checkbox" id="cmd-4" class="cmd-checkbox" checked data-text="Add at the top of CLAUDE.md under ## General\n\nRespond in Russian unless explicitly told otherwise. The user&apos;s primary language is Russian.">
+          <label for="cmd-4">
+            <code class="cmd-code">Respond in Russian unless explicitly told otherwise. The user&apos;s primary language is Russian.</code>
+            <button class="copy-btn" onclick="copyCmdItem(4)">Копировать</button>
+          </label>
+          <div class="cmd-why">Claude отвечал на английском вместо русского как минимум в одной сессии, потребовав коррекции.</div>
+        </div>
+
+        <div class="claude-md-item">
+          <input type="checkbox" id="cmd-5" class="cmd-checkbox" checked data-text="Add under ## Communication section\n\nNever dismiss or skip reported issues without investigating. If the user says something is broken, verify it thoroughly before claiming it works or is already resolved.">
+          <label for="cmd-5">
+            <code class="cmd-code">Never dismiss or skip reported issues without investigating. If the user says something is broken, verify it thoroughly before claiming it works or is already resolved.</code>
+            <button class="copy-btn" onclick="copyCmdItem(5)">Копировать</button>
+          </label>
+          <div class="cmd-why">Claude отмахивался от багов как решённых и утверждал, что фичи работают, когда это было не так — в нескольких сессиях.</div>
+        </div>
+
+    </div>
+
+
+    <p style="font-size: 13px; color: #64748b; margin-bottom: 12px;">Просто скопируй это в Claude Code, и он настроит всё сам.</p>
+    <div class="features-section">
+
+        <div class="feature-card">
+          <div class="feature-title">Hooks</div>
+          <div class="feature-oneliner">Автозапуск shell-команд на определённых этапах жизненного цикла, например pre-commit или post-edit.</div>
+          <div class="feature-why"><strong>Почему для тебя:</strong> Главное трение — wrong_approach (76 случаев) и buggy_code (42). Hooks могут автоматически запускать линтеры, проверку типов и тест-сьюты после правок, ловя синтаксические ошибки и висячие скобки до того, как они накопятся — проблемы, которые многократно требовали ручных коррекций в твоих сессиях.</div>
+
+          <div class="feature-examples">
+            <div class="feature-example">
+              <div class="example-code-row">
+                <code class="example-code">// .claude/settings.json
+{
+  &quot;hooks&quot;: {
+    &quot;postEdit&quot;: {
+      &quot;command&quot;: &quot;npx tsc --noEmit 2&gt;&amp;1 | head -20&quot;,
+      &quot;description&quot;: &quot;Type-check after edits&quot;
+    },
+    &quot;preCommit&quot;: {
+      &quot;command&quot;: &quot;bundle exec rspec --fail-fast 2&gt;&amp;1 | tail -5&quot;,
+      &quot;description&quot;: &quot;Run specs before committing&quot;
+    }
+  }
+}</code>
+                <button class="copy-btn" onclick="copyText(this)">Копировать</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-title">Custom Skills</div>
+          <div class="feature-oneliner">Переиспользуемые markdown-промпты, запускаемые одной /командой.</div>
+          <div class="feature-why"><strong>Почему для тебя:</strong> Ты запускаешь сессии бенчмаркинга (8 сессий), протоколы охоты за багами и воркфлоу покрытия тестами многократно с определёнными конвенциями. Кастомные навыки вроде /bughunt, /coverage и /benchmark закодируют твои протоколы, чтобы Claude следовал им правильно без коррекций каждый раз.</div>
+
+          <div class="feature-examples">
+            <div class="feature-example">
+              <div class="example-code-row">
+                <code class="example-code"># .claude/skills/bughunt/SKILL.md
+## Bug Hunt Protocol
+1. Read the Jira ticket or bug description
+2. Use Grep and Read to trace the code path — do NOT guess
+3. Search for the specific method/class mentioned in the error
+4. Identify the exact file and line of root cause
+5. Report: file, line, root cause, time taken
+6. Do NOT suggest fixes unless asked
+
+Then run: /bughunt TD-12345</code>
+                <button class="copy-btn" onclick="copyText(this)">Копировать</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-title">Headless Mode</div>
+          <div class="feature-oneliner">Запуск Claude неинтерактивно из скриптов и CI/CD.</div>
+          <div class="feature-why"><strong>Почему для тебя:</strong> У тебя 9 сессий индексации и частые воркфлоу переиндексации/проверки статуса для tea-rags. Headless-режим может автоматизировать их как скрипты, чтобы не открывать интерактивные сессии только для запуска переиндексации или бенчмарков.</div>
+
+          <div class="feature-examples">
+            <div class="feature-example">
+              <div class="example-code-row">
+                <code class="example-code"># Automated reindex + benchmark script
+claude -p &quot;Run tea-rags index_codebase for the current project, then run search_code for &apos;batch_create&apos; and report results&quot; --allowedTools &quot;Bash,Read,Grep,mcp__tea-rags__index_codebase,mcp__tea-rags__search_code&quot;</code>
+                <button class="copy-btn" onclick="copyText(this)">Копировать</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+    </div>
+
+
+    <h2 id="section-patterns">Новые паттерны</h2>
+    <p style="font-size: 13px; color: #64748b; margin-bottom: 12px;">Просто скопируй это в Claude Code, и он проведёт тебя через процесс.</p>
+    <div class="patterns-section">
+
+        <div class="pattern-card">
+          <div class="pattern-title">Сократить трение от неверного подхода через предварительные ограничения</div>
+          <div class="pattern-summary">Начинай сессии с явных ограничений, чтобы Claude не угадывал неверные подходы.</div>
+          <div class="pattern-detail">Главное трение — «неверный подход» с 76 случаями: Claude пробует неправильные методы установки, ищет не в тех директориях и выбирает неверные пути дебага. Многое можно предотвратить, указав ограничения заранее: в каких директориях искать, какую ветку использовать, какой подход применить. Преамбула в 2 строки экономит 10 минут коррекций.</div>
+
+          <div class="copyable-prompt-section">
+            <div class="prompt-label">Вставь в Claude Code:</div>
+            <div class="copyable-prompt-row">
+              <code class="copyable-prompt">Before starting: we&apos;re on branch feature/X, working in src/services/. Do NOT touch files outside that directory. Use TDD — write failing test first, then implement. Run `bundle exec rspec spec/services/` after each change.</code>
+              <button class="copy-btn" onclick="copyText(this)">Копировать</button>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="pattern-card">
+          <div class="pattern-title">Пакетный бенчмаркинг охоты за багами</div>
+          <div class="pattern-summary">Используй структурированный шаблон бенчмаркинга для сокращения времени настройки в частых сессиях бенчмарков.</div>
+          <div class="pattern-detail">Ты провёл 8+ сессий бенчмаркинга поиска корневых причин, часто с похожей настройкой и протоколом. Несколько были прерваны проблемами подключения инструментов. Определив стандартный шаблон бенчмарка и предварительно проверяя подключение инструментов, можно исключить повторяющиеся накладные расходы на настройку и проваленные сессии. Рассмотри запуск проверок подключения перед стартом замеров.</div>
+
+          <div class="copyable-prompt-section">
+            <div class="prompt-label">Вставь в Claude Code:</div>
+            <div class="copyable-prompt-row">
+              <code class="copyable-prompt">Pre-flight check: verify MCP tools are connected by calling get_index_status. If any tool fails, stop and report which tool is down. Only proceed with the benchmark if all tools respond. Then follow the bug-hunt protocol for ticket TD-XXXXX and report time-to-root-cause.</code>
+              <button class="copy-btn" onclick="copyText(this)">Копировать</button>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="pattern-card">
+          <div class="pattern-title">Повысить процент полного достижения целей</div>
+          <div class="pattern-summary">Разбивай сложные мульти-целевые сессии на фокусированные одно-целевые.</div>
+          <div class="pattern-detail">У тебя 14 частично достигнутых сессий, часто при комбинировании нескольких целей (починить баги + рефакторинг + добавить тесты + настроить интеграции). Процент полного достижения самый высокий, когда у сессии одна чёткая цель — например «найти корневую причину X» или «добавить спеки для Y-сервисов». Разделение многочасовых сессий на 2-3 фокусированных улучшит процент завершения и снизит кумулятивное трение от неверных подходов в середине сессии.</div>
+
+          <div class="copyable-prompt-section">
+            <div class="prompt-label">Вставь в Claude Code:</div>
+            <div class="copyable-prompt-row">
+              <code class="copyable-prompt">Goal: Add RSpec coverage for QBO sync services ONLY. Do not refactor, do not fix unrelated bugs, do not change git branches. Target: 100% coverage for spec/services/qbo/sync_*.rb. Run specs after each file.</code>
+              <button class="copy-btn" onclick="copyText(this)">Копировать</button>
+            </div>
+          </div>
+
+        </div>
+
+    </div>
+
+
+
+
+    <h2 id="section-horizon">На горизонте</h2>
+    <p class="section-intro">Твои 143 сессии показывают воркфлоу продвинутого пользователя, эволюционирующий в сторону автономных агентов, но трение от неверных подходов (76 случаев) и бажного кода (42 случая) обнажает чёткие возможности позволить Claude итерировать самостоятельно по тест-сьютам и протоколам.</p>
+    <div class="horizon-section">
+
+        <div class="horizon-card">
+          <div class="horizon-title">Автономные TDD-циклы фикса багов против CI</div>
+          <div class="horizon-possible">Твоя главная активность — исправление багов (26 сессий), и ты уже добенчмаркил поиск корневых причин до 44 секунд. Представь запуск Claude с падающим тестом или тикетом из Jira, где он автономно итерирует — находит корневую причину, пишет фикс, запускает спеки, чинит регрессии — пока весь сьют не позеленеет, исключая 42 случая бажного кода, где приходилось вмешиваться вручную.</div>
+          <div class="horizon-tip"><strong>Как начать:</strong> Используй headless-режим Claude Code или Agent tool (ты уже используешь его 155 раз) для запуска под-агента, который зацикливается по RSpec/vitest-сьюту до зелёного результата, с жёстким лимитом итераций.</div>
+          <div class="pattern-prompt"><div class="prompt-label">Вставь в Claude Code:</div><code>Find the root cause of the failing test in [spec file]. Then fix the production code, run the full test suite with `bundle exec rspec` (or `npx vitest run`), and if any tests fail, analyze the failures and fix them. Repeat this loop until ALL tests pass. Do not ask me for guidance — iterate autonomously. After all tests pass, show me a summary of: 1) root cause, 2) all files changed, 3) number of iterations needed. Limit yourself to 10 iterations maximum.</code><button class="copy-btn" onclick="copyText(this)">Копировать</button></div>
+        </div>
+
+        <div class="horizon-card">
+          <div class="horizon-title">Параллельные под-агенты для мультифайлового рефакторинга</div>
+          <div class="horizon-possible">Твои самые впечатляющие успехи связаны с мультифайловыми изменениями (27 случаев) в кодобазах TypeScript и Ruby, но трение от неверного подхода (76 случаев) часто возникает из-за последовательного исследования Claude не того пути. Параллельные под-агенты могли бы каждый взять независимый модуль — один обрабатывает спеки, другой реализацию, третий валидирует интеграцию — а затем сойтись, кардинально сокращая твои 429 часов сессий.</div>
+          <div class="horizon-tip"><strong>Как начать:</strong> Используй Agent tool для веерного запуска параллельных воркеров, привязанных к конкретным директориям или задачам, где каждый под-агент запускает свой срез тестов перед объединением результатов.</div>
+          <div class="pattern-prompt"><div class="prompt-label">Вставь в Claude Code:</div><code>I need to refactor [feature/module] across these areas: 1) service layer implementation, 2) test specs, 3) integration points. Launch 3 parallel sub-agents: Agent 1 — refactor the service files in [dir] following our layered patterns, run unit specs after each change. Agent 2 — update all specs in [spec dir] to match new interfaces, ensure 100% coverage. Agent 3 — update integration points and run the full integration suite. Each agent should work independently, commit to a feature branch, and report back. Coordinate final merge only after all three report green tests.</code><button class="copy-btn" onclick="copyText(this)">Копировать</button></div>
+        </div>
+
+        <div class="horizon-card">
+          <div class="horizon-title">Самокорректирующиеся протоколы поиска и расследования</div>
+          <div class="horizon-possible">Ты вложил много сил в бенчмаркинг стратегий поиска (каскадные стратегии, тюнинг rank_chunks, LSP vs семантический поиск) и создал кастомные протоколы охоты за багами. Вместо ручного руководства Claude, когда он выбирает неверный подход, закодируй протокол как самокорректирующийся цикл: если grep не находит ничего полезного, эскалируй на семантический поиск, затем на LSP-ссылки — автоматически — с замерами и скорингом уверенности на каждом шаге.</div>
+          <div class="horizon-tip"><strong>Как начать:</strong> Кодифицируй свой каскад поиска и протокол охоты за багами в переиспользуемый промпт, которому Claude следует автономно, используя цепочки инструментов Bash/Grep/Read со встроенной fallback-логикой.</div>
+          <div class="pattern-prompt"><div class="prompt-label">Вставь в Claude Code:</div><code>Investigate Jira ticket [ID]: &apos;[description]&apos;. Follow this protocol strictly and autonomously:
+
+Phase 1 (max 60s): Use Grep to search for key terms from the bug description. Score confidence 0-10.
+Phase 2 (if confidence &lt; 7): Use broader file reads and trace the call chain from the entry point. Score again.
+Phase 3 (if confidence &lt; 7): Use LSP-style reference tracing — find all callers/callees of suspect methods.
+Phase 4: Identify the root cause with exact file, line number, and explanation.
+
+At each phase, log: time elapsed, tools used, files examined, confidence score, and reasoning. Do NOT ask me for help — escalate through phases automatically. Output a final report with root cause, evidence chain, and total time.</code><button class="copy-btn" onclick="copyText(this)">Копировать</button></div>
+        </div>
+
+    </div>
+
+
+
+    <div class="fun-ending">
+      <div class="fun-headline">«Пользователь потребовал честный архитектурный ревью уровня Google, а потом пришлось поправлять Claude за излишнюю суровость к вещам, которые на самом деле были реализованы»</div>
+      <div class="fun-detail">Во время сессии оценки проекта Claude попросили оценить MCP-сервер так, как если бы это был code review в Google. Claude изначально снизил оценку за «отсутствие graceful degradation» и «отсутствие observability» — фичи, которые, как указал пользователь, уже были реализованы. Claude пришлось признать ошибку и повысить оценку.</div>
+    </div>
+
+
+
+  </div>
+  <script>
+    function toggleCollapsible(header) {
+      header.classList.toggle('open');
+      const content = header.nextElementSibling;
+      content.classList.toggle('open');
+    }
+    function copyText(btn) {
+      const code = btn.previousElementSibling;
+      navigator.clipboard.writeText(code.textContent).then(() => {
+        btn.textContent = 'Скопировано!';
+        setTimeout(() => { btn.textContent = 'Копировать'; }, 2000);
+      });
+    }
+    function copyCmdItem(idx) {
+      const checkbox = document.getElementById('cmd-' + idx);
+      if (checkbox) {
+        const text = checkbox.dataset.text;
+        navigator.clipboard.writeText(text).then(() => {
+          const btn = checkbox.nextElementSibling.querySelector('.copy-btn');
+          if (btn) { btn.textContent = 'Скопировано!'; setTimeout(() => { btn.textContent = 'Копировать'; }, 2000); }
+        });
+      }
+    }
+    function copyAllCheckedClaudeMd() {
+      const checkboxes = document.querySelectorAll('.cmd-checkbox:checked');
+      const texts = [];
+      checkboxes.forEach(cb => {
+        if (cb.dataset.text) { texts.push(cb.dataset.text); }
+      });
+      const combined = texts.join('\n');
+      const btn = document.querySelector('.copy-all-btn');
+      if (btn) {
+        navigator.clipboard.writeText(combined).then(() => {
+          btn.textContent = 'Скопировано ' + texts.length + '!';
+          btn.classList.add('copied');
+          setTimeout(() => { btn.textContent = 'Скопировать отмеченные'; btn.classList.remove('copied'); }, 2000);
+        });
+      }
+    }
+    // Timezone selector for time of day chart (data is from our own analytics, not user input)
+    const rawHourCounts = {"0":194,"1":84,"2":91,"3":76,"4":4,"5":3,"6":2,"8":5,"12":30,"13":139,"14":180,"15":168,"16":83,"17":121,"18":155,"19":196,"20":126,"21":110,"22":97,"23":49};
+    function updateHourHistogram(offsetFromPT) {
+      const periods = [
+        { label: "Утро (6-12)", range: [6,7,8,9,10,11] },
+        { label: "День (12-18)", range: [12,13,14,15,16,17] },
+        { label: "Вечер (18-24)", range: [18,19,20,21,22,23] },
+        { label: "Ночь (0-6)", range: [0,1,2,3,4,5] }
+      ];
+      const adjustedCounts = {};
+      for (const [hour, count] of Object.entries(rawHourCounts)) {
+        const newHour = (parseInt(hour) + offsetFromPT + 24) % 24;
+        adjustedCounts[newHour] = (adjustedCounts[newHour] || 0) + count;
+      }
+      const periodCounts = periods.map(p => ({
+        label: p.label,
+        count: p.range.reduce((sum, h) => sum + (adjustedCounts[h] || 0), 0)
+      }));
+      const maxCount = Math.max(...periodCounts.map(p => p.count)) || 1;
+      const container = document.getElementById('hour-histogram');
+      container.textContent = '';
+      periodCounts.forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'bar-row';
+        const label = document.createElement('div');
+        label.className = 'bar-label';
+        label.textContent = p.label;
+        const track = document.createElement('div');
+        track.className = 'bar-track';
+        const fill = document.createElement('div');
+        fill.className = 'bar-fill';
+        fill.style.width = (p.count / maxCount) * 100 + '%';
+        fill.style.background = '#8b5cf6';
+        track.appendChild(fill);
+        const value = document.createElement('div');
+        value.className = 'bar-value';
+        value.textContent = p.count;
+        row.appendChild(label);
+        row.appendChild(track);
+        row.appendChild(value);
+        container.appendChild(row);
+      });
+    }
+    document.getElementById('timezone-select').addEventListener('change', function() {
+      const customInput = document.getElementById('custom-offset');
+      if (this.value === 'custom') {
+        customInput.style.display = 'inline-block';
+        customInput.focus();
+      } else {
+        customInput.style.display = 'none';
+        updateHourHistogram(parseInt(this.value));
+      }
+    });
+    document.getElementById('custom-offset').addEventListener('change', function() {
+      const offset = parseInt(this.value) + 8;
+      updateHourHistogram(offset);
+    });
+  </script>
+</body>
+</html>
