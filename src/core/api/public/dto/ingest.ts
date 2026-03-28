@@ -4,13 +4,8 @@
  * App-facing types only. Internal pipeline types stay in core/types.ts.
  */
 
-import type {
-  ChunkEnrichmentInfo,
-  EnrichmentInfo,
-  EnrichmentMetrics,
-  IndexingStatus,
-  ProgressUpdate,
-} from "../../../types.js";
+import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
+import type { EnrichmentMetrics, IndexingStatus, ProgressUpdate } from "../../../types.js";
 
 // ---------------------------------------------------------------------------
 // Indexing options
@@ -34,7 +29,7 @@ export interface IndexStats {
   status: "completed" | "partial" | "failed";
   errors?: string[];
   /** Git enrichment status */
-  enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
+  enrichmentStatus?: "completed" | "partial" | "skipped" | "background" | "failed";
   enrichmentDurationMs?: number;
   /** Detailed enrichment metrics (file/chunk signal breakdown) */
   enrichmentMetrics?: EnrichmentMetrics;
@@ -63,7 +58,7 @@ export interface ChangeStats {
   durationMs: number;
   status: "completed" | "partial" | "failed";
   /** Git enrichment status */
-  enrichmentStatus?: "completed" | "partial" | "skipped" | "background";
+  enrichmentStatus?: "completed" | "partial" | "skipped" | "background" | "failed";
   enrichmentDurationMs?: number;
   /** Detailed enrichment metrics (file/chunk signal breakdown) */
   enrichmentMetrics?: EnrichmentMetrics;
@@ -87,10 +82,8 @@ export interface IndexStatus {
   embeddingModel?: string;
   /** Qdrant URL (useful for embedded Qdrant with dynamic ports) */
   qdrantUrl?: string;
-  /** Background git enrichment progress (file-level) */
-  enrichment?: EnrichmentInfo;
-  /** Background chunk-level git enrichment progress */
-  chunkEnrichment?: ChunkEnrichmentInfo;
+  /** Per-provider enrichment health (e.g. { git: { file: ..., chunk: ... } }) */
+  enrichment?: EnrichmentHealthMap;
   /** BM25 sparse vector version (from schema metadata) */
   sparseVersion?: number;
   /** Infrastructure health status (Qdrant + embedding provider) */
