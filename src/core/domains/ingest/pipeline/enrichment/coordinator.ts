@@ -16,7 +16,7 @@ import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type { FileSignalOverlay } from "../../../../contracts/types/provider.js";
-import type { ChunkLookupEntry, EnrichmentInfo, EnrichmentMetrics } from "../../../../types.js";
+import type { ChunkLookupEntry, EnrichmentMetrics } from "../../../../types.js";
 import { INDEXING_METADATA_ID } from "../../constants.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import { isDebug } from "../infra/runtime.js";
@@ -440,7 +440,8 @@ export class EnrichmentCoordinator {
     // Scoped prefetch (incremental reindex): only update status/timing, not coverage stats.
     // Coverage stats (matchedFiles, missedFiles, gitLogFileCount) reflect only changed files
     // and would overwrite the accurate full-index values from the previous run.
-    const markerUpdate: Partial<EnrichmentInfo> = {
+    // TODO(Task 4): replace with per-provider marker updates
+    const markerUpdate: Record<string, unknown> = {
       status: "completed",
       completedAt: new Date().toISOString(),
       durationMs: metrics.totalDurationMs,
@@ -461,7 +462,8 @@ export class EnrichmentCoordinator {
    * Update enrichment progress marker in Qdrant.
    * Merges with existing marker to preserve fields not in the update.
    */
-  async updateEnrichmentMarker(collectionName: string, info: Partial<EnrichmentInfo>): Promise<void> {
+  // TODO(Task 4): replace with per-provider marker updates
+  async updateEnrichmentMarker(collectionName: string, info: Record<string, unknown>): Promise<void> {
     try {
       let enrichment: Record<string, unknown> = { ...info };
 
@@ -472,7 +474,7 @@ export class EnrichmentCoordinator {
       }
 
       if (info.totalFiles && info.processedFiles !== undefined) {
-        enrichment.percentage = Math.round((info.processedFiles / info.totalFiles) * 100);
+        enrichment.percentage = Math.round(((info.processedFiles as number) / (info.totalFiles as number)) * 100);
       }
       await this.qdrant.setPayload(collectionName, { enrichment }, { points: [INDEXING_METADATA_ID] });
     } catch (error) {

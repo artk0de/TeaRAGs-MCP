@@ -1,4 +1,5 @@
 import type { Distributions } from "../../../contracts/types/trajectory.js";
+import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 
 /** Signal statistics with label-to-threshold mapping for a single signal. */
 export interface SignalMetrics {
@@ -18,4 +19,6 @@ export interface IndexMetrics {
   distributions: Distributions;
   /** Signal stats grouped by language → signal → scope → metrics. Scopes: "source", "test". */
   signals: Record<string, Record<string, Record<string, SignalMetrics>>>;
+  /** Per-provider enrichment health (e.g. { git: { file: ..., chunk: ... } }) */
+  enrichment?: EnrichmentHealthMap;
 }

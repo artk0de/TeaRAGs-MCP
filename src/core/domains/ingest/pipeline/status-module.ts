@@ -12,8 +12,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
-import type { ChunkEnrichmentInfo, EnrichmentInfo, IndexStatus } from "../../../types.js";
+import type { IndexStatus } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 
@@ -153,13 +154,8 @@ export class StatusModule {
 
     const actualChunksCount = indexingMarker ? Math.max(0, info.pointsCount - 1) : info.pointsCount;
 
-    const enrichmentPayload = indexingMarker?.payload?.enrichment as EnrichmentInfo | undefined;
-    const enrichment: EnrichmentInfo | undefined = enrichmentPayload?.status ? enrichmentPayload : undefined;
-
-    const chunkEnrichmentPayload = indexingMarker?.payload?.chunkEnrichment as ChunkEnrichmentInfo | undefined;
-    const chunkEnrichment: ChunkEnrichmentInfo | undefined = chunkEnrichmentPayload?.status
-      ? chunkEnrichmentPayload
-      : undefined;
+    // TODO(Task 7): parse new per-provider marker format properly
+    const enrichment = (indexingMarker?.payload?.enrichment as EnrichmentHealthMap | undefined) ?? undefined;
 
     const embeddingModel =
       typeof indexingMarker?.payload?.embeddingModel === "string" ? indexingMarker.payload.embeddingModel : undefined;
@@ -208,7 +204,6 @@ export class StatusModule {
         qdrantUrl: this.qdrant.url,
         sparseVersion,
         enrichment,
-        chunkEnrichment,
       };
     }
 
@@ -230,7 +225,6 @@ export class StatusModule {
             )
           : undefined,
         enrichment,
-        chunkEnrichment,
       };
     }
 

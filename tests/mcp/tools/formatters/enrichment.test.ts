@@ -27,52 +27,52 @@ describe("formatEnrichmentStatus", () => {
     expect(result).toContain("3.0s");
   });
 
-  it("should format background enrichment with progress from getIndexStatus", async () => {
+  it("should format background enrichment with per-provider health from getIndexStatus", async () => {
     const mockGetStatus = vi.fn().mockResolvedValue({
       enrichment: {
-        status: "in_progress",
-        percentage: 42,
-        matchedFiles: 80,
-        missedFiles: 20,
-        gitLogFileCount: 150,
+        git: {
+          file: { status: "in_progress", message: "Enrichment in progress..." },
+          chunk: { status: "healthy" },
+        },
       },
     });
 
     const result = await formatEnrichmentStatus("background", undefined, mockGetStatus, "/my/path");
     expect(mockGetStatus).toHaveBeenCalledWith("/my/path");
-    expect(result).toContain("in_progress");
-    expect(result).toContain("42%");
-    expect(result).toContain("80/100"); // matched/total
-    expect(result).toContain("150 files");
+    expect(result).toContain("git.file: in_progress");
   });
 
-  it("should show completed enrichment without track-progress hint", async () => {
+  it("should show completed enrichment as healthy", async () => {
     const mockGetStatus = vi.fn().mockResolvedValue({
       enrichment: {
-        status: "completed",
-        matchedFiles: 100,
-        missedFiles: 0,
+        git: {
+          file: { status: "healthy" },
+          chunk: { status: "healthy" },
+        },
       },
     });
 
     const result = await formatEnrichmentStatus("background", undefined, mockGetStatus, "/my/path");
-    expect(result).toContain("completed");
-    expect(result).not.toContain("get_index_status to track progress");
+    expect(result).toContain("healthy");
   });
 
-  it("should show low-coverage hint when rate < 80%", async () => {
+  it("should show degraded chunk status with message", async () => {
     const mockGetStatus = vi.fn().mockResolvedValue({
       enrichment: {
-        status: "completed",
-        matchedFiles: 30,
-        missedFiles: 70,
+        git: {
+          file: { status: "healthy" },
+          chunk: {
+            status: "degraded",
+            unenrichedChunks: 23,
+            message: "23 chunks missing chunk-level signals.",
+          },
+        },
       },
     });
 
     const result = await formatEnrichmentStatus("background", undefined, mockGetStatus, "/my/path");
-    expect(result).toContain("30%");
-    expect(result).toContain("Hint:");
-    expect(result).toContain("GIT_LOG_MAX_AGE_MONTHS");
+    expect(result).toContain("degraded");
+    expect(result).toContain("23 chunks missing");
   });
 
   it("should handle getIndexStatus failure gracefully for background", async () => {
@@ -131,7 +131,12 @@ describe("formatEnrichmentStatus", () => {
 
     it("should show metrics for background status too", async () => {
       const mockGetStatus = vi.fn().mockResolvedValue({
-        enrichment: { status: "in_progress", percentage: 50 },
+        enrichment: {
+          git: {
+            file: { status: "in_progress" },
+            chunk: { status: "pending" },
+          },
+        },
       });
       const result = await formatEnrichmentStatus("background", undefined, mockGetStatus, "/path", metrics);
       expect(result).toContain("trajectory.git.file:");
