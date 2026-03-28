@@ -12,7 +12,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
+import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
+import type { EnrichmentMarkerMap } from "./enrichment/types.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { IndexStatus } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
@@ -154,8 +155,8 @@ export class StatusModule {
 
     const actualChunksCount = indexingMarker ? Math.max(0, info.pointsCount - 1) : info.pointsCount;
 
-    // TODO(Task 7): parse new per-provider marker format properly
-    const enrichment = (indexingMarker?.payload?.enrichment as EnrichmentHealthMap | undefined) ?? undefined;
+    const rawEnrichment = indexingMarker?.payload?.enrichment as EnrichmentMarkerMap | undefined;
+    const enrichment = rawEnrichment ? mapMarkerToHealth(rawEnrichment) : undefined;
 
     const embeddingModel =
       typeof indexingMarker?.payload?.embeddingModel === "string" ? indexingMarker.payload.embeddingModel : undefined;
