@@ -590,9 +590,9 @@ async function main() {
   }
 
   const bestDft = dftDecision.getBest();
-  optimal.QDRANT_DELETE_FLUSH_TIMEOUT_MS = bestDft?.timeoutMs || 500;
+  optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS = bestDft?.timeoutMs || 500;
   console.log(
-    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_DELETE_FLUSH_TIMEOUT_MS=${optimal.QDRANT_DELETE_FLUSH_TIMEOUT_MS}${c.reset}`,
+    `\n  ${c.green}✓${c.reset} ${c.bold}Optimal: QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS=${optimal.QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS}${c.reset}`,
   );
   if (bestDft) console.log(`    ${c.dim}Speed: ${bestDft.rate} deletions/sec${c.reset}`);
 
