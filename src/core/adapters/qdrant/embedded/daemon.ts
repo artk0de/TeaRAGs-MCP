@@ -108,7 +108,22 @@ export async function resolveQdrantUrl(qdrantUrl?: string, appDataPath?: string)
   }
 
   const handle = await ensureDaemon(appDataPath);
-  return { mode: "embedded", url: handle.url, release: handle.release };
+  return { mode: "embedded", url: handle.url, release: handle.release, reconnect: handle.reconnect };
+}
+
+/**
+ * Build a reconnect callback that re-reads daemon.port and returns a new URL
+ * if the daemon restarted on a different port. Returns null if port unchanged.
+ */
+function makeReconnect(paths: DaemonPaths, currentPort: number): () => string | null {
+  return () => {
+    if (!existsSync(paths.portFile) || !isDaemonAlive(paths)) return null;
+    const newPort = parseInt(readFileSync(paths.portFile, "utf-8").trim(), 10);
+    if (newPort === currentPort || isNaN(newPort)) return null;
+    const newUrl = `http://127.0.0.1:${newPort}`;
+    console.error(`[tea-rags] Qdrant daemon port changed: ${currentPort} → ${newPort}`);
+    return newUrl;
+  };
 }
 
 async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
@@ -128,6 +143,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
           const remaining = decrementRefs(paths);
           console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
         },
+        reconnect: makeReconnect(paths, port),
       };
     }
   }
@@ -176,6 +192,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
           const remaining = decrementRefs(paths);
           console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
         },
+        reconnect: makeReconnect(paths, port),
       };
     }
     await sleep(HEALTH_CHECK_INTERVAL_MS);

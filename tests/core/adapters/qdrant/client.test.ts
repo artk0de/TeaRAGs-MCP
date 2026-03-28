@@ -21,6 +21,7 @@ const mockClient = {
   batchUpdate: vi.fn().mockResolvedValue({}),
   scroll: vi.fn().mockResolvedValue({ points: [] }),
   queryGroups: vi.fn().mockResolvedValue({ groups: [] }),
+  count: vi.fn().mockResolvedValue({ count: 0 }),
 };
 
 vi.mock("@qdrant/js-client-rest", () => ({
@@ -2320,6 +2321,68 @@ describe("QdrantManager", () => {
       await expect(manager.batchSetPayload("col", [{ payload: { k: "v" }, points: ["id1"] }])).rejects.toThrow(
         QdrantUnavailableError,
       );
+    });
+  });
+
+  describe("countPoints", () => {
+    it("returns count with filter", async () => {
+      mockClient.count.mockResolvedValueOnce({ count: 5 });
+
+      const result = await manager.countPoints("col", {
+        should: [{ key: "relativePath", match: { value: "src/foo.ts" } }],
+      });
+
+      expect(result).toBe(5);
+      expect(mockClient.count).toHaveBeenCalledWith("col", {
+        filter: { should: [{ key: "relativePath", match: { value: "src/foo.ts" } }] },
+        exact: true,
+      });
+    });
+
+    it("returns count without filter", async () => {
+      mockClient.count.mockResolvedValueOnce({ count: 42 });
+
+      const result = await manager.countPoints("col");
+
+      expect(result).toBe(42);
+      expect(mockClient.count).toHaveBeenCalledWith("col", { filter: undefined, exact: true });
+    });
+  });
+
+  describe("reconnect on connection error", () => {
+    it("retries with new URL when reconnect returns a new URL", async () => {
+      const reconnect = vi.fn().mockReturnValue("http://127.0.0.1:99999");
+      const mgr = new QdrantManager("http://127.0.0.1:11111", undefined, reconnect);
+
+      // First call fails, second succeeds (after reconnect recreates client)
+      mockClient.getCollections
+        .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+        .mockResolvedValueOnce({ collections: [{ name: "test" }] });
+
+      const result = await mgr.listCollections();
+
+      expect(reconnect).toHaveBeenCalledOnce();
+      expect(mgr.url).toBe("http://127.0.0.1:99999");
+      expect(result).toEqual(["test"]);
+    });
+
+    it("throws QdrantUnavailableError when reconnect returns null", async () => {
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      const reconnect = vi.fn().mockReturnValue(null);
+      const mgr = new QdrantManager("http://127.0.0.1:11111", undefined, reconnect);
+
+      mockClient.getCollections.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      await expect(mgr.listCollections()).rejects.toThrow(QdrantUnavailableError);
+      expect(reconnect).toHaveBeenCalledOnce();
+    });
+
+    it("throws QdrantUnavailableError without reconnect callback", async () => {
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+
+      mockClient.getCollections.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      await expect(manager.listCollections()).rejects.toThrow(QdrantUnavailableError);
     });
   });
 

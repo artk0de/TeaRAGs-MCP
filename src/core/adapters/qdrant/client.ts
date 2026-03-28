@@ -27,12 +27,16 @@ export interface SparseVector {
 }
 
 export class QdrantManager {
-  private readonly client: QdrantClient;
-  private readonly qdrantUrl: string;
+  private client: QdrantClient;
+  private qdrantUrl: string;
+  private readonly apiKey?: string;
+  private readonly reconnect?: () => string | null;
   private _aliases?: QdrantAliasManager;
 
-  constructor(url = "http://localhost:6333", apiKey?: string) {
+  constructor(url = "http://localhost:6333", apiKey?: string, reconnect?: () => string | null) {
     this.qdrantUrl = url;
+    this.apiKey = apiKey;
+    this.reconnect = reconnect;
     this.client = new QdrantClient({ url, apiKey });
   }
 
@@ -40,16 +44,36 @@ export class QdrantManager {
    * Guard all Qdrant client calls through a single entry point.
    * Catches connection errors (fetch failed, ECONNREFUSED) and converts
    * them to QdrantUnavailableError. Business errors (404, 409) pass through.
+   *
+   * For embedded mode: on connection error, tries to reconnect to a daemon
+   * that may have restarted on a different port, then retries once.
    */
   private async call<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (error: unknown) {
+      if (isConnectionError(error) && this.tryReconnect()) {
+        return await fn();
+      }
       if (isConnectionError(error)) {
         throw new QdrantUnavailableError(this.qdrantUrl, error instanceof Error ? error : undefined);
       }
       throw error;
     }
+  }
+
+  /**
+   * Attempt to reconnect to embedded daemon on a new port.
+   * Returns true if URL was updated and retry is warranted.
+   */
+  private tryReconnect(): boolean {
+    if (!this.reconnect) return false;
+    const newUrl = this.reconnect();
+    if (!newUrl) return false;
+    this.qdrantUrl = newUrl;
+    this.client = new QdrantClient({ url: newUrl, apiKey: this.apiKey });
+    this._aliases = undefined;
+    return true;
   }
 
   get url(): string {
@@ -271,6 +295,11 @@ export class QdrantManager {
 
   async deleteCollection(name: string): Promise<void> {
     await this.call(async () => this.client.deleteCollection(name));
+  }
+
+  async countPoints(collectionName: string, filter?: Record<string, unknown>): Promise<number> {
+    const result = await this.call(async () => this.client.count(collectionName, { filter, exact: true }));
+    return result.count;
   }
 
   async addPoints(
