@@ -63,17 +63,6 @@ export class SnapshotCorruptedError extends IngestError {
   }
 }
 
-/** Snapshot migration from old format failed. */
-export class MigrationFailedError extends IngestError {
-  constructor(reason: string) {
-    super({
-      code: "INGEST_MIGRATION_FAILED",
-      message: `Snapshot migration failed: ${reason}`,
-      hint: "Delete the old snapshot file and re-index with forceReindex=true",
-    });
-  }
-}
-
 /** Pipeline method called before start(). */
 export class PipelineNotStartedError extends IngestError {
   constructor(component: string) {

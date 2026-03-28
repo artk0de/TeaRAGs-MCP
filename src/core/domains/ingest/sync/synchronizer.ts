@@ -80,69 +80,6 @@ export class FileSynchronizer {
   }
 
   /**
-   * AUTO-MIGRATION: Upgrade v1 snapshot to v2 by adding metadata
-   * Called automatically after initialize() if snapshot is v1
-   * This is FAST (only stat calls, no file reading)
-   */
-  async ensureSnapshotV2(): Promise<boolean> {
-    // Check if already v2
-    if (this.previousMetadata.size > 0) {
-      return false; // Already v2, no migration needed
-    }
-
-    // Check if we have v1 snapshot data
-    if (this.previousHashes.size === 0) {
-      return false; // No snapshot exists
-    }
-
-    console.error("[FileSynchronizer] Migrating snapshot v1 → v2...");
-    const startTime = Date.now();
-    const metadata = new Map<string, FileMetadata>();
-    let migratedCount = 0;
-    let missingCount = 0;
-
-    // For each file in old snapshot, add metadata
-    for (const [relativePath, hash] of this.previousHashes) {
-      const absolutePath = join(this.codebasePath, relativePath);
-
-      // Get current mtime + size (fast stat call)
-      const meta = await this.getFileMetadata(absolutePath);
-
-      if (meta) {
-        metadata.set(relativePath, {
-          mtime: meta.mtime,
-          size: meta.size,
-          hash, // Use existing hash from v1
-        });
-        migratedCount++;
-      } else {
-        // File no longer exists, skip it
-        missingCount++;
-      }
-    }
-
-    // Save as v2
-    if (metadata.size > 0) {
-      const tree = new MerkleTree();
-      tree.build(this.previousHashes);
-      await this.snapshotManager.save(this.codebasePath, this.previousHashes, tree, metadata);
-
-      // Update internal state
-      this.previousMetadata = metadata;
-      this.previousTree = tree;
-
-      const duration = Date.now() - startTime;
-      console.error(
-        `[FileSynchronizer] Migration complete: ${migratedCount} files upgraded ` +
-          `(${missingCount} missing) in ${duration}ms`,
-      );
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
    * Get file metadata (mtime + size) without reading content
    */
   private async getFileMetadata(filePath: string): Promise<{ mtime: number; size: number } | null> {
