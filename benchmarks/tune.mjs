@@ -18,7 +18,6 @@
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
-import { OllamaEmbeddings } from "../build/core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../build/core/adapters/qdrant/client.js";
 import {
   benchmarkBatchFormationTimeout,
@@ -54,6 +53,7 @@ import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
 import { printTimeEstimates } from "./lib/estimator.mjs";
 import { collectSourceFiles, preloadFiles } from "./lib/files.mjs";
 import { printSummary, printUsage, writeEnvFile } from "./lib/output.mjs";
+import { checkProviderConnectivity, createEmbeddingProvider } from "./lib/provider.mjs";
 import { smartSteppingSearch } from "./lib/smart-stepping.mjs";
 import { StoppingDecision } from "./lib/stopping.mjs";
 
@@ -92,46 +92,9 @@ async function checkConnectivity() {
     }
   })();
 
-  // Check Ollama connectivity and model availability
-  const ollamaCheck = await (async () => {
-    try {
-      // First check if Ollama is reachable
-      const tagsResponse = await fetch(`${config.EMBEDDING_BASE_URL}/api/tags`, {
-        method: "GET",
-        signal: AbortSignal.timeout(5000),
-      });
-      if (!tagsResponse.ok) {
-        return `Ollama returned status ${tagsResponse.status}`;
-      }
-
-      // Check if the model exists
-      const tags = await tagsResponse.json();
-      const models = tags.models || [];
-      const modelNames = models.map((m) => m.name.replace(/:latest$/, ""));
-
-      // Check both with and without :latest suffix
-      const targetModel = config.EMBEDDING_MODEL.replace(/:latest$/, "");
-      const modelExists = modelNames.some((name) => name === targetModel || name === config.EMBEDDING_MODEL);
-
-      if (!modelExists) {
-        const availableModels =
-          modelNames.length > 0
-            ? `\n    Available models: ${modelNames.slice(0, 5).join(", ")}${modelNames.length > 5 ? "..." : ""}`
-            : `\n    No models found. Run: ollama pull ${config.EMBEDDING_MODEL}`;
-        return `Model "${config.EMBEDDING_MODEL}" not found on Ollama${availableModels}`;
-      }
-
-      return null;
-    } catch (err) {
-      if (err.cause?.code === "ECONNREFUSED") {
-        return `Cannot connect to Ollama at ${config.EMBEDDING_BASE_URL}`;
-      }
-      if (err.name === "TimeoutError") {
-        return `Connection to Ollama timed out (${config.EMBEDDING_BASE_URL})`;
-      }
-      return `Ollama error: ${err.message}`;
-    }
-  })();
+  // Check embedding provider connectivity
+  const embeddingCheck = await checkProviderConnectivity();
+  const ollamaCheck = embeddingCheck.ok ? null : embeddingCheck.error;
 
   if (qdrantCheck) errors.push(qdrantCheck);
   if (ollamaCheck) errors.push(ollamaCheck);
@@ -204,16 +167,12 @@ async function main() {
     process.exit(1);
   }
   console.log(`  ${c.green}✓${c.reset} Qdrant connected`);
-  console.log(`  ${c.green}✓${c.reset} Ollama connected (model: ${config.EMBEDDING_MODEL})`);
+  console.log(`  ${c.green}✓${c.reset} Embedding provider connected`);
   console.log();
 
   // Initialize clients
-  const embeddings = new OllamaEmbeddings(
-    config.EMBEDDING_MODEL,
-    config.EMBEDDING_DIMENSION, // undefined = auto-detect
-    undefined,
-    config.EMBEDDING_BASE_URL,
-  );
+  const { provider: embeddings, name: providerName } = await createEmbeddingProvider();
+  console.log(`  ${c.green}✓${c.reset} Embedding provider: ${providerName}`);
 
   // Get actual dimension (auto-detected if not specified)
   const actualDimension = embeddings.getDimensions();
