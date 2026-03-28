@@ -42,7 +42,7 @@ export function createIngestDependencies(
   enableHybrid = false,
 ): IngestDependencies {
   return {
-    createSchemaManager: () => new SchemaManager(qdrant, enableHybrid),
+    createSchemaManager: () => new SchemaManager(qdrant),
     createSynchronizer: (codebasePath, collectionName) =>
       new ParallelFileSynchronizer(
         codebasePath,

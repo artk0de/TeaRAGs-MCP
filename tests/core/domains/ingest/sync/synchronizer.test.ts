@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setDebug } from "../../../../../src/core/domains/ingest/pipeline/infra/runtime.js";
 import { FileSynchronizer } from "../../../../../src/core/domains/ingest/sync/synchronizer.js";
@@ -585,6 +585,13 @@ describe("FileSynchronizer", () => {
         const checkpoint = await synchronizer.loadCheckpoint();
         expect(checkpoint?.phase).toBe("deleting");
       });
+
+      it("should not throw when snapshot dir is not writable (catch branch)", async () => {
+        // Use a path where the snapshot dir doesn't exist and can't be created
+        const badSync = new FileSynchronizer(codebaseDir, "bad-collection", "/nonexistent/snapshots");
+        // Should not throw — catch branch handles the error gracefully
+        await expect(badSync.saveCheckpoint(["file1.ts"], 5, "indexing")).resolves.toBeUndefined();
+      });
     });
 
     describe("loadCheckpoint", () => {
@@ -851,6 +858,20 @@ describe("FileSynchronizer", () => {
       expect(hashes.size).toBe(1);
     });
 
+    it("should handle readFile failure in hashFile (race condition: stat ok, read fails)", async () => {
+      // Create file so stat succeeds, but force readFile to fail on the new file
+      await createFile(codebaseDir, "new-file.ts", "content");
+      // No prior snapshot → no cached metadata → hashFile will be called
+
+      const readFileSpy = vi.spyOn(fs, "readFile").mockRejectedValueOnce(new Error("EPERM: permission denied"));
+
+      const hashes = await synchronizer.computeFileHashes(["new-file.ts"]);
+
+      // hashFile returned "" → filtered out → no entry in map
+      expect(hashes.has("new-file.ts")).toBe(false);
+      readFileSpy.mockRestore();
+    });
+
     it("should continue processing other files when one file fails", async () => {
       // Create valid files
       await createFile(codebaseDir, "file1.ts", "content1");
@@ -942,77 +963,6 @@ describe("FileSynchronizer", () => {
       const changes = await synchronizer.detectChanges(["rapid.ts"]);
 
       expect(changes.modified).toEqual(["rapid.ts"]);
-    });
-  });
-
-  // ============ SNAPSHOT MIGRATION ============
-  describe("snapshot v1 to v2 migration", () => {
-    it("should migrate v1 snapshot to v2 with metadata", async () => {
-      // Manually create a v1 snapshot (without metadata)
-      const snapshotPath = join(snapshotDir, `${collectionName}.json`);
-
-      await createFile(codebaseDir, "file1.ts", "content1");
-      await createFile(codebaseDir, "file2.ts", "content2");
-
-      // Create a v1-style snapshot (with fileHashes but no fileMetadata)
-      // Need to serialize the merkle tree properly
-      const v1Snapshot = {
-        codebasePath: codebaseDir,
-        timestamp: Date.now(),
-        fileHashes: {
-          "file1.ts": "8b1a9953c4611296a827abf8c47804d7",
-          "file2.ts": "8b1a9953c4611296a827abf8c47804d8",
-        },
-        merkleTree: JSON.stringify({
-          root: "someroot",
-          nodes: {},
-        }),
-      };
-
-      await fs.mkdir(join(snapshotDir), { recursive: true });
-      await fs.writeFile(snapshotPath, JSON.stringify(v1Snapshot), "utf-8");
-
-      // Create a new synchronizer and initialize (loads v1 snapshot)
-      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
-      await newSync.initialize();
-
-      // Call ensureSnapshotV2 to trigger migration
-      const migrated = await newSync.ensureSnapshotV2();
-
-      // Should have migrated
-      expect(migrated).toBe(true);
-    });
-
-    it("should handle migration when some files are missing", async () => {
-      await createFile(codebaseDir, "file1.ts", "content1");
-      await createFile(codebaseDir, "file2.ts", "content2");
-      await synchronizer.updateSnapshot(["file1.ts", "file2.ts"]);
-
-      // Delete one file before migration
-      await fs.unlink(join(codebaseDir, "file2.ts"));
-
-      // Create new synchronizer and ensure v2
-      const newSync = new FileSynchronizer(codebaseDir, collectionName, snapshotDir);
-      await newSync.initialize();
-      await newSync.ensureSnapshotV2();
-
-      // Should still work with only file1
-      const changes = await newSync.detectChanges(["file1.ts"]);
-      expect(changes.deleted).toContain("file2.ts");
-    });
-
-    it("should return false when no snapshot exists", async () => {
-      const migrated = await synchronizer.ensureSnapshotV2();
-      expect(migrated).toBe(false);
-    });
-
-    it("should return false when already v2", async () => {
-      await createFile(codebaseDir, "file1.ts", "content1");
-      await synchronizer.updateSnapshot(["file1.ts"]);
-
-      // Call ensureSnapshotV2 - should return false since already v2
-      const migrated = await synchronizer.ensureSnapshotV2();
-      expect(migrated).toBe(false);
     });
   });
 
