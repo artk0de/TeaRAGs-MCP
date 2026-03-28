@@ -21,7 +21,12 @@ export class EnrichmentStoreAdapter implements EnrichmentStore {
   }
 
   async scrollAllChunks(collection: string): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
-    const filter = { must_not: [{ has_id: [INDEXING_METADATA_ID] }] };
+    const filter = {
+      must_not: [
+        { key: "_type", match: { value: "indexing_metadata" } },
+        { key: "_type", match: { value: "schema_metadata" } },
+      ],
+    };
     const points = await this.qdrant.scrollFiltered(collection, filter, SCROLL_LIMIT);
     return points.map((p) => ({
       id: p.id,
