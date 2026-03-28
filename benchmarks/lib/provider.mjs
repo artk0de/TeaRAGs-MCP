@@ -4,7 +4,7 @@ export async function createEmbeddingProvider() {
   const provider = process.env.EMBEDDING_PROVIDER || "ollama";
 
   if (provider === "onnx") {
-    const { OnnxEmbeddings } = await import("../build/core/adapters/embeddings/onnx.js");
+    const { OnnxEmbeddings } = await import("../../build/core/adapters/embeddings/onnx.js");
     const onnx = new OnnxEmbeddings(config.EMBEDDING_MODEL);
     if ("initialize" in onnx) {
       await onnx.initialize();
@@ -12,7 +12,7 @@ export async function createEmbeddingProvider() {
     return { provider: onnx, name: "onnx" };
   }
 
-  const { OllamaEmbeddings } = await import("../build/core/adapters/embeddings/ollama.js");
+  const { OllamaEmbeddings } = await import("../../build/core/adapters/embeddings/ollama.js");
   const ollama = new OllamaEmbeddings(
     config.EMBEDDING_MODEL,
     config.EMBEDDING_DIMENSION,
@@ -27,7 +27,7 @@ export async function checkProviderConnectivity() {
 
   if (provider === "onnx") {
     try {
-      await import("../build/core/adapters/embeddings/onnx.js");
+      await import("../../build/core/adapters/embeddings/onnx.js");
       return { ok: true };
     } catch (e) {
       return { ok: false, error: `ONNX not available: ${e.message}` };
