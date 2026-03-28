@@ -18,8 +18,8 @@
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
-import { OllamaEmbeddings } from "../build/embeddings/ollama.js";
-import { QdrantManager } from "../build/qdrant/client.js";
+import { OllamaEmbeddings } from "../build/core/adapters/embeddings/ollama.js";
+import { QdrantManager } from "../build/core/adapters/qdrant/client.js";
 import {
   benchmarkBatchFormationTimeout,
   benchmarkCodeBatchSize,

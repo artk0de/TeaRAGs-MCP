@@ -11,7 +11,7 @@
  *
  * Run: npm run benchmark-embeddings
  */
-import { OllamaEmbeddings } from "../build/embeddings/ollama.js";
+import { OllamaEmbeddings } from "../build/core/adapters/embeddings/ollama.js";
 import { c, printBox } from "./lib/colors.mjs";
 import { AVG_LOC_PER_CHUNK, config, MEDIAN_CODE_CHUNK_SIZE } from "./lib/config.mjs";
 import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
