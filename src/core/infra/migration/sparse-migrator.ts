@@ -1,4 +1,4 @@
-import { SparseVectorRebuild } from "./sparse_migrations/sparse-v1-vector-rebuild.js";
+import { SparseV1VectorRebuild } from "./sparse_migrations/sparse-v1-vector-rebuild.js";
 import type { Migration, MigrationRunner, SparseStore } from "./types.js";
 
 export class SparseMigrator implements MigrationRunner {
@@ -12,7 +12,7 @@ export class SparseMigrator implements MigrationRunner {
     private readonly store: SparseStore,
     enableHybrid: boolean,
   ) {
-    this.migrations = [new SparseVectorRebuild(collection, store, enableHybrid)];
+    this.migrations = [new SparseV1VectorRebuild(collection, store, enableHybrid)];
     this.latestVersion = Math.max(...this.migrations.map((m) => m.version));
   }
 
