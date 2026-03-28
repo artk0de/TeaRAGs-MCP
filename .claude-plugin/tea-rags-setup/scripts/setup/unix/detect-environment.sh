@@ -1,14 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ─── Prerequisites ─────────────────────────────────────────────────────────
+
+missing_deps=""
+command -v jq   &>/dev/null || missing_deps="${missing_deps} jq"
+command -v curl &>/dev/null || {
+  command -v wget &>/dev/null || missing_deps="${missing_deps} curl"
+}
+
+if [ -n "$missing_deps" ]; then
+  echo "Missing required dependencies:${missing_deps}" >&2
+  echo "Install them and re-run. Examples:" >&2
+  echo "  macOS:  brew install${missing_deps}" >&2
+  echo "  Ubuntu: sudo apt-get install -y${missing_deps}" >&2
+  echo "  Windows (scoop): scoop install${missing_deps}" >&2
+  exit 1
+fi
+
 # ─── Platform ───────────────────────────────────────────────────────────────
 
 raw_os="$(uname -s)"
 case "$raw_os" in
   Darwin)  platform="darwin" ;;
-  Linux)   platform="linux"  ;;
+  Linux)
+    # Detect WSL specifically
+    if grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+      platform="wsl"
+    else
+      platform="linux"
+    fi
+    ;;
   MINGW*|MSYS*|CYGWIN*) platform="windows" ;;
-  *)       platform="unknown" ;;
+  *)
+    echo "Unsupported platform: $raw_os" >&2
+    echo "Supported: macOS, Linux, Windows (Git Bash), WSL" >&2
+    exit 1
+    ;;
 esac
 
 # ─── Architecture ────────────────────────────────────────────────────────────
@@ -38,6 +66,13 @@ command -v n       &>/dev/null && add_manager "n"
 if [ -n "${NVM_DIR:-}" ] && [ -f "${NVM_DIR}/nvm.sh" ]; then
   add_manager "nvm"
 fi
+# nvm-windows is a regular binary in PATH (not a shell function)
+if [ "$platform" = "windows" ] && command -v nvm &>/dev/null; then
+  # nvm-windows has `nvm version` (no dash), unix nvm doesn't exist as binary
+  if nvm version &>/dev/null 2>&1; then
+    add_manager "nvm-windows"
+  fi
+fi
 
 # ─── Active manager (via resolved node path) ─────────────────────────────────
 
@@ -60,6 +95,7 @@ if command -v node &>/dev/null; then
     *"/.nvm/versions/node/"*)                    active_manager="nvm"    ;;
     *"/.nodenv/versions/"*)                      active_manager="nodenv" ;;
     *"/n/versions/node/"*)                       active_manager="n"      ;;
+    *"/AppData/Roaming/nvm/"*|*"/nvm/"*)         active_manager="nvm-windows" ;;
   esac
 fi
 
@@ -95,6 +131,7 @@ has_git=false;    command -v git    &>/dev/null && has_git=true
 has_docker=false; command -v docker &>/dev/null && has_docker=true
 has_ollama=false; command -v ollama &>/dev/null && has_ollama=true
 has_brew=false;   command -v brew   &>/dev/null && has_brew=true
+has_winget=false; command -v winget &>/dev/null && has_winget=true
 
 # ─── GPU detection ───────────────────────────────────────────────────────────
 
@@ -117,7 +154,8 @@ if [ "$platform" = "darwin" ]; then
       esac
     fi
   fi
-elif [ "$platform" = "linux" ]; then
+elif [ "$platform" = "linux" ] || [ "$platform" = "wsl" ]; then
+  # Try lspci first (not available in containers, WSL, or minimal installs)
   if command -v lspci &>/dev/null; then
     vga_line="$(lspci 2>/dev/null | grep -i vga | head -1 || true)"
     if [ -n "$vga_line" ]; then
@@ -129,7 +167,6 @@ elif [ "$platform" = "linux" ]; then
         *AMD*|*Radeon*|*ATI*)
           gpu_vendor="amd"
           gpu_model="\"$(echo "$vga_line" | sed 's/.*: //' | xargs)\""
-          # RDNA generation from model number
           case "$vga_line" in
             *"RX 7"*) gpu_arch="\"RDNA3\"" ;;
             *"RX 6"*) gpu_arch="\"RDNA2\"" ;;
@@ -138,6 +175,44 @@ elif [ "$platform" = "linux" ]; then
         *Intel*)
           gpu_vendor="intel"
           gpu_model="\"$(echo "$vga_line" | sed 's/.*: //' | xargs)\""
+          ;;
+      esac
+    fi
+  fi
+  # Fallback: nvidia-smi (works in WSL2, containers with GPU passthrough)
+  if [ "$gpu_vendor" = "none" ] && command -v nvidia-smi &>/dev/null; then
+    nv_name="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 | tr -d '\r' || true)"
+    if [ -n "$nv_name" ]; then
+      gpu_vendor="nvidia"
+      gpu_model="\"$nv_name\""
+    fi
+  fi
+  # Fallback: /proc/driver/nvidia (kernel module loaded)
+  if [ "$gpu_vendor" = "none" ] && [ -f /proc/driver/nvidia/version ]; then
+    gpu_vendor="nvidia"
+    gpu_model="\"NVIDIA (driver detected)\""
+  fi
+elif [ "$platform" = "windows" ]; then
+  # Try PowerShell for GPU detection (available from Git Bash)
+  if command -v powershell.exe &>/dev/null; then
+    gpu_name="$(powershell.exe -NoProfile -Command \
+      "(Get-CimInstance Win32_VideoController | Select-Object -First 1).Name" \
+      2>/dev/null | tr -d '\r' || true)"
+    if [ -n "$gpu_name" ]; then
+      gpu_model="\"$gpu_name\""
+      case "$gpu_name" in
+        *NVIDIA*|*Nvidia*|*GeForce*|*RTX*|*GTX*|*Quadro*)
+          gpu_vendor="nvidia"
+          ;;
+        *AMD*|*Radeon*)
+          gpu_vendor="amd"
+          case "$gpu_name" in
+            *"RX 7"*) gpu_arch="\"RDNA3\"" ;;
+            *"RX 6"*) gpu_arch="\"RDNA2\"" ;;
+          esac
+          ;;
+        *Intel*)
+          gpu_vendor="intel"
           ;;
       esac
     fi
@@ -159,6 +234,7 @@ jq -n \
   --argjson hasDocker       "$has_docker" \
   --argjson hasOllama       "$has_ollama" \
   --argjson hasBrew         "$has_brew" \
+  --argjson hasWinget       "$has_winget" \
   --arg     gpuVendor       "$gpu_vendor" \
   --argjson gpuModel        "$gpu_model" \
   --argjson gpuArch         "$gpu_arch" \
@@ -175,6 +251,7 @@ jq -n \
     hasDocker:         $hasDocker,
     hasOllama:         $hasOllama,
     hasBrew:           $hasBrew,
+    hasWinget:         $hasWinget,
     gpu: {
       vendor:       $gpuVendor,
       model:        $gpuModel,

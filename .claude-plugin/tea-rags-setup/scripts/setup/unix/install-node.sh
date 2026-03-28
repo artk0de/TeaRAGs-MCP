@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ─── install-node.sh ─────────────────────────────────────────────────────────
-# Input:  $1 = version manager (asdf|nvm|fnm|volta|mise|nodenv|n|none)
+# Input:  $1 = version manager (asdf|nvm|fnm|volta|mise|nodenv|n|nvm-windows|none)
 # Output: JSON → stdout   errors → stderr
 # Exit:   0=success  1=error  2=manual_required
 
@@ -119,12 +119,29 @@ case "$vm" in
     n 22 >&2
     ;;
 
+  nvm-windows)
+    nvm install 22 >&2
+    nvm use 22 >&2
+    ;;
+
   none)
-    jq -n '{
-      status:      "manual_required",
-      nodePath:    null,
-      nodeVersion: null
-    }'
+    # Include current version info so the wizard can tell the user what's wrong
+    current_version="null"
+    current_path="null"
+    if command -v node &>/dev/null; then
+      current_version="\"$(node --version 2>/dev/null | sed 's/^v//' || true)\""
+      current_path="\"$(node_real_path)\""
+    fi
+    jq -n \
+      --argjson currentVersion "$current_version" \
+      --argjson currentPath "$current_path" \
+      '{
+        status:         "manual_required",
+        nodePath:       null,
+        nodeVersion:    null,
+        currentVersion: $currentVersion,
+        currentPath:    $currentPath
+      }'
     exit 2
     ;;
 

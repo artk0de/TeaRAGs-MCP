@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ! command -v jq &>/dev/null; then
+  echo "jq is required but not installed. Install it first:" >&2
+  echo "  macOS:  brew install jq" >&2
+  echo "  Ubuntu: sudo apt-get install -y jq" >&2
+  echo "  Windows (scoop): scoop install jq" >&2
+  exit 1
+fi
+
 PROGRESS_DIR="$HOME/.tea-rags"
 PROGRESS_FILE="$PROGRESS_DIR/setup-progress.json"
 

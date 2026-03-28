@@ -3,6 +3,12 @@ set -euo pipefail
 
 PROJECT_PATH="${1:-.}"
 
+# Validate path exists
+if [ ! -d "$PROJECT_PATH" ]; then
+  echo "Directory does not exist: $PROJECT_PATH" >&2
+  exit 1
+fi
+
 # Resolve to absolute path
 PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
 

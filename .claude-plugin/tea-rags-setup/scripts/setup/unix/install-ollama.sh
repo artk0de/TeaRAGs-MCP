@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # ─── install-ollama.sh ───────────────────────────────────────────────────────
-# Input:  $1 = platform (darwin|linux)
-#         $2 = GPU JSON (optional, accepted but not used — AMD PRO is Windows-only)
+# Input:  $1 = platform (darwin|linux|windows)
+#         $2 = GPU JSON (optional)
 # Output: JSON → stdout   errors → stderr
 # Exit:   0=success  1=error  2=manual_required
 
@@ -19,9 +19,21 @@ ollama_running() {
 
 ensure_ollama_running() {
   if ! ollama_running; then
-    echo "Starting ollama server in background..." >&2
-    ollama serve &>/dev/null &
-    local retries=10
+    if [ "$platform" = "windows" ]; then
+      # On Windows, Ollama runs as a tray app / service.
+      # Try to start it via the app shortcut; if that fails, ask user.
+      echo "Ollama is installed but not running. Attempting to start..." >&2
+      # Try starting via powershell (launches the tray app)
+      if command -v powershell.exe &>/dev/null; then
+        powershell.exe -NoProfile -Command \
+          "Start-Process 'ollama' -ArgumentList 'serve' -WindowStyle Hidden" \
+          &>/dev/null || true
+      fi
+    else
+      echo "Starting ollama server in background..." >&2
+      ollama serve &>/dev/null &
+    fi
+    local retries=15
     while [[ $retries -gt 0 ]]; do
       sleep 1
       ollama_running && return 0
@@ -89,6 +101,14 @@ case "$platform" in
     ensure_ollama_running
     pull_model
     emit_result "installed" "curl"
+    ;;
+
+  windows)
+    jq -n '{
+      status: "manual_required",
+      method: "app"
+    }'
+    exit 2
     ;;
 
   *)
