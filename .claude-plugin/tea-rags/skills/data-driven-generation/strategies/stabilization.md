@@ -1,6 +1,7 @@
 # Stabilization Strategy
 
-**When:** chunk.commitCount "extreme" + file.churnVolatility "erratic" — high-churn, volatile code.
+**When:** chunk.commitCount "extreme" + file.churnVolatility "erratic" —
+high-churn, volatile code.
 
 ## Approach
 
@@ -15,4 +16,6 @@
 
 ## Why
 
-High-churn volatile code has accumulated complexity from sequential patches. Each patch added a condition, a fallback, a special case. The function needs simplification, not more features layered on top.
+High-churn volatile code has accumulated complexity from sequential patches.
+Each patch added a condition, a fallback, a special case. The function needs
+simplification, not more features layered on top.

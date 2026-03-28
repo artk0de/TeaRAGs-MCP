@@ -14,4 +14,6 @@
 
 ## Why
 
-Code untouched for 6+ months has undocumented assumptions. Callers depend on its exact behavior, including edge cases that aren't tested. Minimal change = minimal risk of breaking unknown consumers.
+Code untouched for 6+ months has undocumented assumptions. Callers depend on its
+exact behavior, including edge cases that aren't tested. Minimal change =
+minimal risk of breaking unknown consumers.
