@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   CollectionExistsError,
   IngestError,
-  MigrationFailedError,
   NotIndexedError,
   ReindexFailedError,
   SnapshotCorruptedError,
@@ -89,15 +88,6 @@ describe("IngestError hierarchy", () => {
       const err = new SnapshotCorruptedError("/data/snapshot.bin");
       expect(err.code).toBe("INGEST_SNAPSHOT_CORRUPTED");
       expect(err.message).toContain("/data/snapshot.bin");
-      expect(err).toBeInstanceOf(IngestError);
-    });
-  });
-
-  describe("MigrationFailedError", () => {
-    it("has correct code and message", () => {
-      const err = new MigrationFailedError("schema version mismatch");
-      expect(err.code).toBe("INGEST_MIGRATION_FAILED");
-      expect(err.message).toContain("schema version mismatch");
       expect(err).toBeInstanceOf(IngestError);
     });
   });

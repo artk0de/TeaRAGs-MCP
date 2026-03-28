@@ -3,10 +3,10 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SchemaManager } from "../../../../src/core/adapters/qdrant/schema-migration.js";
 import { IngestFacade } from "../../../../src/core/api/index.js";
 import { EnrichmentCoordinator } from "../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { ParallelFileSynchronizer } from "../../../../src/core/domains/ingest/sync/parallel-synchronizer.js";
+import { Migrator } from "../../../../src/core/infra/migration/migrator.js";
 import type { IngestCodeConfig } from "../../../../src/core/types.js";
 import {
   cleanupTempDir,
@@ -376,26 +376,22 @@ console.log('This file has secrets');`,
   });
 
   describe("schema migration during reindex", () => {
-    it("should log when schema migrations are applied", async () => {
+    it("should run snapshot and schema migrations via Migrator.run()", async () => {
       await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('Initial');");
       await ingest.indexCodebase(codebaseDir);
 
-      // Spy on ensureCurrentSchema to return migrations applied
-      const ensureCurrentSchemaSpy = vi.spyOn(SchemaManager.prototype, "ensureCurrentSchema").mockResolvedValueOnce({
-        success: true,
-        fromVersion: 1,
-        toVersion: 2,
-        migrationsApplied: ["add_chunk_type_index"],
-      });
+      // Spy on Migrator.run to verify both pipelines are invoked during reindex
+      const runSpy = vi.spyOn(Migrator.prototype, "run");
 
       await createTestFile(codebaseDir, "file2.ts", "export const v2 = 2;\nconsole.log('Added');");
 
       const stats = await ingest.reindexChanges(codebaseDir);
 
-      expect(ensureCurrentSchemaSpy).toHaveBeenCalled();
+      expect(runSpy).toHaveBeenCalledWith("snapshot");
+      expect(runSpy).toHaveBeenCalledWith("schema");
       expect(stats.filesAdded).toBe(1);
 
-      ensureCurrentSchemaSpy.mockRestore();
+      runSpy.mockRestore();
     });
   });
 
