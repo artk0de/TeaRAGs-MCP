@@ -7,6 +7,7 @@ describe("getIndexMetrics", () => {
     const qdrant = {
       collectionExists: vi.fn().mockResolvedValue(true),
       getCollectionInfo: vi.fn().mockResolvedValue({ pointsCount: 100 }),
+      getPoint: vi.fn().mockResolvedValue(null),
     } as any;
 
     const embeddings = {

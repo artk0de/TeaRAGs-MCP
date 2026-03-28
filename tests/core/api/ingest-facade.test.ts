@@ -35,7 +35,12 @@ vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js", (
     constructor() {
       mockCoordinatorInstances.push(this);
     }
+    runRecovery = vi.fn().mockResolvedValue(undefined);
   },
+}));
+
+vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/recovery.js", () => ({
+  EnrichmentRecovery: class {},
 }));
 
 vi.mock("../../../src/core/domains/ingest/factory.js", () => ({

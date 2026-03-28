@@ -44,6 +44,7 @@ export class EnrichmentApplier {
     pathBase: string,
     items: ChunkItem[],
     transform?: FileSignalTransform,
+    enrichedAt?: string,
   ): Promise<void> {
     const applyStart = Date.now();
 
@@ -75,16 +76,28 @@ export class EnrichmentApplier {
           existing.push({ chunkId: item.chunkId, endLine: item.chunk.endLine });
         }
         this.missedFileChunks.set(relativePath, existing);
+        if (enrichedAt) {
+          for (const item of fileItems) {
+            operations.push({
+              payload: { enrichedAt },
+              points: [item.chunkId],
+              key: `${providerKey}.file`,
+            });
+          }
+        }
         continue;
       }
       this.matchedFiles++;
 
       const maxEndLine = fileItems.reduce((max, item) => Math.max(max, item.chunk.endLine), 0);
       const finalData = transform ? transform(data, maxEndLine) : data;
+      const payload = enrichedAt
+        ? { ...(finalData as Record<string, unknown>), enrichedAt }
+        : (finalData as Record<string, unknown>);
 
       for (const item of fileItems) {
         operations.push({
-          payload: finalData as Record<string, unknown>,
+          payload,
           points: [item.chunkId],
           key: `${providerKey}.file`,
         });
@@ -115,6 +128,7 @@ export class EnrichmentApplier {
     collectionName: string,
     providerKey: string,
     chunkMetadata: Map<string, Map<string, ChunkSignalOverlay>>,
+    enrichedAt?: string,
   ): Promise<number> {
     let batch: {
       payload: Record<string, unknown>;
@@ -125,8 +139,11 @@ export class EnrichmentApplier {
 
     for (const [, overlayMap] of chunkMetadata) {
       for (const [chunkId, overlay] of overlayMap) {
+        const payload = enrichedAt
+          ? { ...(overlay as Record<string, unknown>), enrichedAt }
+          : (overlay as Record<string, unknown>);
         batch.push({
-          payload: overlay as Record<string, unknown>,
+          payload,
           points: [chunkId],
           key: `${providerKey}.chunk`,
         });

@@ -9,6 +9,7 @@
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { SchemaManager } from "../../adapters/qdrant/schema-migration.js";
 import type { PayloadBuilder } from "../../contracts/types/provider.js";
+import { EnrichmentStoreAdapter } from "../../infra/migration/adapters/enrichment-store-adapter.js";
 import { IndexStoreAdapter } from "../../infra/migration/adapters/index-store-adapter.js";
 import { SnapshotStoreAdapter } from "../../infra/migration/adapters/snapshot-store-adapter.js";
 import { SparseStoreAdapter } from "../../infra/migration/adapters/sparse-store-adapter.js";
@@ -40,6 +41,7 @@ export function createIngestDependencies(
   payloadBuilder: PayloadBuilder,
   syncTuning?: SynchronizerTuning,
   enableHybrid = false,
+  providerKey?: string,
 ): IngestDependencies {
   return {
     createSchemaManager: () => new SchemaManager(qdrant),
@@ -55,10 +57,17 @@ export function createIngestDependencies(
       const snapshotStore = new SnapshotStoreAdapter(snapshotDir, collectionName);
       const indexStore = new IndexStoreAdapter(qdrant);
       const sparseStore = new SparseStoreAdapter(qdrant);
+      const enrichmentStore = providerKey ? new EnrichmentStoreAdapter(qdrant) : undefined;
 
       return new Migrator({
         snapshot: new SnapshotMigrator(snapshotStore),
-        schema: new SchemaMigrator(collectionName, indexStore, sparseStore, { enableHybrid }),
+        schema: new SchemaMigrator(
+          collectionName,
+          indexStore,
+          sparseStore,
+          { enableHybrid, providerKey },
+          enrichmentStore,
+        ),
       });
     },
     payloadBuilder,

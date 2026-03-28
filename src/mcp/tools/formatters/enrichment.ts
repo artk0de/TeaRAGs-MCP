@@ -1,5 +1,6 @@
 // src/mcp/tools/formatters/enrichment.ts
-import type { EnrichmentInfo, EnrichmentMetrics, IndexStatus } from "../../../core/types.js";
+import type { EnrichmentHealthMap } from "../../../core/domains/ingest/pipeline/enrichment/types.js";
+import type { EnrichmentMetrics, IndexStatus } from "../../../core/types.js";
 
 type GetIndexStatusFn = (path: string) => Promise<IndexStatus>;
 
@@ -51,34 +52,23 @@ async function formatBackgroundEnrichment(getIndexStatus: GetIndexStatusFn | und
       return "\n\n[Git enrichment is running in background. Use get_index_status to track progress.]";
     }
 
-    return formatEnrichmentInfo(currentStatus.enrichment);
+        return formatEnrichmentHealthMap(currentStatus.enrichment);
   } catch {
     return "\n\n[Git enrichment is running in background. Use get_index_status to track progress.]";
   }
 }
 
-function formatEnrichmentInfo(e: EnrichmentInfo): string {
-  let message = `\n\nGit enrichment: ${e.status}`;
+function formatEnrichmentHealthMap(map: EnrichmentHealthMap): string {
+  const providers = Object.keys(map);
+  if (providers.length === 0) return "";
 
-  if (e.percentage !== undefined) message += ` (${e.percentage}%)`;
-
-  if (e.matchedFiles !== undefined && e.missedFiles !== undefined) {
-    const total = e.matchedFiles + e.missedFiles;
-    const rate = total > 0 ? Math.round((e.matchedFiles / total) * 100) : 0;
-    message += `\nGit metadata coverage: ${rate}% (${e.matchedFiles}/${total} indexed files)`;
-
-    if (e.gitLogFileCount !== undefined) {
-      message += `\nGit log contains ${e.gitLogFileCount} files (GIT_LOG_MAX_AGE_MONTHS window)`;
-    }
-
-    if (rate < 80 && e.missedFiles > 0) {
-      message += `\nHint: Low coverage is normal for mature codebases. Increase GIT_LOG_MAX_AGE_MONTHS for broader coverage.`;
-    }
+  let message = "\n\nEnrichment health:";
+  for (const provider of providers) {
+    const h = map[provider];
+    message += `\n  ${provider}.file: ${h.file.status}`;
+    if (h.file.message) message += ` — ${h.file.message}`;
+    message += `\n  ${provider}.chunk: ${h.chunk.status}`;
+    if (h.chunk.message) message += ` — ${h.chunk.message}`;
   }
-
-  if (e.status !== "completed") {
-    message += `\n[Use get_index_status to track progress.]`;
-  }
-
   return message;
 }

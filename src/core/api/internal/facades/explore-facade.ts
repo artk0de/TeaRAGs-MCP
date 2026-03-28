@@ -32,7 +32,10 @@ import {
 } from "../../../domains/explore/strategies/index.js";
 import { SimilarSearchStrategy } from "../../../domains/explore/strategies/similar.js";
 import { resolveSymbols } from "../../../domains/explore/symbol-resolve.js";
+import { INDEXING_METADATA_ID } from "../../../domains/ingest/constants.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
+import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/health-mapper.js";
+import type { EnrichmentMarkerMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
@@ -436,12 +439,17 @@ export class ExploreFacade {
       signals["global"] = globalScoped;
     }
 
+    const markerPoint = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID).catch(() => null);
+    const rawEnrichment = (markerPoint?.payload as any)?.enrichment as EnrichmentMarkerMap | undefined;
+    const enrichmentHealth = rawEnrichment ? mapMarkerToHealth(rawEnrichment) : undefined;
+
     return {
       collection: collectionName,
       totalChunks: collectionInfo.pointsCount,
       totalFiles: stats.distributions.totalFiles,
       distributions: stats.distributions,
       signals,
+      enrichment: enrichmentHealth,
     };
   }
 
