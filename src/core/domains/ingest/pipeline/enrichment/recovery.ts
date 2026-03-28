@@ -6,8 +6,9 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
-import { INDEXING_METADATA_ID } from "../../constants.js";
+import type { ChunkLookupEntry } from "../../../../types.js";
 import { isDebug } from "../infra/runtime.js";
+import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
 import type { EnrichmentProvider } from "./types.js";
 
@@ -58,9 +59,7 @@ export class EnrichmentRecovery {
         chunkId: String(point.id),
         chunk: {
           metadata: {
-            filePath: root.endsWith("/")
-              ? `${root}${point.relativePath}`
-              : `${root}/${point.relativePath}`,
+            filePath: root.endsWith("/") ? `${root}${point.relativePath}` : `${root}/${point.relativePath}`,
           },
           startLine: point.startLine ?? 0,
           endLine: point.endLine ?? 0,
@@ -73,7 +72,7 @@ export class EnrichmentRecovery {
         provider.key,
         signals,
         root,
-        items as any,
+        items as unknown as ChunkItem[],
         provider.fileSignalTransform,
         enrichedAt,
       );
@@ -127,7 +126,10 @@ export class EnrichmentRecovery {
         chunkMap.set(point.relativePath, existing);
       }
 
-      const chunkSignals = await provider.buildChunkSignals(root, chunkMap as any);
+      const chunkSignals = await provider.buildChunkSignals(
+        root,
+        chunkMap as unknown as Map<string, ChunkLookupEntry[]>,
+      );
       const applied = await this.applier.applyChunkSignals(collectionName, provider.key, chunkSignals, enrichedAt);
 
       const remaining = await this.countUnenriched(collectionName, provider.key, "chunk");
@@ -170,15 +172,17 @@ export class EnrichmentRecovery {
 
     const filter = {
       must: [{ is_empty: { key: enrichedAtField } }],
-      must_not: [{ has_id: [INDEXING_METADATA_ID] }],
+      must_not: [
+        { key: "_type", match: { value: "indexing_metadata" } },
+        { key: "_type", match: { value: "schema_metadata" } },
+      ],
     };
 
     const points = await this.qdrant.scrollFiltered(collectionName, filter, SCROLL_LIMIT);
 
     const result: UnenrichedPoint[] = [];
     for (const point of points) {
-      const relativePath =
-        typeof point.payload?.relativePath === "string" ? point.payload.relativePath : null;
+      const relativePath = typeof point.payload?.relativePath === "string" ? point.payload.relativePath : null;
       if (!relativePath) continue;
       result.push({
         id: point.id,
