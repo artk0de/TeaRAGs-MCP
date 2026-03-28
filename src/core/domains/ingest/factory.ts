@@ -16,6 +16,7 @@ import { SparseStoreAdapter } from "../../infra/migration/adapters/sparse-store-
 import { Migrator } from "../../infra/migration/migrator.js";
 import { SchemaMigrator } from "../../infra/migration/schema-migrator.js";
 import { SnapshotMigrator } from "../../infra/migration/snapshot-migrator.js";
+import { SparseMigrator } from "../../infra/migration/sparse-migrator.js";
 import { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 
 // ── Public interfaces ────────────────────────────────────────────
@@ -61,13 +62,8 @@ export function createIngestDependencies(
 
       return new Migrator({
         snapshot: new SnapshotMigrator(snapshotStore),
-        schema: new SchemaMigrator(
-          collectionName,
-          indexStore,
-          sparseStore,
-          { enableHybrid, providerKey },
-          enrichmentStore,
-        ),
+        schema: new SchemaMigrator(collectionName, indexStore, { enableHybrid, providerKey }, enrichmentStore),
+        sparse: new SparseMigrator(collectionName, sparseStore, enableHybrid),
       });
     },
     payloadBuilder,

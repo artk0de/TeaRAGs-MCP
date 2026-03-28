@@ -153,6 +153,15 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         steps: schemaResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
       });
     }
+
+    const sparseResult = await migrator.run("sparse");
+    if (sparseResult.steps.length > 0) {
+      pipelineLog.reindexPhase("sparse_migration", {
+        fromVersion: sparseResult.fromVersion,
+        toVersion: sparseResult.toVersion,
+        steps: sparseResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
+      });
+    }
   }
 
   private async checkForCheckpoint(synchronizer: ParallelFileSynchronizer): Promise<boolean> {
