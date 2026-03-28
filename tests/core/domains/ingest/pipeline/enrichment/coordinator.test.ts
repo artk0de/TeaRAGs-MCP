@@ -13,6 +13,7 @@ describe("EnrichmentCoordinator", () => {
     mockQdrant = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
     };
     mockProvider = {
       key: "git",
@@ -180,6 +181,7 @@ describe("EnrichmentCoordinator — prefetch with ignoreFilter", () => {
     mockQdrant = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
     };
     mockProvider = {
       key: "git",
@@ -257,6 +259,7 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
     mockQdrant = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
     };
     mockProvider = {
       key: "git",
@@ -315,10 +318,11 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
 });
 
 describe("EnrichmentCoordinator — updateEnrichmentMarker", () => {
-  it("calls qdrant.setPayload with enrichment info", async () => {
+  it("calls qdrant.setPayload with per-provider enrichment marker", async () => {
     const mockQdrant = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
     };
     const mockProvider: any = {
       key: "git",
@@ -328,18 +332,31 @@ describe("EnrichmentCoordinator — updateEnrichmentMarker", () => {
     };
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
 
-    await coordinator.updateEnrichmentMarker("test-col", { status: "in_progress" });
+    await coordinator.updateEnrichmentMarker("test-col", {
+      git: { file: { status: "in_progress", unenrichedChunks: 0 } },
+    });
     expect(mockQdrant.setPayload).toHaveBeenCalledWith(
       "test-col",
-      { enrichment: { status: "in_progress" } },
+      { enrichment: { git: { file: { status: "in_progress", unenrichedChunks: 0 } } } },
       expect.any(Object),
     );
   });
 
-  it("computes percentage when totalFiles and processedFiles are set", async () => {
+  it("deep-merges per-provider markers preserving existing fields", async () => {
     const mockQdrant = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue({
+        payload: {
+          enrichment: {
+            git: {
+              runId: "abc",
+              file: { status: "in_progress", startedAt: "2026-01-01T00:00:00Z", unenrichedChunks: 5 },
+              chunk: { status: "pending", unenrichedChunks: 0 },
+            },
+          },
+        },
+      }),
     };
     const mockProvider: any = {
       key: "git",
@@ -349,18 +366,24 @@ describe("EnrichmentCoordinator — updateEnrichmentMarker", () => {
     };
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
 
-    await coordinator.updateEnrichmentMarker("test-col", { totalFiles: 100, processedFiles: 50 });
-    expect(mockQdrant.setPayload).toHaveBeenCalledWith(
-      "test-col",
-      { enrichment: expect.objectContaining({ percentage: 50 }) },
-      expect.any(Object),
-    );
+    await coordinator.updateEnrichmentMarker("test-col", {
+      git: { file: { status: "completed", completedAt: "2026-01-01T00:01:00Z", unenrichedChunks: 0 } },
+    });
+
+    const written = mockQdrant.setPayload.mock.calls[0][1].enrichment;
+    // Should preserve runId and chunk from existing, merge file fields
+    expect(written.git.runId).toBe("abc");
+    expect(written.git.file.status).toBe("completed");
+    expect(written.git.file.startedAt).toBe("2026-01-01T00:00:00Z"); // preserved from existing
+    expect(written.git.file.completedAt).toBe("2026-01-01T00:01:00Z"); // new
+    expect(written.git.chunk.status).toBe("pending"); // preserved
   });
 
   it("silently ignores setPayload errors", async () => {
     const mockQdrant = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockRejectedValue(new Error("qdrant down")),
+      getPoint: vi.fn().mockResolvedValue(null),
     };
     const mockProvider: any = {
       key: "git",
@@ -371,7 +394,11 @@ describe("EnrichmentCoordinator — updateEnrichmentMarker", () => {
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
 
     // Should not throw
-    await expect(coordinator.updateEnrichmentMarker("test-col", { status: "completed" })).resolves.toBeUndefined();
+    await expect(
+      coordinator.updateEnrichmentMarker("test-col", {
+        git: { file: { status: "completed", unenrichedChunks: 0 } },
+      }),
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -383,6 +410,7 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     mockQdrant = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
     };
   });
 
@@ -509,8 +537,11 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     await coordinator.awaitCompletion("test-col");
 
     // Backfill should produce 150 operations → 2 batches (100 + 50)
-    // Filter batchSetPayload calls that have >1 items (backfill batches)
-    const backfillCalls = mockQdrant.batchSetPayload.mock.calls.filter((call: any[]) => call[1].length > 0);
+    // Filter batchSetPayload calls to only backfill batches (contain "recovered" payload, not just enrichedAt)
+    const backfillCalls = mockQdrant.batchSetPayload.mock.calls.filter((call: any[]) => {
+      const ops = call[1];
+      return ops.length > 0 && ops[0].payload?.git?.file?.recovered === true;
+    });
     expect(backfillCalls.length).toBeGreaterThanOrEqual(2);
 
     // Verify total operations across backfill calls sum to 150
@@ -526,6 +557,7 @@ describe("EnrichmentCoordinator — onChunkEnrichmentComplete callback", () => {
     mockQdrant = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
     };
   });
 
@@ -685,6 +717,7 @@ describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
     const mockQdrant: any = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
     };
     const providerA: any = {
       key: "provA",
@@ -713,6 +746,7 @@ describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
     const mockQdrant: any = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
     };
     const mockProvider: any = {
       key: "git",
@@ -733,5 +767,156 @@ describe("EnrichmentCoordinator — awaitCompletion metrics", () => {
     expect(metrics.overlapMs).toBeGreaterThanOrEqual(0);
     expect(metrics.overlapRatio).toBeGreaterThanOrEqual(0);
     expect(metrics.overlapRatio).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("EnrichmentCoordinator — per-level enrichment marker", () => {
+  let mockQdrant: any;
+  let mockProvider: any;
+
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    mockProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+  });
+
+  it("writes initial marker with file: in_progress and chunk: pending on prefetch start", async () => {
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+
+    // First setPayload call is the initial marker
+    await new Promise((r) => setTimeout(r, 10));
+    const initialCall = mockQdrant.setPayload.mock.calls[0];
+    expect(initialCall).toBeDefined();
+
+    const marker = initialCall[1].enrichment;
+    expect(marker.git).toBeDefined();
+    expect(marker.git.runId).toMatch(/^[a-f0-9]{8}$/);
+    expect(marker.git.file.status).toBe("in_progress");
+    expect(marker.git.file.startedAt).toBeDefined();
+    expect(marker.git.file.unenrichedChunks).toBe(0);
+    expect(marker.git.chunk.status).toBe("pending");
+    expect(marker.git.chunk.unenrichedChunks).toBe(0);
+  });
+
+  it("writes file: completed with timing on successful awaitCompletion", async () => {
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    // Find the awaitCompletion marker write (last setPayload call)
+    const calls = mockQdrant.setPayload.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const marker = lastCall[1].enrichment;
+
+    expect(marker.git.file.status).toBe("completed");
+    expect(marker.git.file.completedAt).toBeDefined();
+    expect(marker.git.file.durationMs).toBeGreaterThanOrEqual(0);
+    expect(marker.git.file.unenrichedChunks).toBe(0);
+  });
+
+  it("writes file: failed and chunk: failed when prefetch fails", async () => {
+    mockProvider.buildFileSignals.mockRejectedValue(new Error("git fail"));
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Find the failure marker write (after initial marker)
+    const calls = mockQdrant.setPayload.mock.calls;
+    // Should have at least 2 calls: initial marker + failure marker
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+
+    const failureCall = calls[1];
+    const marker = failureCall[1].enrichment;
+
+    expect(marker.git.file.status).toBe("failed");
+    expect(marker.git.file.completedAt).toBeDefined();
+    expect(marker.git.file.durationMs).toBeGreaterThanOrEqual(0);
+    expect(marker.git.chunk.status).toBe("failed");
+  });
+
+  it("passes enrichedAt to applier.applyFileSignals calls", async () => {
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Verify batchSetPayload was called (file signals were applied)
+    expect(mockQdrant.batchSetPayload).toHaveBeenCalled();
+
+    // The applier writes enrichedAt as part of the payload with key="git.file"
+    const batchCall = mockQdrant.batchSetPayload.mock.calls[0];
+    const operations = batchCall[1];
+    expect(operations.length).toBeGreaterThan(0);
+    const op = operations[0];
+    expect(op.key).toBe("git.file");
+    expect(op.payload.enrichedAt).toBeDefined();
+  });
+
+  it("writes chunk: completed marker after successful chunk enrichment", async () => {
+    // buildChunkSignals must return Map<string, Map<string, ChunkSignalOverlay>>
+    const chunkOverlays = new Map([["src/a.ts", new Map([["c1", { commitCount: 5 }]])]]);
+    mockProvider.buildChunkSignals.mockResolvedValue(chunkOverlays);
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Find the chunk completion marker
+    const calls = mockQdrant.setPayload.mock.calls;
+    const chunkMarkerCall = calls.find((call: any[]) => {
+      const enrichment = call[1]?.enrichment;
+      return enrichment?.git?.chunk?.status === "completed";
+    });
+    expect(chunkMarkerCall).toBeDefined();
+    const marker = chunkMarkerCall[1].enrichment;
+    expect(marker.git.chunk.completedAt).toBeDefined();
+    expect(marker.git.chunk.durationMs).toBeGreaterThanOrEqual(0);
+    expect(marker.git.chunk.unenrichedChunks).toBe(0);
+  });
+
+  it("writes chunk: failed marker when chunk enrichment fails", async () => {
+    mockProvider.buildChunkSignals.mockRejectedValue(new Error("chunk fail"));
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Find the chunk failure marker
+    const calls = mockQdrant.setPayload.mock.calls;
+    const chunkFailCall = calls.find((call: any[]) => {
+      const enrichment = call[1]?.enrichment;
+      return enrichment?.git?.chunk?.status === "failed";
+    });
+    expect(chunkFailCall).toBeDefined();
+    const marker = chunkFailCall[1].enrichment;
+    expect(marker.git.chunk.completedAt).toBeDefined();
+    expect(marker.git.chunk.durationMs).toBeGreaterThanOrEqual(0);
   });
 });
