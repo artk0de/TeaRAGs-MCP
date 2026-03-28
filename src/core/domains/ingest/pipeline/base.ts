@@ -198,7 +198,11 @@ export abstract class BaseIndexingPipeline {
   ): () => EnrichmentStatusResult {
     if (chunkMap.size === 0) {
       // Prefetch may have set marker to "in_progress" — clear it
-      this.enrichment.updateEnrichmentMarker(collectionName, { status: "completed" }).catch(() => {});
+      const completedMarker: Record<string, { file: { status: "completed"; unenrichedChunks: number } }> = {};
+      for (const key of this.enrichment.providerKeys) {
+        completedMarker[key] = { file: { status: "completed", unenrichedChunks: 0 } };
+      }
+      this.enrichment.updateEnrichmentMarker(collectionName, completedMarker).catch(() => {});
       return () => ({ status: "skipped" });
     }
 
