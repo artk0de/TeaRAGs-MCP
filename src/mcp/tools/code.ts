@@ -213,7 +213,6 @@ export function registerCodeTools(
 
       if (status.status === "indexing") {
         let text = `Codebase at "${path}" is currently being indexed. ${status.chunksCount || 0} chunks processed so far.`;
-        // TODO(Task 10): rewrite for per-provider health map format
         if (status.enrichment) {
           for (const [provider, health] of Object.entries(status.enrichment)) {
             text += `\n${provider} enrichment: file=${health.file.status}, chunk=${health.chunk.status}`;
@@ -223,7 +222,6 @@ export function registerCodeTools(
         return formatMcpText(text);
       }
 
-      // TODO(Task 10): rewrite for per-provider health map format
       const { enrichment, infraHealth, ...rest } = status;
       const response: Record<string, unknown> = { ...rest };
       if (enrichment) {

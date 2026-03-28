@@ -52,14 +52,12 @@ async function formatBackgroundEnrichment(getIndexStatus: GetIndexStatusFn | und
       return "\n\n[Git enrichment is running in background. Use get_index_status to track progress.]";
     }
 
-    // TODO(Task 10): rewrite to iterate per-provider health map
-    return formatEnrichmentHealthMap(currentStatus.enrichment);
+        return formatEnrichmentHealthMap(currentStatus.enrichment);
   } catch {
     return "\n\n[Git enrichment is running in background. Use get_index_status to track progress.]";
   }
 }
 
-// TODO(Task 10): rewrite formatter for per-provider health
 function formatEnrichmentHealthMap(map: EnrichmentHealthMap): string {
   const providers = Object.keys(map);
   if (providers.length === 0) return "";
