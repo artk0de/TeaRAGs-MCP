@@ -173,8 +173,8 @@ Add the new migration to the runner constructor's `this.migrations` array.
 ```typescript
 this.migrations = [
   // ... existing migrations ...
-  new SchemaV() < N > <Name>(collection, indexStore), // unconditional
-  new SchemaV() < N > <Name>(collection, indexStore, options.X), // conditional on flag
+  new SchemaV10NewfieldKeyword(collection, indexStore), // unconditional
+  new SchemaV11SparseUpdate(collection, indexStore, options.X), // conditional on flag
 ];
 ```
 
@@ -182,7 +182,7 @@ this.migrations = [
 
 ```typescript
 ...(enrichmentStore
-  ? [new SchemaV<N><Name>(collection, enrichmentStore)]
+  ? [new SchemaV12BackfillTimestamps(collection, enrichmentStore)]
   : []),
 ```
 
@@ -191,7 +191,7 @@ this.migrations = [
 ```typescript
 this.migrations = [
   // ... existing migrations ...
-  new SparseV() < N > <Name>(collection, store, enableHybrid),
+  new SparseV2VectorRebuild(collection, store, enableHybrid),
 ];
 ```
 
@@ -200,7 +200,7 @@ this.migrations = [
 ```typescript
 this.migrations = [
   // ... existing migrations ...
-  new SnapshotV() < N > <Name>store,
+  new SnapshotV4ToCompact(store),
 ];
 ```
 
@@ -238,24 +238,24 @@ Add to existing test file or create new one for the specific migration.
 ### Test pattern
 
 ```typescript
-describe("SchemaV<N><Name>", () => {
-  it("creates index on <field>", async () => {
+describe("SchemaV10NewfieldKeyword", () => {
+  it("creates index on newField", async () => {
     const store = createMockIndexStore();
-    const migration = new SchemaV() < N > <Name>(COLLECTION, store);
+    const migration = new SchemaV10NewfieldKeyword(COLLECTION, store);
 
     const result = await migration.apply();
 
     expect(store.ensureIndex).toHaveBeenCalledWith(
       COLLECTION,
-      "<field>",
-      "<type>",
+      "newField",
+      "keyword",
     );
-    expect(result.applied).toContain("<field>:<type>");
+    expect(result.applied).toContain("newField:keyword");
   });
 
-  it("skips when <condition>", async () => {
+  it("skips when disabled", async () => {
     const store = createMockIndexStore();
-    const migration = new SchemaV() < N > <Name>(COLLECTION, store, false);
+    const migration = new SchemaV10NewfieldKeyword(COLLECTION, store, false);
 
     const result = await migration.apply();
 

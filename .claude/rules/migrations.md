@@ -1,7 +1,14 @@
 ---
+description:
+  When and how to add Qdrant schema migrations, snapshot format migrations, or
+  sparse vector migrations. Triggers when changing payload structure, adding
+  indexes, modifying persisted data format, or working with migration code.
 paths:
   - "src/core/infra/migration/**/*.ts"
   - "src/core/domains/ingest/factory.ts"
+  - "src/core/domains/ingest/pipeline/payload/**/*.ts"
+  - "src/core/contracts/types/payload.ts"
+  - "src/core/contracts/types/qdrant.ts"
 ---
 
 # Migration Rules
