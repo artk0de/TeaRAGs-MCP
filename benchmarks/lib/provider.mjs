@@ -1,3 +1,6 @@
+import { homedir } from "os";
+import { join } from "path";
+
 import { config } from "./config.mjs";
 
 export async function createEmbeddingProvider() {
@@ -5,10 +8,16 @@ export async function createEmbeddingProvider() {
 
   if (provider === "onnx") {
     const { OnnxEmbeddings } = await import("../../build/core/adapters/embeddings/onnx.js");
-    const onnx = new OnnxEmbeddings(config.EMBEDDING_MODEL);
-    if ("initialize" in onnx) {
-      await onnx.initialize();
-    }
+    const dataDir = process.env.TEA_RAGS_DATA_DIR || join(homedir(), ".tea-rags");
+    const device = process.env.EMBEDDING_DEVICE || "cpu";
+    const socketPath = join(dataDir, "onnx-daemon.sock");
+    const pidFile = join(dataDir, "onnx-daemon.pid");
+    const modelsDir = join(dataDir, "models");
+    // ONNX uses its own default model (jinaai/jina-embeddings-v2-base-code-fp16),
+    // don't pass Ollama model names — only override if ONNX_MODEL explicitly set
+    const onnxModel = process.env.ONNX_MODEL || undefined;
+    const onnx = new OnnxEmbeddings(onnxModel, config.EMBEDDING_DIMENSION, modelsDir, device, socketPath, pidFile);
+    await onnx.initialize();
     return { provider: onnx, name: "onnx" };
   }
 
