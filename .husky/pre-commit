@@ -30,6 +30,31 @@ fi
 # Get list of staged files
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
 
+# ─── Plugin versioning check ───────────────────────────────────────────────
+# If .claude-plugin/ files changed, plugin.json must be bumped too
+for plugin_dir in .claude-plugin/tea-rags .claude-plugin/tea-rags-setup; do
+  plugin_name=$(basename "$plugin_dir")
+  plugin_json="$plugin_dir/.claude-plugin/plugin.json"
+  # Check if any files in this plugin are staged (excluding plugin.json itself)
+  plugin_files=$(echo "$STAGED_FILES" | grep "^${plugin_dir}/" | grep -v ".claude-plugin/plugin.json" || true)
+  if [ -n "$plugin_files" ]; then
+    # Check if plugin.json is also staged
+    json_staged=$(echo "$STAGED_FILES" | grep "^${plugin_json}$" || true)
+    if [ -z "$json_staged" ]; then
+      echo ""
+      echo "============================================"
+      echo "  Plugin version bump required: $plugin_name"
+      echo "============================================"
+      echo ""
+      echo "Files changed in $plugin_dir/ but $plugin_json was not updated."
+      echo "Bump the version (patch for text changes, minor for new files),"
+      echo "then stage it: git add $plugin_json"
+      echo ""
+      exit 1
+    fi
+  fi
+done
+
 # Check if src/ files changed
 SRC_CHANGED=$(echo "$STAGED_FILES" | grep -E "^src/" || true)
 
