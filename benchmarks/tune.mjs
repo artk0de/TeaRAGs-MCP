@@ -726,6 +726,11 @@ async function main() {
 
   console.log(`${c.dim}Total tuning time: ${totalTime}s${c.reset}`);
   console.log();
+
+  // Terminate embedding provider (ONNX daemon socket keeps process alive)
+  if ("terminate" in embeddings && typeof embeddings.terminate === "function") {
+    await embeddings.terminate();
+  }
 }
 
 main().catch(async (error) => {

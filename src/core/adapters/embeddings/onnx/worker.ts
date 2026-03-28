@@ -177,8 +177,8 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
     if (resolvedCacheDir) env.cacheDir = resolvedCacheDir;
 
     const label = dtype ? `${baseModel} (${dtype})` : baseModel;
-    console.error(`[ONNX] Loading model ${label} [${resolvedDevice}]...`);
-    console.error(`[ONNX] Cache dir: ${env.cacheDir}`);
+    post({ type: "log", level: "info", message: `[ONNX] Loading model ${label} [${resolvedDevice}]...` });
+    post({ type: "log", level: "info", message: `[ONNX] Cache dir: ${env.cacheDir}` });
 
     const pipelineOpts: Record<string, unknown> = {
       session_options: {
@@ -197,12 +197,12 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
 
     extractor = await loadPipeline(pipeline, baseModel, pipelineOpts);
 
-    console.error(`[ONNX] Model loaded on ${resolvedDevice}.`);
+    post({ type: "log", level: "info", message: `[ONNX] Model loaded on ${resolvedDevice}.` });
 
     // Warm-up: prime GPU caches and JIT before accepting real work
     try {
       await extractor(["warm-up"], { pooling: "mean", normalize: true });
-      console.error("[ONNX] Warm-up complete.");
+      post({ type: "log", level: "info", message: "[ONNX] Warm-up complete." });
     } catch {
       // non-fatal
     }

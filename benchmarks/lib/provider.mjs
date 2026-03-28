@@ -9,8 +9,8 @@ export async function createEmbeddingProvider() {
   if (provider === "onnx") {
     const { OnnxEmbeddings } = await import("../../build/core/adapters/embeddings/onnx.js");
     const dataDir = process.env.TEA_RAGS_DATA_DIR || join(homedir(), ".tea-rags");
-    const device = process.env.EMBEDDING_DEVICE || "cpu";
-    const socketPath = join(dataDir, "onnx-daemon.sock");
+    const device = process.env.EMBEDDING_DEVICE || "auto";
+    const socketPath = join(dataDir, "onnx.sock");
     const pidFile = join(dataDir, "onnx-daemon.pid");
     const modelsDir = join(dataDir, "models");
     // ONNX uses its own default model (jinaai/jina-embeddings-v2-base-code-fp16),

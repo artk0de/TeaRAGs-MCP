@@ -146,13 +146,25 @@ export class OnnxEmbeddings implements EmbeddingProvider {
       const socket = createConnection(this.socketPath);
       const splitter = new LineSplitter();
 
-      // Timeout for connect handshake
+      // Timeout for connect handshake.
+      // Model loading can take 30-60s on cold start (download + ONNX init + warm-up + calibration).
+      // Timer resets on each "log" message from daemon (proves daemon is alive and loading).
+      const HANDSHAKE_TIMEOUT_MS = 120_000;
       /* v8 ignore start */
-      const timeout = setTimeout(() => {
+      let timeout = setTimeout(() => {
         socket.destroy();
         reject(new OnnxModelLoadError(this.socketPath, new Error("Timeout connecting to ONNX daemon")));
-      }, 10_000);
+      }, HANDSHAKE_TIMEOUT_MS);
       /* v8 ignore stop */
+
+      /* v8 ignore next 7 -- resets timeout on daemon log (real socket path, not unit-testable) */
+      const resetTimeout = () => {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          socket.destroy();
+          reject(new OnnxModelLoadError(this.socketPath, new Error("Timeout connecting to ONNX daemon")));
+        }, HANDSHAKE_TIMEOUT_MS);
+      };
 
       socket.on("error", (err) => {
         clearTimeout(timeout);
@@ -184,9 +196,10 @@ export class OnnxEmbeddings implements EmbeddingProvider {
         const msg = parseLine(line) as DaemonResponse | null;
         if (!msg) return;
 
-        // Forward logs even during handshake
+        // Forward logs even during handshake — reset timeout to prove daemon is alive
         if (msg.type === "log") {
           console.error(msg.message);
+          if (!handshakeDone) resetTimeout();
           return;
         }
 
