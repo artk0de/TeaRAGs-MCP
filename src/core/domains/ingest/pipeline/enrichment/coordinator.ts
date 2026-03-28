@@ -23,6 +23,8 @@ import { pipelineLog } from "../infra/debug-logger.js";
 import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
+import type { EnrichmentMigration } from "./migration.js";
+import type { EnrichmentRecovery } from "./recovery.js";
 import type { ChunkEnrichmentMarker, EnrichmentProvider, FileEnrichmentMarker, ProviderEnrichmentMarker } from "./types.js";
 
 /** Deep-partial update for a provider marker — allows partial file/chunk sub-objects. */
@@ -165,10 +167,54 @@ export class EnrichmentCoordinator {
   constructor(
     private readonly qdrant: QdrantManager,
     providers: EnrichmentProvider | EnrichmentProvider[],
+    private readonly recovery?: EnrichmentRecovery,
+    private readonly migration?: EnrichmentMigration,
   ) {
     this.applier = new EnrichmentApplier(qdrant);
     const list = Array.isArray(providers) ? providers : [providers];
     this.states = new Map(list.map((p) => [p.key, createProviderState(p)]));
+  }
+
+  /**
+   * Run recovery + migration before the main enrichment pipeline.
+   * Migration is one-time and idempotent. Recovery re-enriches chunks missing enrichedAt.
+   * No-op when recovery was not provided at construction time.
+   */
+  async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
+    if (!this.recovery) return;
+
+    // Run migration first (one-time, idempotent)
+    if (this.migration) {
+      for (const state of this.states.values()) {
+        await this.migration.migrateEnrichedAt(collectionName, state.provider.key);
+      }
+    }
+
+    const enrichedAt = new Date().toISOString();
+
+    for (const state of this.states.values()) {
+      const provider = state.provider;
+
+      await this.recovery.recoverFileLevel(collectionName, absolutePath, provider, enrichedAt);
+      await this.recovery.recoverChunkLevel(collectionName, absolutePath, provider, enrichedAt);
+
+      // Update marker with post-recovery counts
+      const fileCount = await this.recovery.countUnenriched(collectionName, provider.key, "file");
+      const chunkCount = await this.recovery.countUnenriched(collectionName, provider.key, "chunk");
+
+      await this.updateEnrichmentMarker(collectionName, {
+        [provider.key]: {
+          file: {
+            status: fileCount === 0 ? "completed" : "failed",
+            unenrichedChunks: fileCount,
+          },
+          chunk: {
+            status: chunkCount === 0 ? "completed" : chunkCount > 0 ? "degraded" : "completed",
+            unenrichedChunks: chunkCount,
+          },
+        },
+      });
+    }
   }
 
   /**
