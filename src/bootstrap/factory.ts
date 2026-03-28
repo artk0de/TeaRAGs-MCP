@@ -48,7 +48,8 @@ export interface AppContext {
 
 export async function createAppContext(config: AppConfig): Promise<AppContext> {
   const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData);
-  const qdrant = new QdrantManager(resolution.url, config.qdrantApiKey);
+  const reconnect = resolution.mode === "embedded" ? resolution.reconnect : undefined;
+  const qdrant = new QdrantManager(resolution.url, config.qdrantApiKey, reconnect);
   const embeddedRelease = resolution.mode === "embedded" ? resolution.release : undefined;
   const zodConfig = getZodConfig();
   setDebug(zodConfig.core.debug);
