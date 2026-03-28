@@ -501,7 +501,7 @@ export async function benchmarkDeleteConcurrency(
 }
 
 export async function benchmarkChunkerPoolSize(files, poolSize) {
-  const { ChunkerPool } = await import("../build/core/domains/ingest/pipeline/chunker/infra/pool.js");
+  const { ChunkerPool } = await import("../../build/core/domains/ingest/pipeline/chunker/infra/pool.js");
   const chunkerConfig = { chunkSize: 2500, chunkOverlap: 300, maxChunkSize: 5000 };
 
   try {
