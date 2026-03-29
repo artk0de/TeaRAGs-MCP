@@ -1,3 +1,65 @@
+## [1.17.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.16.0...v1.17.0) (2026-03-29)
+
+### ⚠ BREAKING CHANGES
+
+- **ingest:** IndexPipeline.indexCodebase() now throws IndexingFailedError
+  instead of returning stats with status='failed'. MCP error handler already
+  handles typed errors correctly.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- **ingest:** IndexPipeline.indexCodebase() now throws IndexingFailedError
+  instead of returning stats with status='failed'. MCP error handler already
+  handles typed errors correctly.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+### Features
+
+- **api:** add risk-assessment skill for multi-dimensional code health scan
+  ([ba99b7f](https://github.com/artk0de/TeaRAGs-MCP/commit/ba99b7f67d0f40fc060dd0925b22106698ae9b66))
+- **ingest:** add IndexingFailedError + wrapUnexpectedError base method
+  ([b12eff3](https://github.com/artk0de/TeaRAGs-MCP/commit/b12eff36aa3397ad057541f91b99b5cf6bb3f656))
+
+### Improvements
+
+- **plugin:** optimize explore skill — eval-driven, fix pathPattern + codeReview
+  bugs
+  ([ef974a0](https://github.com/artk0de/TeaRAGs-MCP/commit/ef974a0e8ee286ef64a52db98c0376d0673baecd))
+- **plugin:** refactor search-cascade — modularize, skills-first, eval-driven
+  ([2f25288](https://github.com/artk0de/TeaRAGs-MCP/commit/2f252881276c3f6808798ec5109a5bdd596c82f4))
+- **plugin:** update risk-assessment skill
+  ([4d8df59](https://github.com/artk0de/TeaRAGs-MCP/commit/4d8df593d9f1115adc9afc9631c9266a8315f15b))
+
+### Bug Fixes
+
+- **explore:** apply pathPattern filter in findSimilar via buildMergedFilter
+  ([edf1e7b](https://github.com/artk0de/TeaRAGs-MCP/commit/edf1e7bcf874566f2471fab1b8fbec868e76a149))
+- **explore:** propagate chunk ID through rank_chunks pipeline
+  ([0a01d0f](https://github.com/artk0de/TeaRAGs-MCP/commit/0a01d0f8cc3e4a7312b82bbed1673df3ad0f1a1b))
+- **explore:** propagate must_not from pathPattern in findSymbol
+  ([3c5dd45](https://github.com/artk0de/TeaRAGs-MCP/commit/3c5dd452c2cd4a09f294619118a9bb90658ed532))
+- **explore:** wrap Qdrant 404 as ChunkNotFoundError in find_similar
+  ([378ebaa](https://github.com/artk0de/TeaRAGs-MCP/commit/378ebaaca5badf0782a2ebb39441bd4426253d64))
+- **ingest:** harden risk zones — daemon lock, status-module codec, unified
+  errors
+  ([ef94055](https://github.com/artk0de/TeaRAGs-MCP/commit/ef940550d3505158232d0e3bdc0b64592743fc36))
+- **ingest:** unify IndexPipeline error handling, reorder alias-before-marker
+  ([65ead0a](https://github.com/artk0de/TeaRAGs-MCP/commit/65ead0acd72df8f20bbdeed2711c7bb0b37ce0fc))
+- **pipeline:** stamp enrichedAt on chunks with no git commits
+  ([79a762d](https://github.com/artk0de/TeaRAGs-MCP/commit/79a762d28cf76d42b6b36107013fabef6813aa9b))
+- **qdrant:** use exact match for pathPattern with literal file paths
+  ([2a35062](https://github.com/artk0de/TeaRAGs-MCP/commit/2a3506281349c009cddd0a42d9700df48b3ed1e4))
+
+### Documentation
+
+- **ingest:** add reindexing decomposition spec and implementation plan
+  ([47a8a8b](https://github.com/artk0de/TeaRAGs-MCP/commit/47a8a8b6706b23aa73e7e33317ca1d1968d4eb43))
+- **plans:** add ingest risk zones hardening implementation plan
+  ([7719f9a](https://github.com/artk0de/TeaRAGs-MCP/commit/7719f9a3b25e6b5938c038f8e63f2c49b50dc93a))
+- **specs:** add ingest risk zones hardening design
+  ([f825eec](https://github.com/artk0de/TeaRAGs-MCP/commit/f825eec4190bf21e312aecef5a7fa54bc6df6eca))
+
 ## [1.16.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.15.1...v1.16.0) (2026-03-29)
 
 ### ⚠ BREAKING CHANGES

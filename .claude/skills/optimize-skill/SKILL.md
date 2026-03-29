@@ -16,8 +16,11 @@ them, and verifies fixes.
 
 ## Prerequisites
 
-- Skill file to optimize (SKILL.md path)
-- Understanding of what the skill should do (read it first)
+1. **Load skill-creator toolkit** — invoke `/example-skills:skill-creator` via
+   the Skill tool BEFORE starting any phase. It provides scripts, agents, and
+   eval-viewer used in Phases 5-7. Keep it loaded throughout the session.
+2. Skill file to optimize (SKILL.md path)
+3. Understanding of what the skill should do (read it first)
 
 ## Phase 1: AUDIT
 
@@ -152,13 +155,20 @@ cases only for discovered failure modes.
 ## Phase 6: DESCRIPTION OPTIMIZATION (optional)
 
 After skill body is stable, optimize the `description` field in frontmatter for
-better triggering accuracy. Use `/example-skills:skill-creator` — it has a
-dedicated Description Optimization flow:
+better triggering accuracy. Follow the **Description Optimization** section from
+`/example-skills:skill-creator` (loaded in Prerequisites step 1):
 
 1. Generate 20 trigger eval queries (10 should-trigger, 10 should-not-trigger)
-2. Review with user via HTML template
-3. Run optimization loop:
-   `python -m scripts.run_loop --eval-set ... --skill-path ... --max-iterations 5`
+2. Review with user via HTML template (`assets/eval_review.html` from
+   skill-creator)
+3. Run optimization loop from the skill-creator directory:
+   ```bash
+   python -m scripts.run_loop \
+     --eval-set <path-to-trigger-eval.json> \
+     --skill-path <path-to-skill> \
+     --model <model-id> \
+     --max-iterations 5 --verbose
+   ```
 4. Apply `best_description` to SKILL.md frontmatter
 
 This is separate from body optimization — description controls **when** the
@@ -167,16 +177,26 @@ skill triggers, body controls **what it does** once triggered.
 ## Phase 7: FULL INTEGRATION EVAL (optional)
 
 When lightweight tool-selection eval is not enough (complex multi-step skills,
-skills that produce files), use `/example-skills:skill-creator` for full
-integration testing:
+skills that produce files), follow the **Running and evaluating test cases**
+section from `/example-skills:skill-creator` (loaded in Prerequisites step 1):
 
 1. Save eval cases to `evals/evals.json` (see skill-creator's
    `references/schemas.md` for schema)
 2. Spawn with-skill and baseline subagents that **execute the skill** on real
    tasks
 3. Save outputs to `<skill-name>-workspace/iteration-N/`
-4. Grade with assertions + human review via `eval-viewer/generate_review.py`
-5. Aggregate benchmarks: `python -m scripts.aggregate_benchmark`
+4. Grade using `agents/grader.md` from skill-creator, then review via:
+   ```bash
+   python <skill-creator-path>/eval-viewer/generate_review.py \
+     <workspace>/iteration-N \
+     --skill-name "<name>" \
+     --benchmark <workspace>/iteration-N/benchmark.json
+   ```
+5. Aggregate benchmarks:
+   ```bash
+   python -m scripts.aggregate_benchmark <workspace>/iteration-N \
+     --skill-name <name>
+   ```
 
 Key difference from Phase 3: integration eval tests **end-to-end behavior**
 (tool calls, outputs, quality). Phase 3 tests **instruction clarity** (does the
