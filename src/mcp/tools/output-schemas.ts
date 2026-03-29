@@ -12,12 +12,12 @@ const RankingOverlaySchema = z.object({
   preset: z.string().optional().describe("Rerank preset used"),
   raw: z
     .object({
-      file: z.record(z.unknown()).optional().describe("Raw file-level signals"),
-      chunk: z.record(z.unknown()).optional().describe("Raw chunk-level signals"),
+      file: z.record(z.string(), z.unknown()).optional().describe("Raw file-level signals"),
+      chunk: z.record(z.string(), z.unknown()).optional().describe("Raw chunk-level signals"),
     })
     .optional()
     .describe("Raw signal values from payload"),
-  derived: z.record(z.number()).optional().describe("Normalized derived signals (0-1)"),
+  derived: z.record(z.string(), z.number()).optional().describe("Normalized derived signals (0-1)"),
 });
 
 const GitMetadataSchema = z

@@ -66,7 +66,7 @@
     "express": "^5.2.1",
     "ignore": "^7.0.5",
     "isomorphic-git": "^1.37.4",
-    "openai": "^4.104.0",
+    "openai": "^6.33.0",
     "picomatch": "^4.0.4",
     "remark": "^15.0.1",
     "remark-frontmatter": "^5.0.0",
@@ -82,12 +82,12 @@
     "tree-sitter-typescript": "^0.23.2",
     "yaml": "^2.8.3",
     "yargs": "^18.0.0",
-    "zod": "^3.25.76"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/exec": "^7.1.0",
@@ -102,7 +102,8 @@
     "@types/yargs": "^17.0.35",
     "@vitest/coverage-v8": "^4.1.2",
     "@vitest/ui": "^4.1.2",
-    "eslint": "^9.39.2",
+    "eslint": "^10.1.0",
+    "globals": "^17.4.0",
     "husky": "^9.1.7",
     "jest": "^30.2.0",
     "lint-staged": "^16.4.0",
