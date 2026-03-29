@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest";
 import { GIT_PRESETS } from "../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
 import { STATIC_PRESETS } from "../../../../src/core/domains/trajectory/static/rerank/presets/index.js";
 
-const RANK_CHUNKS_PRESETS = new Set(["decomposition", "bugHunt", "techDebt", "hotspots", "refactoring", "ownership"]);
+const RANK_CHUNKS_PRESETS = new Set([
+  "decomposition",
+  "bugHunt",
+  "techDebt",
+  "hotspots",
+  "refactoring",
+  "ownership",
+  "codeReview",
+]);
 
 describe("preset tool lists", () => {
   const allPresets = [...STATIC_PRESETS, ...GIT_PRESETS];

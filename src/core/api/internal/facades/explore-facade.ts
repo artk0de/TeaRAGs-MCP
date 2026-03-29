@@ -323,12 +323,26 @@ export class ExploreFacade {
     }
 
     // Also collect parentName matches for class outline (members)
-    const parentFilter: Record<string, unknown> = {
-      must: [
-        { key: "parentName", match: { text: request.symbol } },
-        ...(request.language ? [{ key: "language", match: { value: request.language } }] : []),
-      ],
-    };
+    const parentMust: Record<string, unknown>[] = [
+      { key: "parentName", match: { text: request.symbol } },
+      ...(request.language ? [{ key: "language", match: { value: request.language } }] : []),
+    ];
+    const parentFilter: Record<string, unknown> = { must: parentMust };
+
+    // Apply same pathPattern filter to parent scroll
+    if (request.pathPattern) {
+      const pathFilter = this.registry.buildMergedFilter(
+        { pathPattern: request.pathPattern } as unknown as Record<string, unknown>,
+        undefined,
+        "chunk",
+      );
+      if (pathFilter) {
+        const extraMust = pathFilter.must as Record<string, unknown>[] | undefined;
+        if (extraMust) parentMust.push(...extraMust);
+        const extraMustNot = pathFilter.must_not as Record<string, unknown>[] | undefined;
+        if (extraMustNot) parentFilter.must_not = extraMustNot;
+      }
+    }
 
     // Execute both scrolls in parallel
     const [symbolChunks, memberChunks] = await Promise.all([
