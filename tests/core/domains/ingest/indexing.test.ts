@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OllamaUnavailableError } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { IngestFacade } from "../../../../src/core/api/index.js";
+import { IndexingFailedError } from "../../../../src/core/domains/ingest/errors.js";
 import type { IngestCodeConfig } from "../../../../src/core/types.js";
 import {
   cleanupTempDir,
@@ -358,7 +359,7 @@ function third() {
   });
 
   describe("Overall indexing failure", () => {
-    it("should return failed status when indexing encounters a fatal error", async () => {
+    it("should throw IndexingFailedError when indexing encounters a fatal error", async () => {
       await createTestFile(
         codebaseDir,
         "test.ts",
@@ -371,12 +372,7 @@ function third() {
       });
 
       try {
-        const stats = await ingest.indexCodebase(codebaseDir);
-
-        expect(stats.status).toBe("failed");
-        expect(stats.errors?.some((e) => e.includes("Indexing failed"))).toBe(true);
-        expect(stats.errors?.some((e) => e.includes("Qdrant connection refused"))).toBe(true);
-        expect(stats.durationMs).toBeGreaterThanOrEqual(0);
+        await expect(ingest.indexCodebase(codebaseDir)).rejects.toThrow(IndexingFailedError);
       } finally {
         vi.restoreAllMocks();
       }
@@ -489,7 +485,7 @@ function third() {
       expect(createAliasSpy).toHaveBeenCalledWith(collName, expect.stringMatching(/_v2$/));
     });
 
-    it("should clean up incomplete versioned collection on failure", async () => {
+    it("should throw IndexingFailedError on pipeline failure during forceReindex", async () => {
       await createTestFile(codebaseDir, "test.ts", "export const z = 3;");
 
       // First index succeeds
@@ -508,10 +504,7 @@ function third() {
         }
       });
 
-      const stats = await ingest.indexCodebase(codebaseDir, { forceReindex: true });
-
-      expect(stats.status).toBe("failed");
-      expect(stats.errors?.some((e) => e.includes("Simulated pipeline failure"))).toBe(true);
+      await expect(ingest.indexCodebase(codebaseDir, { forceReindex: true })).rejects.toThrow(IndexingFailedError);
 
       vi.restoreAllMocks();
     });
