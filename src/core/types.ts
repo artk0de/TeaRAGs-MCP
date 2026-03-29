@@ -223,5 +223,3 @@ export interface ChunkLookupEntry {
   /** Non-contiguous line ranges for precise overlap detection (e.g., Ruby body groups) */
   lineRanges?: { start: number; end: number }[];
 }
-
-// trigger
