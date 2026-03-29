@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { EmbeddingProvider } from "../../../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
+import { QdrantPointNotFoundError } from "../../../../../src/core/adapters/qdrant/errors.js";
+import { ChunkNotFoundError } from "../../../../../src/core/domains/explore/errors.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
 import { SimilarSearchStrategy } from "../../../../../src/core/domains/explore/strategies/similar.js";
 
@@ -231,6 +233,19 @@ describe("SimilarSearchStrategy", () => {
       ],
       should: [{ key: "chunkType", match: { value: "class" } }],
       must_not: [{ key: "isDocumentation", match: { value: true } }],
+    });
+  });
+
+  it("throws ChunkNotFoundError when positiveIds contains non-existent chunk ID", async () => {
+    const qdrant = createMockQdrant();
+    (qdrant.query as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new QdrantPointNotFoundError("non-existent-uuid", "col"),
+    );
+    const strategy = createStrategy({ qdrant, positiveIds: ["non-existent-uuid"] });
+
+    await expect(strategy.execute({ collectionName: "col", limit: 10 })).rejects.toThrow(ChunkNotFoundError);
+    await expect(strategy.execute({ collectionName: "col", limit: 10 })).rejects.toMatchObject({
+      code: "EXPLORE_CHUNK_NOT_FOUND",
     });
   });
 

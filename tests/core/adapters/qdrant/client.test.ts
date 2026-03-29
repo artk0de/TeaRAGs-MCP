@@ -1015,6 +1015,20 @@ describe("QdrantManager", () => {
         }),
       );
     });
+
+    it("should throw QdrantPointNotFoundError when recommend API returns 404", async () => {
+      const { QdrantPointNotFoundError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      mockClient.getCollection.mockResolvedValue({
+        config: { params: { vectors: { size: 3, distance: "Cosine" } } },
+        points_count: 10,
+      });
+      const notFoundError = Object.assign(new Error("Not Found"), { status: 404 });
+      mockClient.query.mockRejectedValue(notFoundError);
+
+      await expect(manager.query("test-col", { positive: ["non-existent-id"], limit: 5 })).rejects.toThrow(
+        QdrantPointNotFoundError,
+      );
+    });
   });
 
   describe("hybridSearch", () => {
