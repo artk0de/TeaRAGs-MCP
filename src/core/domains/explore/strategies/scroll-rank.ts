@@ -116,6 +116,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     return results.map((r) => {
       const withOverlay = r as RerankableResult & { rankingOverlay?: RankingOverlay };
       return {
+        id: r.id,
         score: r.score,
         payload: r.payload as Record<string, unknown> | undefined,
         rankingOverlay: withOverlay.rankingOverlay,

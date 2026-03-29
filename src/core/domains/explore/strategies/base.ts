@@ -86,7 +86,8 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    */
   protected applyMetaOnly(results: ExploreResult[]): ExploreResult[] {
     const metaResults = filterMetaOnly(results, this.payloadSignals, this.essentialKeys);
-    return metaResults.map((meta) => ({
+    return metaResults.map((meta, i) => ({
+      id: results[i].id,
       score: meta.score as number,
       payload: meta,
     }));
