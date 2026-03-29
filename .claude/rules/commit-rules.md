@@ -54,7 +54,15 @@ Do NOT use BREAKING CHANGE for:
 - New features that are additive (no existing behavior changes)
 - Bug fixes (unless the buggy behavior was documented/relied upon)
 
-Format:
+Two supported formats:
+
+**Short form** — `!` after scope (preferred for simple breaks):
+
+```text
+feat(config)!: change QDRANT_URL default to autodetect
+```
+
+**Long form** — `BREAKING CHANGE:` footer (for detailed explanation):
 
 ```text
 feat(config): add embedded Qdrant support
@@ -62,3 +70,6 @@ feat(config): add embedded Qdrant support
 BREAKING CHANGE: QDRANT_URL default changed from http://localhost:6333 to autodetect.
 Users with Docker Qdrant should set QDRANT_URL=http://localhost:6333 explicitly.
 ```
+
+Both forms can be combined. The `!` goes after scope, before `:` —
+`type(scope)!: subject`, NOT `type!(scope): subject`.
