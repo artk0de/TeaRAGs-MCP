@@ -110,6 +110,23 @@ describe("ExploreFacade.findSimilar()", () => {
     expect(deps.embeddings.embedBatch).toHaveBeenCalledWith(["function foo() {}"]);
   });
 
+  it("passes pathPattern through buildMergedFilter to Qdrant pre-filter", async () => {
+    const deps = createMockDeps();
+    const facade = new ExploreFacade(deps);
+
+    await facade.findSimilar({
+      collection: "test_col",
+      positiveIds: ["uuid-1"],
+      pathPattern: "!**/ingest/**",
+    });
+
+    expect(deps.registry.buildMergedFilter).toHaveBeenCalledWith(
+      expect.objectContaining({ pathPattern: "!**/ingest/**" }),
+      undefined,
+      undefined,
+    );
+  });
+
   it("recognizes negativeCode with non-empty strings as valid negative input", async () => {
     const deps = createMockDeps();
     (deps.embeddings.embedBatch as ReturnType<typeof vi.fn>).mockResolvedValue([

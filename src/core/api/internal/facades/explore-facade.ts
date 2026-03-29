@@ -274,13 +274,18 @@ export class ExploreFacade {
     );
 
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
+    const filter = this.registry.buildMergedFilter(
+      request as unknown as Record<string, unknown>,
+      request.filter,
+      level,
+    );
     return this.executeExplore(
       similarStrategy,
       {
         collectionName,
         limit: request.limit ?? 10,
         offset: request.offset,
-        filter: request.filter,
+        filter,
         pathPattern: request.pathPattern,
         rerank: request.rerank,
         metaOnly: request.metaOnly,
