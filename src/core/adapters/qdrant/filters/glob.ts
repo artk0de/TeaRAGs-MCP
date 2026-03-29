@@ -26,7 +26,7 @@ export function globToTextFilter(pattern: string): FilterConditionResult {
   // Expand braces (top-level or inline) into alternatives
   const expanded = expandBraces(pattern);
   if (expanded.length > 1) {
-    const positive: { key: string; match: { text: string } }[] = [];
+    const positive: { key: string; match: { text: string } | { value: string } }[] = [];
     const negative: { key: string; match: { text: string } }[] = [];
 
     for (const alt of expanded) {
@@ -34,8 +34,8 @@ export function globToTextFilter(pattern: string): FilterConditionResult {
         const q = extractTextQuery(alt.slice(1));
         if (q.length > 0) negative.push({ key: "relativePath", match: { text: q } });
       } else {
-        const q = extractTextQuery(alt);
-        if (q.length > 0) positive.push({ key: "relativePath", match: { text: q } });
+        const cond = buildMatchCondition(alt);
+        if (cond) positive.push(cond);
       }
     }
 
@@ -53,10 +53,38 @@ export function globToTextFilter(pattern: string): FilterConditionResult {
     return result;
   }
 
-  const textQuery = extractTextQuery(pattern);
-  if (textQuery.length === 0) return {};
+  const resolved = expanded.length === 1 ? expanded[0] : pattern;
+  const cond = buildMatchCondition(resolved);
+  if (!cond) return {};
 
-  return { must: [{ key: "relativePath", match: { text: textQuery } }] };
+  return { must: [cond] };
+}
+
+/**
+ * Check if a pattern is an exact file path (no glob wildcards, has file extension).
+ */
+function isExactFilePath(pattern: string): boolean {
+  // Must not contain any glob special characters
+  if (/[*?[\]{}!@#]/.test(pattern)) return false;
+  // Must have a file extension (dot followed by alphanumeric chars at the end)
+  return /\.\w+$/.test(pattern);
+}
+
+/**
+ * Build a Qdrant match condition for a single pattern.
+ * Exact file paths use `match: { value }` for precise matching.
+ * Glob patterns use `match: { text }` for tokenized matching.
+ */
+function buildMatchCondition(pattern: string): { key: string; match: { text: string } | { value: string } } | null {
+  if (isExactFilePath(pattern)) {
+    // Exact file path — use value match for precise filtering
+    const cleaned = pattern.replace(/^\//, "");
+    if (cleaned.length === 0) return null;
+    return { key: "relativePath", match: { value: cleaned } };
+  }
+  const textQuery = extractTextQuery(pattern);
+  if (textQuery.length === 0) return null;
+  return { key: "relativePath", match: { text: textQuery } };
 }
 
 /**
