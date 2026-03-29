@@ -58,7 +58,7 @@ export const AddDocumentsSchema = {
       z.object({
         id: z.union([z.string(), z.number()]).describe("Unique identifier for the document"),
         text: z.string().describe("Text content to embed and store"),
-        metadata: z.record(z.any()).optional().describe("Optional metadata to store with the document"),
+        metadata: z.record(z.string(), z.any()).optional().describe("Optional metadata to store with the document"),
       }),
     )
     .describe("Array of documents to add"),
@@ -178,7 +178,7 @@ function searchCommonFields() {
     query: z.string().describe("Search query text"),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     filter: z
-      .record(z.any())
+      .record(z.string(), z.any())
       .optional()
       .describe(
         "Qdrant filter object with must/should/must_not conditions. " +
@@ -280,7 +280,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
     ...levelField(),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10)"),
     filter: z
-      .record(z.any())
+      .record(z.string(), z.any())
       .optional()
       .describe(
         "Qdrant filter object with must/should/must_not conditions. " +
@@ -329,7 +329,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
           "sum_scores: sums scores across examples, middle ground.",
       ),
     filter: z
-      .record(z.any())
+      .record(z.string(), z.any())
       .optional()
       .describe(
         "Qdrant filter object with must/should/must_not conditions. " +

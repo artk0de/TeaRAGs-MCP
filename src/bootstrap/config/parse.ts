@@ -1,5 +1,3 @@
-import type { ZodType, ZodTypeDef } from "zod";
-
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../errors.js";
 import {
   coreSchema,
@@ -15,7 +13,15 @@ import {
 } from "./schemas.js";
 import { envWithFallback, type DeprecationNotice } from "./utils.js";
 
-function validateSchema<T>(schema: ZodType<T, ZodTypeDef, unknown>, input: unknown, section: string): T {
+function validateSchema<T>(
+  schema: {
+    safeParse: (
+      input: unknown,
+    ) => { success: true; data: T } | { success: false; error: { issues: { path: PropertyKey[]; message: string }[] } };
+  },
+  input: unknown,
+  section: string,
+): T {
   const result = schema.safeParse(input);
   if (!result.success) {
     const issues = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");

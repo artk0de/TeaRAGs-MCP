@@ -12,6 +12,8 @@ export default defineConfig({
     ...(!isCI && { pool: "forks" }),
     // Give worker_threads (ChunkerPool) time to terminate before fork exits
     teardownTimeout: isCI ? 10_000 : 5_000,
+    // Detect hanging async operations (timers, promises, connections)
+    reporters: isCI ? ["default", "hanging-process"] : ["default"],
     // Setup file mocks tree-sitter native modules to prevent crashes
     setupFiles: ["./tests/vitest.setup.ts"],
     exclude: [
