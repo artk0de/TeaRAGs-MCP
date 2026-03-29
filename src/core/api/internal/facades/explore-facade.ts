@@ -315,8 +315,10 @@ export class ExploreFacade {
         "chunk",
       );
       if (pathFilter) {
-        const extra = pathFilter.must as Record<string, unknown>[] | undefined;
-        if (extra) (filter.must as Record<string, unknown>[]).push(...extra);
+        const extraMust = pathFilter.must as Record<string, unknown>[] | undefined;
+        if (extraMust) (filter.must as Record<string, unknown>[]).push(...extraMust);
+        const extraMustNot = pathFilter.must_not as Record<string, unknown>[] | undefined;
+        if (extraMustNot) filter.must_not = extraMustNot;
       }
     }
 

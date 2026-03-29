@@ -101,6 +101,48 @@ describe("ExploreFacade.findSymbol", () => {
     );
   });
 
+  it("applies negation pathPattern as must_not filter", async () => {
+    const deps = {
+      qdrant: {
+        scrollFiltered: mockScrollFiltered,
+        collectionExists: mockCollectionExists,
+      } as any,
+      embeddings: { embed: vi.fn().mockResolvedValue({ embedding: [] }) } as any,
+      reranker: {
+        rerank: vi.fn((r: any[]) => r),
+        hasCollectionStats: false,
+        setCollectionStats: vi.fn(),
+        getDescriptors: vi.fn().mockReturnValue([]),
+        getPreset: vi.fn(),
+        getPresetNames: vi.fn().mockReturnValue([]),
+        getFullPreset: vi.fn().mockReturnValue(undefined),
+      } as any,
+      registry: {
+        buildMergedFilter: vi.fn().mockReturnValue({
+          must_not: [{ key: "relativePath", match: { text: "ingest/" } }],
+        }),
+        getAllFilters: vi.fn().mockReturnValue([]),
+        getAllPayloadSignalDescriptors: vi.fn().mockReturnValue([]),
+        getEssentialPayloadKeys: vi.fn().mockReturnValue([]),
+      } as any,
+    };
+    const facadeWithFilter = new ExploreFacade(deps);
+
+    await facadeWithFilter.findSymbol({
+      symbol: "Pipeline",
+      collection: "test_collection",
+      pathPattern: "!**/ingest/**",
+    });
+
+    expect(mockScrollFiltered).toHaveBeenCalledWith(
+      "test_collection",
+      expect.objectContaining({
+        must_not: [{ key: "relativePath", match: { text: "ingest/" } }],
+      }),
+      expect.any(Number),
+    );
+  });
+
   it("returns empty results when no symbols match", async () => {
     mockScrollFiltered.mockResolvedValue([]);
 
