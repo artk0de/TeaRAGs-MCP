@@ -12,8 +12,6 @@ Signal-driven root cause investigation using TeaRAGs git signals.
 
 ## Rules
 
-0. **@post-search-validation.md after every search call.** No-match detection +
-   disambiguation. Do NOT skip.
 1. **Execute YOURSELF** — no subagents.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
 3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only.

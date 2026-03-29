@@ -18,7 +18,7 @@ them, and verifies fixes.
 
 1. **Load skill-creator toolkit** — invoke `/example-skills:skill-creator` via
    the Skill tool BEFORE starting any phase. It provides scripts, agents, and
-   eval-viewer used in Phases 5-7. Keep it loaded throughout the session.
+   eval-viewer used in Phases 6-8. Keep it loaded throughout the session.
 2. Skill file to optimize (SKILL.md path)
 3. Understanding of what the skill should do (read it first)
 
@@ -35,22 +35,20 @@ Read the skill. Identify problems by category:
 | **Wrong routing**     | Skill sends agent to wrong tool for a given intent             |
 | **Anti-patterns**     | Read after search, ripgrep for semantic queries, Glob for code |
 
-Present findings. Get user approval before fixing.
+Present findings as numbered list. Get user approval on each finding (interview
+style, one at a time, with recommended resolution).
 
-## Phase 2: FIX
+## Phase 2: BASELINE EVAL (before fixing)
 
-Apply fixes from audit. Track:
+**Measure first, fix second.** Audit findings are hypotheses — eval confirms
+them. Do NOT apply fixes until baseline proves the skill is actually broken.
 
-- Lines before/after (target: -30% or more for verbose skills)
-- Each fix with reason
-
-## Phase 3: EVAL
-
-### 3.1 Design eval cases
+### 2.1 Design eval cases
 
 Create eval cases targeting:
 
-1. **Each new/changed behavior** — one case per fix
+1. **Each audit finding** — one case per identified problem. The case should
+   FAIL if the problem exists and PASS if the skill handles it correctly
 2. **Regression controls** — unchanged behaviors that must still work
 3. **Edge cases** — non-English input, code snippet input, ambiguous intent
 4. **Subagent routing** — if skill is used by subagents
@@ -61,11 +59,12 @@ Each case has:
 Eval-N: "<user prompt>"
 Expected: <tool sequence>. NOT <wrong tools>.
 Failure mode: <what we're testing against>
+Audit finding: <N or "control">
 ```
 
-**Minimum 8 cases.** Balance: ~50% new behaviors, ~30% controls, ~20% edges.
+**Minimum 8 cases.** Balance: ~50% audit findings, ~30% controls, ~20% edges.
 
-### 3.2 Run with-rule eval
+### 2.2 Run with-rule eval
 
 Spawn ONE subagent with the **full skill text injected** into its prompt.
 Present ALL eval cases in a single prompt. Agent describes tool selection plan
@@ -73,14 +72,14 @@ for each — does NOT execute tools.
 
 Grade each case: PASS / FAIL against expected behavior.
 
-### 3.3 Run without-rule baseline
+### 2.3 Run without-rule baseline
 
 Spawn ONE subagent with NO skill text — only the list of available MCP tools.
 Same eval cases. Agent describes its natural tool selection.
 
 This establishes the **delta** — how much the skill improves behavior.
 
-### 3.4 Grade
+### 2.4 Grade and triage
 
 ```
 With-rule:    N/M PASS (X%)
@@ -88,11 +87,47 @@ Without-rule: N/M PASS (Y%)
 Delta:        +Zpp
 ```
 
-**Target: 100% with-rule pass rate.** If not met → iterate (Phase 4).
+**Triage audit findings by eval results:**
 
-## Phase 4: ITERATE (if needed)
+- Finding FAILS in with-rule eval → **confirmed problem**, proceed to fix
+- Finding PASSES in with-rule eval → **not broken**, drop from fix list
+- Finding PASSES in both with-rule and without-rule → **skill adds no value
+  here**, consider if the instruction is dead weight
 
-For each FAIL:
+Present triage to user. Only confirmed problems proceed to Phase 3.
+
+## Phase 3: FIX
+
+Apply fixes ONLY for confirmed problems (eval-proven failures from Phase 2).
+
+Track:
+
+- Lines before/after (target: -30% or more for verbose skills)
+- Each fix with reason and linked eval case
+
+## Phase 4: VERIFY
+
+Re-run full eval suite against fixed skill.
+
+### 4.1 Run with-rule eval (fixed skill)
+
+Same eval cases from Phase 2. All previously failing cases must now PASS.
+Previously passing cases must not regress.
+
+### 4.2 Grade
+
+```
+Before fix:   N/M PASS (X%)
+After fix:    N/M PASS (X'%)
+Baseline:     N/M PASS (Y%)
+Delta:        +Zpp
+```
+
+**Target: 100% with-rule pass rate.** If not met → iterate (Phase 5).
+
+## Phase 5: ITERATE (if needed)
+
+For each remaining FAIL:
 
 1. Identify **why** the agent chose wrong — ambiguous instruction? missing rule?
    conflicting guidance?
@@ -103,7 +138,12 @@ For each FAIL:
 **Max 3 iterations.** If still failing after 3 — the skill design needs
 rethinking, not tweaking. Report to user.
 
-## Phase 5: PERSIST
+## Phase 6: PERSIST (MANDATORY — execute inline, not deferred)
+
+**This phase is NOT optional.** Save results immediately after Phase 4/5
+completes. Do not wait for user to ask. Do not skip because "session is ending".
+Benchmark artifacts are the proof that optimization happened — without them, the
+work is unverifiable.
 
 Save results to `.claude-plugin/benchmarks/<skill-name>/`:
 
@@ -111,17 +151,23 @@ Save results to `.claude-plugin/benchmarks/<skill-name>/`:
 benchmarks/<skill-name>/
 ├── benchmark.md        — committed. Permanent optimization record.
 └── workspace/          — gitignored. Recreatable by this skill.
-    ├── evals.json      — eval cases + assertions
+    ├── evals.json      — eval cases + assertions + results
     ├── skill-snapshot/  — frozen copy of skill before/after optimization
     └── iteration-N/    — subagent outputs per iteration
 ```
 
+**Execute these steps in order:**
+
 1. **Create workspace/** dir (gitignored —
    `.claude-plugin/benchmarks/**/workspace/`)
-2. **Save evals.json** to `workspace/`
+2. **Save evals.json** to `workspace/` — must include ALL eval cases with:
+   prompt, expected output, assertions, audit finding references, and final
+   pass/fail results per iteration
 3. **Copy SKILL.md** before and after to `workspace/skill-snapshot/`
-4. **Write benchmark.md** (committed) with: summary, iterations table, delta,
-   eval results detail, bugs found, changes made, key design decisions
+4. **Write benchmark.md** (committed) with: summary, changes table, key design
+   decisions, metrics (lines before/after), iterations table (pass rates per
+   iteration), per-eval detail table (prompt + before/after grade), integration
+   test results if Phase 7/8 was run
 5. **Update README.md** in `benchmarks/` with new skill row
 
 Present final state to user:
@@ -152,7 +198,7 @@ adds little value. Target: +50pp minimum delta.
 **Minimum viable eval.** Don't over-test. 8-15 cases covers most skills. Add
 cases only for discovered failure modes.
 
-## Phase 6: DESCRIPTION OPTIMIZATION (optional)
+## Phase 7: DESCRIPTION OPTIMIZATION (optional)
 
 After skill body is stable, optimize the `description` field in frontmatter for
 better triggering accuracy. Follow the **Description Optimization** section from
@@ -174,7 +220,7 @@ better triggering accuracy. Follow the **Description Optimization** section from
 This is separate from body optimization — description controls **when** the
 skill triggers, body controls **what it does** once triggered.
 
-## Phase 7: FULL INTEGRATION EVAL (optional)
+## Phase 8: FULL INTEGRATION EVAL (optional)
 
 When lightweight tool-selection eval is not enough (complex multi-step skills,
 skills that produce files), follow the **Running and evaluating test cases**
@@ -198,17 +244,23 @@ section from `/example-skills:skill-creator` (loaded in Prerequisites step 1):
      --skill-name <name>
    ```
 
-Key difference from Phase 3: integration eval tests **end-to-end behavior**
-(tool calls, outputs, quality). Phase 3 tests **instruction clarity** (does the
-agent know which tool to pick). Use Phase 3 first — it's faster. Escalate to
-Phase 7 only when tool selection is correct but output quality is uncertain.
+Key difference from Phase 2: integration eval tests **end-to-end behavior**
+(tool calls, outputs, quality). Phase 2 tests **instruction clarity** (does the
+agent know which tool to pick). Use Phase 2 first — it's faster. Escalate to
+Phase 8 only when tool selection is correct but output quality is uncertain.
 
 ## Anti-patterns
 
-- **Running real MCP calls in Phase 3 eval** — unnecessary, tests tool not skill
+- **Skipping PERSIST** — benchmark artifacts are proof of work. Without
+  evals.json and benchmark.md, the optimization is unverifiable and
+  unrepeatable. Execute Phase 6 inline, immediately after verify passes
+- **Fixing before measuring** — audit findings are hypotheses. Run baseline eval
+  (Phase 2) to confirm problems exist before applying fixes. A finding that
+  passes eval is not broken — drop it from the fix list
+- **Running real MCP calls in Phase 2 eval** — unnecessary, tests tool not skill
 - **One subagent per eval case** — wasteful, use one subagent for all cases
 - **Skipping baseline** — can't measure delta without it
 - **Fixing skill without re-eval** — any fix can break other cases
 - **Inflating eval count** — 20+ cases with no new failure modes is waste
-- **Skipping Phase 3, jumping to Phase 7** — Phase 7 is 10x slower. Always start
+- **Skipping Phase 2, jumping to Phase 8** — Phase 8 is 10x slower. Always start
   with lightweight tool-selection eval
