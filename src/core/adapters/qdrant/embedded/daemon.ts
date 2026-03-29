@@ -6,8 +6,11 @@ import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { QdrantOperationError, QdrantUnavailableError } from "../errors.js";
+import { DaemonLock } from "./daemon-lock.js";
 import { downloadQdrant, getBinaryPath, isBinaryUpToDate, QDRANT_VERSION } from "./download.js";
 import type { DaemonHandle, DaemonPaths, QdrantResolution } from "./types.js";
+
+const daemonLock = new DaemonLock();
 
 export const EMBEDDED_MARKER = "embedded";
 const HEALTH_CHECK_TIMEOUT_MS = 30_000;
@@ -62,24 +65,64 @@ function readRefs(paths: DaemonPaths): number {
 }
 
 function incrementRefs(paths: DaemonPaths): number {
-  const next = readRefs(paths) + 1;
-  writeFileSync(paths.refsFile, String(next), "utf-8");
-  return next;
+  const lock = daemonLock.acquire(paths.lockFile);
+  try {
+    const next = readRefs(paths) + 1;
+    writeFileSync(paths.refsFile, String(next), "utf-8");
+    return next;
+  } finally {
+    if (lock) daemonLock.release(lock.fd);
+  }
 }
 
 function decrementRefs(paths: DaemonPaths): number {
-  const next = Math.max(0, readRefs(paths) - 1);
-  writeFileSync(paths.refsFile, String(next), "utf-8");
-  return next;
+  const lock = daemonLock.acquire(paths.lockFile);
+  try {
+    const next = Math.max(0, readRefs(paths) - 1);
+    writeFileSync(paths.refsFile, String(next), "utf-8");
+    return next;
+  } finally {
+    if (lock) daemonLock.release(lock.fd);
+  }
 }
 
 function cleanupDaemonFiles(paths: DaemonPaths): void {
-  for (const f of [paths.pidFile, paths.portFile, paths.refsFile]) {
+  for (const f of [paths.pidFile, paths.portFile, paths.refsFile, paths.lockFile]) {
     try {
       unlinkSync(f);
     } catch {
       /* ignore */
     }
+  }
+}
+
+const GRACEFUL_KILL_TIMEOUT_MS = 3000;
+
+/**
+ * Send SIGTERM, wait up to timeout, then SIGKILL if still alive.
+ * Exported for testability.
+ */
+export async function gracefulKill(pid: number, timeoutMs = GRACEFUL_KILL_TIMEOUT_MS): Promise<void> {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return; // already dead
+  }
+
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return; // exited
+    }
+    await sleep(100);
+  }
+
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    /* already dead */
   }
 }
 
@@ -127,85 +170,122 @@ function makeReconnect(paths: DaemonPaths, currentPort: number): () => string | 
   };
 }
 
+const LOCK_WAIT_INTERVAL_MS = 200;
+const LOCK_WAIT_TIMEOUT_MS = HEALTH_CHECK_TIMEOUT_MS + 5000;
+
+/**
+ * Wait for another process to finish starting the daemon.
+ * Returns when the lock file disappears (or timeout).
+ */
+async function waitForDaemon(paths: DaemonPaths): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < LOCK_WAIT_TIMEOUT_MS) {
+    if (!daemonLock.isHeld(paths.lockFile)) return;
+    await sleep(LOCK_WAIT_INTERVAL_MS);
+  }
+}
+
+function makeDaemonHandle(paths: DaemonPaths, port: number, url: string): DaemonHandle {
+  return {
+    url,
+    release: () => {
+      const remaining = decrementRefs(paths);
+      console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
+    },
+    reconnect: makeReconnect(paths, port),
+  };
+}
+
 async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
   const storagePath = getStoragePath(appDataPath);
   mkdirSync(storagePath, { recursive: true });
   const paths = getDaemonPaths(storagePath);
 
+  // Fast path: attach to running daemon (no lock needed)
   if (isDaemonAlive(paths) && existsSync(paths.portFile)) {
     const port = parseInt(readFileSync(paths.portFile, "utf-8").trim(), 10);
     const url = `http://127.0.0.1:${port}`;
     if (await probeHealth(url)) {
       const refs = incrementRefs(paths);
       console.error(`[tea-rags] Attached to Qdrant daemon (port ${port}, refs=${refs})`);
-      return {
-        url,
-        release: () => {
-          const remaining = decrementRefs(paths);
-          console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
-        },
-        reconnect: makeReconnect(paths, port),
-      };
+      return makeDaemonHandle(paths, port, url);
     }
   }
 
-  cleanupDaemonFiles(paths);
-
-  if (!isBinaryUpToDate(appDataPath)) {
-    console.error(`[tea-rags] Downloading Qdrant v${QDRANT_VERSION}...`);
-    await downloadQdrant(undefined, undefined, appDataPath);
-  }
-
-  const port = await findFreePort();
-  const binaryPath = getBinaryPath(undefined, appDataPath);
-
-  const child = spawn(binaryPath, ["--disable-telemetry"], {
-    cwd: dirname(binaryPath),
-    detached: true,
-    stdio: "ignore",
-    env: {
-      ...process.env,
-      QDRANT__STORAGE__STORAGE_PATH: storagePath,
-      QDRANT__SERVICE__HTTP_PORT: String(port),
-      QDRANT__SERVICE__GRPC_PORT: "0",
-    },
-  });
-  child.unref();
-
-  const { pid } = child;
-  if (pid === undefined) {
-    throw new QdrantOperationError("spawn", "daemon failed to spawn — no PID assigned");
-  }
-
-  writeFileSync(paths.pidFile, String(pid), "utf-8");
-  writeFileSync(paths.portFile, String(port), "utf-8");
-  writeFileSync(paths.refsFile, "1", "utf-8");
-
-  const url = `http://127.0.0.1:${port}`;
-  const start = Date.now();
-  while (Date.now() - start < HEALTH_CHECK_TIMEOUT_MS) {
-    if (await probeHealth(url)) {
-      console.error(`[tea-rags] Qdrant daemon started (pid=${pid}, port=${port})`);
-      scheduleIdleWatcher(paths, pid);
-      return {
-        url,
-        release: () => {
-          const remaining = decrementRefs(paths);
-          console.error(`[tea-rags] Released Qdrant ref (remaining=${remaining})`);
-        },
-        reconnect: makeReconnect(paths, port),
-      };
-    }
-    await sleep(HEALTH_CHECK_INTERVAL_MS);
+  // Slow path: acquire lock for daemon spawn
+  const lock = daemonLock.acquire(paths.lockFile);
+  if (!lock) {
+    // Another process is starting the daemon — wait and retry
+    console.error("[tea-rags] Daemon lock held by another process, waiting...");
+    await waitForDaemon(paths);
+    return ensureDaemon(appDataPath);
   }
 
   try {
-    process.kill(pid, "SIGKILL");
-  } catch {
-    /* ignore */
+    // Double-check: daemon may have appeared while we waited for the lock
+    if (isDaemonAlive(paths) && existsSync(paths.portFile)) {
+      const port = parseInt(readFileSync(paths.portFile, "utf-8").trim(), 10);
+      const url = `http://127.0.0.1:${port}`;
+      if (await probeHealth(url)) {
+        const refs = incrementRefs(paths);
+        console.error(`[tea-rags] Attached to Qdrant daemon (port ${port}, refs=${refs})`);
+        return makeDaemonHandle(paths, port, url);
+      }
+    }
+
+    cleanupDaemonFiles(paths);
+
+    if (!isBinaryUpToDate(appDataPath)) {
+      console.error(`[tea-rags] Downloading Qdrant v${QDRANT_VERSION}...`);
+      await downloadQdrant(undefined, undefined, appDataPath);
+    }
+
+    const port = await findFreePort();
+    const binaryPath = getBinaryPath(undefined, appDataPath);
+
+    const child = spawn(binaryPath, ["--disable-telemetry"], {
+      cwd: dirname(binaryPath),
+      detached: true,
+      stdio: "ignore",
+      env: {
+        ...process.env,
+        QDRANT__STORAGE__STORAGE_PATH: storagePath,
+        QDRANT__SERVICE__HTTP_PORT: String(port),
+        QDRANT__SERVICE__GRPC_PORT: "0",
+      },
+    });
+    child.unref();
+
+    const { pid } = child;
+    if (pid === undefined) {
+      throw new QdrantOperationError("spawn", "daemon failed to spawn — no PID assigned");
+    }
+
+    writeFileSync(paths.pidFile, String(pid), "utf-8");
+    writeFileSync(paths.portFile, String(port), "utf-8");
+    writeFileSync(paths.refsFile, "1", "utf-8");
+
+    const url = `http://127.0.0.1:${port}`;
+    const start = Date.now();
+    while (Date.now() - start < HEALTH_CHECK_TIMEOUT_MS) {
+      if (await probeHealth(url)) {
+        console.error(`[tea-rags] Qdrant daemon started (pid=${pid}, port=${port})`);
+        scheduleIdleWatcher(paths, pid);
+        return makeDaemonHandle(paths, port, url);
+      }
+      await sleep(HEALTH_CHECK_INTERVAL_MS);
+    }
+
+    // Health check timed out — graceful kill instead of SIGKILL
+    await gracefulKill(pid);
+    cleanupDaemonFiles(paths);
+    throw new QdrantUnavailableError(
+      url,
+      new Error(`Qdrant daemon failed to start within ${HEALTH_CHECK_TIMEOUT_MS}ms`),
+    );
+  } finally {
+    daemonLock.release(lock.fd);
   }
-  cleanupDaemonFiles(paths);
-  throw new QdrantUnavailableError(url, new Error(`Qdrant daemon failed to start within ${HEALTH_CHECK_TIMEOUT_MS}ms`));
 }
 
 function scheduleIdleWatcher(paths: DaemonPaths, pid: number): void {

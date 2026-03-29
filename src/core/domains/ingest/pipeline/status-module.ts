@@ -12,12 +12,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
-import type { EnrichmentMarkerMap } from "./enrichment/types.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { IndexStatus } from "../../../types.js";
 import { INDEXING_METADATA_ID } from "../constants.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
+import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
+import { parseMarkerPayload } from "./indexing-marker-codec.js";
 
 /** If indexing marker says "in progress" for longer than this, report as stale */
 const STALE_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
@@ -147,53 +147,35 @@ export class StatusModule {
    * @param reportedName - collection name to report in the response (always the base alias name)
    */
   private async getStatusFromCollection(sourceCollection: string, reportedName: string): Promise<IndexStatus> {
-    const indexingMarker = await this.qdrant.getPoint(sourceCollection, INDEXING_METADATA_ID);
+    const rawPoint = await this.qdrant.getPoint(sourceCollection, INDEXING_METADATA_ID);
     const info = await this.qdrant.getCollectionInfo(sourceCollection);
+    const marker = rawPoint ? parseMarkerPayload(rawPoint.payload as Record<string, unknown>) : undefined;
 
-    const isComplete = indexingMarker?.payload?.indexingComplete === true;
-    const isInProgress = indexingMarker?.payload?.indexingComplete === false;
-
-    const actualChunksCount = indexingMarker ? Math.max(0, info.pointsCount - 1) : info.pointsCount;
-
-    const rawEnrichment = indexingMarker?.payload?.enrichment as EnrichmentMarkerMap | undefined;
-    const enrichment = rawEnrichment ? mapMarkerToHealth(rawEnrichment) : undefined;
-
-    const embeddingModel =
-      typeof indexingMarker?.payload?.embeddingModel === "string" ? indexingMarker.payload.embeddingModel : undefined;
+    const actualChunksCount = marker ? Math.max(0, info.pointsCount - 1) : info.pointsCount;
+    const enrichment = marker?.enrichment ? mapMarkerToHealth(marker.enrichment) : undefined;
 
     const schemaMetadata = await this.qdrant.getPoint(sourceCollection, "__schema_metadata__").catch(() => null);
     const sparseVersion =
       typeof schemaMetadata?.payload?.sparseVersion === "number" ? schemaMetadata.payload.sparseVersion : undefined;
 
-    if (isInProgress) {
+    if (marker && !marker.indexingComplete) {
       // Detect stale indexing: prefer lastHeartbeat (updated periodically by live pipeline),
       // fall back to startedAt for markers written before heartbeat was introduced.
-      const lastHeartbeat = indexingMarker?.payload?.lastHeartbeat;
-      const startedAt = indexingMarker?.payload?.startedAt;
-      const referenceTime = typeof lastHeartbeat === "string" ? lastHeartbeat : startedAt;
+      const referenceTime = marker.lastHeartbeat ?? marker.startedAt;
       const isStale =
-        typeof referenceTime === "string" &&
-        Date.now() - new Date(referenceTime).getTime() > STALE_INDEXING_THRESHOLD_MS;
+        referenceTime !== undefined && Date.now() - new Date(referenceTime).getTime() > STALE_INDEXING_THRESHOLD_MS;
 
       if (isStale && sourceCollection !== reportedName) {
-        // Versioned _vN with stale marker — check if a working version exists.
-        const aliasTarget = await this.getAliasTarget(reportedName);
-        if (aliasTarget) {
-          // Alias points to a completed version — safe to delete stale _vN.
-          await this.qdrant.deleteCollection(sourceCollection);
-          return this.getStatusFromCollection(aliasTarget, reportedName);
-        }
-        // Legacy: no alias, but real collection may exist (pre-alias migration).
-        const realExists = await this.qdrant.collectionExists(reportedName);
-        if (realExists) {
-          await this.qdrant.deleteCollection(sourceCollection);
-          return this.getStatusFromCollection(reportedName, reportedName);
-        }
-        // No alias, no real collection (first index crashed). Delete only if empty.
-        if (actualChunksCount === 0) {
-          await this.qdrant.deleteCollection(sourceCollection);
+        const resolved = await this.resolveStaleCollection(sourceCollection, reportedName, actualChunksCount);
+        if ("notIndexed" in resolved) {
           return { isIndexed: false, status: "not_indexed", collectionName: reportedName };
         }
+        if (resolved.collection !== sourceCollection) {
+          // Bounded: resolved collection is always base name or alias target (never versioned),
+          // so the stale check `sourceCollection !== reportedName` won't match on the second call.
+          return this.getStatusFromCollection(resolved.collection, reportedName);
+        }
+        // No fallback found but collection has data — fall through to report stale_indexing.
       }
 
       return {
@@ -201,30 +183,23 @@ export class StatusModule {
         status: isStale ? "stale_indexing" : "indexing",
         collectionName: reportedName,
         chunksCount: actualChunksCount,
-        embeddingModel,
+        embeddingModel: marker.embeddingModel,
         qdrantUrl: this.qdrant.url,
         sparseVersion,
         enrichment,
       };
     }
 
-    if (isComplete) {
+    if (marker?.indexingComplete) {
       return {
         isIndexed: true,
         status: "indexed",
         collectionName: reportedName,
         chunksCount: actualChunksCount,
-        embeddingModel,
+        embeddingModel: marker.embeddingModel,
         qdrantUrl: this.qdrant.url,
         sparseVersion,
-        lastUpdated: indexingMarker.payload?.completedAt
-          ? new Date(
-              typeof indexingMarker.payload.completedAt === "string" ||
-                typeof indexingMarker.payload.completedAt === "number"
-                ? indexingMarker.payload.completedAt
-                : new Date(indexingMarker.payload.completedAt as Date).toISOString(),
-            )
-          : undefined,
+        lastUpdated: marker.completedAt ? new Date(marker.completedAt) : undefined,
         enrichment,
       };
     }
@@ -249,5 +224,37 @@ export class StatusModule {
       qdrantUrl: this.qdrant.url,
       sparseVersion,
     };
+  }
+
+  /**
+   * Resolve a stale versioned collection by finding a working fallback.
+   * Deletes the stale collection and returns either a fallback collection name
+   * or a notIndexed sentinel if no fallback exists.
+   */
+  private async resolveStaleCollection(
+    staleCollection: string,
+    reportedName: string,
+    chunksCount: number,
+  ): Promise<{ collection: string } | { notIndexed: true }> {
+    // Versioned _vN with stale marker — check if a working version exists.
+    const aliasTarget = await this.getAliasTarget(reportedName);
+    if (aliasTarget) {
+      // Alias points to a completed version — safe to delete stale _vN.
+      await this.qdrant.deleteCollection(staleCollection);
+      return { collection: aliasTarget };
+    }
+    // Legacy: no alias, but real collection may exist (pre-alias migration).
+    const realExists = await this.qdrant.collectionExists(reportedName);
+    if (realExists) {
+      await this.qdrant.deleteCollection(staleCollection);
+      return { collection: reportedName };
+    }
+    // No alias, no real collection (first index crashed). Delete only if empty.
+    if (chunksCount === 0) {
+      await this.qdrant.deleteCollection(staleCollection);
+      return { notIndexed: true };
+    }
+    // Stale but has chunks and no fallback — keep it, caller reports stale_indexing.
+    return { collection: staleCollection };
   }
 }
