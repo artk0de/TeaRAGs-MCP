@@ -1,22 +1,21 @@
 ---
 name: explore
 description:
-  Use when developer asks to explain, understand, or explore how code works —
+  Use when developer asks to explore, understand, explain, or investigate code —
   "how does X work", "show me the architecture of Y", "what does Z do", "where
-  is X used". Also handles pattern search intents — "find all X", "antipatterns
-  in X", "best example of X". NOT for pre-generation research — use
-  tea-rags:research instead
+  is X used", "find all X", "antipatterns in X", "best example of X". Also use
+  for pre-generation investigation — "before I code/change/modify/refactor X",
+  "what should I know before touching X", "research before coding", "context for
+  changing X", "risks before refactoring X". NOT for active bugs (use bug-hunt),
+  NOT for standalone code health scan without specific area (use
+  risk-assessment)
 argument-hint: [what to explore — feature, module, or question]
 ---
 
 # Explore
 
-Understand how code works. Breadth-first discovery → depth-first tracing →
-explain to developer.
-
-**This skill is for human understanding, NOT for code generation input.** If
-you're researching code before generating/modifying it → use
-`/tea-rags:research` instead.
+Unified code investigation. Breadth-first discovery → depth-first tracing →
+output shaped by intent (human explanation OR pre-generation context).
 
 **CRITICAL: search-cascade governs all tool selection.** Built-in Search, Grep,
 Glob, `grep`, `rg`, `find` are PROHIBITED for code discovery. When this skill
@@ -26,13 +25,23 @@ NOT add ripgrep "verification" or "completeness" passes after tea-rags calls —
 tea-rags results are complete. ripgrep is only for exact text patterns (TODO,
 FIXME, import paths) per search-cascade rules.
 
-**MANDATORY: After every search call, run @post-search-validation.md checks
-(no-match detection + disambiguation). Do NOT skip.**
-
 ## Step 0: CLASSIFY INTENT
 
 Translate $ARGUMENTS to English (if not already). If user's language differs,
 optionally run a secondary query in the original language for non-English docs.
+
+### Pre-generation intent → PRE-GEN flow
+
+Check $ARGUMENTS for pre-generation signals. **First match wins** → PRE-GEN flow
+(skip all other classification).
+
+| Signal                    | Examples                                                               |
+| ------------------------- | ---------------------------------------------------------------------- |
+| Explicit coding intent    | "before I modify/change/refactor/add/implement", "before coding"       |
+| Research request + coding | "research X — I need to add Y", "what should I know before touching X" |
+| Context for generation    | "context for changing X", "risks before refactoring X"                 |
+
+**Match found → go to PRE-GEN flow (below).**
 
 ### Pattern-search intents → delegate
 
@@ -80,7 +89,7 @@ Do NOT hardcode aliases — filesystem is source of truth.
 If the user provides **code snippet or chunk** (not a question) → skip BREADTH,
 go straight to find_similar with the code as input. Then EXPLAIN similarities.
 
-## Flow
+## Explore Flow (human understanding)
 
 ```
 BREADTH (search) → pick interesting results →
@@ -150,3 +159,62 @@ Structure by what was asked:
      `X → { Y.method(), Z.method() } → { ... }`.
 
 Code citations: `file:line`. Quote 3-5 relevant lines, don't dump functions.
+
+---
+
+## PRE-GEN Flow (pre-generation context)
+
+Triggered by Step 0 classification. Gathers actionable context for code
+generation — files, risk signals, overlay labels.
+
+### PG-1. DISCOVER
+
+Find target area files. Select tool directly:
+
+- **Behavior/intent query** → `semantic_search` (query=$ARGUMENTS,
+  metaOnly=true, limit=10, documentation="exclude")
+- **Known symbol + context** → `hybrid_search` (query=$ARGUMENTS, metaOnly=true,
+  limit=10, documentation="exclude")
+
+Add `pathPattern` if module is known. Add `language` if polyglot codebase.
+`documentation="exclude"` prevents RFC/docs from taking result slots.
+
+**Checkpoint:** Found target files (3-5 paths)?
+
+- YES → extract pathPattern, proceed to PG-2
+- NO → reformulate query (narrower scope, different angle), retry once
+
+### PG-2. RISK ASSESSMENT
+
+Delegate to `/tea-rags:risk-assessment` with pathPattern from PG-1.
+
+Risk-assessment handles all signal analysis: bugHunt, hotspots, techDebt
+presets, tier classification, find_similar expansion. Do NOT duplicate its work.
+
+### PG-3. DEEP TRACE (optional)
+
+If risk-assessment surfaced Critical/High zones and you need to understand a
+specific symbol before generating code:
+
+- `find_symbol` for 1-2 key symbols (definition only)
+- Fallback: `hybrid_search` if find_symbol returns 0
+
+**Limit:** Do NOT trace call chains, dependency trees, or "all callers" — use
+the Explore flow EXPLAIN patterns for that.
+
+### PG-4. OUTPUT
+
+```
+Pre-generation context for: [area]
+
+Files: [list with pathPattern-ready format]
+Language: [detected language]
+Risk summary: [Critical/High count from risk-assessment]
+Key risks: [top 3 from risk-assessment output]
+
+Context for generation:
+  - pathPattern: [ready for data-driven-generation]
+  - overlay labels: [from risk-assessment]
+```
+
+Output is self-contained. Agent or user decides next step.

@@ -11,14 +11,13 @@ Selects code generation strategy based on git signal labels. Uses overlay labels
 from TeaRAGs search results — not hardcoded thresholds — so strategies adapt to
 each codebase automatically.
 
-**MANDATORY: After every search call, run @post-search-validation.md checks
-(no-match detection + disambiguation). Do NOT skip.**
-
 ## Prerequisites
 
-**Run `/tea-rags:research` first** to get verified area, overlay labels, and
-strategy recommendation. If research was already done in this conversation, use
-its output.
+**Area context required:** files, pathPattern, and overlay labels from
+risk-assessment must be present in conversation. If missing, invoke
+`/tea-rags:explore` for the target area — explore will detect pre-generation
+intent and gather the context automatically. If explore output already exists
+from this conversation, use it.
 
 ## Reading Overlay Labels
 
@@ -79,7 +78,7 @@ Quality gate by labels:
 
 ### Step 3: STYLE
 
-Use dominantAuthor from research output.
+Use dominantAuthor from explore pre-gen output.
 
 | file.dominantAuthorPct | Behavior                                        |
 | ---------------------- | ----------------------------------------------- |

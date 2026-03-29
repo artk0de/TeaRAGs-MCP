@@ -2,6 +2,10 @@
 
 ## Principles
 
+**Post-search validation after every search call.** Run
+@post-search-validation.md checks (no-match detection + disambiguation). Do NOT
+skip. This applies to ALL skills and direct tool calls.
+
 **Semantic First, Exact Second.** Any code search starts with tea-rags
 (semantic_search, hybrid_search, find_symbol, find_similar). ripgrep only for
 exact string patterns (TODO, import paths, regex) or as fallback when tea-rags
@@ -73,18 +77,18 @@ Already have search results for this area?
 └─ No (need to search)
 
 Intent matches a skill? (check FIRST — skills handle tool selection internally)
-├─ User asks to explore/understand/find patterns in code
+├─ User asks to explore/understand/investigate/research code
 │     → /tea-rags:explore
 │     Covers: "how does X work", "show architecture of Y",
 │     "find all implementations of X", "antipatterns in Y",
 │     "best example of X", "what to refactor in Z",
-│     "find similar patterns to this code"
-│     Explore internally selects strategy: pattern-search, refactoring-scan,
-│     or direct exploration. search_code is ONLY used through this skill,
+│     "find similar patterns to this code",
+│     "before I modify/change/refactor X", "research before coding",
+│     "what should I know before touching X"
+│     Explore classifies intent internally: pattern-search, refactoring-scan,
+│     direct exploration, or pre-generation context (risk assessment +
+│     generation-ready output). search_code is ONLY used through this skill,
 │     NEVER directly by agents.
-│
-├─ Pre-generation research (about to write/modify code, need context)
-│     → /tea-rags:research (identifies risk zones, ownership, patterns)
 │
 ├─ Bug hunting ("why does X fail", "find the bug in Y")
 │     → /tea-rags:bug-hunt (uses bugHunt rerank, targets historically buggy code)
@@ -222,6 +226,19 @@ operations, or have no code search in their task.
 | Behavioral discovery | semantic_search                   | hybrid_search                        |
 | Cross-layer          | semantic_search × per language    | same                                 |
 | Exact text           | ripgrep MCP                       | built-in Grep                        |
+
+## pathPattern Rules
+
+Never use braces with full file paths containing slashes — breaks picomatch.
+Always extract directory-level prefixes for pathPattern globs.
+
+- GOOD: `**/enrichment/**` (directory prefix)
+- GOOD: `{file1.rb,file2.rb}` (flat file names, no slashes)
+- BAD: `{app/services/foo.rb,app/models/bar.rb}` (slashes inside braces)
+
+Skills have their own pathPattern extraction logic (how to derive pathPattern
+from user arguments or search results). This section covers the universal
+formatting constraint.
 
 ## Reference Files
 
