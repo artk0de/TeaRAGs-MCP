@@ -2,6 +2,7 @@ export interface DaemonPaths {
   pidFile: string;
   portFile: string;
   refsFile: string;
+  lockFile: string;
   storagePath: string;
 }
 

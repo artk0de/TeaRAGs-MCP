@@ -99,3 +99,16 @@ export class ReindexFailedError extends IngestError {
     });
   }
 }
+
+/** Full indexing failed unexpectedly. */
+export class IndexingFailedError extends IngestError {
+  constructor(detail: string, cause?: Error) {
+    super({
+      code: "INGEST_INDEXING_FAILED",
+      message: `Full indexing failed: ${detail}`,
+      hint: "Check server logs for details, or retry with forceReindex=true",
+      httpStatus: 500,
+      cause,
+    });
+  }
+}
