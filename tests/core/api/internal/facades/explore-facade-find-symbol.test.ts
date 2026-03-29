@@ -143,6 +143,54 @@ describe("ExploreFacade.findSymbol", () => {
     );
   });
 
+  it("applies pathPattern filter to both symbol and member scrolls", async () => {
+    const pathMust = [{ key: "relativePath", match: { text: "tests/" } }];
+    const deps = {
+      qdrant: {
+        scrollFiltered: mockScrollFiltered,
+        collectionExists: mockCollectionExists,
+      } as any,
+      embeddings: { embed: vi.fn().mockResolvedValue({ embedding: [] }) } as any,
+      reranker: {
+        rerank: vi.fn((r: any[]) => r),
+        hasCollectionStats: false,
+        setCollectionStats: vi.fn(),
+        getDescriptors: vi.fn().mockReturnValue([]),
+        getPreset: vi.fn(),
+        getPresetNames: vi.fn().mockReturnValue([]),
+        getFullPreset: vi.fn().mockReturnValue(undefined),
+      } as any,
+      registry: {
+        buildMergedFilter: vi.fn().mockReturnValue({ must: pathMust }),
+        getAllFilters: vi.fn().mockReturnValue([]),
+        getAllPayloadSignalDescriptors: vi.fn().mockReturnValue([]),
+        getEssentialPayloadKeys: vi.fn().mockReturnValue([]),
+      } as any,
+    };
+    const facadeWithFilter = new ExploreFacade(deps);
+
+    await facadeWithFilter.findSymbol({
+      symbol: "Reranker",
+      collection: "test_collection",
+      pathPattern: "**/tests/**",
+    });
+
+    // Both scroll calls should include pathPattern conditions
+    expect(mockScrollFiltered).toHaveBeenCalledTimes(2);
+
+    // First call: symbolId filter + pathPattern
+    const symbolFilter = mockScrollFiltered.mock.calls[0][1];
+    expect(symbolFilter.must).toEqual(
+      expect.arrayContaining([{ key: "symbolId", match: { text: "Reranker" } }, ...pathMust]),
+    );
+
+    // Second call: parentName filter + pathPattern
+    const parentFilter = mockScrollFiltered.mock.calls[1][1];
+    expect(parentFilter.must).toEqual(
+      expect.arrayContaining([{ key: "parentName", match: { text: "Reranker" } }, ...pathMust]),
+    );
+  });
+
   it("returns empty results when no symbols match", async () => {
     mockScrollFiltered.mockResolvedValue([]);
 
