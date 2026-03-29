@@ -440,7 +440,7 @@ export class ExploreFacade {
     }
 
     const markerPoint = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID).catch(() => null);
-    const rawEnrichment = (markerPoint?.payload as any)?.enrichment as EnrichmentMarkerMap | undefined;
+    const rawEnrichment = markerPoint?.payload?.enrichment as EnrichmentMarkerMap | undefined;
     const enrichmentHealth = rawEnrichment ? mapMarkerToHealth(rawEnrichment) : undefined;
 
     return {

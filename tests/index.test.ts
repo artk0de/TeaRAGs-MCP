@@ -55,7 +55,7 @@ describe("MCP Server Tool Schemas", () => {
           z.object({
             id: z.union([z.string(), z.number()]),
             text: z.string(),
-            metadata: z.record(z.any()).optional(),
+            metadata: z.record(z.string(), z.any()).optional(),
           }),
         ),
       });
@@ -80,7 +80,7 @@ describe("MCP Server Tool Schemas", () => {
           z.object({
             id: z.union([z.string(), z.number()]),
             text: z.string(),
-            metadata: z.record(z.any()).optional(),
+            metadata: z.record(z.string(), z.any()).optional(),
           }),
         ),
       });
@@ -107,7 +107,7 @@ describe("MCP Server Tool Schemas", () => {
           z.object({
             id: z.union([z.string(), z.number()]),
             text: z.string(),
-            metadata: z.record(z.any()).optional(),
+            metadata: z.record(z.string(), z.any()).optional(),
           }),
         ),
       });
@@ -128,7 +128,7 @@ describe("MCP Server Tool Schemas", () => {
         collection: z.string(),
         query: z.string(),
         limit: z.number().optional(),
-        filter: z.record(z.any()).optional(),
+        filter: z.record(z.string(), z.any()).optional(),
       });
 
       const validInput = {
@@ -148,7 +148,7 @@ describe("MCP Server Tool Schemas", () => {
         collection: z.string(),
         query: z.string(),
         limit: z.number().optional(),
-        filter: z.record(z.any()).optional(),
+        filter: z.record(z.string(), z.any()).optional(),
       });
 
       const minimalInput = {
@@ -166,7 +166,7 @@ describe("MCP Server Tool Schemas", () => {
         collection: z.string(),
         query: z.string(),
         limit: z.number().optional(),
-        filter: z.record(z.any()).optional(),
+        filter: z.record(z.string(), z.any()).optional(),
       });
 
       const missingQuery = { collection: "test", limit: 5 };

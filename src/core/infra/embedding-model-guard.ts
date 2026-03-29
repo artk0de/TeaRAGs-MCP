@@ -36,65 +36,73 @@ export class EmbeddingModelGuard {
     }
 
     // 2. Cache miss — read marker from Qdrant
-    let storedModel: string | null = null;
+    const storedModel = await this.readOrCreateMarker(collectionName);
+    if (storedModel === undefined) return; // Qdrant read failed — skip guard
 
+    // 3. Compare and cache
+    this.cache.set(collectionName, storedModel);
+    if (storedModel && storedModel !== this.currentModel) {
+      throw new EmbeddingModelMismatchError(storedModel, this.currentModel);
+    }
+  }
+
+  /** Read or create the embedding model marker. Returns undefined if Qdrant is unreachable. */
+  private async readOrCreateMarker(collectionName: string): Promise<string | null | undefined> {
     try {
       const point = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID);
 
       if (point?.payload) {
         const model = point.payload.embeddingModel;
-        if (typeof model === "string") {
-          storedModel = model;
-        } else {
-          // Marker exists but no embeddingModel — backfill via setPayload
-          await this.qdrant.setPayload(
-            collectionName,
-            { embeddingModel: this.currentModel },
-            { points: [INDEXING_METADATA_ID] },
-          );
-          storedModel = this.currentModel;
+        if (typeof model === "string") return model;
 
-          if (isDebug()) {
-            console.error(`[ModelGuard] Backfilled embeddingModel="${this.currentModel}" for ${collectionName}`);
-          }
-        }
-      } else {
-        // No marker point at all — create one with zero vector
-        const zeroVector = new Array<number>(this.dimensions).fill(0);
-        const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
-
-        if (collectionInfo.hybridEnabled) {
-          await this.qdrant.addPointsWithSparse(collectionName, [
-            {
-              id: INDEXING_METADATA_ID,
-              vector: zeroVector,
-              sparseVector: { indices: [], values: [] },
-              payload: {
-                _type: "indexing_metadata",
-                indexingComplete: true,
-                embeddingModel: this.currentModel,
-              },
-            },
-          ]);
-        } else {
-          await this.qdrant.addPoints(collectionName, [
-            {
-              id: INDEXING_METADATA_ID,
-              vector: zeroVector,
-              payload: {
-                _type: "indexing_metadata",
-                indexingComplete: true,
-                embeddingModel: this.currentModel,
-              },
-            },
-          ]);
-        }
-        storedModel = this.currentModel;
+        // Marker exists but no embeddingModel — backfill via setPayload
+        await this.qdrant.setPayload(
+          collectionName,
+          { embeddingModel: this.currentModel },
+          { points: [INDEXING_METADATA_ID] },
+        );
 
         if (isDebug()) {
-          console.error(`[ModelGuard] Created marker with embeddingModel="${this.currentModel}" for ${collectionName}`);
+          console.error(`[ModelGuard] Backfilled embeddingModel="${this.currentModel}" for ${collectionName}`);
         }
+        return this.currentModel;
       }
+
+      // No marker point at all — create one with zero vector
+      const zeroVector = new Array<number>(this.dimensions).fill(0);
+      const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
+
+      if (collectionInfo.hybridEnabled) {
+        await this.qdrant.addPointsWithSparse(collectionName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: zeroVector,
+            sparseVector: { indices: [], values: [] },
+            payload: {
+              _type: "indexing_metadata",
+              indexingComplete: true,
+              embeddingModel: this.currentModel,
+            },
+          },
+        ]);
+      } else {
+        await this.qdrant.addPoints(collectionName, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: zeroVector,
+            payload: {
+              _type: "indexing_metadata",
+              indexingComplete: true,
+              embeddingModel: this.currentModel,
+            },
+          },
+        ]);
+      }
+
+      if (isDebug()) {
+        console.error(`[ModelGuard] Created marker with embeddingModel="${this.currentModel}" for ${collectionName}`);
+      }
+      return this.currentModel;
     } catch (error) {
       if (error instanceof EmbeddingModelMismatchError) throw error;
       // Qdrant read failed — skip guard silently (don't block operations)
@@ -102,13 +110,7 @@ export class EmbeddingModelGuard {
         console.error(`[ModelGuard] Failed to read/write marker for ${collectionName}:`, error);
       }
       this.cache.set(collectionName, null);
-      return;
-    }
-
-    // 3. Compare and cache
-    this.cache.set(collectionName, storedModel);
-    if (storedModel && storedModel !== this.currentModel) {
-      throw new EmbeddingModelMismatchError(storedModel, this.currentModel);
+      return undefined;
     }
   }
 
