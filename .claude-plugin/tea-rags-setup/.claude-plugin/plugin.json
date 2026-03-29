@@ -1,7 +1,7 @@
 {
   "name": "tea-rags-setup",
   "description": "Automated TeaRAGs installation wizard — Node.js, embedding providers, Qdrant, MCP configuration",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": { "name": "artk0de" },
   "keywords": ["setup", "installation", "wizard"]
 }

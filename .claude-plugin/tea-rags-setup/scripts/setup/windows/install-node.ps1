@@ -1,5 +1,5 @@
 # install-node.ps1
-# Installs Node.js >= 22 via the given version manager
+# Installs Node.js >= 24 via the given version manager
 # Input:  $1 = version manager (volta|fnm|nvm|none)
 # Output: JSON -> stdout   errors -> stderr
 # Exit:   0=success  1=error  2=manual_required
@@ -11,7 +11,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$MIN_MAJOR = 22
+$MIN_MAJOR = 24
+$REQUIRED_VERSION = '24.14.1'
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -63,12 +64,12 @@ if ($nodeCmd) {
 switch ($VersionManager) {
 
     'volta' {
-        & volta install node@22 2>&1 | ForEach-Object { Write-Host $_ }
+        & volta install "node@$REQUIRED_VERSION" 2>&1 | ForEach-Object { Write-Host $_ }
     }
 
     'fnm' {
-        & fnm install 22 2>&1 | ForEach-Object { Write-Host $_ }
-        & fnm default 22 2>&1 | ForEach-Object { Write-Host $_ }
+        & fnm install $REQUIRED_VERSION 2>&1 | ForEach-Object { Write-Host $_ }
+        & fnm default $REQUIRED_VERSION 2>&1 | ForEach-Object { Write-Host $_ }
         # Reload fnm env for current process
         try {
             $fnmEnv = & fnm env --shell powershell 2>$null
@@ -83,8 +84,8 @@ switch ($VersionManager) {
             Write-Error 'nvm (nvm-windows) not found in PATH'
             exit 1
         }
-        & nvm install 22.0.0 2>&1 | ForEach-Object { Write-Host $_ }
-        & nvm use 22.0.0 2>&1 | ForEach-Object { Write-Host $_ }
+        & nvm install $REQUIRED_VERSION 2>&1 | ForEach-Object { Write-Host $_ }
+        & nvm use $REQUIRED_VERSION 2>&1 | ForEach-Object { Write-Host $_ }
     }
 
     'none' {

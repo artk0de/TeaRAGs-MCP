@@ -7,6 +7,8 @@ coverage/**
 build/**
 docs/**
 .claude/**
+.claude-plugin/**/*.sh
+.claude-plugin/**/*.ps1
 .github/**
 .husky/**
 .beads/**

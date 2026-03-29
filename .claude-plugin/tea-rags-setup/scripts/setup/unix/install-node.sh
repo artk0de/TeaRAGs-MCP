@@ -7,7 +7,8 @@ set -euo pipefail
 # Exit:   0=success  1=error  2=manual_required
 
 vm="${1:-none}"
-MIN_MAJOR=22
+MIN_MAJOR=24
+REQUIRED_VERSION="24.14.1"
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -57,18 +58,8 @@ case "$vm" in
 
   asdf)
     asdf plugin add nodejs 2>/dev/null || true
-    # Find latest 22.x available
-    latest22="$(asdf list-all nodejs 2>/dev/null \
-      | grep -E '^22\.' \
-      | grep -v '[a-zA-Z]' \
-      | sort -t. -k1,1n -k2,2n -k3,3n \
-      | tail -1)"
-    if [[ -z "$latest22" ]]; then
-      echo "asdf: could not find a nodejs 22.x version to install" >&2
-      exit 1
-    fi
-    asdf install nodejs "$latest22" >&2
-    asdf global  nodejs "$latest22" >&2
+    asdf install nodejs "$REQUIRED_VERSION" >&2
+    asdf global  nodejs "$REQUIRED_VERSION" >&2
     ;;
 
   nvm)
@@ -79,49 +70,38 @@ case "$vm" in
     fi
     # shellcheck source=/dev/null
     source "$nvm_script"
-    nvm install 22 >&2
-    nvm alias default 22 >&2
+    nvm install "$REQUIRED_VERSION" >&2
+    nvm alias default "$REQUIRED_VERSION" >&2
     ;;
 
   fnm)
-    fnm install 22 >&2
-    fnm default 22 >&2
+    fnm install "$REQUIRED_VERSION" >&2
+    fnm default "$REQUIRED_VERSION" >&2
     # Reload shell env so `node` resolves in this process
     eval "$(fnm env --shell bash 2>/dev/null)" || true
     ;;
 
   volta)
-    volta install node@22 >&2
+    volta install "node@$REQUIRED_VERSION" >&2
     ;;
 
   mise)
-    mise install node@22 >&2
-    mise use -g node@22 >&2
+    mise install "node@$REQUIRED_VERSION" >&2
+    mise use -g "node@$REQUIRED_VERSION" >&2
     ;;
 
   nodenv)
-    # Find latest 22.x
-    latest22="$(nodenv install -l 2>/dev/null \
-      | grep -E '^\s*22\.' \
-      | grep -v '[a-zA-Z]' \
-      | sort -t. -k1,1n -k2,2n -k3,3n \
-      | tail -1 \
-      | xargs)"
-    if [[ -z "$latest22" ]]; then
-      echo "nodenv: could not find a nodejs 22.x version to install" >&2
-      exit 1
-    fi
-    nodenv install "$latest22" >&2
-    nodenv global  "$latest22" >&2
+    nodenv install "$REQUIRED_VERSION" >&2
+    nodenv global  "$REQUIRED_VERSION" >&2
     ;;
 
   n)
-    n 22 >&2
+    n "$REQUIRED_VERSION" >&2
     ;;
 
   nvm-windows)
-    nvm install 22 >&2
-    nvm use 22 >&2
+    nvm install "$REQUIRED_VERSION" >&2
+    nvm use "$REQUIRED_VERSION" >&2
     ;;
 
   none)
