@@ -89,9 +89,9 @@ Note: `n` only if node exists (`npm install -g n`) or direct
 | --------------------- | -------------------------------------------------------------------------------------------------------- |
 | Windows + hasWinget   | `! winget install OpenJS.NodeJS.LTS`                                                                     |
 | Windows + no winget   | `! scoop install nodejs-lts` (if scoop) or download https://nodejs.org                                   |
-| macOS + hasBrew       | `! brew install node@22`                                                                                 |
+| macOS + hasBrew       | `! brew install node@24`                                                                                 |
 | macOS + no brew       | Download from https://nodejs.org                                                                         |
-| Linux (Debian/Ubuntu) | `! curl -fsSL https://deb.nodesource.com/setup_22.x \| sudo -E bash - && sudo apt-get install -y nodejs` |
+| Linux (Debian/Ubuntu) | `! curl -fsSL https://deb.nodesource.com/setup_24.x \| sudo -E bash - && sudo apt-get install -y nodejs` |
 | Linux (other)         | Download from https://nodejs.org                                                                         |
 
 ## Tune Defaults (used when tune fails)

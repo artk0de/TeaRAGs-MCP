@@ -43,7 +43,7 @@ subsequent script calls.
 | ---- | --------------------------- | ------------------------------------ |
 | 0    | `steps/step-0-progress.md`  | Check/init progress file             |
 | 1    | `steps/step-1-detect.md`    | Detect environment, save to progress |
-| 2    | `steps/step-2-node.md`      | Install Node.js 22+                  |
+| 2    | `steps/step-2-node.md`      | Install Node.js 24+                  |
 | 3    | `steps/step-3-tea-rags.md`  | Install tea-rags package             |
 | 4    | `steps/step-4-embedding.md` | Choose & install embedding provider  |
 | 5    | `steps/step-5-qdrant.md`    | Choose & setup Qdrant                |
