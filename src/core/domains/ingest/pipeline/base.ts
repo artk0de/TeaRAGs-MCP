@@ -11,6 +11,7 @@ import type { Ignore } from "ignore";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { TeaRagsError } from "../../../infra/errors.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";
@@ -88,6 +89,16 @@ export abstract class BaseIndexingPipeline {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = undefined;
     }
+  }
+
+  /** Re-throw typed errors as-is; wrap unknown errors in the given class. */
+  protected wrapUnexpectedError(
+    error: unknown,
+    ErrorClass: new (message: string, cause?: Error) => TeaRagsError,
+  ): never {
+    if (error instanceof TeaRagsError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ErrorClass(message, error instanceof Error ? error : undefined);
   }
 
   // ── Shared context ─────────────────────────────────────────

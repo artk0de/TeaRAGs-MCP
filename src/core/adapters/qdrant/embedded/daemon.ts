@@ -19,6 +19,7 @@ export function getDaemonPaths(storagePath: string): DaemonPaths {
     pidFile: join(storagePath, "daemon.pid"),
     portFile: join(storagePath, "daemon.port"),
     refsFile: join(storagePath, "daemon.refs"),
+    lockFile: join(storagePath, "daemon.lock"),
     storagePath,
   };
 }
