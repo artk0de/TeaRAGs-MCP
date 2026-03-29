@@ -1,3 +1,11 @@
+## [1.17.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.0...v1.17.1) (2026-03-29)
+
+### Improvements
+
+- **dx:** add skill-creator dependency to optimize-skill, enforce marketplace
+  version sync
+  ([08cc218](https://github.com/artk0de/TeaRAGs-MCP/commit/08cc218626b5158a33748c31b61fe9aa59f716b8))
+
 ## [1.17.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.16.0...v1.17.0) (2026-03-29)
 
 ### ⚠ BREAKING CHANGES
