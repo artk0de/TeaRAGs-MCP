@@ -1,3 +1,335 @@
+## [1.16.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.15.1...v1.16.0) (2026-03-29)
+
+### ⚠ BREAKING CHANGES
+
+- **deps:** zod upgraded from v3 to v4. Users extending MCP tool schemas must
+  use z.record(z.string(), valueSchema) instead of z.record(valueSchema). No
+  changes needed for MCP tool consumers.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- **deps:** Minimum Node.js version remains 22, but .tool-versions now defaults
+  to 24.14.1. Users on Node 22 are unaffected. tree-sitter dependency now
+  resolves to @artk0de/tree-sitter fork with prebuilt native binaries — no
+  CXXFLAGS or compilation required.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- **enrichment:** EnrichmentInfo and ChunkEnrichmentInfo removed.
+  IndexStatus.enrichment is now Record<string, EnrichmentProviderHealth>.
+  IndexStatus.chunkEnrichment removed.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+- **api:** get_index_metrics signals format changed from Record<signalKey,
+  SignalMetrics> to Record<language, Record<signalKey, SignalMetrics>>. Global
+  stats are now under signals["global"]. Per-language stats under
+  signals["typescript"] etc. Consumers must update to access signals.global
+  instead of signals directly.
+
+Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+
+### Features
+
+- **api:** add find_symbol MCP tool — LSP-like symbol lookup
+  ([810eb52](https://github.com/artk0de/TeaRAGs-MCP/commit/810eb5233e7337cb26805dcaeb020db23b2828ec))
+- **api:** add infraHealth to get_index_status + auto-cleanup stale markers
+  ([3c13bcd](https://github.com/artk0de/TeaRAGs-MCP/commit/3c13bcdff1e6d958713ec78585c0337235bc19f0))
+- **api:** add infraHealth to get_index_status + auto-cleanup stale markers
+  ([5e02ebd](https://github.com/artk0de/TeaRAGs-MCP/commit/5e02ebd3bbad094d10a2bad62d3beae5f05c7591))
+- **api:** per-language signal statistics
+  ([e967864](https://github.com/artk0de/TeaRAGs-MCP/commit/e9678640ae56ef654b496ea17140b1dd524a35ce))
+- **api:** per-language signals in get_index_metrics response
+  ([7a737ea](https://github.com/artk0de/TeaRAGs-MCP/commit/7a737ea98f820fa491f203de0111d48a7369125d))
+- **api:** scoped signal metrics in get_index_metrics output
+  ([2636794](https://github.com/artk0de/TeaRAGs-MCP/commit/26367947ec7e36d7867393478b6c866179ddb0b2))
+- **chunker:** add RSpec scope-centric chunking with parent setup injection
+  ([2ad5cd3](https://github.com/artk0de/TeaRAGs-MCP/commit/2ad5cd344dc8e6ab0341d5cb9596ad3a466e8126))
+- **chunker:** add RSpec scope-centric chunking with parent setup injection
+  ([6a119a2](https://github.com/artk0de/TeaRAGs-MCP/commit/6a119a2bc4d9723fe2f5ff8ea256a9b43e3a2d53))
+- **cli:** add tea-rags tune command
+  ([7d4a550](https://github.com/artk0de/TeaRAGs-MCP/commit/7d4a550cd2420131b1cff0621abbccf429ae31f6))
+- **contracts:** add perLanguage to CollectionSignalStats type
+  ([97856a5](https://github.com/artk0de/TeaRAGs-MCP/commit/97856a5dca403b21de43d28b83ea8d5b77e9cc9a))
+- **contracts:** add ScopedSignalStats type, CODE_TEST_PATHS config, and v5
+  cache
+  ([cbc20ef](https://github.com/artk0de/TeaRAGs-MCP/commit/cbc20efa76579b848ebb484b2a6fcdd09faf03c5))
+- **dx:** add /tea-rags-setup:tune skill, remove tune scripts
+  ([8f9c073](https://github.com/artk0de/TeaRAGs-MCP/commit/8f9c073459036f35888a35e2ab6456ad4b315381))
+- **dx:** add node, tea-rags, and ollama install scripts (unix)
+  ([64ae330](https://github.com/artk0de/TeaRAGs-MCP/commit/64ae330b6f2da060e3985a6e29d1b0b5f83cabf6))
+- **dx:** add qdrant, tune, analyze, and configure scripts (unix)
+  ([c25ccec](https://github.com/artk0de/TeaRAGs-MCP/commit/c25ccec3bd25b05682a2f1197f189e0ff1b78e28))
+- **dx:** add setup progress CRUD script (unix)
+  ([b9c750a](https://github.com/artk0de/TeaRAGs-MCP/commit/b9c750aeee5f87aa34501fc1df051cd13e8f0d97))
+- **dx:** add setup scripts (windows)
+  ([63aa8c6](https://github.com/artk0de/TeaRAGs-MCP/commit/63aa8c6c0821f611d1e4db724bb6c2aa37420b21))
+- **dx:** add setup skill orchestrator (SKILL.md)
+  ([c812177](https://github.com/artk0de/TeaRAGs-MCP/commit/c81217736139fd20f488df512538116d58a3e2e4))
+- **embedded:** auto-reconnect to Qdrant daemon on port change
+  ([d893617](https://github.com/artk0de/TeaRAGs-MCP/commit/d893617bb6c04c06516b1e529f6b7b1ef7df8306))
+- **enrichment:** add enrichedAt migration for existing collections
+  ([e1d2848](https://github.com/artk0de/TeaRAGs-MCP/commit/e1d28489c58451b928c4ddd01c58c2fa47ee621e))
+- **enrichment:** add enrichment health to get_index_metrics output
+  ([949be11](https://github.com/artk0de/TeaRAGs-MCP/commit/949be1110855eafb58a56dbe2c5802c12e47e46f))
+- **enrichment:** add EnrichmentRecovery module for unenriched chunk detection
+  and re-enrichment
+  ([6a448ff](https://github.com/artk0de/TeaRAGs-MCP/commit/6a448ff9559209789970c6d11b8d73d161eebac7))
+- **enrichment:** add health mapper with stale detection for StatusModule
+  ([f7be1c9](https://github.com/artk0de/TeaRAGs-MCP/commit/f7be1c9148ef00be2d56e2aaa07dba07d1f766cc))
+- **enrichment:** enrichment failure recovery with per-provider health tracking
+  ([b30f64a](https://github.com/artk0de/TeaRAGs-MCP/commit/b30f64a86c392305ff8b0389e15f967f91f3bc28))
+- **enrichment:** per-level marker updates with heartbeat in coordinator
+  ([923b628](https://github.com/artk0de/TeaRAGs-MCP/commit/923b62843a1af4c7333d1b77a5e226cc5ad63573))
+- **enrichment:** replace flat EnrichmentInfo with per-provider health types
+  ([f34751c](https://github.com/artk0de/TeaRAGs-MCP/commit/f34751c97c6b0a625b86fd1a750a86bcdbc9360c))
+- **enrichment:** wire recovery and migration into indexing pipeline
+  ([271b4e3](https://github.com/artk0de/TeaRAGs-MCP/commit/271b4e3246acb3ad764cb51593fe8431b4514ca4))
+- **enrichment:** write enrichedAt timestamps in applier batch payloads
+  ([3b881a3](https://github.com/artk0de/TeaRAGs-MCP/commit/3b881a32ba8b3eb45cb76a5153ed3d096ff7f630))
+- **explore:** add ExploreFacade.findSymbol() with scroll + resolve pipeline
+  ([19e9df4](https://github.com/artk0de/TeaRAGs-MCP/commit/19e9df4e929cfa827b6f7a7c736692a2be723728))
+- **explore:** add symbol-resolve.ts with merge and outline strategies
+  ([dfda4b9](https://github.com/artk0de/TeaRAGs-MCP/commit/dfda4b92373666a0285ac3a3f51f6d9775019ade))
+- **filters:** add symbolId filter with text index and partial match
+  ([c038f2e](https://github.com/artk0de/TeaRAGs-MCP/commit/c038f2eb0b168728482556e66d3aa30581f5b86a))
+- **infra:** add detectScope() utility for test/source classification
+  ([57e8d1f](https://github.com/artk0de/TeaRAGs-MCP/commit/57e8d1fb129762f9cfe158109ab6bea6545de69b))
+- **infra:** add migration framework — Migrator, Migration interface, types
+  ([6416a71](https://github.com/artk0de/TeaRAGs-MCP/commit/6416a712d18a222b6135c4b8c3ad980bd9560a3c))
+- **infra:** add SnapshotMigrator and snapshot migration classes
+  ([72ffee2](https://github.com/artk0de/TeaRAGs-MCP/commit/72ffee23ef12235d69e9714e4579feabbe807458))
+- **ingest:** add per-provider per-level enrichment marker types
+  ([8632769](https://github.com/artk0de/TeaRAGs-MCP/commit/8632769f3a4f85a9f0c16a00c7a124218c243fd5))
+- **ingest:** compute per-language signal statistics
+  ([bb470e7](https://github.com/artk0de/TeaRAGs-MCP/commit/bb470e73c9a5fe566c72e60b99b6175186d030d3))
+- **ingest:** scope-aware signal stats computation (source vs test)
+  ([c63a161](https://github.com/artk0de/TeaRAGs-MCP/commit/c63a161c3e5f3756524f3148047d1d6d0c676063))
+- **mcp:** health-aware error interceptor with infra context
+  ([1ebb68e](https://github.com/artk0de/TeaRAGs-MCP/commit/1ebb68e91dc32a1b09decd6eaa8a89b7087efd16))
+- **mcp:** health-aware error interceptor with infra context
+  ([e1deef2](https://github.com/artk0de/TeaRAGs-MCP/commit/e1deef286e60fc674591cd510998f886bb63aaa8))
+- **mcp:** register find_symbol tool with Zod schema
+  ([dccc9a7](https://github.com/artk0de/TeaRAGs-MCP/commit/dccc9a7c23bb7a6902601feaf2d71bb4fd4988b9))
+- **qdrant:** add QdrantManager.scrollFiltered() for filter-based scroll
+  ([d1e2159](https://github.com/artk0de/TeaRAGs-MCP/commit/d1e2159c3b958389b1b20f65ae250377aff39e1c))
+- **rerank:** scope-aware label resolution (source vs test thresholds)
+  ([0c91455](https://github.com/artk0de/TeaRAGs-MCP/commit/0c91455069794fce6d0098ab444c06750d599bb7))
+- **scripts:** abstract embedding provider for Ollama/ONNX support
+  ([2c48d48](https://github.com/artk0de/TeaRAGs-MCP/commit/2c48d486101bff502147a0a94a18effd51af2c11))
+- **scripts:** add --path arg and test values for new benchmark params
+  ([17573b3](https://github.com/artk0de/TeaRAGs-MCP/commit/17573b3a4299021949d8b982aa1c3a7d5580e7bc))
+- **scripts:** add benchmark functions for pipeline, qdrant gaps, and git
+  trajectory
+  ([dc720d8](https://github.com/artk0de/TeaRAGs-MCP/commit/dc720d8b27449b4ffe121de715b62b29f22cbc00))
+- **scripts:** add file collector for benchmark corpus
+  ([27fe55a](https://github.com/artk0de/TeaRAGs-MCP/commit/27fe55a2bbaa6eb91b6b494f255fe4e2f7999719))
+- **scripts:** add new params to benchmark output
+  ([5a66096](https://github.com/artk0de/TeaRAGs-MCP/commit/5a6609676bd7a773c0f33172f2eb1e457cccf43f))
+- **scripts:** benchmark expansion — pipeline, git trajectory, ONNX, CLI tune
+  command
+  ([1d490c8](https://github.com/artk0de/TeaRAGs-MCP/commit/1d490c85f00cc6ef9c3cc7c30a24d0f835e7aea9))
+- **scripts:** integrate git trajectory benchmarks into tune.mjs
+  ([0e67210](https://github.com/artk0de/TeaRAGs-MCP/commit/0e6721020261643df2aed49fea0d4c7f091c5cc9))
+- **scripts:** integrate pipeline + qdrant gap benchmarks into tune.mjs
+  ([98d20b1](https://github.com/artk0de/TeaRAGs-MCP/commit/98d20b1d35c83b6bf01b68997796071b430239e9))
+
+### Improvements
+
+- **cli:** add --qdrant-url, --embedding-url, --model, --provider params to tune
+  command
+  ([918633c](https://github.com/artk0de/TeaRAGs-MCP/commit/918633ca81ecfc568036802541be130d04d0356e))
+- **cli:** add tune embeddings subcommand, fix provider display, remove device
+  restrictions
+  ([cfc693a](https://github.com/artk0de/TeaRAGs-MCP/commit/cfc693a998fa8c63c72486088803b1a1443edb9c))
+- **dx:** add subagent tea-rags injection rule to search-cascade
+  ([99c9b54](https://github.com/artk0de/TeaRAGs-MCP/commit/99c9b5424825dacb133787e0f662d686c77bdcbd))
+- **dx:** add subagent tea-rags injection rule to search-cascade
+  ([54a1b8a](https://github.com/artk0de/TeaRAGs-MCP/commit/54a1b8a5b8c27c2f8f7c43d6c25d6a8cc567951e))
+- **dx:** add subagent tea-rags injection rule to search-cascade
+  ([13b3c79](https://github.com/artk0de/TeaRAGs-MCP/commit/13b3c797fc7ac37af8bf0fec490898e4a4364ee6))
+- **dx:** emphasize duration field in index/force-reindex skill prompts
+  ([c6310bd](https://github.com/artk0de/TeaRAGs-MCP/commit/c6310bd8994629436e2b51c45bccff6e17f913f6))
+- **dx:** enhance migration rule frontmatter, fix skill templates
+  ([610ef09](https://github.com/artk0de/TeaRAGs-MCP/commit/610ef09b1d59dc1a59cf5ba8a950714e5b54cf85))
+- **dx:** harden install wizard — cross-platform fixes, decompose SKILL.md
+  ([a727edd](https://github.com/artk0de/TeaRAGs-MCP/commit/a727edd1cd27234db04afbb7cd691ecebf3366a5))
+- **dx:** inject tea-rags search rules into subagent prompts via PreToolUse hook
+  ([2368987](https://github.com/artk0de/TeaRAGs-MCP/commit/2368987c9bb169fe091e6cc0cef80be1019e9d2c))
+- **dx:** inject tea-rags search rules into subagent prompts via PreToolUse hook
+  ([3270062](https://github.com/artk0de/TeaRAGs-MCP/commit/3270062492d70cf3d3560e34edf96561b21b7ddf))
+- **dx:** replace configure-mcp scripts with MCP integrator agent
+  ([a5da1f0](https://github.com/artk0de/TeaRAGs-MCP/commit/a5da1f0cc29222381027545f6ffb43854efccde4))
+- **dx:** require explicit user confirmation for force-reindex skill
+  ([40afa1d](https://github.com/artk0de/TeaRAGs-MCP/commit/40afa1d316a3a9650b58c68c0d74f6fb24166df0))
+- **dx:** require explicit user confirmation for force-reindex skill
+  ([c55718d](https://github.com/artk0de/TeaRAGs-MCP/commit/c55718db28f6a24cf59aee8791cdc14a1d64cbde))
+- **dx:** update skills for per-language signals format
+  ([33f7d74](https://github.com/artk0de/TeaRAGs-MCP/commit/33f7d745eed0c05751aa3bcd635068f8434af551))
+- **ingest:** add 'code' (fenced blocks from markdown) to config languages
+  ([ec18c11](https://github.com/artk0de/TeaRAGs-MCP/commit/ec18c113928f48845c5b54932378f15c79b1dcfc))
+- **ingest:** exclude config languages (markdown, bash, json, etc.) from
+  per-language stats
+  ([e9c33bd](https://github.com/artk0de/TeaRAGs-MCP/commit/e9c33bd8d9e5e56fa52fefb7c4ac998f43cc0e26))
+- **ingest:** exclude config languages from global, hide global if mono-lang
+  ([b601fde](https://github.com/artk0de/TeaRAGs-MCP/commit/b601fdec8b4c11521c9bfea358be5fc11978ccf4))
+- **mcp:** add limit/offset to find_symbol for pagination
+  ([e8f81ec](https://github.com/artk0de/TeaRAGs-MCP/commit/e8f81ece9b71dbec3fe8de60d7b7c291608ef519))
+- **mcp:** add metaOnly to find_symbol, update plugin skills
+  ([4fc6095](https://github.com/artk0de/TeaRAGs-MCP/commit/4fc609592aa93e768b882a061e682386c9b515ae))
+- **mcp:** add rerank parameter to find_symbol for ranking overlays
+  ([e0f83b9](https://github.com/artk0de/TeaRAGs-MCP/commit/e0f83b9aa415064b1a4629f237acf2450c77707f))
+- **mcp:** clean up TODO markers in enrichment output formatters
+  ([f2cb4be](https://github.com/artk0de/TeaRAGs-MCP/commit/f2cb4be4cf8754bccdb466862010e28ae36b6bbe))
+- **qdrant:** cap scrollFiltered total results at limit parameter
+  ([215c6f2](https://github.com/artk0de/TeaRAGs-MCP/commit/215c6f2f0b0380522325bf7845fa14d355111c32))
+- **rerank:** labels only for code languages in perLanguage, no global fallback
+  ([9f81f6b](https://github.com/artk0de/TeaRAGs-MCP/commit/9f81f6b561bf33edc12d5404b7b719f571432eb8))
+
+### Bug Fixes
+
+- **api:** add missing FindSymbolRequest DTO and barrel export
+  ([b41dd91](https://github.com/artk0de/TeaRAGs-MCP/commit/b41dd910437fa7518ca60c7c056d132ed2f499d7))
+- **benchmarks:** update import paths after project restructuring
+  ([27c55d9](https://github.com/artk0de/TeaRAGs-MCP/commit/27c55d9d65c342ab956b80179e9944e3beb0ef15))
+- **chunker:** fix RSpec scope chunking and expand signal coverage
+  ([76ac375](https://github.com/artk0de/TeaRAGs-MCP/commit/76ac375416d27eb2a37de0e9b47ffbc7f83ee3be))
+- **dx:** correct plugin version to 0.11.0
+  ([3b639db](https://github.com/artk0de/TeaRAGs-MCP/commit/3b639db8ccb0da2ea52dddf25ce50210ef7dd1df))
+- **embedding:** add health probe before embed to fix cold-start timeout
+  ([1e9e6ed](https://github.com/artk0de/TeaRAGs-MCP/commit/1e9e6ed865c6968d39d4c65ebfeb68779e00a4b4))
+- **embedding:** add health probe before embed to fix cold-start timeout
+  ([b2a52ac](https://github.com/artk0de/TeaRAGs-MCP/commit/b2a52ac887c4c48829577757db66db8bb76475e1))
+- **enrichment:** use \_type filter instead of has_id to exclude metadata points
+  in recovery scroll
+  ([8a4742b](https://github.com/artk0de/TeaRAGs-MCP/commit/8a4742bbd29be0e47b52c6f832e03a1056c4c434))
+- **explore:** detect class from residual block with parentType
+  ([b31fe43](https://github.com/artk0de/TeaRAGs-MCP/commit/b31fe438624af62ea56d7358a6c012cc81f6215a))
+- **explore:** detect class from residual block with
+  parentType=class_declaration
+  ([9e011ee](https://github.com/artk0de/TeaRAGs-MCP/commit/9e011ee9dcb4e63173ce9ff9308c67dcc6fa5b8e))
+- **ingest:** cleanup stale \_vN when legacy real collection or alias exists
+  ([cabc89c](https://github.com/artk0de/TeaRAGs-MCP/commit/cabc89c3ecf5be7ae561d41467558abfc6262bf0))
+- **ingest:** cleanup stale \_vN when legacy real collection or alias exists
+  ([6b38f37](https://github.com/artk0de/TeaRAGs-MCP/commit/6b38f37d6879935e376c0d44eefbecbe1bd3095a))
+- **ingest:** delete chunks for newly ignored files during incremental reindex
+  ([6ff33cf](https://github.com/artk0de/TeaRAGs-MCP/commit/6ff33cfa6a43a84f672cbbc1a1816af5585c8704))
+- **ingest:** heartbeat-based stale detection + remove embedding check from
+  getIndexStatus
+  ([84e0dd6](https://github.com/artk0de/TeaRAGs-MCP/commit/84e0dd645f77ad11632dbddeef7a64fa3129147f))
+- **ingest:** heartbeat-based stale detection + remove embedding check from
+  getIndexStatus
+  ([c9d4a7c](https://github.com/artk0de/TeaRAGs-MCP/commit/c9d4a7c2356f904fd08f5c65b7653215d5f23787))
+- **ingest:** heartbeat-based stale detection + remove embedding check from
+  getIndexStatus
+  ([1ded172](https://github.com/artk0de/TeaRAGs-MCP/commit/1ded172d5b922f64db4808f87e65213885ae2fb0))
+- **ingest:** resolve versioned collection status + batch timeout
+  ([24e71ae](https://github.com/artk0de/TeaRAGs-MCP/commit/24e71aeeb1b3d348c6e636c0250896b361ae8cb3))
+- **ingest:** resolve versioned collection status + batch timeout
+  ([4bfd471](https://github.com/artk0de/TeaRAGs-MCP/commit/4bfd471f78a6118c3e2e4c1e69914786b78f1989))
+- **ingest:** resolve versioned collection status + batch timeout
+  ([daa4ccb](https://github.com/artk0de/TeaRAGs-MCP/commit/daa4ccbcf4947dfcf87c47336285c9f6c8ced5ae))
+- **mcp:** omit driftWarning from structured output when null
+  ([7c8f5a5](https://github.com/artk0de/TeaRAGs-MCP/commit/7c8f5a5702dce736176340ad1495be1c12502ce3))
+- **migration:** SparseVectorRebuild version 2 → 1 to match
+  CURRENT_SPARSE_VERSION
+  ([c06bb9d](https://github.com/artk0de/TeaRAGs-MCP/commit/c06bb9d0be427b47a8e536b7d2298b3f8981be55))
+- **migration:** use \_type filter in enrichment store adapter, add empty
+  collection guard in v9
+  ([474d6bb](https://github.com/artk0de/TeaRAGs-MCP/commit/474d6bb6c6b8149ff16a4cd89e0f843bb1618b39))
+- **onnx:** auto-detect device, fix socket path, add connect keepalive,
+  terminate on exit
+  ([d024261](https://github.com/artk0de/TeaRAGs-MCP/commit/d0242610649c47e6d2155474dc884c48abae4c15))
+- **qdrant:** centralize connection error handling via call() guard
+  ([1e1e134](https://github.com/artk0de/TeaRAGs-MCP/commit/1e1e1341a7b6cf71c75e62ceee9db12fcd2c45c1))
+- **qdrant:** centralize connection error handling via call() guard
+  ([677694e](https://github.com/artk0de/TeaRAGs-MCP/commit/677694e96a06a33786a1a27c7c999960bb010e00))
+- **rerank:** per-language + level-aware label resolution in overlay
+  ([c06b941](https://github.com/artk0de/TeaRAGs-MCP/commit/c06b941fc3ce8e15aae076f2added9ee071650d6))
+- **rerank:** skip label resolution for config languages in overlay
+  ([a887136](https://github.com/artk0de/TeaRAGs-MCP/commit/a887136f4b3a2f5e0227691fbf46490af02bbacc))
+- **scripts:** align QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS key between tune and
+  output
+  ([38120ba](https://github.com/artk0de/TeaRAGs-MCP/commit/38120ba1a0f87072d09dbee33a22b0104f551f7d))
+- **scripts:** correct import paths in benchmarks/lib/ (../../build not
+  ../build)
+  ([3a6f9cf](https://github.com/artk0de/TeaRAGs-MCP/commit/3a6f9cf5617a800319b88a01c5a3cce55fe4cc39))
+- **scripts:** use ONNX default model name instead of Ollama model name
+  ([78ee713](https://github.com/artk0de/TeaRAGs-MCP/commit/78ee71368345df43e75ab18ea1071cd019d5c183))
+- **test:** add retry and timeout to flakey GitLogReader integration tests
+  ([bca75ca](https://github.com/artk0de/TeaRAGs-MCP/commit/bca75ca3bcbee13ba4169659209f6a6d0a1797e6))
+- **test:** add retry and timeout to flakey GitLogReader integration tests
+  ([0371422](https://github.com/artk0de/TeaRAGs-MCP/commit/0371422e782ebb4c6b333c47b27754a669ee110d))
+- **test:** update ingest-facade mocks for enrichment recovery wiring
+  ([b9bb104](https://github.com/artk0de/TeaRAGs-MCP/commit/b9bb104dd830f004072eb801f7b65006e448f247))
+
+### Documentation
+
+- **api:** add find_symbol design spec
+  ([0c9c402](https://github.com/artk0de/TeaRAGs-MCP/commit/0c9c402f24ec3cada6f8cda356f1ec55b8a7b36f))
+- **api:** add find_symbol implementation plan
+  ([fa3392f](https://github.com/artk0de/TeaRAGs-MCP/commit/fa3392f0300616ff10102db7ac671921202d1cff))
+- **api:** add migration framework design spec
+  ([0d1044d](https://github.com/artk0de/TeaRAGs-MCP/commit/0d1044ddbea93dd9e039fee7765e621286edcac9))
+- **api:** update migration framework spec — remove stats-cache, add file
+  structure
+  ([5cfd651](https://github.com/artk0de/TeaRAGs-MCP/commit/5cfd651cfc480bd8a637121dbd00b855529c4129))
+- **dx:** add migration rule and add-migration skill
+  ([f87a894](https://github.com/artk0de/TeaRAGs-MCP/commit/f87a8945f9d15fca6f177bc45b51ae260f10613d))
+- **dx:** add plugin restructuring spec
+  ([60b547a](https://github.com/artk0de/TeaRAGs-MCP/commit/60b547a4a8b1f3d9f0000104fff1c1d563fea023))
+- **dx:** add setup skill spec and implementation plan
+  ([779201c](https://github.com/artk0de/TeaRAGs-MCP/commit/779201c070ba7cf4aba8cbe60bd2b3e39d3d17fa))
+- **enrichment:** add enrichment recovery design spec
+  ([b377994](https://github.com/artk0de/TeaRAGs-MCP/commit/b37799453af1b3b00bc11a96262c3eb1fb971f3a))
+- **enrichment:** add enrichment recovery implementation plan
+  ([66996df](https://github.com/artk0de/TeaRAGs-MCP/commit/66996df409b8682c65efb481ccb76930e852b314))
+- **enrichment:** add heartbeat-based stale detection to recovery spec
+  ([7dcb44d](https://github.com/artk0de/TeaRAGs-MCP/commit/7dcb44d4447f12cf90e0e1d88ab807d96ffa2d97))
+- **infra:** add migration framework barrel export and update project docs
+  ([d77b728](https://github.com/artk0de/TeaRAGs-MCP/commit/d77b7285a86c6b51e2833c7ed91069fe0b5724f0))
+- **infra:** add migration framework implementation plan
+  ([6e9ee50](https://github.com/artk0de/TeaRAGs-MCP/commit/6e9ee50bc8e663e295f6ca45c99b2f03cbae6b56))
+- **mcp:** update get_index_metrics docs for scoped signal output
+  ([11061ba](https://github.com/artk0de/TeaRAGs-MCP/commit/11061ba35b8d5ae119621fd6c8667a2dcc7e25ec))
+- **specs:** per-language signal statistics spec and plan
+  ([507abed](https://github.com/artk0de/TeaRAGs-MCP/commit/507abeda41998705914ce679cfcc1358fe989cc2))
+
+### Code Refactoring
+
+- **dx:** rename setup plugin to tea-rags-setup
+  ([e1aecdc](https://github.com/artk0de/TeaRAGs-MCP/commit/e1aecdcbb0116eb927d8a9d2a93fa5b6e2bc8152))
+- **dx:** rename setup skill to install
+  ([51169b7](https://github.com/artk0de/TeaRAGs-MCP/commit/51169b712f340246ec35c0711065e71ed982ab55))
+- **dx:** split plugin into tea-rags@tea-rags + setup@tea-rags
+  ([e649590](https://github.com/artk0de/TeaRAGs-MCP/commit/e6495909986af4b73e00cf8e16cb97aa00fa39d0))
+- **infra:** unify migrations into infra/migration framework
+  ([d4af2e2](https://github.com/artk0de/TeaRAGs-MCP/commit/d4af2e28ae89d397c4adb62faf4246332547a557))
+- **ingest:** remove old migration code replaced by infra/migration framework
+  ([fa18e73](https://github.com/artk0de/TeaRAGs-MCP/commit/fa18e73556c9965b4fe236d48b01071341bf95f5))
+- **ingest:** wire Migrator into factory and ReindexPipeline
+  ([9a0c412](https://github.com/artk0de/TeaRAGs-MCP/commit/9a0c412eccd9dbc3133e6acbfef6142e599304b3))
+- **migration:** extract SparseMigrator from SchemaMigrator
+  ([dac3173](https://github.com/artk0de/TeaRAGs-MCP/commit/dac3173a4d352ac6f3d58133cbcd95bdb37ae07b))
+- **migration:** latestVersion on all runners, rename snapshot migrations
+  ([df6fd24](https://github.com/artk0de/TeaRAGs-MCP/commit/df6fd247ba8b6f9c5c77686fc88760a543ab587a))
+- **migration:** move enrichedAt backfill to migration framework as schema-v9
+  ([372de9d](https://github.com/artk0de/TeaRAGs-MCP/commit/372de9d33cd2649fbe23d63a263d08479cb20183))
+- **migration:** move sparse rebuild to
+  sparse_migrations/sparse-v1-vector-rebuild
+  ([fe707d5](https://github.com/artk0de/TeaRAGs-MCP/commit/fe707d568c154ebc233b47c864dbf1682665fe5c))
+- **migration:** remove CURRENT_SPARSE_VERSION hardcode, simplify sparse apply()
+  ([26a4b3b](https://github.com/artk0de/TeaRAGs-MCP/commit/26a4b3b63b6e03694be272e129e51adadd6ade47))
+
+### Chores
+
+- **deps:** upgrade major dependencies (openai 6, eslint 10, zod 4)
+  ([d7b0d89](https://github.com/artk0de/TeaRAGs-MCP/commit/d7b0d89cd4b192a2517798c246b45a062501e258))
+- **deps:** upgrade to Node 24 LTS and bump safe dependencies
+  ([ccda0d6](https://github.com/artk0de/TeaRAGs-MCP/commit/ccda0d610b5b22387e64c0a77dc497ec087baae1)),
+  closes
+  [tree-sitter/node-tree-sitter#276](https://github.com/tree-sitter/node-tree-sitter/issues/276)
+
 ## <small>1.15.1 (2026-03-23)</small>
 
 - ([a48e5b0](https://github.com/artk0de/TeaRAGs-MCP/commit/a48e5b0))
