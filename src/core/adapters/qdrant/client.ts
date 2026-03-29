@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 import { QdrantAliasManager } from "./aliases.js";
-import { CollectionAlreadyExistsError, QdrantOperationError, QdrantUnavailableError } from "./errors.js";
+import {
+  CollectionAlreadyExistsError,
+  QdrantOperationError,
+  QdrantPointNotFoundError,
+  QdrantUnavailableError,
+} from "./errors.js";
 
 type QdrantPayload = Record<string, unknown>;
 
@@ -525,9 +530,18 @@ export class QdrantManager {
     if (options.filter) queryParams.filter = options.filter;
     if (collectionInfo.hybridEnabled) queryParams.using = "dense";
 
-    const response = await this.call(async () =>
-      this.client.query(collectionName, queryParams as Parameters<QdrantClient["query"]>[1]),
-    );
+    let response;
+    try {
+      response = await this.call(async () =>
+        this.client.query(collectionName, queryParams as Parameters<QdrantClient["query"]>[1]),
+      );
+    } catch (error: unknown) {
+      if (error instanceof Error && "status" in error && (error as { status: number }).status === 404) {
+        const ids = options.positive.filter((p): p is string => typeof p === "string");
+        throw new QdrantPointNotFoundError(ids[0] ?? "unknown", collectionName, error);
+      }
+      throw error;
+    }
 
     return (response.points ?? []).map((point) => ({
       id: point.id,

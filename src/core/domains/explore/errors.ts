@@ -51,6 +51,19 @@ export class InvalidQueryError extends ExploreError {
   }
 }
 
+/** A chunk ID referenced in find_similar does not exist in the collection. */
+export class ChunkNotFoundError extends ExploreError {
+  constructor(cause?: Error) {
+    super({
+      code: "EXPLORE_CHUNK_NOT_FOUND",
+      message: "One or more chunk IDs not found in the collection",
+      hint: "Chunk IDs are ephemeral — reindex changes them. Run a new search to get current IDs.",
+      httpStatus: 404,
+      cause,
+    });
+  }
+}
+
 /** Unknown search strategy type requested. */
 export class InvalidStrategyError extends ExploreError {
   constructor(type: string) {

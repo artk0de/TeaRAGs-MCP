@@ -7,7 +7,9 @@
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { QdrantPointNotFoundError } from "../../../adapters/qdrant/errors.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import { ChunkNotFoundError } from "../errors.js";
 import type { Reranker } from "../reranker.js";
 import { BaseExploreStrategy } from "./base.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
@@ -61,14 +63,22 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
 
     // 6. Call Qdrant query (overfetch for file-level dedup)
     const fetchLimit = ctx.level === "file" ? ctx.limit * 3 : ctx.limit;
-    const results = await this.qdrant.query(ctx.collectionName, {
-      positive,
-      negative: negative.length > 0 ? negative : undefined,
-      strategy: this.input.strategy ?? "best_score",
-      limit: fetchLimit,
-      offset: ctx.offset,
-      filter,
-    });
+    let results;
+    try {
+      results = await this.qdrant.query(ctx.collectionName, {
+        positive,
+        negative: negative.length > 0 ? negative : undefined,
+        strategy: this.input.strategy ?? "best_score",
+        limit: fetchLimit,
+        offset: ctx.offset,
+        filter,
+      });
+    } catch (error) {
+      if (error instanceof QdrantPointNotFoundError) {
+        throw new ChunkNotFoundError(error);
+      }
+      throw error;
+    }
 
     // Client-side grouping for file level
     if (ctx.level === "file") {

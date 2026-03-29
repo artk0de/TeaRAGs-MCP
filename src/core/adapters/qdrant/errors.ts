@@ -52,6 +52,18 @@ export class QdrantOperationError extends InfraError {
   }
 }
 
+export class QdrantPointNotFoundError extends InfraError {
+  constructor(pointId: string, collectionName: string, cause?: Error) {
+    super({
+      code: "INFRA_QDRANT_POINT_NOT_FOUND",
+      message: `Point "${pointId}" not found in collection "${collectionName}"`,
+      hint: "The point ID may be stale after a reindex. Run a new search to get current IDs.",
+      httpStatus: 404,
+      cause,
+    });
+  }
+}
+
 export class CollectionAlreadyExistsError extends InfraError {
   constructor(collectionName: string, cause?: Error) {
     super({
