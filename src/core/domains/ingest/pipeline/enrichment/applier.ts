@@ -129,7 +129,12 @@ export class EnrichmentApplier {
     providerKey: string,
     chunkMetadata: Map<string, Map<string, ChunkSignalOverlay>>,
     enrichedAt?: string,
+    /** All chunk IDs that were requested for enrichment. Used to stamp enrichedAt
+     *  on chunks that buildChunkSignals found no commits for — so they don't
+     *  remain "unenriched" forever and trigger infinite recovery loops. */
+    allRequestedChunkIds?: Set<string>,
   ): Promise<number> {
+    const enrichedChunkIds = new Set<string>();
     let batch: {
       payload: Record<string, unknown>;
       points: (string | number)[];
@@ -139,6 +144,7 @@ export class EnrichmentApplier {
 
     for (const [, overlayMap] of chunkMetadata) {
       for (const [chunkId, overlay] of overlayMap) {
+        enrichedChunkIds.add(chunkId);
         const payload = enrichedAt
           ? { ...(overlay as Record<string, unknown>), enrichedAt }
           : (overlay as Record<string, unknown>);
@@ -169,6 +175,33 @@ export class EnrichmentApplier {
       } catch (error) {
         if (isDebug()) {
           console.error("[EnrichmentApplier] final chunk batch failed:", error);
+        }
+      }
+    }
+
+    // Stamp enrichedAt on chunks that had no commits (not in chunkMetadata).
+    // Without this, these chunks stay "unenriched" and recovery retries forever.
+    if (enrichedAt && allRequestedChunkIds) {
+      const missed: string[] = [];
+      for (const id of allRequestedChunkIds) {
+        if (!enrichedChunkIds.has(id)) missed.push(id);
+      }
+
+      if (missed.length > 0) {
+        for (let i = 0; i < missed.length; i += BATCH_SIZE) {
+          const stampBatch = missed.slice(i, i + BATCH_SIZE).map((id) => ({
+            payload: { enrichedAt } as Record<string, unknown>,
+            points: [id] as (string | number)[],
+            key: `${providerKey}.chunk`,
+          }));
+          try {
+            await this.qdrant.batchSetPayload(collectionName, stampBatch);
+            applied += stampBatch.length;
+          } catch (error) {
+            if (isDebug()) {
+              console.error("[EnrichmentApplier] enrichedAt stamp batch failed:", error);
+            }
+          }
         }
       }
     }

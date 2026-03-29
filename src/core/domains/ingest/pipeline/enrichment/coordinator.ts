@@ -374,6 +374,12 @@ export class EnrichmentCoordinator {
 
       const chunkStart = Date.now();
 
+      // Collect all chunk IDs so applier can stamp enrichedAt on chunks with no commits
+      const allChunkIds = new Set<string>();
+      for (const entries of effectiveChunkMap.values()) {
+        for (const entry of entries) allChunkIds.add(entry.chunkId);
+      }
+
       const providerDone = state.provider
         .buildChunkSignals(root, effectiveChunkMap)
         .then(async (chunkMetadata) => {
@@ -382,6 +388,7 @@ export class EnrichmentCoordinator {
             state.provider.key,
             chunkMetadata,
             this.runStartedAt,
+            allChunkIds,
           );
           state.chunkEnrichmentDurationMs = Date.now() - chunkStart;
 

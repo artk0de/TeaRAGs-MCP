@@ -126,11 +126,22 @@ export class EnrichmentRecovery {
         chunkMap.set(point.relativePath, existing);
       }
 
+      const allChunkIds = new Set<string>();
+      for (const entries of chunkMap.values()) {
+        for (const entry of entries) allChunkIds.add(entry.chunkId);
+      }
+
       const chunkSignals = await provider.buildChunkSignals(
         root,
         chunkMap as unknown as Map<string, ChunkLookupEntry[]>,
       );
-      const applied = await this.applier.applyChunkSignals(collectionName, provider.key, chunkSignals, enrichedAt);
+      const applied = await this.applier.applyChunkSignals(
+        collectionName,
+        provider.key,
+        chunkSignals,
+        enrichedAt,
+        allChunkIds,
+      );
 
       const remaining = await this.countUnenriched(collectionName, provider.key, "chunk");
 
