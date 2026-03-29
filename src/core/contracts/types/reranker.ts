@@ -29,6 +29,7 @@ export interface DerivedSignalDescriptor {
 }
 
 export interface RerankableResult {
+  id?: string | number;
   score: number;
   payload?: {
     relativePath?: string;

@@ -101,6 +101,7 @@ export class RankModule {
 
     // Convert to RerankableResult (score=0, no similarity)
     const rerankable: RerankableResult[] = merged.map((p) => ({
+      id: p.id,
       score: 0,
       payload: p.payload,
     }));
