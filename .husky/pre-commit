@@ -52,6 +52,21 @@ for plugin_dir in .claude-plugin/tea-rags .claude-plugin/tea-rags-setup; do
       echo ""
       exit 1
     fi
+    # Check marketplace.json is in sync with plugin.json
+    marketplace_json=".claude-plugin/marketplace.json"
+    marketplace_staged=$(echo "$STAGED_FILES" | grep "^${marketplace_json}$" || true)
+    if [ -z "$marketplace_staged" ]; then
+      echo ""
+      echo "============================================"
+      echo "  Marketplace version sync required: $plugin_name"
+      echo "============================================"
+      echo ""
+      echo "$plugin_json was bumped but $marketplace_json was not updated."
+      echo "Update the version for '$plugin_name' in marketplace.json to match,"
+      echo "then stage it: git add $marketplace_json"
+      echo ""
+      exit 1
+    fi
   fi
 done
 
