@@ -92,6 +92,27 @@ rank_chunks:
 **Polyglot:** If 2+ languages each >10% chunks → omit `language` filter. Group
 by language in OUTPUT.
 
+**Domain-stratified scanning (broad scope only):**
+
+Unfiltered `rank_chunks` returns results dominated by the highest-churn domain.
+Other domains are invisible regardless of their actual risk.
+
+```
+After first scan (3 presets × no pathPattern):
+1. Identify dominant domain:
+   Count unique relativePath directory prefixes across all results.
+   The domain with the most slots is dominant.
+
+2. ALWAYS run second scan (broad scope):
+   3 presets × pathPattern = "!**/dominant-domain/**"
+   Same parameters, same limit.
+   Feed both scans into Phase 2 MERGE.
+```
+
+This doubles the scan calls for broad scope (6 instead of 3), but guarantees
+every domain gets representation. The cost is acceptable: rank_chunks is a
+scroll operation, not vector search. No threshold — always run both scans.
+
 **Empty results:** If a preset returns 0 results, exclude from overlap count. N
 = number of presets with results (may be < 3).
 
@@ -130,22 +151,62 @@ critical risks found. Codebase appears healthy by multi-signal analysis."
 
 `find_similar` from **Critical (N/N) candidates only**.
 
+**Negative contrast (healthy-demoted as negativeIds):**
+
+Phase 2 MERGE produces healthy-demoted candidates: high preset overlap but
+healthy bugFixRate. These are structurally similar to Critical candidates but
+well-maintained — the exact opposite of antipatterns. Use them as negative
+examples to sharpen find_similar toward risky code:
+
+```
+find_similar vector direction:
+  positive = Critical candidates (buggy, churny, oversized)
+  negative = healthy-demoted from MERGE (active but clean)
+  → result space shifts AWAY from "active development" TOWARD "antipattern"
+```
+
+Collect negativeIds from ALL healthy-demoted candidates in Phase 2 (any tier).
+If no healthy-demoted candidates exist, skip negativeIds.
+
+**Two-pass expansion (broad scope):**
+
+```
+For each Critical candidate:
+├─ Pass 1 (in-domain): find_similar without pathPattern
+│   → related risks in same domain
+│
+├─ Pass 2 (cross-domain): find_similar with pathPattern excluding
+│   the candidate's domain directory
+│   → same antipattern in other domains
+│   Example: Critical in ingest/ → pathPattern = "!**/ingest/**"
+│
+└─ Merge both passes into "Related risks"
+    Label pass 1 results as "Related risk"
+    Label pass 2 results as "Cross-domain risk"
+```
+
+Parameters per pass:
+
 ```
 find_similar:
-  positiveIds: [<chunk UUID>]       ← preferred (when id present)
-  positiveCode: [<chunk content>]   ← fallback (when id empty)
+  positiveIds: [<chunk UUID>]       ← Critical candidate
+  negativeIds: [<demoted UUIDs>]    ← healthy-demoted from MERGE
   path: <project>
   limit: 5
-  pathPattern: <scope-dependent>
+  rerank: bugHunt                   ← surface risky similar code, not just similar
+  pathPattern: <see scope rules>
 ```
 
 **Scope rules:**
 
-| scopeType | pathPattern for find_similar             |
-| --------- | ---------------------------------------- |
-| broad     | none (cross-domain expansion allowed)    |
-| domain    | same as Phase 0 (stay in domain)         |
-| intent    | same as Phase 0 (stay in resolved scope) |
+| scopeType | Pass 1 pathPattern | Pass 2 pathPattern                   |
+| --------- | ------------------ | ------------------------------------ |
+| broad     | none               | `!**/dominant-domain/**`             |
+| domain    | same as Phase 0    | skip (domain scope = stay in domain) |
+| intent    | same as Phase 0    | skip (intent scope = stay in scope)  |
+
+Pass 2 only runs for `broad` scopeType. Domain/intent scopes are intentionally
+narrow — cross-domain expansion would violate the user's scoping intent.
 
 **Filter by overlay:** Include only results with concerning+ signals (bugFixRate
 concerning+, OR churnVolatility erratic+, OR contributorCount = 1). Healthy
@@ -160,11 +221,11 @@ For **Critical and High** candidates (typically 5-10 chunks):
 **1. Code review** — Content is in results (metaOnly=false). Read only when
 additional surrounding context needed. Use chunk coordinates.
 
-**2. Test coverage check** — ripgrep MCP: search filename stem in test
-directories (`**/tests/**`, `**/*.test.ts`, `**/*.spec.ts`).
+**2. Test coverage check** — `find_symbol` with the candidate's symbol name and
+pathPattern targeting the project's test directory convention. `metaOnly=true`.
 
-- No test file → "untested risk zone"
-- Test exists → note path (do NOT read test content)
+- 0 results → "untested risk zone"
+- Results found → note test path (do NOT read test content)
 
 **3. Decomposition check** — Run `rank_chunks` with `decomposition` preset,
 scoped to the same pathPattern. Cross-reference with Critical/High candidates by
@@ -237,3 +298,8 @@ raw value + label: `bugFix:58% concerning`.
   for Medium.
 - **find_similar from Medium candidates.** Only Critical warrants expansion.
 - **Braces with slashes in pathPattern.** Extract directory prefixes instead.
+- **Single unfiltered scan for broad scope.** Dominant-churn domain takes 100%
+  of slots. Always run stratified second scan with `!**/dominant/**`.
+- **find_similar without negativeIds.** Healthy-demoted candidates from MERGE
+  are free negative examples. Always pass them to shift results toward
+  antipatterns and away from active-but-clean code.
