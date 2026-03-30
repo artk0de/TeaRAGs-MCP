@@ -2,14 +2,13 @@
 name: index
 description:
   Index or reindex a codebase. First time — full index. Already indexed —
-  incremental reindex (only changed files). Runs in background, does not block
-  conversation.
+  incremental reindex (only changed files).
 argument-hint: [path to codebase]
 ---
 
-# Index Codebase (Background)
+# Index Codebase
 
-Smart indexing in a background subagent:
+Smart indexing — call MCP tool directly (no subagent):
 
 - **Not indexed** → full index
 - **Already indexed** → incremental reindex (only changed files)
@@ -19,27 +18,13 @@ Smart indexing in a background subagent:
 1. Extract `path` from the user's message or argument. If not provided, use the
    current working directory.
 
-2. Dispatch a **background subagent** with `run_in_background: true`:
+2. Call `mcp__tea-rags__index_codebase` directly with:
+   - `path`: extracted path
 
-```
-Agent tool:
-  description: "Index codebase in background"
-  run_in_background: true
-  prompt: |
-    Call mcp__tea-rags__index_codebase with:
-    - path: <extracted path>
-    Report the COMPLETE response as-is — every field returned by the tool.
-    Do not cherry-pick fields. Whatever the endpoint returns, summarize it all.
-    ALWAYS include the duration field — users need to see how long indexing took.
-```
-
-3. Tell the user indexing has started and they will be notified when it
-   completes. Continue with other work.
-
-4. When the background agent completes, report the **full result** to the user.
-   Include all metrics and duration — do not summarize or omit fields.
+3. Report the **full result** — all metrics and duration.
 
 ## Do NOT
 
-- Call `index_codebase` in the foreground (blocks conversation)
+- Spawn a subagent (Agent tool) — direct MCP call is much faster for incremental
+  reindex. Subagent overhead (~10-15s) dwarfs the actual reindex time (~1-3s).
 - Call with `forceReindex: true` — use `/tea-rags:force-reindex` for that

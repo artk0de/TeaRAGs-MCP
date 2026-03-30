@@ -4,7 +4,7 @@ description:
   Force full re-index with zero downtime. Builds new versioned collection in
   background while search continues on current one. Alias switches atomically
   when done. Requires explicit user confirmation — NEVER invoke automatically.
-argument-hint: [path to codebase]
+argument-hint: "[path to codebase]"
 ---
 
 # Force Reindex (Background, Zero-Downtime)
@@ -39,7 +39,8 @@ Before executing, you MUST:
 2. Extract `path` from the user's message or argument. If not provided, use the
    current working directory.
 
-3. Dispatch a **background subagent** with `run_in_background: true`:
+3. Dispatch a **background subagent** with `run_in_background: true` (full
+   reindex takes minutes — background is justified here):
 
 ```
 Agent tool:
