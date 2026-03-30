@@ -1,3 +1,10 @@
+## [1.17.5](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.4...v1.17.5) (2026-03-30)
+
+### Improvements
+
+- **dx:** enforce tea-rags search injection for all subagents
+  ([bede8e9](https://github.com/artk0de/TeaRAGs-MCP/commit/bede8e94ec2304cd958ee6c2baaa5f7a3b069bda))
+
 ## [1.17.4](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.3...v1.17.4) (2026-03-30)
 
 ### Bug Fixes
