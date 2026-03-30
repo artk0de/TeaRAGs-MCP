@@ -27,11 +27,20 @@ interface UnenrichedPoint {
 
 const SCROLL_LIMIT = 10_000;
 
+export interface RecoveryOptions {
+  scrollPageSize?: number;
+}
+
 export class EnrichmentRecovery {
+  private readonly scrollPageSize: number | undefined;
+
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly applier: EnrichmentApplier,
-  ) {}
+    options?: RecoveryOptions,
+  ) {
+    this.scrollPageSize = options?.scrollPageSize;
+  }
 
   /**
    * Re-enrich file-level signals for chunks missing `{providerKey}.file.enrichedAt`.
@@ -164,10 +173,25 @@ export class EnrichmentRecovery {
 
   /**
    * Count chunks missing enrichedAt for the given provider key and level.
+   * Uses Qdrant count API — lightweight, no payload transfer.
    */
   async countUnenriched(collectionName: string, providerKey: string, level: "file" | "chunk"): Promise<number> {
-    const unenriched = await this.scrollUnenriched(collectionName, providerKey, level);
-    return unenriched.length;
+    const filter = this.buildUnenrichedFilter(providerKey, level);
+    return this.qdrant.countPoints(collectionName, filter);
+  }
+
+  /**
+   * Build the Qdrant filter for chunks missing `{providerKey}.{level}.enrichedAt`.
+   */
+  private buildUnenrichedFilter(providerKey: string, level: "file" | "chunk"): Record<string, unknown> {
+    const enrichedAtField = `${providerKey}.${level}.enrichedAt`;
+    return {
+      must: [{ is_empty: { key: enrichedAtField } }],
+      must_not: [
+        { key: "_type", match: { value: "indexing_metadata" } },
+        { key: "_type", match: { value: "schema_metadata" } },
+      ],
+    };
   }
 
   /**
@@ -179,17 +203,8 @@ export class EnrichmentRecovery {
     providerKey: string,
     level: "file" | "chunk",
   ): Promise<UnenrichedPoint[]> {
-    const enrichedAtField = `${providerKey}.${level}.enrichedAt`;
-
-    const filter = {
-      must: [{ is_empty: { key: enrichedAtField } }],
-      must_not: [
-        { key: "_type", match: { value: "indexing_metadata" } },
-        { key: "_type", match: { value: "schema_metadata" } },
-      ],
-    };
-
-    const points = await this.qdrant.scrollFiltered(collectionName, filter, SCROLL_LIMIT);
+    const filter = this.buildUnenrichedFilter(providerKey, level);
+    const points = await this.qdrant.scrollFiltered(collectionName, filter, SCROLL_LIMIT, this.scrollPageSize);
 
     const result: UnenrichedPoint[] = [];
     for (const point of points) {

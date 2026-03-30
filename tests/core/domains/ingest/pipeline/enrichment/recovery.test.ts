@@ -7,6 +7,7 @@ describe("EnrichmentRecovery", () => {
     scrollFiltered: ReturnType<typeof vi.fn>;
     setPayload: ReturnType<typeof vi.fn>;
     batchSetPayload: ReturnType<typeof vi.fn>;
+    countPoints: ReturnType<typeof vi.fn>;
   };
   let mockProvider: {
     key: string;
@@ -26,6 +27,7 @@ describe("EnrichmentRecovery", () => {
       scrollFiltered: vi.fn().mockResolvedValue([]),
       setPayload: vi.fn().mockResolvedValue(undefined),
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      countPoints: vi.fn().mockResolvedValue(0),
     };
     mockProvider = {
       key: "git",
@@ -110,6 +112,7 @@ describe("EnrichmentRecovery", () => {
           ]),
         }),
         expect.any(Number),
+        undefined,
       );
 
       expect(mockProvider.buildFileSignals).toHaveBeenCalledWith("/repo", {
@@ -272,32 +275,63 @@ describe("EnrichmentRecovery", () => {
   });
 
   describe("countUnenriched", () => {
-    it("returns count of unenriched file-level chunks", async () => {
-      mockQdrant.scrollFiltered.mockResolvedValue([
-        { id: "chunk-1", payload: { relativePath: "src/foo.ts" } },
-        { id: "chunk-2", payload: { relativePath: "src/bar.ts" } },
-        { id: "chunk-3", payload: { relativePath: "src/baz.ts" } },
-      ]);
+    it("uses countPoints API instead of scrolling all points", async () => {
+      mockQdrant.countPoints.mockResolvedValue(42);
 
       const count = await recovery.countUnenriched("test-collection", "git", "file");
 
-      expect(count).toBe(3);
+      expect(count).toBe(42);
+      expect(mockQdrant.countPoints).toHaveBeenCalledWith(
+        "test-collection",
+        expect.objectContaining({
+          must: expect.arrayContaining([{ is_empty: { key: "git.file.enrichedAt" } }]),
+        }),
+      );
     });
 
-    it("returns count of unenriched chunk-level chunks", async () => {
-      mockQdrant.scrollFiltered.mockResolvedValue([{ id: "chunk-1", payload: { relativePath: "src/foo.ts" } }]);
+    it("builds correct filter for chunk level", async () => {
+      mockQdrant.countPoints.mockResolvedValue(7);
 
       const count = await recovery.countUnenriched("test-collection", "git", "chunk");
 
-      expect(count).toBe(1);
+      expect(count).toBe(7);
+      expect(mockQdrant.countPoints).toHaveBeenCalledWith(
+        "test-collection",
+        expect.objectContaining({
+          must: expect.arrayContaining([{ is_empty: { key: "git.chunk.enrichedAt" } }]),
+        }),
+      );
     });
 
-    it("returns zero when nothing is unenriched", async () => {
-      mockQdrant.scrollFiltered.mockResolvedValue([]);
+    it("returns zero when countPoints returns zero", async () => {
+      mockQdrant.countPoints.mockResolvedValue(0);
 
       const count = await recovery.countUnenriched("test-collection", "git", "file");
 
       expect(count).toBe(0);
+    });
+  });
+
+  describe("scrollUnenriched — configurable pageSize", () => {
+    it("passes pageSize to scrollFiltered when provided", async () => {
+      const customRecovery = new EnrichmentRecovery(mockQdrant as any, mockApplier as any, { scrollPageSize: 1000 });
+
+      await customRecovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+
+      expect(mockQdrant.scrollFiltered).toHaveBeenCalledWith(
+        "test-collection",
+        expect.any(Object),
+        expect.any(Number),
+        1000,
+      );
+    });
+
+    it("passes undefined pageSize when not configured", async () => {
+      await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+
+      // Fourth arg should be undefined (no custom pageSize)
+      const call = mockQdrant.scrollFiltered.mock.calls[0];
+      expect(call[3]).toBeUndefined();
     });
   });
 });

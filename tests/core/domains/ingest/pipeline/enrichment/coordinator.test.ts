@@ -1138,8 +1138,97 @@ describe("EnrichmentCoordinator — recovery integration", () => {
 
     expect(mockRecovery.recoverFileLevel).toHaveBeenCalledWith("col", "/root", mockProvider, expect.any(String));
     expect(mockRecovery.recoverChunkLevel).toHaveBeenCalledWith("col", "/root", mockProvider, expect.any(String));
-    expect(mockRecovery.countUnenriched).toHaveBeenCalledWith("col", "git", "file");
-    expect(mockRecovery.countUnenriched).toHaveBeenCalledWith("col", "git", "chunk");
+  });
+
+  it("should skip recovery when marker shows unenrichedChunks=0 for all levels", async () => {
+    // Marker says everything is enriched
+    mockQdrant.getPoint.mockResolvedValue({
+      payload: {
+        enrichment: {
+          git: {
+            file: { status: "completed", unenrichedChunks: 0 },
+            chunk: { status: "completed", unenrichedChunks: 0 },
+          },
+        },
+      },
+    });
+
+    const mockRecovery = {
+      recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
+      recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
+      countUnenriched: vi.fn().mockResolvedValue(0),
+    };
+
+    const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, mockRecovery as any);
+    await coordWithRecovery.runRecovery("col", "/root");
+
+    // Recovery should NOT have been called — marker guard skipped it
+    expect(mockRecovery.recoverFileLevel).not.toHaveBeenCalled();
+    expect(mockRecovery.recoverChunkLevel).not.toHaveBeenCalled();
+  });
+
+  it("should run recovery when marker shows unenrichedChunks > 0", async () => {
+    mockQdrant.getPoint.mockResolvedValue({
+      payload: {
+        enrichment: {
+          git: {
+            file: { status: "completed", unenrichedChunks: 0 },
+            chunk: { status: "degraded", unenrichedChunks: 42 },
+          },
+        },
+      },
+    });
+
+    const mockRecovery = {
+      recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
+      recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
+      countUnenriched: vi.fn().mockResolvedValue(0),
+    };
+
+    const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, mockRecovery as any);
+    await coordWithRecovery.runRecovery("col", "/root");
+
+    // Recovery SHOULD run — chunk level has unenriched
+    expect(mockRecovery.recoverFileLevel).toHaveBeenCalled();
+    expect(mockRecovery.recoverChunkLevel).toHaveBeenCalled();
+  });
+
+  it("should run recovery when marker is missing (first run)", async () => {
+    mockQdrant.getPoint.mockResolvedValue(null);
+
+    const mockRecovery = {
+      recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
+      recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
+      countUnenriched: vi.fn().mockResolvedValue(0),
+    };
+
+    const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, mockRecovery as any);
+    await coordWithRecovery.runRecovery("col", "/root");
+
+    expect(mockRecovery.recoverFileLevel).toHaveBeenCalled();
+    expect(mockRecovery.recoverChunkLevel).toHaveBeenCalled();
+  });
+
+  it("should use remainingUnenriched from recovery result instead of separate countUnenriched call", async () => {
+    const mockRecovery = {
+      recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 1, recoveredChunks: 3, remainingUnenriched: 5 }),
+      recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 1, recoveredChunks: 2, remainingUnenriched: 10 }),
+      countUnenriched: vi.fn().mockResolvedValue(999),
+    };
+
+    const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, mockRecovery as any);
+    await coordWithRecovery.runRecovery("col", "/root");
+
+    // countUnenriched should NOT be called — use remainingUnenriched from recover results
+    expect(mockRecovery.countUnenriched).not.toHaveBeenCalled();
+
+    // Marker should use remainingUnenriched values, not countUnenriched
+    const markerCalls = mockQdrant.setPayload.mock.calls.filter(
+      (call: any[]) => call[1]?.enrichment?.git !== undefined,
+    );
+    const lastMarker = markerCalls[markerCalls.length - 1][1].enrichment.git;
+    expect(lastMarker.file.unenrichedChunks).toBe(5);
+    expect(lastMarker.chunk.unenrichedChunks).toBe(10);
   });
 
   it("should be no-op when recovery not provided", async () => {
@@ -1148,7 +1237,7 @@ describe("EnrichmentCoordinator — recovery integration", () => {
     // Should not throw, should not call any qdrant methods for recovery
   });
 
-  it("should update enrichment marker with post-recovery status", async () => {
+  it("should update enrichment marker with post-recovery status from remainingUnenriched", async () => {
     const mockRecovery = {
       recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 2, recoveredChunks: 5, remainingUnenriched: 0 }),
       recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 2, recoveredChunks: 5, remainingUnenriched: 0 }),
@@ -1170,14 +1259,11 @@ describe("EnrichmentCoordinator — recovery integration", () => {
     expect(lastMarker.file.unenrichedChunks).toBe(0);
   });
 
-  it("should set degraded status when chunk-level unenriched remain", async () => {
+  it("should set degraded status when chunk-level remainingUnenriched > 0", async () => {
     const mockRecovery = {
       recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 }),
       recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 3 }),
-      countUnenriched: vi
-        .fn()
-        .mockResolvedValueOnce(0) // file count = 0
-        .mockResolvedValueOnce(3), // chunk count = 3
+      countUnenriched: vi.fn().mockResolvedValue(999), // should not be called
     };
 
     const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, mockRecovery as any);
