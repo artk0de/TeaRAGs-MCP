@@ -1193,6 +1193,34 @@ describe("EnrichmentCoordinator — recovery integration", () => {
     expect(mockRecovery.recoverChunkLevel).toHaveBeenCalled();
   });
 
+  it("should run recovery when marker says 0 but actual count > 0 (stale marker)", async () => {
+    // Marker lies — says 0
+    mockQdrant.getPoint.mockResolvedValue({
+      payload: {
+        enrichment: {
+          git: {
+            file: { status: "completed", unenrichedChunks: 0 },
+            chunk: { status: "completed", unenrichedChunks: 0 },
+          },
+        },
+      },
+    });
+
+    const mockRecovery = {
+      recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 5, recoveredChunks: 100, remainingUnenriched: 0 }),
+      recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 5, recoveredChunks: 50, remainingUnenriched: 0 }),
+      // Verify call returns actual non-zero count — stale marker detected
+      countUnenriched: vi.fn().mockResolvedValue(8745),
+    };
+
+    const coordWithRecovery = new EnrichmentCoordinator(mockQdrant, mockProvider, mockRecovery as any);
+    await coordWithRecovery.runRecovery("col", "/root");
+
+    // Recovery SHOULD run despite marker showing 0 — verify detected stale marker
+    expect(mockRecovery.recoverFileLevel).toHaveBeenCalled();
+    expect(mockRecovery.recoverChunkLevel).toHaveBeenCalled();
+  });
+
   it("should run recovery when marker is missing (first run)", async () => {
     mockQdrant.getPoint.mockResolvedValue(null);
 
