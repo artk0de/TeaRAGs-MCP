@@ -1,5 +1,6 @@
 {
   "name": "tea-rags",
+  "version": "0.5.0",
   "owner": {
     "name": "Artur Korochanskii",
     "email": "art2rik.desperado@gmail.com"
@@ -7,12 +8,7 @@
   "plugins": [
     {
       "name": "tea-rags",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/artk0de/TeaRAGs-MCP.git",
-        "path": ".claude-plugin/tea-rags",
-        "ref": "main"
-      },
+      "source": "./tea-rags",
       "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
       "keywords": [
         "code-generation",
@@ -24,12 +20,7 @@
     },
     {
       "name": "tea-rags-setup",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/artk0de/TeaRAGs-MCP.git",
-        "path": ".claude-plugin/tea-rags-setup",
-        "ref": "main"
-      },
+      "source": "./tea-rags-setup",
       "description": "Automated TeaRAGs installation wizard",
       "keywords": ["setup", "installation", "wizard"]
     }
