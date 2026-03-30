@@ -62,7 +62,7 @@ website/build/
 website/.docusaurus/
 
 # Plugin eval workspaces
-.claude-plugin/benchmarks/**/workspace/
+.claude-plugin/.benchmarks/**/workspace/
 
 # Dolt database files (added by bd init)
 .dolt/

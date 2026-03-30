@@ -51,7 +51,15 @@ Create eval cases targeting:
    FAIL if the problem exists and PASS if the skill handles it correctly
 2. **Regression controls** — unchanged behaviors that must still work
 3. **Edge cases** — non-English input, code snippet input, ambiguous intent
-4. **Subagent routing** — if skill is used by subagents
+4. **Subagent routing (MANDATORY)** — ALWAYS include 2+ cases simulating skill
+   invocation from different agent contexts:
+   - `[subagent: explore]` — skill called during codebase exploration
+   - `[subagent: task-agent]` — skill called during autonomous task execution
+   - `[subagent: plan-executor]` — skill called as a plan step
+   - `[subagent: other]` — any other agent type that might use the skill These
+     cases test whether skill instructions work when the calling agent has
+     limited context (no CLAUDE.md, no rules, no search-cascade). Frame prompts
+     as a subagent would phrase them — with explicit paths, not vague intents.
 
 Each case has:
 
@@ -145,10 +153,10 @@ completes. Do not wait for user to ask. Do not skip because "session is ending".
 Benchmark artifacts are the proof that optimization happened — without them, the
 work is unverifiable.
 
-Save results to `.claude-plugin/benchmarks/<skill-name>/`:
+Save results to `.claude-plugin/.benchmarks/<skill-name>/`:
 
 ```
-benchmarks/<skill-name>/
+.benchmarks/<skill-name>/
 ├── benchmark.md        — committed. Permanent optimization record.
 └── workspace/          — gitignored. Recreatable by this skill.
     ├── evals.json      — eval cases + assertions + results
@@ -159,7 +167,7 @@ benchmarks/<skill-name>/
 **Execute these steps in order:**
 
 1. **Create workspace/** dir (gitignored —
-   `.claude-plugin/benchmarks/**/workspace/`)
+   `.claude-plugin/.benchmarks/**/workspace/`)
 2. **Save evals.json** to `workspace/` — must include ALL eval cases with:
    prompt, expected output, assertions, audit finding references, and final
    pass/fail results per iteration
@@ -168,7 +176,7 @@ benchmarks/<skill-name>/
    decisions, metrics (lines before/after), iterations table (pass rates per
    iteration), per-eval detail table (prompt + before/after grade), integration
    test results if Phase 7/8 was run
-5. **Update README.md** in `benchmarks/` with new skill row
+5. **Update README.md** in `.benchmarks/` with new skill row
 
 Present final state to user:
 
@@ -177,7 +185,7 @@ Skill: [name]
 Lines: [before] → [after] ([delta]%)
 Eval cases: [N] (with-rule [X]%, baseline [Y]%, delta +[Z]pp)
 Iterations: [count]
-Benchmark: .claude-plugin/benchmarks/[name]/benchmark.md
+Benchmark: .claude-plugin/.benchmarks/[name]/benchmark.md
 ```
 
 ## Key Principles
