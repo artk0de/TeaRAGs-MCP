@@ -2,15 +2,15 @@
 name: risk-assessment
 description:
   Assess project or domain health by scanning for risk zones across multiple
-  dimensions (bugs, hotspots, ownership, tech debt). Use when asked to evaluate
-  risks, find problematic areas, assess code health, or identify zones that need
-  attention — NOT for specific bug symptoms (use bug-hunt instead)
+  dimensions (bugs, hotspots, tech debt). Use when asked to evaluate risks, find
+  problematic areas, assess code health, or identify zones that need attention —
+  NOT for specific bug symptoms (use bug-hunt instead)
 argument-hint: "[scope — domain, subsystem, or 'whole project']"
 ---
 
 # Risk Assessment
 
-Multi-dimensional risk scan using rank_chunks with 4 rerank presets,
+Multi-dimensional risk scan using rank_chunks with 3 rerank presets,
 cross-referenced by overlap count. Semantic/hybrid search resolves intent-based
 scopes.
 
@@ -18,18 +18,21 @@ scopes.
 
 1. **Execute YOURSELF** — no subagents.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
-3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only.
+3. **No built-in Search/Grep for code discovery** — use tea-rags tools only.
 4. **Search results contain code when metaOnly=false.** Evaluate from search
    results BEFORE any Read or navigation.
 5. **Partial reads only.**
    `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
    from search results. Never read full files.
+6. **Minimize tool calls.** Batch where possible: all rank_chunks in one
+   message, all Critical UUIDs in one find_similar, all symbol names in one
+   hybrid_search. Target: ≤12 calls for domain scope, ≤16 for broad scope.
 
 ## Flow
 
 ```
 0. SCOPE RESOLUTION   → pathPattern + scopeType
-1. SCAN               → rank_chunks × 4 presets (parallel)
+1. SCAN               → rank_chunks × 3 presets (parallel)
 2. MERGE              → cross-reference by relativePath, assign tiers
 3. EXPAND             → find_similar from Critical only
 4. ENRICH             → partial Read + test coverage check + classify
@@ -39,6 +42,9 @@ scopes.
 ## Phase 0: SCOPE RESOLUTION
 
 Translate $ARGUMENTS into `pathPattern` and `scopeType`.
+
+**Shortcut:** If `pathPattern` is provided directly as argument (e.g., delegated
+from explore PG-2) → use it as-is, `scopeType = "domain"`, skip resolution.
 
 ```
 $ARGUMENTS describes...
@@ -51,7 +57,8 @@ $ARGUMENTS describes...
 │   → scopeType = "domain"
 │
 └─ Intent/concept ("enrichment pipeline", "error handling")
-    → ONE semantic_search or hybrid_search (search-cascade decides tool):
+    → ONE search call (concept/behavior → semantic_search,
+      named symbol + context → hybrid_search):
       query = extracted concept, language = primary, limit = 10
     → extract directory prefixes from result relativePaths:
       - Shared prefix → "**/enrichment/**"
@@ -67,7 +74,7 @@ $ARGUMENTS describes...
 
 ## Phase 1: SCAN
 
-Run `rank_chunks` × 3 presets. All calls in parallel.
+Run `rank_chunks` × 3 presets. **All 3 calls in ONE message** (parallel).
 
 | Preset     | Surfaces                                   |
 | ---------- | ------------------------------------------ |
@@ -114,7 +121,7 @@ scroll operation, not vector search. No threshold — always run both scans.
 **Empty results:** If a preset returns 0 results, exclude from overlap count. N
 = number of presets with results (may be < 3).
 
-**Pagination:** Apply search-cascade stop conditions per-preset:
+**Pagination:** Stop conditions per-preset:
 
 - Gradient drop > 2× average adjacent gap → stop
 - < 3 new unique files on page → stop
@@ -166,45 +173,28 @@ find_similar vector direction:
 Collect negativeIds from ALL healthy-demoted candidates in Phase 2 (any tier).
 If no healthy-demoted candidates exist, skip negativeIds.
 
-**Two-pass expansion (broad scope):**
-
-```
-For each Critical candidate:
-├─ Pass 1 (in-domain): find_similar without pathPattern
-│   → related risks in same domain
-│
-├─ Pass 2 (cross-domain): find_similar with pathPattern excluding
-│   the candidate's domain directory
-│   → same antipattern in other domains
-│   Example: Critical in ingest/ → pathPattern = "!**/ingest/**"
-│
-└─ Merge both passes into "Related risks"
-    Label pass 1 results as "Related risk"
-    Label pass 2 results as "Cross-domain risk"
-```
-
-Parameters per pass:
+**Batch expansion** — pass ALL Critical chunk UUIDs in one call:
 
 ```
 find_similar:
-  positiveIds: [<chunk UUID>]       ← Critical candidate
-  negativeIds: [<demoted UUIDs>]    ← healthy-demoted from MERGE
+  positiveIds: [<all Critical UUIDs>]   ← batch, not per-candidate
+  negativeIds: [<demoted UUIDs>]        ← healthy-demoted from MERGE
   path: <project>
-  limit: 5
-  rerank: bugHunt                   ← surface risky similar code, not just similar
+  limit: 10
+  rerank: bugHunt                       ← surface risky similar, not just similar
   pathPattern: <see scope rules>
 ```
 
-**Scope rules:**
+**Two-pass for broad scope only:**
 
-| scopeType | Pass 1 pathPattern | Pass 2 pathPattern                   |
-| --------- | ------------------ | ------------------------------------ |
-| broad     | none               | `!**/dominant-domain/**`             |
-| domain    | same as Phase 0    | skip (domain scope = stay in domain) |
-| intent    | same as Phase 0    | skip (intent scope = stay in scope)  |
+- Pass 1 (in-domain): no pathPattern → 1 call
+- Pass 2 (cross-domain): `pathPattern = "!**/dominant-domain/**"` → 1 call
 
-Pass 2 only runs for `broad` scopeType. Domain/intent scopes are intentionally
-narrow — cross-domain expansion would violate the user's scoping intent.
+Domain/intent scopes: Pass 1 only (same pathPattern as Phase 0). Total: 1 call.
+
+Label results as "Related risk" (pass 1) or "Cross-domain risk" (pass 2).
+
+Scope rules are embedded in the two-pass description above.
 
 **Filter by overlay:** Include only results with concerning+ signals (bugFixRate
 concerning+, OR churnVolatility erratic+, OR contributorCount = 1). Healthy
@@ -219,11 +209,13 @@ For **Critical and High** candidates (typically 5-10 chunks):
 **1. Code review** — Content is in results (metaOnly=false). Read only when
 additional surrounding context needed. Use chunk coordinates.
 
-**2. Test coverage check** — `find_symbol` with the candidate's symbol name and
-pathPattern targeting the project's test directory convention. `metaOnly=true`.
+**2. Test coverage check** — ONE `hybrid_search` with all Critical/High symbol
+names joined as query, `pathPattern` targeting the project's test directory
+convention, `metaOnly=true`. BM25 catches exact symbol names in test files. One
+call covers all candidates.
 
-- 0 results → "untested risk zone"
-- Results found → note test path (do NOT read test content)
+- Symbol absent from results → "untested risk zone"
+- Symbol present → note test path (do NOT read test content)
 
 **3. Decomposition check** — Run `rank_chunks` with `decomposition` preset,
 scoped to the same pathPattern. Cross-reference with Critical/High candidates by
@@ -291,7 +283,7 @@ raw value + label: `bugFix:58% concerning`.
 - **Exhaustive scope resolution.** One semantic/hybrid call. Don't find_similar
   to expand scope — that's pattern-search's job.
 - **Reading full files.** Chunk coordinates exist. Use them.
-- **Paginating all 4 presets to page 3.** If gradient drops on page 1 — stop.
+- **Paginating all 3 presets to page 3.** If gradient drops on page 1 — stop.
 - **Reporting 1/N overlap as risk.** Single-preset hits are noise. Minimum 2/N
   for Medium.
 - **find_similar from Medium candidates.** Only Critical warrants expansion.

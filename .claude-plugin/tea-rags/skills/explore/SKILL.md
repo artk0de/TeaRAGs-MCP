@@ -17,13 +17,8 @@ argument-hint: [what to explore — feature, module, or question]
 Unified code investigation. Breadth-first discovery → depth-first tracing →
 output shaped by intent (human explanation OR pre-generation context).
 
-**CRITICAL: search-cascade governs all tool selection.** Built-in Search, Grep,
-Glob, `grep`, `rg`, `find` are PROHIBITED for code discovery. When this skill
-prescribes a specific tool (e.g., hybrid_search for "where is X used"), use it
-directly. For intents not listed here, defer to search-cascade decision tree. Do
-NOT add ripgrep "verification" or "completeness" passes after tea-rags calls —
-tea-rags results are complete. ripgrep is only for exact text patterns (TODO,
-FIXME, import paths) per search-cascade rules.
+Use tea-rags tools for code discovery. Built-in Search/Grep/Glob prohibited.
+Search results are complete — no ripgrep verification passes.
 
 ## Step 0: CLASSIFY INTENT
 
@@ -42,6 +37,13 @@ Check $ARGUMENTS for pre-generation signals. **First match wins** → PRE-GEN fl
 | Context for generation    | "context for changing X", "risks before refactoring X"                 |
 
 **Match found → go to PRE-GEN flow (below).**
+
+### Risk intent → delegate to risk-assessment
+
+If $ARGUMENTS contains risk-assessment signals ("risk surface", "risk zones",
+"code health", "assess risks", "problematic areas") → delegate to
+`risk-assessment/SKILL.md`. This check runs BEFORE keyword matching below — risk
+intent overrides Spread/Collect keywords.
 
 ### Pattern-search intents → delegate
 
@@ -100,7 +102,8 @@ BREADTH (search) → pick interesting results →
 
 ### 1. BREADTH
 
-Search with query=$ARGUMENTS. Search-cascade determines the tool.
+Search with query=$ARGUMENTS. Tool selection: behavior/intent → semantic_search,
+known symbol → hybrid_search, bare symbol name → hybrid_search.
 
 Scan results: files, modules, patterns. Note domain boundaries.
 
@@ -184,23 +187,31 @@ Add `pathPattern` if module is known. Add `language` if polyglot codebase.
 - YES → extract pathPattern, proceed to PG-2
 - NO → reformulate query (narrower scope, different angle), retry once
 
-### PG-2. RISK ASSESSMENT
+### PG-2. SIGNAL LOOKUP
 
-Delegate to `/tea-rags:risk-assessment` with pathPattern from PG-1.
+For each key symbol from PG-1 (2-5 symbols), call `find_symbol` with rerank to
+get overlay labels. One call per symbol — find_symbol is instant (scroll, no
+embedding).
 
-Risk-assessment handles all signal analysis: bugHunt, hotspots, techDebt
-presets, tier classification, find_similar expansion. Do NOT duplicate its work.
+```
+find_symbol:
+  symbolId: <symbol name from PG-1>
+  path: <project>
+  rerank: "techDebt"          ← any preset works, overlay is preset-independent
+  metaOnly: false             ← need overlay labels
+```
+
+Extract per-symbol: bugFixRate, ageDays, churnVolatility, commitCount,
+dominantAuthor, dominantAuthorPct. These feed DDG strategy selection.
 
 ### PG-3. DEEP TRACE (optional)
 
-If risk-assessment surfaced Critical/High zones and you need to understand a
-specific symbol before generating code:
+If specific symbols need structural understanding before generation:
 
-- `find_symbol` for 1-2 key symbols (definition only)
+- `find_symbol` for 1-2 key symbols (definition + imports)
 - Fallback: `hybrid_search` if find_symbol returns 0
 
-**Limit:** Do NOT trace call chains, dependency trees, or "all callers" — use
-the Explore flow EXPLAIN patterns for that.
+**Limit:** Do NOT trace call chains or dependency trees.
 
 ### PG-4. OUTPUT
 
@@ -209,12 +220,13 @@ Pre-generation context for: [area]
 
 Files: [list with pathPattern-ready format]
 Language: [detected language]
-Risk summary: [Critical/High count from risk-assessment]
-Key risks: [top 3 from risk-assessment output]
+Symbols with overlay:
+  - symbolName: { bugFixRate, ageDays, churnVolatility, commitCount,
+                  dominantAuthor, dominantAuthorPct }
 
 Context for generation:
   - pathPattern: [ready for data-driven-generation]
-  - overlay labels: [from risk-assessment]
+  - overlay labels: [per-symbol from PG-2]
 ```
 
-Output is self-contained. Agent or user decides next step.
+Output is self-contained. data-driven-generation reads overlay labels directly.
