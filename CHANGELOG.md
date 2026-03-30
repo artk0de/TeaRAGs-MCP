@@ -1,3 +1,10 @@
+## [1.17.4](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.3...v1.17.4) (2026-03-30)
+
+### Bug Fixes
+
+- **dx:** resolve plugin source paths relative to repo root
+  ([910f1df](https://github.com/artk0de/TeaRAGs-MCP/commit/910f1dffc2f4bed8ebbdd880f0c7d21c1fc7a063))
+
 ## [1.17.3](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.2...v1.17.3) (2026-03-30)
 
 ### Bug Fixes
