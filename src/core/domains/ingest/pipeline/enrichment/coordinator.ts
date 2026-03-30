@@ -181,21 +181,6 @@ export class EnrichmentCoordinator {
   async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
     if (!this.recovery) return;
 
-    // Guard: skip recovery if marker shows all enrichment complete
-    // Self-correcting: verify with lightweight count API to catch stale markers
-    if (await this.isRecoveryComplete(collectionName)) {
-      const actuallyComplete = await this.verifyRecoveryComplete(collectionName);
-      if (actuallyComplete) {
-        if (isDebug()) {
-          console.error("[Enrichment] Recovery skipped — verified unenrichedChunks=0 for all providers");
-        }
-        return;
-      }
-      if (isDebug()) {
-        console.error("[Enrichment] Stale marker detected — running recovery despite marker showing 0");
-      }
-    }
-
     const enrichedAt = new Date().toISOString();
 
     for (const state of this.states.values()) {
@@ -221,47 +206,6 @@ export class EnrichmentCoordinator {
         },
       });
     }
-  }
-
-  /**
-   * Check if all providers report unenrichedChunks=0 in the enrichment marker.
-   * Returns true only when marker exists AND all levels show 0 unenriched.
-   */
-  private async isRecoveryComplete(collectionName: string): Promise<boolean> {
-    const marker = await this.readExistingMarker(collectionName);
-    if (!marker) return false;
-
-    for (const state of this.states.values()) {
-      const providerMarker = marker[state.provider.key] as Record<string, unknown> | undefined;
-      if (!providerMarker) return false;
-
-      const file = providerMarker.file as Record<string, unknown> | undefined;
-      const chunk = providerMarker.chunk as Record<string, unknown> | undefined;
-
-      if (!file || !chunk) return false;
-      if (typeof file.unenrichedChunks !== "number" || file.unenrichedChunks > 0) return false;
-      if (typeof chunk.unenrichedChunks !== "number" || chunk.unenrichedChunks > 0) return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * Verify marker accuracy with lightweight Qdrant count API calls.
-   * Returns true only when actual unenriched count is 0 for all providers.
-   * Cost: 2 count API calls per provider (~0.5s each over network).
-   */
-  private async verifyRecoveryComplete(collectionName: string): Promise<boolean> {
-    if (!this.recovery) return true;
-
-    for (const state of this.states.values()) {
-      const fileCount = await this.recovery.countUnenriched(collectionName, state.provider.key, "file");
-      if (fileCount > 0) return false;
-      const chunkCount = await this.recovery.countUnenriched(collectionName, state.provider.key, "chunk");
-      if (chunkCount > 0) return false;
-    }
-
-    return true;
   }
 
   /**

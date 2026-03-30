@@ -24,6 +24,11 @@ import { IndexPipeline } from "../../../domains/ingest/indexing.js";
 import type { PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
+import {
+  invalidateRecoveryCache,
+  isRecoveryComplete,
+  markRecoveryComplete,
+} from "../../../domains/ingest/pipeline/enrichment/recovery-cache.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
@@ -49,6 +54,7 @@ export class IngestFacade {
   private readonly status: StatusModule;
   private readonly reindex: ReindexPipeline;
   private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
+  private readonly snapshotDir: string;
 
   constructor(
     private readonly qdrant: QdrantManager,
@@ -65,8 +71,8 @@ export class IngestFacade {
     private readonly modelGuard?: EmbeddingModelGuard,
   ) {
     /* v8 ignore next 2 -- fallback for backward compat */
-    const resolvedSnapshotDir =
-      snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
+    this.snapshotDir = snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
+    const resolvedSnapshotDir = this.snapshotDir;
 
     const squashOpts = trajectoryConfig.squashAwareSessions
       ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
@@ -135,10 +141,24 @@ export class IngestFacade {
       const collectionName = resolveCollectionName(absolutePath);
       const exists = await this.qdrant.collectionExists(collectionName);
       if (exists) {
-        await this.enrichment.runRecovery(collectionName, absolutePath);
+        // Recovery: local file guard (0ms) + fire-and-forget (background)
+        if (!isRecoveryComplete(this.snapshotDir, collectionName)) {
+          void this.enrichment
+            .runRecovery(collectionName, absolutePath)
+            .then(() => {
+              markRecoveryComplete(this.snapshotDir, collectionName);
+            })
+            .catch(() => {});
+        }
+
         const changeStats = await this.reindex.reindexChanges(path, progressCallback);
-        // Fire-and-forget: stats refresh scrolls the entire collection (59k+ points)
-        // and should not block the incremental reindex response
+
+        // Invalidate recovery cache when new chunks are added (may need enrichment)
+        if (changeStats.chunksAdded > 0) {
+          invalidateRecoveryCache(this.snapshotDir, collectionName);
+        }
+
+        // Fire-and-forget: stats refresh scrolls the entire collection
         void this.refreshStats(path);
         return {
           filesScanned: changeStats.filesAdded + changeStats.filesModified + changeStats.filesDeleted,
