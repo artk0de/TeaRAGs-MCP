@@ -22,8 +22,8 @@ import { computeCollectionStats } from "../../../domains/ingest/collection-stats
 import { createIngestDependencies, type SynchronizerTuning } from "../../../domains/ingest/factory.js";
 import { IndexPipeline } from "../../../domains/ingest/indexing.js";
 import type { PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
-import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
+import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
@@ -90,11 +90,12 @@ export class IngestFacade {
         chunkMonths: trajectoryConfig.trajectoryGit.chunkMaxAgeMonths,
       };
     }
-    const recovery = providers.length > 0
-      ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant))
-      : undefined;
+    const recovery = providers.length > 0 ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant)) : undefined;
     this.enrichment = new EnrichmentCoordinator(qdrant, providers, recovery);
-    this.enrichment.onChunkEnrichmentComplete = async (collectionName) => this.refreshStatsByCollection(collectionName);
+    this.enrichment.onChunkEnrichmentComplete = async (collectionName) => {
+      // Fire-and-forget: don't block enrichment completion with full collection scroll
+      void this.refreshStatsByCollection(collectionName);
+    };
     this.indexing = new IndexPipeline(qdrant, embeddings, ingestConfig, this.enrichment, deps, pipelineTuning);
     this.status = new StatusModule(qdrant, resolvedSnapshotDir);
     this.reindex = new ReindexPipeline(
@@ -136,7 +137,9 @@ export class IngestFacade {
       if (exists) {
         await this.enrichment.runRecovery(collectionName, absolutePath);
         const changeStats = await this.reindex.reindexChanges(path, progressCallback);
-        await this.refreshStats(path);
+        // Fire-and-forget: stats refresh scrolls the entire collection (59k+ points)
+        // and should not block the incremental reindex response
+        void this.refreshStats(path);
         return {
           filesScanned: changeStats.filesAdded + changeStats.filesModified + changeStats.filesDeleted,
           filesIndexed: changeStats.filesAdded + changeStats.filesModified,
