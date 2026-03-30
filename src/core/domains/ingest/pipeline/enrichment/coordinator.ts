@@ -182,11 +182,18 @@ export class EnrichmentCoordinator {
     if (!this.recovery) return;
 
     // Guard: skip recovery if marker shows all enrichment complete
+    // Self-correcting: verify with lightweight count API to catch stale markers
     if (await this.isRecoveryComplete(collectionName)) {
-      if (isDebug()) {
-        console.error("[Enrichment] Recovery skipped — marker shows unenrichedChunks=0 for all providers");
+      const actuallyComplete = await this.verifyRecoveryComplete(collectionName);
+      if (actuallyComplete) {
+        if (isDebug()) {
+          console.error("[Enrichment] Recovery skipped — verified unenrichedChunks=0 for all providers");
+        }
+        return;
       }
-      return;
+      if (isDebug()) {
+        console.error("[Enrichment] Stale marker detected — running recovery despite marker showing 0");
+      }
     }
 
     const enrichedAt = new Date().toISOString();
@@ -234,6 +241,24 @@ export class EnrichmentCoordinator {
       if (!file || !chunk) return false;
       if (typeof file.unenrichedChunks !== "number" || file.unenrichedChunks > 0) return false;
       if (typeof chunk.unenrichedChunks !== "number" || chunk.unenrichedChunks > 0) return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Verify marker accuracy with lightweight Qdrant count API calls.
+   * Returns true only when actual unenriched count is 0 for all providers.
+   * Cost: 2 count API calls per provider (~0.5s each over network).
+   */
+  private async verifyRecoveryComplete(collectionName: string): Promise<boolean> {
+    if (!this.recovery) return true;
+
+    for (const state of this.states.values()) {
+      const fileCount = await this.recovery.countUnenriched(collectionName, state.provider.key, "file");
+      if (fileCount > 0) return false;
+      const chunkCount = await this.recovery.countUnenriched(collectionName, state.provider.key, "chunk");
+      if (chunkCount > 0) return false;
     }
 
     return true;
