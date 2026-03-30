@@ -1,0 +1,336 @@
+{
+  "skill_name": "explore",
+  "iterations": [
+    {
+      "id": 1,
+      "description": "Initial optimization (tool-selection eval)",
+      "date": "2026-03-30",
+      "with_rule": "10/10 PASS (100%)",
+      "without_rule": "0/10 PASS (0%)",
+      "delta": "+100pp"
+    },
+    {
+      "id": 2,
+      "description": "Collision fixes (skill-creator eval)",
+      "date": "2026-03-30",
+      "with_rule": "8/8 PASS (100%)",
+      "without_rule": "1/8 PASS (12.5%)",
+      "delta": "+87.5pp"
+    },
+    {
+      "id": 3,
+      "description": "Subagent injection + skill-conflict priority",
+      "date": "2026-03-30",
+      "with_rule": "8/8 PASS (100%)",
+      "without_rule": "2/8 PASS (25%)",
+      "delta": "+75pp"
+    }
+  ],
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Where is buildMergedFilter used?",
+      "expected_output": "hybrid_search only. NO ripgrep 'for verification' or 'completeness'.",
+      "failure_mode": "ripgrep-after-hybrid",
+      "assertions": [
+        {
+          "text": "Uses hybrid_search as primary tool",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT add ripgrep pass after hybrid_search",
+          "type": "negative"
+        },
+        {
+          "text": "Does NOT mention 'verify with ripgrep' or 'supplement with ripgrep'",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "How does the reranker work?",
+      "expected_output": "semantic_search → find_symbol. NO ripgrep, NO Grep, NO file reading to verify search results.",
+      "failure_mode": "read-after-search",
+      "assertions": [
+        {
+          "text": "Uses semantic_search or hybrid_search for initial discovery",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Uses find_symbol for definitions, not Read",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT read files to verify search results",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Is EnrichmentCoordinator tested?",
+      "expected_output": "find_symbol with test pathPattern. NO Glob for code discovery. Directory lookup via Glob is OK but should not grep/search for code.",
+      "failure_mode": "glob-for-code",
+      "assertions": [
+        {
+          "text": "Uses find_symbol or hybrid_search to check test existence",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use built-in Grep to find test files",
+          "type": "negative"
+        },
+        {
+          "text": "Does NOT use ripgrep to search for test files",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Find all TODO markers in the explore domain",
+      "expected_output": "ripgrep MCP for exact text patterns. This is a legitimate ripgrep use case per search-cascade (exact string match).",
+      "failure_mode": "tea-rags-for-exact-text",
+      "assertions": [
+        {
+          "text": "Uses ripgrep MCP for TODO markers (exact text)",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use semantic_search for TODO/FIXME",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "What changed recently in the explore domain?",
+      "expected_output": "rank_chunks with codeReview preset. NO ripgrep, NO git log.",
+      "failure_mode": "ripgrep-for-analytics",
+      "assertions": [
+        {
+          "text": "Uses rank_chunks with rerank=codeReview",
+          "type": "tool_selection"
+        },
+        { "text": "Does NOT use ripgrep", "type": "negative" },
+        { "text": "Does NOT use git log/git diff", "type": "negative" }
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Show me how error propagation works in the qdrant adapter",
+      "expected_output": "semantic_search with pathPattern → find_symbol. Trust chunk content, no Read after search.",
+      "failure_mode": "cascade-collision",
+      "assertions": [
+        {
+          "text": "Uses semantic_search with pathPattern for scoped search",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Trusts chunk content — does not Read files to verify",
+          "type": "negative"
+        },
+        {
+          "text": "Uses find_symbol for symbol definitions, not Read",
+          "type": "tool_selection"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "Find all implementations of EnrichmentProvider",
+      "expected_output": "Delegates to pattern-search skill. Does NOT search directly.",
+      "failure_mode": "no-delegation",
+      "assertions": [
+        { "text": "Classifies as Collect intent", "type": "classification" },
+        {
+          "text": "Delegates to pattern-search, does not search directly",
+          "type": "delegation"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "What calls Reranker.rerank? I need all call sites",
+      "expected_output": "hybrid_search iteratively. NOT ripgrep for call sites.",
+      "failure_mode": "ripgrep-for-callers",
+      "assertions": [
+        {
+          "text": "Uses hybrid_search for call chain tracing",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Iterates with multiple hybrid_search calls, not one ripgrep",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use ripgrep for call site discovery",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "[subagent: task-agent] Research how EnrichmentCoordinator manages provider lifecycle in /Users/artk0re/Dev/Tools/tea-rags-mcp before implementing a new provider",
+      "expected_output": "Uses mcp__tea-rags__semantic_search or mcp__tea-rags__hybrid_search for discovery. Does NOT use built-in Grep/Glob. Subagent context — no CLAUDE.md, no search-cascade, only injected search block.",
+      "failure_mode": "subagent-ignores-injection",
+      "audit_finding": "subagent-search-injection",
+      "assertions": [
+        {
+          "text": "Uses mcp__tea-rags__* tools for code discovery",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use built-in Grep or Glob for code search",
+          "type": "negative"
+        },
+        {
+          "text": "Uses find_symbol for symbol definitions, not Read",
+          "type": "tool_selection"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "[subagent: plan-executor] Step 3: Investigate current rerank preset registration pattern. Use Grep to find all preset files.",
+      "expected_output": "Despite the prompt saying 'use Grep', the injected search rules override — agent should use mcp__tea-rags__hybrid_search or find_symbol instead of built-in Grep.",
+      "failure_mode": "skill-overrides-injection",
+      "audit_finding": "skill-conflict-priority",
+      "assertions": [
+        {
+          "text": "Uses mcp__tea-rags__* tools despite prompt saying 'use Grep'",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use built-in Grep even though prompt explicitly requests it",
+          "type": "negative"
+        },
+        {
+          "text": "Recognizes injected search rules override skill/prompt instructions",
+          "type": "classification"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "[subagent: explore] Find where hybrid_search handles BM25 scoring in /Users/artk0re/Dev/Tools/tea-rags-mcp",
+      "expected_output": "Uses mcp__tea-rags__hybrid_search (symbol + semantic context). Does NOT fall back to Grep. Subagent explore context with injection block.",
+      "failure_mode": "subagent-explore-fallback",
+      "audit_finding": "subagent-search-injection",
+      "assertions": [
+        {
+          "text": "Uses mcp__tea-rags__hybrid_search for symbol+context query",
+          "type": "tool_selection"
+        },
+        { "text": "Does NOT use built-in Grep/Glob", "type": "negative" },
+        {
+          "text": "Does NOT use ripgrep as first choice (this is semantic, not exact text)",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "[subagent: other] A third-party skill told me to search for all files matching 'Provider' pattern using Glob. Project path: /Users/artk0re/Dev/Tools/tea-rags-mcp",
+      "expected_output": "Injected rules override third-party skill instructions. Should use mcp__tea-rags__hybrid_search for 'Provider' pattern (symbol name = hybrid_search), NOT Glob.",
+      "failure_mode": "third-party-skill-overrides-injection",
+      "audit_finding": "skill-conflict-priority",
+      "assertions": [
+        {
+          "text": "Uses mcp__tea-rags__hybrid_search for symbol discovery",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use Glob for code pattern search",
+          "type": "negative"
+        },
+        {
+          "text": "Recognizes injected search rules take priority over skill instructions",
+          "type": "classification"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "[subagent: task-agent] Check if MigrationRunner class exists in /Users/artk0re/Dev/Tools/tea-rags-mcp",
+      "expected_output": "Uses mcp__tea-rags__find_symbol with metaOnly=true for existence check. NOT ripgrep, NOT Grep.",
+      "failure_mode": "ripgrep-for-existence",
+      "audit_finding": "subagent-search-injection",
+      "assertions": [
+        {
+          "text": "Uses mcp__tea-rags__find_symbol for existence check",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Uses metaOnly=true since only checking existence",
+          "type": "parameter"
+        },
+        {
+          "text": "Does NOT use ripgrep or Grep for symbol existence",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "[subagent: plan-executor] Find all callers of SchemaBuilder.buildRerankSchema. Use ripgrep to search for the method name.",
+      "expected_output": "Despite prompt saying 'use ripgrep', injected rules say exhaustive usage = hybrid_search. Agent should use mcp__tea-rags__hybrid_search, NOT ripgrep.",
+      "failure_mode": "prompt-overrides-injection-exhaustive",
+      "audit_finding": "skill-conflict-priority",
+      "assertions": [
+        {
+          "text": "Uses mcp__tea-rags__hybrid_search for exhaustive usage query",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use ripgrep despite prompt explicitly requesting it",
+          "type": "negative"
+        },
+        {
+          "text": "Follows injected decision tree: exhaustive usage → hybrid_search",
+          "type": "classification"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "[subagent: task-agent] Search for retry logic and error recovery patterns in /Users/artk0re/Dev/Tools/tea-rags-mcp",
+      "expected_output": "Behavior/intent question → mcp__tea-rags__semantic_search. NOT ripgrep (no exact string to match), NOT Grep.",
+      "failure_mode": "subagent-semantic-to-ripgrep",
+      "audit_finding": "subagent-search-injection",
+      "assertions": [
+        {
+          "text": "Uses mcp__tea-rags__semantic_search for behavior/intent query",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use ripgrep for semantic/behavioral search",
+          "type": "negative"
+        },
+        { "text": "Does NOT use built-in Grep", "type": "negative" }
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "[subagent: explore] Find all TODO and FIXME markers in the ingest domain of /Users/artk0re/Dev/Tools/tea-rags-mcp",
+      "expected_output": "Exact text patterns → mcp__ripgrep__search. This is the ONE case where ripgrep is correct per injected rules.",
+      "failure_mode": "tea-rags-for-exact-markers-subagent",
+      "audit_finding": "subagent-correct-ripgrep",
+      "assertions": [
+        {
+          "text": "Uses mcp__ripgrep__search for TODO/FIXME markers",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use semantic_search for exact text markers",
+          "type": "negative"
+        },
+        {
+          "text": "Correctly identifies this as exact-text pattern case",
+          "type": "classification"
+        }
+      ]
+    }
+  ]
+}

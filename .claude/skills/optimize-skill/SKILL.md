@@ -158,8 +158,8 @@ Save results to `.claude-plugin/.benchmarks/<skill-name>/`:
 ```
 .benchmarks/<skill-name>/
 ├── benchmark.md        — committed. Permanent optimization record.
+├── evals.json          — committed. Eval cases + assertions + results.
 └── workspace/          — gitignored. Recreatable by this skill.
-    ├── evals.json      — eval cases + assertions + results
     ├── skill-snapshot/  — frozen copy of skill before/after optimization
     └── iteration-N/    — subagent outputs per iteration
 ```
@@ -168,9 +168,10 @@ Save results to `.claude-plugin/.benchmarks/<skill-name>/`:
 
 1. **Create workspace/** dir (gitignored —
    `.claude-plugin/.benchmarks/**/workspace/`)
-2. **Save evals.json** to `workspace/` — must include ALL eval cases with:
-   prompt, expected output, assertions, audit finding references, and final
-   pass/fail results per iteration
+2. **Save evals.json** to `.benchmarks/<skill-name>/evals.json` (NOT inside
+   workspace/) — must include ALL eval cases with: prompt, expected output,
+   assertions, audit finding references, and final pass/fail results per
+   iteration. This file is committed — eval cases are reusable test artifacts.
 3. **Copy SKILL.md** before and after to `workspace/skill-snapshot/`
 4. **Write benchmark.md** (committed) with: summary, changes table, key design
    decisions, metrics (lines before/after), iterations table (pass rates per
