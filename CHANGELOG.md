@@ -1,3 +1,26 @@
+## [1.17.6](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.5...v1.17.6) (2026-03-30)
+
+### Improvements
+
+- **embedding:** add Ollama fallback switch observability to pipeline log
+  ([d2c4665](https://github.com/artk0de/TeaRAGs-MCP/commit/d2c4665b4b48e454151d98a59949990251fc08ab))
+
+### Bug Fixes
+
+- **pipeline:** self-correcting recovery guard detects stale markers
+  ([4103e1e](https://github.com/artk0de/TeaRAGs-MCP/commit/4103e1e5bdbfacf553aeb4a10bc3f51cdcaca7fd))
+- **pipeline:** skip enrichment recovery when marker shows all enriched
+  ([9b21ea7](https://github.com/artk0de/TeaRAGs-MCP/commit/9b21ea7a24d90e2dc72b3baf9a07af5d3a144a0e))
+
+### Performance Improvements
+
+- **pipeline:** deduplicate facade pre-checks, remove index skill subagent
+  ([d79943b](https://github.com/artk0de/TeaRAGs-MCP/commit/d79943b9e37e04a861e5a9da2c11496af09141ce))
+- **pipeline:** local file guard for recovery, fire-and-forget execution
+  ([ba48370](https://github.com/artk0de/TeaRAGs-MCP/commit/ba48370d84809e48e3cb0d65d19256ea4b27d442))
+- **pipeline:** make refreshStats non-blocking for incremental reindex
+  ([6a74f30](https://github.com/artk0de/TeaRAGs-MCP/commit/6a74f30132f9c8e1f7308d2a4de6ec2ba131d125))
+
 ## [1.17.5](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.4...v1.17.5) (2026-03-30)
 
 ### Improvements
