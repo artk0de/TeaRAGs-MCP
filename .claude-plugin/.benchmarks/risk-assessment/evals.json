@@ -1,0 +1,114 @@
+{
+  "skill_name": "risk-assessment",
+  "optimized_skills": ["risk-assessment", "explore"],
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Assess risks in the ingest domain",
+      "expected": "Phase 0: pathPattern='**/ingest/**', scopeType='domain'. Phase 1: rank_chunks × 3 presets. NOT 4 presets, NOT search-cascade.",
+      "audit_finding": [1, 2],
+      "baseline_grade": "FAIL",
+      "before_grade": "PASS",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 2,
+      "prompt": "Evaluate code health of enrichment pipeline",
+      "expected": "Phase 0: semantic_search (concept, no symbol). No search-cascade decision tree.",
+      "audit_finding": [2],
+      "baseline_grade": "FAIL",
+      "before_grade": "FAIL",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 3,
+      "prompt": "Risk scan whole project",
+      "expected": "Broad scope, domain-stratified 6 calls. Pagination stop conditions without search-cascade ref.",
+      "audit_finding": [3],
+      "baseline_grade": "FAIL",
+      "before_grade": "PASS",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 4,
+      "prompt": "Find risky areas before I refactor the trajectory module",
+      "expected": "explore PG → PG-2 delegates to risk-assessment WITH pathPattern. risk-assessment SKIPS Phase 0.",
+      "audit_finding": [9],
+      "baseline_grade": "FAIL",
+      "before_grade": "FAIL",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 5,
+      "prompt": "Оцени проблемные зоны в explore стратегиях",
+      "expected": "Translates to English, resolves scope correctly. Non-English edge case.",
+      "audit_finding": "control",
+      "baseline_grade": "PARTIAL",
+      "before_grade": "PASS",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 6,
+      "prompt": "What are the riskiest files that data-driven-generation should be careful with?",
+      "expected": "Full flow, Phase 5 includes machine-readable context (pathPattern, riskFiles, overlayLabels) for data-driven chain.",
+      "audit_finding": [10],
+      "baseline_grade": "FAIL",
+      "before_grade": "FAIL",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 7,
+      "prompt": "Show hotspots and ownership patterns in adapters/",
+      "expected": "3 presets (NOT 4th ownership preset). Ownership via overlay. tea-rags only, NOT ripgrep/Grep.",
+      "audit_finding": [1, 4, 6],
+      "baseline_grade": "FAIL",
+      "before_grade": "PASS",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 8,
+      "prompt": "Assess risks in the chunker hooks area",
+      "expected": "Standard flow, no deviations. Regression control.",
+      "audit_finding": "control",
+      "baseline_grade": "FAIL",
+      "before_grade": "PASS",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 9,
+      "prompt": "Risk assessment for the reranker — I need context before generating new signals",
+      "expected": "explore PG flow or direct risk-assessment. Machine-readable output for generation.",
+      "audit_finding": [9, 10],
+      "baseline_grade": "FAIL",
+      "before_grade": "PARTIAL",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 10,
+      "prompt": "Explore the risk surface of error handling across the codebase",
+      "expected": "explore classifies 'risk surface' → risk-assessment. NOT pattern-search via 'across' keyword.",
+      "audit_finding": [11],
+      "baseline_grade": "PARTIAL",
+      "before_grade": "FAIL",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 11,
+      "prompt": "[subagent] Assess code risks in src/core/domains/ingest/ before implementing new enrichment provider",
+      "expected": "Subagent uses tea-rags tools, follows skill flow, accepts pathPattern shortcut.",
+      "audit_finding": "subagent",
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PASS"
+    },
+    {
+      "id": 12,
+      "prompt": "[plan execution] Step 3: Run risk assessment on trajectory domain to identify fragile areas before refactoring signals",
+      "expected": "Plan executor triggers skill, accepts pathPattern, outputs structured context.",
+      "audit_finding": [9, 10],
+      "baseline_grade": "N/A",
+      "before_grade": "N/A",
+      "after_grade": "PASS"
+    }
+  ]
+}

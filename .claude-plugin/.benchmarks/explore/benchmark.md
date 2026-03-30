@@ -6,20 +6,23 @@ Date: 2026-03-30
 
 Optimized explore skill from 200-line monolith to 142-line focused skill with 15
 covered intents. Fixed 2 MCP server bugs discovered during integration testing.
-Evaluated tool selection accuracy across 8 unique test cases in 2 iterations + 5
-integration tests with real MCP calls.
+Evaluated tool selection accuracy across 16 unique test cases in 3 iterations +
+8 integration tests with real MCP calls. Iteration 3 added 8 subagent-context
+eval cases testing search injection enforcement and skill-conflict priority.
 
 ## Results by Iteration
 
-| Iteration | Version                   | Evals | Pass Rate    | Key Change                                   |
-| --------- | ------------------------- | ----- | ------------ | -------------------------------------------- |
-| 0         | baseline (no skill)       | 10    | 0% (0/10)    | Read after search, ripgrep for everything    |
-| 1         | v1 (initial optimization) | 10    | 100% (10/10) | Removed ~13% recall, fixed contrastive       |
-| 2         | v2 (collision fixes)      | 8     | 100% (8/8)   | No ripgrep verification, stronger delegation |
+| Iteration | Version                      | Evals | Pass Rate    | Key Change                                   |
+| --------- | ---------------------------- | ----- | ------------ | -------------------------------------------- |
+| 0         | baseline (no skill)          | 10    | 0% (0/10)    | Read after search, ripgrep for everything    |
+| 1         | v1 (initial optimization)    | 10    | 100% (10/10) | Removed ~13% recall, fixed contrastive       |
+| 2         | v2 (collision fixes)         | 8     | 100% (8/8)   | No ripgrep verification, stronger delegation |
+| 3         | v3 (subagent injection eval) | 8     | 100% (8/8)   | Subagent contexts, skill-conflict priority   |
 
 ## Delta: with-skill vs without-skill
 
-**+87.5 percentage points** (12.5% → 100%)
+- Iteration 1-2: **+87.5pp** (12.5% → 100%)
+- Iteration 3: **+75pp** (25% → 100%)
 
 ## Eval Results Detail
 
@@ -93,6 +96,28 @@ integration tests with real MCP calls.
 - `code-review.ts` — rank_chunks added to tools[]
 - `explore-facade-find-symbol.test.ts` — new test for pathPattern propagation
 
+### Iteration 3 — Subagent Injection + Skill-Conflict Priority
+
+| #   | Task                                      | With Skill                      | Baseline                           |
+| --- | ----------------------------------------- | ------------------------------- | ---------------------------------- |
+| 9   | [task-agent] research provider lifecycle  | ✅ semantic_search, no Grep     | ✅ semantic_search + tree-sitter   |
+| 10  | [plan-executor] prompt says "use Grep"    | ✅ hybrid_search, Grep rejected | ⚠️ hybrid + ripgrep + **Glob**     |
+| 11  | [explore] symbol+context query            | ✅ hybrid_search only           | ⚠️ semantic + hybrid + **ripgrep** |
+| 12  | [other] third-party skill says "use Glob" | ✅ hybrid_search, Glob rejected | ❌ **Glob** as primary tool        |
+| 13  | [task-agent] class existence check        | ✅ find_symbol metaOnly=true    | ❌ hybrid + **ripgrep**            |
+| 14  | [plan-executor] prompt says "use ripgrep" | ✅ hybrid_search for callers    | ⚠️ hybrid + ripgrep equal weight   |
+| 15  | [task-agent] behavior/intent search       | ✅ semantic_search only         | ⚠️ semantic + hybrid + **ripgrep** |
+| 16  | [explore] TODO/FIXME markers (control)    | ✅ ripgrep (correct)            | ✅ ripgrep (correct)               |
+
+**Key findings:**
+
+- Skill-conflict priority works: cases 10, 12, 14 correctly override explicit
+  Grep/Glob/ripgrep requests from prompts and skills
+- find_symbol metaOnly=true for existence checks unknown without injection
+- Without rules, agent adds unnecessary ripgrep "for completeness" (cases
+  11, 15)
+- Glob used for "find files matching pattern" without injection (case 12)
+
 ### Key Design Decisions
 
 1. **search-cascade governs** — explore prescribes tools for specific intents,
@@ -102,3 +127,5 @@ integration tests with real MCP calls.
 3. **ripgrep only for exact text** — TODO, FIXME, import paths per cascade rules
 4. **Delegation is hard stop** — Collect/Spread/Antipattern/Reference →
    delegate, don't search before or after
+5. **Injection overrides skills** — subagent search injection takes priority
+   over any skill-specific or prompt-specific search instructions

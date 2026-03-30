@@ -1,0 +1,243 @@
+{
+  "skill_name": "research-merge",
+  "description": "Research skill merged into explore as PRE-GEN flow. Tests skill routing, tool selection, and subagent behavior.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I need to add retry logic to the payment service. What should I know before coding?",
+      "expected_output": "PRE-GEN flow. semantic_search metaOnly=true → delegate risk-assessment → output.",
+      "audit_findings": [2, 3],
+      "assertions": [
+        {
+          "text": "Routes to PRE-GEN flow (not Explore flow)",
+          "type": "routing"
+        },
+        {
+          "text": "Uses semantic_search or hybrid_search directly (not 'follow search-cascade')",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Delegates to risk-assessment (not own risk flagging)",
+          "type": "delegation"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Who owns the authentication module?",
+      "expected_output": "Explore flow, ownership EXPLAIN pattern. rank_chunks rerank=ownership.",
+      "audit_findings": [1],
+      "assertions": [
+        { "text": "Routes to Explore flow (not PRE-GEN)", "type": "routing" },
+        {
+          "text": "Uses rank_chunks with ownership rerank",
+          "type": "tool_selection"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "What changed recently in the ingest pipeline?",
+      "expected_output": "Explore flow, recent changes EXPLAIN pattern. rank_chunks rerank=codeReview + maxAgeDays=14.",
+      "audit_findings": [6],
+      "assertions": [
+        { "text": "Routes to Explore flow (not PRE-GEN)", "type": "routing" },
+        {
+          "text": "Uses rank_chunks with codeReview rerank",
+          "type": "tool_selection"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I want to understand how the chunker handles Ruby files before I modify its hook system",
+      "expected_output": "PRE-GEN flow. 'before I modify' is pre-generation signal, overrides 'understand'.",
+      "audit_findings": [5, 8],
+      "assertions": [
+        {
+          "text": "Routes to PRE-GEN flow (not Explore flow)",
+          "type": "routing"
+        },
+        {
+          "text": "'before I modify' detected as pre-generation signal",
+          "type": "intent_classification"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Assess code health of the trajectory domain",
+      "expected_output": "Delegates to risk-assessment directly. Explore does not trigger.",
+      "audit_findings": [5],
+      "assertions": [
+        { "text": "Routes to risk-assessment (not explore)", "type": "routing" }
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "There's a bug in the enrichment pipeline — commits are double-counted",
+      "expected_output": "Delegates to bug-hunt. Explore does not trigger.",
+      "audit_findings": [8],
+      "assertions": [
+        { "text": "Routes to bug-hunt (not explore)", "type": "routing" }
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "I'm about to refactor the reranker scoring. Research the area first.",
+      "expected_output": "PRE-GEN flow. Self-contained output, does NOT auto-invoke data-driven-generation.",
+      "audit_findings": [4, 10],
+      "assertions": [
+        { "text": "Routes to PRE-GEN flow", "type": "routing" },
+        {
+          "text": "Output is self-contained (no auto-invoke ddg)",
+          "type": "output_format"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Исследуй модуль explore перед тем как я буду менять стратегии поиска",
+      "expected_output": "PRE-GEN flow. Russian input, 'перед тем как менять' = pre-generation signal.",
+      "audit_findings": [9, 13],
+      "assertions": [
+        { "text": "Routes to PRE-GEN flow", "type": "routing" },
+        {
+          "text": "Translates to English, detects pre-gen signal",
+          "type": "intent_classification"
+        },
+        { "text": "Uses metaOnly=true for DISCOVER", "type": "tool_selection" }
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Research the error handling patterns — I need to add a new error type",
+      "expected_output": "PRE-GEN flow. find_symbol for 1-2 base error classes (limited DEEP TRACE).",
+      "audit_findings": [12],
+      "assertions": [
+        { "text": "Routes to PRE-GEN flow", "type": "routing" },
+        {
+          "text": "DEEP TRACE limited to find_symbol for 1-2 symbols",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT trace call chains or dependency trees",
+          "type": "boundary"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Show me how the pipeline architecture works",
+      "expected_output": "Explore flow, architecture EXPLAIN pattern.",
+      "audit_findings": ["control"],
+      "assertions": [
+        { "text": "Routes to Explore flow (not PRE-GEN)", "type": "routing" }
+      ]
+    },
+    {
+      "id": 11,
+      "prompt": "[Context: data-driven-generation invoked, no prior area context] Generate a new enrichment provider for static analysis signals",
+      "expected_output": "ddg detects missing context → auto-invokes explore → explore PRE-GEN flow → context returned → ddg resumes.",
+      "audit_findings": ["subagent"],
+      "assertions": [
+        { "text": "ddg detects missing area context", "type": "prerequisite" },
+        {
+          "text": "ddg auto-invokes explore (not manual user step)",
+          "type": "delegation"
+        },
+        {
+          "text": "Explore runs PRE-GEN flow, returns context to ddg",
+          "type": "chain"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "[Context: Plan step] Task 3: Research the sync module before implementing delta sync",
+      "expected_output": "PRE-GEN flow. Self-contained output, does NOT auto-invoke ddg (plan controls flow).",
+      "audit_findings": ["subagent"],
+      "assertions": [
+        { "text": "Routes to PRE-GEN flow", "type": "routing" },
+        {
+          "text": "Output is self-contained (plan controls next step)",
+          "type": "output_format"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "How does the reranker work? And what risks should I know before I change the scoring?",
+      "expected_output": "Two-part: Explore flow for understanding + PRE-GEN for risks. Sequential or PRE-GEN subsumes both.",
+      "audit_findings": ["subagent"],
+      "assertions": [
+        {
+          "text": "Both parts addressed (understanding + pre-gen context)",
+          "type": "coverage"
+        },
+        {
+          "text": "'before I change' detected as pre-gen signal",
+          "type": "intent_classification"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "prompt": "[Context: Task subagent, no skill access] Implement retry logic in QdrantManager.upsert",
+      "expected_output": "Subagent cannot use explore skill. Must use MCP tools directly or parent should have provided context.",
+      "audit_findings": ["subagent"],
+      "assertions": [
+        {
+          "text": "Identifies that subagent has no skill access",
+          "type": "boundary"
+        },
+        {
+          "text": "Suggests parent should provide context or inject MCP tools",
+          "type": "workaround"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "prompt": "[Context: Post-brainstorming approval] Go ahead, implement the new trajectory provider",
+      "expected_output": "Explore PRE-GEN triggers before implementation → TDD → data-driven-generation.",
+      "audit_findings": ["subagent"],
+      "assertions": [
+        {
+          "text": "Pre-gen context gathered before implementation",
+          "type": "chain"
+        },
+        {
+          "text": "Explore PRE-GEN → TDD → implementation sequence",
+          "type": "workflow"
+        }
+      ]
+    }
+  ],
+  "results": {
+    "baseline": {
+      "pass": 7,
+      "total": 10,
+      "rate": "70%",
+      "note": "Evals 1-10 only (no skill text)"
+    },
+    "before_fix": {
+      "pass": 6,
+      "total": 10,
+      "rate": "60%",
+      "note": "Original research skill, evals 1-10"
+    },
+    "after_fix": {
+      "pass": 15,
+      "total": 15,
+      "rate": "100%",
+      "note": "Merged explore with PRE-GEN flow, full eval suite"
+    },
+    "integration_tests": {
+      "semantic_search_pregen_discover": "PASS — 5 relevant files, metaOnly=true, score spread 0.13 (discriminative)",
+      "rank_chunks_ownership": "PASS — silo labels correct, dominantAuthorPct=100",
+      "rank_chunks_codeReview": "PASS — recent+churn labels, maxAgeDays=14 filtering works",
+      "hybrid_search_pregen_discover": "PASS — Ruby hooks found, documentation filter added post-test"
+    }
+  }
+}
