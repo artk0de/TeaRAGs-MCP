@@ -181,17 +181,25 @@ export class EnrichmentCoordinator {
   async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
     if (!this.recovery) return;
 
+    // Guard: skip recovery if marker shows all enrichment complete
+    if (await this.isRecoveryComplete(collectionName)) {
+      if (isDebug()) {
+        console.error("[Enrichment] Recovery skipped — marker shows unenrichedChunks=0 for all providers");
+      }
+      return;
+    }
+
     const enrichedAt = new Date().toISOString();
 
     for (const state of this.states.values()) {
       const { provider } = state;
 
-      await this.recovery.recoverFileLevel(collectionName, absolutePath, provider, enrichedAt);
-      await this.recovery.recoverChunkLevel(collectionName, absolutePath, provider, enrichedAt);
+      const fileResult = await this.recovery.recoverFileLevel(collectionName, absolutePath, provider, enrichedAt);
+      const chunkResult = await this.recovery.recoverChunkLevel(collectionName, absolutePath, provider, enrichedAt);
 
-      // Update marker with post-recovery counts
-      const fileCount = await this.recovery.countUnenriched(collectionName, provider.key, "file");
-      const chunkCount = await this.recovery.countUnenriched(collectionName, provider.key, "chunk");
+      // Use remainingUnenriched from recovery results — no extra scroll needed
+      const fileCount = fileResult.remainingUnenriched;
+      const chunkCount = chunkResult.remainingUnenriched;
 
       await this.updateEnrichmentMarker(collectionName, {
         [provider.key]: {
@@ -206,6 +214,29 @@ export class EnrichmentCoordinator {
         },
       });
     }
+  }
+
+  /**
+   * Check if all providers report unenrichedChunks=0 in the enrichment marker.
+   * Returns true only when marker exists AND all levels show 0 unenriched.
+   */
+  private async isRecoveryComplete(collectionName: string): Promise<boolean> {
+    const marker = await this.readExistingMarker(collectionName);
+    if (!marker) return false;
+
+    for (const state of this.states.values()) {
+      const providerMarker = marker[state.provider.key] as Record<string, unknown> | undefined;
+      if (!providerMarker) return false;
+
+      const file = providerMarker.file as Record<string, unknown> | undefined;
+      const chunk = providerMarker.chunk as Record<string, unknown> | undefined;
+
+      if (!file || !chunk) return false;
+      if (typeof file.unenrichedChunks !== "number" || file.unenrichedChunks > 0) return false;
+      if (typeof chunk.unenrichedChunks !== "number" || chunk.unenrichedChunks > 0) return false;
+    }
+
+    return true;
   }
 
   /**

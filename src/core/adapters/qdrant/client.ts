@@ -1141,15 +1141,16 @@ export class QdrantManager {
     collectionName: string,
     filter: Record<string, unknown>,
     limit: number,
+    pageSize?: number,
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     const results: { id: string | number; payload: Record<string, unknown> }[] = [];
-    const pageSize = Math.min(limit, 200);
+    const effectivePageSize = pageSize ? Math.min(pageSize, limit) : Math.min(limit, 200);
     let offset: string | number | undefined = undefined;
 
     do {
       const result = await this.call(async () =>
         this.client.scroll(collectionName, {
-          limit: pageSize,
+          limit: effectivePageSize,
           with_payload: true,
           with_vector: false,
           filter,
