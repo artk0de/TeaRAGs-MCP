@@ -122,25 +122,15 @@ export class IngestFacade {
 
   /** Index a codebase — first index, force re-index, or incremental fallback */
   async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
-    // Model guard before health check — guard reads Qdrant (no embed),
-    // health check calls embed() which fails with wrong model name
     if (!options?.forceReindex) {
       const absolutePath = await validatePath(path);
       const collectionName = resolveCollectionName(absolutePath);
       const exists = await this.qdrant.collectionExists(collectionName);
       if (exists) {
+        // Model guard before health check — guard reads Qdrant (no embed),
+        // health check calls embed() which fails with wrong model name
         await this.modelGuard?.ensureMatch(collectionName);
-      }
-    }
-
-    await this.checkEmbeddingHealth();
-
-    // If collection exists and no forceReindex → incremental reindex
-    if (!options?.forceReindex) {
-      const absolutePath = await validatePath(path);
-      const collectionName = resolveCollectionName(absolutePath);
-      const exists = await this.qdrant.collectionExists(collectionName);
-      if (exists) {
+        await this.checkEmbeddingHealth();
         // Recovery: local file guard (0ms) + fire-and-forget (background)
         if (!isRecoveryComplete(this.snapshotDir, collectionName)) {
           void this.enrichment
@@ -184,6 +174,7 @@ export class IngestFacade {
       }
     }
 
+    await this.checkEmbeddingHealth();
     const result = await this.indexing.indexCodebase(path, options, progressCallback);
     await this.refreshStats(path);
     return result;
