@@ -1300,4 +1300,112 @@ describe("OllamaEmbeddings", () => {
       expect(embeddings.getBaseUrl()).toBe("http://localhost:11434");
     });
   });
+
+  describe("fallback observability", () => {
+    const PRIMARY = "http://192.168.1.71:11434";
+    const FALLBACK = "http://localhost:11434";
+    const mockEmbedding = Array(768).fill(0.5);
+
+    it("should call onFallbackSwitch when health probe fails and switches to fallback", async () => {
+      const onSwitch = vi.fn();
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        PRIMARY,
+        true, // legacyApi
+        999,
+        FALLBACK,
+      );
+      provider.onFallbackSwitch = onSwitch;
+
+      // Primary health probe fails (GET /)
+      mockFetch
+        .mockRejectedValueOnce(new Error("ECONNREFUSED")) // health probe
+        .mockResolvedValueOnce({
+          // fallback embed succeeds
+          ok: true,
+          json: async () => ({ embedding: mockEmbedding }),
+        });
+
+      await provider.embed("test");
+
+      expect(onSwitch).toHaveBeenCalledOnce();
+      expect(onSwitch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          direction: "to-fallback",
+          primaryUrl: PRIMARY,
+          fallbackUrl: FALLBACK,
+        }),
+      );
+    });
+
+    it("should call onFallbackSwitch when primary recovers", async () => {
+      vi.useFakeTimers();
+      try {
+        const onSwitch = vi.fn();
+        const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+        provider.onFallbackSwitch = onSwitch;
+
+        // Step 1: force fallback (health probe fails)
+        mockFetch
+          .mockRejectedValueOnce(new Error("ECONNREFUSED")) // health probe
+          .mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ embedding: mockEmbedding }),
+          });
+        await provider.embed("test");
+        onSwitch.mockClear();
+
+        // Step 2: primary probe succeeds → probePrimary switches back
+        mockFetch.mockResolvedValueOnce({ ok: true }); // probe
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(onSwitch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            direction: "to-primary",
+            primaryUrl: PRIMARY,
+            fallbackUrl: FALLBACK,
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("should include reason in fallback switch event", async () => {
+      const onSwitch = vi.fn();
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      provider.onFallbackSwitch = onSwitch;
+
+      mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED")).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ embedding: mockEmbedding }),
+      });
+
+      await provider.embed("test");
+
+      expect(onSwitch.mock.calls[0][0]).toHaveProperty("reason");
+      expect(typeof onSwitch.mock.calls[0][0].reason).toBe("string");
+    });
+
+    it("should not call onFallbackSwitch when no fallback configured", async () => {
+      const onSwitch = vi.fn();
+      const provider = new OllamaEmbeddings(
+        "nomic-embed-text",
+        undefined,
+        undefined,
+        PRIMARY,
+        true,
+        999,
+        undefined, // no fallback
+      );
+      provider.onFallbackSwitch = onSwitch;
+
+      mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      await expect(provider.embed("test")).rejects.toThrow();
+      expect(onSwitch).not.toHaveBeenCalled();
+    });
+  });
 });

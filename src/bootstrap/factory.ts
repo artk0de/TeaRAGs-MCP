@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
+import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
 import { resolveQdrantUrl } from "../core/adapters/qdrant/embedded/daemon.js";
 import {
@@ -16,7 +17,7 @@ import {
   SchemaBuilder,
   type App,
 } from "../core/api/index.js";
-import { initDebugLogger } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
+import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
@@ -73,6 +74,18 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     daemonSocket: config.paths.daemonSocket,
     daemonPid: config.paths.daemonPid,
   });
+
+  // Wire Ollama fallback observability into pipeline debug log
+  if (embeddings instanceof OllamaEmbeddings) {
+    embeddings.onFallbackSwitch = (event) => {
+      const level = event.direction === "to-fallback" ? 1 : 0;
+      pipelineLog.fallback(
+        { component: "Ollama" },
+        level,
+        `${event.direction}: ${event.primaryUrl} → ${event.fallbackUrl} (${event.reason})`,
+      );
+    };
+  }
 
   // Eagerly init ONNX to get calibrated batch size before pipeline config
   if ("initialize" in embeddings && typeof embeddings.initialize === "function") {

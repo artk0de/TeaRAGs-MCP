@@ -65,6 +65,14 @@ interface OllamaEmbedBatchResponse {
 /** How often to probe primary URL when operating on fallback */
 const PRIMARY_PROBE_INTERVAL_MS = 30_000;
 
+/** Event emitted when Ollama switches between primary and fallback URLs. */
+export interface FallbackSwitchEvent {
+  direction: "to-fallback" | "to-primary";
+  primaryUrl: string;
+  fallbackUrl: string;
+  reason: string;
+}
+
 export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly model: string;
   private readonly dimensions: number;
@@ -79,6 +87,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private probeTimer?: ReturnType<typeof setInterval>;
   private primaryAlive = false;
   private primaryAliveAt = 0;
+
+  /** Optional callback for fallback switch observability. Set by pipeline wiring. */
+  onFallbackSwitch?: (event: FallbackSwitchEvent) => void;
 
   constructor(
     model = "unclemusclez/jina-embeddings-v2-base-code:latest",
@@ -110,6 +121,17 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       maxConcurrent: 10,
       minTime: Math.floor((60 * 1000) / maxRequestsPerMinute),
     });
+  }
+
+  private emitFallbackSwitch(direction: FallbackSwitchEvent["direction"], reason: string): void {
+    if (this.onFallbackSwitch && this.fallbackBaseUrl) {
+      this.onFallbackSwitch({
+        direction,
+        primaryUrl: this.baseUrl,
+        fallbackUrl: this.fallbackBaseUrl,
+        reason,
+      });
+    }
   }
 
   private isOllamaError(e: unknown): e is OllamaError {
@@ -182,6 +204,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         if (isDebug()) {
           console.error(`[Ollama] Primary ${this.baseUrl} recovered, switching back from fallback`);
         }
+        this.emitFallbackSwitch("to-primary", "primary recovered (health probe OK)");
       }
     } catch {
       // Still down — probe continues
@@ -213,6 +236,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         if (isDebug()) {
           console.error(`[Ollama] Primary ${this.baseUrl} health probe failed, using fallback ${this.fallbackBaseUrl}`);
         }
+        this.emitFallbackSwitch("to-fallback", "primary health probe failed");
         try {
           return await fallbackFn();
         } catch (fallbackError) {
@@ -250,6 +274,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
           `[Ollama] Primary ${this.baseUrl} failed, switching to fallback ${this.fallbackBaseUrl}. Probing primary every ${PRIMARY_PROBE_INTERVAL_MS / 1000}s.`,
         );
       }
+      this.emitFallbackSwitch("to-fallback", "primary embed failed");
 
       try {
         return await fallbackFn();
