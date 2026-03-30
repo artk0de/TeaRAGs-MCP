@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "tea-rags",
-      "source": "./tea-rags",
+      "source": "./.claude-plugin/tea-rags",
       "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
       "keywords": [
         "code-generation",
@@ -20,7 +20,7 @@
     },
     {
       "name": "tea-rags-setup",
-      "source": "./tea-rags-setup",
+      "source": "./.claude-plugin/tea-rags-setup",
       "description": "Automated TeaRAGs installation wizard",
       "keywords": ["setup", "installation", "wizard"]
     }
