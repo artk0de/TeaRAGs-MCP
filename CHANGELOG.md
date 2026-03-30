@@ -1,3 +1,11 @@
+## [1.17.3](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.2...v1.17.3) (2026-03-30)
+
+### Bug Fixes
+
+- **dx:** use relative source paths in marketplace.json, fix ENAMETOOLONG on
+  plugin update
+  ([eac2343](https://github.com/artk0de/TeaRAGs-MCP/commit/eac2343594b1cbbd3dc8461db16c8d2295c0d644))
+
 ## [1.17.2](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.1...v1.17.2) (2026-03-30)
 
 ### Improvements
