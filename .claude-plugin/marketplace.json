@@ -14,7 +14,6 @@
         "ref": "main"
       },
       "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-      "version": "0.14.1",
       "keywords": [
         "code-generation",
         "git-signals",
@@ -32,7 +31,6 @@
         "ref": "main"
       },
       "description": "Automated TeaRAGs installation wizard",
-      "version": "0.1.0",
       "keywords": ["setup", "installation", "wizard"]
     }
   ]
