@@ -1,3 +1,18 @@
+## [1.17.2](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.1...v1.17.2) (2026-03-30)
+
+### Improvements
+
+- **plugin:** merge research into explore, add baseline-first eval to
+  optimize-skill
+  ([ffc6c42](https://github.com/artk0de/TeaRAGs-MCP/commit/ffc6c42d45fb1c15ca8a1d1fe72aba982adedc62))
+- **plugin:** optimize risk-assessment skill, decouple from DDG chain
+  ([3e8c8fe](https://github.com/artk0de/TeaRAGs-MCP/commit/3e8c8fea6a32bff4e2bd689ad777631bb5068fa6))
+
+### Documentation
+
+- **architecture:** add pattern vocabulary design spec
+  ([2e47001](https://github.com/artk0de/TeaRAGs-MCP/commit/2e470014affe245d42e6503deab32cc3ee4af3f5))
+
 ## [1.17.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.0...v1.17.1) (2026-03-29)
 
 ### Improvements
