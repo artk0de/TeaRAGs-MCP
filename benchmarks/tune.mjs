@@ -52,7 +52,7 @@ import {
 import { calibrateEmbeddings } from "./lib/embedding-calibration.mjs";
 import { printTimeEstimates } from "./lib/estimator.mjs";
 import { collectSourceFiles, preloadFiles } from "./lib/files.mjs";
-import { printSummary, printUsage, writeEnvFile } from "./lib/output.mjs";
+import { detectQdrantMode, printSummary, printUsage, writeEnvFile } from "./lib/output.mjs";
 import { checkProviderConnectivity, createEmbeddingProvider } from "./lib/provider.mjs";
 import { smartSteppingSearch } from "./lib/smart-stepping.mjs";
 import { StoppingDecision } from "./lib/stopping.mjs";
@@ -119,8 +119,9 @@ async function main() {
 
   // Print configuration (dimension will be shown after initialization)
   const embeddingProviderType = process.env.EMBEDDING_PROVIDER || "ollama";
+  const qdrantMode = detectQdrantMode();
   console.log(`${c.bold}Configuration:${c.reset}`);
-  console.log(`  ${c.dim}Qdrant:${c.reset}        ${config.QDRANT_URL}`);
+  console.log(`  ${c.dim}Qdrant:${c.reset}        ${config.QDRANT_URL} (${qdrantMode})`);
   console.log(`  ${c.dim}Provider:${c.reset}      ${embeddingProviderType}`);
   if (embeddingProviderType === "ollama") {
     console.log(`  ${c.dim}Ollama URL:${c.reset}    ${config.EMBEDDING_BASE_URL}`);
@@ -722,10 +723,14 @@ async function main() {
     storageRate,
     deletionRate: bestDel?.rate || 0,
   };
-  const envPath = writeEnvFile(PROJECT_ROOT, optimal, metrics, totalTime);
+  const { envPath, historyPath } = writeEnvFile(PROJECT_ROOT, optimal, metrics, totalTime, {
+    qdrantMode,
+    projectPath: PROJECT_PATH,
+  });
 
-  console.log(`${c.bold}Output file:${c.reset}`);
+  console.log(`${c.bold}Output files:${c.reset}`);
   console.log(`  ${c.dim}${envPath}${c.reset}`);
+  console.log(`  ${c.dim}${historyPath}${c.reset}`);
   console.log();
 
   printUsage(optimal);
