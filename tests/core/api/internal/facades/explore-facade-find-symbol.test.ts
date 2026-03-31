@@ -201,4 +201,33 @@ describe("ExploreFacade.findSymbol", () => {
 
     expect(result.results).toEqual([]);
   });
+
+  it("throws CollectionNotFoundError when collection does not exist", async () => {
+    const facadeWithMissing = new ExploreFacade({
+      qdrant: {
+        scrollFiltered: mockScrollFiltered,
+        collectionExists: vi.fn().mockResolvedValue(false),
+      } as any,
+      embeddings: { embed: vi.fn().mockResolvedValue({ embedding: [] }) } as any,
+      reranker: {
+        rerank: vi.fn((r: any[]) => r),
+        hasCollectionStats: false,
+        setCollectionStats: vi.fn(),
+        getDescriptors: vi.fn().mockReturnValue([]),
+        getPreset: vi.fn(),
+        getPresetNames: vi.fn().mockReturnValue([]),
+        getFullPreset: vi.fn().mockReturnValue(undefined),
+      } as any,
+      registry: {
+        buildMergedFilter: vi.fn().mockReturnValue(undefined),
+        getAllFilters: vi.fn().mockReturnValue([]),
+        getAllPayloadSignalDescriptors: vi.fn().mockReturnValue([]),
+        getEssentialPayloadKeys: vi.fn().mockReturnValue([]),
+      } as any,
+    });
+
+    await expect(facadeWithMissing.findSymbol({ symbol: "Anything", collection: "missing_col" })).rejects.toThrow(
+      /not found/,
+    );
+  });
 });
