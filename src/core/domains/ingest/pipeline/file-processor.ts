@@ -8,6 +8,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
+import { isTestPath } from "../../../infra/scope-detection.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../../types.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
 import type { ChunkerPool } from "./chunker/infra/pool.js";
@@ -69,13 +70,14 @@ export async function processFiles(
     async (filePath) => {
       try {
         const code = await fs.readFile(filePath, "utf-8");
+        const language = detectLanguage(filePath);
+        const relativePath = filePath.startsWith(basePath) ? filePath.slice(basePath.length + 1) : filePath;
 
-        if (containsSecrets(code)) {
+        if (!isTestPath(relativePath, language) && containsSecrets(code)) {
           result.errors.push(`Skipped ${filePath}: potential secrets detected`);
           return;
         }
 
-        const language = detectLanguage(filePath);
         const { imports } = extractImportsExports(code, language);
         const parseStart = Date.now();
         const { chunks } = await chunkerPool.processFile(filePath, code, language);

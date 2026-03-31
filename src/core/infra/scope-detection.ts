@@ -28,6 +28,12 @@ export function getDefaultTestPaths(language: string): string[] {
   return DEFAULT_TEST_PATHS[language] ?? FALLBACK_TEST_PATHS;
 }
 
+/** Check if a relative path matches test directory patterns for the given language. */
+export function isTestPath(relativePath: string, language: string): boolean {
+  const patterns = getDefaultTestPaths(language);
+  return patterns.some((pattern) => picomatch.isMatch(relativePath, pattern));
+}
+
 export function detectScope(
   chunkType: string | undefined,
   relativePath: string,
