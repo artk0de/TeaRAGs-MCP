@@ -17,7 +17,6 @@ import Bottleneck from "bottleneck";
 import { isDebug } from "../../infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { OllamaModelMissingError, OllamaUnavailableError } from "./ollama/errors.js";
-import { OperationLock } from "./ollama/operation-lock.js";
 import { withRateLimitRetry } from "./retry.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
@@ -26,8 +25,8 @@ import { getModelDimensions } from "./utils/model-dimensions.js";
 const SINGLE_EMBED_TIMEOUT_MS = 30_000;
 /** Timeout for lightweight health probe (GET /) */
 const HEALTH_PROBE_TIMEOUT_MS = 1000;
-/** How long to cache a successful health probe result */
-const HEALTH_TTL_MS = 60_000;
+/** Minimum time after primary failure before allowing recovery */
+const RECOVERY_COOLDOWN_MS = 60_000;
 /**
  * Per-item timeout budget for batch requests.
  * Total timeout = BATCH_PER_ITEM_TIMEOUT_MS × batchSize + BATCH_BASE_TIMEOUT_MS.
@@ -93,8 +92,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private probeTimer?: ReturnType<typeof setInterval>;
   private primaryAlive = false;
   private primaryAliveAt = 0;
-  private readonly lock: OperationLock | null;
-  private readonly staleTimeoutMs: number;
+  private primaryFailedAt = 0;
 
   /** Optional callback for fallback switch observability. Set by pipeline wiring. */
   onFallbackSwitch?: (event: FallbackSwitchEvent) => void;
@@ -130,8 +128,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       minTime: Math.floor((60 * 1000) / maxRequestsPerMinute),
     });
 
-    this.lock = fallbackBaseUrl ? new OperationLock() : null;
-    this.staleTimeoutMs = 300_000; // 5 min safety net
+    if (fallbackBaseUrl) {
+      void this.checkInitialHealth();
+    }
   }
 
   private emitFallbackSwitch(direction: FallbackSwitchEvent["direction"], reason: string): void {
@@ -179,86 +178,49 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     }
   }
 
-  /**
-   * Lightweight pre-flight check: GET / with short timeout.
-   * Cached for HEALTH_TTL_MS to avoid overhead on warm calls.
-   * Only called when fallback is configured — separates "server alive?"
-   * (fast, ~15ms) from "embed works?" (slow on cold model, ~2s).
-   */
-  private async checkPrimaryHealth(): Promise<boolean> {
-    if (this.primaryAlive && Date.now() - this.primaryAliveAt < HEALTH_TTL_MS) {
-      return true;
-    }
+  private async checkInitialHealth(): Promise<void> {
     try {
       const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
-      if (response.ok) {
+      if (!response.ok) {
+        this.switchToFallback("initial health check non-ok");
+      } else {
         this.primaryAlive = true;
         this.primaryAliveAt = Date.now();
-        return true;
       }
-      this.primaryAlive = false;
-      return false;
     } catch {
-      this.primaryAlive = false;
-      return false;
+      this.switchToFallback("initial health check failed");
     }
+  }
+
+  private switchToFallback(reason: string): void {
+    this.usingFallback = true;
+    this.primaryAlive = false;
+    this.startPrimaryProbe();
+    if (isDebug()) {
+      console.error(`[Ollama] ${reason}, using fallback ${this.fallbackBaseUrl}`);
+    }
+    this.emitFallbackSwitch("to-fallback", reason);
   }
 
   private async probePrimary(): Promise<void> {
     try {
       const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
       if (response.ok) {
-        if (this.lock?.isActive) {
-          // Defer recovery — apply when last embed releases the lock
-          this.lock.deferRecovery();
-          if (isDebug()) {
-            console.error(`[Ollama] Primary ${this.baseUrl} recovered, deferring switch until lock releases`);
-          }
-        } else {
-          this.applyRecovery();
+        if (Date.now() - this.primaryFailedAt < RECOVERY_COOLDOWN_MS) {
+          return;
         }
+        this.usingFallback = false;
+        this.primaryAlive = true;
+        this.primaryAliveAt = Date.now();
+        this.stopPrimaryProbe();
+        if (isDebug()) {
+          console.error(`[Ollama] Primary ${this.baseUrl} recovered, switching back from fallback`);
+        }
+        this.emitFallbackSwitch("to-primary", "primary recovered (health probe OK)");
       }
     } catch {
       // Still down — probe continues
     }
-  }
-
-  /** Switch back to primary after probe detects recovery. */
-  private applyRecovery(): void {
-    this.usingFallback = false;
-    this.primaryAlive = true;
-    this.primaryAliveAt = Date.now();
-    this.stopPrimaryProbe();
-    if (isDebug()) {
-      console.error(`[Ollama] Primary ${this.baseUrl} recovered, switching back from fallback`);
-    }
-    this.emitFallbackSwitch("to-primary", "primary recovered (health probe OK)");
-  }
-
-  /**
-   * Resolve the active URL for the current operation.
-   * When usingFallback, returns fallback directly.
-   * Otherwise, checks primary health — on failure switches to fallback.
-   */
-  private async resolveUrl(): Promise<string> {
-    if (this.usingFallback && this.fallbackBaseUrl) {
-      return this.fallbackBaseUrl;
-    }
-
-    if (this.fallbackBaseUrl) {
-      const healthy = await this.checkPrimaryHealth();
-      if (!healthy) {
-        this.usingFallback = true;
-        this.startPrimaryProbe();
-        if (isDebug()) {
-          console.error(`[Ollama] Primary ${this.baseUrl} health probe failed, using fallback ${this.fallbackBaseUrl}`);
-        }
-        this.emitFallbackSwitch("to-fallback", "primary health probe failed");
-        return this.fallbackBaseUrl;
-      }
-    }
-
-    return this.baseUrl;
   }
 
   /** Return current active URL without health checks (no-fallback path). */
@@ -267,8 +229,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   private async retryWithBackoff<T>(fn: (url: string) => Promise<T>): Promise<T> {
+    const url = this.resolveActiveUrl();
     try {
-      return await withRateLimitRetry(async () => fn(this.lock?.url ?? this.resolveActiveUrl()), {
+      return await withRateLimitRetry(async () => fn(url), {
         maxAttempts: this.retryAttempts,
         baseDelayMs: this.retryDelayMs,
         isRetryable: (error) => this.isRateLimit(error),
@@ -276,23 +239,17 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     } catch (error) {
       if (error instanceof OllamaModelMissingError) throw error;
 
-      const url = this.lock?.url ?? this.resolveActiveUrl();
-
-      // Invalidate health cache — embed failed despite probe
       this.primaryAlive = false;
+
+      if (url === this.baseUrl) {
+        this.primaryFailedAt = Date.now();
+        if (!this.usingFallback) {
+          this.switchToFallback("primary embed failed");
+        }
+      }
 
       if (!this.fallbackBaseUrl) {
         throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined);
-      }
-
-      // Mark for next acquire — no same-call fallback
-      if (!this.usingFallback) {
-        this.usingFallback = true;
-        this.startPrimaryProbe();
-        if (isDebug()) {
-          console.error(`[Ollama] Embed failed at ${url}, next operation will use fallback ${this.fallbackBaseUrl}`);
-        }
-        this.emitFallbackSwitch("to-fallback", "primary embed failed");
       }
 
       if (url === this.fallbackBaseUrl) {
@@ -414,23 +371,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
-    return this.limiter.schedule(async () => {
-      if (this.lock) {
-        await this.lock.acquire(async () => this.resolveUrl(), this.staleTimeoutMs);
-      }
-      try {
-        return await this.retryWithBackoff(async (activeUrl) => this.embedSingle(text, activeUrl));
-      } finally {
-        if (this.lock) {
-          try {
-            const { recovered } = this.lock.release();
-            if (recovered) this.applyRecovery();
-          } catch {
-            // never throw from finally — would mask caller's error
-          }
-        }
-      }
-    });
+    return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => this.embedSingle(text, url)));
   }
 
   /**
@@ -475,23 +416,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         }));
       };
 
-      return this.limiter.schedule(async () => {
-        if (this.lock) {
-          await this.lock.acquire(async () => this.resolveUrl(), this.staleTimeoutMs);
-        }
-        try {
-          return await this.retryWithBackoff(async (activeUrl) => batchEmbed(activeUrl));
-        } finally {
-          if (this.lock) {
-            try {
-              const { recovered } = this.lock.release();
-              if (recovered) this.applyRecovery();
-            } catch {
-              // never throw from finally — would mask caller's error
-            }
-          }
-        }
-      });
+      return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => batchEmbed(url)));
     }
 
     // Fallback: Legacy parallel individual requests (old Ollama without /api/embed)
