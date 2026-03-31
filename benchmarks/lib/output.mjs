@@ -4,8 +4,9 @@
  * Functions for generating output files and displaying results.
  */
 
-import { writeFileSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs";
+import { homedir } from "os";
+import { basename, join } from "path";
 
 import { c } from "./colors.mjs";
 import { config, SAMPLE_SIZE } from "./config.mjs";
@@ -14,12 +15,13 @@ import { getTimeEstimatesData } from "./estimator.mjs";
 /**
  * Generate environment file content
  */
-export function generateEnvContent(optimal, metrics, totalTime) {
+export function generateEnvContent(optimal, metrics, totalTime, qdrantMode) {
   const estimates = getTimeEstimatesData(metrics.embeddingRate, metrics.storageRate);
 
   return `# Tea Rags MCP - Tuned Environment Variables
 # Generated: ${new Date().toISOString()}
 # Hardware: ${config.EMBEDDING_BASE_URL} (${config.EMBEDDING_MODEL})
+# Qdrant: ${config.QDRANT_URL} (${qdrantMode})
 # Duration: ${totalTime}s
 # Sample size: ${SAMPLE_SIZE} chunks
 
@@ -64,13 +66,69 @@ function formatLoc(loc) {
 }
 
 /**
- * Write environment file
+ * Detect Qdrant mode from URL.
+ * Embedded daemon uses 127.0.0.1 with a random high port (!= 6333).
  */
-export function writeEnvFile(projectRoot, optimal, metrics, totalTime) {
-  const envContent = generateEnvContent(optimal, metrics, totalTime);
+export function detectQdrantMode() {
+  const url = config.QDRANT_URL;
+  try {
+    const parsed = new URL(url);
+    const port = parseInt(parsed.port || "6333", 10);
+    const isLocal = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+    if (isLocal && port !== 6333) {
+      return "embedded";
+    }
+    return "remote";
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
+ * Derive project name from --path argument or cwd.
+ */
+function deriveProjectName(projectPath) {
+  return basename(projectPath || process.cwd())
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-");
+}
+
+/**
+ * Find next run number for a project in ~/.tea-rags/benchmarks/.
+ */
+function nextRunNumber(benchmarkDir, projectName) {
+  if (!existsSync(benchmarkDir)) return 1;
+  const files = readdirSync(benchmarkDir);
+  const pattern = new RegExp(`^${projectName}-run(\\d+)\\.env$`);
+  let max = 0;
+  for (const file of files) {
+    const m = file.match(pattern);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return max + 1;
+}
+
+/**
+ * Write environment file to project root and ~/.tea-rags/benchmarks/.
+ */
+export function writeEnvFile(projectRoot, optimal, metrics, totalTime, { qdrantMode, projectPath } = {}) {
+  const mode = qdrantMode || detectQdrantMode();
+  const envContent = generateEnvContent(optimal, metrics, totalTime, mode);
+
+  // Write to project root (existing behavior)
   const envPath = join(projectRoot, "tuned_environment_variables.env");
   writeFileSync(envPath, envContent);
-  return envPath;
+
+  // Write to ~/.tea-rags/benchmarks/<project>-run<N>.env
+  const benchmarkDir = join(homedir(), ".tea-rags", "benchmarks");
+  mkdirSync(benchmarkDir, { recursive: true });
+
+  const projectName = deriveProjectName(projectPath);
+  const runNum = nextRunNumber(benchmarkDir, projectName);
+  const historyPath = join(benchmarkDir, `${projectName}-run${runNum}.env`);
+  writeFileSync(historyPath, envContent);
+
+  return { envPath, historyPath };
 }
 
 /**
