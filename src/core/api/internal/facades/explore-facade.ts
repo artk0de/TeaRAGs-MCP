@@ -484,7 +484,6 @@ export class ExploreFacade {
     ctx: ExploreContext,
     path?: string,
   ): Promise<ExploreResponse> {
-    await this.validateCollectionExists(ctx.collectionName, path);
     await this.ensureStats(ctx.collectionName);
     const results = await strategy.execute(ctx);
     const driftWarning = await this.checkDrift(path, ctx.collectionName);
@@ -511,6 +510,7 @@ export class ExploreFacade {
   ): Promise<{ collectionName: string; path?: string }> {
     if (!collection && !path) throw new CollectionNotProvidedError();
     const resolved = resolveCollection(collection, path);
+    await this.validateCollectionExists(resolved.collectionName);
     await this.modelGuard?.ensureMatch(resolved.collectionName);
     return resolved;
   }
