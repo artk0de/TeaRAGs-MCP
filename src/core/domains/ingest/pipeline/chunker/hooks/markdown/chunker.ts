@@ -352,6 +352,9 @@ export class MarkdownChunker {
           accumStartLine = heading.startLine;
           accumBreadcrumb = breadcrumb;
           accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
+        } else {
+          // Add grouped h3 heading to path
+          accumHeadingPath.push({ depth: heading.depth, text: heading.text });
         }
       } else {
         // Doesn't fit — flush current, start new with this h3
