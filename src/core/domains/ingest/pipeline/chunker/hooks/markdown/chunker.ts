@@ -63,64 +63,9 @@ export class MarkdownChunker {
     // ALL code block line ranges excluded from section prose (regardless of size)
     const codeBlockLineRanges = codeBlocks.map((b) => ({ startLine: b.startLine, endLine: b.endLine }));
 
-    // Create section chunks (prose only — code blocks excluded)
-    for (let i = 0; i < sectionHeadings.length; i++) {
-      const heading = sectionHeadings[i];
-      const sectionEndLine = i + 1 < sectionHeadings.length ? sectionHeadings[i + 1].startLine - 1 : lines.length;
-
-      // Extract section lines, excluding code block ranges
-      const sectionLines: string[] = [];
-      for (let line = heading.startLine - 1; line < sectionEndLine; line++) {
-        const lineNum = line + 1; // 1-based
-        const inCodeBlock = codeBlockLineRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine);
-        if (!inCodeBlock) {
-          sectionLines.push(lines[line]);
-        }
-      }
-      const sectionContent = sectionLines.join("\n").trim();
-
-      if (sectionContent.length < MIN_SECTION_SIZE) continue;
-
-      // Breadcrumb: "# Title > ## Section" prefix for h2/h3 sections
-      const breadcrumb = this.buildBreadcrumb(headings, heading);
-
-      // Oversized section -> fallback, each sub-chunk gets breadcrumb
-      if (sectionContent.length > this.config.maxChunkSize) {
-        const subChunks = await this.fallbackChunker.chunk(sectionContent, filePath, language);
-        for (const subChunk of subChunks) {
-          chunks.push({
-            ...subChunk,
-            content: breadcrumb + subChunk.content,
-            startLine: heading.startLine + subChunk.startLine - 1,
-            endLine: heading.startLine + subChunk.endLine - 1,
-            metadata: {
-              ...subChunk.metadata,
-              chunkIndex: chunks.length,
-              name: heading.text,
-              parentName: heading.text,
-              parentType: `h${heading.depth}`,
-              isDocumentation: true,
-            },
-          });
-        }
-        continue;
-      }
-
-      chunks.push({
-        content: breadcrumb + sectionContent,
-        startLine: heading.startLine,
-        endLine: sectionEndLine,
-        metadata: {
-          filePath,
-          language,
-          chunkIndex: chunks.length,
-          chunkType: "block",
-          name: heading.text,
-          symbolId: heading.text,
-          isDocumentation: true,
-        },
-      });
-    }
+    // Create section chunks: group consecutive h3 sections under parent h2,
+    // splitting at h3 boundaries when accumulated size exceeds maxChunkSize.
+    await this.buildSectionChunks(chunks, sectionHeadings, headings, lines, codeBlockLineRanges, filePath, language);
 
     // Create code block chunks with parentName
     for (const block of codeBlocks) {
@@ -295,6 +240,124 @@ export class MarkdownChunker {
     // Heuristic for unlabeled Mermaid blocks
     if (!block.lang && MERMAID_KEYWORDS.test(block.value)) return true;
     return false;
+  }
+
+  /**
+   * Build section chunks by grouping consecutive headings.
+   * Small h3 sections are accumulated into parent h2 block up to maxChunkSize.
+   * When accumulated content exceeds the limit, a new chunk starts at the h3 boundary.
+   */
+  private async buildSectionChunks(
+    chunks: CodeChunk[],
+    sectionHeadings: HeadingInfo[],
+    allHeadings: HeadingInfo[],
+    lines: string[],
+    codeBlockLineRanges: { startLine: number; endLine: number }[],
+    filePath: string,
+    language: string,
+  ): Promise<void> {
+    let accumContent = "";
+    let accumStartLine = 0;
+    let accumEndLine = 0;
+    let accumName = "";
+    let accumBreadcrumb = "";
+
+    const flushAccum = async (): Promise<void> => {
+      const content = accumContent.trim();
+      if (content.length < MIN_SECTION_SIZE) return;
+
+      if (content.length > this.config.maxChunkSize) {
+        // Oversized → character fallback, each sub-chunk gets breadcrumb
+        const subChunks = await this.fallbackChunker.chunk(content, filePath, language);
+        for (const subChunk of subChunks) {
+          chunks.push({
+            ...subChunk,
+            content: accumBreadcrumb + subChunk.content,
+            startLine: accumStartLine + subChunk.startLine - 1,
+            endLine: accumStartLine + subChunk.endLine - 1,
+            metadata: {
+              ...subChunk.metadata,
+              chunkIndex: chunks.length,
+              name: accumName,
+              parentName: accumName,
+              isDocumentation: true,
+            },
+          });
+        }
+      } else {
+        chunks.push({
+          content,
+          startLine: accumStartLine,
+          endLine: accumEndLine,
+          metadata: {
+            filePath,
+            language,
+            chunkIndex: chunks.length,
+            chunkType: "block",
+            name: accumName,
+            symbolId: accumName,
+            isDocumentation: true,
+          },
+        });
+      }
+    };
+
+    for (let i = 0; i < sectionHeadings.length; i++) {
+      const heading = sectionHeadings[i];
+      const sectionEndLine = i + 1 < sectionHeadings.length ? sectionHeadings[i + 1].startLine - 1 : lines.length;
+
+      // Extract section lines, excluding code block ranges
+      const sectionLines: string[] = [];
+      for (let line = heading.startLine - 1; line < sectionEndLine; line++) {
+        const lineNum = line + 1;
+        const inCodeBlock = codeBlockLineRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine);
+        if (!inCodeBlock) {
+          sectionLines.push(lines[line]);
+        }
+      }
+      const sectionContent = sectionLines.join("\n").trim();
+      if (sectionContent.length < MIN_SECTION_SIZE) continue;
+
+      const breadcrumb = this.buildBreadcrumb(allHeadings, heading);
+      const contentWithBreadcrumb = breadcrumb + sectionContent;
+
+      // h1/h2 always starts a new chunk
+      if (heading.depth <= 2) {
+        await flushAccum();
+        accumContent = contentWithBreadcrumb;
+        accumStartLine = heading.startLine;
+        accumEndLine = sectionEndLine;
+        accumName = heading.text;
+        accumBreadcrumb = breadcrumb;
+        continue;
+      }
+
+      // h3: try to append to current accumulator
+      const separator = accumContent ? "\n\n" : "";
+      const merged = accumContent + separator + contentWithBreadcrumb;
+
+      if (merged.length <= this.config.maxChunkSize) {
+        // Fits — accumulate
+        accumContent = merged;
+        accumEndLine = sectionEndLine;
+        if (!accumName) {
+          accumName = heading.text;
+          accumStartLine = heading.startLine;
+          accumBreadcrumb = breadcrumb;
+        }
+      } else {
+        // Doesn't fit — flush current, start new with this h3
+        await flushAccum();
+        accumContent = contentWithBreadcrumb;
+        accumStartLine = heading.startLine;
+        accumEndLine = sectionEndLine;
+        accumName = heading.text;
+        accumBreadcrumb = breadcrumb;
+      }
+    }
+
+    // Flush remaining
+    await flushAccum();
   }
 
   /** Build breadcrumb from ancestor headings: "# Title > ## Section > ### Sub" */

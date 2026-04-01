@@ -1715,7 +1715,7 @@ describe("signalLevel: file-level preset suppresses chunk overlay", () => {
         },
       },
     ];
-    const reranked = reranker.rerank(results, "hotspots", "semantic_search", "file");
+    const reranked = reranker.rerank(results, "hotspots", "semantic_search", { signalLevel: "file" });
     expect(reranked[0].rankingOverlay).toBeDefined();
     expect(reranked[0].rankingOverlay!.chunk).toBeUndefined();
   });
