@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import { stripInternalFields } from "../../../../../src/core/api/public/dto/sanitize.js";
 
 describe("stripInternalFields", () => {
-  it("removes headingPath from payload", () => {
+  it("preserves headingPath in payload (visible for agent navigation)", () => {
     const payload = {
       relativePath: "test.md",
       headingPath: [{ depth: 1, text: "Title" }],
       content: "some content",
     };
     const result = stripInternalFields(payload);
-    expect(result).not.toHaveProperty("headingPath");
+    expect(result.headingPath).toEqual([{ depth: 1, text: "Title" }]);
     expect(result.relativePath).toBe("test.md");
     expect(result.content).toBe("some content");
   });
@@ -24,10 +24,10 @@ describe("stripInternalFields", () => {
   it("does not mutate original payload", () => {
     const payload = {
       relativePath: "test.md",
-      headingPath: [{ depth: 1, text: "Title" }],
+      content: "test",
     };
-    stripInternalFields(payload);
-    expect(payload).toHaveProperty("headingPath");
+    const result = stripInternalFields(payload);
+    expect(result).toEqual(payload);
   });
 
   it("does NOT strip navigation field", () => {
@@ -44,6 +44,6 @@ describe("stripInternalFields", () => {
       prevSymbolId: "doc:abc123",
       nextSymbolId: "App.run",
     });
-    expect(result.headingPath).toBeUndefined(); // still stripped
+    expect(result.headingPath).toEqual([{ depth: 1, text: "Title" }]);
   });
 });
