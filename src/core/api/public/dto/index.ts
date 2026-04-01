@@ -41,3 +41,5 @@ export type {
 } from "./document.js";
 
 export type { IndexMetrics, SignalMetrics } from "./metrics.js";
+
+export { stripInternalFields } from "./sanitize.js";
