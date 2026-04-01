@@ -86,6 +86,62 @@ function isLocalUrl(url: string): boolean {
   }
 }
 
+/**
+ * Embedding request timed out — server is alive but batch is too large
+ * or inference is too slow. NOT a connectivity issue — do NOT fallback.
+ */
+export class OllamaTimeoutError extends EmbeddingError {
+  constructor(url: string, batchSize: number, timeoutMs: number, cause?: Error) {
+    super({
+      code: "INFRA_OLLAMA_TIMEOUT",
+      message: `Ollama embedding timed out at ${url} (${batchSize} texts, ${timeoutMs}ms limit)`,
+      hint:
+        `The embedding request exceeded the timeout.\n` +
+        `Try reducing EMBEDDING_BATCH_SIZE (current batch: ${batchSize} texts).\n` +
+        `Timeout formula: 30s base + ${batchSize} × 200ms/item = ${timeoutMs}ms`,
+      httpStatus: 504,
+      cause,
+    });
+  }
+}
+
+/**
+ * Ollama responded with an HTTP error (server is available, but returned an error).
+ * Distinct from OllamaUnavailableError (no connection at all).
+ */
+export class OllamaResponseError extends EmbeddingError {
+  readonly responseStatus: number;
+  readonly responseBody: string;
+
+  constructor(url: string, status: number, body: string) {
+    super({
+      code: "INFRA_OLLAMA_RESPONSE_ERROR",
+      message: `Ollama HTTP ${status} at ${url}: ${body}`,
+      hint: `Ollama returned an error (HTTP ${status}).\nResponse: ${body}\nCheck Ollama logs for details.`,
+      httpStatus: status >= 500 ? 502 : status,
+    });
+    this.responseStatus = status;
+    this.responseBody = body;
+  }
+}
+
+/**
+ * A chunk exceeds the embedding model's context window.
+ * Detected by Ollama response body containing "context length" or "input length".
+ */
+export class OllamaContextOverflowError extends OllamaResponseError {
+  constructor(url: string, status: number, body: string) {
+    super(url, status, body);
+    Object.defineProperty(this, "code", { value: "INFRA_OLLAMA_CONTEXT_OVERFLOW" });
+    Object.defineProperty(this, "hint", {
+      value:
+        `A code chunk exceeds the embedding model's context window.\n` +
+        `Reduce INGEST_CHUNK_SIZE or use a model with larger context.\n` +
+        `Model context limits: nomic-embed-text=8192, jina-v2-base-code=8192, mxbai-embed-large=512`,
+    });
+  }
+}
+
 export class OllamaModelMissingError extends EmbeddingError {
   constructor(model: string, url: string) {
     super({

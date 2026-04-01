@@ -247,6 +247,18 @@ describe("CohereEmbeddings", () => {
     });
   });
 
+  describe("checkHealth", () => {
+    it("should return true", async () => {
+      expect(await embeddings.checkHealth()).toBe(true);
+    });
+  });
+
+  describe("getProviderName", () => {
+    it("should return cohere", () => {
+      expect(embeddings.getProviderName()).toBe("cohere");
+    });
+  });
+
   describe("rate limiting", () => {
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });

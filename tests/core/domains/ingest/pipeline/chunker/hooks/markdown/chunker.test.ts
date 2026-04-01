@@ -98,7 +98,7 @@ describe("MarkdownChunker", () => {
       expect(names).toContain("Usage");
     });
 
-    it("should include h3+ content in parent h1/h2 section", async () => {
+    it("should split h3 into separate chunks with breadcrumb from parent h2", async () => {
       const code = [
         "## Getting Started",
         "",
@@ -115,15 +115,14 @@ describe("MarkdownChunker", () => {
 
       const chunks = await chunker.chunk(code, "doc.md", "markdown");
 
-      const section = chunks.find((c) => c.metadata.name === "Getting Started");
-      expect(section).toBeDefined();
-      expect(section!.content).toContain("Installation");
-      expect(section!.content).toContain("Configuration");
-
-      // h3 headings should NOT create separate chunks
       const names = chunks.map((c) => c.metadata.name);
-      expect(names).not.toContain("Installation");
-      expect(names).not.toContain("Configuration");
+      // h3 headings create separate chunks
+      expect(names).toContain("Installation");
+      expect(names).toContain("Configuration");
+
+      // h3 chunks include breadcrumb from parent h2
+      const installation = chunks.find((c) => c.metadata.name === "Installation");
+      expect(installation!.content).toContain("## Getting Started");
     });
 
     it("should set isDocumentation on all chunks", async () => {
@@ -422,6 +421,71 @@ describe("MarkdownChunker", () => {
       for (const chunk of chunks) {
         expect(chunk.metadata.isDocumentation).toBe(true);
         expect(chunk.metadata.name).toBe("Big Section");
+      }
+    });
+
+    it("should build correct breadcrumbs when heading order varies", async () => {
+      const smallChunker = new MarkdownChunker({ maxChunkSize: 5000 });
+
+      const code = [
+        "### Orphan H3",
+        "",
+        "Content under orphan h3 that has no parent h1 or h2 heading above it.",
+        "",
+        "## Middle Section",
+        "",
+        "Content under h2 that appears after an orphan h3 in the document flow.",
+        "",
+        "### Sub of Middle",
+        "",
+        "Content under h3 that is a child of the h2 Middle Section heading above.",
+        "",
+        "# Late H1",
+        "",
+        "Content under h1 that appears late in the document after h2 and h3 content.",
+        "",
+        "### H3 Under H1",
+        "",
+        "Content under h3 that is a child of the h1 Late H1 without intermediate h2.",
+      ].join("\n");
+
+      const chunks = await smallChunker.chunk(code, "mixed.md", "markdown");
+
+      // Orphan h3 — no ancestors, no breadcrumb prefix
+      const orphan = chunks.find((c) => c.metadata.name === "Orphan H3");
+      expect(orphan).toBeDefined();
+      expect(orphan!.content).not.toContain(" > ");
+
+      // h3 under h2 — breadcrumb from h2
+      const sub = chunks.find((c) => c.metadata.name === "Sub of Middle");
+      expect(sub).toBeDefined();
+      expect(sub!.content).toContain("## Middle Section");
+
+      // h3 under h1 (no h2) — breadcrumb from h1
+      const h3UnderH1 = chunks.find((c) => c.metadata.name === "H3 Under H1");
+      expect(h3UnderH1).toBeDefined();
+      expect(h3UnderH1!.content).toContain("# Late H1");
+      expect(h3UnderH1!.content).not.toContain("## Middle Section");
+    });
+
+    it("should include breadcrumb in every fallback sub-chunk", async () => {
+      const smallChunker = new MarkdownChunker({ maxChunkSize: 200 });
+
+      const longContent = Array(30)
+        .fill("This line fills the subsection to force a character fallback split here.")
+        .join("\n");
+
+      const code = [`# Guide`, "", `## Auth`, "", `### OAuth`, "", longContent].join("\n");
+
+      const chunks = await smallChunker.chunk(code, "doc.md", "markdown");
+
+      const oauthChunks = chunks.filter((c) => c.metadata.name === "OAuth");
+      // Oversized h3 section → multiple sub-chunks
+      expect(oauthChunks.length).toBeGreaterThan(1);
+
+      // Every sub-chunk has breadcrumb prefix
+      for (const chunk of oauthChunks) {
+        expect(chunk.content).toContain("# Guide > ## Auth");
       }
     });
   });

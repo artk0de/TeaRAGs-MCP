@@ -781,7 +781,7 @@ end
   });
 
   describe("chunk - Markdown", () => {
-    it("should only split on h1/h2 boundaries, including h3+ in parent section", async () => {
+    it("should split on h1/h2/h3 boundaries", async () => {
       const code = `# Introduction
 
 This is the introduction section with some content that is long enough.
@@ -805,27 +805,17 @@ Use the library like this. This is a separate top-level section.
 
       const chunks = await chunker.chunk(code, "README.md", "markdown");
       const sectionChunks = chunks.filter((c) => c.metadata.chunkType === "block" && c.metadata.name);
-
-      // Should have 3 section chunks: Introduction, Getting Started (with h3s), Usage
       const sectionNames = sectionChunks.map((c) => c.metadata.name);
+
+      // h3 headings now create separate chunks
       expect(sectionNames).toContain("Introduction");
       expect(sectionNames).toContain("Getting Started");
+      expect(sectionNames).toContain("Installation");
+      expect(sectionNames).toContain("Configuration");
       expect(sectionNames).toContain("Usage");
-
-      // h3 headings should NOT create separate chunks
-      expect(sectionNames).not.toContain("Installation");
-      expect(sectionNames).not.toContain("Configuration");
-
-      // Getting Started chunk should include h3 content
-      const gettingStarted = sectionChunks.find((c) => c.metadata.name === "Getting Started");
-      expect(gettingStarted).toBeDefined();
-      expect(gettingStarted!.content).toContain("Installation");
-      expect(gettingStarted!.content).toContain("Configuration");
-      expect(gettingStarted!.content).toContain("npm install");
-      expect(gettingStarted!.content).toContain("config file");
     });
 
-    it("should treat document with only h3+ headings as single chunk", async () => {
+    it("should split h3-only documents into separate chunks", async () => {
       const code = `### Section One
 
 This is content under a h3 heading with enough text to meet minimum size.
@@ -840,20 +830,19 @@ Even more content under a third h3 heading with plenty of text for the chunk.
 `;
 
       const chunks = await chunker.chunk(code, "notes.md", "markdown");
+      const names = chunks.map((c) => c.metadata.name);
 
-      // No h1/h2 → no section boundaries → single chunk
-      expect(chunks.length).toBe(1);
-      expect(chunks[0].content).toContain("Section One");
-      expect(chunks[0].content).toContain("Section Two");
-      expect(chunks[0].content).toContain("Section Three");
+      expect(names).toContain("Section One");
+      expect(names).toContain("Section Two");
+      expect(names).toContain("Section Three");
     });
 
-    it("should include h3 before first h2 in preamble", async () => {
+    it("should split h3 before first h2 into its own chunk", async () => {
       const code = `Some intro text that appears before any major heading in the document.
 
 ### A Minor Heading
 
-Content under the minor heading that is part of the preamble section.
+Content under the minor heading that is part of the early document section.
 
 ## First Real Section
 
@@ -861,12 +850,47 @@ This is the first real section with enough content for a valid chunk size.
 `;
 
       const chunks = await chunker.chunk(code, "README.md", "markdown");
+      const names = chunks.map((c) => c.metadata.name);
 
-      // Preamble should exist and include the h3 content
-      const preamble = chunks.find((c) => c.metadata.name === "Preamble");
-      expect(preamble).toBeDefined();
-      expect(preamble!.content).toContain("A Minor Heading");
-      expect(preamble!.content).toContain("minor heading that is part");
+      // h3 before first h2 is now its own chunk (not preamble)
+      expect(names).toContain("A Minor Heading");
+      expect(names).toContain("First Real Section");
+    });
+
+    it("should include breadcrumb from ancestor headings in h3 chunks", async () => {
+      const code = `# API Guide
+
+Overview of the API.
+
+## Authentication
+
+How authentication works in the system and all the important details.
+
+### OAuth Flow
+
+The OAuth flow involves multiple steps and requires proper configuration setup.
+
+### Token Refresh
+
+Token refresh happens automatically when the access token expires on the server.
+
+## Endpoints
+
+List of available API endpoints and their documentation with examples.
+`;
+
+      const chunks = await chunker.chunk(code, "api.md", "markdown");
+
+      // h3 chunks include breadcrumb from ancestor h1 > h2
+      const oauthChunk = chunks.find((c) => c.metadata.name === "OAuth Flow");
+      expect(oauthChunk).toBeDefined();
+      expect(oauthChunk!.content).toContain("# API Guide > ## Authentication");
+      expect(oauthChunk!.content).toContain("### OAuth Flow");
+
+      // h2 chunks include breadcrumb from h1
+      const authChunk = chunks.find((c) => c.metadata.name === "Authentication");
+      expect(authChunk).toBeDefined();
+      expect(authChunk!.content).toContain("# API Guide");
     });
 
     it("should extract code blocks from markdown", async () => {

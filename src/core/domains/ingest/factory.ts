@@ -47,6 +47,7 @@ export function createIngestDependencies(
   return {
     createSchemaManager: (collectionName: string) => {
       const indexStore = new IndexStoreAdapter(qdrant);
+      const sparseStore = new SparseStoreAdapter(qdrant);
       const enrichmentStore = providerKey ? new EnrichmentStoreAdapter(qdrant) : undefined;
       const schemaMigrator = new SchemaMigrator(
         collectionName,
@@ -54,7 +55,8 @@ export function createIngestDependencies(
         { enableHybrid, providerKey },
         enrichmentStore,
       );
-      return new SchemaManager(qdrant, schemaMigrator.latestVersion);
+      const sparseMigrator = new SparseMigrator(collectionName, sparseStore, enableHybrid);
+      return new SchemaManager(qdrant, schemaMigrator.latestVersion, sparseMigrator.latestVersion);
     },
     createSynchronizer: (codebasePath, collectionName) =>
       new ParallelFileSynchronizer(

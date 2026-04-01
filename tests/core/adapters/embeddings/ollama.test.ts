@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
 import {
   OllamaModelMissingError,
+  OllamaResponseError,
+  OllamaTimeoutError,
   OllamaUnavailableError,
 } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
 
@@ -168,7 +170,7 @@ describe("OllamaEmbeddings", () => {
       await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
     });
 
-    it("should wrap API error for long text in OllamaUnavailableError", async () => {
+    it("should wrap API error for long text in OllamaResponseError", async () => {
       const longText = "a".repeat(150);
       mockFetch.mockResolvedValue({
         ok: false,
@@ -176,7 +178,7 @@ describe("OllamaEmbeddings", () => {
         text: async () => "Server error",
       });
 
-      await expect(embeddings.embed(longText)).rejects.toThrow(OllamaUnavailableError);
+      await expect(embeddings.embed(longText)).rejects.toThrow(OllamaResponseError);
     });
 
     it("should wrap non-Error objects in OllamaUnavailableError", async () => {
@@ -434,7 +436,7 @@ describe("OllamaEmbeddings", () => {
       promise.catch(() => {}); // prevent unhandled rejection detection
       await vi.advanceTimersByTimeAsync(10_000);
 
-      await expect(promise).rejects.toThrow(OllamaUnavailableError);
+      await expect(promise).rejects.toThrow(OllamaResponseError);
 
       expect(mockFetch).toHaveBeenCalledTimes(3);
     });
@@ -985,7 +987,7 @@ describe("OllamaEmbeddings", () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
-    it("should switch to fallback on embed failure for next call", async () => {
+    it("should NOT switch to fallback on embed failure — stays on primary", async () => {
       const PRIMARY = "http://primary:11434";
       const FALLBACK = "http://fallback:11434";
       const mockEmbedding = Array(768).fill(0.5);
@@ -995,16 +997,16 @@ describe("OllamaEmbeddings", () => {
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
       await flush();
 
-      // First embed fails on primary
+      // First embed fails on primary — no fallback switch
       mockFetch.mockRejectedValueOnce(new Error("primary embed failed"));
       await expect(provider.embed("test")).rejects.toThrow(OllamaUnavailableError);
 
-      // Next call goes to fallback
+      // Next call still uses primary (no fallback switch during operation)
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
       await provider.embed("second");
 
       const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
-      expect(lastUrl).toContain("fallback");
+      expect(lastUrl).toContain("primary");
     });
   });
 
@@ -1157,51 +1159,38 @@ describe("OllamaEmbeddings", () => {
     const FALLBACK = "http://fallback:11434";
     const mockEmbedding = Array(768).fill(0.5);
 
-    it("should not recover before cooldown expires after embed failure", async () => {
-      vi.useFakeTimers();
-      try {
-        // Constructor: primary up
-        mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
-        const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
-        await vi.advanceTimersByTimeAsync(0);
+    it("should stay on primary after embed failure (no fallback switch)", async () => {
+      // Constructor: primary up
+      const flush = async () => new Promise<void>((r) => setTimeout(r, 0));
+      mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      await flush();
 
-        // Primary embed fails — sets primaryFailedAt
-        mockFetch.mockRejectedValueOnce(new Error("primary embed timeout"));
-        await expect(provider.embed("first")).rejects.toThrow(OllamaUnavailableError);
+      // Primary embed fails — error propagated, no fallback
+      mockFetch.mockRejectedValueOnce(new Error("primary embed failed"));
+      await expect(provider.embed("first")).rejects.toThrow(OllamaUnavailableError);
 
-        // Probe fires — primary responds, but cooldown not expired
-        mockFetch.mockResolvedValueOnce({ ok: true });
-        await vi.advanceTimersByTimeAsync(30_000);
+      // Next call still on primary
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+      await provider.embed("second");
 
-        // Should still use fallback (cooldown = 60s, only 30s passed)
-        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
-        await provider.embed("still fallback");
-
-        const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
-        expect(lastUrl).toContain("fallback");
-      } finally {
-        vi.useRealTimers();
-      }
+      const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+      expect(lastUrl).toContain("primary");
     });
 
-    it("should recover after cooldown expires", async () => {
+    it("should recover from initial fallback after cooldown expires", async () => {
       vi.useFakeTimers();
       try {
-        // Constructor: primary up
-        mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
+        // Constructor: primary DOWN → uses fallback
+        mockFetch.mockRejectedValueOnce(new Error("primary down")); // constructor health check
         const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
         await vi.advanceTimersByTimeAsync(0);
 
-        // Primary embed fails — sets primaryFailedAt
-        mockFetch.mockRejectedValueOnce(new Error("primary embed timeout"));
-        await expect(provider.embed("first")).rejects.toThrow(OllamaUnavailableError);
+        // Embed on fallback
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+        await provider.embed("on fallback");
 
-        // Advance past cooldown (60s) + probe interval (30s)
-        // First probe at 30s — cooldown not expired
-        mockFetch.mockResolvedValueOnce({ ok: true });
-        await vi.advanceTimersByTimeAsync(30_000);
-
-        // Second probe at 60s — cooldown expired
+        // Probe fires — primary recovered (cooldown = 0 since initial failure)
         mockFetch.mockResolvedValueOnce({ ok: true });
         await vi.advanceTimersByTimeAsync(30_000);
 
@@ -1238,21 +1227,21 @@ describe("OllamaEmbeddings", () => {
       expect(embedUrl).toContain("primary");
     });
 
-    it("should set primaryFailedAt on primary embed failure", async () => {
+    it("should stay on primary after embed failure (no mid-operation fallback)", async () => {
       mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
       const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
       await flush();
 
-      // Primary embed fails
-      mockFetch.mockRejectedValueOnce(new Error("timeout"));
+      // Primary embed fails — error propagated, no fallback switch
+      mockFetch.mockRejectedValueOnce(new Error("connection error"));
       await expect(provider.embed("test")).rejects.toThrow(OllamaUnavailableError);
 
-      // Next call should go to fallback
+      // Next call still on primary
       mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
       await provider.embed("second");
 
       const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
-      expect(lastUrl).toContain("fallback");
+      expect(lastUrl).toContain("primary");
     });
 
     it("should include both URLs in error when fallback fails", async () => {
@@ -1271,6 +1260,122 @@ describe("OllamaEmbeddings", () => {
         const msg = (error as OllamaUnavailableError).message;
         expect(msg).toContain(PRIMARY);
         expect(msg).toContain(FALLBACK);
+      }
+    });
+  });
+
+  describe("no fallback during operation", () => {
+    const PRIMARY = "http://primary:11434";
+    const FALLBACK = "http://fallback:11434";
+    const mockEmbedding = Array(768).fill(0.5);
+    const flush = async () => new Promise<void>((r) => setTimeout(r, 0));
+
+    it("should NOT switch to fallback on primary embed failure", async () => {
+      // Constructor: primary up
+      mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      await flush();
+
+      // Primary embed fails — connection error
+      mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+      await expect(provider.embed("test")).rejects.toThrow(OllamaUnavailableError);
+
+      // Next call should STILL go to primary (no fallback switch)
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+      await provider.embed("second");
+
+      const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+      expect(lastUrl).toContain("primary");
+    });
+
+    it("should throw OllamaTimeoutError on batch embed timeout without fallback", async () => {
+      vi.useFakeTimers();
+      try {
+        // Constructor: primary up, native batch (legacyApi = false)
+        mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
+        const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, false, 999, FALLBACK);
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Mock fetch that hangs until abort signal fires (simulates slow Ollama)
+        mockFetch.mockImplementationOnce(
+          async (_url: string, init: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener("abort", () => {
+                reject(new DOMException("The operation was aborted", "AbortError"));
+              });
+            }),
+        );
+
+        const embedPromise = provider.embedBatch(["text1", "text2"]);
+        // Prevent unhandled rejection during timer advancement
+        embedPromise.catch(() => {});
+        // Advance past batch timeout: 30000 + 2*200 = 30400ms
+        await vi.advanceTimersByTimeAsync(31_000);
+
+        await expect(embedPromise).rejects.toThrow(OllamaTimeoutError);
+
+        // Next call should STILL go to primary (no fallback switch)
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ model: "nomic-embed-text", embeddings: [[0.1], [0.2]] }),
+        });
+        await provider.embedBatch(["a", "b"]);
+
+        const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+        expect(lastUrl).toContain("primary");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("should include EMBEDDING_BATCH_SIZE hint in timeout error", async () => {
+      vi.useFakeTimers();
+      try {
+        mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
+        const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, false, 999, FALLBACK);
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Mock fetch that hangs until abort
+        mockFetch.mockImplementationOnce(
+          async (_url: string, init: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener("abort", () => {
+                reject(new DOMException("The operation was aborted", "AbortError"));
+              });
+            }),
+        );
+
+        const embedPromise = provider.embedBatch(["text1"]);
+        embedPromise.catch(() => {});
+        await vi.advanceTimersByTimeAsync(31_000);
+
+        const error = await embedPromise.catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(OllamaTimeoutError);
+        expect((error as OllamaTimeoutError).hint).toContain("EMBEDDING_BATCH_SIZE");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("should preserve Ollama HTTP error body in OllamaResponseError", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, false, 999, FALLBACK);
+      await flush();
+
+      // Ollama returns HTTP 500 with error body
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: async () => "GPU out of memory: failed to allocate 2.1GB",
+      });
+
+      try {
+        await provider.embedBatch(["text1"]);
+        expect.unreachable("should have thrown");
+      } catch (error) {
+        expect(error).toBeInstanceOf(OllamaResponseError);
+        expect((error as OllamaResponseError).message).toContain("GPU out of memory");
+        expect((error as OllamaResponseError).responseStatus).toBe(500);
       }
     });
   });

@@ -333,6 +333,18 @@ describe("VoyageEmbeddings", () => {
     });
   });
 
+  describe("checkHealth", () => {
+    it("should return true", async () => {
+      expect(await embeddings.checkHealth()).toBe(true);
+    });
+  });
+
+  describe("getProviderName", () => {
+    it("should return voyage", () => {
+      expect(embeddings.getProviderName()).toBe("voyage");
+    });
+  });
+
   describe("rate limiting", () => {
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });

@@ -52,7 +52,7 @@ export class TreeSitterChunker implements CodeChunker {
 
   constructor(private readonly config: ChunkerConfig) {
     this.fallbackChunker = new CharacterChunker(config);
-    this.markdownChunker = new MarkdownChunker({ maxChunkSize: this.config.maxChunkSize }, this.fallbackChunker);
+    this.markdownChunker = new MarkdownChunker({ maxChunkSize: this.config.chunkSize }, this.fallbackChunker);
     // NO parser initialization here - lazy load on demand!
   }
 

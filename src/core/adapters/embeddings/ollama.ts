@@ -16,7 +16,13 @@ import Bottleneck from "bottleneck";
 
 import { isDebug } from "../../infra/runtime.js";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
-import { OllamaModelMissingError, OllamaUnavailableError } from "./ollama/errors.js";
+import {
+  OllamaContextOverflowError,
+  OllamaModelMissingError,
+  OllamaResponseError,
+  OllamaTimeoutError,
+  OllamaUnavailableError,
+} from "./ollama/errors.js";
 import { withRateLimitRetry } from "./retry.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
@@ -33,7 +39,7 @@ const RECOVERY_COOLDOWN_MS = 60_000;
  * Ollama processes batches synchronously — large batches need proportionally more time.
  */
 const BATCH_BASE_TIMEOUT_MS = 30_000; // 30s base (model loading, warmup)
-const BATCH_PER_ITEM_TIMEOUT_MS = 100; // 100ms per item
+const BATCH_PER_ITEM_TIMEOUT_MS = 200; // 200ms per item (accounts for GPU queue with concurrent workers)
 
 async function fetchWithTimeout(
   url: string,
@@ -49,6 +55,12 @@ async function fetchWithTimeout(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** Detect "input length exceeds context" error from Ollama response body. */
+function isContextOverflow(body: string): boolean {
+  const lower = body.toLowerCase();
+  return lower.includes("context length") || lower.includes("input length");
 }
 
 interface OllamaError {
@@ -92,7 +104,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private probeTimer?: ReturnType<typeof setInterval>;
   private primaryAlive = false;
   private primaryAliveAt = 0;
-  private primaryFailedAt = 0;
+  private readonly primaryFailedAt = 0;
 
   /** Optional callback for fallback switch observability. Set by pipeline wiring. */
   onFallbackSwitch?: (event: FallbackSwitchEvent) => void;
@@ -149,8 +161,8 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   private isRateLimit(error: unknown): boolean {
-    // Check responseStatus on OllamaUnavailableError (from callApi/callBatchApi HTTP errors)
-    if (error instanceof OllamaUnavailableError && error.responseStatus === 429) return true;
+    // Check responseStatus on OllamaResponseError (HTTP 429 from Ollama)
+    if (error instanceof OllamaResponseError && error.responseStatus === 429) return true;
     // Check OllamaError-shaped objects (from rejected fetch with rate limit message)
     const apiError = this.isOllamaError(error) ? error : { status: 0, message: String(error) };
     return (
@@ -237,30 +249,20 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         isRetryable: (error) => this.isRateLimit(error),
       });
     } catch (error) {
+      // Typed errors propagate directly — no fallback switching
       if (error instanceof OllamaModelMissingError) throw error;
+      if (error instanceof OllamaTimeoutError) throw error;
+      if (error instanceof OllamaResponseError) throw error;
 
-      this.primaryAlive = false;
+      // Connection/HTTP errors: propagate with cause, no fallback switch.
+      // Fallback is only decided at initial health check (constructor), not mid-operation.
+      const cause = error instanceof Error ? error : undefined;
 
-      if (url === this.baseUrl) {
-        this.primaryFailedAt = Date.now();
-        if (!this.usingFallback) {
-          this.switchToFallback("primary embed failed");
-        }
+      if (this.usingFallback && this.fallbackBaseUrl) {
+        throw OllamaUnavailableError.withFallback(this.baseUrl, this.fallbackBaseUrl, cause);
       }
 
-      if (!this.fallbackBaseUrl) {
-        throw new OllamaUnavailableError(this.baseUrl, error instanceof Error ? error : undefined);
-      }
-
-      if (url === this.fallbackBaseUrl) {
-        throw OllamaUnavailableError.withFallback(
-          this.baseUrl,
-          this.fallbackBaseUrl,
-          error instanceof Error ? error : undefined,
-        );
-      }
-
-      throw new OllamaUnavailableError(url, error instanceof Error ? error : undefined);
+      throw new OllamaUnavailableError(url, cause);
     }
   }
 
@@ -270,9 +272,19 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    */
   private async callBatchApi(texts: string[], url?: string, timeoutMs?: number): Promise<OllamaEmbedBatchResponse> {
     const baseUrl = url ?? this.baseUrl;
-    const response = await fetchWithTimeout(
-      `${baseUrl}/api/embed`,
-      {
+    const effectiveTimeout = timeoutMs ?? this.batchTimeout(texts.length);
+
+    // Own AbortController with timedOut flag — distinguishes our timeout from other aborts
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, effectiveTimeout);
+
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}/api/embed`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -280,9 +292,21 @@ export class OllamaEmbeddings implements EmbeddingProvider {
           input: texts,
           options: { num_gpu: this.numGpu },
         }),
-      },
-      timeoutMs,
-    );
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (timedOut) {
+        throw new OllamaTimeoutError(
+          baseUrl,
+          texts.length,
+          effectiveTimeout,
+          error instanceof Error ? error : undefined,
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -290,7 +314,10 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       if (response.status === 404 || errorBody.includes("not found")) {
         throw new OllamaModelMissingError(this.model, baseUrl);
       }
-      throw new OllamaUnavailableError(baseUrl, undefined, response.status);
+      if (isContextOverflow(errorBody)) {
+        throw new OllamaContextOverflowError(baseUrl, response.status, errorBody);
+      }
+      throw new OllamaResponseError(baseUrl, response.status, errorBody);
     }
 
     return response.json() as Promise<OllamaEmbedBatchResponse>;
@@ -318,26 +345,30 @@ export class OllamaEmbeddings implements EmbeddingProvider {
         if (response.status === 404 || errorBody.includes("not found")) {
           throw new OllamaModelMissingError(this.model, baseUrl);
         }
-        throw new OllamaUnavailableError(baseUrl, undefined, response.status);
+        if (isContextOverflow(errorBody)) {
+          throw new OllamaContextOverflowError(baseUrl, response.status, errorBody);
+        }
+        throw new OllamaResponseError(baseUrl, response.status, errorBody);
       }
 
       return response.json() as Promise<OllamaEmbedResponse>;
     } catch (error) {
       // Re-throw typed errors (from !response.ok block)
-      if (error instanceof OllamaModelMissingError || error instanceof OllamaUnavailableError) {
+      if (error instanceof OllamaModelMissingError || error instanceof OllamaResponseError) {
         throw error;
       }
 
-      // Detect rate limit from rejected fetch (network-level errors with rate limit message)
-      const rateLimitStatus =
-        this.isOllamaError(error) &&
-        typeof error.message === "string" &&
-        error.message.toLowerCase().includes("rate limit")
-          ? 429
-          : undefined;
+      // Detect rate limit from network-level rejection (raw error with rate limit message)
+      const rawMessage = this.isOllamaError(error) ? error.message : undefined;
+      if (
+        (this.isOllamaError(error) && error.status === 429) ||
+        (typeof rawMessage === "string" && rawMessage.toLowerCase().includes("rate limit"))
+      ) {
+        throw new OllamaResponseError(baseUrl, 429, rawMessage ?? "rate limited");
+      }
 
-      // Wrap network errors and unknown errors
-      throw new OllamaUnavailableError(baseUrl, error instanceof Error ? error : undefined, rateLimitStatus);
+      // Network errors → server unavailable
+      throw new OllamaUnavailableError(baseUrl, error instanceof Error ? error : undefined);
     }
   }
 
