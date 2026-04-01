@@ -1,3 +1,80 @@
+## [1.18.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.6...v1.18.0) (2026-04-01)
+
+### Features
+
+- **adapters:** add OllamaEmbeddings.resolveModelInfo() via /api/show
+  ([38b2da8](https://github.com/artk0de/TeaRAGs-MCP/commit/38b2da8b3b2cd0d6f2d74a88eb60cdcf4a4b0b5c))
+- **chunker:** write headingPath to markdown chunk metadata
+  ([5e7cf76](https://github.com/artk0de/TeaRAGs-MCP/commit/5e7cf76bb93fc264793f7dc23491cbb0e81bd900))
+- **drift:** track navigation field in schema drift detection
+  ([5dcb0a2](https://github.com/artk0de/TeaRAGs-MCP/commit/5dcb0a2ee0569bd39feef749fe240bed19d74525))
+- **dto:** add stripInternalFields to hide headingPath from API responses
+  ([a2c0fa5](https://github.com/artk0de/TeaRAGs-MCP/commit/a2c0fa566f48409f789e8cd18369c86ec8cc05bc))
+- **ingest:** auto-detect model context and dimensions from Ollama
+  ([cd38fd0](https://github.com/artk0de/TeaRAGs-MCP/commit/cd38fd04c6fa773edfce528ae8b42374cb8b252c))
+- **migration:** schema v10 — purge markdown chunks for re-chunking
+  ([3d68028](https://github.com/artk0de/TeaRAGs-MCP/commit/3d680284ff946af024d0006a881704672fbc4e2f))
+- **pipeline:** generate doc symbolId hashes and navigation links
+  ([95c65cc](https://github.com/artk0de/TeaRAGs-MCP/commit/95c65cc2689af397c3cd4f58834888e07e94f566))
+- **presets:** add documentationRelevance preset with auto-activation
+  ([79c81e4](https://github.com/artk0de/TeaRAGs-MCP/commit/79c81e4923e5791ce13d1ceb935bf68e8bc94fb7))
+- **signals:** add HeadingRelevanceSignal for markdown heading boost
+  ([1fee0e2](https://github.com/artk0de/TeaRAGs-MCP/commit/1fee0e2242fee6adf7dbf7b56a38216b7c399a15))
+- **trajectory:** write navigation and headingPath to Qdrant payload
+  ([e2a9e93](https://github.com/artk0de/TeaRAGs-MCP/commit/e2a9e930382daa2fe6fcc2009f190169a594312a))
+- **types:** add navigation field to CodeChunk metadata
+  ([6245061](https://github.com/artk0de/TeaRAGs-MCP/commit/6245061d7de63e606e01fb82c80c4f3f44ef426f))
+
+### Improvements
+
+- **chunker:** group small h3 sections into parent h2 chunk
+  ([ec49fe0](https://github.com/artk0de/TeaRAGs-MCP/commit/ec49fe02137926e38a00cab6d4cf58f319e14173))
+- **dx:** optimize coverage-expander agent for tea-rags and npm scripts
+  ([8f45f3f](https://github.com/artk0de/TeaRAGs-MCP/commit/8f45f3faee73e0f15d55ee79437f9665017b29fc))
+
+### Bug Fixes
+
+- **adapters,chunker:** Ollama error taxonomy and markdown chunk splitting
+  ([d1649c5](https://github.com/artk0de/TeaRAGs-MCP/commit/d1649c5efa3d43d135a9adb6cccb532f0cf2a3de))
+- **adapters:** prevent mid-operation URL switching in Ollama fallback
+  ([3a60511](https://github.com/artk0de/TeaRAGs-MCP/commit/3a60511ce4980aafd36119d51ae1011884fd8db9))
+- **adapters:** replace OperationLock with per-operation URL snapshot in Ollama
+  fallback
+  ([73d617e](https://github.com/artk0de/TeaRAGs-MCP/commit/73d617e0fc4499f7512c409efe69e49bf3e8514c))
+- **chunker:** include grouped h3 headings in headingPath
+  ([51d12e4](https://github.com/artk0de/TeaRAGs-MCP/commit/51d12e4d185e5c7680bf9d03ca8f672af72e3b30))
+- **explore:** move collection existence check to resolveAndGuard
+  ([5a422ae](https://github.com/artk0de/TeaRAGs-MCP/commit/5a422ae24675fb4773a94c985d981bab0705ce58))
+- **ingest:** lower CHARS_PER_TOKEN from 3 to 2 for safer context cap
+  ([1e8fece](https://github.com/artk0de/TeaRAGs-MCP/commit/1e8fece7012e68627aa052c2d432c5db72a17086))
+- **migration:** use mtime=0 instead of hash="" for snapshot invalidation
+  ([f831b8a](https://github.com/artk0de/TeaRAGs-MCP/commit/f831b8acf383eb5c7f2414f82ad1be2f0350d852))
+- **pipeline:** persist sparseVersion in schema metadata on fresh index
+  ([99dbc95](https://github.com/artk0de/TeaRAGs-MCP/commit/99dbc9541e1b68691ac629410aa14ee1109aa673))
+- **pipeline:** skip secrets detection for test files
+  ([1ba9856](https://github.com/artk0de/TeaRAGs-MCP/commit/1ba9856300dd6d33bedad59d2e00638d19ac0f89))
+- **scripts:** save tune history to ~/.tea-rags/benchmarks and show Qdrant mode
+  ([56fa223](https://github.com/artk0de/TeaRAGs-MCP/commit/56fa2230a9693786c3f430ebe28d8056baf5ed8e))
+
+### Documentation
+
+- **dx:** add chunk navigation guidance to search-cascade
+  ([af875be](https://github.com/artk0de/TeaRAGs-MCP/commit/af875be926f78f58642f58b4b6f59e1ef9bd3cf6))
+- **plans:** add chunk navigation implementation plan
+  ([7c5cb24](https://github.com/artk0de/TeaRAGs-MCP/commit/7c5cb2468d8f49481f76e3039bfd80705375aa1c))
+- **plans:** add Ollama model info auto-detection implementation plan
+  ([3fd1332](https://github.com/artk0de/TeaRAGs-MCP/commit/3fd1332f272dab7968583b18fba9c3cacf96db31))
+- **rules:** add snapshot invalidation guide to migration rules
+  ([730438b](https://github.com/artk0de/TeaRAGs-MCP/commit/730438b27bc6b2a224df77c9cbfb2e97334d3564))
+- **search-cascade:** add documentation rerank auto-activation rule
+  ([a368c1d](https://github.com/artk0de/TeaRAGs-MCP/commit/a368c1dde1715aa4550ee1b30eac7ed292b9f7f8))
+- **specs:** add chunk navigation design spec
+  ([fc19cd7](https://github.com/artk0de/TeaRAGs-MCP/commit/fc19cd718e003e31d0109e41d7cd2b7bcae350cf))
+- **specs:** add heading relevance boost design spec and plan
+  ([65d59d3](https://github.com/artk0de/TeaRAGs-MCP/commit/65d59d3631b0ca9d4b1798bb992e880d7492490e))
+- **specs:** add Ollama model info auto-detection design
+  ([73c7a29](https://github.com/artk0de/TeaRAGs-MCP/commit/73c7a2978538027c03109f7863d8c1a9826c1ffa))
+
 ## [1.17.6](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.5...v1.17.6) (2026-03-30)
 
 ### Improvements
