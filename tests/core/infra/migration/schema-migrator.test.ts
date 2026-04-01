@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SchemaMigrator } from "../../../../src/core/infra/migration/schema-migrator.js";
 import { SparseMigrator } from "../../../../src/core/infra/migration/sparse-migrator.js";
-import type { IndexStore, SparseStore } from "../../../../src/core/infra/migration/types.js";
+import type { IndexStore, SnapshotStore, SparseStore } from "../../../../src/core/infra/migration/types.js";
 
 function createMockIndexStore(version = 0): IndexStore {
   return {
@@ -12,6 +12,7 @@ function createMockIndexStore(version = 0): IndexStore {
     hasPayloadIndex: vi.fn().mockResolvedValue(false),
     getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: false, vectorSize: 384 }),
     updateSparseConfig: vi.fn().mockResolvedValue(undefined),
+    deletePointsByFilter: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -26,14 +27,14 @@ function createMockSparseStore(version = 0): SparseStore {
 const COLLECTION = "test_col";
 
 describe("SchemaMigrator", () => {
-  it("has 5 schema migrations (v4-v8) without enrichment store", () => {
+  it("has 6 schema migrations (v4-v10) without enrichment store", () => {
     const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), { enableHybrid: false });
     const migrations = migrator.getMigrations();
-    expect(migrations).toHaveLength(5);
-    expect(migrations.filter((m) => m.version >= 4 && m.version <= 8)).toHaveLength(5);
+    expect(migrations).toHaveLength(6);
+    expect(migrations.filter((m) => m.version >= 4 && m.version <= 10)).toHaveLength(6);
   });
 
-  it("has 6 schema migrations (v4-v9) with enrichment store", () => {
+  it("has 7 schema migrations (v4-v10) with enrichment store", () => {
     const mockEnrichmentStore = {
       isMigrated: vi.fn(),
       scrollAllChunks: vi.fn(),
@@ -47,8 +48,9 @@ describe("SchemaMigrator", () => {
       mockEnrichmentStore as any,
     );
     const migrations = migrator.getMigrations();
-    expect(migrations).toHaveLength(6);
+    expect(migrations).toHaveLength(7);
     expect(migrations.find((m) => m.version === 9)).toBeDefined();
+    expect(migrations.find((m) => m.version === 10)).toBeDefined();
   });
 
   it("reads schema version from IndexStore", async () => {
@@ -61,10 +63,10 @@ describe("SchemaMigrator", () => {
 
   it("computes latestVersion from registered migrations", () => {
     const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), { enableHybrid: false });
-    expect(migrator.latestVersion).toBe(8);
+    expect(migrator.latestVersion).toBe(10);
   });
 
-  it("computes latestVersion=9 with enrichment store", () => {
+  it("computes latestVersion=10 with enrichment store", () => {
     const mockEnrichmentStore = {
       isMigrated: vi.fn(),
       scrollAllChunks: vi.fn(),
@@ -77,7 +79,7 @@ describe("SchemaMigrator", () => {
       { enableHybrid: false, providerKey: "git" },
       mockEnrichmentStore as any,
     );
-    expect(migrator.latestVersion).toBe(9);
+    expect(migrator.latestVersion).toBe(10);
   });
 
   it("stores version via IndexStore after migrations", async () => {
@@ -150,6 +152,43 @@ describe("individual schema migrations", () => {
     const v8 = migrator.getMigrations().find((m) => m.version === 8)!;
     await v8.apply();
     expect(store.ensureIndex).toHaveBeenCalledWith(COLLECTION, "symbolId", "text");
+  });
+
+  it("v10 deletes markdown chunks and invalidates snapshot entries", async () => {
+    const store = createMockIndexStore();
+    const snapshotStore: SnapshotStore = {
+      getFormat: vi.fn(),
+      readV1: vi.fn(),
+      readV2: vi.fn(),
+      writeSharded: vi.fn(),
+      backup: vi.fn(),
+      deleteOld: vi.fn(),
+      statFile: vi.fn(),
+      invalidateByExtensions: vi.fn().mockResolvedValue(3),
+    };
+    const migrator = new SchemaMigrator(COLLECTION, store, { enableHybrid: false }, undefined, snapshotStore);
+    const v10 = migrator.getMigrations().find((m) => m.version === 10)!;
+    const result = await v10.apply();
+
+    expect(store.deletePointsByFilter).toHaveBeenCalledWith(COLLECTION, {
+      must: [{ key: "language", match: { value: "markdown" } }],
+    });
+    expect(snapshotStore.invalidateByExtensions).toHaveBeenCalledWith([".md", ".markdown"]);
+    expect(result.applied).toContain("deleted markdown chunks from Qdrant");
+    expect(result.applied).toContain("invalidated 3 markdown file(s) in snapshot");
+  });
+
+  it("v10 works without snapshotStore", async () => {
+    const store = createMockIndexStore();
+    const migrator = new SchemaMigrator(COLLECTION, store, { enableHybrid: false });
+    const v10 = migrator.getMigrations().find((m) => m.version === 10)!;
+    const result = await v10.apply();
+
+    expect(store.deletePointsByFilter).toHaveBeenCalledWith(COLLECTION, {
+      must: [{ key: "language", match: { value: "markdown" } }],
+    });
+    expect(result.applied).toHaveLength(1);
+    expect(result.applied).toContain("deleted markdown chunks from Qdrant");
   });
 });
 

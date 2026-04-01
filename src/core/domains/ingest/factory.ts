@@ -74,7 +74,13 @@ export function createIngestDependencies(
 
       return new Migrator({
         snapshot: new SnapshotMigrator(snapshotStore),
-        schema: new SchemaMigrator(collectionName, indexStore, { enableHybrid, providerKey }, enrichmentStore),
+        schema: new SchemaMigrator(
+          collectionName,
+          indexStore,
+          { enableHybrid, providerKey },
+          enrichmentStore,
+          snapshotStore,
+        ),
         sparse: new SparseMigrator(collectionName, sparseStore, enableHybrid),
       });
     },

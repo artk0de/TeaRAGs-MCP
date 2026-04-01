@@ -52,6 +52,8 @@ export interface SnapshotStore {
   backup: () => Promise<void>;
   deleteOld: () => Promise<void>;
   statFile: (absolutePath: string) => Promise<{ mtimeMs: number; size: number } | null>;
+  /** Invalidate snapshot entries matching file extensions (e.g. [".md"]). Returns count of invalidated entries. */
+  invalidateByExtensions: (extensions: string[]) => Promise<number>;
 }
 
 /** DIP: Qdrant index operations for schema migrations. */
@@ -62,6 +64,7 @@ export interface IndexStore {
   hasPayloadIndex: (collection: string, field: string) => Promise<boolean>;
   getCollectionInfo: (collection: string) => Promise<{ hybridEnabled: boolean; vectorSize: number }>;
   updateSparseConfig: (collection: string) => Promise<void>;
+  deletePointsByFilter: (collection: string, filter: Record<string, unknown>) => Promise<void>;
 }
 
 /** DIP: Sparse vector operations. */
