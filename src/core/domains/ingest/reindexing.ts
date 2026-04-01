@@ -39,7 +39,11 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     super(qdrant, embeddings, config, enrichment, deps, tuning);
   }
 
-  async reindexChanges(path: string, progressCallback?: ProgressCallback): Promise<ChangeStats> {
+  async reindexChanges(
+    path: string,
+    progressCallback?: ProgressCallback,
+    overrides?: { chunkSize?: number; modelInfo?: { model: string; contextLength: number; dimensions: number } },
+  ): Promise<ChangeStats> {
     const startTime = Date.now();
     const { absolutePath, collectionName } = await this.resolveContext(path);
     const stats: ChangeStats = {
@@ -90,6 +94,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         ctx,
         changes,
         progressCallback,
+        overrides?.chunkSize,
       );
       stats.chunksAdded = chunksAdded;
       stats.chunksDeleted = chunksDeleted;
@@ -183,6 +188,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     ctx: ReindexContext,
     changes: FileChanges,
     progressCallback?: ProgressCallback,
+    chunkSizeOverride?: number,
   ): Promise<{
     chunksAdded: number;
     chunksDeleted: number;
@@ -190,7 +196,13 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     chunkMap: Map<string, ChunkLookupEntry[]>;
   }> {
     const changedPaths = [...changes.added, ...changes.modified];
-    const pCtx = this.initProcessing(ctx.collectionName, ctx.absolutePath, ctx.scanner, changedPaths);
+    const pCtx = this.initProcessing(
+      ctx.collectionName,
+      ctx.absolutePath,
+      ctx.scanner,
+      changedPaths,
+      chunkSizeOverride,
+    );
     const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
     const filesToDelete = [...changes.modified, ...changes.deleted, ...changes.newlyIgnored];

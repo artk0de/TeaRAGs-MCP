@@ -59,7 +59,7 @@ describe("parseModelInfo", () => {
     expect(result).toBeUndefined();
   });
 
-  it("should pick first matching keys when multiple architectures present", () => {
+  it("should pick last matching keys when multiple architectures present", () => {
     const result = parseModelInfo("model", {
       "bert.context_length": 512,
       "bert.embedding_length": 384,

@@ -25,6 +25,9 @@ export interface IngestCodeConfig {
 
   // Git metadata (optional, adds author/commit info to chunks)
   enableGitMetadata?: boolean;
+
+  /** True when user explicitly set INGEST_CHUNK_SIZE env var */
+  userSetChunkSize?: boolean;
 }
 
 /** Config for IngestFacade trajectory enrichment setup */

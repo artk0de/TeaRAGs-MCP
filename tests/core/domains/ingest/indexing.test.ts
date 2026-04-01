@@ -129,6 +129,29 @@ describe("IndexPipeline", () => {
       );
     });
 
+    it("should use modelInfo dimensions for collection creation when available", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+
+      // Add resolveModelInfo returning dimensions=768 (different from mock's 384)
+      (embeddings as any).resolveModelInfo = vi.fn().mockResolvedValue({
+        model: "nomic-embed-text",
+        contextLength: 8192,
+        dimensions: 768,
+      });
+
+      const createCollectionSpy = vi.spyOn(qdrant, "createCollection");
+
+      await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      expect(createCollectionSpy).toHaveBeenCalledWith(
+        expect.stringContaining("code_"),
+        768,
+        "Cosine",
+        false,
+        undefined,
+      );
+    });
+
     it("should pass quantizationScalar to createCollection", async () => {
       config = { ...defaultTestConfig(), quantizationScalar: true };
       ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());

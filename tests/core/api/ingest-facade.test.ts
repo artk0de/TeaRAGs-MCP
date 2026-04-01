@@ -235,6 +235,183 @@ describe("IngestFacade", () => {
     });
   });
 
+  describe("resolveEffectiveChunkSize", () => {
+    function makeFacadeWithConfig(config: { chunkSize: number; userSetChunkSize?: boolean }) {
+      const facade = new IngestFacade(
+        { collectionExists: vi.fn(), checkHealth: vi.fn(), url: "http://localhost:6333" } as any,
+        { embed: vi.fn(), checkHealth: vi.fn(), getProviderName: vi.fn() } as any,
+        config as any,
+        { enableGitMetadata: false } as any,
+      );
+      return facade;
+    }
+
+    it("returns config chunkSize when modelInfo is absent", () => {
+      const facade = makeFacadeWithConfig({ chunkSize: 2500 });
+      expect(facade.resolveEffectiveChunkSize(undefined)).toBe(2500);
+    });
+
+    it("derives default chunkSize from modelInfo when user did not set chunkSize", () => {
+      const facade = makeFacadeWithConfig({ chunkSize: 2500, userSetChunkSize: false });
+      const modelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
+      // maxAllowed = 2048 * 3 = 6144, default = floor(6144 * 0.8) = 4915
+      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(4915);
+    });
+
+    it("keeps user chunkSize when within model limit", () => {
+      const facade = makeFacadeWithConfig({ chunkSize: 3000, userSetChunkSize: true });
+      const modelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
+      // maxAllowed = 6144, 3000 < 6144 → keep 3000
+      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(3000);
+    });
+
+    it("caps user chunkSize to maxAllowed when exceeding model limit", () => {
+      const facade = makeFacadeWithConfig({ chunkSize: 8000, userSetChunkSize: true });
+      const modelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
+      // maxAllowed = 6144, 8000 > 6144 → cap to 6144
+      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(6144);
+    });
+
+    it("uses model-derived default for small context models", () => {
+      const facade = makeFacadeWithConfig({ chunkSize: 2500 });
+      const modelInfo = { model: "all-minilm", contextLength: 512, dimensions: 384 };
+      // maxAllowed = 512 * 3 = 1536, default = floor(1536 * 0.8) = 1228
+      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(1228);
+    });
+  });
+
+  describe("modelInfo from marker on re-index", () => {
+    const defaultReindexResult = {
+      filesAdded: 0,
+      filesModified: 1,
+      filesDeleted: 0,
+      filesNewlyIgnored: 0,
+      filesNewlyUnignored: 0,
+      chunksAdded: 2,
+      chunksDeleted: 0,
+      durationMs: 50,
+      status: "completed",
+    };
+
+    function makeReindexFacade(opts: {
+      markerPayload?: Record<string, unknown> | null;
+      resolveModelInfo?: () => Promise<any>;
+    }) {
+      const getPoint = vi
+        .fn()
+        .mockResolvedValue(opts.markerPayload !== null ? { payload: opts.markerPayload ?? {} } : null);
+      const setPayload = vi.fn().mockResolvedValue(undefined);
+      const resolveModelInfoMock = opts.resolveModelInfo ?? vi.fn().mockResolvedValue(undefined);
+
+      const facade = new IngestFacade(
+        {
+          collectionExists: vi.fn().mockResolvedValue(true),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getPoint,
+          setPayload,
+          url: "http://localhost:6333",
+        } as any,
+        {
+          embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: vi.fn().mockReturnValue("mock"),
+          resolveModelInfo: resolveModelInfoMock,
+        } as any,
+        { chunkSize: 2500 } as any,
+        { enableGitMetadata: false } as any,
+      );
+
+      return { facade, getPoint, setPayload, resolveModelInfoMock };
+    }
+
+    it("uses modelInfo from existing marker and skips Ollama query", async () => {
+      const markerModelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
+      const resolveModelInfoMock = vi.fn();
+      mockReindexChanges.mockResolvedValueOnce(defaultReindexResult);
+
+      const { facade, getPoint } = makeReindexFacade({
+        markerPayload: {
+          indexingComplete: true,
+          embeddingModel: "nomic-embed-text",
+          modelInfo: markerModelInfo,
+        },
+        resolveModelInfo: resolveModelInfoMock,
+      });
+
+      await facade.indexCodebase("/tmp/test-project");
+
+      expect(getPoint).toHaveBeenCalled();
+      expect(resolveModelInfoMock).not.toHaveBeenCalled();
+    });
+
+    it("queries Ollama and backfills marker when marker has no modelInfo (legacy)", async () => {
+      const ollamaModelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
+      const resolveModelInfoMock = vi.fn().mockResolvedValue(ollamaModelInfo);
+      mockReindexChanges.mockResolvedValueOnce(defaultReindexResult);
+
+      const { facade, setPayload } = makeReindexFacade({
+        markerPayload: {
+          indexingComplete: true,
+          embeddingModel: "nomic-embed-text",
+        },
+        resolveModelInfo: resolveModelInfoMock,
+      });
+
+      await facade.indexCodebase("/tmp/test-project");
+
+      expect(resolveModelInfoMock).toHaveBeenCalled();
+      expect(setPayload).toHaveBeenCalledWith(
+        expect.any(String),
+        { modelInfo: ollamaModelInfo },
+        { points: [expect.any(String)] },
+      );
+    });
+
+    it("queries Ollama on fresh index (no existing collection)", async () => {
+      const ollamaModelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
+      const resolveModelInfoMock = vi.fn().mockResolvedValue(ollamaModelInfo);
+
+      const facade = new IngestFacade(
+        {
+          collectionExists: vi.fn().mockResolvedValue(false),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getPoint: vi.fn(),
+          setPayload: vi.fn(),
+          url: "http://localhost:6333",
+        } as any,
+        {
+          embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: vi.fn().mockReturnValue("mock"),
+          resolveModelInfo: resolveModelInfoMock,
+        } as any,
+        { chunkSize: 2500 } as any,
+        { enableGitMetadata: false } as any,
+      );
+
+      await facade.indexCodebase("/tmp/test-project");
+
+      // Fresh index always queries Ollama (no marker to read)
+      expect(resolveModelInfoMock).toHaveBeenCalled();
+    });
+
+    it("does not backfill marker when Ollama returns no modelInfo", async () => {
+      const resolveModelInfoMock = vi.fn().mockResolvedValue(undefined);
+      mockReindexChanges.mockResolvedValueOnce(defaultReindexResult);
+
+      const { facade, setPayload } = makeReindexFacade({
+        markerPayload: { indexingComplete: true },
+        resolveModelInfo: resolveModelInfoMock,
+      });
+
+      await facade.indexCodebase("/tmp/test-project");
+
+      expect(resolveModelInfoMock).toHaveBeenCalled();
+      // setPayload should NOT be called for backfill (only for other purposes)
+      expect(setPayload).not.toHaveBeenCalled();
+    });
+  });
+
   describe("Error propagation", () => {
     it("propagates OllamaUnavailableError from indexCodebase", async () => {
       const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");

@@ -12,6 +12,11 @@ export interface IndexingMarkerPayload {
   completedAt?: string;
   lastHeartbeat?: string;
   embeddingModel?: string;
+  modelInfo?: {
+    model: string;
+    contextLength: number;
+    dimensions: number;
+  };
   enrichment?: EnrichmentMarkerMap;
 }
 
@@ -23,6 +28,7 @@ export function parseMarkerPayload(raw: Record<string, unknown>): IndexingMarker
     completedAt: normalizeTimestamp(raw.completedAt),
     lastHeartbeat: typeof raw.lastHeartbeat === "string" ? raw.lastHeartbeat : undefined,
     embeddingModel: typeof raw.embeddingModel === "string" ? raw.embeddingModel : undefined,
+    modelInfo: parseModelInfoField(raw.modelInfo),
     enrichment:
       raw.enrichment !== null && raw.enrichment !== undefined && typeof raw.enrichment === "object"
         ? (raw.enrichment as EnrichmentMarkerMap)
@@ -43,8 +49,18 @@ export function serializeMarkerPayload(marker: IndexingMarkerPayload): Record<st
   if (marker.embeddingModel !== undefined) {
     result.embeddingModel = marker.embeddingModel;
   }
+  if (marker.modelInfo !== undefined) result.modelInfo = marker.modelInfo;
   if (marker.enrichment !== undefined) result.enrichment = marker.enrichment;
   return result;
+}
+
+function parseModelInfoField(value: unknown): { model: string; contextLength: number; dimensions: number } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.model !== "string" || typeof obj.contextLength !== "number" || typeof obj.dimensions !== "number") {
+    return undefined;
+  }
+  return { model: obj.model, contextLength: obj.contextLength, dimensions: obj.dimensions };
 }
 
 function normalizeTimestamp(value: unknown): string | undefined {

@@ -142,8 +142,9 @@ export abstract class BaseIndexingPipeline {
     absolutePath: string,
     scanner: FileScanner,
     changedPaths?: string[],
+    chunkSizeOverride?: number,
   ): ProcessingContext {
-    const chunkerPool = this.createChunkerPool();
+    const chunkerPool = this.createChunkerPool(chunkSizeOverride);
     const chunkPipeline = this.createChunkPipeline(collectionName);
     this.setupEnrichmentHooks(chunkPipeline, absolutePath, collectionName, scanner.getIgnoreFilter(), changedPaths);
     chunkPipeline.start();
@@ -162,11 +163,12 @@ export abstract class BaseIndexingPipeline {
 
   // ── Processing components (private) ────────────────────
 
-  private createChunkerPool(): ChunkerPool {
+  private createChunkerPool(chunkSizeOverride?: number): ChunkerPool {
+    const chunkSize = chunkSizeOverride ?? this.config.chunkSize;
     return new ChunkerPool(this.tuning.chunkerPoolSize, {
-      chunkSize: this.config.chunkSize,
+      chunkSize,
       chunkOverlap: this.config.chunkOverlap,
-      maxChunkSize: this.config.chunkSize * 2,
+      maxChunkSize: chunkSize * 2,
     });
   }
 

@@ -132,7 +132,9 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     quantizationScalar: env("QDRANT_QUANTIZATION_SCALAR"),
   };
 
-  return { core, embedding, ingest, trajectoryGit, qdrantTune, userSetBatchSize };
+  const userSetChunkSize = ingest.chunkSize;
+
+  return { core, embedding, ingest, trajectoryGit, qdrantTune, userSetBatchSize, userSetChunkSize };
 }
 
 export function parseAppConfigZod(): {
@@ -142,7 +144,7 @@ export function parseAppConfigZod(): {
   trajectoryGit: TrajectoryGitConfig;
   qdrantTune: QdrantTuneConfig;
   deprecations: DeprecationNotice[];
-  flags: { userSetBatchSize: boolean };
+  flags: { userSetBatchSize: boolean; userSetChunkSize: boolean };
 } {
   const deprecations: DeprecationNotice[] = [];
   const env = (name: string, ...fallbacks: string[]) => envWithFallback(deprecations, name, ...fallbacks);
@@ -168,7 +170,7 @@ export function parseAppConfigZod(): {
     trajectoryGit,
     qdrantTune,
     deprecations,
-    flags: { userSetBatchSize: !!inputs.userSetBatchSize },
+    flags: { userSetBatchSize: !!inputs.userSetBatchSize, userSetChunkSize: !!inputs.userSetChunkSize },
   };
 }
 

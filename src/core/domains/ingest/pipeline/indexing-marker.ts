@@ -20,6 +20,7 @@ export async function storeIndexingMarker(
   embeddings: EmbeddingProvider,
   collectionName: string,
   complete: boolean,
+  modelInfo?: { model: string; contextLength: number; dimensions: number },
 ): Promise<void> {
   try {
     if (complete) {
@@ -57,6 +58,7 @@ export async function storeIndexingMarker(
       indexingComplete: false,
       startedAt: new Date().toISOString(),
       embeddingModel: embeddings.getModel(),
+      ...(modelInfo && { modelInfo }),
     };
 
     if (collectionInfo.hybridEnabled) {
