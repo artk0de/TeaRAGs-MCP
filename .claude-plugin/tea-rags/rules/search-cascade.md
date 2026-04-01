@@ -147,6 +147,18 @@ Has query?
 When the user asks an analytical question:
 
 ```
+Documentation search? (language: "markdown" OR documentation: "only")
+├─ Yes → no explicit rerank needed
+│     → facade auto-applies "documentationRelevance" preset
+│     → heading-weighted ranking is automatic
+│     Note: tea-rags is a good index and compass for docs, but not a
+│     replacement for reading when full context matters. Optimal flow:
+│       1. hybrid_search — find the doc and related files
+│       2. Read — full text when complete picture needed
+│       3. semantic_search — find similar patterns across docs
+│
+└─ No → continue to preset selection below
+
 Existing preset fits?
 ├─ Yes → use it (consult tea-rags://schema/presets for full list)
 │
