@@ -430,6 +430,38 @@ describe("ChunkPipeline", () => {
   });
 
   describe("Error handling", () => {
+    it("should enrich context overflow error with largest chunk info", async () => {
+      const contextOverflowError = Object.assign(new Error("context length exceeded"), {
+        code: "INFRA_OLLAMA_CONTEXT_OVERFLOW",
+      });
+      mockEmbeddings.embedBatch.mockRejectedValue(contextOverflowError);
+
+      // Add chunks of different sizes — the largest should appear in the enriched error
+      const smallChunk = createChunk(1);
+      const largeChunk = {
+        ...createChunk(2),
+        content: "x".repeat(5000),
+        startLine: 10,
+        endLine: 50,
+      };
+      pipeline.addChunk(smallChunk, "chunk-1", "/test/path");
+      pipeline.addChunk(largeChunk, "chunk-2", "/test/path");
+      pipeline.addChunk(createChunk(3), "chunk-3", "/test/path");
+
+      for (let i = 0; i < 5; i++) {
+        await vi.advanceTimersByTimeAsync(500);
+      }
+      await vi.runAllTimersAsync();
+
+      try {
+        await pipeline.flush();
+        expect.unreachable("flush should have thrown");
+      } catch (error: any) {
+        expect(error.message).toContain("Largest chunk:");
+        expect(error.message).toContain("5000 chars");
+      }
+    });
+
     it("should track errors from embedding failures", async () => {
       mockEmbeddings.embedBatch.mockRejectedValue(new Error("Embedding failed"));
 

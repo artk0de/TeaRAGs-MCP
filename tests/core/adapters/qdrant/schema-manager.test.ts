@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SchemaManager } from "../../../../src/core/adapters/qdrant/schema-manager.js";
 import { SchemaMigrator } from "../../../../src/core/infra/migration/schema-migrator.js";
+import { SparseMigrator } from "../../../../src/core/infra/migration/sparse-migrator.js";
 
 const LATEST_SCHEMA_VERSION = new SchemaMigrator(
   "",
@@ -122,6 +123,48 @@ describe("SchemaManager", () => {
 
       expect(mockQdrant.addPointsWithSparse).toHaveBeenCalled();
       expect(mockQdrant.addPoints).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("sparseVersion in metadata", () => {
+    it("should store sparseVersion when provided", async () => {
+      const sparseLatest = new SparseMigrator(
+        "",
+        { getSparseVersion: async () => 0, rebuildSparseVectors: async () => {}, storeSparseVersion: async () => {} },
+        true,
+      ).latestVersion;
+      const manager = new SchemaManager(mockQdrant as any, LATEST_SCHEMA_VERSION, sparseLatest);
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await manager.initializeSchema("test-collection");
+
+      expect(mockQdrant.addPoints).toHaveBeenCalledWith(
+        "test-collection",
+        expect.arrayContaining([
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              sparseVersion: sparseLatest,
+            }),
+          }),
+        ]),
+      );
+    });
+
+    it("should default sparseVersion to 0 when not provided", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("test-collection");
+
+      expect(mockQdrant.addPoints).toHaveBeenCalledWith(
+        "test-collection",
+        expect.arrayContaining([
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              sparseVersion: 0,
+            }),
+          }),
+        ]),
+      );
     });
   });
 

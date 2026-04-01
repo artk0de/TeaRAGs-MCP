@@ -25,8 +25,8 @@ interface CodeBlockInfo {
 const MERMAID_KEYWORDS =
   /(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|gitGraph|subgraph)/;
 
-/** Section heading depth — h1/h2 are section boundaries, h3+ rolls up */
-const SECTION_HEADING_DEPTH = 2;
+/** Section heading depth — h1/h2/h3 are section boundaries, h4+ rolls up */
+const SECTION_HEADING_DEPTH = 3;
 
 /** Minimum chars for a code block to become its own chunk */
 const MIN_CODE_BLOCK_SIZE = 50;
@@ -81,12 +81,16 @@ export class MarkdownChunker {
 
       if (sectionContent.length < MIN_SECTION_SIZE) continue;
 
-      // Oversized section -> fallback
-      if (sectionContent.length > this.config.maxChunkSize * 2) {
+      // Breadcrumb: "# Title > ## Section" prefix for h2/h3 sections
+      const breadcrumb = this.buildBreadcrumb(headings, heading);
+
+      // Oversized section -> fallback, each sub-chunk gets breadcrumb
+      if (sectionContent.length > this.config.maxChunkSize) {
         const subChunks = await this.fallbackChunker.chunk(sectionContent, filePath, language);
         for (const subChunk of subChunks) {
           chunks.push({
             ...subChunk,
+            content: breadcrumb + subChunk.content,
             startLine: heading.startLine + subChunk.startLine - 1,
             endLine: heading.startLine + subChunk.endLine - 1,
             metadata: {
@@ -103,7 +107,7 @@ export class MarkdownChunker {
       }
 
       chunks.push({
-        content: sectionContent,
+        content: breadcrumb + sectionContent,
         startLine: heading.startLine,
         endLine: sectionEndLine,
         metadata: {
@@ -125,6 +129,34 @@ export class MarkdownChunker {
 
       const parentHeading = this.findNearestHeading(sectionHeadings, block.startLine);
       const codeBlockName = block.lang ? `Code: ${block.lang}` : "Code block";
+      const codeBlockMeta = {
+        name: codeBlockName,
+        symbolId: codeBlockName,
+        isDocumentation: true as const,
+        ...(parentHeading && {
+          parentName: parentHeading.text,
+          parentType: `h${parentHeading.depth}`,
+        }),
+      };
+
+      // Oversized code block → split via character fallback
+      if (block.value.length > this.config.maxChunkSize) {
+        const subChunks = await this.fallbackChunker.chunk(block.value, filePath, block.lang || "code");
+        for (const subChunk of subChunks) {
+          chunks.push({
+            ...subChunk,
+            startLine: block.startLine + 1 + subChunk.startLine - 1,
+            endLine: block.startLine + 1 + subChunk.endLine - 1,
+            metadata: {
+              ...subChunk.metadata,
+              chunkIndex: chunks.length,
+              chunkType: "block",
+              ...codeBlockMeta,
+            },
+          });
+        }
+        continue;
+      }
 
       chunks.push({
         content: block.value,
@@ -135,13 +167,7 @@ export class MarkdownChunker {
           language: block.lang || "code",
           chunkIndex: chunks.length,
           chunkType: "block",
-          name: codeBlockName,
-          symbolId: codeBlockName,
-          isDocumentation: true,
-          ...(parentHeading && {
-            parentName: parentHeading.text,
-            parentType: `h${parentHeading.depth}`,
-          }),
+          ...codeBlockMeta,
         },
       });
     }
@@ -269,6 +295,23 @@ export class MarkdownChunker {
     // Heuristic for unlabeled Mermaid blocks
     if (!block.lang && MERMAID_KEYWORDS.test(block.value)) return true;
     return false;
+  }
+
+  /** Build breadcrumb from ancestor headings: "# Title > ## Section > ### Sub" */
+  private buildBreadcrumb(allHeadings: HeadingInfo[], heading: HeadingInfo): string {
+    const ancestors: HeadingInfo[] = [];
+    for (const h of allHeadings) {
+      if (h.startLine >= heading.startLine) break;
+      if (h.depth < heading.depth) {
+        // Keep only the deepest ancestor at each level
+        while (ancestors.length > 0 && ancestors[ancestors.length - 1].depth >= h.depth) {
+          ancestors.pop();
+        }
+        ancestors.push(h);
+      }
+    }
+    if (ancestors.length === 0) return "";
+    return `${ancestors.map((h) => `${"#".repeat(h.depth)} ${h.text}`).join(" > ")}\n`;
   }
 
   private findNearestHeading(headings: HeadingInfo[], lineNum: number): HeadingInfo | undefined {

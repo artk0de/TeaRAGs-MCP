@@ -36,6 +36,7 @@ export class SchemaManager {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly schemaVersion: number,
+    private readonly sparseVersion = 0,
   ) {}
 
   /**
@@ -50,6 +51,7 @@ export class SchemaManager {
       const payload: SchemaMetadata = {
         _type: "schema_metadata",
         schemaVersion: version,
+        sparseVersion: this.sparseVersion,
         migratedAt: new Date().toISOString(),
         indexes,
       };

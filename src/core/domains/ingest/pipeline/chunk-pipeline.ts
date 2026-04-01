@@ -32,6 +32,21 @@ import type {
 
 const LOG_CTX = { component: "ChunkPipeline" };
 
+/** Enrich OllamaContextOverflowError with the file/chunk that likely caused the overflow. */
+function enrichContextOverflowError(error: unknown, items: ChunkItem[]): unknown {
+  // Only enrich context overflow errors — other errors pass through unchanged
+  if (!error || typeof error !== "object" || !("code" in error)) return error;
+  if ((error as { code: string }).code !== "INFRA_OLLAMA_CONTEXT_OVERFLOW") return error;
+  if (items.length === 0) return error;
+
+  const largest = items.reduce((max, item) => (item.chunk.content.length > max.chunk.content.length ? item : max));
+  const context =
+    `\nLargest chunk: ${largest.chunk.metadata.filePath}:${largest.chunk.startLine}-${largest.chunk.endLine}` +
+    ` (${largest.chunk.content.length} chars)`;
+  Object.defineProperty(error, "message", { value: (error as unknown as Error).message + context });
+  return error;
+}
+
 export interface ChunkPipelineConfig {
   /** Worker pool settings */
   workerPool: WorkerPoolConfig;
@@ -296,7 +311,12 @@ export class ChunkPipeline {
 
       // 2. Generate embeddings
       const embedStart = Date.now();
-      const embeddings = await this.embeddings.embedBatch(texts);
+      let embeddings: Awaited<ReturnType<EmbeddingProvider["embedBatch"]>>;
+      try {
+        embeddings = await this.embeddings.embedBatch(texts);
+      } catch (error) {
+        throw enrichContextOverflowError(error, batch.items);
+      }
       const embedDuration = Date.now() - embedStart;
       pipelineLog.embedCall(ctx, texts.length, embedDuration);
       pipelineLog.addStageTime("embed", embedDuration);

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  OllamaContextOverflowError,
   OllamaModelMissingError,
+  OllamaTimeoutError,
   OllamaUnavailableError,
 } from "../../../../../src/core/adapters/embeddings/ollama/errors.js";
 
@@ -176,5 +178,39 @@ describe("OllamaModelMissingError", () => {
   it("should suggest ollama pull in hint", () => {
     const error = new OllamaModelMissingError("nomic-embed-text", "http://localhost:11434");
     expect(error.hint).toContain("ollama pull nomic-embed-text");
+  });
+});
+
+describe("OllamaContextOverflowError", () => {
+  it("should override code and hint from OllamaResponseError", () => {
+    const error = new OllamaContextOverflowError("http://localhost:11434", 400, "context length exceeded");
+    expect(error.code).toBe("INFRA_OLLAMA_CONTEXT_OVERFLOW");
+    expect(error.hint).toContain("context window");
+    expect(error.hint).toContain("INGEST_CHUNK_SIZE");
+  });
+
+  it("should preserve responseStatus and responseBody from parent", () => {
+    const error = new OllamaContextOverflowError("http://localhost:11434", 400, "input length too long");
+    expect(error.responseStatus).toBe(400);
+    expect(error.responseBody).toBe("input length too long");
+  });
+});
+
+describe("OllamaTimeoutError", () => {
+  it("should include batch size and timeout in message and hint", () => {
+    const error = new OllamaTimeoutError("http://localhost:11434", 64, 42800);
+    expect(error.message).toContain("64 texts");
+    expect(error.message).toContain("42800ms");
+    expect(error.hint).toContain("EMBEDDING_BATCH_SIZE");
+  });
+});
+
+describe("isLocalUrl edge cases (via withFallback)", () => {
+  it("should handle malformed URLs gracefully (catch branch)", () => {
+    // Malformed URL triggers the catch block in isLocalUrl, returning false
+    const error = OllamaUnavailableError.withFallback("not-a-url", "also-not-a-url");
+    // Both URLs are unparseable → not local → no start hint
+    expect(error.hint).not.toContain("Start Ollama");
+    expect(error.hint).toContain("Check network connectivity");
   });
 });
