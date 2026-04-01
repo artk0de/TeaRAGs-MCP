@@ -85,6 +85,31 @@ interfaces:
 If a new migration needs capabilities not in existing stores, extend the
 interface + adapter first — do NOT inject `QdrantManager` directly.
 
+## Forcing File Re-Indexation via Snapshot Invalidation
+
+When a migration needs files to be re-processed (e.g., chunker strategy
+changed), delete chunks from Qdrant AND invalidate snapshot entries:
+
+1. **Delete chunks from Qdrant** —
+   `store.deletePointsByFilter(collection, filter)`
+2. **Invalidate snapshot** — `snapshotStore.invalidateByExtensions([".md"])`
+
+**How snapshot invalidation works:** Sets `mtime = 0` on matching entries.
+Synchronizer's fast path skips files with matching mtime+size — zeroing mtime
+forces slow path → hash recomputed from disk → hash differs from snapshot → file
+treated as "modified" → re-chunked.
+
+**CRITICAL: Use `mtime = 0`, NOT `hash = ""`**. Zeroing hash has no effect
+because the fast path uses the cached hash from snapshot for comparison
+(`previousMeta.hash !== hash` where both are the same empty string).
+
+**Migration order:** Schema migrations run BEFORE synchronizer in
+`prepareReindexContext()`. This ensures snapshot is invalidated before change
+detection.
+
+**Shard count:** Use `readShardCount()` from meta.json, not the default.
+Snapshots may have been created with a different shard count.
+
 ## Execution Guarantees
 
 1. **Sequential** — migrations run sorted by `version` ascending
