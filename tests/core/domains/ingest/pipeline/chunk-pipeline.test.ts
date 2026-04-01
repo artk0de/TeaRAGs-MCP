@@ -239,6 +239,58 @@ describe("ChunkPipeline", () => {
       expect(result).toBe(true);
     });
 
+    it("should return false when backpressure wait exceeds timeout", async () => {
+      vi.useRealTimers();
+
+      // Create a pipeline with slow embeddings to build up backpressure
+      const embedResolvers: ((val: { embedding: number[] }[]) => void)[] = [];
+      const slowEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(
+          async () =>
+            new Promise<{ embedding: number[] }[]>((resolve) => {
+              embedResolvers.push(resolve);
+            }),
+        ),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 384),
+      };
+
+      const bpPipeline = new ChunkPipeline(
+        mockQdrant as any,
+        slowEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+          accumulator: { batchSize: 1, flushTimeoutMs: 50, maxQueueSize: 2 },
+          enableHybrid: false,
+        },
+      );
+
+      bpPipeline.start();
+
+      // Fill queue to trigger backpressure
+      bpPipeline.addChunk(createChunk(1), "bp-t1", "/test/path");
+      await new Promise((r) => setTimeout(r, 100));
+      bpPipeline.addChunk(createChunk(2), "bp-t2", "/test/path");
+      await new Promise((r) => setTimeout(r, 100));
+      bpPipeline.addChunk(createChunk(3), "bp-t3", "/test/path");
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(bpPipeline.isBackpressured()).toBe(true);
+
+      // Wait with a very short timeout — should return false (timeout exceeded)
+      const result = await bpPipeline.waitForBackpressure(150);
+      expect(result).toBe(false);
+
+      // Clean up: resolve pending embeds and shutdown
+      for (const resolve of embedResolvers) {
+        resolve([{ embedding: [1, 2, 3] }]);
+      }
+      bpPipeline.forceShutdown();
+      vi.useFakeTimers();
+    });
+
     it("should pause accumulator when queue reaches maxQueueSize", async () => {
       vi.useRealTimers();
 
