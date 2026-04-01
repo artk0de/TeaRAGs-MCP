@@ -53,8 +53,8 @@ import type {
 /** Model info resolved from embedding provider (e.g. Ollama /api/show) */
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
 
-/** Conservative chars-per-token estimate for code */
-const CHARS_PER_TOKEN = 3;
+/** Conservative chars-per-token estimate (2 is safe for both code and prose) */
+const CHARS_PER_TOKEN = 2;
 /** Safety factor: use 80% of model context to leave room for breadcrumbs/overlap */
 const CONTEXT_SAFETY_FACTOR = 0.8;
 

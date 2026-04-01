@@ -254,29 +254,29 @@ describe("IngestFacade", () => {
     it("derives default chunkSize from modelInfo when user did not set chunkSize", () => {
       const facade = makeFacadeWithConfig({ chunkSize: 2500, userSetChunkSize: false });
       const modelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
-      // maxAllowed = 2048 * 3 = 6144, default = floor(6144 * 0.8) = 4915
-      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(4915);
+      // maxAllowed = 2048 * 2 = 4096, default = floor(4096 * 0.8) = 3276
+      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(3276);
     });
 
     it("keeps user chunkSize when within model limit", () => {
       const facade = makeFacadeWithConfig({ chunkSize: 3000, userSetChunkSize: true });
       const modelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
-      // maxAllowed = 6144, 3000 < 6144 → keep 3000
+      // maxAllowed = 4096, 3000 < 4096 → keep 3000
       expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(3000);
     });
 
     it("caps user chunkSize to maxAllowed when exceeding model limit", () => {
       const facade = makeFacadeWithConfig({ chunkSize: 8000, userSetChunkSize: true });
       const modelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
-      // maxAllowed = 6144, 8000 > 6144 → cap to 6144
-      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(6144);
+      // maxAllowed = 4096, 8000 > 4096 → cap to 4096
+      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(4096);
     });
 
     it("uses model-derived default for small context models", () => {
       const facade = makeFacadeWithConfig({ chunkSize: 2500 });
       const modelInfo = { model: "all-minilm", contextLength: 512, dimensions: 384 };
-      // maxAllowed = 512 * 3 = 1536, default = floor(1536 * 0.8) = 1228
-      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(1228);
+      // maxAllowed = 512 * 2 = 1024, default = floor(1024 * 0.8) = 819
+      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(819);
     });
   });
 
