@@ -242,6 +242,23 @@ Replace `<absolute-project-path>` with the actual working directory path.
 | Cross-layer          | semantic_search × per language    | same                                 |
 | Exact text           | ripgrep MCP                       | built-in Grep                        |
 
+## Chunk Navigation
+
+After finding a chunk via search, use `navigation` field to explore surrounding
+context without `Read`:
+
+| Situation                  | Action                                           |
+| -------------------------- | ------------------------------------------------ |
+| Need adjacent context      | Check `navigation.prevSymbolId` / `nextSymbolId` |
+| Navigate to adjacent chunk | Call `find_symbol(symbol: <symbolId>)`           |
+| Found middle of file       | Navigate both directions as needed               |
+| No navigation field        | Index predates feature — use `Read` as fallback  |
+
+**Doc symbolId format:** Documentation chunks use opaque hash IDs
+(`doc:a3f8b2c1e4d7`). Do NOT guess or construct these — always take from search
+results or `navigation` links. Code chunks keep readable symbolId
+(`Class.method`).
+
 ## pathPattern Rules
 
 Never use braces with full file paths containing slashes — breaks picomatch.
