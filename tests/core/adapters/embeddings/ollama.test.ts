@@ -1438,4 +1438,68 @@ describe("OllamaEmbeddings", () => {
       }
     });
   });
+
+  describe("resolveModelInfo", () => {
+    it("should return model info from /api/show", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, "http://primary:11434", true);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          model_info: {
+            "nomic-bert.context_length": 2048,
+            "nomic-bert.embedding_length": 768,
+          },
+        }),
+      });
+
+      const info = await provider.resolveModelInfo();
+
+      expect(info).toEqual({
+        model: "nomic-embed-text",
+        contextLength: 2048,
+        dimensions: 768,
+      });
+      const url = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+      expect(url).toBe("http://primary:11434/api/show");
+    });
+
+    it("should return undefined when /api/show fails", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, "http://primary:11434", true);
+      mockFetch.mockRejectedValueOnce(new Error("connection refused"));
+      const info = await provider.resolveModelInfo();
+      expect(info).toBeUndefined();
+    });
+
+    it("should return undefined when model_info has no context_length", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, "http://primary:11434", true);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ model_info: {} }),
+      });
+      const info = await provider.resolveModelInfo();
+      expect(info).toBeUndefined();
+    });
+
+    it("should cache result on second call", async () => {
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, "http://primary:11434", true);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          model_info: {
+            "jina-bert-v2.context_length": 8192,
+            "jina-bert-v2.embedding_length": 768,
+          },
+        }),
+      });
+
+      const first = await provider.resolveModelInfo();
+      const second = await provider.resolveModelInfo();
+      expect(first).toEqual(second);
+      const showCalls = mockFetch.mock.calls.filter(
+        (c: any[]) => typeof c[0] === "string" && c[0].includes("/api/show"),
+      );
+      expect(showCalls.length).toBe(1);
+    });
+  });
 });
