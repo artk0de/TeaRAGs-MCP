@@ -139,10 +139,10 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     config.paths.snapshots,
     modelGuard,
   );
-  const schemaDriftMonitor = new SchemaDriftMonitor(
-    statsCache,
-    allPayloadSignalDescriptors.map((d) => d.key),
-  );
+  const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [
+    ...allPayloadSignalDescriptors.map((d) => d.key),
+    "navigation",
+  ]);
   const explore = new ExploreFacade({
     qdrant,
     embeddings,

@@ -148,4 +148,23 @@ describe("Schema drift detection", () => {
     expect(warning).toContain("git.chunk.changeDensity");
     expect(warning).toContain("reindex");
   });
+
+  it("detects drift when navigation key is missing from cached index", () => {
+    const cachedKeys = ["git.file.ageDays", "git.file.commitCount"];
+    const currentKeys = ["git.file.ageDays", "git.file.commitCount", "navigation"];
+
+    const drift = StatsCache.checkSchemaDrift(cachedKeys, currentKeys);
+
+    expect(drift).not.toBeNull();
+    expect(drift!.added).toContain("navigation");
+  });
+
+  it("formats drift warning mentioning navigation requires reindex", () => {
+    const drift = { added: ["navigation"], removed: [] };
+
+    const warning = StatsCache.formatSchemaDriftWarning(drift);
+
+    expect(warning).toContain("navigation");
+    expect(warning).toContain("reindex");
+  });
 });
