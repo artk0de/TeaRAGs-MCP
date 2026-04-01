@@ -404,6 +404,43 @@ describe("MarkdownChunker", () => {
     });
   });
 
+  describe("oversized code blocks", () => {
+    it("should split oversized code blocks using character fallback", async () => {
+      const smallChunker = new MarkdownChunker({ maxChunkSize: 100 });
+
+      const longCode = Array(30).fill("const x = computeSomethingVeryLong();").join("\n");
+
+      const md = ["# Setup", "", "```typescript", longCode, "```"].join("\n");
+
+      const chunks = await smallChunker.chunk(md, "code.md", "markdown");
+
+      // Should produce multiple sub-chunks from the oversized code block
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(chunk.metadata.isDocumentation).toBe(true);
+        expect(chunk.metadata.chunkType).toBe("block");
+        expect(chunk.metadata.language).toBe("typescript");
+      }
+    });
+
+    it("should preserve parent heading context in oversized code block sub-chunks", async () => {
+      const smallChunker = new MarkdownChunker({ maxChunkSize: 100 });
+
+      const longCode = Array(30).fill("function doWork() { return 42; }").join("\n");
+
+      const md = ["## API Reference", "", "### Examples", "", "```python", longCode, "```"].join("\n");
+
+      const chunks = await smallChunker.chunk(md, "api.md", "markdown");
+
+      const codeChunks = chunks.filter((c) => c.metadata.language === "python");
+      expect(codeChunks.length).toBeGreaterThan(1);
+      // Each sub-chunk should have sequential chunk indices
+      for (const chunk of codeChunks) {
+        expect(chunk.metadata.chunkIndex).toBeDefined();
+      }
+    });
+  });
+
   describe("oversized sections", () => {
     it("should split oversized sections using character fallback", async () => {
       const smallChunker = new MarkdownChunker({ maxChunkSize: 100 });

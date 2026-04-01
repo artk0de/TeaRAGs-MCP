@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OllamaEmbeddings } from "../../../../src/core/adapters/embeddings/ollama.js";
 import {
+  OllamaContextOverflowError,
   OllamaModelMissingError,
   OllamaResponseError,
   OllamaTimeoutError,
@@ -199,6 +200,30 @@ describe("OllamaEmbeddings", () => {
       mockFetch.mockRejectedValue({ code: "ERR_UNKNOWN", details: "info" });
 
       await expect(embeddings.embed("test")).rejects.toThrow(OllamaUnavailableError);
+    });
+
+    it("should throw OllamaContextOverflowError when legacy API returns context length error", async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () => "context length exceeded for model",
+      });
+
+      await expect(embeddings.embed("very long text")).rejects.toThrow(OllamaContextOverflowError);
+    });
+
+    it("should detect rate limit from raw error with status 429 in legacy API", async () => {
+      const rateLimitError = Object.assign(new Error("rate limit exceeded"), { status: 429 });
+      mockFetch.mockRejectedValue(rateLimitError);
+
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaResponseError);
+    });
+
+    it("should detect rate limit from raw error message in legacy API", async () => {
+      const rateLimitError = Object.assign(new Error("Rate Limit hit, try again later"), { status: undefined });
+      mockFetch.mockRejectedValue(rateLimitError);
+
+      await expect(embeddings.embed("test")).rejects.toThrow(OllamaResponseError);
     });
   });
 
@@ -726,6 +751,26 @@ describe("OllamaEmbeddings", () => {
       await expect(batchEmbeddings.embedBatch(["text1"])).rejects.toThrow(OllamaUnavailableError);
     });
 
+    it("should throw OllamaContextOverflowError when batch API returns context length error", async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () => "input length exceeds context window",
+      });
+
+      await expect(batchEmbeddings.embed("very long text")).rejects.toThrow(OllamaContextOverflowError);
+    });
+
+    it("should throw OllamaResponseError for non-context-overflow batch API errors", async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 422,
+        text: async () => "unprocessable entity",
+      });
+
+      await expect(batchEmbeddings.embed("test")).rejects.toThrow(OllamaResponseError);
+    });
+
     it("should detect batch support via checkBatchSupport", async () => {
       mockFetch.mockResolvedValue({
         ok: true,
@@ -858,6 +903,20 @@ describe("OllamaEmbeddings", () => {
         const expectedStart = process.platform === "darwin" ? "open -a Ollama" : "ollama serve";
         expect((error as OllamaUnavailableError).hint).toContain(expectedStart);
       }
+    });
+
+    it("should switch to fallback when constructor health check returns non-ok status", async () => {
+      // Constructor health check returns non-ok (e.g. 500) instead of throwing
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+      const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+      await flush();
+
+      // Embed should use fallback URL since primary health was non-ok
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+      await provider.embed("test");
+
+      const embedUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+      expect(embedUrl).toContain("fallback");
     });
 
     it("should work without fallback URL", async () => {
