@@ -1,0 +1,91 @@
+{
+  "skill": "coverage-expander",
+  "date": "2026-04-01",
+  "cases": [
+    {
+      "id": "eval-1",
+      "prompt": "Pre-commit hook failed: ERROR: Coverage for statements (96.83%) does not meet global threshold (96.9%)",
+      "expected": "npm run test:coverage, tea-rags for candidates, NOT npx vitest, NOT awk",
+      "findings": [1, 2],
+      "before": "FAIL",
+      "after": "PASS"
+    },
+    {
+      "id": "eval-2",
+      "prompt": "Coverage dropped after adding new file src/core/domains/explore/strategies/scroll-search.ts — need tests",
+      "expected": "find_symbol/semantic_search to understand file, NOT Read",
+      "findings": [3],
+      "before": "FAIL",
+      "after": "PASS"
+    },
+    {
+      "id": "eval-3",
+      "prompt": "Coverage is 96.5%, threshold 96.9%. Find what needs tests.",
+      "expected": "Single npm run test:coverage for measurement and verification, NOT two runs",
+      "findings": [4],
+      "before": "FAIL",
+      "after": "PASS"
+    },
+    {
+      "id": "eval-4",
+      "prompt": "Need to write tests for src/core/domains/ingest/pipeline/enrichment/coordinator.ts to raise coverage",
+      "expected": "hybrid_search with pathPattern **/*.test.ts for existing tests, NOT Read",
+      "findings": [5],
+      "before": "FAIL",
+      "after": "PASS"
+    },
+    {
+      "id": "eval-5",
+      "prompt": "Coverage threshold not met. The file src/core/adapters/embedding/onnx-provider.ts has 0% coverage.",
+      "expected": "tea-rags for understanding + patterns, single coverage run, zero Read calls",
+      "findings": [2, 3, 4],
+      "before": "FAIL",
+      "after": "PASS"
+    },
+    {
+      "id": "eval-6",
+      "type": "control",
+      "prompt": "Pre-commit failed with coverage error. I only want you to write tests, not touch production code.",
+      "expected": "Only writes test files, never modifies src/",
+      "findings": [],
+      "before": "PASS",
+      "after": "PASS"
+    },
+    {
+      "id": "eval-7",
+      "type": "control",
+      "prompt": "Coverage is already at 97.1% and threshold is 96.9%. The pre-commit hook passed.",
+      "expected": "Early exit, no action needed",
+      "findings": [],
+      "before": "FAIL",
+      "after": "PASS"
+    },
+    {
+      "id": "eval-8",
+      "type": "subagent",
+      "prompt": "Task: raise test coverage from 96.83% to 96.9%. Project path: /Users/artk0re/Dev/Tools/tea-rags-mcp. Use tea-rags MCP for code search.",
+      "expected": "npm run test:coverage, tea-rags for discovery, hybrid_search for patterns, single verification",
+      "findings": [1, 2, 3, 4, 5],
+      "before": "FAIL",
+      "after": "PASS"
+    },
+    {
+      "id": "eval-9",
+      "type": "subagent",
+      "prompt": "Execute step: write tests to close coverage gap for trajectory domain files. Use tea-rags semantic_search to find uncovered areas.",
+      "expected": "semantic_search with pathPattern, hybrid_search for patterns, single npm run test:coverage",
+      "findings": [2, 3, 5],
+      "before": "FAIL",
+      "after": "PASS"
+    },
+    {
+      "id": "eval-10",
+      "type": "edge",
+      "prompt": "Покрытие 96.83%, порог 96.9%. Напиши тесты.",
+      "expected": "Same as eval-1 — npm run test:coverage, tea-rags, behavioral tests",
+      "findings": [],
+      "before": "FAIL",
+      "after": "PASS"
+    }
+  ]
+}

@@ -27,9 +27,13 @@ benchmarks/
 
 ## Current benchmarks
 
-| Skill           | Date       | Evals | With-skill | Baseline | Delta   |
-| --------------- | ---------- | ----- | ---------- | -------- | ------- |
-| search-cascade  | 2026-03-29 | 20    | 100%       | 22%      | +78pp   |
-| explore         | 2026-03-30 | 8+8   | 100%       | 12.5%    | +87.5pp |
-| research-merge  | 2026-03-30 | 15    | 100%       | 70%      | +30pp   |
-| risk-assessment | 2026-03-30 | 12    | 100%       | 10%      | +90pp   |
+| Skill             | Date       | Evals | With-skill | Baseline | Delta   |
+| ----------------- | ---------- | ----- | ---------- | -------- | ------- |
+| search-cascade    | 2026-03-29 | 20    | 100%       | 22%      | +78pp   |
+| explore           | 2026-03-30 | 8+8   | 100%       | 12.5%    | +87.5pp |
+| research-merge    | 2026-03-30 | 15    | 100%       | 70%      | +30pp   |
+| risk-assessment   | 2026-03-30 | 12    | 100%       | 10%      | +90pp   |
+| coverage-expander | 2026-04-01 | 10    | 100%       | 100%     | 0pp\*   |
+
+\* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
+After fix, skill no longer degrades natural tool selection.
