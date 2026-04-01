@@ -78,6 +78,7 @@ export class MarkdownChunker {
         name: codeBlockName,
         symbolId: codeBlockName,
         isDocumentation: true as const,
+        headingPath: parentHeading ? this.buildHeadingPath(headings, parentHeading) : [],
         ...(parentHeading && {
           parentName: parentHeading.text,
           parentType: `h${parentHeading.depth}`,
@@ -147,6 +148,7 @@ export class MarkdownChunker {
               name: "Preamble",
               symbolId: "Preamble",
               isDocumentation: true,
+              headingPath: [],
             },
           });
           // Re-index
@@ -177,6 +179,7 @@ export class MarkdownChunker {
             chunkIndex: 0,
             chunkType: "block",
             isDocumentation: true,
+            headingPath: [],
           },
         });
       }
@@ -261,6 +264,7 @@ export class MarkdownChunker {
     let accumEndLine = 0;
     let accumName = "";
     let accumBreadcrumb = "";
+    let accumHeadingPath: { depth: number; text: string }[] = [];
 
     const flushAccum = async (): Promise<void> => {
       const content = accumContent.trim();
@@ -281,6 +285,7 @@ export class MarkdownChunker {
               name: accumName,
               parentName: accumName,
               isDocumentation: true,
+              headingPath: accumHeadingPath,
             },
           });
         }
@@ -297,6 +302,7 @@ export class MarkdownChunker {
             name: accumName,
             symbolId: accumName,
             isDocumentation: true,
+            headingPath: accumHeadingPath,
           },
         });
       }
@@ -329,6 +335,7 @@ export class MarkdownChunker {
         accumEndLine = sectionEndLine;
         accumName = heading.text;
         accumBreadcrumb = breadcrumb;
+        accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
         continue;
       }
 
@@ -344,6 +351,7 @@ export class MarkdownChunker {
           accumName = heading.text;
           accumStartLine = heading.startLine;
           accumBreadcrumb = breadcrumb;
+          accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
         }
       } else {
         // Doesn't fit — flush current, start new with this h3
@@ -353,6 +361,7 @@ export class MarkdownChunker {
         accumEndLine = sectionEndLine;
         accumName = heading.text;
         accumBreadcrumb = breadcrumb;
+        accumHeadingPath = this.buildHeadingPath(allHeadings, heading);
       }
     }
 
@@ -362,19 +371,30 @@ export class MarkdownChunker {
 
   /** Build breadcrumb from ancestor headings: "# Title > ## Section > ### Sub" */
   private buildBreadcrumb(allHeadings: HeadingInfo[], heading: HeadingInfo): string {
+    const ancestors = this.collectAncestors(allHeadings, heading);
+    if (ancestors.length === 0) return "";
+    return `${ancestors.map((h) => `${"#".repeat(h.depth)} ${h.text}`).join(" > ")}\n`;
+  }
+
+  /** Build structured heading path: ancestors + current heading. */
+  private buildHeadingPath(allHeadings: HeadingInfo[], heading: HeadingInfo): { depth: number; text: string }[] {
+    const ancestors = this.collectAncestors(allHeadings, heading);
+    return [...ancestors.map((h) => ({ depth: h.depth, text: h.text })), { depth: heading.depth, text: heading.text }];
+  }
+
+  /** Collect ancestor headings (shallower depth) before a given heading. */
+  private collectAncestors(allHeadings: HeadingInfo[], heading: HeadingInfo): HeadingInfo[] {
     const ancestors: HeadingInfo[] = [];
     for (const h of allHeadings) {
       if (h.startLine >= heading.startLine) break;
       if (h.depth < heading.depth) {
-        // Keep only the deepest ancestor at each level
         while (ancestors.length > 0 && ancestors[ancestors.length - 1].depth >= h.depth) {
           ancestors.pop();
         }
         ancestors.push(h);
       }
     }
-    if (ancestors.length === 0) return "";
-    return `${ancestors.map((h) => `${"#".repeat(h.depth)} ${h.text}`).join(" > ")}\n`;
+    return ancestors;
   }
 
   private findNearestHeading(headings: HeadingInfo[], lineNum: number): HeadingInfo | undefined {

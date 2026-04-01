@@ -205,6 +205,9 @@ export interface CodeChunk {
 
     /** Original method/block line count before chunk splitting. Used by decomposition signals. */
     methodLines?: number;
+
+    /** Heading breadcrumb path for documentation chunks. Internal — stripped from API responses. */
+    headingPath?: { depth: number; text: string }[];
   };
 }
 
