@@ -29,4 +29,21 @@ describe("stripInternalFields", () => {
     stripInternalFields(payload);
     expect(payload).toHaveProperty("headingPath");
   });
+
+  it("does NOT strip navigation field", () => {
+    const payload = {
+      relativePath: "src/app.ts",
+      headingPath: [{ depth: 1, text: "Title" }],
+      navigation: { prevSymbolId: "doc:abc123", nextSymbolId: "App.run" },
+      content: "code here",
+    };
+
+    const result = stripInternalFields(payload);
+
+    expect(result.navigation).toEqual({
+      prevSymbolId: "doc:abc123",
+      nextSymbolId: "App.run",
+    });
+    expect(result.headingPath).toBeUndefined(); // still stripped
+  });
 });
