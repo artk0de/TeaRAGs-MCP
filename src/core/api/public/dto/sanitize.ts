@@ -1,4 +1,4 @@
-const INTERNAL_PAYLOAD_FIELDS = ["headingPath"] as const;
+const INTERNAL_PAYLOAD_FIELDS = [] as const;
 
 /** Remove internal payload fields that should not appear in MCP responses. */
 export function stripInternalFields(payload: Record<string, unknown>): Record<string, unknown> {
