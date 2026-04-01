@@ -19,6 +19,7 @@ import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { computeCollectionStats } from "../../../domains/ingest/collection-stats.js";
+import { INDEXING_METADATA_ID } from "../../../domains/ingest/constants.js";
 import { createIngestDependencies, type SynchronizerTuning } from "../../../domains/ingest/factory.js";
 import { IndexPipeline } from "../../../domains/ingest/indexing.js";
 import type { PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
@@ -30,6 +31,7 @@ import {
   markRecoveryComplete,
 } from "../../../domains/ingest/pipeline/enrichment/recovery-cache.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
+import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion-strategy.js";
@@ -48,6 +50,14 @@ import type {
   TrajectoryIngestConfig,
 } from "../../../types.js";
 
+/** Model info resolved from embedding provider (e.g. Ollama /api/show) */
+type ModelInfo = { model: string; contextLength: number; dimensions: number };
+
+/** Conservative chars-per-token estimate for code */
+const CHARS_PER_TOKEN = 3;
+/** Safety factor: use 80% of model context to leave room for breadcrumbs/overlap */
+const CONTEXT_SAFETY_FACTOR = 0.8;
+
 export class IngestFacade {
   private readonly enrichment: EnrichmentCoordinator;
   private readonly indexing: IndexPipeline;
@@ -59,7 +69,7 @@ export class IngestFacade {
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly embeddings: EmbeddingProvider,
-    ingestConfig: IngestCodeConfig,
+    private readonly config: IngestCodeConfig,
     trajectoryConfig: TrajectoryIngestConfig,
     private readonly statsCache?: StatsCache,
     private readonly allPayloadSignals?: PayloadSignalDescriptor[],
@@ -87,7 +97,7 @@ export class IngestFacade {
       resolvedSnapshotDir,
       new StaticPayloadBuilder(),
       syncTuning,
-      ingestConfig.enableHybridSearch,
+      this.config.enableHybridSearch,
       enrichmentProviderKey,
     );
     if (trajectoryConfig.trajectoryGit) {
@@ -102,12 +112,12 @@ export class IngestFacade {
       // Fire-and-forget: don't block enrichment completion with full collection scroll
       void this.refreshStatsByCollection(collectionName);
     };
-    this.indexing = new IndexPipeline(qdrant, embeddings, ingestConfig, this.enrichment, deps, pipelineTuning);
+    this.indexing = new IndexPipeline(qdrant, embeddings, this.config, this.enrichment, deps, pipelineTuning);
     this.status = new StatusModule(qdrant, resolvedSnapshotDir);
     this.reindex = new ReindexPipeline(
       qdrant,
       embeddings,
-      ingestConfig,
+      this.config,
       this.enrichment,
       deps,
       deleteConfig,
@@ -118,6 +128,34 @@ export class IngestFacade {
   /** Verify embedding provider is reachable before starting work. */
   private async checkEmbeddingHealth(): Promise<void> {
     await this.embeddings.embed("health");
+  }
+
+  /** Resolve model capabilities from the embedding provider, if supported. */
+  private async resolveModelInfo(): Promise<ModelInfo | undefined> {
+    try {
+      return await this.embeddings.resolveModelInfo?.();
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Compute effective chunkSize based on model context window.
+   *
+   * - No modelInfo → return config chunkSize unchanged
+   * - User didn't set INGEST_CHUNK_SIZE → use model-derived default
+   * - User's chunkSize exceeds model max → cap to maxAllowed
+   * - Otherwise → keep user's chunkSize
+   */
+  resolveEffectiveChunkSize(modelInfo: ModelInfo | undefined): number {
+    if (!modelInfo) return this.config.chunkSize;
+
+    const maxAllowed = modelInfo.contextLength * CHARS_PER_TOKEN;
+    const defaultChunkSize = Math.floor(maxAllowed * CONTEXT_SAFETY_FACTOR);
+
+    if (!this.config.userSetChunkSize) return defaultChunkSize;
+    if (this.config.chunkSize > maxAllowed) return maxAllowed;
+    return this.config.chunkSize;
   }
 
   /** Index a codebase — first index, force re-index, or incremental fallback */
@@ -131,6 +169,19 @@ export class IngestFacade {
         // health check calls embed() which fails with wrong model name
         await this.modelGuard?.ensureMatch(collectionName);
         await this.checkEmbeddingHealth();
+
+        // Try reading modelInfo from existing marker to avoid Ollama query
+        let modelInfo = await this.readMarkerModelInfo(collectionName);
+        if (!modelInfo) {
+          // Legacy collection or marker without modelInfo — query Ollama
+          modelInfo = await this.resolveModelInfo();
+          if (modelInfo) {
+            await this.backfillMarkerModelInfo(collectionName, modelInfo);
+          }
+        }
+        const effectiveChunkSize = this.resolveEffectiveChunkSize(modelInfo);
+        const overrides = { chunkSize: effectiveChunkSize, modelInfo };
+
         // Recovery: local file guard (0ms) + fire-and-forget (background)
         if (!isRecoveryComplete(this.snapshotDir, collectionName)) {
           void this.enrichment
@@ -141,7 +192,7 @@ export class IngestFacade {
             .catch(() => {});
         }
 
-        const changeStats = await this.reindex.reindexChanges(path, progressCallback);
+        const changeStats = await this.reindex.reindexChanges(path, progressCallback, overrides);
 
         // Invalidate recovery cache when new chunks are added (may need enrichment)
         if (changeStats.chunksAdded > 0) {
@@ -175,7 +226,12 @@ export class IngestFacade {
     }
 
     await this.checkEmbeddingHealth();
-    const result = await this.indexing.indexCodebase(path, options, progressCallback);
+    const modelInfo = await this.resolveModelInfo();
+    const effectiveChunkSize = this.resolveEffectiveChunkSize(modelInfo);
+    const result = await this.indexing.indexCodebase(path, options, progressCallback, {
+      chunkSize: effectiveChunkSize,
+      modelInfo,
+    });
     await this.refreshStats(path);
     return result;
   }
@@ -218,6 +274,27 @@ export class IngestFacade {
     const collectionName = resolveCollectionName(absolutePath);
     this.modelGuard?.invalidate(collectionName);
     return this.status.clearIndex(path);
+  }
+
+  /** Read modelInfo from an existing indexing marker. Returns undefined if marker is missing or has no modelInfo. */
+  private async readMarkerModelInfo(collectionName: string): Promise<ModelInfo | undefined> {
+    try {
+      const point = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID);
+      if (!point?.payload) return undefined;
+      const marker = parseMarkerPayload(point.payload);
+      return marker.modelInfo;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Backfill modelInfo into an existing marker (legacy collections). */
+  private async backfillMarkerModelInfo(collectionName: string, modelInfo: ModelInfo): Promise<void> {
+    try {
+      await this.qdrant.setPayload(collectionName, { modelInfo }, { points: [INDEXING_METADATA_ID] });
+    } catch {
+      // Non-fatal: backfill failure should not block indexing
+    }
   }
 
   /** Recompute collection stats from Qdrant and save to cache. */

@@ -65,6 +65,29 @@ describe("parseMarkerPayload", () => {
     const parsed = parseMarkerPayload({});
     expect(parsed.enrichment).toBeUndefined();
   });
+
+  it("parses modelInfo from raw payload", () => {
+    const raw = {
+      indexingComplete: false,
+      modelInfo: { model: "jina-v2", contextLength: 8192, dimensions: 384 },
+    };
+    const parsed = parseMarkerPayload(raw);
+    expect(parsed.modelInfo).toEqual({ model: "jina-v2", contextLength: 8192, dimensions: 384 });
+  });
+
+  it("returns undefined modelInfo when absent", () => {
+    const parsed = parseMarkerPayload({ indexingComplete: true });
+    expect(parsed.modelInfo).toBeUndefined();
+  });
+
+  it("returns undefined modelInfo when malformed", () => {
+    expect(parseMarkerPayload({ modelInfo: "not-an-object" }).modelInfo).toBeUndefined();
+    expect(parseMarkerPayload({ modelInfo: null }).modelInfo).toBeUndefined();
+    expect(parseMarkerPayload({ modelInfo: { model: 123 } }).modelInfo).toBeUndefined();
+    expect(
+      parseMarkerPayload({ modelInfo: { model: "x", contextLength: "bad", dimensions: 384 } }).modelInfo,
+    ).toBeUndefined();
+  });
 });
 
 describe("serializeMarkerPayload", () => {
@@ -92,5 +115,18 @@ describe("serializeMarkerPayload", () => {
     const result = serializeMarkerPayload({ indexingComplete: true });
     expect("startedAt" in result).toBe(false);
     expect("completedAt" in result).toBe(false);
+  });
+
+  it("serializes modelInfo", () => {
+    const result = serializeMarkerPayload({
+      indexingComplete: false,
+      modelInfo: { model: "jina-v2", contextLength: 8192, dimensions: 384 },
+    });
+    expect(result.modelInfo).toEqual({ model: "jina-v2", contextLength: 8192, dimensions: 384 });
+  });
+
+  it("omits modelInfo when undefined", () => {
+    const result = serializeMarkerPayload({ indexingComplete: true });
+    expect("modelInfo" in result).toBe(false);
   });
 });

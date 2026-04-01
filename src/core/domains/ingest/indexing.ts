@@ -41,7 +41,12 @@ export interface SetupResult {
 }
 
 export class IndexPipeline extends BaseIndexingPipeline {
-  async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
+  async indexCodebase(
+    path: string,
+    options?: IndexOptions,
+    progressCallback?: ProgressCallback,
+    overrides?: { chunkSize?: number; modelInfo?: { model: string; contextLength: number; dimensions: number } },
+  ): Promise<IndexStats> {
     const startTime = Date.now();
     const stats: IndexStats = {
       filesScanned: 0,
@@ -63,7 +68,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
-      const setup = await this.setupCollection(collectionName, absolutePath, options);
+      const setup = await this.setupCollection(collectionName, absolutePath, options, overrides?.modelInfo?.dimensions);
       /* v8 ignore next 7 -- defensive guard: facade handles exists-without-force via reindexChanges */
       if (!setup.ready) {
         stats.status = "failed";
@@ -74,7 +79,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         return stats;
       }
 
-      const ctx = this.initProcessing(setup.targetCollection, absolutePath, scanner);
+      const ctx = this.initProcessing(setup.targetCollection, absolutePath, scanner, undefined, overrides?.chunkSize);
       this.startHeartbeat(setup.targetCollection);
 
       const result = await this.processAndTrack(files, absolutePath, ctx, progressCallback);
@@ -102,7 +107,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
 
       this.stopHeartbeat();
       await this.finalizeAlias(collectionName, setup);
-      await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true);
+      await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true, overrides?.modelInfo);
       await this.saveSnapshot(absolutePath, collectionName, files, stats, setup.aliasVersion);
 
       const enrichmentResult = getEnrichmentStatus();
@@ -148,6 +153,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     collectionName: string,
     absolutePath: string,
     options?: IndexOptions,
+    dimensionsOverride?: number,
   ): Promise<SetupResult> {
     const exists = await this.qdrant.collectionExists(collectionName);
 
@@ -197,7 +203,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     }
 
     // Create new versioned collection
-    const vectorSize = this.embeddings.getDimensions();
+    const vectorSize = dimensionsOverride ?? this.embeddings.getDimensions();
     await this.qdrant.createCollection(
       versionedName,
       vectorSize,
@@ -208,7 +214,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
 
     const schemaManager = this.deps.createSchemaManager(versionedName);
     await schemaManager.initializeSchema(versionedName);
-    await storeIndexingMarker(this.qdrant, this.embeddings, versionedName, false);
+    await storeIndexingMarker(this.qdrant, this.embeddings, versionedName, false, undefined);
 
     return {
       ready: true,
