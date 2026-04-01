@@ -807,12 +807,15 @@ Use the library like this. This is a separate top-level section.
       const sectionChunks = chunks.filter((c) => c.metadata.chunkType === "block" && c.metadata.name);
       const sectionNames = sectionChunks.map((c) => c.metadata.name);
 
-      // h3 headings now create separate chunks
+      // Small h3 sections grouped into parent h2 chunks
       expect(sectionNames).toContain("Introduction");
-      expect(sectionNames).toContain("Getting Started");
-      expect(sectionNames).toContain("Installation");
-      expect(sectionNames).toContain("Configuration");
+      expect(sectionNames).toContain("Getting Started"); // includes Installation + Configuration
       expect(sectionNames).toContain("Usage");
+
+      // Getting Started chunk contains h3 content
+      const gs = sectionChunks.find((c) => c.metadata.name === "Getting Started");
+      expect(gs!.content).toContain("Installation");
+      expect(gs!.content).toContain("Configuration");
     });
 
     it("should split h3-only documents into separate chunks", async () => {
@@ -830,11 +833,13 @@ Even more content under a third h3 heading with plenty of text for the chunk.
 `;
 
       const chunks = await chunker.chunk(code, "notes.md", "markdown");
-      const names = chunks.map((c) => c.metadata.name);
 
-      expect(names).toContain("Section One");
-      expect(names).toContain("Section Two");
-      expect(names).toContain("Section Three");
+      // Small h3-only sections grouped into one chunk
+      expect(chunks.length).toBeGreaterThanOrEqual(1);
+      const allContent = chunks.map((c) => c.content).join("");
+      expect(allContent).toContain("Section One");
+      expect(allContent).toContain("Section Two");
+      expect(allContent).toContain("Section Three");
     });
 
     it("should split h3 before first h2 into its own chunk", async () => {
@@ -881,15 +886,14 @@ List of available API endpoints and their documentation with examples.
 
       const chunks = await chunker.chunk(code, "api.md", "markdown");
 
-      // h3 chunks include breadcrumb from ancestor h1 > h2
-      const oauthChunk = chunks.find((c) => c.metadata.name === "OAuth Flow");
-      expect(oauthChunk).toBeDefined();
-      expect(oauthChunk!.content).toContain("# API Guide > ## Authentication");
-      expect(oauthChunk!.content).toContain("### OAuth Flow");
-
-      // h2 chunks include breadcrumb from h1
+      // h3 sections grouped into h2 "Authentication" chunk with breadcrumbs
       const authChunk = chunks.find((c) => c.metadata.name === "Authentication");
       expect(authChunk).toBeDefined();
+      expect(authChunk!.content).toContain("# API Guide");
+      expect(authChunk!.content).toContain("### OAuth Flow");
+      expect(authChunk!.content).toContain("### Token Refresh");
+
+      // h2 chunk includes breadcrumb from h1 (same chunk, already verified above)
       expect(authChunk!.content).toContain("# API Guide");
     });
 

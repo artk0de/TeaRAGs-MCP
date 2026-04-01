@@ -62,7 +62,10 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     // 1. Rerank
     let filtered =
       rerank && rerank !== "relevance"
-        ? this.reranker.rerank(results, rerank, "semantic_search", originalCtx.level as SignalLevel | undefined)
+        ? this.reranker.rerank(results, rerank, "semantic_search", {
+            signalLevel: originalCtx.level as SignalLevel | undefined,
+            query: originalCtx.query,
+          })
         : results;
 
     // 2. Offset + trim to requested limit

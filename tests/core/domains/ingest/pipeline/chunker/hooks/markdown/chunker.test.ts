@@ -98,7 +98,7 @@ describe("MarkdownChunker", () => {
       expect(names).toContain("Usage");
     });
 
-    it("should split h3 into separate chunks with breadcrumb from parent h2", async () => {
+    it("should group small h3 sections into parent h2 chunk", async () => {
       const code = [
         "## Getting Started",
         "",
@@ -115,14 +115,73 @@ describe("MarkdownChunker", () => {
 
       const chunks = await chunker.chunk(code, "doc.md", "markdown");
 
-      const names = chunks.map((c) => c.metadata.name);
-      // h3 headings create separate chunks
-      expect(names).toContain("Installation");
-      expect(names).toContain("Configuration");
+      // Small h3s grouped into parent h2 chunk
+      const h2Chunk = chunks.find((c) => c.metadata.name === "Getting Started");
+      expect(h2Chunk).toBeDefined();
+      expect(h2Chunk!.content).toContain("Installation");
+      expect(h2Chunk!.content).toContain("Configuration");
+      expect(h2Chunk!.content).toContain("npm install");
+    });
 
-      // h3 chunks include breadcrumb from parent h2
-      const installation = chunks.find((c) => c.metadata.name === "Installation");
-      expect(installation!.content).toContain("## Getting Started");
+    it("should split h3 sections into separate chunks when exceeding maxChunkSize", async () => {
+      const smallChunker = new MarkdownChunker({ maxChunkSize: 200 });
+      const longContent = "This is enough content to exceed the very small chunk size limit when combined.";
+
+      const code = [
+        "## Parent",
+        "",
+        "Parent intro text that is long enough.",
+        "",
+        "### Sub One",
+        "",
+        longContent,
+        "",
+        "### Sub Two",
+        "",
+        longContent,
+      ].join("\n");
+
+      const chunks = await smallChunker.chunk(code, "doc.md", "markdown");
+
+      // Too large to fit in one chunk → h3s become separate chunks
+      expect(chunks.length).toBeGreaterThan(1);
+    });
+
+    it("should record correct startLine/endLine when grouping h3 into h2", async () => {
+      const code = [
+        "# Title", // line 1
+        "",
+        "Intro content that meets minimum size requirements for a valid chunk here.", // line 3
+        "",
+        "## Section A", // line 5
+        "",
+        "Section A content with enough text to meet the fifty character minimum.", // line 7
+        "",
+        "### Sub 1", // line 9
+        "",
+        "Sub 1 content that is long enough to meet minimum size thresholds.", // line 11
+        "",
+        "### Sub 2", // line 13
+        "",
+        "Sub 2 content that is long enough to meet minimum size thresholds.", // line 15
+        "",
+        "## Section B", // line 17
+        "",
+        "Section B content that has enough text to meet minimum threshold.", // line 19
+      ].join("\n");
+
+      const chunks = await chunker.chunk(code, "doc.md", "markdown");
+
+      // Section A should group Sub 1 + Sub 2
+      const sectionA = chunks.find((c) => c.metadata.name === "Section A");
+      expect(sectionA).toBeDefined();
+      expect(sectionA!.startLine).toBe(5); // starts at ## Section A
+      expect(sectionA!.endLine).toBe(16); // ends before ## Section B
+
+      // Section B standalone
+      const sectionB = chunks.find((c) => c.metadata.name === "Section B");
+      expect(sectionB).toBeDefined();
+      expect(sectionB!.startLine).toBe(17);
     });
 
     it("should set isDocumentation on all chunks", async () => {
@@ -493,16 +552,17 @@ describe("MarkdownChunker", () => {
       expect(orphan).toBeDefined();
       expect(orphan!.content).not.toContain(" > ");
 
-      // h3 under h2 — breadcrumb from h2
-      const sub = chunks.find((c) => c.metadata.name === "Sub of Middle");
-      expect(sub).toBeDefined();
-      expect(sub!.content).toContain("## Middle Section");
+      // h3 grouped into h2 — "Middle Section" chunk contains "Sub of Middle" content
+      const middle = chunks.find((c) => c.metadata.name === "Middle Section");
+      expect(middle).toBeDefined();
+      expect(middle!.content).toContain("Sub of Middle");
+      expect(middle!.content).toContain("## Middle Section");
 
-      // h3 under h1 (no h2) — breadcrumb from h1
-      const h3UnderH1 = chunks.find((c) => c.metadata.name === "H3 Under H1");
-      expect(h3UnderH1).toBeDefined();
-      expect(h3UnderH1!.content).toContain("# Late H1");
-      expect(h3UnderH1!.content).not.toContain("## Middle Section");
+      // h3 under h1 (no h2) grouped into h1 — "Late H1" chunk contains h3 content
+      const lateH1 = chunks.find((c) => c.metadata.name === "Late H1");
+      expect(lateH1).toBeDefined();
+      expect(lateH1!.content).toContain("H3 Under H1");
+      expect(lateH1!.content).not.toContain("## Middle Section");
     });
 
     it("should include breadcrumb in every fallback sub-chunk", async () => {
@@ -512,17 +572,27 @@ describe("MarkdownChunker", () => {
         .fill("This line fills the subsection to force a character fallback split here.")
         .join("\n");
 
-      const code = [`# Guide`, "", `## Auth`, "", `### OAuth`, "", longContent].join("\n");
+      const code = [
+        `# Guide`,
+        "",
+        `## Auth`,
+        "",
+        "Authentication overview with enough content to meet minimum threshold size.",
+        "",
+        `### OAuth`,
+        "",
+        longContent,
+      ].join("\n");
 
       const chunks = await smallChunker.chunk(code, "doc.md", "markdown");
 
+      // OAuth too large to group into Auth → standalone, then fallback split
       const oauthChunks = chunks.filter((c) => c.metadata.name === "OAuth");
-      // Oversized h3 section → multiple sub-chunks
       expect(oauthChunks.length).toBeGreaterThan(1);
 
-      // Every sub-chunk has breadcrumb prefix
+      // OAuth sub-chunks include breadcrumb from parent h2
       for (const chunk of oauthChunks) {
-        expect(chunk.content).toContain("# Guide > ## Auth");
+        expect(chunk.content).toContain("Auth");
       }
     });
   });

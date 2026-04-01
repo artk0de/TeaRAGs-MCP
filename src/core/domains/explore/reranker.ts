@@ -28,6 +28,12 @@ import { resolveLabel } from "./label-resolver.js";
 export type { ScoringWeights } from "../../contracts/types/provider.js";
 export type { RerankableResult, RerankMode } from "../../contracts/types/reranker.js";
 
+/** Options for Reranker.rerank() — consolidates optional parameters. */
+export interface RerankOptions {
+  signalLevel?: SignalLevel;
+  query?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Reranker — descriptor-based scoring with ranking overlay
 // ---------------------------------------------------------------------------
@@ -81,7 +87,7 @@ export class Reranker {
     results: T[],
     mode: RerankMode<string>,
     presetSet: "semantic_search" | "search_code" | "rank_chunks",
-    overrideSignalLevel?: SignalLevel,
+    options?: RerankOptions,
   ): (T & { rankingOverlay?: RankingOverlay })[] {
     // Resolve weights, overlay mask, groupBy, and signalLevel
     let weights: ScoringWeights;
@@ -110,7 +116,7 @@ export class Reranker {
     }
 
     // User override wins over preset signalLevel
-    if (overrideSignalLevel) signalLevel = overrideSignalLevel;
+    if (options?.signalLevel) ({ signalLevel } = options);
 
     // Fast path: similarity-only -> no reranking, no overlay
     const activeKeys = Object.keys(weights).filter((k) => {
@@ -127,7 +133,7 @@ export class Reranker {
     // Score each result and attach overlay
     const scored = results.map((result) => {
       const payload = this.buildExtractPayload(result);
-      const signals = this.extractAllDerived(payload, bounds, signalLevel);
+      const signals = this.extractAllDerived(payload, bounds, signalLevel, options?.query);
       const score = calculateScore(signals, weights);
       const overlay = this.buildOverlay(result, presetName, weights, signals, mask, signalLevel);
       return { ...result, score, rankingOverlay: overlay };
@@ -268,6 +274,7 @@ export class Reranker {
     payload: Record<string, unknown>,
     sourceBounds: Map<string, number>,
     signalLevel?: SignalLevel,
+    query?: string,
   ): Record<string, number> {
     const signals: Record<string, number> = {};
 
@@ -286,6 +293,7 @@ export class Reranker {
         dampeningThreshold,
         collectionStats: this.collectionStats,
         signalLevel,
+        query,
       });
     }
 
