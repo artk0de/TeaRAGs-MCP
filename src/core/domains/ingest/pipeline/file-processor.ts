@@ -43,6 +43,7 @@ export function assignNavigationAndDocSymbolId(chunks: CodeChunk[], basePath: st
         hashInput = `${relPath}#${chunk.metadata.chunkIndex}`;
       }
       chunk.metadata.symbolId = `doc:${createHash("sha256").update(hashInput).digest("hex").slice(0, 12)}`;
+      chunk.metadata.parentName = relPath;
     }
   }
 
