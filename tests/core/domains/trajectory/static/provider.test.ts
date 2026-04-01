@@ -51,4 +51,68 @@ describe("StaticPayloadBuilder", () => {
     expect(payload.methodLines).toBeUndefined();
     expect(payload.methodDensity).toBeUndefined();
   });
+
+  it("writes navigation to payload", () => {
+    const navChunk = {
+      content: "test",
+      startLine: 1,
+      endLine: 5,
+      metadata: {
+        filePath: "/project/src/app.ts",
+        language: "typescript",
+        chunkIndex: 0,
+        symbolId: "App.run",
+        navigation: { prevSymbolId: "App.init", nextSymbolId: "App.stop" },
+      } as Record<string, unknown>,
+    };
+
+    const payload = builder.buildPayload(navChunk, "/project");
+
+    expect(payload.navigation).toEqual({
+      prevSymbolId: "App.init",
+      nextSymbolId: "App.stop",
+    });
+  });
+
+  it("writes headingPath to payload for documentation chunks", () => {
+    const docChunk = {
+      content: "# Auth\nSome content",
+      startLine: 1,
+      endLine: 5,
+      metadata: {
+        filePath: "/project/docs/api.md",
+        language: "markdown",
+        chunkIndex: 0,
+        isDocumentation: true,
+        headingPath: [
+          { depth: 1, text: "API" },
+          { depth: 2, text: "Auth" },
+        ],
+      } as Record<string, unknown>,
+    };
+
+    const payload = builder.buildPayload(docChunk, "/project");
+
+    expect(payload.headingPath).toEqual([
+      { depth: 1, text: "API" },
+      { depth: 2, text: "Auth" },
+    ]);
+  });
+
+  it("omits navigation from payload when not present", () => {
+    const noNavChunk = {
+      content: "test",
+      startLine: 1,
+      endLine: 5,
+      metadata: {
+        filePath: "/project/src/app.ts",
+        language: "typescript",
+        chunkIndex: 0,
+      } as Record<string, unknown>,
+    };
+
+    const payload = builder.buildPayload(noNavChunk, "/project");
+
+    expect(payload.navigation).toBeUndefined();
+  });
 });

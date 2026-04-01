@@ -29,6 +29,10 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (m.isDocumentation) payload.isDocumentation = m.isDocumentation;
     const imports = m.imports as string[] | undefined;
     if (imports?.length) payload.imports = imports;
+    const headingPath = m.headingPath as { depth: number; text: string }[] | undefined;
+    if (headingPath?.length) payload.headingPath = headingPath;
+    const navigation = m.navigation as { prevSymbolId?: string; nextSymbolId?: string } | undefined;
+    if (navigation) payload.navigation = navigation;
     if (methodLines) {
       payload.methodLines = methodLines;
     }
