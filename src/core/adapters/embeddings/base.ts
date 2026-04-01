@@ -20,6 +20,8 @@ export interface EmbeddingProvider {
   getProviderName: () => string;
   /** Base URL for remote providers. Undefined for local (e.g. ONNX). */
   getBaseUrl?: () => string;
+  /** Resolve model capabilities (context length, dimensions) from provider API. */
+  resolveModelInfo?: () => Promise<{ model: string; contextLength: number; dimensions: number } | undefined>;
 }
 
 export interface ProviderConfig {

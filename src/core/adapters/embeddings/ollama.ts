@@ -23,6 +23,7 @@ import {
   OllamaTimeoutError,
   OllamaUnavailableError,
 } from "./ollama/errors.js";
+import { parseModelInfo, type OllamaModelInfo } from "./ollama/model-info.js";
 import { withRateLimitRetry } from "./retry.js";
 import { getModelDimensions } from "./utils/model-dimensions.js";
 
@@ -105,6 +106,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private primaryAlive = false;
   private primaryAliveAt = 0;
   private readonly primaryFailedAt = 0;
+  private cachedModelInfo?: OllamaModelInfo;
 
   /** Optional callback for fallback switch observability. Set by pipeline wiring. */
   onFallbackSwitch?: (event: FallbackSwitchEvent) => void;
@@ -475,6 +477,33 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       console.error("[Ollama] Native batch not supported, using fallback");
       this.useNativeBatch = false;
       return false;
+    }
+  }
+
+  async resolveModelInfo(): Promise<OllamaModelInfo | undefined> {
+    if (this.cachedModelInfo) return this.cachedModelInfo;
+
+    const url = this.resolveActiveUrl();
+    try {
+      const response = await fetchWithTimeout(
+        `${url}/api/show`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: this.model }),
+        },
+        HEALTH_PROBE_TIMEOUT_MS * 5,
+      );
+      if (!response.ok) return undefined;
+
+      const data = (await response.json()) as { model_info?: Record<string, unknown> };
+      if (!data.model_info) return undefined;
+
+      const info = parseModelInfo(this.model, data.model_info);
+      if (info) this.cachedModelInfo = info;
+      return info;
+    } catch {
+      return undefined;
     }
   }
 
