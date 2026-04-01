@@ -2,6 +2,7 @@ import type { DerivedSignalDescriptor } from "../../../../../contracts/types/rer
 import { ChunkDensitySignal } from "./chunk-density.js";
 import { ChunkSizeSignal } from "./chunk-size.js";
 import { DocumentationSignal } from "./documentation.js";
+import { HeadingRelevanceSignal } from "./heading-relevance.js";
 import { ImportsSignal } from "./imports.js";
 import { PathRiskSignal } from "./path-risk.js";
 import { SimilaritySignal } from "./similarity.js";
@@ -9,6 +10,7 @@ import { SimilaritySignal } from "./similarity.js";
 export { ChunkDensitySignal } from "./chunk-density.js";
 export { ChunkSizeSignal } from "./chunk-size.js";
 export { DocumentationSignal } from "./documentation.js";
+export { HeadingRelevanceSignal } from "./heading-relevance.js";
 export { ImportsSignal } from "./imports.js";
 export { PathRiskSignal } from "./path-risk.js";
 export { SimilaritySignal } from "./similarity.js";
@@ -18,6 +20,7 @@ export const staticDerivedSignals: DerivedSignalDescriptor[] = [
   new ChunkSizeSignal(),
   new ChunkDensitySignal(),
   new DocumentationSignal(),
+  new HeadingRelevanceSignal(),
   new ImportsSignal(),
   new PathRiskSignal(),
 ];

@@ -103,6 +103,8 @@ export interface ExtractContext {
   collectionStats?: CollectionSignalStats;
   /** Signal level from preset — when "file", forces alpha=0 (pure file signals). */
   signalLevel?: SignalLevel;
+  /** Search query text for query-dependent signals (e.g. heading relevance). */
+  query?: string;
 }
 
 /**
