@@ -315,7 +315,7 @@ export class IngestFacade {
     try {
       const points = await scrollAllPoints(this.qdrant, collectionName);
       const stats = computeCollectionStats(points, this.allPayloadSignals, this.gitTimePeriods);
-      const payloadFieldKeys = this.allPayloadSignals.map((d) => d.key);
+      const payloadFieldKeys = [...this.allPayloadSignals.map((d) => d.key), "navigation"];
       this.statsCache.save(collectionName, stats, payloadFieldKeys);
       this.reranker?.invalidateStats();
     } catch (error) {
