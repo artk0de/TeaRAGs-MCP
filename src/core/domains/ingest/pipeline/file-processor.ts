@@ -5,8 +5,9 @@
  * Eliminates duplication between IndexPipeline and ReindexPipeline.
  */
 
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { isTestPath } from "../../../infra/scope-detection.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../../types.js";
@@ -19,6 +20,44 @@ import { containsSecrets } from "./chunker/utils/secrets-detector.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { parallelLimit } from "./infra/parallel.js";
 import { isDebug } from "./infra/runtime.js";
+
+/**
+ * Post-process chunks of a single file:
+ * 1. Replace readable symbolId with doc:hash for documentation chunks
+ * 2. Assign navigation links (prevSymbolId / nextSymbolId) for all chunks
+ *
+ * Mutates chunks in place. Must be called AFTER chunking, BEFORE pipeline.
+ */
+export function assignNavigationAndDocSymbolId(chunks: CodeChunk[], basePath: string): void {
+  // Phase 1: compute doc symbolIds
+  for (const chunk of chunks) {
+    if (chunk.metadata.isDocumentation) {
+      const relPath = relative(basePath, chunk.metadata.filePath);
+      const hp = chunk.metadata.headingPath;
+      let hashInput: string;
+      if (hp && hp.length > 0) {
+        hashInput = `${relPath}#${hp.map((h) => h.text).join(" > ")}`;
+      } else if (chunk.metadata.name === "Preamble") {
+        hashInput = `${relPath}#preamble`;
+      } else {
+        hashInput = `${relPath}#${chunk.metadata.chunkIndex}`;
+      }
+      chunk.metadata.symbolId = `doc:${createHash("sha256").update(hashInput).digest("hex").slice(0, 12)}`;
+    }
+  }
+
+  // Phase 2: assign navigation
+  for (let i = 0; i < chunks.length; i++) {
+    const nav: { prevSymbolId?: string; nextSymbolId?: string } = {};
+    if (i > 0 && chunks[i - 1].metadata.symbolId) {
+      nav.prevSymbolId = chunks[i - 1].metadata.symbolId;
+    }
+    if (i < chunks.length - 1 && chunks[i + 1].metadata.symbolId) {
+      nav.nextSymbolId = chunks[i + 1].metadata.symbolId;
+    }
+    chunks[i].metadata.navigation = nav;
+  }
+}
 
 export interface FileProcessorOptions {
   enableGitMetadata: boolean;
@@ -83,6 +122,9 @@ export async function processFiles(
         const { chunks } = await chunkerPool.processFile(filePath, code, language);
         pipelineLog.addStageTime("parse", Date.now() - parseStart);
 
+        // Post-process: doc symbolIds + navigation links
+        assignNavigationAndDocSymbolId(chunks, basePath);
+
         // Apply chunk limits if configured
         const chunksToAdd = options.maxChunksPerFile ? chunks.slice(0, options.maxChunksPerFile) : chunks;
 
@@ -107,6 +149,8 @@ export async function processFiles(
               symbolId: chunk.metadata.symbolId,
               isDocumentation: chunk.metadata.isDocumentation,
               methodLines: chunk.metadata.methodLines,
+              headingPath: chunk.metadata.headingPath,
+              navigation: chunk.metadata.navigation,
               ...(imports.length > 0 && { imports }),
             } as CodeChunk["metadata"],
           };
