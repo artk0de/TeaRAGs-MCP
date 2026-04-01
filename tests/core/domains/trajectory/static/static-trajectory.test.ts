@@ -22,12 +22,13 @@ describe("StaticTrajectory", () => {
     expect(keys).toContain("contentSize");
   });
 
-  it("has 6 derived signals", () => {
-    expect(trajectory.derivedSignals).toHaveLength(6);
+  it("has 7 derived signals", () => {
+    expect(trajectory.derivedSignals).toHaveLength(7);
     const names = trajectory.derivedSignals.map((d) => d.name);
     expect(names).toContain("similarity");
     expect(names).toContain("chunkSize");
     expect(names).toContain("chunkDensity");
+    expect(names).toContain("headingRelevance");
   });
 
   it("has 2 presets", () => {
