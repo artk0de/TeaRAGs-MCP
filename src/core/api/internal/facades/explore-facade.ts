@@ -129,7 +129,8 @@ export class ExploreFacade {
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
-    const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
+    const rerank = this.resolveDocRerank(request.rerank, request.documentation, request.language);
+    const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
     const filter = this.registry.buildMergedFilter(
       request as unknown as Record<string, unknown>,
       request.filter,
@@ -145,7 +146,7 @@ export class ExploreFacade {
         offset: request.offset,
         filter,
         pathPattern: request.pathPattern,
-        rerank: request.rerank,
+        rerank,
         metaOnly: request.metaOnly,
         level,
       },
@@ -157,7 +158,8 @@ export class ExploreFacade {
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
     const { embedding } = await this.embeddings.embed(request.query);
-    const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
+    const rerank = this.resolveDocRerank(request.rerank, request.documentation, request.language);
+    const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
     const filter = this.registry.buildMergedFilter(
       request as unknown as Record<string, unknown>,
       request.filter,
@@ -173,7 +175,7 @@ export class ExploreFacade {
         offset: request.offset,
         filter,
         pathPattern: request.pathPattern,
-        rerank: request.rerank,
+        rerank,
         metaOnly: request.metaOnly,
         level,
       },
@@ -497,6 +499,17 @@ export class ExploreFacade {
       driftWarning,
       ...(ctx.level ? { level: ctx.level } : {}),
     };
+  }
+
+  /** Auto-apply documentationRelevance preset for doc searches without explicit rerank. */
+  private resolveDocRerank(
+    rerank: string | { custom: Record<string, number> } | undefined,
+    documentation?: string,
+    language?: string,
+  ): string | { custom: Record<string, number> } | undefined {
+    if (rerank) return rerank;
+    if (documentation === "only" || language === "markdown") return "documentationRelevance";
+    return rerank;
   }
 
   /**

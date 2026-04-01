@@ -31,10 +31,11 @@ describe("StaticTrajectory", () => {
     expect(names).toContain("headingRelevance");
   });
 
-  it("has 2 presets", () => {
-    expect(trajectory.presets).toHaveLength(2);
+  it("has 3 presets", () => {
+    expect(trajectory.presets).toHaveLength(3);
     expect(trajectory.presets.map((p) => p.name)).toContain("relevance");
     expect(trajectory.presets.map((p) => p.name)).toContain("decomposition");
+    expect(trajectory.presets.map((p) => p.name)).toContain("documentationRelevance");
   });
 
   it("has 6 static filters", () => {

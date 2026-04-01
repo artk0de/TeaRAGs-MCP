@@ -27,10 +27,11 @@ describe("STATIC_PRESETS", () => {
     expect(weights).toEqual({ similarity: 1.0 });
   });
 
-  it("contains RelevancePreset and DecompositionPreset", () => {
-    expect(STATIC_PRESETS).toHaveLength(2);
+  it("contains RelevancePreset, DecompositionPreset, and DocumentationRelevancePreset", () => {
+    expect(STATIC_PRESETS).toHaveLength(3);
     expect(STATIC_PRESETS.map((p) => p.name)).toContain("relevance");
     expect(STATIC_PRESETS.map((p) => p.name)).toContain("decomposition");
+    expect(STATIC_PRESETS.map((p) => p.name)).toContain("documentationRelevance");
   });
 });
 
