@@ -115,6 +115,32 @@ export class SnapshotStoreAdapter implements SnapshotStore {
     }
   }
 
+  async invalidateByExtensions(extensions: string[]): Promise<number> {
+    const format = await this.getFormat();
+    if (format !== "sharded") return 0;
+
+    const snapshotManager = new ShardedSnapshotManager(this.snapshotDir, this.collectionName, this.shardCount);
+    const snapshot = await snapshotManager.load();
+    if (!snapshot) return 0;
+
+    const extSet = new Set(extensions);
+    let invalidated = 0;
+
+    for (const [path, meta] of snapshot.files) {
+      const ext = path.lastIndexOf(".") >= 0 ? path.slice(path.lastIndexOf(".")) : "";
+      if (extSet.has(ext)) {
+        meta.hash = ""; // Empty hash → synchronizer detects mismatch → "modified"
+        invalidated++;
+      }
+    }
+
+    if (invalidated > 0) {
+      await snapshotManager.save(snapshot.codebasePath, snapshot.files);
+    }
+
+    return invalidated;
+  }
+
   private async exists(path: string): Promise<boolean> {
     try {
       await fs.access(path);

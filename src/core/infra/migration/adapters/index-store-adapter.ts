@@ -98,4 +98,8 @@ export class IndexStoreAdapter implements IndexStore {
   async updateSparseConfig(collection: string): Promise<void> {
     await this.qdrant.updateCollectionSparseConfig(collection);
   }
+
+  async deletePointsByFilter(collection: string, filter: Record<string, unknown>): Promise<void> {
+    await this.qdrant.deletePointsByFilter(collection, filter);
+  }
 }

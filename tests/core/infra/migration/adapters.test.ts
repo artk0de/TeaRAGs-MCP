@@ -150,6 +150,53 @@ describe("SnapshotStoreAdapter", () => {
     });
   });
 
+  describe("invalidateByExtensions", () => {
+    it("returns 0 when format is not sharded", async () => {
+      // No sharded snapshot exists → format is "none"
+      const count = await adapter.invalidateByExtensions([".md"]);
+      expect(count).toBe(0);
+    });
+
+    it("invalidates matching files in sharded snapshot", async () => {
+      // Create a sharded snapshot with markdown and non-markdown files
+      const files = new Map([
+        ["docs/readme.md", { mtime: 1000, size: 100, hash: "abc" }],
+        ["docs/guide.markdown", { mtime: 2000, size: 200, hash: "def" }],
+        ["src/index.ts", { mtime: 3000, size: 300, hash: "ghi" }],
+      ]);
+      await adapter.writeSharded("/my/codebase", files);
+
+      const count = await adapter.invalidateByExtensions([".md", ".markdown"]);
+      expect(count).toBe(2);
+    });
+
+    it("returns 0 when no files match the extensions", async () => {
+      const files = new Map([["src/index.ts", { mtime: 1000, size: 100, hash: "abc" }]]);
+      await adapter.writeSharded("/my/codebase", files);
+
+      const count = await adapter.invalidateByExtensions([".md"]);
+      expect(count).toBe(0);
+    });
+
+    it("empties hash for invalidated files so synchronizer detects mismatch", async () => {
+      const files = new Map([
+        ["docs/readme.md", { mtime: 1000, size: 100, hash: "abc123" }],
+        ["src/index.ts", { mtime: 2000, size: 200, hash: "def456" }],
+      ]);
+      await adapter.writeSharded("/my/codebase", files);
+
+      await adapter.invalidateByExtensions([".md"]);
+
+      // Reload snapshot to verify hash was emptied
+      const { ShardedSnapshotManager } = await import("../../../../src/core/domains/ingest/sync/sharded-snapshot.js");
+      const manager = new ShardedSnapshotManager(snapshotDir, collectionName);
+      const snapshot = await manager.load();
+      expect(snapshot).not.toBeNull();
+      expect(snapshot!.files.get("docs/readme.md")!.hash).toBe("");
+      expect(snapshot!.files.get("src/index.ts")!.hash).toBe("def456");
+    });
+  });
+
   describe("statFile", () => {
     it("returns mtime and size for existing file", async () => {
       const filePath = join(snapshotDir, "test.ts");
@@ -281,6 +328,18 @@ describe("IndexStoreAdapter", () => {
       const adapter = new IndexStoreAdapter(qdrant as any);
       await adapter.updateSparseConfig("col");
       expect(qdrant.updateCollectionSparseConfig).toHaveBeenCalledWith("col");
+    });
+  });
+
+  describe("deletePointsByFilter", () => {
+    it("delegates to qdrant.deletePointsByFilter", async () => {
+      const qdrant = makeQdrant({
+        deletePointsByFilter: vi.fn().mockResolvedValue(undefined),
+      });
+      const adapter = new IndexStoreAdapter(qdrant as any);
+      const filter = { must: [{ key: "language", match: { value: "markdown" } }] };
+      await adapter.deletePointsByFilter("col", filter);
+      expect(qdrant.deletePointsByFilter).toHaveBeenCalledWith("col", filter);
     });
   });
 });

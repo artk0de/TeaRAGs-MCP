@@ -169,8 +169,8 @@ describe("SchemaManager", () => {
   });
 
   describe("LATEST_SCHEMA_VERSION", () => {
-    it("should be 8 without enrichment store", () => {
-      expect(LATEST_SCHEMA_VERSION).toBe(8);
+    it("should be 10 with v10 markdown purge migration", () => {
+      expect(LATEST_SCHEMA_VERSION).toBe(10);
     });
   });
 });
