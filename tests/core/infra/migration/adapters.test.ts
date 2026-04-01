@@ -187,13 +187,13 @@ describe("SnapshotStoreAdapter", () => {
 
       await adapter.invalidateByExtensions([".md"]);
 
-      // Reload snapshot to verify hash was emptied
+      // Reload snapshot to verify mtime was zeroed (forces hash recompute in synchronizer)
       const { ShardedSnapshotManager } = await import("../../../../src/core/domains/ingest/sync/sharded-snapshot.js");
       const manager = new ShardedSnapshotManager(snapshotDir, collectionName);
       const snapshot = await manager.load();
       expect(snapshot).not.toBeNull();
-      expect(snapshot!.files.get("docs/readme.md")!.hash).toBe("");
-      expect(snapshot!.files.get("src/index.ts")!.hash).toBe("def456");
+      expect(snapshot!.files.get("docs/readme.md")!.mtime).toBe(0);
+      expect(snapshot!.files.get("src/index.ts")!.mtime).not.toBe(0);
     });
   });
 

@@ -119,7 +119,9 @@ export class SnapshotStoreAdapter implements SnapshotStore {
     const format = await this.getFormat();
     if (format !== "sharded") return 0;
 
-    const snapshotManager = new ShardedSnapshotManager(this.snapshotDir, this.collectionName, this.shardCount);
+    // Read actual shard count from meta.json — snapshot may use different count than default
+    const shardCount = await this.readShardCount();
+    const snapshotManager = new ShardedSnapshotManager(this.snapshotDir, this.collectionName, shardCount);
     const snapshot = await snapshotManager.load();
     if (!snapshot) return 0;
 
@@ -129,7 +131,7 @@ export class SnapshotStoreAdapter implements SnapshotStore {
     for (const [path, meta] of snapshot.files) {
       const ext = path.lastIndexOf(".") >= 0 ? path.slice(path.lastIndexOf(".")) : "";
       if (extSet.has(ext)) {
-        meta.hash = ""; // Empty hash → synchronizer detects mismatch → "modified"
+        meta.mtime = 0; // Zero mtime → fast path skipped → hash recomputed → mismatch → "modified"
         invalidated++;
       }
     }
@@ -139,6 +141,16 @@ export class SnapshotStoreAdapter implements SnapshotStore {
     }
 
     return invalidated;
+  }
+
+  private async readShardCount(): Promise<number> {
+    try {
+      const raw = await fs.readFile(this.shardedMetaPath, "utf-8");
+      const meta = JSON.parse(raw) as { hashRing?: { shardCount?: number } };
+      return meta.hashRing?.shardCount ?? this.shardCount;
+    } catch {
+      return this.shardCount;
+    }
   }
 
   private async exists(path: string): Promise<boolean> {
