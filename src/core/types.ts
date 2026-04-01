@@ -208,6 +208,9 @@ export interface CodeChunk {
 
     /** Heading breadcrumb path for documentation chunks. Internal — stripped from API responses. */
     headingPath?: { depth: number; text: string }[];
+
+    /** Navigation links to adjacent chunks in the same file. */
+    navigation?: { prevSymbolId?: string; nextSymbolId?: string };
   };
 }
 
