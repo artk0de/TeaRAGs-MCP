@@ -42,16 +42,17 @@ import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.j
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import { CollectionNotProvidedError } from "../../errors.js";
-import type {
-  ExploreCodeRequest,
-  ExploreResponse,
-  FindSimilarRequest,
-  FindSymbolRequest,
-  HybridSearchRequest,
-  IndexMetrics,
-  RankChunksRequest,
-  SemanticSearchRequest,
-  SignalMetrics,
+import {
+  stripInternalFields,
+  type ExploreCodeRequest,
+  type ExploreResponse,
+  type FindSimilarRequest,
+  type FindSymbolRequest,
+  type HybridSearchRequest,
+  type IndexMetrics,
+  type RankChunksRequest,
+  type SemanticSearchRequest,
+  type SignalMetrics,
 } from "../../public/dto/index.js";
 
 // ---------------------------------------------------------------------------
@@ -493,7 +494,7 @@ export class ExploreFacade {
       results: results.map((r) => ({
         id: r.id ?? "",
         score: r.score,
-        payload: r.payload,
+        payload: r.payload ? stripInternalFields(r.payload) : r.payload,
         rankingOverlay: r.rankingOverlay,
       })),
       driftWarning,
