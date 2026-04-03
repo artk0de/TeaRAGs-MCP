@@ -5,3 +5,4 @@ export { SchemaV7SparseConfig } from "./schema-v7-sparse-config.js";
 export { SchemaV8SymbolIdText } from "./schema-v8-symbolid-text.js";
 export { SchemaV9EnrichedAtBackfill } from "./schema-v9-enrichedat-backfill.js";
 export { SchemaV10PurgeMarkdownChunks } from "./schema-v10-purge-markdown-chunks.js";
+export { SchemaV11RenameParentSymbolId } from "./schema-v11-rename-parent-symbol-id.js";

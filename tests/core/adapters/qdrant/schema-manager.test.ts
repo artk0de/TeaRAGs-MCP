@@ -169,8 +169,8 @@ describe("SchemaManager", () => {
   });
 
   describe("LATEST_SCHEMA_VERSION", () => {
-    it("should be 10 with v10 markdown purge migration", () => {
-      expect(LATEST_SCHEMA_VERSION).toBe(10);
+    it("should be 11 with v11 parentName rename migration", () => {
+      expect(LATEST_SCHEMA_VERSION).toBe(11);
     });
   });
 });

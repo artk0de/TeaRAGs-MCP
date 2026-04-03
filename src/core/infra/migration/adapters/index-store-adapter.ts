@@ -102,4 +102,19 @@ export class IndexStoreAdapter implements IndexStore {
   async deletePointsByFilter(collection: string, filter: Record<string, unknown>): Promise<void> {
     await this.qdrant.deletePointsByFilter(collection, filter);
   }
+
+  async scrollAllPayload(collection: string): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
+    return this.qdrant.scrollFiltered(collection, {}, 10000);
+  }
+
+  async batchSetPayload(
+    collection: string,
+    operations: { payload: Record<string, unknown>; points: (string | number)[] }[],
+  ): Promise<void> {
+    await this.qdrant.batchSetPayload(collection, operations);
+  }
+
+  async deletePayloadKeys(collection: string, keys: string[]): Promise<void> {
+    await this.qdrant.deletePayloadKeys(collection, keys);
+  }
 }
