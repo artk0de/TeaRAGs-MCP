@@ -118,9 +118,13 @@ export interface FindSimilarRequest extends CollectionRef {
 /**
  * Find symbol by name — direct Qdrant scroll, no embedding.
  * Returns merged definition for functions, outline for classes.
+ * When relativePath is provided instead of symbol, returns file-level outline.
  */
 export interface FindSymbolRequest extends CollectionRef {
-  symbol: string;
+  /** Symbol name to find. Mutually exclusive with relativePath. */
+  symbol?: string;
+  /** File path for file-level lookup. Mutually exclusive with symbol. */
+  relativePath?: string;
   language?: string;
   pathPattern?: string;
   metaOnly?: boolean;
