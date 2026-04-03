@@ -141,7 +141,8 @@ export function registerSearchTools(
         "symbol mode: merged definition for functions, outline + members for classes. " +
         "relativePath mode: file-level outline (code symbols or doc TOC). " +
         "Uses Qdrant text match. Partial match supported: " +
-        "'Reranker' finds the class and all its methods.",
+        "'Reranker' finds the class and all its methods. " +
+        "symbolId convention: Class#method (instance), Class.method (static).",
       inputSchema: searchSchemas.FindSymbolSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },
