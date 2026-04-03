@@ -118,7 +118,7 @@ describe("resolveSymbols", () => {
         {
           id: "method-1",
           payload: {
-            symbolId: "Reranker.score",
+            symbolId: "Reranker#score",
             chunkType: "function",
             parentSymbolId: "Reranker",
             relativePath: "src/reranker.ts",
@@ -132,7 +132,7 @@ describe("resolveSymbols", () => {
         {
           id: "method-2",
           payload: {
-            symbolId: "Reranker.rerank",
+            symbolId: "Reranker#rerank",
             chunkType: "function",
             parentSymbolId: "Reranker",
             relativePath: "src/reranker.ts",
@@ -149,7 +149,7 @@ describe("resolveSymbols", () => {
 
       const classResult = results.find((r) => r.payload?.chunkType === "class");
       expect(classResult).toBeDefined();
-      expect(classResult!.payload?.members).toEqual(["Reranker.score", "Reranker.rerank"]);
+      expect(classResult!.payload?.members).toEqual(["Reranker#score", "Reranker#rerank"]);
       expect(classResult!.payload?.git).toEqual({ file: { commitCount: 15, ageDays: 60 } });
     });
 
@@ -173,7 +173,7 @@ describe("resolveSymbols", () => {
         {
           id: "method-uuid",
           payload: {
-            symbolId: "Reranker.rerank",
+            symbolId: "Reranker#rerank",
             chunkType: "function",
             parentSymbolId: "Reranker",
             relativePath: "src/reranker.ts",
@@ -190,7 +190,7 @@ describe("resolveSymbols", () => {
 
       const classResult = results.find((r) => r.payload?.symbolId === "Reranker");
       expect(classResult).toBeDefined();
-      expect(classResult!.payload?.members).toEqual(["Reranker.rerank"]);
+      expect(classResult!.payload?.members).toEqual(["Reranker#rerank"]);
     });
   });
 
@@ -200,7 +200,7 @@ describe("resolveSymbols", () => {
         {
           id: "uuid-partial",
           payload: {
-            symbolId: "Reranker.score",
+            symbolId: "Reranker#score",
             chunkType: "function",
             relativePath: "src/reranker.ts",
             content: "score() {}",

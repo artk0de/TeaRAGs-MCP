@@ -11,6 +11,8 @@ export interface BodyChunkResult {
   symbolId?: string;
   /** Hook-provided chunk name. When present, chunker uses instead of parentSymbolId. */
   name?: string;
+  /** Whether this chunk represents a static/class method. Default: false (instance). */
+  isStatic?: boolean;
   /** Hook-provided parent name. */
   parentSymbolId?: string;
 }
