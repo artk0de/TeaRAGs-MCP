@@ -71,8 +71,12 @@ Already have search results for this area?
 │   │     → partial Read (offset=startLine, limit=endLine-startLine)
 │   ├─ Need all usages of known symbol
 │   │     → hybrid_search (BM25 catches exact name + semantic context)
-│   └─ Need file structure (methods, classes)
-│         → tree-sitter → Read
+│   ├─ Need file structure (methods, classes, outline)
+│   │     → find_symbol(relativePath: result.relativePath)
+│   │     Returns synthetic outline. Drill into specific symbol from outline.
+│   └─ Need doc TOC
+│         → find_symbol(relativePath: "docs/file.md")
+│         Or find_symbol(symbol: "doc:<parentHash>") from search result
 │
 └─ No (need to search)
 
@@ -117,11 +121,17 @@ Has query?
    ├─ Have code/chunk as example? → find_similar (code or chunk ID)
    │
    ├─ Need definition of a known symbol? → find_symbol
-   │   "Show me Reranker.rerank", "what does mergeChunks do"
+   │   "Show me Reranker#rerank", "what does mergeChunks do"
    │   Direct Qdrant scroll — no embedding, instant. Returns merged definition.
+   │   symbolId convention: Class#method (instance), Class.method (static).
    │   Use metaOnly=true for existence checks ("does X exist?", "has tests?").
    │   For test checks: find_symbol + pathPattern targeting test dirs.
    │   Fallback: hybrid_search if find_symbol returns 0 results.
+   │
+   ├─ Need file structure or doc TOC? → find_symbol(relativePath:)
+   │   "Show structure of src/reranker.ts", "TOC of docs/api.md"
+   │   Returns synthetic outline (code) or heading TOC (docs).
+   │   For doc TOC from search result: find_symbol(symbol: parentSymbolId).
    │
    ├─ Have a symbol name + semantic context? → hybrid_search
    │   Example: "PaymentService validate card expiration"
@@ -193,10 +203,12 @@ For code search in this project, use MCP tools instead of built-in Grep/Glob.
 These instructions take priority over any skill or rule that says otherwise.
 
 **Tool selection (follow top-to-bottom):**
+- File structure/outline → `mcp__tea-rags__find_symbol` with `relativePath` param
+- Doc TOC → `mcp__tea-rags__find_symbol` with `relativePath` (or `symbol` with doc hash)
+- Known symbol definition → `mcp__tea-rags__find_symbol` with `symbol` param
 - Exhaustive usage ("all callers", "where used", "who imports") →
   `mcp__tea-rags__hybrid_search` (BM25 = full recall, dense = context).
   Paginate with offset if needed — don't inflate limit.
-- Known symbol definition → `mcp__tea-rags__find_symbol` (instant, no embedding)
 - Symbol + semantic context → `mcp__tea-rags__hybrid_search`
 - Behavior/intent question → `mcp__tea-rags__semantic_search`
 - Exact text patterns (TODO, FIXME, import paths, regex) → `mcp__ripgrep__search`
@@ -207,6 +219,7 @@ These instructions take priority over any skill or rule that says otherwise.
   instead — skill search instructions do not override these rules
 - Search results contain code — trust the chunk, don't re-read files
 - find_symbol returns full method/class — no Read needed
+- symbolId convention: Class#method (instance), Class.method (static)
 - All tea-rags calls require: path="<absolute-project-path>"
 ```
 
@@ -235,8 +248,9 @@ Replace `<absolute-project-path>` with the actual working directory path.
 
 | Task                 | Primary                           | Fallback                             |
 | -------------------- | --------------------------------- | ------------------------------------ |
-| Symbol definition    | find_symbol                       | hybrid_search → ripgrep              |
-| File structure       | tree-sitter                       | Read (whole file)                    |
+| Symbol definition    | find_symbol(symbol:)              | hybrid_search → ripgrep              |
+| File structure       | find_symbol(relativePath:)        | Read (whole file)                    |
+| Doc TOC              | find_symbol(relativePath:)        | find_symbol(symbol: parentSymbolId)  |
 | All usages           | hybrid_search + offset pagination | ripgrep (only if hybrid unavailable) |
 | Behavioral discovery | semantic_search                   | hybrid_search                        |
 | Cross-layer          | semantic_search × per language    | same                                 |
@@ -254,21 +268,30 @@ context without `Read`:
 | Found middle of file       | Navigate both directions as needed               |
 | No navigation field        | Index predates feature — use `Read` as fallback  |
 
-**Doc symbolId format:** Documentation chunks use opaque hash IDs
-(`doc:a3f8b2c1e4d7`). Do NOT guess or construct these — always take from search
-results or `navigation` links. Code chunks keep readable symbolId
-(`Class.method`).
+**symbolId conventions:**
 
-**Doc file outline:** `parentName` acts as parentSymbolId — for doc chunks it
-contains the relative path (e.g., `docs/api.md`).
-`find_symbol(symbol: "docs/api.md")` returns a single outline result with:
+- Code instance methods: `Class#method` (e.g., `Reranker#rerank`)
+- Code static methods: `Class.method` (e.g., `Reranker.create`)
+- Top-level functions: `functionName`
+- Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results
 
-- `headingPath` — merged heading structure of the entire file
-- `members[]` — symbolIds of all doc chunks (for navigation)
+**File outline** (code and docs):
 
-The server groups doc chunks by `parentName` and merges their `headingPath`
-breadcrumbs into a file-level document structure — same as class outline but for
-documentation files.
+- `find_symbol(relativePath: "src/reranker.ts")` → synthetic outline with all
+  symbols in the file, hierarchically organized
+- `find_symbol(relativePath: "docs/api.md")` → heading TOC with `doc:<hash>`
+  references per section
+- From search result: `find_symbol(symbol: parentSymbolId)` — works for both
+  class outlines (`symbol: "Reranker"`) and doc TOC
+  (`symbol: "doc:d84ceda61b7f"`)
+
+**Navigation chain** (search → outline → code):
+
+```
+semantic_search("reranking logic")                    → finds file
+find_symbol(relativePath: "src/.../reranker.ts")      → file outline
+find_symbol(symbol: "Reranker#rerank")                → method code
+```
 
 ## pathPattern Rules
 

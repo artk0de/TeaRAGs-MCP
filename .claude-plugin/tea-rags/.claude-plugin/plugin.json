@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.14.8",
+  "version": "0.14.9",
   "author": { "name": "artk0de" },
   "keywords": ["code-generation", "git-signals", "strategies", "search"],
   "hooks": {
