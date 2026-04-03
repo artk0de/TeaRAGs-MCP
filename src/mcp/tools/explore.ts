@@ -140,7 +140,9 @@ export function registerSearchTools(
         "Find symbol by name — direct lookup, no embedding. " +
         "Returns merged definition for functions (chunks joined), outline + members for classes. " +
         "Uses Qdrant text match on symbolId field. Partial match supported: " +
-        "'Reranker' finds the class and all its methods.",
+        "'Reranker' finds the class and all its methods. " +
+        "For doc files: find_symbol('docs/file.md') returns file outline with merged headingPath " +
+        "structure and members[] (chunk symbolIds for navigation).",
       inputSchema: searchSchemas.FindSymbolSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },

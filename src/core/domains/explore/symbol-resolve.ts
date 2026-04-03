@@ -53,7 +53,29 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?:
     for (const m of memberChunks) emittedIds.add(m.id);
   }
 
-  // Second pass: handle remaining non-class, non-member chunks
+  // Second pass: collect doc chunks by parentName for doc outline
+  const docByParent = new Map<string, ScrollChunk[]>();
+  for (const group of groups.values()) {
+    for (const c of group) {
+      if (emittedIds.has(c.id)) continue;
+      if (c.payload.isDocumentation && typeof c.payload.parentName === "string") {
+        const key = `${String(c.payload.parentName)}::${String(c.payload.relativePath)}`;
+        const list = docByParent.get(key);
+        if (list) list.push(c);
+        else docByParent.set(key, [c]);
+      }
+    }
+  }
+
+  // Emit doc outlines (only when multiple doc chunks share parentName, or query matches parentName)
+  for (const [, docChunks] of docByParent) {
+    if (docChunks.length > 1 || (query && docChunks[0].payload.parentName === query)) {
+      results.push(outlineDoc(docChunks));
+      for (const c of docChunks) emittedIds.add(c.id);
+    }
+  }
+
+  // Third pass: handle remaining non-class, non-member, non-doc-outline chunks
   for (const group of groups.values()) {
     const unemitted = group.filter((c) => !emittedIds.has(c.id));
     if (unemitted.length === 0) continue;
@@ -124,6 +146,43 @@ function outlineClass(classChunk: ScrollChunk, memberChunks: ScrollChunk[]): Sea
   };
 
   return { id: classChunk.id, score: 1.0, payload };
+}
+
+/** Outline a doc file: merged headingPath + members list (symbolIds). */
+function outlineDoc(chunks: ScrollChunk[]): SearchResult {
+  const sorted = [...chunks].sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0));
+  const first = sorted[0];
+
+  // Merge unique headingPath entries (deduplicate by depth+text)
+  const seen = new Set<string>();
+  const mergedHeadingPath: { depth: number; text: string }[] = [];
+  for (const c of sorted) {
+    const hp = c.payload.headingPath as { depth: number; text: string }[] | undefined;
+    if (!hp) continue;
+    for (const entry of hp) {
+      const key = `${entry.depth}:${entry.text}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        mergedHeadingPath.push(entry);
+      }
+    }
+  }
+
+  const members = sorted.map((c) => (c.payload.symbolId as string | undefined) ?? "");
+
+  const payload: Record<string, unknown> = {
+    relativePath: first.payload.relativePath,
+    language: first.payload.language,
+    isDocumentation: true,
+    parentName: first.payload.parentName,
+    startLine: first.payload.startLine,
+    endLine: sorted[sorted.length - 1].payload.endLine,
+    headingPath: mergedHeadingPath,
+    members,
+    git: first.payload.git ? { file: (first.payload.git as Record<string, unknown>).file } : undefined,
+  };
+
+  return { id: first.id, score: 1.0, payload };
 }
 
 /** Sort: exact symbolId match first, then alphabetical by path. */

@@ -259,6 +259,17 @@ context without `Read`:
 results or `navigation` links. Code chunks keep readable symbolId
 (`Class.method`).
 
+**Doc file outline:** `parentName` acts as parentSymbolId — for doc chunks it
+contains the relative path (e.g., `docs/api.md`).
+`find_symbol(symbol: "docs/api.md")` returns a single outline result with:
+
+- `headingPath` — merged heading structure of the entire file
+- `members[]` — symbolIds of all doc chunks (for navigation)
+
+The server groups doc chunks by `parentName` and merges their `headingPath`
+breadcrumbs into a file-level document structure — same as class outline but for
+documentation files.
+
 ## pathPattern Rules
 
 Never use braces with full file paths containing slashes — breaks picomatch.

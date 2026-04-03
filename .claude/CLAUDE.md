@@ -52,6 +52,35 @@ All paths relative to `src/core/`.
 | `migration`        | `infra/migration/`                               |
 | `bootstrap`        | `bootstrap/`                                     |
 
+### Design Principle: Don't Generate — Interrogate
+
+The agent's instinct is to GENERATE variants fast and move on. The user's
+strength is to INTERROGATE each variant until it breaks or holds.
+
+**The anti-pattern that wastes time:**
+
+1. Agent proposes "pure function renderOutline()" → user says it's wrong
+2. Agent proposes "OutlineRenderer with strategies" → user says naming is wrong
+3. Agent proposes "ChunkGroupView" → user says view doesn't reflect reality
+4. Agent proposes "ChunkGrouper" → user approves
+
+The agent went through 4 names because it generated instead of thinking. Each
+time the user had to explain WHY it was wrong. The agent should have asked
+itself: "what does this component DO?" → it groups chunks → ChunkGrouper. One
+step, not four.
+
+**Rule:** Before proposing a name or structure, answer three questions:
+
+1. What does it DO? (verb → noun)
+2. Who OWNS it? (domain)
+3. What's the INTERFACE? (inputs/outputs)
+
+If you can't answer all three — don't propose, investigate first.
+
+**Why:** The user's time is more valuable than the agent's compute. Every bad
+proposal the user has to reject is wasted human attention. Get it right in fewer
+rounds.
+
 ### Naming Conventions
 
 - `buildFileSignals` / `buildChunkSignals` (NOT
