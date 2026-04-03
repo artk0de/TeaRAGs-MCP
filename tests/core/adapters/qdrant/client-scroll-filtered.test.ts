@@ -28,7 +28,7 @@ describe("QdrantManager.scrollFiltered", () => {
         {
           id: "uuid-1",
           payload: {
-            symbolId: "Reranker.score",
+            symbolId: "Reranker#score",
             content: "function score() {}",
             relativePath: "src/reranker.ts",
             startLine: 10,
@@ -38,7 +38,7 @@ describe("QdrantManager.scrollFiltered", () => {
         {
           id: "uuid-2",
           payload: {
-            symbolId: "Reranker.rerank",
+            symbolId: "Reranker#rerank",
             content: "function rerank() {}",
             relativePath: "src/reranker.ts",
             startLine: 30,
@@ -56,7 +56,7 @@ describe("QdrantManager.scrollFiltered", () => {
 
     expect(results).toHaveLength(2);
     expect(results[0].id).toBe("uuid-1");
-    expect(results[0].payload.symbolId).toBe("Reranker.score");
+    expect(results[0].payload.symbolId).toBe("Reranker#score");
     expect(results[1].id).toBe("uuid-2");
 
     expect(mockScroll).toHaveBeenCalledWith("test_collection", {

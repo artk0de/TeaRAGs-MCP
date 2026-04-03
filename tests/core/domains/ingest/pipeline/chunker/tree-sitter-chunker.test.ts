@@ -278,9 +278,9 @@ end
       const names = methodChunks.map((c) => c.metadata.name).sort();
       expect(names).toEqual(["create_user", "find_user"]);
 
-      // Verify symbolId format: ClassName.methodName
+      // Verify symbolId format: ClassName#methodName (instance methods use #)
       expect(methodChunks.find((c) => c.metadata.name === "find_user")?.metadata.symbolId).toBe(
-        "UserService.find_user",
+        "UserService#find_user",
       );
     });
 
@@ -1297,14 +1297,14 @@ end
       if (methodChunks.length > 0) {
         for (const chunk of methodChunks) {
           if (chunk.metadata.name && chunk.metadata.parentSymbolId) {
-            expect(chunk.metadata.symbolId).toBe(`${chunk.metadata.parentSymbolId}.${chunk.metadata.name}`);
+            expect(chunk.metadata.symbolId).toBe(`${chunk.metadata.parentSymbolId}#${chunk.metadata.name}`);
           }
         }
 
         // Specific check for one method
         const findMethod = methodChunks.find((c) => c.metadata.name === "find_by_id");
         if (findMethod) {
-          expect(findMethod.metadata.symbolId).toBe("UserService.find_by_id");
+          expect(findMethod.metadata.symbolId).toBe("UserService#find_by_id");
         }
       } else {
         // If class wasn't split, all chunks should still have symbolId
@@ -1485,13 +1485,13 @@ class DataProcessor {
       if (methodChunks.length > 0) {
         // Verify symbolId format
         for (const chunk of methodChunks) {
-          expect(chunk.metadata.symbolId).toBe(`DataProcessor.${chunk.metadata.name}`);
+          expect(chunk.metadata.symbolId).toBe(`DataProcessor#${chunk.metadata.name}`);
         }
 
         // Check specific method
         const processMethod = methodChunks.find((c) => c.metadata.name === "processData");
         if (processMethod) {
-          expect(processMethod.metadata.symbolId).toBe("DataProcessor.processData");
+          expect(processMethod.metadata.symbolId).toBe("DataProcessor#processData");
         }
       }
     });

@@ -20,7 +20,7 @@ describe("ExploreFacade.findSymbol", () => {
       {
         id: "uuid-1",
         payload: {
-          symbolId: "Reranker.score",
+          symbolId: "Reranker#score",
           chunkType: "function",
           relativePath: "src/reranker.ts",
           content: "score() { return 42; }",
@@ -63,7 +63,7 @@ describe("ExploreFacade.findSymbol", () => {
     });
 
     expect(result.results).toHaveLength(1);
-    expect(result.results[0].payload?.symbolId).toBe("Reranker.score");
+    expect(result.results[0].payload?.symbolId).toBe("Reranker#score");
     expect(result.results[0].score).toBe(1.0);
   });
 

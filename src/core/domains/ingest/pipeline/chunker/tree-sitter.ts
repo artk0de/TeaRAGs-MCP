@@ -33,12 +33,26 @@ export class TreeSitterChunker implements CodeChunker {
   private static readonly MERGEABLE_TYPES = new Set(["block", "interface"]);
 
   /**
-   * Build symbolId from name and optional parentName
-   * Format: "ParentName.childName" or just "name"
+   * Build symbolId from name and optional parentName.
+   * Instance methods use "#" separator: "Parent#method"
+   * Static methods use "." separator: "Parent.method"
+   * Top-level symbols have no separator: "name"
    */
-  private buildSymbolId(name?: string, parentName?: string): string | undefined {
+  private buildSymbolId(name?: string, parentName?: string, isStatic?: boolean): string | undefined {
     if (!name) return undefined;
-    return parentName ? `${parentName}.${name}` : name;
+    if (!parentName) return name;
+    const separator = isStatic ? "." : "#";
+    return `${parentName}${separator}${name}`;
+  }
+
+  /**
+   * Check if a tree-sitter node has a specific modifier (e.g., "static").
+   */
+  private hasModifier(node: Parser.SyntaxNode, modifier: string): boolean {
+    for (const child of node.children) {
+      if (child.type === modifier || child.text === modifier) return true;
+    }
+    return false;
   }
 
   /**
@@ -588,6 +602,7 @@ export class TreeSitterChunker implements CodeChunker {
       }
 
       const childName = this.extractName(childNode, code, langConfig.nameExtractor);
+      const isStatic = this.hasModifier(childNode, "static");
       chunks.push({
         content: finalContent,
         startLine,
@@ -600,7 +615,7 @@ export class TreeSitterChunker implements CodeChunker {
           name: childName,
           parentSymbolId: parentName,
           parentType,
-          symbolId: this.buildSymbolId(childName, parentName),
+          symbolId: this.buildSymbolId(childName, parentName, isStatic),
           methodLines: this.computeEndLine(childNode) - (childNode.startPosition.row + 1),
         },
       });
