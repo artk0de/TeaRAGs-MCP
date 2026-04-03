@@ -54,7 +54,6 @@ export const DocChunkGrouper = {
       tocLines.push(`${indent}${hashes} ${entry.text}${suffix}`);
     }
 
-    const members = sorted.map((c) => (c.payload.symbolId as string | undefined) ?? "");
     const contentSize = sorted.reduce((sum, c) => sum + ((c.payload.content as string | undefined) ?? "").length, 0);
 
     const payload: Record<string, unknown> = {
@@ -66,7 +65,6 @@ export const DocChunkGrouper = {
       endLine: sorted[sorted.length - 1].payload.endLine,
       content: tocLines.join("\n"),
       headingPath: mergedHeadingPath,
-      members,
       chunkCount: sorted.length,
       contentSize,
       git: fileGit(first),

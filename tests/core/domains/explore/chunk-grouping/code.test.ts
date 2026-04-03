@@ -71,10 +71,7 @@ describe("CodeChunkGrouper", () => {
       expect(result.id).toBe("class-1");
       expect(result.score).toBe(1.0);
 
-      // Members sorted by startLine
-      expect(result.payload?.members).toEqual(["Reranker#rerank", "Reranker#score", "Reranker.create"]);
-
-      // Synthetic outline content
+      // Synthetic outline content (members visible in outline, no separate members array)
       const content = result.payload?.content as string;
       expect(content).toBe("Reranker\n  Reranker#rerank\n  Reranker#score\n  Reranker.create");
 
@@ -109,7 +106,6 @@ describe("CodeChunkGrouper", () => {
 
       const result = CodeChunkGrouper.group(classChunk, []);
 
-      expect(result.payload?.members).toBeUndefined();
       expect(result.payload?.content).toBe("EmptyClass");
       expect(result.payload?.chunkCount).toBe(1);
       expect(result.payload?.contentSize).toBe("class EmptyClass {}".length);

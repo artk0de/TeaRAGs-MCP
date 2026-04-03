@@ -14,7 +14,7 @@ import type { ScrollChunk } from "./chunk-grouping/types.js";
  * Resolve raw scroll chunks into find_symbol results.
  *
  * Strategy per group (same symbolId + same relativePath):
- * - chunkType "class" → outline with members[]
+ * - chunkType "class" → synthetic outline via CodeChunkGrouper
  * - anything else → merge chunks by startLine order
  *
  * @param chunks - raw Qdrant scroll results

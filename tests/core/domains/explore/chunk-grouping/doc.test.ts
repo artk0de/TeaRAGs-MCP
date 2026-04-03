@@ -93,9 +93,6 @@ describe("DocChunkGrouper", () => {
       expect(hp[1]).toEqual({ depth: 2, text: "Installation" });
       expect(hp[2]).toEqual({ depth: 2, text: "Usage" });
 
-      // Members list
-      expect(result.payload?.members).toEqual(["readme-chunk-0", "readme-chunk-1", "readme-chunk-2"]);
-
       // Aggregated stats
       expect(result.payload?.chunkCount).toBe(3);
       expect(result.payload?.contentSize).toBe(
@@ -187,7 +184,6 @@ describe("DocChunkGrouper", () => {
 
       expect(result.payload?.headingPath).toEqual([]);
       expect(result.payload?.content).toBe("");
-      expect(result.payload?.members).toEqual(["no-heading-chunk"]);
       expect(result.payload?.chunkCount).toBe(1);
     });
   });

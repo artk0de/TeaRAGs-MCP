@@ -99,7 +99,7 @@ describe("resolveSymbols", () => {
   });
 
   describe("class outline strategy", () => {
-    it("returns class chunk with members list", () => {
+    it("returns class outline via CodeChunkGrouper", () => {
       const chunks = [
         {
           id: "class-uuid",
@@ -149,7 +149,8 @@ describe("resolveSymbols", () => {
 
       const classResult = results.find((r) => r.payload?.chunkType === "class");
       expect(classResult).toBeDefined();
-      expect(classResult!.payload?.members).toEqual(["Reranker#score", "Reranker#rerank"]);
+      expect(classResult!.payload?.content).toContain("Reranker#score");
+      expect(classResult!.payload?.content).toContain("Reranker#rerank");
       expect(classResult!.payload?.git).toEqual({ file: { commitCount: 15, ageDays: 60 } });
     });
 
@@ -190,7 +191,7 @@ describe("resolveSymbols", () => {
 
       const classResult = results.find((r) => r.payload?.symbolId === "Reranker");
       expect(classResult).toBeDefined();
-      expect(classResult!.payload?.members).toEqual(["Reranker#rerank"]);
+      expect(classResult!.payload?.content).toContain("Reranker#rerank");
     });
   });
 
@@ -330,7 +331,9 @@ describe("resolveSymbols", () => {
       expect(results).toHaveLength(1);
       const outline = results[0];
       expect(outline.payload?.relativePath).toBe("docs/api.md");
-      expect(outline.payload?.members).toEqual(["doc:aaa111", "doc:bbb222", "doc:ccc333"]);
+      expect(outline.payload?.content).toContain("doc:aaa111");
+      expect(outline.payload?.content).toContain("doc:bbb222");
+      expect(outline.payload?.content).toContain("doc:ccc333");
       expect(outline.payload?.headingPath).toEqual([
         { depth: 1, text: "API" },
         { depth: 2, text: "Authentication" },
@@ -362,7 +365,6 @@ describe("resolveSymbols", () => {
 
       expect(results).toHaveLength(1);
       expect(results[0].payload?.content).toBeUndefined();
-      expect(results[0].payload?.members).toEqual(["doc:aaa111"]);
       expect(results[0].payload?.headingPath).toEqual([{ depth: 2, text: "Setup" }]);
     });
   });
