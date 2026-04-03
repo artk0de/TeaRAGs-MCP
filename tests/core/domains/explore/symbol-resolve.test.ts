@@ -120,7 +120,7 @@ describe("resolveSymbols", () => {
           payload: {
             symbolId: "Reranker.score",
             chunkType: "function",
-            parentName: "Reranker",
+            parentSymbolId: "Reranker",
             relativePath: "src/reranker.ts",
             content: "score() { ... }",
             startLine: 30,
@@ -134,7 +134,7 @@ describe("resolveSymbols", () => {
           payload: {
             symbolId: "Reranker.rerank",
             chunkType: "function",
-            parentName: "Reranker",
+            parentSymbolId: "Reranker",
             relativePath: "src/reranker.ts",
             content: "rerank() { ... }",
             startLine: 55,
@@ -175,7 +175,7 @@ describe("resolveSymbols", () => {
           payload: {
             symbolId: "Reranker.rerank",
             chunkType: "function",
-            parentName: "Reranker",
+            parentSymbolId: "Reranker",
             relativePath: "src/reranker.ts",
             content: "rerank() { ... }",
             startLine: 76,
@@ -264,14 +264,14 @@ describe("resolveSymbols", () => {
   });
 
   describe("doc outline strategy", () => {
-    it("groups doc chunks by parentName into outline with merged headingPath", () => {
+    it("groups doc chunks by parentSymbolId into outline with merged headingPath", () => {
       const chunks = [
         {
           id: "doc-1",
           payload: {
             symbolId: "doc:aaa111",
             chunkType: "block",
-            parentName: "docs/api.md",
+            parentSymbolId: "docs/api.md",
             relativePath: "docs/api.md",
             isDocumentation: true,
             name: "Introduction",
@@ -288,7 +288,7 @@ describe("resolveSymbols", () => {
           payload: {
             symbolId: "doc:bbb222",
             chunkType: "block",
-            parentName: "docs/api.md",
+            parentSymbolId: "docs/api.md",
             relativePath: "docs/api.md",
             isDocumentation: true,
             name: "Authentication",
@@ -308,7 +308,7 @@ describe("resolveSymbols", () => {
           payload: {
             symbolId: "doc:ccc333",
             chunkType: "block",
-            parentName: "docs/api.md",
+            parentSymbolId: "docs/api.md",
             relativePath: "docs/api.md",
             isDocumentation: true,
             name: "Usage",
@@ -345,7 +345,7 @@ describe("resolveSymbols", () => {
           payload: {
             symbolId: "doc:aaa111",
             chunkType: "block",
-            parentName: "docs/guide.md",
+            parentSymbolId: "docs/guide.md",
             relativePath: "docs/guide.md",
             isDocumentation: true,
             name: "Setup",

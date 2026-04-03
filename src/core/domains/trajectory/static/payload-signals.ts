@@ -10,7 +10,7 @@ export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
   { key: "isDocumentation", type: "boolean", description: "Whether chunk is documentation" },
   { key: "chunkType", type: "string", description: "Chunk type (function, class, block, etc.)" },
   { key: "name", type: "string", description: "Symbol name (class, function, etc.)" },
-  { key: "parentName", type: "string", description: "Parent symbol name" },
+  { key: "parentSymbolId", type: "string", description: "Parent symbol name" },
   { key: "parentType", type: "string", description: "Parent symbol type" },
   { key: "imports", type: "string[]", description: "File-level imports inherited by all chunks" },
   { key: "symbolId", type: "string", description: "Unique symbol identifier (e.g. 'MyClass.processData')" },

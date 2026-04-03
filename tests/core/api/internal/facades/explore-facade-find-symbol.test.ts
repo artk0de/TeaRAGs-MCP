@@ -184,10 +184,10 @@ describe("ExploreFacade.findSymbol", () => {
       expect.arrayContaining([{ key: "symbolId", match: { text: "Reranker" } }, ...pathMust]),
     );
 
-    // Second call: parentName filter + pathPattern
+    // Second call: parentSymbolId filter + pathPattern
     const parentFilter = mockScrollFiltered.mock.calls[1][1];
     expect(parentFilter.must).toEqual(
-      expect.arrayContaining([{ key: "parentName", match: { text: "Reranker" } }, ...pathMust]),
+      expect.arrayContaining([{ key: "parentSymbolId", match: { text: "Reranker" } }, ...pathMust]),
     );
   });
 

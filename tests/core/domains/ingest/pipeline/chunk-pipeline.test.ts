@@ -766,7 +766,7 @@ describe("ChunkPipeline", () => {
           chunkIndex: 0,
           name: "processData",
           chunkType: "function",
-          parentName: "DataService",
+          parentSymbolId: "DataService",
           parentType: "class",
           symbolId: "DataService.processData",
           isDocumentation: false,
@@ -789,7 +789,7 @@ describe("ChunkPipeline", () => {
             payload: expect.objectContaining({
               name: "processData",
               chunkType: "function",
-              parentName: "DataService",
+              parentSymbolId: "DataService",
               parentType: "class",
               symbolId: "DataService.processData",
               imports: ["./utils", "lodash"],

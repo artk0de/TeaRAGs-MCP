@@ -180,7 +180,7 @@ end`;
     expect(chunks[0].chunkType).toBe("test");
     expect(chunks[0].content).toContain("validates name");
     expect(chunks[0].content).toContain("validates email");
-    expect(chunks[0].parentName).toBe("User");
+    expect(chunks[0].parentSymbolId).toBe("User");
   });
 
   it("should inject parent setup into leaf chunks", () => {
@@ -305,7 +305,7 @@ end`;
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].symbolId).toBe("User.context 'when admin'");
-    expect(chunks[0].parentName).toBe("User");
+    expect(chunks[0].parentSymbolId).toBe("User");
     expect(chunks[0].name).toBe("context 'when admin'");
   });
 
@@ -324,7 +324,7 @@ end`;
 
     expect(chunks).toHaveLength(1);
     expect(chunks[0].symbolId).toContain("User");
-    expect(chunks[0].parentName).toBe("User");
+    expect(chunks[0].parentSymbolId).toBe("User");
   });
 
   it("should handle shared_examples at file root (symbolId fallback)", () => {

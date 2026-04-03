@@ -45,7 +45,7 @@ export interface ChunkItem extends WorkItem {
       name?: string;
       chunkType?: string;
       /** Parent class/module name for methods extracted from large classes */
-      parentName?: string;
+      parentSymbolId?: string;
       /** Parent AST node type (e.g., "class", "module") */
       parentType?: string;
       /** Symbol identifier: "ClassName.methodName" or just "functionName" */

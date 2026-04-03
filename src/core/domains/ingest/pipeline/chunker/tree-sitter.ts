@@ -233,7 +233,7 @@ export class TreeSitterChunker implements CodeChunker {
                       chunkIndex: chunks.length,
                       chunkType: (result.chunkType as CodeChunk["metadata"]["chunkType"]) ?? "block",
                       name: result.name ?? parentName,
-                      parentName: result.parentName ?? parentName,
+                      parentSymbolId: result.parentSymbolId ?? parentName,
                       parentType,
                       symbolId: result.symbolId ?? this.buildSymbolId(parentName),
                       lineRanges: result.lineRanges,
@@ -254,7 +254,7 @@ export class TreeSitterChunker implements CodeChunker {
                       chunkIndex: chunks.length,
                       chunkType: "block",
                       name: parentName,
-                      parentName,
+                      parentSymbolId: parentName,
                       parentType,
                       symbolId: this.buildSymbolId(parentName),
                     },
@@ -280,7 +280,7 @@ export class TreeSitterChunker implements CodeChunker {
                 metadata: {
                   ...subChunk.metadata,
                   chunkIndex: chunks.length,
-                  parentName,
+                  parentSymbolId: parentName,
                   parentType,
                   methodLines: nodeMethodLines,
                 },
@@ -336,7 +336,7 @@ export class TreeSitterChunker implements CodeChunker {
       const lines = chunk.endLine - chunk.startLine;
       return (
         lines <= TreeSitterChunker.MERGE_THRESHOLD &&
-        !chunk.metadata.parentName &&
+        !chunk.metadata.parentSymbolId &&
         TreeSitterChunker.MERGEABLE_TYPES.has(chunk.metadata.chunkType ?? "")
       );
     };
@@ -489,7 +489,7 @@ export class TreeSitterChunker implements CodeChunker {
             metadata: {
               ...subChunk.metadata,
               chunkIndex: chunks.length,
-              parentName,
+              parentSymbolId: parentName,
               parentType,
               methodLines: childMethodLines,
             },
@@ -558,7 +558,7 @@ export class TreeSitterChunker implements CodeChunker {
               chunkIndex: chunks.length,
               chunkType: (result.chunkType as CodeChunk["metadata"]["chunkType"]) ?? "block",
               name: result.name ?? childName,
-              parentName: result.parentName ?? fullParentName ?? parentName,
+              parentSymbolId: result.parentSymbolId ?? fullParentName ?? parentName,
               parentType,
               symbolId: result.symbolId ?? this.buildSymbolId(childName),
               lineRanges: result.lineRanges,
@@ -598,7 +598,7 @@ export class TreeSitterChunker implements CodeChunker {
           chunkIndex: chunks.length,
           chunkType: this.getChunkType(childNode.type),
           name: childName,
-          parentName,
+          parentSymbolId: parentName,
           parentType,
           symbolId: this.buildSymbolId(childName, parentName),
           methodLines: this.computeEndLine(childNode) - (childNode.startPosition.row + 1),

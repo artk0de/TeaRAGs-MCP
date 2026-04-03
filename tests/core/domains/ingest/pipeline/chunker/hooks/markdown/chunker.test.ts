@@ -319,7 +319,7 @@ describe("MarkdownChunker", () => {
       expect(codeBlock).toBeDefined();
       expect(codeBlock!.content).toContain("npm install tea-rags-mcp");
       expect(codeBlock!.content).toContain("npm run configure");
-      expect(codeBlock!.metadata.parentName).toBe("Setup Guide");
+      expect(codeBlock!.metadata.parentSymbolId).toBe("Setup Guide");
       expect(codeBlock!.metadata.parentType).toBe("h1");
     });
 
@@ -373,7 +373,7 @@ describe("MarkdownChunker", () => {
 
       const codeBlock = chunks.find((c) => c.metadata.name === "Code: typescript");
       expect(codeBlock).toBeDefined();
-      expect(codeBlock!.metadata.parentName).toBe("API Reference");
+      expect(codeBlock!.metadata.parentSymbolId).toBe("API Reference");
       expect(codeBlock!.metadata.parentType).toBe("h2");
     });
 
@@ -394,7 +394,7 @@ describe("MarkdownChunker", () => {
 
       const codeBlock = chunks.find((c) => c.metadata.name === "Code: bash");
       expect(codeBlock).toBeDefined();
-      expect(codeBlock!.metadata.parentName).toBeUndefined();
+      expect(codeBlock!.metadata.parentSymbolId).toBeUndefined();
     });
   });
 

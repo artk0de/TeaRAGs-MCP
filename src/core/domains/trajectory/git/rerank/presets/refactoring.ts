@@ -9,7 +9,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  * Query examples: "data transformation", "request handler", "business logic".
  * Key signals: chunkSize (large methods = split candidates), chunkDensity (dense code),
  *   chunkChurn + chunkRelativeChurn (frequently patched chunks).
- * Groups results by parentName — shows which classes contain the worst methods.
+ * Groups results by parentSymbolId — shows which classes contain the worst methods.
  * Works well with rank_chunks + level:"chunk" for project-wide refactoring inventory.
  */
 export class RefactoringPreset implements RerankPreset {
@@ -27,7 +27,7 @@ export class RefactoringPreset implements RerankPreset {
     age: 0.05,
     blockPenalty: -0.1,
   };
-  readonly groupBy = "parentName";
+  readonly groupBy = "parentSymbolId";
   readonly overlayMask: OverlayMask = {
     file: ["ageDays", "commitCount", "relativeChurn", "bugFixRate", "churnVolatility"],
     chunk: ["commitCount", "churnRatio"],

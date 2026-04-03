@@ -167,8 +167,8 @@ export function buildFiltersDoc(): string {
   md += "- `must_not: [...]` — NOT (none must match)\n\n";
   md += "## Available fields\n\n";
   md += "**Chunk metadata:** relativePath, fileExtension, language, startLine, endLine, ";
-  md += "chunkIndex, isDocumentation, name, chunkType, parentName (acts as parentSymbolId — ";
-  md += "class name for code, relative path for docs), parentType, symbolId, navigation, headingPath\n\n";
+  md += "chunkIndex, isDocumentation, name, chunkType, parentSymbolId ";
+  md += "(class name for code, relative path for docs), parentType, symbolId, navigation, headingPath\n\n";
   md += "**Git metadata** (requires enrichment, two levels):\n\n";
   md += "File-level (`git.file.*`): ageDays, commitCount, dominantAuthor, dominantAuthorPct, ";
   md += "contributorCount, authors[], lastModifiedAt, firstCreatedAt, taskIds[], ";

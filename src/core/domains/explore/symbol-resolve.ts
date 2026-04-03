@@ -40,11 +40,11 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?:
     );
     if (!classChunk) continue;
 
-    // Find all member chunks across all groups (same file, parentName matches class name)
+    // Find all member chunks across all groups (same file, parentSymbolId matches class name)
     const memberChunks = chunks.filter(
       (c) =>
         c !== classChunk &&
-        c.payload.parentName === classChunk.payload.name &&
+        c.payload.parentSymbolId === classChunk.payload.name &&
         c.payload.relativePath === classChunk.payload.relativePath,
     );
 
@@ -53,13 +53,13 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?:
     for (const m of memberChunks) emittedIds.add(m.id);
   }
 
-  // Second pass: collect doc chunks by parentName for doc outline
+  // Second pass: collect doc chunks by parentSymbolId for doc outline
   const docByParent = new Map<string, ScrollChunk[]>();
   for (const group of groups.values()) {
     for (const c of group) {
       if (emittedIds.has(c.id)) continue;
-      if (c.payload.isDocumentation && typeof c.payload.parentName === "string") {
-        const key = `${String(c.payload.parentName)}::${String(c.payload.relativePath)}`;
+      if (c.payload.isDocumentation && typeof c.payload.parentSymbolId === "string") {
+        const key = `${String(c.payload.parentSymbolId)}::${String(c.payload.relativePath)}`;
         const list = docByParent.get(key);
         if (list) list.push(c);
         else docByParent.set(key, [c]);
@@ -67,9 +67,9 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?:
     }
   }
 
-  // Emit doc outlines (only when multiple doc chunks share parentName, or query matches parentName)
+  // Emit doc outlines (only when multiple doc chunks share parentSymbolId, or query matches parentSymbolId)
   for (const [, docChunks] of docByParent) {
-    if (docChunks.length > 1 || (query && docChunks[0].payload.parentName === query)) {
+    if (docChunks.length > 1 || (query && docChunks[0].payload.parentSymbolId === query)) {
       results.push(outlineDoc(docChunks));
       for (const c of docChunks) emittedIds.add(c.id);
     }
@@ -174,7 +174,7 @@ function outlineDoc(chunks: ScrollChunk[]): SearchResult {
     relativePath: first.payload.relativePath,
     language: first.payload.language,
     isDocumentation: true,
-    parentName: first.payload.parentName,
+    parentSymbolId: first.payload.parentSymbolId,
     startLine: first.payload.startLine,
     endLine: sorted[sorted.length - 1].payload.endLine,
     headingPath: mergedHeadingPath,
