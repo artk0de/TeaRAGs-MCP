@@ -32,7 +32,6 @@ export const CodeChunkGrouper = {
    */
   group(classChunk: ScrollChunk, memberChunks: ScrollChunk[]): SearchResult {
     const sorted = sortByLine(memberChunks);
-    const members = sorted.map((c) => (c.payload.symbolId as string | undefined) ?? "");
 
     const className = (classChunk.payload.name as string | undefined) ?? "";
     const lines = [
@@ -50,7 +49,6 @@ export const CodeChunkGrouper = {
       git: fileGit(classChunk),
       chunkCount: 1 + memberChunks.length,
       contentSize,
-      ...(members.length > 0 ? { members } : {}),
     };
 
     return { id: classChunk.id, score: 1.0, payload };
