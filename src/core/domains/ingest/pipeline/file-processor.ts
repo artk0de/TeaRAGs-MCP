@@ -43,7 +43,7 @@ export function assignNavigationAndDocSymbolId(chunks: CodeChunk[], basePath: st
         hashInput = `${relPath}#${chunk.metadata.chunkIndex}`;
       }
       chunk.metadata.symbolId = `doc:${createHash("sha256").update(hashInput).digest("hex").slice(0, 12)}`;
-      chunk.metadata.parentName = relPath;
+      chunk.metadata.parentSymbolId = relPath;
     }
   }
 
@@ -145,7 +145,7 @@ export async function processFiles(
               chunkIndex: chunk.metadata.chunkIndex,
               name: chunk.metadata.name,
               chunkType: chunk.metadata.chunkType,
-              parentName: chunk.metadata.parentName,
+              parentSymbolId: chunk.metadata.parentSymbolId,
               parentType: chunk.metadata.parentType,
               symbolId: chunk.metadata.symbolId,
               isDocumentation: chunk.metadata.isDocumentation,

@@ -54,7 +54,7 @@ class Calculator {
       const methodChunks = chunks.filter((c) => c.metadata.chunkType === "function");
       expect(methodChunks.some((c) => c.metadata.name === "add")).toBe(true);
       expect(methodChunks.some((c) => c.metadata.name === "subtract")).toBe(true);
-      expect(methodChunks.every((c) => c.metadata.parentName === "Calculator")).toBe(true);
+      expect(methodChunks.every((c) => c.metadata.parentSymbolId === "Calculator")).toBe(true);
     });
 
     it("should chunk TypeScript interfaces", async () => {
@@ -118,7 +118,7 @@ export interface LargeInterface {
 
       // The 5 small declarations should be merged into 1 block
       // LargeInterface (8+ lines) should remain separate
-      const blockChunks = chunks.filter((c) => c.metadata.chunkType === "block" && !c.metadata.parentName);
+      const blockChunks = chunks.filter((c) => c.metadata.chunkType === "block" && !c.metadata.parentSymbolId);
       const interfaceChunks = chunks.filter((c) => c.metadata.chunkType === "interface");
 
       // Small declarations merged into 1 block
@@ -154,7 +154,7 @@ export type SmallTypeB = "x" | "y" | "z" | "w" | "v" | "u" | "t" | "s";
       // Each small type stays individual (no merge partner)
       // Merged blocks have "..." suffix in name; individual blocks do not
       const mergedBlocks = chunks.filter(
-        (c) => c.metadata.chunkType === "block" && !c.metadata.parentName && c.metadata.name?.endsWith("..."),
+        (c) => c.metadata.chunkType === "block" && !c.metadata.parentSymbolId && c.metadata.name?.endsWith("..."),
       );
       expect(mergedBlocks.length).toBe(0); // No merged blocks
 
@@ -270,7 +270,7 @@ end
 
       // Each method should have parentName and parentType
       for (const chunk of methodChunks) {
-        expect(chunk.metadata.parentName).toBe("UserService");
+        expect(chunk.metadata.parentSymbolId).toBe("UserService");
         expect(chunk.metadata.parentType).toBe("class");
       }
 
@@ -278,9 +278,9 @@ end
       const names = methodChunks.map((c) => c.metadata.name).sort();
       expect(names).toEqual(["create_user", "find_user"]);
 
-      // Verify symbolId format: ClassName.methodName
+      // Verify symbolId format: ClassName#methodName (instance methods use #)
       expect(methodChunks.find((c) => c.metadata.name === "find_user")?.metadata.symbolId).toBe(
-        "UserService.find_user",
+        "UserService#find_user",
       );
     });
 
@@ -325,7 +325,7 @@ end
 
       // All methods should have parentName and parentType
       for (const chunk of methodChunks) {
-        expect(chunk.metadata.parentName).toBe("LargeService");
+        expect(chunk.metadata.parentSymbolId).toBe("LargeService");
         expect(chunk.metadata.parentType).toBe("class");
       }
     });
@@ -371,7 +371,7 @@ end
 
       // All methods should have parentName = module name
       for (const chunk of methodChunks) {
-        expect(chunk.metadata.parentName).toBe("LargeModule");
+        expect(chunk.metadata.parentSymbolId).toBe("LargeModule");
         expect(chunk.metadata.parentType).toBe("module");
       }
     });
@@ -419,7 +419,7 @@ end
 
       // Methods inside class << self should have class as parent
       for (const chunk of methodChunks) {
-        expect(chunk.metadata.parentName).toBe("ConfigurationManager");
+        expect(chunk.metadata.parentSymbolId).toBe("ConfigurationManager");
         expect(chunk.metadata.parentType).toBe("class");
       }
     });
@@ -488,7 +488,7 @@ end
 
       // Each body chunk should have parent metadata and class header
       for (const body of bodyChunks) {
-        expect(body.metadata.parentName).toBe("User");
+        expect(body.metadata.parentSymbolId).toBe("User");
         expect(body.metadata.parentType).toBe("class");
         expect(body.content).toContain("class User < ApplicationRecord");
       }
@@ -645,7 +645,7 @@ end
       expect(methodChunks.length).toBe(2);
 
       for (const chunk of methodChunks) {
-        expect(chunk.metadata.parentName).toBe("Authenticatable");
+        expect(chunk.metadata.parentSymbolId).toBe("Authenticatable");
         expect(chunk.metadata.parentType).toBe("module");
       }
 
@@ -683,7 +683,7 @@ end
       expect(methodChunks.length).toBe(2);
 
       for (const chunk of methodChunks) {
-        expect(chunk.metadata.parentName).toBe("Configuration");
+        expect(chunk.metadata.parentSymbolId).toBe("Configuration");
         expect(chunk.metadata.parentType).toBe("class");
       }
     });
@@ -1291,20 +1291,20 @@ end
       const chunks = await smallChunker.chunk(code, "user_service.rb", "ruby");
 
       // Find method chunks with parentName (indicates class was split)
-      const methodChunks = chunks.filter((c) => c.metadata.parentName && c.metadata.chunkType === "function");
+      const methodChunks = chunks.filter((c) => c.metadata.parentSymbolId && c.metadata.chunkType === "function");
 
       // If class was split, verify symbolId format
       if (methodChunks.length > 0) {
         for (const chunk of methodChunks) {
-          if (chunk.metadata.name && chunk.metadata.parentName) {
-            expect(chunk.metadata.symbolId).toBe(`${chunk.metadata.parentName}.${chunk.metadata.name}`);
+          if (chunk.metadata.name && chunk.metadata.parentSymbolId) {
+            expect(chunk.metadata.symbolId).toBe(`${chunk.metadata.parentSymbolId}#${chunk.metadata.name}`);
           }
         }
 
         // Specific check for one method
         const findMethod = methodChunks.find((c) => c.metadata.name === "find_by_id");
         if (findMethod) {
-          expect(findMethod.metadata.symbolId).toBe("UserService.find_by_id");
+          expect(findMethod.metadata.symbolId).toBe("UserService#find_by_id");
         }
       } else {
         // If class wasn't split, all chunks should still have symbolId
@@ -1479,19 +1479,19 @@ class DataProcessor {
 
       // Find method chunks with parent
       const methodChunks = chunks.filter(
-        (c) => c.metadata.parentName === "DataProcessor" && c.metadata.chunkType === "function",
+        (c) => c.metadata.parentSymbolId === "DataProcessor" && c.metadata.chunkType === "function",
       );
 
       if (methodChunks.length > 0) {
         // Verify symbolId format
         for (const chunk of methodChunks) {
-          expect(chunk.metadata.symbolId).toBe(`DataProcessor.${chunk.metadata.name}`);
+          expect(chunk.metadata.symbolId).toBe(`DataProcessor#${chunk.metadata.name}`);
         }
 
         // Check specific method
         const processMethod = methodChunks.find((c) => c.metadata.name === "processData");
         if (processMethod) {
-          expect(processMethod.metadata.symbolId).toBe("DataProcessor.processData");
+          expect(processMethod.metadata.symbolId).toBe("DataProcessor#processData");
         }
       }
     });
@@ -1622,7 +1622,7 @@ class DataProcessor {
 
       // The oversized section should have been split into multiple sub-chunks
       const oversizedChunks = chunks.filter(
-        (c) => c.metadata.name === "Oversized Section" || c.metadata.parentName === "Oversized Section",
+        (c) => c.metadata.name === "Oversized Section" || c.metadata.parentSymbolId === "Oversized Section",
       );
       expect(oversizedChunks.length).toBeGreaterThan(1);
 
@@ -1674,7 +1674,7 @@ class DataProcessor {
       // The oversized method should be split into sub-chunks with parentName
       const _subChunks = chunks.filter(
         (c) =>
-          c.metadata.parentName === "DataProcessor" &&
+          c.metadata.parentSymbolId === "DataProcessor" &&
           c.metadata.chunkType !== "function" &&
           c.metadata.chunkType !== "block",
       );
@@ -1682,7 +1682,7 @@ class DataProcessor {
       expect(chunks.length).toBeGreaterThan(1);
 
       // All chunks from this class should reference DataProcessor as parent
-      const processorChunks = chunks.filter((c) => c.metadata.parentName === "DataProcessor");
+      const processorChunks = chunks.filter((c) => c.metadata.parentSymbolId === "DataProcessor");
       expect(processorChunks.length).toBeGreaterThan(0);
     });
   });
@@ -1826,7 +1826,7 @@ class DataProcessor {
       expect(chunks.length).toBeGreaterThan(0);
 
       // Sub-chunks should have parentName from the class
-      const withParent = chunks.filter((c) => c.metadata.parentName === "LargeSerializer");
+      const withParent = chunks.filter((c) => c.metadata.parentSymbolId === "LargeSerializer");
       expect(withParent.length).toBeGreaterThan(0);
     });
   });

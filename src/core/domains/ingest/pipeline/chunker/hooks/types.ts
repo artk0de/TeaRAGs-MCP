@@ -9,10 +9,12 @@ export interface BodyChunkResult {
   chunkType?: string;
   /** Hook-provided symbolId. When present, chunker uses instead of buildSymbolId(). */
   symbolId?: string;
-  /** Hook-provided chunk name. When present, chunker uses instead of parentName. */
+  /** Hook-provided chunk name. When present, chunker uses instead of parentSymbolId. */
   name?: string;
+  /** Whether this chunk represents a static/class method. Default: false (instance). */
+  isStatic?: boolean;
   /** Hook-provided parent name. */
-  parentName?: string;
+  parentSymbolId?: string;
 }
 
 /** Shared mutable context passed through the hook chain */

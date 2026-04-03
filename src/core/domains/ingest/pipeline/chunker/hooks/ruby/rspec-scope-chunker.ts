@@ -284,7 +284,7 @@ export function produceScopeChunks(
               chunkType: "test",
               symbolId: `${topLevelName}.${scope.name}`,
               name: scope.name,
-              parentName: topLevelName,
+              parentSymbolId: topLevelName,
             });
           }
           return;
@@ -308,7 +308,7 @@ export function produceScopeChunks(
           chunkType: "test",
           symbolId: `${topLevelName}.${scope.name}`,
           name: scope.name,
-          parentName: topLevelName,
+          parentSymbolId: topLevelName,
         });
       } else if (scope.setupLines.length > 0 || scope.otherLines.length > 0) {
         // Leaf without it blocks → test_setup
@@ -338,7 +338,7 @@ export function produceScopeChunks(
           chunkType: hasDelegatingTests ? "test" : "test_setup",
           symbolId: `${topLevelName}.${scope.name}`,
           name: scope.name,
-          parentName: topLevelName,
+          parentSymbolId: topLevelName,
         });
       }
     } else {
@@ -371,7 +371,7 @@ export function produceScopeChunks(
             chunkType: "test_setup",
             symbolId: `${topLevelName}.${scope.name}`,
             name: scope.name,
-            parentName: topLevelName,
+            parentSymbolId: topLevelName,
           });
         }
       }
@@ -411,7 +411,7 @@ export function produceScopeChunks(
           chunkType: "test_setup",
           symbolId: `${topLevelName}.${rootScope.name}`,
           name: rootScope.name,
-          parentName: topLevelName,
+          parentSymbolId: topLevelName,
         });
       }
     }

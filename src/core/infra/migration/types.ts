@@ -65,6 +65,15 @@ export interface IndexStore {
   getCollectionInfo: (collection: string) => Promise<{ hybridEnabled: boolean; vectorSize: number }>;
   updateSparseConfig: (collection: string) => Promise<void>;
   deletePointsByFilter: (collection: string, filter: Record<string, unknown>) => Promise<void>;
+  /** Scroll all points returning id + payload. For field rename migrations. */
+  scrollAllPayload?: (collection: string) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
+  /** Batch set payload on specific points. */
+  batchSetPayload?: (
+    collection: string,
+    operations: { payload: Record<string, unknown>; points: (string | number)[] }[],
+  ) => Promise<void>;
+  /** Delete payload keys from all points. */
+  deletePayloadKeys?: (collection: string, keys: string[]) => Promise<void>;
 }
 
 /** DIP: Sparse vector operations. */

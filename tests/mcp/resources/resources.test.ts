@@ -117,13 +117,13 @@ describe("Resource builders", () => {
   });
 
   describe("buildSearchGuide", () => {
-    it("contains tool routing table", () => {
+    it("contains parameter examples for each tool", () => {
       const md = buildSearchGuide();
-      expect(md).toContain("search_code");
-      expect(md).toContain("semantic_search");
-      expect(md).toContain("hybrid_search");
-      expect(md).toContain("rank_chunks");
-      expect(md).toContain("find_similar");
+      expect(md).toContain("search_code Examples");
+      expect(md).toContain("semantic_search Examples");
+      expect(md).toContain("hybrid_search Examples");
+      expect(md).toContain("find_symbol Examples");
+      expect(md).toContain("rank_chunks Examples");
     });
 
     it("contains search_code examples", () => {
@@ -140,10 +140,10 @@ describe("Resource builders", () => {
       expect(md).toContain("metaOnly");
     });
 
-    it("contains hybrid_search examples", () => {
+    it("contains find_symbol relativePath examples", () => {
       const md = buildSearchGuide();
-      expect(md).toContain("TODO");
-      expect(md).toContain("FIXME");
+      expect(md).toContain("relativePath");
+      expect(md).toContain("Reranker#rerank");
     });
   });
 

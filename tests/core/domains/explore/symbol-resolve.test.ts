@@ -99,7 +99,7 @@ describe("resolveSymbols", () => {
   });
 
   describe("class outline strategy", () => {
-    it("returns class chunk with members list", () => {
+    it("returns class outline via CodeChunkGrouper", () => {
       const chunks = [
         {
           id: "class-uuid",
@@ -118,9 +118,9 @@ describe("resolveSymbols", () => {
         {
           id: "method-1",
           payload: {
-            symbolId: "Reranker.score",
+            symbolId: "Reranker#score",
             chunkType: "function",
-            parentName: "Reranker",
+            parentSymbolId: "Reranker",
             relativePath: "src/reranker.ts",
             content: "score() { ... }",
             startLine: 30,
@@ -132,9 +132,9 @@ describe("resolveSymbols", () => {
         {
           id: "method-2",
           payload: {
-            symbolId: "Reranker.rerank",
+            symbolId: "Reranker#rerank",
             chunkType: "function",
-            parentName: "Reranker",
+            parentSymbolId: "Reranker",
             relativePath: "src/reranker.ts",
             content: "rerank() { ... }",
             startLine: 55,
@@ -149,7 +149,8 @@ describe("resolveSymbols", () => {
 
       const classResult = results.find((r) => r.payload?.chunkType === "class");
       expect(classResult).toBeDefined();
-      expect(classResult!.payload?.members).toEqual(["Reranker.score", "Reranker.rerank"]);
+      expect(classResult!.payload?.content).toContain("Reranker#score");
+      expect(classResult!.payload?.content).toContain("Reranker#rerank");
       expect(classResult!.payload?.git).toEqual({ file: { commitCount: 15, ageDays: 60 } });
     });
 
@@ -173,9 +174,9 @@ describe("resolveSymbols", () => {
         {
           id: "method-uuid",
           payload: {
-            symbolId: "Reranker.rerank",
+            symbolId: "Reranker#rerank",
             chunkType: "function",
-            parentName: "Reranker",
+            parentSymbolId: "Reranker",
             relativePath: "src/reranker.ts",
             content: "rerank() { ... }",
             startLine: 76,
@@ -190,7 +191,7 @@ describe("resolveSymbols", () => {
 
       const classResult = results.find((r) => r.payload?.symbolId === "Reranker");
       expect(classResult).toBeDefined();
-      expect(classResult!.payload?.members).toEqual(["Reranker.rerank"]);
+      expect(classResult!.payload?.content).toContain("Reranker#rerank");
     });
   });
 
@@ -200,7 +201,7 @@ describe("resolveSymbols", () => {
         {
           id: "uuid-partial",
           payload: {
-            symbolId: "Reranker.score",
+            symbolId: "Reranker#score",
             chunkType: "function",
             relativePath: "src/reranker.ts",
             content: "score() {}",
@@ -260,6 +261,111 @@ describe("resolveSymbols", () => {
       const results = resolveSymbols(chunks, "score");
 
       expect(results[0].payload?.relativePath).toBe("src/a/scorer.ts");
+    });
+  });
+
+  describe("doc outline strategy", () => {
+    it("groups doc chunks by parentSymbolId into outline with merged headingPath", () => {
+      const chunks = [
+        {
+          id: "doc-1",
+          payload: {
+            symbolId: "doc:aaa111",
+            chunkType: "block",
+            parentSymbolId: "docs/api.md",
+            relativePath: "docs/api.md",
+            isDocumentation: true,
+            name: "Introduction",
+            headingPath: [{ depth: 1, text: "API" }],
+            content: "Introduction text",
+            startLine: 1,
+            endLine: 10,
+            language: "markdown",
+            navigation: { nextSymbolId: "doc:bbb222" },
+          },
+        },
+        {
+          id: "doc-2",
+          payload: {
+            symbolId: "doc:bbb222",
+            chunkType: "block",
+            parentSymbolId: "docs/api.md",
+            relativePath: "docs/api.md",
+            isDocumentation: true,
+            name: "Authentication",
+            headingPath: [
+              { depth: 1, text: "API" },
+              { depth: 2, text: "Authentication" },
+            ],
+            content: "Auth content",
+            startLine: 12,
+            endLine: 25,
+            language: "markdown",
+            navigation: { prevSymbolId: "doc:aaa111", nextSymbolId: "doc:ccc333" },
+          },
+        },
+        {
+          id: "doc-3",
+          payload: {
+            symbolId: "doc:ccc333",
+            chunkType: "block",
+            parentSymbolId: "docs/api.md",
+            relativePath: "docs/api.md",
+            isDocumentation: true,
+            name: "Usage",
+            headingPath: [
+              { depth: 1, text: "API" },
+              { depth: 2, text: "Usage" },
+            ],
+            content: "Usage content",
+            startLine: 27,
+            endLine: 40,
+            language: "markdown",
+            navigation: { prevSymbolId: "doc:bbb222" },
+          },
+        },
+      ];
+
+      const results = resolveSymbols(chunks, "docs/api.md");
+
+      expect(results).toHaveLength(1);
+      const outline = results[0];
+      expect(outline.payload?.relativePath).toBe("docs/api.md");
+      expect(outline.payload?.content).toContain("doc:aaa111");
+      expect(outline.payload?.content).toContain("doc:bbb222");
+      expect(outline.payload?.content).toContain("doc:ccc333");
+      expect(outline.payload?.headingPath).toEqual([
+        { depth: 1, text: "API" },
+        { depth: 2, text: "Authentication" },
+        { depth: 2, text: "Usage" },
+      ]);
+    });
+
+    it("returns doc outline with metaOnly (no content)", () => {
+      const chunks = [
+        {
+          id: "doc-1",
+          payload: {
+            symbolId: "doc:aaa111",
+            chunkType: "block",
+            parentSymbolId: "docs/guide.md",
+            relativePath: "docs/guide.md",
+            isDocumentation: true,
+            name: "Setup",
+            headingPath: [{ depth: 2, text: "Setup" }],
+            content: "Setup instructions",
+            startLine: 1,
+            endLine: 10,
+            language: "markdown",
+          },
+        },
+      ];
+
+      const results = resolveSymbols(chunks, "docs/guide.md", true);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBeUndefined();
+      expect(results[0].payload?.headingPath).toEqual([{ depth: 2, text: "Setup" }]);
     });
   });
 

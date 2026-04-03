@@ -22,6 +22,7 @@ const mockClient = {
   scroll: vi.fn().mockResolvedValue({ points: [] }),
   queryGroups: vi.fn().mockResolvedValue({ groups: [] }),
   count: vi.fn().mockResolvedValue({ count: 0 }),
+  deletePayload: vi.fn().mockResolvedValue({}),
 };
 
 vi.mock("@qdrant/js-client-rest", () => ({
@@ -50,6 +51,7 @@ describe("QdrantManager", () => {
     mockClient.batchUpdate.mockReset().mockResolvedValue({});
     mockClient.queryGroups.mockReset().mockResolvedValue({ groups: [] });
     mockClient.scroll.mockReset().mockResolvedValue({ points: [], next_page_offset: null });
+    mockClient.deletePayload.mockReset().mockResolvedValue({});
     vi.mocked(QdrantClient).mockClear();
     manager = new QdrantManager("http://localhost:6333");
   });
@@ -1952,6 +1954,29 @@ describe("QdrantManager", () => {
         ],
         wait: false,
         ordering: "weak",
+      });
+    });
+  });
+
+  describe("deletePayloadKeys", () => {
+    it("should call client.deletePayload with keys and empty filter by default", async () => {
+      await manager.deletePayloadKeys("test-collection", ["parentName"]);
+
+      expect(mockClient.deletePayload).toHaveBeenCalledWith("test-collection", {
+        keys: ["parentName"],
+        filter: {},
+        wait: true,
+      });
+    });
+
+    it("should pass filter when provided", async () => {
+      const filter = { must: [{ key: "language", match: { value: "typescript" } }] };
+      await manager.deletePayloadKeys("test-collection", ["parentName", "oldField"], filter);
+
+      expect(mockClient.deletePayload).toHaveBeenCalledWith("test-collection", {
+        keys: ["parentName", "oldField"],
+        filter,
+        wait: true,
       });
     });
   });

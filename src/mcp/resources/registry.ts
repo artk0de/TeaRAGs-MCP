@@ -22,7 +22,7 @@ export function buildOverview(): string {
 - hybrid_search — semantic + BM25, best for symbol name + context
 - rank_chunks — rank by signals without query
 - find_similar — find code similar to examples
-- find_symbol — symbol definition by name, no embedding (LSP-like lookup)
+- find_symbol — symbol definition by name OR file outline/doc TOC by relativePath (no embedding)
 
 ## Guides
 - tea-rags://schema/search-guide — search tool routing, use cases, examples
@@ -72,21 +72,10 @@ export function buildSignalsDoc(descriptors: PresetDescriptors): string {
 }
 
 export function buildSearchGuide(): string {
-  return `# Search Guide
+  return `# Search Guide — Parameter Examples
 
-## Tool Routing
-
-| Need | Tool |
-| --- | --- |
-| Quick lookup for user request | \`search_code\` |
-| Structured JSON for analytics/reports | \`semantic_search\` |
-| Symbol name + semantic context | \`hybrid_search\` |
-| Symbol definition by name (no embedding) | \`find_symbol\` |
-| Top-N by signal without query | \`rank_chunks\` |
-| Find code similar to examples | \`find_similar\` |
-| Exact text, markers (TODO/FIXME) | ripgrep MCP |
-
-For full decision logic (when to use which tool), consult the search-cascade rule.
+Tool routing is in the search-cascade rule. This resource has concrete
+parameter examples for each tool.
 
 ## search_code Examples
 
@@ -109,10 +98,17 @@ For full decision logic (when to use which tool), consult the search-cascade rul
 
 ## find_symbol Examples
 
-- Method definition → symbol="Reranker.rerank" (instant, no embedding)
-- Class outline → symbol="Reranker" (returns members list)
+**By symbol name (symbol param):**
+- Instance method → symbol="Reranker#rerank" (# = instance)
+- Static method → symbol="Reranker.create" (. = static)
+- Class outline → symbol="Reranker" (returns synthetic outline of all members)
 - Existence check → symbol="myFunc", metaOnly=true (no content)
-- With signals → symbol="Reranker.score", rerank="hotspots" (ranking overlay)
+- With signals → symbol="Reranker#score", rerank="hotspots" (ranking overlay)
+
+**By file path (relativePath param, mutually exclusive with symbol):**
+- File outline → relativePath="src/reranker.ts" (code structure with hierarchy)
+- Doc TOC → relativePath="docs/api.md" (heading TOC with doc:<hash> references)
+- From search result → find_symbol(symbol: parentSymbolId) for class or doc parent
 
 ## rank_chunks Examples
 
@@ -167,7 +163,8 @@ export function buildFiltersDoc(): string {
   md += "- `must_not: [...]` — NOT (none must match)\n\n";
   md += "## Available fields\n\n";
   md += "**Chunk metadata:** relativePath, fileExtension, language, startLine, endLine, ";
-  md += "chunkIndex, isDocumentation, name, chunkType, parentName, parentType\n\n";
+  md += "chunkIndex, isDocumentation, name, chunkType, parentSymbolId ";
+  md += "(class name for code, relative path for docs), parentType, symbolId, navigation, headingPath\n\n";
   md += "**Git metadata** (requires enrichment, two levels):\n\n";
   md += "File-level (`git.file.*`): ageDays, commitCount, dominantAuthor, dominantAuthorPct, ";
   md += "contributorCount, authors[], lastModifiedAt, firstCreatedAt, taskIds[], ";

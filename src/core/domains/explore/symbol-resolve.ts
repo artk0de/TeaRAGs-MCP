@@ -6,17 +6,15 @@
  */
 
 import type { SearchResult } from "../../api/public/dto/explore.js";
-
-interface ScrollChunk {
-  id: string | number;
-  payload: Record<string, unknown>;
-}
+import { CodeChunkGrouper } from "./chunk-grouping/code.js";
+import { DocChunkGrouper } from "./chunk-grouping/doc.js";
+import type { ScrollChunk } from "./chunk-grouping/types.js";
 
 /**
  * Resolve raw scroll chunks into find_symbol results.
  *
  * Strategy per group (same symbolId + same relativePath):
- * - chunkType "class" → outline with members[]
+ * - chunkType "class" → synthetic outline via CodeChunkGrouper
  * - anything else → merge chunks by startLine order
  *
  * @param chunks - raw Qdrant scroll results
@@ -40,20 +38,42 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?:
     );
     if (!classChunk) continue;
 
-    // Find all member chunks across all groups (same file, parentName matches class name)
+    // Find all member chunks across all groups (same file, parentSymbolId matches class name)
     const memberChunks = chunks.filter(
       (c) =>
         c !== classChunk &&
-        c.payload.parentName === classChunk.payload.name &&
+        c.payload.parentSymbolId === classChunk.payload.name &&
         c.payload.relativePath === classChunk.payload.relativePath,
     );
 
-    results.push(outlineClass(classChunk, memberChunks));
+    results.push(CodeChunkGrouper.group(classChunk, memberChunks));
     emittedIds.add(classChunk.id);
     for (const m of memberChunks) emittedIds.add(m.id);
   }
 
-  // Second pass: handle remaining non-class, non-member chunks
+  // Second pass: collect doc chunks by parentSymbolId for doc outline
+  const docByParent = new Map<string, ScrollChunk[]>();
+  for (const group of groups.values()) {
+    for (const c of group) {
+      if (emittedIds.has(c.id)) continue;
+      if (c.payload.isDocumentation && typeof c.payload.parentSymbolId === "string") {
+        const key = `${String(c.payload.parentSymbolId)}::${String(c.payload.relativePath)}`;
+        const list = docByParent.get(key);
+        if (list) list.push(c);
+        else docByParent.set(key, [c]);
+      }
+    }
+  }
+
+  // Emit doc outlines (only when multiple doc chunks share parentSymbolId, or query matches parentSymbolId)
+  for (const [, docChunks] of docByParent) {
+    if (docChunks.length > 1 || (query && docChunks[0].payload.parentSymbolId === query)) {
+      results.push(DocChunkGrouper.group(docChunks));
+      for (const c of docChunks) emittedIds.add(c.id);
+    }
+  }
+
+  // Third pass: handle remaining non-class, non-member, non-doc-outline chunks
   for (const group of groups.values()) {
     const unemitted = group.filter((c) => !emittedIds.has(c.id));
     if (unemitted.length === 0) continue;
@@ -109,21 +129,6 @@ function mergeChunks(chunks: ScrollChunk[]): SearchResult {
   }
 
   return { id: first.id, score: 1.0, payload };
-}
-
-/** Outline a class: class chunk + members list. */
-function outlineClass(classChunk: ScrollChunk, memberChunks: ScrollChunk[]): SearchResult {
-  const members = memberChunks
-    .sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0))
-    .map((c) => (c.payload.symbolId as string | undefined) ?? "");
-
-  const payload: Record<string, unknown> = {
-    ...classChunk.payload,
-    git: classChunk.payload.git ? { file: (classChunk.payload.git as Record<string, unknown>).file } : undefined,
-    ...(members.length > 0 ? { members } : {}),
-  };
-
-  return { id: classChunk.id, score: 1.0, payload };
 }
 
 /** Sort: exact symbolId match first, then alphabetical by path. */
