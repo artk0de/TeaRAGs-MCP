@@ -1,6 +1,6 @@
 # Search Cascade Benchmark
 
-Date: 2026-03-29
+Last updated: 2026-04-03 (chunk-grouping iteration) Original: 2026-03-29
 
 ## Summary
 
@@ -107,3 +107,55 @@ Without-rule agents consume significantly more tokens:
 
 The difference comes from fewer tool calls (semantic search returns relevant
 results in 1-3 calls vs 6+ Grep/Glob phases) and no unnecessary file reads.
+
+---
+
+## Iteration 4 — Chunk Grouping (2026-04-03)
+
+Context: chunk-grouping epic added `find_symbol(relativePath:)`, `#`/`.`
+separator, ChunkGrouper outlines, Doc TOC. search-cascade needed updates.
+
+Evals: `evals/chunk-grouping-evals.json`
+
+### Audit Findings (6 confirmed)
+
+| #   | Finding                                             | Status  |
+| --- | --------------------------------------------------- | ------- |
+| F1  | Stale parentName refs + members[] + old doc outline | Fixed   |
+| F2  | Missing relativePath in decision tree               | Fixed   |
+| F3  | Stale Class.method convention (now #/.)             | Fixed   |
+| F4  | Missing navigation chain (search → outline → code)  | Fixed   |
+| F5  | tree-sitter as primary for file structure           | Removed |
+| F6  | Subagent block missing relativePath + # convention  | Fixed   |
+
+### Results
+
+| Version                 | Pass Rate  | Delta |
+| ----------------------- | ---------- | ----- |
+| Baseline (no rule)      | 22% (2/9)  | —     |
+| Before fix (stale rule) | 33% (3/9)  | +11pp |
+| After fix               | 100% (9/9) | +78pp |
+
+### Per-Eval Detail
+
+| #   | Task                    | Before                           | After                             |
+| --- | ----------------------- | -------------------------------- | --------------------------------- |
+| 1   | File structure          | ❌ tree-sitter                   | ✅ find_symbol(relativePath:)     |
+| 2   | Class methods           | ✅ find_symbol                   | ✅ find_symbol                    |
+| 3   | Doc TOC                 | ❌ old symbol style              | ✅ find_symbol(relativePath:)     |
+| 4   | Navigation chain        | ❌ tree-sitter + wrong separator | ✅ relativePath → Reranker#rerank |
+| 5   | Instance method #       | ❌ uses .                        | ✅ uses #                         |
+| 6   | All usages (control)    | ✅ hybrid_search                 | ✅ hybrid_search                  |
+| 7   | Intent (control)        | ✅ semantic_search               | ✅ semantic_search                |
+| 8   | Subagent file structure | ❌ tree-sitter                   | ✅ find_symbol(relativePath:)     |
+| 9   | Subagent # symbol       | ❌ uses .                        | ✅ uses #                         |
+
+### Changes Made
+
+- Decision tree: added relativePath branches for file outline + doc TOC
+- Decision tree: added #/. symbolId convention to find_symbol section
+- Chunk Navigation: rewrote with symbolId conventions, file outline, navigation
+  chain
+- Fallback table: find_symbol(relativePath:) replaces tree-sitter
+- Subagent injection: added relativePath, doc TOC, # convention
+- Removed all tree-sitter references
