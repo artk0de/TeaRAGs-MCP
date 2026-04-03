@@ -48,13 +48,16 @@ returns the full method/class definition — no Read needed.
 - Check language distribution in metrics. If 2+ languages each have >10% of
   chunks → **polyglot codebase**. See `references/polyglot-rule.md`.
 
-**3. Load resource references:**
+**3. Resource references (read on demand, not at session start):**
 
-- Read `tea-rags://schema/overview` → navigation hub for presets, signals,
-  filters, search-guide.
-- Read `tea-rags://schema/search-guide` → concrete query examples for each tool.
-- Consult linked resources (`presets`, `signals`, `filters`) when making
-  rerank/filter decisions.
+- `tea-rags://schema/overview` → navigation hub for all resources
+- `tea-rags://schema/search-guide` → parameter examples per tool (read when
+  unsure how to call a specific tool)
+- `tea-rags://schema/presets` → rerank presets (read when choosing rerank)
+- `tea-rags://schema/signals` → custom weight keys (read when building custom
+  rerank)
+- `tea-rags://schema/filters` → Qdrant filter syntax (read when building
+  filters)
 
 ## Decision Tree
 
