@@ -44,8 +44,15 @@ export const CodeChunkGrouper = {
     const contentSize = allChunks.reduce((sum, c) => sum + ((c.payload.content as string | undefined) ?? "").length, 0);
 
     const payload: Record<string, unknown> = {
-      ...classChunk.payload,
+      symbolId: classChunk.payload.symbolId,
+      name: classChunk.payload.name,
+      chunkType: classChunk.payload.chunkType,
+      relativePath: classChunk.payload.relativePath,
+      language: classChunk.payload.language,
+      fileExtension: classChunk.payload.fileExtension,
       content: outlineContent,
+      startLine: classChunk.payload.startLine,
+      endLine: sorted.length > 0 ? sorted[sorted.length - 1].payload.endLine : classChunk.payload.endLine,
       git: fileGit(classChunk),
       chunkCount: 1 + memberChunks.length,
       contentSize,
