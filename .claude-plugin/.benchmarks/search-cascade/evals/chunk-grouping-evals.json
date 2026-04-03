@@ -1,0 +1,144 @@
+{
+  "skill_name": "search-cascade",
+  "date": "2026-04-03",
+  "context": "chunk-grouping epic: relativePath param, #/. separator, ChunkGrouper, Doc TOC",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Покажи структуру файла src/core/domains/explore/reranker.ts",
+      "expected_output": "find_symbol(relativePath: 'src/core/domains/explore/reranker.ts')",
+      "assertions": [
+        {
+          "text": "Uses find_symbol with relativePath param",
+          "type": "tool_selection"
+        },
+        { "text": "Does NOT use tree-sitter", "type": "negative" },
+        { "text": "Does NOT use Read", "type": "negative" }
+      ],
+      "audit_finding": 2,
+      "failure_mode": "missing relativePath in decision tree"
+    },
+    {
+      "id": 2,
+      "prompt": "Какие методы есть у класса Reranker?",
+      "expected_output": "find_symbol(symbol: 'Reranker') → class outline",
+      "assertions": [
+        {
+          "text": "Uses find_symbol with symbol param",
+          "type": "tool_selection"
+        },
+        { "text": "Does NOT use tree-sitter", "type": "negative" }
+      ],
+      "audit_finding": "control",
+      "failure_mode": "regression control"
+    },
+    {
+      "id": 3,
+      "prompt": "Покажи оглавление документа docs/api.md",
+      "expected_output": "find_symbol(relativePath: 'docs/api.md') → heading TOC",
+      "assertions": [
+        {
+          "text": "Uses find_symbol with relativePath param",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use find_symbol(symbol: 'docs/api.md') old style",
+          "type": "negative"
+        },
+        { "text": "Does NOT use Read", "type": "negative" }
+      ],
+      "audit_finding": 1,
+      "failure_mode": "stale doc outline instructions"
+    },
+    {
+      "id": 4,
+      "prompt": "Нашёл через поиск файл src/reranker.ts. Хочу понять его структуру, потом посмотреть конкретный метод rerank",
+      "expected_output": "find_symbol(relativePath:) → outline → find_symbol(symbol: 'Reranker#rerank')",
+      "assertions": [
+        {
+          "text": "Step 1: find_symbol with relativePath for outline",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Step 2: find_symbol with symbol using # separator",
+          "type": "tool_selection"
+        },
+        { "text": "Uses # not . for instance method", "type": "convention" },
+        { "text": "Does NOT use tree-sitter", "type": "negative" }
+      ],
+      "audit_finding": "2,3,4",
+      "failure_mode": "missing navigation chain + wrong separator"
+    },
+    {
+      "id": 5,
+      "prompt": "Покажи код метода Reranker#rerank",
+      "expected_output": "find_symbol(symbol: 'Reranker#rerank') with # separator",
+      "assertions": [
+        {
+          "text": "Uses find_symbol with symbol param",
+          "type": "tool_selection"
+        },
+        { "text": "Uses # separator (not .)", "type": "convention" }
+      ],
+      "audit_finding": 3,
+      "failure_mode": "stale symbolId convention"
+    },
+    {
+      "id": 6,
+      "prompt": "Найди всё использование PaymentService в проекте",
+      "expected_output": "hybrid_search(query: 'PaymentService')",
+      "assertions": [
+        { "text": "Uses hybrid_search", "type": "tool_selection" },
+        { "text": "Does NOT use ripgrep as primary", "type": "negative" }
+      ],
+      "audit_finding": "control",
+      "failure_mode": "regression control"
+    },
+    {
+      "id": 7,
+      "prompt": "Где реализована логика retry после ошибки?",
+      "expected_output": "semantic_search(query: 'retry logic after failure')",
+      "assertions": [
+        { "text": "Uses semantic_search", "type": "tool_selection" },
+        { "text": "Does NOT use ripgrep", "type": "negative" }
+      ],
+      "audit_finding": "control",
+      "failure_mode": "regression control"
+    },
+    {
+      "id": 8,
+      "prompt": "[subagent: explore] Мне нужно понять структуру файла /Users/artk0re/Dev/project/src/core/domains/explore/reranker.ts перед модификацией",
+      "expected_output": "find_symbol(relativePath:) — subagent knows about relativePath",
+      "assertions": [
+        {
+          "text": "Uses find_symbol with relativePath param",
+          "type": "tool_selection"
+        },
+        { "text": "Does NOT use tree-sitter", "type": "negative" },
+        { "text": "Does NOT use Read as primary", "type": "negative" }
+      ],
+      "audit_finding": 6,
+      "failure_mode": "subagent injection missing relativePath"
+    },
+    {
+      "id": 9,
+      "prompt": "[subagent: task-agent] Найди определение метода CodeChunkGrouper#group в /Users/artk0re/Dev/project",
+      "expected_output": "find_symbol(symbol: 'CodeChunkGrouper#group') with # separator",
+      "assertions": [
+        {
+          "text": "Uses find_symbol with symbol param",
+          "type": "tool_selection"
+        },
+        { "text": "Uses # separator (not .)", "type": "convention" }
+      ],
+      "audit_finding": 6,
+      "failure_mode": "subagent injection missing # convention"
+    }
+  ],
+  "results": {
+    "baseline": { "pass": 2, "total": 9, "rate": "22%" },
+    "before_fix": { "pass": 3, "total": 9, "rate": "33%" },
+    "after_fix": { "pass": 9, "total": 9, "rate": "100%" },
+    "delta": "+78pp"
+  }
+}
