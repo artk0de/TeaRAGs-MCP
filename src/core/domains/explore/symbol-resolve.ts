@@ -6,11 +6,9 @@
  */
 
 import type { SearchResult } from "../../api/public/dto/explore.js";
-
-interface ScrollChunk {
-  id: string | number;
-  payload: Record<string, unknown>;
-}
+import { CodeChunkGrouper } from "./chunk-grouping/code.js";
+import { DocChunkGrouper } from "./chunk-grouping/doc.js";
+import type { ScrollChunk } from "./chunk-grouping/types.js";
 
 /**
  * Resolve raw scroll chunks into find_symbol results.
@@ -48,7 +46,7 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?:
         c.payload.relativePath === classChunk.payload.relativePath,
     );
 
-    results.push(outlineClass(classChunk, memberChunks));
+    results.push(CodeChunkGrouper.group(classChunk, memberChunks));
     emittedIds.add(classChunk.id);
     for (const m of memberChunks) emittedIds.add(m.id);
   }
@@ -70,7 +68,7 @@ export function resolveSymbols(chunks: ScrollChunk[], query?: string, metaOnly?:
   // Emit doc outlines (only when multiple doc chunks share parentSymbolId, or query matches parentSymbolId)
   for (const [, docChunks] of docByParent) {
     if (docChunks.length > 1 || (query && docChunks[0].payload.parentSymbolId === query)) {
-      results.push(outlineDoc(docChunks));
+      results.push(DocChunkGrouper.group(docChunks));
       for (const c of docChunks) emittedIds.add(c.id);
     }
   }
@@ -129,58 +127,6 @@ function mergeChunks(chunks: ScrollChunk[]): SearchResult {
   if (sorted.length > 1) {
     payload.mergedChunkIds = sorted.map((c) => c.id);
   }
-
-  return { id: first.id, score: 1.0, payload };
-}
-
-/** Outline a class: class chunk + members list. */
-function outlineClass(classChunk: ScrollChunk, memberChunks: ScrollChunk[]): SearchResult {
-  const members = memberChunks
-    .sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0))
-    .map((c) => (c.payload.symbolId as string | undefined) ?? "");
-
-  const payload: Record<string, unknown> = {
-    ...classChunk.payload,
-    git: classChunk.payload.git ? { file: (classChunk.payload.git as Record<string, unknown>).file } : undefined,
-    ...(members.length > 0 ? { members } : {}),
-  };
-
-  return { id: classChunk.id, score: 1.0, payload };
-}
-
-/** Outline a doc file: merged headingPath + members list (symbolIds). */
-function outlineDoc(chunks: ScrollChunk[]): SearchResult {
-  const sorted = [...chunks].sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0));
-  const first = sorted[0];
-
-  // Merge unique headingPath entries (deduplicate by depth+text)
-  const seen = new Set<string>();
-  const mergedHeadingPath: { depth: number; text: string }[] = [];
-  for (const c of sorted) {
-    const hp = c.payload.headingPath as { depth: number; text: string }[] | undefined;
-    if (!hp) continue;
-    for (const entry of hp) {
-      const key = `${entry.depth}:${entry.text}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        mergedHeadingPath.push(entry);
-      }
-    }
-  }
-
-  const members = sorted.map((c) => (c.payload.symbolId as string | undefined) ?? "");
-
-  const payload: Record<string, unknown> = {
-    relativePath: first.payload.relativePath,
-    language: first.payload.language,
-    isDocumentation: true,
-    parentSymbolId: first.payload.parentSymbolId,
-    startLine: first.payload.startLine,
-    endLine: sorted[sorted.length - 1].payload.endLine,
-    headingPath: mergedHeadingPath,
-    members,
-    git: first.payload.git ? { file: (first.payload.git as Record<string, unknown>).file } : undefined,
-  };
 
   return { id: first.id, score: 1.0, payload };
 }
