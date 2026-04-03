@@ -263,6 +263,110 @@ describe("resolveSymbols", () => {
     });
   });
 
+  describe("doc outline strategy", () => {
+    it("groups doc chunks by parentName into outline with merged headingPath", () => {
+      const chunks = [
+        {
+          id: "doc-1",
+          payload: {
+            symbolId: "doc:aaa111",
+            chunkType: "block",
+            parentName: "docs/api.md",
+            relativePath: "docs/api.md",
+            isDocumentation: true,
+            name: "Introduction",
+            headingPath: [{ depth: 1, text: "API" }],
+            content: "Introduction text",
+            startLine: 1,
+            endLine: 10,
+            language: "markdown",
+            navigation: { nextSymbolId: "doc:bbb222" },
+          },
+        },
+        {
+          id: "doc-2",
+          payload: {
+            symbolId: "doc:bbb222",
+            chunkType: "block",
+            parentName: "docs/api.md",
+            relativePath: "docs/api.md",
+            isDocumentation: true,
+            name: "Authentication",
+            headingPath: [
+              { depth: 1, text: "API" },
+              { depth: 2, text: "Authentication" },
+            ],
+            content: "Auth content",
+            startLine: 12,
+            endLine: 25,
+            language: "markdown",
+            navigation: { prevSymbolId: "doc:aaa111", nextSymbolId: "doc:ccc333" },
+          },
+        },
+        {
+          id: "doc-3",
+          payload: {
+            symbolId: "doc:ccc333",
+            chunkType: "block",
+            parentName: "docs/api.md",
+            relativePath: "docs/api.md",
+            isDocumentation: true,
+            name: "Usage",
+            headingPath: [
+              { depth: 1, text: "API" },
+              { depth: 2, text: "Usage" },
+            ],
+            content: "Usage content",
+            startLine: 27,
+            endLine: 40,
+            language: "markdown",
+            navigation: { prevSymbolId: "doc:bbb222" },
+          },
+        },
+      ];
+
+      const results = resolveSymbols(chunks, "docs/api.md");
+
+      expect(results).toHaveLength(1);
+      const outline = results[0];
+      expect(outline.payload?.relativePath).toBe("docs/api.md");
+      expect(outline.payload?.members).toEqual(["doc:aaa111", "doc:bbb222", "doc:ccc333"]);
+      expect(outline.payload?.headingPath).toEqual([
+        { depth: 1, text: "API" },
+        { depth: 2, text: "Authentication" },
+        { depth: 2, text: "Usage" },
+      ]);
+    });
+
+    it("returns doc outline with metaOnly (no content)", () => {
+      const chunks = [
+        {
+          id: "doc-1",
+          payload: {
+            symbolId: "doc:aaa111",
+            chunkType: "block",
+            parentName: "docs/guide.md",
+            relativePath: "docs/guide.md",
+            isDocumentation: true,
+            name: "Setup",
+            headingPath: [{ depth: 2, text: "Setup" }],
+            content: "Setup instructions",
+            startLine: 1,
+            endLine: 10,
+            language: "markdown",
+          },
+        },
+      ];
+
+      const results = resolveSymbols(chunks, "docs/guide.md", true);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBeUndefined();
+      expect(results[0].payload?.members).toEqual(["doc:aaa111"]);
+      expect(results[0].payload?.headingPath).toEqual([{ depth: 2, text: "Setup" }]);
+    });
+  });
+
   describe("mixed results", () => {
     it("handles functions from different files separately", () => {
       const chunks = [
