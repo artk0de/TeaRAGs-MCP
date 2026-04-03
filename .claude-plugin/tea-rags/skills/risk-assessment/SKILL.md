@@ -10,7 +10,7 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
 
 # Risk Assessment
 
-Multi-dimensional risk scan using rank_chunks with 3 rerank presets,
+Multi-dimensional risk scan using rank_chunks with 4 rerank presets,
 cross-referenced by overlap count. Semantic/hybrid search resolves intent-based
 scopes.
 
@@ -32,7 +32,7 @@ scopes.
 
 ```
 0. SCOPE RESOLUTION   → pathPattern + scopeType
-1. SCAN               → rank_chunks × 3 presets (parallel)
+1. SCAN               → rank_chunks × 4 presets (parallel)
 2. MERGE              → cross-reference by relativePath, assign tiers
 3. EXPAND             → find_similar from Critical only
 4. ENRICH             → partial Read + test coverage check + classify
@@ -74,13 +74,14 @@ $ARGUMENTS describes...
 
 ## Phase 1: SCAN
 
-Run `rank_chunks` × 3 presets. **All 3 calls in ONE message** (parallel).
+Run `rank_chunks` × 4 presets. **All 4 calls in ONE message** (parallel).
 
-| Preset     | Surfaces                                   |
-| ---------- | ------------------------------------------ |
-| `bugHunt`  | Burst activity + volatility + bug fix rate |
-| `hotspots` | Chunk-level churn + burst + instability    |
-| `techDebt` | Old + churny + bug-prone + dense code      |
+| Preset      | Surfaces                                         |
+| ----------- | ------------------------------------------------ |
+| `bugHunt`   | Burst activity + volatility + bug fix rate       |
+| `hotspots`  | Chunk-level churn + burst + instability          |
+| `techDebt`  | Old + churny + bug-prone + dense code            |
+| `dangerous` | Bug-prone + volatile + single-owner (bus factor) |
 
 Parameters per call:
 
@@ -103,23 +104,23 @@ Unfiltered `rank_chunks` returns results dominated by the highest-churn domain.
 Other domains are invisible regardless of their actual risk.
 
 ```
-After first scan (3 presets × no pathPattern):
+After first scan (4 presets × no pathPattern):
 1. Identify dominant domain:
    Count unique relativePath directory prefixes across all results.
    The domain with the most slots is dominant.
 
 2. ALWAYS run second scan (broad scope):
-   3 presets × pathPattern = "!**/dominant-domain/**"
+   4 presets × pathPattern = "!**/dominant-domain/**"
    Same parameters, same limit.
    Feed both scans into Phase 2 MERGE.
 ```
 
-This doubles the scan calls for broad scope (6 instead of 3), but guarantees
+This doubles the scan calls for broad scope (8 instead of 4), but guarantees
 every domain gets representation. The cost is acceptable: rank_chunks is a
 scroll operation, not vector search. No threshold — always run both scans.
 
 **Empty results:** If a preset returns 0 results, exclude from overlap count. N
-= number of presets with results (may be < 3).
+= number of presets with results (may be < 4).
 
 **Pagination:** Stop conditions per-preset:
 
@@ -233,6 +234,7 @@ already-identified risk zones.
 | Legacy debt      | ageDays legacy+ AND churn high+ AND bugFix high+              |
 | Untested hotspot | No test file AND tier Critical/High                           |
 | Oversized        | methodLines high+ (from labelMap) AND in decomposition top-10 |
+| Knowledge silo   | knowledgeSilo high+ AND contributorCount = 1                  |
 | Race condition   | Agent judgment from code content                              |
 
 Multiple classifications per candidate allowed.

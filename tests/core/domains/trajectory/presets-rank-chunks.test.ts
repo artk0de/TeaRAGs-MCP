@@ -11,6 +11,7 @@ const RANK_CHUNKS_PRESETS = new Set([
   "refactoring",
   "ownership",
   "codeReview",
+  "dangerous",
 ]);
 
 describe("preset tool lists", () => {
