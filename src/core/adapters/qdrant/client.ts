@@ -813,6 +813,17 @@ export class QdrantManager {
     }
   }
 
+  /** Delete payload keys from all points (or filtered subset). */
+  async deletePayloadKeys(collectionName: string, keys: string[], filter?: Record<string, unknown>): Promise<void> {
+    await this.call(async () =>
+      this.client.deletePayload(collectionName, {
+        keys,
+        filter: filter ?? {},
+        wait: true,
+      }),
+    );
+  }
+
   /**
    * Performs hybrid search combining semantic vector search with sparse vector (keyword) search.
    * Runs both searches in parallel, normalizes scores via min-max, and blends with semanticWeight.

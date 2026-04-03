@@ -347,10 +347,20 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
   const FindSymbolSchema = {
     symbol: z
       .string()
+      .optional()
       .describe(
         "Symbol name or symbolId to find. Format: 'ClassName.methodName' for class methods, " +
           "'functionName' for top-level functions, 'ClassName' for classes. " +
-          "Supports partial match: 'ClassName' finds the class and all its methods.",
+          "Supports partial match: 'ClassName' finds the class and all its methods. " +
+          "Mutually exclusive with relativePath.",
+      ),
+    relativePath: z
+      .string()
+      .optional()
+      .describe(
+        "File path for file-level lookup. Returns file outline (code) or TOC (docs). " +
+          "Use the relativePath from a previous search result. " +
+          "Mutually exclusive with symbol.",
       ),
     ...collectionPathFields(),
     language: z

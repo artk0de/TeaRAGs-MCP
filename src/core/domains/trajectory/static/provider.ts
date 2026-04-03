@@ -23,7 +23,7 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     };
     if (m.name) payload.name = m.name;
     if (m.chunkType) payload.chunkType = m.chunkType;
-    if (m.parentName) payload.parentName = m.parentName;
+    if (m.parentSymbolId) payload.parentSymbolId = m.parentSymbolId;
     if (m.parentType) payload.parentType = m.parentType;
     if (m.symbolId) payload.symbolId = m.symbolId;
     if (m.isDocumentation) payload.isDocumentation = m.isDocumentation;

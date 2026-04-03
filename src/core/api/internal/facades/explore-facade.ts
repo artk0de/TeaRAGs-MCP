@@ -20,6 +20,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor, SignalStats } from "../../../contracts/types/trajectory.js";
+import { CodeChunkGrouper, DocChunkGrouper } from "../../../domains/explore/chunk-grouping/index.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   InvalidQueryError,
@@ -41,7 +42,7 @@ import { resolveCollection, resolveCollectionName, validatePath } from "../../..
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
-import { CollectionNotProvidedError } from "../../errors.js";
+import { CollectionNotProvidedError, InvalidParameterError } from "../../errors.js";
 import {
   stripInternalFields,
   type ExploreCodeRequest,
@@ -51,6 +52,7 @@ import {
   type HybridSearchRequest,
   type IndexMetrics,
   type RankChunksRequest,
+  type SearchResult,
   type SemanticSearchRequest,
   type SignalMetrics,
 } from "../../public/dto/index.js";
@@ -298,12 +300,27 @@ export class ExploreFacade {
     );
   }
 
-  /** Find symbol by name — direct Qdrant scroll, no embedding. */
+  /** Find symbol by name or file-level outline by relativePath. */
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
+    if (request.symbol && request.relativePath) {
+      throw new InvalidParameterError("symbol", "symbol and relativePath are mutually exclusive");
+    }
+    if (!request.symbol && !request.relativePath) {
+      throw new InvalidParameterError("symbol", "either symbol or relativePath is required");
+    }
+
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
 
+    // Dispatch to relativePath branch when provided
+    if (request.relativePath) {
+      return this.findByRelativePath(collectionName, request, path);
+    }
+
+    // At this point, validation guarantees symbol is present
+    const symbol = request.symbol as string;
+
     // Build filter: symbolId text match + optional language
-    const must: Record<string, unknown>[] = [{ key: "symbolId", match: { text: request.symbol } }];
+    const must: Record<string, unknown>[] = [{ key: "symbolId", match: { text: symbol } }];
     if (request.language) {
       must.push({ key: "language", match: { value: request.language } });
     }
@@ -325,9 +342,9 @@ export class ExploreFacade {
       }
     }
 
-    // Also collect parentName matches for class outline (members)
+    // Also collect parentSymbolId matches for class outline (members)
     const parentMust: Record<string, unknown>[] = [
-      { key: "parentName", match: { text: request.symbol } },
+      { key: "parentSymbolId", match: { text: symbol } },
       ...(request.language ? [{ key: "language", match: { value: request.language } }] : []),
     ];
     const parentFilter: Record<string, unknown> = { must: parentMust };
@@ -353,7 +370,7 @@ export class ExploreFacade {
       this.qdrant.scrollFiltered(collectionName, parentFilter, 200),
     ]);
 
-    // Deduplicate (a chunk may appear in both if its symbolId and parentName both match)
+    // Deduplicate (a chunk may appear in both if its symbolId and parentSymbolId both match)
     const seen = new Set(symbolChunks.map((c) => c.id));
     const allChunks = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
 
@@ -373,6 +390,47 @@ export class ExploreFacade {
 
     const driftWarning = path ? await this.checkDrift(path) : null;
 
+    return { results, driftWarning };
+  }
+
+  /** File-level outline via relativePath scroll. */
+  private async findByRelativePath(
+    collectionName: string,
+    request: FindSymbolRequest,
+    path?: string,
+  ): Promise<ExploreResponse> {
+    const must: Record<string, unknown>[] = [{ key: "relativePath", match: { text: request.relativePath as string } }];
+    if (request.language) {
+      must.push({ key: "language", match: { value: request.language } });
+    }
+
+    const chunks = await this.qdrant.scrollFiltered(collectionName, { must }, 200);
+
+    if (chunks.length === 0) {
+      const driftWarning = path ? await this.checkDrift(path) : null;
+      return { results: [], driftWarning };
+    }
+
+    const isDoc = chunks.some((c) => c.payload.isDocumentation);
+    let results: SearchResult[];
+    if (isDoc) {
+      results = [DocChunkGrouper.group(chunks)];
+    } else {
+      results = [CodeChunkGrouper.groupFile(chunks)];
+    }
+
+    if (request.metaOnly) {
+      for (const r of results) {
+        if (r.payload) delete r.payload.content;
+      }
+    }
+
+    if (request.rerank) {
+      await this.ensureStats(collectionName);
+      results = this.reranker.rerank(results, request.rerank, "semantic_search");
+    }
+
+    const driftWarning = path ? await this.checkDrift(path) : null;
     return { results, driftWarning };
   }
 

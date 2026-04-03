@@ -67,7 +67,7 @@ export class MarkdownChunker {
     // splitting at h3 boundaries when accumulated size exceeds maxChunkSize.
     await this.buildSectionChunks(chunks, sectionHeadings, headings, lines, codeBlockLineRanges, filePath, language);
 
-    // Create code block chunks with parentName
+    // Create code block chunks with parentSymbolId
     for (const block of codeBlocks) {
       if (block.value.length < MIN_CODE_BLOCK_SIZE) continue;
       if (this.isMermaid(block)) continue;
@@ -80,7 +80,7 @@ export class MarkdownChunker {
         isDocumentation: true as const,
         headingPath: parentHeading ? this.buildHeadingPath(headings, parentHeading) : [],
         ...(parentHeading && {
-          parentName: parentHeading.text,
+          parentSymbolId: parentHeading.text,
           parentType: `h${parentHeading.depth}`,
         }),
       };
@@ -283,7 +283,7 @@ export class MarkdownChunker {
               ...subChunk.metadata,
               chunkIndex: chunks.length,
               name: accumName,
-              parentName: accumName,
+              parentSymbolId: accumName,
               isDocumentation: true,
               headingPath: accumHeadingPath,
             },

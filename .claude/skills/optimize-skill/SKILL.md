@@ -153,6 +153,13 @@ completes. Do not wait for user to ask. Do not skip because "session is ending".
 Benchmark artifacts are the proof that optimization happened — without them, the
 work is unverifiable.
 
+**Applies to feature-driven updates too.** When a skill is updated as part of a
+feature implementation (not a standalone optimization session), eval cases and
+results MUST still be persisted. The eval may be smaller (only covering new
+functionality), but `evals/<feature>-evals.json` + benchmark.md appendix are
+required. Eval cases are reusable regression tests — skipping persistence means
+the next optimization has no baseline for the new functionality.
+
 Save results to `.claude-plugin/.benchmarks/<skill-name>/`:
 
 ```

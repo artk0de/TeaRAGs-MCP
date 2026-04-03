@@ -103,14 +103,14 @@ describe("assignNavigationAndDocSymbolId", () => {
           filePath: "/project/src/app.ts",
           language: "typescript",
           chunkIndex: 0,
-          symbolId: "Reranker.rerank",
+          symbolId: "Reranker#rerank",
         },
       }),
     ];
 
     assignNavigationAndDocSymbolId(chunks, basePath);
 
-    expect(chunks[0].metadata.symbolId).toBe("Reranker.rerank");
+    expect(chunks[0].metadata.symbolId).toBe("Reranker#rerank");
   });
 
   it("sets navigation links for ordered chunks", () => {
@@ -151,7 +151,7 @@ describe("assignNavigationAndDocSymbolId", () => {
       makeChunk({
         metadata: {
           chunkIndex: 1,
-          symbolId: "Reranker.rerank",
+          symbolId: "Reranker#rerank",
         },
       }),
     ];
@@ -161,12 +161,12 @@ describe("assignNavigationAndDocSymbolId", () => {
     const docId = docHash("docs/api.md#Intro");
     expect(chunks[0].metadata.symbolId).toBe(docId);
     expect(chunks[0].metadata.navigation).toEqual({
-      nextSymbolId: "Reranker.rerank",
+      nextSymbolId: "Reranker#rerank",
     });
     expect(chunks[1].metadata.navigation).toEqual({ prevSymbolId: docId });
   });
 
-  it("sets parentName to relative path for documentation chunks", () => {
+  it("sets parentSymbolId to relative path for documentation chunks", () => {
     const chunks: CodeChunk[] = [
       makeChunk({
         metadata: {
@@ -188,25 +188,25 @@ describe("assignNavigationAndDocSymbolId", () => {
 
     assignNavigationAndDocSymbolId(chunks, basePath);
 
-    expect(chunks[0].metadata.parentName).toBe("docs/api.md");
-    expect(chunks[1].metadata.parentName).toBe("docs/api.md");
+    expect(chunks[0].metadata.parentSymbolId).toBe("docs/api.md");
+    expect(chunks[1].metadata.parentSymbolId).toBe("docs/api.md");
   });
 
-  it("does NOT overwrite parentName for code chunks", () => {
+  it("does NOT overwrite parentSymbolId for code chunks", () => {
     const chunks: CodeChunk[] = [
       makeChunk({
         metadata: {
           filePath: "/project/src/app.ts",
           language: "typescript",
           chunkIndex: 0,
-          symbolId: "App.run",
-          parentName: "App",
+          symbolId: "App#run",
+          parentSymbolId: "App",
         },
       }),
     ];
 
     assignNavigationAndDocSymbolId(chunks, basePath);
 
-    expect(chunks[0].metadata.parentName).toBe("App");
+    expect(chunks[0].metadata.parentSymbolId).toBe("App");
   });
 });

@@ -137,10 +137,12 @@ export function registerSearchTools(
     {
       title: "Find Symbol",
       description:
-        "Find symbol by name — direct lookup, no embedding. " +
-        "Returns merged definition for functions (chunks joined), outline + members for classes. " +
-        "Uses Qdrant text match on symbolId field. Partial match supported: " +
-        "'Reranker' finds the class and all its methods.",
+        "Find symbol by name or file outline by relativePath — direct lookup, no embedding. " +
+        "symbol mode: merged definition for functions, outline + members for classes. " +
+        "relativePath mode: file-level outline (code symbols or doc TOC). " +
+        "Uses Qdrant text match. Partial match supported: " +
+        "'Reranker' finds the class and all its methods. " +
+        "symbolId convention: Class#method (instance), Class.method (static).",
       inputSchema: searchSchemas.FindSymbolSchema,
       outputSchema: SearchResultOutputSchema,
       annotations: { readOnlyHint: true },

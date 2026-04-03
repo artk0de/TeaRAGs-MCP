@@ -13,6 +13,9 @@ function createMockIndexStore(version = 0): IndexStore {
     getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: false, vectorSize: 384 }),
     updateSparseConfig: vi.fn().mockResolvedValue(undefined),
     deletePointsByFilter: vi.fn().mockResolvedValue(undefined),
+    scrollAllPayload: vi.fn().mockResolvedValue([]),
+    batchSetPayload: vi.fn().mockResolvedValue(undefined),
+    deletePayloadKeys: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -27,14 +30,14 @@ function createMockSparseStore(version = 0): SparseStore {
 const COLLECTION = "test_col";
 
 describe("SchemaMigrator", () => {
-  it("has 6 schema migrations (v4-v10) without enrichment store", () => {
+  it("has 7 schema migrations (v4-v11) without enrichment store", () => {
     const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), { enableHybrid: false });
     const migrations = migrator.getMigrations();
-    expect(migrations).toHaveLength(6);
-    expect(migrations.filter((m) => m.version >= 4 && m.version <= 10)).toHaveLength(6);
+    expect(migrations).toHaveLength(7);
+    expect(migrations.filter((m) => m.version >= 4 && m.version <= 11)).toHaveLength(7);
   });
 
-  it("has 7 schema migrations (v4-v10) with enrichment store", () => {
+  it("has 8 schema migrations (v4-v11) with enrichment store", () => {
     const mockEnrichmentStore = {
       isMigrated: vi.fn(),
       scrollAllChunks: vi.fn(),
@@ -48,9 +51,10 @@ describe("SchemaMigrator", () => {
       mockEnrichmentStore as any,
     );
     const migrations = migrator.getMigrations();
-    expect(migrations).toHaveLength(7);
+    expect(migrations).toHaveLength(8);
     expect(migrations.find((m) => m.version === 9)).toBeDefined();
     expect(migrations.find((m) => m.version === 10)).toBeDefined();
+    expect(migrations.find((m) => m.version === 11)).toBeDefined();
   });
 
   it("reads schema version from IndexStore", async () => {
@@ -63,7 +67,7 @@ describe("SchemaMigrator", () => {
 
   it("computes latestVersion from registered migrations", () => {
     const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), { enableHybrid: false });
-    expect(migrator.latestVersion).toBe(10);
+    expect(migrator.latestVersion).toBe(11);
   });
 
   it("computes latestVersion=10 with enrichment store", () => {
@@ -79,7 +83,7 @@ describe("SchemaMigrator", () => {
       { enableHybrid: false, providerKey: "git" },
       mockEnrichmentStore as any,
     );
-    expect(migrator.latestVersion).toBe(10);
+    expect(migrator.latestVersion).toBe(11);
   });
 
   it("stores version via IndexStore after migrations", async () => {

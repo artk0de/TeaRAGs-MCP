@@ -61,16 +61,16 @@ describe("StaticPayloadBuilder", () => {
         filePath: "/project/src/app.ts",
         language: "typescript",
         chunkIndex: 0,
-        symbolId: "App.run",
-        navigation: { prevSymbolId: "App.init", nextSymbolId: "App.stop" },
+        symbolId: "App#run",
+        navigation: { prevSymbolId: "App#init", nextSymbolId: "App#stop" },
       } as Record<string, unknown>,
     };
 
     const payload = builder.buildPayload(navChunk, "/project");
 
     expect(payload.navigation).toEqual({
-      prevSymbolId: "App.init",
-      nextSymbolId: "App.stop",
+      prevSymbolId: "App#init",
+      nextSymbolId: "App#stop",
     });
   });
 

@@ -18,6 +18,8 @@ export {
 } from "./post-process.js";
 export { resolvePresets, getPresetNames, getPresetWeights } from "./rerank/presets/index.js";
 export type { RerankPreset } from "./rerank/presets/index.js";
+export { CodeChunkGrouper, DocChunkGrouper } from "./chunk-grouping/index.js";
+export type { ScrollChunk } from "./chunk-grouping/index.js";
 export {
   createExploreStrategy,
   HybridSearchStrategy,

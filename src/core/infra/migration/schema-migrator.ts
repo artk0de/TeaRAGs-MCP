@@ -6,6 +6,7 @@ import {
   SchemaV8SymbolIdText,
   SchemaV9EnrichedAtBackfill,
   SchemaV10PurgeMarkdownChunks,
+  SchemaV11RenameParentSymbolId,
 } from "./schema_migrations/index.js";
 import type { EnrichmentStore, IndexStore, Migration, MigrationRunner, SnapshotStore } from "./types.js";
 
@@ -38,6 +39,11 @@ export class SchemaMigrator implements MigrationRunner {
         ? [new SchemaV9EnrichedAtBackfill(collection, enrichmentStore, options.providerKey)]
         : []),
       new SchemaV10PurgeMarkdownChunks(collection, indexStore, snapshotStore),
+      new SchemaV11RenameParentSymbolId(
+        collection,
+        indexStore as IndexStore &
+          Required<Pick<IndexStore, "scrollAllPayload" | "batchSetPayload" | "deletePayloadKeys">>,
+      ),
     ];
     this.latestVersion = Math.max(...this.migrations.map((m) => m.version));
   }

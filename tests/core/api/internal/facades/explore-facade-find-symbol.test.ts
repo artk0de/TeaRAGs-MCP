@@ -20,7 +20,7 @@ describe("ExploreFacade.findSymbol", () => {
       {
         id: "uuid-1",
         payload: {
-          symbolId: "Reranker.score",
+          symbolId: "Reranker#score",
           chunkType: "function",
           relativePath: "src/reranker.ts",
           content: "score() { return 42; }",
@@ -63,7 +63,7 @@ describe("ExploreFacade.findSymbol", () => {
     });
 
     expect(result.results).toHaveLength(1);
-    expect(result.results[0].payload?.symbolId).toBe("Reranker.score");
+    expect(result.results[0].payload?.symbolId).toBe("Reranker#score");
     expect(result.results[0].score).toBe(1.0);
   });
 
@@ -184,10 +184,10 @@ describe("ExploreFacade.findSymbol", () => {
       expect.arrayContaining([{ key: "symbolId", match: { text: "Reranker" } }, ...pathMust]),
     );
 
-    // Second call: parentName filter + pathPattern
+    // Second call: parentSymbolId filter + pathPattern
     const parentFilter = mockScrollFiltered.mock.calls[1][1];
     expect(parentFilter.must).toEqual(
-      expect.arrayContaining([{ key: "parentName", match: { text: "Reranker" } }, ...pathMust]),
+      expect.arrayContaining([{ key: "parentSymbolId", match: { text: "Reranker" } }, ...pathMust]),
     );
   });
 
@@ -229,5 +229,114 @@ describe("ExploreFacade.findSymbol", () => {
     await expect(facadeWithMissing.findSymbol({ symbol: "Anything", collection: "missing_col" })).rejects.toThrow(
       /not found/,
     );
+  });
+
+  it("rejects when both symbol and relativePath provided", async () => {
+    await expect(
+      facade.findSymbol({
+        symbol: "Reranker",
+        relativePath: "src/reranker.ts",
+        collection: "test_collection",
+      }),
+    ).rejects.toThrow(/mutually exclusive/);
+  });
+
+  it("rejects when neither symbol nor relativePath provided", async () => {
+    await expect(
+      facade.findSymbol({
+        collection: "test_collection",
+      }),
+    ).rejects.toThrow(/either symbol or relativePath is required/);
+  });
+
+  it("returns file outline for code file via relativePath", async () => {
+    mockScrollFiltered.mockResolvedValue([
+      {
+        id: "uuid-1",
+        payload: {
+          symbolId: "helperFn",
+          chunkType: "function",
+          relativePath: "src/utils.ts",
+          content: "function helperFn() {}",
+          startLine: 1,
+          endLine: 5,
+          language: "typescript",
+          name: "helperFn",
+        },
+      },
+      {
+        id: "uuid-2",
+        payload: {
+          symbolId: "anotherFn",
+          chunkType: "function",
+          relativePath: "src/utils.ts",
+          content: "function anotherFn() {}",
+          startLine: 10,
+          endLine: 15,
+          language: "typescript",
+          name: "anotherFn",
+        },
+      },
+    ]);
+
+    const result = await facade.findSymbol({
+      relativePath: "src/utils.ts",
+      collection: "test_collection",
+    });
+
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].payload?.relativePath).toBe("src/utils.ts");
+    expect(result.results[0].payload?.chunkCount).toBe(2);
+    // Verify it scrolled by relativePath, not symbolId
+    expect(mockScrollFiltered).toHaveBeenCalledWith(
+      "test_collection",
+      { must: [{ key: "relativePath", match: { text: "src/utils.ts" } }] },
+      200,
+    );
+  });
+
+  it("returns TOC for markdown file via relativePath", async () => {
+    mockScrollFiltered.mockResolvedValue([
+      {
+        id: "doc-1",
+        payload: {
+          symbolId: "README.md",
+          chunkType: "block",
+          relativePath: "docs/guide.md",
+          content: "# Introduction\nSome text",
+          startLine: 1,
+          endLine: 5,
+          language: "markdown",
+          isDocumentation: true,
+          headingPath: [{ depth: 1, text: "Introduction" }],
+        },
+      },
+      {
+        id: "doc-2",
+        payload: {
+          symbolId: "README.md#Setup",
+          chunkType: "block",
+          relativePath: "docs/guide.md",
+          content: "## Setup\nMore text",
+          startLine: 6,
+          endLine: 10,
+          language: "markdown",
+          isDocumentation: true,
+          headingPath: [
+            { depth: 1, text: "Introduction" },
+            { depth: 2, text: "Setup" },
+          ],
+        },
+      },
+    ]);
+
+    const result = await facade.findSymbol({
+      relativePath: "docs/guide.md",
+      collection: "test_collection",
+    });
+
+    expect(result.results).toHaveLength(1);
+    // DocChunkGrouper produces a TOC-style result
+    expect(result.results[0].payload?.relativePath).toBe("docs/guide.md");
   });
 });
