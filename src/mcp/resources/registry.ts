@@ -72,22 +72,10 @@ export function buildSignalsDoc(descriptors: PresetDescriptors): string {
 }
 
 export function buildSearchGuide(): string {
-  return `# Search Guide
+  return `# Search Guide — Parameter Examples
 
-## Tool Routing
-
-| Need | Tool |
-| --- | --- |
-| Quick lookup for user request | \`search_code\` |
-| Structured JSON for analytics/reports | \`semantic_search\` |
-| Symbol name + semantic context | \`hybrid_search\` |
-| Symbol definition by name (no embedding) | \`find_symbol\` (symbol param) |
-| File outline or doc TOC | \`find_symbol\` (relativePath param) |
-| Top-N by signal without query | \`rank_chunks\` |
-| Find code similar to examples | \`find_similar\` |
-| Exact text, markers (TODO/FIXME) | ripgrep MCP |
-
-For full decision logic (when to use which tool), consult the search-cascade rule.
+Tool routing is in the search-cascade rule. This resource has concrete
+parameter examples for each tool.
 
 ## search_code Examples
 
