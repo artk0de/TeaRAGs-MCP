@@ -166,7 +166,7 @@ describe("assignNavigationAndDocSymbolId", () => {
     expect(chunks[1].metadata.navigation).toEqual({ prevSymbolId: docId });
   });
 
-  it("sets parentName to relative path for documentation chunks", () => {
+  it("sets parentSymbolId to relative path for documentation chunks", () => {
     const chunks: CodeChunk[] = [
       makeChunk({
         metadata: {
@@ -188,11 +188,11 @@ describe("assignNavigationAndDocSymbolId", () => {
 
     assignNavigationAndDocSymbolId(chunks, basePath);
 
-    expect(chunks[0].metadata.parentName).toBe("docs/api.md");
-    expect(chunks[1].metadata.parentName).toBe("docs/api.md");
+    expect(chunks[0].metadata.parentSymbolId).toBe("docs/api.md");
+    expect(chunks[1].metadata.parentSymbolId).toBe("docs/api.md");
   });
 
-  it("does NOT overwrite parentName for code chunks", () => {
+  it("does NOT overwrite parentSymbolId for code chunks", () => {
     const chunks: CodeChunk[] = [
       makeChunk({
         metadata: {
@@ -200,13 +200,13 @@ describe("assignNavigationAndDocSymbolId", () => {
           language: "typescript",
           chunkIndex: 0,
           symbolId: "App.run",
-          parentName: "App",
+          parentSymbolId: "App",
         },
       }),
     ];
 
     assignNavigationAndDocSymbolId(chunks, basePath);
 
-    expect(chunks[0].metadata.parentName).toBe("App");
+    expect(chunks[0].metadata.parentSymbolId).toBe("App");
   });
 });

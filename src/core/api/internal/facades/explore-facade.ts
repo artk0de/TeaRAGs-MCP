@@ -325,9 +325,9 @@ export class ExploreFacade {
       }
     }
 
-    // Also collect parentName matches for class outline (members)
+    // Also collect parentSymbolId matches for class outline (members)
     const parentMust: Record<string, unknown>[] = [
-      { key: "parentName", match: { text: request.symbol } },
+      { key: "parentSymbolId", match: { text: request.symbol } },
       ...(request.language ? [{ key: "language", match: { value: request.language } }] : []),
     ];
     const parentFilter: Record<string, unknown> = { must: parentMust };
@@ -353,7 +353,7 @@ export class ExploreFacade {
       this.qdrant.scrollFiltered(collectionName, parentFilter, 200),
     ]);
 
-    // Deduplicate (a chunk may appear in both if its symbolId and parentName both match)
+    // Deduplicate (a chunk may appear in both if its symbolId and parentSymbolId both match)
     const seen = new Set(symbolChunks.map((c) => c.id));
     const allChunks = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
 

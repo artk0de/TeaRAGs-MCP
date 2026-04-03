@@ -9,7 +9,7 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  * Query examples: "request handler", "data processor", "render method".
  * Key signals: chunkSize (large methods), chunkDensity (dense code = complex logic).
  *   Similarity stays high (0.4) to keep results relevant to the query.
- * Groups results by parentName — shows which classes contain oversized methods.
+ * Groups results by parentSymbolId — shows which classes contain oversized methods.
  * Compare: RefactoringPreset adds git signals (churn, volatility);
  *   DecompositionPreset is purely structural — no git history needed.
  */
@@ -25,5 +25,5 @@ export class DecompositionPreset implements RerankPreset {
   readonly overlayMask: OverlayMask = {
     file: ["methodLines"],
   };
-  readonly groupBy = "parentName";
+  readonly groupBy = "parentSymbolId";
 }
