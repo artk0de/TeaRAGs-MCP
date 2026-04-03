@@ -7,6 +7,7 @@
 import type { RerankPreset } from "../../../../../contracts/types/reranker.js";
 import { BugHuntPreset } from "./bug-hunt.js";
 import { CodeReviewPreset } from "./code-review.js";
+import { DangerousPreset } from "./dangerous.js";
 import { HotspotsPreset } from "./hotspots.js";
 import { OnboardingPreset } from "./onboarding.js";
 import { OwnershipPreset } from "./ownership.js";
@@ -18,6 +19,7 @@ import { TechDebtPreset } from "./tech-debt.js";
 
 export { BugHuntPreset } from "./bug-hunt.js";
 export { CodeReviewPreset } from "./code-review.js";
+export { DangerousPreset } from "./dangerous.js";
 export { HotspotsPreset } from "./hotspots.js";
 export { OnboardingPreset } from "./onboarding.js";
 export { OwnershipPreset } from "./ownership.js";
@@ -32,6 +34,7 @@ export const GIT_PRESETS: RerankPreset[] = [
   new TechDebtPreset(),
   new HotspotsPreset(),
   new CodeReviewPreset(),
+  new DangerousPreset(),
   new OnboardingPreset(),
   new SecurityAuditPreset(),
   new RefactoringPreset(),
