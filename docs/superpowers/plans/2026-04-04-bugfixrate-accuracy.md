@@ -9,11 +9,12 @@
 (tea-rags-mcp-6130), small sample unreliability (tea-rags-mcp-2xeb), and chunk
 line drift attribution (tea-rags-mcp-fek8).
 
-**Architecture:** Two-layer fix. Layer 1 — improve commit classification by
+**Architecture:** Three-layer fix. Layer 1 — improve commit classification by
 adding merge-branch-prefix propagation to child commits (single-pass via `%P` in
 git log format) plus stricter subject-line patterns with cosmetic exclusion.
-Layer 2 — raise dampening thresholds (file k=8→12, add chunk-level k=15) to
-reduce noise from small samples and line drift.
+Layer 2 — raise dampening FALLBACK_THRESHOLD (k=8→10) to reduce noise from small
+samples. Layer 3 — fix chunk line drift by adding offset tracking to
+chunk-reader (two-phase: parallel blob reads, sequential per-file mapping).
 
 **Tech Stack:** TypeScript, Vitest, git CLI
 
@@ -30,9 +31,11 @@ reduce noise from small samples and line drift.
 | Modify | `src/core/domains/trajectory/git/infra/metrics.ts`                        | Rewrite `isBugFixCommit()` with strict patterns        |
 | Modify | `src/core/domains/trajectory/git/infra/file-reader.ts`                    | Call merge-branch-resolver, pass map to classification |
 | Modify | `src/core/domains/trajectory/git/infra/chunk-reader.ts`                   | Use resolved isBugFix from merge map                   |
-| Modify | `src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts`       | Raise FALLBACK_THRESHOLD 8→12, add chunk dampening     |
+| Modify | `src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts`       | Raise FALLBACK_THRESHOLD 8→10                          |
+| Create | `src/core/domains/trajectory/git/infra/offset-tracker.ts`                 | Per-file chunk range offset tracking for drift fix     |
 | Modify | `tests/core/domains/trajectory/git/infra/git-log-reader.test.ts`          | Update isBugFixCommit tests for new patterns           |
 | Create | `tests/core/domains/trajectory/git/infra/merge-branch-resolver.test.ts`   | Tests for merge graph traversal                        |
+| Create | `tests/core/domains/trajectory/git/infra/offset-tracker.test.ts`          | Tests for offset tracking algorithm                    |
 | Modify | `tests/core/domains/trajectory/git/derived-signals/confidence.test.ts`    | Update BugFixSignal threshold tests                    |
 | Modify | `tests/core/domains/trajectory/git/infra/metrics/chunk-assembler.test.ts` | Update Laplace smoothing expected values               |
 
@@ -1027,12 +1030,16 @@ Part of tea-rags-mcp-6130."
 
 ---
 
-## Task 6: Raise BugFixSignal dampening thresholds (bug 2xeb)
+## Task 6: Raise BugFixSignal FALLBACK_THRESHOLD (bug 2xeb)
 
 **Files:**
 
 - Modify: `src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts:21`
 - Modify: `tests/core/domains/trajectory/git/derived-signals/confidence.test.ts`
+
+Note: adaptive dampening via `GIT_FILE_DAMPENING` (p25 of commitCount) remains
+unchanged. Only the FALLBACK_THRESHOLD (used when adaptive bounds unavailable)
+changes from 8 to 10.
 
 ### Step 1: Write failing test for new threshold
 
@@ -1040,16 +1047,16 @@ Part of tea-rags-mcp-6130."
       `tests/core/domains/trajectory/git/derived-signals/confidence.test.ts`:
 
 ```typescript
-it("uses fallback threshold k=12 (not k=8)", () => {
+it("uses fallback threshold k=10 (not k=8)", () => {
   const raw = makePayload({ commitCount: 4, bugFixRate: 50 });
   const ctx: ExtractContext = {
     bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
   };
   const value = signal.extract(raw, ctx);
-  // With k=12: confidence = (4/12)^2 = 0.1111
+  // With k=10: confidence = (4/10)^2 = 0.16
   // base = 50/100 = 0.5
-  // value = 0.5 * 0.1111 = 0.0556
-  expect(value).toBeCloseTo(0.5 * (4 / 12) ** 2);
+  // value = 0.5 * 0.16 = 0.08
+  expect(value).toBeCloseTo(0.5 * (4 / 10) ** 2);
 });
 ```
 
@@ -1057,16 +1064,16 @@ it("uses fallback threshold k=12 (not k=8)", () => {
       `npx vitest run tests/core/domains/trajectory/git/derived-signals/confidence.test.ts`
 - [ ] Expected: FAIL — old threshold k=8 gives different value
 
-### Step 2: Change FALLBACK_THRESHOLD from 8 to 12
+### Step 2: Change FALLBACK_THRESHOLD from 8 to 10
 
 - [ ] Modify
       `src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts`:
 
 ```typescript
-private static readonly FALLBACK_THRESHOLD = 12;
+private static readonly FALLBACK_THRESHOLD = 10;
 ```
 
-### Step 3: Update existing tests for k=12
+### Step 3: Update existing tests for k=10
 
 - [ ] In `confidence.test.ts`, update the "dampens value when commitCount <
       adaptive threshold" test:
@@ -1078,8 +1085,8 @@ it("dampens value when commitCount < adaptive threshold", () => {
     bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
   };
   const value = signal.extract(raw, ctx);
-  // base = 50/100 = 0.5, confidence = (2/12)^2 = 0.0278 (FALLBACK_THRESHOLD=12)
-  expect(value).toBeCloseTo(0.5 * (2 / 12) ** 2);
+  // base = 50/100 = 0.5, confidence = (2/10)^2 = 0.04 (FALLBACK_THRESHOLD=10)
+  expect(value).toBeCloseTo(0.5 * (2 / 10) ** 2);
 });
 
 it("uses fallback threshold when no dampeningThreshold", () => {
@@ -1088,8 +1095,8 @@ it("uses fallback threshold when no dampeningThreshold", () => {
     bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
   };
   const value = signal.extract(raw, ctx);
-  // Fallback k=12, confidence = (2/12)^2 = 0.0278
-  expect(value).toBeCloseTo(0.5 * (2 / 12) ** 2);
+  // Fallback k=10, confidence = (2/10)^2 = 0.04
+  expect(value).toBeCloseTo(0.5 * (2 / 10) ** 2);
 });
 ```
 
@@ -1103,173 +1110,590 @@ it("uses fallback threshold when no dampeningThreshold", () => {
 ```bash
 git add src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts \
   tests/core/domains/trajectory/git/derived-signals/confidence.test.ts
-git commit -m "fix(signals): raise BugFixSignal dampening threshold from k=8 to k=12
+git commit -m "fix(signals): raise BugFixSignal FALLBACK_THRESHOLD from k=8 to k=10
 
-Reduces false-positive impact on small samples. At commitCount=4,
-confidence drops from 25% (k=8) to 11% (k=12), making a single
-false positive much less impactful.
+Reduces false-positive impact on small samples when adaptive bounds
+unavailable. At commitCount=4, confidence drops from 25% (k=8) to
+16% (k=10). Adaptive dampening (p25) unchanged.
 
 Fixes tea-rags-mcp-2xeb."
 ```
 
 ---
 
-## Task 7: Add chunk-level dampening to BugFixSignal (bug fek8)
+## Task 7: Offset tracker — pure algorithm for chunk range drift fix (bug fek8)
 
 **Files:**
 
-- Modify: `src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts`
-- Modify: `tests/core/domains/trajectory/git/derived-signals/confidence.test.ts`
+- Create: `src/core/domains/trajectory/git/infra/offset-tracker.ts`
+- Create: `tests/core/domains/trajectory/git/infra/offset-tracker.test.ts`
 
-### Step 1: Write failing test for chunk dampening
+This task extracts the offset tracking algorithm as a pure, testable module. The
+chunk-reader wiring happens in Task 8.
 
-- [ ] Add to `confidence.test.ts`:
+### Step 1: Write failing tests for offset tracking
+
+- [ ] Create `tests/core/domains/trajectory/git/infra/offset-tracker.test.ts`:
 
 ```typescript
-describe("BugFixSignal chunk-level dampening", () => {
-  const signal = new BugFixSignal();
+import { describe, expect, it } from "vitest";
 
-  it("applies additional chunk dampening when chunk data present", () => {
-    const raw = {
-      git: {
-        file: { commitCount: 20, bugFixRate: 50 },
-        chunk: { commitCount: 3, bugFixRate: 80 },
-      },
-    };
-    const ctx: ExtractContext = {
-      bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
-      dampeningThreshold: 12,
-    };
-    const value = signal.extract(raw, ctx);
-    // File dampening: (20/12)^2 = 1.0 (capped)
-    // Chunk dampening: (3/15)^2 = 0.04
-    // Blended value is alpha-blended between file and chunk, then dampened
-    // The chunk dampening should reduce the value significantly
-    expect(value).toBeLessThan(0.5); // Without chunk dampening would be ~0.5+
+import {
+  applyOffsets,
+  mapHunksToChunks,
+  type AdjustedRange,
+} from "../../../../../../src/core/domains/trajectory/git/infra/offset-tracker.js";
+
+interface Hunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+}
+
+describe("mapHunksToChunks", () => {
+  it("maps hunk to overlapping chunk using adjusted ranges", () => {
+    const ranges: AdjustedRange[] = [
+      { chunkId: "A", start: 10, end: 20 },
+      { chunkId: "B", start: 30, end: 40 },
+    ];
+    const hunks: Hunk[] = [
+      { oldStart: 10, oldLines: 3, newStart: 12, newLines: 5 },
+    ];
+    // Hunk covers lines 12-16 in new version → overlaps chunk A (10-20)
+    const affected = mapHunksToChunks(hunks, ranges);
+    expect(affected).toContain("A");
+    expect(affected).not.toContain("B");
   });
 
-  it("does not apply chunk dampening when no chunk data", () => {
-    const raw = makePayload({ commitCount: 20, bugFixRate: 50 });
-    const ctx: ExtractContext = {
-      bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
-      dampeningThreshold: 12,
-    };
-    const value = signal.extract(raw, ctx);
-    // File only, file dampening = 1.0 (20 >= 12)
-    expect(value).toBeCloseTo(0.5);
+  it("maps hunk overlapping multiple chunks", () => {
+    const ranges: AdjustedRange[] = [
+      { chunkId: "A", start: 10, end: 20 },
+      { chunkId: "B", start: 21, end: 30 },
+    ];
+    const hunks: Hunk[] = [
+      { oldStart: 15, oldLines: 10, newStart: 15, newLines: 12 },
+    ];
+    // Hunk covers lines 15-26 → overlaps both A and B
+    const affected = mapHunksToChunks(hunks, ranges);
+    expect(affected).toContain("A");
+    expect(affected).toContain("B");
+  });
+
+  it("returns empty set when no overlap", () => {
+    const ranges: AdjustedRange[] = [{ chunkId: "A", start: 50, end: 60 }];
+    const hunks: Hunk[] = [
+      { oldStart: 1, oldLines: 3, newStart: 1, newLines: 5 },
+    ];
+    // Hunk covers lines 1-5, chunk at 50-60
+    const affected = mapHunksToChunks(hunks, ranges);
+    expect(affected.size).toBe(0);
+  });
+});
+
+describe("applyOffsets", () => {
+  it("shifts chunks BELOW a hunk by insertion delta", () => {
+    const ranges: AdjustedRange[] = [
+      { chunkId: "A", start: 5, end: 10 },
+      { chunkId: "B", start: 20, end: 30 },
+    ];
+    // Hunk at lines 12-16 in new version inserted 3 lines (newLines=5, oldLines=2)
+    const hunks: Hunk[] = [
+      { oldStart: 12, oldLines: 2, newStart: 12, newLines: 5 },
+    ];
+    const adjusted = applyOffsets(ranges, hunks);
+    // Chunk A (5-10) is ABOVE hunk (12) → no shift
+    expect(adjusted.find((r) => r.chunkId === "A")).toEqual({
+      chunkId: "A",
+      start: 5,
+      end: 10,
+    });
+    // Chunk B (20-30) is BELOW hunk end (16) → shift by -(5-2) = -3
+    const b = adjusted.find((r) => r.chunkId === "B")!;
+    expect(b.start).toBe(17); // 20 - 3
+    expect(b.end).toBe(27); // 30 - 3
+  });
+
+  it("shifts chunks BELOW a hunk by deletion delta", () => {
+    const ranges: AdjustedRange[] = [
+      { chunkId: "A", start: 5, end: 10 },
+      { chunkId: "B", start: 20, end: 30 },
+    ];
+    // Hunk deleted 3 lines (oldLines=5, newLines=2), lines 8-9 in new version
+    const hunks: Hunk[] = [
+      { oldStart: 8, oldLines: 5, newStart: 8, newLines: 2 },
+    ];
+    const adjusted = applyOffsets(ranges, hunks);
+    // Chunk B (20-30) is below hunk → shift by -(2-5) = +3
+    const b = adjusted.find((r) => r.chunkId === "B")!;
+    expect(b.start).toBe(23); // 20 + 3
+    expect(b.end).toBe(33); // 30 + 3
+  });
+
+  it("resizes chunk when hunk is INSIDE it (insertion)", () => {
+    const ranges: AdjustedRange[] = [{ chunkId: "A", start: 10, end: 30 }];
+    // Hunk at lines 15-19 inside chunk A, inserted 3 lines (old=2, new=5)
+    const hunks: Hunk[] = [
+      { oldStart: 15, oldLines: 2, newStart: 15, newLines: 5 },
+    ];
+    const adjusted = applyOffsets(ranges, hunks);
+    const a = adjusted.find((r) => r.chunkId === "A")!;
+    // Start unchanged (hunk is inside), end shrinks by delta=3
+    expect(a.start).toBe(10);
+    expect(a.end).toBe(27); // 30 - 3
+  });
+
+  it("resizes chunk when hunk is INSIDE it (deletion)", () => {
+    const ranges: AdjustedRange[] = [{ chunkId: "A", start: 10, end: 30 }];
+    // Hunk deleted lines inside chunk (old=5, new=2) → delta=-3
+    const hunks: Hunk[] = [
+      { oldStart: 15, oldLines: 5, newStart: 15, newLines: 2 },
+    ];
+    const adjusted = applyOffsets(ranges, hunks);
+    const a = adjusted.find((r) => r.chunkId === "A")!;
+    // End expands by 3 (going backward, old version had 3 more lines)
+    expect(a.start).toBe(10);
+    expect(a.end).toBe(33); // 30 + 3
+  });
+
+  it("handles multiple hunks bottom-to-top to avoid cascading", () => {
+    const ranges: AdjustedRange[] = [
+      { chunkId: "A", start: 5, end: 10 },
+      { chunkId: "B", start: 20, end: 25 },
+      { chunkId: "C", start: 40, end: 50 },
+    ];
+    // Two insertions: one at line 12 (+3), one at line 30 (+2)
+    const hunks: Hunk[] = [
+      { oldStart: 12, oldLines: 1, newStart: 12, newLines: 4 }, // +3 at 12
+      { oldStart: 28, oldLines: 1, newStart: 30, newLines: 3 }, // +2 at 30
+    ];
+    const adjusted = applyOffsets(ranges, hunks);
+    // A (5-10): above both hunks → no shift
+    expect(adjusted.find((r) => r.chunkId === "A")).toEqual({
+      chunkId: "A",
+      start: 5,
+      end: 10,
+    });
+    // B (20-25): below hunk1 (12) → shift -3, above hunk2 (30) → no shift from hunk2
+    const b = adjusted.find((r) => r.chunkId === "B")!;
+    expect(b.start).toBe(17); // 20 - 3
+    expect(b.end).toBe(22); // 25 - 3
+    // C (40-50): below both hunks → shift -(3+2) = -5
+    const c = adjusted.find((r) => r.chunkId === "C")!;
+    expect(c.start).toBe(35); // 40 - 5
+    expect(c.end).toBe(45); // 50 - 5
+  });
+
+  it("does not shift chunks ABOVE hunk", () => {
+    const ranges: AdjustedRange[] = [{ chunkId: "A", start: 5, end: 10 }];
+    const hunks: Hunk[] = [
+      { oldStart: 20, oldLines: 2, newStart: 20, newLines: 5 },
+    ];
+    const adjusted = applyOffsets(ranges, hunks);
+    expect(adjusted[0]).toEqual({ chunkId: "A", start: 5, end: 10 });
+  });
+
+  it("handles zero-delta hunk (pure replacement, same line count)", () => {
+    const ranges: AdjustedRange[] = [
+      { chunkId: "A", start: 5, end: 10 },
+      { chunkId: "B", start: 20, end: 30 },
+    ];
+    const hunks: Hunk[] = [
+      { oldStart: 12, oldLines: 3, newStart: 12, newLines: 3 },
+    ];
+    const adjusted = applyOffsets(ranges, hunks);
+    // Zero delta → no shifts
+    expect(adjusted.find((r) => r.chunkId === "A")).toEqual({
+      chunkId: "A",
+      start: 5,
+      end: 10,
+    });
+    expect(adjusted.find((r) => r.chunkId === "B")).toEqual({
+      chunkId: "B",
+      start: 20,
+      end: 30,
+    });
+  });
+
+  it("prevents negative start after large deletion", () => {
+    const ranges: AdjustedRange[] = [{ chunkId: "A", start: 2, end: 5 }];
+    // Hunk at line 1 deleted 10 lines → delta = -(0-10) = +10
+    // Going backward, chunk was lower... but start can't go below 1
+    const hunks: Hunk[] = [
+      { oldStart: 1, oldLines: 10, newStart: 1, newLines: 0 },
+    ];
+    const adjusted = applyOffsets(ranges, hunks);
+    const a = adjusted.find((r) => r.chunkId === "A")!;
+    expect(a.start).toBeGreaterThanOrEqual(1);
+    expect(a.end).toBeGreaterThanOrEqual(a.start);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(applyOffsets([], [])).toEqual([]);
   });
 });
 ```
 
-- [ ] Run: FAIL — chunk dampening not implemented
+- [ ] Run:
+      `npx vitest run tests/core/domains/trajectory/git/infra/offset-tracker.test.ts`
+- [ ] Expected: FAIL — module does not exist
 
-### Step 2: Implement chunk-level dampening
+### Step 2: Implement offset-tracker
 
-- [ ] Modify
-      `src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts`:
+- [ ] Create `src/core/domains/trajectory/git/infra/offset-tracker.ts`:
 
 ```typescript
-import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
-import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import {
-  blendNormalized,
-  chunkField,
-  confidenceDampening,
-  fileNum,
-  GIT_FILE_DAMPENING,
-} from "./helpers.js";
+/**
+ * Per-file chunk range offset tracking for drift-free hunk→chunk mapping.
+ *
+ * When processing commits newest→oldest, chunk line ranges (defined at HEAD)
+ * must be adjusted backward through each commit's insertions/deletions.
+ *
+ * Pure functions — no I/O, no git dependency.
+ */
 
-export class BugFixSignal implements DerivedSignalDescriptor {
-  readonly name = "bugFix";
-  readonly description =
-    "Bug fix rate: code with more fix commits scores higher. L3 blends chunk+file bugFixRate.";
-  readonly sources = ["file.bugFixRate", "chunk.bugFixRate"];
-  readonly defaultBound = 100;
-  readonly dampeningSource = GIT_FILE_DAMPENING;
-  private static readonly FALLBACK_THRESHOLD = 12;
-  private static readonly CHUNK_DAMPENING_THRESHOLD = 15;
+export interface AdjustedRange {
+  chunkId: string;
+  start: number;
+  end: number;
+}
 
-  extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const fb = ctx?.bounds?.["file.bugFixRate"] ?? this.defaultBound;
-    const cb = ctx?.bounds?.["chunk.bugFixRate"] ?? this.defaultBound;
-    let value = blendNormalized(
-      rawSignals,
-      "bugFixRate",
-      fb,
-      cb,
-      ctx?.signalLevel,
-    );
+interface Hunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+}
 
-    // File-level dampening (existing)
-    const k = ctx?.dampeningThreshold ?? BugFixSignal.FALLBACK_THRESHOLD;
-    value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
-
-    // Chunk-level dampening: if chunk data exists, apply additional dampening
-    // based on chunk commitCount. This addresses line-drift attribution noise
-    // where chunks with few commits have unreliable bugFixRate.
-    const chunkCC = chunkField(rawSignals, "commitCount");
-    if (chunkCC !== undefined && chunkCC > 0) {
-      value *= confidenceDampening(
-        chunkCC,
-        BugFixSignal.CHUNK_DAMPENING_THRESHOLD,
-      );
+/**
+ * Map hunks to overlapping chunks using current adjusted ranges.
+ * Returns Set of affected chunkIds.
+ */
+export function mapHunksToChunks(
+  hunks: Hunk[],
+  ranges: AdjustedRange[],
+): Set<string> {
+  const affected = new Set<string>();
+  for (const hunk of hunks) {
+    const hunkStart = hunk.newStart;
+    const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
+    for (const r of ranges) {
+      if (hunkStart <= r.end && hunkEnd >= r.start) {
+        affected.add(r.chunkId);
+      }
     }
-
-    return value;
   }
+  return affected;
+}
+
+/**
+ * Apply offset corrections to adjusted ranges for the next (older) commit.
+ *
+ * For each hunk, computes delta = newLines - oldLines:
+ * - Chunks BELOW hunk: shift start/end by -delta
+ * - Chunks CONTAINING hunk (hunk entirely inside chunk): shrink/expand end by -delta
+ * - Chunks ABOVE hunk: no change
+ *
+ * Hunks are processed bottom-to-top (sorted by newStart DESC) to prevent
+ * cascading shift errors.
+ *
+ * Returns new array of AdjustedRange (does not mutate input).
+ */
+export function applyOffsets(
+  ranges: AdjustedRange[],
+  hunks: Hunk[],
+): AdjustedRange[] {
+  if (ranges.length === 0) return [];
+
+  // Deep copy to avoid mutation
+  const result: AdjustedRange[] = ranges.map((r) => ({ ...r }));
+
+  // Sort hunks bottom-to-top to avoid cascading
+  const sorted = [...hunks].sort((a, b) => b.newStart - a.newStart);
+
+  for (const hunk of sorted) {
+    const delta = hunk.newLines - hunk.oldLines;
+    if (delta === 0) continue;
+
+    const hunkStart = hunk.newStart;
+    const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
+
+    for (const r of result) {
+      if (r.start > hunkEnd) {
+        // Chunk is entirely BELOW hunk → shift by -delta
+        r.start -= delta;
+        r.end -= delta;
+      } else if (hunkStart >= r.start && hunkEnd <= r.end) {
+        // Hunk is entirely INSIDE chunk → resize end only
+        r.end -= delta;
+      }
+      // Chunk above or partially overlapping → no adjustment
+    }
+  }
+
+  // Clamp to valid ranges
+  for (const r of result) {
+    r.start = Math.max(r.start, 1);
+    r.end = Math.max(r.end, r.start);
+  }
+
+  return result;
 }
 ```
 
 ### Step 3: Run tests
 
-- [ ] Run: `npx vitest run`
+- [ ] Run:
+      `npx vitest run tests/core/domains/trajectory/git/infra/offset-tracker.test.ts`
 - [ ] Expected: ALL PASS
 
 ### Step 4: Commit
 
 ```bash
-git add src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts \
-  tests/core/domains/trajectory/git/derived-signals/confidence.test.ts
-git commit -m "fix(signals): add chunk-level dampening to BugFixSignal (k=15)
+git add src/core/domains/trajectory/git/infra/offset-tracker.ts \
+  tests/core/domains/trajectory/git/infra/offset-tracker.test.ts
+git commit -m "feat(git): add offset-tracker for drift-free chunk attribution
 
-Chunks with few commits have unreliable bugFixRate due to line drift
-in git blame attribution. Chunk dampening (k=15) reduces noise:
-- 3 chunk commits → 4% confidence
-- 8 chunk commits → 28% confidence
-- 15+ chunk commits → full confidence
-
-Fixes tea-rags-mcp-fek8."
+Pure algorithm: adjusts chunk line ranges backward through commit
+history to compensate for insertions/deletions above/inside chunks.
+Hunks processed bottom-to-top to prevent cascading errors.
+Part of tea-rags-mcp-fek8."
 ```
 
 ---
 
-## Task 8: Update Laplace smoothing denominator
+## Task 8: Wire offset tracker into chunk-reader (bug fek8)
 
 **Files:**
 
-- Modify: `src/core/domains/trajectory/git/infra/metrics.ts:153`
-- Modify: `src/core/domains/trajectory/git/infra/metrics/chunk-assembler.ts:70`
-- Modify: `tests/core/domains/trajectory/git/infra/git-log-reader.test.ts`
-- Modify:
-  `tests/core/domains/trajectory/git/infra/metrics/chunk-assembler.test.ts`
+- Modify: `src/core/domains/trajectory/git/infra/chunk-reader.ts`
 
-Note: the current file-level formula uses `commits.length + 2 * SMOOTHING_ALPHA`
-(= n + 1.0) while the chunk-level uses `commitCount + 2 * SMOOTHING_ALPHA` (=
-n + 1.0). Both are consistent — Jeffreys prior with alpha=0.5. No change needed
-to the formula itself.
+Refactors `buildChunkChurnMapUncached()` from flat parallel commit processing to
+two-phase architecture: parallel blob reads → sequential per-file offset-aware
+mapping.
 
-This task is a verification checkpoint — confirm all Laplace smoothing math is
-consistent across file and chunk levels after the classification changes.
+### Step 1: Refactor chunk-reader to two-phase architecture
 
-### Step 1: Verify existing tests still pass
+- [ ] Modify `src/core/domains/trajectory/git/infra/chunk-reader.ts`:
+
+**Phase 1** — parallel blob reads + patch computation (replaces current
+`processCommitEntry`). Collects raw hunk data per file:
+
+```typescript
+import {
+  applyOffsets,
+  mapHunksToChunks,
+  type AdjustedRange,
+} from "./offset-tracker.js";
+
+/** Raw hunk data collected in Phase 1 (parallel). */
+interface CommitHunkData {
+  commit: CommitInfo;
+  hunks: {
+    oldStart: number;
+    oldLines: number;
+    newStart: number;
+    newLines: number;
+  }[];
+  isBugFix: boolean;
+  taskIds: string[];
+}
+
+// Phase 1: parallel blob reads + patch computation
+// Collect Map<filePath, CommitHunkData[]>
+const fileHunkMap = new Map<string, CommitHunkData[]>();
+
+const collectHunks = async (entry: {
+  commit: CommitInfo;
+  changedFiles: string[];
+}): Promise<void> => {
+  await acquire();
+  try {
+    const { commit, changedFiles } = entry;
+    const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f));
+    if (relevantFiles.length === 0) return;
+
+    const isBugFix = isBugFixCommitOrBranch(
+      commit.body,
+      commit.sha,
+      bugFixShas,
+    );
+    const taskIds = extractTaskIds(commit.body);
+
+    let parentOid: string;
+    try {
+      const commitObj = await git.readCommit({
+        fs,
+        dir: repoRoot,
+        oid: commit.sha,
+        cache: isoGitCache,
+      });
+      if (commitObj.commit.parent.length === 0) return;
+      parentOid = commitObj.commit.parent[0];
+    } catch {
+      return;
+    }
+
+    await Promise.all(
+      relevantFiles.map(async (filePath) => {
+        const entries = relativeChunkMap.get(filePath);
+        if (!entries) return;
+        const maxLine = entries.reduce((max, e) => Math.max(max, e.endLine), 0);
+        if (maxLine > maxFileLines) {
+          skippedLargeFiles++;
+          return;
+        }
+
+        const [oldContent, newContent] = await Promise.all([
+          readBlobAsString(repoRoot, parentOid, filePath, isoGitCache),
+          readBlobAsString(repoRoot, commit.sha, filePath, isoGitCache),
+        ]);
+        blobReads += 2;
+
+        if (!oldContent && !newContent) {
+          skippedEmptyBlobs++;
+          return;
+        }
+
+        let hunks: {
+          oldStart: number;
+          oldLines: number;
+          newStart: number;
+          newLines: number;
+        }[];
+        try {
+          const patch = structuredPatch(
+            filePath,
+            filePath,
+            oldContent,
+            newContent,
+            "",
+            "",
+          );
+          ({ hunks } = patch);
+          patchCalls++;
+        } catch {
+          return;
+        }
+
+        if (hunks.length === 0) return;
+
+        // Thread-safe: each filePath gets its own array
+        let arr = fileHunkMap.get(filePath);
+        if (!arr) {
+          arr = [];
+          fileHunkMap.set(filePath, arr);
+        }
+        arr.push({ commit, hunks, isBugFix, taskIds });
+      }),
+    );
+  } finally {
+    release();
+  }
+};
+
+await Promise.all(commitEntries.map(collectHunks));
+```
+
+**Phase 2** — sequential per-file, parallel across files. Sort commits
+newest→oldest, apply offset tracking:
+
+```typescript
+// Phase 2: sequential per-file offset-aware mapping (parallel across files)
+await Promise.all(
+  Array.from(fileHunkMap.entries()).map(async ([filePath, hunkDataList]) => {
+    const entries = relativeChunkMap.get(filePath);
+    if (!entries) return;
+
+    // Sort newest → oldest (descending timestamp)
+    hunkDataList.sort((a, b) => b.commit.timestamp - a.commit.timestamp);
+
+    // Initialize adjusted ranges from HEAD chunk positions
+    let adjustedRanges: AdjustedRange[] = entries.flatMap((e) => {
+      const ranges = e.lineRanges || [{ start: e.startLine, end: e.endLine }];
+      return ranges.map((r) => ({
+        chunkId: e.chunkId,
+        start: r.start,
+        end: r.end,
+      }));
+    });
+
+    for (const { commit, hunks, isBugFix, taskIds } of hunkDataList) {
+      // Map hunks to chunks using ADJUSTED ranges
+      const affectedChunkIds = mapHunksToChunks(hunks, adjustedRanges);
+
+      // Accumulate stats (same as before)
+      for (const chunkId of affectedChunkIds) {
+        const acc = accumulators.get(chunkId);
+        if (!acc) continue;
+        acc.commitShas.add(commit.sha);
+        acc.authors.add(commit.author);
+        acc.commitTimestamps.push(commit.timestamp);
+        acc.commitAuthors.push(commit.author);
+        if (isBugFix) acc.bugFixCount++;
+        for (const tid of taskIds) acc.taskIds.add(tid);
+        if (commit.timestamp > acc.lastModifiedAt) {
+          acc.lastModifiedAt = commit.timestamp;
+        }
+      }
+
+      // Compute relativeChurn from hunk overlaps with adjusted ranges
+      for (const hunk of hunks) {
+        const hunkStart = hunk.newStart;
+        const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
+        for (const r of adjustedRanges) {
+          if (hunkStart <= r.end && hunkEnd >= r.start) {
+            const acc = accumulators.get(r.chunkId);
+            if (acc) {
+              const overlapLines =
+                Math.min(hunkEnd, r.end) - Math.max(hunkStart, r.start) + 1;
+              acc.linesAdded += overlapLines;
+              if (hunk.newLines > 0) {
+                acc.linesDeleted += Math.round(
+                  (hunk.oldLines * overlapLines) / hunk.newLines,
+                );
+              }
+            }
+          }
+        }
+      }
+
+      // Apply offsets for next (older) commit
+      adjustedRanges = applyOffsets(adjustedRanges, hunks);
+    }
+  }),
+);
+```
+
+### Step 2: Handle thread safety for fileHunkMap
+
+- [ ] The `fileHunkMap.get()/set()` in Phase 1 runs inside parallel
+      `processCommitEntry` callbacks. Since JS is single-threaded (no true
+      parallelism in `Promise.all`), Map operations are safe — `await` yields
+      between callbacks, and Map mutations are synchronous. No mutex needed.
+
+### Step 3: Run tests
 
 - [ ] Run: `npx vitest run`
-- [ ] Expected: ALL PASS
+- [ ] Expected: ALL PASS — existing chunk-reader integration tests still pass,
+      offset tracking improves accuracy
 
-### Step 2: Commit (no-op if nothing changed)
+### Step 4: Commit
 
-If tests required adjustments in earlier tasks, they're already committed. This
-step is just a checkpoint.
+```bash
+git add src/core/domains/trajectory/git/infra/chunk-reader.ts
+git commit -m "fix(git): wire offset tracker into chunk-reader for drift-free attribution
+
+Refactors chunk processing to two-phase architecture:
+- Phase 1 (parallel): blob reads + structuredPatch → raw hunk data
+- Phase 2 (sequential per file, parallel across files): offset-aware
+  hunk→chunk mapping with adjusted ranges
+
+Chunk line ranges are now corrected backward through commit history,
+compensating for insertions/deletions that shift line numbers.
+
+Fixes tea-rags-mcp-fek8."
+```
 
 ---
 
@@ -1307,8 +1731,8 @@ git commit -m "style(git): format after bugFixRate accuracy fixes"
 | Bug                                  | Fix                                           | Task      |
 | ------------------------------------ | --------------------------------------------- | --------- |
 | tea-rags-mcp-6130 (false positives)  | Strict isBugFixCommit + merge-branch-resolver | Tasks 1-5 |
-| tea-rags-mcp-2xeb (small samples)    | FALLBACK_THRESHOLD 8→12                       | Task 6    |
-| tea-rags-mcp-fek8 (chunk line drift) | Chunk dampening k=15                          | Task 7    |
+| tea-rags-mcp-2xeb (small samples)    | FALLBACK_THRESHOLD 8→10                       | Task 6    |
+| tea-rags-mcp-fek8 (chunk line drift) | Offset tracker + two-phase chunk-reader       | Tasks 7-8 |
 
 **Execution order:** Tasks 1→2→3→4→5→6→7→8→9 (sequential — each builds on
 previous).
