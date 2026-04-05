@@ -66,6 +66,15 @@ const CLOSES_ISSUE = /\b(?:fix|fixe[sd]|resolve[sd]?|close[sd]?)\s+#\d+/i;
 export const MERGE_SUBJECT = /^Merge\b/i;
 
 /**
+ * Combined bug-fix check: merge branch prefix OR commit message.
+ * Used by file-reader and chunk-reader for final classification.
+ */
+export function isBugFixCommitOrBranch(body: string, sha: string, bugFixShas: Set<string>): boolean {
+  if (bugFixShas.has(sha)) return true;
+  return isBugFixCommit(body);
+}
+
+/**
  * Check if a commit is a bug fix based on its message.
  *
  * Classification rules (in order):
@@ -112,7 +121,11 @@ export function overlaps(hunkStart: number, hunkEnd: number, chunkStart: number,
 /**
  * Compute churn metrics for a single file from its commit history.
  */
-export function computeFileSignals(churnData: FileChurnData, currentLineCount: number): GitFileSignals {
+export function computeFileSignals(
+  churnData: FileChurnData,
+  currentLineCount: number,
+  bugFixShas?: Set<string>,
+): GitFileSignals {
   const nowSec = Date.now() / 1000;
   const { commits } = churnData;
 
@@ -201,7 +214,8 @@ export function computeFileSignals(churnData: FileChurnData, currentLineCount: n
   }
 
   // Bug fix rate: Laplace-smoothed (Jeffreys prior) percentage of fix commits
-  const bugFixCount = commits.filter((c) => isBugFixCommit(c.body)).length;
+  const effectiveBugFixShas = bugFixShas ?? new Set<string>();
+  const bugFixCount = commits.filter((c) => isBugFixCommitOrBranch(c.body, c.sha, effectiveBugFixShas)).length;
   const bugFixRate = Math.round(((bugFixCount + SMOOTHING_ALPHA) / (commits.length + 2 * SMOOTHING_ALPHA)) * 100);
   const contributorCount = authorCounts.size;
 

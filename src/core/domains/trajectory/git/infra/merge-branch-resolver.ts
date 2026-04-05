@@ -40,7 +40,7 @@ export function buildBugFixShaSet(commits: CommitInfo[]): Set<string> {
   const bugFixShas = new Set<string>();
 
   for (const c of commits) {
-    if (c.parents.length < 2) continue;
+    if (!c.parents || c.parents.length < 2) continue;
 
     const subject = c.body.split("\n")[0];
     if (!isBugFixMerge(subject)) continue;
