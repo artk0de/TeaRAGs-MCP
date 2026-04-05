@@ -15,7 +15,8 @@ import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import type { GitEnrichmentCache } from "./cache.js";
-import { isBugFixCommit, overlaps, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
+import { isBugFixCommitOrBranch, overlaps, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
+import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import { assembleChunkSignals } from "./metrics/chunk-assembler.js";
 import { extractTaskIds } from "./utils.js";
 
@@ -138,6 +139,10 @@ export async function buildChunkChurnMapUncached(
     );
   }
 
+  // Build bug-fix SHA set from merge branch prefixes
+  const allCommitsForMerge = commitEntries.map((e) => e.commit);
+  const bugFixShas = buildBugFixShaSet(allCommitsForMerge);
+
   // Process commits: for each, read blobs and compute hunk→chunk mapping
   let blobReads = 0;
   let patchCalls = 0;
@@ -172,7 +177,7 @@ export async function buildChunkChurnMapUncached(
       const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f));
       if (relevantFiles.length === 0) return;
 
-      const isBugFix = isBugFixCommit(commit.body);
+      const isBugFix = isBugFixCommitOrBranch(commit.body, commit.sha, bugFixShas);
       const commitTaskIds = extractTaskIds(commit.body);
 
       // Resolve parent OID via isomorphic-git readCommit (single object read, not a walk)
