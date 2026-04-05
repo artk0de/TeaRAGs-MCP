@@ -31,16 +31,24 @@ describe("BugFixSignal self-dampening", () => {
       bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
     };
     const value = signal.extract(raw, ctx);
-    // base = 50/100 = 0.5, confidence = (2/8)^2 = 0.0625 (FALLBACK_THRESHOLD=8)
-    expect(value).toBeCloseTo(0.5 * 0.0625);
+    // base = 50/100 = 0.5, confidence = (2/10)^2 = 0.04 (FALLBACK_THRESHOLD=10)
+    expect(value).toBeCloseTo(0.5 * 0.04);
   });
 
   it("uses fallback threshold when no dampeningThreshold", () => {
     const raw = makePayload({ commitCount: 2, bugFixRate: 50 });
     const ctx: ExtractContext = { bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 } };
     const value = signal.extract(raw, ctx);
-    // Fallback k=8, confidence = (2/8)^2 = 0.0625
-    expect(value).toBeCloseTo(0.5 * 0.0625);
+    // Fallback k=10, confidence = (2/10)^2 = 0.04
+    expect(value).toBeCloseTo(0.5 * 0.04);
+  });
+
+  it("uses fallback threshold k=10 (not k=8)", () => {
+    const raw = makePayload({ commitCount: 4, bugFixRate: 50 });
+    const ctx: ExtractContext = { bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 } };
+    const value = signal.extract(raw, ctx);
+    // base = 50/100 = 0.5, confidence = (4/10)^2 = 0.16 (k=10, not k=8 which would give 0.25)
+    expect(value).toBeCloseTo(0.5 * 0.16);
   });
 
   it("returns 0 when no commits", () => {
