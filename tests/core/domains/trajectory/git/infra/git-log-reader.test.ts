@@ -19,6 +19,7 @@ import {
   GitLogReader,
   overlaps,
 } from "../../../../../../src/core/domains/trajectory/git/infra/git-log-reader.js";
+import { isBugFixCommit } from "../../../../../../src/core/domains/trajectory/git/infra/metrics.js";
 
 // Enable cross-module spy interception for adapter functions
 vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
@@ -197,7 +198,7 @@ describe("computeFileSignals", () => {
     const commits = [
       makeCommit({ body: "fix: resolve crash on login" }),
       makeCommit({ body: "feat: add new dashboard" }),
-      makeCommit({ body: "bugfix: patch memory leak" }),
+      makeCommit({ body: "hotfix: patch memory leak" }),
       makeCommit({ body: "chore: update dependencies" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
@@ -229,10 +230,10 @@ describe("computeFileSignals", () => {
 
   it("should detect various bug fix patterns", () => {
     const commits = [
-      makeCommit({ body: "resolved: issue with auth" }),
-      makeCommit({ body: "defect: handle null pointer" }),
+      makeCommit({ body: "fix(auth): resolve session issue" }),
+      makeCommit({ body: "[Bug] Handle null pointer in payment flow" }),
       makeCommit({ body: "hotfix: emergency deploy" }),
-      makeCommit({ body: "patch: security vulnerability" }),
+      makeCommit({ body: "[TD-12345] Fix security vulnerability" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileSignals(data, 100);
@@ -810,7 +811,7 @@ describe("buildChunkChurnMap", () => {
   });
 });
 
-// ─── isBugFixCommit edge cases ────────────────────────────────────────────────
+// ─── isBugFixCommit — strict classification ─────────────────────────────────
 
 describe("isBugFixCommit (via computeFileSignals)", () => {
   const nowSec = Math.floor(Date.now() / 1000);
@@ -845,16 +846,152 @@ describe("isBugFixCommit (via computeFileSignals)", () => {
     // Laplace-smoothed: (0 + 0.5) / (1 + 1.0) = 0.5/2.0 = 0.25 → 25
     expect(meta.bugFixRate).toBe(25);
   });
+});
 
-  it("should detect fix even when body has fix keyword only on 2nd line", () => {
-    // Subject line has no fix keyword, but body has 'fix'
-    const commits = [makeCommit({ body: "chore: update auth\nfix: also resolve login bug" })];
-    const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileSignals(data, 100);
-    // BUG_FIX_PATTERN tests full body, not just subject line; but MERGE_SUBJECT only checks first line
-    // "fix" appears on the second line → should detect it
-    // Laplace-smoothed: (1 + 0.5) / (1 + 1.0) = 1.5/2.0 = 0.75 → 75
-    expect(meta.bugFixRate).toBe(75);
+describe("isBugFixCommit — strict classification", () => {
+  // ── TRUE POSITIVES ──
+
+  it("detects conventional commit: fix:", () => {
+    expect(isBugFixCommit("fix: resolve login race condition")).toBe(true);
+  });
+
+  it("detects conventional commit: fix(scope):", () => {
+    expect(isBugFixCommit("fix(auth): prevent session fixation")).toBe(true);
+  });
+
+  it("detects conventional commit: hotfix:", () => {
+    expect(isBugFixCommit("hotfix: emergency payment rollback")).toBe(true);
+  });
+
+  it("detects conventional commit: hotfix(scope):", () => {
+    expect(isBugFixCommit("hotfix(billing): fix double charge")).toBe(true);
+  });
+
+  it("detects [Fix] tag", () => {
+    expect(isBugFixCommit("[Fix] Restore sorting param in documents")).toBe(true);
+  });
+
+  it("detects [Bug] tag", () => {
+    expect(isBugFixCommit("[Bug] Handle null pointer in payment flow")).toBe(true);
+  });
+
+  it("detects [HOTFIX] tag", () => {
+    expect(isBugFixCommit("[HOTFIX] Return retry, need in specific place")).toBe(true);
+  });
+
+  it("detects [Bugfix] tag", () => {
+    expect(isBugFixCommit("[Bugfix] Correct timezone offset")).toBe(true);
+  });
+
+  it("detects [TD-XXXX] Fix ... pattern (ticket + Fix verb)", () => {
+    expect(isBugFixCommit("[TD-81775] Fix for uncheckable checkbox in enum filters")).toBe(true);
+  });
+
+  it("detects [TD-XXXX] fixed ... pattern (past tense)", () => {
+    expect(isBugFixCommit("[TD-81618] fixed 404 error when a job is created")).toBe(true);
+  });
+
+  it("detects TD-XXXX Fix without brackets", () => {
+    expect(isBugFixCommit("TD-78954 Fix retry from failed jobs notification")).toBe(true);
+  });
+
+  it("detects 'Fix high bug' with ticket prefix", () => {
+    expect(isBugFixCommit("[TD-81602] Fix high bug")).toBe(true);
+  });
+
+  it("detects 'fixes #123' GitHub keyword", () => {
+    expect(isBugFixCommit("Update auth flow\n\nfixes #123")).toBe(true);
+  });
+
+  it("detects 'resolves #456' GitHub keyword", () => {
+    expect(isBugFixCommit("Patch validation\n\nresolves #456")).toBe(true);
+  });
+
+  it("detects 'closes #789' GitHub keyword", () => {
+    expect(isBugFixCommit("Handle edge case\n\ncloses #789")).toBe(true);
+  });
+
+  // ── TRUE NEGATIVES ──
+
+  it("rejects merge commit with fix/ branch", () => {
+    expect(isBugFixCommit("Merge branch 'fix/TD-123-urgent' into 'master'")).toBe(false);
+  });
+
+  it("rejects merge commit with hotfix/ branch", () => {
+    expect(isBugFixCommit("Merge branch 'hotfix/emergency' into 'master'")).toBe(false);
+  });
+
+  it("rejects merge PR with fix/ branch", () => {
+    expect(isBugFixCommit("Merge pull request #42 from user/fix-auth")).toBe(false);
+  });
+
+  it("rejects 'fix typo'", () => {
+    expect(isBugFixCommit("fix typo in README")).toBe(false);
+  });
+
+  it("rejects 'fix lint' / 'fix linter'", () => {
+    expect(isBugFixCommit("fix lint errors")).toBe(false);
+    expect(isBugFixCommit("fix linter warnings")).toBe(false);
+  });
+
+  it("rejects 'fix formatting' / 'fix style'", () => {
+    expect(isBugFixCommit("fix formatting issues")).toBe(false);
+    expect(isBugFixCommit("fix style violations")).toBe(false);
+  });
+
+  it("rejects 'fix whitespace' / 'fix indentation'", () => {
+    expect(isBugFixCommit("fix whitespace")).toBe(false);
+    expect(isBugFixCommit("fix indentation in module")).toBe(false);
+  });
+
+  it("rejects 'fix imports'", () => {
+    expect(isBugFixCommit("fix imports order")).toBe(false);
+  });
+
+  it("rejects 'fix tests' / 'fix specs' / 'fix flaky'", () => {
+    expect(isBugFixCommit("fix flaky tests")).toBe(false);
+    expect(isBugFixCommit("fix spec tags, ordering")).toBe(false);
+    expect(isBugFixCommit("[TD-81841] fix spec tags, ordering and add purchase/create coverage")).toBe(false);
+  });
+
+  it("rejects 'fix rubocop' / 'fix eslint'", () => {
+    expect(isBugFixCommit("Fix rubocop offenses in CodeMetrics spec")).toBe(false);
+    expect(isBugFixCommit("fix eslint warnings")).toBe(false);
+  });
+
+  it("rejects 'fix review' / 'fix code review findings'", () => {
+    expect(isBugFixCommit("refactor(specs): fix code review findings")).toBe(false);
+    expect(isBugFixCommit("[TD-80688] Fix rubocop offenses in UpdatePassFee service")).toBe(false);
+  });
+
+  it("rejects 'fix ci' / 'fix pipeline'", () => {
+    expect(isBugFixCommit("fix ci pipeline")).toBe(false);
+    expect(isBugFixCommit("fix: preserve NODE_OPTIONS env in test-ct script")).toBe(false);
+  });
+
+  it("rejects 'fix migration' without bug context", () => {
+    expect(isBugFixCommit("[TD-81791] fix migration")).toBe(false);
+  });
+
+  it("rejects 'resolve the conflicts'", () => {
+    expect(isBugFixCommit("[TD-80535] resolve the conflicts")).toBe(false);
+  });
+
+  it("rejects feature commit with no fix keywords", () => {
+    expect(isBugFixCommit("[TD-80719] Add v3 cursor pagination endpoints")).toBe(false);
+  });
+
+  it("rejects 'Resolve TD-XXXXX Feature/' GitLab auto-merge", () => {
+    expect(isBugFixCommit('Resolve TD-77320 "Feature/ vitest test for usepipelineform"')).toBe(false);
+  });
+
+  it("detects [TD-81964] Fix badges (has ticket + Fix verb)", () => {
+    expect(isBugFixCommit("[TD-81964] Fix badges")).toBe(true);
+  });
+
+  it("rejects 'Text fix' / 'text fixes'", () => {
+    expect(isBugFixCommit("[TD-81563] Text fix")).toBe(false);
+    expect(isBugFixCommit("text fixes")).toBe(false);
   });
 });
 
