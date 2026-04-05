@@ -966,7 +966,11 @@ describe("isBugFixCommit — strict classification", () => {
 
   it("rejects 'fix ci' / 'fix pipeline'", () => {
     expect(isBugFixCommit("fix ci pipeline")).toBe(false);
-    expect(isBugFixCommit("fix: preserve NODE_OPTIONS env in test-ct script")).toBe(false);
+  });
+
+  it("accepts conventional fix: even with infra context (strong signal)", () => {
+    // Conventional prefix is a strong signal — project chose to label this as fix:
+    expect(isBugFixCommit("fix: preserve NODE_OPTIONS env in test-ct script")).toBe(true);
   });
 
   it("rejects 'fix migration' without bug context", () => {
