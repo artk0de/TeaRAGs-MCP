@@ -1,0 +1,157 @@
+{
+  "skill_name": "search-cascade",
+  "iteration": "mid-session-reindex",
+  "date": "2026-04-05",
+  "finding": "Missing rule: no reindex after code changes before tea-rags search",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Refactored Reranker (Edit on 3 files). Find all usages of old RerankResult type renamed to ScoredResult",
+      "expected": "ripgrep only, NO reindex (exact text, ripgrep doesn't use index)",
+      "audit_finding": 1,
+      "results": {
+        "baseline": {
+          "grade": "FAIL",
+          "reason": "No reindex, but also no awareness of stale index"
+        },
+        "before_fix": {
+          "grade": "PASS_OVEREAGER",
+          "reason": "Called reindex before ripgrep — unnecessary"
+        },
+        "after_fix": {
+          "grade": "PASS",
+          "reason": "Correctly skips reindex, uses ripgrep only"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "prompt": "Wrote new EnrichmentProvider (Write). Show how other providers implement buildSignals",
+      "expected": "index_codebase → find_symbol/semantic_search",
+      "audit_finding": 1,
+      "results": {
+        "baseline": { "grade": "FAIL", "reason": "No reindex before tea-rags" },
+        "before_fix": {
+          "grade": "PASS",
+          "reason": "Called reindex_changes first"
+        },
+        "after_fix": {
+          "grade": "PASS",
+          "reason": "Called index_codebase first"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "prompt": "Added new preset file (Write). Explore how presets are registered and loaded",
+      "expected": "index_codebase → semantic_search",
+      "audit_finding": 1,
+      "results": {
+        "baseline": { "grade": "FAIL", "reason": "No reindex" },
+        "before_fix": { "grade": "PASS", "reason": "Reindex first" },
+        "after_fix": { "grade": "PASS", "reason": "index_codebase first" }
+      }
+    },
+    {
+      "id": 4,
+      "prompt": "No code changes. Find retry logic in embedding adapter",
+      "expected": "semantic_search only, NO reindex",
+      "audit_finding": "control",
+      "results": {
+        "baseline": {
+          "grade": "PASS",
+          "reason": "Correct — no reindex needed"
+        },
+        "before_fix": { "grade": "PASS", "reason": "Correct" },
+        "after_fix": { "grade": "PASS", "reason": "Correct" }
+      }
+    },
+    {
+      "id": 5,
+      "prompt": "Fixed bug in chunker hooks (Edit on 2 files). Find all TODO comments in chunker",
+      "expected": "ripgrep only, NO reindex (exact text pattern)",
+      "audit_finding": 1,
+      "results": {
+        "baseline": {
+          "grade": "FAIL",
+          "reason": "No awareness of index staleness"
+        },
+        "before_fix": {
+          "grade": "PASS_OVEREAGER",
+          "reason": "Reindexed before ripgrep — unnecessary"
+        },
+        "after_fix": {
+          "grade": "PASS",
+          "reason": "Correctly skips reindex, ripgrep only"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "prompt": "Created new MCP tool handler (Write). How do other handlers validate input parameters",
+      "expected": "index_codebase → semantic_search",
+      "audit_finding": 1,
+      "results": {
+        "baseline": { "grade": "FAIL", "reason": "No reindex" },
+        "before_fix": { "grade": "PASS", "reason": "Reindex first" },
+        "after_fix": { "grade": "PASS", "reason": "index_codebase first" }
+      }
+    },
+    {
+      "id": 7,
+      "prompt": "[subagent: explore] Parent edited app.ts. Find all facades needing update",
+      "expected": "index_codebase (subagent must reindex itself) → hybrid_search",
+      "audit_finding": 1,
+      "results": {
+        "baseline": { "grade": "FAIL", "reason": "No reindex" },
+        "before_fix": {
+          "grade": "PASS",
+          "reason": "Reindex first, subagent note followed"
+        },
+        "after_fix": {
+          "grade": "PASS",
+          "reason": "index_codebase first, subagent note correct"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "prompt": "[subagent: task-agent] Parent wrote test files. Search similar test patterns",
+      "expected": "index_codebase (subagent) → semantic_search/find_similar",
+      "audit_finding": 1,
+      "results": {
+        "baseline": { "grade": "FAIL", "reason": "No reindex" },
+        "before_fix": { "grade": "PASS", "reason": "Reindex first" },
+        "after_fix": { "grade": "PASS", "reason": "index_codebase first" }
+      }
+    },
+    {
+      "id": 9,
+      "prompt": "Edits across 5 files. Understand current state of trajectory module",
+      "expected": "index_codebase → semantic_search",
+      "audit_finding": 1,
+      "results": {
+        "baseline": {
+          "grade": "PARTIAL",
+          "reason": "Mentioned reindex as afterthought"
+        },
+        "before_fix": { "grade": "PASS", "reason": "Reindex first" },
+        "after_fix": { "grade": "PASS", "reason": "index_codebase first" }
+      }
+    },
+    {
+      "id": 10,
+      "prompt": "No changes. Find all files importing from contracts/errors.ts",
+      "expected": "hybrid_search or ripgrep, NO reindex",
+      "audit_finding": "control",
+      "results": {
+        "baseline": {
+          "grade": "PASS",
+          "reason": "Correct — no reindex needed"
+        },
+        "before_fix": { "grade": "PASS", "reason": "Correct" },
+        "after_fix": { "grade": "PASS", "reason": "Correct" }
+      }
+    }
+  ]
+}

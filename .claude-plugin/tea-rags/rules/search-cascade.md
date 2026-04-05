@@ -59,6 +59,32 @@ returns the full method/class definition — no Read needed.
 - `tea-rags://schema/filters` → Qdrant filter syntax (read when building
   filters)
 
+## After Code Changes (mid-session reindex)
+
+When you (or a subagent) modified files via Write/Edit and then need to search
+with tea-rags for a **new task**, call `index_codebase` first. Without it the
+index is stale and search results won't reflect your edits.
+
+**When to reindex:**
+
+- You used Write or Edit on source files, AND
+- The next step involves tea-rags search (semantic_search, hybrid_search,
+  find_symbol, find_similar) for a different question than the one you just
+  finished implementing
+
+**When NOT to reindex:**
+
+- No files were modified since last reindex
+- You're about to use ripgrep only (exact text search doesn't use the index)
+- You're continuing the same implementation task (you already know the code)
+
+**How:** One call to `index_codebase` — it's already incremental (only processes
+changed files), takes seconds.
+
+**Subagent note:** If the parent agent made edits before spawning you, include
+`index_codebase` as the first tool call before any tea-rags search. The parent
+cannot reindex for you — the subagent must do it.
+
 ## Decision Tree
 
 Single point of tool selection. Follow top-to-bottom, take the first matching

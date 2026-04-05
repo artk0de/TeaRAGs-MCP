@@ -159,3 +159,53 @@ Evals: `evals/chunk-grouping-evals.json`
 - Fallback table: find_symbol(relativePath:) replaces tree-sitter
 - Subagent injection: added relativePath, doc TOC, # convention
 - Removed all tree-sitter references
+
+---
+
+## Iteration 5 — Mid-Session Reindex (2026-04-05)
+
+Context: Agent modifies code (Write/Edit), then searches with tea-rags for a new
+task without reindexing — gets stale results. Missing rule for mid-session index
+freshness.
+
+Evals: `evals/mid-session-reindex-evals.json`
+
+### Audit Finding
+
+| #   | Finding                                               | Status    |
+| --- | ----------------------------------------------------- | --------- |
+| F1  | No rule for reindexing after code changes mid-session | Confirmed |
+
+### Results
+
+| Version            | Pass Rate    | Delta |
+| ------------------ | ------------ | ----- |
+| Baseline (no rule) | 30% (3/10)   | —     |
+| After fix          | 100% (10/10) | +70pp |
+
+### Per-Eval Detail
+
+| #   | Task                            | Baseline | After Fix                                |
+| --- | ------------------------------- | -------- | ---------------------------------------- |
+| 1   | Edit 3 files + exact search     | ❌       | ✅ ripgrep only, skips reindex correctly |
+| 2   | Write + find_symbol/semantic    | ❌       | ✅ index_codebase → tea-rags             |
+| 3   | Write + explore presets         | ❌       | ✅ index_codebase → semantic             |
+| 4   | No changes + semantic (control) | ✅       | ✅ no reindex                            |
+| 5   | Edit + ripgrep TODO             | ❌       | ✅ ripgrep only, skips reindex correctly |
+| 6   | Write + semantic validation     | ❌       | ✅ index_codebase → semantic             |
+| 7   | Subagent after parent Edit      | ❌       | ✅ subagent calls index_codebase first   |
+| 8   | Subagent after parent Write     | ❌       | ✅ subagent calls index_codebase first   |
+| 9   | Edit 5 files + explore module   | ⚠️       | ✅ index_codebase → semantic             |
+| 10  | No changes + hybrid (control)   | ✅       | ✅ no reindex                            |
+
+### Bonus: "When NOT to reindex" precision
+
+Before-fix eval (with deprecated `reindex_changes`) called reindex even before
+ripgrep-only searches (evals 1, 5). After fix, "When NOT to reindex" rule
+correctly prevents unnecessary reindex when only ripgrep is used.
+
+### Changes Made
+
+- Added "After Code Changes (mid-session reindex)" section between Session Start
+  and Decision Tree
+- Covers: when to reindex, when NOT to, how (index_codebase), subagent note
