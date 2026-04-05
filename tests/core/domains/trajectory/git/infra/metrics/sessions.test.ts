@@ -24,6 +24,7 @@ function commit(overrides: Partial<CommitInfo> & { timestamp: number }): CommitI
     author: "alice",
     authorEmail: "alice@x.com",
     body: "feat: something",
+    parents: [],
     ...overrides,
   };
 }

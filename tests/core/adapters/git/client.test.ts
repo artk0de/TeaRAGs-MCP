@@ -66,6 +66,7 @@ function makeCommit(sha: string, author = "Test Author"): CommitInfo {
     authorEmail: `${author.toLowerCase().replace(" ", ".")}@test.com`,
     timestamp: Math.floor(Date.now() / 1000),
     body: `commit ${sha.slice(0, 7)}`,
+    parents: [],
   };
 }
 

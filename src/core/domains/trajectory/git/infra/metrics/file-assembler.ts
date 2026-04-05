@@ -65,6 +65,7 @@ export function assembleFileSignals(
         authorEmail: "",
         timestamp: s.timestamp,
         body: s.isFix ? "fix: session" : "feat: session",
+        parents: [],
       }))
     : null;
 

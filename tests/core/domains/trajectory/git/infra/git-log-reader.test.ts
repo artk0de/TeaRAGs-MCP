@@ -110,6 +110,7 @@ describe("computeFileSignals", () => {
       authorEmail: "alice@example.com",
       timestamp: nowSec - 86400, // 1 day ago
       body: "feat: initial commit",
+      parents: [],
       ...overrides,
     };
   }
@@ -821,6 +822,7 @@ describe("isBugFixCommit (via computeFileSignals)", () => {
       authorEmail: "alice@example.com",
       timestamp: nowSec - 86400,
       body: "feat: initial commit",
+      parents: [],
       ...overrides,
     };
   }
@@ -862,10 +864,11 @@ describe("parsePathspecOutput (via private method)", () => {
   it("should skip binary files with '-\\t-\\t' in numstat output", () => {
     // Simulate git log output with binary file entries
     const sha = "a".repeat(40);
-    // Format: \0SHA\0author\0email\0timestamp\0body\0numstat_section
+    // Format: \0SHA\0PARENTS\0author\0email\0timestamp\0body\0numstat_section
     const stdout = [
       "", // leading empty
       sha, // SHA
+      "", // parents (empty = root)
       "Alice", // author
       "alice@example.com", // email
       String(Math.floor(Date.now() / 1000)), // timestamp
@@ -887,6 +890,7 @@ describe("parsePathspecOutput (via private method)", () => {
     const stdout = [
       "",
       sha,
+      "", // parents
       "Bob",
       "bob@example.com",
       String(Math.floor(Date.now() / 1000)),
@@ -905,10 +909,71 @@ describe("parsePathspecOutput (via private method)", () => {
   });
 
   it("should skip malformed SHA entries", () => {
-    const stdout = ["", "not-a-sha", "Alice", "alice@example.com", "12345", "feat: stuff", "10\t5\tfile.ts"].join("\0");
+    const stdout = ["", "not-a-sha", "", "Alice", "alice@example.com", "12345", "feat: stuff", "10\t5\tfile.ts"].join(
+      "\0",
+    );
 
     const result = gitParsers.parsePathspecOutput(stdout);
     expect(result).toHaveLength(0);
+  });
+});
+
+// ─── parseNumstatOutput — parent parsing ─────────────────────────────────────
+
+describe("parseNumstatOutput — parent parsing", () => {
+  it("should parse parent SHAs from %P field", () => {
+    const sha = "a".repeat(40);
+    const parent1 = "b".repeat(40);
+    const parent2 = "c".repeat(40);
+    // Format: \0SHA\0PARENTS\0author\0email\0timestamp\0body\0numstat
+    const stdout = [
+      "",
+      sha,
+      `${parent1} ${parent2}`, // two parents = merge commit
+      "Alice",
+      "alice@example.com",
+      String(Math.floor(Date.now() / 1000)),
+      "Merge branch 'fix/TD-123' into 'master'",
+      "10\t5\tapp/models/user.rb",
+    ].join("\0");
+    const result = gitParsers.parseNumstatOutput(stdout);
+    const { commits } = result.get("app/models/user.rb")!;
+    expect(commits[0].parents).toEqual([parent1, parent2]);
+  });
+
+  it("should parse single parent for non-merge commits", () => {
+    const sha = "a".repeat(40);
+    const parent = "b".repeat(40);
+    const stdout = [
+      "",
+      sha,
+      parent,
+      "Alice",
+      "alice@example.com",
+      String(Math.floor(Date.now() / 1000)),
+      "[TD-456] Fix validation",
+      "3\t1\tapp/services/auth.rb",
+    ].join("\0");
+    const result = gitParsers.parseNumstatOutput(stdout);
+    const { commits } = result.get("app/services/auth.rb")!;
+    expect(commits[0].parents).toEqual([parent]);
+  });
+
+  it("should handle root commit with no parents", () => {
+    const sha = "a".repeat(40);
+    const stdout = [
+      "",
+      sha,
+      "", // empty parents = root commit
+      "Alice",
+      "alice@example.com",
+      String(Math.floor(Date.now() / 1000)),
+      "Initial commit",
+      "1\t0\tREADME.md",
+    ].join("\0");
+    const result = gitParsers.parseNumstatOutput(stdout);
+    const { commits } = result.get("README.md")!;
+    expect(commits[0].parents).toEqual([]);
   });
 });
 
@@ -920,6 +985,7 @@ describe("parseNumstatOutput (via private method)", () => {
     const stdout = [
       "",
       sha,
+      "", // parents
       "Alice",
       "alice@example.com",
       String(Math.floor(Date.now() / 1000)),
@@ -942,6 +1008,7 @@ describe("parseNumstatOutput (via private method)", () => {
     const stdout = [
       "",
       sha,
+      "", // parents
       "Alice",
       "alice@example.com",
       String(Math.floor(Date.now() / 1000)),
@@ -966,12 +1033,14 @@ describe("parseNumstatOutput (via private method)", () => {
     const stdout = [
       "",
       sha1,
+      "", // parents
       "Alice",
       "alice@ex.com",
       ts,
       "fix: first",
       "10\t5\tshared.ts",
       sha2,
+      "", // parents
       "Bob",
       "bob@ex.com",
       ts,
@@ -1936,6 +2005,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     const stdout = [
       "",
       "abc1234567", // too short
+      "", // parents
       "Alice",
       "alice@ex.com",
       "12345",
@@ -1952,6 +2022,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     const stdout = [
       "",
       `AAAA${"a".repeat(36)}`, // uppercase chars — fails /^[a-f0-9]+$/ test
+      "", // parents
       "Alice",
       "alice@ex.com",
       "12345",
@@ -1972,6 +2043,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
       "more garbage",
       "", // empty
       validSha,
+      "", // parents
       "Alice",
       "alice@ex.com",
       ts,
