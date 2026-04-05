@@ -45,14 +45,6 @@ const COSMETIC_PATTERN =
 const TEXT_FIX_PATTERN = /\btext\s+fix(?:es)?\b/i;
 
 /**
- * Infrastructure context words in the subject — even with conventional prefix,
- * these indicate non-bug-fix maintenance work.
- * Example: "fix: preserve NODE_OPTIONS env in test-ct script" → has "test" context.
- */
-const INFRA_SUBJECT_PATTERN =
-  /\b(?:typos?|lint|linter|format|formatting|style|whitespace|indentation|imports?|tests?|specs?|flaky|rubocop|eslint|prettier|ci|pipeline|migration|review|code\s*review|conflicts?)\b/i;
-
-/**
  * Strong positive signals — conventional commits and explicit tags.
  * Checked against the SUBJECT line only.
  */
@@ -93,7 +85,6 @@ export function isBugFixCommit(body: string): boolean {
   // 2. Exclude cosmetic/infrastructure fixes
   if (COSMETIC_PATTERN.test(body)) return false;
   if (TEXT_FIX_PATTERN.test(body)) return false;
-  if (INFRA_SUBJECT_PATTERN.test(subject)) return false;
 
   // 3. Conventional commit prefix
   if (CONVENTIONAL_FIX.test(subject)) return true;
