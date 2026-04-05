@@ -61,7 +61,7 @@ export async function buildFileSignalsForPaths(
 
   for (let i = 0; i < paths.length; i += BATCH) {
     const batch = paths.slice(i, i + BATCH);
-    const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
+    const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00", "--", ...batch];
 
     try {
       const { stdout } = await execFileAsync("git", args, {

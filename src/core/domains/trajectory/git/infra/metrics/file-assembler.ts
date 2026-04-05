@@ -24,6 +24,7 @@ export function assembleFileSignals(
   churnData: FileChurnData,
   currentLineCount: number,
   squashOpts?: SquashOptions,
+  bugFixShas?: Set<string>,
 ): GitFileSignals {
   const { commits } = churnData;
 
@@ -65,6 +66,7 @@ export function assembleFileSignals(
         authorEmail: "",
         timestamp: s.timestamp,
         body: s.isFix ? "fix: session" : "feat: session",
+        parents: [],
       }))
     : null;
 
@@ -84,7 +86,7 @@ export function assembleFileSignals(
     recencyWeightedFreq: computeRecencyWeightedFreq(countSource ?? commits),
     changeDensity: computeChangeDensity(countSource ?? commits),
     churnVolatility: computeChurnVolatility(countSource ?? commits),
-    bugFixRate: computeBugFixRate(countSource ?? commits),
+    bugFixRate: computeBugFixRate(countSource ?? commits, bugFixShas),
     contributorCount: authorship.contributorCount,
     taskIds: extractAllTaskIds(commits),
   };
