@@ -19,6 +19,10 @@ import {
   GitLogReader,
   overlaps,
 } from "../../../../../../src/core/domains/trajectory/git/infra/git-log-reader.js";
+import {
+  isBugFixCommit,
+  isBugFixCommitOrBranch,
+} from "../../../../../../src/core/domains/trajectory/git/infra/metrics.js";
 
 // Enable cross-module spy interception for adapter functions
 vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
@@ -110,6 +114,7 @@ describe("computeFileSignals", () => {
       authorEmail: "alice@example.com",
       timestamp: nowSec - 86400, // 1 day ago
       body: "feat: initial commit",
+      parents: [],
       ...overrides,
     };
   }
@@ -196,7 +201,7 @@ describe("computeFileSignals", () => {
     const commits = [
       makeCommit({ body: "fix: resolve crash on login" }),
       makeCommit({ body: "feat: add new dashboard" }),
-      makeCommit({ body: "bugfix: patch memory leak" }),
+      makeCommit({ body: "hotfix: patch memory leak" }),
       makeCommit({ body: "chore: update dependencies" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
@@ -228,10 +233,10 @@ describe("computeFileSignals", () => {
 
   it("should detect various bug fix patterns", () => {
     const commits = [
-      makeCommit({ body: "resolved: issue with auth" }),
-      makeCommit({ body: "defect: handle null pointer" }),
+      makeCommit({ body: "fix(auth): resolve session issue" }),
+      makeCommit({ body: "[Bug] Handle null pointer in payment flow" }),
       makeCommit({ body: "hotfix: emergency deploy" }),
-      makeCommit({ body: "patch: security vulnerability" }),
+      makeCommit({ body: "[TD-12345] Fix security vulnerability" }),
     ];
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileSignals(data, 100);
@@ -809,7 +814,7 @@ describe("buildChunkChurnMap", () => {
   });
 });
 
-// ─── isBugFixCommit edge cases ────────────────────────────────────────────────
+// ─── isBugFixCommit — strict classification ─────────────────────────────────
 
 describe("isBugFixCommit (via computeFileSignals)", () => {
   const nowSec = Math.floor(Date.now() / 1000);
@@ -821,6 +826,7 @@ describe("isBugFixCommit (via computeFileSignals)", () => {
       authorEmail: "alice@example.com",
       timestamp: nowSec - 86400,
       body: "feat: initial commit",
+      parents: [],
       ...overrides,
     };
   }
@@ -843,16 +849,156 @@ describe("isBugFixCommit (via computeFileSignals)", () => {
     // Laplace-smoothed: (0 + 0.5) / (1 + 1.0) = 0.5/2.0 = 0.25 → 25
     expect(meta.bugFixRate).toBe(25);
   });
+});
 
-  it("should detect fix even when body has fix keyword only on 2nd line", () => {
-    // Subject line has no fix keyword, but body has 'fix'
-    const commits = [makeCommit({ body: "chore: update auth\nfix: also resolve login bug" })];
-    const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
-    const meta = computeFileSignals(data, 100);
-    // BUG_FIX_PATTERN tests full body, not just subject line; but MERGE_SUBJECT only checks first line
-    // "fix" appears on the second line → should detect it
-    // Laplace-smoothed: (1 + 0.5) / (1 + 1.0) = 1.5/2.0 = 0.75 → 75
-    expect(meta.bugFixRate).toBe(75);
+describe("isBugFixCommit — strict classification", () => {
+  // ── TRUE POSITIVES ──
+
+  it("detects conventional commit: fix:", () => {
+    expect(isBugFixCommit("fix: resolve login race condition")).toBe(true);
+  });
+
+  it("detects conventional commit: fix(scope):", () => {
+    expect(isBugFixCommit("fix(auth): prevent session fixation")).toBe(true);
+  });
+
+  it("detects conventional commit: hotfix:", () => {
+    expect(isBugFixCommit("hotfix: emergency payment rollback")).toBe(true);
+  });
+
+  it("detects conventional commit: hotfix(scope):", () => {
+    expect(isBugFixCommit("hotfix(billing): fix double charge")).toBe(true);
+  });
+
+  it("detects [Fix] tag", () => {
+    expect(isBugFixCommit("[Fix] Restore sorting param in documents")).toBe(true);
+  });
+
+  it("detects [Bug] tag", () => {
+    expect(isBugFixCommit("[Bug] Handle null pointer in payment flow")).toBe(true);
+  });
+
+  it("detects [HOTFIX] tag", () => {
+    expect(isBugFixCommit("[HOTFIX] Return retry, need in specific place")).toBe(true);
+  });
+
+  it("detects [Bugfix] tag", () => {
+    expect(isBugFixCommit("[Bugfix] Correct timezone offset")).toBe(true);
+  });
+
+  it("detects [TD-XXXX] Fix ... pattern (ticket + Fix verb)", () => {
+    expect(isBugFixCommit("[TD-81775] Fix for uncheckable checkbox in enum filters")).toBe(true);
+  });
+
+  it("detects [TD-XXXX] fixed ... pattern (past tense)", () => {
+    expect(isBugFixCommit("[TD-81618] fixed 404 error when a job is created")).toBe(true);
+  });
+
+  it("detects TD-XXXX Fix without brackets", () => {
+    expect(isBugFixCommit("TD-78954 Fix retry from failed jobs notification")).toBe(true);
+  });
+
+  it("detects 'Fix high bug' with ticket prefix", () => {
+    expect(isBugFixCommit("[TD-81602] Fix high bug")).toBe(true);
+  });
+
+  it("detects 'fixes #123' GitHub keyword", () => {
+    expect(isBugFixCommit("Update auth flow\n\nfixes #123")).toBe(true);
+  });
+
+  it("detects 'resolves #456' GitHub keyword", () => {
+    expect(isBugFixCommit("Patch validation\n\nresolves #456")).toBe(true);
+  });
+
+  it("detects 'closes #789' GitHub keyword", () => {
+    expect(isBugFixCommit("Handle edge case\n\ncloses #789")).toBe(true);
+  });
+
+  // ── TRUE NEGATIVES ──
+
+  it("rejects merge commit with fix/ branch", () => {
+    expect(isBugFixCommit("Merge branch 'fix/TD-123-urgent' into 'master'")).toBe(false);
+  });
+
+  it("rejects merge commit with hotfix/ branch", () => {
+    expect(isBugFixCommit("Merge branch 'hotfix/emergency' into 'master'")).toBe(false);
+  });
+
+  it("rejects merge PR with fix/ branch", () => {
+    expect(isBugFixCommit("Merge pull request #42 from user/fix-auth")).toBe(false);
+  });
+
+  it("rejects 'fix typo'", () => {
+    expect(isBugFixCommit("fix typo in README")).toBe(false);
+  });
+
+  it("rejects 'fix lint' / 'fix linter'", () => {
+    expect(isBugFixCommit("fix lint errors")).toBe(false);
+    expect(isBugFixCommit("fix linter warnings")).toBe(false);
+  });
+
+  it("rejects 'fix formatting' / 'fix style'", () => {
+    expect(isBugFixCommit("fix formatting issues")).toBe(false);
+    expect(isBugFixCommit("fix style violations")).toBe(false);
+  });
+
+  it("rejects 'fix whitespace' / 'fix indentation'", () => {
+    expect(isBugFixCommit("fix whitespace")).toBe(false);
+    expect(isBugFixCommit("fix indentation in module")).toBe(false);
+  });
+
+  it("rejects 'fix imports'", () => {
+    expect(isBugFixCommit("fix imports order")).toBe(false);
+  });
+
+  it("rejects 'fix tests' / 'fix specs' / 'fix flaky'", () => {
+    expect(isBugFixCommit("fix flaky tests")).toBe(false);
+    expect(isBugFixCommit("fix spec tags, ordering")).toBe(false);
+    expect(isBugFixCommit("[TD-81841] fix spec tags, ordering and add purchase/create coverage")).toBe(false);
+  });
+
+  it("rejects 'fix rubocop' / 'fix eslint'", () => {
+    expect(isBugFixCommit("Fix rubocop offenses in CodeMetrics spec")).toBe(false);
+    expect(isBugFixCommit("fix eslint warnings")).toBe(false);
+  });
+
+  it("rejects 'fix review' / 'fix code review findings'", () => {
+    expect(isBugFixCommit("refactor(specs): fix code review findings")).toBe(false);
+    expect(isBugFixCommit("[TD-80688] Fix rubocop offenses in UpdatePassFee service")).toBe(false);
+  });
+
+  it("rejects 'fix ci' / 'fix pipeline'", () => {
+    expect(isBugFixCommit("fix ci pipeline")).toBe(false);
+  });
+
+  it("accepts conventional fix: even with infra context (strong signal)", () => {
+    // Conventional prefix is a strong signal — project chose to label this as fix:
+    expect(isBugFixCommit("fix: preserve NODE_OPTIONS env in test-ct script")).toBe(true);
+  });
+
+  it("rejects 'fix migration' without bug context", () => {
+    expect(isBugFixCommit("[TD-81791] fix migration")).toBe(false);
+  });
+
+  it("rejects 'resolve the conflicts'", () => {
+    expect(isBugFixCommit("[TD-80535] resolve the conflicts")).toBe(false);
+  });
+
+  it("rejects feature commit with no fix keywords", () => {
+    expect(isBugFixCommit("[TD-80719] Add v3 cursor pagination endpoints")).toBe(false);
+  });
+
+  it("rejects 'Resolve TD-XXXXX Feature/' GitLab auto-merge", () => {
+    expect(isBugFixCommit('Resolve TD-77320 "Feature/ vitest test for usepipelineform"')).toBe(false);
+  });
+
+  it("detects [TD-81964] Fix badges (has ticket + Fix verb)", () => {
+    expect(isBugFixCommit("[TD-81964] Fix badges")).toBe(true);
+  });
+
+  it("rejects 'Text fix' / 'text fixes'", () => {
+    expect(isBugFixCommit("[TD-81563] Text fix")).toBe(false);
+    expect(isBugFixCommit("text fixes")).toBe(false);
   });
 });
 
@@ -862,10 +1008,11 @@ describe("parsePathspecOutput (via private method)", () => {
   it("should skip binary files with '-\\t-\\t' in numstat output", () => {
     // Simulate git log output with binary file entries
     const sha = "a".repeat(40);
-    // Format: \0SHA\0author\0email\0timestamp\0body\0numstat_section
+    // Format: \0SHA\0PARENTS\0author\0email\0timestamp\0body\0numstat_section
     const stdout = [
       "", // leading empty
       sha, // SHA
+      "", // parents (empty = root)
       "Alice", // author
       "alice@example.com", // email
       String(Math.floor(Date.now() / 1000)), // timestamp
@@ -887,6 +1034,7 @@ describe("parsePathspecOutput (via private method)", () => {
     const stdout = [
       "",
       sha,
+      "", // parents
       "Bob",
       "bob@example.com",
       String(Math.floor(Date.now() / 1000)),
@@ -905,10 +1053,71 @@ describe("parsePathspecOutput (via private method)", () => {
   });
 
   it("should skip malformed SHA entries", () => {
-    const stdout = ["", "not-a-sha", "Alice", "alice@example.com", "12345", "feat: stuff", "10\t5\tfile.ts"].join("\0");
+    const stdout = ["", "not-a-sha", "", "Alice", "alice@example.com", "12345", "feat: stuff", "10\t5\tfile.ts"].join(
+      "\0",
+    );
 
     const result = gitParsers.parsePathspecOutput(stdout);
     expect(result).toHaveLength(0);
+  });
+});
+
+// ─── parseNumstatOutput — parent parsing ─────────────────────────────────────
+
+describe("parseNumstatOutput — parent parsing", () => {
+  it("should parse parent SHAs from %P field", () => {
+    const sha = "a".repeat(40);
+    const parent1 = "b".repeat(40);
+    const parent2 = "c".repeat(40);
+    // Format: \0SHA\0PARENTS\0author\0email\0timestamp\0body\0numstat
+    const stdout = [
+      "",
+      sha,
+      `${parent1} ${parent2}`, // two parents = merge commit
+      "Alice",
+      "alice@example.com",
+      String(Math.floor(Date.now() / 1000)),
+      "Merge branch 'fix/TD-123' into 'master'",
+      "10\t5\tapp/models/user.rb",
+    ].join("\0");
+    const result = gitParsers.parseNumstatOutput(stdout);
+    const { commits } = result.get("app/models/user.rb")!;
+    expect(commits[0].parents).toEqual([parent1, parent2]);
+  });
+
+  it("should parse single parent for non-merge commits", () => {
+    const sha = "a".repeat(40);
+    const parent = "b".repeat(40);
+    const stdout = [
+      "",
+      sha,
+      parent,
+      "Alice",
+      "alice@example.com",
+      String(Math.floor(Date.now() / 1000)),
+      "[TD-456] Fix validation",
+      "3\t1\tapp/services/auth.rb",
+    ].join("\0");
+    const result = gitParsers.parseNumstatOutput(stdout);
+    const { commits } = result.get("app/services/auth.rb")!;
+    expect(commits[0].parents).toEqual([parent]);
+  });
+
+  it("should handle root commit with no parents", () => {
+    const sha = "a".repeat(40);
+    const stdout = [
+      "",
+      sha,
+      "", // empty parents = root commit
+      "Alice",
+      "alice@example.com",
+      String(Math.floor(Date.now() / 1000)),
+      "Initial commit",
+      "1\t0\tREADME.md",
+    ].join("\0");
+    const result = gitParsers.parseNumstatOutput(stdout);
+    const { commits } = result.get("README.md")!;
+    expect(commits[0].parents).toEqual([]);
   });
 });
 
@@ -920,6 +1129,7 @@ describe("parseNumstatOutput (via private method)", () => {
     const stdout = [
       "",
       sha,
+      "", // parents
       "Alice",
       "alice@example.com",
       String(Math.floor(Date.now() / 1000)),
@@ -942,6 +1152,7 @@ describe("parseNumstatOutput (via private method)", () => {
     const stdout = [
       "",
       sha,
+      "", // parents
       "Alice",
       "alice@example.com",
       String(Math.floor(Date.now() / 1000)),
@@ -966,12 +1177,14 @@ describe("parseNumstatOutput (via private method)", () => {
     const stdout = [
       "",
       sha1,
+      "", // parents
       "Alice",
       "alice@ex.com",
       ts,
       "fix: first",
       "10\t5\tshared.ts",
       sha2,
+      "", // parents
       "Bob",
       "bob@ex.com",
       ts,
@@ -1936,6 +2149,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     const stdout = [
       "",
       "abc1234567", // too short
+      "", // parents
       "Alice",
       "alice@ex.com",
       "12345",
@@ -1952,6 +2166,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     const stdout = [
       "",
       `AAAA${"a".repeat(36)}`, // uppercase chars — fails /^[a-f0-9]+$/ test
+      "", // parents
       "Alice",
       "alice@ex.com",
       "12345",
@@ -1972,6 +2187,7 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
       "more garbage",
       "", // empty
       validSha,
+      "", // parents
       "Alice",
       "alice@ex.com",
       ts,
@@ -1982,5 +2198,30 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput(stdout);
     expect(result.has("file.ts")).toBe(true);
     expect(result.get("file.ts")!.commits).toHaveLength(1);
+  });
+});
+
+// ─── isBugFixCommitOrBranch — combined merge-branch + message check ─────────
+
+describe("isBugFixCommitOrBranch", () => {
+  it("returns true when SHA is in bugFixShaSet (from merge branch)", () => {
+    const bugFixShas = new Set(["abc123"]);
+    expect(isBugFixCommitOrBranch("feat: unrelated commit", "abc123", bugFixShas)).toBe(true);
+  });
+
+  it("returns true when message matches isBugFixCommit", () => {
+    const bugFixShas = new Set<string>();
+    expect(isBugFixCommitOrBranch("fix(auth): prevent session fixation", "xyz789", bugFixShas)).toBe(true);
+  });
+
+  it("returns false when neither branch nor message match", () => {
+    const bugFixShas = new Set<string>();
+    expect(isBugFixCommitOrBranch("feat: add dashboard", "xyz789", bugFixShas)).toBe(false);
+  });
+
+  it("prefers SHA match over message-based exclusion (cosmetic fix on fix branch)", () => {
+    const bugFixShas = new Set(["sha1"]);
+    // "fix typo" would normally be excluded by isBugFixCommit, but SHA match wins
+    expect(isBugFixCommitOrBranch("fix typo in README", "sha1", bugFixShas)).toBe(true);
   });
 });

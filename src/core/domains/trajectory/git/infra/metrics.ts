@@ -35,18 +35,79 @@ export interface SquashOptions {
 /** Jeffreys prior for Laplace smoothing of bugFixRate (alpha = 0.5). */
 export const SMOOTHING_ALPHA = 0.5;
 
-const BUG_FIX_PATTERN = /\b(fix|bug|hotfix|patch|resolve[sd]?|defect)\b/i;
+/**
+ * Cosmetic/infrastructure patterns to EXCLUDE — not real bug fixes.
+ * Checked against the full commit body (case-insensitive).
+ */
+const COSMETIC_PATTERN =
+  /\bfix(?:e[sd])?\s+(?:typo|lint|linter|format|formatting|style|whitespace|indentation|imports?|tests?|specs?|flaky|rubocop|eslint|prettier|ci|pipeline|migration|review|code\s*review|conflicts?)\b/i;
+
+const TEXT_FIX_PATTERN = /\btext\s+fix(?:es)?\b/i;
+
+/**
+ * Strong positive signals — conventional commits and explicit tags.
+ * Checked against the SUBJECT line only.
+ */
+const CONVENTIONAL_FIX = /^(?:hot)?fix(?:\([^)]+\))?!?:/i;
+const TAG_FIX = /^\[(?:Fix|Bug|Hotfix|Bugfix)\]/i;
+
+/**
+ * Ticket + Fix verb: "[TD-123] Fix ..." or "TD-123 Fix ..." or "[PROJ-456] fixed ..."
+ * Checked against the SUBJECT line only.
+ */
+const TICKET_FIX = /^\[?[A-Z]+-\d+\]?\s+(?:fix|fixed|fixes)\b/i;
+
+/**
+ * GitHub/GitLab closing keywords in body: "fixes #123", "resolves #456", "closes #789"
+ * Checked against the FULL body.
+ */
+const CLOSES_ISSUE = /\b(?:fix|fixe[sd]|resolve[sd]?|close[sd]?)\s+#\d+/i;
+
 export const MERGE_SUBJECT = /^Merge\b/i;
 
 /**
+ * Combined bug-fix check: merge branch prefix OR commit message.
+ * Used by file-reader and chunk-reader for final classification.
+ */
+export function isBugFixCommitOrBranch(body: string, sha: string, bugFixShas: Set<string>): boolean {
+  if (bugFixShas.has(sha)) return true;
+  return isBugFixCommit(body);
+}
+
+/**
  * Check if a commit is a bug fix based on its message.
- * Skips merge commits — "Merge branch 'fix/TD-123'" is not a fix signal,
- * the actual fix commit within the branch is already counted separately.
+ *
+ * Classification rules (in order):
+ * 1. Skip merge commits — branch prefix is handled by merge-branch-resolver
+ * 2. Exclude cosmetic patterns (fix typo, fix lint, fix tests, etc.)
+ * 3. Match conventional prefix: fix:, hotfix:, fix(scope):
+ * 4. Match explicit tag: [Fix], [Bug], [HOTFIX], [Bugfix]
+ * 5. Match ticket + Fix verb: [TD-123] Fix ..., TD-456 fixed ...
+ * 6. Match GitHub closing keywords: fixes #123, resolves #456
  */
 export function isBugFixCommit(body: string): boolean {
   const subject = body.split("\n")[0];
+
+  // 1. Skip merge commits
   if (MERGE_SUBJECT.test(subject)) return false;
-  return BUG_FIX_PATTERN.test(body);
+
+  // 2. Exclude cosmetic/infrastructure fixes
+  if (COSMETIC_PATTERN.test(body)) return false;
+  if (TEXT_FIX_PATTERN.test(body)) return false;
+
+  // 3. Conventional commit prefix
+  if (CONVENTIONAL_FIX.test(subject)) return true;
+
+  // 4. Explicit tag
+  if (TAG_FIX.test(subject)) return true;
+
+  // 5. Ticket + Fix verb
+  if (TICKET_FIX.test(subject)) return true;
+
+  // 6. GitHub/GitLab closing keywords (anywhere in body)
+  if (CLOSES_ISSUE.test(body)) return true;
+
+  return false;
 }
 
 /**
@@ -60,7 +121,11 @@ export function overlaps(hunkStart: number, hunkEnd: number, chunkStart: number,
 /**
  * Compute churn metrics for a single file from its commit history.
  */
-export function computeFileSignals(churnData: FileChurnData, currentLineCount: number): GitFileSignals {
+export function computeFileSignals(
+  churnData: FileChurnData,
+  currentLineCount: number,
+  bugFixShas?: Set<string>,
+): GitFileSignals {
   const nowSec = Date.now() / 1000;
   const { commits } = churnData;
 
@@ -149,7 +214,8 @@ export function computeFileSignals(churnData: FileChurnData, currentLineCount: n
   }
 
   // Bug fix rate: Laplace-smoothed (Jeffreys prior) percentage of fix commits
-  const bugFixCount = commits.filter((c) => isBugFixCommit(c.body)).length;
+  const effectiveBugFixShas = bugFixShas ?? new Set<string>();
+  const bugFixCount = commits.filter((c) => isBugFixCommitOrBranch(c.body, c.sha, effectiveBugFixShas)).length;
   const bugFixRate = Math.round(((bugFixCount + SMOOTHING_ALPHA) / (commits.length + 2 * SMOOTHING_ALPHA)) * 100);
   const contributorCount = authorCounts.size;
 

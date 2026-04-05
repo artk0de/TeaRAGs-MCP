@@ -8,7 +8,7 @@
  */
 
 import type { CommitInfo } from "../../../../../adapters/git/types.js";
-import { isBugFixCommit, SMOOTHING_ALPHA } from "../metrics.js";
+import { isBugFixCommitOrBranch, SMOOTHING_ALPHA } from "../metrics.js";
 import { extractTaskIds } from "../utils.js";
 
 export interface AuthorshipResult {
@@ -136,10 +136,13 @@ export function computeChurnVolatility(commits: CommitInfo[]): number {
 /**
  * Compute bug fix rate using Laplace smoothing (Jeffreys prior).
  * Formula: (bugFixCount + alpha) / (totalCommits + 2*alpha) * 100
+ *
+ * @param bugFixShas - SHAs classified as bug-fix by merge-branch-resolver
  */
-export function computeBugFixRate(commits: CommitInfo[]): number {
+export function computeBugFixRate(commits: CommitInfo[], bugFixShas?: Set<string>): number {
   if (commits.length === 0) return 0;
-  const bugFixCount = commits.filter((c) => isBugFixCommit(c.body)).length;
+  const effectiveShas = bugFixShas ?? new Set<string>();
+  const bugFixCount = commits.filter((c) => isBugFixCommitOrBranch(c.body, c.sha, effectiveShas)).length;
   return Math.round(((bugFixCount + SMOOTHING_ALPHA) / (commits.length + 2 * SMOOTHING_ALPHA)) * 100);
 }
 

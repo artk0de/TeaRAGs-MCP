@@ -15,8 +15,10 @@ import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import type { GitEnrichmentCache } from "./cache.js";
-import { isBugFixCommit, overlaps, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
+import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
+import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import { assembleChunkSignals } from "./metrics/chunk-assembler.js";
+import { type AdjustedRange, applyOffsets, mapHunksToChunks } from "./offset-tracker.js";
 import { extractTaskIds } from "./utils.js";
 
 const MAX_FILE_LINES_DEFAULT = 10000;
@@ -138,13 +140,26 @@ export async function buildChunkChurnMapUncached(
     );
   }
 
-  // Process commits: for each, read blobs and compute hunk→chunk mapping
+  // Build bug-fix SHA set from merge branch prefixes
+  const allCommitsForMerge = commitEntries.map((e) => e.commit);
+  const bugFixShas = buildBugFixShaSet(allCommitsForMerge);
+
+  // ─── Phase 1: Parallel blob reads + structuredPatch → raw hunk data ───
   let blobReads = 0;
   let patchCalls = 0;
   let skippedLargeFiles = 0;
   let skippedEmptyBlobs = 0;
 
-  // Process commits with bounded concurrency
+  interface CommitHunkData {
+    commit: CommitInfo;
+    hunks: { oldStart: number; oldLines: number; newStart: number; newLines: number }[];
+    isBugFix: boolean;
+    taskIds: string[];
+  }
+
+  const fileHunkMap = new Map<string, CommitHunkData[]>();
+
+  // Bounded concurrency semaphore for blob reads
   let activeCount = 0;
   const queue: (() => void)[] = [];
   const acquire = async (): Promise<void> => {
@@ -163,16 +178,15 @@ export async function buildChunkChurnMapUncached(
     }
   };
 
-  const processCommitEntry = async (entry: { commit: CommitInfo; changedFiles: string[] }): Promise<void> => {
+  const collectHunks = async (entry: { commit: CommitInfo; changedFiles: string[] }): Promise<void> => {
     await acquire();
     try {
       const { commit, changedFiles } = entry;
 
-      // Filter to files we care about (CLI already filtered, but double-check)
       const relevantFiles = changedFiles.filter((f) => relativeChunkMap.has(f));
       if (relevantFiles.length === 0) return;
 
-      const isBugFix = isBugFixCommit(commit.body);
+      const isBugFix = isBugFixCommitOrBranch(commit.body, commit.sha, bugFixShas);
       const commitTaskIds = extractTaskIds(commit.body);
 
       // Resolve parent OID via isomorphic-git readCommit (single object read, not a walk)
@@ -218,43 +232,13 @@ export async function buildChunkChurnMapUncached(
 
           if (hunks.length === 0) return;
 
-          const affectedChunkIds = new Set<string>();
-          for (const hunk of hunks) {
-            const hunkStart = hunk.newStart;
-            const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
-            for (const e of entries) {
-              const ranges = e.lineRanges || [{ start: e.startLine, end: e.endLine }];
-              for (const r of ranges) {
-                if (overlaps(hunkStart, hunkEnd, r.start, r.end)) {
-                  affectedChunkIds.add(e.chunkId);
-                  // Track hunk overlap for relativeChurn
-                  const acc = accumulators.get(e.chunkId);
-                  if (acc) {
-                    const overlapLines = Math.min(hunkEnd, r.end) - Math.max(hunkStart, r.start) + 1;
-                    acc.linesAdded += overlapLines;
-                    if (hunk.newLines > 0) {
-                      acc.linesDeleted += Math.round((hunk.oldLines * overlapLines) / hunk.newLines);
-                    }
-                  }
-                  break;
-                }
-              }
-            }
+          // Collect into fileHunkMap (safe: JS single-threaded between awaits)
+          let list = fileHunkMap.get(filePath);
+          if (!list) {
+            list = [];
+            fileHunkMap.set(filePath, list);
           }
-
-          for (const chunkId of affectedChunkIds) {
-            const acc = accumulators.get(chunkId);
-            if (!acc) continue;
-            acc.commitShas.add(commit.sha);
-            acc.authors.add(commit.author);
-            acc.commitTimestamps.push(commit.timestamp);
-            acc.commitAuthors.push(commit.author);
-            if (isBugFix) acc.bugFixCount++;
-            for (const tid of commitTaskIds) acc.taskIds.add(tid);
-            if (commit.timestamp > acc.lastModifiedAt) {
-              acc.lastModifiedAt = commit.timestamp;
-            }
-          }
+          list.push({ commit, hunks, isBugFix, taskIds: commitTaskIds });
         }),
       );
     } finally {
@@ -262,7 +246,68 @@ export async function buildChunkChurnMapUncached(
     }
   };
 
-  await Promise.all(commitEntries.map(processCommitEntry));
+  await Promise.all(commitEntries.map(collectHunks));
+
+  // ─── Phase 2: Sequential per file, parallel across files — offset-aware mapping ───
+  const processFileHunks = async (filePath: string, hunkDataList: CommitHunkData[]): Promise<void> => {
+    const entries = relativeChunkMap.get(filePath);
+    if (!entries) return;
+
+    // Sort commits newest→oldest for backward offset tracking
+    hunkDataList.sort((a, b) => b.commit.timestamp - a.commit.timestamp);
+
+    // Init adjusted ranges from HEAD chunk positions
+    let adjustedRanges: AdjustedRange[] = entries.map((e) => ({
+      chunkId: e.chunkId,
+      start: e.startLine,
+      end: e.endLine,
+    }));
+
+    for (const { commit, hunks, isBugFix, taskIds } of hunkDataList) {
+      // Map hunks to chunks using current adjusted ranges
+      const affectedChunkIds = mapHunksToChunks(hunks, adjustedRanges);
+
+      // Compute relativeChurn from hunk overlaps with adjusted ranges
+      for (const hunk of hunks) {
+        const hunkStart = hunk.newStart;
+        const hunkEnd = hunk.newStart + Math.max(hunk.newLines - 1, 0);
+        for (const r of adjustedRanges) {
+          if (hunkStart <= r.end && hunkEnd >= r.start) {
+            const acc = accumulators.get(r.chunkId);
+            if (acc) {
+              const overlapLines = Math.min(hunkEnd, r.end) - Math.max(hunkStart, r.start) + 1;
+              acc.linesAdded += overlapLines;
+              if (hunk.newLines > 0) {
+                acc.linesDeleted += Math.round((hunk.oldLines * overlapLines) / hunk.newLines);
+              }
+            }
+          }
+        }
+      }
+
+      // Accumulate per-chunk stats
+      for (const chunkId of affectedChunkIds) {
+        const acc = accumulators.get(chunkId);
+        if (!acc) continue;
+        acc.commitShas.add(commit.sha);
+        acc.authors.add(commit.author);
+        acc.commitTimestamps.push(commit.timestamp);
+        acc.commitAuthors.push(commit.author);
+        if (isBugFix) acc.bugFixCount++;
+        for (const tid of taskIds) acc.taskIds.add(tid);
+        if (commit.timestamp > acc.lastModifiedAt) {
+          acc.lastModifiedAt = commit.timestamp;
+        }
+      }
+
+      // Apply offsets for the next (older) commit
+      adjustedRanges = applyOffsets(adjustedRanges, hunks);
+    }
+  };
+
+  await Promise.all(
+    Array.from(fileHunkMap.entries()).map(([filePath, hunkDataList]) => processFileHunks(filePath, hunkDataList)),
+  );
 
   const t2 = Date.now();
 

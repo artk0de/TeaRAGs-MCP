@@ -18,7 +18,7 @@ export class BugFixSignal implements DerivedSignalDescriptor {
   readonly sources = ["file.bugFixRate", "chunk.bugFixRate"];
   readonly defaultBound = 100;
   readonly dampeningSource = GIT_FILE_DAMPENING;
-  private static readonly FALLBACK_THRESHOLD = 8;
+  private static readonly FALLBACK_THRESHOLD = 10;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.bugFixRate"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.bugFixRate"] ?? this.defaultBound;

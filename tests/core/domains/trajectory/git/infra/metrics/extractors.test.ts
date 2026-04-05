@@ -25,6 +25,7 @@ const makeCommit = (overrides: Partial<CommitInfo> = {}): CommitInfo => ({
   authorEmail: "alice@example.com",
   timestamp: 1700000000,
   body: "feat: add feature",
+  parents: [],
   ...overrides,
 });
 

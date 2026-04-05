@@ -54,7 +54,7 @@ export async function execFileForPathspec(repoRoot: string, args: string[], time
 
 /** Build CLI args for `git log --numstat`. Uses HEAD (not --all), no --max-count. */
 export function buildCliArgs(sinceDate?: Date): string[] {
-  const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00"];
+  const args = ["log", "HEAD", "--numstat", "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00"];
   if (sinceDate) {
     args.push(`--since=${sinceDate.toISOString()}`);
   }
@@ -138,7 +138,7 @@ export async function getCommitsByPathspecSingle(
   const args = [
     "log",
     `--since=${sinceDate.toISOString()}`,
-    "--format=%x00%H%x00%an%x00%ae%x00%at%x00%B%x00",
+    "--format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B%x00",
     "--numstat",
     "--",
     ...filePaths,
