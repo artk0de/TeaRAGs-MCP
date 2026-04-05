@@ -19,6 +19,7 @@ export interface CommitInfo {
   authorEmail: string;
   timestamp: number; // unix seconds
   body: string; // full commit message (for taskId extraction)
+  parents: string[]; // parent SHAs from %P (merge commits have 2+, root has 0)
 }
 
 /**

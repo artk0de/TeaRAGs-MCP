@@ -6,7 +6,7 @@
 import type { CommitInfo, FileChurnData } from "./types.js";
 
 /**
- * Parse `git log --numstat --format=%x00%H%x00%an%x00%ae%x00%at%x00%B` output
+ * Parse `git log --numstat --format=%x00%H%x00%P%x00%an%x00%ae%x00%at%x00%B` output
  * into a per-file FileChurnData map.
  */
 export function parseNumstatOutput(stdout: string): Map<string, FileChurnData> {
@@ -27,13 +27,15 @@ export function parseNumstatOutput(stdout: string): Map<string, FileChurnData> {
       continue;
     }
 
-    const author = sections[i + 1] || "";
-    const email = sections[i + 2] || "";
-    const timestamp = parseInt(sections[i + 3] || "0", 10);
-    const body = sections[i + 4] || "";
-    i += 5;
+    const parentsRaw = sections[i + 1] || "";
+    const parents = parentsRaw.trim() ? parentsRaw.trim().split(" ") : [];
+    const author = sections[i + 2] || "";
+    const email = sections[i + 3] || "";
+    const timestamp = parseInt(sections[i + 4] || "0", 10);
+    const body = sections[i + 5] || "";
+    i += 6;
 
-    const commitInfo: CommitInfo = { sha, author, authorEmail: email, timestamp, body };
+    const commitInfo: CommitInfo = { sha, author, authorEmail: email, timestamp, body, parents };
 
     const numstatSection = sections[i] || "";
     i++;
@@ -84,13 +86,15 @@ export function parsePathspecOutput(stdout: string): { commit: CommitInfo; chang
       continue;
     }
 
-    const author = sections[i + 1] || "";
-    const email = sections[i + 2] || "";
-    const timestamp = parseInt(sections[i + 3] || "0", 10);
-    const body = sections[i + 4] || "";
-    i += 5;
+    const parentsRaw = sections[i + 1] || "";
+    const parents = parentsRaw.trim() ? parentsRaw.trim().split(" ") : [];
+    const author = sections[i + 2] || "";
+    const email = sections[i + 3] || "";
+    const timestamp = parseInt(sections[i + 4] || "0", 10);
+    const body = sections[i + 5] || "";
+    i += 6;
 
-    const commit: CommitInfo = { sha, author, authorEmail: email, timestamp, body };
+    const commit: CommitInfo = { sha, author, authorEmail: email, timestamp, body, parents };
     const changedFiles: string[] = [];
 
     // Parse numstat section
