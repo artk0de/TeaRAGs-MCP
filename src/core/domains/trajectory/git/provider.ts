@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveRepoRoot } from "../../../adapters/git/client.js";
-import type { FileChurnData } from "../../../adapters/git/types.js";
+import type { CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type {
   ChunkLookupEntry,
@@ -25,6 +25,7 @@ import { gitFilters } from "./filters.js";
 import { GitEnrichmentCache } from "./infra/cache.js";
 import { buildChunkChurnMap } from "./infra/chunk-reader.js";
 import { buildFileSignalMap, buildFileSignalsForPaths } from "./infra/file-reader.js";
+import { buildBugFixShaSet } from "./infra/merge-branch-resolver.js";
 import type { SquashOptions } from "./infra/metrics.js";
 import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
 import { gitPayloadSignalDescriptors } from "./payload-signals.js";
@@ -57,6 +58,8 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
   private readonly squashOpts?: SquashOptions;
   private readonly config: GitProviderConfig;
+  /** Bug-fix SHAs resolved from merge branch prefixes. Updated per buildFileSignals() call. */
+  private bugFixShas: Set<string> = new Set();
 
   constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
@@ -66,6 +69,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
         data as unknown as FileChurnData,
         maxEndLine,
         this.squashOpts,
+        this.bugFixShas,
       ) as unknown as FileSignalOverlay;
   }
 
@@ -99,6 +103,15 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     }
 
     this.lastFileResult = rawData;
+
+    // Build bug-fix SHA set from merge branch prefixes (all commits across all files)
+    const allCommits = new Map<string, CommitInfo>();
+    for (const [, data] of rawData) {
+      for (const c of data.commits) {
+        if (!allCommits.has(c.sha)) allCommits.set(c.sha, c);
+      }
+    }
+    this.bugFixShas = buildBugFixShaSet(Array.from(allCommits.values()));
 
     // Return raw FileChurnData — coordinator/applier will call computeFileSignals
     // with actual line count when applying per-file

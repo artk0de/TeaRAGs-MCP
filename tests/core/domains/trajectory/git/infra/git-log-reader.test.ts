@@ -19,7 +19,10 @@ import {
   GitLogReader,
   overlaps,
 } from "../../../../../../src/core/domains/trajectory/git/infra/git-log-reader.js";
-import { isBugFixCommit } from "../../../../../../src/core/domains/trajectory/git/infra/metrics.js";
+import {
+  isBugFixCommit,
+  isBugFixCommitOrBranch,
+} from "../../../../../../src/core/domains/trajectory/git/infra/metrics.js";
 
 // Enable cross-module spy interception for adapter functions
 vi.mock("../../../../../../src/core/adapters/git/client.js", async (importOriginal) => importOriginal());
@@ -2195,5 +2198,30 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     const result: Map<string, FileChurnData> = gitParsers.parseNumstatOutput(stdout);
     expect(result.has("file.ts")).toBe(true);
     expect(result.get("file.ts")!.commits).toHaveLength(1);
+  });
+});
+
+// ─── isBugFixCommitOrBranch — combined merge-branch + message check ─────────
+
+describe("isBugFixCommitOrBranch", () => {
+  it("returns true when SHA is in bugFixShaSet (from merge branch)", () => {
+    const bugFixShas = new Set(["abc123"]);
+    expect(isBugFixCommitOrBranch("feat: unrelated commit", "abc123", bugFixShas)).toBe(true);
+  });
+
+  it("returns true when message matches isBugFixCommit", () => {
+    const bugFixShas = new Set<string>();
+    expect(isBugFixCommitOrBranch("fix(auth): prevent session fixation", "xyz789", bugFixShas)).toBe(true);
+  });
+
+  it("returns false when neither branch nor message match", () => {
+    const bugFixShas = new Set<string>();
+    expect(isBugFixCommitOrBranch("feat: add dashboard", "xyz789", bugFixShas)).toBe(false);
+  });
+
+  it("prefers SHA match over message-based exclusion (cosmetic fix on fix branch)", () => {
+    const bugFixShas = new Set(["sha1"]);
+    // "fix typo" would normally be excluded by isBugFixCommit, but SHA match wins
+    expect(isBugFixCommitOrBranch("fix typo in README", "sha1", bugFixShas)).toBe(true);
   });
 });
