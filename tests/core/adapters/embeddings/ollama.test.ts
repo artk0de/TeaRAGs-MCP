@@ -950,8 +950,10 @@ describe("OllamaEmbeddings", () => {
         mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
         await provider.embed("on fallback");
 
-        // Probe fires — primary recovered (cooldown = 0 since primaryFailedAt = 0)
-        mockFetch.mockResolvedValueOnce({ ok: true });
+        // Advance past recovery cooldown (60s) then probe fires
+        mockFetch.mockResolvedValueOnce({ ok: true }); // probe at 30s — cooldown not expired
+        await vi.advanceTimersByTimeAsync(30_000);
+        mockFetch.mockResolvedValueOnce({ ok: true }); // probe at 60s — cooldown expired, switches back
         await vi.advanceTimersByTimeAsync(30_000);
 
         // Next embed should go to primary
@@ -1166,8 +1168,10 @@ describe("OllamaEmbeddings", () => {
         await vi.advanceTimersByTimeAsync(0);
         onSwitch.mockClear();
 
-        // Primary probe succeeds → probePrimary switches back
-        mockFetch.mockResolvedValueOnce({ ok: true });
+        // Advance past recovery cooldown (60s) then probe switches back
+        mockFetch.mockResolvedValueOnce({ ok: true }); // probe at 30s — cooldown blocks
+        await vi.advanceTimersByTimeAsync(30_000);
+        mockFetch.mockResolvedValueOnce({ ok: true }); // probe at 60s — cooldown expired
         await vi.advanceTimersByTimeAsync(30_000);
 
         expect(onSwitch).toHaveBeenCalledWith(
@@ -1249,8 +1253,10 @@ describe("OllamaEmbeddings", () => {
         mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
         await provider.embed("on fallback");
 
-        // Probe fires — primary recovered (cooldown = 0 since initial failure)
-        mockFetch.mockResolvedValueOnce({ ok: true });
+        // Advance past recovery cooldown (60s) then probe recovers
+        mockFetch.mockResolvedValueOnce({ ok: true }); // probe at 30s — cooldown blocks
+        await vi.advanceTimersByTimeAsync(30_000);
+        mockFetch.mockResolvedValueOnce({ ok: true }); // probe at 60s — cooldown expired
         await vi.advanceTimersByTimeAsync(30_000);
 
         // Should now use primary

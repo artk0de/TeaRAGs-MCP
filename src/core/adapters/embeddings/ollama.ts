@@ -34,6 +34,8 @@ const SINGLE_EMBED_TIMEOUT_MS = 30_000;
 const HEALTH_PROBE_TIMEOUT_MS = 1000;
 /** Minimum time after primary failure before allowing recovery */
 const RECOVERY_COOLDOWN_MS = 60_000;
+/** How long to cache checkHealth() result before re-probing */
+const HEALTH_CACHE_TTL_MS = 60_000;
 /**
  * Per-item timeout budget for batch requests.
  * Total timeout = BATCH_PER_ITEM_TIMEOUT_MS × batchSize + BATCH_BASE_TIMEOUT_MS.
@@ -105,8 +107,11 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private probeTimer?: ReturnType<typeof setInterval>;
   private primaryAlive = false;
   private primaryAliveAt = 0;
-  private readonly primaryFailedAt = 0;
+  private primaryFailedAt = 0;
   private cachedModelInfo?: OllamaModelInfo;
+  private readonly healthReady?: Promise<void>;
+  private lastHealthResult?: boolean;
+  private lastHealthAt = 0;
 
   /** Optional callback for fallback switch observability. Set by pipeline wiring. */
   onFallbackSwitch?: (event: FallbackSwitchEvent) => void;
@@ -143,7 +148,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     });
 
     if (fallbackBaseUrl) {
-      void this.checkInitialHealth();
+      this.healthReady = this.checkInitialHealth();
     }
   }
 
@@ -209,6 +214,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   private switchToFallback(reason: string): void {
     this.usingFallback = true;
     this.primaryAlive = false;
+    this.primaryFailedAt = Date.now();
     this.startPrimaryProbe();
     if (isDebug()) {
       console.error(`[Ollama] ${reason}, using fallback ${this.fallbackBaseUrl}`);
@@ -404,6 +410,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<EmbeddingResult> {
+    await this.healthReady;
     return this.limiter.schedule(async () => this.retryWithBackoff(async (url) => this.embedSingle(text, url)));
   }
 
@@ -425,6 +432,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
    * Note: GPU must have num_gpu: 999 enabled (see callBatchApi)
    */
   async embedBatch(texts: string[]): Promise<EmbeddingResult[]> {
+    await this.healthReady;
     if (texts.length === 0) {
       return [];
     }
@@ -516,13 +524,18 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   async checkHealth(): Promise<boolean> {
+    if (this.lastHealthResult !== undefined && Date.now() - this.lastHealthAt < HEALTH_CACHE_TTL_MS) {
+      return this.lastHealthResult;
+    }
     const url = this.usingFallback && this.fallbackBaseUrl ? this.fallbackBaseUrl : this.baseUrl;
     try {
       const response = await fetchWithTimeout(`${url}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
-      return response.ok;
+      this.lastHealthResult = response.ok;
     } catch {
-      return false;
+      this.lastHealthResult = false;
     }
+    this.lastHealthAt = Date.now();
+    return this.lastHealthResult;
   }
 
   getProviderName(): string {
