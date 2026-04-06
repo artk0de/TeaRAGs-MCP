@@ -20,6 +20,7 @@ describe("StaticTrajectory", () => {
     expect(keys).toContain("methodLines");
     expect(keys).toContain("methodDensity");
     expect(keys).toContain("contentSize");
+    expect(keys).toContain("isTest");
   });
 
   it("has 7 derived signals", () => {
@@ -38,10 +39,18 @@ describe("StaticTrajectory", () => {
     expect(trajectory.presets.map((p) => p.name)).toContain("documentationRelevance");
   });
 
-  it("has 6 static filters", () => {
-    expect(trajectory.filters).toHaveLength(6);
+  it("has 7 static filters", () => {
+    expect(trajectory.filters).toHaveLength(7);
     expect(trajectory.filters.map((f) => f.param)).toEqual(
-      expect.arrayContaining(["language", "fileExtension", "chunkType", "documentation", "pathPattern", "symbolId"]),
+      expect.arrayContaining([
+        "language",
+        "fileExtension",
+        "chunkType",
+        "documentation",
+        "testFile",
+        "pathPattern",
+        "symbolId",
+      ]),
     );
   });
 });

@@ -8,6 +8,11 @@ export const BASE_PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
   { key: "endLine", type: "number", description: "End line of chunk in file" },
   { key: "chunkIndex", type: "number", description: "Chunk position within file" },
   { key: "isDocumentation", type: "boolean", description: "Whether chunk is documentation" },
+  {
+    key: "isTest",
+    type: "boolean",
+    description: "Whether the file is a test/spec file (detected by naming convention per language)",
+  },
   { key: "chunkType", type: "string", description: "Chunk type (function, class, block, etc.)" },
   { key: "name", type: "string", description: "Symbol name (class, function, etc.)" },
   { key: "parentSymbolId", type: "string", description: "Parent symbol name" },

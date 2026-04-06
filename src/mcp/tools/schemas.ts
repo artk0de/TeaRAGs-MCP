@@ -139,6 +139,13 @@ function typedFilterFields() {
         "Documentation filter mode. 'only' = documentation chunks only, " +
           "'exclude' = no documentation chunks, 'include' = all chunks (default).",
       ),
+    testFile: z
+      .enum(["only", "exclude", "include"])
+      .optional()
+      .describe(
+        "Test file filter mode. 'only' = test files only, " +
+          "'exclude' = no test files, 'include' = all files (default).",
+      ),
     author: z
       .string()
       .optional()
