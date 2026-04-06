@@ -269,6 +269,26 @@ describe("Resource builders", () => {
       // No group sections when no signals with labels
       expect(md).not.toContain("## Git File Signals");
     });
+
+    it("handles signal with no stats property", () => {
+      const signals: PayloadSignalDescriptor[] = [{ key: "git.file.test", type: "number", description: "test" }];
+      const md = buildSignalLabelsGuide(signals);
+      expect(md).not.toContain("git.file.test");
+    });
+
+    it("handles non-standard percentile keys gracefully", () => {
+      const signals: PayloadSignalDescriptor[] = [
+        {
+          key: "git.file.custom",
+          type: "number",
+          description: "custom",
+          stats: { labels: { invalid: "unknown", p50: "mid" } },
+        },
+      ];
+      const md = buildSignalLabelsGuide(signals);
+      expect(md).toContain("git.file.custom");
+      expect(md).toContain("mid");
+    });
   });
 
   describe("buildFiltersDoc", () => {

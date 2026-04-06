@@ -248,7 +248,9 @@ thresholds. Reranker automatically uses the correct scope for label resolution.
     md += "| Signal | Labels (percentile → name) |\n";
     md += "|--------|---------------------------|\n";
     for (const signal of signals) {
+      /* v8 ignore start -- stats.labels guaranteed by withLabels filter */
       const labels = signal.stats?.labels ?? {};
+      /* v8 ignore stop */
       const entries = Object.entries(labels)
         .sort((a, b) => parsePercentile(a[0]) - parsePercentile(b[0]))
         .map(([p, name]) => `${p}: ${name}`)
