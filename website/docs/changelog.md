@@ -3,6 +3,111 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.19.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.18.0...v1.19.0) (2026-04-06)
+
+### Features
+
+- **api:** add relativePath parameter to find_symbol
+  ([5ce07fa](https://github.com/artk0de/TeaRAGs-MCP/commit/5ce07fa49fd40b4ada839de662dfbf93a7941a81))
+- **chunker:** use # separator for instance methods, . for static
+  ([06fd221](https://github.com/artk0de/TeaRAGs-MCP/commit/06fd221f39fbb5c43e96f6f31e28912851265da2)),
+  closes [Reranker#rerank](https://github.com/artk0de/Reranker/issues/rerank)
+- **drift:** add schema-v11 migration for parentName → parentSymbolId rename
+  ([405e52c](https://github.com/artk0de/TeaRAGs-MCP/commit/405e52cad444a4f0eae19a6864f0c74c744eb4a8))
+- **explore:** add ChunkGrouper component (CodeChunkGrouper + DocChunkGrouper)
+  ([eb02cfd](https://github.com/artk0de/TeaRAGs-MCP/commit/eb02cfd5ad4c7906fc0750840678df85faaa7f63))
+- **explore:** chunk grouping — file outlines, doc TOC, #/. separator
+  ([86e0fcf](https://github.com/artk0de/TeaRAGs-MCP/commit/86e0fcfa78c623df11a50a6b362530941131541c)),
+  closes [Class#method](https://github.com/artk0de/Class/issues/method)
+- **git:** add merge-branch-resolver for fix branch propagation
+  ([b5fb30e](https://github.com/artk0de/TeaRAGs-MCP/commit/b5fb30edb84236f74fce634edbf5e608b0be215c))
+- **git:** add offset-tracker for drift-free chunk attribution
+  ([9b2ddaf](https://github.com/artk0de/TeaRAGs-MCP/commit/9b2ddafacbeaaa02b563d6996ed411c4e2b9d512))
+- **git:** add parent SHAs to CommitInfo via %P in git log format
+  ([ea048e4](https://github.com/artk0de/TeaRAGs-MCP/commit/ea048e48c95314a9a5fb45e4b6799a44085787dc))
+- **onnx:** add resolveModelInfo for runtime dimensions and context length
+  ([b1050b7](https://github.com/artk0de/TeaRAGs-MCP/commit/b1050b72fa6905220b35d8fe8c695f0770a028e7))
+- **pipeline:** set parentName to relative path for doc chunks
+  ([e99ac33](https://github.com/artk0de/TeaRAGs-MCP/commit/e99ac337ac7a85111cffaa7ec09ae7ee890b2426))
+- **presets:** add 'dangerous' composite preset for high-risk code detection
+  ([63010c9](https://github.com/artk0de/TeaRAGs-MCP/commit/63010c9e297cbb209f24dc03ca1a20c72e797c99))
+- **presets:** add proven rerank preset for battle-tested code
+  ([faf6533](https://github.com/artk0de/TeaRAGs-MCP/commit/faf65332646fd98033cc4874e04af743faa09e16))
+
+### Improvements
+
+- **api:** expose headingPath in API responses for agent navigation
+  ([2742457](https://github.com/artk0de/TeaRAGs-MCP/commit/27424577549759a28abd95e778bf15f9fcc51a8b))
+- **dx:** add mid-session reindex rule to search-cascade
+  ([7e1f84a](https://github.com/artk0de/TeaRAGs-MCP/commit/7e1f84a75b25b8e44793d48a3a0ff35af2b83dc8))
+- **dx:** persist eval cases for chunk-grouping + enforce in optimize-skill
+  ([749de06](https://github.com/artk0de/TeaRAGs-MCP/commit/749de0670203ced2e1793bc1e82311da52c1aa0c))
+- **dx:** update search-cascade for chunk grouping features
+  ([e4ea7b5](https://github.com/artk0de/TeaRAGs-MCP/commit/e4ea7b5078b85e794b9a55027392f63ad20dc21e))
+- **explore:** remove members array from ChunkGrouper output
+  ([d7bda45](https://github.com/artk0de/TeaRAGs-MCP/commit/d7bda451b918461efdc8a5f9faa3f0dfe3e3e0dc))
+- **explore:** slim down ChunkGrouper payload — no spread, explicit fields only
+  ([3f028b4](https://github.com/artk0de/TeaRAGs-MCP/commit/3f028b469f7d57ca4a651330a0a8c1e76502616b))
+- **mcp:** generate signal-labels resource dynamically from
+  PayloadSignalDescriptors
+  ([26b7a98](https://github.com/artk0de/TeaRAGs-MCP/commit/26b7a9810bd00f1c43de055dcf48e2805c5bd0bd))
+- **mcp:** generate signal-labels resource dynamically from
+  PayloadSignalDescriptors
+  ([657fe70](https://github.com/artk0de/TeaRAGs-MCP/commit/657fe70343daf05eeee67bbe221ad8f77925d9ce))
+- **signals:** wire merge-branch-resolver into chunk-level bugFixRate
+  ([2ee0d25](https://github.com/artk0de/TeaRAGs-MCP/commit/2ee0d250f9408705304b3c5e30f2c1f42bc37e08))
+- **signals:** wire merge-branch-resolver into file-level bugFixRate
+  ([a074915](https://github.com/artk0de/TeaRAGs-MCP/commit/a074915d31d03a43c1e2ba0f206d251db91f031a))
+
+### Bug Fixes
+
+- **ci:** remove dead integration test step from pre-commit hook
+  ([59b338d](https://github.com/artk0de/TeaRAGs-MCP/commit/59b338da3adbac0bd6c79b48f536356d1531ce9a))
+- **embedding:** Ollama fallback race condition and cooldown bugs
+  ([ed474f2](https://github.com/artk0de/TeaRAGs-MCP/commit/ed474f22291c91c6e83f1d80aec88ea5347b02f2))
+- **explore:** merge essential trajectory fields with overlay in metaOnly
+  ([cde0eda](https://github.com/artk0de/TeaRAGs-MCP/commit/cde0eda2edaa6d9f71c355164743eb91cc5b5af0))
+- **git:** wire offset tracker into chunk-reader for drift-free attribution
+  ([e8c4d54](https://github.com/artk0de/TeaRAGs-MCP/commit/e8c4d544c5a870a5bdb940041425f398554c329a))
+- **qdrant:** countPoints error wrapping and deletion filter explosion
+  ([d54a010](https://github.com/artk0de/TeaRAGs-MCP/commit/d54a0103d1e50fe660e87e161c853a44ec3af31d))
+- **signals:** raise BugFixSignal FALLBACK_THRESHOLD from k=8 to k=10
+  ([2f5ed3c](https://github.com/artk0de/TeaRAGs-MCP/commit/2f5ed3c53d89672507ed0df93f9188e7a9abb1e5))
+- **signals:** rewrite isBugFixCommit with strict classification
+  ([f880b76](https://github.com/artk0de/TeaRAGs-MCP/commit/f880b760addc73a7cc1b58a70b8e1bc22d5f0681)),
+  closes [#123](https://github.com/artk0de/TeaRAGs-MCP/issues/123)
+- **signals:** rewrite isBugFixCommit with strict classification
+  ([01be60e](https://github.com/artk0de/TeaRAGs-MCP/commit/01be60ee1c687041357f0d35fb24fda52ee12d0b)),
+  closes [#123](https://github.com/artk0de/TeaRAGs-MCP/issues/123)
+
+### Documentation
+
+- **explore:** add outlineDoc strategy + chunk-grouping plan
+  ([f8a2565](https://github.com/artk0de/TeaRAGs-MCP/commit/f8a2565b5958d4e0e8b53c8e13836e7e83c115d6))
+- **mcp:** update find_symbol description with #/. separator convention
+  ([b82c9fc](https://github.com/artk0de/TeaRAGs-MCP/commit/b82c9fc4efe47ddde8a094caa3bb2df3099af7a6))
+- **mcp:** update search-guide and overview resources for chunk grouping
+  ([ebcf9fc](https://github.com/artk0de/TeaRAGs-MCP/commit/ebcf9fc69c31a726c87cc9880da410516b48791f))
+- **signals:** add bugFixRate accuracy implementation plan
+  ([b103683](https://github.com/artk0de/TeaRAGs-MCP/commit/b103683b26dbdf32facc09c079b6d8c77d3b12fa))
+- **signals:** update bugFixRate detection rules in website docs
+  ([24f1dfa](https://github.com/artk0de/TeaRAGs-MCP/commit/24f1dfa76ee50373c7c06620f89a7d520abe03ed))
+- **signals:** update bugFixRate plan — k=10, drift fix via offset tracker
+  ([fcf8d2a](https://github.com/artk0de/TeaRAGs-MCP/commit/fcf8d2ae71387a98767a98101e1d087feac737ec))
+- **specs:** add file-level find_symbol design spec
+  ([74a28d7](https://github.com/artk0de/TeaRAGs-MCP/commit/74a28d7015f82599059e07adc72c1c967c39ab03))
+
+### Code Refactoring
+
+- **api:** rename parentName → parentSymbolId across codebase
+  ([227bbcb](https://github.com/artk0de/TeaRAGs-MCP/commit/227bbcb4832fb71fc55993570f2181905aa302cb))
+- **explore:** integrate ChunkGrouper into resolveSymbols
+  ([178a051](https://github.com/artk0de/TeaRAGs-MCP/commit/178a051972a4df69e4d025610a4000d9f4cb80d3))
+- **mcp:** deduplicate search-guide — examples only, routing in cascade
+  ([413b03b](https://github.com/artk0de/TeaRAGs-MCP/commit/413b03b9975dea7ad5b0b60f3719479eb5fa84cf))
+- **test:** split git-log-reader.test.ts into domain-specific modules
+  ([f4677c2](https://github.com/artk0de/TeaRAGs-MCP/commit/f4677c24ef0d36ab8231e4824f82c979983a3f7d))
+
 ## [1.18.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.17.6...v1.18.0) (2026-04-01)
 
 ### Features
