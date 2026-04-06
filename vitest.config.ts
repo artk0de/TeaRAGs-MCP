@@ -24,6 +24,7 @@ export default defineConfig({
       "**/.claude/worktrees/**",
       // Exclude integration tests - they require real external services
       "**/tests/integration/**",
+      "**/__integration__/**",
       // Exclude website tests — require website/node_modules (@docusaurus/tsconfig)
       "**/tests/website/**",
       // Exclude legacy integration test files

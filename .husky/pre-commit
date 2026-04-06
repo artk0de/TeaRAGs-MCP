@@ -96,3 +96,19 @@ if [ -n "$RUN_TESTS" ]; then
     echo "$TEST_OUTPUT" | tail -3
   fi
 fi
+
+# Run git integration tests when git-related source files changed
+GIT_SRC_CHANGED=$(echo "$STAGED_FILES" | grep -E "^src/core/(adapters/git|domains/trajectory/git/infra)/" || true)
+if [ -n "$GIT_SRC_CHANGED" ]; then
+  echo "🔀 Git source changed — running integration tests..."
+  INTEG_OUTPUT=$(npx vitest run 'tests/**/__integration__/**' 2>&1)
+  INTEG_EXIT=$?
+  if [ $INTEG_EXIT -ne 0 ]; then
+    echo "$INTEG_OUTPUT" | grep -E "FAIL|×|Error|failed"
+    echo ""
+    echo "❌ Git integration tests failed."
+    exit 1
+  else
+    echo "$INTEG_OUTPUT" | tail -3
+  fi
+fi
