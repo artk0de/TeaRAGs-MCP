@@ -193,6 +193,11 @@ export class Reranker {
     return this.resolvedPresets.filter((p) => this.matchesTool(p, tool)).map((p) => p.name);
   }
 
+  /** Payload signal descriptors (for dynamic resource generation). */
+  getPayloadSignals(): PayloadSignalDescriptor[] {
+    return this.payloadSignals;
+  }
+
   /** Preset names + descriptions for a specific tool (for MCP schema generation). */
   getPresetDescriptions(tool: string): { name: string; description: string }[] {
     return this.resolvedPresets

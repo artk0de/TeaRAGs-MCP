@@ -75,6 +75,9 @@ function createMockReranker(): Reranker {
         tools: [tool],
       }));
     }),
+    getPayloadSignals: vi
+      .fn()
+      .mockReturnValue([{ key: "git.file.ageDays", type: "number", description: "Days since last modification" }]),
   } as unknown as Reranker;
 }
 
@@ -297,6 +300,14 @@ describe("createApp", () => {
         name: "recency",
         description: "How recently the code was modified",
       });
+    });
+
+    it("returns payload signals from reranker", () => {
+      const app = createApp(deps);
+      const descriptors = app.getSchemaDescriptors();
+
+      expect(descriptors.payloadSignals).toHaveLength(1);
+      expect(descriptors.payloadSignals[0].key).toBe("git.file.ageDays");
     });
   });
 

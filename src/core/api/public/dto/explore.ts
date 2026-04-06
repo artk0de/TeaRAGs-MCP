@@ -3,6 +3,7 @@
  */
 
 import type { RankingOverlay, SignalLevel } from "../../../contracts/types/reranker.js";
+import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 
 // ---------------------------------------------------------------------------
 // Collection reference (shared by search requests)
@@ -181,4 +182,6 @@ export interface PresetDescriptors {
   presetDetails: Record<string, PresetDetail[]>;
   /** All derived signal descriptors available for custom weights */
   signalDescriptors: SignalDescriptor[];
+  /** All payload signal descriptors (for dynamic resource generation) */
+  payloadSignals: PayloadSignalDescriptor[];
 }
