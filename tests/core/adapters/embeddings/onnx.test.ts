@@ -445,6 +445,14 @@ describe("OnnxEmbeddings (daemon client)", () => {
     });
   });
 
+  describe("resolveModelInfo", () => {
+    it("should return undefined when daemon does not provide model info", async () => {
+      // Default MockWorker sends ready without dimensions/contextLength
+      const info = await provider.resolveModelInfo();
+      expect(info).toBeUndefined();
+    });
+  });
+
   describe("heartbeat", () => {
     it("should start heartbeat with unref on connect", async () => {
       await provider.embed("test");
@@ -507,6 +515,88 @@ describe("OnnxEmbeddings (daemon client)", () => {
       await firstProvider.terminate();
       await errDaemon.stop();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests with model info propagation
+// ---------------------------------------------------------------------------
+
+describe("OnnxEmbeddings resolveModelInfo (with model info)", () => {
+  let daemon: OnnxDaemon;
+  let provider: OnnxEmbeddings;
+  let socketPath: string;
+
+  class ModelInfoWorker extends EventEmitter {
+    postMessage(msg: WorkerRequest): void {
+      switch (msg.type) {
+        case "init":
+          setImmediate(() =>
+            this.emit("message", {
+              type: "ready",
+              dimensions: 768,
+              contextLength: 8192,
+            } satisfies WorkerResponse),
+          );
+          break;
+        case "embed":
+          setImmediate(() =>
+            this.emit("message", {
+              type: "result",
+              id: msg.id,
+              embeddings: msg.texts.map(() => Array.from({ length: 768 }, () => 0.1)),
+            } satisfies WorkerResponse),
+          );
+          break;
+        case "terminate":
+          setImmediate(() => this.emit("exit", 0));
+          break;
+      }
+    }
+    async terminate(): Promise<number> {
+      this.emit("exit", 0);
+      return Promise.resolve(0);
+    }
+  }
+
+  beforeEach(async () => {
+    socketPath = join(tmpdir(), `onnx-info-test-${randomUUID().slice(0, 8)}.sock`);
+    daemon = new OnnxDaemon({
+      socketPath,
+      idleTimeoutMs: 30_000,
+      heartbeatTimeoutMs: 45_000,
+      workerFactory: () => new ModelInfoWorker(),
+    });
+    await daemon.start();
+    provider = new OnnxEmbeddings("nomic-ai/nomic-embed-text-v1.5", undefined, undefined, "cpu", socketPath);
+  });
+
+  afterEach(async () => {
+    await provider.terminate();
+    await daemon.stop();
+  });
+
+  it("should return model info after connecting to daemon", async () => {
+    const info = await provider.resolveModelInfo();
+    expect(info).toEqual({
+      model: "nomic-ai/nomic-embed-text-v1.5",
+      dimensions: 768,
+      contextLength: 8192,
+    });
+  });
+
+  it("should cache model info and return same result on second call", async () => {
+    const info1 = await provider.resolveModelInfo();
+    const info2 = await provider.resolveModelInfo();
+    expect(info1).toEqual(info2);
+  });
+
+  it("should return model info even without prior embed call", async () => {
+    // resolveModelInfo triggers connection if not yet connected
+    const info = await provider.resolveModelInfo();
+    expect(info).toBeDefined();
+    expect(info!.dimensions).toBe(768);
+    expect(info!.contextLength).toBe(8192);
   });
 });
 

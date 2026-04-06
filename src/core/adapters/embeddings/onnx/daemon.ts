@@ -73,6 +73,10 @@ export class OnnxDaemon {
   private batchController: BatchSizeController | null = null;
   private calibratedBatchSize: number | undefined;
 
+  // Model info from worker (dimensions + context length)
+  private modelDimensions: number | undefined;
+  private modelContextLength: number | undefined;
+
   // Shutdown tracking
   private stopped = false;
 
@@ -295,6 +299,8 @@ export class OnnxDaemon {
       model: this.loadedModel,
       clients: this.connectedClientCount(),
       recommendedBatchSize: this.batchController?.recommendedPipelineBatchSize(),
+      dimensions: this.modelDimensions,
+      contextLength: this.modelContextLength,
     });
   }
 
@@ -385,6 +391,8 @@ export class OnnxDaemon {
     switch (msg.type) {
       case "ready":
         this.workerReady = true;
+        if (msg.dimensions !== undefined) this.modelDimensions = msg.dimensions;
+        if (msg.contextLength !== undefined) this.modelContextLength = msg.contextLength;
         if (this.workerReadyResolve) {
           this.workerReadyResolve();
           this.workerReadyResolve = null;

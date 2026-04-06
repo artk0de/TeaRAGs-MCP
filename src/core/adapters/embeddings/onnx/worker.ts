@@ -69,12 +69,26 @@ function formatAuthError(baseModel: string): string {
   );
 }
 
+interface PipelineWithConfig extends Pipeline {
+  model?: { config?: Record<string, unknown> };
+}
+
 async function loadPipeline(
   pipelineFn: PipelineFn,
   baseModel: string,
   pipelineOpts: Record<string, unknown>,
-): Promise<Pipeline> {
-  return (await pipelineFn("feature-extraction", baseModel, pipelineOpts)) as Pipeline;
+): Promise<PipelineWithConfig> {
+  return (await pipelineFn("feature-extraction", baseModel, pipelineOpts)) as PipelineWithConfig;
+}
+
+function extractModelInfo(pipeline: PipelineWithConfig): { dimensions?: number; contextLength?: number } {
+  const config = pipeline.model?.config;
+  if (!config) return {};
+
+  const dimensions = typeof config.hidden_size === "number" ? config.hidden_size : undefined;
+  const contextLength = typeof config.max_position_embeddings === "number" ? config.max_position_embeddings : undefined;
+
+  return { dimensions, contextLength };
 }
 
 function calibrationCachePath(): string | null {
@@ -195,7 +209,8 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
     if (dtype) pipelineOpts.dtype = dtype;
     if (resolvedDevice !== "cpu") pipelineOpts.device = resolvedDevice;
 
-    extractor = await loadPipeline(pipeline, baseModel, pipelineOpts);
+    const loaded = await loadPipeline(pipeline, baseModel, pipelineOpts);
+    extractor = loaded;
 
     post({ type: "log", level: "info", message: `[ONNX] Model loaded on ${resolvedDevice}.` });
 
@@ -207,7 +222,8 @@ async function handleInit(model: string, cacheDir?: string, device?: string): Pr
       // non-fatal
     }
 
-    post({ type: "ready" });
+    const modelInfo = extractModelInfo(loaded);
+    post({ type: "ready", ...modelInfo });
 
     // Fire-and-forget: calibrate GPU batch size in background (queued to avoid GPU contention)
     const loadedPipeline = extractor;
