@@ -150,6 +150,7 @@ export function createApp(deps: AppDeps): App {
         presetNames,
         presetDetails,
         signalDescriptors: info.map((d) => ({ name: d.name, description: d.description })),
+        payloadSignals: deps.reranker.getPayloadSignals(),
       };
     },
 

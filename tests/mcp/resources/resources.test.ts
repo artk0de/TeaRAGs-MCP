@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PresetDescriptors } from "../../../src/core/api/public/dto/explore.js";
+import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
 import {
   buildFiltersDoc,
   buildIndexingGuide,
@@ -10,6 +11,46 @@ import {
   buildSignalLabelsGuide,
   buildSignalsDoc,
 } from "../../../src/mcp/resources/index.js";
+
+const mockPayloadSignals: PayloadSignalDescriptor[] = [
+  {
+    key: "git.file.commitCount",
+    type: "number",
+    description: "Total commits touching this file",
+    stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
+  },
+  {
+    key: "git.file.ageDays",
+    type: "number",
+    description: "Days since last modification",
+    stats: { labels: { p25: "recent", p50: "typical", p75: "old", p95: "legacy" } },
+  },
+  {
+    key: "git.chunk.bugFixRate",
+    type: "number",
+    description: "Percentage of bug-fix commits",
+    stats: { labels: { p50: "healthy", p75: "concerning", p95: "critical" } },
+  },
+  {
+    key: "methodLines",
+    type: "number",
+    description: "Lines in method",
+    stats: { labels: { p50: "small", p75: "large", p95: "decomposition_candidate" } },
+  },
+  // Signal without labels — should be excluded
+  {
+    key: "git.file.dominantAuthor",
+    type: "string",
+    description: "Primary file author",
+  },
+  // Signal with empty labels — should be excluded
+  {
+    key: "git.file.lastModifiedAt",
+    type: "timestamp",
+    description: "Last modification time",
+    stats: { labels: {} },
+  },
+];
 
 const mockDescriptors: PresetDescriptors = {
   presetNames: {
@@ -42,6 +83,7 @@ const mockDescriptors: PresetDescriptors = {
     { name: "age", description: "Direct age signal" },
     { name: "churn", description: "Commit frequency" },
   ],
+  payloadSignals: mockPayloadSignals,
 };
 
 describe("Resource builders", () => {
@@ -174,40 +216,58 @@ describe("Resource builders", () => {
 
   describe("buildSignalLabelsGuide", () => {
     it("contains header and how-it-works section", () => {
-      const md = buildSignalLabelsGuide();
+      const md = buildSignalLabelsGuide(mockPayloadSignals);
       expect(md).toContain("# Signal Labels");
       expect(md).toContain("get_index_metrics");
       expect(md).toContain("ranking overlay");
     });
 
-    it("contains git file signal table", () => {
-      const md = buildSignalLabelsGuide();
-      expect(md).toContain("## Git File Signals");
+    it("includes all signals with stats.labels in output", () => {
+      const md = buildSignalLabelsGuide(mockPayloadSignals);
       expect(md).toContain("git.file.commitCount");
       expect(md).toContain("git.file.ageDays");
-      expect(md).toContain("git.file.bugFixRate");
-      expect(md).toContain("git.file.dominantAuthorPct");
-    });
-
-    it("contains git chunk signal table", () => {
-      const md = buildSignalLabelsGuide();
-      expect(md).toContain("## Git Chunk Signals");
-      expect(md).toContain("git.chunk.commitCount");
-      expect(md).toContain("git.chunk.churnRatio");
-    });
-
-    it("contains static signal table", () => {
-      const md = buildSignalLabelsGuide();
-      expect(md).toContain("## Static Signals");
+      expect(md).toContain("git.chunk.bugFixRate");
       expect(md).toContain("methodLines");
-      expect(md).toContain("methodDensity");
-      expect(md).toContain("decomposition_candidate");
+    });
+
+    it("excludes signals without labels", () => {
+      const md = buildSignalLabelsGuide(mockPayloadSignals);
+      // dominantAuthor has no stats.labels
+      expect(md).not.toContain("git.file.dominantAuthor");
+      // lastModifiedAt has empty labels
+      expect(md).not.toContain("git.file.lastModifiedAt");
+    });
+
+    it("groups signals by domain prefix", () => {
+      const md = buildSignalLabelsGuide(mockPayloadSignals);
+      expect(md).toContain("## Git File Signals");
+      expect(md).toContain("## Git Chunk Signals");
+      expect(md).toContain("## Static Signals");
+    });
+
+    it("generates valid Markdown tables with percentile labels", () => {
+      const md = buildSignalLabelsGuide(mockPayloadSignals);
+      // Check table header
+      expect(md).toContain("| Signal | Labels (percentile → name) |");
+      expect(md).toContain("|--------|---------------------------|");
+      // Check specific label entries in sorted percentile order
+      expect(md).toContain("p25: low, p50: typical, p75: high, p95: extreme");
+      expect(md).toContain("p50: healthy, p75: concerning, p95: critical");
+      expect(md).toContain("p50: small, p75: large, p95: decomposition_candidate");
     });
 
     it("contains label resolution algorithm", () => {
-      const md = buildSignalLabelsGuide();
+      const md = buildSignalLabelsGuide(mockPayloadSignals);
       expect(md).toContain("## Label Resolution Algorithm");
       expect(md).toContain("ascending percentile order");
+    });
+
+    it("handles empty payload signals array", () => {
+      const md = buildSignalLabelsGuide([]);
+      expect(md).toContain("# Signal Labels");
+      expect(md).toContain("## Label Resolution Algorithm");
+      // No group sections when no signals with labels
+      expect(md).not.toContain("## Git File Signals");
     });
   });
 

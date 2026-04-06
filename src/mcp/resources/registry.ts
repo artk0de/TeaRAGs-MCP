@@ -7,6 +7,7 @@ import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/serv
 import { InvalidParameterError } from "../../core/api/errors.js";
 import type { App } from "../../core/api/index.js";
 import type { PresetDescriptors } from "../../core/api/public/dto/explore.js";
+import type { PayloadSignalDescriptor } from "../../core/contracts/types/trajectory.js";
 
 export function buildOverview(): string {
   return `# tea-rags Schema Overview
@@ -187,8 +188,23 @@ export function buildFiltersDoc(): string {
   return md;
 }
 
-export function buildSignalLabelsGuide(): string {
-  return `# Signal Labels
+export function buildSignalLabelsGuide(payloadSignals: PayloadSignalDescriptor[]): string {
+  // Filter to signals with stats.labels
+  const withLabels = payloadSignals.filter((s) => s.stats?.labels && Object.keys(s.stats.labels).length > 0);
+
+  // Group by domain prefix
+  const groups = new Map<string, PayloadSignalDescriptor[]>();
+  for (const signal of withLabels) {
+    const prefix = getDomainGroup(signal.key);
+    let group = groups.get(prefix);
+    if (!group) {
+      group = [];
+      groups.set(prefix, group);
+    }
+    group.push(signal);
+  }
+
+  let md = `# Signal Labels
 
 Signal labels provide human-readable interpretation of numeric signal values
 relative to the current codebase distribution. Labels are computed from
@@ -224,42 +240,25 @@ Example: \`signals["ruby"]["git.file.commitCount"]["source"].labelMap\`
 If a language has test chunks indexed, a \`"test"\` scope appears with separate
 thresholds. Reranker automatically uses the correct scope for label resolution.
 
-## Git File Signals
+`;
 
-| Signal | Labels (percentile → name) |
-|--------|---------------------------|
-| \`git.file.commitCount\` | p25: low, p50: typical, p75: high, p95: extreme |
-| \`git.file.ageDays\` | p25: recent, p50: typical, p75: old, p95: legacy |
-| \`git.file.bugFixRate\` | p50: healthy, p75: concerning, p95: critical |
-| \`git.file.dominantAuthorPct\` | p25: shared, p50: mixed, p75: concentrated, p95: silo |
-| \`git.file.contributorCount\` | p50: solo, p75: team, p95: crowd |
-| \`git.file.relativeChurn\` | p75: normal, p95: high |
-| \`git.file.changeDensity\` | p50: calm, p75: active, p95: intense |
-| \`git.file.churnVolatility\` | p75: stable, p95: erratic |
-| \`git.file.recencyWeightedFreq\` | p75: normal, p95: burst |
+  // Render each group as a section with a Markdown table
+  for (const [groupName, signals] of groups) {
+    md += `## ${groupName}\n\n`;
+    md += "| Signal | Labels (percentile → name) |\n";
+    md += "|--------|---------------------------|\n";
+    for (const signal of signals) {
+      const labels = signal.stats?.labels ?? {};
+      const entries = Object.entries(labels)
+        .sort((a, b) => parsePercentile(a[0]) - parsePercentile(b[0]))
+        .map(([p, name]) => `${p}: ${name}`)
+        .join(", ");
+      md += `| \`${signal.key}\` | ${entries} |\n`;
+    }
+    md += "\n";
+  }
 
-## Git Chunk Signals
-
-| Signal | Labels (percentile → name) |
-|--------|---------------------------|
-| \`git.chunk.commitCount\` | p25: low, p50: typical, p75: high, p95: extreme |
-| \`git.chunk.ageDays\` | p25: recent, p50: typical, p75: old, p95: legacy |
-| \`git.chunk.bugFixRate\` | p50: healthy, p75: concerning, p95: critical |
-| \`git.chunk.churnRatio\` | p75: normal, p95: concentrated |
-| \`git.chunk.contributorCount\` | p50: solo, p95: crowd |
-| \`git.chunk.relativeChurn\` | p75: normal, p95: high |
-| \`git.chunk.changeDensity\` | p75: active, p95: intense |
-| \`git.chunk.churnVolatility\` | p75: stable, p95: erratic |
-| \`git.chunk.recencyWeightedFreq\` | p75: normal, p95: burst |
-
-## Static Signals
-
-| Signal | Labels (percentile → name) |
-|--------|---------------------------|
-| \`methodLines\` | p50: small, p75: large, p95: decomposition_candidate |
-| \`methodDensity\` | p50: sparse, p95: dense |
-
-## Label Resolution Algorithm
+  md += `## Label Resolution Algorithm
 
 1. Thresholds are walked in ascending percentile order
 2. Each label covers [its threshold, next threshold)
@@ -271,6 +270,20 @@ Example: commitCount with thresholds p25=2, p50=5, p75=12, p95=30
 - value 8 → "typical" (between p50 and p75)
 - value 35 → "extreme" (above p95)
 `;
+
+  return md;
+}
+
+/** Map a signal key to a human-readable group name. */
+function getDomainGroup(key: string): string {
+  if (key.startsWith("git.file.")) return "Git File Signals";
+  if (key.startsWith("git.chunk.")) return "Git Chunk Signals";
+  return "Static Signals";
+}
+
+/** Parse percentile number from "pNN" key. */
+function parsePercentile(key: string): number {
+  return parseInt(key.replace("p", ""), 10) || 0;
 }
 
 /**
@@ -440,7 +453,13 @@ export function registerAllResources(server: McpServer, app: App): void {
       mimeType: "text/markdown",
     },
     async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildSignalLabelsGuide() }],
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "text/markdown",
+          text: buildSignalLabelsGuide(app.getSchemaDescriptors().payloadSignals),
+        },
+      ],
     }),
   );
 }
