@@ -211,6 +211,41 @@ describe("filterMetaOnly", () => {
     expect(meta[0].git).toEqual({ chunk: { commitCount: 3 } });
   });
 
+  it("merges essential fields with overlay data when both exist", () => {
+    const results: SearchResult[] = [
+      {
+        score: 0.8,
+        payload: {
+          relativePath: "src/b.ts",
+          git: {
+            file: { ageDays: 100, commitCount: 5, taskIds: ["TD-123", "TD-456"], authors: ["Alice"] },
+            chunk: { commitCount: 3, taskIds: ["TD-123"] },
+          },
+        },
+        rankingOverlay: {
+          preset: "techDebt",
+          file: { ageDays: 100, commitCount: 5 },
+        },
+      },
+    ];
+    const meta = filterMetaOnly(results, payloadSignals, [
+      "git.file.taskIds",
+      "git.chunk.commitCount",
+      "git.chunk.taskIds",
+    ]);
+    const git = meta[0].git as Record<string, Record<string, unknown>>;
+    // overlay signals present
+    expect(git.file.ageDays).toBe(100);
+    expect(git.file.commitCount).toBe(5);
+    // essential fields merged from full payload
+    expect(git.file.taskIds).toEqual(["TD-123", "TD-456"]);
+    expect(git.chunk.commitCount).toBe(3);
+    expect(git.chunk.taskIds).toEqual(["TD-123"]);
+    // non-essential fields excluded
+    expect(git.file.authors).toBeUndefined();
+    expect(meta[0].preset).toBe("techDebt");
+  });
+
   it("includes imports when marked essential in payload signals", () => {
     const signalsWithImports: PayloadSignalDescriptor[] = [
       ...payloadSignals,

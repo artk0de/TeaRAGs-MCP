@@ -148,15 +148,29 @@ export function filterMetaOnly(
     const overlay = r.rankingOverlay;
     const fullGit = r.payload?.git as Record<string, Record<string, unknown>> | undefined;
 
+    // Always include essential trajectory fields from full payload
+    let gitResult: Record<string, unknown> = {};
+    if (fullGit) {
+      gitResult = filterGitByEssential(fullGit, essentialTrajectoryFields);
+    }
+
     if (overlay && hasOverlayData(overlay)) {
       const gitFromOverlay = buildGitFromOverlay(overlay);
-      if (Object.keys(gitFromOverlay).length > 0) meta.git = gitFromOverlay;
+      // Overlay signals take precedence over essential fields
+      for (const level of ["file", "chunk"] as const) {
+        if (gitFromOverlay[level]) {
+          gitResult[level] = {
+            ...(gitResult[level] as Record<string, unknown> | undefined),
+            ...(gitFromOverlay[level] as Record<string, unknown>),
+          };
+        }
+      }
       meta.preset = overlay.preset;
-    } else if (fullGit) {
-      const filtered = filterGitByEssential(fullGit, essentialTrajectoryFields);
-      if (Object.keys(filtered).length > 0) meta.git = filtered;
-      if (overlay?.preset) meta.preset = overlay.preset;
+    } else if (overlay?.preset) {
+      meta.preset = overlay.preset;
     }
+
+    if (Object.keys(gitResult).length > 0) meta.git = gitResult;
 
     return meta;
   });
