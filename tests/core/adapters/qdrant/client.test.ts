@@ -2386,6 +2386,17 @@ describe("QdrantManager", () => {
       expect(result).toBe(42);
       expect(mockClient.count).toHaveBeenCalledWith("col", { filter: undefined, exact: true });
     });
+
+    it("wraps non-connection errors in QdrantOperationError", async () => {
+      const rawError = Object.assign(new Error("Internal Server Error"), {
+        data: { status: { error: "too many filter conditions" } },
+      });
+      mockClient.count.mockRejectedValueOnce(rawError);
+
+      const err = await manager.countPoints("col", { should: [] }).catch((e) => e);
+      expect(err).toBeInstanceOf(QdrantOperationError);
+      expect(err.message).toContain("too many filter conditions");
+    });
   });
 
   describe("reconnect on connection error", () => {
