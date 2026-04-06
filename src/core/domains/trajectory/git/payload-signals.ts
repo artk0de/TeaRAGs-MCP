@@ -44,6 +44,12 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     stats: { labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" } },
   },
   {
+    key: "git.file.fileChurnCount",
+    type: "number",
+    description: "Total lines churned (added + deleted) — absolute change volume",
+    stats: { labels: { p25: "minimal", p50: "moderate", p75: "significant", p95: "massive" } },
+  },
+  {
     key: "git.file.relativeChurn",
     type: "number",
     description: "Churn relative to file size (linesAdded + linesDeleted) / currentLines",
