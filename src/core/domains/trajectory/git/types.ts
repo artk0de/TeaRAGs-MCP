@@ -42,6 +42,8 @@ export interface GitFileSignals extends FileSignalOverlay {
   linesAdded: number;
   /** Total lines deleted across all commits */
   linesDeleted: number;
+  /** Total lines churned (added + deleted) across all commits. Absolute measure of change volume. */
+  fileChurnCount: number;
   /** (linesAdded + linesDeleted) / currentLines */
   relativeChurn: number;
   /** Σ exp(-0.1 × daysAgo) — recency-weighted commit frequency */

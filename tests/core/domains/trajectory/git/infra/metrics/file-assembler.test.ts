@@ -32,6 +32,7 @@ describe("assembleFileSignals", () => {
     expect(result.commitCount).toBe(3);
     expect(result.linesAdded).toBe(200);
     expect(result.linesDeleted).toBe(50);
+    expect(result.fileChurnCount).toBe(250);
     expect(result.relativeChurn).toBeCloseTo(0.83, 1);
     // Laplace-smoothed: (1 + 0.5) / (3 + 1.0) = 1.5/4.0 = 0.375 → 38
     expect(result.bugFixRate).toBe(38);
@@ -44,6 +45,7 @@ describe("assembleFileSignals", () => {
     const result = assembleFileSignals(churnData, 100);
     expect(result.dominantAuthor).toBe("unknown");
     expect(result.commitCount).toBe(0);
+    expect(result.fileChurnCount).toBe(0);
     expect(result.bugFixRate).toBe(0);
     expect(result.relativeChurn).toBe(0);
     expect(result.recencyWeightedFreq).toBe(0);
