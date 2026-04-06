@@ -303,8 +303,19 @@ export class QdrantManager {
   }
 
   async countPoints(collectionName: string, filter?: Record<string, unknown>): Promise<number> {
-    const result = await this.call(async () => this.client.count(collectionName, { filter, exact: true }));
-    return result.count;
+    try {
+      const result = await this.call(async () => this.client.count(collectionName, { filter, exact: true }));
+      return result.count;
+    } catch (error: unknown) {
+      if (error instanceof QdrantUnavailableError) throw error;
+      const errorData = error as { data?: { status?: { error?: string } }; message?: string };
+      const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
+      throw new QdrantOperationError(
+        "countPoints",
+        `collection "${collectionName}": ${errorMessage}`,
+        error instanceof Error ? error : undefined,
+      );
+    }
   }
 
   async addPoints(
