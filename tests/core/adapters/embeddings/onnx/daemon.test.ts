@@ -25,8 +25,14 @@ class MockWorker extends EventEmitter {
   postMessage(msg: WorkerRequest): void {
     switch (msg.type) {
       case "init":
-        // Simulate async ready + calibration
-        setImmediate(() => this.emit("message", { type: "ready" } satisfies WorkerResponse));
+        // Simulate async ready (with model info) + calibration
+        setImmediate(() =>
+          this.emit("message", {
+            type: "ready",
+            dimensions: 768,
+            contextLength: 8192,
+          } satisfies WorkerResponse),
+        );
         setImmediate(() => this.emit("message", { type: "calibrated", batchSize: 8 } satisfies WorkerResponse));
         break;
       case "embed":
@@ -854,6 +860,107 @@ describe("OnnxDaemon", () => {
       if (resp.type === "result") {
         expect(resp.id).toBe(3);
         expect(resp.embeddings).toHaveLength(16);
+      }
+
+      await client.close();
+    });
+  });
+
+  describe("model info propagation", () => {
+    it("should include dimensions and contextLength in connected response", async () => {
+      daemon = new OnnxDaemon({
+        socketPath,
+        pidFile,
+        idleTimeoutMs: 30_000,
+        heartbeatTimeoutMs: 45_000,
+        workerFactory: createMockWorkerFactory(),
+      });
+
+      await daemon.start();
+
+      const client = createPersistentClient(socketPath);
+      client.send({ type: "connect", model: "test-model", device: "cpu" });
+      const resp = await client.waitForResponse();
+
+      expect(resp).toMatchObject({
+        type: "connected",
+        model: "test-model",
+        dimensions: 768,
+        contextLength: 8192,
+      });
+
+      await client.close();
+    });
+
+    it("should propagate model info to second client without re-spawning worker", async () => {
+      daemon = new OnnxDaemon({
+        socketPath,
+        pidFile,
+        idleTimeoutMs: 30_000,
+        heartbeatTimeoutMs: 45_000,
+        workerFactory: createMockWorkerFactory(),
+      });
+
+      await daemon.start();
+
+      const client1 = createPersistentClient(socketPath);
+      client1.send({ type: "connect", model: "test-model", device: "cpu" });
+      await client1.waitForResponse();
+
+      const client2 = createPersistentClient(socketPath);
+      client2.send({ type: "connect", model: "test-model", device: "cpu" });
+      const resp2 = await client2.waitForResponse();
+
+      expect(resp2).toMatchObject({
+        type: "connected",
+        dimensions: 768,
+        contextLength: 8192,
+      });
+
+      await client1.close();
+      await client2.close();
+    });
+
+    it("should omit dimensions/contextLength when worker does not report them", async () => {
+      class NoInfoWorker extends EventEmitter {
+        postMessage(msg: WorkerRequest): void {
+          if (msg.type === "init") {
+            setImmediate(() => this.emit("message", { type: "ready" } satisfies WorkerResponse));
+          } else if (msg.type === "embed") {
+            setImmediate(() =>
+              this.emit("message", {
+                type: "result",
+                id: msg.id,
+                embeddings: msg.texts.map(() => [1, 2, 3]),
+                durationMs: 50,
+              } satisfies WorkerResponse),
+            );
+          }
+        }
+        async terminate(): Promise<number> {
+          this.emit("exit", 0);
+          return Promise.resolve(0);
+        }
+      }
+
+      daemon = new OnnxDaemon({
+        socketPath,
+        pidFile,
+        idleTimeoutMs: 30_000,
+        heartbeatTimeoutMs: 45_000,
+        workerFactory: () => new NoInfoWorker(),
+      });
+
+      await daemon.start();
+
+      const client = createPersistentClient(socketPath);
+      client.send({ type: "connect", model: "test-model", device: "cpu" });
+      const resp = await client.waitForResponse();
+
+      expect(resp.type).toBe("connected");
+      if (resp.type === "connected") {
+        expect(resp.dimensions).toBeUndefined();
+        expect(resp.contextLength).toBeUndefined();
       }
 
       await client.close();

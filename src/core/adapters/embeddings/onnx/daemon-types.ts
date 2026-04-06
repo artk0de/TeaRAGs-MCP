@@ -9,7 +9,14 @@ export type DaemonRequest =
 
 /** Daemon → Client */
 export type DaemonResponse =
-  | { type: "connected"; model: string; clients: number; recommendedBatchSize?: number }
+  | {
+      type: "connected";
+      model: string;
+      clients: number;
+      recommendedBatchSize?: number;
+      dimensions?: number;
+      contextLength?: number;
+    }
   | { type: "result"; id: number; embeddings: number[][] }
   | { type: "error"; message: string }
   | { type: "pong" }

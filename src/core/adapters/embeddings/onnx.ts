@@ -31,6 +31,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   private nextId = 0;
 
   public recommendedBatchSize?: number;
+  private cachedModelInfo?: { model: string; contextLength: number; dimensions: number };
 
   // Pending embed requests: id → { resolve, reject }
   private readonly pending = new Map<
@@ -211,6 +212,13 @@ export class OnnxEmbeddings implements EmbeddingProvider {
           if (msg.recommendedBatchSize !== undefined) {
             this.recommendedBatchSize = msg.recommendedBatchSize;
           }
+          if (msg.dimensions !== undefined && msg.contextLength !== undefined) {
+            this.cachedModelInfo = {
+              model: this.model,
+              dimensions: msg.dimensions,
+              contextLength: msg.contextLength,
+            };
+          }
           this.startHeartbeat();
           resolve();
           return;
@@ -384,6 +392,16 @@ export class OnnxEmbeddings implements EmbeddingProvider {
 
   getProviderName(): string {
     return "onnx";
+  }
+
+  async resolveModelInfo(): Promise<{ model: string; contextLength: number; dimensions: number } | undefined> {
+    if (this.cachedModelInfo) return this.cachedModelInfo;
+    try {
+      await this.ensureInitialized();
+      return this.cachedModelInfo;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Eagerly initialize connection to daemon (for batch size calibration) */
