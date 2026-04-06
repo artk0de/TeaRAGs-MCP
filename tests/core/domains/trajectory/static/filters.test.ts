@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { staticFilters } from "../../../../../src/core/domains/trajectory/static/filters.js";
 
 describe("staticFilters", () => {
-  it("has 6 filters", () => {
-    expect(staticFilters).toHaveLength(6);
+  it("has 7 filters", () => {
+    expect(staticFilters).toHaveLength(7);
   });
 
   it("language filter produces must condition", () => {
@@ -52,6 +52,27 @@ describe("staticFilters", () => {
 
   it("documentation='include' produces no conditions", () => {
     const f = staticFilters.find((f) => f.param === "documentation")!;
+    const result = f.toCondition("include");
+    expect(result.must).toBeUndefined();
+    expect(result.must_not).toBeUndefined();
+  });
+
+  it("testFile='only' produces must condition on isTest", () => {
+    const f = staticFilters.find((f) => f.param === "testFile")!;
+    expect(f).toBeDefined();
+    const result = f.toCondition("only");
+    expect(result.must).toEqual([{ key: "isTest", match: { value: true } }]);
+  });
+
+  it("testFile='exclude' produces must_not condition on isTest", () => {
+    const f = staticFilters.find((f) => f.param === "testFile")!;
+    const result = f.toCondition("exclude");
+    expect(result.must_not).toEqual([{ key: "isTest", match: { value: true } }]);
+    expect(result.must).toBeUndefined();
+  });
+
+  it("testFile='include' produces no conditions", () => {
+    const f = staticFilters.find((f) => f.param === "testFile")!;
     const result = f.toCondition("include");
     expect(result.must).toBeUndefined();
     expect(result.must_not).toBeUndefined();

@@ -1,6 +1,7 @@
 import { extname, relative } from "node:path";
 
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
+import { detectTestFile } from "./test-detection.js";
 
 export class StaticPayloadBuilder implements PayloadBuilder {
   buildPayload(
@@ -27,6 +28,9 @@ export class StaticPayloadBuilder implements PayloadBuilder {
     if (m.parentType) payload.parentType = m.parentType;
     if (m.symbolId) payload.symbolId = m.symbolId;
     if (m.isDocumentation) payload.isDocumentation = m.isDocumentation;
+    const relativePath = payload.relativePath as string;
+    const language = m.language as string;
+    if (detectTestFile(relativePath, language)) payload.isTest = true;
     const imports = m.imports as string[] | undefined;
     if (imports?.length) payload.imports = imports;
     const headingPath = m.headingPath as { depth: number; text: string }[] | undefined;

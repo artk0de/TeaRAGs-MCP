@@ -41,6 +41,16 @@ export const staticFilters: FilterDescriptor[] = [
     },
   },
   {
+    param: "testFile",
+    description: "Test file filter: 'only' | 'exclude' | 'include'",
+    type: "string",
+    toCondition: (value: unknown) => {
+      if (value === "only") return { must: [{ key: "isTest", match: { value: true } }] };
+      if (value === "exclude") return { must_not: [{ key: "isTest", match: { value: true } }] };
+      return {};
+    },
+  },
+  {
     param: "pathPattern",
     description: "Glob pattern for filtering by file path — converts to Qdrant text filter",
     type: "string",

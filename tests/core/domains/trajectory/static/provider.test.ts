@@ -52,6 +52,26 @@ describe("StaticPayloadBuilder", () => {
     expect(payload.methodDensity).toBeUndefined();
   });
 
+  it("writes parentSymbolId, parentType, and imports to payload", () => {
+    const richChunk = {
+      content: "class method body",
+      startLine: 5,
+      endLine: 15,
+      metadata: {
+        filePath: "/project/src/service.ts",
+        language: "typescript",
+        chunkIndex: 1,
+        parentSymbolId: "MyService",
+        parentType: "class",
+        imports: ["./utils.js", "./types.js"],
+      } as Record<string, unknown>,
+    };
+    const payload = builder.buildPayload(richChunk, "/project");
+    expect(payload.parentSymbolId).toBe("MyService");
+    expect(payload.parentType).toBe("class");
+    expect(payload.imports).toEqual(["./utils.js", "./types.js"]);
+  });
+
   it("writes navigation to payload", () => {
     const navChunk = {
       content: "test",
@@ -114,5 +134,25 @@ describe("StaticPayloadBuilder", () => {
     const payload = builder.buildPayload(noNavChunk, "/project");
 
     expect(payload.navigation).toBeUndefined();
+  });
+
+  it("sets isTest for test files", () => {
+    const testChunk = {
+      content: "test code",
+      startLine: 1,
+      endLine: 5,
+      metadata: {
+        filePath: "/project/tests/utils.test.ts",
+        language: "typescript",
+        chunkIndex: 0,
+      } as Record<string, unknown>,
+    };
+    const payload = builder.buildPayload(testChunk, "/project");
+    expect(payload.isTest).toBe(true);
+  });
+
+  it("omits isTest for non-test files", () => {
+    const payload = builder.buildPayload(chunk, "/project");
+    expect(payload.isTest).toBeUndefined();
   });
 });
