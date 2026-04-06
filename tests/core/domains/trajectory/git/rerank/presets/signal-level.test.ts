@@ -4,6 +4,7 @@ import { CodeReviewPreset } from "../../../../../../../src/core/domains/trajecto
 import { HotspotsPreset } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/hotspots.js";
 import { OnboardingPreset } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/onboarding.js";
 import { OwnershipPreset } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/ownership.js";
+import { ProvenPreset } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/proven.js";
 import { RecentPreset } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/recent.js";
 import { RefactoringPreset } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/refactoring.js";
 import { SecurityAuditPreset } from "../../../../../../../src/core/domains/trajectory/git/rerank/presets/security-audit.js";
@@ -15,6 +16,7 @@ describe("preset signalLevel", () => {
     ["securityAudit", new SecurityAuditPreset()],
     ["ownership", new OwnershipPreset()],
     ["onboarding", new OnboardingPreset()],
+    ["proven", new ProvenPreset()],
   ])("%s should have signalLevel file", (_name, preset) => {
     expect(preset.signalLevel).toBe("file");
   });

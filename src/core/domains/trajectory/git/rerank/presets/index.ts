@@ -11,6 +11,7 @@ import { DangerousPreset } from "./dangerous.js";
 import { HotspotsPreset } from "./hotspots.js";
 import { OnboardingPreset } from "./onboarding.js";
 import { OwnershipPreset } from "./ownership.js";
+import { ProvenPreset } from "./proven.js";
 import { RecentPreset } from "./recent.js";
 import { RefactoringPreset } from "./refactoring.js";
 import { SecurityAuditPreset } from "./security-audit.js";
@@ -23,6 +24,7 @@ export { DangerousPreset } from "./dangerous.js";
 export { HotspotsPreset } from "./hotspots.js";
 export { OnboardingPreset } from "./onboarding.js";
 export { OwnershipPreset } from "./ownership.js";
+export { ProvenPreset } from "./proven.js";
 export { RecentPreset } from "./recent.js";
 export { RefactoringPreset } from "./refactoring.js";
 export { SecurityAuditPreset } from "./security-audit.js";
@@ -41,4 +43,5 @@ export const GIT_PRESETS: RerankPreset[] = [
   new OwnershipPreset(),
   new RecentPreset(),
   new StablePreset(),
+  new ProvenPreset(),
 ];
