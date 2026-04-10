@@ -45,6 +45,7 @@
   },
   "files": [
     "build/",
+    "benchmarks/",
     "scripts/postinstall.js",
     "prompts.json"
   ],
