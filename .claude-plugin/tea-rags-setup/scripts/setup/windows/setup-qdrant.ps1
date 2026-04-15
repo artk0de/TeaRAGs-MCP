@@ -49,7 +49,7 @@ switch ($Mode) {
         }
 
         # Trigger postinstall download
-        try { & npx tea-rags --version 2>$null | Out-Null } catch { }
+        try { & tea-rags --version 2>$null | Out-Null } catch { }
 
         if (Test-Path $BinaryPath) {
             Emit-Result 'installed' 'embedded' 'embedded'

@@ -51,8 +51,9 @@ large projects).
 - If Ollama chosen → run `$SCRIPTS/install-ollama.sh <platform> '<gpu_json>'`
   (use `"linux"` for WSL platform)
   - If `manual_required` with method `app` → install instructions by platform:
-    - **macOS**: suggest `! brew install --cask ollama` (if hasBrew=true),
-      otherwise "Download from https://ollama.com/download"
+    - **macOS**: should not reach here (script auto-installs via curl, same as
+      Linux). If it does fail, suggest `! brew install --cask ollama` (if
+      hasBrew=true), otherwise "Download from https://ollama.com/download"
     - **Windows**: if hasWinget → suggest `! winget install Ollama.Ollama`,
       otherwise "Download from https://ollama.com/download"
     - **Linux**: should not reach here (script auto-installs via curl) After

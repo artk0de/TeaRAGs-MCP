@@ -48,7 +48,7 @@ Agent tool:
 
     Server name: tea-rags
     Scope: <user|project>
-    Command: npx tea-rags server
+    Command: tea-rags server
     Environment variables (include all non-null values from progress):
       EMBEDDING_PROVIDER=<value>
       QDRANT_URL=<value or omit if embedded>
