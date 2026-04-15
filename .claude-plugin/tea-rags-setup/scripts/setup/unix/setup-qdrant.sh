@@ -39,14 +39,14 @@ case "$MODE" in
       output_json "already_done" "embedded" "embedded"
       exit 0
     fi
-    # Ensure npx is available (may not be in PATH after fresh Node install)
-    if ! command -v npx &>/dev/null; then
-      echo "npx not found in PATH. Restart your terminal or source your shell profile, then retry." >&2
+    # Ensure tea-rags is available (globally installed in step 3)
+    if ! command -v tea-rags &>/dev/null; then
+      echo "tea-rags not found in PATH. Ensure it was installed globally (npm install -g tea-rags), then retry." >&2
       output_json "error" "embedded" "embedded"
       exit 1
     fi
     # Trigger postinstall download
-    npx tea-rags --version >/dev/null 2>&1 || true
+    tea-rags --version >/dev/null 2>&1 || true
     if [ -f "$BINARY_PATH" ]; then
       output_json "installed" "embedded" "embedded"
       exit 0

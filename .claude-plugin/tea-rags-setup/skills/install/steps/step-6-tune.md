@@ -11,7 +11,7 @@
 
 Invoke the `/tea-rags-setup:tune` skill. It will:
 
-1. Run `npx tea-rags tune` with the provider from step 4
+1. Run `tea-rags tune` with the provider from step 4
 2. Parse results and save to progress file
 3. Show summary to the user
 

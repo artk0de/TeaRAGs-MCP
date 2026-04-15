@@ -1,0 +1,174 @@
+{
+  "skill_name": "install",
+  "plugin": "tea-rags-setup",
+  "date": "2026-04-12",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Install tea-rags. Node v20 already on machine, fnm available.",
+      "assertions": [
+        {
+          "text": "Mentions Node.js 24+ (not 22+) in user-facing message",
+          "audit_finding": 2
+        },
+        {
+          "text": "MCP command is 'tea-rags server' not 'npx tea-rags server'",
+          "audit_finding": 1
+        },
+        { "text": "Blocks progression until Node >= 24", "audit_finding": 4 }
+      ],
+      "before": {
+        "passed": false,
+        "failures": [
+          "Says '22+' instead of '24+'",
+          "Uses 'npx tea-rags server'"
+        ]
+      },
+      "after": { "passed": true }
+    },
+    {
+      "id": 2,
+      "prompt": "Install tea-rags, embedded qdrant mode. Fresh machine, no node.",
+      "assertions": [
+        { "text": "Mentions Node.js 24+ requirement", "audit_finding": 2 },
+        { "text": "MCP command is 'tea-rags server'", "audit_finding": 1 },
+        {
+          "text": "Embedded qdrant postinstall uses 'tea-rags --version' not 'npx'",
+          "audit_finding": 3
+        }
+      ],
+      "before": {
+        "passed": false,
+        "failures": [
+          "Says '22+'",
+          "Uses 'npx tea-rags server'",
+          "Uses 'npx tea-rags --version'"
+        ]
+      },
+      "after": { "passed": true }
+    },
+    {
+      "id": 3,
+      "prompt": "Setup tea-rags. Node v18 via system install, volta available.",
+      "assertions": [
+        { "text": "Mentions 24+ in upgrade message", "audit_finding": 2 },
+        {
+          "text": "Re-runs detect-environment.sh after install to refresh PATH",
+          "audit_finding": 4
+        },
+        { "text": "MCP command is 'tea-rags server'", "audit_finding": 1 }
+      ],
+      "before": { "passed": false, "failures": ["Says '22+'", "Uses npx"] },
+      "after": { "passed": true }
+    },
+    {
+      "id": 4,
+      "prompt": "Install tea-rags with embedded qdrant.",
+      "assertions": [
+        {
+          "text": "Embedded postinstall triggers 'tea-rags --version' (global)",
+          "audit_finding": 3
+        },
+        {
+          "text": "Error message mentions 'npm install -g tea-rags' if binary missing",
+          "audit_finding": 3
+        },
+        { "text": "MCP command is 'tea-rags server'", "audit_finding": 1 }
+      ],
+      "before": {
+        "passed": false,
+        "failures": [
+          "Uses 'npx tea-rags --version'",
+          "Error says npx not found"
+        ]
+      },
+      "after": { "passed": true }
+    },
+    {
+      "id": 5,
+      "prompt": "Resume install — progress shows step 2 failed last time. Node v22 found.",
+      "assertions": [
+        { "text": "Says '24+ required' not '22+'", "audit_finding": 2 },
+        {
+          "text": "Rejects v22 as insufficient (v22 < 24)",
+          "audit_finding": 2
+        },
+        { "text": "Blocks until Node >= 24 confirmed", "audit_finding": 4 }
+      ],
+      "before": {
+        "passed": false,
+        "failures": ["Says '22+ required' — v22 satisfies that, UX confusion"]
+      },
+      "after": { "passed": true }
+    },
+    {
+      "id": 6,
+      "prompt": "Install tea-rags on macOS Apple Silicon, Ollama, project has 50k LOC.",
+      "assertions": [
+        {
+          "text": "Full step sequence 0-9 in correct order",
+          "audit_finding": "control"
+        },
+        { "text": "MCP command is 'tea-rags server'", "audit_finding": 1 }
+      ],
+      "before": { "passed": false, "failures": ["Uses npx in MCP command"] },
+      "after": { "passed": true }
+    },
+    {
+      "id": 7,
+      "prompt": "Install tea-rags, user picks Docker qdrant mode.",
+      "assertions": [
+        {
+          "text": "MCP command is 'tea-rags server' with QDRANT_URL",
+          "audit_finding": 1
+        },
+        {
+          "text": "Docker mode does not trigger tea-rags --version postinstall",
+          "audit_finding": "control"
+        }
+      ],
+      "before": { "passed": false, "failures": ["Uses npx in MCP command"] },
+      "after": { "passed": true }
+    },
+    {
+      "id": 8,
+      "prompt": "[subagent: task-agent] Run /tea-rags-setup:install for path /home/user/myproject. Node v20 on machine.",
+      "assertions": [
+        {
+          "text": "Follows full step sequence even as subagent",
+          "audit_finding": "subagent"
+        },
+        { "text": "Catches v20 < 24, does not proceed", "audit_finding": 4 },
+        { "text": "Says '24+' in messaging", "audit_finding": 2 }
+      ],
+      "before": { "passed": false, "failures": ["Says '22+'"] },
+      "after": { "passed": true }
+    },
+    {
+      "id": 9,
+      "prompt": "[subagent: explore] User wants tea-rags installed with ONNX on Windows + nvidia.",
+      "assertions": [
+        {
+          "text": "Correct ONNX recommendation from reference table",
+          "audit_finding": "subagent"
+        },
+        { "text": "MCP command is 'tea-rags server'", "audit_finding": 1 }
+      ],
+      "before": { "passed": false, "failures": ["Uses npx"] },
+      "after": { "passed": true }
+    },
+    {
+      "id": 10,
+      "prompt": "Install tea-rags. Node 24 already installed via nvm. tea-rags already installed latest.",
+      "assertions": [
+        {
+          "text": "Skips to step 4 (already_done for both)",
+          "audit_finding": "control"
+        },
+        { "text": "MCP command is 'tea-rags server'", "audit_finding": 1 }
+      ],
+      "before": { "passed": false, "failures": ["Uses npx in MCP command"] },
+      "after": { "passed": true }
+    }
+  ]
+}

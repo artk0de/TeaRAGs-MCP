@@ -10,13 +10,12 @@ argument-hint: [--provider ollama|onnx] [--full]
 
 # TeaRAGs Performance Tuning
 
-Runs `npx tea-rags tune` to find optimal performance parameters for your
-hardware, then saves results to the setup progress file for use in MCP
-configuration.
+Runs `tea-rags tune` to find optimal performance parameters for your hardware,
+then saves results to the setup progress file for use in MCP configuration.
 
 ## Prerequisites
 
-- `tea-rags` must be installed (`npx tea-rags --version` works)
+- `tea-rags` must be installed (`tea-rags --version` works)
 - Qdrant must be running (embedded, Docker, or native)
 - Embedding provider must be available (Ollama running or ONNX built-in)
 
@@ -40,7 +39,7 @@ or detect from current MCP config. Default: `ollama`.
 Execute in background (this takes 2-3 minutes in quick mode, 10-15 in full):
 
 ```bash
-npx tea-rags tune \
+tea-rags tune \
   --provider <provider> \
   --qdrant-url <url> \
   --embedding-url <url> \

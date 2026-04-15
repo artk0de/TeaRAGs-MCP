@@ -81,15 +81,7 @@ fi
 # ollama not installed
 case "$platform" in
 
-  darwin)
-    jq -n '{
-      status: "manual_required",
-      method: "app"
-    }'
-    exit 2
-    ;;
-
-  linux)
+  darwin|linux)
     echo "Installing ollama via official install script..." >&2
     curl -fsSL https://ollama.com/install.sh | sh >&2
 
