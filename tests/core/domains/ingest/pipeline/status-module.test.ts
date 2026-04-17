@@ -55,7 +55,12 @@ describe("StatusModule", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
+    ingest = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings,
+      config,
+      trajectoryConfig: defaultTrajectoryConfig(),
+    });
   });
 
   afterEach(async () => {

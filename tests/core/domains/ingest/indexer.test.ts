@@ -66,7 +66,12 @@ describe("IngestFacade + ExploreFacade", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
+    ingest = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings,
+      config,
+      trajectoryConfig: defaultTrajectoryConfig(),
+    });
     const resolvedPresets = resolvePresets([...STATIC_PRESETS, ...GIT_PRESETS], []);
     const reranker = new Reranker([...gitDerivedSignals, ...staticDerivedSignals], resolvedPresets);
     const registry = new TrajectoryRegistry();

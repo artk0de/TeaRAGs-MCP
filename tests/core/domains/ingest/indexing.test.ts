@@ -56,7 +56,12 @@ describe("IndexPipeline", () => {
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
-    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
+    ingest = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings,
+      config,
+      trajectoryConfig: defaultTrajectoryConfig(),
+    });
   });
 
   afterEach(async () => {
@@ -154,7 +159,12 @@ describe("IndexPipeline", () => {
 
     it("should pass quantizationScalar to createCollection", async () => {
       config = { ...defaultTestConfig(), quantizationScalar: true };
-      ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
+      ingest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+      });
 
       await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
 
@@ -217,7 +227,12 @@ describe("IndexPipeline", () => {
 
     it("should enable hybrid search when configured", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIndexer = new IngestFacade(qdrant as any, embeddings, hybridConfig, defaultTrajectoryConfig());
+      const hybridIndexer = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config: hybridConfig,
+        trajectoryConfig: defaultTrajectoryConfig(),
+      });
 
       await createTestFile(
         codebaseDir,
@@ -279,7 +294,12 @@ describe("IndexPipeline", () => {
         ...config,
         maxChunksPerFile: 2,
       };
-      const limitedIndexer = new IngestFacade(qdrant as any, embeddings, limitedConfig, defaultTrajectoryConfig());
+      const limitedIndexer = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config: limitedConfig,
+        trajectoryConfig: defaultTrajectoryConfig(),
+      });
 
       const largeContent = Array(50)
         .fill(null)
@@ -299,7 +319,12 @@ describe("IndexPipeline", () => {
         ...config,
         maxTotalChunks: 3,
       };
-      const limitedIndexer = new IngestFacade(qdrant as any, embeddings, limitedConfig, defaultTrajectoryConfig());
+      const limitedIndexer = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config: limitedConfig,
+        trajectoryConfig: defaultTrajectoryConfig(),
+      });
 
       for (let i = 0; i < 10; i++) {
         await createTestFile(
@@ -320,7 +345,12 @@ describe("IndexPipeline", () => {
         ...config,
         maxTotalChunks: 1,
       };
-      const limitedIndexer = new IngestFacade(qdrant as any, embeddings, limitedConfig, defaultTrajectoryConfig());
+      const limitedIndexer = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config: limitedConfig,
+        trajectoryConfig: defaultTrajectoryConfig(),
+      });
 
       const content = `
 function first() {
@@ -561,7 +591,12 @@ function third() {
       const failingEmbeddings = new MockEmbeddingProvider();
       vi.spyOn(failingEmbeddings, "embedBatch").mockRejectedValue(ollamaError);
 
-      const failingIngest = new IngestFacade(qdrant as any, failingEmbeddings, config, defaultTrajectoryConfig());
+      const failingIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings: failingEmbeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+      });
 
       await expect(failingIngest.indexCodebase(codebaseDir, { forceReindex: true })).rejects.toThrow(
         OllamaUnavailableError,
@@ -575,7 +610,12 @@ function third() {
       const failingEmbeddings = new MockEmbeddingProvider();
       vi.spyOn(failingEmbeddings, "embed").mockRejectedValue(ollamaError);
 
-      const failingIngest = new IngestFacade(qdrant as any, failingEmbeddings, config, defaultTrajectoryConfig());
+      const failingIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings: failingEmbeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+      });
 
       await expect(failingIngest.indexCodebase(codebaseDir, { forceReindex: true })).rejects.toThrow(
         OllamaUnavailableError,
@@ -593,7 +633,12 @@ function third() {
       const failingEmbeddings = new MockEmbeddingProvider();
       vi.spyOn(failingEmbeddings, "embed").mockRejectedValue(ollamaError);
 
-      const failingIngest = new IngestFacade(qdrant as any, failingEmbeddings, config, defaultTrajectoryConfig());
+      const failingIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings: failingEmbeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+      });
 
       await expect(failingIngest.reindexChanges(codebaseDir)).rejects.toThrow(OllamaUnavailableError);
     });

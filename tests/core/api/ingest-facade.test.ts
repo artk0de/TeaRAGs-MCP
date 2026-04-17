@@ -73,23 +73,23 @@ describe("IngestFacade", () => {
     const reranker = opts.withReranker ? { invalidateStats: vi.fn() } : undefined;
     const payloadSignals = opts.withStats ? [{ key: "language", label: "Language" }] : undefined;
 
-    const facade = new IngestFacade(
-      {
+    const facade = new IngestFacade({
+      qdrant: {
         collectionExists: vi.fn().mockResolvedValue(false),
         checkHealth: vi.fn().mockResolvedValue(true),
         url: "http://localhost:6333",
       } as any,
-      {
+      embeddings: {
         embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
         checkHealth: vi.fn().mockResolvedValue(true),
         getProviderName: vi.fn().mockReturnValue("mock"),
       } as any,
-      {} as any,
-      { enableGitMetadata: false } as any,
-      statsCache as any,
-      payloadSignals as any,
-      reranker as any,
-    );
+      config: {} as any,
+      trajectoryConfig: { enableGitMetadata: false } as any,
+      statsCache: statsCache as any,
+      allPayloadSignals: payloadSignals as any,
+      reranker: reranker as any,
+    });
 
     return { facade, statsCache, reranker };
   }
@@ -237,12 +237,12 @@ describe("IngestFacade", () => {
 
   describe("resolveEffectiveChunkSize", () => {
     function makeFacadeWithConfig(config: { chunkSize: number; userSetChunkSize?: boolean }) {
-      const facade = new IngestFacade(
-        { collectionExists: vi.fn(), checkHealth: vi.fn(), url: "http://localhost:6333" } as any,
-        { embed: vi.fn(), checkHealth: vi.fn(), getProviderName: vi.fn() } as any,
-        config as any,
-        { enableGitMetadata: false } as any,
-      );
+      const facade = new IngestFacade({
+        qdrant: { collectionExists: vi.fn(), checkHealth: vi.fn(), url: "http://localhost:6333" } as any,
+        embeddings: { embed: vi.fn(), checkHealth: vi.fn(), getProviderName: vi.fn() } as any,
+        config: config as any,
+        trajectoryConfig: { enableGitMetadata: false } as any,
+      });
       return facade;
     }
 
@@ -303,23 +303,23 @@ describe("IngestFacade", () => {
       const setPayload = vi.fn().mockResolvedValue(undefined);
       const resolveModelInfoMock = opts.resolveModelInfo ?? vi.fn().mockResolvedValue(undefined);
 
-      const facade = new IngestFacade(
-        {
+      const facade = new IngestFacade({
+        qdrant: {
           collectionExists: vi.fn().mockResolvedValue(true),
           checkHealth: vi.fn().mockResolvedValue(true),
           getPoint,
           setPayload,
           url: "http://localhost:6333",
         } as any,
-        {
+        embeddings: {
           embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
           checkHealth: vi.fn().mockResolvedValue(true),
           getProviderName: vi.fn().mockReturnValue("mock"),
           resolveModelInfo: resolveModelInfoMock,
         } as any,
-        { chunkSize: 2500 } as any,
-        { enableGitMetadata: false } as any,
-      );
+        config: { chunkSize: 2500 } as any,
+        trajectoryConfig: { enableGitMetadata: false } as any,
+      });
 
       return { facade, getPoint, setPayload, resolveModelInfoMock };
     }
@@ -371,23 +371,23 @@ describe("IngestFacade", () => {
       const ollamaModelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
       const resolveModelInfoMock = vi.fn().mockResolvedValue(ollamaModelInfo);
 
-      const facade = new IngestFacade(
-        {
+      const facade = new IngestFacade({
+        qdrant: {
           collectionExists: vi.fn().mockResolvedValue(false),
           checkHealth: vi.fn().mockResolvedValue(true),
           getPoint: vi.fn(),
           setPayload: vi.fn(),
           url: "http://localhost:6333",
         } as any,
-        {
+        embeddings: {
           embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
           checkHealth: vi.fn().mockResolvedValue(true),
           getProviderName: vi.fn().mockReturnValue("mock"),
           resolveModelInfo: resolveModelInfoMock,
         } as any,
-        { chunkSize: 2500 } as any,
-        { enableGitMetadata: false } as any,
-      );
+        config: { chunkSize: 2500 } as any,
+        trajectoryConfig: { enableGitMetadata: false } as any,
+      });
 
       await facade.indexCodebase("/tmp/test-project");
 
