@@ -282,7 +282,7 @@ describe("IngestFacade + ExploreFacade Integration Tests", () => {
       ignorePatterns: ["node_modules/**", "dist/**", "*.test.*"],
       enableHybridSearch: false,
     };
-    ingest = new IngestFacade(qdrant as any, embeddings, config, {});
+    ingest = new IngestFacade({ qdrant: qdrant as any, embeddings, config, trajectoryConfig: {} });
     explore = new ExploreFacade({ qdrant: qdrant as any, embeddings, reranker, registry });
   });
 
@@ -904,7 +904,12 @@ describe('Engine', () => {
   describe("Hybrid search workflow", () => {
     it("should enable and use hybrid search", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig, {});
+      const hybridIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config: hybridConfig,
+        trajectoryConfig: {},
+      });
       const hybridSearch = new ExploreFacade({ qdrant: qdrant as any, embeddings, reranker, registry });
 
       await createTestFile(codebaseDir, "search.ts", "function performSearch(query: string) { return results; }");
@@ -1219,7 +1224,12 @@ function validate(): boolean {
   describe("Hybrid search with incremental updates", () => {
     it("should use hybrid search during reindexChanges", async () => {
       const hybridConfig = { ...config, enableHybridSearch: true };
-      const hybridIngest = new IngestFacade(qdrant as any, embeddings, hybridConfig, {});
+      const hybridIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config: hybridConfig,
+        trajectoryConfig: {},
+      });
 
       // Initial indexing with hybrid search
       await createTestFile(codebaseDir, "initial.ts", "export const initial = 1;\nconsole.log('Initial file');");

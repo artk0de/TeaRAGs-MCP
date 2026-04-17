@@ -84,7 +84,12 @@ describe("Enrichment status detection", () => {
 
   it("should report 'completed' when enrichment finishes before return", async () => {
     config.enableGitMetadata = true;
-    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
+    ingest = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings,
+      config,
+      trajectoryConfig: defaultTrajectoryConfig(),
+    });
 
     await createTestFile(
       codebaseDir,
@@ -114,7 +119,12 @@ describe("Enrichment status detection", () => {
     slowEnrichment.startChunkEnrichment = vi.fn();
 
     // Inject slow enrichment into the ingest facade
-    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
+    ingest = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings,
+      config,
+      trajectoryConfig: defaultTrajectoryConfig(),
+    });
     (ingest as any).enrichment = slowEnrichment;
     const deps = createIngestDependencies(qdrant as any, tempDir, {
       buildPayload: (chunk: any, cp: string) => ({ content: chunk.content, codebasePath: cp }),
@@ -171,7 +181,12 @@ describe("Enrichment status detection", () => {
     const deps = createIngestDependencies(qdrant as any, tempDir, {
       buildPayload: (chunk: any, cp: string) => ({ content: chunk.content, codebasePath: cp }),
     });
-    ingest = new IngestFacade(qdrant as any, embeddings, config, defaultTrajectoryConfig());
+    ingest = new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings,
+      config,
+      trajectoryConfig: defaultTrajectoryConfig(),
+    });
     (ingest as any).enrichment = deferredEnrichment;
     (ingest as any).indexing = new (await import("../../../../src/core/domains/ingest/indexing.js")).IndexPipeline(
       qdrant,

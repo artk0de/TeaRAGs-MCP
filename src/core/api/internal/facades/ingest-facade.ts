@@ -58,7 +58,29 @@ const CHARS_PER_TOKEN = 2;
 /** Safety factor: use 80% of model context to leave room for breadcrumbs/overlap */
 const CONTEXT_SAFETY_FACTOR = 0.8;
 
+export interface IngestFacadeDeps {
+  qdrant: QdrantManager;
+  embeddings: EmbeddingProvider;
+  config: IngestCodeConfig;
+  trajectoryConfig: TrajectoryIngestConfig;
+  statsCache?: StatsCache;
+  allPayloadSignals?: PayloadSignalDescriptor[];
+  reranker?: Reranker;
+  deleteConfig?: DeletionConfig;
+  pipelineTuning?: PipelineTuning;
+  syncTuning?: SynchronizerTuning;
+  snapshotDir?: string;
+  modelGuard?: EmbeddingModelGuard;
+}
+
 export class IngestFacade {
+  private readonly qdrant: QdrantManager;
+  private readonly embeddings: EmbeddingProvider;
+  private readonly config: IngestCodeConfig;
+  private readonly statsCache?: StatsCache;
+  private readonly allPayloadSignals?: PayloadSignalDescriptor[];
+  private readonly reranker?: Reranker;
+  private readonly modelGuard?: EmbeddingModelGuard;
   private readonly enrichment: EnrichmentCoordinator;
   private readonly indexing: IndexPipeline;
   private readonly status: StatusModule;
@@ -66,20 +88,28 @@ export class IngestFacade {
   private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   private readonly snapshotDir: string;
 
-  constructor(
-    private readonly qdrant: QdrantManager,
-    private readonly embeddings: EmbeddingProvider,
-    private readonly config: IngestCodeConfig,
-    trajectoryConfig: TrajectoryIngestConfig,
-    private readonly statsCache?: StatsCache,
-    private readonly allPayloadSignals?: PayloadSignalDescriptor[],
-    private readonly reranker?: Reranker,
-    deleteConfig?: DeletionConfig,
-    pipelineTuning?: PipelineTuning,
-    syncTuning?: SynchronizerTuning,
-    snapshotDir?: string,
-    private readonly modelGuard?: EmbeddingModelGuard,
-  ) {
+  constructor(deps: IngestFacadeDeps) {
+    const {
+      qdrant,
+      embeddings,
+      config,
+      trajectoryConfig,
+      statsCache,
+      allPayloadSignals,
+      reranker,
+      deleteConfig,
+      pipelineTuning,
+      syncTuning,
+      snapshotDir,
+      modelGuard,
+    } = deps;
+    this.qdrant = qdrant;
+    this.embeddings = embeddings;
+    this.config = config;
+    this.statsCache = statsCache;
+    this.allPayloadSignals = allPayloadSignals;
+    this.reranker = reranker;
+    this.modelGuard = modelGuard;
     /* v8 ignore next 2 -- fallback for backward compat */
     this.snapshotDir = snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
     const resolvedSnapshotDir = this.snapshotDir;
@@ -92,7 +122,7 @@ export class IngestFacade {
       : [];
     const enrichmentProviderKey = providers.length > 0 ? providers[0].key : undefined;
 
-    const deps = createIngestDependencies(
+    const ingestDeps = createIngestDependencies(
       qdrant,
       resolvedSnapshotDir,
       new StaticPayloadBuilder(),
@@ -112,14 +142,14 @@ export class IngestFacade {
       // Fire-and-forget: don't block enrichment completion with full collection scroll
       void this.refreshStatsByCollection(collectionName);
     };
-    this.indexing = new IndexPipeline(qdrant, embeddings, this.config, this.enrichment, deps, pipelineTuning);
+    this.indexing = new IndexPipeline(qdrant, embeddings, this.config, this.enrichment, ingestDeps, pipelineTuning);
     this.status = new StatusModule(qdrant, resolvedSnapshotDir);
     this.reindex = new ReindexPipeline(
       qdrant,
       embeddings,
       this.config,
       this.enrichment,
-      deps,
+      ingestDeps,
       deleteConfig,
       pipelineTuning,
     );

@@ -125,20 +125,20 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     concurrency: zodConfig.ingest.tune.pipelineConcurrency,
     ioConcurrency: zodConfig.ingest.tune.ioConcurrency,
   };
-  const ingest = new IngestFacade(
+  const ingest = new IngestFacade({
     qdrant,
     embeddings,
-    config.ingestCode,
-    config.trajectoryIngest,
+    config: config.ingestCode,
+    trajectoryConfig: config.trajectoryIngest,
     statsCache,
-    allPayloadSignalDescriptors,
+    allPayloadSignals: allPayloadSignalDescriptors,
     reranker,
     deleteConfig,
     pipelineTuning,
     syncTuning,
-    config.paths.snapshots,
+    snapshotDir: config.paths.snapshots,
     modelGuard,
-  );
+  });
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [
     ...allPayloadSignalDescriptors.map((d) => d.key),
     "navigation",

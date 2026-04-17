@@ -49,12 +49,12 @@ describe("Enrichment recovery E2E", () => {
     ({ tempDir, codebaseDir } = await createTempTestDir());
     qdrant = new MockQdrantManager() as any;
     embeddings = new MockEmbeddingProvider();
-    ingest = new IngestFacade(
-      qdrant as any,
+    ingest = new IngestFacade({
+      qdrant: qdrant as any,
       embeddings,
-      defaultTestConfig(),
-      defaultTrajectoryConfig(),
-    );
+      config: defaultTestConfig(),
+      trajectoryConfig: defaultTrajectoryConfig(),
+    });
   });
 
   afterEach(async () => {
