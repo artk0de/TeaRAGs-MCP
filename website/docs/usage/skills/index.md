@@ -95,12 +95,30 @@ You don't call them directly, but it's useful to know they exist:
 
 ## Installation
 
-Skills ship with the TeaRAGs Claude Code plugin. When the plugin is installed,
-all skills are registered automatically and your agent can invoke them via
-`/tea-rags:<skill-name>`.
+Skills ship with the `tea-rags` Claude Code plugin. This plugin is
+**Claude Code only** — it wraps MCP tools into slash-commands. Other MCP
+clients (Cursor, Roo Code, Continue, …) can still talk to the `tea-rags`
+MCP server directly, but won't have `/tea-rags:<skill>` commands.
 
-See [Quickstart → Connect to an Agent](/quickstart/connect-to-agent) for plugin
-installation.
+:::warning Install the MCP server first
+The skills plugin is the **final** step. Before installing it, make sure
+the TeaRAGs MCP server is running (via `/tea-rags-setup:install` or a
+manual install). See
+[Quickstart → Installation](/quickstart/installation).
+:::
+
+Inside Claude Code, after the MCP server is set up:
+
+```
+/plugin marketplace add artk0de/TeaRAGs-MCP
+/plugin install tea-rags@tea-rags
+```
+
+(If you installed via `/tea-rags-setup:install`, the marketplace is already
+added — just run the `/plugin install` line.)
+
+Restart Claude Code. Every skill is then registered automatically and your
+agent can invoke them via `/tea-rags:<skill-name>`.
 
 ## See Also
 

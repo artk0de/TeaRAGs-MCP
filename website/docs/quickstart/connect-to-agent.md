@@ -3,11 +3,39 @@ title: Connect to an Agent
 sidebar_position: 2
 ---
 
-## Claude Code (Recommended)
+## Claude Code via the Setup Plugin (Recommended)
+
+The fastest path — the `tea-rags-setup` plugin registers the MCP server for
+you:
+
+```
+/plugin marketplace add artk0de/TeaRAGs-MCP
+/plugin install tea-rags-setup@tea-rags
+/tea-rags-setup:install
+```
+
+The wizard detects your environment, installs `tea-rags`, configures Qdrant
+and embeddings, and writes the MCP entry to your Claude Code config. No manual
+`claude mcp add` needed.
+
+After the wizard finishes, install the Claude-only skills plugin:
+
+```
+/plugin install tea-rags@tea-rags
+```
+
+This is the final step — it gives your agent `/tea-rags:explore`,
+`/tea-rags:bug-hunt`, and the other skills. See
+[Installation](/quickstart/installation) for the full step list.
+
+## Claude Code — Manual MCP Registration
+
+Use this only if you installed `tea-rags` manually or want to override the
+plugin's config.
 
 ```bash
 # Local setup — Qdrant starts automatically (embedded), Ollama on localhost
-claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js
+claude mcp add tea-rags -s user -- tea-rags
 ```
 
 :::tip
@@ -18,7 +46,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js
 
 ```bash
 # External Qdrant + Ollama on separate host
-claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
+claude mcp add tea-rags -s user -- tea-rags \
   -e QDRANT_URL=http://192.168.1.100:6333 \
   -e EMBEDDING_BASE_URL=http://192.168.1.100:11434
 ```
@@ -26,7 +54,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
 ### Qdrant Cloud
 
 ```bash
-claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
+claude mcp add tea-rags -s user -- tea-rags \
   -e QDRANT_URL=https://your-cluster.qdrant.io:6333 \
   -e QDRANT_API_KEY=your-api-key-here
 ```
@@ -44,7 +72,7 @@ When deploying HTTP transport in production:
 **Start the server:**
 
 ```bash
-TRANSPORT_MODE=http HTTP_PORT=3000 node build/index.js
+SERVER_TRANSPORT=http SERVER_HTTP_PORT=3000 tea-rags
 ```
 
 **Configure client:**
