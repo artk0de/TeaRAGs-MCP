@@ -78,6 +78,12 @@ and how to use the signals. No prompt engineering required:
 Install the plugin, your agent learns the workflow.
 [See all skills →](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/)
 
+**Bonus: `dinopowers`** — a companion plugin with 10 wrappers over
+[`superpowers:*`](https://github.com/anthropics/skills) skills that inject
+tea-rags signals into brainstorming, planning, debugging, TDD, review, and
+completion flows. Mean eval delta +71pp across 136 cases.
+[Learn more →](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/#dinopowers--wrappers-over-superpowers)
+
 ## Use Cases
 
 ### 🛡️ Safe code generation
@@ -176,6 +182,12 @@ Then install the skills plugin (Claude-only, final step):
 
 ```
 /plugin install tea-rags@tea-rags
+```
+
+Optionally install `dinopowers` for wrappers over `superpowers:*` skills:
+
+```
+/plugin install dinopowers@tea-rags
 ```
 
 Index your codebase:
