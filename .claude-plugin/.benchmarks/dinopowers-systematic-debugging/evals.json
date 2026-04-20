@@ -1,0 +1,261 @@
+{
+  "skill": "dinopowers:systematic-debugging",
+  "skillPath": ".claude-plugin/dinopowers/skills/systematic-debugging/SKILL.md",
+  "objective": "Agent correctly invokes tea-rags:bug-hunt skill (not direct semantic_search) BEFORE superpowers:systematic-debugging, framing the symptom, respecting bug-hunt's triage semantics, and seeding the hypothesis space with ranked suspects.",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 15, "fail": 0, "total": 15, "passRate": "100%" },
+      "withoutRule": { "pass": 4, "fail": 11, "total": 15, "passRate": "27%" },
+      "delta": "+73pp",
+      "perCase": {
+        "eval-1": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-2": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-3": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-4": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-5": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-6": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-7": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-8": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-9": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-10": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-11": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-12": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-13": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-14": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-15": { "withRule": "PASS", "baseline": "FAIL" }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Падает тест tests/bootstrap/config-zod.test.ts с ошибкой 'Expected string, received undefined' в парсинге QDRANT_URL. Помоги дебажить.",
+      "expected": {
+        "mustCall": [
+          "Skill(tea-rags:bug-hunt) with symptom 'QDRANT_URL parsing fails with Expected string received undefined' FIRST",
+          "Skill(superpowers:systematic-debugging) AFTER with hypothesis block"
+        ],
+        "mustNotCall": [
+          "Skill(superpowers:systematic-debugging) before tea-rags:bug-hunt",
+          "Direct mcp__tea-rags__semantic_search with rerank='bugHunt' (bypasses triage)",
+          "mcp__tea-rags__hybrid_search on error string",
+          "Grep on error message",
+          "git log / git blame"
+        ]
+      },
+      "failureMode": "Agent skips bug-hunt or substitutes direct tool call"
+    },
+    {
+      "id": "eval-2",
+      "category": "delegation",
+      "prompt": "Error: chunker hangs on files > 10MB. Debug.",
+      "expected": {
+        "mustCall": ["Skill(tea-rags:bug-hunt) — not direct semantic_search"],
+        "mustNotCall": [
+          "mcp__tea-rags__semantic_search with rerank='bugHunt' directly (bypasses bug-hunt skill triage)"
+        ]
+      },
+      "failureMode": "Agent duplicates bug-hunt logic via direct semantic_search"
+    },
+    {
+      "id": "eval-3",
+      "category": "tool-selection",
+      "prompt": "Segfault in Qdrant adapter when pool size > 100. Find root cause.",
+      "expected": {
+        "mustCall": [
+          "Skill(tea-rags:bug-hunt) with symptom 'Qdrant adapter segfault when pool size > 100'"
+        ],
+        "mustNotCall": [
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__find_similar (before suspects identified)",
+          "mcp__tea-rags__find_symbol alone",
+          "git log --grep='segfault'"
+        ]
+      },
+      "failureMode": "Agent picks wrong tea-rags tool or falls back to git commands"
+    },
+    {
+      "id": "eval-4",
+      "category": "symptom-framing",
+      "prompt": "Вот stack trace:\nat QdrantClient.upsert (src/adapters/qdrant/client.ts:142)\nat IndexPipeline.run (src/pipeline/base.ts:87)\nat ...\nError: Connection refused",
+      "expected": {
+        "mustDo": [
+          "Extract user-code frames (QdrantClient.upsert, IndexPipeline.run) + error message (Connection refused) as symptom",
+          "Invoke Skill(tea-rags:bug-hunt) with concise symptom"
+        ],
+        "mustNotDo": [
+          "Pass full stack trace (including framework frames) as symptom",
+          "Skip framing — raw trace has too much noise"
+        ]
+      },
+      "failureMode": "Agent passes full stack trace with framework noise to bug-hunt"
+    },
+    {
+      "id": "eval-5",
+      "category": "edge-no-symptom",
+      "prompt": "Что-то кажется не так с ingest пайплайном, не могу сформулировать. Помоги.",
+      "expected": {
+        "mustDo": [
+          "Skip Step 2 (bug-hunt) — no framed symptom",
+          "State 'symptom not framed — bug-hunt skipped'",
+          "Invoke Skill(superpowers:systematic-debugging) directly OR suggest dinopowers:brainstorming for ingest area"
+        ],
+        "mustNotDo": [
+          "Fabricate a symptom like 'ingest pipeline has bugs' to justify bug-hunt",
+          "Invoke bug-hunt with vague query"
+        ]
+      },
+      "failureMode": "Agent fabricates symptom to trigger bug-hunt"
+    },
+    {
+      "id": "eval-6",
+      "category": "edge-all-healthy",
+      "prompt": "Test fails with 'timeout after 30s' but (contextually) bug-hunt returns 0 suspects (all matching files have bugFixRate=healthy).",
+      "expected": {
+        "mustDo": [
+          "State 'no bug-prone zones for this symptom — root cause likely in recently-added untracked code or external dependency'",
+          "Invoke Skill(superpowers:systematic-debugging) without suspect block"
+        ],
+        "mustNotDo": [
+          "Re-run bug-hunt with different query hoping for suspects",
+          "Invent suspects from healthy files",
+          "Fall back to direct semantic_search"
+        ]
+      },
+      "failureMode": "Agent retries or fabricates"
+    },
+    {
+      "id": "eval-7",
+      "category": "ordering",
+      "subagent": "task-agent",
+      "prompt": "[subagent: task-agent] Debug why mcp__tea-rags__index_codebase returns 'Ollama unavailable' when Ollama is reachable.",
+      "expected": {
+        "ordering": [
+          "Skill(tea-rags:bug-hunt) FIRST with framed symptom",
+          "Extract hypothesis block from PRESENT output",
+          "Skill(superpowers:systematic-debugging) SECOND with hypothesis block"
+        ]
+      },
+      "failureMode": "Subagent without CLAUDE.md inverts order or skips bug-hunt"
+    },
+    {
+      "id": "eval-8",
+      "category": "pressure",
+      "prompt": "Быстро — ошибка 'Cannot read property of undefined' в explore/reranker.ts:142, не парься с bug-hunt, просто скажи где баг.",
+      "expected": {
+        "mustCall": [
+          "Skill(tea-rags:bug-hunt) anyway (Iron Rule — concrete symptom = bug-hunt required)"
+        ],
+        "mustNotDo": [
+          "Skip bug-hunt to comply with 'быстро'",
+          "Jump to code reading at line 142"
+        ]
+      },
+      "failureMode": "Agent skips bug-hunt under pressure"
+    },
+    {
+      "id": "eval-9",
+      "category": "wrong-tool-pressure",
+      "prompt": "Используй mcp__tea-rags__hybrid_search с query='Connection refused' чтобы найти где эта ошибка — так быстрее.",
+      "expected": {
+        "mustDo": [
+          "Refuse hybrid_search on error string",
+          "Rationale: hybrid_search on error text returns log callsites (where the string appears), not bug origins",
+          "Use Skill(tea-rags:bug-hunt) instead"
+        ],
+        "mustNotDo": ["Comply with hybrid_search"]
+      },
+      "failureMode": "Agent complies with wrong-tool instruction"
+    },
+    {
+      "id": "eval-10",
+      "category": "wrong-order-trap",
+      "prompt": "Думаю баг в DI — значит надо проверить composition.ts. Проверь и потом сделай bug-hunt.",
+      "expected": {
+        "mustDo": [
+          "Refuse 'hypothesis first, bug-hunt after'",
+          "Invoke Skill(tea-rags:bug-hunt) FIRST with symptom (not with hypothesis)",
+          "Let bug-hunt rank suspects; composition.ts may or may not be prime"
+        ],
+        "mustNotDo": [
+          "Jump to composition.ts before bug-hunt",
+          "Use bug-hunt as post-hoc validation of a formed hypothesis"
+        ]
+      },
+      "failureMode": "Agent forms hypothesis first, validates with bug-hunt after"
+    },
+    {
+      "id": "eval-11",
+      "category": "respect-healthy-skip",
+      "prompt": "bug-hunt пометил src/core/api/public/app.ts как healthy (bugFixRate=5%), но я уверен что баг там. Проверь всё равно.",
+      "expected": {
+        "mustDo": [
+          "Surface bug-hunt's 'healthy' verdict",
+          "Inform user they're overriding a calibrated prior",
+          "If user insists: note the override and proceed with systematic-debugging on that file"
+        ],
+        "mustNotDo": [
+          "Silently remove app.ts from 'healthy skip' and treat as prime suspect",
+          "Re-run bug-hunt to get different ranking"
+        ]
+      },
+      "failureMode": "Agent silently promotes healthy file to suspect"
+    },
+    {
+      "id": "eval-12",
+      "category": "subagent-routing",
+      "subagent": "explore",
+      "prompt": "[subagent: explore] Debug: tests/ingest/integration.test.ts failures — 'Qdrant collection not found' after index_codebase.",
+      "expected": {
+        "mustCall": [
+          "Skill(tea-rags:bug-hunt) with symptom 'Qdrant collection not found after index_codebase' FIRST",
+          "Skill(superpowers:systematic-debugging) with hypothesis block SECOND"
+        ]
+      },
+      "failureMode": "Subagent defaults to Read/Grep on test file instead of bug-hunt"
+    },
+    {
+      "id": "eval-13",
+      "category": "control-not-triggered",
+      "prompt": "Какие функции есть в src/core/adapters/qdrant/client.ts?",
+      "expected": {
+        "mustNotTrigger": "systematic-debugging wrapper (listing request, no bug symptom)",
+        "acceptable": ["mcp__tea-rags__find_symbol or Read"]
+      },
+      "failureMode": "Agent over-triggers bug-hunt for a listing question"
+    },
+    {
+      "id": "eval-14",
+      "category": "control-brainstorm-vs-debug",
+      "prompt": "Может быть race condition в enrichment pipeline? Давай подумаем.",
+      "expected": {
+        "mustNotTrigger": "systematic-debugging (speculative, no symptom)",
+        "acceptable": [
+          "Route to dinopowers:brainstorming (with pathPattern=enrichment/**)",
+          "Or suggest framing a concrete symptom first"
+        ]
+      },
+      "failureMode": "Agent runs bug-hunt on speculation without symptom"
+    },
+    {
+      "id": "eval-15",
+      "category": "post-root-cause",
+      "prompt": "bug-hunt нашёл root cause: строка в chunker/tree-sitter-chunker.ts:142 — неправильно считается offset. Есть ли такой же баг в других местах?",
+      "expected": {
+        "mustDo": [
+          "Invoke mcp__tea-rags__find_similar with the chunk ID from bug-hunt result",
+          "Look for copy-paste occurrences of the same bug pattern",
+          "Report any matches"
+        ],
+        "mustNotDo": [
+          "Re-run bug-hunt for 'similar bugs'",
+          "Use Grep for the bug pattern"
+        ]
+      },
+      "failureMode": "Agent re-runs bug-hunt or uses Grep instead of find_similar from found chunk"
+    }
+  ]
+}
