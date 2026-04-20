@@ -23,6 +23,19 @@
       "source": "./.claude-plugin/tea-rags-setup",
       "description": "Automated TeaRAGs installation wizard",
       "keywords": ["setup", "installation", "wizard"]
+    },
+    {
+      "name": "dinopowers",
+      "source": "./.claude-plugin/dinopowers",
+      "description": "Wrapper skills over superpowers:* that inject tea-rags signals (risk, ownership, churn, impact) into brainstorming, planning, execution, debugging, and review flows",
+      "keywords": [
+        "superpowers",
+        "wrapper",
+        "tea-rags",
+        "git-signals",
+        "risk-assessment",
+        "data-driven"
+      ]
     }
   ]
 }
