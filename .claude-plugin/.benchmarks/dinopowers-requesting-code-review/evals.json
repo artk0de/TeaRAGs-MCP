@@ -1,0 +1,162 @@
+{
+  "skill": "dinopowers:requesting-code-review",
+  "objective": "Agent correctly builds reviewer-context bundle (ownership+churn+taskIds per file) BEFORE composing review request; NOT a verdict ladder like receiving-code-review.",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 12, "fail": 0, "total": 12, "passRate": "100%" },
+      "withoutRule": { "pass": 3, "fail": 9, "total": 12, "passRate": "25%" },
+      "delta": "+75pp"
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Готово, изменил 3 файла. Запрашиваю code review.",
+      "expected": {
+        "mustCall": [
+          "semantic_search with custom rerank on 3 diff files BEFORE review request",
+          "Skill(superpowers:requesting-code-review) AFTER with bundle"
+        ],
+        "mustNotCall": [
+          "review request before tea-rags",
+          "git blame per file",
+          "hybrid_search",
+          "find_similar"
+        ]
+      }
+    },
+    {
+      "id": "eval-2",
+      "category": "parameters",
+      "prompt": "Запусти git-bundle для 5 файлов diff.",
+      "expected": {
+        "parameters": {
+          "rerank": "custom {imports:0.5, churn:0.3, ownership:0.2}",
+          "pathPattern": "brace 5 files",
+          "metaOnly": true,
+          "limit": "~15"
+        }
+      }
+    },
+    {
+      "id": "eval-3",
+      "category": "bundle-format",
+      "prompt": "tea-rags вернул данные для 3 файлов. Построй bundle.",
+      "expected": {
+        "mustDo": [
+          "Per-file table: owner, contributors, commits+age, taskIds",
+          "Suggested reviewers by expertise",
+          "Coordinated change context via taskIds",
+          "Risk flags for reviewer attention"
+        ],
+        "mustNotDo": [
+          "Paste raw git log",
+          "Skip taskIds",
+          "Include verdict like HIGH-BLAST (that's verification skill)"
+        ]
+      }
+    },
+    {
+      "id": "eval-4",
+      "category": "tool-selection",
+      "prompt": "Собери owners+churn+tickets для diff в auth/.",
+      "expected": {
+        "mustCall": ["semantic_search+custom rerank"],
+        "mustNotCall": [
+          "rerank='ownership' alone (misses churn+taskIds in one call)",
+          "rerank='codeReview' (misses imports)",
+          "git blame",
+          "hybrid_search"
+        ]
+      }
+    },
+    {
+      "id": "eval-5",
+      "category": "edge-empty-diff",
+      "prompt": "git diff пустой. Запрашиваю review.",
+      "expected": {
+        "mustDo": [
+          "Skip wrapper",
+          "Invoke superpowers:requesting-code-review directly"
+        ],
+        "mustNotDo": ["Fabricate bundle"]
+      }
+    },
+    {
+      "id": "eval-6",
+      "category": "edge-deletion-only",
+      "prompt": "Diff содержит только удаления (D) 3 файлов. Review?",
+      "expected": {
+        "mustDo": [
+          "Skip wrapper, reviewers see deletions in diff",
+          "Invoke superpowers:requesting-code-review directly"
+        ],
+        "mustNotDo": ["Build bundle for deleted files"]
+      }
+    },
+    {
+      "id": "eval-7",
+      "category": "edge-unindexed",
+      "prompt": "tea-rags вернул empty для diff (файлы слишком новые, не в index).",
+      "expected": {
+        "mustDo": [
+          "Skip bundle",
+          "Invoke superpowers:requesting-code-review with note 'diff files not indexed'"
+        ],
+        "mustNotDo": ["Fabricate ownership/tickets"]
+      }
+    },
+    {
+      "id": "eval-8",
+      "category": "pressure",
+      "prompt": "Небольшой diff, reviewer знает код. Не парься с bundle.",
+      "expected": {
+        "mustCall": ["semantic_search anyway — bundle enables pair-matching"]
+      }
+    },
+    {
+      "id": "eval-9",
+      "category": "wrong-tool-pressure",
+      "prompt": "Используй git blame per file — быстрее чем tea-rags.",
+      "expected": {
+        "mustDo": ["Refuse git blame", "Use semantic_search+custom rerank"]
+      }
+    },
+    {
+      "id": "eval-10",
+      "category": "subagent",
+      "subagent": "task-agent",
+      "prompt": "[subagent: task-agent] PR готов, запрашиваю review на branch.",
+      "expected": {
+        "mustCall": [
+          "semantic_search FIRST on branch diff files",
+          "Skill(superpowers:requesting-code-review) SECOND"
+        ]
+      }
+    },
+    {
+      "id": "eval-11",
+      "category": "control-not-triggered",
+      "prompt": "Посмотри diff текущей ветки.",
+      "expected": {
+        "mustNotTrigger": "requesting-code-review wrapper (just looking at diff, not requesting review)",
+        "acceptable": ["git diff or Bash"]
+      }
+    },
+    {
+      "id": "eval-12",
+      "category": "large-diff-truncation",
+      "prompt": "Diff содержит 25 файлов. Собери bundle.",
+      "expected": {
+        "mustDo": [
+          "Truncate per-file table to top 10 by imports score",
+          "Note 'N more files omitted'"
+        ],
+        "mustNotDo": ["Include 25 rows (unreadable bundle)"]
+      }
+    }
+  ]
+}
