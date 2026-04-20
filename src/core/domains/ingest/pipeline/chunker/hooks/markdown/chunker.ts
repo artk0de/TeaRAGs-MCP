@@ -53,21 +53,29 @@ export class MarkdownChunker {
     const chunks: CodeChunk[] = [];
     const lines = code.split("\n");
 
-    // Parse with frontmatter support
     const tree = remark().use(remarkGfm).use(remarkFrontmatter, ["yaml"]).parse(code);
-
     const headings = this.collectHeadings(tree.children);
     const codeBlocks = this.collectCodeBlocks(tree.children);
     const sectionHeadings = headings.filter((h) => h.depth <= SECTION_HEADING_DEPTH);
-
-    // ALL code block line ranges excluded from section prose (regardless of size)
     const codeBlockLineRanges = codeBlocks.map((b) => ({ startLine: b.startLine, endLine: b.endLine }));
 
-    // Create section chunks: group consecutive h3 sections under parent h2,
-    // splitting at h3 boundaries when accumulated size exceeds maxChunkSize.
     await this.buildSectionChunks(chunks, sectionHeadings, headings, lines, codeBlockLineRanges, filePath, language);
+    await this.buildCodeBlockChunks(chunks, codeBlocks, sectionHeadings, headings, filePath, language);
+    this.buildPreambleChunk(chunks, tree.children, sectionHeadings, lines, codeBlockLineRanges, filePath, language);
+    this.buildWholeDocumentFallback(chunks, tree.children, lines, filePath, language);
 
-    // Create code block chunks with parentSymbolId
+    return chunks;
+  }
+
+  /** Create code block chunks, splitting oversized blocks via character fallback. */
+  private async buildCodeBlockChunks(
+    chunks: CodeChunk[],
+    codeBlocks: CodeBlockInfo[],
+    sectionHeadings: HeadingInfo[],
+    allHeadings: HeadingInfo[],
+    filePath: string,
+    _language: string,
+  ): Promise<void> {
     for (const block of codeBlocks) {
       if (block.value.length < MIN_CODE_BLOCK_SIZE) continue;
       if (this.isMermaid(block)) continue;
@@ -78,14 +86,13 @@ export class MarkdownChunker {
         name: codeBlockName,
         symbolId: codeBlockName,
         isDocumentation: true as const,
-        headingPath: parentHeading ? this.buildHeadingPath(headings, parentHeading) : [],
+        headingPath: parentHeading ? this.buildHeadingPath(allHeadings, parentHeading) : [],
         ...(parentHeading && {
           parentSymbolId: parentHeading.text,
           parentType: `h${parentHeading.depth}`,
         }),
       };
 
-      // Oversized code block → split via character fallback
       if (block.value.length > this.config.maxChunkSize) {
         const subChunks = await this.fallbackChunker.chunk(block.value, filePath, block.lang || "code");
         for (const subChunk of subChunks) {
@@ -106,8 +113,8 @@ export class MarkdownChunker {
 
       chunks.push({
         content: block.value,
-        startLine: block.startLine + 1, // skip ``` line
-        endLine: block.endLine - 1, // skip closing ```
+        startLine: block.startLine + 1,
+        endLine: block.endLine - 1,
         metadata: {
           filePath,
           language: block.lang || "code",
@@ -117,75 +124,89 @@ export class MarkdownChunker {
         },
       });
     }
+  }
 
-    // Handle preamble (content before first section heading, after frontmatter)
-    if (sectionHeadings.length > 0) {
-      // Find where actual content starts (after frontmatter)
-      const firstContentLine = this.findFirstContentLine(tree.children);
-      const preambleEndLine = sectionHeadings[0].startLine - 1;
+  /** Extract preamble content before first section heading, after frontmatter. */
+  private buildPreambleChunk(
+    chunks: CodeChunk[],
+    children: Content[],
+    sectionHeadings: HeadingInfo[],
+    lines: string[],
+    codeBlockLineRanges: { startLine: number; endLine: number }[],
+    filePath: string,
+    language: string,
+  ): void {
+    if (sectionHeadings.length === 0) return;
 
-      if (firstContentLine > 0 && firstContentLine <= preambleEndLine) {
-        const preambleLines: string[] = [];
-        for (let line = firstContentLine - 1; line < preambleEndLine; line++) {
-          const lineNum = line + 1;
-          const inCodeBlock = codeBlockLineRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine);
-          if (!inCodeBlock) {
-            preambleLines.push(lines[line]);
-          }
-        }
-        const preamble = preambleLines.join("\n").trim();
+    const firstContentLine = this.findFirstContentLine(children);
+    const preambleEndLine = sectionHeadings[0].startLine - 1;
 
-        if (preamble.length >= MIN_SECTION_SIZE) {
-          chunks.unshift({
-            content: preamble,
-            startLine: firstContentLine,
-            endLine: preambleEndLine,
-            metadata: {
-              filePath,
-              language,
-              chunkIndex: 0,
-              chunkType: "block",
-              name: "Preamble",
-              symbolId: "Preamble",
-              isDocumentation: true,
-              headingPath: [],
-            },
-          });
-          // Re-index
-          for (let i = 1; i < chunks.length; i++) {
-            chunks[i].metadata.chunkIndex = i;
-          }
-        }
+    if (firstContentLine <= 0 || firstContentLine > preambleEndLine) return;
+
+    const preambleLines: string[] = [];
+    for (let line = firstContentLine - 1; line < preambleEndLine; line++) {
+      const lineNum = line + 1;
+      const inCodeBlock = codeBlockLineRanges.some((r) => lineNum >= r.startLine && lineNum <= r.endLine);
+      if (!inCodeBlock) {
+        preambleLines.push(lines[line]);
       }
     }
+    const preamble = preambleLines.join("\n").trim();
 
-    // Whole-document fallback — strip frontmatter
-    if (chunks.length === 0) {
-      const firstContentLine = this.findFirstContentLine(tree.children);
-      const startLine = firstContentLine > 0 ? firstContentLine : 1;
-      const content = lines
-        .slice(startLine - 1)
-        .join("\n")
-        .trim();
+    if (preamble.length < MIN_SECTION_SIZE) return;
 
-      if (content.length >= MIN_SECTION_SIZE) {
-        chunks.push({
-          content,
-          startLine,
-          endLine: lines.length,
-          metadata: {
-            filePath,
-            language,
-            chunkIndex: 0,
-            chunkType: "block",
-            isDocumentation: true,
-            headingPath: [],
-          },
-        });
-      }
+    chunks.unshift({
+      content: preamble,
+      startLine: firstContentLine,
+      endLine: preambleEndLine,
+      metadata: {
+        filePath,
+        language,
+        chunkIndex: 0,
+        chunkType: "block",
+        name: "Preamble",
+        symbolId: "Preamble",
+        isDocumentation: true,
+        headingPath: [],
+      },
+    });
+    for (let i = 1; i < chunks.length; i++) {
+      chunks[i].metadata.chunkIndex = i;
     }
+  }
 
-    return chunks;
+  /** Whole-document fallback when no chunks were produced. Strips frontmatter. */
+  private buildWholeDocumentFallback(
+    chunks: CodeChunk[],
+    children: Content[],
+    lines: string[],
+    filePath: string,
+    language: string,
+  ): void {
+    if (chunks.length > 0) return;
+
+    const firstContentLine = this.findFirstContentLine(children);
+    const startLine = firstContentLine > 0 ? firstContentLine : 1;
+    const content = lines
+      .slice(startLine - 1)
+      .join("\n")
+      .trim();
+
+    if (content.length < MIN_SECTION_SIZE) return;
+
+    chunks.push({
+      content,
+      startLine,
+      endLine: lines.length,
+      metadata: {
+        filePath,
+        language,
+        chunkIndex: 0,
+        chunkType: "block",
+        isDocumentation: true,
+        headingPath: [],
+      },
+    });
   }
 
   // --- Private helpers ---
