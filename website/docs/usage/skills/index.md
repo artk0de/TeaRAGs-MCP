@@ -120,6 +120,82 @@ added — just run the `/plugin install` line.)
 Restart Claude Code. Every skill is then registered automatically and your
 agent can invoke them via `/tea-rags:<skill-name>`.
 
+## Dinopowers — wrappers over `superpowers:*`
+
+A separate plugin (`dinopowers`) ships 10 **wrapper skills** that run
+tea-rags enrichment _before_ chaining to the underlying
+[`superpowers:*`](https://github.com/anthropics/skills) skill. Instead of
+`superpowers:brainstorming` starting with a blank slate, `dinopowers:brainstorming`
+first queries tea-rags for the target area's hotspots / ownership / tech-debt
+signals, then hands that context to `superpowers:brainstorming`.
+
+### What ships
+
+| Skill                                       | Wraps                                        | tea-rags tooling                                                                          |
+| ------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `dinopowers:brainstorming`                  | `superpowers:brainstorming`                  | 3 parallel `semantic_search` with `hotspots` / `ownership` / `techDebt` presets           |
+| `dinopowers:writing-plans`                  | `superpowers:writing-plans`                  | `semantic_search` with custom `{imports:0.5, churn:0.3, ownership:0.2}` on plan file list |
+| `dinopowers:executing-plans`                | `superpowers:executing-plans`                | Per-Task pre-touch guard with SAFE / CAUTION / UNSAFE verdict                             |
+| `dinopowers:systematic-debugging`           | `superpowers:systematic-debugging`           | Delegates to `tea-rags:bug-hunt` for ranked suspects                                      |
+| `dinopowers:test-driven-development`        | `superpowers:test-driven-development`        | `semantic_search` with `testFile:"only"` + `rerank:"proven"`                              |
+| `dinopowers:verification-before-completion` | `superpowers:verification-before-completion` | Collateral-damage scan: HIGH / MEDIUM / LOW-BLAST per edited file                         |
+| `dinopowers:receiving-code-review`          | `superpowers:receiving-code-review`          | Impact analysis with AGREE-DIRECT / AGREE-WITH-SCOPE / PUSHBACK verdict                   |
+| `dinopowers:requesting-code-review`         | `superpowers:requesting-code-review`         | Reviewer-context bundle (owners + contributors + taskIds + risk flags)                    |
+| `dinopowers:finishing-a-development-branch` | `superpowers:finishing-a-development-branch` | Delegates to `tea-rags:risk-assessment` on full branch diff                               |
+| `dinopowers:writing-skills`                 | `superpowers:writing-skills`                 | `semantic_search` on `**/SKILL.md` for structural patterns                                |
+
+### How the enrichment flows
+
+Every wrapper follows the same 4-step pattern:
+
+1. **Extract intent/scope** from the user request (target area, file list, bug
+   symptom, review target, branch scope)
+2. **Call `mcp__tea-rags__*`** with calibrated parameters — correct tool,
+   correct rerank preset or custom weights, correct `metaOnly`
+3. **Extract a context block** from results — risk table, per-file impact,
+   ranked suspects, reviewer bundle
+4. **Invoke the underlying `superpowers:*` skill** with the block prepended
+
+Plus a PreToolUse hook on the `Agent` tool that appends a wrapper-routing
+table to every subagent prompt, so subagents don't bypass the enrichment layer
+by invoking `superpowers:*` directly.
+
+### Design principles
+
+- **One project idiom for impact analysis** — wrappers that measure blast
+  radius all use `{imports: 0.5, churn: 0.3, ownership: 0.2}` custom rerank.
+  Shared idiom = cross-wrapper comparability.
+- **Composition where the domain skill exists** —
+  `dinopowers:systematic-debugging` delegates to `tea-rags:bug-hunt`;
+  `finishing-a-development-branch` delegates to `tea-rags:risk-assessment`.
+  Other wrappers call `mcp__tea-rags__semantic_search` directly.
+- **Verdict before action** — `executing-plans` and `receiving-code-review`
+  compute a verdict on signals (SAFE / CAUTION / UNSAFE, AGREE / PUSHBACK) and
+  branch behavior. No silent downgrades.
+- **Honest fallbacks** — empty index, new-only files, or out-of-scope intents
+  fall through to the underlying skill with explicit `UNVERIFIABLE` /
+  `TRIVIAL-SCOPE` / `PASS-THROUGH` notes, never fabricated signals.
+
+### Installation
+
+Dinopowers ships alongside `tea-rags` in the same marketplace. Install after
+`tea-rags`:
+
+```
+/plugin install dinopowers@tea-rags
+```
+
+Requires `tea-rags` (MCP tools) to be installed and the codebase to be
+indexed. Unindexed codebases fall through to the fallback paths.
+
+### Eval results
+
+Each wrapper was authored via `/optimize-skill` with parallel with-rule vs
+without-rule baseline subagents. All 10 hit 100% with-rule on the first
+iteration thanks to bootstrap via `dinopowers:writing-skills`. **Mean delta
++71pp across 136 eval cases.** See
+`.claude-plugin/.benchmarks/dinopowers-*/benchmark.md` for per-skill results.
+
 ## See Also
 
 - [MCP Tools Atlas](/usage/advanced/mcp-tools) — the 17 underlying tools skills
