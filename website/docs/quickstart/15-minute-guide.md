@@ -61,137 +61,15 @@ install it yet.
 
 ### Option B — manual install
 
-Use this if you want full control, can't use plugins, or are setting up CI.
+Use this for CI, non-Claude MCP clients (Cursor, Roo Code, Continue, …),
+air-gapped environments, or full control over the setup.
 
-**B.1. Install Node.js 24+**
+The full manual path — per-platform Node.js install, `npm install -g tea-rags`,
+all four embedding providers, and `claude mcp add` registration — lives in
+**[Installation → Option B](/quickstart/installation#option-b--manual-install)**.
 
-<details>
-<summary>macOS</summary>
-
-```bash
-# With Homebrew (recommended)
-brew install node@24
-
-# Or a version manager
-brew install fnm && fnm install 24 && fnm default 24
-```
-
-</details>
-
-<details>
-<summary>Linux / WSL (Debian/Ubuntu)</summary>
-
-```bash
-curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# Or via fnm
-curl -fsSL https://fnm.vercel.app/install | bash
-fnm install 24 && fnm default 24
-```
-
-</details>
-
-<details>
-<summary>Windows (PowerShell)</summary>
-
-```powershell
-# With winget
-winget install OpenJS.NodeJS.LTS
-
-# Or fnm
-winget install Schniz.fnm
-fnm install 24 ; fnm default 24
-```
-
-</details>
-
-Verify: `node --version` → `v24.x.x`.
-
-**B.2. Install `tea-rags`**
-
-```bash
-npm install -g tea-rags
-# or: pnpm add -g tea-rags / yarn global add tea-rags / bun add -g tea-rags
-```
-
-Verify: `tea-rags --version`.
-
-:::tip `EACCES` on macOS/Linux?
-Either use `sudo npm install -g tea-rags`, or set a user-writable prefix:
-`npm config set prefix ~/.npm-global && export PATH=~/.npm-global/bin:$PATH`.
-:::
-
-**B.3. Pick an embedding provider**
-
-| Provider                  | When to use                                           | Install                                                           |
-| ------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------- |
-| **Ollama** (recommended)  | macOS (Apple Silicon), Linux/WSL + NVIDIA/AMD, any CPU host | see below                                                  |
-| **ONNX** (built-in, beta) | Windows (DirectML), small projects (≤100k LOC), no external process | nothing to install — `EMBEDDING_PROVIDER=onnx`          |
-| **OpenAI**                | Cloud preferred, no local GPU                         | no local install — set `OPENAI_API_KEY`                           |
-| **Cohere / Voyage AI**    | Cloud, code-tuned models                              | no local install — set `COHERE_API_KEY` / `VOYAGE_API_KEY`        |
-
-<details>
-<summary>Install Ollama + pull the default model</summary>
-
-```bash
-# macOS / Linux / WSL
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Windows (winget)
-winget install Ollama.Ollama
-
-# All platforms — pull the default code-embedding model (~270 MB)
-ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
-```
-
-Verify: `curl -s http://localhost:11434/api/tags` lists the model.
-
-**AMD on Windows (RDNA2/RDNA3):** install the
-[AMD Radeon PRO driver](https://www.amd.com/en/support/professional-graphics)
-before Ollama for GPU acceleration.
-
-</details>
-
-<details>
-<summary>Use ONNX (built-in, no install)</summary>
-
-No install. At Step 3, register the MCP server with
-`-e EMBEDDING_PROVIDER=onnx`. ONNX runs inside the MCP process — no Ollama, no
-Docker. Best for Windows (DirectML GPU) and projects under ~100k LOC on CPU.
-
-</details>
-
-<details>
-<summary>Use OpenAI / Cohere / Voyage (cloud)</summary>
-
-No install. At Step 3, register with the provider key:
-
-```bash
--e EMBEDDING_PROVIDER=openai -e OPENAI_API_KEY=sk-...
-# or: -e EMBEDDING_PROVIDER=cohere  -e COHERE_API_KEY=...
-# or: -e EMBEDDING_PROVIDER=voyage  -e VOYAGE_API_KEY=...
-```
-
-</details>
-
-**B.4. Register the MCP server in Claude Code**
-
-```bash
-# Ollama (defaults — Qdrant embedded, Ollama on localhost:11434)
-claude mcp add tea-rags -s user -- tea-rags
-
-# ONNX
-claude mcp add tea-rags -s user -- tea-rags -e EMBEDDING_PROVIDER=onnx
-
-# OpenAI
-claude mcp add tea-rags -s user -- tea-rags \
-  -e EMBEDDING_PROVIDER=openai -e OPENAI_API_KEY=sk-...
-```
-
-Qdrant starts automatically (embedded native binary) — no Docker, no
-`QDRANT_URL` needed. For external Qdrant or Qdrant Cloud, see
-[Connect to an Agent](/quickstart/connect-to-agent).
+Skim the 4 sub-steps there (B.1 Node → B.2 `tea-rags` → B.3 embedding provider
+→ B.4 MCP register), then return here for Step 2.
 
 ## Step 2: Restart Claude Code {#step-2}
 

@@ -42,21 +42,28 @@ claude mcp add tea-rags -s user -- tea-rags
 `QDRANT_URL` is autodetected: probes `localhost:6333` for external Qdrant, falls back to embedded. No configuration needed for local setups.
 :::
 
+:::note `claude mcp add` flag order
+`-e KEY=VAL` is a `claude mcp add` option, so env vars go **before** the `--`
+separator. Everything after `--` is the command and its args.
+:::
+
 ### Remote Server Setup
 
 ```bash
 # External Qdrant + Ollama on separate host
-claude mcp add tea-rags -s user -- tea-rags \
+claude mcp add tea-rags -s user \
   -e QDRANT_URL=http://192.168.1.100:6333 \
-  -e EMBEDDING_BASE_URL=http://192.168.1.100:11434
+  -e EMBEDDING_BASE_URL=http://192.168.1.100:11434 \
+  -- tea-rags
 ```
 
 ### Qdrant Cloud
 
 ```bash
-claude mcp add tea-rags -s user -- tea-rags \
+claude mcp add tea-rags -s user \
   -e QDRANT_URL=https://your-cluster.qdrant.io:6333 \
-  -e QDRANT_API_KEY=your-api-key-here
+  -e QDRANT_API_KEY=your-api-key-here \
+  -- tea-rags
 ```
 
 ## HTTP Transport (Remote)
