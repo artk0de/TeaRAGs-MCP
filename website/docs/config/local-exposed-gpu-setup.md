@@ -530,10 +530,10 @@ EMBEDDING_BASE_URL=http://192.168.1.100:11434 npm run tune
 
 **Expected optimal settings:**
 ```bash
-EMBEDDING_BATCH_SIZE=256
+EMBEDDING_TUNE_BATCH_SIZE=256
 INGEST_PIPELINE_CONCURRENCY=4-6
-QDRANT_UPSERT_BATCH_SIZE=512
-QDRANT_BATCH_ORDERING=strong
+QDRANT_TUNE_UPSERT_BATCH_SIZE=512
+QDRANT_TUNE_UPSERT_ORDERING=strong
 ```
 
 See **[Performance Tuning](/config/performance-tuning)** for detailed benchmarks and topology comparison.

@@ -46,12 +46,12 @@ NEVER:
 | Bug investigation | `recent` → `hotspots`   | `ownership` for escalation       |
 | Code review       | `codeReview`             | `securityAudit` for auth paths   |
 | Finding templates | `stable`                 | Reject if chunkBugFixRate > 40%  |
-| Refactoring       | `refactoring`            | `impactAnalysis` for blast       |
+| Refactoring       | `refactoring`            | `custom weights (imports)` for blast       |
 | Onboarding        | `onboarding`             | `stable` for reference code      |
 | Security audit    | `securityAudit`          | `ownership` for silo detection   |
 | Tech debt         | `techDebt`               | `hotspots` for active problems   |
 | Incident response | `recent` (maxAgeDays: 3) | `hotspots` if nothing recent     |
-| Blast radius      | `impactAnalysis`         | `hotspots` for risk overlay      |
+| Blast radius      | `custom weights (imports)`         | `hotspots` for risk overlay      |
 
 ### Before Generating Code
 

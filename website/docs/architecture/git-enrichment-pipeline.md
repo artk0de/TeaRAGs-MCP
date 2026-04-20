@@ -53,7 +53,7 @@ flowchart TB
 
 ## Phase 1: File-Level Enrichment
 
-Reads git history via isomorphic-git (bounded by `GIT_LOG_MAX_AGE_MONTHS`, default 12 months), with CLI fallback on timeout (`GIT_LOG_TIMEOUT_MS`).
+Reads git history via isomorphic-git (bounded by `TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`, default 12 months), with CLI fallback on timeout (`TRAJECTORY_GIT_LOG_TIMEOUT_MS`).
 
 ```text
 git log (isomorphic-git, reads .git directly)
@@ -102,7 +102,7 @@ Chunk-level analysis is automatically skipped for:
 
 - **Single-chunk files** — chunk equals file, no granularity benefit.
 - **Files with 1 commit** — all chunks would get identical data.
-- **Files exceeding `GIT_CHUNK_MAX_FILE_LINES`** — performance guard.
+- **Files exceeding `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES`** — performance guard.
 - **Binary files** — blob read fails gracefully.
 - **Root commits** — no parent to diff against.
 
@@ -110,11 +110,12 @@ Chunk-level analysis is automatically skipped for:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CODE_ENABLE_GIT_METADATA` | `"false"` | Enable git enrichment during indexing |
-| `GIT_LOG_MAX_AGE_MONTHS` | `12` | Time window for file-level git analysis (months). `0` = no age limit (safety depth still applies). |
-| `GIT_LOG_TIMEOUT_MS` | `30000` | Timeout for isomorphic-git; falls back to native CLI on expiry |
-| `GIT_LOG_SAFETY_DEPTH` | `10000` | Max commits for isomorphic-git `depth` and CLI `--max-count` |
-| `GIT_CHUNK_ENABLED` | `"true"` | Enable chunk-level churn analysis |
-| `GIT_CHUNK_MAX_AGE_MONTHS` | `6` | Time window for chunk-level churn analysis (months). `0` = no age limit. |
-| `GIT_CHUNK_CONCURRENCY` | `10` | Parallel commit processing for chunk churn |
-| `GIT_CHUNK_MAX_FILE_LINES` | `10000` | Skip files larger than this for chunk analysis |
+| `TRAJECTORY_GIT_ENABLED` | `true` | Enable git enrichment during indexing. Set to `false` for non-git projects or fast iteration |
+| `TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS` | `12` | Time window for file-level git analysis (months). `0` = no age limit |
+| `TRAJECTORY_GIT_LOG_TIMEOUT_MS` | `60000` | Timeout for `git log --numstat` (ms); falls back to native CLI on expiry |
+| `TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS` | `6` | Time window for chunk-level churn analysis (months). `0` = no age limit |
+| `TRAJECTORY_GIT_CHUNK_CONCURRENCY` | `10` | Parallel commit processing for chunk churn |
+| `TRAJECTORY_GIT_CHUNK_TIMEOUT_MS` | `120000` | Timeout for chunk churn CLI pathspec (ms) |
+| `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` | `10000` | Skip files larger than this for chunk analysis |
+| `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS` | `false` | Group commits into sessions (squash noise reduction) |
+| `TRAJECTORY_GIT_SESSION_GAP_MINUTES` | `30` | Gap between commits to split sessions |

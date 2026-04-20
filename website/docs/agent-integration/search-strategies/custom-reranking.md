@@ -154,8 +154,8 @@ Signals that are **orthogonal** and combine well:
 
 2. **No cross-search chaining:** Each search is independent. The agent must manually chain results from one search into filters for the next. There is no built-in "find all files that import results from my previous search."
 
-3. **Git metadata required:** All reranking presets except `relevance` require `CODE_ENABLE_GIT_METADATA=true` during indexing. Without git enrichment, non-relevance presets silently degrade to similarity-only scoring.
+3. **Git metadata required:** All reranking presets except `relevance` require git enrichment (enabled by default via `TRAJECTORY_GIT_ENABLED=true`). If disabled, non-relevance presets silently degrade to similarity-only scoring.
 
-4. **Chunk-level data is partial:** Chunk-level metrics (chunkCommitCount, chunkBugFixRate, etc.) are only available for files with multiple chunks and recent commits within the `GIT_CHUNK_MAX_AGE_MONTHS` window. Single-chunk files and old-only commits fall back to file-level metrics.
+4. **Chunk-level data is partial:** Chunk-level metrics (chunkCommitCount, chunkBugFixRate, etc.) are only available for files with multiple chunks and recent commits within the `TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS` window. Single-chunk files and old-only commits fall back to file-level metrics.
 
-5. **No fan-in (importedBy) data yet:** The current `impactAnalysis` preset uses only fan-out (imports count). Fan-in metrics and the `blastRadius` preset are planned.
+5. **No fan-in (importedBy) data yet:** The `imports` signal measures only fan-out (how many files this file imports). Use custom weights `{ imports: 0.7, similarity: 0.3 }` for blast radius scoring. Fan-in metrics (`importedBy`) and a dedicated `blastRadius` preset are planned.

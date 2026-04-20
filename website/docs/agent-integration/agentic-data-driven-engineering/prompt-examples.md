@@ -19,7 +19,7 @@ For where to place these blocks (CLAUDE.md, .cursorrules, system prompt), see [A
 | ANTI-PATTERN | 2. Anti-Pattern Detection   | `search_code` with `rerank: "hotspots"`          |
 | CONTEXT      | 4. Historical Context       | check `taskIds` in search results                |
 | VERIFY       | Post-generation validation  | ripgrep for every function, import, type         |
-| BLAST RADIUS | Post-generation impact      | `semantic_search` with `rerank: "impactAnalysis"` |
+| BLAST RADIUS | Post-generation impact      | `semantic_search` with `rerank: { custom: { imports: 0.7, similarity: 0.3 } }` |
 
 **Signal names used in all blocks:**
 
@@ -52,7 +52,7 @@ tea-rags is available as an MCP server. Use it for ALL code search.
 4. VERIFY: Confirm identifiers with ripgrep — every function, import, type must exist
    - Semantic search finds by meaning, not exact names
    - 0 ripgrep matches = fix the reference before committing
-5. BLAST RADIUS: Check impact — `semantic_search` with `rerank: "impactAnalysis"`, `metaOnly: true`
+5. BLAST RADIUS: Check impact — `semantic_search` with `rerank: { custom: { imports: 0.7, similarity: 0.3 } }`, `metaOnly: true`
 
 ### Threshold Decision Table
 
@@ -126,7 +126,7 @@ tea-rags is available as an MCP server. Use it for ALL code search.
 
 4. VERIFY: Confirm identifiers with ripgrep — every function, import, type must exist
    - 0 ripgrep matches = fix the reference
-5. BLAST RADIUS: Check impact — `semantic_search` with `rerank: "impactAnalysis"`, `metaOnly: true`
+5. BLAST RADIUS: Check impact — `semantic_search` with `rerank: { custom: { imports: 0.7, similarity: 0.3 } }`, `metaOnly: true`
 
 ### Threshold Decision Table
 

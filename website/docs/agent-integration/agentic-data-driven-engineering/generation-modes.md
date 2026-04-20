@@ -92,7 +92,7 @@ The flow integrates all five strategies, danger zone verification, and exact-mat
 6. GENERATE     — Write code in the selected mode
 7. VERIFY EXACT — Validate with ripgrep (grep, tree-sitter)
                   ↳ Confirm referenced functions, imports, and types actually exist
-8. IMPACT       — Check blast radius (semantic_search, rerank=impactAnalysis)
+8. IMPACT       — Check blast radius (semantic_search, rerank={custom:{imports:0.7}})
 ```
 
 ### Danger Zone Check (Step 2)

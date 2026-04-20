@@ -127,27 +127,41 @@ the preset. If no preset and no explicit value — defaults to `chunk`.
 
 Reorder search results based on git metadata signals.
 
-**For `semantic_search` / `hybrid_search` (analytics):**
+**Development-focused** (available on `search_code`, `semantic_search`, `hybrid_search`, `find_similar`):
 
-| Preset           | Use Case                     | Signals                                                                |
-| ---------------- | ---------------------------- | ---------------------------------------------------------------------- |
-| `relevance`      | Default semantic similarity  | similarity only                                                        |
-| `techDebt`       | Find legacy problematic code | age + churn + bugFix + volatility                                      |
-| `hotspots`       | Bug hunting                  | chunkChurn + chunkRelativeChurn + burstActivity + bugFix + volatility  |
-| `codeReview`     | Review recent changes        | recency + burstActivity + density + chunkChurn                         |
-| `onboarding`     | Entry points for new devs    | documentation + stability                                              |
-| `securityAudit`  | Old code in critical paths   | age + pathRisk + bugFix + ownership + volatility                       |
-| `refactoring`    | Refactoring candidates       | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age |
-| `ownership`      | Knowledge transfer           | ownership + knowledgeSilo (flags single-author code)                   |
-| `impactAnalysis` | Dependency analysis          | imports count                                                          |
+| Preset      | Use Case                            | Signals                                                         |
+| ----------- | ----------------------------------- | --------------------------------------------------------------- |
+| `relevance` | Default semantic similarity         | similarity only                                                 |
+| `recent`    | Find recently modified code         | recency + similarity                                            |
+| `stable`    | Find stable implementation examples | stability + similarity                                          |
+| `proven`    | Battle-tested low-bug code          | stability + ownership + low bugFix + similarity                 |
 
-**For `search_code` (practical development):**
+**Analytical** (available on `semantic_search`, `hybrid_search`, `rank_chunks`):
 
-| Preset      | Use Case                            | Boost           |
-| ----------- | ----------------------------------- | --------------- |
-| `relevance` | Default semantic similarity         | —               |
-| `recent`    | Find recently modified code         | low ageDays     |
-| `stable`    | Find stable implementation examples | low commitCount |
+| Preset          | Use Case                        | Signals                                                                |
+| --------------- | ------------------------------- | ---------------------------------------------------------------------- |
+| `techDebt`      | Legacy problematic code         | age + churn + bugFix + volatility                                      |
+| `hotspots`      | Bug-prone areas                 | chunkChurn + chunkRelativeChurn + burstActivity + bugFix + volatility  |
+| `dangerous`     | High-risk modification targets  | bugFix + volatility + pathRisk + imports                               |
+| `bugHunt`       | Historically buggy code         | bugFix + chunkChurn + volatility                                       |
+| `codeReview`    | Review recent changes           | recency + burstActivity + density + chunkChurn                         |
+| `refactoring`   | Refactoring candidates          | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age |
+| `onboarding`    | Entry points for new devs       | documentation + stability                                              |
+| `securityAudit` | Old code in critical paths      | age + pathRisk + bugFix + ownership + volatility                       |
+| `ownership`     | Knowledge transfer / silos      | ownership + knowledgeSilo (flags single-author code)                   |
+
+**Documentation / structural** (automatic or explicit):
+
+| Preset                    | Use Case                             | Signals                             |
+| ------------------------- | ------------------------------------ | ----------------------------------- |
+| `documentationRelevance`  | Heading-weighted doc search          | similarity + headingDepth + density |
+| `decomposition`           | Find components to split             | chunkSize + imports + density       |
+
+:::note
+`impactAnalysis` was removed — use custom weights with `imports` or the
+`dangerous` preset for blast-radius scoring. Full preset catalog with weight
+formulas: **[Rerank Presets](/usage/advanced/rerank-presets)**.
+:::
 
 **Custom weights:**
 
@@ -179,7 +193,8 @@ For `semantic_search` / `hybrid_search` only. Returns metadata without content:
 ```
 
 `imports` contains file-level imports (inherited by all chunks from that file).
-Used by `impactAnalysis` reranking to boost files with many dependencies.
+Used by the `dangerous` preset and custom weights (`imports` key) to boost
+files with many dependencies (blast radius).
 
 Use for file discovery, analytics, or reducing response size.
 

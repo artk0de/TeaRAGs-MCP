@@ -86,7 +86,7 @@ semantic_search({
 flowchart LR
     S1[📝 Recent Changes<br/><small>semantic_search · codeReview</small>]
     S2[🔒 Security Check<br/><small>semantic_search · securityAudit</small>]
-    S3[💥 Blast Radius<br/><small>semantic_search · impactAnalysis</small>]
+    S3[💥 Blast Radius<br/><small>semantic_search · custom imports</small>]
     S1 --> S2 --> S3
 `}
 </MermaidTeaRAGs>
@@ -127,7 +127,7 @@ semantic_search({
 semantic_search({
   "path": "/project",
   "query": "imports from changed module",
-  "rerank": "impactAnalysis",
+  "rerank": { "custom": { "imports": 0.7, "similarity": 0.3 } },
   "metaOnly": true,
   "limit": 20
 })
@@ -135,7 +135,7 @@ semantic_search({
 
 </details>
 
-**Agent reasoning:** `codeReview` boosts recent burst activity and change density -- showing what's actively being worked on. `securityAudit` cross-checks if any recent changes touch security-sensitive paths (auth, crypto, tokens). `impactAnalysis` reveals how many other modules depend on the changed code.
+**Agent reasoning:** `codeReview` boosts recent burst activity and change density -- showing what's actively being worked on. `securityAudit` cross-checks if any recent changes touch security-sensitive paths (auth, crypto, tokens). `custom weights (imports)` reveals how many other modules depend on the changed code.
 
 ---
 
@@ -151,7 +151,7 @@ semantic_search({
 {`
 flowchart LR
     S1[🔧 Candidates<br/><small>semantic_search · refactoring</small>]
-    S2[💥 Blast Radius<br/><small>semantic_search · impactAnalysis</small>]
+    S2[💥 Blast Radius<br/><small>semantic_search · custom imports</small>]
     S3[👤 Reviewers<br/><small>semantic_search · ownership</small>]
     S1 --> S2 --> S3
 `}
@@ -179,7 +179,7 @@ semantic_search({
 semantic_search({
   "path": "/project",
   "query": "imports from candidate module",
-  "rerank": "impactAnalysis",
+  "rerank": { "custom": { "imports": 0.7, "similarity": 0.3 } },
   "pathPattern": "!**/test/**",
   "metaOnly": true
 })
@@ -201,7 +201,7 @@ semantic_search({
 
 </details>
 
-**Agent reasoning:** `refactoring` surfaces large, churny, volatile chunks with high bug-fix rates -- the best candidates for improvement. `impactAnalysis` measures how many dependents each candidate has (high imports = high blast radius = refactor carefully). `ownership` identifies reviewers and potential knowledge silos.
+**Agent reasoning:** `refactoring` surfaces large, churny, volatile chunks with high bug-fix rates -- the best candidates for improvement. `custom weights (imports)` measures how many dependents each candidate has (high imports = high blast radius = refactor carefully). `ownership` identifies reviewers and potential knowledge silos.
 
 **Decision matrix for the agent:**
 
@@ -443,7 +443,7 @@ semantic_search({
 {`
 flowchart LR
     S1[📁 Module API<br/><small>search_code · relevance</small>]
-    S2[🔗 Dependents<br/><small>semantic_search · impactAnalysis</small>]
+    S2[🔗 Dependents<br/><small>semantic_search · custom imports</small>]
     S3[🔥 Risk Assessment<br/><small>semantic_search · hotspots</small>]
     S1 --> S2 --> S3
 `}
@@ -468,7 +468,7 @@ search_code({
 semantic_search({
   "path": "/project",
   "query": "module X",
-  "rerank": "impactAnalysis",
+  "rerank": { "custom": { "imports": 0.7, "similarity": 0.3 } },
   "metaOnly": true,
   "limit": 30
 })
@@ -552,12 +552,12 @@ General pattern for multi-step agent workflows:
 2. ANALYZE   -- semantic_search(query, rerank=<task-preset>, metaOnly=true)
                 Get structured metadata for analysis
 
-3. ASSESS    -- semantic_search(query, rerank=hotspots|ownership|impactAnalysis)
+3. ASSESS    -- semantic_search(query, rerank=hotspots|ownership|custom(imports))
                 Evaluate risk, ownership, blast radius
 
 4. ACT       -- Read specific files from results, make changes
 
-5. VERIFY    -- semantic_search(query, rerank=impactAnalysis)
+5. VERIFY    -- semantic_search(query, rerank={custom:{imports:0.7}})
                 Confirm blast radius of your changes
 ```
 

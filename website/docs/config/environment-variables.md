@@ -54,7 +54,7 @@ variables are optional unless specified otherwise.
 
 | Variable                               | Description                                          | Default  |
 | -------------------------------------- | ---------------------------------------------------- | -------- |
-| `TRAJECTORY_GIT_ENABLED`               | Enable git enrichment (file + chunk signals)         | `false`  |
+| `TRAJECTORY_GIT_ENABLED`               | Enable git enrichment (file + chunk signals)         | `true`   |
 | `TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`    | Git log depth for file-level signals (months)        | `12`     |
 | `TRAJECTORY_GIT_LOG_TIMEOUT_MS`        | Timeout for `git log --numstat` (ms)                 | `60000`  |
 | `TRAJECTORY_GIT_CHUNK_CONCURRENCY`     | Parallel files for chunk-level churn analysis        | `10`     |

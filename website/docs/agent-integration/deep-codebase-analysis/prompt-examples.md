@@ -79,7 +79,7 @@ To find legacy code that needs attention:
 ## Blast Radius Check
 
 Before modifying a module:
-1. `semantic_search` with `rerank: "impactAnalysis"`, `metaOnly: true`
+1. `semantic_search` with `rerank: { custom: { imports: 0.7, similarity: 0.3 } }`, `metaOnly: true`
 2. Count imports in results — high imports = many dependents
 3. Overlay risk: `semantic_search` with `rerank: "hotspots"` on dependent files
 
@@ -108,7 +108,7 @@ For thorough codebase assessment. All steps use `semantic_search` with `metaOnly
 | 1    | Discover relevant code | `relevance`      |
 | 2    | Assess risk            | `hotspots`       |
 | 3    | Map ownership          | `ownership`      |
-| 4    | Estimate blast radius  | `impactAnalysis` |
+| 4    | Estimate blast radius  | `custom weights (imports)` |
 
 Synthesize: code that appears in hotspots AND silos AND has high blast radius is highest priority.
 ````

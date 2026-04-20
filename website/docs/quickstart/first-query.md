@@ -18,7 +18,7 @@ Just ask your AI assistant naturally:
 
 ## With Git Metadata Filters
 
-Requires `CODE_ENABLE_GIT_METADATA=true` during indexing. See [Git Enrichments](/usage/advanced/git-enrichments) for details.
+Git enrichment is **enabled by default** (`TRAJECTORY_GIT_ENABLED=true`). See [Git Enrichments](/usage/advanced/git-enrichments) for the full signal catalog.
 
 <AiQuery>Find code that Alice wrote recently</AiQuery>
 <AiQuery>Show me files with high churn rate</AiQuery>

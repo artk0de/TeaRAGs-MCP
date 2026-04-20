@@ -43,9 +43,9 @@ Then add tuned values to your MCP config:
 
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
-  -e EMBEDDING_BATCH_SIZE=256 \
+  -e EMBEDDING_TUNE_BATCH_SIZE=256 \
   -e INGEST_PIPELINE_CONCURRENCY=2 \
-  -e QDRANT_UPSERT_BATCH_SIZE=384
+  -e QDRANT_TUNE_UPSERT_BATCH_SIZE=384
 ```
 
 ## Embeddings-Only Benchmark
@@ -254,11 +254,11 @@ Network latency crushes remote Qdrant storage: 6966 ch/s → 1810 ch/s (3.8x dro
 
 ```bash
 # Local GPU — GPU-bound, concurrency adds overhead
-export EMBEDDING_BATCH_SIZE=512
+export EMBEDDING_TUNE_BATCH_SIZE=512
 export INGEST_PIPELINE_CONCURRENCY=1
 
 # Remote GPU — network latency hidden by parallel requests
-export EMBEDDING_BATCH_SIZE=256
+export EMBEDDING_TUNE_BATCH_SIZE=256
 export INGEST_PIPELINE_CONCURRENCY=4
 ```
 
@@ -316,8 +316,8 @@ Even at 156 ch/s (remote GPU), embedding is **40x slower** than storage. Invest 
 
 ### For Memory Issues
 
-- ⚠️ Reduce `CODE_CHUNK_SIZE` (default 2500)
-- ⚠️ Reduce `QDRANT_UPSERT_BATCH_SIZE`
+- ⚠️ Reduce `INGEST_CHUNK_SIZE` (default 2500)
+- ⚠️ Reduce `QDRANT_TUNE_UPSERT_BATCH_SIZE`
 - ⚠️ Increase Qdrant memory (docker-compose.yml for external Qdrant)
 - ⚠️ Index subdirectories separately
 
@@ -358,9 +358,9 @@ Returns: status, chunk count, last update time, collection statistics.
 ### 🏠 Local Setup (MacBook M3 Pro)
 
 ```bash
-EMBEDDING_BATCH_SIZE=512
+EMBEDDING_TUNE_BATCH_SIZE=512
 INGEST_PIPELINE_CONCURRENCY=1
-QDRANT_UPSERT_BATCH_SIZE=192
+QDRANT_TUNE_UPSERT_BATCH_SIZE=192
 QDRANT_BATCH_ORDERING=weak
 QDRANT_FLUSH_INTERVAL_MS=100
 QDRANT_DELETE_BATCH_SIZE=1500
@@ -376,9 +376,9 @@ QDRANT_DELETE_CONCURRENCY=12
 ### ⭐ Remote GPU + Local Qdrant (AMD 7800M)
 
 ```bash
-EMBEDDING_BATCH_SIZE=256
+EMBEDDING_TUNE_BATCH_SIZE=256
 INGEST_PIPELINE_CONCURRENCY=6
-QDRANT_UPSERT_BATCH_SIZE=512
+QDRANT_TUNE_UPSERT_BATCH_SIZE=512
 QDRANT_BATCH_ORDERING=strong
 QDRANT_FLUSH_INTERVAL_MS=250
 QDRANT_DELETE_BATCH_SIZE=500
@@ -394,9 +394,9 @@ QDRANT_DELETE_CONCURRENCY=16
 ### 🌐 Full Remote Setup
 
 ```bash
-EMBEDDING_BATCH_SIZE=256
+EMBEDDING_TUNE_BATCH_SIZE=256
 INGEST_PIPELINE_CONCURRENCY=4
-QDRANT_UPSERT_BATCH_SIZE=256
+QDRANT_TUNE_UPSERT_BATCH_SIZE=256
 QDRANT_BATCH_ORDERING=weak
 QDRANT_FLUSH_INTERVAL_MS=500
 QDRANT_DELETE_BATCH_SIZE=1000
