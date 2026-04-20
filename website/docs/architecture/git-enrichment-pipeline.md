@@ -106,6 +106,34 @@ Chunk-level analysis is automatically skipped for:
 - **Binary files** — blob read fails gracefully.
 - **Root commits** — no parent to diff against.
 
+## GIT SESSIONS — Squash-Aware Grouping {#git-sessions}
+
+**Why it exists.** Agent-driven development produces **bursts of micro-commits**:
+a single refactor session might land as 15–20 "fix typo", "adjust", "wip"
+commits within a few minutes. Treating each as an independent commit wrecks
+every churn-based signal — a 20-commit session looks identical to 20 separate
+production incidents.
+
+**What it does.** When `TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true`, the pipeline
+groups commits by `(author, time gap)`. Any silence gap larger than
+`TRAJECTORY_GIT_SESSION_GAP_MINUTES` (default 30 min) starts a new session.
+Session count — not raw commit count — then feeds churn-related signals.
+
+**Where it matters most:**
+
+- Solo devs pair-programming with an agent (single human + single agent author)
+- Teams adopting AI-assisted workflows where agents produce fine-grained commits
+- Any project where `git log --oneline | wc -l` is misleading because most
+  commits are agent checkpoints, not logical deliverables
+
+**Impact on signals.** `commitCount`, `chunkCommitCount`, `bugFixRate`,
+`churnVolatility`, and `relativeChurn` all use the deduplicated session count
+when this mode is on. `dominantAuthor` and `taskIds` are unaffected.
+
+**Default is `false`** — opt in per project. Enable via the environment variable
+or the setup wizard (`/tea-rags-setup:install` step 7 — "Configure git
+analytics").
+
 ## Environment Variables
 
 | Variable | Default | Description |
