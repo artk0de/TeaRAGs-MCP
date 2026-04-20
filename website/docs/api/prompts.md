@@ -27,7 +27,7 @@ Reusable text templates with parameters that AI assistants can invoke via MCP. D
 ```json
 {
   "mcpServers": {
-    "qdrant": {
+    "tea-rags": {
       "env": {
         "PROMPTS_CONFIG_FILE": "/custom/path/to/prompts.json"
       }
@@ -36,10 +36,10 @@ Reusable text templates with parameters that AI assistants can invoke via MCP. D
 }
 ```
 
-3. **Use prompts** in your AI assistant:
+3. **Use prompts** in your AI assistant (example — run a prompt defined in `prompts.example.json`):
 
 ```bash
-/mcp__tea-rags__find_similar_docs papers "neural networks" 10
+/mcp__tea-rags__analyze_and_optimize code_27622aef
 ```
 
 ## Template Syntax
@@ -54,5 +54,8 @@ Templates use `{{variable}}` placeholders:
 See `prompts.example.json` for ready-to-use prompts including:
 
 - `setup_rag_collection` — create RAG-optimized collections
-- `analyze_collection` — collection insights and recommendations
-- `compare_search_methods` — semantic vs hybrid search comparison
+- `analyze_and_optimize` — collection insights and recommendations
+- `compare_search_strategies` — semantic vs hybrid search comparison
+- `migrate_to_hybrid` — upgrade dense-only collections to hybrid search
+- `debug_search_quality` — diagnose why a query returns poor results
+- `build_knowledge_base` — end-to-end RAG knowledge base assembly

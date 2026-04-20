@@ -124,7 +124,8 @@ agent can invoke them via `/tea-rags:<skill-name>`.
 
 A separate plugin (`dinopowers`) ships 10 **wrapper skills** that run
 tea-rags enrichment _before_ chaining to the underlying
-[`superpowers:*`](https://github.com/anthropics/skills) skill. Instead of
+[`superpowers:*`](https://github.com/obra/superpowers) skill (Jesse Vincent's
+skills library for Claude Code — TDD, debugging, planning). Instead of
 `superpowers:brainstorming` starting with a blank slate, `dinopowers:brainstorming`
 first queries tea-rags for the target area's hotspots / ownership / tech-debt
 signals, then hands that context to `superpowers:brainstorming`.

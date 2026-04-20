@@ -302,19 +302,9 @@ changeRisk: {
 }
 ```
 
-#### Updated `impactAnalysis`
-
-The current `impactAnalysis` preset uses `similarity: 0.5, imports: 0.5`. The proposed update:
-
-```typescript
-impactAnalysis: {
-  similarity:  0.30,
-  importedBy:  0.30,  // was: imports 0.5 (fan-out only)
-  fanOut:      0.15,
-  isHub:       0.15,
-  churn:       0.10,
-}
-```
+:::note Historical context
+An earlier `impactAnalysis` preset (`similarity: 0.5, imports: 0.5`) was removed in favour of the current `dangerous` preset and explicit custom weights. The `blastRadius` proposal above is the principled successor once structural fan-in data is available.
+:::
 
 ---
 
@@ -352,7 +342,7 @@ Post-indexing pass: build reverse dependency map from existing `imports[]` data.
 
 ### Phase C: blastRadius Preset
 
-Wire new signals into the reranker. Add `blastRadius` and update `impactAnalysis` preset. Add normalization bounds.
+Wire new signals into the reranker. Add the `blastRadius` preset alongside the existing `dangerous` preset. Add normalization bounds.
 
 ### Phase D: Complexity Metrics
 
