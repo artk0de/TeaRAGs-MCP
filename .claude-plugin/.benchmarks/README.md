@@ -27,19 +27,20 @@ benchmarks/
 
 ## Current benchmarks
 
-| Skill                           | Date       | Evals | With-skill | Baseline | Delta   |
-| ------------------------------- | ---------- | ----- | ---------- | -------- | ------- |
-| search-cascade                  | 2026-03-29 | 20    | 100%       | 22%      | +78pp   |
-| explore                         | 2026-03-30 | 8+8   | 100%       | 12.5%    | +87.5pp |
-| research-merge                  | 2026-03-30 | 15    | 100%       | 70%      | +30pp   |
-| risk-assessment                 | 2026-03-30 | 12    | 100%       | 10%      | +90pp   |
-| coverage-expander               | 2026-04-01 | 10    | 100%       | 100%     | 0pp\*   |
-| install                         | 2026-04-12 | 10    | 100%       | 100%     | 0pp\*\* |
-| dinopowers:writing-skills       | 2026-04-20 | 12    | 100%       | 25%      | +75pp   |
-| dinopowers:brainstorming        | 2026-04-20 | 13    | 100%       | 23%      | +77pp   |
-| dinopowers:writing-plans        | 2026-04-20 | 14    | 100%       | 29%      | +71pp   |
-| dinopowers:executing-plans      | 2026-04-20 | 15    | 100%       | 53%      | +47pp   |
-| dinopowers:systematic-debugging | 2026-04-20 | 15    | 100%       | 27%      | +73pp   |
+| Skill                              | Date       | Evals | With-skill | Baseline | Delta   |
+| ---------------------------------- | ---------- | ----- | ---------- | -------- | ------- |
+| search-cascade                     | 2026-03-29 | 20    | 100%       | 22%      | +78pp   |
+| explore                            | 2026-03-30 | 8+8   | 100%       | 12.5%    | +87.5pp |
+| research-merge                     | 2026-03-30 | 15    | 100%       | 70%      | +30pp   |
+| risk-assessment                    | 2026-03-30 | 12    | 100%       | 10%      | +90pp   |
+| coverage-expander                  | 2026-04-01 | 10    | 100%       | 100%     | 0pp\*   |
+| install                            | 2026-04-12 | 10    | 100%       | 100%     | 0pp\*\* |
+| dinopowers:writing-skills          | 2026-04-20 | 12    | 100%       | 25%      | +75pp   |
+| dinopowers:brainstorming           | 2026-04-20 | 13    | 100%       | 23%      | +77pp   |
+| dinopowers:writing-plans           | 2026-04-20 | 14    | 100%       | 29%      | +71pp   |
+| dinopowers:executing-plans         | 2026-04-20 | 15    | 100%       | 53%      | +47pp   |
+| dinopowers:systematic-debugging    | 2026-04-20 | 15    | 100%       | 27%      | +73pp   |
+| dinopowers:test-driven-development | 2026-04-20 | 15    | 100%       | 20%      | +80pp   |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
