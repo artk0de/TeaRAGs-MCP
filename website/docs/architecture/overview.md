@@ -253,7 +253,7 @@ Searching: Agent → TeaRAGs → Qdrant (retrieve) → TeaRAGs (rerank) → Agen
 
 ## Next Steps
 
-- [Indexing Pipeline](./indexing-pipeline) — deep dive into code vectorization
-- [Data Model](./data-model) — chunk schema, payload structure, vector dimensions
-- [Pipeline Stages](./pipeline-stages) — chunking, embedding, enrichment stages
-- [Cache Lifecycle](./cache-lifecycle) — snapshot management, incremental updates
+- [Indexing Pipeline](./indexing-pipeline) — chunk → embed → upsert flow + incremental reindex
+- [Data Model](./data-model) — full payload catalog: base fields + `git.file.*` + `git.chunk.*` + schema versioning
+- [Git Enrichment Pipeline](./git-enrichment-pipeline) — how `git.*` signals are computed (2-phase)
+- [Cache Lifecycle](./cache-lifecycle) — all caches in the system (Qdrant daemon, stats, git, ONNX, snapshots)

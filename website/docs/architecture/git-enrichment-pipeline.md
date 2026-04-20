@@ -18,7 +18,7 @@ For metric definitions and research context, see [Code Churn: Theory & Research]
 flowchart TB
     subgraph phase1["Phase 1: File-Level Enrichment"]
         GitLog[🔀 git log<br/><small>isomorphic-git</small>]
-        FileCommits[📋 Per-file CommitInfo[]<br/><small>+ linesAdded / linesDeleted</small>]
+        FileCommits["📋 Per-file CommitInfo list<br/><small>+ linesAdded / linesDeleted</small>"]
         ComputeMeta[⚙️ computeFileMetadata]
         GitFileMeta[📊 GitFileMetadata<br/><small>stored on all chunks of file</small>]
 
