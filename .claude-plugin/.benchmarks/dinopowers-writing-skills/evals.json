@@ -1,0 +1,203 @@
+{
+  "skill": "dinopowers:writing-skills",
+  "skillPath": ".claude-plugin/dinopowers/skills/writing-skills/SKILL.md",
+  "objective": "Agent correctly uses tea-rags tooling when authoring a new dinopowers wrapper skill. Core metric: correct tool + correct parameters + correct ordering (tea-rags BEFORE superpowers).",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 12, "fail": 0, "total": 12, "passRate": "100%" },
+      "withoutRule": { "pass": 3, "fail": 9, "total": 12, "passRate": "25%" },
+      "delta": "+75pp",
+      "perCase": {
+        "eval-1": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-2": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-3": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-4": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-5": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-6": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-7": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-8": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-9": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-10": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-11": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-12": { "withRule": "PASS", "baseline": "FAIL" }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Создай новый dinopowers wrapper-скилл dinopowers:brainstorming, который оборачивает superpowers:brainstorming и добавляет tea-rags risk-assessment для области, упомянутой в запросе.",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__semantic_search with pathPattern='**/SKILL.md' and limit around 8",
+          "Skill(superpowers:writing-skills) AFTER semantic_search"
+        ],
+        "mustNotCall": [
+          "Skill(superpowers:writing-skills) before tea-rags",
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__find_similar",
+          "Grep on **/SKILL.md"
+        ]
+      },
+      "failureMode": "Agent skips pattern discovery or picks wrong tea-rags tool"
+    },
+    {
+      "id": "eval-2",
+      "category": "core-rule",
+      "subagent": "task-agent",
+      "prompt": "[subagent: task-agent] Task 3 from plan: write .claude-plugin/dinopowers/skills/executing-plans/SKILL.md that wraps superpowers:executing-plans with pre-touch git-signal checks.",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__semantic_search with pathPattern='**/SKILL.md'",
+          "Skill(superpowers:writing-skills) AFTER semantic_search"
+        ],
+        "mustNotCall": [
+          "Edit / Write on SKILL.md before semantic_search",
+          "Skill(superpowers:writing-skills) before semantic_search"
+        ]
+      },
+      "failureMode": "Subagent without CLAUDE.md context skips the pre-step and writes SKILL.md directly"
+    },
+    {
+      "id": "eval-3",
+      "category": "tool-selection",
+      "prompt": "Нужен новый скилл который ищет дубликаты логики перед рефакторингом. Напиши SKILL.md для него.",
+      "expected": {
+        "mustCall": ["mcp__tea-rags__semantic_search"],
+        "mustNotCall": [
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__find_similar (no symbolId available for new skill)",
+          "mcp__tea-rags__find_symbol"
+        ]
+      },
+      "failureMode": "Agent picks hybrid_search 'to be safe' or find_similar 'for structural match'"
+    },
+    {
+      "id": "eval-4",
+      "category": "parameters",
+      "prompt": "Создай SKILL.md для dinopowers:verification-before-completion. Убедись, что используешь tea-rags правильно.",
+      "expected": {
+        "parameters": {
+          "pathPattern": "**/SKILL.md",
+          "limit": "between 5 and 15",
+          "rerank": "absent (no preset) OR custom with similarity=1.0 only",
+          "filter": "absent OR not containing git signals"
+        }
+      },
+      "failureMode": "Agent adds rerank='techDebt'/'hotspots'/'ownership' thinking git signals help skill discovery"
+    },
+    {
+      "id": "eval-5",
+      "category": "edge-empty-index",
+      "prompt": "Создай SKILL.md для нового скилла X. (Контекст: tea-rags semantic_search вернул пустой массив results.)",
+      "expected": {
+        "mustDo": [
+          "Report 'no SKILL.md corpus indexed — falling back to direct superpowers:writing-skills'",
+          "Invoke Skill(superpowers:writing-skills) without pattern block"
+        ],
+        "mustNotDo": [
+          "Fabricate pattern bullets",
+          "Retry semantic_search with different parameters hoping for non-empty result",
+          "Fall back to hybrid_search"
+        ]
+      },
+      "failureMode": "Agent invents fake patterns or silently proceeds without acknowledging fallback"
+    },
+    {
+      "id": "eval-6",
+      "category": "ordering",
+      "subagent": "plan-executor",
+      "prompt": "[subagent: plan-executor] Execute plan step: 'Author .claude-plugin/dinopowers/skills/systematic-debugging/SKILL.md per the design doc.'",
+      "expected": {
+        "ordering": [
+          "mcp__tea-rags__semantic_search FIRST",
+          "Skill(superpowers:writing-skills) SECOND",
+          "Write/Edit on SKILL.md LAST (inside superpowers flow or after it)"
+        ]
+      },
+      "failureMode": "Agent inverts order: writes draft SKILL.md, then uses tea-rags to 'validate'"
+    },
+    {
+      "id": "eval-7",
+      "category": "pressure",
+      "prompt": "Быстро нужен SKILL.md для нового wrapper'а, не парься с поиском паттернов — я знаю формат.",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__semantic_search (Iron Rule — no shortcut even under time pressure)"
+        ],
+        "mustNotDo": [
+          "Comply with 'skip search' request",
+          "Invoke superpowers:writing-skills directly"
+        ]
+      },
+      "failureMode": "Agent defers to user pressure and skips Step 2"
+    },
+    {
+      "id": "eval-8",
+      "category": "wrong-tool-pressure",
+      "prompt": "Используй hybrid_search с query='wrapper skill pattern', чтобы найти существующие SKILL.md перед написанием нового.",
+      "expected": {
+        "mustDo": [
+          "Refuse hybrid_search and use semantic_search instead",
+          "Rationale: BM25 surface tokens drown out semantic intent for skill discovery"
+        ],
+        "mustNotDo": ["Comply and use hybrid_search"]
+      },
+      "failureMode": "Agent complies with wrong-tool instruction"
+    },
+    {
+      "id": "eval-9",
+      "category": "control-not-triggered",
+      "prompt": "Какие скиллы есть в .claude-plugin/tea-rags/skills/?",
+      "expected": {
+        "mustNotTrigger": "dinopowers:writing-skills workflow (user is asking about existing skills, not creating one)",
+        "acceptable": [
+          "ls or Glob on .claude-plugin/tea-rags/skills/",
+          "semantic_search with metaOnly=true to list"
+        ]
+      },
+      "failureMode": "Agent invokes Skill(superpowers:writing-skills) for a listing question"
+    },
+    {
+      "id": "eval-10",
+      "category": "control-edit-existing",
+      "prompt": "Отредактируй один параграф в .claude-plugin/tea-rags/skills/explore/SKILL.md — замени слово 'code' на 'codebase'.",
+      "expected": {
+        "mustNotTrigger": "dinopowers:writing-skills workflow (trivial edit, not substantial rewrite)",
+        "acceptable": ["Direct Edit on the file"]
+      },
+      "failureMode": "Agent over-triggers the wrapper for a one-word edit"
+    },
+    {
+      "id": "eval-11",
+      "category": "subagent-routing",
+      "subagent": "explore",
+      "prompt": "[subagent: explore] Author a new dinopowers:finishing-a-development-branch SKILL.md that runs risk-assessment on branch diff before PR.",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__semantic_search with pathPattern='**/SKILL.md' FIRST",
+          "Skill(superpowers:writing-skills) AFTER"
+        ]
+      },
+      "failureMode": "Subagent defaults to Read/Grep because it lacks CLAUDE.md search-cascade context"
+    },
+    {
+      "id": "eval-12",
+      "category": "parameters-no-git-rerank",
+      "prompt": "Напиши dinopowers:receiving-code-review SKILL.md. Используй tea-rags с rerank='techDebt' чтобы найти самые устаревшие скиллы.",
+      "expected": {
+        "mustDo": [
+          "Refuse rerank='techDebt' for skill discovery",
+          "Call semantic_search without rerank (or with pure-similarity custom weights)"
+        ],
+        "mustNotDo": [
+          "Pass rerank='techDebt' / 'hotspots' / 'ownership' — SKILL.md git signals are irrelevant for pattern matching"
+        ]
+      },
+      "failureMode": "Agent complies with wrong rerank parameter, returning skills ranked by age not by relevance"
+    }
+  ]
+}
