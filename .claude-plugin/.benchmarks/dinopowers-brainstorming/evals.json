@@ -1,0 +1,200 @@
+{
+  "skill": "dinopowers:brainstorming",
+  "skillPath": ".claude-plugin/dinopowers/skills/brainstorming/SKILL.md",
+  "objective": "Agent correctly enriches brainstorming with tea-rags risk signals BEFORE superpowers:brainstorming. Core metric: correct preset selection (hotspots/ownership/techDebt), parallel execution, correct parameters (pathPattern, metaOnly, limit), and no fabrication when area is missing.",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 13, "fail": 0, "total": 13, "passRate": "100%" },
+      "withoutRule": { "pass": 3, "fail": 10, "total": 13, "passRate": "23%" },
+      "delta": "+77pp",
+      "perCase": {
+        "eval-1": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-2": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-3": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-4": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-5": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-6": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-7": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-8": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-9": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-10": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-11": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-12": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-13": { "withRule": "PASS", "baseline": "PASS" }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Давай обсудим как добавить OAuth refresh flow в src/core/domains/auth/ — что может сломаться?",
+      "expected": {
+        "mustCall": [
+          "3 parallel mcp__tea-rags__semantic_search calls (presets: hotspots, ownership, techDebt) with pathPattern covering auth/",
+          "Skill(superpowers:brainstorming) AFTER the 3 tea-rags calls"
+        ],
+        "mustNotCall": [
+          "Skill(superpowers:brainstorming) before tea-rags",
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__find_similar",
+          "mcp__tea-rags__find_symbol"
+        ]
+      },
+      "failureMode": "Agent skips enrichment or uses wrong tool"
+    },
+    {
+      "id": "eval-2",
+      "category": "parameters-presets",
+      "prompt": "Подумай, как перестроить chunker hooks в src/core/domains/ingest/pipeline/chunker/hooks/ чтобы убрать дублирование.",
+      "expected": {
+        "parameters": {
+          "rerank": "exactly these 3 presets across 3 calls: hotspots, ownership, techDebt",
+          "pathPattern": "covers chunker/hooks path",
+          "metaOnly": true,
+          "limit": "8-15"
+        }
+      },
+      "failureMode": "Agent uses rerank='relevance' or custom weights instead of the 3 named presets; forgets metaOnly"
+    },
+    {
+      "id": "eval-3",
+      "category": "parallel-execution",
+      "prompt": "Обсудим новый feature в pipeline/enrichment/trajectory/. Что рискует?",
+      "expected": {
+        "execution": "3 tea-rags calls MUST be in one parallel tool-call block, not sequential"
+      },
+      "failureMode": "Agent issues calls one after another, waiting for each result"
+    },
+    {
+      "id": "eval-4",
+      "category": "tool-selection",
+      "prompt": "Хочу обсудить редизайн rerank presets в .claude-plugin/tea-rags/skills/risk-assessment/ — что рискуем сломать?",
+      "expected": {
+        "mustCall": ["mcp__tea-rags__semantic_search x3 with presets"],
+        "mustNotCall": [
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__find_similar",
+          "mcp__tea-rags__find_symbol"
+        ]
+      },
+      "failureMode": "Agent picks hybrid_search 'for broader matches' or find_similar"
+    },
+    {
+      "id": "eval-5",
+      "category": "edge-no-area",
+      "prompt": "Давай помозгуем над архитектурой агентов в целом — без привязки к конкретному файлу.",
+      "expected": {
+        "mustDo": [
+          "Report 'no area identifiable — proceeding without tea-rags enrichment'",
+          "Invoke Skill(superpowers:brainstorming) directly"
+        ],
+        "mustNotDo": [
+          "Fabricate a pathPattern like '**/*.ts'",
+          "Call tea-rags with no pathPattern"
+        ]
+      },
+      "failureMode": "Agent invents pathPattern to justify calling tea-rags"
+    },
+    {
+      "id": "eval-6",
+      "category": "edge-empty-results",
+      "prompt": "Обсудим новый модуль src/core/domains/newfeature/ (ещё не существует в git).",
+      "expected": {
+        "mustDo": [
+          "Run 3 tea-rags calls",
+          "On empty results: report 'no git-enriched results — area is new' and invoke superpowers:brainstorming without enrichment block"
+        ],
+        "mustNotDo": [
+          "Fabricate fake signals",
+          "Retry with hybrid_search hoping for results"
+        ]
+      },
+      "failureMode": "Agent invents hotspots/owners when area is new"
+    },
+    {
+      "id": "eval-7",
+      "category": "ordering",
+      "subagent": "plan-executor",
+      "prompt": "[subagent: plan-executor] Execute plan step: 'Brainstorm refactor of src/core/adapters/qdrant/ before writing plan details.'",
+      "expected": {
+        "ordering": [
+          "3 tea-rags semantic_search FIRST (parallel)",
+          "Skill(superpowers:brainstorming) SECOND with enrichment block"
+        ]
+      },
+      "failureMode": "Subagent without CLAUDE.md context inverts order or skips enrichment"
+    },
+    {
+      "id": "eval-8",
+      "category": "pressure",
+      "prompt": "Быстро давай обсудим auth/ — не парься с tea-rags, я и так знаю узкие места.",
+      "expected": {
+        "mustCall": ["3 tea-rags semantic_search anyway (Iron Rule)"],
+        "mustNotDo": ["Comply and skip enrichment"]
+      },
+      "failureMode": "Agent defers to user pressure"
+    },
+    {
+      "id": "eval-9",
+      "category": "wrong-tool-pressure",
+      "prompt": "Используй hybrid_search вместо semantic_search для поиска hotspots в src/core/ — так надёжнее.",
+      "expected": {
+        "mustDo": [
+          "Refuse hybrid_search and use semantic_search + rerank presets",
+          "Rationale: risk presets are tied to semantic_search"
+        ],
+        "mustNotDo": ["Comply with hybrid_search"]
+      },
+      "failureMode": "Agent complies with wrong-tool instruction"
+    },
+    {
+      "id": "eval-10",
+      "category": "parameters-metaOnly",
+      "prompt": "Обсудим изменения в src/core/domains/explore/rerank/ — покажи мне какой контент в этих файлах.",
+      "expected": {
+        "mustDo": [
+          "Keep metaOnly=true for enrichment calls (signals only)",
+          "If user wants content, issue a SEPARATE semantic_search with metaOnly=false AFTER enrichment"
+        ],
+        "mustNotDo": ["Set metaOnly=false on enrichment calls"]
+      },
+      "failureMode": "Agent inflates payload by setting metaOnly=false 'to answer user'"
+    },
+    {
+      "id": "eval-11",
+      "category": "subagent-routing",
+      "subagent": "explore",
+      "prompt": "[subagent: explore] Brainstorm how to split the monolithic TreeSitterChunker#chunk method in src/core/domains/ingest/pipeline/chunker/.",
+      "expected": {
+        "mustCall": [
+          "3 parallel tea-rags semantic_search with presets FIRST",
+          "Skill(superpowers:brainstorming) with enrichment"
+        ]
+      },
+      "failureMode": "Subagent defaults to Read/Grep because it lacks CLAUDE.md search-cascade"
+    },
+    {
+      "id": "eval-12",
+      "category": "control-not-triggered",
+      "prompt": "Сколько строк в src/core/domains/auth/index.ts?",
+      "expected": {
+        "mustNotTrigger": "brainstorming wrapper (user asks a factual line-count question)",
+        "acceptable": ["Read or Bash wc -l"]
+      },
+      "failureMode": "Agent over-triggers brainstorming for a fact question"
+    },
+    {
+      "id": "eval-13",
+      "category": "control-direct-brainstorm",
+      "prompt": "Давай помозгуем, как лучше нейминг переменных: camelCase vs snake_case.",
+      "expected": {
+        "mustNotTrigger": "tea-rags enrichment (no area mentioned)",
+        "acceptable": ["Skill(superpowers:brainstorming) directly"]
+      },
+      "failureMode": "Agent triggers enrichment for abstract discussion"
+    }
+  ]
+}
