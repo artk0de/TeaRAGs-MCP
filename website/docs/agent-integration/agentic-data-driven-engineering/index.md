@@ -7,7 +7,7 @@ import AiQuery from '@site/src/components/AiQuery';
 
 # Agentic Data-Driven Engineering
 
-Standard code RAG retrieves by similarity: "find code that looks like X." The agent copies the first match without knowing if that code is stable, bug-prone, or has been rewritten five times. With trajectory enrichment, every search result carries [19 git-derived quality signals](/usage/git-enrichments) — and the agent can reason about **what to copy, what to avoid, and how to generate** before writing a single line.
+Standard code RAG retrieves by similarity: "find code that looks like X." The agent copies the first match without knowing if that code is stable, bug-prone, or has been rewritten five times. With trajectory enrichment, every search result carries [19 git-derived quality signals](/usage/advanced/git-enrichments) — and the agent can reason about **what to copy, what to avoid, and how to generate** before writing a single line.
 
 This page is the practical guide: the five strategies, generation modes, danger zone checks, ripgrep verification, and ready-to-paste agent configurations. For the mental model behind this approach, see [How to Think with TeaRAGs](/agent-integration/mental-model). For metric interpretation and threshold tables, see [Deep Codebase Analysis](/agent-integration/deep-codebase-analysis). For preset/tool selection and custom weight strategies, see [Search Strategies](/agent-integration/search-strategies).
 

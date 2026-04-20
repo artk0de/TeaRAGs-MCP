@@ -120,5 +120,5 @@ This is the shift from "find similar code" to **context-aware engineering** — 
 - [Deep Codebase Analysis](/agent-integration/deep-codebase-analysis) — metric interpretation, hotspot detection, threshold tables
 - [Semantic Search — Criticism and Responses](/knowledge-base/semantic-search-criticism) — why verification is mandatory, "candidate zone generator" principle
 - [Semantic Search (Core Concepts)](/introduction/core-concepts/semantic-search#not-grep-replacement) — verification workflow with Mermaid diagram
-- [Git Enrichments](/usage/git-enrichments) — all 19 signals explained
+- [Git Enrichments](/usage/advanced/git-enrichments) — all 19 signals explained
 - [Code Churn: Theory & Research](/knowledge-base/code-churn-research) — academic foundations, Nagappan & Ball, Tornhill

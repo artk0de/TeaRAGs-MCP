@@ -1,6 +1,6 @@
 ---
 title: Ignoring Files
-sidebar_position: 3.5
+sidebar_position: 4
 ---
 
 import AiQuery from '@site/src/components/AiQuery'; import MermaidTeaRAGs from
@@ -30,7 +30,7 @@ flowchart LR
 
     subgraph config["⚙️ Config Patterns"]
         BI["Built-in defaults<br/><small>node_modules, dist, .git…</small>"]
-        ENV["CODE_CUSTOM_IGNORE<br/><small>env variable</small>"]
+        PARAM["ignorePatterns<br/><small>index_codebase param</small>"]
     end
 
     subgraph result["🔍 Scanner Decision"]
@@ -56,7 +56,7 @@ flowchart LR
 | 4   | `.contextignore`       | gitignore             | **TeaRAGs-specific** project exclusions      |
 | 5   | `.contextignore.local` | gitignore             | **Personal** overrides (add to `.gitignore`) |
 | 6   | Built-in defaults      | glob                  | Always excluded (see below)                  |
-| 7   | `CODE_CUSTOM_IGNORE`   | comma-separated globs | Runtime overrides via env                    |
+| 7   | `ignorePatterns` param | glob[]                | Per-call overrides passed to `index_codebase`|
 
 All files use
 [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format) and are
@@ -96,8 +96,12 @@ search.
 **/seeds/**
 ```
 
-:::tip `.contextignore` is the recommended way to customize which files TeaRAGs
-indexes. It lives in source control and applies to everyone on the team. :::
+:::tip
+
+`.contextignore` is the recommended way to customize which files TeaRAGs
+indexes. It lives in source control and applies to everyone on the team.
+
+:::
 
 ### .contextignore.local (personal overrides)
 
@@ -128,16 +132,19 @@ These patterns are always applied regardless of your configuration:
 | `*.map`, `*.log`                             | Source maps and logs      |
 | `.env`, `.env.*`                             | Environment secrets       |
 
-### CODE_CUSTOM_IGNORE (environment variable)
+### `ignorePatterns` parameter
 
-Add patterns at runtime without creating a file:
+Pass patterns directly to `index_codebase` for per-call overrides:
 
-```bash
-export CODE_CUSTOM_IGNORE="**/*.generated.ts,**/vendor/**,**/third_party/**"
+```json
+{
+  "path": "/project",
+  "ignorePatterns": ["**/*.generated.ts", "**/vendor/**", "**/third_party/**"]
+}
 ```
 
-Patterns are comma-separated globs. Useful in CI/CD or when testing different
-ignore configurations.
+Useful in CI/CD or when testing different ignore configurations without editing
+the `.contextignore` file.
 
 ## Dynamic Ignore Tracking
 
@@ -146,8 +153,9 @@ accordingly. No manual intervention needed.
 
 ### How it works
 
-When you run `reindex_changes`, TeaRAGs scans files using the **current** ignore
-rules and compares with the previous snapshot:
+When you run `/tea-rags:index` (or call `index_codebase` directly), TeaRAGs
+scans files using the **current** ignore rules and compares with the previous
+snapshot:
 
 | Scenario                 | Detection                                   | Action                          |
 | ------------------------ | ------------------------------------------- | ------------------------------- |
@@ -179,7 +187,7 @@ Incremental re-index complete:
 2. Add `**/*.test.ts` to `.contextignore`
 3. Run reindex — test file chunks are automatically removed
 
-<AiQuery>Update the search index with my recent changes</AiQuery>
+<AiQuery>/tea-rags:index [path]</AiQuery>
 
 **Removing an overly broad pattern:**
 
@@ -197,10 +205,13 @@ switch will automatically add/remove the right files.
 Beyond ignore patterns, TeaRAGs only indexes files with recognized source-code
 extensions. Files with unknown extensions are silently skipped.
 
-To add non-standard extensions:
+To add non-standard extensions, pass them to `index_codebase`:
 
-```bash
-export CODE_CUSTOM_EXTENSIONS=".proto,.graphql,.prisma,.hcl"
+```json
+{
+  "path": "/project",
+  "extensions": [".proto", ".graphql", ".prisma", ".hcl"]
+}
 ```
 
 This is additive — built-in extensions are always included.
@@ -245,15 +256,15 @@ entire directories.
 After changing ignore patterns, a simple reindex picks up the changes
 automatically. No need for a full reindex.
 
-<AiQuery>Update the search index with my recent changes</AiQuery>
+<AiQuery>/tea-rags:index [path]</AiQuery>
 
 ## Troubleshooting
 
 ### File I expect is not indexed
 
-1. Check if it matches any pattern in `.gitignore`, `.contextignore`, or
-   `CODE_CUSTOM_IGNORE`
-2. Verify the file extension is supported or added via `CODE_CUSTOM_EXTENSIONS`
+1. Check if it matches any pattern in `.gitignore`, `.contextignore`, or the
+   `ignorePatterns` parameter
+2. Verify the file extension is supported or added via the `extensions` parameter
 3. Run index status to confirm the index is up to date
 
 <AiQuery>Show me stats for the current index</AiQuery>
@@ -262,7 +273,7 @@ automatically. No need for a full reindex.
 
 Run a reindex to apply the updated ignore rules:
 
-<AiQuery>Update the search index with my recent changes</AiQuery>
+<AiQuery>/tea-rags:index [path]</AiQuery>
 
 The reindex will remove chunks for newly ignored files.
 
@@ -280,9 +291,13 @@ Add aggressive exclusions to `.contextignore`:
 
 Every excluded file reduces index size and improves query speed.
 
-## Next Steps
+## See Also
 
+- [Skills](/usage/skills/) — `/tea-rags:index` picks up ignore-rule changes
+  automatically on next call
 - [Indexing Repositories](/usage/indexing-repositories) — full indexing workflow
   and configuration
-- [Filters](/usage/filters) — narrow search results by metadata after indexing
-- [Query Modes](/usage/query-modes) — semantic, hybrid, and code search
+- [MCP Tools Atlas](/usage/advanced/mcp-tools) — `index_codebase` parameters
+  (`extensions`, `ignorePatterns`)
+- [Filters](/usage/advanced/filters) — narrow search results by metadata _after_
+  indexing (different from ignoring at index time)

@@ -274,7 +274,7 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
 ```
 
 :::tip
-Git enrichment runs concurrently with embedding and does not increase indexing time. See **[Git Enrichments](/usage/git-enrichments)** for the full list of signals and advanced usage.
+Git enrichment runs concurrently with embedding and does not increase indexing time. See **[Git Enrichments](/usage/advanced/git-enrichments)** for the full list of signals and advanced usage.
 :::
 
 ### Performance Tuning

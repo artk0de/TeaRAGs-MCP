@@ -18,7 +18,7 @@ Just ask your AI assistant naturally:
 
 ## With Git Metadata Filters
 
-Requires `CODE_ENABLE_GIT_METADATA=true` during indexing. See [Git Enrichments](/usage/git-enrichments) for details.
+Requires `CODE_ENABLE_GIT_METADATA=true` during indexing. See [Git Enrichments](/usage/advanced/git-enrichments) for details.
 
 <AiQuery>Find code that Alice wrote recently</AiQuery>
 <AiQuery>Show me files with high churn rate</AiQuery>
@@ -32,6 +32,6 @@ Requires `CODE_ENABLE_GIT_METADATA=true` during indexing. See [Git Enrichments](
 
 ## Next Steps
 
-- [Query Modes](/usage/query-modes) — understand semantic, hybrid, and filtered search
+- [Query Modes](/usage/advanced/query-modes) — understand semantic, hybrid, and filtered search
 - [Configuration](/config/environment-variables) — tune search defaults and parameters
 - [Performance Tuning](/config/performance-tuning) — optimize for your hardware

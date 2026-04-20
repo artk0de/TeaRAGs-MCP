@@ -1,25 +1,28 @@
 ---
 title: Query Modes
-sidebar_position: 4
+sidebar_position: 2
 ---
 
 import AiQuery from '@site/src/components/AiQuery';
 
 # Query Modes
 
-TeaRAGs provides three search tools, each backed by a different MCP tool and optimized for different workflows.
+TeaRAGs provides three search tools, each backed by a different MCP tool and
+optimized for different workflows.
 
-| Mode | MCP Tool | Output | Best for |
-|------|----------|--------|----------|
-| [Code Search](#code-search) | `search_code` | Human-readable text | Day-to-day development |
-| [Semantic Search](#semantic-search) | `semantic_search` | Structured JSON with full metadata | Analytics, reports, advanced filtering |
-| [Hybrid Search](#hybrid-search) | `hybrid_search` | Structured JSON with full metadata | Queries mixing natural language with exact identifiers |
+| Mode                                | MCP Tool          | Output                             | Best for                                               |
+| ----------------------------------- | ----------------- | ---------------------------------- | ------------------------------------------------------ |
+| [Code Search](#code-search)         | `search_code`     | Human-readable text                | Day-to-day development                                 |
+| [Semantic Search](#semantic-search) | `semantic_search` | Structured JSON with full metadata | Analytics, reports, advanced filtering                 |
+| [Hybrid Search](#hybrid-search)     | `hybrid_search`   | Structured JSON with full metadata | Queries mixing natural language with exact identifiers |
 
 ## Code Search
 
 **MCP tool:** `search_code`
 
-The primary interface for everyday code search. It wraps semantic search with sensible defaults, accepts shorthand parameters for common filters, and returns **human-readable text** — ready to paste into a conversation.
+The primary interface for everyday code search. It wraps semantic search with
+sensible defaults, accepts shorthand parameters for common filters, and returns
+**human-readable text** — ready to paste into a conversation.
 
 ### What you get
 
@@ -38,11 +41,11 @@ The primary interface for everyday code search. It wraps semantic search with se
 
 ### Rerank presets
 
-| Preset | Boost |
-|--------|-------|
-| `relevance` | Default semantic similarity |
-| `recent` | Recently modified code |
-| `stable` | Low-churn, stable implementations |
+| Preset      | Boost                             |
+| ----------- | --------------------------------- |
+| `relevance` | Default semantic similarity       |
+| `recent`    | Recently modified code            |
+| `stable`    | Low-churn, stable implementations |
 
 Custom weights are also supported:
 
@@ -52,10 +55,10 @@ Custom weights are also supported:
 
 ### Examples
 
-<AiQuery>How does user authentication work?</AiQuery>
-<AiQuery>Find error handling in TypeScript files only</AiQuery>
-<AiQuery>Search for request validation in the API directory</AiQuery>
-<AiQuery>Find recent changes by Alice</AiQuery>
+<AiQuery>How does user authentication work?</AiQuery> <AiQuery>Find error
+handling in TypeScript files only</AiQuery> <AiQuery>Search for request
+validation in the API directory</AiQuery> <AiQuery>Find recent changes by
+Alice</AiQuery>
 
 ### Workflow
 
@@ -85,13 +88,15 @@ If you need a complete re-index (for example, after changing chunking settings):
 
 ### Multi-language projects
 
-The indexer automatically detects languages across a full-stack project (TypeScript, React, Vue, Python, Go, Java, JSON, YAML, Bash, etc.):
+The indexer automatically detects languages across a full-stack project
+(TypeScript, React, Vue, Python, Go, Java, JSON, YAML, Bash, etc.):
 
 <AiQuery>Search for database connection pooling across all languages</AiQuery>
 
 ### Custom ignore patterns
 
-Create a `.contextignore` file in your project root to exclude files from indexing:
+Create a `.contextignore` file in your project root to exclude files from
+indexing:
 
 ```gitignore
 # .contextignore
@@ -109,44 +114,52 @@ Create a `.contextignore` file in your project root to exclude files from indexi
 
 **MCP tool:** `semantic_search`
 
-Converts your query into a vector embedding and finds code chunks with the closest meaning. Unlike `search_code`, returns **structured JSON** with full metadata — chunk IDs, git signals, import lists — and supports advanced features like `metaOnly`, Qdrant native filters, and all rerank presets.
+Converts your query into a vector embedding and finds code chunks with the
+closest meaning. Unlike `search_code`, returns **structured JSON** with full
+metadata — chunk IDs, git signals, import lists — and supports advanced features
+like `metaOnly`, Qdrant native filters, and all rerank presets.
 
 ### What you get (beyond Code Search)
 
-| Feature | `search_code` | `semantic_search` |
-|---------|---------------|-------------------|
-| Human-readable output | yes | — |
-| Structured JSON output | — | yes |
-| Chunk ID (UUID) | — | yes |
-| Full git metadata in response | — | yes (authors[], taskIds[], timestamps) |
-| `metaOnly` mode | — | yes |
-| Qdrant native filter syntax | — | yes |
-| `pathPattern` (glob) | yes | yes |
-| Rerank presets | 3 (relevance, recent, stable) | 9+ (techDebt, hotspots, ownership, ...) |
-| Requires collection name | no (uses path) | no (path or collection) |
+| Feature                       | `search_code`                 | `semantic_search`                       |
+| ----------------------------- | ----------------------------- | --------------------------------------- |
+| Human-readable output         | yes                           | —                                       |
+| Structured JSON output        | —                             | yes                                     |
+| Chunk ID (UUID)               | —                             | yes                                     |
+| Full git metadata in response | —                             | yes (authors[], taskIds[], timestamps)  |
+| `metaOnly` mode               | —                             | yes                                     |
+| Qdrant native filter syntax   | —                             | yes                                     |
+| `pathPattern` (glob)          | yes                           | yes                                     |
+| Rerank presets                | 4 (relevance, recent, stable, proven) | 15 (techDebt, hotspots, ownership, dangerous, bugHunt, ...) |
+| Requires collection name      | no (uses path)                | no (path or collection)                 |
 
 ### When to use
 
 - **Analytics** — tech debt reports, hotspot detection, ownership analysis
-- **Need structured data** — chunk IDs for downstream processing, git metadata for reports
+- **Need structured data** — chunk IDs for downstream processing, git metadata
+  for reports
 - **Complex filtering** — Qdrant filter syntax with range, match, boolean logic
-- **Metadata only** — file discovery, codebase structure scans without reading content
+- **Metadata only** — file discovery, codebase structure scans without reading
+  content
 
 ### Rerank presets
 
-All [reranking presets](/usage/git-enrichments#reranking-presets) are available:
+All [reranking presets](/usage/advanced/git-enrichments#reranking-presets) are
+available:
 
-| Preset | Use case |
-|--------|----------|
-| `relevance` | Default semantic similarity |
-| `techDebt` | Legacy code assessment |
-| `hotspots` | Bug-prone, high-churn areas |
-| `codeReview` | Recent changes |
-| `onboarding` | Docs + stable code |
-| `securityAudit` | Old critical code |
-| `refactoring` | Refactor candidates |
-| `ownership` | Knowledge silos |
-| `impactAnalysis` | Dependency analysis |
+| Preset           | Use case                    |
+| ---------------- | --------------------------- |
+| `relevance`      | Default semantic similarity |
+| `techDebt`       | Legacy code assessment      |
+| `hotspots`       | Bug-prone, high-churn areas |
+| `codeReview`     | Recent changes              |
+| `onboarding`     | Docs + stable code          |
+| `securityAudit`  | Old critical code           |
+| `refactoring`    | Refactor candidates         |
+| `ownership`      | Knowledge silos             |
+| `dangerous`      | High-risk bug-prone code    |
+| `bugHunt`        | Active bug investigation    |
+| `proven`         | Battle-tested templates     |
 
 ### `metaOnly` mode
 
@@ -166,26 +179,31 @@ Returns metadata without content — significantly reduces response size:
 }
 ```
 
-Use for file discovery, analytics, codebase structure scans, or ownership reports.
+Use for file discovery, analytics, codebase structure scans, or ownership
+reports.
 
 ### Characteristics
 
-| Aspect | Detail |
-|--------|--------|
-| **Input** | Natural language query |
-| **Matching** | Vector cosine similarity |
+| Aspect        | Detail                                                    |
+| ------------- | --------------------------------------------------------- |
+| **Input**     | Natural language query                                    |
+| **Matching**  | Vector cosine similarity                                  |
 | **Strengths** | Understands synonyms, intent, and cross-language patterns |
-| **Weakness** | May miss exact keywords like function names or acronyms |
+| **Weakness**  | May miss exact keywords like function names or acronyms   |
 
 ## Hybrid Search
 
 **MCP tool:** `hybrid_search`
 
-Combines **semantic (vector)** similarity with **keyword (BM25)** matching and merges rankings via **Reciprocal Rank Fusion (RRF)**. Returns the same structured JSON as `semantic_search`, with the same features (metaOnly, filters, all rerank presets).
+Combines **semantic (vector)** similarity with **keyword (BM25)** matching and
+merges rankings via **Reciprocal Rank Fusion (RRF)**. Returns the same
+structured JSON as `semantic_search`, with the same features (metaOnly, filters,
+all rerank presets).
 
 ### When to use
 
-Hybrid search is ideal when your query mixes natural language with technical identifiers:
+Hybrid search is ideal when your query mixes natural language with technical
+identifiers:
 
 - **Function or variable names** — "getUserById authentication"
 - **Acronyms and technical terms** — "JWT token validation"
@@ -194,21 +212,25 @@ Hybrid search is ideal when your query mixes natural language with technical ide
 
 ### How it works
 
-1. **Dense vector generation** — your query is embedded using the configured provider (Ollama, OpenAI, etc.)
-2. **Sparse vector generation** — the query is tokenized and BM25 scores are calculated
+1. **Dense vector generation** — your query is embedded using the configured
+   provider (Ollama, OpenAI, etc.)
+2. **Sparse vector generation** — the query is tokenized and BM25 scores are
+   calculated
 3. **Parallel search** — both vector types are searched simultaneously in Qdrant
 4. **Result fusion** — RRF combines rankings from both searches
 5. **Final ranking** — merged results with combined relevance scores
 
 ### RRF formula
 
-Rankings from the semantic and keyword searches are fused using Reciprocal Rank Fusion:
+Rankings from the semantic and keyword searches are fused using Reciprocal Rank
+Fusion:
 
 ```
 score = sum( 1 / (k + rank_i) )   where k = 60 (default)
 ```
 
-RRF does not require score normalization and is robust to differences in score scales between the two retrieval methods.
+RRF does not require score normalization and is robust to differences in score
+scales between the two retrieval methods.
 
 ### BM25 sparse vectors
 
@@ -220,11 +242,11 @@ The server uses a lightweight BM25 implementation for sparse vectors:
 
 ### Comparison: Semantic vs Hybrid
 
-| Query | Semantic Search | Hybrid Search |
-|-------|-----------------|---------------|
-| "JWT authentication" | Finds authentication concepts; may miss exact "JWT" matches | Finds both semantically related auth docs **and** exact "JWT" keyword matches |
-| "authenticateUser function" | Understands the concept but may miss the exact function name | Keyword match catches `authenticateUser` precisely; semantic match catches related auth code |
-| "OAuth2 authentification" (typo) | Understands "authentification" as "authentication" | Keyword match catches "OAuth2" exactly; semantic match handles the typo gracefully |
+| Query                            | Semantic Search                                              | Hybrid Search                                                                                |
+| -------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| "JWT authentication"             | Finds authentication concepts; may miss exact "JWT" matches  | Finds both semantically related auth docs **and** exact "JWT" keyword matches                |
+| "authenticateUser function"      | Understands the concept but may miss the exact function name | Keyword match catches `authenticateUser` precisely; semantic match catches related auth code |
+| "OAuth2 authentification" (typo) | Understands "authentification" as "authentication"           | Keyword match catches "OAuth2" exactly; semantic match handles the typo gracefully           |
 
 ### Enabling hybrid search
 
@@ -243,29 +265,34 @@ Existing collections cannot be converted to hybrid after creation.
 
 ## Filtered Search
 
-Filters narrow search results by metadata — language, file path, code structure, git churn metrics, and more. Filters work with all three search modes.
+Filters narrow search results by metadata — language, file path, code structure,
+git churn metrics, and more. Filters work with all three search modes.
 
-See **[Filters](/usage/filters)** for the complete reference: filter syntax, operators, filterable fields, git churn filters, path patterns, and examples.
+See **[Filters](/usage/advanced/filters)** for the complete reference: filter
+syntax, operators, filterable fields, git churn filters, path patterns, and
+examples.
 
-<AiQuery>Find error handling in TypeScript files only</AiQuery>
-<AiQuery>Show me high-churn code in the auth directory</AiQuery>
+<AiQuery>Find error handling in TypeScript files only</AiQuery> <AiQuery>Show me
+high-churn code in the auth directory</AiQuery>
 
 ## Choosing the Right Mode
 
-| Situation | Recommended Mode |
-|-----------|------------------|
-| Day-to-day development: search, index, reindex | `search_code` |
-| Exploring unfamiliar code by concept | `search_code` or `semantic_search` |
-| Analytics: tech debt, hotspots, ownership reports | `semantic_search` with rerank presets |
-| Need chunk IDs or structured git metadata | `semantic_search` |
-| Metadata-only scans (file discovery, structure) | `semantic_search` with `metaOnly` |
-| Searching for exact function names mixed with concepts | `hybrid_search` |
-| Narrowing results to a specific language, author, or directory | Any mode + [filters](/usage/filters) |
+| Situation                                                      | Recommended Mode                              |
+| -------------------------------------------------------------- | --------------------------------------------- |
+| Day-to-day development: search, index, reindex                 | `search_code`                                 |
+| Exploring unfamiliar code by concept                           | `search_code` or `semantic_search`            |
+| Analytics: tech debt, hotspots, ownership reports              | `semantic_search` with rerank presets         |
+| Need chunk IDs or structured git metadata                      | `semantic_search`                             |
+| Metadata-only scans (file discovery, structure)                | `semantic_search` with `metaOnly`             |
+| Searching for exact function names mixed with concepts         | `hybrid_search`                               |
+| Narrowing results to a specific language, author, or directory | Any mode + [filters](/usage/advanced/filters) |
 
 :::info
-For complete tool parameters, response formats, and rerank weight keys, see the **[Tools Schema](/api/tools)**.
-:::
 
+For complete tool parameters, response formats, and rerank weight keys,
+see the **[Tools Schema](/api/tools)**.
+
+:::
 > Parts of this page are adapted from examples originally written by
 > [Martin Halder](https://github.com/mhalder) in
 > [qdrant-mcp-server](https://github.com/mhalder/qdrant-mcp-server).
