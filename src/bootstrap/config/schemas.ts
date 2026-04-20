@@ -70,7 +70,7 @@ export const ingestSchema = z.object({
 });
 
 export const trajectoryGitSchema = z.object({
-  enabled: booleanFromEnv,
+  enabled: booleanFromEnvWithDefault(true),
   logMaxAgeMonths: floatWithDefault(12),
   logTimeoutMs: intWithDefault(60000),
   chunkConcurrency: intWithDefault(10),

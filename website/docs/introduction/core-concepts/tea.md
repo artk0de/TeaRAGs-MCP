@@ -40,7 +40,7 @@ Statistical signals (`ownership`, `bugFixRate`, `volatility`) are confidence-dam
 | **"Find stable examples"** | Return whatever is most similar | `rerank: "stable"` — boost low-churn, well-established code |
 | **Chunk granularity** | Same score for all chunks in a file | Per-chunk churn overlay — each function/method tracked independently |
 
-The trajectory layer is **opt-in**. Without `CODE_ENABLE_GIT_METADATA=true`, the system operates as a standard semantic code search with AST-aware chunking and hybrid (BM25 + vector) retrieval.
+The git trajectory layer is **enabled by default**. Set `CODE_ENABLE_GIT_METADATA=false` to opt out — the system then operates as a standard semantic code search with AST-aware chunking and hybrid (BM25 + vector) retrieval. The layer is also silently skipped for non-git directories.
 
 ## Agentic Data-Driven Engineering
 
