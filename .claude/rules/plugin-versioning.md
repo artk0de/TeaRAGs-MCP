@@ -8,10 +8,11 @@ paths:
 **Every commit that modifies `.claude-plugin/` files MUST bump the version in
 the affected plugin's `plugin.json`.**
 
-Two plugins exist:
+Three plugins exist:
 
 - **tea-rags**: `.claude-plugin/tea-rags/.claude-plugin/plugin.json`
 - **tea-rags-setup**: `.claude-plugin/tea-rags-setup/.claude-plugin/plugin.json`
+- **dinopowers**: `.claude-plugin/dinopowers/.claude-plugin/plugin.json`
 
 Rules:
 
@@ -23,7 +24,8 @@ Check before committing:
 ```bash
 git diff --cached --name-only | grep '^\.claude-plugin/tea-rags/'
 git diff --cached --name-only | grep '^\.claude-plugin/tea-rags-setup/'
+git diff --cached --name-only | grep '^\.claude-plugin/dinopowers/'
 ```
 
 If files from a plugin are staged, bump that plugin's version BEFORE
-`git commit`. If both plugins are affected, bump both.
+`git commit`. If multiple plugins are affected, bump each.
