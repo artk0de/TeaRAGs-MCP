@@ -1,0 +1,172 @@
+{
+  "skill": "dinopowers:finishing-a-development-branch",
+  "objective": "Agent correctly invokes tea-rags:risk-assessment on FULL branch diff (not last commit) BEFORE presenting completion options, summarizes Critical/High tiers, then hands off to superpowers:finishing-a-development-branch.",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 13, "fail": 0, "total": 13, "passRate": "100%" },
+      "withoutRule": { "pass": 5, "fail": 8, "total": 13, "passRate": "38%" },
+      "delta": "+62pp"
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Ветка feature/auth-refactor готова, всё работает. Merge?",
+      "expected": {
+        "mustCall": [
+          "Skill(tea-rags:risk-assessment) on branch diff FIRST",
+          "Skill(superpowers:finishing-a-development-branch) AFTER with scan block"
+        ],
+        "mustNotCall": [
+          "merge before risk-assessment",
+          "direct semantic_search",
+          "hybrid_search",
+          "git log --stat alone"
+        ]
+      }
+    },
+    {
+      "id": "eval-2",
+      "category": "delegation",
+      "prompt": "Scan риска по branch, всё чисто должно быть.",
+      "expected": {
+        "mustCall": [
+          "Skill(tea-rags:risk-assessment) — not direct semantic_search"
+        ],
+        "mustNotCall": [
+          "mcp__tea-rags__semantic_search with single rerank (misses multi-signal convergence)"
+        ]
+      }
+    },
+    {
+      "id": "eval-3",
+      "category": "scope-branch-wide",
+      "prompt": "Готов branch на 15 коммитов вперёд main. Можно завершать?",
+      "expected": {
+        "mustDo": [
+          "Scope: git diff main...HEAD --name-only (ALL branch commits, not just last)",
+          "Pass full diff files to risk-assessment"
+        ],
+        "mustNotDo": ["Scope to last commit only", "Scope to HEAD only"]
+      }
+    },
+    {
+      "id": "eval-4",
+      "category": "tool-selection",
+      "prompt": "Оцени risk перед merge для ветки.",
+      "expected": {
+        "mustCall": ["Skill(tea-rags:risk-assessment)"],
+        "mustNotCall": [
+          "dinopowers:verification-before-completion wrapper (different lens)",
+          "git diff by eye",
+          "hybrid_search"
+        ]
+      }
+    },
+    {
+      "id": "eval-5",
+      "category": "edge-nothing-ahead",
+      "prompt": "Branch на 0 коммитов впереди. Завершаем?",
+      "expected": {
+        "mustDo": ["Skip wrapper — nothing to complete"],
+        "mustNotDo": ["Run risk-assessment on empty diff"]
+      }
+    },
+    {
+      "id": "eval-6",
+      "category": "edge-docs-only",
+      "prompt": "Ветка содержит только docs изменения (README + markdown в docs/).",
+      "expected": {
+        "mustDo": [
+          "Skip with verdict TRIVIAL-SCOPE (no risk scan)",
+          "Invoke superpowers:finishing-a-development-branch directly"
+        ],
+        "mustNotDo": ["Run risk-assessment on docs-only scope"]
+      }
+    },
+    {
+      "id": "eval-7",
+      "category": "edge-unindexed-branch",
+      "prompt": "Branch создала новый модуль /new/ который ещё не в index.",
+      "expected": {
+        "mustDo": [
+          "Note 'branch scope unindexed — risk-assessment unavailable'",
+          "Rely on tests + human review",
+          "Invoke superpowers:finishing-a-development-branch with note"
+        ],
+        "mustNotDo": ["Fabricate risk tiers"]
+      }
+    },
+    {
+      "id": "eval-8",
+      "category": "tier-critical",
+      "prompt": "risk-assessment вернул 3 Critical в branch scope, все без тестов. Merge?",
+      "expected": {
+        "mustDo": [
+          "Recommend 'address-critical-first' before merge",
+          "Surface Critical list",
+          "Do NOT present 'ready-to-merge'"
+        ],
+        "mustNotDo": [
+          "Hide Critical under 'tests pass'",
+          "Merge despite untested Critical"
+        ]
+      }
+    },
+    {
+      "id": "eval-9",
+      "category": "tier-clean",
+      "prompt": "risk-assessment: 'No critical risks found. Codebase appears healthy.'",
+      "expected": {
+        "mustDo": [
+          "Verdict CLEAN-SCAN — ready to present completion options",
+          "Invoke superpowers:finishing-a-development-branch with clean status"
+        ]
+      }
+    },
+    {
+      "id": "eval-10",
+      "category": "pressure",
+      "prompt": "Тесты зелёные, не парься с risk-assessment, просто merge.",
+      "expected": {
+        "mustCall": [
+          "Skill(tea-rags:risk-assessment) anyway — green tests don't cover hotspot/silo/debt convergence"
+        ],
+        "mustNotDo": ["Skip scan on 'tests pass' argument"]
+      }
+    },
+    {
+      "id": "eval-11",
+      "category": "wrong-scope-pressure",
+      "prompt": "Просто проверь последний коммит — там только критичное.",
+      "expected": {
+        "mustDo": ["Refuse last-commit-only scope", "Scan full branch diff"],
+        "mustNotDo": ["Scope to HEAD only"]
+      }
+    },
+    {
+      "id": "eval-12",
+      "category": "subagent",
+      "subagent": "task-agent",
+      "prompt": "[subagent: task-agent] Finalize branch feature/ingest-refactor, ready for PR.",
+      "expected": {
+        "mustCall": [
+          "Skill(tea-rags:risk-assessment) on branch diff FIRST",
+          "Skill(superpowers:finishing-a-development-branch) SECOND"
+        ]
+      }
+    },
+    {
+      "id": "eval-13",
+      "category": "control-not-triggered",
+      "prompt": "Покажи что в ветке изменилось.",
+      "expected": {
+        "mustNotTrigger": "wrapper (inspection question, not completion decision)",
+        "acceptable": ["git diff or git log"]
+      }
+    }
+  ]
+}
