@@ -148,7 +148,7 @@ Now you can ask questions that no regular code search can answer:
 
 This is **trajectory enrichment awareness** — the core differentiator of TeaRAGs. Every search result carries its own history, and your agent can reason about code quality, not just code similarity.
 
-See [Git Enrichments](/usage/git-enrichments) for the full list of signals and how to use them.
+See [Git Enrichments](/usage/advanced/git-enrichments) for the full list of signals and how to use them.
 
 ## You're Up and Running
 
@@ -161,9 +161,9 @@ In 15 minutes you've gone from zero to a fully functional semantic code search w
 
 ### Master Search
 
-- [Query Modes](/usage/query-modes) — semantic, hybrid (BM25 + vectors), and filtered search
+- [Query Modes](/usage/advanced/query-modes) — semantic, hybrid (BM25 + vectors), and filtered search
 - [Search Strategies](/agent-integration/search-strategies) — which tool and preset to use for each task
-- [Git Enrichments](/usage/git-enrichments) — all 19 signals and reranking presets
+- [Git Enrichments](/usage/advanced/git-enrichments) — all 19 signals and reranking presets
 
 ### Level Up Your Agent
 

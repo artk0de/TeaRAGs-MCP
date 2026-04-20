@@ -7,7 +7,7 @@ sidebar_position: 6
 
 Code churn metrics quantify how frequently and intensively code changes over time. Research shows that churn is one of the strongest predictors of software defects ([Nagappan & Ball 2005](https://doi.org/10.1145/1062455.1062514), [Munson & Elbaum 1998](https://doi.org/10.1109/ICSM.1998.738486)).
 
-This page covers the academic foundations behind the git-derived signals that tea-rags computes. For practical usage — filtering, reranking, environment variables — see [Git Enrichments](/usage/git-enrichments). For pipeline implementation details, see [Git Enrichment Pipeline](/architecture/git-enrichment-pipeline).
+This page covers the academic foundations behind the git-derived signals that tea-rags computes. For practical usage — filtering, reranking, environment variables — see [Git Enrichments](/usage/advanced/git-enrichments). For pipeline implementation details, see [Git Enrichment Pipeline](/architecture/git-enrichment-pipeline).
 
 ## Why Relative Churn Beats Absolute Churn
 

@@ -13,8 +13,12 @@ signals** — churn, stability, authorship, bug-fix rates, code age — at
 your AI agent finds not just relevant code, but code that is stable, well-owned,
 and battle-tested.
 
-:::tip Git enrichment runs concurrently with embedding and does not increase
-indexing time. :::
+:::tip
+
+Git enrichment runs concurrently with embedding and does not increase
+indexing time.
+
+:::
 
 ## Enabling Git Enrichment
 
@@ -22,7 +26,7 @@ Set the environment variable when configuring your MCP server:
 
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
-  -e CODE_ENABLE_GIT_METADATA=true
+  -e TRAJECTORY_GIT_ENABLED=true
 ```
 
 ## What You Get
@@ -190,10 +194,14 @@ counts commits whose diff hunks overlap the chunk's line range. An offset
 tracker corrects for line drift caused by insertions/deletions above the chunk
 in earlier commits.
 
-:::info The detection is designed to minimize false positives. Cosmetic patterns
+:::info
+
+The detection is designed to minimize false positives. Cosmetic patterns
 (fix typo, fix lint, fix tests, etc.) are explicitly excluded. Merge commits are
 handled separately via branch resolution — their child commits inherit the fix
-classification even when their individual messages don't mention "fix". :::
+classification even when their individual messages don't mention "fix".
+
+:::
 
 ## Use Cases
 
@@ -254,11 +262,12 @@ Available weight keys for custom reranking:
 
 | Variable                   | Default   | Description                                                                                        |
 | -------------------------- | --------- | -------------------------------------------------------------------------------------------------- |
-| `CODE_ENABLE_GIT_METADATA` | `"true"`  | Enable git enrichment during indexing. Set to `"false"` to disable. Silently skipped on non-git directories. |
-| `GIT_LOG_MAX_AGE_MONTHS`   | `12`      | Time window for file-level git analysis (months). `0` = no age limit (safety depth still applies). |
-| `GIT_LOG_TIMEOUT_MS`       | `30000`   | Timeout for isomorphic-git; falls back to native CLI on expiry                                     |
-| `GIT_LOG_SAFETY_DEPTH`     | `10000`   | Max commits for isomorphic-git `depth` and CLI `--max-count`                                       |
-| `GIT_CHUNK_ENABLED`        | `"true"`  | Enable chunk-level churn analysis                                                                  |
+| `TRAJECTORY_GIT_ENABLED`           | `"true"`  | Enable git enrichment during indexing. Set to `"false"` to disable for performance. Silently skipped on non-git directories. (legacy: `CODE_ENABLE_GIT_METADATA`) |
+| `TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`| `12`      | Time window for file-level git analysis (months). `0` = no age limit (safety depth still applies). (legacy: `GIT_LOG_MAX_AGE_MONTHS`) |
+| `TRAJECTORY_GIT_LOG_TIMEOUT_MS`    | `30000`   | Timeout for isomorphic-git; falls back to native CLI on expiry (legacy: `GIT_LOG_TIMEOUT_MS`)                                  |
+| `TRAJECTORY_GIT_CHUNK_CONCURRENCY` | `8`       | Chunk-level enrichment concurrency (legacy: `GIT_CHUNK_CONCURRENCY`)                                                           |
+| `TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS` | `12`   | Time window for chunk-level enrichment (legacy: `GIT_CHUNK_MAX_AGE_MONTHS`)                                                    |
+| `TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES` | `5000` | Skip chunk enrichment for files larger than N lines (legacy: `GIT_CHUNK_MAX_FILE_LINES`)                                       |
 | `GIT_CHUNK_MAX_AGE_MONTHS` | `6`       | Time window for chunk-level churn analysis (months). `0` = no age limit.                           |
 | `GIT_CHUNK_CONCURRENCY`    | `10`      | Parallel commit processing for chunk churn                                                         |
 | `GIT_CHUNK_MAX_FILE_LINES` | `10000`   | Skip files larger than this for chunk analysis                                                     |
@@ -267,8 +276,8 @@ Available weight keys for custom reranking:
 
 ## Next Steps
 
-- [Filters](/usage/filters) — filter syntax, git churn filters, filterable
-  fields reference
+- [Filters](/usage/advanced/filters) — filter syntax, git churn filters,
+  filterable fields reference
 - [Code Churn: Theory & Research](/knowledge-base/code-churn-research) — metric
   formulas, research basis, and academic references
 - [Git Enrichment Pipeline](/architecture/git-enrichment-pipeline) —

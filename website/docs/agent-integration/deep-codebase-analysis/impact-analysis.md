@@ -123,6 +123,6 @@ STABLE: src/payment/receipt.ts
 - [Agentic Data-Driven Engineering](/agent-integration/agentic-data-driven-engineering) — pre-generation danger zone checks, generation mode switching, ripgrep verification
 - [Search Strategies](/agent-integration/search-strategies) — reranking presets, custom weight strategies, multi-tool cascade
 - [Code Churn: Theory & Research](/knowledge-base/code-churn-research) — metric formulas, Nagappan mappings, academic references
-- [Git Enrichments](/usage/git-enrichments) — all signals explained with environment variables
-- [Filters](/usage/filters) — filter syntax, git churn filters, filterable fields
+- [Git Enrichments](/usage/advanced/git-enrichments) — all signals explained with environment variables
+- [Filters](/usage/advanced/filters) — filter syntax, git churn filters, filterable fields
 - [Use Cases](/usage/use-cases#git-enrichment-use-cases) — practical git enrichment scenarios

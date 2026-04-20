@@ -72,9 +72,13 @@ variables are optional unless specified otherwise.
 
 ## Performance Tuning
 
-:::tip These variables control batch sizes, concurrency, timeouts, and pool
+:::tip
+
+These variables control batch sizes, concurrency, timeouts, and pool
 sizes. Defaults work well for most setups. Tune only if you hit performance
-bottlenecks. :::
+bottlenecks.
+
+:::
 
 ### Qdrant Tune
 

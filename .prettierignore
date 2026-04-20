@@ -7,3 +7,7 @@ coverage/
 .beads/
 .worktrees/
 .claude/worktrees/
+
+# Docusaurus markdown uses admonition syntax (:::tip, :::warning, etc.)
+# that prettier collapses into a single line, breaking Docusaurus parsing.
+website/docs/**/*.md

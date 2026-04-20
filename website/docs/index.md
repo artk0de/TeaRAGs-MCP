@@ -9,31 +9,106 @@ import DinoLogo from '@site/src/components/DinoLogo'; import MermaidTeaRAGs from
 
 <DinoLogo />
 
-# TeaRAGs
+# TeaRAGs 🦖🍵
 
-**Trajectory Enrichment-Aware RAG system for Coding Agents** 🦖🍵
+**Your coding agent copies the first code it finds — not the right one.**
 
-A high-performance code RAG system exposed as an MCP server. Built for large
-monorepos and enterprise codebases (millions of LOC). Combines semantic
-retrieval with git-derived development history signals — authorship, churn,
-volatility, bug-fix rates — to rerank results beyond pure similarity.
+TeaRAGs is an MCP server for code search that enriches every retrieved chunk
+with git history: authorship, churn, bug-fix rate, ownership. Your agent stops
+learning from hotspots and starts learning from **stable, owned, battle-tested
+code**.
+
+[→ Quickstart (15 min)](/quickstart/installation) ·
+[Core Concepts](/introduction/core-concepts)
+
+## The Problem
+
+### 1. Understanding a monorepo is expensive — for humans AND agents
+
+Every new developer pays in hours. Every fresh agent session pays in tokens.
+Naming conventions, domain logic, local idioms — all of it has to be rebuilt
+from scratch, every time.
+
+### 2. Bad code hygiene is a tax on your agent
+
+Confusing names mean the agent reads more files. More files mean more tokens,
+slower responses, and a higher chance of picking the wrong example. Your
+codebase's technical debt is now your AI bill.
+
+### 3. Agents can't tell stable code from a hotspot
+
+Standard code search ranks by embedding similarity alone. It doesn't know which
+function gets bug-fixed every sprint, which module hasn't been touched in two
+years, or whose name is on the commits. So the agent copies whatever looks
+similar — including the broken examples.
+
+## The Solution
+
+TeaRAGs gives your agent two things it can't get from vanilla code search.
+
+### 1. Every chunk carries its own history
+
+Retrieved code comes with signals about **who wrote it, how stable it is, how
+often it gets bug-fixed**, and **how impactful a change would be**. Semantic
+similarity stops being the whole answer — it becomes the floor.
+
+### 2. Pre-built skills, not just raw tools
+
+TeaRAGs ships agent **skills** — ready-made playbooks that tell your agent when
+and how to use the signals. No prompt engineering required:
+
+- `explore` — orient in an unfamiliar codebase
+- `data-driven-generation` — write code backed by stable, owned templates
+- `risk-assessment` — know what you'd break before you break it
+- `refactoring-scan` · `bug-hunt` · `pattern-search` — and more
+
+Install the plugin, your agent learns the workflow.
+[See all skills →](/usage/skills/)
+
+## Use Cases
+
+### 🛡️ Safe code generation
+
+Your agent writes new code backed by **stable, canonical templates** — modules
+with a low bug-fix rate, long stability, and a clear owner. No more copying from
+last sprint's hotspot. _Skill: `data-driven-generation` ·
+[Why stable code is safer →](/knowledge-base/code-churn-research)_
+
+### 🔧 Refactoring planning & problem-pattern discovery
+
+Find the 5% of code responsible for 80% of incidents. **High churn + high
+bug-fix rate + concentrated ownership = your next production issue** — and your
+next refactoring candidate. _Skills: `refactoring-scan`, `bug-hunt`_
+
+### 🎯 Risk assessment before changes
+
+Before modifying a function, the agent checks **who depends on it, how often it
+breaks, and what its ticket history says**. Know the blast radius before you
+blast. _Skill: `risk-assessment` ·
+[Coupling & blast radius theory →](/knowledge-base/code-quality-metrics)_
+
+### 🗺️ Learning an unfamiliar codebase
+
+Ask questions instead of reading directory trees. _"How does auth work?"_
+returns the **stable, canonical implementation** with its history attached — not
+a random similar-looking snippet. _Skill: `explore`_
 
 ## How It Works
 
 <MermaidTeaRAGs>
 {`
 flowchart LR
-    User[👤 User]
+    User[👤 You]
 
     subgraph mcp["TeaRAGs MCP Server"]
-        Agent[🤖 Agent<br/><small>orchestrates</small>]
+        Agent[🤖 Agent<br/><small>runs skills</small>]
         TeaRAGs[🍵 TeaRAGs<br/><small>search · enrich · rerank</small>]
         Agent <--> TeaRAGs
     end
 
     Qdrant[(🗄️ Qdrant<br/><small>vector DB</small>)]
     Embeddings[✨ Embeddings<br/><small>Ollama/OpenAI</small>]
-    Codebase[📁 Codebase<br/><small>+ Git History</small>]
+    Codebase[📁 Your Codebase<br/><small>+ Git History</small>]
 
     User <--> Agent
     TeaRAGs <--> Qdrant
@@ -43,115 +118,49 @@ flowchart LR
 `} </MermaidTeaRAGs>
 
 <div style={{textAlign: 'center', marginTop: '10px', color: '#666', fontSize: '14px'}}>
-User → Agent calls TeaRAGs tools → TeaRAGs queries Qdrant + enriches results → Agent makes decisions
+You talk to your agent. The agent runs a TeaRAGs skill. TeaRAGs searches your
+code, enriches each result with git history, and ranks by what the skill needs —
+stability, ownership, risk, or pure relevance.
 </div>
 
-## Why Trajectory Enrichment Awareness?
+## What You Get
 
-**Trajectory Enrichment-Aware RAG is a new philosophy of code retrieval.** Not
-an incremental improvement — a fundamental shift in what search results _mean_.
+- 🧬 **Trajectory-aware retrieval** — the only open-source code RAG that scores
+  results by git history, not just embedding similarity
+- 📚 **Ships with agent skills** — 6 ready-made playbooks for exploration,
+  generation, risk assessment, and index management (plus 2 internal strategies)
+- 🔒 **Local-first, privacy-first** — works fully offline with Ollama; your code
+  never leaves your machine (cloud providers optional)
+- 🚀 **Built for monorepos** — AST-aware chunking across 10+ languages,
+  incremental reindexing, parallel pipelines, millions of LOC tested
 
-Standard code search finds code that **looks like** your query. It has no
-opinion on whether that code is good. TeaRAGs introduces a principle: **every
-piece of retrieved code must carry its own history** — who wrote it, how often
-it changed, how many times it was fixed, how stable it is, and why it exists.
-This transforms retrieval from pattern matching into evidence-based
-decision-making.
+## Who It's For
 
-The result: 19 git-derived scoring signals per chunk, composable into reranking
-presets like `hotspots`, `ownership`, `techDebt`, and `securityAudit`. Code that
-is **stable, well-owned, and battle-tested** rises to the top. Code that is
-**risky, volatile, and bug-prone** gets flagged.
+- **Developers in large monorepos** — where "find similar code" returns a dozen
+  near-duplicates and you need the _canonical_ one
+- **Tech leads worried about AI code quality** — who want their team's agents to
+  learn from stable modules, not from last sprint's hotspot
+- **Privacy-sensitive teams** — finance, healthcare, defense, or anyone who
+  can't send source code to a cloud API
 
-This enables
-[**agentic data-driven engineering**](/agent-integration/agentic-data-driven-engineering)
-— a paradigm where AI agents make code generation decisions backed by empirical
-evidence, not pattern matching intuition.
+**Not for:** small solo projects (overkill), repos without git history (no
+signal to enrich), or teams that only need autocomplete (use Copilot).
 
-## Why TeaRAGs?
+## Next Steps
 
-55% fewer tool calls. 97% fewer fresh input tokens. 27.5% lower cost. And that's
-just semantic search over grep — before trajectory enrichment even kicks in.
-
-With trajectory enrichment awareness, the agent goes further: it knows which
-code is **stable** and which is **buggy**, who **owns** each domain, which
-functions have a **0–20% bug-fix rate** vs **50%+**, and links every chunk to
-**JIRA/GitHub tickets**. All at **function-level granularity** — not just per
-file.
-
-Isn't that awesome?
-**[Read the full breakdown: Agent on Grep vs Semantic Search vs TeaRAGs](/introduction/what-is-tearags#why-tearags)**
-
-## Key Features
-
-- 🧠 **Intelligence layer for coding agents** — makes your AI agent smarter by
-  giving it empirical signals about code quality, ownership, and evolution. Not
-  just "find similar code" but "find the _right_ code to learn from"
-- 📊 **Agentic data-driven engineering** — agents make code generation decisions
-  backed by evidence (stable templates, anti-pattern avoidance, style matching,
-  risk assessment), not pattern matching intuition
-- 🧬 **Git trajectory enrichment awareness** — 19 git-derived signals per chunk
-  (churn, volatility, authorship, bug-fix rate, task traceability) feed a
-  composable reranking layer with presets like `hotspots`, `ownership`,
-  `techDebt`, `securityAudit`
-- 🔮 **Topological trajectory enrichment awareness** _(planned)_ — symbol
-  dependency graphs, cross-file coupling, blast radius analysis. The next
-  dimension of code intelligence
-- 🔍 **Semantic & hybrid search** — natural language queries with optional BM25
-  keyword matching and Reciprocal Rank Fusion
-- 🎯 **AST-aware chunking** — tree-sitter parsing for functions, classes,
-  methods across most popular languages including Ruby and Markdown
-- 🚀 **Built for scale** — fast local indexing for enterprise codebases
-  (millions of LOC), incremental reindexing, parallel pipelines
-- 🔒 **Privacy-first** — works fully offline with Ollama, your code never leaves
-  your machine
-- 🔌 **Provider agnostic** — Ollama (local), OpenAI, Cohere, Voyage AI — swap
-  without reindexing
-- ⚙️ **Highly configurable** — fine-tune batch sizes, concurrency, caching.
-  Auto-tuning benchmark included (`npm run tune`)
-
-## Getting Started
-
-- [What is TeaRAGs](/introduction/what-is-tearags) — overview and key features
-- [Core Concepts](/introduction/core-concepts) — vectorization, semantic search,
-  trajectory enrichment awareness, reranking
-- [Installation](/quickstart/installation) — prerequisites and setup
-- [Connect to an Agent](/quickstart/connect-to-agent) — configure Claude Code,
-  Roo, or Cursor
-- [Create Your First Index](/quickstart/create-first-index) — index a codebase
-  in one command
-- [Your First Query](/quickstart/first-query) — search your code with natural
-  language
-
-## Documentation
-
-| Section                                                   | Description                                                                          |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [Introduction](/introduction/what-is-tearags)             | What TeaRAGs is, origin story, comparison, non-goals                                 |
-| [Core Concepts](/introduction/core-concepts)              | Code vectorization, semantic search, trajectory enrichment awareness, reranking      |
-| [**Quickstart**](/quickstart/installation)                | Get up and running in 15 minutes — [15-Minute Guide](/quickstart/15-minute-guide)    |
-| [Usage](/usage/indexing-repositories)                     | Indexing repositories, query modes, use cases                                        |
-| [Configuration](/config/environment-variables)            | Environment variables, embedding providers, performance tuning                       |
-| [Git Enrichments](/usage/git-enrichments)                 | Git-derived quality signals: churn, ownership, stability, task IDs                   |
-| [**Agent Workflows**](/agent-integration/mental-model)    | Mental model, search strategies, deep analysis, data-driven code generation          |
-| [Architecture](/architecture/overview)                    | System design, pipelines, data model                                                 |
-| [Knowledge Base](/knowledge-base/rag-fundamentals)        | RAG theory, code search, software evolution, blast radius, criticism &amp; responses |
-| [Tools Schema](/api/tools)                                | MCP tools, search parameters, reranking presets                                      |
-| [Design Decisions](/rfc/0001-incremental-indexing)        | RFCs documenting key architectural choices                                           |
-| [Operations](/operations/troubleshooting-and-error-codes) | Troubleshooting, FAQ, recovery                                                       |
-| [Extending](/extending/adding-providers)                  | Adding providers, custom chunkers, development setup                                 |
-| [Roadmap](/roadmap/architecture-evolution)                | Future plans and open questions                                                      |
+| I want to...                 | Start here                                                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Get it running**           | [Quickstart (15 min)](/quickstart/installation) — install, index, first query                      |
+| **Understand the concept**   | [Core Concepts](/introduction/core-concepts) — vectorization, trajectory enrichment, reranking     |
+| **See what my agent can do** | [Skills](/usage/skills/) — 6 ready-made agent playbooks for exploration, generation, risk          |
+| **Look under the hood**      | [Architecture](/architecture/overview) — pipelines, data model, reranker internals                 |
+| **Learn the theory**         | [Knowledge Base](/knowledge-base/rag-fundamentals) — RAG, code search, software evolution research |
 
 ## Acknowledgments
 
-Huge thanks to:
-
-- **[Martin Halder](https://github.com/mhalder)** and the
-  **[qdrant-mcp-server](https://github.com/mhalder/qdrant-mcp-server)** project
-  for the solid foundation — a clean architecture, excellent documentation, the
-  MIT license that made this fork possible, and the research on code indexing
-  that paved the way
-- **[qdrant/mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)** —
-  the ancestor of all forks
-- **To Grandpa [Docusaurus](https://docusaurus.io/)** — for making beautiful,
-  functional documentation effortless 📚
+Thanks to **[Martin Halder](https://github.com/mhalder)** /
+**[qdrant-mcp-server](https://github.com/mhalder/qdrant-mcp-server)** for the
+foundation this forks from, and
+**[qdrant/mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)** —
+the ancestor of all forks. Built with **[Docusaurus](https://docusaurus.io/)**
+📚.

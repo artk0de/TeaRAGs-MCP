@@ -34,7 +34,9 @@ GPU-accelerated, private, and proven on multi-million LoC codebases.
 
 ### 1. Install Ollama
 
-:::warning macOS: use Ollama.app for GPU acceleration On macOS, the
+:::warning
+
+macOS: use Ollama.app for GPU acceleration On macOS, the
 `brew install ollama` CLI-only package **does not include GPU support**.
 Embeddings will run on CPU and be significantly slower.
 
@@ -60,8 +62,12 @@ brew install ollama
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-:::tip Advanced GPU Setup For advanced GPU setup (Docker, remote Ollama, exposed
-GPU), see the [Local & Exposed GPU Setup](../local-exposed-gpu-setup) guide. :::
+:::tip Advanced GPU Setup
+
+For advanced GPU setup (Docker, remote Ollama, exposed GPU), see the
+[Local & Exposed GPU Setup](../local-exposed-gpu-setup) guide.
+
+:::
 
 ### 2. Pull the embedding model
 
@@ -93,9 +99,12 @@ export EMBEDDING_BASE_URL=http://localhost:11434
 }
 ```
 
-:::tip `QDRANT_URL` is not needed — Qdrant is built-in and starts automatically.
-Add it only if using external Qdrant. :::
+:::tip
 
+`QDRANT_URL` is not needed — Qdrant is built-in and starts automatically.
+Add it only if using external Qdrant.
+
+:::
 Optional variables:
 
 | Variable                    | Description                                     | Default                                            |
@@ -106,7 +115,9 @@ Optional variables:
 | `OLLAMA_NUM_GPU`            | GPU layers to offload (`0` = CPU only)          | `999` (all)                                        |
 | `OLLAMA_LEGACY_API`         | Use `/api/embeddings` instead of `/api/embed`   | `false`                                            |
 
-:::tip Failover for remote GPU setups If your primary Ollama runs on a remote
+:::tip
+
+Failover for remote GPU setups If your primary Ollama runs on a remote
 GPU server, set `EMBEDDING_FALLBACK_URL` to a local instance as backup:
 
 ```bash
@@ -116,7 +127,9 @@ export EMBEDDING_FALLBACK_URL=http://localhost:11434    # fallback (local Mac)
 
 When the primary is unreachable, TeaRAGs automatically retries on the fallback
 URL. If both fail, the error message includes both URLs and suggests
-`ollama serve` if either points to localhost. :::
+`ollama serve` if either points to localhost.
+
+:::
 
 ## Available Models
 

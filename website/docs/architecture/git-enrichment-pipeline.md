@@ -9,7 +9,7 @@ import MermaidTeaRAGs from '@site/src/components/MermaidTeaRAGs';
 
 tea-rags enriches every indexed code chunk with git-derived quality signals. The pipeline runs in two phases — file-level and chunk-level — both executing asynchronously in the background after indexing returns.
 
-For metric definitions and research context, see [Code Churn: Theory & Research](/knowledge-base/code-churn-research). For practical usage (filtering, reranking), see [Git Enrichments](/usage/git-enrichments).
+For metric definitions and research context, see [Code Churn: Theory & Research](/knowledge-base/code-churn-research). For practical usage (filtering, reranking), see [Git Enrichments](/usage/advanced/git-enrichments).
 
 ## Pipeline Overview
 
