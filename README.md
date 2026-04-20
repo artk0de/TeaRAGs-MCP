@@ -79,9 +79,10 @@ Install the plugin, your agent learns the workflow.
 [See all skills →](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/)
 
 **Bonus: `dinopowers`** — a companion plugin with 10 wrappers over
-[`superpowers:*`](https://github.com/anthropics/skills) skills that inject
-tea-rags signals into brainstorming, planning, debugging, TDD, review, and
-completion flows. Mean eval delta +71pp across 136 cases.
+[`superpowers:*`](https://github.com/obra/superpowers) skills (Jesse Vincent's
+skills library for Claude Code) that inject tea-rags signals into brainstorming,
+planning, debugging, TDD, review, and completion flows. Mean eval delta +71pp
+across 136 cases.
 [Learn more →](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/#dinopowers--wrappers-over-superpowers)
 
 ## Use Cases

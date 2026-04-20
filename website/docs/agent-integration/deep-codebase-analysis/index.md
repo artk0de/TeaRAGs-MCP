@@ -40,7 +40,7 @@ Chunk-level metrics (`chunkCommitCount`, `chunkChurnRatio`, `chunkBugFixRate`, `
 - **Function-level bug density** — `chunkBugFixRate` at 60% means most commits to this specific function were bug fixes. The file-level `bugFixRate` might be only 30% because other functions dilute the signal.
 - **Stable code inside unstable files** — `chunkAgeDays = 180` inside a file with `ageDays = 2` means this function hasn't been touched in 6 months, even though the file was modified yesterday. This function is stable and reliable as a template.
 
-**Limitations:** Chunk-level metrics require the `GIT_CHUNK_ENABLED=true` setting (on by default) and only cover commits within the `GIT_CHUNK_MAX_AGE_MONTHS` window (default: 6 months). Older commits fall back to file-level data.
+**Limitations:** Chunk-level metrics require git enrichment (`TRAJECTORY_GIT_ENABLED=true`, on by default) and only cover commits within the `TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS` window (default: 6 months). Older commits fall back to file-level data.
 
 ### Decision guide
 

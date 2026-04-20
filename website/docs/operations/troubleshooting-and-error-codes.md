@@ -36,7 +36,7 @@ sidebar_position: 3
 | **Snapshot migration failed**  | `INGEST_MIGRATION_FAILED`   | Delete old snapshot and re-index                                           |
 | **Slow indexing**              | —                           | Use Ollama (local) for faster indexing, or increase `EMBEDDING_BATCH_SIZE` |
 | **Files not found**            | —                           | Check `.gitignore` and `.contextignore` patterns                           |
-| **Out of memory during index** | —                           | Reduce `CODE_CHUNK_SIZE` or `EMBEDDING_BATCH_SIZE`                         |
+| **Out of memory during index** | —                           | Reduce `INGEST_CHUNK_SIZE` or `EMBEDDING_BATCH_SIZE`                       |
 
 ## Explore Issues
 
