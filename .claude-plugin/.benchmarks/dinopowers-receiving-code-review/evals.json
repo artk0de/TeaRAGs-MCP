@@ -1,0 +1,175 @@
+{
+  "skill": "dinopowers:receiving-code-review",
+  "skillPath": ".claude-plugin/dinopowers/skills/receiving-code-review/SKILL.md",
+  "objective": "Agent correctly runs impact analysis on review-comment's target BEFORE agreeing/pushing back, computes AGREE-WITH-SCOPE/AGREE-DIRECT/PUSHBACK verdict, and hands off to superpowers:receiving-code-review with informed response.",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 12, "fail": 0, "total": 12, "passRate": "100%" },
+      "withoutRule": { "pass": 4, "fail": 8, "total": 12, "passRate": "33%" },
+      "delta": "+67pp"
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Review comment: 'Rename ChunkGrouper to ChunkMerger — it's more accurate.' Класс в src/core/domains/ingest/pipeline/chunker/chunk-grouper.ts. Ответь.",
+      "expected": {
+        "mustCall": [
+          "semantic_search with custom impact rerank on chunk-grouper.ts BEFORE response",
+          "Skill(superpowers:receiving-code-review) AFTER"
+        ],
+        "mustNotCall": [
+          "agree before tea-rags",
+          "grep -rn 'ChunkGrouper'",
+          "hybrid_search",
+          "find_similar"
+        ]
+      },
+      "failureMode": "Performative agreement without impact analysis"
+    },
+    {
+      "id": "eval-2",
+      "category": "stylistic-pass-through",
+      "prompt": "Review comment: 'typo in line 42: \"recieve\" → \"receive\".'",
+      "expected": {
+        "mustDo": [
+          "Skip wrapper with PASS-THROUGH verdict",
+          "Route directly to superpowers:receiving-code-review"
+        ],
+        "mustNotDo": ["Run tea-rags scan for a typo"]
+      },
+      "failureMode": "Over-triggers scan for stylistic nit"
+    },
+    {
+      "id": "eval-3",
+      "category": "verdict-pushback",
+      "prompt": "Scan returned: errors.ts imports=89, bugFixRate=45%. Review says 'rename this class to match new naming convention'.",
+      "expected": {
+        "mustDo": [
+          "Compute PUSHBACK verdict (imports > 50)",
+          "Respond with impact data, propose alternative/narrower change"
+        ],
+        "mustNotDo": ["Silent agreement", "Implement the rename"]
+      },
+      "failureMode": "Agent agrees to massive rename without pushback"
+    },
+    {
+      "id": "eval-4",
+      "category": "verdict-agree-direct",
+      "prompt": "Scan: helpers.ts imports=2, bugFixRate=5%. Review: 'extract this helper to util.ts'.",
+      "expected": {
+        "mustDo": ["AGREE-DIRECT verdict", "Single-commit change"],
+        "mustNotDo": ["Artificial scope inflation"]
+      },
+      "failureMode": "Over-gates simple change"
+    },
+    {
+      "id": "eval-5",
+      "category": "verdict-agree-with-scope",
+      "prompt": "Scan: client.ts imports=25, bugFixRate=15%. Review: 'rename upsert to put'.",
+      "expected": {
+        "mustDo": [
+          "AGREE-WITH-SCOPE verdict",
+          "List 25 importers, commit to updating all OR justify partial change"
+        ],
+        "mustNotDo": [
+          "Agree without scope expansion",
+          "Pushback (imports not >50)"
+        ]
+      },
+      "failureMode": "Agent misclassifies or skips scope discussion"
+    },
+    {
+      "id": "eval-6",
+      "category": "tool-selection",
+      "prompt": "Review: 'rename Method() to doMethod() in reranker.ts'. Analyze impact.",
+      "expected": {
+        "mustCall": ["semantic_search with custom impact rerank"],
+        "mustNotCall": [
+          "grep -rn 'Method'",
+          "hybrid_search",
+          "find_similar on reranker.ts",
+          "tree-sitter trace_impact as primary"
+        ]
+      },
+      "failureMode": "Falls back to grep or picks wrong MCP tool"
+    },
+    {
+      "id": "eval-7",
+      "category": "edge-unverifiable",
+      "prompt": "Scan вернул empty для нового файла newfeature/service.ts. Review: 'rename this class'.",
+      "expected": {
+        "mustDo": [
+          "UNVERIFIABLE verdict",
+          "State blast radius unknown",
+          "Agree direct (new file, no existing importers)"
+        ],
+        "mustNotDo": ["Fabricate imports count"]
+      },
+      "failureMode": "Fabricates signals for unindexed file"
+    },
+    {
+      "id": "eval-8",
+      "category": "pressure-performative-agreement",
+      "prompt": "Review: 'просто rename и всё' — быстро согласись, не парься с импактом.",
+      "expected": {
+        "mustCall": ["semantic_search anyway (Iron Rule)"],
+        "mustNotDo": ["Skip analysis for performative yes"]
+      },
+      "failureMode": "Agent performatively agrees"
+    },
+    {
+      "id": "eval-9",
+      "category": "pressure-defensive-no",
+      "prompt": "Review: 'move this to another module'. Отклони сразу — я не хочу трогать.",
+      "expected": {
+        "mustCall": [
+          "semantic_search anyway — defensive no without data is as bad as performative yes"
+        ],
+        "mustNotDo": ["Pushback without impact data"]
+      },
+      "failureMode": "Agent defensively refuses without analysis"
+    },
+    {
+      "id": "eval-10",
+      "category": "wrong-tool-pressure",
+      "prompt": "Используй grep -rn 'ChunkGrouper' чтобы посчитать callers — быстрее.",
+      "expected": {
+        "mustDo": [
+          "Refuse grep substitute",
+          "Use semantic_search with custom rerank (grep miscounts comments/strings)"
+        ],
+        "mustNotDo": ["Comply with grep"]
+      },
+      "failureMode": "Complies with wrong tool"
+    },
+    {
+      "id": "eval-11",
+      "category": "control-not-triggered",
+      "prompt": "Review comment: 'nit: prefer const over let here'.",
+      "expected": {
+        "mustNotTrigger": "wrapper (stylistic nit, no structural change)",
+        "acceptable": [
+          "Pass through to superpowers:receiving-code-review directly"
+        ]
+      },
+      "failureMode": "Over-triggers scan"
+    },
+    {
+      "id": "eval-12",
+      "category": "subagent-routing",
+      "subagent": "task-agent",
+      "prompt": "[subagent: task-agent] Review PR response task: comment says 'extract loop body to separate function'.",
+      "expected": {
+        "mustCall": [
+          "semantic_search impact analysis FIRST",
+          "Skill(superpowers:receiving-code-review) SECOND"
+        ]
+      },
+      "failureMode": "Subagent agrees without analysis"
+    }
+  ]
+}
