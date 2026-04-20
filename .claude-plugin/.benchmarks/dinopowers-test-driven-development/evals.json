@@ -1,0 +1,243 @@
+{
+  "skill": "dinopowers:test-driven-development",
+  "skillPath": ".claude-plugin/dinopowers/skills/test-driven-development/SKILL.md",
+  "objective": "Agent correctly searches existing test patterns via semantic_search with testFile='only' + rerank='proven' BEFORE writing a failing test, extracts conventions as a pattern block, and hands off to superpowers:test-driven-development.",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 15, "fail": 0, "total": 15, "passRate": "100%" },
+      "withoutRule": { "pass": 3, "fail": 12, "total": 15, "passRate": "20%" },
+      "delta": "+80pp"
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Нужен новый тест для ChunkGrouper.group() в src/core/domains/ingest/pipeline/chunker/chunk-grouper.ts. Напиши failing test.",
+      "expected": {
+        "mustCall": [
+          "ONE mcp__tea-rags__semantic_search with testFile='only', rerank='proven', pathPattern scoping tests/chunker or similar, metaOnly=false FIRST",
+          "Skill(superpowers:test-driven-development) AFTER with pattern block"
+        ],
+        "mustNotCall": [
+          "Skill(superpowers:test-driven-development) before tea-rags",
+          "Grep for 'vi.mock' or 'describe'",
+          "mcp__tea-rags__find_similar on chunk-grouper.ts alone",
+          "semantic_search without testFile='only' (returns noise)"
+        ]
+      },
+      "failureMode": "Agent writes test from scratch or picks wrong tool"
+    },
+    {
+      "id": "eval-2",
+      "category": "filter-testFile",
+      "prompt": "Добавь unit test для нового hook в chunker/hooks/ruby/.",
+      "expected": {
+        "parameters": {
+          "testFile": "'only' (built-in filter)",
+          "rerank": "'proven'",
+          "metaOnly": false
+        },
+        "mustNotDo": [
+          "Use pathPattern='**/*.test.ts' alone without testFile filter",
+          "Use pathPattern='**/*.spec.rb' alone"
+        ]
+      },
+      "failureMode": "Agent forgets testFile='only', leaks implementation noise into pattern extraction"
+    },
+    {
+      "id": "eval-3",
+      "category": "rerank-proven",
+      "prompt": "Напиши тест для новой стратегии в src/core/domains/explore/strategies/. Найди паттерны.",
+      "expected": {
+        "parameters": {
+          "rerank": "'proven' (stable+old+low-bugFix)"
+        },
+        "mustNotDo": [
+          "rerank='hotspots' (returns flaky tests)",
+          "rerank='recent' (returns drafts)",
+          "rerank='relevance' (no stability weight)",
+          "Custom rerank weights (proven preset owns this)"
+        ]
+      },
+      "failureMode": "Agent picks hotspots/recent/relevance instead of proven"
+    },
+    {
+      "id": "eval-4",
+      "category": "parameters-metaOnly",
+      "prompt": "Ищи test patterns для chunker — и покажи только metadata, без контента.",
+      "expected": {
+        "mustDo": [
+          "Refuse metaOnly=true for TDD pattern search",
+          "Rationale: TDD needs actual test content (mock setup, assertions) — metadata alone is useless for extracting conventions",
+          "Use metaOnly=false"
+        ],
+        "mustNotDo": ["Comply with metaOnly=true"]
+      },
+      "failureMode": "Agent uses metaOnly=true on TDD pattern search, gets useless payload"
+    },
+    {
+      "id": "eval-5",
+      "category": "tool-selection",
+      "prompt": "Добавь тест для src/core/adapters/qdrant/client.ts метода upsert.",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__semantic_search with testFile='only' + rerank='proven'"
+        ],
+        "mustNotCall": [
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__find_similar on client.ts (finds implementation-similar code, not tests)",
+          "Grep for 'describe(' or 'vi.mock('",
+          "Read each test file manually"
+        ]
+      },
+      "failureMode": "Agent picks hybrid_search or falls back to Grep for patterns"
+    },
+    {
+      "id": "eval-6",
+      "category": "edge-no-tests",
+      "prompt": "Первый тест в проекте (только что инициализировали). Напиши тест для src/hello.ts.",
+      "expected": {
+        "mustDo": [
+          "Issue semantic_search with testFile='only' first",
+          "On 0 results (or very thin corpus): report 'no existing test patterns — falling back to superpowers:test-driven-development direct'",
+          "Invoke Skill(superpowers:test-driven-development) without pattern block"
+        ],
+        "mustNotDo": [
+          "Skip Step 2 entirely without checking",
+          "Fabricate conventions from general knowledge"
+        ]
+      },
+      "failureMode": "Agent invents conventions or skips the search entirely"
+    },
+    {
+      "id": "eval-7",
+      "category": "edge-cross-language",
+      "prompt": "Тест для нового Ruby hook в .claude-plugin/tea-rags/... (Ruby files в проекте с TypeScript тестами).",
+      "expected": {
+        "mustDo": [
+          "Search with testFile='only' on broader corpus (no Ruby-specific test files in this TypeScript project)",
+          "If corpus returns 0: fall back with explicit note",
+          "If corpus returns only TypeScript tests: note 'cross-language — TS conventions may not apply to Ruby'"
+        ],
+        "mustNotDo": [
+          "Invoke semantic_search without testFile filter hoping for Ruby tests"
+        ]
+      },
+      "failureMode": "Agent searches with wrong filter or ignores language mismatch"
+    },
+    {
+      "id": "eval-8",
+      "category": "pattern-extraction",
+      "prompt": "tea-rags вернул 5 proven тестов для chunker. Извлеки паттерны.",
+      "expected": {
+        "mustDo": [
+          "Extract 4-6 concise bullets (mock setup, helper imports, describe/it style, assertions, fixtures, setup/teardown)",
+          "Cite source test file for each convention",
+          "Cap at 6 bullets"
+        ],
+        "mustNotDo": [
+          "Paste raw chunk content into handoff",
+          "Extract more than 6 bullets",
+          "Skip citation"
+        ]
+      },
+      "failureMode": "Agent passes raw test code to superpowers:test-driven-development instead of pattern bullets"
+    },
+    {
+      "id": "eval-9",
+      "category": "ordering",
+      "subagent": "task-agent",
+      "prompt": "[subagent: task-agent] Task: add failing test for EnrichmentCoordinator.startProvider() in tests/enrichment/.",
+      "expected": {
+        "ordering": [
+          "semantic_search (testFile='only', rerank='proven') FIRST",
+          "Extract pattern block",
+          "Skill(superpowers:test-driven-development) SECOND"
+        ]
+      },
+      "failureMode": "Subagent without CLAUDE.md writes test directly or inverts order"
+    },
+    {
+      "id": "eval-10",
+      "category": "pressure",
+      "prompt": "Быстро — простой тест для isValidUrl(). Не парься с поиском паттернов, я знаю как тесты выглядят.",
+      "expected": {
+        "mustCall": [
+          "semantic_search with testFile='only' + rerank='proven' anyway (Iron Rule)"
+        ],
+        "mustNotDo": [
+          "Skip search to comply with 'быстро'",
+          "Trust user's claim about knowing patterns"
+        ]
+      },
+      "failureMode": "Agent skips pattern search under pressure"
+    },
+    {
+      "id": "eval-11",
+      "category": "wrong-rerank-pressure",
+      "prompt": "Используй rerank='hotspots' чтобы найти самые часто изменяемые тесты — это же лучший сигнал популярности.",
+      "expected": {
+        "mustDo": [
+          "Refuse rerank='hotspots' for test pattern search",
+          "Rationale: hotspots returns FLAKY tests (high churn + recent = instability), proven is the right lens",
+          "Use rerank='proven'"
+        ],
+        "mustNotDo": ["Comply with hotspots"]
+      },
+      "failureMode": "Agent complies with wrong rerank, gets flaky test patterns"
+    },
+    {
+      "id": "eval-12",
+      "category": "subagent-routing",
+      "subagent": "explore",
+      "prompt": "[subagent: explore] Author a failing test for new RerankPreset.score() method in tests/trajectory/.",
+      "expected": {
+        "mustCall": [
+          "semantic_search (testFile='only', rerank='proven') FIRST",
+          "Skill(superpowers:test-driven-development) SECOND"
+        ]
+      },
+      "failureMode": "Subagent defaults to Read of existing tests instead of semantic_search with proven rerank"
+    },
+    {
+      "id": "eval-13",
+      "category": "control-not-triggered",
+      "prompt": "Сколько тест-файлов в tests/?",
+      "expected": {
+        "mustNotTrigger": "TDD wrapper (user asks for count, not writing a test)",
+        "acceptable": ["Glob or Bash find/wc"]
+      },
+      "failureMode": "Agent triggers pattern search for a counting question"
+    },
+    {
+      "id": "eval-14",
+      "category": "control-fix-existing-test",
+      "prompt": "Почини падающий тест в tests/chunker/base.test.ts — assertion на line 42 неправильный.",
+      "expected": {
+        "mustNotTrigger": "TDD wrapper (fixing existing test, not writing NEW failing test)",
+        "acceptable": [
+          "Read + Edit directly, or invoke dinopowers:systematic-debugging if root cause unclear"
+        ]
+      },
+      "failureMode": "Agent treats bug fix as new TDD cycle"
+    },
+    {
+      "id": "eval-15",
+      "category": "find_similar-alternative",
+      "prompt": "Нужен новый тест для ChunkGrouper. Impl файл уже есть — может просто сделать find_similar на chunk-grouper.ts?",
+      "expected": {
+        "mustDo": [
+          "Refuse find_similar as primary tool for test pattern search",
+          "Rationale: find_similar on implementation file returns structurally-similar PRODUCTION code, not tests",
+          "Use semantic_search with testFile='only' + rerank='proven' as primary",
+          "find_similar is acceptable as supplementary call AFTER primary, with impl-file's symbolId, to find specifically-related tests"
+        ],
+        "mustNotDo": ["Use find_similar as primary pattern source"]
+      },
+      "failureMode": "Agent uses find_similar as primary, gets no test conventions"
+    }
+  ]
+}
