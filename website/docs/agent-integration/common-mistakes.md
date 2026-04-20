@@ -203,11 +203,11 @@ Without chunk-level metrics, the agent either avoids the whole file (missing the
 
 See [Custom Rerank Strategies](/agent-integration/search-strategies/custom-reranking).
 
-## 9. Ignoring Git Enrichment Entirely
+## 9. Disabling Git Enrichment
 
-**The mistake:** Running TeaRAGs with `CODE_ENABLE_GIT_METADATA=false` (the default) and never enabling it.
+**The mistake:** Running TeaRAGs with `TRAJECTORY_GIT_ENABLED=false` and never re-enabling it.
 
-**Why it matters:** Without git enrichment, all reranking presets except `relevance` silently degrade to similarity-only scoring. The agent asks for `hotspots` or `techDebt` or `ownership`, but gets plain cosine similarity results. There's no error message -- the presets just don't work.
+**Why it matters:** Git enrichment is **enabled by default** since v0.14. But if you have a non-git project, or explicitly disabled it, all reranking presets except `relevance` silently degrade to similarity-only scoring. The agent asks for `hotspots` or `techDebt` or `ownership`, but gets plain cosine similarity results. There's no error message -- the presets just don't work.
 
 This also means:
 
@@ -217,11 +217,12 @@ This also means:
 - No `ageDays` -- can't find legacy code
 - No `taskIds` -- can't trace code to tickets
 
-**The fix:** Enable git enrichment during indexing:
+**The fix:** Git enrichment is on by default. If you see degraded reranking, verify it wasn't explicitly disabled:
 
 ```bash
+# Remove TRAJECTORY_GIT_ENABLED=false from your env or set it to true:
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
-  -e CODE_ENABLE_GIT_METADATA=true
+  -e TRAJECTORY_GIT_ENABLED=true
 ```
 
 Then reindex. Git enrichment runs concurrently with embedding and doesn't increase indexing time.
@@ -240,7 +241,7 @@ Then reindex. Git enrichment runs concurrently with embedding and doesn't increa
 | 2 | `semantic_search` with `rerank: "hotspots"`, `metaOnly: true` | **Analyze** -- assess risk of the area |
 | 3 | `semantic_search` with `rerank: "ownership"`, `metaOnly: true` | **Assess** -- identify who owns the code |
 | 4 | Read specific files from results | **Act** -- make informed changes |
-| 5 | `semantic_search` with `rerank: "impactAnalysis"` | **Verify** -- confirm blast radius |
+| 5 | `semantic_search` with `rerank: { custom: { imports: 0.7, similarity: 0.3 } }` | **Verify** -- confirm blast radius via `imports` fan-out |
 
 See [Agentic Flow Template](/agent-integration/search-strategies/preset-mapping#agentic-flow-template) for the general pattern.
 
@@ -311,7 +312,7 @@ For the academic critique and established counter-arguments, see [Semantic Searc
 Before shipping an agent workflow that uses TeaRAGs:
 
 - [ ] Agent configuration (`CLAUDE.md` / `.cursorrules`) explicitly instructs the agent to use TeaRAGs
-- [ ] `CODE_ENABLE_GIT_METADATA=true` is set during indexing
+- [ ] Git enrichment is enabled (default — verify `TRAJECTORY_GIT_ENABLED` isn't overridden to `false`)
 - [ ] Agent uses different rerank presets for different subtasks (not hardcoded)
 - [ ] Templates are selected by quality signals, not just similarity
 - [ ] Generated code is verified with ripgrep / tree-sitter before completion

@@ -124,21 +124,19 @@ Results come back with **file paths, line numbers, and the actual code** — you
 | `"Find recently modified authentication code"` | Filtering by **recency** |
 | `"Show me stable, low-churn utility functions"` | Reranking by **code quality signals** |
 
-## Step 6: Enable Git Intelligence (Optional) {#step-6}
+## Step 6: Git Intelligence (enabled by default) {#step-6}
 
-Standard semantic search is already powerful. But TeaRAGs can go further — enriching every code chunk with **19 git-derived quality signals**: who wrote it, how often it changes, its bug-fix rate, associated tickets, and more.
+Standard semantic search is already powerful. TeaRAGs goes further — enriching every code chunk with **20+ quality signals**: who wrote it, how often it changes, its bug-fix rate, associated tickets, structural imports, documentation weight, and more.
 
-Re-index with git metadata enabled:
+**This is enabled by default** (`TRAJECTORY_GIT_ENABLED=true`). No re-index needed — if your project is a git repo, every chunk already carries git signals.
 
-<AiQuery>Clear the index and re-index this codebase with git metadata enabled</AiQuery>
-
-Or add the environment variable to your MCP configuration:
+To disable (non-git project or fast iteration), set:
 
 ```bash
--e CODE_ENABLE_GIT_METADATA=true
+-e TRAJECTORY_GIT_ENABLED=false
 ```
 
-Now you can ask questions that no regular code search can answer:
+You can immediately ask questions that no regular code search can answer:
 
 <AiQuery>Find high-churn code that keeps getting fixed — the danger zones</AiQuery>
 
@@ -163,7 +161,7 @@ In 15 minutes you've gone from zero to a fully functional semantic code search w
 
 - [Query Modes](/usage/advanced/query-modes) — semantic, hybrid (BM25 + vectors), and filtered search
 - [Search Strategies](/agent-integration/search-strategies) — which tool and preset to use for each task
-- [Git Enrichments](/usage/advanced/git-enrichments) — all 19 signals and reranking presets
+- [Git Enrichments](/usage/advanced/git-enrichments) — full catalog of 20+ signals and reranking presets
 
 ### Level Up Your Agent
 

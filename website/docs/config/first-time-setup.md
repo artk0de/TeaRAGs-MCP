@@ -265,12 +265,13 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `CODE_ENABLE_GIT_METADATA` | `false` | Enable git blame analysis (authorship, churn, task IDs) |
+| `TRAJECTORY_GIT_ENABLED` | `true` | Enable git blame analysis (authorship, churn, task IDs) |
 
-**Enable trajectory enrichment:**
+Git enrichment is **enabled by default** for git repositories. Set to `false`
+to disable:
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
-  -e CODE_ENABLE_GIT_METADATA=true
+  -e TRAJECTORY_GIT_ENABLED=false
 ```
 
 :::tip
@@ -281,9 +282,9 @@ Git enrichment runs concurrently with embedding and does not increase indexing t
 
 | Variable | Default | When to change |
 |----------|---------|----------------|
-| `EMBEDDING_BATCH_SIZE` | `1024` | Tune via `npm run tune` for your hardware |
+| `EMBEDDING_TUNE_BATCH_SIZE` | `1024` | Tune via `npm run tune` for your hardware |
 | `INGEST_PIPELINE_CONCURRENCY` | `1` | Increase for remote GPU (2–4 typical) |
-| `QDRANT_UPSERT_BATCH_SIZE` | `100` | Tune via `npm run tune` |
+| `QDRANT_TUNE_UPSERT_BATCH_SIZE` | `100` | Tune via `npm run tune` |
 
 **Auto-tune for your setup:**
 ```bash
@@ -323,9 +324,9 @@ npm run tune
 # Apply tuned values
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
   -e EMBEDDING_BASE_URL=http://gpu-server:11434 \
-  -e EMBEDDING_BATCH_SIZE=256 \
+  -e EMBEDDING_TUNE_BATCH_SIZE=256 \
   -e INGEST_PIPELINE_CONCURRENCY=4 \
-  -e QDRANT_UPSERT_BATCH_SIZE=384
+  -e QDRANT_TUNE_UPSERT_BATCH_SIZE=384
 ```
 
 ## Quick Reference: Common Setups
@@ -365,11 +366,11 @@ claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
 </details>
 
 <details>
-<summary>Production with Git Enrichment</summary>
+<summary>Disable Git Enrichment (non-git project or fast iteration)</summary>
 
 ```bash
 claude mcp add tea-rags -s user -- node /path/to/tea-rags/build/index.js \
-  -e CODE_ENABLE_GIT_METADATA=true
+  -e TRAJECTORY_GIT_ENABLED=false
 ```
 
 </details>

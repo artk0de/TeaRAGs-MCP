@@ -29,7 +29,7 @@ tea-rags is available as an MCP server. Use it for ALL code search.
 4. Verify with ripgrep: confirm ALL referenced functions, imports, and types exist
    - Semantic search finds by meaning, not exact identifiers
    - 0 ripgrep matches for a referenced function = fix the reference before committing
-5. Check blast radius: `semantic_search` with `rerank: "impactAnalysis"`, `metaOnly: true`
+5. Check blast radius: `semantic_search` with `rerank: { custom: { imports: 0.7, similarity: 0.3 } }`, `metaOnly: true`
 
 ### Never:
 - Copy code from results with chunkBugFixRate > 50%
@@ -120,5 +120,5 @@ This is the shift from "find similar code" to **context-aware engineering** — 
 - [Deep Codebase Analysis](/agent-integration/deep-codebase-analysis) — metric interpretation, hotspot detection, threshold tables
 - [Semantic Search — Criticism and Responses](/knowledge-base/semantic-search-criticism) — why verification is mandatory, "candidate zone generator" principle
 - [Semantic Search (Core Concepts)](/introduction/core-concepts/semantic-search#not-grep-replacement) — verification workflow with Mermaid diagram
-- [Git Enrichments](/usage/advanced/git-enrichments) — all 19 signals explained
+- [Git Enrichments](/usage/advanced/git-enrichments) — full catalog of 20+ git + static signals
 - [Code Churn: Theory & Research](/knowledge-base/code-churn-research) — academic foundations, Nagappan & Ball, Tornhill

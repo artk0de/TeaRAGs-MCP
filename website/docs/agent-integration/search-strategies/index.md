@@ -26,14 +26,20 @@ Default semantic search returns results ranked by vector similarity only. But an
 | Preset | Key signals | Best for |
 |--------|-------------|----------|
 | `relevance` | similarity only | General lookup (default) |
+| `recent` | recency + similarity | Recently modified code |
+| `stable` | stability + similarity | Battle-tested implementations |
+| `proven` | stability + ownership + low bugFix + similarity | Low-bug, mature code |
 | `techDebt` | age + churn + bugFix + volatility | Legacy code assessment |
 | `hotspots` | chunkChurn + chunkRelativeChurn + burstActivity + bugFix + volatility | Bug-prone areas, risk assessment |
+| `dangerous` | bugFix + volatility + knowledgeSilo + burstActivity | High-risk modification targets |
+| `bugHunt` | bugFix + chunkChurn + volatility | Historically buggy code |
 | `codeReview` | recency + burstActivity + density + chunkChurn | Recent changes review |
+| `refactoring` | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age | Refactor candidates |
 | `onboarding` | documentation + stability | New developer entry points |
 | `securityAudit` | age + ownership + bugFix + pathRisk + volatility | Old critical code, security review |
-| `refactoring` | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age | Refactor candidates |
 | `ownership` | ownership + knowledgeSilo | Knowledge silos, bus factor |
-| `impactAnalysis` | similarity + imports | Dependency chains, blast radius |
+
+For blast-radius / dependency analysis use custom weights: `{ "imports": 0.7, "similarity": 0.3 }`.
 
 ### Custom Weights
 

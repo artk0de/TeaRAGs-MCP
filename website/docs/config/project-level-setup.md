@@ -37,9 +37,9 @@ Edit `~/.config/claude/claude_desktop_config.json` (or equivalent):
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "CODE_CHUNK_SIZE": "2500",
-        "CODE_CHUNK_OVERLAP": "300",
-        "CODE_ENABLE_GIT_METADATA": "false"
+        "INGEST_CHUNK_SIZE": "2500",
+        "INGEST_CHUNK_OVERLAP": "300",
+        "TRAJECTORY_GIT_ENABLED": "false"
       }
     }
   }
@@ -66,8 +66,8 @@ Control how code is split into searchable chunks.
 
 | Environment Variable | Type | Default | Description |
 |---------------------|------|---------|-------------|
-| `CODE_CHUNK_SIZE` | number | 2500 | Maximum chunk size in characters |
-| `CODE_CHUNK_OVERLAP` | number | 300 | Overlap between chunks in characters |
+| `INGEST_CHUNK_SIZE` | number | 2500 | Maximum chunk size in characters |
+| `INGEST_CHUNK_OVERLAP` | number | 300 | Overlap between chunks in characters |
 
 **Use cases:**
 - **Large chunks (3000+)**: Documentation sites, architectural documents, low file count
@@ -77,8 +77,8 @@ Control how code is split into searchable chunks.
 ```json
 {
   "env": {
-    "CODE_CHUNK_SIZE": "2000",
-    "CODE_CHUNK_OVERLAP": "250"
+    "INGEST_CHUNK_SIZE": "2000",
+    "INGEST_CHUNK_OVERLAP": "250"
   }
 }
 ```
@@ -89,7 +89,7 @@ Configure what gets indexed and how.
 
 | Environment Variable | Type | Default | Description |
 |---------------------|------|---------|-------------|
-| `CODE_ENABLE_GIT_METADATA` | boolean | false | Enable git enrichment (19 signals per chunk) |
+| `TRAJECTORY_GIT_ENABLED` | boolean | true | Enable git enrichment (20+ signals per chunk, 13 file + 10 chunk raw) |
 
 **Use cases:**
 - **Enable git enrichment**: Enterprise projects, legacy codebases, need ownership/churn data
@@ -98,9 +98,9 @@ Configure what gets indexed and how.
 :::tip Git Enrichment Performance
 Git enrichment runs concurrently with embedding and does not increase indexing time. The process is parallelized across multiple workers:
 
-- `CHUNKER_POOL_SIZE=4` — Parallel AST parsing workers
-- `FILE_PROCESSING_CONCURRENCY=50` — Parallel file reads
-- `GIT_CHUNK_CONCURRENCY=10` — Parallel git blame operations for chunk-level churn
+- `INGEST_TUNE_CHUNKER_POOL_SIZE=4` — Parallel AST parsing workers
+- `INGEST_TUNE_FILE_CONCURRENCY=50` — Parallel file reads
+- `TRAJECTORY_GIT_CHUNK_CONCURRENCY=10` — Parallel git blame operations for chunk-level churn
 
 **Recommended:** Keep defaults for production use.
 :::
@@ -109,7 +109,7 @@ Git enrichment runs concurrently with embedding and does not increase indexing t
 ```json
 {
   "env": {
-    "CODE_ENABLE_GIT_METADATA": "true"
+    "TRAJECTORY_GIT_ENABLED": "true"
   }
 }
 ```
@@ -145,7 +145,7 @@ Configure embedding provider and batching.
 |---------------------|------|---------|-------------|
 | `EMBEDDING_BASE_URL` | string | `http://localhost:11434` | Ollama server URL |
 | `EMBEDDING_MODEL` | string | `unclemusclez/jina-embeddings-v2-base-code:latest` | Embedding model name |
-| `EMBEDDING_BATCH_SIZE` | number | Auto-tuned | Chunks per embedding batch |
+| `EMBEDDING_TUNE_BATCH_SIZE` | number | Auto-tuned | Chunks per embedding batch |
 | `INGEST_PIPELINE_CONCURRENCY` | number | Auto-tuned | Pipeline worker concurrency |
 
 **Example:**
@@ -153,7 +153,7 @@ Configure embedding provider and batching.
 {
   "env": {
     "EMBEDDING_MODEL": "nomic-embed-text:latest",
-    "EMBEDDING_BATCH_SIZE": "512",
+    "EMBEDDING_TUNE_BATCH_SIZE": "512",
     "INGEST_PIPELINE_CONCURRENCY": "1"
   }
 }
@@ -170,9 +170,9 @@ Configure embedding provider and batching.
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "CODE_CHUNK_SIZE": "2000",
-        "CODE_CHUNK_OVERLAP": "200",
-        "CODE_ENABLE_GIT_METADATA": "true"
+        "INGEST_CHUNK_SIZE": "2000",
+        "INGEST_CHUNK_OVERLAP": "200",
+        "TRAJECTORY_GIT_ENABLED": "true"
       }
     }
   }
@@ -201,9 +201,9 @@ scripts/**
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "CODE_CHUNK_SIZE": "3500",
-        "CODE_CHUNK_OVERLAP": "500",
-        "CODE_ENABLE_GIT_METADATA": "false"
+        "INGEST_CHUNK_SIZE": "3500",
+        "INGEST_CHUNK_OVERLAP": "500",
+        "TRAJECTORY_GIT_ENABLED": "false"
       }
     }
   }
@@ -230,9 +230,9 @@ build/**
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "CODE_CHUNK_SIZE": "2500",
-        "CODE_CHUNK_OVERLAP": "300",
-        "CODE_ENABLE_GIT_METADATA": "true"
+        "INGEST_CHUNK_SIZE": "2500",
+        "INGEST_CHUNK_OVERLAP": "300",
+        "TRAJECTORY_GIT_ENABLED": "true"
       }
     }
   }
@@ -259,9 +259,9 @@ third-party/**
       "command": "node",
       "args": ["/path/to/tea-rags/build/index.js"],
       "env": {
-        "CODE_CHUNK_SIZE": "2000",
-        "CODE_CHUNK_OVERLAP": "200",
-        "CODE_ENABLE_GIT_METADATA": "false"
+        "INGEST_CHUNK_SIZE": "2000",
+        "INGEST_CHUNK_OVERLAP": "200",
+        "TRAJECTORY_GIT_ENABLED": "false"
       }
     }
   }
@@ -292,7 +292,7 @@ Settings are resolved in this order (highest priority first):
 
 ```bash
 # Global setting (lowest priority)
-export CODE_CHUNK_SIZE=2500
+export INGEST_CHUNK_SIZE=2500
 
 # Query parameter (highest priority)
 /index_codebase /path/to/project --chunkSize 1500
@@ -353,8 +353,8 @@ Add comments in MCP config or project README:
 ```markdown
 ## TeaRAGs Configuration
 
-- `CODE_CHUNK_SIZE: 2000` — Dense microservice code, smaller chunks for precision
-- `CODE_ENABLE_GIT_METADATA: false` — Fast iteration, small team, no ownership tracking needed
+- `INGEST_CHUNK_SIZE: 2000` — Dense microservice code, smaller chunks for precision
+- `TRAJECTORY_GIT_ENABLED: false` — Fast iteration, small team, no ownership tracking needed
 ```
 
 ### 3. Test Configuration
@@ -377,7 +377,7 @@ Don't override everything. Start with the minimum:
 ```json
 {
   "env": {
-    "CODE_CHUNK_SIZE": "2000"
+    "INGEST_CHUNK_SIZE": "2000"
   }
 }
 ```

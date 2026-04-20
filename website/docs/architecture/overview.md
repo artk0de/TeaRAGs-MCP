@@ -82,7 +82,7 @@ flowchart TB
     subgraph search["Search Path"]
         direction LR
         SE["Search Engine<br/>Query · Filter"]
-        RR["Reranker<br/>19 signals"]
+        RR["Reranker<br/>20+ signals"]
         SE --> RR
     end
 
@@ -101,7 +101,7 @@ TeaRAGs is the central orchestrator with six internal subsystems:
 | Component | Responsibility | Key Details |
 |-----------|---------------|-------------|
 | **Code Indexer** | Scans codebase, performs AST-aware chunking via tree-sitter | Respects `.gitignore` / `.contextignore`. Handles incremental updates (added/modified/deleted files) |
-| **Git Enricher** | Extracts metadata from `git log` and `git blame` | Computes 19 signals: churn, volatility, authorship, bug-fix rates, task IDs. File-level and chunk-level granularity |
+| **Git Enricher** | Extracts metadata from `git log` and `git blame` | Computes 23 raw signals (13 file + 10 chunk) + 14 derived signals: churn, volatility, authorship, bug-fix rates, task IDs. File-level and chunk-level granularity |
 | **Search Engine** | Converts queries to vectors, applies filters, executes search | Qdrant filters (language, path, git metadata). Semantic search and hybrid search (BM25 + RRF) |
 | **Reranker** | Re-scores results using trajectory signals | Composable presets: `hotspots`, `ownership`, `techDebt`, `stable`, etc. Custom weight configs supported |
 | **Embedding Pipeline** | Batches chunks for efficient embedding generation | Manages concurrency, retry logic, backpressure. Supports Ollama, OpenAI, Cohere, Voyage AI |
@@ -119,7 +119,7 @@ flowchart LR
         direction TB
         DV["Dense Vectors<br/>768–3072 dim"]
         SV["Sparse Vectors<br/>BM25"]
-        PL["Payload<br/>19 git signals + metadata"]
+        PL["Payload<br/>20+ git signals + metadata"]
     end
 
     subgraph embed["Embedding Service"]
@@ -138,7 +138,7 @@ flowchart LR
 
 | Service | Role | Details |
 |---------|------|---------|
-| **Qdrant** | Vector database | Dense vectors (768–3072 dim), sparse vectors (BM25 for hybrid search), payload (19 git signals + file metadata). Cosine similarity search at scale |
+| **Qdrant** | Vector database | Dense vectors (768–3072 dim), sparse vectors (BM25 for hybrid search), payload (23 raw git signals — 13 file + 10 chunk — plus static structural signals and file metadata). Cosine similarity search at scale |
 | **Embedding Service** | Text → vector conversion | **Ollama** (local, recommended: `jina-embeddings-v2-base-code`), **OpenAI** (`text-embedding-3-small/large`), **Cohere** (`embed-english-v3.0`), **Voyage AI** (`voyage-code-2`) |
 
 ### 4. Data Sources

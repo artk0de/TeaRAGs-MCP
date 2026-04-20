@@ -34,7 +34,7 @@ Similarity tells you nothing about any of this.
 
 TeaRAGs shifts the optimization target from **"find similar code"** to **"find code that improves the agent's decision quality."**
 
-Every retrieved chunk carries 19 git-derived signals — churn, stability, authorship, bug-fix rates, code age, task references. These signals encode **how code has evolved**, not just what it looks like right now.
+Every retrieved chunk carries 20+ signals — 23 raw git signals (13 file-level + 10 chunk-level) plus 14 derived git signals covering churn, stability, authorship, bug-fix rates, code age, task references; and 7 static structural signals (imports fan-out, documentation weight, path risk, chunk density). These signals encode **how code has evolved and how it's structured**, not just what it looks like right now.
 
 The thinking patterns change:
 

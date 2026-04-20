@@ -13,7 +13,7 @@ Estimating change impact through dependency analysis and combining multiple anal
 
 ### Using imports as a proxy
 
-The `impactAnalysis` preset uses import count as a fan-out measure — files imported by many others have higher blast radius.
+The `custom weights (imports)` preset uses import count as a fan-out measure — files imported by many others have higher blast radius.
 
 <AiQuery>Find shared utility modules ranked by import count, metadata only</AiQuery>
 
@@ -23,7 +23,7 @@ The `impactAnalysis` preset uses import count as a fan-out measure — files imp
 ```json
 {
   "query": "shared utility module",
-  "rerank": "impactAnalysis",
+  "rerank": { "custom": { "imports": 0.7, "similarity": 0.3 } },
   "metaOnly": true,
   "limit": 20
 }
