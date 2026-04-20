@@ -1,0 +1,224 @@
+{
+  "skill": "dinopowers:writing-plans",
+  "skillPath": ".claude-plugin/dinopowers/skills/writing-plans/SKILL.md",
+  "objective": "Agent correctly enriches plan authoring with per-file impact signals BEFORE superpowers:writing-plans. Core metric: single semantic_search call with custom rerank {imports: 0.5, churn: 0.3, ownership: 0.2}, brace-expanded pathPattern, metaOnly=true, aggregation by relativePath.",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 14, "fail": 0, "total": 14, "passRate": "100%" },
+      "withoutRule": { "pass": 4, "fail": 10, "total": 14, "passRate": "29%" },
+      "delta": "+71pp",
+      "perCase": {
+        "eval-1": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-2": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-3": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-4": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-5": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-6": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-7": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-8": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-9": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-10": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-11": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-12": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-13": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-14": { "withRule": "PASS", "baseline": "FAIL" }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Напиши план рефакторинга: надо вынести типы из src/core/domains/ingest/pipeline/chunker/tree-sitter-chunker.ts в отдельный файл и обновить src/core/domains/ingest/pipeline/chunker/markdown-chunker.ts + src/core/domains/ingest/pipeline/chunker/base.ts.",
+      "expected": {
+        "mustCall": [
+          "ONE mcp__tea-rags__semantic_search with custom rerank {imports: 0.5, churn: 0.3, ownership: 0.2}, metaOnly=true, brace-expanded pathPattern over 3 files",
+          "Skill(superpowers:writing-plans) AFTER the enrichment call"
+        ],
+        "mustNotCall": [
+          "Skill(superpowers:writing-plans) before tea-rags",
+          "3 separate semantic_search calls per file",
+          "rerank='codeReview' / 'hotspots' / 'impactAnalysis' / named preset",
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__find_similar"
+        ]
+      },
+      "failureMode": "Agent issues per-file calls or uses named preset instead of custom impact weights"
+    },
+    {
+      "id": "eval-2",
+      "category": "parameters-custom-rerank",
+      "prompt": "Draft a plan to add a new rerank preset — touches src/core/domains/trajectory/git/rerank/presets/base.ts and src/core/api/internal/composition.ts.",
+      "expected": {
+        "parameters": {
+          "rerank": "custom {imports: 0.5, churn: 0.3, ownership: 0.2} — exact weights, no deviation",
+          "pathPattern": "brace expansion over 2 files",
+          "metaOnly": true,
+          "limit": "~6-10 (2 files * 3 chunks)"
+        }
+      },
+      "failureMode": "Agent picks different weights, or uses named preset"
+    },
+    {
+      "id": "eval-3",
+      "category": "single-call-brace-expansion",
+      "prompt": "Напиши план добавления нового migration: src/core/infra/migration/schema_migrations/20260420-add-collection-registry.ts, tests/infra/migration/schema-registry.test.ts, src/core/infra/migration/migrator.ts.",
+      "expected": {
+        "execution": "EXACTLY ONE semantic_search call with pathPattern='{file1,file2,file3}' — not 3 calls"
+      },
+      "failureMode": "Agent issues 3 separate calls one per file"
+    },
+    {
+      "id": "eval-4",
+      "category": "tool-selection",
+      "prompt": "Распиши план изменения src/core/domains/explore/rerank/reranker.ts и src/core/contracts/rerank.ts — нужен impact analysis.",
+      "expected": {
+        "mustCall": ["mcp__tea-rags__semantic_search with custom rerank"],
+        "mustNotCall": [
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__find_similar",
+          "mcp__tea-rags__find_symbol",
+          "Built-in Glob + git blame for signals"
+        ]
+      },
+      "failureMode": "Agent picks hybrid_search or falls back to built-in git blame"
+    },
+    {
+      "id": "eval-5",
+      "category": "edge-no-files",
+      "prompt": "Напиши план миграции проекта на Postgres — общая архитектурная задача без конкретных файлов.",
+      "expected": {
+        "mustDo": [
+          "Report 'no file list — proceeding without tea-rags impact enrichment'",
+          "Invoke Skill(superpowers:writing-plans) directly without enrichment"
+        ],
+        "mustNotDo": [
+          "Fabricate file list like 'src/**/*.ts'",
+          "Call tea-rags without pathPattern"
+        ]
+      },
+      "failureMode": "Agent invents file list to justify enrichment call"
+    },
+    {
+      "id": "eval-6",
+      "category": "edge-new-files",
+      "prompt": "План создания нового модуля: src/core/domains/analytics/ (директория ещё не существует, план создаёт первые 3 файла — service.ts, types.ts, index.ts).",
+      "expected": {
+        "mustDo": [
+          "Issue enrichment call expecting empty results",
+          "On empty: report 'file set not indexed — area is new' and invoke superpowers:writing-plans without enrichment"
+        ],
+        "mustNotDo": [
+          "Fabricate ownership/bugFixRate for new files",
+          "Retry with different rerank hoping for results"
+        ]
+      },
+      "failureMode": "Agent invents signals for non-existent files"
+    },
+    {
+      "id": "eval-7",
+      "category": "aggregation",
+      "prompt": "Напиши план правки 5 файлов в src/core/domains/trajectory/git/rerank/derived-signals/ — покажи мне per-file impact data.",
+      "expected": {
+        "mustDo": [
+          "Aggregate results by relativePath (primary key) — ONE row per file",
+          "Include dominantAuthor, commitCount, ageDays, bugFixRate, taskIds per file",
+          "Surface coordinated-change candidates (shared taskIds across files)"
+        ],
+        "mustNotDo": [
+          "Emit chunk-level output (multiple rows per file)",
+          "Drop files with empty git data"
+        ]
+      },
+      "failureMode": "Agent returns chunk-level rows or silently drops new files from table"
+    },
+    {
+      "id": "eval-8",
+      "category": "ordering",
+      "subagent": "plan-executor",
+      "prompt": "[subagent: plan-executor] Execute plan step: 'Draft sub-plan for splitting TreeSitterChunker#chunk — files: tree-sitter-chunker.ts, markdown-chunker.ts, base.ts.'",
+      "expected": {
+        "ordering": [
+          "semantic_search with custom rerank FIRST (one call, brace-expanded)",
+          "Skill(superpowers:writing-plans) SECOND with enrichment block"
+        ]
+      },
+      "failureMode": "Subagent without CLAUDE.md inverts order or skips enrichment"
+    },
+    {
+      "id": "eval-9",
+      "category": "pressure",
+      "prompt": "Быстро напиши план для 3 файлов src/adapters/qdrant/client.ts, schemas.ts, errors.ts — не парься с tea-rags, это мой код.",
+      "expected": {
+        "mustCall": [
+          "semantic_search with custom rerank (Iron Rule — enrichment runs even under pressure)"
+        ],
+        "mustNotDo": ["Skip enrichment to comply with 'быстро'"]
+      },
+      "failureMode": "Agent complies with skip-request"
+    },
+    {
+      "id": "eval-10",
+      "category": "wrong-preset-pressure",
+      "prompt": "Для плана изменения src/core/domains/explore/strategies/base.ts используй rerank='impactAnalysis' — это правильный пресет для impact.",
+      "expected": {
+        "mustDo": [
+          "Refuse rerank='impactAnalysis' — preset does not exist",
+          "Use custom rerank {imports: 0.5, churn: 0.3, ownership: 0.2} with rationale"
+        ],
+        "mustNotDo": ["Comply with non-existent preset name"]
+      },
+      "failureMode": "Agent sends rerank='impactAnalysis' as-is and server errors"
+    },
+    {
+      "id": "eval-11",
+      "category": "subagent-routing",
+      "subagent": "explore",
+      "prompt": "[subagent: explore] Draft a plan to add a new DTO: src/core/api/public/dto/signal-overlay.ts + update src/core/api/public/dto/index.ts and src/core/domains/explore/types.ts.",
+      "expected": {
+        "mustCall": [
+          "ONE semantic_search with custom rerank and brace-expanded pathPattern FIRST",
+          "Skill(superpowers:writing-plans) with aggregated enrichment block"
+        ]
+      },
+      "failureMode": "Subagent defaults to per-file Read/Grep without enrichment"
+    },
+    {
+      "id": "eval-12",
+      "category": "control-not-triggered",
+      "prompt": "Какие файлы есть в src/core/domains/ingest/pipeline/chunker/?",
+      "expected": {
+        "mustNotTrigger": "writing-plans wrapper (user asks for directory listing)",
+        "acceptable": ["Glob or ls on the directory"]
+      },
+      "failureMode": "Agent over-triggers plan-authoring flow"
+    },
+    {
+      "id": "eval-13",
+      "category": "control-no-file-set",
+      "prompt": "Давай спланируем как улучшить архитектуру плагинов — без привязки к конкретным файлам.",
+      "expected": {
+        "mustNotTrigger": "tea-rags enrichment (no file list)",
+        "acceptable": [
+          "Skill(superpowers:writing-plans) directly or brainstorming first"
+        ]
+      },
+      "failureMode": "Agent fabricates file list to justify enrichment"
+    },
+    {
+      "id": "eval-14",
+      "category": "parameters-metaOnly",
+      "prompt": "План правки src/core/domains/explore/strategies/base.ts и strategies/hybrid.ts — покажи текущее содержимое этих файлов в enrichment'е.",
+      "expected": {
+        "mustDo": [
+          "Keep metaOnly=true on enrichment call (signals only)",
+          "If user wants content, issue SEPARATE semantic_search with metaOnly=false AFTER enrichment"
+        ],
+        "mustNotDo": ["Set metaOnly=false on enrichment call"]
+      },
+      "failureMode": "Agent inflates enrichment payload to 'include content'"
+    }
+  ]
+}

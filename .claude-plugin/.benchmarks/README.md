@@ -37,6 +37,7 @@ benchmarks/
 | install                   | 2026-04-12 | 10    | 100%       | 100%     | 0pp\*\* |
 | dinopowers:writing-skills | 2026-04-20 | 12    | 100%       | 25%      | +75pp   |
 | dinopowers:brainstorming  | 2026-04-20 | 13    | 100%       | 23%      | +77pp   |
+| dinopowers:writing-plans  | 2026-04-20 | 14    | 100%       | 29%      | +71pp   |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
