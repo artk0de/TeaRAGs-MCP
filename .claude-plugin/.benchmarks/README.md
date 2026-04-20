@@ -43,6 +43,8 @@ benchmarks/
 | dinopowers:test-driven-development        | 2026-04-20 | 15    | 100%       | 20%      | +80pp   |
 | dinopowers:verification-before-completion | 2026-04-20 | 15    | 100%       | 13%      | +87pp   |
 | dinopowers:receiving-code-review          | 2026-04-20 | 12    | 100%       | 33%      | +67pp   |
+| dinopowers:requesting-code-review         | 2026-04-20 | 12    | 100%       | 25%      | +75pp   |
+| dinopowers:finishing-a-development-branch | 2026-04-20 | 13    | 100%       | 38%      | +62pp   |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
