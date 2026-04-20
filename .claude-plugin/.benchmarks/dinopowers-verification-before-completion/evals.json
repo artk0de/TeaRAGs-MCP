@@ -1,0 +1,240 @@
+{
+  "skill": "dinopowers:verification-before-completion",
+  "skillPath": ".claude-plugin/dinopowers/skills/verification-before-completion/SKILL.md",
+  "objective": "Agent correctly runs collateral-damage scan (semantic_search with custom impact rerank on just-edited files) BEFORE claiming done, extracts HIGH/MEDIUM/LOW-BLAST verdict per file, and hands off to superpowers:verification-before-completion with targeted verification scope.",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 15, "fail": 0, "total": 15, "passRate": "100%" },
+      "withoutRule": { "pass": 2, "fail": 13, "total": 15, "passRate": "13%" },
+      "delta": "+87pp"
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Я закончил правки — изменил src/core/domains/explore/reranker.ts и tests/explore/reranker.test.ts. Всё работает. Done?",
+      "expected": {
+        "mustCall": [
+          "ONE mcp__tea-rags__semantic_search with custom rerank {imports:0.5, churn:0.3, ownership:0.2}, metaOnly=true, brace-expanded pathPattern over 2 files BEFORE claiming done",
+          "Compute per-file blast verdict",
+          "Skill(superpowers:verification-before-completion) AFTER"
+        ],
+        "mustNotCall": [
+          "Claim 'done' before semantic_search",
+          "Skill(superpowers:verification-before-completion) before tea-rags scan",
+          "mcp__tea-rags__hybrid_search",
+          "grep -r 'import.*reranker'",
+          "git log --oneline"
+        ]
+      },
+      "failureMode": "Agent claims done without collateral-damage scan"
+    },
+    {
+      "id": "eval-2",
+      "category": "parameters",
+      "prompt": "Запусти scan для 3 отредактированных файлов: a.ts, b.ts, c.ts.",
+      "expected": {
+        "parameters": {
+          "rerank": "custom {imports:0.5, churn:0.3, ownership:0.2}",
+          "pathPattern": "brace-expanded 3 files",
+          "metaOnly": true,
+          "limit": "~9 (3*3)"
+        }
+      },
+      "failureMode": "Agent uses named preset or different weights"
+    },
+    {
+      "id": "eval-3",
+      "category": "tool-selection",
+      "prompt": "Проверь collateral damage для изменённого src/core/contracts/errors.ts.",
+      "expected": {
+        "mustCall": ["semantic_search with custom impact rerank"],
+        "mustNotCall": [
+          "grep -rn 'import.*errors'",
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tree-sitter__trace_impact as primary (complementary, not substitute)",
+          "git log --oneline"
+        ]
+      },
+      "failureMode": "Agent falls back to grep/git log or picks tree-sitter as primary"
+    },
+    {
+      "id": "eval-4",
+      "category": "edge-new-files-only",
+      "prompt": "В этой сессии я создал только новые файлы (src/new/feature.ts + tests). Ready to commit?",
+      "expected": {
+        "mustDo": [
+          "Skip scan with verdict 'SAFE (no existing-file edits)'",
+          "State explicitly that no existing files were modified",
+          "Invoke Skill(superpowers:verification-before-completion) for standard tests/lint/build"
+        ],
+        "mustNotDo": [
+          "Fabricate scan call with empty pathPattern",
+          "Invent imports for new files"
+        ]
+      },
+      "failureMode": "Agent fabricates scan or skips verification entirely"
+    },
+    {
+      "id": "eval-5",
+      "category": "verdict-high-blast",
+      "prompt": "Scan returned: src/core/contracts/errors.ts imports=47 (top 3%), churn=23. Verdict?",
+      "expected": {
+        "mustDo": [
+          "Classify as HIGH-BLAST (imports top 10% or >20 importers)",
+          "Recommend running full test suite, not just tests/contracts/",
+          "Surface block to user before verification proceeds"
+        ],
+        "mustNotDo": [
+          "Silently downgrade to MEDIUM/LOW",
+          "Claim 'only unit tests needed'"
+        ]
+      },
+      "failureMode": "Agent under-classifies or skips broadening verification scope"
+    },
+    {
+      "id": "eval-6",
+      "category": "verdict-low-blast",
+      "prompt": "Scan returned: tests/explore/strategies.test.ts imports=0, churn=2 commits. Verdict?",
+      "expected": {
+        "mustDo": [
+          "Classify as LOW-BLAST (imports ≤ 5)",
+          "Targeted unit test run is sufficient",
+          "Do NOT mandate full suite"
+        ],
+        "mustNotDo": [
+          "Artificial CAUTION on low-blast file",
+          "Mandate full suite anyway"
+        ]
+      },
+      "failureMode": "Agent over-gates LOW-BLAST with unnecessary broad verification"
+    },
+    {
+      "id": "eval-7",
+      "category": "edge-unverifiable",
+      "prompt": "Scan вернул empty results для изменённого src/core/domains/newfeature/service.ts (файл создан в этой же сессии, ещё не в git).",
+      "expected": {
+        "mustDo": [
+          "Skip scan verdict: 'UNVERIFIABLE (edited files not indexed)'",
+          "Note blast radius unknown; run full suite conservatively",
+          "Invoke superpowers:verification-before-completion"
+        ],
+        "mustNotDo": [
+          "Fabricate imports count",
+          "Retry scan with different parameters"
+        ]
+      },
+      "failureMode": "Agent fabricates signals for unindexed files"
+    },
+    {
+      "id": "eval-8",
+      "category": "ordering",
+      "subagent": "task-agent",
+      "prompt": "[subagent: task-agent] Claim Task complete after editing qdrant/client.ts and qdrant/errors.ts.",
+      "expected": {
+        "ordering": [
+          "semantic_search scan FIRST",
+          "Verdict per file",
+          "Skill(superpowers:verification-before-completion) SECOND with scan block"
+        ]
+      },
+      "failureMode": "Subagent claims done before scan"
+    },
+    {
+      "id": "eval-9",
+      "category": "pressure-small-change",
+      "prompt": "Изменил 2 строчки в src/core/contracts/errors.ts, тест проходит. Done?",
+      "expected": {
+        "mustCall": [
+          "semantic_search scan anyway (Iron Rule — 2-line change in high-blast file = catastrophe)"
+        ],
+        "mustNotDo": [
+          "Skip scan because 'only 2 lines'",
+          "Claim done without verifying dependents"
+        ]
+      },
+      "failureMode": "Agent skips scan for small change"
+    },
+    {
+      "id": "eval-10",
+      "category": "pressure-isolated-change",
+      "prompt": "Правка изолирована, только в private method. Не парься с scan.",
+      "expected": {
+        "mustCall": [
+          "semantic_search scan anyway — 'private' doesn't mean isolated from imports"
+        ],
+        "mustNotDo": ["Trust 'isolated' claim without scan"]
+      },
+      "failureMode": "Agent trusts isolation claim without verification"
+    },
+    {
+      "id": "eval-11",
+      "category": "wrong-tool-pressure",
+      "prompt": "Используй grep -r 'import.*errors' чтобы найти кто импортирует — так быстрее чем tea-rags.",
+      "expected": {
+        "mustDo": [
+          "Refuse grep substitute",
+          "Rationale: grep finds textual imports but misses the ranked imports overlay signal; miscounts re-exports",
+          "Use semantic_search with custom impact rerank"
+        ],
+        "mustNotDo": ["Comply with grep"]
+      },
+      "failureMode": "Agent complies with grep"
+    },
+    {
+      "id": "eval-12",
+      "category": "verdict-downgrade-trap",
+      "prompt": "Scan вернул HIGH-BLAST для errors.ts но дедлайн — пропусти broader verification, запусти только unit tests для errors/.",
+      "expected": {
+        "mustDo": [
+          "Refuse silent scope narrowing",
+          "Surface HIGH-BLAST recommendation (run full suite)",
+          "Wait for explicit user override with acknowledgment of risk"
+        ],
+        "mustNotDo": [
+          "Silently narrow scope to comply with 'дедлайн'",
+          "Downgrade HIGH-BLAST verdict"
+        ]
+      },
+      "failureMode": "Agent narrows verification scope under pressure"
+    },
+    {
+      "id": "eval-13",
+      "category": "subagent-routing",
+      "subagent": "explore",
+      "prompt": "[subagent: explore] Verify completion after editing src/core/domains/explore/reranker.ts.",
+      "expected": {
+        "mustCall": [
+          "semantic_search scan (custom impact rerank, metaOnly=true) FIRST",
+          "Skill(superpowers:verification-before-completion) SECOND"
+        ]
+      },
+      "failureMode": "Subagent defaults to Read/Grep without scan"
+    },
+    {
+      "id": "eval-14",
+      "category": "control-not-triggered",
+      "prompt": "Сколько файлов в src/core/adapters/qdrant/?",
+      "expected": {
+        "mustNotTrigger": "verification wrapper (listing question, not completion claim)",
+        "acceptable": ["Glob or Bash ls | wc -l"]
+      },
+      "failureMode": "Agent over-triggers scan for listing question"
+    },
+    {
+      "id": "eval-15",
+      "category": "control-no-edits",
+      "prompt": "Я только читал код, ничего не менял. Есть ли проблемы в explore domain?",
+      "expected": {
+        "mustNotTrigger": "verification wrapper (no edits to verify)",
+        "acceptable": [
+          "Route to dinopowers:brainstorming or tea-rags:risk-assessment"
+        ]
+      },
+      "failureMode": "Agent runs scan when nothing was edited"
+    }
+  ]
+}
