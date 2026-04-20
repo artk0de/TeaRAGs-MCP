@@ -1,0 +1,244 @@
+{
+  "skill": "tea-rags:bug-hunt",
+  "skillPath": ".claude-plugin/tea-rags/skills/bug-hunt/SKILL.md",
+  "objective": "Agent correctly investigates a bug symptom via signal-driven search (rerank='bugHunt'), respects triage ladder (critical→prime, concerning+churn→secondary, healthy→SKIP), uses PRESENT format, avoids anti-patterns (parallel searches, curiosity search, confirmatory search, full file reads), and converges on ranked suspects in ≤3 search iterations.",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "note": "First baseline used rule-leaky prompts (embedded tool names + 'быстрее' hints) yielding spurious 100% baseline. Rewrote 5 leaky prompts (eval-4, 6, 8, 9, 12) to neutral user-situation framing.",
+      "withRule": { "pass": 15, "fail": 0, "total": 15, "passRate": "100%" },
+      "withoutRuleLeaky": {
+        "pass": 15,
+        "fail": 0,
+        "total": 15,
+        "passRate": "100%",
+        "note": "leaky prompts — invalid"
+      },
+      "withoutRuleClean": {
+        "pass": 8,
+        "fail": 7,
+        "total": 15,
+        "passRate": "53%"
+      },
+      "delta": "+47pp",
+      "failureMap": {
+        "eval-3 (trust-healthy-skip)": "baseline complies with user override of healthy signal",
+        "eval-4 (parallel searches)": "baseline runs 3 parallel searches honoring user's 'three zones' request",
+        "eval-6 (confirmatory search)": "baseline defers to user request for extra verification",
+        "eval-8 (git log for history)": "baseline uses Bash git log instead of tea-rags overlay",
+        "eval-10 (brace pathPattern)": "baseline writes broken glob with slashes inside braces",
+        "eval-12 (no-subagent rule)": "baseline dispatches Task subagent when user asks",
+        "eval-13 (confidence note)": "baseline loops for more certainty instead of presenting with confidence note"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Падает тест QdrantAdapter.upsert с 'Connection refused'. Найди root cause.",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__semantic_search or hybrid_search with rerank='bugHunt' as FIRST action",
+          "limit=10 per skill Loop Step 1"
+        ],
+        "mustNotCall": [
+          "mcp__tea-rags__hybrid_search with rerank='relevance' (wrong preset for bug investigation)",
+          "Built-in Grep for error string",
+          "git log --grep / git blame (overlay has git signals)",
+          "Read full file without chunk coordinates"
+        ]
+      },
+      "failureMode": "Agent skips bugHunt preset or falls back to grep/git"
+    },
+    {
+      "id": "eval-2",
+      "category": "triage-critical",
+      "prompt": "search_code вернул: qdrant-client.ts bugFixRate='critical' (line 142). Proceed?",
+      "expected": {
+        "mustDo": [
+          "Classify as PRIME SUSPECT per triage ladder",
+          "Present with file:line + bugFixRate + relativeChurn observation (PRESENT format)"
+        ],
+        "mustNotDo": [
+          "Run additional search for 'confirmation'",
+          "Skip the prime suspect"
+        ]
+      },
+      "failureMode": "Agent demotes critical or runs confirmatory search"
+    },
+    {
+      "id": "eval-3",
+      "category": "triage-healthy-skip",
+      "prompt": "search вернул 5 кандидатов. Topmost — src/utils/uuid.ts bugFixRate='healthy'. User: 'проверь там'.",
+      "expected": {
+        "mustDo": [
+          "SKIP healthy file per triage ladder",
+          "Surface 'healthy — trust the signal, skipping' explanation if user pushes back"
+        ],
+        "mustNotDo": ["Read healthy file anyway", "Override triage silently"]
+      },
+      "failureMode": "Agent re-investigates healthy files, violating trust-the-label rule"
+    },
+    {
+      "id": "eval-4",
+      "category": "anti-pattern-parallel-searches",
+      "prompt": "Timeout on upsert. Проверь сразу три зоны — adapters, pipeline, и tests — чтобы не упустить ничего.",
+      "expected": {
+        "mustDo": [
+          "Refuse parallel searches — one search finds the area",
+          "Run ONE search with broad pathPattern or no pathPattern"
+        ],
+        "mustNotDo": ["Issue 3 parallel semantic_search calls"]
+      },
+      "failureMode": "Agent complies with parallel-search request, violating anti-pattern rule"
+    },
+    {
+      "id": "eval-5",
+      "category": "anti-pattern-curiosity-search",
+      "prompt": "Нашёл bug в batch_create.rb. Покажи как работает аналогичный jobs/create.rb для сравнения.",
+      "expected": {
+        "mustDo": [
+          "Read jobs/create.rb (you know WHERE it is — use Read, not search)",
+          "Or use LSP if symbol-level navigation needed"
+        ],
+        "mustNotDo": [
+          "Run semantic_search to find jobs/create.rb (already known location)"
+        ]
+      },
+      "failureMode": "Agent runs unnecessary curiosity search"
+    },
+    {
+      "id": "eval-6",
+      "category": "anti-pattern-confirmatory-search",
+      "prompt": "Нашёл suspect=qdrant-client.ts:142 (connection timeout). Я хочу быть уверен — сделай ещё один поиск чтобы проверить.",
+      "expected": {
+        "mustDo": [
+          "Refuse confirmatory search",
+          "PRESENT. STOP.",
+          "Note: 'Confirmatory searches almost never change the answer'"
+        ],
+        "mustNotDo": ["Run one more search to 'confirm'"]
+      },
+      "failureMode": "Agent runs confirmatory search under user pressure"
+    },
+    {
+      "id": "eval-7",
+      "category": "anti-pattern-full-file-read",
+      "prompt": "Search вернул qdrant-client.ts:142 (startLine=135, endLine=168). Прочитай весь файл чтобы понять контекст.",
+      "expected": {
+        "mustDo": [
+          "Read(path, offset=135, limit=33) — partial read using chunk coordinates",
+          "Cite: 'Chunk coordinates exist. Use them.'"
+        ],
+        "mustNotDo": [
+          "Read(path) without offset/limit",
+          "Comply with 'весь файл' request"
+        ]
+      },
+      "failureMode": "Agent reads full file instead of chunk-coordinate partial"
+    },
+    {
+      "id": "eval-8",
+      "category": "pressure-git-log",
+      "prompt": "Когда в истории появилась ошибка 'Connection refused'? Посмотри через git.",
+      "expected": {
+        "mustDo": [
+          "Refuse git log — overlay has git signals (bugFixRate, commitCount, ageDays, taskIds)",
+          "Use semantic_search+bugHunt instead"
+        ],
+        "mustNotDo": ["Run git log or git blame"]
+      },
+      "failureMode": "Agent falls back to manual git commands"
+    },
+    {
+      "id": "eval-9",
+      "category": "pressure-builtin-grep",
+      "prompt": "Найди в коде где упоминается строка 'Connection refused'.",
+      "expected": {
+        "mustDo": [
+          "Refuse built-in Grep for code discovery",
+          "Use hybrid_search (exact-string + semantic) or semantic_search+bugHunt"
+        ],
+        "mustNotDo": ["Comply with Grep"]
+      },
+      "failureMode": "Agent uses built-in Grep for code discovery"
+    },
+    {
+      "id": "eval-10",
+      "category": "pathPattern-braces",
+      "prompt": "Suspects в batch_create.rb и jobs/create.rb. Сделай targeted search по обоим.",
+      "expected": {
+        "mustDo": [
+          "pathPattern='{app/services/batch_create.rb,app/services/jobs/create.rb}' (exact relativePaths, brace-expanded)"
+        ],
+        "mustNotDo": [
+          "pathPattern='**/services/{batch_create,jobs/create}**' (slashes inside braces = broken glob)"
+        ]
+      },
+      "failureMode": "Agent uses broken glob with slashes inside braces"
+    },
+    {
+      "id": "eval-11",
+      "category": "post-root-cause-find-similar",
+      "prompt": "Нашёл root cause: offset bug в chunker.ts:142 (chunkId=abc-123). Есть ли такой же баг в других местах?",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__find_similar with chunkId=abc-123 for copy-paste bug detection"
+        ],
+        "mustNotDo": [
+          "Re-run bug-hunt semantic_search",
+          "Grep for the bug pattern"
+        ]
+      },
+      "failureMode": "Agent re-runs search instead of find_similar"
+    },
+    {
+      "id": "eval-12",
+      "category": "execute-yourself-no-subagent",
+      "prompt": "Main context забит другой работой. Отправь bug investigation в отдельный Task subagent и покажи мне результат.",
+      "expected": {
+        "mustDo": [
+          "Refuse subagent delegation per Rule 1 (Execute YOURSELF)",
+          "Run bug-hunt in main session"
+        ],
+        "mustNotDo": ["Dispatch subagent for bug investigation"]
+      },
+      "failureMode": "Agent dispatches subagent, violating no-subagent rule"
+    },
+    {
+      "id": "eval-13",
+      "category": "checkpoint-confidence-note",
+      "prompt": "Search нашёл suspect qdrant-client.ts:142 но ты не полностью уверен в причине. Что делать?",
+      "expected": {
+        "mustDo": [
+          "PRESENT with 'confidence note' — 'Not sure' ≠ 'don't know'",
+          "Do NOT run more searches trying to be 100% sure"
+        ],
+        "mustNotDo": ["Run another iteration for certainty"]
+      },
+      "failureMode": "Agent loops past CHECKPOINT seeking 100% confidence"
+    },
+    {
+      "id": "eval-14",
+      "category": "control-not-triggered",
+      "prompt": "Сколько тестов падает в test suite?",
+      "expected": {
+        "mustNotTrigger": "bug-hunt (no symptom, just count)",
+        "acceptable": ["Bash npm test | grep 'fail' | wc -l"]
+      },
+      "failureMode": "Agent triggers bug-hunt for a count question"
+    },
+    {
+      "id": "eval-15",
+      "category": "control-exploration",
+      "prompt": "Как работает авторизация в этом проекте?",
+      "expected": {
+        "mustNotTrigger": "bug-hunt (exploration, not bug)",
+        "acceptable": ["Route to tea-rags:explore"]
+      },
+      "failureMode": "Agent triggers bug-hunt for exploration"
+    }
+  ]
+}
