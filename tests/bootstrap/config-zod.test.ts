@@ -530,7 +530,7 @@ describe("parseAppConfigZod — trajectoryGit", () => {
     const { parseAppConfigZod } = await freshImport();
     const { trajectoryGit } = parseAppConfigZod();
 
-    expect(trajectoryGit.enabled).toBe(false);
+    expect(trajectoryGit.enabled).toBe(true);
     expect(trajectoryGit.logMaxAgeMonths).toBe(12);
     expect(trajectoryGit.logTimeoutMs).toBe(60000);
     expect(trajectoryGit.chunkConcurrency).toBe(10);

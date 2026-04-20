@@ -27,7 +27,7 @@ to the MCP server.
 | `CODE_CUSTOM_EXTENSIONS`   | Additional file extensions to index (comma-separated). Example: `.proto,.graphql,.prisma`                                                 | -       |
 | `CODE_CUSTOM_IGNORE`       | Additional ignore patterns (comma-separated). Example: `**/*.generated.ts,**/dist/**`                                                     | -       |
 | `CODE_DEFAULT_LIMIT`       | Default number of search results returned when the caller does not specify a limit.                                                       | 5       |
-| `CODE_ENABLE_GIT_METADATA` | Enrich every chunk with git blame data: authors, commit count, code age, and task IDs extracted from commit messages.                     | false   |
+| `CODE_ENABLE_GIT_METADATA` | Enrich every chunk with git blame data: authors, commit count, code age, and task IDs extracted from commit messages. Silently skipped on non-git directories. | true    |
 
 See also the full [Configuration Variables](/config/environment-variables) page
 for embedding, Qdrant batch pipeline, and performance variables.

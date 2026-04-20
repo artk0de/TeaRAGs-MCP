@@ -254,7 +254,7 @@ Available weight keys for custom reranking:
 
 | Variable                   | Default   | Description                                                                                        |
 | -------------------------- | --------- | -------------------------------------------------------------------------------------------------- |
-| `CODE_ENABLE_GIT_METADATA` | `"false"` | Enable git enrichment during indexing                                                              |
+| `CODE_ENABLE_GIT_METADATA` | `"true"`  | Enable git enrichment during indexing. Set to `"false"` to disable. Silently skipped on non-git directories. |
 | `GIT_LOG_MAX_AGE_MONTHS`   | `12`      | Time window for file-level git analysis (months). `0` = no age limit (safety depth still applies). |
 | `GIT_LOG_TIMEOUT_MS`       | `30000`   | Timeout for isomorphic-git; falls back to native CLI on expiry                                     |
 | `GIT_LOG_SAFETY_DEPTH`     | `10000`   | Max commits for isomorphic-git `depth` and CLI `--max-count`                                       |
