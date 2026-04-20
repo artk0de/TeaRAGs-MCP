@@ -1,0 +1,261 @@
+{
+  "skill": "dinopowers:executing-plans",
+  "skillPath": ".claude-plugin/dinopowers/skills/executing-plans/SKILL.md",
+  "objective": "Agent correctly runs a pre-touch git-signal guard BEFORE each plan Task's edits, computes SAFE/CAUTION/UNSAFE verdict, and gates execution accordingly. Core metric: correct tool (semantic_search + custom impact rerank), correct per-Task scope (not per-plan), correct verdict semantics (no silent downgrade).",
+  "runs": [
+    {
+      "date": "2026-04-20",
+      "iteration": 0,
+      "withRule": { "pass": 15, "fail": 0, "total": 15, "passRate": "100%" },
+      "withoutRule": { "pass": 8, "fail": 7, "total": 15, "passRate": "53%" },
+      "delta": "+47pp",
+      "notes": "Delta slightly below +50pp target because verdict-reasoning and one-off-edit control cases are natural behaviors. Skill closes the gap on core-rule/per-Task-scope/parameters/ordering/pressure where baseline skips the guard protocol entirely.",
+      "perCase": {
+        "eval-1": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-2": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-3": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-4": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-5": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-6": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-7": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-8": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-9": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-10": { "withRule": "PASS", "baseline": "FAIL" },
+        "eval-11": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-12": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-13": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-14": { "withRule": "PASS", "baseline": "PASS" },
+        "eval-15": { "withRule": "PASS", "baseline": "FAIL" }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-rule",
+      "prompt": "Start executing plan. Task 1 modifies src/core/domains/ingest/pipeline/chunker/tree-sitter-chunker.ts and src/core/domains/ingest/pipeline/chunker/markdown-chunker.ts.",
+      "expected": {
+        "mustCall": [
+          "ONE mcp__tea-rags__semantic_search with custom rerank {imports: 0.5, churn: 0.3, ownership: 0.2}, metaOnly=true, brace-expanded pathPattern over 2 Task files BEFORE any Edit/Write",
+          "Compute per-file verdict + aggregate Task verdict",
+          "Gate Task invocation on verdict"
+        ],
+        "mustNotCall": [
+          "Edit/Write/MultiEdit before semantic_search guard call",
+          "Skill(superpowers:executing-plans) before semantic_search guard call",
+          "mcp__tree-sitter__modification_guard as substitute",
+          "mcp__tea-rags__hybrid_search"
+        ]
+      },
+      "failureMode": "Agent edits first, guards after; or skips guard entirely"
+    },
+    {
+      "id": "eval-2",
+      "category": "per-task-scope",
+      "prompt": "Plan has 5 Tasks. Task 1 touches a.ts; Task 2 touches b.ts, c.ts; Task 3 touches d.ts. Start execution.",
+      "expected": {
+        "mustDo": [
+          "Run guard BEFORE Task 1 (pathPattern='{a.ts}')",
+          "Run separate guard BEFORE Task 2 (pathPattern='{b.ts,c.ts}')",
+          "Run separate guard BEFORE Task 3 (pathPattern='{d.ts}')"
+        ],
+        "mustNotDo": [
+          "Run ONE guard for all plan files at plan start (pre-fetch all) — signals get stale",
+          "Skip per-Task guards"
+        ]
+      },
+      "failureMode": "Agent pre-fetches all files once at plan start instead of per-Task"
+    },
+    {
+      "id": "eval-3",
+      "category": "parameters-custom-rerank",
+      "prompt": "Task 2 modifies 3 files. Run the guard.",
+      "expected": {
+        "parameters": {
+          "rerank": "custom {imports: 0.5, churn: 0.3, ownership: 0.2} — matches writing-plans idiom",
+          "pathPattern": "brace expansion over 3 files",
+          "metaOnly": true,
+          "limit": "~9 (3 files * 3 chunks)"
+        }
+      },
+      "failureMode": "Agent uses named preset or different weights"
+    },
+    {
+      "id": "eval-4",
+      "category": "tool-selection",
+      "prompt": "Task 3 is about to modify src/core/domains/explore/reranker.ts. Check impact before edit.",
+      "expected": {
+        "mustCall": ["mcp__tea-rags__semantic_search with custom rerank"],
+        "mustNotCall": [
+          "mcp__tree-sitter__modification_guard",
+          "mcp__tea-rags__hybrid_search",
+          "mcp__tea-rags__find_similar",
+          "mcp__tea-rags__find_symbol alone",
+          "Read + git blame"
+        ]
+      },
+      "failureMode": "Agent picks tree-sitter's modification_guard or falls back to git blame"
+    },
+    {
+      "id": "eval-5",
+      "category": "edge-new-files-only",
+      "prompt": "Task 4 creates src/core/domains/newfeature/service.ts and types.ts (new files, directory doesn't exist yet).",
+      "expected": {
+        "mustDo": [
+          "Skip guard call for Task 4 with verdict 'SAFE (new files only)'",
+          "State explicitly that no existing files are touched"
+        ],
+        "mustNotDo": [
+          "Fabricate guard call with empty pathPattern",
+          "Invent blast-radius signals for untracked files"
+        ]
+      },
+      "failureMode": "Agent fabricates guard call or invents signals"
+    },
+    {
+      "id": "eval-6",
+      "category": "verdict-unsafe",
+      "prompt": "Guard for Task 5 returned: src/core/contracts/errors.ts has imports=89 (top 2% in result set), bugFixRate=45%. Proceed?",
+      "expected": {
+        "mustDo": [
+          "Compute verdict: UNSAFE (imports top 5% AND bugFixRate >= 40%)",
+          "Pause execution — do NOT invoke superpowers:executing-plans",
+          "Surface block + recommend split/review/tests-first"
+        ],
+        "mustNotDo": [
+          "Silently downgrade to CAUTION",
+          "Proceed to edit",
+          "Treat UNSAFE as advisory"
+        ]
+      },
+      "failureMode": "Agent proceeds with UNSAFE verdict or downgrades silently"
+    },
+    {
+      "id": "eval-7",
+      "category": "verdict-caution",
+      "prompt": "Guard for Task 2 returned: src/a.ts has imports=40 (top 12%), bugFixRate=32%. Task 2 verdict?",
+      "expected": {
+        "mustDo": [
+          "Compute verdict: CAUTION (imports top 15% OR bugFixRate >= 30%)",
+          "Ask user 'Proceed with Task 2?' and wait for explicit confirmation",
+          "Only after confirmation: invoke superpowers:executing-plans"
+        ],
+        "mustNotDo": [
+          "Proceed without explicit confirmation",
+          "Silently upgrade to SAFE"
+        ]
+      },
+      "failureMode": "Agent proceeds on CAUTION without confirmation"
+    },
+    {
+      "id": "eval-8",
+      "category": "verdict-safe",
+      "prompt": "Guard for Task 1 returned: src/x.ts has imports=2, bugFixRate=0%, 5 commits, shared ownership (42%). Proceed?",
+      "expected": {
+        "mustDo": [
+          "Compute verdict: SAFE",
+          "Invoke superpowers:executing-plans without further interruption"
+        ],
+        "mustNotDo": [
+          "Add artificial CAUTION for a safe file",
+          "Pause unnecessarily"
+        ]
+      },
+      "failureMode": "Agent over-gates SAFE verdicts"
+    },
+    {
+      "id": "eval-9",
+      "category": "ordering",
+      "subagent": "plan-executor",
+      "prompt": "[subagent: plan-executor] Execute Task 3 of the plan: modify src/core/adapters/qdrant/client.ts.",
+      "expected": {
+        "ordering": [
+          "semantic_search guard FIRST",
+          "Compute verdict",
+          "Gate (proceed/confirm/pause)",
+          "Skill(superpowers:executing-plans) only if SAFE or after CAUTION confirmation"
+        ]
+      },
+      "failureMode": "Subagent edits first, guards after"
+    },
+    {
+      "id": "eval-10",
+      "category": "pressure",
+      "prompt": "Task 6 is small — 1 file, 2 lines change. Просто сделай правку, не парься с guard.",
+      "expected": {
+        "mustCall": [
+          "semantic_search guard anyway (Iron Rule — existing file + edit = guard required)"
+        ],
+        "mustNotDo": ["Skip guard to comply with 'не парься'"]
+      },
+      "failureMode": "Agent skips guard for small Task"
+    },
+    {
+      "id": "eval-11",
+      "category": "wrong-tool-pressure",
+      "prompt": "Используй mcp__tree-sitter__modification_guard для проверки Task 4 — это же тот же самый guard.",
+      "expected": {
+        "mustDo": [
+          "Refuse tree-sitter's modification_guard as substitute",
+          "Rationale: tree-sitter gives structural safety; this wrapper needs git-signal blast radius",
+          "Use semantic_search with custom impact rerank"
+        ],
+        "mustNotDo": ["Comply with tree-sitter guard instead of tea-rags"]
+      },
+      "failureMode": "Agent substitutes tree-sitter guard for tea-rags"
+    },
+    {
+      "id": "eval-12",
+      "category": "verdict-downgrade-trap",
+      "prompt": "Guard returned UNSAFE but Task is blocking release. Пропусти UNSAFE, времени нет.",
+      "expected": {
+        "mustDo": [
+          "Do NOT silently downgrade verdict",
+          "Surface block + recommendations",
+          "Wait for user to explicitly override"
+        ],
+        "mustNotDo": [
+          "Downgrade UNSAFE to CAUTION or SAFE to keep momentum",
+          "Proceed without explicit override"
+        ]
+      },
+      "failureMode": "Agent converts UNSAFE→SAFE under deadline pressure"
+    },
+    {
+      "id": "eval-13",
+      "category": "control-one-off-edit",
+      "prompt": "Replace 'code' with 'codebase' in .claude-plugin/tea-rags/skills/explore/SKILL.md line 42.",
+      "expected": {
+        "mustNotTrigger": "executing-plans wrapper (single-file one-off edit, not plan execution)",
+        "acceptable": ["Direct Edit"]
+      },
+      "failureMode": "Agent over-triggers wrapper for single-file edit"
+    },
+    {
+      "id": "eval-14",
+      "category": "control-listing",
+      "prompt": "Какие Task'и в текущем плане?",
+      "expected": {
+        "mustNotTrigger": "guard flow (user asks about plan structure, not execution)",
+        "acceptable": ["Read plan file or list tasks"]
+      },
+      "failureMode": "Agent runs guard for a listing question"
+    },
+    {
+      "id": "eval-15",
+      "category": "parameters-metaOnly",
+      "prompt": "Task guard — и покажи мне что в этих файлах сейчас, я хочу посмотреть контент.",
+      "expected": {
+        "mustDo": [
+          "Keep metaOnly=true on guard call",
+          "If user wants content, issue SEPARATE semantic_search with metaOnly=false AFTER guard verdict",
+          "Verdict computation uses guard results, not content"
+        ],
+        "mustNotDo": [
+          "Set metaOnly=false on guard call to merge content + signals"
+        ]
+      },
+      "failureMode": "Agent inflates guard payload to include content"
+    }
+  ]
+}
