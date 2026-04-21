@@ -29,6 +29,35 @@ there's nothing to complete. If branch has only trivial changes (docs-only,
 renames-only): risk-assessment may be skipped with note "trivial scope — no risk
 scan needed".
 
+## Chaining rule (MANDATORY)
+
+When the wrapped `superpowers:` skill runs its cycle it may instruct you to
+invoke another `superpowers:Y` skill next (TDD after planning, verification
+after editing, review after completion, etc.). **Redirect every such onward
+`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
+wrapper exists.**
+
+Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
+
+- `dinopowers:brainstorming`
+- `dinopowers:executing-plans`
+- `dinopowers:finishing-a-development-branch`
+- `dinopowers:receiving-code-review`
+- `dinopowers:requesting-code-review`
+- `dinopowers:systematic-debugging`
+- `dinopowers:test-driven-development`
+- `dinopowers:verification-before-completion`
+- `dinopowers:writing-plans`
+- `dinopowers:writing-skills`
+
+Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
+imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
+`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
+prevents.
+
+Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
+`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+
 ## Step 1 — Determine branch scope
 
 From git state, collect:
@@ -117,7 +146,12 @@ Prepend the scan block as context. Phrase handoff as:
 
 > "Before presenting completion options, note branch-wide risk scan: …<block>…
 > Completion options (merge / PR / cleanup) should factor in these risks — don't
-> present 'ready to merge' if Critical risks are untested."
+> present 'ready to merge' if Critical risks are untested.
+>
+> Chaining rule reminder: when your cycle would next invoke
+> `superpowers:requesting-code-review` or
+> `superpowers:verification-before-completion` (or any wrapped `superpowers:Y`),
+> invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
 Let `superpowers:finishing-a-development-branch` run its standard
 merge/PR/cleanup decision presentation. The wrapper informs the recommendation,
@@ -132,6 +166,11 @@ does not force a specific outcome.
 - Substituted direct `semantic_search` → missed convergence; invoke the skill
 - Scoped scan to last commit only → revert, expand to full branch diff
 - Presented completion options before Step 2 → revert, restart
+- Let `superpowers:finishing-a-development-branch` chain into a raw
+  `superpowers:requesting-code-review` /
+  `superpowers:verification-before-completion` without redirecting to the
+  `dinopowers:Y` wrapper → intercept and invoke the wrapper instead (see
+  Chaining rule)
 
 ## Common Mistakes
 

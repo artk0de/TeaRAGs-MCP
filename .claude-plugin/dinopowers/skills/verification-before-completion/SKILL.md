@@ -30,6 +30,35 @@ recommendation) = core value.
 If only new files were created (no edits to existing files): skip scan with
 verdict `SAFE (no existing-file edits)`. Do not fabricate pathPattern.
 
+## Chaining rule (MANDATORY)
+
+When the wrapped `superpowers:` skill runs its cycle it may instruct you to
+invoke another `superpowers:Y` skill next (TDD after planning, verification
+after editing, review after completion, etc.). **Redirect every such onward
+`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
+wrapper exists.**
+
+Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
+
+- `dinopowers:brainstorming`
+- `dinopowers:executing-plans`
+- `dinopowers:finishing-a-development-branch`
+- `dinopowers:receiving-code-review`
+- `dinopowers:requesting-code-review`
+- `dinopowers:systematic-debugging`
+- `dinopowers:test-driven-development`
+- `dinopowers:verification-before-completion`
+- `dinopowers:writing-plans`
+- `dinopowers:writing-skills`
+
+Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
+imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
+`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
+prevents.
+
+Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
+`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+
 ## Step 1 — Collect edited file set
 
 From `git status --short` or `git diff --name-only`, collect:
@@ -126,7 +155,11 @@ Prepend the collateral-damage block as context. Phrase handoff as:
 
 > "Before claiming done, the edited files have these blast-radius signals:
 > …<block>… Run verification commands that exercise HIGH-BLAST dependents, not
-> just files directly edited. Evidence before assertions."
+> just files directly edited. Evidence before assertions.
+>
+> Chaining rule reminder: when your cycle would next invoke
+> `superpowers:finishing-a-development-branch` (or any wrapped `superpowers:Y`),
+> invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
 Let `superpowers:verification-before-completion` run its standard verification
 cycle (tests, type-check, lint, build). The wrapper does not replace it — it
@@ -144,6 +177,10 @@ informs the scope of verification.
 - Skipped verification after surfacing HIGH-BLAST → wrapper informs scope, never
   substitutes for verification
 - `metaOnly: false` → restart
+- Let `superpowers:verification-before-completion` chain into a raw
+  `superpowers:finishing-a-development-branch` without redirecting to
+  `dinopowers:finishing-a-development-branch` → intercept and invoke the wrapper
+  instead (see Chaining rule)
 
 ## Common Mistakes
 

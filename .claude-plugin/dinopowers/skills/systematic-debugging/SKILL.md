@@ -30,6 +30,35 @@ If the "bug" is purely speculative ("maybe there's a race condition somewhere")
 with no symptom: skip the wrapper, invoke `superpowers:systematic-debugging`
 directly. Do not fabricate a symptom to justify `bug-hunt`.
 
+## Chaining rule (MANDATORY)
+
+When the wrapped `superpowers:` skill runs its cycle it may instruct you to
+invoke another `superpowers:Y` skill next (TDD after planning, verification
+after editing, review after completion, etc.). **Redirect every such onward
+`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
+wrapper exists.**
+
+Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
+
+- `dinopowers:brainstorming`
+- `dinopowers:executing-plans`
+- `dinopowers:finishing-a-development-branch`
+- `dinopowers:receiving-code-review`
+- `dinopowers:requesting-code-review`
+- `dinopowers:systematic-debugging`
+- `dinopowers:test-driven-development`
+- `dinopowers:verification-before-completion`
+- `dinopowers:writing-plans`
+- `dinopowers:writing-skills`
+
+Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
+imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
+`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
+prevents.
+
+Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
+`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+
 ## Step 1 — Frame the symptom
 
 From the user report, extract:
@@ -101,7 +130,12 @@ hypothesis block as context. Phrase the handoff as:
 
 > "Before forming hypotheses, note these bug-hunt priors: …<block>… Start
 > hypothesis space with prime suspects; escalate to secondary only if primes
-> rule out."
+> rule out.
+>
+> Chaining rule reminder: when you (the inner skill) would next invoke
+> `superpowers:test-driven-development` or
+> `superpowers:verification-before-completion` (or any wrapped `superpowers:Y`),
+> invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
 Let `superpowers:systematic-debugging` run its standard hypothesis-form /
 experiment / rule-out cycle. The wrapper does not replace it — it seeds the
@@ -121,6 +155,11 @@ hypothesis space.
   hypothesis block first
 - Fabricated a `symptom` when user only said "it feels off" → skip Step 2, state
   it
+- Let `superpowers:systematic-debugging` chain into a raw
+  `superpowers:test-driven-development` /
+  `superpowers:verification-before-completion` without redirecting to the
+  `dinopowers:Y` wrapper → intercept and invoke the wrapper instead (see
+  Chaining rule)
 
 ## Common Mistakes
 

@@ -29,6 +29,35 @@ correct ordering (search BEFORE draft) is the core value.
 If this is the first test in the project (no existing tests): skip pattern
 search, invoke `superpowers:test-driven-development` directly. State it.
 
+## Chaining rule (MANDATORY)
+
+When the wrapped `superpowers:` skill runs its cycle it may instruct you to
+invoke another `superpowers:Y` skill next (TDD after planning, verification
+after editing, review after completion, etc.). **Redirect every such onward
+`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
+wrapper exists.**
+
+Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
+
+- `dinopowers:brainstorming`
+- `dinopowers:executing-plans`
+- `dinopowers:finishing-a-development-branch`
+- `dinopowers:receiving-code-review`
+- `dinopowers:requesting-code-review`
+- `dinopowers:systematic-debugging`
+- `dinopowers:test-driven-development`
+- `dinopowers:verification-before-completion`
+- `dinopowers:writing-plans`
+- `dinopowers:writing-skills`
+
+Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
+imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
+`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
+prevents.
+
+Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
+`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+
 ## Step 1 — Frame the test intent
 
 From the user request or in-progress feature, identify:
@@ -119,7 +148,11 @@ pattern block from Step 3 as context. Phrase the handoff as:
 
 > "Before writing the failing test, match these established conventions from the
 > proven test corpus: …<block>… Deviate only if the new test genuinely needs a
-> different pattern (document why)."
+> different pattern (document why).
+>
+> Chaining rule reminder: when your cycle would next invoke
+> `superpowers:verification-before-completion` (or any wrapped `superpowers:Y`),
+> invoke `dinopowers:Y` instead — see the Chaining rule section above."
 
 Let `superpowers:test-driven-development` run its RED → GREEN → REFACTOR cycle.
 This wrapper does not replace it — it grounds the RED draft in local
@@ -138,6 +171,10 @@ conventions.
 - Passed raw test code to `superpowers:test-driven-development` → extract
   pattern block first (6 bullets, not raw content)
 - Started drafting the failing test before Step 2 → revert, restart from Step 2
+- Let `superpowers:test-driven-development` chain into a raw
+  `superpowers:verification-before-completion` without redirecting to
+  `dinopowers:verification-before-completion` → intercept and invoke the wrapper
+  instead (see Chaining rule)
 
 ## Common Mistakes
 

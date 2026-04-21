@@ -54,6 +54,7 @@ benchmarks/
 | facade-discipline                         | 2026-04-21 | 12    | 100%       | 58%†     | +42pp†      |
 | facade-discipline (iter-2)                | 2026-04-21 | +4    | 100%       | 75%†     | +25pp†      |
 | facade-discipline (iter-3)                | 2026-04-21 | +3    | 100%       | 100%†    | +0pp†       |
+| dinopowers-chaining-rule                  | 2026-04-21 | 8     | structural | n/a‡     | n/a‡        |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
@@ -83,3 +84,10 @@ clearly enough in prompts that baseline catches it. iter-3 exists as documentary
 precedent that prevents over-literal reading of the iter-2 "≤20 lines per
 method" clause. The loophole DID trip the agent in a live refactor; iter-3 makes
 that failure explicit across sessions.
+
+‡ dinopowers-chaining-rule is a cross-cutting text fix applied to all 10 wrapper
+SKILL.md files. Phase 2 baseline subagent eval was skipped — the problem was
+pre-confirmed by the existing `inject-wrapper-routing.sh` hook (same bypass
+pattern, different tool surface) and a direct user report. Eval cases documented
+in `evals.json` as reusable regression tests; verification was structural
+(grep + markdownlint delta), not subagent-based.
