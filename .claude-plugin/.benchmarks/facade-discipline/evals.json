@@ -1,0 +1,165 @@
+{
+  "skill": "facade-discipline",
+  "skillPath": ".claude/rules/facade-discipline.md",
+  "skillType": "path-scoped-rule",
+  "objective": "When agent edits ExploreFacade/IngestFacade, adds a method to App, or touches strategies/ops/queries, rule must steer new logic into the correct class: strategy (search/rerank/scroll), query (aggregate without vector search), ops (indexing/CRUD branching), or validator (>5 lines of input checks). Facade methods must stay dispatchers (≤20 lines). Both file-size drift (findSymbol at 90 lines) and category confusion (calling an aggregation a 'strategy') are failure modes.",
+  "runs": [
+    {
+      "date": "2026-04-21",
+      "iteration": 1,
+      "note": "Initial baseline — baseline agent prevented facade drift in 12/12 cases (strong general SE intuition, because prompts explicitly stated 'N lines of inline work'). Rule's delta is in category precision: distinguishing queries/ (aggregation without vector search) from strategies/ (search+rerank) from ops/ (indexing branching), plus project-specific conventions (validators in api/errors.ts, registry.buildMergedFilter for filter merging).",
+      "withRule": { "pass": 12, "fail": 0, "total": 12, "passRate": "100%" },
+      "withoutRulePrimary": {
+        "pass": 12,
+        "fail": 0,
+        "total": 12,
+        "passRate": "100%",
+        "note": "drift-prevention only — ignored category precision"
+      },
+      "withoutRuleStrict": {
+        "pass": 7,
+        "fail": 5,
+        "total": 12,
+        "passRate": "58%",
+        "note": "strict grading — wrong category (strategy vs query) counts as fail"
+      },
+      "deltaPrimary": "+0pp",
+      "deltaStrict": "+42pp",
+      "failureMap": {
+        "eval-2 (baseline)": "proposed 'CollectionHealthStrategy' — rule requires queries/ for aggregation without vector search",
+        "eval-8 (baseline)": "proposed 'MetricsStrategy' — same category confusion for getIndexMetrics refactor",
+        "eval-9 (baseline)": "proposed 'CommitHistogramStrategy' — scroll+bucket is query territory per rule",
+        "eval-11 (baseline)": "proposed 'SymbolImportsStrategy' — scroll+group-by+count is query territory per rule",
+        "eval-6 (baseline)": "proposed validator in facades/validators/ — rule specifies api/errors.ts or alongside typed errors"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "new-search-tool",
+      "prompt": "I need a new MCP tool `find_callers` that, given a symbol name, returns all chunks where that symbol is called. It uses a scroll over the collection with filter by a specific payload field and needs reranking by recency. Where does this go in src/core/api/internal/facades/explore-facade.ts and what files do I touch?",
+      "expectedPlacement": "New strategy in domains/explore/strategies/, register via createExploreStrategy, facade method ≤15 line dispatcher",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent inlines 80+ lines of filter+scroll+rerank in facade"
+    },
+    {
+      "id": "eval-2",
+      "category": "aggregation",
+      "prompt": "Product wants a new tool `get_collection_health` that returns, per language, the top 10 files by churn and the 5 most frequent authors. It needs to scroll the whole collection, group by language, aggregate per-file. How should I add this to ExploreFacade?",
+      "expectedPlacement": "New query class in domains/explore/queries/, injected via ExploreFacadeDeps, facade method ≤10 line dispatcher",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "FAIL",
+      "failureMode": "agent inlines Map iteration in facade OR categorizes as strategy (baseline did the latter)"
+    },
+    {
+      "id": "eval-3",
+      "category": "ingest-branching",
+      "prompt": "We need a --dry-run mode for indexCodebase — it runs all the chunking and enrichment logic but doesn't write to Qdrant, returning the stats as if it had. Currently IngestFacade.indexCodebase branches between reindex and full index; dry-run adds a third branch. Where do I put the new branching?",
+      "expectedPlacement": "Ops class in api/internal/ops/ (e.g. IndexingOps), dry-run as additional branch inside it; facade becomes dispatcher",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent adds third if-branch inline in facade method"
+    },
+    {
+      "id": "eval-4",
+      "category": "refactor-drift",
+      "prompt": "The findSymbol method in ExploreFacade is ~90 lines — it builds two filters inline, does two parallel scrolls, deduplicates by id, then reranks. I want to make it easier to test. What's the refactor?",
+      "expectedPlacement": "Extract to SymbolSearchStrategy in domains/explore/strategies/symbol.ts extending BaseExploreStrategy; facade shrinks to dispatcher",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent extracts to private facade method instead of strategy class"
+    },
+    {
+      "id": "eval-5",
+      "category": "control-keep-in-facade",
+      "prompt": "clearIndex(path) currently resolves the collection name, invalidates the model guard cache, then delegates to status.clearIndex(path). Four lines, all dispatch. Someone suggested extracting it to an ops class for consistency. Should I?",
+      "expectedPlacement": "Keep as-is in facade — pure dispatch, fits size budget, no business logic",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent extracts to ops class for symmetry, adding indirection without benefit"
+    },
+    {
+      "id": "eval-6",
+      "category": "validation-extraction",
+      "prompt": "I'm adding a new tool find_by_task_id with three mutually-exclusive parameters (taskId, taskIds, taskPattern) and cross-field rules (taskPattern requires minAgeDays). Validation is about 12 lines. Where does it live?",
+      "expectedPlacement": "Named validator function in api/errors.ts or alongside typed errors; facade calls it first line. >5 lines triggers extraction per rule",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "FAIL",
+      "failureMode": "agent inlines validation OR places validator in non-canonical location"
+    },
+    {
+      "id": "eval-7",
+      "category": "filter-building-antipattern",
+      "prompt": "In a new facade method I need to build a Qdrant filter that combines typed parameters (language, author) with a user-supplied raw filter. I see findSymbol builds { must: [...] } objects inline. Is that the pattern to follow?",
+      "expectedPlacement": "Use registry.buildMergedFilter(typedParams, rawFilter, level) like other explore methods — findSymbol is the anti-pattern being refactored, not a template",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "FAIL",
+      "failureMode": "agent replicates findSymbol's inline pattern OR invents generic FilterBuilder ignoring existing registry.buildMergedFilter"
+    },
+    {
+      "id": "eval-8",
+      "category": "refactor-drift",
+      "prompt": "ExploreFacade.getIndexMetrics is 95 lines of per-language / per-signal / per-scope aggregation, with inline buildSignalMetrics closure and multiple nested Maps. It's hard to test without a full integration setup. Refactor plan?",
+      "expectedPlacement": "Extract to IndexMetricsQuery in domains/explore/queries/ (create directory if missing), inject via ExploreFacadeDeps, facade becomes dispatcher",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "FAIL",
+      "failureMode": "agent splits into smaller private facade methods OR calls it a 'strategy' (baseline did the latter)"
+    },
+    {
+      "id": "eval-9",
+      "category": "subagent-explore",
+      "prompt": "[subagent: explore] You are editing src/core/api/internal/facades/explore-facade.ts. A user wants a new method that, given a file path, returns a histogram of commit counts per chunk. It needs to scroll the collection by relativePath and bucket chunks. Add it.",
+      "expectedPlacement": "New query class in domains/explore/queries/, inject via deps, facade method is dispatcher. Subagent context must not override rule.",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "FAIL",
+      "failureMode": "subagent honors the 'edit this file' framing and inlines the method OR calls scroll+bucket a 'strategy'"
+    },
+    {
+      "id": "eval-10",
+      "category": "subagent-task-agent",
+      "prompt": "[subagent: task-agent] Task: add MCP tool rank_by_stability that scrolls all chunks, reranks them by a stability derived signal, returns top N. Target files: src/core/api/public/app.ts, src/core/api/internal/facades/explore-facade.ts, src/mcp/tools/explore.ts. Describe the file-by-file changes.",
+      "expectedPlacement": "Facade method ≤15 line dispatcher calling new strategy (StabilityRankStrategy) or reusing ScrollRankStrategy with preset param. Add strategies/ file to target list.",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent honors truncated target list and inlines scroll+rerank in facade"
+    },
+    {
+      "id": "eval-11",
+      "category": "edge-russian",
+      "prompt": "Добавь в ExploreFacade новый метод, который принимает symbol и возвращает все файлы, где этот symbol импортируется. Нужен scroll по payload + группировка по relativePath + подсчёт импортов на файл. Куда положить логику?",
+      "expectedPlacement": "New query class in domains/explore/queries/ (scroll+group-by+count is aggregation without vector search), facade is dispatcher",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "FAIL",
+      "failureMode": "non-English prompt confuses agent OR agent categorizes as strategy (baseline did the latter)"
+    },
+    {
+      "id": "eval-12",
+      "category": "edge-code-review",
+      "prompt": "Here's a diff someone submitted for review. They added a new method findByPath to ExploreFacade: [40 lines with inline must filter + scroll + Map grouping + CodeChunkGrouper.groupFile]. Is this ready to merge?",
+      "expectedPlacement": "Not ready — flag inline filter building (use registry.buildMergedFilter), flag Map grouping in facade (extract to query), flag driftWarning: null (should call this.checkDrift(path))",
+      "withRule": "PASS",
+      "withoutRulePrimary": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent approves the PR OR misses filter/aggregation antipatterns"
+    }
+  ],
+  "gradingCriteria": {
+    "primary": "Did agent keep logic OUT of the facade body? (drift prevention)",
+    "strict": "Did agent pick the correct category per rule: strategy (search+rerank) vs query (aggregate without vector search) vs ops (indexing/CRUD branching) vs validator (>5 lines of input checks)?",
+    "pass": "both primary AND strict must hold",
+    "note": "Baseline agent achieves 100% primary on well-telegraphed prompts (explicit 'N lines of inline work' cues extract action). Rule's value shown in strict grading — +42pp delta. Baseline defaults to 'strategy' for everything; rule teaches category distinctions."
+  }
+}

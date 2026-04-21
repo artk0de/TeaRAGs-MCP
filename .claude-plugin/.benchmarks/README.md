@@ -51,6 +51,7 @@ benchmarks/
 | pattern-search                            | 2026-04-21 | 14    | 100%       | 21%      | +79pp       |
 | index                                     | 2026-04-21 | 10    | 100%       | 50%      | +50pp       |
 | force-reindex                             | 2026-04-21 | 10    | 100%       | 80%      | +20pp\*\*\* |
+| facade-discipline                         | 2026-04-21 | 12    | 100%       | 58%†     | +42pp†      |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
@@ -64,3 +65,12 @@ baseline.
 details (background subagent dispatch with `run_in_background=true`, foreground
 refusal for zero-downtime alias-switching). Not a weakness — reflects narrow
 marginal value.
+
+† facade-discipline has two grading axes. Primary drift prevention (keeping
+logic out of facade body) is 100% / 100% — baseline SE intuition already blocks
+obvious drift on telegraphed prompts. Strict category precision (`queries/` vs
+`strategies/` vs `ops/` vs validator) is 100% / 58% — rule's unique value.
+Baseline defaults to calling every extraction "a strategy" because that's the
+only pattern visible in the codebase; rule teaches the three-way split and the
+`registry.buildMergedFilter` / `api/errors.ts` conventions. The 58% is the
+strict number shown.
