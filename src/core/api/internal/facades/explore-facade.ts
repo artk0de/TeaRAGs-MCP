@@ -19,11 +19,12 @@
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
-import type { PayloadSignalDescriptor, SignalStats } from "../../../contracts/types/trajectory.js";
+import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   InvalidQueryError,
 } from "../../../domains/explore/errors.js";
+import { IndexMetricsQuery } from "../../../domains/explore/queries/index-metrics.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import {
   createExploreStrategy,
@@ -33,10 +34,7 @@ import {
   type BaseExploreStrategy,
   type ExploreContext,
 } from "../../../domains/explore/strategies/index.js";
-import { INDEXING_METADATA_ID } from "../../../domains/ingest/constants.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
-import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/health-mapper.js";
-import type { EnrichmentMarkerMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
@@ -53,7 +51,6 @@ import {
   type IndexMetrics,
   type RankChunksRequest,
   type SemanticSearchRequest,
-  type SignalMetrics,
 } from "../../public/dto/index.js";
 
 // ---------------------------------------------------------------------------
@@ -88,6 +85,7 @@ export class ExploreFacade {
   private readonly vectorStrategy: BaseExploreStrategy;
   private readonly hybridStrategy: BaseExploreStrategy;
   private readonly scrollRankStrategy: BaseExploreStrategy;
+  private readonly indexMetricsQuery?: IndexMetricsQuery;
   private readonly modelGuard?: EmbeddingModelGuard;
 
   constructor(deps: ExploreFacadeDeps) {
@@ -121,6 +119,9 @@ export class ExploreFacade {
       this.payloadSignals,
       this.essentialKeys,
     );
+    if (deps.statsCache) {
+      this.indexMetricsQuery = new IndexMetricsQuery(deps.qdrant, deps.statsCache, this.payloadSignals);
+    }
   }
 
   // =========================================================================
@@ -337,99 +338,11 @@ export class ExploreFacade {
 
   /** Return collection-level signal statistics and distributions. */
   async getIndexMetrics(path: string): Promise<IndexMetrics> {
+    if (!this.indexMetricsQuery) throw new NotIndexedError(path);
     const absolutePath = await validatePath(path);
     const collectionName = resolveCollectionName(absolutePath);
-
-    if (!(await this.qdrant.collectionExists(collectionName))) {
-      throw new DomainCollectionNotFoundError(collectionName);
-    }
-
     await this.ensureStats(collectionName);
-
-    const stats = this.statsCache?.load(collectionName);
-    if (!stats) {
-      throw new NotIndexedError(path);
-    }
-
-    const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
-    const descriptors = this.payloadSignals;
-
-    const buildSignalMetrics = (perSignal: Map<string, SignalStats>): Record<string, SignalMetrics> => {
-      const result: Record<string, SignalMetrics> = {};
-      for (const [key, signalStats] of perSignal) {
-        const descriptor = descriptors.find((d) => d.key === key);
-        if (!descriptor?.stats?.labels) continue;
-
-        const labelMap: Record<string, number> = {};
-        for (const [pKey, labelName] of Object.entries(descriptor.stats.labels)) {
-          const p = Number(pKey.slice(1));
-          const threshold = signalStats.percentiles[p];
-          if (threshold !== undefined) {
-            labelMap[labelName] = threshold;
-          }
-        }
-
-        result[key] = {
-          min: signalStats.min,
-          max: signalStats.max,
-          mean: signalStats.mean,
-          count: signalStats.count,
-          labelMap,
-        };
-      }
-      return result;
-    };
-
-    const signals: Record<string, Record<string, Record<string, SignalMetrics>>> = {};
-
-    if (stats.perLanguage) {
-      for (const [lang, langStats] of stats.perLanguage) {
-        const langSignals: Record<string, Record<string, SignalMetrics>> = {};
-        for (const [key, scopedStats] of langStats) {
-          const scoped: Record<string, SignalMetrics> = {};
-          const sourceMetrics = buildSignalMetrics(new Map([[key, scopedStats.source]]));
-          if (sourceMetrics[key]) {
-            scoped["source"] = sourceMetrics[key];
-          }
-          if (scopedStats.test) {
-            const testMetrics = buildSignalMetrics(new Map([[key, scopedStats.test]]));
-            if (testMetrics[key]) {
-              scoped["test"] = testMetrics[key];
-            }
-          }
-          if (Object.keys(scoped).length > 0) {
-            langSignals[key] = scoped;
-          }
-        }
-        if (Object.keys(langSignals).length > 0) {
-          signals[lang] = langSignals;
-        }
-      }
-    }
-
-    // Include global only for multi-language projects (>1 code language)
-    const codeLanguageCount = stats.perLanguage?.size ?? 0;
-    if (codeLanguageCount !== 1) {
-      const globalMetrics = buildSignalMetrics(stats.perSignal);
-      const globalScoped: Record<string, Record<string, SignalMetrics>> = {};
-      for (const [key, metrics] of Object.entries(globalMetrics)) {
-        globalScoped[key] = { source: metrics };
-      }
-      signals["global"] = globalScoped;
-    }
-
-    const markerPoint = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID).catch(() => null);
-    const rawEnrichment = markerPoint?.payload?.enrichment as EnrichmentMarkerMap | undefined;
-    const enrichmentHealth = rawEnrichment ? mapMarkerToHealth(rawEnrichment) : undefined;
-
-    return {
-      collection: collectionName,
-      totalChunks: collectionInfo.pointsCount,
-      totalFiles: stats.distributions.totalFiles,
-      distributions: stats.distributions,
-      signals,
-      enrichment: enrichmentHealth,
-    };
+    return this.indexMetricsQuery.run(collectionName, path);
   }
 
   // =========================================================================
