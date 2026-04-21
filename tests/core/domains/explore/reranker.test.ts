@@ -2183,12 +2183,16 @@ describe("resolveMode (private phase)", () => {
         ) => {
           presetName: string;
           weights: Record<string, number>;
+          mask: unknown;
           groupBy: string | undefined;
         };
       }
-    ).resolveMode({ preset: "techDebt", custom: { similarity: 1.0 } }, "semantic_search");
-    expect(resolved.presetName).toBe("techDebt");
+    ).resolveMode({ preset: "refactoring", custom: { similarity: 1.0 } }, "semantic_search");
+    expect(resolved.presetName).toBe("refactoring");
     expect(resolved.weights).toEqual({ similarity: 1.0 });
+    // Mask and groupBy must flow from the preset, not from custom weights
+    expect(resolved.mask).toBeDefined();
+    expect(resolved.groupBy).toBe("parentSymbolId");
   });
 
   it("resolves pure { custom } mode — presetName is 'custom', weights from input, no mask/groupBy", () => {
