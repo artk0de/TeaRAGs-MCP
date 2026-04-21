@@ -1271,6 +1271,101 @@ describe("OllamaEmbeddings", () => {
     });
   });
 
+  describe("background primary health probe", () => {
+    const PRIMARY = "http://primary:11434";
+    const FALLBACK = "http://fallback:11434";
+    const mockEmbedding = Array(768).fill(0.5);
+
+    it("should switch to fallback when background probe detects primary died mid-session", async () => {
+      vi.useFakeTimers();
+      try {
+        // Constructor: primary up
+        mockFetch.mockResolvedValueOnce({ ok: true });
+        const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Background probe fires at 30s — primary is now dead
+        mockFetch.mockRejectedValueOnce(new Error("primary died"));
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        // Next embed should go to fallback (no session restart required)
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+        await provider.embed("after death");
+
+        const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+        expect(lastUrl).toContain("fallback");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("should emit to-fallback event when background probe detects primary failure", async () => {
+      vi.useFakeTimers();
+      try {
+        const onSwitch = vi.fn();
+        mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
+        const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+        provider.onFallbackSwitch = onSwitch;
+        await vi.advanceTimersByTimeAsync(0);
+        onSwitch.mockClear();
+
+        // Probe fires at 30s — primary dead
+        mockFetch.mockRejectedValueOnce(new Error("primary died"));
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(onSwitch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            direction: "to-fallback",
+            primaryUrl: PRIMARY,
+            fallbackUrl: FALLBACK,
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("should stay on primary when probe succeeds (transient embed error does not flap)", async () => {
+      vi.useFakeTimers();
+      try {
+        mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
+        const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, FALLBACK);
+        await vi.advanceTimersByTimeAsync(0);
+
+        // Background probe at 30s — primary still ok
+        mockFetch.mockResolvedValueOnce({ ok: true });
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        // Next embed still uses primary
+        mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ embedding: mockEmbedding }) });
+        await provider.embed("normal");
+
+        const lastUrl = mockFetch.mock.calls[mockFetch.mock.calls.length - 1][0] as string;
+        expect(lastUrl).toContain("primary");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("should not start probe when no fallback configured", async () => {
+      vi.useFakeTimers();
+      try {
+        mockFetch.mockResolvedValueOnce({ ok: true }); // constructor health check
+        const provider = new OllamaEmbeddings("nomic-embed-text", undefined, undefined, PRIMARY, true, 999, undefined);
+        await vi.advanceTimersByTimeAsync(0);
+        const callsBefore = mockFetch.mock.calls.length;
+
+        // Advance 30s — no probe should fire (no fallback → no probe)
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(mockFetch.mock.calls.length).toBe(callsBefore);
+        expect(provider).toBeDefined();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe("URL snapshot per operation", () => {
     const PRIMARY = "http://primary:11434";
     const FALLBACK = "http://fallback:11434";
@@ -1374,6 +1469,9 @@ describe("OllamaEmbeddings", () => {
         const embedPromise = provider.embedBatch(["text1", "text2"]);
         // Prevent unhandled rejection during timer advancement
         embedPromise.catch(() => {});
+        // Background probe fires at 30s while embed hangs — report primary alive so the
+        // probe doesn't falsely switch to fallback (embed hang ≠ primary down at / health)
+        mockFetch.mockResolvedValueOnce({ ok: true });
         // Advance past batch timeout: 30000 + 2*200 = 30400ms
         await vi.advanceTimersByTimeAsync(31_000);
 

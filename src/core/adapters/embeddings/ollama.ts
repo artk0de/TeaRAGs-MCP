@@ -205,6 +205,9 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       } else {
         this.primaryAlive = true;
         this.primaryAliveAt = Date.now();
+        // Monitor primary for runtime failures — symmetric to recovery probe.
+        // Detection-only: probe never switches URL mid-operation (snapshot invariant).
+        this.startPrimaryProbe();
       }
     } catch {
       this.switchToFallback("initial health check failed");
@@ -223,23 +226,33 @@ export class OllamaEmbeddings implements EmbeddingProvider {
   }
 
   private async probePrimary(): Promise<void> {
+    let alive: boolean;
     try {
       const response = await fetchWithTimeout(`${this.baseUrl}/`, { method: "GET" }, HEALTH_PROBE_TIMEOUT_MS);
-      if (response.ok) {
+      alive = response.ok;
+    } catch {
+      alive = false;
+    }
+
+    if (this.usingFallback) {
+      // Recovery direction: fallback → primary
+      if (alive) {
         if (Date.now() - this.primaryFailedAt < RECOVERY_COOLDOWN_MS) {
           return;
         }
         this.usingFallback = false;
         this.primaryAlive = true;
         this.primaryAliveAt = Date.now();
-        this.stopPrimaryProbe();
         if (isDebug()) {
           console.error(`[Ollama] Primary ${this.baseUrl} recovered, switching back from fallback`);
         }
         this.emitFallbackSwitch("to-primary", "primary recovered (health probe OK)");
       }
-    } catch {
-      // Still down — probe continues
+      // else: still down — probe continues
+    } else if (!alive && this.fallbackBaseUrl) {
+      // Detection direction: primary died mid-session → switch to fallback.
+      // State-only mutation: in-flight operations keep their URL snapshot.
+      this.switchToFallback("primary health probe failed");
     }
   }
 
