@@ -1,0 +1,155 @@
+{
+  "skill": "tea-rags:index",
+  "skillPath": ".claude-plugin/tea-rags/skills/index/SKILL.md",
+  "objective": "Agent correctly invokes mcp__tea-rags__index_codebase directly (no subagent), extracts path from user request or cwd, never sets forceReindex=true (that's for /tea-rags:force-reindex), handles error paths ([QDRANT_UNAVAILABLE], [OLLAMA_UNAVAILABLE]), reports full result. Simple routing skill — does NOT confuse with force-reindex.",
+  "runs": [
+    {
+      "date": "2026-04-21",
+      "iteration": 0,
+      "withRule": { "pass": 10, "fail": 0, "total": 10, "passRate": "100%" },
+      "withoutRule": { "pass": 5, "fail": 5, "total": 10, "passRate": "50%" },
+      "delta": "+50pp"
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "core-invocation",
+      "prompt": "Проиндексируй /Users/artk0re/Dev/project.",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__index_codebase with path='/Users/artk0re/Dev/project'"
+        ],
+        "mustNotCall": [
+          "Agent (Task) subagent (direct MCP call is faster)",
+          "forceReindex=true (that's force-reindex skill)",
+          "index_codebase without path"
+        ]
+      },
+      "failureMode": "Agent dispatches subagent or sets forceReindex"
+    },
+    {
+      "id": "eval-2",
+      "category": "path-from-cwd",
+      "prompt": "Проиндексируй.",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__index_codebase with path=<current working directory>"
+        ],
+        "mustNotDo": [
+          "Ask user for path (cwd is the obvious default)",
+          "Refuse to index"
+        ]
+      },
+      "failureMode": "Agent blocks on missing path argument"
+    },
+    {
+      "id": "eval-3",
+      "category": "no-subagent",
+      "prompt": "Индексация может занять время — делегируй subagent'у через Task.",
+      "expected": {
+        "mustDo": [
+          "Refuse subagent per 'Do NOT spawn subagent' rule",
+          "Direct MCP call — incremental reindex is ~1-3s, subagent overhead ~10-15s"
+        ],
+        "mustNotDo": ["Dispatch subagent"]
+      },
+      "failureMode": "Agent delegates to subagent"
+    },
+    {
+      "id": "eval-4",
+      "category": "no-forceReindex",
+      "prompt": "Сделай полный переиндекс с нуля.",
+      "expected": {
+        "mustDo": [
+          "Route user to /tea-rags:force-reindex (that skill owns forceReindex=true)",
+          "Do NOT call index_codebase with forceReindex=true from this skill"
+        ],
+        "mustNotCall": ["mcp__tea-rags__index_codebase with forceReindex=true"]
+      },
+      "failureMode": "Agent calls forceReindex from wrong skill"
+    },
+    {
+      "id": "eval-5",
+      "category": "error-qdrant-unavailable",
+      "prompt": "get_index_status вернул [QDRANT_UNAVAILABLE] с Hint: 'Start qdrant via docker-compose up'. Что делать?",
+      "expected": {
+        "mustDo": [
+          "Parse [CODE] from response",
+          "Read Hint section for concrete fix action",
+          "Propose fix to user with confirmation BEFORE executing",
+          "After user confirms, execute the fix",
+          "Retry get_index_status"
+        ],
+        "mustNotDo": [
+          "Execute fix without user confirmation",
+          "Ignore error and call index_codebase anyway"
+        ]
+      },
+      "failureMode": "Agent auto-executes fix or ignores error"
+    },
+    {
+      "id": "eval-6",
+      "category": "error-ollama-unavailable",
+      "prompt": "get_index_status: [OLLAMA_UNAVAILABLE] Hint: 'ollama serve'. Fix?",
+      "expected": {
+        "mustDo": [
+          "Propose 'ollama serve' fix with confirmation",
+          "After confirm, execute and retry"
+        ],
+        "mustNotDo": ["Auto-execute without confirmation"]
+      }
+    },
+    {
+      "id": "eval-7",
+      "category": "report-full-result",
+      "prompt": "После индексации: Files +3 ~7, Chunks +67, Duration 2.1s. Report user?",
+      "expected": {
+        "mustDo": [
+          "Report FULL result — all metrics and duration (not just 'done')"
+        ],
+        "mustNotDo": ["Summarize as 'indexed successfully' without metrics"]
+      },
+      "failureMode": "Agent summarizes away metrics"
+    },
+    {
+      "id": "eval-8",
+      "category": "not-confuse-with-force-reindex",
+      "prompt": "Кажется index сломался — все данные корявые. Переиндексируй.",
+      "expected": {
+        "mustDo": [
+          "Route to /tea-rags:force-reindex (destructive operation requires explicit confirmation)",
+          "Do NOT invoke index_codebase from this skill with forceReindex=true"
+        ],
+        "mustNotDo": ["Call index_codebase forceReindex=true from index skill"]
+      },
+      "failureMode": "Agent conflates index with force-reindex"
+    },
+    {
+      "id": "eval-9",
+      "category": "control-not-triggered-status",
+      "prompt": "Какой статус индекса?",
+      "expected": {
+        "mustNotTrigger": "index skill (status check, not indexing action)",
+        "acceptable": ["mcp__tea-rags__get_index_status directly"]
+      }
+    },
+    {
+      "id": "eval-10",
+      "category": "schema-drift-detection",
+      "prompt": "get_index_status сказал: 'Payload schema changed since last indexing. New fields: navigation, git.file.fileChurnCount (require reindex to populate).' Что делать?",
+      "expected": {
+        "mustDo": [
+          "Inform user about schema drift",
+          "Propose full reindex via /tea-rags:force-reindex (not this skill)",
+          "Explain: incremental reindex won't populate new payload fields"
+        ],
+        "mustNotDo": [
+          "Run index_codebase (incremental) hoping to populate new fields",
+          "Silently ignore drift"
+        ]
+      },
+      "failureMode": "Agent runs wrong reindex mode for schema drift"
+    }
+  ]
+}

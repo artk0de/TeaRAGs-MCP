@@ -49,6 +49,7 @@ benchmarks/
 | data-driven-generation                    | 2026-04-21 | 15    | 100%       | 20%      | +80pp   |
 | refactoring-scan                          | 2026-04-21 | 14    | 100%       | 36%      | +64pp   |
 | pattern-search                            | 2026-04-21 | 14    | 100%       | 21%      | +79pp   |
+| index                                     | 2026-04-21 | 10    | 100%       | 50%      | +50pp   |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
