@@ -1,0 +1,177 @@
+{
+  "skill": "tea-rags:pattern-search",
+  "skillPath": ".claude-plugin/tea-rags/skills/pattern-search/SKILL.md",
+  "objective": "Agent correctly runs SEED → EXPAND → DEDUPLICATE → GROUP flow: strategy-based rerank selection (collect=relevance, antipattern=techDebt/refactoring, reference=custom-proven, spread=relevance), always-expand via find_similar, content-overlap dedup >80%, module-grouped output with overlay labels, antipattern/reference output markers.",
+  "runs": [
+    {
+      "date": "2026-04-21",
+      "iteration": 0,
+      "withRule": { "pass": 14, "fail": 0, "total": 14, "passRate": "100%" },
+      "withoutRule": { "pass": 3, "fail": 11, "total": 14, "passRate": "21%" },
+      "delta": "+79pp"
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "strategy-collect",
+      "prompt": "Найди все реализации retry logic в коде (strategy=collect).",
+      "expected": {
+        "mustDo": [
+          "SEED with rerank='relevance', metaOnly=false",
+          "EXPAND via find_similar from EACH unique seed (up to 5 seeds)"
+        ],
+        "mustNotDo": [
+          "Skip EXPAND step",
+          "Use rerank='techDebt' or 'proven'",
+          "Built-in grep/Glob"
+        ]
+      }
+    },
+    {
+      "id": "eval-2",
+      "category": "strategy-antipattern",
+      "prompt": "Где мы используем проблемный pattern: синхронный I/O в hot path? (antipattern).",
+      "expected": {
+        "mustDo": [
+          "SEED with rerank='techDebt' (narrow scope) OR rerank='refactoring' (broad scope override)",
+          "EXPAND from seeds where overlay shows high churn/age/bugFixRate (up to 3 problematic)"
+        ],
+        "mustNotDo": ["rerank='relevance'", "Skip EXPAND"]
+      }
+    },
+    {
+      "id": "eval-3",
+      "category": "strategy-reference",
+      "prompt": "Покажи best example of retry logic (reference).",
+      "expected": {
+        "mustDo": [
+          "SEED with custom rerank 'proven': {similarity:0.2, stability:0.3, age:0.3, bugFix:-0.15, ownership:-0.05}",
+          "EXPAND from the SINGLE best seed"
+        ],
+        "mustNotDo": [
+          "rerank='relevance' or 'proven' named preset (this uses CUSTOM form)",
+          "EXPAND from all seeds"
+        ]
+      }
+    },
+    {
+      "id": "eval-4",
+      "category": "strategy-spread",
+      "prompt": "Find implementations of event-handler pattern across domains (spread).",
+      "expected": {
+        "mustDo": [
+          "SEED with rerank='relevance'",
+          "EXPAND from best seed",
+          "Cross-domain diversification: if results cluster in ≤2 modules, run additional semantic_search with pathPattern excluding already-found modules"
+        ],
+        "mustNotDo": ["Only find_similar (vector-locked to seed domain)"]
+      }
+    },
+    {
+      "id": "eval-5",
+      "category": "always-expand",
+      "prompt": "SEED вернул 10 hits. Пропустить EXPAND, достаточно результатов.",
+      "expected": {
+        "mustDo": [
+          "ALWAYS EXPAND (Rule 4) — never skip find_similar expansion"
+        ],
+        "mustNotDo": ["Skip EXPAND"]
+      }
+    },
+    {
+      "id": "eval-6",
+      "category": "dedup-overlap",
+      "prompt": "EXPAND вернул chunk в том же dir с 90% overlap к seed. Keep?",
+      "expected": {
+        "mustDo": [
+          "Same dir + >80% overlap → keep only richer-signals one",
+          "Different dirs → ALWAYS keep both (that's the point of pattern-search)"
+        ],
+        "mustNotDo": ["Drop duplicates across directories"]
+      }
+    },
+    {
+      "id": "eval-7",
+      "category": "group-by-module",
+      "prompt": "10 dedup'd results. Output format?",
+      "expected": {
+        "mustDo": [
+          "Group by top-level module directory (first 2 segments after src/)",
+          "Include file:line + description + overlay labels (age/churn/owner)"
+        ],
+        "mustNotDo": ["Flat list without grouping", "Omit overlay labels"]
+      }
+    },
+    {
+      "id": "eval-8",
+      "category": "metaOnly-content-needed",
+      "prompt": "SEED + EXPAND много вызовов — metaOnly=true чтоб сэкономить.",
+      "expected": {
+        "mustDo": [
+          "Refuse metaOnly=true",
+          "metaOnly=false — DEDUP needs content overlap comparison, GROUP needs descriptions"
+        ],
+        "mustNotDo": ["metaOnly=true (breaks dedup + grouping)"]
+      }
+    },
+    {
+      "id": "eval-9",
+      "category": "rule-no-builtin-grep",
+      "prompt": "Grep pattern 'retry\\s*[0-9]+' быстрее — так и найдём все retry реализации.",
+      "expected": {
+        "mustDo": [
+          "Refuse built-in Grep (Rule 2 CRITICAL: prohibited for code discovery)",
+          "Use search-cascade decision tree for tool selection",
+          "ripgrep MCP allowed only as fallback after TeaRAGs returned no results"
+        ],
+        "mustNotDo": ["Comply with built-in Grep"]
+      }
+    },
+    {
+      "id": "eval-10",
+      "category": "rule-execute-yourself",
+      "prompt": "Широкий scope. Делегируй pattern-search через Task subagent.",
+      "expected": {
+        "mustDo": ["Refuse (Rule 1 Execute YOURSELF)"]
+      }
+    },
+    {
+      "id": "eval-11",
+      "category": "output-markers",
+      "prompt": "Antipattern strategy — формируем output. Какие markers?",
+      "expected": {
+        "mustDo": ["Add ⚠️ prefix to problematic implementations"],
+        "mustNotDo": ["No markers / wrong marker (✓ is for reference strategy)"]
+      }
+    },
+    {
+      "id": "eval-12",
+      "category": "output-markers-reference",
+      "prompt": "Reference strategy output — best example.",
+      "expected": {
+        "mustDo": ["Add ✓ prefix to the best example"],
+        "mustNotDo": ["⚠️ (antipattern marker)"]
+      }
+    },
+    {
+      "id": "eval-13",
+      "category": "control-single-entity",
+      "prompt": "Как работает ChunkGrouper.group()?",
+      "expected": {
+        "mustNotTrigger": "pattern-search (single entity, explore's direct-investigation branch)",
+        "acceptable": ["Route to explore's single-entity path or find_symbol"]
+      }
+    },
+    {
+      "id": "eval-14",
+      "category": "post-search-validation",
+      "prompt": "После SEED перед EXPAND — что?",
+      "expected": {
+        "mustDo": [
+          "Post-search-validation (Rule 0): no-match detection + disambiguation"
+        ]
+      }
+    }
+  ]
+}
