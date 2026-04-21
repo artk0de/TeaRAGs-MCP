@@ -2151,3 +2151,155 @@ describe("groupByTop", () => {
     expect(groupByTop([], "language")).toEqual([]);
   });
 });
+
+describe("resolveMode (private phase)", () => {
+  const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+
+  it("resolves string preset mode — populates weights, mask, groupBy, signalLevel from preset", () => {
+    const resolved = (
+      reranker as unknown as {
+        resolveMode: (
+          m: unknown,
+          p: string,
+        ) => {
+          presetName: string;
+          weights: Record<string, number>;
+          mask: unknown;
+          groupBy: string | undefined;
+          signalLevel: string | undefined;
+        };
+      }
+    ).resolveMode("techDebt", "semantic_search");
+    expect(resolved.presetName).toBe("techDebt");
+    expect(Object.keys(resolved.weights).length).toBeGreaterThan(0);
+  });
+
+  it("resolves { preset, custom } mode — uses custom weights but preset's mask + groupBy + signalLevel", () => {
+    const resolved = (
+      reranker as unknown as {
+        resolveMode: (
+          m: unknown,
+          p: string,
+        ) => {
+          presetName: string;
+          weights: Record<string, number>;
+          groupBy: string | undefined;
+        };
+      }
+    ).resolveMode({ preset: "techDebt", custom: { similarity: 1.0 } }, "semantic_search");
+    expect(resolved.presetName).toBe("techDebt");
+    expect(resolved.weights).toEqual({ similarity: 1.0 });
+  });
+
+  it("resolves pure { custom } mode — presetName is 'custom', weights from input, no mask/groupBy", () => {
+    const resolved = (
+      reranker as unknown as {
+        resolveMode: (
+          m: unknown,
+          p: string,
+        ) => {
+          presetName: string;
+          weights: Record<string, number>;
+          mask: unknown;
+          groupBy: string | undefined;
+          signalLevel: string | undefined;
+        };
+      }
+    ).resolveMode({ custom: { similarity: 0.5, recency: 0.5 } }, "semantic_search");
+    expect(resolved.presetName).toBe("custom");
+    expect(resolved.weights).toEqual({ similarity: 0.5, recency: 0.5 });
+    expect(resolved.mask).toBeUndefined();
+    expect(resolved.groupBy).toBeUndefined();
+    expect(resolved.signalLevel).toBeUndefined();
+  });
+
+  it("returns default similarity-only weights when string preset does not exist in resolvedPresets", () => {
+    const resolved = (
+      reranker as unknown as {
+        resolveMode: (
+          m: unknown,
+          p: string,
+        ) => {
+          weights: Record<string, number>;
+        };
+      }
+    ).resolveMode("nonexistentPreset", "semantic_search");
+    expect(resolved.weights).toEqual({ similarity: 1.0 });
+  });
+});
+
+describe("scoreResults (private phase)", () => {
+  const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
+
+  const createResult = (score: number, ageDays: number, commitCount: number): RerankableResult => ({
+    score,
+    payload: {
+      relativePath: `src/f${score}.ts`,
+      startLine: 1,
+      endLine: 10,
+      language: "typescript",
+      git: { ageDays, commitCount, dominantAuthor: "alice", authors: ["alice"] },
+    },
+  });
+
+  it("attaches score + rankingOverlay to each result", () => {
+    const results = [createResult(0.8, 30, 5), createResult(0.7, 60, 10)];
+    const bounds = (
+      reranker as unknown as {
+        computeAdaptiveBounds: (r: RerankableResult[]) => Map<string, number>;
+      }
+    ).computeAdaptiveBounds(results);
+    const resolved = (
+      reranker as unknown as {
+        resolveMode: (m: unknown, p: string) => unknown;
+      }
+    ).resolveMode("techDebt", "semantic_search") as {
+      presetName: string;
+      weights: Record<string, number>;
+      mask: unknown;
+      signalLevel: unknown;
+    };
+    const scored = (
+      reranker as unknown as {
+        scoreResults: (
+          r: RerankableResult[],
+          b: Map<string, number>,
+          res: unknown,
+          q: string | undefined,
+        ) => (RerankableResult & { score: number; rankingOverlay?: unknown })[];
+      }
+    ).scoreResults(results, bounds, resolved, undefined);
+
+    expect(scored).toHaveLength(2);
+    expect(scored[0].score).toBeTypeOf("number");
+    expect(scored[0].rankingOverlay).toBeDefined();
+    expect(scored[1].score).toBeTypeOf("number");
+  });
+
+  it("preserves original payload fields on each scored result", () => {
+    const results = [createResult(0.8, 30, 5)];
+    const bounds = (
+      reranker as unknown as {
+        computeAdaptiveBounds: (r: RerankableResult[]) => Map<string, number>;
+      }
+    ).computeAdaptiveBounds(results);
+    const resolved = (
+      reranker as unknown as {
+        resolveMode: (m: unknown, p: string) => unknown;
+      }
+    ).resolveMode("techDebt", "semantic_search");
+    const scored = (
+      reranker as unknown as {
+        scoreResults: (
+          r: RerankableResult[],
+          b: Map<string, number>,
+          res: unknown,
+          q: string | undefined,
+        ) => (RerankableResult & { score: number })[];
+      }
+    ).scoreResults(results, bounds, resolved, undefined);
+
+    expect(scored[0].payload?.relativePath).toBe("src/f0.8.ts");
+    expect(scored[0].payload?.git?.commitCount).toBe(5);
+  });
+});

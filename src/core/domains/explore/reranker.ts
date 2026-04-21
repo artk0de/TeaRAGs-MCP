@@ -34,6 +34,18 @@ export interface RerankOptions {
   query?: string;
 }
 
+/**
+ * Output of `resolveMode()` — the resolved rerank configuration derived from
+ * `mode` (string preset / {preset,custom} / pure {custom}).
+ */
+interface ResolvedMode {
+  presetName: string;
+  weights: ScoringWeights;
+  mask: OverlayMask | undefined;
+  groupBy: string | undefined;
+  signalLevel: SignalLevel | undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Reranker — descriptor-based scoring with ranking overlay
 // ---------------------------------------------------------------------------
@@ -89,7 +101,24 @@ export class Reranker {
     presetSet: "semantic_search" | "search_code" | "rank_chunks",
     options?: RerankOptions,
   ): (T & { rankingOverlay?: RankingOverlay })[] {
-    // Resolve weights, overlay mask, groupBy, and signalLevel
+    const resolved = this.resolveMode(mode, presetSet);
+    if (options?.signalLevel) {
+      resolved.signalLevel = options.signalLevel;
+    }
+    if (isSimilarityOnly(resolved.weights)) {
+      return results.map((r) => ({ ...r }));
+    }
+    const bounds = this.computeAdaptiveBounds(results);
+    const scored = this.scoreResults(results, bounds, resolved, options?.query);
+    const sorted = scored.sort((a, b) => b.score - a.score);
+    return resolved.groupBy ? groupByTop(sorted, resolved.groupBy) : sorted;
+  }
+
+  /** Resolve `mode` to weights, mask, groupBy, signalLevel. Pure lookup, no side effects. */
+  private resolveMode(
+    mode: RerankMode<string>,
+    presetSet: "semantic_search" | "search_code" | "rank_chunks",
+  ): ResolvedMode {
     let weights: ScoringWeights;
     let presetName: string;
     let mask: OverlayMask | undefined;
@@ -103,7 +132,6 @@ export class Reranker {
       groupBy = fullPreset?.groupBy;
       signalLevel = fullPreset?.signalLevel;
     } else if (mode.preset) {
-      // Custom weights with preset overlay mask (used by rank_chunks)
       presetName = mode.preset;
       weights = mode.custom;
       const fullPreset = this.resolvedPresets.find((p) => p.name === mode.preset && this.matchesTool(p, presetSet));
@@ -114,47 +142,30 @@ export class Reranker {
       presetName = "custom";
       weights = mode.custom;
     }
+    return { presetName, weights, mask, groupBy, signalLevel };
+  }
 
-    // User override wins over preset signalLevel
-    if (options?.signalLevel) ({ signalLevel } = options);
-
-    // Fast path: similarity-only -> no reranking, no overlay
-    const activeKeys = Object.keys(weights).filter((k) => {
-      const w = weights[k as keyof ScoringWeights];
-      return w !== undefined && w !== 0;
-    });
-    if (activeKeys.length === 1 && activeKeys[0] === "similarity") {
-      return results.map((r) => ({ ...r }));
-    }
-
-    // Compute adaptive bounds from result batch
-    const bounds = this.computeAdaptiveBounds(results);
-
-    // Score each result and attach overlay
-    const scored = results.map((result) => {
+  /** Score each result and attach ranking overlay. Pure transform given bounds + resolved mode. */
+  private scoreResults<T extends RerankableResult>(
+    results: T[],
+    bounds: Map<string, number>,
+    resolved: ResolvedMode,
+    query: string | undefined,
+  ): (T & { score: number; rankingOverlay?: RankingOverlay })[] {
+    return results.map((result) => {
       const payload = this.buildExtractPayload(result);
-      const signals = this.extractAllDerived(payload, bounds, signalLevel, options?.query);
-      const score = calculateScore(signals, weights);
-      const overlay = this.buildOverlay(result, presetName, weights, signals, mask, signalLevel);
+      const signals = this.extractAllDerived(payload, bounds, resolved.signalLevel, query);
+      const score = calculateScore(signals, resolved.weights);
+      const overlay = this.buildOverlay(
+        result,
+        resolved.presetName,
+        resolved.weights,
+        signals,
+        resolved.mask,
+        resolved.signalLevel,
+      );
       return { ...result, score, rankingOverlay: overlay };
     });
-
-    const sorted = scored.sort((a, b) => b.score - a.score);
-
-    // Group by payload field: keep highest-scored (first) per group
-    if (groupBy) {
-      const seen = new Map<string, (typeof sorted)[number]>();
-      for (const r of sorted) {
-        const raw = r.payload?.[groupBy];
-        const key = typeof raw === "string" ? raw : "";
-        if (!key || !seen.has(key)) {
-          seen.set(key || `__ungrouped_${seen.size}`, r);
-        }
-      }
-      return [...seen.values()];
-    }
-
-    return sorted;
   }
 
   /**
