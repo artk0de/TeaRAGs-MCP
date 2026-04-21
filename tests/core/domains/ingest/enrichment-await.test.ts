@@ -125,17 +125,13 @@ describe("Enrichment status detection", () => {
       config,
       trajectoryConfig: defaultTrajectoryConfig(),
     });
-    (ingest as any).enrichment = slowEnrichment;
+    (ingest as any).indexingOps.enrichment = slowEnrichment;
     const deps = createIngestDependencies(qdrant as any, tempDir, {
       buildPayload: (chunk: any, cp: string) => ({ content: chunk.content, codebasePath: cp }),
     });
-    (ingest as any).indexing = new (await import("../../../../src/core/domains/ingest/indexing.js")).IndexPipeline(
-      qdrant,
-      embeddings,
-      config,
-      slowEnrichment,
-      deps,
-    );
+    (ingest as any).indexingOps.indexing = new (
+      await import("../../../../src/core/domains/ingest/indexing.js")
+    ).IndexPipeline(qdrant, embeddings, config, slowEnrichment, deps);
 
     await createTestFile(
       codebaseDir,
@@ -187,14 +183,10 @@ describe("Enrichment status detection", () => {
       config,
       trajectoryConfig: defaultTrajectoryConfig(),
     });
-    (ingest as any).enrichment = deferredEnrichment;
-    (ingest as any).indexing = new (await import("../../../../src/core/domains/ingest/indexing.js")).IndexPipeline(
-      qdrant,
-      embeddings,
-      config,
-      deferredEnrichment,
-      deps,
-    );
+    (ingest as any).indexingOps.enrichment = deferredEnrichment;
+    (ingest as any).indexingOps.indexing = new (
+      await import("../../../../src/core/domains/ingest/indexing.js")
+    ).IndexPipeline(qdrant, embeddings, config, deferredEnrichment, deps);
 
     await createTestFile(codebaseDir, "test.ts", "export function compute(x: number): number {\n  return x * 2;\n}");
 

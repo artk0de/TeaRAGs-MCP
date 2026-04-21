@@ -187,8 +187,20 @@ describe("IngestFacade", () => {
       migrations: ["v7: Enabled sparse vectors on collection", "Rebuilt sparse vectors (v0 → v1)"],
     });
 
-    const { facade } = makeFacade();
-    (facade as any).qdrant = { collectionExists: vi.fn().mockResolvedValue(true) };
+    const facade = new IngestFacade({
+      qdrant: {
+        collectionExists: vi.fn().mockResolvedValue(true),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        url: "http://localhost:6333",
+      } as any,
+      embeddings: {
+        embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        getProviderName: vi.fn().mockReturnValue("mock"),
+      } as any,
+      config: {} as any,
+      trajectoryConfig: { enableGitMetadata: false } as any,
+    });
     const result = await facade.indexCodebase("/tmp/test-project");
 
     expect(result.migrations).toEqual(["v7: Enabled sparse vectors on collection", "Rebuilt sparse vectors (v0 → v1)"]);
@@ -207,8 +219,20 @@ describe("IngestFacade", () => {
       status: "completed",
     });
 
-    const { facade } = makeFacade();
-    (facade as any).qdrant = { collectionExists: vi.fn().mockResolvedValue(true) };
+    const facade = new IngestFacade({
+      qdrant: {
+        collectionExists: vi.fn().mockResolvedValue(true),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        url: "http://localhost:6333",
+      } as any,
+      embeddings: {
+        embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        getProviderName: vi.fn().mockReturnValue("mock"),
+      } as any,
+      config: {} as any,
+      trajectoryConfig: { enableGitMetadata: false } as any,
+    });
     const result = await facade.indexCodebase("/tmp/test-project");
 
     expect(result.migrations).toBeUndefined();
@@ -427,9 +451,21 @@ describe("IngestFacade", () => {
       const ollamaError = new OllamaUnavailableError("http://192.168.1.71:11434");
       mockReindexChanges.mockRejectedValueOnce(ollamaError);
 
-      const { facade } = makeFacade();
       // collectionExists=true → goes to reindexChanges path
-      (facade as any).qdrant = { collectionExists: vi.fn().mockResolvedValue(true) };
+      const facade = new IngestFacade({
+        qdrant: {
+          collectionExists: vi.fn().mockResolvedValue(true),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          url: "http://localhost:6333",
+        } as any,
+        embeddings: {
+          embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: vi.fn().mockReturnValue("mock"),
+        } as any,
+        config: {} as any,
+        trajectoryConfig: { enableGitMetadata: false } as any,
+      });
       await expect(facade.indexCodebase("/tmp/test-project")).rejects.toThrow(OllamaUnavailableError);
     });
 
