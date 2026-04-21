@@ -71,18 +71,27 @@ that forwards to `status.clearIndex`) — it may stay in the facade as-is.
 
 ## Size budget
 
+**Method body is the primary check. File total is a secondary smoke alarm.**
+
 - **Facade method body: ≤ 20 lines.** If you're past that, the method is doing
-  work — extract it.
-- **Facade file total: ≤ ~250 lines.** Past that, inspect the fattest methods
-  first.
+  work — extract it. This is the rule that prevents drift.
+- **Facade file total: ≤ 250 lines for 3–4 public methods, ≤ 350 lines for 5–7
+  public methods.** Well-factored fasades with many methods legitimately need
+  more room for imports, class scaffold, and per-method dispatcher boilerplate.
+  A 400-line file of 20-line dispatchers is healthier than a 250-line file with
+  one 90-line method.
 - **Private helpers in the facade** are allowed only for cross-cutting concerns
   (e.g. `ensureStats`, `checkDrift`, `resolveAndGuard`). A helper that's called
   by one public method is a smell — move it with its caller.
 
+When the file is over budget but every public method fits ≤ 20 lines, stop — the
+file is fine. When one method is over 20 lines, that method is the problem
+regardless of total file size.
+
 These are not arbitrary numbers: `ExploreFacade` grew to 635 lines because three
 methods (`findSymbol`, `findSimilar`, `getIndexMetrics`) each added ~90 lines of
-business logic inline. A strict budget makes the next such method impossible to
-land without extraction.
+business logic inline. A strict per-method budget makes the next such method
+impossible to land without extraction.
 
 ## Anti-patterns
 
@@ -166,25 +175,83 @@ async indexCodebase(path, options, cb) {
 
 ```typescript
 // domains/explore/strategies/symbol.ts
+export interface SymbolSearchInput {
+  symbol: string;
+  language?: string;
+  pathPattern?: string;
+}
+
 export class SymbolSearchStrategy extends BaseExploreStrategy {
-  async executeSearch(ctx: ExploreContext): Promise<RawResult[]> {
+  readonly type = "symbol" as const;
+
+  constructor(
+    qdrant: QdrantManager,
+    reranker: Reranker,
+    payloadSignals: PayloadSignalDescriptor[],
+    essentialKeys: string[],
+    private readonly registry: TrajectoryRegistry,
+    private readonly input: SymbolSearchInput,
+  ) {
+    super(qdrant, reranker, payloadSignals, essentialKeys);
+  }
+
+  protected async executeExplore(
+    ctx: ExploreContext,
+  ): Promise<ExploreResult[]> {
+    const primary = this.buildFilter("symbolId");
+    const parent = this.buildFilter("parentSymbolId");
     const [symbolChunks, memberChunks] = await Promise.all([
-      this.qdrant.scrollFiltered(ctx.collectionName, ctx.filter!, 200),
-      this.qdrant.scrollFiltered(ctx.collectionName, ctx.parentFilter!, 200),
+      this.qdrant.scrollFiltered(ctx.collectionName, primary, 200),
+      this.qdrant.scrollFiltered(ctx.collectionName, parent, 200),
     ]);
     const seen = new Set(symbolChunks.map((c) => c.id));
     return [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
   }
+
+  private buildFilter(
+    key: "symbolId" | "parentSymbolId",
+  ): Record<string, unknown> {
+    /* ... */
+  }
 }
 ```
 
-Then register in `strategies/index.ts`:
+### Multi-filter strategies — pass input via constructor
+
+`ExploreContext.filter` holds ONE filter. Strategies that need two or more
+filters (parallel scrolls, disjoint passes) take a typed **Input object via
+their constructor** — same pattern as `SimilarSearchStrategy`. Do not try to
+wedge extra filters into `ExploreContext`; do not build filters in the facade
+and thread them as ad-hoc context fields.
+
+The strategy consumes `ctx.collectionName` / `ctx.limit` / `ctx.offset` /
+`ctx.metaOnly` / `ctx.rerank` from `ExploreContext` and everything else from its
+own `input`. Filter construction (including `registry.buildMergedFilter()` calls
+for `pathPattern` merging) happens inside the strategy.
+
+### Adding a new strategy type — checklist
+
+When you add a new concrete strategy class:
+
+1. **Implement `BaseExploreStrategy`** — override `executeExplore` and, if
+   needed, `applyDefaults` / `postProcess`.
+2. **Extend the `type` union** in `strategies/types.ts`:
+   ```typescript
+   readonly type: "vector" | "hybrid" | "scroll-rank" | "similar" | "symbol";
+   ```
+   Do NOT cast (`as unknown as`) to sidestep the union — that's a silent
+   widening that hides the new type from the factory's exhaustiveness check.
+3. **Register the strategy**: either extend `createExploreStrategy()` if the
+   strategy is shared across calls (like `vector`/`hybrid`/`scroll-rank`), or
+   keep it per-request and instantiate it in the facade dispatcher (like
+   `similar`/`symbol`).
+4. **Export from `strategies/index.ts`** — add both the class and its `Input`
+   type to the barrel.
 
 ```typescript
-export function createExploreStrategy(
-  kind: "vector" | "hybrid" | "scroll-rank" | "symbol",
-  ...,
-): BaseExploreStrategy { /* ... */ }
+// strategies/index.ts — barrel
+export { SymbolSearchStrategy } from "./symbol.js";
+export type { SymbolSearchInput } from "./symbol.js";
 ```
 
 ### Query (for aggregation without vector search)
@@ -230,10 +297,15 @@ Match the shape of existing `CollectionOps` / `DocumentOps`.
 
 Input validation (shape, mutual exclusion, strategy-specific rules) counts as
 facade work — but only up to ~5 lines. Past that, extract into a named
-validator:
+`validate<Name>Request` function **exported from the bottom of the same facade
+file**, below the class and alongside other per-endpoint helpers.
+
+Don't put validators in `api/errors.ts` — that file holds error _classes_, not
+validation logic. Don't spin up a `validators/` subdirectory until there are 5+
+validators to group.
 
 ```typescript
-// api/errors.ts or a dedicated validator file
+// src/core/api/internal/facades/explore-facade.ts (bottom of file)
 export function validateFindSimilarRequest(req: FindSimilarRequest): void {
   const hasPositive = /* ... */;
   const hasNegative = /* ... */;
@@ -250,8 +322,9 @@ export function validateFindSimilarRequest(req: FindSimilarRequest): void {
 }
 ```
 
-Throw typed errors (see `typed-errors.md`). The facade calls the validator as
-its first line and moves on.
+Throw typed errors per `typed-errors.md`. Export the validator so its unit test
+imports it directly rather than reaching through the facade. The facade method
+calls it as its first line.
 
 ## Adding a new explore or ingest API
 
@@ -271,6 +344,31 @@ Before writing the method in the facade, run this checklist:
    verifies dispatch + drift wiring; the strategy/query/ops test verifies the
    logic.
 
+## Tests that mutate facade internals after construction
+
+Legacy tests sometimes swap facade dependencies after construction, e.g.:
+
+```typescript
+const facade = new ExploreFacade({ ... });
+(facade as any).qdrant = { collectionExists: vi.fn().mockResolvedValue(true) };
+```
+
+This works as long as facade methods read `this.qdrant` / `this.indexing` on
+every call. After extraction, the strategy / query / ops class **captures those
+deps at construction time** and the post-hoc swap has no effect. The test
+silently exercises the wrong code path.
+
+**Prefer constructor-time DI.** Pass the mocked dependency via
+`ExploreFacadeDeps` / `IngestFacadeDeps` at `new Facade({...})`. If a test
+insists on post-construction swap (e.g. because it's replacing the concrete
+`IndexPipeline` for fire-and-forget assertions), redirect the swap to the
+extracted class: `(facade as any).indexingOps.indexing = ...` — and leave a
+comment pointing at this rule so future readers see why.
+
+When extraction breaks existing tests this way, fix the test by moving the mock
+to constructor time rather than weakening the encapsulation of the extracted
+class.
+
 ## When in doubt
 
 Ask: "If I delete this code from the facade, which file picks it up?" If the
@@ -283,6 +381,6 @@ facade. Find or create its real home before adding it.
 npx tsc --noEmit && npx vitest run tests/core/api/ tests/core/domains/explore/
 ```
 
-Both facade files should stay under ~250 lines. If a PR grows either past that,
-the review must link a strategy/query/ops class absorbing the new work —
-otherwise the PR is rejected.
+File sizes: see the Size budget section above. A PR may grow a facade past
+budget only if every public method fits ≤ 20 lines — otherwise the review must
+link a strategy / query / ops class absorbing the new work.

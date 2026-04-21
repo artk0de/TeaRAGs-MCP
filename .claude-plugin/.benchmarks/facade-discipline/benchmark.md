@@ -44,9 +44,50 @@ The rule introduces three distinctions that the baseline cannot invent:
 
 ## Iterations
 
-| Iter | Lines | With-rule | Baseline (primary / strict) | Delta (strict) | Changes |
-| ---- | ----- | --------- | --------------------------- | -------------- | ------- |
-| 1    | 285   | 100%      | 100% / 58%                  | +42pp          | Initial |
+| Iter | Lines | With-rule | Baseline (primary / strict) | Delta (strict) | Changes                           |
+| ---- | ----- | --------- | --------------------------- | -------------- | --------------------------------- |
+| 1    | 285   | 12/12     | 100% / 58%                  | +42pp          | Initial                           |
+| 2    | 382   | 16/16\*   | — / 75% (new cases 13–16)   | +25pp\*\*      | Gap-closing additions (see below) |
+
+\* 12 original cases remain 100% (instructions not weakened); 4 new cases added
+for gaps surfaced during the 4 real-world extractions that ran against iter-1.
+
+\*\* Delta measured on new cases only. Baseline strong on eval-14 (validator
+colocation by precedent) and eval-15 (TypeScript discriminated-union knowledge);
+rule uniquely wins eval-13 (multi-filter constructor-input pattern vs.
+ExploreContext extension).
+
+### Iteration-2 additions
+
+1. **Size budget — method body is primary, file total is secondary.** The
+   original "≤ 250 lines per file" caught multi-method facades that were already
+   fine. Relaxed to ≤ 250 lines for 3–4 methods, ≤ 350 lines for 5–7. The
+   per-method ≤ 20 rule is the forcing function.
+2. **Multi-filter strategies — constructor-input pattern.** When a strategy
+   needs two or more filters, pass a typed Input via constructor (mirror
+   `SimilarSearchStrategy`). Do not wedge extra filters into `ExploreContext`.
+   Do not build filters in the facade.
+3. **Adding a new strategy — checklist.** Extend the `type` union in
+   `strategies/types.ts`. Reject `as unknown as` casts to sidestep the union —
+   that's silent widening that defeats exhaustiveness checks.
+4. **Validator location crispness.** Bottom of the same facade file (not
+   `api/errors.ts`, not a premature `validators/` subdirectory until 5+
+   validators exist). Export for direct unit-test import.
+5. **Test anti-pattern note.** `(facade as any).qdrant = ...` post-construction
+   mutation silently exercises the wrong code path after ops/strategy
+   extraction. Prefer constructor-time DI; if a test insists on swap, redirect
+   to the extracted class: `(facade as any).indexingOps.indexing = ...`.
+
+### Source of the additions
+
+Each addition corresponds to a concrete friction point observed when applying
+iter-1 to four real extractions (commits `cc9cb8d`, `c0cc189`, `846a52e`,
+`38c9412`). `ExploreFacade` stayed at 464 lines after extraction — not drift,
+just 7 dispatcher methods — which surfaced that the ≤ 250 budget was too strict.
+The `SymbolSearchStrategy` needed two filters — surfaced the multi-filter gap.
+Adding the new strategy class required an ugly `as unknown as` cast — surfaced
+the type-union gap. Two tests with post-construction mutation broke — surfaced
+the test anti-pattern. All five changes are evidence-driven, not speculative.
 
 ## Per-eval detail
 
