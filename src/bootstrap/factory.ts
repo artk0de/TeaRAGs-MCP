@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../core/adapters/qdrant/client.js";
@@ -47,13 +48,28 @@ export interface AppContext {
   cleanup?: () => void;
 }
 
-export async function createAppContext(config: AppConfig): Promise<AppContext> {
+interface InfraContext {
+  qdrant: QdrantManager;
+  embeddings: EmbeddingProvider;
+  modelGuard: EmbeddingModelGuard;
+  embeddedRelease?: () => void;
+}
+
+interface CompositionContext {
+  registry: ReturnType<typeof createComposition>["registry"];
+  reranker: ReturnType<typeof createComposition>["reranker"];
+  allPayloadSignalDescriptors: ReturnType<typeof createComposition>["allPayloadSignalDescriptors"];
+  schemaBuilder: SchemaBuilder;
+}
+
+async function resolveInfrastructure(
+  config: AppConfig,
+  zodConfig: ReturnType<typeof getZodConfig>,
+): Promise<InfraContext> {
   const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData);
   const reconnect = resolution.mode === "embedded" ? resolution.reconnect : undefined;
   const qdrant = new QdrantManager(resolution.url, config.qdrantApiKey, reconnect);
   const embeddedRelease = resolution.mode === "embedded" ? resolution.release : undefined;
-  const zodConfig = getZodConfig();
-  setDebug(zodConfig.core.debug);
 
   // Initialize debug logger with DI paths before any pipeline work
   initDebugLogger({
@@ -103,9 +119,22 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
 
   const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions());
 
+  return { qdrant, embeddings, modelGuard, embeddedRelease };
+}
+
+function wireComposition(): CompositionContext {
   const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
-  const essentialTrajectoryFields = registry.getEssentialPayloadKeys();
   const schemaBuilder = new SchemaBuilder(reranker);
+  return { registry, reranker, allPayloadSignalDescriptors, schemaBuilder };
+}
+
+export async function createAppContext(config: AppConfig): Promise<AppContext> {
+  const zodConfig = getZodConfig();
+  setDebug(zodConfig.core.debug);
+
+  const infra = await resolveInfrastructure(config, zodConfig);
+  const composition = wireComposition();
+
   const statsCache = new StatsCache(config.paths.snapshots);
   const deleteConfig = {
     batchSize: zodConfig.qdrantTune.deleteBatchSize,
@@ -125,66 +154,68 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     concurrency: zodConfig.ingest.tune.pipelineConcurrency,
     ioConcurrency: zodConfig.ingest.tune.ioConcurrency,
   };
+
   const ingest = new IngestFacade({
-    qdrant,
-    embeddings,
+    qdrant: infra.qdrant,
+    embeddings: infra.embeddings,
     config: config.ingestCode,
     trajectoryConfig: config.trajectoryIngest,
     statsCache,
-    allPayloadSignals: allPayloadSignalDescriptors,
-    reranker,
+    allPayloadSignals: composition.allPayloadSignalDescriptors,
+    reranker: composition.reranker,
     deleteConfig,
     pipelineTuning,
     syncTuning,
     snapshotDir: config.paths.snapshots,
-    modelGuard,
+    modelGuard: infra.modelGuard,
   });
+  const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [
-    ...allPayloadSignalDescriptors.map((d) => d.key),
+    ...composition.allPayloadSignalDescriptors.map((d) => d.key),
     "navigation",
   ]);
   const explore = new ExploreFacade({
-    qdrant,
-    embeddings,
-    reranker,
-    registry,
+    qdrant: infra.qdrant,
+    embeddings: infra.embeddings,
+    reranker: composition.reranker,
+    registry: composition.registry,
     statsCache,
     schemaDriftMonitor,
-    payloadSignals: allPayloadSignalDescriptors,
+    payloadSignals: composition.allPayloadSignalDescriptors,
     essentialKeys: essentialTrajectoryFields,
-    modelGuard,
+    modelGuard: infra.modelGuard,
   });
   const app = createApp({
-    qdrant,
-    embeddings,
+    qdrant: infra.qdrant,
+    embeddings: infra.embeddings,
     ingest,
     explore,
-    reranker,
+    reranker: composition.reranker,
     schemaDriftMonitor,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
-    modelGuard,
+    modelGuard: infra.modelGuard,
   });
 
   const cleanup = () => {
-    if ("terminate" in embeddings && typeof embeddings.terminate === "function") {
-      void (embeddings as { terminate: () => Promise<void> }).terminate();
+    if ("terminate" in infra.embeddings && typeof infra.embeddings.terminate === "function") {
+      void (infra.embeddings as { terminate: () => Promise<void> }).terminate();
     }
-    if (embeddedRelease) {
-      embeddedRelease();
+    if (infra.embeddedRelease) {
+      infra.embeddedRelease();
     }
   };
 
   return {
     app,
-    schemaBuilder,
+    schemaBuilder: composition.schemaBuilder,
     healthProbes: {
-      checkQdrant: async () => qdrant.checkHealth(),
-      checkEmbedding: async () => embeddings.checkHealth(),
-      qdrantUrl: qdrant.url,
-      embeddingProvider: embeddings.getProviderName(),
-      ...(embeddings.getBaseUrl ? { embeddingUrl: embeddings.getBaseUrl() } : {}),
+      checkQdrant: async () => infra.qdrant.checkHealth(),
+      checkEmbedding: async () => infra.embeddings.checkHealth(),
+      qdrantUrl: infra.qdrant.url,
+      embeddingProvider: infra.embeddings.getProviderName(),
+      ...(infra.embeddings.getBaseUrl ? { embeddingUrl: infra.embeddings.getBaseUrl() } : {}),
     },
-    embeddedRelease,
+    embeddedRelease: infra.embeddedRelease,
     cleanup,
   };
 }
