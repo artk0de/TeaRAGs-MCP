@@ -1,10 +1,10 @@
 /**
- * IngestFacade — thin dispatcher for codebase indexing operations.
+ * IngestFacade — public delegation surface for codebase indexing.
  *
- * Wires domain modules (IndexPipeline, ReindexPipeline, StatusModule,
- * EnrichmentCoordinator) and delegates orchestration to IndexingOps.
- * Stays in the facade: status lookup, clearIndex, wiring of the
- * enrichment completion callback.
+ * The facade does two things: wire the ingest pipeline at construction
+ * time, then delegate every public method to IndexingOps. All pipeline
+ * work (index / reindex branching, status queries, clearIndex, stats
+ * refresh) lives in IndexingOps.
  */
 
 import { homedir } from "node:os";
@@ -20,12 +20,10 @@ import type { PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
-import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion-strategy.js";
 import { GitEnrichmentProvider } from "../../../domains/trajectory/git/provider.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
-import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
@@ -57,23 +55,14 @@ export interface IngestFacadeDeps {
 }
 
 export class IngestFacade {
-  private readonly qdrant: QdrantManager;
-  private readonly embeddings: EmbeddingProvider;
-  private readonly modelGuard?: EmbeddingModelGuard;
-  private readonly status: StatusModule;
   private readonly indexingOps: IndexingOps;
 
   constructor(deps: IngestFacadeDeps) {
-    this.qdrant = deps.qdrant;
-    this.embeddings = deps.embeddings;
-    this.modelGuard = deps.modelGuard;
-
     /* v8 ignore next 2 -- fallback for backward compat */
     const snapshotDir =
       deps.snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
 
     const { enrichment, indexing, reindex, gitTimePeriods } = this.buildIngestPipeline(deps, snapshotDir);
-    this.status = new StatusModule(deps.qdrant, snapshotDir);
     this.indexingOps = new IndexingOps({
       qdrant: deps.qdrant,
       embeddings: deps.embeddings,
@@ -95,7 +84,6 @@ export class IngestFacade {
     };
   }
 
-  /** Index a codebase — first index, force re-index, or incremental fallback. */
   async indexCodebase(path: string, options?: IndexOptions, progressCallback?: ProgressCallback): Promise<IndexStats> {
     return this.indexingOps.run(path, options, progressCallback);
   }
@@ -105,47 +93,22 @@ export class IngestFacade {
     return this.indexingOps.reindexChanges(path, progressCallback);
   }
 
-  /** Exposed for tests + MCP consumers; computed from embedding model context window. */
   resolveEffectiveChunkSize(modelInfo: ModelInfo | undefined): number {
     return this.indexingOps.resolveEffectiveChunkSize(modelInfo);
   }
 
-  /** Get indexing status with infrastructure health checks. */
   async getIndexStatus(path: string): Promise<IndexStatus> {
-    const [qdrantHealthy, embeddingHealthy] = await Promise.all([
-      this.qdrant.checkHealth(),
-      this.embeddings.checkHealth(),
-    ]);
-
-    const infraHealth: IndexStatus["infraHealth"] = {
-      qdrant: { available: qdrantHealthy, url: this.qdrant.url },
-      embedding: {
-        available: embeddingHealthy,
-        provider: this.embeddings.getProviderName(),
-        ...(this.embeddings.getBaseUrl ? { url: this.embeddings.getBaseUrl() } : {}),
-      },
-    };
-
-    if (!qdrantHealthy) {
-      return { isIndexed: false, status: "unavailable", infraHealth };
-    }
-
-    const status = await this.status.getIndexStatus(path);
-    return { ...status, infraHealth };
+    return this.indexingOps.getStatus(path);
   }
 
-  /** Clear all indexed data for a codebase */
   async clearIndex(path: string): Promise<void> {
-    const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
-    this.modelGuard?.invalidate(collectionName);
-    return this.status.clearIndex(path);
+    return this.indexingOps.clear(path);
   }
 
   /**
    * Assemble the ingest pipeline — trajectory enrichment providers, the
    * coordinator that drives them, and the two pipelines (full + incremental)
-   * that share the coordinator.
+   * that share the coordinator. Synchronous helper; no pipeline logic.
    */
   private buildIngestPipeline(
     deps: IngestFacadeDeps,

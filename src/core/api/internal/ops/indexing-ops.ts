@@ -23,11 +23,19 @@ import {
   markRecoveryComplete,
 } from "../../../domains/ingest/pipeline/enrichment/recovery-cache.js";
 import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
+import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import type { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
-import type { ChangeStats, IndexOptions, IndexStats, IngestCodeConfig, ProgressCallback } from "../../../types.js";
+import type {
+  ChangeStats,
+  IndexOptions,
+  IndexStats,
+  IndexStatus,
+  IngestCodeConfig,
+  ProgressCallback,
+} from "../../../types.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
 
@@ -64,6 +72,7 @@ export class IndexingOps {
   private readonly reranker?: Reranker;
   private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   private readonly modelGuard?: EmbeddingModelGuard;
+  private readonly status: StatusModule;
 
   constructor(deps: IndexingOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -78,6 +87,7 @@ export class IndexingOps {
     this.reranker = deps.reranker;
     this.gitTimePeriods = deps.gitTimePeriods;
     this.modelGuard = deps.modelGuard;
+    this.status = new StatusModule(deps.qdrant, deps.snapshotDir);
   }
 
   /** Index a codebase — first index, force re-index, or incremental fallback. */
@@ -98,6 +108,38 @@ export class IndexingOps {
     const result = await this.reindex.reindexChanges(path, progressCallback);
     await this.refreshStats(path);
     return result;
+  }
+
+  /** Indexing status with infrastructure health checks. */
+  async getStatus(path: string): Promise<IndexStatus> {
+    const [qdrantHealthy, embeddingHealthy] = await Promise.all([
+      this.qdrant.checkHealth(),
+      this.embeddings.checkHealth(),
+    ]);
+
+    const infraHealth: IndexStatus["infraHealth"] = {
+      qdrant: { available: qdrantHealthy, url: this.qdrant.url },
+      embedding: {
+        available: embeddingHealthy,
+        provider: this.embeddings.getProviderName(),
+        ...(this.embeddings.getBaseUrl ? { url: this.embeddings.getBaseUrl() } : {}),
+      },
+    };
+
+    if (!qdrantHealthy) {
+      return { isIndexed: false, status: "unavailable", infraHealth };
+    }
+
+    const status = await this.status.getIndexStatus(path);
+    return { ...status, infraHealth };
+  }
+
+  /** Drop all indexed data for a codebase and invalidate the model-guard cache. */
+  async clear(path: string): Promise<void> {
+    const absolutePath = await validatePath(path);
+    const collectionName = resolveCollectionName(absolutePath);
+    this.modelGuard?.invalidate(collectionName);
+    return this.status.clearIndex(path);
   }
 
   /** Recompute collection stats from Qdrant and save to cache. Public for enrichment callback. */
