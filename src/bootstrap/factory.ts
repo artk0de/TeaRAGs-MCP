@@ -59,6 +59,7 @@ interface CompositionContext {
   registry: ReturnType<typeof createComposition>["registry"];
   reranker: ReturnType<typeof createComposition>["reranker"];
   allPayloadSignalDescriptors: ReturnType<typeof createComposition>["allPayloadSignalDescriptors"];
+  allStatsAccumulators: ReturnType<typeof createComposition>["allStatsAccumulators"];
   schemaBuilder: SchemaBuilder;
 }
 
@@ -123,9 +124,9 @@ async function resolveInfrastructure(
 }
 
 function wireComposition(): CompositionContext {
-  const { registry, reranker, allPayloadSignalDescriptors } = createComposition();
+  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition();
   const schemaBuilder = new SchemaBuilder(reranker);
-  return { registry, reranker, allPayloadSignalDescriptors, schemaBuilder };
+  return { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, schemaBuilder };
 }
 
 export async function createAppContext(config: AppConfig): Promise<AppContext> {
@@ -162,6 +163,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     trajectoryConfig: config.trajectoryIngest,
     statsCache,
     allPayloadSignals: composition.allPayloadSignalDescriptors,
+    statsAccumulators: composition.allStatsAccumulators,
     reranker: composition.reranker,
     deleteConfig,
     pipelineTuning,

@@ -50,6 +50,12 @@ core/
         rerank/
           derived-signals/             # Structural signal classes (1 per file)
           presets/                      # RelevancePreset, DecompositionPreset
+        stats/                         # Collection-stats accumulators (structural)
+          index.ts                     # staticStatsAccumulators: Descriptor[]
+          language-counts.ts           # LanguageCountsAccumulator
+          chunk-type-counts.ts         # ChunkTypeCountsAccumulator
+          docs-code-counts.ts          # DocsCodeCountsAccumulator
+          distinct-paths.ts            # DistinctPathsAccumulator
       git/
         signals.ts                     # gitSignals: Signal[]
         rerank/
@@ -58,9 +64,16 @@ core/
         filters.ts                     # gitFilters: FilterDescriptor[]
         provider.ts                    # GitEnrichmentProvider
         infra/                         # readers, metrics, caches
+        stats/                         # Collection-stats accumulators (git signals)
+          index.ts                     # gitStatsAccumulators: Descriptor[]
+          author-counts.ts             # AuthorCountsAccumulator
+          file-time-range.ts           # FileTimeRangeAccumulator
+          chunk-time-range.ts          # ChunkTimeRangeAccumulator
+          git-data-paths.ts            # GitDataPathsAccumulator
+          utils.ts                     # readPayloadPath (flat + nested)
 
     ingest/                            # Indexing pipeline
-      collection-stats.ts              # computeCollectionStats
+      collection-stats.ts              # computeCollectionStats orchestrator + SignalValuesAccumulator
       pipeline/
         enrichment/                    # coordinator, applier
 
@@ -72,6 +85,9 @@ core/
 
   contracts/                           # Foundation: interfaces + registries
     signal-utils.ts                    # normalize, p95, payload resolvers
+    types/
+      stats-accumulator.ts             # StatsAccumulator, StatsAccumulatorDescriptor,
+                                       # PointContext, STATS_ACCUMULATOR_KEYS (shared vocabulary)
     types/
       provider.ts                      # Signal, FilterDescriptor, FilterLevel,
                                        # ScoringWeights, PayloadBuilder,

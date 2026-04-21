@@ -29,28 +29,30 @@
 
 All paths relative to `src/core/`.
 
-| Alias              | Path                                             |
-| ------------------ | ------------------------------------------------ |
-| `api-public`       | `api/public/`                                    |
-| `api-internal`     | `api/internal/`                                  |
-| `dto`              | `api/public/dto/`                                |
-| `explore`          | `domains/explore/`                               |
-| `explore-strats`   | `domains/explore/strategies/`                    |
-| `explore-presets`  | `domains/explore/rerank/presets/`                |
-| `ingest`           | `domains/ingest/`                                |
-| `pipeline`         | `domains/ingest/pipeline/`                       |
-| `chunker`          | `domains/ingest/pipeline/chunker/`               |
-| `chunker-hooks`    | `domains/ingest/pipeline/chunker/hooks/`         |
-| `enrichment`       | `domains/ingest/pipeline/enrichment/`            |
-| `sync`             | `domains/ingest/sync/`                           |
-| `traj-git`         | `domains/trajectory/git/`                        |
-| `traj-git-signals` | `domains/trajectory/git/rerank/derived-signals/` |
-| `traj-git-presets` | `domains/trajectory/git/rerank/presets/`         |
-| `traj-static`      | `domains/trajectory/static/`                     |
-| `contracts`        | `contracts/`                                     |
-| `infra`            | `infra/`                                         |
-| `migration`        | `infra/migration/`                               |
-| `bootstrap`        | `bootstrap/`                                     |
+| Alias               | Path                                             |
+| ------------------- | ------------------------------------------------ |
+| `api-public`        | `api/public/`                                    |
+| `api-internal`      | `api/internal/`                                  |
+| `dto`               | `api/public/dto/`                                |
+| `explore`           | `domains/explore/`                               |
+| `explore-strats`    | `domains/explore/strategies/`                    |
+| `explore-presets`   | `domains/explore/rerank/presets/`                |
+| `ingest`            | `domains/ingest/`                                |
+| `pipeline`          | `domains/ingest/pipeline/`                       |
+| `chunker`           | `domains/ingest/pipeline/chunker/`               |
+| `chunker-hooks`     | `domains/ingest/pipeline/chunker/hooks/`         |
+| `enrichment`        | `domains/ingest/pipeline/enrichment/`            |
+| `sync`              | `domains/ingest/sync/`                           |
+| `traj-git`          | `domains/trajectory/git/`                        |
+| `traj-git-signals`  | `domains/trajectory/git/rerank/derived-signals/` |
+| `traj-git-presets`  | `domains/trajectory/git/rerank/presets/`         |
+| `traj-git-stats`    | `domains/trajectory/git/stats/`                  |
+| `traj-static`       | `domains/trajectory/static/`                     |
+| `traj-static-stats` | `domains/trajectory/static/stats/`               |
+| `contracts`         | `contracts/`                                     |
+| `infra`             | `infra/`                                         |
+| `migration`         | `infra/migration/`                               |
+| `bootstrap`         | `bootstrap/`                                     |
 
 ### Design Principle: Don't Generate — Interrogate
 

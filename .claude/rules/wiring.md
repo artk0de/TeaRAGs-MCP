@@ -24,16 +24,17 @@ createAppContext(config)          // src/bootstrap/factory.ts
 
 ## Where to add things
 
-| Adding...               | Touch these files                                            |
-| ----------------------- | ------------------------------------------------------------ |
-| New MCP tool            | `mcp/tools/`, `api/public/app.ts`, facade                    |
-| New derived signal      | `trajectory/{domain}/rerank/derived-signals/` + barrel       |
-| New rerank preset       | `trajectory/{domain}/rerank/presets/` + barrel               |
-| New trajectory          | `trajectory/`, `api/internal/composition.ts` (register)      |
-| New enrichment provider | Provider file + `pipeline/enrichment/trajectory/registry.ts` |
-| New DTO                 | `api/public/dto/` + barrel                                   |
-| New facade method       | Facade + `api/public/app.ts`                                 |
-| New migration           | `infra/migration/{pipeline}_migrations/` + register in migrator |
+| Adding...               | Touch these files                                                                                                                                                                                     |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New MCP tool            | `mcp/tools/`, `api/public/app.ts`, facade                                                                                                                                                             |
+| New derived signal      | `trajectory/{domain}/rerank/derived-signals/` + barrel                                                                                                                                                |
+| New rerank preset       | `trajectory/{domain}/rerank/presets/` + barrel                                                                                                                                                        |
+| New stats accumulator   | `trajectory/{domain}/stats/<name>.ts` + barrel (update `<domain>StatsAccumulators`). If ingest needs the result by name, add a key to `contracts/types/stats-accumulator.ts` `STATS_ACCUMULATOR_KEYS` |
+| New trajectory          | `trajectory/`, `api/internal/composition.ts` (register)                                                                                                                                               |
+| New enrichment provider | Provider file + `pipeline/enrichment/trajectory/registry.ts`                                                                                                                                          |
+| New DTO                 | `api/public/dto/` + barrel                                                                                                                                                                            |
+| New facade method       | Facade + `api/public/app.ts`                                                                                                                                                                          |
+| New migration           | `infra/migration/{pipeline}_migrations/` + register in migrator                                                                                                                                       |
 
 ## Key contracts
 

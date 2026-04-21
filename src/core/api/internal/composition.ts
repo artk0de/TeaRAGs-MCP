@@ -7,6 +7,7 @@
  */
 
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
+import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
@@ -19,6 +20,7 @@ export interface CompositionResult {
   reranker: Reranker;
   allPayloadSignalDescriptors: PayloadSignalDescriptor[];
   allDerivedSignals: DerivedSignalDescriptor[];
+  allStatsAccumulators: StatsAccumulatorDescriptor[];
   resolvedPresets: RerankPreset[];
 }
 
@@ -29,8 +31,16 @@ export function createComposition(): CompositionResult {
 
   const allPayloadSignalDescriptors = registry.getAllPayloadSignalDescriptors();
   const allDerivedSignals = registry.getAllDerivedSignals();
+  const allStatsAccumulators = registry.getAllStatsAccumulators();
   const resolvedPresets = resolvePresets(registry.getAllPresets(), []);
   const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors);
 
-  return { registry, reranker, allPayloadSignalDescriptors, allDerivedSignals, resolvedPresets };
+  return {
+    registry,
+    reranker,
+    allPayloadSignalDescriptors,
+    allDerivedSignals,
+    allStatsAccumulators,
+    resolvedPresets,
+  };
 }

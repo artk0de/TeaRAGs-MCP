@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
 import { computeCollectionStats } from "../../../src/core/domains/ingest/collection-stats.js";
+import { gitStatsAccumulators } from "../../../src/core/domains/trajectory/git/stats/index.js";
+import { staticStatsAccumulators } from "../../../src/core/domains/trajectory/static/stats/index.js";
+
+const ALL_ACCS = [...staticStatsAccumulators, ...gitStatsAccumulators];
 
 describe("computeCollectionStats", () => {
   // 100 values: 1, 2, 3, ..., 100
@@ -20,7 +24,7 @@ describe("computeCollectionStats", () => {
       { key: "git.file.ageDays", type: "number", description: "age" }, // no stats → skipped
       { key: "relativePath", type: "string", description: "path" }, // non-numeric → skipped
     ];
-    const stats = computeCollectionStats(hundredPoints, signals);
+    const stats = computeCollectionStats(hundredPoints, signals, ALL_ACCS);
 
     expect(stats.perSignal.has("git.file.commitCount")).toBe(true);
     expect(stats.perSignal.has("git.file.ageDays")).toBe(false); // no stats field
@@ -37,7 +41,7 @@ describe("computeCollectionStats", () => {
         stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
       },
     ];
-    const stats = computeCollectionStats(hundredPoints, signals);
+    const stats = computeCollectionStats(hundredPoints, signals, ALL_ACCS);
     const s = stats.perSignal.get("git.file.commitCount")!;
 
     expect(s.count).toBe(100);
@@ -52,7 +56,7 @@ describe("computeCollectionStats", () => {
     const signals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "commits", stats: { labels: { p95: "extreme" } } },
     ];
-    const stats = computeCollectionStats(hundredPoints, signals);
+    const stats = computeCollectionStats(hundredPoints, signals, ALL_ACCS);
     const s = stats.perSignal.get("git.file.commitCount")!;
 
     expect(s.percentiles).toBeDefined();
@@ -64,7 +68,7 @@ describe("computeCollectionStats", () => {
     const signals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "commits", stats: { mean: true } },
     ];
-    const stats = computeCollectionStats(hundredPoints, signals);
+    const stats = computeCollectionStats(hundredPoints, signals, ALL_ACCS);
     const s = stats.perSignal.get("git.file.commitCount")!;
 
     expect(s.mean).toBeCloseTo(50.5, 1); // mean of 1..100
@@ -75,7 +79,7 @@ describe("computeCollectionStats", () => {
     const signals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "commits", stats: { stddev: true } },
     ];
-    const stats = computeCollectionStats(hundredPoints, signals);
+    const stats = computeCollectionStats(hundredPoints, signals, ALL_ACCS);
     const s = stats.perSignal.get("git.file.commitCount")!;
 
     // stddev of 1..100 ≈ 28.87 (population stddev)
@@ -91,7 +95,7 @@ describe("computeCollectionStats", () => {
         stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }, mean: true, stddev: true },
       },
     ];
-    const stats = computeCollectionStats(hundredPoints, signals);
+    const stats = computeCollectionStats(hundredPoints, signals, ALL_ACCS);
     const s = stats.perSignal.get("git.file.commitCount")!;
 
     expect(s.count).toBe(100);
@@ -105,7 +109,7 @@ describe("computeCollectionStats", () => {
     const signals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "commits", stats: { labels: { p50: "typical" } } },
     ];
-    const stats = computeCollectionStats(points, signals);
+    const stats = computeCollectionStats(points, signals, ALL_ACCS);
     const s = stats.perSignal.get("git.file.commitCount")!;
     expect(s.count).toBe(1);
   });
@@ -114,7 +118,7 @@ describe("computeCollectionStats", () => {
     const signals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "commits", stats: { labels: { p50: "typical" } } },
     ];
-    const stats = computeCollectionStats([], signals);
+    const stats = computeCollectionStats([], signals, ALL_ACCS);
     expect(stats.perSignal.size).toBe(0);
     expect(stats.computedAt).toBeGreaterThan(0);
   });
@@ -123,7 +127,7 @@ describe("computeCollectionStats", () => {
     const signals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "commits" }, // no stats
     ];
-    const stats = computeCollectionStats(hundredPoints, signals);
+    const stats = computeCollectionStats(hundredPoints, signals, ALL_ACCS);
     expect(stats.perSignal.size).toBe(0);
   });
 });

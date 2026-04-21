@@ -4,6 +4,7 @@
 
 import type { EnrichmentProvider, FilterDescriptor } from "./provider.js";
 import type { DerivedSignalDescriptor, RerankPreset, SignalLevel } from "./reranker.js";
+import type { StatsAccumulatorDescriptor } from "./stats-accumulator.js";
 
 /** What statistics to compute for this signal at collection level. */
 export interface SignalStatsRequest {
@@ -133,6 +134,9 @@ export interface Trajectory {
   readonly derivedSignals: DerivedSignalDescriptor[];
   readonly filters: FilterDescriptor[];
   readonly presets: RerankPreset[];
+  // Collection-stats (ISP) — optional: accumulators the trajectory contributes
+  // to computeCollectionStats. Reads payload fields only this trajectory owns.
+  readonly statsAccumulators?: StatsAccumulatorDescriptor[];
   // Ingest-side (ISP) — optional: not all trajectories have ingest enrichment
   readonly enrichment?: EnrichmentProvider;
 }

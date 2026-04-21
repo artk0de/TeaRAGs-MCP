@@ -6,6 +6,13 @@
  * Qdrant scrolling is handled at the API layer — this function is pure.
  */
 
+import {
+  STATS_ACCUMULATOR_KEYS,
+  type PointContext,
+  type StatsAccumulator,
+  type StatsAccumulatorDescriptor,
+  type StatsPoint,
+} from "../../contracts/types/stats-accumulator.js";
 import type {
   CollectionSignalStats,
   PayloadSignalDescriptor,
@@ -53,6 +60,104 @@ function tryPushSignalValue(
   }
 }
 
+/** Pre-pass: count test chunks per language for scope detection. */
+function countTestChunksPerLanguage(points: StatsPoint[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const point of points) {
+    if (point.payload["chunkType"] === "test" && typeof point.payload["language"] === "string") {
+      const lang = point.payload["language"];
+      counts.set(lang, (counts.get(lang) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/** Derive per-point context once so all accumulators share the same parse. */
+function derivePointContext(point: StatsPoint, scopeConfig: ScopeDetectionConfig): PointContext {
+  const pointChunkType = typeof point.payload["chunkType"] === "string" ? point.payload["chunkType"] : undefined;
+  const lang = typeof point.payload["language"] === "string" ? point.payload["language"] : undefined;
+  const isCodeLanguage = lang !== undefined && CODE_LANGUAGES.has(lang);
+  const relPath = typeof point.payload["relativePath"] === "string" ? point.payload["relativePath"] : "";
+  const scope = isCodeLanguage && lang !== undefined ? detectScope(pointChunkType, relPath, lang, scopeConfig) : null;
+  return { pointChunkType, lang, isCodeLanguage, relPath, scope };
+}
+
+interface SignalValuesResult {
+  valueArrays: Map<string, number[]>;
+  perLanguageValues: Map<string, Map<string, number[]>>;
+  perLanguageScopedValues: Map<string, Map<string, { source: number[]; test: number[] }>>;
+}
+
+/**
+ * Built-in ingest accumulator — parameterized by PayloadSignalDescriptor[].
+ * Produces global + per-language + per-language-scoped signal value arrays.
+ *
+ * Lives in ingest (not a trajectory) because its aggregation shape depends
+ * on the runtime-provided signals list, which is itself an aggregate of all
+ * trajectories' payload signals.
+ */
+class SignalValuesAccumulator implements StatsAccumulator<SignalValuesResult> {
+  private readonly valueArrays: Map<string, number[]>;
+  private readonly perLanguageValues = new Map<string, Map<string, number[]>>();
+  private readonly perLanguageScopedValues = new Map<string, Map<string, { source: number[]; test: number[] }>>();
+
+  constructor(private readonly statsSignals: PayloadSignalDescriptor[]) {
+    this.valueArrays = new Map(statsSignals.map((s) => [s.key, []]));
+  }
+
+  accept(point: StatsPoint, ctx: PointContext): void {
+    if (ctx.isCodeLanguage && ctx.scope === "source") {
+      for (const signal of this.statsSignals) {
+        const arr = this.valueArrays.get(signal.key);
+        if (arr) tryPushSignalValue(point, signal, ctx.pointChunkType, arr);
+      }
+    }
+    if (typeof ctx.lang !== "string") return;
+
+    let langMap = this.perLanguageValues.get(ctx.lang);
+    if (!langMap) {
+      langMap = new Map<string, number[]>();
+      for (const signal of this.statsSignals) langMap.set(signal.key, []);
+      this.perLanguageValues.set(ctx.lang, langMap);
+    }
+    for (const signal of this.statsSignals) {
+      const langArr = langMap.get(signal.key);
+      if (langArr) tryPushSignalValue(point, signal, ctx.pointChunkType, langArr);
+    }
+
+    if (ctx.scope === null) return;
+    let scopedMap = this.perLanguageScopedValues.get(ctx.lang);
+    if (!scopedMap) {
+      scopedMap = new Map();
+      for (const signal of this.statsSignals) scopedMap.set(signal.key, { source: [], test: [] });
+      this.perLanguageScopedValues.set(ctx.lang, scopedMap);
+    }
+    for (const signal of this.statsSignals) {
+      const scopedArr = scopedMap.get(signal.key);
+      if (!scopedArr) continue;
+      const target = ctx.scope === "test" ? scopedArr.test : scopedArr.source;
+      tryPushSignalValue(point, signal, ctx.pointChunkType, target);
+    }
+  }
+
+  result(): SignalValuesResult {
+    return {
+      valueArrays: this.valueArrays,
+      perLanguageValues: this.perLanguageValues,
+      perLanguageScopedValues: this.perLanguageScopedValues,
+    };
+  }
+}
+
+function signalValuesDescriptor(
+  statsSignals: PayloadSignalDescriptor[],
+): StatsAccumulatorDescriptor<SignalValuesResult> {
+  return {
+    key: STATS_ACCUMULATOR_KEYS.SIGNAL_VALUES,
+    factory: () => new SignalValuesAccumulator(statsSignals),
+  };
+}
+
 /**
  * Compute percentile from a sorted array using linear interpolation.
  *
@@ -93,155 +198,60 @@ interface ExtractedValues {
 }
 
 function extractSignalValues(
-  points: { payload: Record<string, unknown> }[],
+  points: StatsPoint[],
   statsSignals: PayloadSignalDescriptor[],
+  trajectoryDescriptors: readonly StatsAccumulatorDescriptor[],
   scopeConfig?: ScopeDetectionConfig,
 ): ExtractedValues {
-  const valueArrays = new Map<string, number[]>();
-  for (const signal of statsSignals) {
-    valueArrays.set(signal.key, []);
-  }
-
-  const languageCounts: Record<string, number> = {};
-  const chunkTypeCounts: Record<string, number> = {};
-  let docsCount = 0;
-  let codeCount = 0;
-  const distinctPaths = new Set<string>();
-  const authorCounts = new Map<string, number>();
-  let fileOldest: number | undefined;
-  let fileNewest: number | undefined;
-  let chunkOldest: number | undefined;
-  let chunkNewest: number | undefined;
-  const gitDataPaths = new Set<string>();
-  const perLanguageValues = new Map<string, Map<string, number[]>>();
-  const perLanguageScopedValues = new Map<string, Map<string, { source: number[]; test: number[] }>>();
-
-  // Pre-pass: count test chunks per language for scope detection
-  const languageTestChunkCounts = new Map<string, number>();
-  for (const point of points) {
-    if (point.payload["chunkType"] === "test" && typeof point.payload["language"] === "string") {
-      const lang = point.payload["language"];
-      languageTestChunkCounts.set(lang, (languageTestChunkCounts.get(lang) ?? 0) + 1);
-    }
-  }
-
+  const languageTestChunkCounts = countTestChunksPerLanguage(points);
   const effectiveScopeConfig: ScopeDetectionConfig = scopeConfig ?? { languageTestChunkCounts };
 
+  const descriptors: StatsAccumulatorDescriptor[] = [signalValuesDescriptor(statsSignals), ...trajectoryDescriptors];
+  const instances = new Map<string, StatsAccumulator>(descriptors.map((d) => [d.key, d.factory()]));
+
   for (const point of points) {
-    const pointChunkType = point.payload["chunkType"];
-    const lang = point.payload["language"];
-    const isCodeLanguage = typeof lang === "string" && CODE_LANGUAGES.has(lang);
-    const relPath = typeof point.payload["relativePath"] === "string" ? point.payload["relativePath"] : "";
-
-    // Determine scope for this chunk
-    const scope =
-      isCodeLanguage && typeof lang === "string"
-        ? detectScope(
-            typeof pointChunkType === "string" ? pointChunkType : undefined,
-            relPath,
-            lang,
-            effectiveScopeConfig,
-          )
-        : null;
-
-    // Global stats: only code languages, only source scope
-    if (isCodeLanguage && scope === "source") {
-      for (const signal of statsSignals) {
-        const arr = valueArrays.get(signal.key);
-        if (arr) tryPushSignalValue(point, signal, pointChunkType, arr);
-      }
-    }
-    if (typeof lang === "string") {
-      languageCounts[lang] = (languageCounts[lang] ?? 0) + 1;
-
-      // Legacy per-language (all chunks, for backward compat)
-      let langMap = perLanguageValues.get(lang);
-      if (!langMap) {
-        langMap = new Map<string, number[]>();
-        for (const signal of statsSignals) {
-          langMap.set(signal.key, []);
-        }
-        perLanguageValues.set(lang, langMap);
-      }
-      for (const signal of statsSignals) {
-        const langArr = langMap.get(signal.key);
-        if (langArr) tryPushSignalValue(point, signal, pointChunkType, langArr);
-      }
-
-      // Scoped per-language values
-      if (scope !== null) {
-        let scopedMap = perLanguageScopedValues.get(lang);
-        if (!scopedMap) {
-          scopedMap = new Map<string, { source: number[]; test: number[] }>();
-          for (const signal of statsSignals) {
-            scopedMap.set(signal.key, { source: [], test: [] });
-          }
-          perLanguageScopedValues.set(lang, scopedMap);
-        }
-        for (const signal of statsSignals) {
-          const scopedArr = scopedMap.get(signal.key);
-          if (scopedArr) {
-            const target = scope === "test" ? scopedArr.test : scopedArr.source;
-            tryPushSignalValue(point, signal, pointChunkType, target);
-          }
-        }
-      }
-    }
-
-    const { chunkType } = point.payload as { chunkType?: unknown };
-    if (typeof chunkType === "string") {
-      chunkTypeCounts[chunkType] = (chunkTypeCounts[chunkType] ?? 0) + 1;
-    }
-
-    const isDoc = point.payload["isDocumentation"];
-    if (isDoc === true) {
-      docsCount++;
-    } else {
-      codeCount++;
-    }
-
-    if (typeof relPath === "string") {
-      distinctPaths.add(relPath);
-    }
-
-    const author = readPayloadPath(point.payload, "git.file.dominantAuthor");
-    if (typeof author === "string") {
-      authorCounts.set(author, (authorCounts.get(author) ?? 0) + 1);
-    }
-
-    const fileFirstCreated = readPayloadPath(point.payload, "git.file.firstCreatedAt");
-    const fileLastModified = readPayloadPath(point.payload, "git.file.lastModifiedAt");
-    const chunkLastModified = readPayloadPath(point.payload, "git.chunk.lastModifiedAt");
-
-    if (typeof fileFirstCreated === "number" && fileFirstCreated > 0) {
-      fileOldest = fileOldest === undefined ? fileFirstCreated : Math.min(fileOldest, fileFirstCreated);
-      const relPath = point.payload["relativePath"];
-      if (typeof relPath === "string") gitDataPaths.add(relPath);
-    }
-    if (typeof fileLastModified === "number" && fileLastModified > 0) {
-      fileNewest = fileNewest === undefined ? fileLastModified : Math.max(fileNewest, fileLastModified);
-    }
-    if (typeof chunkLastModified === "number" && chunkLastModified > 0) {
-      chunkOldest = chunkOldest === undefined ? chunkLastModified : Math.min(chunkOldest, chunkLastModified);
-      chunkNewest = chunkNewest === undefined ? chunkLastModified : Math.max(chunkNewest, chunkLastModified);
-    }
+    const ctx = derivePointContext(point, effectiveScopeConfig);
+    for (const acc of instances.values()) acc.accept(point, ctx);
   }
 
+  const signalValuesAcc = instances.get(STATS_ACCUMULATOR_KEYS.SIGNAL_VALUES);
+  if (!signalValuesAcc) throw new Error("SIGNAL_VALUES accumulator missing — orchestrator bug");
+  const signalValues = signalValuesAcc.result() as SignalValuesResult;
+  const languageCounts =
+    (instances.get(STATS_ACCUMULATOR_KEYS.LANGUAGE_COUNTS)?.result() as Record<string, number>) ?? {};
+  const chunkTypeCounts =
+    (instances.get(STATS_ACCUMULATOR_KEYS.CHUNK_TYPE_COUNTS)?.result() as Record<string, number>) ?? {};
+  const docsCode = (instances.get(STATS_ACCUMULATOR_KEYS.DOCS_CODE_COUNTS)?.result() as
+    | { docsCount: number; codeCount: number }
+    | undefined) ?? { docsCount: 0, codeCount: 0 };
+  const distinctPaths =
+    (instances.get(STATS_ACCUMULATOR_KEYS.DISTINCT_PATHS)?.result() as Set<string>) ?? new Set<string>();
+  const authorCounts =
+    (instances.get(STATS_ACCUMULATOR_KEYS.AUTHOR_COUNTS)?.result() as Map<string, number>) ?? new Map<string, number>();
+  const fileRange = (instances.get(STATS_ACCUMULATOR_KEYS.FILE_TIME_RANGE)?.result() as
+    | { fileOldest: number | undefined; fileNewest: number | undefined }
+    | undefined) ?? { fileOldest: undefined, fileNewest: undefined };
+  const chunkRange = (instances.get(STATS_ACCUMULATOR_KEYS.CHUNK_TIME_RANGE)?.result() as
+    | { chunkOldest: number | undefined; chunkNewest: number | undefined }
+    | undefined) ?? { chunkOldest: undefined, chunkNewest: undefined };
+  const gitDataPaths =
+    (instances.get(STATS_ACCUMULATOR_KEYS.GIT_DATA_PATHS)?.result() as Set<string>) ?? new Set<string>();
+
   return {
-    valueArrays,
+    valueArrays: signalValues.valueArrays,
     languageCounts,
     chunkTypeCounts,
-    docsCount,
-    codeCount,
+    docsCount: docsCode.docsCount,
+    codeCount: docsCode.codeCount,
     distinctPaths,
     authorCounts,
-    fileOldest,
-    fileNewest,
-    chunkOldest,
-    chunkNewest,
+    fileOldest: fileRange.fileOldest,
+    fileNewest: fileRange.fileNewest,
+    chunkOldest: chunkRange.chunkOldest,
+    chunkNewest: chunkRange.chunkNewest,
     gitDataPaths,
-    perLanguageValues,
-    perLanguageScopedValues,
+    perLanguageValues: signalValues.perLanguageValues,
+    perLanguageScopedValues: signalValues.perLanguageScopedValues,
   };
 }
 
@@ -340,12 +350,13 @@ function buildDistributions(
  * - Returns empty perSignal map for signals with no valid values
  */
 export function computeCollectionStats(
-  points: { payload: Record<string, unknown> }[],
+  points: StatsPoint[],
   signals: PayloadSignalDescriptor[],
+  trajectoryAccumulators: readonly StatsAccumulatorDescriptor[],
   gitTimePeriods?: { fileMonths: number; chunkMonths: number },
 ): CollectionSignalStats {
   const statsSignals = signals.filter((s) => s.stats !== undefined);
-  const extracted = extractSignalValues(points, statsSignals);
+  const extracted = extractSignalValues(points, statsSignals, trajectoryAccumulators);
   const perSignal = computePerSignalStats(extracted.valueArrays, statsSignals);
   const distributions = buildDistributions(extracted, gitTimePeriods);
 

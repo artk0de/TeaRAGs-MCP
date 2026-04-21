@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/types/trajectory.js";
 import { computeCollectionStats } from "../../../../src/core/domains/ingest/collection-stats.js";
+import { gitStatsAccumulators } from "../../../../src/core/domains/trajectory/git/stats/index.js";
+import { staticStatsAccumulators } from "../../../../src/core/domains/trajectory/static/stats/index.js";
+
+const ALL_ACCS = [...staticStatsAccumulators, ...gitStatsAccumulators];
 
 const testSignals: PayloadSignalDescriptor[] = [
   {
@@ -44,7 +48,7 @@ function makePoints(values: number[]) {
 describe("computeCollectionStats distributions", () => {
   it("should compute min and max from actual values", () => {
     const points = makePoints([3, 1, 7, 2, 10]);
-    const result = computeCollectionStats(points, testSignals);
+    const result = computeCollectionStats(points, testSignals, ALL_ACCS);
     const stats = result.perSignal.get("git.file.commitCount")!;
     expect(stats.min).toBe(1);
     expect(stats.max).toBe(10);
@@ -52,32 +56,32 @@ describe("computeCollectionStats distributions", () => {
 
   it("should compute distributions.language", () => {
     const points = makePoints([1, 2, 3, 4]);
-    const result = computeCollectionStats(points, testSignals);
+    const result = computeCollectionStats(points, testSignals, ALL_ACCS);
     expect(result.distributions.language).toEqual({ typescript: 2, python: 2 });
   });
 
   it("should compute distributions.chunkType", () => {
     const points = makePoints([1, 2]);
-    const result = computeCollectionStats(points, testSignals);
+    const result = computeCollectionStats(points, testSignals, ALL_ACCS);
     expect(result.distributions.chunkType).toEqual({ function: 2 });
   });
 
   it("should compute distributions.documentation", () => {
     const points = makePoints([1, 2, 3]);
-    const result = computeCollectionStats(points, testSignals);
+    const result = computeCollectionStats(points, testSignals, ALL_ACCS);
     expect(result.distributions.documentation).toEqual({ docs: 1, code: 2 });
   });
 
   it("should compute distributions.totalFiles from distinct relativePath", () => {
     const points = makePoints([1, 2, 3, 4, 5, 6]);
-    const result = computeCollectionStats(points, testSignals);
+    const result = computeCollectionStats(points, testSignals, ALL_ACCS);
     // relativePath cycles: file0, file1, file2, file0, file1, file2
     expect(result.distributions.totalFiles).toBe(3);
   });
 
   it("should compute distributions.topAuthors", () => {
     const points = makePoints([1, 2, 3, 4]);
-    const result = computeCollectionStats(points, testSignals);
+    const result = computeCollectionStats(points, testSignals, ALL_ACCS);
     expect(result.distributions.topAuthors).toEqual([
       { name: "Alice", chunks: 2 },
       { name: "Bob", chunks: 2 },
@@ -96,7 +100,7 @@ describe("computeCollectionStats distributions", () => {
         "git.file.dominantAuthor": `Author${i}`,
       },
     }));
-    const result = computeCollectionStats(points, testSignals);
+    const result = computeCollectionStats(points, testSignals, ALL_ACCS);
     expect(result.distributions.topAuthors).toHaveLength(10);
     expect(result.distributions.othersCount).toBe(12);
   });
@@ -149,7 +153,7 @@ describe("computeCollectionStats distributions", () => {
           },
         },
       ];
-      const result = computeCollectionStats(points, signalsWithChunkFilter);
+      const result = computeCollectionStats(points, signalsWithChunkFilter, ALL_ACCS);
 
       // methodLines: only function chunks → [20, 40]
       const mlStats = result.perSignal.get("methodLines")!;
@@ -197,7 +201,7 @@ describe("computeCollectionStats distributions", () => {
           },
         },
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
 
       expect(result.distributions.enrichmentTimeRange).toBeDefined();
       expect(result.distributions.enrichmentTimeRange!.file.oldest).toBe(now - 60 * day);
@@ -234,7 +238,7 @@ describe("computeCollectionStats distributions", () => {
           },
         },
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
 
       expect(result.distributions.enrichmentTimeRange!.chunk).toBeDefined();
       expect(result.distributions.enrichmentTimeRange!.chunk!.oldest).toBe(now - 5 * day);
@@ -257,7 +261,7 @@ describe("computeCollectionStats distributions", () => {
           },
         },
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
 
       expect(result.distributions.enrichmentTimeRange).toBeDefined();
       expect(result.distributions.enrichmentTimeRange!.chunk).toBeUndefined();
@@ -280,7 +284,7 @@ describe("computeCollectionStats distributions", () => {
           },
         },
       ];
-      const result = computeCollectionStats(points, testSignals, { fileMonths: 12, chunkMonths: 6 });
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS, { fileMonths: 12, chunkMonths: 6 });
 
       expect(result.distributions.enrichmentTimeRange!.file.configTimePeriodMonths).toBe(12);
       expect(result.distributions.enrichmentTimeRange!.chunk!.configTimePeriodMonths).toBe(6);
@@ -302,14 +306,14 @@ describe("computeCollectionStats distributions", () => {
           },
         },
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
 
       expect(result.distributions.enrichmentTimeRange!.file.configTimePeriodMonths).toBeUndefined();
     });
 
     it("should return undefined enrichmentTimeRange when no git timestamps", () => {
       const points = makePoints([1, 2, 3]);
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
       expect(result.distributions.enrichmentTimeRange).toBeUndefined();
     });
   });
@@ -336,7 +340,7 @@ describe("computeCollectionStats distributions", () => {
           },
         })),
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
 
       expect(result.perLanguage.has("typescript")).toBe(true);
       expect(result.perLanguage.has("python")).toBe(true);
@@ -373,7 +377,7 @@ describe("computeCollectionStats distributions", () => {
           },
         })),
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
 
       expect(result.perLanguage.has("typescript")).toBe(true);
       expect(result.perLanguage.has("python")).toBe(false);
@@ -411,7 +415,7 @@ describe("computeCollectionStats distributions", () => {
           },
         })),
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
 
       expect(result.perLanguage.has("typescript")).toBe(true);
       expect(result.perLanguage.has("json")).toBe(false);
@@ -440,7 +444,7 @@ describe("computeCollectionStats distributions", () => {
           },
         })),
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
       expect(result.perLanguage.has("typescript")).toBe(true);
       expect(result.perLanguage.has("bash")).toBe(false);
     });
@@ -467,7 +471,7 @@ describe("computeCollectionStats distributions", () => {
           },
         })),
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
       expect(result.perLanguage.has("typescript")).toBe(true);
       expect(result.perLanguage.has("bash")).toBe(true);
     });
@@ -494,7 +498,7 @@ describe("computeCollectionStats distributions", () => {
           },
         })),
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
 
       // Global should only contain typescript values (10), not markdown
       const globalStats = result.perSignal.get("git.file.commitCount")!;
@@ -523,7 +527,7 @@ describe("computeCollectionStats distributions", () => {
           },
         })),
       ];
-      const result = computeCollectionStats(points, testSignals);
+      const result = computeCollectionStats(points, testSignals, ALL_ACCS);
 
       // Global should only have typescript (10), not the 5 language-less
       const globalStats = result.perSignal.get("git.file.commitCount")!;
@@ -559,7 +563,7 @@ describe("computeCollectionStats distributions", () => {
           },
         })),
       ];
-      const result = computeCollectionStats(points, signalsWithChunkFilter);
+      const result = computeCollectionStats(points, signalsWithChunkFilter, ALL_ACCS);
 
       const tsStats = result.perLanguage.get("typescript")!;
 
@@ -619,7 +623,7 @@ describe("computeCollectionStats distributions", () => {
       );
       const points = [...sourcePoints, ...testPoints];
 
-      const result = computeCollectionStats(points, scopedSignals);
+      const result = computeCollectionStats(points, scopedSignals, ALL_ACCS);
       const rubyStats = result.perLanguage.get("ruby");
       expect(rubyStats).toBeDefined();
 
@@ -653,7 +657,7 @@ describe("computeCollectionStats distributions", () => {
       );
       const points = [...sourcePoints, ...testPoints, ...setupPoints];
 
-      const result = computeCollectionStats(points, scopedSignals);
+      const result = computeCollectionStats(points, scopedSignals, ALL_ACCS);
       const rubyStats = result.perLanguage.get("ruby");
       const ccStats = rubyStats!.get("git.file.commitCount");
       expect(ccStats!.source.count).toBe(10);
@@ -670,13 +674,29 @@ describe("computeCollectionStats distributions", () => {
       );
       const points = [...sourcePoints, ...testPoints];
 
-      const result = computeCollectionStats(points, scopedSignals);
+      const result = computeCollectionStats(points, scopedSignals, ALL_ACCS);
       const pyStats = result.perLanguage.get("python");
       expect(pyStats).toBeDefined();
       const mlStats = pyStats!.get("methodLines");
       expect(mlStats!.source.count).toBe(10);
       expect(mlStats!.test).toBeDefined();
       expect(mlStats!.test!.count).toBe(10);
+    });
+
+    it("empty trajectoryAccumulators yields safe defaults (no language, no authors)", () => {
+      const points = makePoints([1, 2, 3, 4]);
+      // Pass NO trajectory accumulators — only the built-in signal-values runs.
+      const result = computeCollectionStats(points, testSignals, []);
+      // Signal-values still works (built-in, runs always)
+      expect(result.perSignal.get("git.file.commitCount")).toBeDefined();
+      // Trajectory-produced fields default to empty
+      expect(result.distributions.language).toEqual({});
+      expect(result.distributions.chunkType).toEqual({});
+      expect(result.distributions.documentation).toEqual({ docs: 0, code: 0 });
+      expect(result.distributions.totalFiles).toBe(0);
+      expect(result.distributions.topAuthors).toEqual([]);
+      expect(result.distributions.othersCount).toBe(0);
+      expect(result.distributions.enrichmentTimeRange).toBeUndefined();
     });
 
     it("global perSignal excludes test chunks", () => {
@@ -688,7 +708,7 @@ describe("computeCollectionStats distributions", () => {
       );
       const points = [...sourcePoints, ...testPoints];
 
-      const result = computeCollectionStats(points, scopedSignals);
+      const result = computeCollectionStats(points, scopedSignals, ALL_ACCS);
       const globalML = result.perSignal.get("methodLines");
       expect(globalML).toBeDefined();
       // Global should only have source values

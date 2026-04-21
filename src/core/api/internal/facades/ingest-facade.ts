@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { createIngestDependencies, type SynchronizerTuning } from "../../../domains/ingest/factory.js";
@@ -46,6 +47,7 @@ export interface IngestFacadeDeps {
   trajectoryConfig: TrajectoryIngestConfig;
   statsCache?: StatsCache;
   allPayloadSignals?: PayloadSignalDescriptor[];
+  statsAccumulators?: readonly StatsAccumulatorDescriptor[];
   reranker?: Reranker;
   deleteConfig?: DeletionConfig;
   pipelineTuning?: PipelineTuning;
@@ -73,6 +75,7 @@ export class IngestFacade {
       snapshotDir,
       statsCache: deps.statsCache,
       allPayloadSignals: deps.allPayloadSignals,
+      statsAccumulators: deps.statsAccumulators,
       reranker: deps.reranker,
       gitTimePeriods,
       modelGuard: deps.modelGuard,
