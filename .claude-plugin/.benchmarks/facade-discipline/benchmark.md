@@ -44,10 +44,52 @@ The rule introduces three distinctions that the baseline cannot invent:
 
 ## Iterations
 
-| Iter | Lines | With-rule | Baseline (primary / strict) | Delta (strict) | Changes                           |
-| ---- | ----- | --------- | --------------------------- | -------------- | --------------------------------- |
-| 1    | 285   | 12/12     | 100% / 58%                  | +42pp          | Initial                           |
-| 2    | 382   | 16/16\*   | — / 75% (new cases 13–16)   | +25pp\*\*      | Gap-closing additions (see below) |
+| Iter | Lines | With-rule     | Baseline (primary / strict) | Delta (strict) | Changes                                                               |
+| ---- | ----- | ------------- | --------------------------- | -------------- | --------------------------------------------------------------------- |
+| 1    | 285   | 12/12         | 100% / 58%                  | +42pp          | Initial                                                               |
+| 2    | 382   | 16/16\*       | — / 75% (new cases 13–16)   | +25pp\*\*      | Gap-closing additions (see below)                                     |
+| 3    | ~420  | — (rule-only) | —                           | —              | Loophole closure: private async pipeline helpers explicitly forbidden |
+
+### Iteration-3 — the cosmetic-thinning loophole
+
+**Failure observed:** when asked to refactor `ExploreFacade` under iter-2, the
+agent initially collapsed the 4 search methods into one-line dispatchers by
+extracting a `private async embedAndDispatch`, a `private async executeExplore`,
+a `private buildFilter`, and 4 ctx-builder helpers — _all as private members of
+ExploreFacade_. Every public method ≤ 10 lines, every size-budget check
+satisfied, yet the pipeline lived in the facade class all the same. Total file
+size went _up_ (464 → 478) because the private helpers stayed in the facade
+file.
+
+**Root cause:** iter-2 said "facade is thin dispatcher" and gave a 5-step
+pipeline, but didn't forbid re-packaging that pipeline as private async methods
+on the facade. "Thin" was measured by method body length, not by class
+responsibility.
+
+**Rule changes in iter-3:**
+
+1. **"What a facade does" rewritten** — explicit statement that the facade does
+   two things (validate + delegate), and that the pipeline lives in Ops.
+   Responsibility table moved "path resolution / model guard / ensureStats /
+   embedding / filter merge / ctx assembly / drift warning" into the Ops column.
+2. **"Zero private async pipeline methods on the facade"** — hard structural
+   check added as the new first gate of the Size Budget section.
+   Method-body-length check demoted to second check; file-total demoted to
+   informational.
+3. **New anti-pattern** with a side-by-side BAD/GOOD for "public method thin but
+   private async helpers do the pipeline" vs. "pure delegation to Ops".
+4. **Decision tree reframed** — every new facade method delegates to Ops. The
+   three-question tree now classifies the _inner_ work (strategy / query /
+   nested ops), not the method's home.
+
+**Post-fix application:** rule iter-3 applied to `ExploreFacade` → extracted
+`ExploreOps` with the entire pipeline (126 + 404 lines = 530 total, vs. 478
+inside one file before). Facade now holds only the Ops reference and two
+synchronous input validators; every public method is 1–3 lines. Check 1 passes
+(no private async methods on the facade).
+
+The iter-3 fix was evidence-driven: the agent's own shortcut under iter-2 became
+the rule's new counter-example.
 
 \* 12 original cases remain 100% (instructions not weakened); 4 new cases added
 for gaps surfaced during the 4 real-world extractions that ran against iter-1.
