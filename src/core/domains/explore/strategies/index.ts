@@ -7,4 +7,8 @@ export { HybridNotEnabledError } from "./types.js";
 export type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 export { SimilarSearchStrategy } from "./similar.js";
 export type { SimilarSearchInput } from "./similar.js";
+export { SymbolSearchStrategy } from "./symbol.js";
+export type { SymbolSearchInput } from "./symbol.js";
+export { FileOutlineStrategy } from "./file-outline.js";
+export type { FileOutlineInput } from "./file-outline.js";
 export { VectorSearchStrategy } from "./vector.js";
