@@ -32,6 +32,30 @@
         "eval-11 (baseline)": "proposed 'SymbolImportsStrategy' — scroll+group-by+count is query territory per rule",
         "eval-6 (baseline)": "proposed validator in facades/validators/ — rule specifies api/errors.ts or alongside typed errors"
       }
+    },
+    {
+      "date": "2026-04-21",
+      "iteration": 2,
+      "ruleLines": 382,
+      "note": "Iteration 2 adds four sections in response to gaps observed while applying iter-1 to four real drift extractions (findSymbol, getIndexMetrics, findSimilar validator, IngestFacade.indexCodebase): (1) multi-filter strategies — constructor-input pattern, prohibit extending ExploreContext; (2) adding-a-new-strategy checklist — extend type union in strategies/types.ts, prohibit `as unknown as` cast; (3) validator location — bottom of facade file (not api/errors.ts or validators/); (4) size-budget relaxation — method body ≤20 is primary, file total is secondary; ≤350 allowed for 5–7 public methods. Plus test anti-pattern note about post-construction mutation of facade internals.",
+      "withRule": {
+        "pass": 4,
+        "fail": 0,
+        "total": 4,
+        "passRate": "100%",
+        "scope": "new-cases-only-13-to-16"
+      },
+      "withoutRuleStrict": {
+        "pass": 3,
+        "fail": 1,
+        "total": 4,
+        "passRate": "75%",
+        "note": "Baseline strong on TS discriminated-union knowledge (eval-15) and existing validator precedent (eval-14); fails only on eval-13 where it offered ExploreContext extension as alternative to constructor input."
+      },
+      "deltaStrict": "+25pp",
+      "failureMap": {
+        "eval-13 (baseline)": "offered 'extend ExploreContext to carry a structured payload OR pass both filters via constructor args' — rule explicitly prohibits extending ExploreContext with strategy-specific fields"
+      }
     }
   ],
   "cases": [
@@ -160,6 +184,44 @@
     "primary": "Did agent keep logic OUT of the facade body? (drift prevention)",
     "strict": "Did agent pick the correct category per rule: strategy (search+rerank) vs query (aggregate without vector search) vs ops (indexing/CRUD branching) vs validator (>5 lines of input checks)?",
     "pass": "both primary AND strict must hold",
-    "note": "Baseline agent achieves 100% primary on well-telegraphed prompts (explicit 'N lines of inline work' cues extract action). Rule's value shown in strict grading — +42pp delta. Baseline defaults to 'strategy' for everything; rule teaches category distinctions."
-  }
+    "note": "Baseline agent achieves 100% primary on well-telegraphed prompts (explicit 'N lines of inline work' cues extract action). Rule's value shown in strict grading — +42pp delta iter-1, +25pp iter-2. Baseline defaults to 'strategy' for everything; rule teaches category distinctions."
+  },
+  "newCasesIteration2": [
+    {
+      "id": "eval-13",
+      "category": "multi-filter-strategy",
+      "prompt": "I'm adding a new MCP tool find_call_sites that, given a function name, returns chunks that BOTH contain a call to that function AND are NOT themselves the function's definition. Implementation: two parallel scrolls with different filters, then set-difference by id. Where does filter building live, and how do the two filters reach the strategy?",
+      "expectedPlacement": "New CallSitesStrategy in domains/explore/strategies/; typed Input via constructor (like SimilarSearchStrategy); filters built inside the strategy using registry.buildMergedFilter for pathPattern merging. NOT: extend ExploreContext with additional filter fields.",
+      "withRule": "PASS",
+      "withoutRuleStrict": "FAIL",
+      "failureMode": "agent extends ExploreContext with a multi-filter payload instead of constructor-input pattern"
+    },
+    {
+      "id": "eval-14",
+      "category": "validator-location",
+      "prompt": "I have a new method find_by_region with 15 lines of input validation (mutex between regionName and regionBounds, cross-field rule 'if coords given, all four required'). The project's existing validators for find-symbol and find-similar sit at the bottom of explore-facade.ts. Where does my new validator go?",
+      "expectedPlacement": "Bottom of src/core/api/internal/facades/explore-facade.ts as exported validateFindByRegionRequest, throwing InputValidationError subclasses. NOT: api/errors.ts (that's for error classes), NOT: new validators/ directory (threshold is 5+ validators).",
+      "withRule": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent creates premature validators/ subdirectory OR dumps logic into api/errors.ts"
+    },
+    {
+      "id": "eval-15",
+      "category": "type-union-extension",
+      "prompt": "I'm adding CallSitesStrategy extends BaseExploreStrategy. TypeScript complains that my `readonly type = \"call-sites\" as const` doesn't match the declared union. The quickest fix is `readonly type = \"call-sites\" as unknown as \"vector\" | \"hybrid\" | \"scroll-rank\" | \"similar\" | \"symbol\"`. Is this the right fix?",
+      "expectedPlacement": "No — extend the union in strategies/types.ts (or base.ts — wherever BaseExploreStrategy.type is declared) to include 'call-sites'. Reject the `as unknown as` cast — it silently widens and breaks the factory's exhaustiveness check.",
+      "withRule": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent accepts the double-cast as pragmatic quick fix"
+    },
+    {
+      "id": "eval-16",
+      "category": "file-budget-context",
+      "prompt": "ExploreFacade is currently 460 lines with 7 public search methods, each method ≤ 20 lines (all dispatchers). A reviewer flags the file as 'over the 250-line budget'. Response?",
+      "expectedPlacement": "No change — file is fine. Method body ≤20 is the primary check and all 7 pass. File total ≤350 allowed for 5–7 public methods per the size-budget clause. Push back on reviewer by citing the clause.",
+      "withRule": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent proposes splitting facade into SearchFacade + NavigationFacade to satisfy rigid 250-line budget"
+    }
+  ]
 }

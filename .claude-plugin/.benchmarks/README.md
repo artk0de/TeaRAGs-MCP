@@ -52,6 +52,7 @@ benchmarks/
 | index                                     | 2026-04-21 | 10    | 100%       | 50%      | +50pp       |
 | force-reindex                             | 2026-04-21 | 10    | 100%       | 80%      | +20pp\*\*\* |
 | facade-discipline                         | 2026-04-21 | 12    | 100%       | 58%†     | +42pp†      |
+| facade-discipline (iter-2)                | 2026-04-21 | +4    | 100%       | 75%†     | +25pp†      |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
