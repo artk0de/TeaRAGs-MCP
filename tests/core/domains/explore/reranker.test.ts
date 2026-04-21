@@ -6,7 +6,12 @@ import type {
   PayloadSignalDescriptor,
 } from "../../../../src/core/contracts/types/trajectory.js";
 import { resolvePresets } from "../../../../src/core/domains/explore/rerank/presets/index.js";
-import { Reranker, type RerankableResult } from "../../../../src/core/domains/explore/reranker.js";
+import {
+  groupByTop,
+  isSimilarityOnly,
+  Reranker,
+  type RerankableResult,
+} from "../../../../src/core/domains/explore/reranker.js";
 import { gitPayloadSignalDescriptors } from "../../../../src/core/domains/trajectory/git/payload-signals.js";
 import { gitDerivedSignals } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "../../../../src/core/domains/trajectory/git/rerank/presets/index.js";
@@ -2081,5 +2086,68 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     expect(overlay.file!.commitCount).toEqual({ value: 10, label: "high" });
 
     rerankerWithLabels.invalidateStats();
+  });
+});
+
+describe("isSimilarityOnly", () => {
+  it("returns true when only similarity is non-zero", () => {
+    expect(isSimilarityOnly({ similarity: 1.0 })).toBe(true);
+  });
+
+  it("returns true when similarity is the only non-zero key (others explicitly 0)", () => {
+    expect(isSimilarityOnly({ similarity: 1.0, recency: 0, churn: 0 })).toBe(true);
+  });
+
+  it("returns false when similarity plus another non-zero weight", () => {
+    expect(isSimilarityOnly({ similarity: 0.5, recency: 0.5 })).toBe(false);
+  });
+
+  it("returns false when only non-similarity key is non-zero", () => {
+    expect(isSimilarityOnly({ recency: 1.0 })).toBe(false);
+  });
+
+  it("returns false on empty weights", () => {
+    expect(isSimilarityOnly({})).toBe(false);
+  });
+
+  it("returns false when similarity is zero and another key is non-zero", () => {
+    expect(isSimilarityOnly({ similarity: 0, recency: 0.5 })).toBe(false);
+  });
+});
+
+describe("groupByTop", () => {
+  const makeResult = (score: number, groupKey: string) => ({
+    score,
+    payload: { language: groupKey, relativePath: `f${score}.ts` },
+  });
+
+  it("keeps highest-scored entry per group key", () => {
+    const sorted = [
+      makeResult(0.9, "typescript"),
+      makeResult(0.8, "python"),
+      makeResult(0.7, "typescript"),
+      makeResult(0.6, "python"),
+    ];
+    const grouped = groupByTop(sorted, "language");
+    expect(grouped).toHaveLength(2);
+    expect(grouped[0].score).toBe(0.9);
+    expect(grouped[1].score).toBe(0.8);
+  });
+
+  it("buckets missing keys under unique __ungrouped slots", () => {
+    const sorted = [makeResult(0.9, ""), { score: 0.8, payload: { relativePath: "f.ts" } }, makeResult(0.7, "")];
+    const grouped = groupByTop(sorted as Parameters<typeof groupByTop>[0], "language");
+    // Each missing key gets its own slot (no collapse)
+    expect(grouped).toHaveLength(3);
+  });
+
+  it("preserves input order for first occurrence per group", () => {
+    const sorted = [makeResult(0.9, "ts"), makeResult(0.85, "py"), makeResult(0.8, "ts")];
+    const grouped = groupByTop(sorted, "language");
+    expect(grouped.map((r) => r.payload.language)).toEqual(["ts", "py"]);
+  });
+
+  it("handles empty input", () => {
+    expect(groupByTop([], "language")).toEqual([]);
   });
 });
