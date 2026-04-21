@@ -1,0 +1,270 @@
+{
+  "skill": "tea-rags:data-driven-generation",
+  "skillPath": ".claude-plugin/tea-rags/skills/data-driven-generation/SKILL.md",
+  "objective": "Agent correctly runs data-driven generation workflow — prerequisites check (explore first if no area context), Step 1 STRATEGY selection via hard rules ladder, Step 2 TEMPLATE with exact proven weights {similarity:0.2, stability:0.3, age:0.3, bugFix:-0.15, ownership:-0.05} + quality gate rejections, Step 3 STYLE via dominantAuthorPct, Step 5 VERIFY identifiers (find_symbol, never skip), Step 6 IMPACT with exact weights {imports:0.5, churn:0.3, ownership:0.2}. Eval prompts use neutral user framing (no rule vocabulary leakage).",
+  "runs": [
+    {
+      "date": "2026-04-21",
+      "iteration": 0,
+      "withRule": { "pass": 15, "fail": 0, "total": 15, "passRate": "100%" },
+      "withoutRule": { "pass": 3, "fail": 12, "total": 15, "passRate": "20%" },
+      "delta": "+80pp",
+      "failureMap": {
+        "eval-1 (prerequisites)": "baseline starts with semantic_search instead of invoking /tea-rags:explore as formal step",
+        "eval-2 (DEFENSIVE)": "baseline recognizes risk but doesn't invoke named strategy protocol",
+        "eval-3 (STABILIZATION)": "same — general caution instead of named strategy",
+        "eval-4 (CONSERVATIVE)": "same pattern",
+        "eval-6 (template weights)": "baseline uses named 'proven' preset or 'stable', not exact custom weights with negative coefficients",
+        "eval-8 (recent+low reject)": "baseline bias: new=good, doesn't see unproven-by-time logic",
+        "eval-9 (silo style)": "baseline understands silo but doesn't invoke exact-match protocol",
+        "eval-11 (Step 5 mandatory)": "baseline relies on tests+tsc, doesn't run find_symbol per identifier",
+        "eval-12 (impact weights)": "baseline picks named preset (hotspots/refactoring), not exact custom {imports:0.5, churn:0.3, ownership:0.2}",
+        "eval-13 (hotfix Step 5)": "baseline skips Step 5 as overkill for trivial fix",
+        "eval-14 (greenfield Step 5)": "baseline treats greenfield as clean slate, skips verification",
+        "eval-15 (custom strategy discovery)": "baseline doesn't scan .claude/skills/strategy-* before applying hard rules"
+      },
+      "note": "CRITICAL: evals 6 and 12 validate the impact-analysis idiom weights {imports:0.5, churn:0.3, ownership:0.2} that 5 dinopowers wrappers depend on. If this skill's weights drift, those wrappers silently lose protection."
+    }
+  ],
+  "cases": [
+    {
+      "id": "eval-1",
+      "category": "prerequisites-no-context",
+      "prompt": "Сгенерируй retry helper для src/adapters/qdrant/. Код должен быть стабильный.",
+      "expected": {
+        "mustDo": [
+          "Detect missing area context (no prior explore or risk-assessment output)",
+          "Invoke /tea-rags:explore first on src/adapters/qdrant/ to gather files + overlay labels",
+          "Only then proceed to Step 1 STRATEGY"
+        ],
+        "mustNotDo": [
+          "Jump straight to code generation",
+          "Skip to Step 4 without labels"
+        ]
+      },
+      "failureMode": "Agent generates without gathering signals first"
+    },
+    {
+      "id": "eval-2",
+      "category": "step1-hard-rule-defensive",
+      "prompt": "Area context есть. Overlay: chunk.bugFixRate='critical', file.ageDays='legacy'. Генерируй модуль.",
+      "expected": {
+        "mustDo": [
+          "Select DEFENSIVE strategy (hard rule: bugFixRate critical + ageDays old/legacy)",
+          "Load strategies/defensive.md or .claude/skills/strategy-defensive if present"
+        ],
+        "mustNotDo": [
+          "Select STANDARD or CONSERVATIVE",
+          "Skip strategy selection"
+        ]
+      },
+      "failureMode": "Agent misclassifies high-risk legacy zone"
+    },
+    {
+      "id": "eval-3",
+      "category": "step1-hard-rule-stabilization",
+      "prompt": "Overlay: chunk.commitCount='high', file.churnVolatility='erratic'. Добавить method.",
+      "expected": {
+        "mustDo": [
+          "Select STABILIZATION strategy (hard rule: high commits + erratic volatility)"
+        ],
+        "mustNotDo": ["STANDARD", "DEFENSIVE (no bugFix critical)"]
+      },
+      "failureMode": "Agent picks wrong strategy for churn hotspot"
+    },
+    {
+      "id": "eval-4",
+      "category": "step1-hard-rule-conservative",
+      "prompt": "Overlay: file.ageDays='legacy', chunk.commitCount='low'. Небольшая правка.",
+      "expected": {
+        "mustDo": [
+          "Select CONSERVATIVE strategy (hard rule: legacy age + low commits)"
+        ],
+        "mustNotDo": ["STANDARD", "DEFENSIVE (no bugFix critical)"]
+      },
+      "failureMode": "Agent doesn't apply conservative rule for stable legacy"
+    },
+    {
+      "id": "eval-5",
+      "category": "step1-autonomous-judgment",
+      "prompt": "Overlay: chunk.bugFixRate='concerning', file.ageDays='recent', chunk.commitCount='typical'. Strategy?",
+      "expected": {
+        "mustDo": [
+          "No hard rule match → apply Autonomous Judgment Protocol",
+          "Decide closest strategy (likely STANDARD or lean to STABILIZATION)",
+          "Justify with signal axes (Risk rising but Stability low, Confidence medium)",
+          "Ask user if uncertain"
+        ],
+        "mustNotDo": [
+          "Force-fit a hard rule that doesn't match",
+          "Pick strategy silently without justification"
+        ]
+      },
+      "failureMode": "Agent force-fits a hard rule or picks silently"
+    },
+    {
+      "id": "eval-6",
+      "category": "step2-template-exact-weights",
+      "prompt": "Нужен template для generation: найди стабильный example кода.",
+      "expected": {
+        "parameters": {
+          "rerank": "custom with EXACT weights {similarity:0.2, stability:0.3, age:0.3, bugFix:-0.15, ownership:-0.05}",
+          "note": "These are the 'proven' template weights — long-lived + low-churn + low-bug + multi-author"
+        },
+        "mustNotDo": [
+          "Use rerank='proven' preset directly (may exist but skill uses CUSTOM for this step)",
+          "Make up different weights",
+          "Skip the template step"
+        ]
+      },
+      "failureMode": "Agent uses wrong weights or skips template"
+    },
+    {
+      "id": "eval-7",
+      "category": "step2-quality-gate-reject",
+      "prompt": "Template search вернул chunk с chunk.bugFixRate='critical'. Использовать?",
+      "expected": {
+        "mustDo": [
+          "Reject per quality gate (bugFixRate critical is automatic reject)",
+          "Request next-best candidate or re-search"
+        ],
+        "mustNotDo": [
+          "Use critical-bug-rate chunk as template",
+          "Accept silently"
+        ]
+      },
+      "failureMode": "Agent uses bad template"
+    },
+    {
+      "id": "eval-8",
+      "category": "step2-quality-gate-recent-low-churn",
+      "prompt": "Template chunk: ageDays='recent', commitCount='low'. OK?",
+      "expected": {
+        "mustDo": [
+          "Reject per quality gate (recent + low commits = not yet proven)",
+          "Find older/more-proven alternative"
+        ],
+        "mustNotDo": ["Accept"]
+      },
+      "failureMode": "Agent accepts unproven recent code as template"
+    },
+    {
+      "id": "eval-9",
+      "category": "step3-style-silo",
+      "prompt": "Template найден. file.dominantAuthorPct='silo'. Как адаптировать стиль?",
+      "expected": {
+        "mustDo": [
+          "Match style EXACTLY per STYLE table (silo → match exactly)",
+          "Flag owner for review"
+        ],
+        "mustNotDo": [
+          "Propose alternative style",
+          "Unify with project conventions (that's 'shared', not 'silo')"
+        ]
+      },
+      "failureMode": "Agent doesn't match silo-owned style"
+    },
+    {
+      "id": "eval-10",
+      "category": "step3-style-shared",
+      "prompt": "file.dominantAuthorPct='shared'. Style?",
+      "expected": {
+        "mustDo": [
+          "Follow project conventions (shared → opportunity to unify)",
+          "Don't rigidly copy any single author's style"
+        ]
+      },
+      "failureMode": "Agent over-matches a single author for shared files"
+    },
+    {
+      "id": "eval-11",
+      "category": "step5-verify-identifiers",
+      "prompt": "Код сгенерирован, все тесты проходят. Финализировать?",
+      "expected": {
+        "mustDo": [
+          "Step 5 MANDATORY — verify every identifier",
+          "find_symbol(metaOnly=true) for every function/type referenced",
+          "ripgrep for import paths (find_symbol doesn't cover imports)",
+          "0 results = hallucinated identifier → fix before commit"
+        ],
+        "mustNotDo": [
+          "Skip Step 5 because tests pass",
+          "Claim complete without identifier verification"
+        ]
+      },
+      "failureMode": "Agent skips identifier verification"
+    },
+    {
+      "id": "eval-12",
+      "category": "step6-impact-exact-weights",
+      "prompt": "Код готов, verified. Посмотри blast radius перед коммитом.",
+      "expected": {
+        "parameters": {
+          "rerank": "custom with EXACT weights {imports:0.5, churn:0.3, ownership:0.2}",
+          "metaOnly": true,
+          "note": "IMPACT step weights — THE idiom that 5 dinopowers wrappers depend on"
+        },
+        "mustDo": [
+          "Warn on high-imports modules",
+          "Flag shared taskIds → coordinated change"
+        ],
+        "mustNotDo": [
+          "Use named preset (e.g. hotspots) instead of custom",
+          "Different weights",
+          "Skip impact step"
+        ]
+      },
+      "failureMode": "Agent uses wrong weights — breaks dinopowers compatibility"
+    },
+    {
+      "id": "eval-13",
+      "category": "skip-hotfix",
+      "prompt": "Hotfix: баг на qdrant-client.ts:142, fix is line 147: replace `0` with `null`. Исправь немедленно.",
+      "expected": {
+        "mustDo": [
+          "User provides exact location → skip to Step 4 GENERATE",
+          "Step 5 VERIFY still MANDATORY after the fix",
+          "Skip Steps 1-3 (strategy, template, style)"
+        ],
+        "mustNotDo": [
+          "Run full strategy selection for a known-location hotfix",
+          "Skip Step 5 even for hotfix"
+        ]
+      },
+      "failureMode": "Agent over-engineers hotfix flow or skips Step 5"
+    },
+    {
+      "id": "eval-14",
+      "category": "skip-greenfield",
+      "prompt": "Новый модуль src/core/domains/analytics/ — директория не существует ещё. Пиши с нуля.",
+      "expected": {
+        "mustDo": [
+          "Greenfield → skip Step 2 TEMPLATE and Step 3 STYLE (nothing to match)",
+          "Step 5 VERIFY MANDATORY — identifiers must resolve"
+        ],
+        "mustNotDo": [
+          "Search for template in non-existent directory",
+          "Skip Step 5"
+        ]
+      },
+      "failureMode": "Agent tries to template-match nonexistent code"
+    },
+    {
+      "id": "eval-15",
+      "category": "custom-strategy-discovery",
+      "prompt": "Before generation — какие custom strategies у проекта?",
+      "expected": {
+        "mustDo": [
+          "Scan .claude/skills/ for strategy-* skills",
+          "Read ## When sections",
+          "Custom conditions evaluated BEFORE hard rules if matched"
+        ],
+        "mustNotDo": [
+          "Skip custom-strategy discovery",
+          "Apply hard rules before checking custom"
+        ]
+      },
+      "failureMode": "Agent misses project-specific strategies"
+    }
+  ]
+}
