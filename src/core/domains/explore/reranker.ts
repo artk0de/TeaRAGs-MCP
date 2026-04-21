@@ -562,3 +562,36 @@ function buildSignalKeyMap(payloadSignals: PayloadSignalDescriptor[]): Map<strin
 
   return map;
 }
+
+/**
+ * Returns true when the only non-zero weight is `similarity`. Used as a fast
+ * path in `rerank()` to skip adaptive bounds + overlay computation.
+ *
+ * @internal Exported only for unit testing. Not part of the public module API.
+ */
+export function isSimilarityOnly(weights: ScoringWeights): boolean {
+  const activeKeys = Object.keys(weights).filter((k) => {
+    const w = weights[k as keyof ScoringWeights];
+    return w !== undefined && w !== 0;
+  });
+  return activeKeys.length === 1 && activeKeys[0] === "similarity";
+}
+
+/**
+ * Collapse sorted results by payload field, keeping the first (highest-scored)
+ * entry per group. Missing/empty group keys each get a unique `__ungrouped_N`
+ * slot so they don't collapse into a single bucket.
+ *
+ * @internal Exported only for unit testing. Not part of the public module API.
+ */
+export function groupByTop<T extends { payload?: Record<string, unknown> }>(sorted: T[], groupBy: string): T[] {
+  const seen = new Map<string, T>();
+  for (const r of sorted) {
+    const raw = r.payload?.[groupBy];
+    const key = typeof raw === "string" ? raw : "";
+    if (!key || !seen.has(key)) {
+      seen.set(key || `__ungrouped_${seen.size}`, r);
+    }
+  }
+  return [...seen.values()];
+}
