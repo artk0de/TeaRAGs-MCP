@@ -24,6 +24,35 @@ point of this wrapper. The core value of every dinopowers wrapper is correct
 tea-rags tool selection — this skill bootstraps that correctness for all future
 wrappers.
 
+## Chaining rule (MANDATORY)
+
+When the wrapped `superpowers:` skill runs its cycle it may instruct you to
+invoke another `superpowers:Y` skill next (TDD after planning, verification
+after editing, review after completion, etc.). **Redirect every such onward
+`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
+wrapper exists.**
+
+Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
+
+- `dinopowers:brainstorming`
+- `dinopowers:executing-plans`
+- `dinopowers:finishing-a-development-branch`
+- `dinopowers:receiving-code-review`
+- `dinopowers:requesting-code-review`
+- `dinopowers:systematic-debugging`
+- `dinopowers:test-driven-development`
+- `dinopowers:verification-before-completion`
+- `dinopowers:writing-plans`
+- `dinopowers:writing-skills`
+
+Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
+imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
+`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
+prevents.
+
+Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
+`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+
 ## Step 1 — Extract intent
 
 From the user request identify three elements:
@@ -84,8 +113,15 @@ signal only.
 ## Step 4 — Invoke superpowers:writing-skills
 
 Invoke the `Skill` tool with `superpowers:writing-skills`. Prepend the pattern
-block from Step 3 as context. Let `superpowers:writing-skills` run its
-RED-GREEN-REFACTOR cycle — this wrapper does not replace it, only enriches it.
+block from Step 3 as context. Phrase the handoff as:
+
+> "Use the structural pattern block as template. When your cycle would next
+> invoke `superpowers:writing-plans` / `superpowers:test-driven-development` (or
+> any wrapped `superpowers:Y`), invoke the `dinopowers:Y` wrapper instead — see
+> the Chaining rule section above."
+
+Let `superpowers:writing-skills` run its RED-GREEN-REFACTOR cycle — this wrapper
+does not replace it, only enriches it.
 
 ## Red Flags — STOP and restart from Step 2
 
@@ -96,6 +132,10 @@ RED-GREEN-REFACTOR cycle — this wrapper does not replace it, only enriches it.
 - Called `superpowers:writing-skills` first, tea-rags after as "validation" →
   wrong order, restart
 - Started writing the new SKILL.md without a pattern block → revert, restart
+- Let `superpowers:writing-skills` chain into a raw `superpowers:writing-plans`
+  / `superpowers:test-driven-development` without redirecting to the
+  `dinopowers:Y` wrapper → intercept and invoke the wrapper instead (see
+  Chaining rule)
 
 ## Common Mistakes
 

@@ -1,0 +1,95 @@
+{
+  "skill": "dinopowers:* (cross-cutting: all 10 wrapper skills)",
+  "fix_name": "chaining-rule",
+  "audit_finding": {
+    "id": "F1",
+    "description": "Wrapper leakage at chain-hop. Step 4 handoff in every dinopowers:X invokes superpowers:X; that inner skill then instructs the agent to invoke superpowers:Y (TDD after planning, verification after editing, review after completion). Those onward calls bypass the dinopowers:Y wrappers, losing all tea-rags enrichment.",
+    "evidence": [
+      ".claude-plugin/dinopowers/scripts/inject-wrapper-routing.sh already exists to solve the same bypass problem but only for Agent-tool subagent prompts — not for in-session Skill() chain-hops",
+      "User-reported: dinopowers:writing-plans -> superpowers:writing-plans -> superpowers:executing-plans (instead of dinopowers:executing-plans)"
+    ]
+  },
+  "fix_strategy": {
+    "scope": "Insert uniform `## Chaining rule (MANDATORY)` block between `## Iron Rule` and `## Step 1` in each of 10 SKILL.md files. Append short reminder to Step 4 handoff blockquote. Add one Red Flags entry listing the specific inner chain-hops that must be redirected.",
+    "files_touched": [
+      ".claude-plugin/dinopowers/skills/brainstorming/SKILL.md",
+      ".claude-plugin/dinopowers/skills/executing-plans/SKILL.md",
+      ".claude-plugin/dinopowers/skills/finishing-a-development-branch/SKILL.md",
+      ".claude-plugin/dinopowers/skills/receiving-code-review/SKILL.md",
+      ".claude-plugin/dinopowers/skills/requesting-code-review/SKILL.md",
+      ".claude-plugin/dinopowers/skills/systematic-debugging/SKILL.md",
+      ".claude-plugin/dinopowers/skills/test-driven-development/SKILL.md",
+      ".claude-plugin/dinopowers/skills/verification-before-completion/SKILL.md",
+      ".claude-plugin/dinopowers/skills/writing-plans/SKILL.md",
+      ".claude-plugin/dinopowers/skills/writing-skills/SKILL.md"
+    ]
+  },
+  "eval_cases": [
+    {
+      "id": "EC1",
+      "prompt": "You are inside dinopowers:writing-plans Step 4. You invoked superpowers:writing-plans and its body says: 'after planning is done, invoke superpowers:executing-plans to execute the plan'. What do you invoke next?",
+      "expected": "Skill(dinopowers:executing-plans)",
+      "failure_mode": "Agent invokes Skill(superpowers:executing-plans) directly, bypassing the pre-touch modification guard",
+      "audit_finding": "F1"
+    },
+    {
+      "id": "EC2",
+      "prompt": "You are inside dinopowers:executing-plans executing Task 3. Task 3 is complete, and superpowers:executing-plans now says: 'run superpowers:verification-before-completion'. What do you invoke?",
+      "expected": "Skill(dinopowers:verification-before-completion)",
+      "failure_mode": "Direct superpowers:verification-before-completion skips collateral-damage scan",
+      "audit_finding": "F1"
+    },
+    {
+      "id": "EC3",
+      "prompt": "You are inside dinopowers:brainstorming. superpowers:brainstorming concluded and recommends 'next run superpowers:writing-plans'. What do you invoke?",
+      "expected": "Skill(dinopowers:writing-plans)",
+      "failure_mode": "Direct superpowers:writing-plans skips tea-rags impact enrichment over the affected files",
+      "audit_finding": "F1"
+    },
+    {
+      "id": "EC4",
+      "prompt": "You are inside dinopowers:systematic-debugging after bug-hunt and superpowers:systematic-debugging triage. The inner skill now says 'write a failing test via superpowers:test-driven-development'. What do you invoke?",
+      "expected": "Skill(dinopowers:test-driven-development)",
+      "failure_mode": "Direct superpowers:test-driven-development skips proven-test-pattern search",
+      "audit_finding": "F1"
+    },
+    {
+      "id": "EC5",
+      "prompt": "You are inside dinopowers:verification-before-completion. After tests pass, the inner skill says 'invoke superpowers:finishing-a-development-branch to present completion options'. What do you invoke?",
+      "expected": "Skill(dinopowers:finishing-a-development-branch)",
+      "failure_mode": "Direct superpowers:finishing-a-development-branch skips branch-wide tea-rags:risk-assessment scan",
+      "audit_finding": "F1"
+    },
+    {
+      "id": "EC6",
+      "prompt": "You are inside dinopowers:writing-plans. The inner skill wants to invoke superpowers:using-git-worktrees to isolate the work. What do you invoke?",
+      "expected": "Skill(superpowers:using-git-worktrees)",
+      "failure_mode": "Incorrectly redirects to a non-existent dinopowers:using-git-worktrees",
+      "audit_finding": "control (regression: ensure non-wrapped superpowers pass through)"
+    },
+    {
+      "id": "EC7",
+      "prompt": "[subagent: task-agent] You were dispatched to write a plan for refactoring src/auth/. You need to invoke the plan-authoring skill. What do you invoke?",
+      "expected": "Skill(dinopowers:writing-plans)",
+      "failure_mode": "Subagent hits Agent-tool hook which already forces dinopowers:* routing; regression control — should still work after chaining-rule fix",
+      "audit_finding": "control (subagent routing — must not regress)"
+    },
+    {
+      "id": "EC8",
+      "prompt": "You are inside dinopowers:writing-skills. The inner superpowers:writing-skills says 'write a plan for the skill via superpowers:writing-plans'. What do you invoke?",
+      "expected": "Skill(dinopowers:writing-plans)",
+      "failure_mode": "Direct superpowers:writing-plans skips impact enrichment",
+      "audit_finding": "F1"
+    }
+  ],
+  "eval_method_rationale": "Baseline subagent runs (Phase 2.3) skipped. Rationale: the problem was pre-confirmed by (a) the existing inject-wrapper-routing.sh hook already solving the identical pattern for Agent-tool subagent prompts, and (b) direct user report with a concrete example. Delta subagent eval would re-discover what is already known. Phase 2 budget redirected to thoroughness of the fix (uniform block + per-skill Red Flags entry) and Phase 4 structural verification (all 10 files contain the block, no markdownlint regressions).",
+  "verification": {
+    "method": "grep for '## Chaining rule (MANDATORY)' across all 10 files, grep for per-skill Red Flags entry, markdownlint baseline delta",
+    "results": {
+      "chaining_rule_block_present": "10/10 files",
+      "step4_reminder_present": "10/10 files (9 with explicit 'Chaining rule reminder:' prefix, 1 with inline redirect phrasing in writing-skills)",
+      "red_flags_entry_present": "10/10 files",
+      "markdownlint_baseline": "242 errors before fix, 242 errors after fix — no new lint issues introduced"
+    }
+  }
+}

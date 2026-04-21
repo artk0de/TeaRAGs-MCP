@@ -32,6 +32,35 @@ If the plan is conceptual with no file list derivable (e.g. "plan for migrating
 to Postgres") — skip enrichment and invoke `superpowers:writing-plans` directly.
 State it. Do not fabricate a file list.
 
+## Chaining rule (MANDATORY)
+
+When the wrapped `superpowers:` skill runs its cycle it may instruct you to
+invoke another `superpowers:Y` skill next (TDD after planning, verification
+after editing, review after completion, etc.). **Redirect every such onward
+`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
+wrapper exists.**
+
+Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
+
+- `dinopowers:brainstorming`
+- `dinopowers:executing-plans`
+- `dinopowers:finishing-a-development-branch`
+- `dinopowers:receiving-code-review`
+- `dinopowers:requesting-code-review`
+- `dinopowers:systematic-debugging`
+- `dinopowers:test-driven-development`
+- `dinopowers:verification-before-completion`
+- `dinopowers:writing-plans`
+- `dinopowers:writing-skills`
+
+Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
+imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
+`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
+prevents.
+
+Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
+`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+
 ## Step 1 — Collect target file set
 
 From the user request or existing plan draft, collect the concrete file list:
@@ -135,7 +164,11 @@ block from Step 3 as context. Phrase the handoff as:
 > "Before decomposing, note these impact signals per affected file: …<block>…
 > Use them to: (1) order Tasks so shared-taskId files change together, (2)
 > isolate high-blast-radius files into dedicated Tasks with explicit tests, (3)
-> flag silo-owned files for owner review."
+> flag silo-owned files for owner review.
+>
+> Chaining rule reminder: when your cycle would next invoke
+> `superpowers:executing-plans` (or any other wrapped `superpowers:Y`), invoke
+> the `dinopowers:Y` wrapper instead — see the Chaining rule section above."
 
 Let `superpowers:writing-plans` run its standard RED-GREEN-REFACTOR plan
 authoring cycle — this wrapper does not replace it, only grounds it.
@@ -153,6 +186,9 @@ authoring cycle — this wrapper does not replace it, only grounds it.
 - `metaOnly: false` → restart with `metaOnly: true`
 - Called `superpowers:writing-plans` first, tea-rags after for "documentation" →
   wrong order, restart
+- Let `superpowers:writing-plans` chain into a raw `superpowers:executing-plans`
+  (or any other wrapped `superpowers:Y`) without redirecting to `dinopowers:Y` →
+  intercept and invoke the wrapper instead (see Chaining rule)
 
 ## Common Mistakes
 
