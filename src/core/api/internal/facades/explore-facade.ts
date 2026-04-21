@@ -130,83 +130,22 @@ export class ExploreFacade {
 
   /** Semantic (dense vector) search over a collection. */
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
-    const { embedding } = await this.embeddings.embed(request.query);
-    const rerank = this.resolveDocRerank(request.rerank, request.documentation, request.language);
-    const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
-    const filter = this.registry.buildMergedFilter(
-      request as unknown as Record<string, unknown>,
-      request.filter,
-      level,
-    );
-    return this.executeExplore(
-      this.vectorStrategy,
-      {
-        collectionName,
-        query: request.query,
-        embedding,
-        limit: request.limit ?? 10,
-        offset: request.offset,
-        filter,
-        pathPattern: request.pathPattern,
-        rerank,
-        metaOnly: request.metaOnly,
-        level,
-      },
-      path,
-    );
+    return this.embedAndDispatch(request, this.vectorStrategy);
   }
 
   /** Hybrid (dense + BM25 sparse) search over a collection. */
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
-    const { embedding } = await this.embeddings.embed(request.query);
-    const rerank = this.resolveDocRerank(request.rerank, request.documentation, request.language);
-    const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
-    const filter = this.registry.buildMergedFilter(
-      request as unknown as Record<string, unknown>,
-      request.filter,
-      level,
-    );
-    return this.executeExplore(
-      this.hybridStrategy,
-      {
-        collectionName,
-        query: request.query,
-        embedding,
-        limit: request.limit ?? 10,
-        offset: request.offset,
-        filter,
-        pathPattern: request.pathPattern,
-        rerank,
-        metaOnly: request.metaOnly,
-        level,
-      },
-      path,
-    );
+    return this.embedAndDispatch(request, this.hybridStrategy);
   }
 
   /** Rank all chunks by rerank signals without vector search. */
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "rank_chunks");
-    const filter = this.registry.buildMergedFilter(
-      request as unknown as Record<string, unknown>,
-      request.filter,
-      level,
-    );
+    const filter = this.buildFilter(request, level);
     return this.executeExplore(
       this.scrollRankStrategy,
-      {
-        collectionName,
-        limit: request.limit ?? 10,
-        offset: request.offset,
-        level,
-        filter,
-        pathPattern: request.pathPattern,
-        rerank: request.rerank,
-        metaOnly: request.metaOnly,
-      },
+      buildRankChunksContext(request, collectionName, filter, level),
       path,
     );
   }
@@ -218,25 +157,41 @@ export class ExploreFacade {
     await this.modelGuard?.ensureMatch(collectionName);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
-    const filter = this.registry.buildMergedFilter(
-      request as unknown as Record<string, unknown>,
-      request.filter,
-      level,
-    );
+    const filter = this.buildFilter(request, level);
     return this.executeExplore(
       this.vectorStrategy,
-      {
-        collectionName,
-        query: request.query,
-        embedding,
-        limit: request.limit ?? 5,
-        offset: request.offset,
-        filter,
-        pathPattern: request.pathPattern,
-        rerank: request.rerank,
-      },
+      buildSearchCodeContext(request, collectionName, embedding, filter),
       absolutePath,
     );
+  }
+
+  /**
+   * Shared flow for semantic + hybrid search: embed query, resolve doc-aware
+   * rerank + signal level, merge filter, dispatch to the given strategy.
+   */
+  private async embedAndDispatch(
+    request: SemanticSearchRequest | HybridSearchRequest,
+    strategy: BaseExploreStrategy,
+  ): Promise<ExploreResponse> {
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
+    const { embedding } = await this.embeddings.embed(request.query);
+    const rerank = this.resolveDocRerank(request.rerank, request.documentation, request.language);
+    const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
+    const filter = this.buildFilter(request, level);
+    return this.executeExplore(
+      strategy,
+      buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
+      path,
+    );
+  }
+
+  /** Merge typed filter params with raw filter via registry. Thin shortcut so call sites read like prose. */
+  private buildFilter(
+    request: Record<string, unknown> | { filter?: Record<string, unknown> },
+    level: SignalLevel | undefined,
+  ): Record<string, unknown> | undefined {
+    const req = request as Record<string, unknown> & { filter?: Record<string, unknown> };
+    return this.registry.buildMergedFilter(req, req.filter, level);
   }
 
   /** Find similar chunks by ID or code block (find_similar MCP tool). */
@@ -244,23 +199,10 @@ export class ExploreFacade {
     validateFindSimilarRequest(request);
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
-    const filter = this.registry.buildMergedFilter(
-      request as unknown as Record<string, unknown>,
-      request.filter,
-      level,
-    );
+    const filter = this.buildFilter(request, level);
     return this.executeExplore(
       this.buildFindSimilarStrategy(request),
-      {
-        collectionName,
-        limit: request.limit ?? 10,
-        offset: request.offset,
-        filter,
-        pathPattern: request.pathPattern,
-        rerank: request.rerank,
-        metaOnly: request.metaOnly,
-        level,
-      },
+      buildFindSimilarContext(request, collectionName, filter, level),
       path,
     );
   }
@@ -458,6 +400,82 @@ function buildFindSymbolContext(request: FindSymbolRequest, collectionName: stri
     offset: request.offset,
     rerank: request.rerank,
     metaOnly: request.metaOnly,
+  };
+}
+
+function buildVectorSearchContext(
+  request: SemanticSearchRequest | HybridSearchRequest,
+  collectionName: string,
+  embedding: number[],
+  filter: Record<string, unknown> | undefined,
+  rerank: SemanticSearchRequest["rerank"],
+  level: SignalLevel | undefined,
+): ExploreContext {
+  return {
+    collectionName,
+    query: request.query,
+    embedding,
+    limit: request.limit ?? 10,
+    offset: request.offset,
+    filter,
+    pathPattern: request.pathPattern,
+    rerank,
+    metaOnly: request.metaOnly,
+    level,
+  };
+}
+
+function buildRankChunksContext(
+  request: RankChunksRequest,
+  collectionName: string,
+  filter: Record<string, unknown> | undefined,
+  level: SignalLevel | undefined,
+): ExploreContext {
+  return {
+    collectionName,
+    limit: request.limit ?? 10,
+    offset: request.offset,
+    level,
+    filter,
+    pathPattern: request.pathPattern,
+    rerank: request.rerank,
+    metaOnly: request.metaOnly,
+  };
+}
+
+function buildSearchCodeContext(
+  request: ExploreCodeRequest,
+  collectionName: string,
+  embedding: number[],
+  filter: Record<string, unknown> | undefined,
+): ExploreContext {
+  return {
+    collectionName,
+    query: request.query,
+    embedding,
+    limit: request.limit ?? 5,
+    offset: request.offset,
+    filter,
+    pathPattern: request.pathPattern,
+    rerank: request.rerank,
+  };
+}
+
+function buildFindSimilarContext(
+  request: FindSimilarRequest,
+  collectionName: string,
+  filter: Record<string, unknown> | undefined,
+  level: SignalLevel | undefined,
+): ExploreContext {
+  return {
+    collectionName,
+    limit: request.limit ?? 10,
+    offset: request.offset,
+    filter,
+    pathPattern: request.pathPattern,
+    rerank: request.rerank,
+    metaOnly: request.metaOnly,
+    level,
   };
 }
 
