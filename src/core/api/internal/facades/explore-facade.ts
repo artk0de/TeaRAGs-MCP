@@ -241,43 +241,8 @@ export class ExploreFacade {
 
   /** Find similar chunks by ID or code block (find_similar MCP tool). */
   async findSimilar(request: FindSimilarRequest): Promise<ExploreResponse> {
-    // Count meaningful inputs
-    const hasPositive =
-      (request.positiveIds?.length ?? 0) > 0 ||
-      (request.positiveCode?.filter((c) => c.trim().length > 0).length ?? 0) > 0;
-    const hasNegative =
-      (request.negativeIds?.length ?? 0) > 0 ||
-      (request.negativeCode?.filter((c) => c.trim().length > 0).length ?? 0) > 0;
-
-    // Validate: strategy-specific constraints
-    const strategy = request.strategy ?? "best_score";
-    if (strategy !== "best_score" && !hasPositive) {
-      throw new InvalidQueryError(`Strategy '${strategy}' requires at least one positive input`);
-    }
-    // best_score allows negative-only, but must have at least something
-    if (!hasPositive && !hasNegative) {
-      throw new InvalidQueryError("At least one positive or negative input is required");
-    }
-
+    validateFindSimilarRequest(request);
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
-
-    // Create per-request strategy
-    const similarStrategy = new SimilarSearchStrategy(
-      this.qdrant,
-      this.reranker,
-      this.payloadSignals,
-      this.essentialKeys,
-      this.embeddings,
-      {
-        positiveIds: request.positiveIds,
-        positiveCode: request.positiveCode,
-        negativeIds: request.negativeIds,
-        negativeCode: request.negativeCode,
-        strategy,
-        fileExtensions: request.fileExtensions,
-      },
-    );
-
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     const filter = this.registry.buildMergedFilter(
       request as unknown as Record<string, unknown>,
@@ -285,7 +250,7 @@ export class ExploreFacade {
       level,
     );
     return this.executeExplore(
-      similarStrategy,
+      this.buildFindSimilarStrategy(request),
       {
         collectionName,
         limit: request.limit ?? 10,
@@ -297,6 +262,24 @@ export class ExploreFacade {
         level,
       },
       path,
+    );
+  }
+
+  private buildFindSimilarStrategy(request: FindSimilarRequest): SimilarSearchStrategy {
+    return new SimilarSearchStrategy(
+      this.qdrant,
+      this.reranker,
+      this.payloadSignals,
+      this.essentialKeys,
+      this.embeddings,
+      {
+        positiveIds: request.positiveIds,
+        positiveCode: request.positiveCode,
+        negativeIds: request.negativeIds,
+        negativeCode: request.negativeCode,
+        strategy: request.strategy ?? "best_score",
+        fileExtensions: request.fileExtensions,
+      },
     );
   }
 
@@ -448,6 +431,23 @@ function validateFindSymbolRequest(request: FindSymbolRequest): void {
   }
   if (!request.symbol && !request.relativePath) {
     throw new InvalidParameterError("symbol", "either symbol or relativePath is required");
+  }
+}
+
+export function validateFindSimilarRequest(request: FindSimilarRequest): void {
+  const hasPositive =
+    (request.positiveIds?.length ?? 0) > 0 ||
+    (request.positiveCode?.filter((c) => c.trim().length > 0).length ?? 0) > 0;
+  const hasNegative =
+    (request.negativeIds?.length ?? 0) > 0 ||
+    (request.negativeCode?.filter((c) => c.trim().length > 0).length ?? 0) > 0;
+
+  const strategy = request.strategy ?? "best_score";
+  if (strategy !== "best_score" && !hasPositive) {
+    throw new InvalidQueryError(`Strategy '${strategy}' requires at least one positive input`);
+  }
+  if (!hasPositive && !hasNegative) {
+    throw new InvalidQueryError("At least one positive or negative input is required");
   }
 }
 
