@@ -20,7 +20,6 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor, SignalStats } from "../../../contracts/types/trajectory.js";
-import { CodeChunkGrouper, DocChunkGrouper } from "../../../domains/explore/chunk-grouping/index.js";
 import {
   CollectionNotFoundError as DomainCollectionNotFoundError,
   InvalidQueryError,
@@ -28,11 +27,12 @@ import {
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import {
   createExploreStrategy,
+  FileOutlineStrategy,
+  SimilarSearchStrategy,
+  SymbolSearchStrategy,
   type BaseExploreStrategy,
   type ExploreContext,
 } from "../../../domains/explore/strategies/index.js";
-import { SimilarSearchStrategy } from "../../../domains/explore/strategies/similar.js";
-import { resolveSymbols } from "../../../domains/explore/symbol-resolve.js";
 import { INDEXING_METADATA_ID } from "../../../domains/ingest/constants.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { mapMarkerToHealth } from "../../../domains/ingest/pipeline/enrichment/health-mapper.js";
@@ -52,7 +52,6 @@ import {
   type HybridSearchRequest,
   type IndexMetrics,
   type RankChunksRequest,
-  type SearchResult,
   type SemanticSearchRequest,
   type SignalMetrics,
 } from "../../public/dto/index.js";
@@ -302,136 +301,34 @@ export class ExploreFacade {
 
   /** Find symbol by name or file-level outline by relativePath. */
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
-    if (request.symbol && request.relativePath) {
-      throw new InvalidParameterError("symbol", "symbol and relativePath are mutually exclusive");
-    }
-    if (!request.symbol && !request.relativePath) {
-      throw new InvalidParameterError("symbol", "either symbol or relativePath is required");
-    }
-
+    validateFindSymbolRequest(request);
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
-
-    // Dispatch to relativePath branch when provided
-    if (request.relativePath) {
-      return this.findByRelativePath(collectionName, request, path);
-    }
-
-    // At this point, validation guarantees symbol is present
-    const symbol = request.symbol as string;
-
-    // Build filter: symbolId text match + optional language
-    const must: Record<string, unknown>[] = [{ key: "symbolId", match: { text: symbol } }];
-    if (request.language) {
-      must.push({ key: "language", match: { value: request.language } });
-    }
-
-    const filter: Record<string, unknown> = { must };
-
-    // Merge pathPattern filter if present
-    if (request.pathPattern) {
-      const pathFilter = this.registry.buildMergedFilter(
-        { pathPattern: request.pathPattern } as unknown as Record<string, unknown>,
-        undefined,
-        "chunk",
-      );
-      if (pathFilter) {
-        const extraMust = pathFilter.must as Record<string, unknown>[] | undefined;
-        if (extraMust) (filter.must as Record<string, unknown>[]).push(...extraMust);
-        const extraMustNot = pathFilter.must_not as Record<string, unknown>[] | undefined;
-        if (extraMustNot) filter.must_not = extraMustNot;
-      }
-    }
-
-    // Also collect parentSymbolId matches for class outline (members)
-    const parentMust: Record<string, unknown>[] = [
-      { key: "parentSymbolId", match: { text: symbol } },
-      ...(request.language ? [{ key: "language", match: { value: request.language } }] : []),
-    ];
-    const parentFilter: Record<string, unknown> = { must: parentMust };
-
-    // Apply same pathPattern filter to parent scroll
-    if (request.pathPattern) {
-      const pathFilter = this.registry.buildMergedFilter(
-        { pathPattern: request.pathPattern } as unknown as Record<string, unknown>,
-        undefined,
-        "chunk",
-      );
-      if (pathFilter) {
-        const extraMust = pathFilter.must as Record<string, unknown>[] | undefined;
-        if (extraMust) parentMust.push(...extraMust);
-        const extraMustNot = pathFilter.must_not as Record<string, unknown>[] | undefined;
-        if (extraMustNot) parentFilter.must_not = extraMustNot;
-      }
-    }
-
-    // Execute both scrolls in parallel
-    const [symbolChunks, memberChunks] = await Promise.all([
-      this.qdrant.scrollFiltered(collectionName, filter, 200),
-      this.qdrant.scrollFiltered(collectionName, parentFilter, 200),
-    ]);
-
-    // Deduplicate (a chunk may appear in both if its symbolId and parentSymbolId both match)
-    const seen = new Set(symbolChunks.map((c) => c.id));
-    const allChunks = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
-
-    let results = resolveSymbols(allChunks, request.symbol, request.metaOnly);
-
-    // Optional reranking — attach ranking overlay with git signals
-    if (request.rerank) {
-      await this.ensureStats(collectionName);
-      results = this.reranker.rerank(results, request.rerank, "semantic_search");
-    }
-
-    // Pagination
-    const offset = request.offset ?? 0;
-    const limit = request.limit ?? 50;
-    if (offset > 0) results = results.slice(offset);
-    results = results.slice(0, limit);
-
-    const driftWarning = path ? await this.checkDrift(path) : null;
-
-    return { results, driftWarning };
+    return this.executeExplore(
+      this.buildFindSymbolStrategy(request),
+      buildFindSymbolContext(request, collectionName),
+      path,
+    );
   }
 
-  /** File-level outline via relativePath scroll. */
-  private async findByRelativePath(
-    collectionName: string,
-    request: FindSymbolRequest,
-    path?: string,
-  ): Promise<ExploreResponse> {
-    const must: Record<string, unknown>[] = [{ key: "relativePath", match: { text: request.relativePath as string } }];
-    if (request.language) {
-      must.push({ key: "language", match: { value: request.language } });
+  private buildFindSymbolStrategy(request: FindSymbolRequest): BaseExploreStrategy {
+    if (request.relativePath) {
+      return new FileOutlineStrategy(this.qdrant, this.reranker, this.payloadSignals, this.essentialKeys, {
+        relativePath: request.relativePath,
+        language: request.language,
+      });
     }
-
-    const chunks = await this.qdrant.scrollFiltered(collectionName, { must }, 200);
-
-    if (chunks.length === 0) {
-      const driftWarning = path ? await this.checkDrift(path) : null;
-      return { results: [], driftWarning };
-    }
-
-    const isDoc = chunks.some((c) => c.payload.isDocumentation);
-    let results: SearchResult[];
-    if (isDoc) {
-      results = [DocChunkGrouper.group(chunks)];
-    } else {
-      results = [CodeChunkGrouper.groupFile(chunks)];
-    }
-
-    if (request.metaOnly) {
-      for (const r of results) {
-        if (r.payload) delete r.payload.content;
-      }
-    }
-
-    if (request.rerank) {
-      await this.ensureStats(collectionName);
-      results = this.reranker.rerank(results, request.rerank, "semantic_search");
-    }
-
-    const driftWarning = path ? await this.checkDrift(path) : null;
-    return { results, driftWarning };
+    return new SymbolSearchStrategy(
+      this.qdrant,
+      this.reranker,
+      this.payloadSignals,
+      this.essentialKeys,
+      this.registry,
+      {
+        symbol: request.symbol as string,
+        language: request.language,
+        pathPattern: request.pathPattern,
+      },
+    );
   }
 
   // =========================================================================
@@ -630,6 +527,25 @@ function resolveEffectiveLevel(
     return preset?.signalLevel;
   }
   return undefined;
+}
+
+function validateFindSymbolRequest(request: FindSymbolRequest): void {
+  if (request.symbol && request.relativePath) {
+    throw new InvalidParameterError("symbol", "symbol and relativePath are mutually exclusive");
+  }
+  if (!request.symbol && !request.relativePath) {
+    throw new InvalidParameterError("symbol", "either symbol or relativePath is required");
+  }
+}
+
+function buildFindSymbolContext(request: FindSymbolRequest, collectionName: string): ExploreContext {
+  return {
+    collectionName,
+    limit: request.limit ?? 50,
+    offset: request.offset,
+    rerank: request.rerank,
+    metaOnly: request.metaOnly,
+  };
 }
 
 export { DomainCollectionNotFoundError as CollectionNotFoundError };
