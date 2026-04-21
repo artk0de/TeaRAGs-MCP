@@ -11,6 +11,7 @@
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
+import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { computeCollectionStats } from "../../../domains/ingest/collection-stats.js";
@@ -54,6 +55,7 @@ export interface IndexingOpsDeps {
   snapshotDir: string;
   statsCache?: StatsCache;
   allPayloadSignals?: PayloadSignalDescriptor[];
+  statsAccumulators?: readonly StatsAccumulatorDescriptor[];
   reranker?: Reranker;
   gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   modelGuard?: EmbeddingModelGuard;
@@ -69,6 +71,7 @@ export class IndexingOps {
   private readonly snapshotDir: string;
   private readonly statsCache?: StatsCache;
   private readonly allPayloadSignals?: PayloadSignalDescriptor[];
+  private readonly statsAccumulators: readonly StatsAccumulatorDescriptor[];
   private readonly reranker?: Reranker;
   private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   private readonly modelGuard?: EmbeddingModelGuard;
@@ -84,6 +87,7 @@ export class IndexingOps {
     this.snapshotDir = deps.snapshotDir;
     this.statsCache = deps.statsCache;
     this.allPayloadSignals = deps.allPayloadSignals;
+    this.statsAccumulators = deps.statsAccumulators ?? [];
     this.reranker = deps.reranker;
     this.gitTimePeriods = deps.gitTimePeriods;
     this.modelGuard = deps.modelGuard;
@@ -159,7 +163,7 @@ export class IndexingOps {
     if (!this.statsCache || !this.allPayloadSignals) return;
     try {
       const points = await scrollAllPoints(this.qdrant, collectionName);
-      const stats = computeCollectionStats(points, this.allPayloadSignals, this.gitTimePeriods);
+      const stats = computeCollectionStats(points, this.allPayloadSignals, this.statsAccumulators, this.gitTimePeriods);
       const payloadFieldKeys = [...this.allPayloadSignals.map((d) => d.key), "navigation"];
       this.statsCache.save(collectionName, stats, payloadFieldKeys);
       this.reranker?.invalidateStats();

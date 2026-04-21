@@ -79,13 +79,24 @@ creates instances, and wires them together via DI.
   PayloadBuilder DIP)
 - Provider implementations (EnrichmentProvider — optional, not all trajectories
   have ingest enrichment)
+- **stats/** subdirectory (per trajectory): collection-stats accumulators the
+  trajectory contributes to `computeCollectionStats`. Each accumulator reads
+  only payload fields the trajectory owns (e.g. `git.file.dominantAuthor` lives
+  in `git/stats/author-counts.ts`; `language` counts live in
+  `static/stats/language-counts.ts`). Exported as
+  `<domain>StatsAccumulators: readonly StatsAccumulatorDescriptor[]` and
+  attached to the `Trajectory.statsAccumulators` field.
 
 **core/domains/ingest/** — Indexing pipeline (domain module)
 
 - Chunking, embedding, enrichment coordination
-- Collection utilities (computeCollectionStats)
-- Depends on PayloadBuilder and EnrichmentProvider interfaces from contracts,
-  NOT from trajectory
+- Collection utilities (`computeCollectionStats` orchestrator)
+- Depends on PayloadBuilder, EnrichmentProvider, and StatsAccumulatorDescriptor
+  interfaces from contracts, NOT from trajectory
+- Ingest MUST NOT reference trajectory-specific payload keys (e.g.
+  `git.file.dominantAuthor`). Trajectory-owned aggregation lives in that
+  trajectory's `stats/` subdirectory; ingest only orchestrates accumulators
+  received via DI
 
 **core/contracts/** — Shared interfaces, registries, utilities (foundation)
 
@@ -130,7 +141,7 @@ never touches foundation.
 modules use them internally. api/ interacts with registries through domain
 module facades, not by importing from contracts/ directly.
 
-Example flow:
+Example flow (enrichment provider):
 
 - `EnrichmentProvider` interface -> `core/contracts/types/provider.ts`
 - `GitEnrichmentProvider` implementation ->
@@ -142,3 +153,23 @@ Example flow:
 - `domains/explore/` receives resolved data via DI (constructor params), never
   imports trajectory/
 - `api/` creates registry from domains/trajectory/, passes to domains/explore/
+
+Example flow (stats accumulator):
+
+- `StatsAccumulator<R>` / `StatsAccumulatorDescriptor` interfaces + well-known
+  key constants (`STATS_ACCUMULATOR_KEYS`) ->
+  `core/contracts/types/stats-accumulator.ts`
+- `AuthorCountsAccumulator` (reads `git.file.dominantAuthor`) ->
+  `core/domains/trajectory/git/stats/author-counts.ts`
+- `LanguageCountsAccumulator` ->
+  `core/domains/trajectory/static/stats/language-counts.ts`
+- Each trajectory barrel (`stats/index.ts`) exports a
+  `readonly StatsAccumulatorDescriptor[]` and the `Trajectory` instance attaches
+  it as `statsAccumulators`
+- `TrajectoryRegistry.getAllStatsAccumulators()` merges descriptors across
+  registered trajectories; `createComposition()` pipes the merged list through
+  `IngestFacadeDeps.statsAccumulators` → `IndexingOps.statsAccumulators` →
+  `computeCollectionStats(points, signals, trajectoryAccumulators, ...)`
+- `computeCollectionStats` in `domains/ingest/collection-stats.ts` only
+  orchestrates — it derives a shared `PointContext` per point and calls `accept`
+  on each accumulator instance, then collects results by key

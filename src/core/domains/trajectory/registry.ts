@@ -15,6 +15,7 @@ import { mergeQdrantFilters } from "../../adapters/qdrant/filters/utils.js";
 import type { QdrantFilter, QdrantFilterCondition } from "../../adapters/qdrant/types.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
+import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, Trajectory } from "../../contracts/types/trajectory.js";
 
 export class TrajectoryRegistry {
@@ -98,6 +99,17 @@ export class TrajectoryRegistry {
       all.push(...trajectory.presets);
     }
     return all;
+  }
+
+  /** All collection-stats accumulator descriptors from all registered trajectories. */
+  getAllStatsAccumulators(): StatsAccumulatorDescriptor[] {
+    const accumulators: StatsAccumulatorDescriptor[] = [];
+    for (const trajectory of this.trajectories.values()) {
+      if (trajectory.statsAccumulators) {
+        accumulators.push(...trajectory.statsAccumulators);
+      }
+    }
+    return accumulators;
   }
 
   /** All enrichment providers from all registered trajectories (for ingest layer). */

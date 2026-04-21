@@ -3,6 +3,7 @@ import { staticFilters } from "./filters.js";
 import { BASE_PAYLOAD_SIGNALS } from "./payload-signals.js";
 import { staticDerivedSignals } from "./rerank/derived-signals/index.js";
 import { STATIC_PRESETS } from "./rerank/presets/index.js";
+import { staticStatsAccumulators } from "./stats/index.js";
 
 export { TrajectoryStaticError, StaticParseFailedError } from "./errors.js";
 
@@ -14,4 +15,5 @@ export class StaticTrajectory implements Trajectory {
   readonly derivedSignals = staticDerivedSignals;
   readonly filters = staticFilters;
   readonly presets = STATIC_PRESETS;
+  readonly statsAccumulators = [...staticStatsAccumulators];
 }
