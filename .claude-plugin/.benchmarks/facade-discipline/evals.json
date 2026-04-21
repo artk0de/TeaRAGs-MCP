@@ -56,6 +56,29 @@
       "failureMap": {
         "eval-13 (baseline)": "offered 'extend ExploreContext to carry a structured payload OR pass both filters via constructor args' — rule explicitly prohibits extending ExploreContext with strategy-specific fields"
       }
+    },
+    {
+      "date": "2026-04-21",
+      "iteration": 3,
+      "ruleLines": 489,
+      "note": "Iteration 3 closes the cosmetic-thinning loophole the agent itself exploited under iter-2 (extracted pipeline into private async methods on the facade class, passing all size checks). Added: (1) 'What a facade does' rewritten — facade = validate + delegate only; (2) Size-budget Check 1 — zero private async pipeline methods on the facade (structural, not length); (3) anti-pattern section with BAD/GOOD for private-pipeline-helpers vs pure-delegation-to-Ops; (4) decision tree reframed — every facade method delegates to Ops, three-question tree classifies inner work. Eval on 3 new cases (17, 18, 19) shows with-rule and baseline BOTH 100% — the prompts telegraph the bad pattern clearly and project context mentions IngestFacade→IndexingOps convention, so baseline figures it out naturally. Iter-3 value is documentary (clause to cite in PR review, precedent to prevent over-literal reading of iter-2 ≤20-line clause) rather than behavioral shift.",
+      "withRule": {
+        "pass": 3,
+        "fail": 0,
+        "total": 3,
+        "passRate": "100%",
+        "scope": "new-cases-only-17-to-19"
+      },
+      "withoutRuleStrict": {
+        "pass": 3,
+        "fail": 0,
+        "total": 3,
+        "passRate": "100%",
+        "note": "Baseline caught all three correctly — project layout mentions IngestFacade→IndexingOps convention (strong precedent signal), and the 'private async helpers doing pipeline work' pattern is recognizable as an anti-pattern by any senior-level read."
+      },
+      "deltaStrict": "+0pp",
+      "failureMap": {},
+      "honestyNote": "Zero delta doesn't mean the rule is useless — it means the bad pattern is telegraphed clearly enough that a reader with the current project layout doesn't need the rule to avoid it. The rule's value is (a) a concrete clause to cite in PR review, (b) a counter-example that prevents over-literal reading of iter-2 size clauses, (c) documentation for agents starting sessions without full project context. The loophole originally tripped the agent (me) in a live refactor under iter-2 — honesty about that trap is the rule's contribution."
     }
   ],
   "cases": [
@@ -222,6 +245,33 @@
       "withRule": "PASS",
       "withoutRuleStrict": "PASS",
       "failureMode": "agent proposes splitting facade into SearchFacade + NavigationFacade to satisfy rigid 250-line budget"
+    },
+    {
+      "id": "eval-17",
+      "category": "cosmetic-thinning-pr-review",
+      "prompt": "Reviewing a PR that refactors ExploreFacade. Before: 4 search methods each ~25 lines of inline pipeline. After: 4 public methods all ~3 lines, the work moved into 5 new methods on the same ExploreFacade class (private async embedAndDispatch, private async executeExplore, private buildFilter, and two ctx-builder helpers). File shrunk slightly. PR description says 'methods now tiny, facade-discipline compliant, every public method ≤ 20 lines'. Is this ready to merge?",
+      "expectedPlacement": "Reject. Private async pipeline methods on the facade class violate Check 1 (zero private async pipeline methods). Size-budget pass doesn't override the structural check. Real extraction means ExploreOps class, not private member methods.",
+      "withRule": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent approves the PR because every public method is ≤20 lines, missing that the pipeline just got renamed to private methods"
+    },
+    {
+      "id": "eval-18",
+      "category": "refactor-direction-explore-facade",
+      "prompt": "ExploreFacade has 4 methods (semanticSearch, hybridSearch, rankChunks, searchCode) each ~25 lines doing inline pipeline (guard + embed + level + filter merge + strategy call + response shape). I want to make them small. What's the refactor?",
+      "expectedPlacement": "Extract the pipeline into ExploreOps at api/internal/ops/, mirror IngestFacade→IndexingOps pattern. Facade methods become 1–3 line delegations. NOT: move to private async helpers on the facade.",
+      "withRule": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent proposes private async helpers on the facade to cosmetically thin the methods"
+    },
+    {
+      "id": "eval-19",
+      "category": "coworker-suggests-private-helper",
+      "prompt": "Adding a new method to ExploreFacade that's 15 lines: validateRequest, resolveAndGuard, build filter via registry, embed query, call vector strategy, shape response. Coworker says 15 lines is under the 20-line budget so technically fine, but still suggests 'extract everything after the validator to a private async helper on the facade to keep the public method a one-liner'. Agree with the coworker's suggestion?",
+      "expectedPlacement": "Disagree. The coworker's 'private async helper on the facade' is the cosmetic-thinning anti-pattern. Extract to ExploreOps.<method>() instead. Facade method becomes validator + 1-line delegation. Check 1 (zero private async on facade) beats Check 2 (≤20 lines) in priority.",
+      "withRule": "PASS",
+      "withoutRuleStrict": "PASS",
+      "failureMode": "agent agrees with coworker because the ≤20-line budget is satisfied, missing Check 1"
     }
   ]
 }

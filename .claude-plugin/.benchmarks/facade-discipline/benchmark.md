@@ -44,11 +44,11 @@ The rule introduces three distinctions that the baseline cannot invent:
 
 ## Iterations
 
-| Iter | Lines | With-rule     | Baseline (primary / strict) | Delta (strict) | Changes                                                               |
-| ---- | ----- | ------------- | --------------------------- | -------------- | --------------------------------------------------------------------- |
-| 1    | 285   | 12/12         | 100% / 58%                  | +42pp          | Initial                                                               |
-| 2    | 382   | 16/16\*       | — / 75% (new cases 13–16)   | +25pp\*\*      | Gap-closing additions (see below)                                     |
-| 3    | ~420  | — (rule-only) | —                           | —              | Loophole closure: private async pipeline helpers explicitly forbidden |
+| Iter | Lines | With-rule     | Baseline (primary / strict)   | Delta (strict) | Changes                                                               |
+| ---- | ----- | ------------- | ----------------------------- | -------------- | --------------------------------------------------------------------- |
+| 1    | 285   | 12/12         | 100% / 58%                    | +42pp          | Initial                                                               |
+| 2    | 382   | 16/16\*       | — / 75% (new cases 13–16)     | +25pp\*\*      | Gap-closing additions (see below)                                     |
+| 3    | 489   | 3/3 new cases | 100% / 100% (new cases 17–19) | +0pp           | Loophole closure: private async pipeline helpers explicitly forbidden |
 
 ### Iteration-3 — the cosmetic-thinning loophole
 
@@ -90,6 +90,23 @@ synchronous input validators; every public method is 1–3 lines. Check 1 passes
 
 The iter-3 fix was evidence-driven: the agent's own shortcut under iter-2 became
 the rule's new counter-example.
+
+**Eval on iter-3 additions (cases 17, 18, 19):** with-rule 3/3, baseline 3/3 —
++0pp delta. Honest reading: the bad pattern ("private async methods doing
+pipeline work on the facade class") is telegraphed clearly enough in the prompts
+that a reader with the current project layout (which mentions the
+IngestFacade→IndexingOps convention) recognizes it without the rule. The rule's
+value on these cases is **documentary**:
+
+- A concrete clause to cite in PR review ("Check 1: zero private async pipeline
+  methods")
+- A counter-example that prevents over-literal reading of the iter-2 ≤20-line
+  clause (easy to mistake "methods are short" for "facade is thin")
+- Precedent for future sessions starting without full project context
+
+Zero eval delta here does not mean the rule is inert — the loophole DID trip the
+agent (me) in a live refactor under iter-2, and iter-3 is what made that failure
+explicit in a form that survives across sessions.
 
 \* 12 original cases remain 100% (instructions not weakened); 4 new cases added
 for gaps surfaced during the 4 real-world extractions that ran against iter-1.

@@ -53,6 +53,7 @@ benchmarks/
 | force-reindex                             | 2026-04-21 | 10    | 100%       | 80%      | +20pp\*\*\* |
 | facade-discipline                         | 2026-04-21 | 12    | 100%       | 58%†     | +42pp†      |
 | facade-discipline (iter-2)                | 2026-04-21 | +4    | 100%       | 75%†     | +25pp†      |
+| facade-discipline (iter-3)                | 2026-04-21 | +3    | 100%       | 100%†    | +0pp†       |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
@@ -75,3 +76,10 @@ Baseline defaults to calling every extraction "a strategy" because that's the
 only pattern visible in the codebase; rule teaches the three-way split and the
 `registry.buildMergedFilter` / `api/errors.ts` conventions. The 58% is the
 strict number shown.
+
+iter-3 delta is +0pp honestly: the cosmetic-thinning anti-pattern is telegraphed
+clearly enough in prompts that baseline catches it. iter-3 exists as documentary
+/ counter-example value — a concrete clause to cite in PR review, and a
+precedent that prevents over-literal reading of the iter-2 "≤20 lines per
+method" clause. The loophole DID trip the agent in a live refactor; iter-3 makes
+that failure explicit across sessions.
