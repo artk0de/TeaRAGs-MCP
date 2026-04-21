@@ -241,8 +241,9 @@ describe("IngestFacade", () => {
   describe("getIndexStatus does not require embeddings", () => {
     it("returns status with embedding unavailable when provider is unreachable", async () => {
       const { facade } = makeFacade();
-      // Sabotage embed() and checkHealth() to simulate Ollama being down
-      (facade as any).embeddings = {
+      // Sabotage embeddings on the extracted IndexingOps (per facade-discipline
+      // iter-2 test anti-pattern note: post-construction swap goes on the ops class).
+      (facade as any).indexingOps.embeddings = {
         embed: vi.fn().mockRejectedValue(new OllamaUnavailableError("http://localhost:11434")),
         checkHealth: vi.fn().mockResolvedValue(false),
         getProviderName: vi.fn().mockReturnValue("ollama"),
