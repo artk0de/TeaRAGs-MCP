@@ -115,7 +115,11 @@ describe("EnrichmentCoordinator", () => {
     coordinator.prefetch("/repo", "test-col");
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
     coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
-    expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith("/repo", chunkMap);
+    expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith(
+      "/repo",
+      chunkMap,
+      expect.objectContaining({ skipCache: true }),
+    );
   });
 
   it("awaitCompletion returns metrics", async () => {
@@ -278,7 +282,11 @@ describe("EnrichmentCoordinator — startChunkEnrichment", () => {
     coordinator.startChunkEnrichment("test-col", "/repo", chunkMap);
 
     await new Promise((r) => setTimeout(r, 20));
-    expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith("/repo", chunkMap);
+    expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith(
+      "/repo",
+      chunkMap,
+      expect.objectContaining({ skipCache: true }),
+    );
   });
 
   it("filters chunkMap paths by ignoreFilter", async () => {
@@ -1208,5 +1216,166 @@ describe("EnrichmentCoordinator — recovery integration", () => {
     expect(lastMarker.file.status).toBe("completed");
     expect(lastMarker.chunk.status).toBe("degraded");
     expect(lastMarker.chunk.unenrichedChunks).toBe(3);
+  });
+});
+
+describe("EnrichmentCoordinator — streaming chunk enrichment", () => {
+  let mockQdrant: any;
+  let mockProvider: any;
+
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    mockProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+  });
+
+  it("calls buildChunkSignals per batch after prefetch completes, with skipCache + semaphore", async () => {
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      {
+        chunkId: "c1",
+        chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 5 },
+      } as any,
+      {
+        chunkId: "c2",
+        chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 6, endLine: 10 },
+      } as any,
+    ]);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockProvider.buildChunkSignals).toHaveBeenCalled();
+    const call = mockProvider.buildChunkSignals.mock.calls[0];
+    const [, batchMap, options] = call;
+    expect(batchMap.has("src/a.ts")).toBe(true);
+    expect(batchMap.get("src/a.ts").length).toBe(2);
+    expect(options).toMatchObject({
+      skipCache: true,
+      concurrencySemaphore: expect.objectContaining({ acquire: expect.any(Function) }),
+    });
+  });
+
+  it("queues chunk enrichment when prefetch is still pending, flushes on prefetch resolve", async () => {
+    let resolvePrefetch: (v: Map<string, Record<string, unknown>>) => void;
+    mockProvider.buildFileSignals.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePrefetch = resolve;
+      }),
+    );
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      {
+        chunkId: "c1",
+        chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 },
+      } as any,
+    ]);
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockProvider.buildChunkSignals).not.toHaveBeenCalled();
+
+    resolvePrefetch!(new Map([["src/a.ts", { x: 1 }]]));
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockProvider.buildChunkSignals).toHaveBeenCalled();
+  });
+
+  it("startChunkEnrichment skips files already enriched by streaming", async () => {
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      {
+        chunkId: "c1",
+        chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 },
+      } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 50));
+
+    mockProvider.buildChunkSignals.mockClear();
+
+    const fullChunkMap = new Map([["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
+    coordinator.startChunkEnrichment("test-col", "/repo", fullChunkMap);
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mockProvider.buildChunkSignals).not.toHaveBeenCalled();
+  });
+
+  it("startChunkEnrichment processes files NOT covered by streaming", async () => {
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      {
+        chunkId: "c1",
+        chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 },
+      } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 50));
+
+    mockProvider.buildChunkSignals.mockClear();
+    mockProvider.buildChunkSignals.mockResolvedValue(new Map());
+
+    const fullChunkMap = new Map([
+      ["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]],
+      ["/repo/src/b.ts", [{ chunkId: "c2", startLine: 1, endLine: 20 }]],
+    ]);
+    coordinator.startChunkEnrichment("test-col", "/repo", fullChunkMap);
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mockProvider.buildChunkSignals).toHaveBeenCalledTimes(1);
+    const calledMap = mockProvider.buildChunkSignals.mock.calls[0][1] as Map<string, unknown>;
+    expect(calledMap.has("/repo/src/b.ts")).toBe(true);
+    expect(calledMap.has("/repo/src/a.ts")).toBe(false);
+  });
+
+  it("awaitCompletion waits for in-flight streaming chunk work", async () => {
+    let resolveChunkSignals: (v: Map<string, Map<string, unknown>>) => void;
+    mockProvider.buildChunkSignals.mockReturnValue(
+      new Promise((resolve) => {
+        resolveChunkSignals = resolve;
+      }),
+    );
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      {
+        chunkId: "c1",
+        chunk: { metadata: { filePath: "/repo/src/a.ts" }, startLine: 1, endLine: 10 },
+      } as any,
+    ]);
+
+    let completed = false;
+    const completionPromise = coordinator.awaitCompletion("test-col").then(() => {
+      completed = true;
+    });
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(completed).toBe(false);
+
+    resolveChunkSignals!(new Map());
+    await completionPromise;
+    expect(completed).toBe(true);
   });
 });
