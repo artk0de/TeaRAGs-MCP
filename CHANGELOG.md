@@ -1,3 +1,10 @@
+## [1.19.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.19.0...v1.19.1) (2026-04-10)
+
+### Bug Fixes
+
+- **build:** include benchmarks/ in published package
+  ([0dd332c](https://github.com/artk0de/TeaRAGs-MCP/commit/0dd332c28979d024afe88388b362cdb99cc0ab9e))
+
 ## [1.19.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.18.0...v1.19.0) (2026-04-06)
 
 ### Features
