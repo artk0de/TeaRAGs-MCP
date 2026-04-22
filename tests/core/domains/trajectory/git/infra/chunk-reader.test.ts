@@ -455,6 +455,137 @@ describe("buildChunkChurnMapUncached — CLI pathspec failure", () => {
   });
 });
 
+// ─── external semaphore — shared concurrency across streaming calls ─────────
+
+describe("buildChunkChurnMapUncached — external semaphore", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("uses external semaphore's acquire/release when provided", async () => {
+    const commitSha = "a".repeat(40);
+    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+      {
+        commit: {
+          sha: commitSha,
+          author: "Alice",
+          authorEmail: "alice@ex.com",
+          timestamp: Math.floor(Date.now() / 1000),
+          body: "fix: something",
+        },
+        changedFiles: ["src/a.ts"],
+      },
+    ]);
+
+    const git = await import("isomorphic-git");
+    vi.spyOn(git.default, "readCommit").mockResolvedValue({
+      oid: commitSha,
+      commit: {
+        tree: "t".repeat(40),
+        parent: ["p".repeat(40)],
+        author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
+        committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
+        message: "fix: something",
+      },
+      payload: "",
+    } as any);
+
+    vi.spyOn(git.default, "readBlob")
+      .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("old\n") } as any)
+      .mockResolvedValueOnce({ oid: "y".repeat(40), blob: new TextEncoder().encode("new\nextra\n") } as any);
+
+    const mockRelease = vi.fn();
+    const externalSem = { acquire: vi.fn().mockResolvedValue(mockRelease) };
+
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
+    chunkMap.set("src/a.ts", [
+      { chunkId: "c1", startLine: 1, endLine: 5 },
+      { chunkId: "c2", startLine: 6, endLine: 10 },
+    ]);
+
+    await chunkReader.buildChunkChurnMapUncached(
+      "/fake/repo",
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+      undefined,
+      120000,
+      10000,
+      externalSem,
+    );
+
+    expect(externalSem.acquire).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+  });
+
+  it("does not call external semaphore when chunkMap is empty (all single-chunk files filtered out)", async () => {
+    const externalSem = { acquire: vi.fn() };
+
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      "/fake/repo",
+      new Map(),
+      {},
+      10,
+      6,
+      undefined,
+      undefined,
+      120000,
+      10000,
+      externalSem,
+    );
+
+    expect(result.size).toBe(0);
+    expect(externalSem.acquire).not.toHaveBeenCalled();
+  });
+
+  it("falls back to internal semaphore when externalSemaphore is undefined", async () => {
+    // Regression guard: existing call sites that don't pass semaphore still work
+    const commitSha = "a".repeat(40);
+    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+      {
+        commit: {
+          sha: commitSha,
+          author: "Alice",
+          authorEmail: "alice@ex.com",
+          timestamp: Math.floor(Date.now() / 1000),
+          body: "fix: something",
+        },
+        changedFiles: ["src/a.ts"],
+      },
+    ]);
+
+    const git = await import("isomorphic-git");
+    vi.spyOn(git.default, "readCommit").mockResolvedValue({
+      oid: commitSha,
+      commit: {
+        tree: "t".repeat(40),
+        parent: ["p".repeat(40)],
+        author: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
+        committer: { name: "Alice", email: "a@ex.com", timestamp: 12345, timezoneOffset: 0 },
+        message: "fix: something",
+      },
+      payload: "",
+    } as any);
+
+    vi.spyOn(git.default, "readBlob")
+      .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("old\n") } as any)
+      .mockResolvedValueOnce({ oid: "y".repeat(40), blob: new TextEncoder().encode("new\nextra\n") } as any);
+
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
+    chunkMap.set("src/a.ts", [
+      { chunkId: "c1", startLine: 1, endLine: 5 },
+      { chunkId: "c2", startLine: 6, endLine: 10 },
+    ]);
+
+    // No semaphore passed — should still work
+    const result = await chunkReader.buildChunkChurnMapUncached("/fake/repo", chunkMap, {}, 10, 6, undefined);
+
+    expect(result.get("src/a.ts")).toBeDefined();
+  });
+});
+
 // ─── concurrency semaphore — queue and release ──────────────────────────────
 
 describe("buildChunkChurnMapUncached — concurrency control", () => {

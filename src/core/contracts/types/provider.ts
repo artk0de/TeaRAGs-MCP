@@ -70,6 +70,25 @@ export interface PayloadBuilder {
   ) => Record<string, unknown>;
 }
 
+// --- Chunk signal options ---
+
+/**
+ * Options for buildChunkSignals — allows coordinator to inject shared
+ * concurrency and opt out of HEAD-based caching for partial streaming calls.
+ */
+export interface ChunkSignalOptions {
+  /**
+   * External semaphore to use instead of the provider's internal concurrency
+   * limiter. Lets a coordinator share one limit across many per-batch calls.
+   */
+  concurrencySemaphore?: { acquire: () => Promise<() => void> };
+  /**
+   * Skip HEAD-based caching. Required for streaming partial calls, since a
+   * subset of the chunk map would corrupt the cache for the next full call.
+   */
+  skipCache?: boolean;
+}
+
 // --- Enrichment provider ---
 
 export interface EnrichmentProvider {
@@ -95,10 +114,11 @@ export interface EnrichmentProvider {
   readonly fileSignalTransform?: FileSignalTransform;
   /** File-level signal enrichment (prefetch at T=0, or backfill for specific paths) */
   buildFileSignals: (root: string, options?: { paths?: string[] }) => Promise<Map<string, FileSignalOverlay>>;
-  /** Chunk-level signal enrichment (post-flush) */
+  /** Chunk-level signal enrichment (streaming per-batch or post-flush). */
   buildChunkSignals: (
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
+    options?: ChunkSignalOptions,
   ) => Promise<Map<string, Map<string, ChunkSignalOverlay>>>;
 }
 

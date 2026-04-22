@@ -14,6 +14,7 @@ import type { CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type {
   ChunkLookupEntry,
+  ChunkSignalOptions,
   ChunkSignalOverlay,
   EnrichmentProvider,
   FileSignalOverlay,
@@ -125,6 +126,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   async buildChunkSignals(
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
+    options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
     const rawResult = await buildChunkChurnMap(
       root,
@@ -137,6 +139,8 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       this.squashOpts,
       this.config.chunkTimeoutMs,
       this.config.chunkMaxFileLines,
+      options?.concurrencySemaphore,
+      options?.skipCache,
     );
 
     const result = new Map<string, Map<string, ChunkSignalOverlay>>();

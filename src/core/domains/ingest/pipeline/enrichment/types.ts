@@ -1,4 +1,8 @@
-export type { EnrichmentProvider, FileSignalTransform } from "../../../../contracts/types/provider.js";
+export type {
+  ChunkSignalOptions,
+  EnrichmentProvider,
+  FileSignalTransform,
+} from "../../../../contracts/types/provider.js";
 
 // --- Enrichment marker types (per-provider, per-level) ---
 
