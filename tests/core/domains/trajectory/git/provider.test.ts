@@ -106,6 +106,8 @@ describe("GitEnrichmentProvider", () => {
         undefined, // squashOpts
         120000, // chunkTimeoutMs (default)
         10000, // chunkMaxFileLines (default)
+        undefined, // externalSemaphore (not passed when no options)
+        undefined, // skipCache (not passed when no options)
       );
     });
   });

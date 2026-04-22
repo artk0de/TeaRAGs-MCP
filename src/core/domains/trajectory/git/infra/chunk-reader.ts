@@ -15,10 +15,10 @@ import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
 import type { GitEnrichmentCache } from "./cache.js";
-import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
+import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
 import { assembleChunkSignals } from "./metrics/chunk-assembler.js";
-import { type AdjustedRange, applyOffsets, mapHunksToChunks } from "./offset-tracker.js";
+import { applyOffsets, mapHunksToChunks, type AdjustedRange } from "./offset-tracker.js";
 import { extractTaskIds } from "./utils.js";
 
 const MAX_FILE_LINES_DEFAULT = 10000;
@@ -33,6 +33,11 @@ const MAX_FILE_LINES_DEFAULT = 10000;
  *
  * @returns Map<relativePath, Map<chunkId, ChunkChurnOverlay>>
  */
+/** Duck type for injected concurrency limiter — matches infra/semaphore.ts Semaphore shape. */
+export interface ChunkConcurrencySemaphore {
+  acquire: () => Promise<() => void>;
+}
+
 export async function buildChunkChurnMap(
   repoRoot: string,
   chunkMap: Map<string, ChunkLookupEntry[]>,
@@ -44,10 +49,13 @@ export async function buildChunkChurnMap(
   squashOpts?: SquashOptions,
   chunkTimeoutMs = 120000,
   maxFileLines = MAX_FILE_LINES_DEFAULT,
+  externalSemaphore?: ChunkConcurrencySemaphore,
+  skipCache = false,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
-  // Check HEAD-based cache
-  const cached = await enrichmentCache.getChunkChurn(repoRoot);
-  if (cached) return cached;
+  if (!skipCache) {
+    const cached = await enrichmentCache.getChunkChurn(repoRoot);
+    if (cached) return cached;
+  }
 
   const result = await buildChunkChurnMapUncached(
     repoRoot,
@@ -59,10 +67,12 @@ export async function buildChunkChurnMap(
     squashOpts,
     chunkTimeoutMs,
     maxFileLines,
+    externalSemaphore,
   );
 
-  // Store in cache (non-fatal if HEAD unresolvable)
-  await enrichmentCache.setChunkChurn(repoRoot, result);
+  if (!skipCache) {
+    await enrichmentCache.setChunkChurn(repoRoot, result);
+  }
 
   return result;
 }
@@ -77,6 +87,7 @@ export async function buildChunkChurnMapUncached(
   squashOpts?: SquashOptions,
   chunkTimeoutMs = 120000,
   maxFileLines = MAX_FILE_LINES_DEFAULT,
+  externalSemaphore?: ChunkConcurrencySemaphore,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Build relative path → entries lookup (chunkMap keys may be absolute paths)
   // Also filter: only files with >1 chunk benefit from chunk-level analysis
@@ -159,27 +170,36 @@ export async function buildChunkChurnMapUncached(
 
   const fileHunkMap = new Map<string, CommitHunkData[]>();
 
-  // Bounded concurrency semaphore for blob reads
-  let activeCount = 0;
-  const queue: (() => void)[] = [];
-  const acquire = async (): Promise<void> => {
-    if (activeCount < concurrency) {
-      activeCount++;
-      return Promise.resolve();
-    }
-    return new Promise<void>((resolve) => queue.push(resolve));
-  };
-  const release = (): void => {
-    const next = queue.shift();
-    if (next) {
-      next();
-    } else {
-      activeCount--;
-    }
-  };
+  // Bounded concurrency: external semaphore (coordinator-shared) or internal.
+  // Unified shape: acquire() returns a per-call release closure.
+  const acquire: () => Promise<() => void> = externalSemaphore
+    ? async () => externalSemaphore.acquire()
+    : (() => {
+        let activeCount = 0;
+        const queue: (() => void)[] = [];
+        const makeRelease = () => (): void => {
+          const next = queue.shift();
+          if (next) {
+            next();
+          } else {
+            activeCount--;
+          }
+        };
+        return async (): Promise<() => void> => {
+          if (activeCount < concurrency) {
+            activeCount++;
+            return makeRelease();
+          }
+          return new Promise<() => void>((resolve) => {
+            queue.push(() => {
+              resolve(makeRelease());
+            });
+          });
+        };
+      })();
 
   const collectHunks = async (entry: { commit: CommitInfo; changedFiles: string[] }): Promise<void> => {
-    await acquire();
+    const release = await acquire();
     try {
       const { commit, changedFiles } = entry;
 
@@ -306,7 +326,7 @@ export async function buildChunkChurnMapUncached(
   };
 
   await Promise.all(
-    Array.from(fileHunkMap.entries()).map(([filePath, hunkDataList]) => processFileHunks(filePath, hunkDataList)),
+    Array.from(fileHunkMap.entries()).map(async ([filePath, hunkDataList]) => processFileHunks(filePath, hunkDataList)),
   );
 
   const t2 = Date.now();
