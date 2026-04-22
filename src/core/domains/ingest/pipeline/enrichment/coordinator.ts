@@ -17,6 +17,7 @@ import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type { FileSignalOverlay } from "../../../../contracts/types/provider.js";
+import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry, EnrichmentMetrics } from "../../../../types.js";
 import { INDEXING_METADATA_ID } from "../../constants.js";
 import { pipelineLog } from "../infra/debug-logger.js";
@@ -25,6 +26,9 @@ import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
 import type { EnrichmentRecovery } from "./recovery.js";
 import type { ChunkEnrichmentMarker, EnrichmentProvider, FileEnrichmentMarker } from "./types.js";
+
+/** Max concurrent git-blame operations shared across all providers + streaming calls. */
+const CHUNK_ENRICHMENT_CONCURRENCY = 10;
 
 /** Deep-partial update for a provider marker — allows partial file/chunk sub-objects. */
 type ProviderMarkerUpdate = {
@@ -56,6 +60,8 @@ interface ProviderState {
   streamingApplies: number;
   flushApplies: number;
   prefetchDurationMs: number;
+  /** Relative paths of files already enriched per-batch during streaming. */
+  streamingEnrichedFiles: Set<string>;
 }
 
 function createProviderState(provider: EnrichmentProvider): ProviderState {
@@ -76,6 +82,7 @@ function createProviderState(provider: EnrichmentProvider): ProviderState {
     streamingApplies: 0,
     flushApplies: 0,
     prefetchDurationMs: 0,
+    streamingEnrichedFiles: new Set(),
   };
 }
 
@@ -144,6 +151,14 @@ export class EnrichmentCoordinator {
 
   // Delegates
   private readonly applier: EnrichmentApplier;
+
+  /**
+   * Shared concurrency limiter for chunk enrichment (git blame).
+   * Bounds total parallelism across all streaming per-batch calls AND the
+   * final startChunkEnrichment catch-up, so pipelines can't explode into
+   * N*concurrency concurrent git operations.
+   */
+  private readonly chunkSemaphore = new Semaphore(CHUNK_ENRICHMENT_CONCURRENCY);
 
   /**
    * Optional callback fired after ALL providers complete chunk enrichment.
@@ -315,6 +330,9 @@ export class EnrichmentCoordinator {
 
   /**
    * Called per-batch by pipeline callback after chunks are stored in Qdrant.
+   * Applies file-level signals and also triggers streaming chunk-level
+   * enrichment so git blame runs overlapped with embedding/upsert of later
+   * batches — instead of waiting for a single post-flush catch-up.
    */
   onChunksStored(collectionName: string, absolutePath: string, items: ChunkItem[]): void {
     for (const state of this.states.values()) {
@@ -339,6 +357,9 @@ export class EnrichmentCoordinator {
           provider: state.provider.key,
           chunks: items.length,
         });
+
+        const batchChunkMap = this.extractBatchChunkMap(items, pathBase);
+        this.startStreamingChunkEnrichment(state, collectionName, pathBase, batchChunkMap);
       } else {
         state.pendingBatches.push({ collectionName, absolutePath, items });
       }
@@ -367,21 +388,53 @@ export class EnrichmentCoordinator {
         });
       }
 
+      // Drop files already covered by streaming chunk enrichment (onChunksStored).
+      // Keeps original chunkMap keys (absolute or relative) so downstream path
+      // logic is unchanged.
+      const remainingChunkMap = new Map<string, ChunkLookupEntry[]>();
+      for (const [filePath, entries] of effectiveChunkMap) {
+        const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
+        if (!state.streamingEnrichedFiles.has(rel)) {
+          remainingChunkMap.set(filePath, entries);
+        }
+      }
+
+      if (remainingChunkMap.size === 0) {
+        pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_SKIPPED", {
+          provider: state.provider.key,
+          reason: "all files enriched via streaming",
+          streamingEnrichedFiles: state.streamingEnrichedFiles.size,
+        });
+        this.updateEnrichmentMarker(collectionName, {
+          [state.provider.key]: {
+            chunk: {
+              status: "completed",
+              completedAt: new Date().toISOString(),
+              durationMs: state.chunkEnrichmentDurationMs,
+              unenrichedChunks: 0,
+            },
+          },
+        }).catch(() => {});
+        providerPromises.push(Promise.resolve(true));
+        continue;
+      }
+
       pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_START", {
         provider: state.provider.key,
-        files: effectiveChunkMap.size,
+        files: remainingChunkMap.size,
+        streamingEnrichedFiles: state.streamingEnrichedFiles.size,
       });
 
       const chunkStart = Date.now();
 
       // Collect all chunk IDs so applier can stamp enrichedAt on chunks with no commits
       const allChunkIds = new Set<string>();
-      for (const entries of effectiveChunkMap.values()) {
+      for (const entries of remainingChunkMap.values()) {
         for (const entry of entries) allChunkIds.add(entry.chunkId);
       }
 
       const providerDone = state.provider
-        .buildChunkSignals(root, effectiveChunkMap)
+        .buildChunkSignals(root, remainingChunkMap, { skipCache: true })
         .then(async (chunkMetadata) => {
           const applied = await this.applier.applyChunkSignals(
             collectionName,
@@ -390,7 +443,7 @@ export class EnrichmentCoordinator {
             this.runStartedAt,
             allChunkIds,
           );
-          state.chunkEnrichmentDurationMs = Date.now() - chunkStart;
+          state.chunkEnrichmentDurationMs += Date.now() - chunkStart;
 
           // Write per-provider chunk marker
           await this.updateEnrichmentMarker(collectionName, {
@@ -412,7 +465,7 @@ export class EnrichmentCoordinator {
           return true;
         })
         .catch((error) => {
-          state.chunkEnrichmentDurationMs = Date.now() - chunkStart;
+          state.chunkEnrichmentDurationMs += Date.now() - chunkStart;
           console.error(`[Enrichment:${state.provider.key}] Chunk enrichment failed:`, error);
           pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_FAILED", {
             provider: state.provider.key,
@@ -627,7 +680,99 @@ export class EnrichmentCoordinator {
       );
       state.inFlightWork.push(work);
       state.flushApplies++;
+
+      const batchChunkMap = this.extractBatchChunkMap(batch.items, pathBase);
+      this.startStreamingChunkEnrichment(state, batch.collectionName, pathBase, batchChunkMap);
     }
+  }
+
+  /**
+   * Build a per-batch chunkMap keyed by relative path from pathBase.
+   * Matches the shape buildChunkChurnMap expects.
+   */
+  private extractBatchChunkMap(items: ChunkItem[], pathBase: string): Map<string, ChunkLookupEntry[]> {
+    const map = new Map<string, ChunkLookupEntry[]>();
+    for (const item of items) {
+      const fp = item.chunk.metadata.filePath;
+      const rel = fp.startsWith(pathBase) ? fp.slice(pathBase.length + 1) : fp;
+      const arr = map.get(rel) ?? [];
+      arr.push({
+        chunkId: item.chunkId,
+        startLine: item.chunk.startLine,
+        endLine: item.chunk.endLine,
+      });
+      map.set(rel, arr);
+    }
+    return map;
+  }
+
+  /**
+   * Fire-and-forget streaming chunk enrichment for a single batch.
+   * Shares this.chunkSemaphore across calls so total git blame parallelism
+   * stays bounded even when many batches arrive rapidly. Marks files as
+   * streaming-enriched before the async work starts so startChunkEnrichment()
+   * can skip them without racing.
+   */
+  private startStreamingChunkEnrichment(
+    state: ProviderState,
+    collectionName: string,
+    pathBase: string,
+    batchChunkMap: Map<string, ChunkLookupEntry[]>,
+  ): void {
+    if (state.ignoreFilter) {
+      for (const relPath of [...batchChunkMap.keys()]) {
+        if (state.ignoreFilter.ignores(relPath)) batchChunkMap.delete(relPath);
+      }
+    }
+
+    if (batchChunkMap.size === 0) return;
+
+    const root = state.effectiveRoot || pathBase;
+
+    for (const relPath of batchChunkMap.keys()) {
+      state.streamingEnrichedFiles.add(relPath);
+    }
+
+    const allChunkIds = new Set<string>();
+    for (const entries of batchChunkMap.values()) {
+      for (const entry of entries) allChunkIds.add(entry.chunkId);
+    }
+
+    pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_START", {
+      provider: state.provider.key,
+      files: batchChunkMap.size,
+      chunks: allChunkIds.size,
+    });
+
+    const streamStart = Date.now();
+    const work = state.provider
+      .buildChunkSignals(root, batchChunkMap, {
+        concurrencySemaphore: this.chunkSemaphore,
+        skipCache: true,
+      })
+      .then(async (chunkMetadata) => {
+        const applied = await this.applier.applyChunkSignals(
+          collectionName,
+          state.provider.key,
+          chunkMetadata,
+          this.runStartedAt,
+          allChunkIds,
+        );
+        state.chunkEnrichmentDurationMs += Date.now() - streamStart;
+        pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_COMPLETE", {
+          provider: state.provider.key,
+          files: batchChunkMap.size,
+          overlaysApplied: applied,
+        });
+      })
+      .catch((error) => {
+        pipelineLog.enrichmentPhase("STREAMING_CHUNK_ENRICHMENT_FAILED", {
+          provider: state.provider.key,
+          error: extractErrorMessage(error),
+        });
+      });
+
+    state.inFlightWork.push(work);
   }
 
   private async backfillMissedFiles(collectionName: string, state: ProviderState): Promise<void> {
