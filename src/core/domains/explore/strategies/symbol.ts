@@ -12,6 +12,7 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
+import { applyEssentialSignalsToOverlay } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { BaseExploreStrategy } from "./base.js";
@@ -64,9 +65,17 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
   }
 
   /**
-   * Custom post-process — resolveSymbols already handles metaOnly internally
-   * (strips payload.content), so we skip BaseExploreStrategy.applyMetaOnly.
-   * Rerank uses "semantic_search" scope consistent with the legacy facade path.
+   * Custom post-process — resolveSymbols already merges chunks into outline
+   * results and strips payload.content on metaOnly. We keep that scaffolding
+   * (chunkCount, mergedChunkIds, merged startLine/endLine) intact and only
+   * adjust the git layer to match the semantic/hybrid contract:
+   *
+   *   metaOnly=true  → essential git keys + overlay signals (when reranked)
+   *   metaOnly=false → full payload passes through unchanged
+   *
+   * Using BaseExploreStrategy.applyMetaOnly would strip synthetic outline
+   * fields (not present in payloadSignals), so we apply a targeted git
+   * filter via applyEssentialGitToResult instead.
    */
   protected override postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
     let processed = results;
@@ -80,7 +89,13 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     if (offset > 0) processed = processed.slice(offset);
 
     const limit = originalCtx.limit ?? DEFAULT_USER_LIMIT;
-    return processed.slice(0, limit);
+    processed = processed.slice(0, limit);
+
+    if (originalCtx.metaOnly) {
+      processed = processed.map((r) => applyEssentialSignalsToOverlay(r, this.essentialKeys) as ExploreResult);
+    }
+
+    return processed;
   }
 
   private buildSymbolFilter(key: "symbolId" | "parentSymbolId"): Record<string, unknown> {
