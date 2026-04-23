@@ -451,7 +451,7 @@ DERIVED:
    * compete for the slow-file heap.
    */
   fileIngested(ctx: LogContext, record: FileIngestRecord): void {
-    this.step(ctx, "FILE_INGESTED", record as unknown as Record<string, unknown>);
+    this.step(ctx, "FILE_INGESTED", { ...record });
     this.slowFiles.record(record);
   }
 

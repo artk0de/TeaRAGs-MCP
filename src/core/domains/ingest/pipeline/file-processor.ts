@@ -114,6 +114,7 @@ export async function processFiles(
       let language = "unknown";
       try {
         const code = await fs.readFile(filePath, "utf-8");
+        const bytes = Buffer.byteLength(code, "utf8");
         language = detectLanguage(filePath);
         relativePath = filePath.startsWith(basePath) ? filePath.slice(basePath.length + 1) : filePath;
 
@@ -124,7 +125,7 @@ export async function processFiles(
             {
               path: relativePath,
               language,
-              bytes: Buffer.byteLength(code, "utf8"),
+              bytes,
               chunks: 0,
               parseMs: 0,
               skipped: true,
@@ -208,7 +209,7 @@ export async function processFiles(
             {
               path: relativePath,
               language,
-              bytes: Buffer.byteLength(code, "utf8"),
+              bytes,
               chunks: chunksAddedForFile,
               parseMs,
               skipped: true,
@@ -225,7 +226,7 @@ export async function processFiles(
           {
             path: relativePath,
             language,
-            bytes: Buffer.byteLength(code, "utf8"),
+            bytes,
             chunks: chunksToAdd.length,
             parseMs,
           },
