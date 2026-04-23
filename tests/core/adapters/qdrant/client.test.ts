@@ -252,6 +252,8 @@ describe("QdrantManager", () => {
         pointsCount: 100,
         distance: "Cosine",
         hybridEnabled: false,
+        status: "green",
+        optimizerStatus: "unknown",
       });
     });
 
@@ -302,6 +304,8 @@ describe("QdrantManager", () => {
         pointsCount: 50,
         distance: "Cosine",
         hybridEnabled: true,
+        status: "green",
+        optimizerStatus: "unknown",
       });
     });
 
@@ -324,6 +328,8 @@ describe("QdrantManager", () => {
         pointsCount: 0,
         distance: "Cosine",
         hybridEnabled: false,
+        status: "green",
+        optimizerStatus: "unknown",
       });
     });
 
@@ -351,6 +357,8 @@ describe("QdrantManager", () => {
         pointsCount: 10,
         distance: "Euclid",
         hybridEnabled: false,
+        status: "green",
+        optimizerStatus: "unknown",
       });
     });
 
@@ -376,6 +384,8 @@ describe("QdrantManager", () => {
         pointsCount: 5,
         distance: "Dot",
         hybridEnabled: false,
+        status: "green",
+        optimizerStatus: "unknown",
       });
     });
 
@@ -400,7 +410,42 @@ describe("QdrantManager", () => {
         pointsCount: 3,
         distance: "Cosine",
         hybridEnabled: false,
+        status: "green",
+        optimizerStatus: "unknown",
       });
+    });
+
+    it("returns status and optimizerStatus from Qdrant metadata", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "yellow-col",
+        points_count: 100,
+        status: "yellow",
+        optimizer_status: "ok",
+        config: {
+          params: {
+            vectors: { size: 384, distance: "Cosine" },
+          },
+        },
+      });
+
+      const info = await manager.getCollectionInfo("yellow-col");
+
+      expect(info.status).toBe("yellow");
+      expect(info.optimizerStatus).toBe("ok");
+    });
+
+    it("defaults optimizerStatus to 'unknown' when Qdrant omits it", async () => {
+      mockClient.getCollection.mockResolvedValue({
+        collection_name: "minimal",
+        points_count: 0,
+        status: "green",
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+      });
+
+      const info = await manager.getCollectionInfo("minimal");
+
+      expect(info.status).toBe("green");
+      expect(info.optimizerStatus).toBe("unknown");
     });
   });
 

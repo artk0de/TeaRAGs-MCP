@@ -18,6 +18,10 @@ export interface CollectionInfo {
   pointsCount: number;
   distance: "Cosine" | "Euclid" | "Dot";
   hybridEnabled?: boolean;
+  /** Qdrant collection health status. `yellow` indicates background optimization. */
+  status: "green" | "yellow" | "red";
+  /** Optimizer state string from Qdrant (`"ok"` or `"unknown"` when absent). */
+  optimizerStatus: string;
 }
 
 export interface SearchResult {
@@ -295,6 +299,8 @@ export class QdrantManager {
       pointsCount: info.points_count || 0,
       distance,
       hybridEnabled,
+      status: (info.status ?? "green") as "green" | "yellow" | "red",
+      optimizerStatus: typeof info.optimizer_status === "string" ? info.optimizer_status : "unknown",
     };
   }
 
