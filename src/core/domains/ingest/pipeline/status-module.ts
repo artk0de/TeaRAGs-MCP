@@ -50,12 +50,26 @@ export class StatusModule {
     }
 
     // If a versioned collection exists that is newer than what alias points to,
-    // report status from it (covers first index + forceReindex in progress)
+    // report status from it only when it's actually in-progress or crashed
+    // mid-index. A complete-but-unaliased _vN is an orphan from a prior
+    // rotation (force-reindex deleted the old alias target and left _vN
+    // behind), and must not shadow the real alias target.
     if (latestVersioned) {
       const aliasTarget = exists ? await this.getAliasTarget(collectionName) : undefined;
       if (aliasTarget !== latestVersioned) {
-        // Latest version is not yet aliased — it's being indexed or crashed mid-index
-        return this.getStatusFromCollection(latestVersioned, collectionName);
+        if (!exists) {
+          // No alias/real collection at all — latestVersioned is the only source
+          // (first index in progress, or first index that completed but alias was
+          // never created).
+          return this.getStatusFromCollection(latestVersioned, collectionName);
+        }
+        const rawPoint = await this.qdrant.getPoint(latestVersioned, INDEXING_METADATA_ID).catch(() => null);
+        const marker = rawPoint ? parseMarkerPayload(rawPoint.payload as Record<string, unknown>) : undefined;
+        if (!marker?.indexingComplete) {
+          // In-progress or crashed mid-index — report from this collection
+          return this.getStatusFromCollection(latestVersioned, collectionName);
+        }
+        // Otherwise it's a completed orphan; fall through to read from alias.
       }
     }
 
