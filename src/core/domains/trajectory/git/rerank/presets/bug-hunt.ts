@@ -30,7 +30,16 @@ export class BugHuntPreset implements RerankPreset {
     blockPenalty: -0.05,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["bugFixRate", "churnVolatility", "recencyWeightedFreq", "relativeChurn", "ageDays"],
-    chunk: ["commitCount", "churnRatio"],
+    file: [
+      "bugFixRate",
+      "churnVolatility",
+      "recencyWeightedFreq",
+      "relativeChurn",
+      "ageDays",
+      "imports",
+      "dominantAuthorPct",
+      "contributorCount",
+    ],
+    chunk: ["commitCount", "churnRatio", "bugFixRate", "ageDays", "relativeChurn", "contributorCount"],
   };
 }

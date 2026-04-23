@@ -51,6 +51,22 @@ describe("DangerousPreset", () => {
     expect(preset.overlayMask.file).toContain("bugFixRate");
   });
 
+  it("surfaces pair-diagnostic disambiguators for architectural interpretation", () => {
+    // imports (fan-in): coupling vs bug attractor
+    expect(preset.overlayMask.file).toContain("imports");
+    // ageDays: young feature vs legacy minefield
+    expect(preset.overlayMask.file).toContain("ageDays");
+    // relativeChurn: file-size-normalized activity
+    expect(preset.overlayMask.file).toContain("relativeChurn");
+  });
+
+  it("surfaces method-level (chunk) disambiguators", () => {
+    // bugFixRate already covered above; add age + relativeChurn + contributorCount
+    expect(preset.overlayMask.chunk).toContain("ageDays");
+    expect(preset.overlayMask.chunk).toContain("relativeChurn");
+    expect(preset.overlayMask.chunk).toContain("contributorCount");
+  });
+
   it("has chunk overlay with commit and churn signals", () => {
     expect(preset.overlayMask.chunk).toContain("commitCount");
     expect(preset.overlayMask.chunk).toContain("churnRatio");

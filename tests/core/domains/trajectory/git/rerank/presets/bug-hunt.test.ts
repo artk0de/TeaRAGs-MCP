@@ -42,6 +42,25 @@ describe("BugHuntPreset", () => {
     expect(preset.overlayMask.file).toContain("recencyWeightedFreq");
   });
 
+  it("surfaces pair-diagnostic disambiguators for architectural interpretation", () => {
+    // imports: separates coupling point from bug attractor (high fan-in vs low)
+    expect(preset.overlayMask.file).toContain("imports");
+    // dominantAuthorPct + contributorCount: separates toxic silo from healthy owner
+    expect(preset.overlayMask.file).toContain("dominantAuthorPct");
+    expect(preset.overlayMask.file).toContain("contributorCount");
+  });
+
+  it("surfaces method-level (chunk) disambiguators", () => {
+    // chunk.bugFixRate: local method as bug source vs healthy method in buggy file
+    expect(preset.overlayMask.chunk).toContain("bugFixRate");
+    // chunk.ageDays: young method in old file vs ancient fossil method
+    expect(preset.overlayMask.chunk).toContain("ageDays");
+    // chunk.relativeChurn: method-level thrashing normalized by chunk size
+    expect(preset.overlayMask.chunk).toContain("relativeChurn");
+    // chunk.contributorCount: shared method inside owned file
+    expect(preset.overlayMask.chunk).toContain("contributorCount");
+  });
+
   it("does not set signalLevel (defaults to chunk)", () => {
     expect(preset.signalLevel).toBeUndefined();
   });

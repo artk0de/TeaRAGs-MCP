@@ -225,19 +225,61 @@ label = high+ from labelMap) → add "Oversized" classification. This is NOT a 4
 preset in MERGE — decomposition measures size, not risk. It's a post-filter on
 already-identified risk zones.
 
-**4. Risk classification** — from overlay labels + tier + test coverage:
+**4. Risk classification** — from overlay labels + tier + test coverage.
 
-| Classification   | Criteria                                                      |
-| ---------------- | ------------------------------------------------------------- |
-| Bug magnet       | bugFixRate concerning+ AND churn high+                        |
-| Fragile          | volatility erratic+ AND burst high+                           |
-| Legacy debt      | ageDays legacy+ AND churn high+ AND bugFix high+              |
-| Untested hotspot | No test file AND tier Critical/High                           |
-| Oversized        | methodLines high+ (from labelMap) AND in decomposition top-10 |
-| Knowledge silo   | knowledgeSilo high+ AND contributorCount = 1                  |
-| Race condition   | Agent judgment from code content                              |
+**BEFORE picking a class, consult pair diagnostics.** Single overlay signals are
+ambiguous. `references/signal-interpretation.md` gives the pair/triple rules
+that disambiguate patterns (god module vs bug attractor, healthy owner vs toxic
+silo, active development vs coupling, legacy minefield vs proven stable). Read
+it whenever the overlay shows more than one strong signal.
 
-Multiple classifications per candidate allowed.
+**Key disambiguators** (always check before classifying):
+
+- `imports` (fan-in, file-level) separates coupling (high) from bug attractor
+  (low)
+- `bugFixRate` separates healthy (stable) from fragile (unstable)
+- `ageDays` inverts churn meaning (old+churn = minefield, young+churn = feature)
+- `dominantAuthorPct` alone does NOT mean silo; pair with bugFixRate or age
+- path heuristic (`dto/`, `schema/`, `generated/`) flags boilerplate churn
+
+**File × chunk refinement.** File-level signals point to which file. Chunk-level
+signals (`chunk.bugFixRate`, `chunk.ageDays`, `chunk.relativeChurn`,
+`chunk.contributorCount`) point to which method inside. When overlay shows both,
+chunk-level locates the exact problem:
+
+- Coupling point → find chunk with highest `chunk.contributorCount` (overloaded
+  API)
+- Legacy minefield → find chunk with highest
+  `chunk.bugFixRate + chunk.relativeChurn`
+- Bug attractor → find chunk with highest `chunk.bugFixRate`
+- Fossil vs active legacy → `chunk.ageDays` inside old file
+
+See `references/signal-interpretation.md` § "Method-level (chunk) pair
+diagnostics" for the full table.
+
+| Classification          | Signature (required pair/triple)                                               |
+| ----------------------- | ------------------------------------------------------------------------------ |
+| **Coupling point**      | churn high+ AND imports high+ AND authors high+                                |
+| **Bug attractor**       | bugFixRate concerning+ AND churn high+ AND imports low                         |
+| **Legacy minefield**    | ageDays legacy AND churn high+ AND bugFixRate concerning+                      |
+| **Fragile legacy**      | ageDays legacy AND bugFixRate concerning+ (churn typical)                      |
+| **Toxic silo**          | dominantAuthorPct high AND bugFixRate concerning+ (OR churn high)              |
+| **Healthy owner**       | dominantAuthorPct high AND churn low AND ageDays legacy AND bugFixRate=healthy |
+| **Feature-in-progress** | churn high+ AND ageDays new AND bugFixRate=healthy AND imports low             |
+| **Boilerplate churn**   | churn high+ AND blockPenalty high+ AND bugFixRate=healthy                      |
+| **Emerging coupling**   | ageDays new AND churn high+ AND imports rising                                 |
+| **Untested hotspot**    | No test file AND tier Critical/High                                            |
+| **Oversized**           | methodLines high+ (labelMap) AND in decomposition top-10                       |
+| **Fragile**             | volatility erratic+ AND burst high+                                            |
+| **Race condition**      | Agent judgment from code content                                               |
+
+Multiple classifications per candidate allowed (e.g., god module + oversized).
+Healthy owner, feature-in-progress, and boilerplate churn are **NOT risks** —
+report them as "benign" and exclude from risk count.
+
+**Single strong signal?** If only one overlay signal is strong (everything else
+typical/missing) → insufficient evidence. Report candidate but do not classify.
+See anti-pattern #7 in signal-interpretation.md.
 
 ## Phase 5: OUTPUT
 
@@ -295,3 +337,14 @@ raw value + label: `bugFix:58% concerning`.
 - **find_similar without negativeIds.** Healthy-demoted candidates from MERGE
   are free negative examples. Always pass them to shift results toward
   antipatterns and away from active-but-clean code.
+- **Classifying from a single signal.** "High churn" alone does not imply any
+  class. Check companion signals (`imports`, `bugFixRate`, `ageDays`,
+  `blockPenalty`) before picking a label. See
+  `references/signal-interpretation.md`.
+- **Treating mono ownership as a risk by default.** Healthy owner of stable
+  mature code is an asset. Toxic silo requires pairing with bugFixRate or churn.
+- **Ignoring `imports` when classifying churn-heavy files.** Without fan-in, god
+  module and bug attractor look identical — they need opposite remediation.
+- **Reporting feature-in-progress or boilerplate churn as risks.** High churn on
+  a new single-author file with healthy bugFixRate is normal development. High
+  churn on a DTO with high blockPenalty is boilerplate, not a hotspot.

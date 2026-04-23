@@ -33,6 +33,7 @@ benchmarks/
 | explore                                   | 2026-03-30 | 8+8   | 100%       | 12.5%    | +87.5pp     |
 | research-merge                            | 2026-03-30 | 15    | 100%       | 70%      | +30pp       |
 | risk-assessment                           | 2026-03-30 | 12    | 100%       | 10%      | +90pp       |
+| risk-assessment (pair diagnostics)        | 2026-04-23 | 10    | 100%       | 60%§     | +40pp       |
 | coverage-expander                         | 2026-04-01 | 10    | 100%       | 100%     | 0pp\*       |
 | install                                   | 2026-04-12 | 10    | 100%       | 100%     | 0pp\*\*     |
 | dinopowers:writing-skills                 | 2026-04-20 | 12    | 100%       | 25%      | +75pp       |
@@ -91,3 +92,14 @@ pre-confirmed by the existing `inject-wrapper-routing.sh` hook (same bypass
 pattern, different tool surface) and a direct user report. Eval cases documented
 in `evals.json` as reusable regression tests; verification was structural
 (grep + markdownlint delta), not subagent-based.
+
+§ risk-assessment pair diagnostics: rare baseline-higher-than-with-rule
+inversion. Old Phase 4 classification table lacked coupling/bug-attractor/
+healthy-owner/feature-in-progress/boilerplate classes, so the skill _forced_
+agents into neighbouring wrong labels (god module → Legacy debt, healthy owner →
+Knowledge silo, feature-in-progress → Fragile, boilerplate → Oversized).
+Unconstrained engineer intuition (baseline 100%) hit the right architectural
+patterns naturally. After-fix skill matches baseline accuracy (100%) AND
+provides consistent named classes with explicit disambiguators (`imports`,
+`bugFixRate`, `ageDays`, `blockPenalty`) and a
+`references/signal-interpretation.md` reference for pair diagnostics.
