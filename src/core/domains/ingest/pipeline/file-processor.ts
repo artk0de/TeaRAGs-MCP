@@ -108,20 +108,37 @@ export async function processFiles(
   await parallelLimit(
     absolutePaths,
     async (filePath) => {
+      // Declared outside try/catch so the error-path emission can reference them
+      // even when failure happens before assignment.
+      let relativePath = filePath;
+      let language = "unknown";
       try {
         const code = await fs.readFile(filePath, "utf-8");
-        const language = detectLanguage(filePath);
-        const relativePath = filePath.startsWith(basePath) ? filePath.slice(basePath.length + 1) : filePath;
+        language = detectLanguage(filePath);
+        relativePath = filePath.startsWith(basePath) ? filePath.slice(basePath.length + 1) : filePath;
 
         if (!isTestPath(relativePath, language) && containsSecrets(code)) {
           result.errors.push(`Skipped ${filePath}: potential secrets detected`);
+          pipelineLog.fileIngested(
+            { component: "FileProcessor" },
+            {
+              path: relativePath,
+              language,
+              bytes: Buffer.byteLength(code, "utf8"),
+              chunks: 0,
+              parseMs: 0,
+              skipped: true,
+              skipReason: "secrets",
+            },
+          );
           return;
         }
 
         const { imports } = extractImportsExports(code, language);
         const parseStart = Date.now();
         const { chunks } = await chunkerPool.processFile(filePath, code, language);
-        pipelineLog.addStageTime("parse", Date.now() - parseStart);
+        const parseMs = Date.now() - parseStart;
+        pipelineLog.addStageTime("parse", parseMs);
 
         // Post-process: doc symbolIds + navigation links
         assignNavigationAndDocSymbolId(chunks, basePath);
@@ -129,10 +146,13 @@ export async function processFiles(
         // Apply chunk limits if configured
         const chunksToAdd = options.maxChunksPerFile ? chunks.slice(0, options.maxChunksPerFile) : chunks;
 
+        let chunksAddedForFile = 0;
+        let hitChunkLimit = false;
         for (const chunk of chunksToAdd) {
           // Check total chunk limit
           if (options.maxTotalChunks && result.chunksCreated >= options.maxTotalChunks) {
-            return;
+            hitChunkLimit = true;
+            break;
           }
 
           const baseChunk = {
@@ -165,6 +185,7 @@ export async function processFiles(
           const chunkId = generateChunkId(chunk);
           chunkPipeline.addChunk(baseChunk as CodeChunk, chunkId, basePath);
           result.chunksCreated++;
+          chunksAddedForFile++;
 
           // Track for git enrichment
           if (options.enableGitMetadata) {
@@ -179,11 +200,51 @@ export async function processFiles(
           }
         }
 
+        if (hitChunkLimit) {
+          // Partial file — counter never advances; emit explicit skip so the
+          // file still appears in post-mortem telemetry with skipReason.
+          pipelineLog.fileIngested(
+            { component: "FileProcessor" },
+            {
+              path: relativePath,
+              language,
+              bytes: Buffer.byteLength(code, "utf8"),
+              chunks: chunksAddedForFile,
+              parseMs,
+              skipped: true,
+              skipReason: "chunk-limit",
+            },
+          );
+          return;
+        }
+
         result.filesProcessed++;
         callbacks?.onFileProcessed?.(filePath, chunksToAdd.length);
+        pipelineLog.fileIngested(
+          { component: "FileProcessor" },
+          {
+            path: relativePath,
+            language,
+            bytes: Buffer.byteLength(code, "utf8"),
+            chunks: chunksToAdd.length,
+            parseMs,
+          },
+        );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         result.errors.push(`Skipped ${filePath}: ${errorMessage}`);
+        pipelineLog.fileIngested(
+          { component: "FileProcessor" },
+          {
+            path: relativePath,
+            language,
+            bytes: 0,
+            chunks: 0,
+            parseMs: 0,
+            skipped: true,
+            skipReason: "error",
+          },
+        );
       }
     },
     concurrency,

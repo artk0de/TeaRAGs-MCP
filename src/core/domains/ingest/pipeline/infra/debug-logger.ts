@@ -43,6 +43,57 @@ function localTimestamp(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 }
 
+/**
+ * Per-file ingestion telemetry record emitted by FileProcessor.
+ * Used for post-mortem analysis — "which files were slowest to parse?".
+ */
+export interface FileIngestRecord {
+  /** Relative path from basePath. */
+  path: string;
+  language: string;
+  /** File size in bytes (UTF-8). 0 for errors before read. */
+  bytes: number;
+  /** Number of chunks produced. 0 if skipped. */
+  chunks: number;
+  /** Parse duration in ms. 0 if skipped before parsing. */
+  parseMs: number;
+  skipped?: boolean;
+  skipReason?: "secrets" | "chunk-limit" | "error";
+}
+
+/**
+ * Tracks the top-N slowest non-skipped files by parseMs within a session.
+ *
+ * Skipped files (secrets, chunk-limit, errors) do not compete for the slow-file
+ * heap — they carry their own signal in the FILE_INGESTED event and would
+ * distort "slowest" semantics.
+ */
+export class SlowFileTracker {
+  private readonly heap: FileIngestRecord[] = [];
+  private readonly capacity: number;
+
+  constructor(capacity = 20) {
+    this.capacity = capacity;
+  }
+
+  record(entry: FileIngestRecord): void {
+    if (entry.skipped) return;
+    this.heap.push(entry);
+    this.heap.sort((a, b) => b.parseMs - a.parseMs);
+    if (this.heap.length > this.capacity) {
+      this.heap.length = this.capacity;
+    }
+  }
+
+  snapshot(): readonly FileIngestRecord[] {
+    return [...this.heap];
+  }
+
+  reset(): void {
+    this.heap.length = 0;
+  }
+}
+
 export type PipelineStage =
   | "scan"
   | "parse"
@@ -189,6 +240,7 @@ class DebugLogger {
   private logFile: string | null = null;
   private readonly sessionStart: number;
   private readonly profiler = new StageProfiler();
+  private readonly slowFiles = new SlowFileTracker(20);
   private readonly counters = {
     batches: 0,
     chunks: 0,
@@ -394,6 +446,16 @@ DERIVED:
   }
 
   /**
+   * Log per-file ingestion telemetry and feed the slow-file tracker.
+   * Skipped files (secrets/chunk-limit/error) emit the event but do not
+   * compete for the slow-file heap.
+   */
+  fileIngested(ctx: LogContext, record: FileIngestRecord): void {
+    this.step(ctx, "FILE_INGESTED", record as unknown as Record<string, unknown>);
+    this.slowFiles.record(record);
+  }
+
+  /**
    * Log git enrichment phase progress (Phase 2 of two-phase indexing)
    */
   enrichmentPhase(phase: string, data?: Record<string, unknown>): void {
@@ -429,10 +491,12 @@ DERIVED:
   }
 
   /**
-   * Reset stage profiler (for new indexing session)
+   * Reset stage profiler (for new indexing session).
+   * Also clears the slow-file tracker — slow files are per-session like stages.
    */
   resetProfiler(): void {
     this.profiler.reset();
+    this.slowFiles.reset();
   }
 
   /**
@@ -507,12 +571,18 @@ DERIVED:
       stageBlock += `\n  ~added = cumul. / concurrency (estimated incremental cost)\n`;
     }
 
+    let slowFilesBlock = "";
+    const slowFiles = this.slowFiles.snapshot();
+    if (slowFiles.length > 0) {
+      slowFilesBlock = `\nSLOW_FILES_TOP_${slowFiles.length}:\n${JSON.stringify(slowFiles, null, 2)}\n`;
+    }
+
     this.writeRaw(`
 --------------------------------------------------------------------------------
 SUMMARY for ${ctx.component}
 --------------------------------------------------------------------------------
 ${JSON.stringify(stats, null, 2)}
-Session counters: ${JSON.stringify(this.counters)}${stageBlock}
+Session counters: ${JSON.stringify(this.counters)}${stageBlock}${slowFilesBlock}
 --------------------------------------------------------------------------------
 `);
   }

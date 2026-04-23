@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LogContext } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
+import type {
+  FileIngestRecord,
+  LogContext,
+} from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
 // Import after setting DEBUG
 import { setDebug } from "../../../../../src/core/domains/ingest/pipeline/infra/runtime.js";
 
@@ -16,7 +19,7 @@ process.env.DEBUG = "true";
 
 setDebug(true);
 
-const { pipelineLog, initDebugLogger } =
+const { pipelineLog, initDebugLogger, SlowFileTracker } =
   await import("../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js");
 const fs = await import("node:fs");
 
@@ -799,6 +802,145 @@ describe("DebugLogger - lazy initialization", () => {
     consoleErrorSpy.mockRestore();
     process.env.DEBUG = originalDebug;
     setDebug(originalDebug === "true" || originalDebug === "1");
+  });
+});
+
+describe("SlowFileTracker", () => {
+  it("keeps the top-N by parseMs and evicts faster ones on overflow", () => {
+    const tracker = new SlowFileTracker(3);
+
+    tracker.record({ path: "a.ts", language: "typescript", bytes: 100, chunks: 1, parseMs: 50 });
+    tracker.record({ path: "b.ts", language: "typescript", bytes: 100, chunks: 1, parseMs: 200 });
+    tracker.record({ path: "c.ts", language: "typescript", bytes: 100, chunks: 1, parseMs: 10 });
+    tracker.record({ path: "d.ts", language: "typescript", bytes: 100, chunks: 1, parseMs: 150 });
+
+    const snapshot = tracker.snapshot();
+
+    expect(snapshot).toHaveLength(3);
+    // Slowest first
+    expect(snapshot[0].path).toBe("b.ts");
+    expect(snapshot[0].parseMs).toBe(200);
+    expect(snapshot[1].path).toBe("d.ts");
+    expect(snapshot[1].parseMs).toBe(150);
+    expect(snapshot[2].path).toBe("a.ts");
+    expect(snapshot[2].parseMs).toBe(50);
+    // Fastest evicted
+    expect(snapshot.find((e) => e.path === "c.ts")).toBeUndefined();
+  });
+
+  it("ignores entries with skipped: true", () => {
+    const tracker = new SlowFileTracker(5);
+
+    tracker.record({ path: "fast.ts", language: "typescript", bytes: 10, chunks: 1, parseMs: 5 });
+    tracker.record({
+      path: "skipped.ts",
+      language: "typescript",
+      bytes: 0,
+      chunks: 0,
+      parseMs: 9999,
+      skipped: true,
+      skipReason: "secrets",
+    });
+
+    const snapshot = tracker.snapshot();
+    expect(snapshot).toHaveLength(1);
+    expect(snapshot[0].path).toBe("fast.ts");
+  });
+
+  it("reset empties the heap", () => {
+    const tracker = new SlowFileTracker(3);
+    tracker.record({ path: "a.ts", language: "typescript", bytes: 100, chunks: 1, parseMs: 50 });
+    tracker.record({ path: "b.ts", language: "typescript", bytes: 100, chunks: 1, parseMs: 200 });
+
+    expect(tracker.snapshot()).toHaveLength(2);
+
+    tracker.reset();
+
+    expect(tracker.snapshot()).toHaveLength(0);
+  });
+});
+
+describe("DebugLogger - fileIngested", () => {
+  let consoleErrorSpy: any;
+
+  beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.clearAllMocks();
+    pipelineLog.resetProfiler();
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("emits a FILE_INGESTED step entry", () => {
+    const record: FileIngestRecord = {
+      path: "src/foo.ts",
+      language: "typescript",
+      bytes: 1024,
+      chunks: 5,
+      parseMs: 42,
+    };
+
+    pipelineLog.fileIngested({ component: "FileProcessor" }, record);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining("FILE_INGESTED"));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"path":"src/foo.ts"'));
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"parseMs":42'));
+  });
+
+  it("includes non-skipped files in SLOW_FILES_TOP block of summary", () => {
+    pipelineLog.fileIngested(
+      { component: "FileProcessor" },
+      { path: "slow.ts", language: "typescript", bytes: 2048, chunks: 8, parseMs: 500 },
+    );
+    pipelineLog.fileIngested(
+      { component: "FileProcessor" },
+      { path: "fast.ts", language: "typescript", bytes: 100, chunks: 1, parseMs: 5 },
+    );
+
+    const ctx: LogContext = { component: "TestPipeline" };
+    pipelineLog.summary(ctx, { test: true });
+
+    const summaryCall = (fs.appendFileSync as any).mock.calls.find(
+      (call: any[]) => typeof call[1] === "string" && call[1].includes("SUMMARY for TestPipeline"),
+    );
+    expect(summaryCall).toBeDefined();
+    expect(summaryCall[1]).toContain("SLOW_FILES_TOP_");
+    expect(summaryCall[1]).toContain("slow.ts");
+    expect(summaryCall[1]).toContain("fast.ts");
+  });
+
+  it("omits the SLOW_FILES_TOP block when no files tracked", () => {
+    pipelineLog.resetProfiler();
+
+    const ctx: LogContext = { component: "EmptyPipeline" };
+    pipelineLog.summary(ctx, { test: true });
+
+    const summaryCall = (fs.appendFileSync as any).mock.calls.find(
+      (call: any[]) => typeof call[1] === "string" && call[1].includes("SUMMARY for EmptyPipeline"),
+    );
+    expect(summaryCall).toBeDefined();
+    expect(summaryCall[1]).not.toContain("SLOW_FILES_TOP_");
+  });
+
+  it("resetProfiler also clears the slow files tracker", () => {
+    pipelineLog.fileIngested(
+      { component: "FileProcessor" },
+      { path: "will-be-reset.ts", language: "typescript", bytes: 100, chunks: 1, parseMs: 100 },
+    );
+
+    pipelineLog.resetProfiler();
+
+    const ctx: LogContext = { component: "AfterReset" };
+    pipelineLog.summary(ctx, { test: true });
+
+    const summaryCall = (fs.appendFileSync as any).mock.calls.find(
+      (call: any[]) => typeof call[1] === "string" && call[1].includes("SUMMARY for AfterReset"),
+    );
+    expect(summaryCall).toBeDefined();
+    expect(summaryCall[1]).not.toContain("SLOW_FILES_TOP_");
+    expect(summaryCall[1]).not.toContain("will-be-reset.ts");
   });
 });
 
