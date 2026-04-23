@@ -35,6 +35,8 @@ export class CollectionOps {
       pointsCount: 0,
       distance: request.distance || "Cosine",
       hybridEnabled: enableHybrid,
+      status: "green",
+      optimizerStatus: "ok",
     };
   }
 
