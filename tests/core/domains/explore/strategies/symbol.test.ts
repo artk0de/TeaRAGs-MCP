@@ -197,4 +197,107 @@ describe("SymbolSearchStrategy", () => {
     expect(mockRerank).toHaveBeenCalled();
     expect(result[0].score).toBe(42);
   });
+
+  describe("metaOnly git filtering (contract parity with semantic/hybrid)", () => {
+    const essentialKeys = ["git.file.commitCount", "git.file.ageDays", "git.file.taskIds"];
+
+    const buildChunkWithFullGit = () => ({
+      id: "fn-1",
+      payload: {
+        symbolId: "QdrantManager#list",
+        name: "list",
+        chunkType: "function",
+        relativePath: "src/qdrant.ts",
+        language: "typescript",
+        content: "function list() {}",
+        startLine: 10,
+        endLine: 12,
+        git: {
+          file: {
+            // Essential — should remain
+            commitCount: 27,
+            ageDays: 0,
+            taskIds: [],
+            // Internal — should NOT leak at metaOnly=true without rerank
+            dominantAuthor: "Alice",
+            dominantAuthorEmail: "alice@example.com",
+            lastCommitHash: "abc123",
+            lastModifiedAt: 1776952725,
+            firstCreatedAt: 1772631366,
+            enrichedAt: "2026-04-23T14:29:08.845Z",
+            linesAdded: 1028,
+            linesDeleted: 356,
+            fileChurnCount: 1384,
+            relativeChurn: 1.09,
+            bugFixRate: 27,
+            contributorCount: 2,
+            dominantAuthorPct: 79,
+          },
+          chunk: {
+            commitCount: 2,
+            ageDays: 28,
+            taskIds: [],
+            relativeChurn: 0.5,
+            bugFixRate: 10,
+          },
+        },
+      },
+    });
+
+    it("strips non-essential git fields when metaOnly=true and no rerank (contract parity)", async () => {
+      mockScrollFiltered.mockResolvedValueOnce([buildChunkWithFullGit()]).mockResolvedValueOnce([]);
+
+      const strategy = new SymbolSearchStrategy(qdrant, reranker, [], essentialKeys, buildRegistry(), {
+        symbol: "QdrantManager",
+      });
+      const result = await strategy.execute({ collectionName: "c", limit: 50, metaOnly: true });
+
+      expect(result).toHaveLength(1);
+      const git = result[0].payload?.git as Record<string, Record<string, unknown>> | undefined;
+      expect(git).toBeDefined();
+      // File-level: only essential
+      expect(Object.keys(git!.file).sort()).toEqual(["ageDays", "commitCount", "taskIds"]);
+      // Internal fields gone
+      expect(git!.file.dominantAuthorEmail).toBeUndefined();
+      expect(git!.file.enrichedAt).toBeUndefined();
+      expect(git!.file.lastCommitHash).toBeUndefined();
+      expect(git!.file.firstCreatedAt).toBeUndefined();
+      expect(git!.file.lastModifiedAt).toBeUndefined();
+      expect(git!.file.linesAdded).toBeUndefined();
+      expect(git!.file.linesDeleted).toBeUndefined();
+      expect(git!.file.fileChurnCount).toBeUndefined();
+      expect(git!.file.bugFixRate).toBeUndefined();
+      expect(git!.file.dominantAuthorPct).toBeUndefined();
+    });
+
+    it("leaves full git payload intact when metaOnly=false (no change to raw path)", async () => {
+      mockScrollFiltered.mockResolvedValueOnce([buildChunkWithFullGit()]).mockResolvedValueOnce([]);
+
+      const strategy = new SymbolSearchStrategy(qdrant, reranker, [], essentialKeys, buildRegistry(), {
+        symbol: "QdrantManager",
+      });
+      const result = await strategy.execute({ collectionName: "c", limit: 50, metaOnly: false });
+
+      expect(result).toHaveLength(1);
+      const git = result[0].payload?.git as Record<string, Record<string, unknown>> | undefined;
+      // Full payload preserved when metaOnly=false
+      expect(git!.file.dominantAuthor).toBe("Alice");
+      expect(git!.file.enrichedAt).toBeDefined();
+    });
+
+    it("preserves outline-specific fields (content, startLine, endLine) at metaOnly=true", async () => {
+      mockScrollFiltered.mockResolvedValueOnce([buildChunkWithFullGit()]).mockResolvedValueOnce([]);
+
+      const strategy = new SymbolSearchStrategy(qdrant, reranker, [], essentialKeys, buildRegistry(), {
+        symbol: "QdrantManager",
+      });
+      const result = await strategy.execute({ collectionName: "c", limit: 50, metaOnly: true });
+
+      // resolveSymbols already strips content on metaOnly; outline scaffolding stays
+      expect(result[0].payload?.symbolId).toBe("QdrantManager#list");
+      expect(result[0].payload?.startLine).toBe(10);
+      expect(result[0].payload?.endLine).toBe(12);
+      expect(result[0].payload?.content).toBeUndefined();
+    });
+  });
 });

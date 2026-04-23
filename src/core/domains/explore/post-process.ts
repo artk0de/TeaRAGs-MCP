@@ -125,6 +125,96 @@ function filterGitByEssential(
 }
 
 /**
+ * Apply essential-signal filter + ranking overlay to a result's payload.
+ *
+ * Trajectory-agnostic: namespace, level, and field are derived from the
+ * essentialKeys list at runtime (keys shaped `<namespace>.<level>.<field>`,
+ * e.g. `git.file.commitCount`). For each namespace discovered in
+ * essentialKeys, the corresponding payload branch is filtered to the allowed
+ * fields, and any ranking overlay's `{file, chunk}` signals are merged on top.
+ *
+ * Use case: outline strategies (find_symbol) need to enforce the metaOnly
+ * signal contract without losing synthetic outline fields (chunkCount,
+ * mergedChunkIds). filterMetaOnly rebuilds the payload from payloadSignals
+ * and would drop those synthetic fields; this helper preserves everything
+ * outside the signal namespaces.
+ *
+ * Overlay namespace: the current RankingOverlay shape exposes only
+ * `{file, chunk}` levels without namespace, so overlay signals are merged
+ * into each namespace present in essentialKeys. In practice only one
+ * trajectory contributes overlay at a time (rerank is single-preset), so the
+ * merge is unambiguous. When multi-namespace overlay lands, this helper
+ * needs a namespace hint — today's shape does not carry one.
+ */
+export function applyEssentialSignalsToOverlay(result: SearchResult, essentialKeys: string[]): SearchResult {
+  const byNamespace = groupEssentialKeysByNamespace(essentialKeys);
+  const overlay = result.rankingOverlay;
+  const overlayActive = overlay ? hasOverlayData(overlay) : false;
+
+  if (byNamespace.size === 0 && !overlayActive) return result;
+
+  const newPayload: Record<string, unknown> = { ...result.payload };
+
+  for (const [namespace, levelMap] of byNamespace) {
+    const nsData = result.payload?.[namespace] as Record<string, Record<string, unknown>> | undefined;
+    const filtered: Record<string, Record<string, unknown>> = {};
+
+    for (const [level, fields] of levelMap) {
+      const levelData = nsData?.[level];
+      const levelFiltered: Record<string, unknown> = {};
+      if (levelData) {
+        for (const field of fields) {
+          if (levelData[field] !== undefined) levelFiltered[field] = levelData[field];
+        }
+      }
+      if (Object.keys(levelFiltered).length > 0) filtered[level] = levelFiltered;
+    }
+
+    if (overlay && overlayActive) {
+      for (const level of ["file", "chunk"] as const) {
+        const overlayLevel = overlay[level];
+        if (overlayLevel && Object.keys(overlayLevel).length > 0) {
+          filtered[level] = { ...(filtered[level] ?? {}), ...overlayLevel };
+        }
+      }
+    }
+
+    if (Object.keys(filtered).length > 0) {
+      newPayload[namespace] = filtered;
+    } else if (newPayload[namespace] !== undefined) {
+      delete newPayload[namespace];
+    }
+  }
+
+  if (overlay?.preset) newPayload.preset = overlay.preset;
+
+  return { ...result, payload: newPayload };
+}
+
+/** Group `<namespace>.<level>.<field>` keys into namespace → level → fields. Flat keys (1 segment) are ignored — they live directly on the payload root and are preserved by caller. */
+function groupEssentialKeysByNamespace(essentialKeys: string[]): Map<string, Map<string, Set<string>>> {
+  const byNamespace = new Map<string, Map<string, Set<string>>>();
+  for (const key of essentialKeys) {
+    const parts = key.split(".");
+    if (parts.length < 3) continue;
+    const [namespace, level, ...fieldParts] = parts;
+    const field = fieldParts.join(".");
+    let levelMap = byNamespace.get(namespace);
+    if (!levelMap) {
+      levelMap = new Map();
+      byNamespace.set(namespace, levelMap);
+    }
+    let fieldSet = levelMap.get(level);
+    if (!fieldSet) {
+      fieldSet = new Set();
+      levelMap.set(level, fieldSet);
+    }
+    fieldSet.add(field);
+  }
+  return byNamespace;
+}
+
+/**
  * Format results for metaOnly mode: extract metadata + overlay signals,
  * exclude raw content. Returns null if metaOnly is falsy (caller should
  * use full results instead).

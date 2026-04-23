@@ -21,7 +21,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     protected readonly qdrant: QdrantManager,
     protected readonly reranker: Reranker,
     private readonly payloadSignals: PayloadSignalDescriptor[],
-    private readonly essentialKeys: string[],
+    protected readonly essentialKeys: string[],
   ) {}
 
   /** Main entry point: apply defaults → execute search → post-process. */
