@@ -51,6 +51,8 @@ describe("CollectionOps", () => {
         pointsCount: 0,
         distance: "Cosine",
         hybridEnabled: false,
+        status: "green",
+        optimizerStatus: "ok",
       });
     });
 
