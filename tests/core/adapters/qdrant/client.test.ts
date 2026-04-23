@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QdrantAliasManager } from "../../../../src/core/adapters/qdrant/aliases.js";
 import { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
-import { QdrantOperationError } from "../../../../src/core/adapters/qdrant/errors.js";
+import {
+  QdrantOperationError,
+  QdrantOptimizationInProgressError,
+} from "../../../../src/core/adapters/qdrant/errors.js";
 
 const mockClient = {
   createCollection: vi.fn().mockResolvedValue({}),
@@ -2441,6 +2444,52 @@ describe("QdrantManager", () => {
       const err = await manager.countPoints("col", { should: [] }).catch((e) => e);
       expect(err).toBeInstanceOf(QdrantOperationError);
       expect(err.message).toContain("too many filter conditions");
+    });
+
+    it("throws QdrantOptimizationInProgressError when count fails and collection is yellow", async () => {
+      const rawError = new Error("This operation was aborted");
+      mockClient.count.mockRejectedValueOnce(rawError);
+      mockClient.getCollection.mockResolvedValueOnce({
+        collection_name: "col",
+        status: "yellow",
+        optimizer_status: "ok",
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+        points_count: 100,
+      });
+
+      const err = await manager.countPoints("col").catch((e) => e);
+
+      expect(err).toBeInstanceOf(QdrantOptimizationInProgressError);
+      expect(err.cause).toBe(rawError);
+    });
+
+    it("falls through to QdrantOperationError when count fails but collection is green", async () => {
+      const rawError = Object.assign(new Error("boom"), {
+        data: { status: { error: "transient" } },
+      });
+      mockClient.count.mockRejectedValueOnce(rawError);
+      mockClient.getCollection.mockResolvedValueOnce({
+        collection_name: "col",
+        status: "green",
+        optimizer_status: "ok",
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+        points_count: 100,
+      });
+
+      const err = await manager.countPoints("col").catch((e) => e);
+
+      expect(err).toBeInstanceOf(QdrantOperationError);
+      expect(err.message).toContain("transient");
+    });
+
+    it("falls through to QdrantOperationError when probe itself fails", async () => {
+      const rawError = new Error("aborted");
+      mockClient.count.mockRejectedValueOnce(rawError);
+      mockClient.getCollection.mockRejectedValueOnce(new Error("probe failed"));
+
+      const err = await manager.countPoints("col").catch((e) => e);
+
+      expect(err).toBeInstanceOf(QdrantOperationError);
     });
   });
 

@@ -6,6 +6,7 @@ import { QdrantAliasManager } from "./aliases.js";
 import {
   CollectionAlreadyExistsError,
   QdrantOperationError,
+  QdrantOptimizationInProgressError,
   QdrantPointNotFoundError,
   QdrantUnavailableError,
 } from "./errors.js";
@@ -314,6 +315,18 @@ export class QdrantManager {
       return result.count;
     } catch (error: unknown) {
       if (error instanceof QdrantUnavailableError) throw error;
+
+      // Probe: is Qdrant still alive (yellow) or genuinely unreachable?
+      try {
+        const info = await this.call(async () => this.client.getCollection(collectionName));
+        if (info.status === "yellow") {
+          throw new QdrantOptimizationInProgressError(collectionName, error instanceof Error ? error : undefined);
+        }
+      } catch (probeError) {
+        if (probeError instanceof QdrantOptimizationInProgressError) throw probeError;
+        // probe failed too → fall through to generic QdrantOperationError below
+      }
+
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
       throw new QdrantOperationError(
