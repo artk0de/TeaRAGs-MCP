@@ -118,6 +118,8 @@ export class MockQdrantManager implements Partial<QdrantManager> {
       hybridEnabled: collection?.hybridEnabled || false,
       vectorSize: collection?.vectorSize || 384,
       distance: collection?.distance || "Cosine",
+      status: "green" as const,
+      optimizerStatus: "ok",
     };
   }
 
