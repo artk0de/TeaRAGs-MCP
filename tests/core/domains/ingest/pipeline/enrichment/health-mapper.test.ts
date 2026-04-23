@@ -230,4 +230,79 @@ describe("mapMarkerToHealth", () => {
     const result = mapMarkerToHealth(map);
     expect(result!.git.file.durationMs).toBe(0);
   });
+
+  it("recovers in_progress with startedAt older than 1 hour and no completedAt to failed", () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const map: EnrichmentMarkerMap = {
+      git: makeMarker({
+        file: { status: "in_progress", unenrichedChunks: 4, startedAt: twoHoursAgo },
+        chunk: { status: "pending", unenrichedChunks: 0 },
+      }),
+    };
+
+    const result = mapMarkerToHealth(map);
+    expect(result!.git.file.status).toBe("failed");
+    expect(result!.git.file.message).toMatch(/crashed|recovered/i);
+    expect(result!.git.file.startedAt).toBe(twoHoursAgo);
+  });
+
+  it("keeps in_progress when startedAt is within 1 hour (still running)", () => {
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const now = new Date().toISOString();
+    const map: EnrichmentMarkerMap = {
+      git: makeMarker({
+        file: {
+          status: "in_progress",
+          unenrichedChunks: 2,
+          startedAt: tenMinutesAgo,
+          lastProgressAt: now,
+        },
+        chunk: { status: "pending", unenrichedChunks: 0 },
+      }),
+    };
+
+    const result = mapMarkerToHealth(map);
+    expect(result!.git.file.status).toBe("in_progress");
+    expect(result!.git.file.message).toBe("Enrichment in progress...");
+  });
+
+  it("recovers to failed when startedAt >1h AND lastProgressAt >2min (crashed-long-ago wins)", () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const map: EnrichmentMarkerMap = {
+      git: makeMarker({
+        file: {
+          status: "in_progress",
+          unenrichedChunks: 4,
+          startedAt: twoHoursAgo,
+          lastProgressAt: fiveMinutesAgo,
+        },
+        chunk: { status: "pending", unenrichedChunks: 0 },
+      }),
+    };
+
+    const result = mapMarkerToHealth(map);
+    expect(result!.git.file.status).toBe("failed");
+    expect(result!.git.file.message).toMatch(/crashed|recovered/i);
+  });
+
+  it("does not recover when startedAt >1h but completedAt is set (completed run)", () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const map: EnrichmentMarkerMap = {
+      git: makeMarker({
+        file: {
+          status: "in_progress",
+          unenrichedChunks: 0,
+          startedAt: twoHoursAgo,
+          completedAt: oneHourAgo,
+        },
+        chunk: { status: "pending", unenrichedChunks: 0 },
+      }),
+    };
+
+    const result = mapMarkerToHealth(map);
+    // completedAt defined => crashed-long-ago detection should not trigger
+    expect(result!.git.file.status).toBe("in_progress");
+  });
 });
