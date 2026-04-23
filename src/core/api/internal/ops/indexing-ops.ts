@@ -130,6 +130,20 @@ export class IndexingOps {
       },
     };
 
+    if (qdrantHealthy) {
+      try {
+        const absolutePath = await validatePath(path);
+        const collectionName = resolveCollectionName(absolutePath);
+        if (await this.qdrant.collectionExists(collectionName)) {
+          const info = await this.qdrant.getCollectionInfo(collectionName);
+          infraHealth.qdrant.status = info.status;
+          infraHealth.qdrant.optimizerStatus = info.optimizerStatus;
+        }
+      } catch {
+        // Non-fatal: status/optimizerStatus stay undefined; available flag already set.
+      }
+    }
+
     if (!qdrantHealthy) {
       return { isIndexed: false, status: "unavailable", infraHealth };
     }
