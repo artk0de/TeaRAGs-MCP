@@ -7,13 +7,14 @@
  */
 
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../types.js";
-import { NotIndexedError, ReindexFailedError, SnapshotMissingError } from "./errors.js";
+import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "./errors.js";
 import { BaseIndexingPipeline, type PipelineTuning, type ProcessingContext } from "./pipeline/base.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
 import { storeIndexingMarker } from "./pipeline/indexing-marker.js";
 import { pipelineLog } from "./pipeline/infra/debug-logger.js";
 import { isDebug } from "./pipeline/infra/runtime.js";
 import type { FileScanner } from "./pipeline/scanner.js";
+import type { DeletionOutcome } from "./sync/deletion-outcome.js";
 import { performDeletion, type DeletionConfig } from "./sync/deletion-strategy.js";
 import type { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
 import { SnapshotCleaner } from "./sync/snapshot-cleaner.js";
@@ -194,6 +195,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     chunksDeleted: number;
     processingCtx: ProcessingContext;
     chunkMap: Map<string, ChunkLookupEntry[]>;
+    deletionOutcome?: DeletionOutcome;
   }> {
     const changedPaths = [...changes.added, ...changes.modified];
     const pCtx = this.initProcessing(
@@ -220,14 +222,17 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     // Level 1: delete old chunks + process added files in parallel
     const deleteStartTime = Date.now();
     let chunksDeleted = 0;
+    let deletionOutcome: DeletionOutcome | undefined;
     const deletePromise = performDeletion(
       this.qdrant,
       ctx.collectionName,
       filesToDelete,
       this.deleteConfig,
       progressCallback,
-    ).then((count) => {
-      chunksDeleted = count;
+    ).then((outcome) => {
+      deletionOutcome = outcome;
+      ({ chunksDeleted } = outcome);
+      return outcome;
     });
     const addPromise = processRelativeFiles(
       addedFiles,
@@ -250,6 +255,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       durationMs: Date.now() - deleteStartTime,
       deleted: filesToDelete.length,
     });
+
+    if (deletionOutcome && !deletionOutcome.isFullSuccess()) {
+      pipelineLog.step({ component: "Reindex" }, "DELETE_PARTIAL_FAILURE", {
+        failedFiles: deletionOutcome.failed.size,
+        succeededFiles: deletionOutcome.succeeded.size,
+        failedSample: [...deletionOutcome.failed].slice(0, 20),
+      });
+    }
 
     if (isDebug()) {
       console.error(`[Reindex] Delete complete, starting modified indexing (add still running in parallel)`);
@@ -283,7 +296,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     this.logPipelineStats(pCtx, parallelStart);
 
-    return { chunksAdded: addedChunks + modifiedChunks, chunksDeleted, processingCtx: pCtx, chunkMap };
+    return { chunksAdded: addedChunks + modifiedChunks, chunksDeleted, processingCtx: pCtx, chunkMap, deletionOutcome };
   }
 
   // ── Finalization ─────────────────────────────────────────
@@ -335,20 +348,26 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     pipelineLog.reindexPhase("DELETE_ONLY_START", { files: filesToDelete.length });
 
-    const chunksDeleted = await performDeletion(
+    const outcome = await performDeletion(
       this.qdrant,
       ctx.collectionName,
       filesToDelete,
       this.deleteConfig,
       progressCallback,
     );
-    stats.chunksDeleted = chunksDeleted;
+    if (!outcome.isFullSuccess()) {
+      throw new PartialDeletionError(outcome);
+    }
+    stats.chunksDeleted = outcome.chunksDeleted;
 
-    pipelineLog.reindexPhase("DELETE_ONLY_COMPLETE", { files: filesToDelete.length, chunksDeleted });
+    pipelineLog.reindexPhase("DELETE_ONLY_COMPLETE", {
+      files: filesToDelete.length,
+      chunksDeleted: outcome.chunksDeleted,
+    });
 
     if (isDebug()) {
       console.error(
-        `[Reindex] Deletion-only: removed ${filesToDelete.length} files (${chunksDeleted} chunks), skipping enrichment`,
+        `[Reindex] Deletion-only: removed ${filesToDelete.length} files (${outcome.chunksDeleted} chunks), skipping enrichment`,
       );
     }
   }

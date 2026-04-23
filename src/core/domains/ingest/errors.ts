@@ -4,6 +4,7 @@
 
 import type { ErrorCode } from "../../contracts/errors.js";
 import { TeaRagsError } from "../../infra/errors.js";
+import type { DeletionOutcome } from "./sync/deletion-outcome.js";
 
 /**
  * Abstract base for all ingest domain errors.
@@ -110,5 +111,24 @@ export class IndexingFailedError extends IngestError {
       httpStatus: 500,
       cause,
     });
+  }
+}
+
+/**
+ * One or more files failed to delete during a reindex pass.
+ * Carries the DeletionOutcome so callers can inspect which paths failed.
+ */
+export class PartialDeletionError extends IngestError {
+  public readonly outcome: DeletionOutcome;
+
+  constructor(outcome: DeletionOutcome) {
+    const totalAttempted = outcome.succeeded.size + outcome.failed.size;
+    super({
+      code: "INGEST_PARTIAL_DELETION",
+      message: `Failed to delete ${outcome.failed.size} of ${totalAttempted} files`,
+      hint: "Rerun reindex to retry, or /tea-rags:force-reindex for full rebuild.",
+      httpStatus: 500,
+    });
+    this.outcome = outcome;
   }
 }

@@ -10,6 +10,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { ProgressCallback } from "../../../types.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
+import { createDeletionOutcome, type DeletionOutcome } from "./deletion-outcome.js";
 
 export interface DeletionConfig {
   batchSize: number;
@@ -18,6 +19,13 @@ export interface DeletionConfig {
 
 /**
  * Delete chunks for a list of relative file paths using a 3-level fallback cascade.
+ *
+ * Returns a DeletionOutcome whose `succeeded` / `failed` sets reflect per-path
+ * results. L0 (batched) and L1 (bulk) are atomic — on success every path is
+ * considered succeeded. Only L2 (per-file filter deletion) can produce a
+ * partial outcome: each individual failure calls `outcome.markFailed(path)`
+ * so upstream callers can gate modified-file upsert on failed paths instead
+ * of silently proceeding (2026-04-23 orphan-duplicate incident).
  */
 export async function performDeletion(
   qdrant: QdrantManager,
@@ -25,8 +33,9 @@ export async function performDeletion(
   filesToDelete: string[],
   deleteConfig: DeletionConfig,
   progressCallback?: ProgressCallback,
-): Promise<number> {
-  if (filesToDelete.length === 0) return 0;
+): Promise<DeletionOutcome> {
+  const outcome = createDeletionOutcome(filesToDelete);
+  if (filesToDelete.length === 0) return outcome;
 
   const totalBefore = (await qdrant.getCollectionInfo(collectionName)).pointsCount;
 
@@ -94,6 +103,7 @@ export async function performDeletion(
           await qdrant.deletePointsByFilter(collectionName, filter);
           deleted++;
         } catch (innerError) {
+          outcome.markFailed(relativePath);
           failed++;
           if (isDebug()) {
             console.error(`[Reindex] FALLBACK L2: Failed to delete ${relativePath}:`, innerError);
@@ -105,6 +115,7 @@ export async function performDeletion(
         deleted,
         failed,
         durationMs: Date.now() - individualStart,
+        failedPaths: [...outcome.failed].slice(0, 50),
       });
       console.error(
         `[Reindex] FALLBACK L2 COMPLETE: ${deleted} deleted, ${failed} failed in ${Date.now() - individualStart}ms`,
@@ -113,5 +124,6 @@ export async function performDeletion(
   }
 
   const totalAfter = (await qdrant.getCollectionInfo(collectionName)).pointsCount;
-  return Math.max(0, totalBefore - totalAfter);
+  outcome.chunksDeleted = Math.max(0, totalBefore - totalAfter);
+  return outcome;
 }

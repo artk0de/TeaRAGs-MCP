@@ -4,10 +4,12 @@ import {
   CollectionExistsError,
   IngestError,
   NotIndexedError,
+  PartialDeletionError,
   ReindexFailedError,
   SnapshotCorruptedError,
   SnapshotMissingError,
 } from "../../../../src/core/domains/ingest/errors.js";
+import { createDeletionOutcome } from "../../../../src/core/domains/ingest/sync/deletion-outcome.js";
 import { TeaRagsError } from "../../../../src/core/infra/errors.js";
 
 describe("IngestError hierarchy", () => {
@@ -101,6 +103,43 @@ describe("IngestError hierarchy", () => {
       expect(err.message).toContain("/path");
       expect(err.cause).toBe(cause);
       expect(err).toBeInstanceOf(IngestError);
+    });
+  });
+
+  describe("PartialDeletionError", () => {
+    it("has correct code, httpStatus, and message reflecting failed/attempted counts", () => {
+      const outcome = createDeletionOutcome(["a.ts", "b.ts", "c.ts", "d.ts", "e.ts"]);
+      outcome.markFailed("b.ts");
+      outcome.markFailed("d.ts");
+
+      const err = new PartialDeletionError(outcome);
+
+      expect(err.code).toBe("INGEST_PARTIAL_DELETION");
+      expect(err.httpStatus).toBe(500);
+      expect(err.message).toContain("2 of 5");
+      expect(err.hint).toContain("force-reindex");
+    });
+
+    it("preserves the outcome reference for downstream inspection", () => {
+      const outcome = createDeletionOutcome(["a.ts", "b.ts"]);
+      outcome.markFailed("a.ts");
+
+      const err = new PartialDeletionError(outcome);
+
+      expect(err.outcome).toBe(outcome);
+      expect(err.outcome.failed.has("a.ts")).toBe(true);
+    });
+
+    it("instanceof chain is correct", () => {
+      const outcome = createDeletionOutcome(["a.ts"]);
+      outcome.markAllFailed();
+
+      const err = new PartialDeletionError(outcome);
+
+      expect(err).toBeInstanceOf(PartialDeletionError);
+      expect(err).toBeInstanceOf(IngestError);
+      expect(err).toBeInstanceOf(TeaRagsError);
+      expect(err).toBeInstanceOf(Error);
     });
   });
 });
