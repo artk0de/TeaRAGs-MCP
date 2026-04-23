@@ -541,6 +541,59 @@ describe("StatusModule", () => {
         expect(await qdrant.collectionExists(versionedName)).toBe(false);
       });
 
+      it("should prefer aliased _v1 over completed-but-orphaned _v2 (higher N)", async () => {
+        // Repro for the bug observed live: after a force-reindex rotation the
+        // alias may point back to _v1 while an older _v2 is left behind with
+        // indexingComplete=true. `findLatestVersionedCollection` returns _v2
+        // by numeric suffix, but the alias is the real source of truth.
+        const { resolveCollectionName, validatePath } =
+          await import("../../../../../src/core/infra/collection-name.js");
+        const { INDEXING_METADATA_ID } = await import("../../../../../src/core/domains/ingest/constants.js");
+        const absolutePath = await validatePath(codebaseDir);
+        const collectionName = resolveCollectionName(absolutePath);
+
+        // _v1 is the fresh, aliased collection (514 chunks + marker)
+        await qdrant.createCollection(`${collectionName}_v1`, 384, "Cosine", false);
+        await qdrant.addPoints(`${collectionName}_v1`, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: {
+              indexingComplete: true,
+              completedAt: new Date().toISOString(),
+              embeddingModel: "fresh-model",
+            },
+          },
+          { id: "fresh-a", vector: new Array(384).fill(0.1), payload: { relativePath: "fresh-a.ts" } },
+          { id: "fresh-b", vector: new Array(384).fill(0.2), payload: { relativePath: "fresh-b.ts" } },
+        ]);
+        await qdrant.aliases.createAlias(collectionName, `${collectionName}_v1`);
+
+        // _v2 is orphaned: completed (not stale) but not aliased. 1 chunk only.
+        await qdrant.createCollection(`${collectionName}_v2`, 384, "Cosine", false);
+        await qdrant.addPoints(`${collectionName}_v2`, [
+          {
+            id: INDEXING_METADATA_ID,
+            vector: new Array(384).fill(0),
+            payload: {
+              indexingComplete: true,
+              completedAt: new Date(Date.now() - 60 * 1000).toISOString(),
+              embeddingModel: "stale-model",
+            },
+          },
+          { id: "stale-chunk", vector: new Array(384).fill(0.3), payload: { relativePath: "stale.ts" } },
+        ]);
+
+        const status = await ingest.getIndexStatus(codebaseDir);
+
+        // Must read from _v1 (alias target), not _v2 (higher N but orphan).
+        expect(status.status).toBe("indexed");
+        expect(status.isIndexed).toBe(true);
+        expect(status.collectionName).toBe(collectionName);
+        expect(status.chunksCount).toBe(2);
+        expect(status.embeddingModel).toBe("fresh-model");
+      });
+
       it("should cleanup stale _v2 and return indexed from alias target _v1", async () => {
         const { resolveCollectionName, validatePath } =
           await import("../../../../../src/core/infra/collection-name.js");
