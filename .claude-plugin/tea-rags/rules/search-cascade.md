@@ -207,6 +207,11 @@ Existing preset fits?
     custom: { bugFix: 0.4, volatility: 0.3, knowledgeSilo: 0.3 }
 ```
 
+For interpreting rerank overlay signals architecturally (god module vs bug
+attractor, healthy owner vs toxic silo, legacy minefield vs proven stable),
+consult `references/signal-interpretation.md`. Single overlay signals are
+ambiguous — pair diagnostics there map combinations to patterns.
+
 ## Filter Level: file vs chunk
 
 - **`level: "chunk"`** (default) — filters against `git.chunk.*` fields
@@ -345,3 +350,6 @@ For detailed guidance on specific topics, read these when needed:
   codebases
 - `references/pagination.md` — pagination, reformulation, stop conditions,
   no-match detection, disambiguation
+- `references/signal-interpretation.md` — pair diagnostics for overlay signals
+  (god module vs bug attractor, healthy owner vs toxic silo, legacy minefield vs
+  proven stable, interpretation anti-patterns)

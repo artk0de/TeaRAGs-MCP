@@ -71,6 +71,10 @@ When rank_chunks returns overlay labels:
 - file.bugFixRate "concerning" + relativeChurn high → **secondary suspect**
 - file.bugFixRate "healthy" → **SKIP**
 
+**High bugFixRate + high `imports` (fan-in):** suspect may be a coupling point
+propagating bugs from upstream, not the origin. Check callers before fixing
+here. See `references/signal-interpretation.md` (bug attractor vs coupling).
+
 ## After root cause found
 
 Pattern found → `find_similar` from chunk ID for copy-paste bugs in other files.

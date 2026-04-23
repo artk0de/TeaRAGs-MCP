@@ -27,7 +27,15 @@ export class DangerousPreset implements RerankPreset {
     blockPenalty: -0.05,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["bugFixRate", "churnVolatility", "dominantAuthorPct", "contributorCount"],
-    chunk: ["commitCount", "churnRatio", "bugFixRate"],
+    file: [
+      "bugFixRate",
+      "churnVolatility",
+      "dominantAuthorPct",
+      "contributorCount",
+      "ageDays",
+      "imports",
+      "relativeChurn",
+    ],
+    chunk: ["commitCount", "churnRatio", "bugFixRate", "ageDays", "relativeChurn", "contributorCount"],
   };
 }

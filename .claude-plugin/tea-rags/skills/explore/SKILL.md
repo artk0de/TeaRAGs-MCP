@@ -204,6 +204,12 @@ find_symbol:
 Extract per-symbol: bugFixRate, ageDays, churnVolatility, commitCount,
 dominantAuthor, dominantAuthorPct. These feed DDG strategy selection.
 
+**Interpretation:** when presenting overlay findings to the user (pre-gen
+context or explore), do not read single signals in isolation. Consult
+`references/signal-interpretation.md` for pair diagnostics — especially when
+churn, age, or ownership are high. Single-signal conclusions mislead (high churn
+≠ active development; mono ownership ≠ silo risk).
+
 ### PG-3. DEEP TRACE (optional)
 
 If specific symbols need structural understanding before generation:
