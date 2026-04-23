@@ -290,9 +290,17 @@ function formatInfraHealth(h: NonNullable<IndexStatus["infraHealth"]>): string {
   const qdrantStatus = h.qdrant.available ? "available" : "unavailable";
   const embeddingStatus = h.embedding.available ? "available" : "unavailable";
   const embeddingUrl = h.embedding.url ? ` (${h.embedding.url})` : "";
+  const collectionHealth =
+    h.qdrant.status && h.qdrant.status !== "green"
+      ? ` [collection status: ${h.qdrant.status}${
+          h.qdrant.optimizerStatus && h.qdrant.optimizerStatus !== "ok"
+            ? `, optimizer: ${h.qdrant.optimizerStatus}`
+            : ""
+        }]`
+      : "";
   return (
     `Infrastructure:\n` +
-    `  Qdrant: ${qdrantStatus} (${h.qdrant.url})\n` +
+    `  Qdrant: ${qdrantStatus} (${h.qdrant.url})${collectionHealth}\n` +
     `  Embedding (${h.embedding.provider}): ${embeddingStatus}${embeddingUrl}`
   );
 }

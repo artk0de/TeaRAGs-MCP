@@ -73,12 +73,23 @@ describe("IngestFacade", () => {
     const reranker = opts.withReranker ? { invalidateStats: vi.fn() } : undefined;
     const payloadSignals = opts.withStats ? [{ key: "language", label: "Language" }] : undefined;
 
+    const qdrant = {
+      collectionExists: vi.fn().mockResolvedValue(false),
+      checkHealth: vi.fn().mockResolvedValue(true),
+      getCollectionInfo: vi.fn().mockResolvedValue({
+        name: "test_col",
+        vectorSize: 384,
+        pointsCount: 0,
+        distance: "Cosine" as const,
+        hybridEnabled: false,
+        status: "green" as const,
+        optimizerStatus: "ok",
+      }),
+      url: "http://localhost:6333",
+    };
+
     const facade = new IngestFacade({
-      qdrant: {
-        collectionExists: vi.fn().mockResolvedValue(false),
-        checkHealth: vi.fn().mockResolvedValue(true),
-        url: "http://localhost:6333",
-      } as any,
+      qdrant: qdrant as any,
       embeddings: {
         embed: vi.fn().mockResolvedValue({ embedding: [0.1], dimensions: 1 }),
         checkHealth: vi.fn().mockResolvedValue(true),
@@ -91,7 +102,7 @@ describe("IngestFacade", () => {
       reranker: reranker as any,
     });
 
-    return { facade, statsCache, reranker };
+    return { facade, statsCache, reranker, qdrant };
   }
 
   it("delegates indexCodebase and refreshes stats", async () => {
@@ -123,14 +134,45 @@ describe("IngestFacade", () => {
     expect(result).toEqual({ chunksIndexed: 10 });
   });
 
-  it("delegates getIndexStatus with infraHealth", async () => {
-    const { facade } = makeFacade();
+  it("delegates getIndexStatus with infraHealth including Qdrant collection status", async () => {
+    const { facade, qdrant } = makeFacade();
+    qdrant.collectionExists.mockResolvedValue(true);
     const status = await facade.getIndexStatus("/tmp/test-project");
     expect(status).toMatchObject({ indexed: true });
     expect(status.infraHealth).toEqual({
-      qdrant: { available: true, url: "http://localhost:6333" },
+      qdrant: {
+        available: true,
+        url: "http://localhost:6333",
+        status: "green",
+        optimizerStatus: "ok",
+      },
       embedding: { available: true, provider: "mock" },
     });
+  });
+
+  it("surfaces yellow collection status through infraHealth.qdrant", async () => {
+    const { facade, qdrant } = makeFacade();
+    qdrant.collectionExists.mockResolvedValue(true);
+    qdrant.getCollectionInfo.mockResolvedValue({
+      name: "test_col",
+      vectorSize: 384,
+      pointsCount: 100,
+      distance: "Cosine" as const,
+      hybridEnabled: false,
+      status: "yellow" as const,
+      optimizerStatus: "ok",
+    });
+
+    const status = await facade.getIndexStatus("/tmp/test-project");
+    expect(status.infraHealth?.qdrant.status).toBe("yellow");
+    expect(status.infraHealth?.qdrant.optimizerStatus).toBe("ok");
+  });
+
+  it("omits status fields from infraHealth when collection does not yet exist", async () => {
+    const { facade } = makeFacade();
+    const status = await facade.getIndexStatus("/tmp/test-project");
+    expect(status.infraHealth?.qdrant.status).toBeUndefined();
+    expect(status.infraHealth?.qdrant.optimizerStatus).toBeUndefined();
   });
 
   it("delegates clearIndex", async () => {

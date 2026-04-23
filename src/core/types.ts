@@ -160,7 +160,14 @@ export interface IndexStatus {
   sparseVersion?: number;
   /** Infrastructure health status (Qdrant + embedding provider) */
   infraHealth?: {
-    qdrant: { available: boolean; url: string };
+    qdrant: {
+      available: boolean;
+      url: string;
+      /** Qdrant collection health. `yellow` = background optimization running. */
+      status?: "green" | "yellow" | "red";
+      /** Optimizer state (`"ok"` or `"unknown"`). */
+      optimizerStatus?: string;
+    };
     embedding: { available: boolean; provider: string; url?: string };
   };
 }
