@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { IngestFacade } from "../../../../src/core/api/index.js";
+import { PartialDeletionError } from "../../../../src/core/domains/ingest/errors.js";
 import { EnrichmentCoordinator } from "../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { ParallelFileSynchronizer } from "../../../../src/core/domains/ingest/sync/parallel-synchronizer.js";
 import { Migrator } from "../../../../src/core/infra/migration/migrator.js";
@@ -689,6 +690,59 @@ console.log('This file has secrets');`,
       const stats = await ingest.reindexChanges(codebaseDir);
       expect(stats.filesModified).toBe(1);
       expect(stats.status).toBe("completed");
+    });
+  });
+
+  describe("deletion-only partial failure surfacing", () => {
+    it("throws PartialDeletionError from deletion-only path when every level fails", async () => {
+      await createTestFile(codebaseDir, "doomed.ts", "export const v1 = 1;\nconsole.log('Doomed file for deletion');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // Delete the file locally so reindex sees it as deleted → triggers deletion-only path
+      await fs.unlink(join(codebaseDir, "doomed.ts"));
+
+      // Force total deletion failure through all 3 levels
+      vi.spyOn(qdrant, "deletePointsByPathsBatched").mockRejectedValueOnce(new Error("L0 timeout"));
+      vi.spyOn(qdrant, "deletePointsByPaths").mockRejectedValueOnce(new Error("L1 timeout"));
+      vi.spyOn(qdrant, "deletePointsByFilter").mockRejectedValue(new Error("L2 per-file timeout"));
+
+      // Typed errors propagate as-is through wrapUnexpectedError
+      await expect(ingest.reindexChanges(codebaseDir)).rejects.toMatchObject({
+        code: "INGEST_PARTIAL_DELETION",
+      });
+    });
+
+    it("completes normally when deletion-only path fully succeeds", async () => {
+      await createTestFile(codebaseDir, "safe.ts", "export const v1 = 1;\nconsole.log('Safe for deletion');");
+      await ingest.indexCodebase(codebaseDir);
+
+      await fs.unlink(join(codebaseDir, "safe.ts"));
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.status).toBe("completed");
+      expect(stats.filesDeleted).toBe(1);
+    });
+
+    it("PartialDeletionError carries the outcome with failed paths", async () => {
+      await createTestFile(codebaseDir, "doomed.ts", "export const v1 = 1;\nconsole.log('Doomed file for deletion');");
+      await ingest.indexCodebase(codebaseDir);
+
+      await fs.unlink(join(codebaseDir, "doomed.ts"));
+
+      vi.spyOn(qdrant, "deletePointsByPathsBatched").mockRejectedValueOnce(new Error("L0 timeout"));
+      vi.spyOn(qdrant, "deletePointsByPaths").mockRejectedValueOnce(new Error("L1 timeout"));
+      vi.spyOn(qdrant, "deletePointsByFilter").mockRejectedValue(new Error("L2 per-file timeout"));
+
+      try {
+        await ingest.reindexChanges(codebaseDir);
+        throw new Error("expected rejection");
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(PartialDeletionError);
+        const partial = err as PartialDeletionError;
+        expect(partial.outcome.failed.has("doomed.ts")).toBe(true);
+        expect(partial.outcome.isFullSuccess()).toBe(false);
+      }
     });
   });
 });
