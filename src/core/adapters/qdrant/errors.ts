@@ -78,3 +78,18 @@ export class CollectionAlreadyExistsError extends InfraError {
     });
   }
 }
+
+export class QdrantOptimizationInProgressError extends InfraError {
+  constructor(collectionName: string, cause?: Error) {
+    super({
+      code: "INFRA_QDRANT_OPTIMIZATION_IN_PROGRESS",
+      message: `Qdrant collection "${collectionName}" is optimizing`,
+      hint:
+        `Collection is under background optimization (status=yellow). ` +
+        `Wait 1-5 minutes and retry, or run /tea-rags:force-reindex to build ` +
+        `a new collection in parallel without waiting.`,
+      httpStatus: 503,
+      cause,
+    });
+  }
+}
