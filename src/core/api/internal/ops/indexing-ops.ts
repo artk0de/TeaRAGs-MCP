@@ -18,11 +18,6 @@ import { computeCollectionStats } from "../../../domains/ingest/collection-stats
 import { INDEXING_METADATA_ID } from "../../../domains/ingest/constants.js";
 import type { IndexPipeline } from "../../../domains/ingest/indexing.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
-import {
-  invalidateRecoveryCache,
-  isRecoveryComplete,
-  markRecoveryComplete,
-} from "../../../domains/ingest/pipeline/enrichment/recovery-cache.js";
 import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import type { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
@@ -239,10 +234,6 @@ export class IndexingOps {
 
     const changeStats = await this.reindex.reindexChanges(path, progressCallback, overrides);
 
-    if (changeStats.chunksAdded > 0) {
-      invalidateRecoveryCache(this.snapshotDir, collectionName);
-    }
-
     void this.refreshStats(path);
     return toIndexStats(changeStats);
   }
@@ -311,13 +302,13 @@ export class IndexingOps {
   }
 
   private dispatchRecovery(collectionName: string, absolutePath: string): void {
-    if (isRecoveryComplete(this.snapshotDir, collectionName)) return;
-    void this.enrichment
-      .runRecovery(collectionName, absolutePath)
-      .then(() => {
-        markRecoveryComplete(this.snapshotDir, collectionName);
-      })
-      .catch(() => {});
+    // Fire-and-forget. runRecovery is cheap when there's no work:
+    // recoverFileLevel/recoverChunkLevel short-circuit on empty scroll, and
+    // the updateEnrichmentMarker writeback is guarded by runId snapshot inside
+    // runRecovery. No disk-based completion flag — the only source of truth is
+    // the collection itself, so an incremental reindex with 0 changes still
+    // triggers recovery for stale/unenriched state left by prior runs.
+    void this.enrichment.runRecovery(collectionName, absolutePath).catch(() => {});
   }
 }
 
