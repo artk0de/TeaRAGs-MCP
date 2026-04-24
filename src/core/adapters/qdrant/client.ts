@@ -47,6 +47,9 @@ export interface SparseVector {
 }
 
 export class QdrantManager {
+  /** Page size for scroll pagination when collecting point IDs by filter. */
+  private static readonly SCROLL_PAGE_SIZE = 1000;
+
   private client: QdrantClient;
   private qdrantUrl: string;
   private readonly apiKey?: string;
@@ -466,28 +469,48 @@ export class QdrantManager {
   }
 
   /**
-   * Disable indexing for bulk upload performance.
-   * Call enableIndexing() after upload completes.
+   * Pause both HNSW indexing and segment vacuum during a large-delta reindex.
+   *
+   * After a bulk delete on embedded Qdrant the optimizer repacks segments
+   * (triggered by `deleted_threshold`, default 0.2 = ≥20% tombstones). On
+   * multi-thousand-file deletes this holds WAL busy for several minutes and
+   * starves concurrent upsert HTTP requests until they hit the 300s client
+   * timeout (taxdome incident 2026-04-24T16-34).
+   *
+   * Setting `deleted_threshold: 0.99` prevents vacuum from firing mid-reindex.
+   * Setting `indexing_threshold: 0` pauses HNSW rebuilds. Both resume via
+   * {@link resumeOptimizer}, which also triggers a one-shot optimization pass
+   * when thresholds revert.
    */
-  async disableIndexing(collectionName: string): Promise<void> {
+  async pauseOptimizer(collectionName: string): Promise<void> {
     await this.call(async () =>
       this.client.updateCollection(collectionName, {
         optimizers_config: {
           indexing_threshold: 0,
+          deleted_threshold: 0.99,
         },
       }),
     );
   }
 
   /**
-   * Re-enable indexing after bulk upload.
-   * @param threshold - Default 20000 (Qdrant default)
+   * Resume optimizer after reindex: restore thresholds to their productive
+   * defaults. Reverting `deleted_threshold` naturally triggers one optimizer
+   * pass to repack any tombstones accumulated during the paused interval.
+   *
+   * @param options.indexingThreshold - HNSW indexing threshold (Qdrant default: 20000)
+   * @param options.deletedThreshold - Vacuum trigger ratio (Qdrant default: 0.2)
    */
-  async enableIndexing(collectionName: string, threshold = 20000): Promise<void> {
+  async resumeOptimizer(
+    collectionName: string,
+    options: { indexingThreshold?: number; deletedThreshold?: number } = {},
+  ): Promise<void> {
+    const { indexingThreshold = 20000, deletedThreshold = 0.2 } = options;
     await this.call(async () =>
       this.client.updateCollection(collectionName, {
         optimizers_config: {
-          indexing_threshold: threshold,
+          indexing_threshold: indexingThreshold,
+          deleted_threshold: deletedThreshold,
         },
       }),
     );
@@ -716,23 +739,29 @@ export class QdrantManager {
   }
 
   /**
-   * PIPELINED BATCH DELETE: Delete points with batching and parallelism.
+   * PHASE-SEPARATED DELETE: one read pass, parallel writes.
    *
-   * Strategy:
-   * - Split paths into batches (default: 500 paths per batch with payload index)
-   * - Run batches with concurrency limit (default: 8 concurrent requests)
-   * - Use wait=false for intermediate batches (fire-and-forget)
-   * - Use wait=true for final batch (consistency guarantee)
+   * Phase 1 (sequential, read-only): a single `scroll` over MatchAny(all paths)
+   * paginates through every matching point to collect IDs. Pure read — never
+   * touches WAL, never competes with upserts, never triggers optimizer repack.
    *
-   * IMPORTANT: For best performance, ensure `relativePath` field has a
-   * keyword payload index. Without index, filter-based deletes scan all points.
+   * Phase 2 (parallel writes): collected IDs are split into chunks of
+   * `batchSize` and deleted via `client.delete({points})` with up to
+   * `concurrency` parallel calls. Point-ID deletion bypasses the filter engine
+   * entirely and completes in versioned-storage time.
    *
-   * This approach significantly speeds up deletion of large file sets
-   * while maintaining eventual consistency.
+   * Why phase separation? Interleaving scroll+delete per batch under
+   * `concurrency: 4` saturates embedded Qdrant WAL — upserts from the parallel
+   * ingest pipeline starve, client hits 300s AbortError (taxdome incident
+   * 2026-04-24T16-15). Collecting IDs first, then writing, keeps reads and
+   * writes from stepping on each other.
+   *
+   * Only the final delete call uses `wait: true` — it acts as the barrier for
+   * the whole operation.
    *
    * @param collectionName - Collection to delete from
    * @param relativePaths - Array of file paths to delete
-   * @param options - Configuration options
+   * @param options - batchSize = IDs per delete call; concurrency = parallel deletes
    */
   async deletePointsByPathsBatched(
     collectionName: string,
@@ -751,59 +780,81 @@ export class QdrantManager {
 
     const { batchSize, concurrency, onProgress } = options;
 
-    // Split into batches
-    const batches: string[][] = [];
-    for (let i = 0; i < relativePaths.length; i += batchSize) {
-      batches.push(relativePaths.slice(i, i + batchSize));
+    // Phase 1: collect all IDs in one sequential scroll (read-only).
+    const ids = await this.collectPointIdsForPaths(collectionName, relativePaths);
+
+    if (ids.length === 0) {
+      onProgress?.(relativePaths.length, relativePaths.length);
+      return { deletedPaths: relativePaths.length, batchCount: 0, durationMs: Date.now() - startTime };
     }
 
-    let deletedCount = 0;
+    // Phase 2: parallel delete-by-IDs with concurrency cap.
+    const chunks: (string | number)[][] = [];
+    for (let i = 0; i < ids.length; i += batchSize) {
+      chunks.push(ids.slice(i, i + batchSize));
+    }
 
-    // Process batches with concurrency limit using pipelining
-    // Track pending promises to limit concurrency
+    let chunksCompleted = 0;
+    const reportProgress = (): void => {
+      chunksCompleted++;
+      onProgress?.(Math.floor((chunksCompleted / chunks.length) * relativePaths.length), relativePaths.length);
+    };
+
     const pendingPromises: Promise<void>[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const isLastChunk = i === chunks.length - 1;
 
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      const isLastBatch = i === batches.length - 1;
-
-      // Wait for oldest promise if at concurrency limit
-      if (pendingPromises.length >= concurrency) {
-        await pendingPromises.shift();
-      }
-
-      // Create delete promise
-      const deletePromise = this.call(async () =>
-        this.client.delete(collectionName, {
-          wait: isLastBatch, // Only wait for final batch
-          filter: {
-            should: batch.map((path) => ({
-              key: "relativePath",
-              match: { value: path },
-            })),
-          },
-        }),
-      ).then(() => {
-        deletedCount += batch.length;
-        onProgress?.(deletedCount, relativePaths.length);
-      });
-
-      if (!isLastBatch) {
-        pendingPromises.push(deletePromise);
+      if (isLastChunk) {
+        await Promise.all(pendingPromises);
+        await this.call(async () => this.client.delete(collectionName, { wait: true, points: chunk }));
+        reportProgress();
       } else {
-        // Wait for final batch
-        await deletePromise;
+        if (pendingPromises.length >= concurrency) {
+          await pendingPromises.shift();
+        }
+        pendingPromises.push(
+          this.call(async () => this.client.delete(collectionName, { wait: false, points: chunk })).then(
+            reportProgress,
+          ),
+        );
       }
     }
-
-    // Wait for any remaining pending promises
-    await Promise.all(pendingPromises);
 
     return {
       deletedPaths: relativePaths.length,
-      batchCount: batches.length,
+      batchCount: chunks.length,
       durationMs: Date.now() - startTime,
     };
+  }
+
+  private async collectPointIdsForPaths(collectionName: string, paths: string[]): Promise<(string | number)[]> {
+    const ids: (string | number)[] = [];
+    // MatchAny (Qdrant 1.9+) — single set-membership condition instead of an
+    // N-way OR. Keeps filter-engine cost O(1) per point regardless of batch
+    // size (a 1000-item `should` triggers 500 Internal Server Error on
+    // embedded under concurrent load).
+    const filter = {
+      must: [{ key: "relativePath", match: { any: paths } }],
+    };
+    let offset: string | number | undefined = undefined;
+    do {
+      const result = await this.call(async () =>
+        this.client.scroll(collectionName, {
+          limit: QdrantManager.SCROLL_PAGE_SIZE,
+          with_payload: false,
+          with_vector: false,
+          filter,
+          ...(offset !== undefined ? { offset } : {}),
+        }),
+      );
+      for (const point of result.points) {
+        ids.push(point.id);
+      }
+      const next = result.next_page_offset;
+      offset = typeof next === "string" || typeof next === "number" ? next : undefined;
+    } while (offset !== undefined);
+    return ids;
   }
 
   /**

@@ -814,4 +814,77 @@ console.log('This file has secrets');`,
       }
     });
   });
+
+  describe("resumeOptimizer failure is non-fatal", () => {
+    it("should complete reindexChanges parallel-pipeline path when resumeOptimizer rejects in finally", async () => {
+      // Setup: existing indexed file + new file → triggers executeParallelPipelines
+      await createTestFile(
+        codebaseDir,
+        "existing.ts",
+        "export const v1 = 1;\nconsole.log('Existing file with some content');",
+      );
+      await ingest.indexCodebase(codebaseDir);
+
+      await createTestFile(
+        codebaseDir,
+        "added.ts",
+        "export const v2 = 2;\nconsole.log('Added');\nfunction helper() { return true; }",
+      );
+
+      // resumeOptimizer rejects — finally block's .catch must swallow it
+      const resumeSpy = vi
+        .spyOn(qdrant, "resumeOptimizer")
+        .mockRejectedValue(new Error("Qdrant 5xx: resumeOptimizer unavailable"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const stats = await ingest.reindexChanges(codebaseDir);
+
+        // Parent method returns normally — no rethrow
+        expect(stats.status).toBe("completed");
+        expect(stats.filesAdded).toBe(1);
+        expect(resumeSpy).toHaveBeenCalled();
+        const loggedResumeFailure = errorSpy.mock.calls.some((call) =>
+          call.some((arg) => typeof arg === "string" && arg.includes("resumeOptimizer failed")),
+        );
+        expect(loggedResumeFailure).toBe(true);
+      } finally {
+        resumeSpy.mockRestore();
+        errorSpy.mockRestore();
+      }
+    });
+
+    it("should complete deletion-only reindex when resumeOptimizer rejects in finally", async () => {
+      await createTestFile(
+        codebaseDir,
+        "doomed.ts",
+        "export const v1 = 1;\nconsole.log('Doomed file for deletion-only path');",
+      );
+      await ingest.indexCodebase(codebaseDir);
+
+      // Delete file → triggers executeDeletionOnly (no added/modified)
+      await fs.unlink(join(codebaseDir, "doomed.ts"));
+
+      const resumeSpy = vi
+        .spyOn(qdrant, "resumeOptimizer")
+        .mockRejectedValue(new Error("Qdrant 5xx: resumeOptimizer unavailable"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const stats = await ingest.reindexChanges(codebaseDir);
+
+        // Deletion-only path returns normally despite resume failure
+        expect(stats.status).toBe("completed");
+        expect(stats.filesDeleted).toBe(1);
+        expect(resumeSpy).toHaveBeenCalled();
+        const loggedResumeFailure = errorSpy.mock.calls.some((call) =>
+          call.some((arg) => typeof arg === "string" && arg.includes("resumeOptimizer failed")),
+        );
+        expect(loggedResumeFailure).toBe(true);
+      } finally {
+        resumeSpy.mockRestore();
+        errorSpy.mockRestore();
+      }
+    });
+  });
 });

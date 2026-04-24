@@ -643,4 +643,39 @@ function third() {
       await expect(failingIngest.reindexChanges(codebaseDir)).rejects.toThrow(OllamaUnavailableError);
     });
   });
+
+  describe("resumeOptimizer failure is non-fatal", () => {
+    it("should complete indexCodebase normally when resumeOptimizer rejects in finally", async () => {
+      await createTestFile(
+        codebaseDir,
+        "test.ts",
+        "export function resumeFailTest(): string {\n  console.log('Testing resume failure');\n  return 'ok';\n}",
+      );
+
+      // resumeOptimizer rejects — the finally block's .catch must swallow it
+      // and debug-log, without propagating out of indexCodebase.
+      const resumeSpy = vi
+        .spyOn(qdrant, "resumeOptimizer")
+        .mockRejectedValue(new Error("Qdrant 5xx: resumeOptimizer unavailable"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const stats = await ingest.indexCodebase(codebaseDir);
+
+        // Parent method returns normally — no rethrow
+        expect(stats.status).toBe("completed");
+        expect(stats.filesIndexed).toBe(1);
+        // resumeOptimizer was attempted
+        expect(resumeSpy).toHaveBeenCalled();
+        // DEBUG is on in vitest.setup — failure must be logged via console.error
+        const loggedResumeFailure = errorSpy.mock.calls.some((call) =>
+          call.some((arg) => typeof arg === "string" && arg.includes("resumeOptimizer failed")),
+        );
+        expect(loggedResumeFailure).toBe(true);
+      } finally {
+        resumeSpy.mockRestore();
+        errorSpy.mockRestore();
+      }
+    });
+  });
 });
