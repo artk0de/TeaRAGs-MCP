@@ -162,6 +162,24 @@ export class BatchAccumulator<T extends WorkItem> {
     this.clearFlushTimer();
   }
 
+  /**
+   * Update the flush-threshold batch size at runtime.
+   * Used by AdaptiveBatchSizer integration in ChunkPipeline to shrink
+   * or grow the batch size in response to Qdrant yellow/recovery signals.
+   *
+   * No-op if newSize is <= 0 (defensive guard — sizer cannot produce
+   * non-positive values given its own floor semantics, but this keeps
+   * the accumulator robust against config mistakes).
+   */
+  updateBatchSize(newSize: number): void {
+    if (newSize > 0) {
+      // this.config is declared `private readonly` at the reference level,
+      // but the BatchAccumulatorConfig interface fields themselves are mutable,
+      // so Object.assign mutates the same object in place.
+      Object.assign(this.config, { batchSize: newSize });
+    }
+  }
+
   private startFlushTimer(): void {
     if (this.flushTimer) {
       return; // Timer already running

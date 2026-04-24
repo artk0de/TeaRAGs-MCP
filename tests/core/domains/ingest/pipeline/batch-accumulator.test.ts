@@ -553,6 +553,61 @@ describe("BatchAccumulator", () => {
     });
   });
 
+  describe("updateBatchSize", () => {
+    it("should change flush threshold at runtime", () => {
+      // Config uses batchSize=5. After updateBatchSize(3), a batch should flush at 3 items.
+      accumulator.add(createItem(1));
+      accumulator.add(createItem(2));
+      expect(receivedBatches).toHaveLength(0);
+
+      accumulator.updateBatchSize(3);
+
+      accumulator.add(createItem(3));
+      expect(receivedBatches).toHaveLength(1);
+      expect(receivedBatches[0].items).toHaveLength(3);
+      expect(accumulator.getPendingCount()).toBe(0);
+    });
+
+    it("should be a no-op when newSize is 0", () => {
+      accumulator.updateBatchSize(0);
+
+      // Threshold stays at 5 (from config). Adding 4 items should not trigger flush.
+      for (let i = 1; i <= 4; i++) {
+        accumulator.add(createItem(i));
+      }
+      expect(receivedBatches).toHaveLength(0);
+      expect(accumulator.getPendingCount()).toBe(4);
+    });
+
+    it("should be a no-op when newSize is negative", () => {
+      accumulator.updateBatchSize(-1);
+
+      for (let i = 1; i <= 4; i++) {
+        accumulator.add(createItem(i));
+      }
+      expect(receivedBatches).toHaveLength(0);
+      expect(accumulator.getPendingCount()).toBe(4);
+    });
+
+    it("should allow growing back to a larger batch size", () => {
+      accumulator.updateBatchSize(2);
+      accumulator.add(createItem(1));
+      accumulator.add(createItem(2));
+      expect(receivedBatches).toHaveLength(1);
+
+      // Now grow back to 4; adding 3 items should not flush yet.
+      accumulator.updateBatchSize(4);
+      accumulator.add(createItem(3));
+      accumulator.add(createItem(4));
+      accumulator.add(createItem(5));
+      expect(receivedBatches).toHaveLength(1);
+
+      accumulator.add(createItem(6));
+      expect(receivedBatches).toHaveLength(2);
+      expect(receivedBatches[1].items).toHaveLength(4);
+    });
+  });
+
   describe("Edge cases", () => {
     it("should handle batch size of 1", () => {
       const smallBatchConfig: BatchAccumulatorConfig = {

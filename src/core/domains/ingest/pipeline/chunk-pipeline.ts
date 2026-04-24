@@ -17,6 +17,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import type { PayloadBuilder } from "../../../contracts/types/provider.js";
 import { PipelineNotStartedError } from "../errors.js";
+import { AdaptiveBatchSizer } from "./adaptive-batch-sizer.js";
 import { BatchAccumulator } from "./infra/batch-accumulator.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { isDebug } from "./infra/runtime.js";
@@ -66,6 +67,7 @@ export class ChunkPipeline {
 
   private readonly workerPool: WorkerPool;
   private readonly accumulator: BatchAccumulator<ChunkItem>;
+  private readonly batchSizer: AdaptiveBatchSizer;
   private pendingBatches: Promise<BatchResult>[] = [];
 
   private onBatchUpsertedCb?: (items: ChunkItem[]) => void;
@@ -120,6 +122,15 @@ export class ChunkPipeline {
     // Initialize accumulator
     this.accumulator = new BatchAccumulator(this.config.accumulator, "upsert", (batch) => {
       this.submitBatch(batch);
+    });
+
+    // Adaptive batch sizer — reacts to Qdrant yellow (halve) and recovery (double).
+    // Floor = max(32, initial/16) so very small configured batchSizes still degrade gracefully.
+    const initialBatchSize = this.config.accumulator.batchSize;
+    this.batchSizer = new AdaptiveBatchSizer({
+      initial: initialBatchSize,
+      min: Math.max(32, Math.floor(initialBatchSize / 16)),
+      recoveryThreshold: 5,
     });
   }
 
@@ -328,22 +339,36 @@ export class ChunkPipeline {
         payload: this.payloadBuilder.buildPayload(item.chunk, item.codebasePath),
       }));
 
-      // 4. Store to Qdrant
+      // 4. Store to Qdrant — wrap in try/catch so AdaptiveBatchSizer observes
+      // both success (drives recovery) and yellow failures (halves batch size).
+      // We re-throw so WorkerPool's retry logic stays intact.
       const qdrantStart = Date.now();
       if (this.enableHybrid) {
         const hybridPoints = points.map((point, idx) => ({
           ...point,
           sparseVector: generateSparseVector(batch.items[idx].chunk.content),
         }));
-        await this.qdrant.addPointsWithSparse(this.collectionName, hybridPoints);
+        try {
+          await this.qdrant.addPointsWithSparse(this.collectionName, hybridPoints);
+          this.onSizerSuccess();
+        } catch (error) {
+          this.onSizerFailure(error);
+          throw error;
+        }
         const qdrantDurationHybrid = Date.now() - qdrantStart;
         pipelineLog.qdrantCall(ctx, "UPSERT_HYBRID", points.length, qdrantDurationHybrid);
         pipelineLog.addStageTime("qdrant", qdrantDurationHybrid);
       } else {
-        await this.qdrant.addPointsOptimized(this.collectionName, points, {
-          wait: false,
-          ordering: "weak",
-        });
+        try {
+          await this.qdrant.addPointsOptimized(this.collectionName, points, {
+            wait: false,
+            ordering: "weak",
+          });
+          this.onSizerSuccess();
+        } catch (error) {
+          this.onSizerFailure(error);
+          throw error;
+        }
         const qdrantDuration = Date.now() - qdrantStart;
         pipelineLog.qdrantCall(ctx, "UPSERT", points.length, qdrantDuration);
         pipelineLog.addStageTime("qdrant", qdrantDuration);
@@ -352,6 +377,45 @@ export class ChunkPipeline {
       // 5. Notify callback after successful upsert (for streaming enrichment)
       this.onBatchUpsertedCb?.(batch.items);
     };
+  }
+
+  /**
+   * Record a successful Qdrant upsert against the adaptive sizer.
+   * If the sizer advances (recovery threshold reached), push the new size
+   * into the accumulator and emit a BATCH_SIZE_ADJUSTED log event.
+   */
+  private onSizerSuccess(): void {
+    const before = this.batchSizer.current();
+    this.batchSizer.onSuccess();
+    const after = this.batchSizer.current();
+    if (before !== after) {
+      this.accumulator.updateBatchSize(after);
+      pipelineLog.step(LOG_CTX, "BATCH_SIZE_ADJUSTED", {
+        from: before,
+        to: after,
+        reason: "recovery",
+      });
+    }
+  }
+
+  /**
+   * Record a failed Qdrant upsert against the adaptive sizer.
+   * Only QdrantOptimizationInProgressError causes a size change (halving);
+   * other errors are no-ops for the sizer (but still re-thrown by caller).
+   * On halving, propagate to accumulator and emit BATCH_SIZE_ADJUSTED.
+   */
+  private onSizerFailure(error: unknown): void {
+    const before = this.batchSizer.current();
+    this.batchSizer.onFailure(error);
+    const after = this.batchSizer.current();
+    if (before !== after) {
+      this.accumulator.updateBatchSize(after);
+      pipelineLog.step(LOG_CTX, "BATCH_SIZE_ADJUSTED", {
+        from: before,
+        to: after,
+        reason: "yellow",
+      });
+    }
   }
 
   private onBatchComplete(result: BatchResult): void {
