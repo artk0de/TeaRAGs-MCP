@@ -11,7 +11,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { QdrantOptimizationInProgressError } from "../../../../../src/core/adapters/qdrant/errors.js";
 import { ChunkPipeline } from "../../../../../src/core/domains/ingest/pipeline/chunk-pipeline.js";
+import { pipelineLog } from "../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
 import type { ChunkItem } from "../../../../../src/core/domains/ingest/pipeline/types.js";
 // Use real StaticPayloadBuilder for full payload construction
 import { StaticPayloadBuilder } from "../../../../../src/core/domains/trajectory/static/provider.js";
@@ -751,6 +753,199 @@ describe("ChunkPipeline", () => {
       expect(stats.uptimeMs).toBe(0);
       expect(stats.itemsProcessed).toBe(0);
       freshPipeline.forceShutdown();
+    });
+  });
+
+  describe("Adaptive batch sizing", () => {
+    type StepCall = { message: string; data?: Record<string, unknown> };
+    let stepCalls: StepCall[];
+    let stepSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      stepCalls = [];
+      stepSpy = vi.spyOn(pipelineLog, "step").mockImplementation((_ctx, message, data) => {
+        stepCalls.push({ message, data });
+      });
+    });
+
+    afterEach(() => {
+      stepSpy.mockRestore();
+    });
+
+    function adjustedEvents(): StepCall[] {
+      return stepCalls.filter((c) => c.message === "BATCH_SIZE_ADJUSTED");
+    }
+
+    it("halves upsert batch size on Qdrant yellow and emits BATCH_SIZE_ADJUSTED with reason 'yellow'", async () => {
+      vi.useRealTimers();
+
+      const yellowQdrant = {
+        addPointsOptimized: vi.fn().mockRejectedValue(new QdrantOptimizationInProgressError("test_collection")),
+        addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
+      };
+      const fastEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(async (texts: string[]) => texts.map(() => ({ embedding: [1, 2, 3] }))),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 3),
+      };
+
+      const adaptivePipeline = new ChunkPipeline(
+        yellowQdrant as any,
+        fastEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+          accumulator: { batchSize: 1024, flushTimeoutMs: 50, maxQueueSize: 4 },
+          enableHybrid: false,
+        },
+      );
+
+      adaptivePipeline.start();
+      adaptivePipeline.addChunk(createChunk(1), "yellow-1", "/test/path");
+
+      await expect(adaptivePipeline.flush()).rejects.toThrow();
+
+      const events = adjustedEvents();
+      expect(events.length).toBeGreaterThanOrEqual(1);
+      const firstEvent = events[0];
+      expect(firstEvent.data).toMatchObject({
+        from: 1024,
+        to: 512,
+        reason: "yellow",
+      });
+
+      adaptivePipeline.forceShutdown();
+      vi.useFakeTimers();
+    });
+
+    it("propagates yellow error to caller after sizer update (WorkerPool retry path preserved)", async () => {
+      vi.useRealTimers();
+
+      const yellowQdrant = {
+        addPointsOptimized: vi.fn().mockRejectedValue(new QdrantOptimizationInProgressError("test_collection")),
+        addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
+      };
+      const fastEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(async (texts: string[]) => texts.map(() => ({ embedding: [1, 2, 3] }))),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 3),
+      };
+
+      const adaptivePipeline = new ChunkPipeline(
+        yellowQdrant as any,
+        fastEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+          accumulator: { batchSize: 256, flushTimeoutMs: 50, maxQueueSize: 4 },
+          enableHybrid: false,
+        },
+      );
+
+      adaptivePipeline.start();
+      adaptivePipeline.addChunk(createChunk(1), "yellow-rethrow", "/test/path");
+
+      await expect(adaptivePipeline.flush()).rejects.toBeInstanceOf(QdrantOptimizationInProgressError);
+
+      adaptivePipeline.forceShutdown();
+      vi.useFakeTimers();
+    });
+
+    it("does not adjust batch size on non-yellow errors", async () => {
+      vi.useRealTimers();
+
+      const plainErrorQdrant = {
+        addPointsOptimized: vi.fn().mockRejectedValue(new Error("plain failure")),
+        addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
+      };
+      const fastEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(async (texts: string[]) => texts.map(() => ({ embedding: [1, 2, 3] }))),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 3),
+      };
+
+      const adaptivePipeline = new ChunkPipeline(
+        plainErrorQdrant as any,
+        fastEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+          accumulator: { batchSize: 256, flushTimeoutMs: 50, maxQueueSize: 4 },
+          enableHybrid: false,
+        },
+      );
+
+      adaptivePipeline.start();
+      adaptivePipeline.addChunk(createChunk(1), "plain-1", "/test/path");
+
+      await expect(adaptivePipeline.flush()).rejects.toThrow("plain failure");
+
+      expect(adjustedEvents()).toHaveLength(0);
+
+      adaptivePipeline.forceShutdown();
+      vi.useFakeTimers();
+    });
+
+    it("recovers batch size back toward initial after consecutive successful upserts", async () => {
+      vi.useRealTimers();
+
+      // Yellow on the very first upsert, then success on every subsequent one.
+      let callCount = 0;
+      const flappingQdrant = {
+        addPointsOptimized: vi.fn().mockImplementation(async () => {
+          callCount++;
+          if (callCount === 1) {
+            throw new QdrantOptimizationInProgressError("test_collection");
+          }
+          return undefined;
+        }),
+        addPointsWithSparse: vi.fn().mockResolvedValue(undefined),
+      };
+      const fastEmbeddings = {
+        embedBatch: vi.fn().mockImplementation(async (texts: string[]) => texts.map(() => ({ embedding: [1, 2, 3] }))),
+        embed: vi.fn(),
+        getDimensions: vi.fn(() => 3),
+      };
+
+      const adaptivePipeline = new ChunkPipeline(
+        flappingQdrant as any,
+        fastEmbeddings as any,
+        testCollectionName,
+        mockPayloadBuilder,
+        {
+          workerPool: { concurrency: 1, maxRetries: 0, retryBaseDelayMs: 10, retryMaxDelayMs: 100 },
+          accumulator: { batchSize: 1024, flushTimeoutMs: 20, maxQueueSize: 16 },
+          enableHybrid: false,
+        },
+      );
+
+      adaptivePipeline.start();
+
+      // First batch fails yellow -> expect halving event (1024 -> 512)
+      adaptivePipeline.addChunk(createChunk(0), "recover-0", "/test/path");
+      await expect(adaptivePipeline.flush()).rejects.toBeInstanceOf(QdrantOptimizationInProgressError);
+
+      // Now run 5 successful partial-batches (each triggers onSizerSuccess once).
+      // Recovery threshold = 5 -> size should bump 512 -> 1024 once.
+      for (let i = 1; i <= 5; i++) {
+        adaptivePipeline.addChunk(createChunk(i), `recover-${i}`, "/test/path");
+        await adaptivePipeline.flush();
+      }
+
+      const recoveryEvents = adjustedEvents().filter((e) => e.data?.reason === "recovery");
+      expect(recoveryEvents.length).toBeGreaterThanOrEqual(1);
+      const firstRecovery = recoveryEvents[0];
+      expect(firstRecovery.data).toMatchObject({
+        from: 512,
+        to: 1024,
+        reason: "recovery",
+      });
+
+      adaptivePipeline.forceShutdown();
+      vi.useFakeTimers();
     });
   });
 
