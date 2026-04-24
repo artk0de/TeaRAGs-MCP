@@ -17,6 +17,7 @@ import type { FileScanner } from "./pipeline/scanner.js";
 import type { DeletionOutcome } from "./sync/deletion-outcome.js";
 import { performDeletion, type DeletionConfig } from "./sync/deletion-strategy.js";
 import type { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
+import { ReindexCoordinator } from "./sync/reindex-coordinator.js";
 import { SnapshotCleaner } from "./sync/snapshot-cleaner.js";
 
 interface ReindexContext {
@@ -91,14 +92,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       }
 
       this.startHeartbeat(ctx.collectionName);
-      const { chunksAdded, chunksDeleted, processingCtx, chunkMap } = await this.executeParallelPipelines(
-        ctx,
-        changes,
-        progressCallback,
-        overrides?.chunkSize,
-      );
+      const { chunksAdded, chunksDeleted, processingCtx, chunkMap, filesSkippedDueToDeleteFailure } =
+        await this.executeParallelPipelines(ctx, changes, progressCallback, overrides?.chunkSize);
       stats.chunksAdded = chunksAdded;
       stats.chunksDeleted = chunksDeleted;
+      if (filesSkippedDueToDeleteFailure !== undefined && filesSkippedDueToDeleteFailure > 0) {
+        stats.filesSkippedDueToDeleteFailure = filesSkippedDueToDeleteFailure;
+        stats.status = "partial";
+      }
 
       this.stopHeartbeat();
       await this.finalizeReindex(ctx, processingCtx, chunkMap, stats, startTime);
@@ -196,6 +197,8 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     processingCtx: ProcessingContext;
     chunkMap: Map<string, ChunkLookupEntry[]>;
     deletionOutcome?: DeletionOutcome;
+    /** Count of modified files whose upsert was skipped due to delete failure (Phase 3.2). */
+    filesSkippedDueToDeleteFailure?: number;
   }> {
     const changedPaths = [...changes.added, ...changes.modified];
     const pCtx = this.initProcessing(
@@ -268,14 +271,21 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       console.error(`[Reindex] Delete complete, starting modified indexing (add still running in parallel)`);
     }
 
+    // Phase 3.2: gate modified-file upsert on per-file delete success. Added
+    // files have no old chunks to collide with, so they never see the
+    // coordinator.
+    const coordinator = new ReindexCoordinator();
+    if (deletionOutcome) coordinator.applyDeletionOutcome(deletionOutcome);
+
     // Level 2: process modified files (after delete completes)
     const modifiedStartTime = Date.now();
+    const modifiedOpts = { ...processOpts, coordinator };
     const modifiedPromise = processRelativeFiles(
       modifiedFiles,
       ctx.absolutePath,
       pCtx.chunkerPool,
       pCtx.chunkPipeline,
-      processOpts,
+      modifiedOpts,
       chunkMap,
       "modified",
     );
@@ -294,9 +304,27 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       modifiedDurationMs: Date.now() - modifiedStartTime,
     });
 
+    let filesSkippedDueToDeleteFailure: number | undefined;
+    if (coordinator.hasBlockedPaths()) {
+      const skipped = coordinator.skippedFiles();
+      filesSkippedDueToDeleteFailure = skipped.length;
+      pipelineLog.step({ component: "Reindex" }, "REINDEX_PARTIAL_COMPLETE", {
+        skippedFilesCount: skipped.length,
+        skippedSample: skipped.slice(0, 20),
+        blockedPathsCount: deletionOutcome?.failed.size ?? 0,
+      });
+    }
+
     this.logPipelineStats(pCtx, parallelStart);
 
-    return { chunksAdded: addedChunks + modifiedChunks, chunksDeleted, processingCtx: pCtx, chunkMap, deletionOutcome };
+    return {
+      chunksAdded: addedChunks + modifiedChunks,
+      chunksDeleted,
+      processingCtx: pCtx,
+      chunkMap,
+      deletionOutcome,
+      filesSkippedDueToDeleteFailure,
+    };
   }
 
   // ── Finalization ─────────────────────────────────────────

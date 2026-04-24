@@ -58,7 +58,7 @@ export interface FileIngestRecord {
   /** Parse duration in ms. 0 if skipped before parsing. */
   parseMs: number;
   skipped?: boolean;
-  skipReason?: "secrets" | "chunk-limit" | "error";
+  skipReason?: "secrets" | "chunk-limit" | "error" | "delete-failed";
 }
 
 /**
