@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import { ConfigValueInvalidError } from "../../../../../src/bootstrap/errors.js";
 import {
-  EMBEDDED_QDRANT_VERSION,
   getBinaryPath,
   getPlatformAsset,
   isBinaryPresent,
   isBinaryUpToDate,
+  QDRANT_VERSION,
 } from "../../../../../src/core/adapters/qdrant/embedded/download.js";
 
 describe("getPlatformAsset", () => {
@@ -51,9 +51,9 @@ describe("getBinaryPath", () => {
   });
 });
 
-describe("EMBEDDED_QDRANT_VERSION", () => {
+describe("QDRANT_VERSION", () => {
   it("is a valid semver string", () => {
-    expect(EMBEDDED_QDRANT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(QDRANT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
 

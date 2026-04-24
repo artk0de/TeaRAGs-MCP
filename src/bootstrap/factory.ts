@@ -31,6 +31,7 @@ import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
+import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8")) as {
@@ -69,6 +70,9 @@ async function resolveInfrastructure(
   zodConfig: ReturnType<typeof getZodConfig>,
 ): Promise<InfraContext> {
   const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData);
+  if (resolution.mode === "external") {
+    await checkExternalQdrantVersion(resolution.url, config.qdrantApiKey);
+  }
   const reconnect = resolution.mode === "embedded" ? resolution.reconnect : undefined;
   const daemon =
     resolution.mode === "embedded"

@@ -157,6 +157,52 @@ export class CollectionAlreadyExistsError extends InfraError {
   }
 }
 
+/**
+ * External Qdrant server's version is below the minimum declared in
+ * `.qdrant-required-version`. The server is reachable and responded with
+ * a version string, but one or more MCP features rely on server
+ * capabilities introduced after that version — continuing would surface
+ * opaque 4xx errors on specific API calls. Fail fast at startup instead.
+ */
+export class QdrantVersionTooOldError extends InfraError {
+  constructor(url: string, serverVersion: string, minVersion: string) {
+    super({
+      code: "INFRA_QDRANT_VERSION_TOO_OLD",
+      message: `Qdrant at ${url} reports version ${serverVersion}, required >= ${minVersion}`,
+      hint:
+        `Upgrade the Qdrant server to at least ${minVersion}. ` +
+        `If you cannot upgrade, unset QDRANT_URL to use the embedded daemon ` +
+        `(which is pinned to a known-compatible version).`,
+      httpStatus: 503,
+    });
+  }
+}
+
+/**
+ * Installed embedded Qdrant binary reports a version newer than the one
+ * pinned by `EMBEDDED_QDRANT_VERSION`. Automatic downgrade is refused
+ * because Qdrant storage is not backward-compatible: running an older
+ * daemon against a storage directory written by a newer daemon corrupts
+ * the index. Triggered when the user has reinstalled an older `tea-rags`
+ * package on top of a previously-run newer one.
+ */
+export class QdrantDowngradeNotSupportedError extends InfraError {
+  constructor(installedVersion: string, pinnedVersion: string, binaryDir: string) {
+    super({
+      code: "INFRA_QDRANT_DOWNGRADE_NOT_SUPPORTED",
+      message:
+        `Embedded Qdrant binary is ${installedVersion}, newer than pinned ${pinnedVersion} — ` +
+        `downgrade refused to protect storage integrity`,
+      hint:
+        `Qdrant storage created by ${installedVersion} cannot be read by ${pinnedVersion}. ` +
+        `Either upgrade the tea-rags package back to a version that pins >= ${installedVersion}, ` +
+        `or manually delete the binary + storage at ${binaryDir} (DESTROYS the index — ` +
+        `will force a full reindex).`,
+      httpStatus: 409,
+    });
+  }
+}
+
 export class QdrantOptimizationInProgressError extends InfraError {
   constructor(collectionName: string, cause?: Error) {
     super({
