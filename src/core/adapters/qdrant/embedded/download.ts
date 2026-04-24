@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { ConfigValueInvalidError } from "../../../../bootstrap/errors.js";
 import { QdrantOperationError } from "../errors.js";
 
-export const QDRANT_VERSION = "1.17.0";
+export const EMBEDDED_QDRANT_VERSION = "1.17.0";
 
 /* v8 ignore next 3 -- fallback for backward compat when DI paths not provided */
 function fallbackAppDataDir(): string {
@@ -50,7 +50,7 @@ export function getBinaryPath(platform = process.platform, appDataPath?: string)
 }
 
 export function getDownloadUrl(asset: string): string {
-  return `https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VERSION}/${asset}`;
+  return `https://github.com/qdrant/qdrant/releases/download/v${EMBEDDED_QDRANT_VERSION}/${asset}`;
 }
 
 function getVersionPath(appDataPath?: string): string {
@@ -66,7 +66,7 @@ function getInstalledVersion(appDataPath?: string): string | null {
 }
 
 function writeInstalledVersion(appDataPath?: string): void {
-  writeFileSync(getVersionPath(appDataPath), QDRANT_VERSION, "utf-8");
+  writeFileSync(getVersionPath(appDataPath), EMBEDDED_QDRANT_VERSION, "utf-8");
 }
 
 export function isBinaryPresent(appDataPath?: string): boolean {
@@ -74,7 +74,7 @@ export function isBinaryPresent(appDataPath?: string): boolean {
 }
 
 export function isBinaryUpToDate(appDataPath?: string): boolean {
-  return isBinaryPresent(appDataPath) && getInstalledVersion(appDataPath) === QDRANT_VERSION;
+  return isBinaryPresent(appDataPath) && getInstalledVersion(appDataPath) === EMBEDDED_QDRANT_VERSION;
 }
 
 export async function downloadQdrant(
