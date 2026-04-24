@@ -310,6 +310,22 @@ describe("EnrichmentRecovery", () => {
 
       expect(count).toBe(0);
     });
+
+    it("excludes indexing/schema metadata points from unenriched count", async () => {
+      mockQdrant.countPoints.mockResolvedValue(0);
+
+      await recovery.countUnenriched("test-collection", "git", "chunk");
+
+      expect(mockQdrant.countPoints).toHaveBeenCalledWith(
+        "test-collection",
+        expect.objectContaining({
+          must_not: expect.arrayContaining([
+            { key: "_type", match: { value: "indexing_metadata" } },
+            { key: "_type", match: { value: "schema_metadata" } },
+          ]),
+        }),
+      );
+    });
   });
 
   describe("scrollUnenriched — configurable pageSize", () => {

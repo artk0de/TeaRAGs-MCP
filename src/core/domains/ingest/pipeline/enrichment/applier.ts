@@ -78,10 +78,19 @@ export class EnrichmentApplier {
         this.missedFileChunks.set(relativePath, existing);
         if (enrichedAt) {
           for (const item of fileItems) {
+            // File-level stamp: marks "we tried, no git history".
             operations.push({
               payload: { enrichedAt },
               points: [item.chunkId],
               key: `${providerKey}.file`,
+            });
+            // Chunk-level stamp: same semantics. Without this, recovery keeps
+            // counting these chunks forever and forces chunk.status=degraded
+            // even though there is nothing retriable.
+            operations.push({
+              payload: { enrichedAt },
+              points: [item.chunkId],
+              key: `${providerKey}.chunk`,
             });
           }
         }

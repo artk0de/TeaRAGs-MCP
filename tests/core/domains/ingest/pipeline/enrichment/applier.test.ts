@@ -295,6 +295,34 @@ describe("EnrichmentApplier", () => {
       expect(ops[0].points).toEqual(["chunk-1"]);
     });
 
+    it("stamps chunk-level enrichedAt for missed files (no git history)", async () => {
+      const ts = "2026-03-27T00:00:00.000Z";
+
+      await applier.applyFileSignals(
+        "test-collection",
+        "git",
+        new Map(), // no file signals → file is missed
+        "/repo",
+        [
+          {
+            chunkId: "chunk-1",
+            chunk: { metadata: { filePath: "/repo/src/missing.ts" }, endLine: 50 },
+          } as any,
+        ],
+        undefined,
+        ts,
+      );
+
+      const ops = mockQdrant.batchSetPayload.mock.calls[0][1];
+      // Must write BOTH file and chunk level enrichedAt, otherwise recovery keeps
+      // reporting these chunks as unenriched forever.
+      const keys = ops.map((op: any) => op.key).sort();
+      expect(keys).toEqual(["git.chunk", "git.file"]);
+      const chunkOp = ops.find((op: any) => op.key === "git.chunk");
+      expect(chunkOp.payload).toEqual({ enrichedAt: ts });
+      expect(chunkOp.points).toEqual(["chunk-1"]);
+    });
+
     it("should include git.chunk.enrichedAt in chunk signal batch payload", async () => {
       const ts = "2026-03-27T00:00:00.000Z";
 

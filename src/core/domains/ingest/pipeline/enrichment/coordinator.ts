@@ -605,20 +605,32 @@ export class EnrichmentCoordinator {
     metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
 
     // 6. Update per-provider file-level markers with final status.
+    // unenrichedChunks is re-read from storage (not hardcoded 0) so the marker
+    // stays in sync with reality after partial failures or races with recovery.
     // Counters reflect the current run's work (scoped or full); get_index_status
     // should report what the last run actually did, not a frozen full-index total
     // that drifts as successive scoped reindexes leave it untouched.
     for (const state of this.states.values()) {
+      const [fileUnenriched, chunkUnenriched] = this.recovery
+        ? await Promise.all([
+            this.recovery.countUnenriched(collectionName, state.provider.key, "file").catch(() => 0),
+            this.recovery.countUnenriched(collectionName, state.provider.key, "chunk").catch(() => 0),
+          ])
+        : [0, 0];
+
       const fileMarker: Partial<FileEnrichmentMarker> = {
         status: state.prefetchFailed ? "failed" : "completed",
         completedAt: new Date().toISOString(),
         durationMs: state.prefetchDurationMs,
-        unenrichedChunks: 0,
+        unenrichedChunks: fileUnenriched,
         matchedFiles: this.applier.matchedFiles,
         missedFiles: this.applier.missedFiles,
       };
+      const chunkMarker: Partial<ChunkEnrichmentMarker> = {
+        unenrichedChunks: chunkUnenriched,
+      };
       await this.updateEnrichmentMarker(collectionName, {
-        [state.provider.key]: { file: fileMarker },
+        [state.provider.key]: { file: fileMarker, chunk: chunkMarker },
       });
     }
 

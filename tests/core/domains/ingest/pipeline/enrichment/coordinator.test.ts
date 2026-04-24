@@ -1445,6 +1445,58 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
     expect(degradedWrite![1].enrichment.git.chunk.unenrichedChunks).toBe(7);
   });
 
+  it("awaitCompletion writes final unenrichedChunks from recovery.countUnenriched (honest state)", async () => {
+    const provider = mkProvider();
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const recovery = {
+      recoverFileLevel: vi.fn(),
+      recoverChunkLevel: vi.fn(),
+      countUnenriched: vi
+        .fn()
+        .mockImplementation(async (_col: string, _key: string, level: "file" | "chunk") => (level === "file" ? 3 : 17)),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any, recovery as any);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    // Final file marker written in awaitCompletion — must reflect actual count.
+    const fileWrites = mockQdrant.setPayload.mock.calls.filter(
+      (call: any[]) => call[1]?.enrichment?.git?.file?.status === "completed",
+    );
+    const lastFileWrite = fileWrites[fileWrites.length - 1];
+    expect(lastFileWrite[1].enrichment.git.file.unenrichedChunks).toBe(3);
+    expect(recovery.countUnenriched).toHaveBeenCalledWith("test-col", "git", "file");
+    expect(recovery.countUnenriched).toHaveBeenCalledWith("test-col", "git", "chunk");
+  });
+
+  it("awaitCompletion falls back to 0 unenrichedChunks when recovery is not provided", async () => {
+    const provider = mkProvider();
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    const fileWrites = mockQdrant.setPayload.mock.calls.filter(
+      (call: any[]) => call[1]?.enrichment?.git?.file?.status === "completed",
+    );
+    const lastFileWrite = fileWrites[fileWrites.length - 1];
+    expect(lastFileWrite[1].enrichment.git.file.unenrichedChunks).toBe(0);
+  });
+
   it("writes recovery marker when no prior marker exists (first-ever run)", async () => {
     const provider = mkProvider();
     const mockQdrant: any = {
