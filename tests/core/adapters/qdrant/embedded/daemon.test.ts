@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  buildDaemonEnv,
   EMBEDDED_MARKER,
   getDaemonPaths,
   gracefulKill,
@@ -60,5 +61,42 @@ describe("isDaemonAlive", () => {
 describe("gracefulKill", () => {
   it("is exported and callable", () => {
     expect(typeof gracefulKill).toBe("function");
+  });
+});
+
+describe("buildDaemonEnv", () => {
+  it("applies multi-core performance defaults", () => {
+    const env = buildDaemonEnv("/tmp/q", 6333, {});
+    expect(env.QDRANT__STORAGE__PERFORMANCE__MAX_SEARCH_THREADS).toBe("0");
+    expect(env.QDRANT__STORAGE__PERFORMANCE__MAX_OPTIMIZATION_THREADS).toBe("0");
+    expect(env.QDRANT__STORAGE__PERFORMANCE__OPTIMIZER_CPU_BUDGET).toBe("0");
+    expect(env.QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORING_ENABLED).toBe("true");
+  });
+
+  it("forces storage path and ports regardless of parent env", () => {
+    const env = buildDaemonEnv("/tmp/q", 6333, {
+      QDRANT__STORAGE__STORAGE_PATH: "/wrong",
+      QDRANT__SERVICE__HTTP_PORT: "9999",
+      QDRANT__SERVICE__GRPC_PORT: "9998",
+    });
+    expect(env.QDRANT__STORAGE__STORAGE_PATH).toBe("/tmp/q");
+    expect(env.QDRANT__SERVICE__HTTP_PORT).toBe("6333");
+    expect(env.QDRANT__SERVICE__GRPC_PORT).toBe("0");
+  });
+
+  it("respects user-provided performance overrides", () => {
+    const env = buildDaemonEnv("/tmp/q", 6333, {
+      QDRANT__STORAGE__PERFORMANCE__MAX_OPTIMIZATION_THREADS: "4",
+      QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORING_ENABLED: "false",
+    });
+    expect(env.QDRANT__STORAGE__PERFORMANCE__MAX_OPTIMIZATION_THREADS).toBe("4");
+    expect(env.QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORING_ENABLED).toBe("false");
+    expect(env.QDRANT__STORAGE__PERFORMANCE__MAX_SEARCH_THREADS).toBe("0");
+  });
+
+  it("preserves unrelated parent env vars", () => {
+    const env = buildDaemonEnv("/tmp/q", 6333, { PATH: "/usr/bin", FOO: "bar" });
+    expect(env.PATH).toBe("/usr/bin");
+    expect(env.FOO).toBe("bar");
   });
 });

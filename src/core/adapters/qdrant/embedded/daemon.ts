@@ -17,6 +17,37 @@ const HEALTH_CHECK_TIMEOUT_MS = 30_000;
 const HEALTH_CHECK_INTERVAL_MS = 200;
 const IDLE_SHUTDOWN_MS = 30_000;
 
+/**
+ * Multi-core performance defaults for the embedded Qdrant daemon.
+ * `0` means "auto" — Qdrant picks a value based on available CPUs.
+ * User-provided QDRANT__* env vars take precedence.
+ */
+const MULTI_CORE_DEFAULTS: Readonly<Record<string, string>> = {
+  QDRANT__STORAGE__PERFORMANCE__MAX_SEARCH_THREADS: "0",
+  QDRANT__STORAGE__PERFORMANCE__MAX_OPTIMIZATION_THREADS: "0",
+  QDRANT__STORAGE__PERFORMANCE__OPTIMIZER_CPU_BUDGET: "0",
+  QDRANT__STORAGE__PERFORMANCE__ASYNC_SCORING_ENABLED: "true",
+};
+
+export function buildDaemonEnv(
+  storagePath: string,
+  port: number,
+  parentEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const performanceDefaults: Record<string, string> = {};
+  for (const [key, value] of Object.entries(MULTI_CORE_DEFAULTS)) {
+    if (parentEnv[key] === undefined) performanceDefaults[key] = value;
+  }
+
+  return {
+    ...parentEnv,
+    ...performanceDefaults,
+    QDRANT__STORAGE__STORAGE_PATH: storagePath,
+    QDRANT__SERVICE__HTTP_PORT: String(port),
+    QDRANT__SERVICE__GRPC_PORT: "0",
+  };
+}
+
 export function getDaemonPaths(storagePath: string): DaemonPaths {
   return {
     pidFile: join(storagePath, "daemon.pid"),
@@ -247,12 +278,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
       cwd: dirname(binaryPath),
       detached: true,
       stdio: "ignore",
-      env: {
-        ...process.env,
-        QDRANT__STORAGE__STORAGE_PATH: storagePath,
-        QDRANT__SERVICE__HTTP_PORT: String(port),
-        QDRANT__SERVICE__GRPC_PORT: "0",
-      },
+      env: buildDaemonEnv(storagePath, port),
     });
     child.unref();
 
