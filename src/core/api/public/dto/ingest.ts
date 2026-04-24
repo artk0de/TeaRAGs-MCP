@@ -62,6 +62,12 @@ export interface ChangeStats {
   enrichmentDurationMs?: number;
   /** Detailed enrichment metrics (file/chunk signal breakdown) */
   enrichmentMetrics?: EnrichmentMetrics;
+  /**
+   * Files whose upsert was skipped because their delete silently failed.
+   * Their old chunks remain in the index and will be retried on next reindex.
+   * Present only when at least one path was blocked (see Phase 3.2).
+   */
+  filesSkippedDueToDeleteFailure?: number;
 }
 
 // ---------------------------------------------------------------------------

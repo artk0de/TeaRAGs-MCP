@@ -11,6 +11,7 @@ import { join, relative } from "node:path";
 
 import { isTestPath } from "../../../infra/scope-detection.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../../types.js";
+import type { ReindexCoordinator } from "../sync/reindex-coordinator.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
 import type { ChunkerPool } from "./chunker/infra/pool.js";
 import { generateChunkId } from "./chunker/utils/chunk-id.js";
@@ -65,6 +66,13 @@ export interface FileProcessorOptions {
   maxChunksPerFile?: number;
   maxTotalChunks?: number;
   concurrency?: number;
+  /**
+   * Optional per-file barrier. When set, files whose delete silently failed
+   * (tracked by the coordinator) are skipped from upsert to prevent orphan
+   * duplicates. Pass ONLY for the modified-files pass — added files have no
+   * old chunks to collide with. See reindex-resilience plan Phase 3.2.
+   */
+  coordinator?: ReindexCoordinator;
 }
 
 export interface FileProcessResult {
@@ -117,6 +125,26 @@ export async function processFiles(
         const bytes = Buffer.byteLength(code, "utf8");
         language = detectLanguage(filePath);
         relativePath = filePath.startsWith(basePath) ? filePath.slice(basePath.length + 1) : filePath;
+
+        // Phase 3.2 gate: skip files whose delete silently failed in this
+        // reindex. Runs BEFORE parse/chunk to save CPU on blocked files.
+        // Emits exactly one FILE_INGESTED skip record to preserve the
+        // "one event per touched file" invariant.
+        if (options.coordinator && !options.coordinator.canUpsertForFile(relativePath)) {
+          pipelineLog.fileIngested(
+            { component: "FileProcessor" },
+            {
+              path: relativePath,
+              language,
+              bytes,
+              chunks: 0,
+              parseMs: 0,
+              skipped: true,
+              skipReason: "delete-failed",
+            },
+          );
+          return;
+        }
 
         if (!isTestPath(relativePath, language) && containsSecrets(code)) {
           result.errors.push(`Skipped ${filePath}: potential secrets detected`);

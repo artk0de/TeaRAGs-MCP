@@ -260,6 +260,72 @@ function helper(param: string): boolean {
       expect(deletePointsByPathsSpy).toHaveBeenCalled();
       expect(stats.filesModified).toBe(1);
     });
+
+    it("skips modified-file upsert when deletion L2 fails for that path", async () => {
+      // Two modified files; force the deletion cascade to L2, then fail
+      // only the filter-based delete for "blocked.ts".
+      await createTestFile(
+        codebaseDir,
+        "blocked.ts",
+        "export const blockedOriginal = 1;\nconsole.log('Blocked original');\nconst pad = 'padding content to meet the chunker minimum size threshold';",
+      );
+      await createTestFile(
+        codebaseDir,
+        "allowed.ts",
+        "export const allowedOriginal = 1;\nconsole.log('Allowed original');\nconst pad = 'padding content to meet the chunker minimum size threshold';",
+      );
+      await ingest.indexCodebase(codebaseDir);
+
+      // Force L2 cascade: batched + bulk deletes both fail.
+      vi.spyOn(qdrant, "deletePointsByPathsBatched").mockRejectedValueOnce(new Error("batched failed"));
+      vi.spyOn(qdrant, "deletePointsByPaths").mockRejectedValueOnce(new Error("bulk failed"));
+
+      // In L2, per-path deletePointsByFilter is called for each path.
+      // Fail only for blocked.ts; succeed for allowed.ts.
+      vi.spyOn(qdrant, "deletePointsByFilter").mockImplementation(async (_collection, filter) => {
+        const path = (filter as { must?: { match?: { value?: string } }[] }).must?.[0]?.match?.value;
+        if (path === "blocked.ts") throw new Error("L2 delete failed for blocked.ts");
+      });
+
+      // Modify both files.
+      await createTestFile(
+        codebaseDir,
+        "blocked.ts",
+        "export const blockedNew = 2;\nconsole.log('Blocked new');\nconst pad = 'different padding content to trigger change detection properly now';",
+      );
+      await createTestFile(
+        codebaseDir,
+        "allowed.ts",
+        "export const allowedNew = 2;\nconsole.log('Allowed new');\nconst pad = 'different padding content to trigger change detection properly now';",
+      );
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesModified).toBe(2);
+      expect(stats.filesSkippedDueToDeleteFailure).toBe(1);
+      expect(stats.status).toBe("partial");
+    });
+
+    it("does not set filesSkippedDueToDeleteFailure when all deletes succeed", async () => {
+      await createTestFile(
+        codebaseDir,
+        "clean.ts",
+        "export const cleanOriginal = 1;\nconsole.log('Clean original');\nconst pad = 'padding content to meet the chunker minimum size threshold';",
+      );
+      await ingest.indexCodebase(codebaseDir);
+
+      await createTestFile(
+        codebaseDir,
+        "clean.ts",
+        "export const cleanNew = 2;\nconsole.log('Clean new');\nconst pad = 'different padding content to trigger change detection properly now';",
+      );
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesModified).toBe(1);
+      expect(stats.filesSkippedDueToDeleteFailure).toBeUndefined();
+      expect(stats.status).toBe("completed");
+    });
   });
 
   describe("indexing marker update", () => {
@@ -686,10 +752,13 @@ console.log('This file has secrets');`,
       vi.spyOn(qdrant, "deletePointsByPaths").mockRejectedValueOnce(new Error("Single failed"));
       vi.spyOn(qdrant, "deletePointsByFilter").mockRejectedValue(new Error("Individual failed"));
 
-      // Should still complete without throwing
+      // Should still complete without throwing. Phase 3.2: when L2 fails for
+      // a modified file, its upsert is skipped and the overall status is
+      // downgraded to "partial" so callers can surface the degraded outcome.
       const stats = await ingest.reindexChanges(codebaseDir);
       expect(stats.filesModified).toBe(1);
-      expect(stats.status).toBe("completed");
+      expect(stats.status).toBe("partial");
+      expect(stats.filesSkippedDueToDeleteFailure).toBe(1);
     });
   });
 

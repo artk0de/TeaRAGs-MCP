@@ -108,6 +108,12 @@ export interface ChangeStats {
   enrichmentMetrics?: EnrichmentMetrics;
   /** Schema and sparse vector migrations applied during this operation */
   migrations?: string[];
+  /**
+   * Files whose upsert was skipped because their delete silently failed.
+   * Their old chunks remain in the index and will be retried on next reindex.
+   * Present only when at least one path was blocked (see Phase 3.2).
+   */
+  filesSkippedDueToDeleteFailure?: number;
 }
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing" | "unavailable";
