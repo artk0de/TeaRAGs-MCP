@@ -114,15 +114,30 @@ export class IndexingOps {
     return result;
   }
 
-  /** Indexing status with infrastructure health checks. */
+  /**
+   * Indexing status with infrastructure health checks.
+   *
+   * Does NOT swallow typed Qdrant errors — QdrantStartingError /
+   * QdrantRecoveringError / QdrantUnavailableError propagate to the MCP
+   * middleware, which formats them with the appropriate retry hint. Callers
+   * that just want a boolean can still use `qdrant.checkHealth()` directly.
+   */
   async getStatus(path: string): Promise<IndexStatus> {
-    const [qdrantHealthy, embeddingHealthy] = await Promise.all([
-      this.qdrant.checkHealth(),
-      this.embeddings.checkHealth(),
-    ]);
+    const absolutePath = await validatePath(path);
+    const collectionName = resolveCollectionName(absolutePath);
 
+    // Real Qdrant call — serves as the health probe.
+    // Throws a typed error (QdrantStartingError / QdrantRecoveringError /
+    // QdrantUnavailableError) on connection failure, which propagates to
+    // the MCP middleware. Works for both embedded and external Qdrant:
+    //   - embedded daemon alive but HTTP not bound → Starting/Recovering
+    //   - external Qdrant down → Unavailable (no daemon probe available)
+    // Only if this call succeeds do we mark qdrant.available = true below.
+    const exists = await this.qdrant.collectionExists(collectionName);
+
+    const embeddingHealthy = await this.embeddings.checkHealth();
     const infraHealth: IndexStatus["infraHealth"] = {
-      qdrant: { available: qdrantHealthy, url: this.qdrant.url },
+      qdrant: { available: true, url: this.qdrant.url },
       embedding: {
         available: embeddingHealthy,
         provider: this.embeddings.getProviderName(),
@@ -130,22 +145,10 @@ export class IndexingOps {
       },
     };
 
-    if (qdrantHealthy) {
-      try {
-        const absolutePath = await validatePath(path);
-        const collectionName = resolveCollectionName(absolutePath);
-        if (await this.qdrant.collectionExists(collectionName)) {
-          const info = await this.qdrant.getCollectionInfo(collectionName);
-          infraHealth.qdrant.status = info.status;
-          infraHealth.qdrant.optimizerStatus = info.optimizerStatus;
-        }
-      } catch {
-        // Non-fatal: status/optimizerStatus stay undefined; available flag already set.
-      }
-    }
-
-    if (!qdrantHealthy) {
-      return { isIndexed: false, status: "unavailable", infraHealth };
+    if (exists) {
+      const info = await this.qdrant.getCollectionInfo(collectionName);
+      infraHealth.qdrant.status = info.status;
+      infraHealth.qdrant.optimizerStatus = info.optimizerStatus;
     }
 
     const status = await this.status.getIndexStatus(path);

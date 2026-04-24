@@ -69,7 +69,15 @@ async function resolveInfrastructure(
 ): Promise<InfraContext> {
   const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData);
   const reconnect = resolution.mode === "embedded" ? resolution.reconnect : undefined;
-  const qdrant = new QdrantManager(resolution.url, config.qdrantApiKey, reconnect);
+  const daemon =
+    resolution.mode === "embedded"
+      ? {
+          startupPhase: resolution.startupPhase,
+          pid: resolution.pid,
+          storagePath: resolution.storagePath,
+        }
+      : undefined;
+  const qdrant = new QdrantManager(resolution.url, config.qdrantApiKey, reconnect, daemon);
   const embeddedRelease = resolution.mode === "embedded" ? resolution.release : undefined;
 
   // Initialize debug logger with DI paths before any pipeline work

@@ -26,26 +26,43 @@ export interface HealthProbes {
   embeddingUrl?: string;
 }
 
-const INFRA_ERROR_CODES = new Set(["INFRA_OLLAMA_UNAVAILABLE", "INFRA_QDRANT_UNAVAILABLE"]);
+const QDRANT_INFRA_ERROR_CODES = new Set([
+  "INFRA_QDRANT_UNAVAILABLE",
+  "INFRA_QDRANT_STARTING",
+  "INFRA_QDRANT_RECOVERING",
+]);
+const OLLAMA_INFRA_ERROR_CODES = new Set(["INFRA_OLLAMA_UNAVAILABLE"]);
 
 async function enrichWithHealthContext(error: TeaRagsError, probes: HealthProbes): Promise<string> {
   const base = error.toUserMessage();
-  if (!INFRA_ERROR_CODES.has(error.code)) return base;
+  const isQdrantError = QDRANT_INFRA_ERROR_CODES.has(error.code);
+  const isOllamaError = OLLAMA_INFRA_ERROR_CODES.has(error.code);
+  if (!isQdrantError && !isOllamaError) return base;
 
   try {
-    const isQdrantError = error.code === "INFRA_QDRANT_UNAVAILABLE";
     // Probe the OTHER service
     const otherHealthy = isQdrantError ? await probes.checkEmbedding() : await probes.checkQdrant();
 
-    const qdrantStatus = isQdrantError ? "unavailable" : otherHealthy ? "available" : "unavailable";
-    const embeddingStatus = isQdrantError ? (otherHealthy ? "available" : "unavailable") : "unavailable";
+    // For "starting"/"recovering" Qdrant errors the daemon IS alive — label
+    // accordingly instead of lumping them under "unavailable".
+    const qdrantLabel =
+      error.code === "INFRA_QDRANT_STARTING"
+        ? "starting"
+        : error.code === "INFRA_QDRANT_RECOVERING"
+          ? "recovering"
+          : error.code === "INFRA_QDRANT_UNAVAILABLE"
+            ? "unavailable"
+            : otherHealthy
+              ? "available"
+              : "unavailable";
+    const embeddingLabel = isOllamaError ? "unavailable" : otherHealthy ? "available" : "unavailable";
     const embeddingUrl = probes.embeddingUrl ? ` (${probes.embeddingUrl})` : "";
 
     return (
       `${base}\n\n` +
       `Infrastructure status:\n` +
-      `  Qdrant: ${qdrantStatus} (${probes.qdrantUrl})\n` +
-      `  Embedding (${probes.embeddingProvider}): ${embeddingStatus}${embeddingUrl}`
+      `  Qdrant: ${qdrantLabel} (${probes.qdrantUrl})\n` +
+      `  Embedding (${probes.embeddingProvider}): ${embeddingLabel}${embeddingUrl}`
     );
   } catch {
     return base;
