@@ -145,7 +145,6 @@ function aggregateProviderMetrics(states: Map<string, ProviderState>): Aggregate
 export class EnrichmentCoordinator {
   private readonly states: Map<string, ProviderState>;
   private startTime = 0;
-  private scopedPrefetch = false;
   private runId = "";
   private runStartedAt = "";
 
@@ -201,8 +200,27 @@ export class EnrichmentCoordinator {
     for (const state of this.states.values()) {
       const { provider } = state;
 
+      // Snapshot runId BEFORE recovery work. If a newer pipeline run stamps a
+      // different runId during recovery, our unenriched counts become stale —
+      // writing them back would overwrite the fresher run's `completed` status
+      // with an outdated `degraded`. The dispatchRecovery call is fire-and-forget
+      // (indexing-ops.ts:313), so this race is real.
+      const baselineMarker = await this.readExistingMarker(collectionName);
+      const baselineRunId = this.readRunId(baselineMarker, provider.key);
+
       const fileResult = await this.recovery.recoverFileLevel(collectionName, absolutePath, provider, enrichedAt);
       const chunkResult = await this.recovery.recoverChunkLevel(collectionName, absolutePath, provider, enrichedAt);
+
+      const afterMarker = await this.readExistingMarker(collectionName);
+      const currentRunId = this.readRunId(afterMarker, provider.key);
+      if (baselineRunId !== currentRunId) {
+        pipelineLog.enrichmentPhase("RECOVERY_SKIP_STALE", {
+          provider: provider.key,
+          baselineRunId,
+          currentRunId,
+        });
+        continue;
+      }
 
       // Use remainingUnenriched from recovery results — no extra scroll needed
       const fileCount = fileResult.remainingUnenriched;
@@ -223,6 +241,11 @@ export class EnrichmentCoordinator {
     }
   }
 
+  private readRunId(marker: Record<string, unknown> | null, providerKey: string): string | undefined {
+    const entry = marker?.[providerKey] as Record<string, unknown> | undefined;
+    return typeof entry?.runId === "string" ? entry.runId : undefined;
+  }
+
   /**
    * Start file-level metadata prefetch at T=0. Non-blocking.
    * Call before pipeline.start() to maximize overlap.
@@ -230,7 +253,6 @@ export class EnrichmentCoordinator {
    */
   prefetch(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore, changedPaths?: string[]): void {
     this.startTime = Date.now();
-    this.scopedPrefetch = changedPaths !== undefined;
     this.runId = randomUUID().slice(0, 8);
     this.runStartedAt = new Date().toISOString();
 
@@ -582,21 +604,19 @@ export class EnrichmentCoordinator {
     }
     metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
 
-    // 6. Update per-provider file-level markers with final status
-    // Scoped prefetch (incremental reindex): only update status/timing, not coverage stats.
-    // Coverage stats (matchedFiles, missedFiles) reflect only changed files
-    // and would overwrite the accurate full-index values from the previous run.
+    // 6. Update per-provider file-level markers with final status.
+    // Counters reflect the current run's work (scoped or full); get_index_status
+    // should report what the last run actually did, not a frozen full-index total
+    // that drifts as successive scoped reindexes leave it untouched.
     for (const state of this.states.values()) {
       const fileMarker: Partial<FileEnrichmentMarker> = {
         status: state.prefetchFailed ? "failed" : "completed",
         completedAt: new Date().toISOString(),
         durationMs: state.prefetchDurationMs,
         unenrichedChunks: 0,
+        matchedFiles: this.applier.matchedFiles,
+        missedFiles: this.applier.missedFiles,
       };
-      if (!this.scopedPrefetch) {
-        fileMarker.matchedFiles = this.applier.matchedFiles;
-        fileMarker.missedFiles = this.applier.missedFiles;
-      }
       await this.updateEnrichmentMarker(collectionName, {
         [state.provider.key]: { file: fileMarker },
       });
