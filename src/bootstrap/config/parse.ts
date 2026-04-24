@@ -133,8 +133,20 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
   };
 
   const userSetChunkSize = ingest.chunkSize;
+  const userSetDeleteBatchSize = qdrantTune.deleteBatchSize;
+  const userSetDeleteConcurrency = qdrantTune.deleteConcurrency;
 
-  return { core, embedding, ingest, trajectoryGit, qdrantTune, userSetBatchSize, userSetChunkSize };
+  return {
+    core,
+    embedding,
+    ingest,
+    trajectoryGit,
+    qdrantTune,
+    userSetBatchSize,
+    userSetChunkSize,
+    userSetDeleteBatchSize,
+    userSetDeleteConcurrency,
+  };
 }
 
 export function parseAppConfigZod(): {
@@ -144,7 +156,12 @@ export function parseAppConfigZod(): {
   trajectoryGit: TrajectoryGitConfig;
   qdrantTune: QdrantTuneConfig;
   deprecations: DeprecationNotice[];
-  flags: { userSetBatchSize: boolean; userSetChunkSize: boolean };
+  flags: {
+    userSetBatchSize: boolean;
+    userSetChunkSize: boolean;
+    userSetDeleteBatchSize: boolean;
+    userSetDeleteConcurrency: boolean;
+  };
 } {
   const deprecations: DeprecationNotice[] = [];
   const env = (name: string, ...fallbacks: string[]) => envWithFallback(deprecations, name, ...fallbacks);
@@ -170,7 +187,12 @@ export function parseAppConfigZod(): {
     trajectoryGit,
     qdrantTune,
     deprecations,
-    flags: { userSetBatchSize: !!inputs.userSetBatchSize, userSetChunkSize: !!inputs.userSetChunkSize },
+    flags: {
+      userSetBatchSize: !!inputs.userSetBatchSize,
+      userSetChunkSize: !!inputs.userSetChunkSize,
+      userSetDeleteBatchSize: !!inputs.userSetDeleteBatchSize,
+      userSetDeleteConcurrency: !!inputs.userSetDeleteConcurrency,
+    },
   };
 }
 
