@@ -792,8 +792,8 @@ describe("EnrichmentCoordinator — fire-and-forget marker error paths", () => {
   });
 });
 
-describe("EnrichmentCoordinator — scoped prefetch (incremental reindex)", () => {
-  it("skips matchedFiles/missedFiles in awaitCompletion marker when changedPaths provided", async () => {
+describe("EnrichmentCoordinator — marker counters reflect current run", () => {
+  it("writes matchedFiles/missedFiles in awaitCompletion marker for scoped reindex (changedPaths provided)", async () => {
     const mockQdrant: any = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
@@ -807,21 +807,18 @@ describe("EnrichmentCoordinator — scoped prefetch (incremental reindex)", () =
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
-    // Pass changedPaths to trigger scopedPrefetch=true
+    // Pass changedPaths — counters still reflect this run's files, never stale full-index state.
     coordinator.prefetch("/repo", "test-col", undefined, ["src/a.ts"]);
     await new Promise((r) => setTimeout(r, 20));
 
     await coordinator.awaitCompletion("test-col");
 
-    // Find the final file marker written by awaitCompletion
     const { calls } = mockQdrant.setPayload.mock;
     const lastCall = calls[calls.length - 1];
     const marker = lastCall[1].enrichment;
 
-    // With scoped prefetch, matchedFiles/missedFiles should NOT be set
-    expect(marker.git.file.matchedFiles).toBeUndefined();
-    expect(marker.git.file.missedFiles).toBeUndefined();
-    // But status and timing should still be present
+    expect(marker.git.file.matchedFiles).toBeDefined();
+    expect(marker.git.file.missedFiles).toBeDefined();
     expect(marker.git.file.status).toBe("completed");
     expect(marker.git.file.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -1377,5 +1374,93 @@ describe("EnrichmentCoordinator — streaming chunk enrichment", () => {
     resolveChunkSignals!(new Map());
     await completionPromise;
     expect(completed).toBe(true);
+  });
+});
+
+describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => {
+  const mkProvider = (key = "git") => ({
+    key,
+    signals: [],
+    filters: [],
+    presets: [],
+    resolveRoot: vi.fn((p: string) => p),
+    buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+    buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+  });
+
+  const mkRecovery = (file = 0, chunk = 0) => ({
+    recoverFileLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: file }),
+    recoverChunkLevel: vi.fn().mockResolvedValue({ recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: chunk }),
+  });
+
+  const markerPoint = (enrichment: Record<string, unknown>) => ({
+    id: "meta",
+    payload: { enrichment },
+  });
+
+  it("skips marker writeback when runId changes between recovery start and end", async () => {
+    const provider = mkProvider();
+    // Before recovery: runId=A. After recovery finishes: runId=B (new pipeline run stamped it).
+    const getPoint = vi
+      .fn()
+      .mockResolvedValueOnce(markerPoint({ git: { runId: "A" } })) // baseline snapshot
+      .mockResolvedValueOnce(markerPoint({ git: { runId: "B" } })); // after recovery
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint,
+    };
+    const recovery = mkRecovery(0, 42); // would otherwise write chunk=degraded, unenriched=42
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any, recovery as any);
+    await coordinator.runRecovery("test-col", "/repo");
+
+    // Writeback with recovery verdict must NOT happen — fresher run owns the marker now.
+    const degradedWrite = mockQdrant.setPayload.mock.calls.find(
+      (call: any[]) => call[1]?.enrichment?.git?.chunk?.status === "degraded",
+    );
+    expect(degradedWrite).toBeUndefined();
+  });
+
+  it("writes recovery marker when runId is unchanged across recovery", async () => {
+    const provider = mkProvider();
+    const getPoint = vi
+      .fn()
+      .mockResolvedValueOnce(markerPoint({ git: { runId: "A" } }))
+      .mockResolvedValueOnce(markerPoint({ git: { runId: "A" } }));
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint,
+    };
+    const recovery = mkRecovery(0, 7);
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any, recovery as any);
+    await coordinator.runRecovery("test-col", "/repo");
+
+    const degradedWrite = mockQdrant.setPayload.mock.calls.find(
+      (call: any[]) => call[1]?.enrichment?.git?.chunk?.status === "degraded",
+    );
+    expect(degradedWrite).toBeDefined();
+    expect(degradedWrite![1].enrichment.git.chunk.unenrichedChunks).toBe(7);
+  });
+
+  it("writes recovery marker when no prior marker exists (first-ever run)", async () => {
+    const provider = mkProvider();
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      // both reads return null → baselineRunId === currentRunId === undefined → allowed
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const recovery = mkRecovery(0, 0);
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider as any, recovery as any);
+    await coordinator.runRecovery("test-col", "/repo");
+
+    const recoveryWrite = mockQdrant.setPayload.mock.calls.find(
+      (call: any[]) => call[1]?.enrichment?.git?.chunk?.status === "completed",
+    );
+    expect(recoveryWrite).toBeDefined();
   });
 });
