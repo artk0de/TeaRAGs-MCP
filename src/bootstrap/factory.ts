@@ -29,6 +29,7 @@ import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
+import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -125,6 +126,14 @@ async function resolveInfrastructure(
   ) {
     zodConfig.embedding.tune.batchSize = embeddings.recommendedBatchSize;
   }
+
+  Object.assign(
+    zodConfig.qdrantTune,
+    applyEmbeddedDeleteTuning(zodConfig.qdrantTune, resolution.mode, {
+      deleteBatchSize: zodConfig.flags.userSetDeleteBatchSize,
+      deleteConcurrency: zodConfig.flags.userSetDeleteConcurrency,
+    }),
+  );
 
   const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions());
 

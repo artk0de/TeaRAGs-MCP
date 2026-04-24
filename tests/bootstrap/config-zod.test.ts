@@ -273,6 +273,32 @@ describe("parseAppConfigZod", () => {
     });
   });
 
+  describe("delete-tune userSet flags", () => {
+    it("flags.userSetDeleteBatchSize is false when no env is set", async () => {
+      const { parseAppConfigZod } = await freshImport();
+      const { flags } = parseAppConfigZod();
+
+      expect(flags.userSetDeleteBatchSize).toBe(false);
+      expect(flags.userSetDeleteConcurrency).toBe(false);
+    });
+
+    it("flags.userSetDeleteBatchSize is true when QDRANT_TUNE_DELETE_BATCH_SIZE is set", async () => {
+      process.env.QDRANT_TUNE_DELETE_BATCH_SIZE = "500";
+      const { parseAppConfigZod } = await freshImport();
+      const { flags } = parseAppConfigZod();
+
+      expect(flags.userSetDeleteBatchSize).toBe(true);
+    });
+
+    it("flags.userSetDeleteConcurrency is true when legacy DELETE_CONCURRENCY is set", async () => {
+      process.env.DELETE_CONCURRENCY = "4";
+      const { parseAppConfigZod } = await freshImport();
+      const { flags } = parseAppConfigZod();
+
+      expect(flags.userSetDeleteConcurrency).toBe(true);
+    });
+  });
+
   describe("validation errors", () => {
     it("throws readable error for invalid transport mode", async () => {
       process.env.SERVER_TRANSPORT = "grpc";
