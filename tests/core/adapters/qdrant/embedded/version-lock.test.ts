@@ -11,7 +11,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
  * We can't easily mock getBinaryPath in ESM, so we test the logic
  * by replicating what isBinaryUpToDate checks:
  * 1. Binary file exists at getBinaryPath()
- * 2. qdrant.version file next to binary contains EMBEDDED_QDRANT_VERSION
+ * 2. qdrant.version file next to binary contains QDRANT_VERSION
  */
 describe("version lock file logic", () => {
   const tempDir = join(tmpdir(), `tea-rags-version-lock-${Date.now()}`);
@@ -52,17 +52,17 @@ describe("version lock file logic", () => {
   });
 
   it("binary + version file with correct version → up to date", async () => {
-    const { EMBEDDED_QDRANT_VERSION } = await import("../../../../../src/core/adapters/qdrant/embedded/download.js");
+    const { QDRANT_VERSION } = await import("../../../../../src/core/adapters/qdrant/embedded/download.js");
     writeFileSync(binaryFile, "fake-binary");
-    writeFileSync(versionFile, EMBEDDED_QDRANT_VERSION);
+    writeFileSync(versionFile, QDRANT_VERSION);
     expect(existsSync(binaryFile)).toBe(true);
-    expect(readFileSync(versionFile, "utf-8").trim()).toBe(EMBEDDED_QDRANT_VERSION);
+    expect(readFileSync(versionFile, "utf-8").trim()).toBe(QDRANT_VERSION);
   });
 
-  it("version file written by downloadQdrant contains EMBEDDED_QDRANT_VERSION", async () => {
-    const { EMBEDDED_QDRANT_VERSION } = await import("../../../../../src/core/adapters/qdrant/embedded/download.js");
+  it("version file written by downloadQdrant contains QDRANT_VERSION", async () => {
+    const { QDRANT_VERSION } = await import("../../../../../src/core/adapters/qdrant/embedded/download.js");
     // Simulate what downloadQdrant does at the end
-    writeFileSync(versionFile, EMBEDDED_QDRANT_VERSION, "utf-8");
-    expect(readFileSync(versionFile, "utf-8")).toBe(EMBEDDED_QDRANT_VERSION);
+    writeFileSync(versionFile, QDRANT_VERSION, "utf-8");
+    expect(readFileSync(versionFile, "utf-8")).toBe(QDRANT_VERSION);
   });
 });

@@ -1,39 +1,40 @@
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { QdrantVersionTooOldError } from "../../core/adapters/qdrant/errors.js";
+import { compareSemver, isSemver, QDRANT_VERSION } from "../../core/infra/qdrant-version.js";
 
-import { ConfigValueInvalidError } from "../errors.js";
-
-const VERSION_FILE_NAME = ".qdrant-required-version";
-const SEMVER_RE = /^\d+\.\d+\.\d+$/;
-
-function resolveVersionFilePath(): string {
-  // Works for both `src/bootstrap/config/qdrant-compat.ts` (dev via tsx/vitest)
-  // and `build/bootstrap/config/qdrant-compat.js` (published package layout):
-  // in both cases the file lives three levels up at the package root.
-  const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "..", "..", VERSION_FILE_NAME);
-}
-
-export function readMinQdrantVersion(): string {
-  const path = resolveVersionFilePath();
-  const content = readFileSync(path, "utf-8").trim();
-  if (!SEMVER_RE.test(content)) {
-    throw new ConfigValueInvalidError("MIN_QDRANT_VERSION", content, `semver X.Y.Z from ${VERSION_FILE_NAME}`);
+/**
+ * Validate that an externally-managed Qdrant server meets the version
+ * declared in `.qdrant-required-version`.
+ *
+ * Throws {@link QdrantVersionTooOldError} only when the server successfully
+ * reports a semver string strictly older than {@link QDRANT_VERSION}. All
+ * other conditions (connection error, non-OK HTTP, missing/malformed
+ * version field) are treated as "skip" — the subsequent QdrantManager
+ * health handling owns reachability, and we do not want to fail startup
+ * against proxies or non-standard Qdrant-compatible servers that omit the
+ * field.
+ *
+ * Embedded daemons MUST NOT be passed through this function — their
+ * version is pinned by {@link QDRANT_VERSION} directly.
+ */
+export async function checkExternalQdrantVersion(url: string, apiKey?: string): Promise<void> {
+  let body: unknown;
+  try {
+    const headers: Record<string, string> = {};
+    if (apiKey) headers["api-key"] = apiKey;
+    const res = await fetch(`${url}/`, {
+      headers,
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return;
+    body = await res.json();
+  } catch {
+    return;
   }
-  return content;
-}
-
-export function compareSemver(a: string, b: string): number {
-  if (!SEMVER_RE.test(a)) {
-    throw new ConfigValueInvalidError("compareSemver.a", a, "semver X.Y.Z");
+  const raw = (body as { version?: unknown } | null)?.version;
+  if (typeof raw !== "string") return;
+  const normalized = raw.startsWith("v") ? raw.slice(1) : raw;
+  if (!isSemver(normalized)) return;
+  if (compareSemver(normalized, QDRANT_VERSION) < 0) {
+    throw new QdrantVersionTooOldError(url, normalized, QDRANT_VERSION);
   }
-  if (!SEMVER_RE.test(b)) {
-    throw new ConfigValueInvalidError("compareSemver.b", b, "semver X.Y.Z");
-  }
-  const [a1, a2, a3] = a.split(".").map((n) => parseInt(n, 10));
-  const [b1, b2, b3] = b.split(".").map((n) => parseInt(n, 10));
-  if (a1 !== b1) return a1 - b1;
-  if (a2 !== b2) return a2 - b2;
-  return a3 - b3;
 }

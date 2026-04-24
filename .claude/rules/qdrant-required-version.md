@@ -1,48 +1,57 @@
-# `.qdrant-required-version` — Minimum Qdrant Server Version
+# `.qdrant-required-version` — Qdrant Server Version
 
 ## What it is
 
-A single-line file at the repository root containing the **minimum Qdrant server
-version** (semver `X.Y.Z`) required for all features of the MCP server to work
-correctly.
+A single-line file at the repository root containing the Qdrant server version
+this package targets (semver `X.Y.Z`).
 
 ```
 1.17.0
 ```
 
-Shipped with the npm package via `package.json` `files[]`. Read at runtime by
-`src/bootstrap/config/qdrant-compat.ts`:
+**Single source of truth** for everything Qdrant-version related — both the
+embedded daemon version and the minimum accepted external server version.
+Shipped with the npm package via `package.json` `files[]`, loaded eagerly at
+module import by `src/core/infra/qdrant-version.ts`:
 
 ```ts
-import { readMinQdrantVersion } from "./bootstrap/config/qdrant-compat.js";
+import { QDRANT_VERSION } from "./core/infra/qdrant-version.js";
 
-const min = readMinQdrantVersion(); // "1.17.0"
+console.log(QDRANT_VERSION); // "1.17.0"
 ```
 
-## Purpose
+## How it is used
 
-Single source of truth for the minimum server version contract. Consumed in two
-places:
+1. **Embedded daemon.** `src/core/adapters/qdrant/embedded/download.ts`
+   downloads exactly this version from
+   `github.com/qdrant/qdrant/releases/v${QDRANT_VERSION}` and pins it on disk in
+   `qdrant.version` next to the binary. `isBinaryUpToDate()` is a strict
+   equality check against `QDRANT_VERSION`.
 
-1. **External Qdrant validation.** When `QDRANT_URL` points at a user-managed
-   Qdrant (not the embedded daemon), `checkExternalQdrantVersion` fetches the
-   server version and compares against `readMinQdrantVersion()`. Mismatch →
-   `QdrantVersionTooOldError` with hint to upgrade.
+2. **External Qdrant validation.** When `QDRANT_URL` points at a user-managed
+   Qdrant, `checkExternalQdrantVersion` fetches the server version and rejects
+   anything strictly older than `QDRANT_VERSION` with
+   `QdrantVersionTooOldError`.
 
-2. **Embedded binary invariant.** `EMBEDDED_QDRANT_VERSION` (in
-   `src/core/adapters/qdrant/embedded/download.ts`) is the version the embedded
-   daemon downloads and runs. It MUST always satisfy
-   `compareSemver(EMBEDDED_QDRANT_VERSION, readMinQdrantVersion()) >= 0`.
-   Enforced by unit test — CI blocks downgrades below the minimum.
+3. **Downgrade guard.** If the installed binary reports a version newer than
+   `QDRANT_VERSION` (user reinstalled an older tea-rags package on top of a
+   newer one), `assertNoDowngrade()` throws `QdrantDowngradeNotSupportedError`
+   before the old binary overwrites the new one — Qdrant storage is not
+   backward-compatible.
+
+4. **Stale-binary warning.** On the attach fast path, when the live daemon's
+   binary does not match `QDRANT_VERSION`, `warnIfStaleBinary()` emits a stderr
+   notice; upgrade is deferred to the next cold spawn (after all MCP clients
+   disconnect and the idle watcher shuts the daemon down, ~30s).
 
 ## When to bump `.qdrant-required-version`
 
-Bump when the MCP server starts using a Qdrant server capability that did not
-exist in the previously-pinned minimum. Concrete triggers:
+Bump when the MCP server starts using a Qdrant capability that did not exist in
+the previously-pinned version. Concrete triggers:
 
-- Adding a call to a REST endpoint introduced in a newer Qdrant release.
+- Calling a REST endpoint introduced in a newer Qdrant release.
 - Adopting a new filter operator, rerank strategy, sparse-vector modifier,
-  quantization mode, or vector config that the old server does not accept.
+  quantization mode, or vector config the old server rejects.
 - Switching `@qdrant/js-client-rest` to a major that drops support for the old
   server range.
 
@@ -54,27 +63,26 @@ exist in the previously-pinned minimum. Concrete triggers:
 
 ## Bump procedure
 
-1. Edit `.qdrant-required-version` to the new minimum semver.
-2. Verify the embedded invariant still holds — if the new minimum exceeds
-   `EMBEDDED_QDRANT_VERSION`, bump `EMBEDDED_QDRANT_VERSION` in `download.ts` to
-   match (and verify Qdrant storage forward-compat for the jump — see
-   `docs/plans/2026-03-09-embedded-qdrant-design.md`).
-3. Update `CHANGELOG` / release notes: this is a **BREAKING** change for users
-   running external Qdrant below the new minimum — they will get
+1. Edit `.qdrant-required-version` to the new semver.
+2. Validate Qdrant forward-compat for the jump — storage migrates forward on
+   `+1..+3` minor bumps, bigger jumps need verification.
+3. Update `CHANGELOG` / release notes: this is **BREAKING** for users running
+   external Qdrant below the new version — they will get
    `QdrantVersionTooOldError` on startup.
 4. Commit with scope `config` (patch) or `feat(config)!` (breaking).
 
 ## Why not an env var
 
 `.qdrant-required-version` is a **compile-time contract**, not user config.
-Users cannot relax it at runtime — if the MCP code paths depend on a server
+Users cannot relax it at runtime — if the MCP code paths rely on a server
 feature, running against an older server is broken by definition. Keeping the
-constant in a git-tracked file (vs `src/`) makes bumps visible in the diff and
-lets `npm`/IDE tools show the required version without parsing TypeScript.
+constant in a git-tracked file (vs buried in TypeScript) makes bumps visible in
+the diff and lets `npm`/IDE tools show the target version without parsing
+compiled JS.
 
 ## Anti-pattern
 
-Never hardcode the minimum in multiple places. If you need the value, import
-`readMinQdrantVersion()` — do not duplicate the string literal. The file is the
-only source of truth; grep for `.qdrant-required-version` before adding a new
-reference to find the canonical reader.
+Never hardcode the version in multiple places or introduce a parallel "min" vs
+"embedded" split — there is only one version, one file, one export. If you need
+the value, import `QDRANT_VERSION` from `src/core/infra/qdrant-version.ts`. Do
+not duplicate the string literal.

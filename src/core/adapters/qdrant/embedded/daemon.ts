@@ -7,7 +7,14 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { QdrantOperationError, QdrantUnavailableError } from "../errors.js";
 import { DaemonLock } from "./daemon-lock.js";
-import { downloadQdrant, EMBEDDED_QDRANT_VERSION, getBinaryPath, isBinaryUpToDate } from "./download.js";
+import {
+  assertNoDowngrade,
+  downloadQdrant,
+  getBinaryPath,
+  isBinaryUpToDate,
+  QDRANT_VERSION,
+  warnIfStaleBinary,
+} from "./download.js";
 import type { DaemonHandle, DaemonPaths, QdrantResolution, StartupPhase } from "./types.js";
 
 const daemonLock = new DaemonLock();
@@ -320,6 +327,7 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
     const pid = readPidFromFile(paths);
     const refs = incrementRefs(paths);
     console.error(`[tea-rags] Attached to Qdrant daemon (pid=${pid}, port=${port}, refs=${refs})`);
+    warnIfStaleBinary(appDataPath);
     return makeDaemonHandle(paths, port, url, pid);
   }
 
@@ -347,7 +355,8 @@ async function ensureDaemon(appDataPath?: string): Promise<DaemonHandle> {
     cleanupDaemonFiles(paths);
 
     if (!isBinaryUpToDate(appDataPath)) {
-      console.error(`[tea-rags] Downloading Qdrant v${EMBEDDED_QDRANT_VERSION}...`);
+      assertNoDowngrade(appDataPath);
+      console.error(`[tea-rags] Downloading Qdrant v${QDRANT_VERSION}...`);
       await downloadQdrant(undefined, undefined, appDataPath);
     }
 

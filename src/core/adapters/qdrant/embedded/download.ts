@@ -5,9 +5,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { ConfigValueInvalidError } from "../../../../bootstrap/errors.js";
-import { QdrantOperationError } from "../errors.js";
+import { compareSemver, isSemver, QDRANT_VERSION } from "../../../infra/qdrant-version.js";
+import { QdrantDowngradeNotSupportedError, QdrantOperationError } from "../errors.js";
 
-export const EMBEDDED_QDRANT_VERSION = "1.17.0";
+export { QDRANT_VERSION } from "../../../infra/qdrant-version.js";
 
 /* v8 ignore next 3 -- fallback for backward compat when DI paths not provided */
 function fallbackAppDataDir(): string {
@@ -50,14 +51,14 @@ export function getBinaryPath(platform = process.platform, appDataPath?: string)
 }
 
 export function getDownloadUrl(asset: string): string {
-  return `https://github.com/qdrant/qdrant/releases/download/v${EMBEDDED_QDRANT_VERSION}/${asset}`;
+  return `https://github.com/qdrant/qdrant/releases/download/v${QDRANT_VERSION}/${asset}`;
 }
 
 function getVersionPath(appDataPath?: string): string {
   return join(dirname(getBinaryPath(undefined, appDataPath)), "qdrant.version");
 }
 
-function getInstalledVersion(appDataPath?: string): string | null {
+export function getInstalledVersion(appDataPath?: string): string | null {
   try {
     return readFileSync(getVersionPath(appDataPath), "utf-8").trim();
   } catch {
@@ -65,8 +66,40 @@ function getInstalledVersion(appDataPath?: string): string | null {
   }
 }
 
+/**
+ * Refuse to overwrite a newer installed binary with the pinned (older)
+ * version. Qdrant storage is not backward-compatible, so a silent
+ * downgrade (e.g. from reinstalling an older tea-rags package) would
+ * corrupt the on-disk index. No-op when no prior install exists or the
+ * version file is unparseable.
+ */
+export function assertNoDowngrade(appDataPath?: string): void {
+  const installed = getInstalledVersion(appDataPath);
+  if (installed === null || !isSemver(installed)) return;
+  if (compareSemver(installed, QDRANT_VERSION) > 0) {
+    throw new QdrantDowngradeNotSupportedError(installed, QDRANT_VERSION, getQdrantBinaryDir(appDataPath));
+  }
+}
+
+/**
+ * On the attach fast path we can't upgrade a live daemon — another MCP
+ * process may be holding refs. Surface a one-line warning so the user
+ * knows a refresh is pending; upgrade will happen automatically at the
+ * next cold spawn (after all clients release and the idle watcher shuts
+ * the daemon down). Returns true iff a warning was emitted.
+ */
+export function warnIfStaleBinary(appDataPath?: string, log: (msg: string) => void = console.error): boolean {
+  const installed = getInstalledVersion(appDataPath);
+  if (installed === null || installed === QDRANT_VERSION) return false;
+  log(
+    `[tea-rags] Qdrant binary is stale (installed=${installed}, pinned=${QDRANT_VERSION}). ` +
+      `Upgrade is deferred until all MCP clients disconnect and the daemon goes idle (~30s).`,
+  );
+  return true;
+}
+
 function writeInstalledVersion(appDataPath?: string): void {
-  writeFileSync(getVersionPath(appDataPath), EMBEDDED_QDRANT_VERSION, "utf-8");
+  writeFileSync(getVersionPath(appDataPath), QDRANT_VERSION, "utf-8");
 }
 
 export function isBinaryPresent(appDataPath?: string): boolean {
@@ -74,7 +107,7 @@ export function isBinaryPresent(appDataPath?: string): boolean {
 }
 
 export function isBinaryUpToDate(appDataPath?: string): boolean {
-  return isBinaryPresent(appDataPath) && getInstalledVersion(appDataPath) === EMBEDDED_QDRANT_VERSION;
+  return isBinaryPresent(appDataPath) && getInstalledVersion(appDataPath) === QDRANT_VERSION;
 }
 
 export async function downloadQdrant(
