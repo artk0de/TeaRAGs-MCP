@@ -278,9 +278,12 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     this.batchSetPayloadCalls.push({ collectionName, operations });
   }
 
-  async disableIndexing(_collectionName: string): Promise<void> {}
+  async pauseOptimizer(_collectionName: string): Promise<void> {}
 
-  async enableIndexing(_collectionName: string, _threshold?: number): Promise<void> {}
+  async resumeOptimizer(
+    _collectionName: string,
+    _options?: { indexingThreshold?: number; deletedThreshold?: number },
+  ): Promise<void> {}
 
   async checkHealth(): Promise<boolean> {
     return true;

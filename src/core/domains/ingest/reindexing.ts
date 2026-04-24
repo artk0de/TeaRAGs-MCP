@@ -222,109 +222,127 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const parallelStart = Date.now();
     this.logParallelStart(filesToDelete, addedFiles, modifiedFiles);
 
-    // Level 1: delete old chunks + process added files in parallel
-    const deleteStartTime = Date.now();
-    let chunksDeleted = 0;
-    let deletionOutcome: DeletionOutcome | undefined;
-    const deletePromise = performDeletion(
-      this.qdrant,
-      ctx.collectionName,
-      filesToDelete,
-      this.deleteConfig,
-      progressCallback,
-    ).then((outcome) => {
-      deletionOutcome = outcome;
-      ({ chunksDeleted } = outcome);
-      return outcome;
-    });
-    const addPromise = processRelativeFiles(
-      addedFiles,
-      ctx.absolutePath,
-      pCtx.chunkerPool,
-      pCtx.chunkPipeline,
-      processOpts,
-      chunkMap,
-      "added",
-    );
+    // Pause HNSW indexing + segment vacuum for the whole reindex window.
+    // Without this, a large delete (>20% tombstones) triggers optimizer repack
+    // that blocks concurrent upserts for minutes on embedded Qdrant and makes
+    // them hit the client's requestTimeoutMs. Resumed in `finally`; if the
+    // process dies between pause and resume, the next reindex's `pauseOptimizer`
+    // is idempotent and the subsequent `resumeOptimizer` heals the collection.
+    await this.qdrant.pauseOptimizer(ctx.collectionName);
 
-    pipelineLog.reindexPhase("DELETE_AND_ADD_STARTED", {
-      deleteFiles: filesToDelete.length,
-      addFiles: addedFiles.length,
-    });
+    try {
+      // Level 1: delete old chunks + process added files in parallel
+      const deleteStartTime = Date.now();
+      let chunksDeleted = 0;
+      let deletionOutcome: DeletionOutcome | undefined;
+      const deletePromise = performDeletion(
+        this.qdrant,
+        ctx.collectionName,
+        filesToDelete,
+        this.deleteConfig,
+        progressCallback,
+      ).then((outcome) => {
+        deletionOutcome = outcome;
+        ({ chunksDeleted } = outcome);
+        return outcome;
+      });
+      const addPromise = processRelativeFiles(
+        addedFiles,
+        ctx.absolutePath,
+        pCtx.chunkerPool,
+        pCtx.chunkPipeline,
+        processOpts,
+        chunkMap,
+        "added",
+      );
 
-    await deletePromise;
+      pipelineLog.reindexPhase("DELETE_AND_ADD_STARTED", {
+        deleteFiles: filesToDelete.length,
+        addFiles: addedFiles.length,
+      });
 
-    pipelineLog.reindexPhase("DELETE_COMPLETE", {
-      durationMs: Date.now() - deleteStartTime,
-      deleted: filesToDelete.length,
-    });
+      await deletePromise;
 
-    if (deletionOutcome && !deletionOutcome.isFullSuccess()) {
-      pipelineLog.step({ component: "Reindex" }, "DELETE_PARTIAL_FAILURE", {
-        failedFiles: deletionOutcome.failed.size,
-        succeededFiles: deletionOutcome.succeeded.size,
-        failedSample: [...deletionOutcome.failed].slice(0, 20),
+      pipelineLog.reindexPhase("DELETE_COMPLETE", {
+        durationMs: Date.now() - deleteStartTime,
+        deleted: filesToDelete.length,
+      });
+
+      if (deletionOutcome && !deletionOutcome.isFullSuccess()) {
+        pipelineLog.step({ component: "Reindex" }, "DELETE_PARTIAL_FAILURE", {
+          failedFiles: deletionOutcome.failed.size,
+          succeededFiles: deletionOutcome.succeeded.size,
+          failedSample: [...deletionOutcome.failed].slice(0, 20),
+        });
+      }
+
+      if (isDebug()) {
+        console.error(`[Reindex] Delete complete, starting modified indexing (add still running in parallel)`);
+      }
+
+      // Phase 3.2: gate modified-file upsert on per-file delete success. Added
+      // files have no old chunks to collide with, so they never see the
+      // coordinator.
+      const coordinator = new ReindexCoordinator();
+      if (deletionOutcome) coordinator.applyDeletionOutcome(deletionOutcome);
+
+      // Level 2: process modified files (after delete completes)
+      const modifiedStartTime = Date.now();
+      const modifiedOpts = { ...processOpts, coordinator };
+      const modifiedPromise = processRelativeFiles(
+        modifiedFiles,
+        ctx.absolutePath,
+        pCtx.chunkerPool,
+        pCtx.chunkPipeline,
+        modifiedOpts,
+        chunkMap,
+        "modified",
+      );
+
+      pipelineLog.reindexPhase("MODIFIED_STARTED", {
+        modifiedFiles: modifiedFiles.length,
+        addStillRunning: true,
+      });
+
+      const [addedChunks, modifiedChunks] = await Promise.all([addPromise, modifiedPromise]);
+
+      pipelineLog.reindexPhase("ADD_AND_MODIFIED_COMPLETE", {
+        addedChunks,
+        modifiedChunks,
+        addDurationMs: Date.now() - parallelStart,
+        modifiedDurationMs: Date.now() - modifiedStartTime,
+      });
+
+      let filesSkippedDueToDeleteFailure: number | undefined;
+      if (coordinator.hasBlockedPaths()) {
+        const skipped = coordinator.skippedFiles();
+        filesSkippedDueToDeleteFailure = skipped.length;
+        pipelineLog.step({ component: "Reindex" }, "REINDEX_PARTIAL_COMPLETE", {
+          skippedFilesCount: skipped.length,
+          skippedSample: skipped.slice(0, 20),
+          blockedPathsCount: deletionOutcome?.failed.size ?? 0,
+        });
+      }
+
+      this.logPipelineStats(pCtx, parallelStart);
+
+      return {
+        chunksAdded: addedChunks + modifiedChunks,
+        chunksDeleted,
+        processingCtx: pCtx,
+        chunkMap,
+        deletionOutcome,
+        filesSkippedDueToDeleteFailure,
+      };
+    } finally {
+      // Reverting deleted_threshold to 0.2 naturally triggers one optimizer
+      // pass for all accumulated tombstones — a single repack instead of
+      // continuous reactive ones during ingest. Failure here is non-fatal:
+      // next reindex's pause/resume cycle heals the collection.
+      await this.qdrant.resumeOptimizer(ctx.collectionName).catch((err) => {
+        if (isDebug()) console.error(`[Reindex] resumeOptimizer failed (next reindex will heal):`, err);
       });
     }
-
-    if (isDebug()) {
-      console.error(`[Reindex] Delete complete, starting modified indexing (add still running in parallel)`);
-    }
-
-    // Phase 3.2: gate modified-file upsert on per-file delete success. Added
-    // files have no old chunks to collide with, so they never see the
-    // coordinator.
-    const coordinator = new ReindexCoordinator();
-    if (deletionOutcome) coordinator.applyDeletionOutcome(deletionOutcome);
-
-    // Level 2: process modified files (after delete completes)
-    const modifiedStartTime = Date.now();
-    const modifiedOpts = { ...processOpts, coordinator };
-    const modifiedPromise = processRelativeFiles(
-      modifiedFiles,
-      ctx.absolutePath,
-      pCtx.chunkerPool,
-      pCtx.chunkPipeline,
-      modifiedOpts,
-      chunkMap,
-      "modified",
-    );
-
-    pipelineLog.reindexPhase("MODIFIED_STARTED", {
-      modifiedFiles: modifiedFiles.length,
-      addStillRunning: true,
-    });
-
-    const [addedChunks, modifiedChunks] = await Promise.all([addPromise, modifiedPromise]);
-
-    pipelineLog.reindexPhase("ADD_AND_MODIFIED_COMPLETE", {
-      addedChunks,
-      modifiedChunks,
-      addDurationMs: Date.now() - parallelStart,
-      modifiedDurationMs: Date.now() - modifiedStartTime,
-    });
-
-    let filesSkippedDueToDeleteFailure: number | undefined;
-    if (coordinator.hasBlockedPaths()) {
-      const skipped = coordinator.skippedFiles();
-      filesSkippedDueToDeleteFailure = skipped.length;
-      pipelineLog.step({ component: "Reindex" }, "REINDEX_PARTIAL_COMPLETE", {
-        skippedFilesCount: skipped.length,
-        skippedSample: skipped.slice(0, 20),
-        blockedPathsCount: deletionOutcome?.failed.size ?? 0,
-      });
-    }
-
-    this.logPipelineStats(pCtx, parallelStart);
-
-    return {
-      chunksAdded: addedChunks + modifiedChunks,
-      chunksDeleted,
-      processingCtx: pCtx,
-      chunkMap,
-      deletionOutcome,
-      filesSkippedDueToDeleteFailure,
-    };
   }
 
   // ── Finalization ─────────────────────────────────────────
@@ -376,13 +394,23 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
     pipelineLog.reindexPhase("DELETE_ONLY_START", { files: filesToDelete.length });
 
-    const outcome = await performDeletion(
-      this.qdrant,
-      ctx.collectionName,
-      filesToDelete,
-      this.deleteConfig,
-      progressCallback,
-    );
+    await this.qdrant.pauseOptimizer(ctx.collectionName);
+
+    let outcome: DeletionOutcome;
+    try {
+      outcome = await performDeletion(
+        this.qdrant,
+        ctx.collectionName,
+        filesToDelete,
+        this.deleteConfig,
+        progressCallback,
+      );
+    } finally {
+      await this.qdrant.resumeOptimizer(ctx.collectionName).catch((err) => {
+        if (isDebug()) console.error(`[Reindex] resumeOptimizer failed (next reindex will heal):`, err);
+      });
+    }
+
     if (!outcome.isFullSuccess()) {
       throw new PartialDeletionError(outcome);
     }

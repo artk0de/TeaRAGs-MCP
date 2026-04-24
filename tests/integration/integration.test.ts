@@ -211,13 +211,12 @@ class MockQdrantManager implements Partial<QdrantManager> {
     return { deletedPaths: relativePaths.length, batchCount: 1, durationMs: 0 };
   }
 
-  async disableIndexing(_collectionName: string): Promise<void> {
-    // Mock: no-op, indexing control not needed for tests
-  }
+  async pauseOptimizer(_collectionName: string): Promise<void> {}
 
-  async enableIndexing(_collectionName: string, _threshold?: number): Promise<void> {
-    // Mock: no-op, indexing control not needed for tests
-  }
+  async resumeOptimizer(
+    _collectionName: string,
+    _options?: { indexingThreshold?: number; deletedThreshold?: number },
+  ): Promise<void> {}
 
   // For testing: get all indexed paths
   getAllIndexedPaths(collectionName: string): string[] {

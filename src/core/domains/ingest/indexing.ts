@@ -82,39 +82,53 @@ export class IndexPipeline extends BaseIndexingPipeline {
       const ctx = this.initProcessing(setup.targetCollection, absolutePath, scanner, undefined, overrides?.chunkSize);
       this.startHeartbeat(setup.targetCollection);
 
-      const result = await this.processAndTrack(files, absolutePath, ctx, progressCallback);
-      stats.filesIndexed = result.filesProcessed;
-      stats.chunksCreated = result.chunksCreated;
-      if (result.errors.length > 0) {
-        stats.errors?.push(...result.errors);
+      // Pause HNSW indexing while we bulk-ingest. Reactive HNSW build during
+      // upserts otherwise throttles ingest; deferring to a single post-ingest
+      // pass is 2-3× faster on large codebases. `deleted_threshold` pause is
+      // harmless here (no deletes during initial index).
+      await this.qdrant.pauseOptimizer(setup.targetCollection);
+
+      try {
+        const result = await this.processAndTrack(files, absolutePath, ctx, progressCallback);
+        stats.filesIndexed = result.filesProcessed;
+        stats.chunksCreated = result.chunksCreated;
+        if (result.errors.length > 0) {
+          stats.errors?.push(...result.errors);
+        }
+
+        progressCallback?.({
+          phase: "storing",
+          current: result.chunksCreated,
+          total: result.chunksCreated,
+          percentage: 90,
+          message: "Finalizing embeddings and storage...",
+        });
+
+        const getEnrichmentStatus = await this.finalizeProcessing(
+          ctx,
+          result.chunkMap,
+          setup.targetCollection,
+          absolutePath,
+        );
+        this.logPipelineCompletion(ctx);
+
+        this.stopHeartbeat();
+        await this.finalizeAlias(collectionName, setup);
+        await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true, overrides?.modelInfo);
+        await this.saveSnapshot(absolutePath, collectionName, files, stats, setup.aliasVersion);
+
+        const enrichmentResult = getEnrichmentStatus();
+        stats.enrichmentStatus = enrichmentResult.status;
+        stats.enrichmentMetrics = enrichmentResult.metrics;
+        stats.durationMs = Date.now() - startTime;
+        return stats;
+      } finally {
+        // Revert thresholds: triggers one optimizer pass over freshly-indexed
+        // points. Non-fatal on failure — next run's pause/resume heals it.
+        await this.qdrant.resumeOptimizer(setup.targetCollection).catch((err) => {
+          if (isDebug()) console.error(`[Index] resumeOptimizer failed (next reindex will heal):`, err);
+        });
       }
-
-      progressCallback?.({
-        phase: "storing",
-        current: result.chunksCreated,
-        total: result.chunksCreated,
-        percentage: 90,
-        message: "Finalizing embeddings and storage...",
-      });
-
-      const getEnrichmentStatus = await this.finalizeProcessing(
-        ctx,
-        result.chunkMap,
-        setup.targetCollection,
-        absolutePath,
-      );
-      this.logPipelineCompletion(ctx);
-
-      this.stopHeartbeat();
-      await this.finalizeAlias(collectionName, setup);
-      await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true, overrides?.modelInfo);
-      await this.saveSnapshot(absolutePath, collectionName, files, stats, setup.aliasVersion);
-
-      const enrichmentResult = getEnrichmentStatus();
-      stats.enrichmentStatus = enrichmentResult.status;
-      stats.enrichmentMetrics = enrichmentResult.metrics;
-      stats.durationMs = Date.now() - startTime;
-      return stats;
     } catch (error) {
       this.wrapUnexpectedError(error, IndexingFailedError);
     } finally {

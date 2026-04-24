@@ -655,37 +655,45 @@ describe("QdrantManager", () => {
     });
   });
 
-  describe("disableIndexing and enableIndexing", () => {
+  describe("pauseOptimizer and resumeOptimizer", () => {
     beforeEach(() => {
       mockClient.updateCollection = vi.fn().mockResolvedValue({});
     });
 
-    it("should disable indexing for bulk upload", async () => {
-      await manager.disableIndexing("test-collection");
+    it("pauses both HNSW indexing and segment vacuum", async () => {
+      await manager.pauseOptimizer("test-collection");
 
+      // deleted_threshold: 0.99 is the key — without it, bulk deletes trigger
+      // vacuum mid-reindex which blocks upserts for minutes.
       expect(mockClient.updateCollection).toHaveBeenCalledWith("test-collection", {
         optimizers_config: {
           indexing_threshold: 0,
+          deleted_threshold: 0.99,
         },
       });
     });
 
-    it("should enable indexing with default threshold", async () => {
-      await manager.enableIndexing("test-collection");
+    it("resumes with Qdrant defaults when no options provided", async () => {
+      await manager.resumeOptimizer("test-collection");
 
       expect(mockClient.updateCollection).toHaveBeenCalledWith("test-collection", {
         optimizers_config: {
           indexing_threshold: 20000,
+          deleted_threshold: 0.2,
         },
       });
     });
 
-    it("should enable indexing with custom threshold", async () => {
-      await manager.enableIndexing("test-collection", 50000);
+    it("resumes with custom thresholds", async () => {
+      await manager.resumeOptimizer("test-collection", {
+        indexingThreshold: 50000,
+        deletedThreshold: 0.3,
+      });
 
       expect(mockClient.updateCollection).toHaveBeenCalledWith("test-collection", {
         optimizers_config: {
           indexing_threshold: 50000,
+          deleted_threshold: 0.3,
         },
       });
     });
@@ -1645,19 +1653,24 @@ describe("QdrantManager", () => {
   });
 
   describe("deletePointsByPathsBatched", () => {
-    it("should process paths in batches", async () => {
-      mockClient.delete.mockResolvedValue({});
-
-      const paths = Array.from({ length: 25 }, (_, i) => `file${i}.ts`);
-      const result = await manager.deletePointsByPathsBatched("test-collection", paths, {
-        batchSize: 10,
-        concurrency: 2,
+    /**
+     * Helper: make `scroll` return a fixed set of point IDs for a filter,
+     * paginating when the result exceeds the page limit.
+     */
+    function mockScrollReturning(ids: (string | number)[]): void {
+      let callIndex = 0;
+      const pageSize = 1000;
+      mockClient.scroll.mockImplementation(async () => {
+        const start = callIndex * pageSize;
+        const slice = ids.slice(start, start + pageSize);
+        callIndex++;
+        const hasMore = start + pageSize < ids.length;
+        return {
+          points: slice.map((id) => ({ id, payload: null })),
+          next_page_offset: hasMore ? `offset-${callIndex}` : null,
+        };
       });
-
-      expect(result.deletedPaths).toBe(25);
-      expect(result.batchCount).toBe(3); // 10 + 10 + 5
-      expect(mockClient.delete).toHaveBeenCalledTimes(3);
-    });
+    }
 
     it("should return immediately for empty paths", async () => {
       const result = await manager.deletePointsByPathsBatched("test-collection", [], {
@@ -1668,88 +1681,197 @@ describe("QdrantManager", () => {
       expect(result.deletedPaths).toBe(0);
       expect(result.batchCount).toBe(0);
       expect(result.durationMs).toBe(0);
+      expect(mockClient.scroll).not.toHaveBeenCalled();
       expect(mockClient.delete).not.toHaveBeenCalled();
     });
 
-    it("should use wait=false for intermediate batches and wait=true for last batch", async () => {
+    it("uses scroll + delete-by-IDs instead of filter-based delete", async () => {
+      mockScrollReturning(["id1", "id2", "id3"]);
       mockClient.delete.mockResolvedValue({});
 
-      const paths = Array.from({ length: 20 }, (_, i) => `file${i}.ts`);
-      await manager.deletePointsByPathsBatched("test-collection", paths, {
-        batchSize: 10,
-        concurrency: 4,
+      const paths = ["src/a.ts", "src/b.ts", "src/c.ts"];
+      const result = await manager.deletePointsByPathsBatched("test-collection", paths, {
+        batchSize: 500,
+        concurrency: 1,
       });
 
-      const { calls } = mockClient.delete.mock;
-      expect(calls).toHaveLength(2);
+      // scroll called exactly once with filter + metadata-only projection
+      expect(mockClient.scroll).toHaveBeenCalledTimes(1);
+      const scrollArgs = mockClient.scroll.mock.calls[0][1];
+      expect(scrollArgs.with_payload).toBe(false);
+      expect(scrollArgs.with_vector).toBe(false);
+      // MatchAny: single set-membership condition, not a `should` OR-array.
+      expect(scrollArgs.filter).toEqual({
+        must: [{ key: "relativePath", match: { any: ["src/a.ts", "src/b.ts", "src/c.ts"] } }],
+      });
 
-      // First batch should have wait=false
-      expect(calls[0][1].wait).toBe(false);
+      // delete called with {points: ids}, NOT with filter
+      expect(mockClient.delete).toHaveBeenCalledTimes(1);
+      const deleteArgs = mockClient.delete.mock.calls[0][1];
+      expect(deleteArgs.points).toEqual(["id1", "id2", "id3"]);
+      expect(deleteArgs.filter).toBeUndefined();
 
-      // Last batch should have wait=true
-      expect(calls[1][1].wait).toBe(true);
+      expect(result.deletedPaths).toBe(3);
+      expect(result.batchCount).toBe(1);
     });
 
-    it("should invoke progress callback", async () => {
+    it("paginates scroll across multiple pages", async () => {
+      const ids = Array.from({ length: 2500 }, (_, i) => `p${i}`);
+      mockScrollReturning(ids);
+      mockClient.delete.mockResolvedValue({});
+
+      await manager.deletePointsByPathsBatched("test-collection", ["src/big.ts"], {
+        batchSize: 500,
+        concurrency: 1,
+      });
+
+      // 2500 IDs / 1000 per page = 3 scroll calls
+      expect(mockClient.scroll).toHaveBeenCalledTimes(3);
+
+      // 2nd+ calls carry offset; first does not
+      expect(mockClient.scroll.mock.calls[0][1].offset).toBeUndefined();
+      expect(mockClient.scroll.mock.calls[1][1].offset).toBe("offset-1");
+      expect(mockClient.scroll.mock.calls[2][1].offset).toBe("offset-2");
+    });
+
+    it("splits IDs into chunks of `batchSize` for delete-by-IDs calls", async () => {
+      // 5000 IDs, batchSize=2000 → 3 delete calls (2000 + 2000 + 1000)
+      const ids = Array.from({ length: 5000 }, (_, i) => `p${i}`);
+      mockScrollReturning(ids);
+      mockClient.delete.mockResolvedValue({});
+
+      await manager.deletePointsByPathsBatched("test-collection", ["src/huge.ts"], {
+        batchSize: 2000,
+        concurrency: 1,
+      });
+
+      expect(mockClient.delete).toHaveBeenCalledTimes(3);
+      expect(mockClient.delete.mock.calls[0][1].points).toHaveLength(2000);
+      expect(mockClient.delete.mock.calls[1][1].points).toHaveLength(2000);
+      expect(mockClient.delete.mock.calls[2][1].points).toHaveLength(1000);
+
+      // only the very last delete uses wait=true
+      expect(mockClient.delete.mock.calls[0][1].wait).toBe(false);
+      expect(mockClient.delete.mock.calls[1][1].wait).toBe(false);
+      expect(mockClient.delete.mock.calls[2][1].wait).toBe(true);
+    });
+
+    it("skips delete call entirely when scroll returns no matches", async () => {
+      mockScrollReturning([]);
+
+      const result = await manager.deletePointsByPathsBatched("test-collection", ["src/missing.ts"], {
+        batchSize: 500,
+        concurrency: 1,
+      });
+
+      expect(mockClient.scroll).toHaveBeenCalledTimes(1);
+      expect(mockClient.delete).not.toHaveBeenCalled();
+      // deletedPaths reflects paths processed; batchCount=0 because no deletes fired.
+      expect(result.deletedPaths).toBe(1);
+      expect(result.batchCount).toBe(0);
+    });
+
+    it("scrolls once for all paths regardless of count", async () => {
+      // Phase 1 is a single serial scroll pass over MatchAny(all paths) — no
+      // per-path-batch chunking. Reads are cheap; interleaving them with
+      // writes is what saturated embedded Qdrant.
+      mockScrollReturning(["id-a", "id-b"]);
+      mockClient.delete.mockResolvedValue({});
+
+      const paths = Array.from({ length: 25 }, (_, i) => `file${i}.ts`);
+      await manager.deletePointsByPathsBatched("test-collection", paths, {
+        batchSize: 10,
+        concurrency: 2,
+      });
+
+      expect(mockClient.scroll).toHaveBeenCalledTimes(1);
+      // Filter carries every path in a single MatchAny set.
+      expect(mockClient.scroll.mock.calls[0][1].filter).toEqual({
+        must: [{ key: "relativePath", match: { any: paths } }],
+      });
+    });
+
+    it("parallelizes delete-by-IDs calls under concurrency limit", async () => {
+      // 50 IDs / batchSize=10 → 5 delete calls; concurrency=2 caps parallel writes.
+      const ids = Array.from({ length: 50 }, (_, i) => `p${i}`);
+      mockScrollReturning(ids);
+      let activeDeletes = 0;
+      let maxActiveDeletes = 0;
+      mockClient.delete.mockImplementation(async () => {
+        activeDeletes++;
+        maxActiveDeletes = Math.max(maxActiveDeletes, activeDeletes);
+        await new Promise((r) => setTimeout(r, 10));
+        activeDeletes--;
+        return {};
+      });
+
+      const result = await manager.deletePointsByPathsBatched("test-collection", ["a.ts"], {
+        batchSize: 10,
+        concurrency: 2,
+      });
+
+      expect(mockClient.delete).toHaveBeenCalledTimes(5);
+      expect(result.batchCount).toBe(5);
+      // Concurrency cap: never more than `concurrency + 1` in flight (final chunk races).
+      expect(maxActiveDeletes).toBeLessThanOrEqual(3);
+    });
+
+    it("reports cumulative progress per delete chunk", async () => {
+      const ids = Array.from({ length: 10 }, (_, i) => `p${i}`);
+      mockScrollReturning(ids);
       mockClient.delete.mockResolvedValue({});
 
       const paths = Array.from({ length: 15 }, (_, i) => `file${i}.ts`);
       const progressCalls: [number, number][] = [];
 
+      // 10 IDs / batchSize=5 → 2 delete chunks → 2 progress calls.
       await manager.deletePointsByPathsBatched("test-collection", paths, {
         batchSize: 5,
-        concurrency: 2,
+        concurrency: 1,
         onProgress: (deleted, total) => {
           progressCalls.push([deleted, total]);
         },
       });
 
-      expect(progressCalls).toHaveLength(3);
-      expect(progressCalls[2]).toEqual([15, 15]); // Final progress
+      expect(progressCalls.length).toBeGreaterThan(0);
+      expect(progressCalls[progressCalls.length - 1]).toEqual([15, 15]);
     });
 
-    it("should respect concurrency limit", async () => {
-      let activeCalls = 0;
-      let maxActiveCalls = 0;
-
-      mockClient.delete.mockImplementation(async () => {
-        activeCalls++;
-        maxActiveCalls = Math.max(maxActiveCalls, activeCalls);
-        await new Promise((r) => setTimeout(r, 10));
-        activeCalls--;
-        return {};
-      });
-
-      const paths = Array.from({ length: 50 }, (_, i) => `file${i}.ts`);
-      await manager.deletePointsByPathsBatched("test-collection", paths, {
-        batchSize: 10,
-        concurrency: 2,
-      });
-
-      // Should never exceed concurrency + 1 (final batch runs after waiting)
-      expect(maxActiveCalls).toBeLessThanOrEqual(3);
-    });
-
-    it("should handle errors during batch deletion", async () => {
-      mockClient.delete.mockRejectedValue(new Error("Delete failed"));
-
-      const paths = ["file1.ts", "file2.ts"];
+    it("propagates scroll errors", async () => {
+      mockClient.scroll.mockRejectedValue(new Error("Scroll failed"));
 
       await expect(
-        manager.deletePointsByPathsBatched("test-collection", paths, { batchSize: 500, concurrency: 8 }),
+        manager.deletePointsByPathsBatched("test-collection", ["a.ts"], {
+          batchSize: 500,
+          concurrency: 1,
+        }),
+      ).rejects.toThrow("Scroll failed");
+
+      expect(mockClient.delete).not.toHaveBeenCalled();
+    });
+
+    it("propagates delete errors", async () => {
+      mockScrollReturning(["id1"]);
+      mockClient.delete.mockRejectedValue(new Error("Delete failed"));
+
+      await expect(
+        manager.deletePointsByPathsBatched("test-collection", ["a.ts"], {
+          batchSize: 500,
+          concurrency: 1,
+        }),
       ).rejects.toThrow("Delete failed");
     });
 
-    it("should calculate duration correctly", async () => {
+    it("calculates duration correctly", async () => {
+      mockScrollReturning(["id1"]);
       mockClient.delete.mockImplementation(async () => {
         await new Promise((r) => setTimeout(r, 10));
         return {};
       });
 
-      const paths = ["file1.ts", "file2.ts"];
-      const result = await manager.deletePointsByPathsBatched("test-collection", paths, {
+      const result = await manager.deletePointsByPathsBatched("test-collection", ["a.ts"], {
         batchSize: 500,
-        concurrency: 8,
+        concurrency: 1,
       });
 
       expect(result.durationMs).toBeGreaterThan(0);
@@ -2391,7 +2513,7 @@ describe("QdrantManager", () => {
       const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
       mockClient.updateCollection.mockRejectedValueOnce(new Error("ECONNREFUSED"));
 
-      await expect(manager.disableIndexing("col")).rejects.toThrow(QdrantUnavailableError);
+      await expect(manager.pauseOptimizer("col")).rejects.toThrow(QdrantUnavailableError);
     });
 
     it("propagates connection errors through deletePoints", async () => {
