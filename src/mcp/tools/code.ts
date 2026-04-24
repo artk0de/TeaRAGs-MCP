@@ -186,16 +186,10 @@ export function registerCodeTools(
       annotations: { readOnlyHint: true },
     },
     async ({ path }) => {
+      // Qdrant connectivity errors (unavailable / starting / recovering) are
+      // thrown as typed errors by QdrantManager and handled by the MCP error
+      // middleware — we don't mask them here by returning a text response.
       const status = await app.getIndexStatus(path);
-
-      if (status.status === "unavailable") {
-        let text = `Infrastructure problem detected for "${path}".\n`;
-        if (status.infraHealth) {
-          text += formatInfraHealth(status.infraHealth);
-        }
-        text += `\nIndex state is unknown — Qdrant is not reachable.`;
-        return formatMcpText(text);
-      }
 
       if (status.status === "not_indexed") {
         let text = `Codebase at "${path}" is not indexed. Use index_codebase to index it first.`;

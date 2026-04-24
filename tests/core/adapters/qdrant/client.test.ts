@@ -2409,6 +2409,72 @@ describe("QdrantManager", () => {
         QdrantUnavailableError,
       );
     });
+
+    it("throws QdrantStartingError when daemon phase is 'starting'", async () => {
+      const { QdrantStartingError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      const { QdrantManager } = await import("../../../../src/core/adapters/qdrant/client.js");
+
+      const startingManager = new QdrantManager("http://127.0.0.1:6333", undefined, undefined, {
+        startupPhase: () => "starting",
+        pid: 99999,
+        storagePath: "/tmp/qdrant-test",
+      });
+
+      (startingManager as any).client = mockClient;
+      mockClient.getCollections.mockRejectedValueOnce(new Error("fetch failed"));
+
+      await expect(startingManager.listCollections()).rejects.toThrow(QdrantStartingError);
+    });
+
+    it("throws QdrantRecoveringError when daemon phase is 'recovering'", async () => {
+      const { QdrantRecoveringError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      const { QdrantManager } = await import("../../../../src/core/adapters/qdrant/client.js");
+
+      const recoveringManager = new QdrantManager("http://127.0.0.1:6333", undefined, undefined, {
+        startupPhase: () => "recovering",
+        pid: 99999,
+        storagePath: "/tmp/qdrant-test",
+      });
+
+      (recoveringManager as any).client = mockClient;
+      mockClient.getCollections.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      await expect(recoveringManager.listCollections()).rejects.toThrow(QdrantRecoveringError);
+    });
+
+    it("throws QdrantUnavailableError when daemon phase is null (dead or external)", async () => {
+      const { QdrantUnavailableError, QdrantStartingError, QdrantRecoveringError } =
+        await import("../../../../src/core/adapters/qdrant/errors.js");
+      const { QdrantManager } = await import("../../../../src/core/adapters/qdrant/client.js");
+
+      const deadManager = new QdrantManager("http://127.0.0.1:6333", undefined, undefined, {
+        startupPhase: () => null,
+        pid: 99999,
+        storagePath: "/tmp/qdrant-test",
+      });
+
+      (deadManager as any).client = mockClient;
+      mockClient.getCollections.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      await expect(deadManager.listCollections()).rejects.toThrow(QdrantUnavailableError);
+      mockClient.getCollections.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+      const p = deadManager.listCollections();
+      await expect(p).rejects.not.toThrow(QdrantStartingError);
+      mockClient.getCollections.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+      await expect(deadManager.listCollections()).rejects.not.toThrow(QdrantRecoveringError);
+    });
+
+    it("throws QdrantUnavailableError when no daemon probe provided (external Qdrant)", async () => {
+      const { QdrantUnavailableError } = await import("../../../../src/core/adapters/qdrant/errors.js");
+      const { QdrantManager } = await import("../../../../src/core/adapters/qdrant/client.js");
+
+      const externalManager = new QdrantManager("http://127.0.0.1:6333");
+
+      (externalManager as any).client = mockClient;
+      mockClient.getCollections.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+      await expect(externalManager.listCollections()).rejects.toThrow(QdrantUnavailableError);
+    });
   });
 
   describe("countPoints", () => {

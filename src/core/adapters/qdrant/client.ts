@@ -3,13 +3,23 @@ import { createHash } from "node:crypto";
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 import { QdrantAliasManager } from "./aliases.js";
+import type { StartupPhase } from "./embedded/types.js";
 import {
   CollectionAlreadyExistsError,
   QdrantOperationError,
   QdrantOptimizationInProgressError,
   QdrantPointNotFoundError,
+  QdrantRecoveringError,
+  QdrantStartingError,
   QdrantUnavailableError,
 } from "./errors.js";
+
+export interface EmbeddedDaemonProbe {
+  /** Current startup phase of the embedded daemon, or null if daemon is dead / not an embedded daemon. */
+  startupPhase: () => StartupPhase | null;
+  pid: number;
+  storagePath: string;
+}
 
 type QdrantPayload = Record<string, unknown>;
 
@@ -41,22 +51,34 @@ export class QdrantManager {
   private qdrantUrl: string;
   private readonly apiKey?: string;
   private readonly reconnect?: () => string | null;
+  private readonly daemon?: EmbeddedDaemonProbe;
   private _aliases?: QdrantAliasManager;
 
-  constructor(url = "http://localhost:6333", apiKey?: string, reconnect?: () => string | null) {
+  constructor(
+    url = "http://localhost:6333",
+    apiKey?: string,
+    reconnect?: () => string | null,
+    daemon?: EmbeddedDaemonProbe,
+  ) {
     this.qdrantUrl = url;
     this.apiKey = apiKey;
     this.reconnect = reconnect;
+    this.daemon = daemon;
     this.client = new QdrantClient({ url, apiKey });
   }
 
   /**
    * Guard all Qdrant client calls through a single entry point.
    * Catches connection errors (fetch failed, ECONNREFUSED) and converts
-   * them to QdrantUnavailableError. Business errors (404, 409) pass through.
+   * them to a typed error. Business errors (404, 409) pass through.
    *
    * For embedded mode: on connection error, tries to reconnect to a daemon
    * that may have restarted on a different port, then retries once.
+   *
+   * If the daemon is known-alive (embedded mode, pid still running) but the
+   * HTTP port is not listening — the daemon is recovering shards. We throw
+   * QdrantStartingError so callers can distinguish "not ready yet, retry"
+   * from "really unreachable, fix your config".
    */
   private async call<T>(fn: () => Promise<T>): Promise<T> {
     try {
@@ -66,7 +88,23 @@ export class QdrantManager {
         return await fn();
       }
       if (isConnectionError(error)) {
-        throw new QdrantUnavailableError(this.qdrantUrl, error instanceof Error ? error : undefined);
+        const cause = error instanceof Error ? error : undefined;
+        const phase = this.daemon?.startupPhase();
+        if (phase === "starting") {
+          throw new QdrantStartingError(
+            this.qdrantUrl,
+            { pid: this.daemon?.pid, storagePath: this.daemon?.storagePath },
+            cause,
+          );
+        }
+        if (phase === "recovering") {
+          throw new QdrantRecoveringError(
+            this.qdrantUrl,
+            { pid: this.daemon?.pid, storagePath: this.daemon?.storagePath },
+            cause,
+          );
+        }
+        throw new QdrantUnavailableError(this.qdrantUrl, cause);
       }
       throw error;
     }

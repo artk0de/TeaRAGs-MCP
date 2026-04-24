@@ -16,6 +16,84 @@ export class QdrantUnavailableError extends InfraError {
   }
 }
 
+export interface StartupDetails {
+  pid?: number;
+  storagePath?: string;
+}
+
+function buildObservabilityHint(details: StartupDetails | undefined): string {
+  const pid = details?.pid;
+  const storage = details?.storagePath;
+  const { platform } = process;
+
+  const lines: string[] = [];
+  if (pid !== undefined) {
+    if (platform === "darwin") {
+      lines.push(`ps -o pid,etime,time,command -p ${pid}`);
+      lines.push(`lsof -p ${pid} 2>/dev/null | grep -oE 'segments/[0-9a-f-]{36}' | sort -u | wc -l`);
+    } else if (platform === "linux") {
+      lines.push(`ps -o pid,etime,time,command -p ${pid}`);
+      lines.push(
+        `ls /proc/${pid}/fd 2>/dev/null | xargs -I{} readlink /proc/${pid}/fd/{} 2>/dev/null | ` +
+          `grep -oE 'segments/[0-9a-f-]{36}' | sort -u | wc -l`,
+      );
+    } else if (platform === "win32") {
+      lines.push(`Get-Process -Id ${pid} | Format-List Name,Id,CPU,StartTime`);
+    }
+  }
+  if (storage) {
+    if (platform === "win32") {
+      lines.push(`Get-ChildItem '${storage}/collections' -Recurse -Directory -Filter segments`);
+    } else {
+      lines.push(`find '${storage}/collections' -maxdepth 4 -type d -name segments -exec ls {} \\; | wc -l`);
+    }
+  }
+  return lines.length > 0 ? `To observe progress externally, run:\n  ${lines.join("\n  ")}` : "";
+}
+
+/**
+ * Embedded Qdrant daemon was spawned very recently. HTTP port is not
+ * bound yet because the process is still in its initial boot phase
+ * (config parsing, raft/alias load, jemalloc init). This is a short
+ * window — usually a few seconds. Retry fast.
+ */
+export class QdrantStartingError extends InfraError {
+  constructor(url: string, details?: StartupDetails, cause?: Error) {
+    const obs = buildObservabilityHint(details);
+    super({
+      code: "INFRA_QDRANT_STARTING",
+      message: `Qdrant daemon at ${url} is starting up`,
+      hint:
+        `The embedded Qdrant daemon was spawned a moment ago and the HTTP ` +
+        `server has not bound the port yet. Retry the same operation in 3-10 seconds.${obs ? `\n\n${obs}` : ""}`,
+      httpStatus: 503,
+      cause,
+    });
+  }
+}
+
+/**
+ * Embedded Qdrant daemon is alive and has passed the initial boot window,
+ * but HTTP is still unreachable — the process is recovering shards or
+ * running a background segment optimization that blocks the HTTP bind.
+ * Can last tens of seconds to several minutes on large collections.
+ */
+export class QdrantRecoveringError extends InfraError {
+  constructor(url: string, details?: StartupDetails, cause?: Error) {
+    const obs = buildObservabilityHint(details);
+    super({
+      code: "INFRA_QDRANT_RECOVERING",
+      message: `Qdrant daemon at ${url} is recovering shards`,
+      hint:
+        `The daemon is alive (pid running) but the HTTP port is still not ` +
+        `bound — it is loading shards from disk or merging segments. Large ` +
+        `collections can take 1-5 minutes. Retry in 30-120 seconds.${obs ? `\n\n${obs}` : ""}`,
+      httpStatus: 503,
+      cause,
+    });
+  }
+}
+
 export class QdrantTimeoutError extends InfraError {
   constructor(url: string, operation: string, cause?: Error) {
     super({
