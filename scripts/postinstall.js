@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 async function main() {
   try {
-    const { isBinaryUpToDate, downloadQdrant, QDRANT_VERSION, getPlatformAsset } =
+    const { isBinaryUpToDate, downloadQdrant, EMBEDDED_QDRANT_VERSION, getPlatformAsset } =
       await import("../build/core/adapters/qdrant/embedded/download.js");
 
     if (isBinaryUpToDate()) {
-      console.error(`[tea-rags] Qdrant v${QDRANT_VERSION} binary already present`);
+      console.error(`[tea-rags] Qdrant v${EMBEDDED_QDRANT_VERSION} binary already present`);
       return;
     }
 
     const asset = getPlatformAsset(process.platform, process.arch);
-    console.error(`[tea-rags] Downloading Qdrant v${QDRANT_VERSION} (${asset})...`);
+    console.error(`[tea-rags] Downloading Qdrant v${EMBEDDED_QDRANT_VERSION} (${asset})...`);
     await downloadQdrant();
     console.error(`[tea-rags] Qdrant binary ready`);
   } catch (err) {

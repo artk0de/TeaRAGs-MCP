@@ -47,7 +47,8 @@
     "build/",
     "benchmarks/",
     "scripts/postinstall.js",
-    "prompts.json"
+    "prompts.json",
+    ".qdrant-required-version"
   ],
   "publishConfig": {
     "provenance": true
