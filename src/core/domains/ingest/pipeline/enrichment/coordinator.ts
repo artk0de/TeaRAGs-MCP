@@ -50,7 +50,10 @@ interface ProviderState {
   prefetchFailed: boolean;
   effectiveRoot: string | null;
   pendingBatches: PendingBatch[];
-  inFlightWork: Promise<void>[];
+  /** applyFileSignals work — drained before file marker is finalized. */
+  fileWork: Promise<void>[];
+  /** streaming + post-flush chunk enrichment work — drained after file marker. */
+  chunkWork: Promise<void>[];
   chunkEnrichmentDurationMs: number;
   ignoreFilter: Ignore | null;
   fileMetadataCount: number;
@@ -62,6 +65,10 @@ interface ProviderState {
   prefetchDurationMs: number;
   /** Relative paths of files already enriched per-batch during streaming. */
   streamingEnrichedFiles: Set<string>;
+  /** True if any chunk enrichment work failed; set inside startChunkEnrichment. */
+  chunkEnrichmentFailed: boolean;
+  /** Set when startChunkEnrichment dispatched at least one provider work. */
+  chunkEnrichmentInvoked: boolean;
 }
 
 function createProviderState(provider: EnrichmentProvider): ProviderState {
@@ -72,7 +79,8 @@ function createProviderState(provider: EnrichmentProvider): ProviderState {
     prefetchFailed: false,
     effectiveRoot: null,
     pendingBatches: [],
-    inFlightWork: [],
+    fileWork: [],
+    chunkWork: [],
     chunkEnrichmentDurationMs: 0,
     ignoreFilter: null,
     fileMetadataCount: 0,
@@ -83,6 +91,8 @@ function createProviderState(provider: EnrichmentProvider): ProviderState {
     flushApplies: 0,
     prefetchDurationMs: 0,
     streamingEnrichedFiles: new Set(),
+    chunkEnrichmentFailed: false,
+    chunkEnrichmentInvoked: false,
   };
 }
 
@@ -373,7 +383,7 @@ export class EnrichmentCoordinator {
           state.provider.fileSignalTransform,
           this.runStartedAt,
         );
-        state.inFlightWork.push(work);
+        state.fileWork.push(work);
         state.streamingApplies++;
         pipelineLog.enrichmentPhase("STREAMING_APPLY", {
           provider: state.provider.key,
@@ -399,6 +409,7 @@ export class EnrichmentCoordinator {
       if (state.prefetchFailed) continue;
 
       const root = state.effectiveRoot || absolutePath;
+      state.chunkEnrichmentInvoked = true;
 
       // Filter chunkMap by ignore patterns
       const { result: effectiveChunkMap, filtered } = filterByIgnore(chunkMap, state.ignoreFilter, root);
@@ -411,8 +422,6 @@ export class EnrichmentCoordinator {
       }
 
       // Drop files already covered by streaming chunk enrichment (onChunksStored).
-      // Keeps original chunkMap keys (absolute or relative) so downstream path
-      // logic is unchanged.
       const remainingChunkMap = new Map<string, ChunkLookupEntry[]>();
       for (const [filePath, entries] of effectiveChunkMap) {
         const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
@@ -427,16 +436,8 @@ export class EnrichmentCoordinator {
           reason: "all files enriched via streaming",
           streamingEnrichedFiles: state.streamingEnrichedFiles.size,
         });
-        this.updateEnrichmentMarker(collectionName, {
-          [state.provider.key]: {
-            chunk: {
-              status: "completed",
-              completedAt: new Date().toISOString(),
-              durationMs: state.chunkEnrichmentDurationMs,
-              unenrichedChunks: 0,
-            },
-          },
-        }).catch(() => {});
+        // Marker write deferred to awaitCompletion's chunk-finalization phase
+        // so file marker can be written first.
         providerPromises.push(Promise.resolve(true));
         continue;
       }
@@ -467,18 +468,6 @@ export class EnrichmentCoordinator {
           );
           state.chunkEnrichmentDurationMs += Date.now() - chunkStart;
 
-          // Write per-provider chunk marker
-          await this.updateEnrichmentMarker(collectionName, {
-            [state.provider.key]: {
-              chunk: {
-                status: "completed",
-                completedAt: new Date().toISOString(),
-                durationMs: state.chunkEnrichmentDurationMs,
-                unenrichedChunks: 0,
-              },
-            },
-          });
-
           pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_COMPLETE", {
             provider: state.provider.key,
             overlaysApplied: applied,
@@ -488,27 +477,17 @@ export class EnrichmentCoordinator {
         })
         .catch((error) => {
           state.chunkEnrichmentDurationMs += Date.now() - chunkStart;
+          state.chunkEnrichmentFailed = true;
           console.error(`[Enrichment:${state.provider.key}] Chunk enrichment failed:`, error);
           pipelineLog.enrichmentPhase("CHUNK_ENRICHMENT_FAILED", {
             provider: state.provider.key,
             error: extractErrorMessage(error),
           });
-
-          // Write per-provider chunk failure marker
-          this.updateEnrichmentMarker(collectionName, {
-            [state.provider.key]: {
-              chunk: {
-                status: "failed",
-                completedAt: new Date().toISOString(),
-                durationMs: state.chunkEnrichmentDurationMs,
-                unenrichedChunks: 0,
-              },
-            },
-          }).catch(() => {});
-
           return false;
         });
 
+      // Track as chunk work so awaitCompletion drains it before finalizing chunk marker.
+      state.chunkWork.push(providerDone.then(() => {}));
       providerPromises.push(providerDone);
     }
 
@@ -556,12 +535,14 @@ export class EnrichmentCoordinator {
       await Promise.allSettled(prefetchPromises);
     }
 
-    // 2. Wait for all in-flight streaming applies across all states
-    const allInFlight = [...this.states.values()].flatMap((s) => s.inFlightWork);
-    if (allInFlight.length > 0) {
-      await Promise.allSettled(allInFlight);
+    // 2. Wait for all in-flight FILE work (applyFileSignals). Chunk work runs
+    //    independently and is awaited separately so the file marker can be
+    //    finalized without waiting for git blame to finish.
+    const allFileWork = [...this.states.values()].flatMap((s) => s.fileWork);
+    if (allFileWork.length > 0) {
+      await Promise.allSettled(allFileWork);
       for (const state of this.states.values()) {
-        state.inFlightWork = [];
+        state.fileWork = [];
       }
     }
 
@@ -574,9 +555,30 @@ export class EnrichmentCoordinator {
       }
     }
 
-    // 4. Chunk enrichment runs in background — do NOT await here.
+    // 4. Write FILE marker now — file work is fully drained, chunk work is
+    //    still in flight. unenrichedChunks read from storage (not hardcoded)
+    //    so the marker stays honest after partial failures or recovery races.
+    //    Counters reflect this run's work, not a frozen full-index total.
+    for (const state of this.states.values()) {
+      const fileUnenriched = this.recovery
+        ? await this.recovery.countUnenriched(collectionName, state.provider.key, "file").catch(() => 0)
+        : 0;
 
-    // 5. Aggregate metrics across all providers
+      const fileMarker: Partial<FileEnrichmentMarker> = {
+        status: state.prefetchFailed ? "failed" : "completed",
+        completedAt: new Date().toISOString(),
+        durationMs: state.prefetchDurationMs,
+        unenrichedChunks: fileUnenriched,
+        matchedFiles: this.applier.matchedFiles,
+        missedFiles: this.applier.missedFiles,
+      };
+      await this.updateEnrichmentMarker(collectionName, {
+        [state.provider.key]: { file: fileMarker },
+      });
+    }
+
+    // 5. Aggregate metrics across all providers (file-side numbers are final;
+    //    chunk durations may grow as chunkWork drains).
     const agg = aggregateProviderMetrics(this.states);
 
     const metrics: EnrichmentMetrics = {
@@ -604,33 +606,40 @@ export class EnrichmentCoordinator {
     }
     metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
 
-    // 6. Update per-provider file-level markers with final status.
-    // unenrichedChunks is re-read from storage (not hardcoded 0) so the marker
-    // stays in sync with reality after partial failures or races with recovery.
-    // Counters reflect the current run's work (scoped or full); get_index_status
-    // should report what the last run actually did, not a frozen full-index total
-    // that drifts as successive scoped reindexes leave it untouched.
-    for (const state of this.states.values()) {
-      const [fileUnenriched, chunkUnenriched] = this.recovery
-        ? await Promise.all([
-            this.recovery.countUnenriched(collectionName, state.provider.key, "file").catch(() => 0),
-            this.recovery.countUnenriched(collectionName, state.provider.key, "chunk").catch(() => 0),
-          ])
-        : [0, 0];
+    // 6. Wait for chunk work (streaming + post-flush) and finalize chunk marker.
+    //    Chunk status writes inside startChunkEnrichment may already mark
+    //    chunk=completed; here we sync unenrichedChunks with storage as the
+    //    last word, in case streaming completed before backfill or recovery raced.
+    const allChunkWork = [...this.states.values()].flatMap((s) => s.chunkWork);
+    if (allChunkWork.length > 0) {
+      await Promise.allSettled(allChunkWork);
+      for (const state of this.states.values()) {
+        state.chunkWork = [];
+      }
+    }
 
-      const fileMarker: Partial<FileEnrichmentMarker> = {
-        status: state.prefetchFailed ? "failed" : "completed",
-        completedAt: new Date().toISOString(),
-        durationMs: state.prefetchDurationMs,
-        unenrichedChunks: fileUnenriched,
-        matchedFiles: this.applier.matchedFiles,
-        missedFiles: this.applier.missedFiles,
-      };
+    for (const state of this.states.values()) {
+      const chunkUnenriched = this.recovery
+        ? await this.recovery.countUnenriched(collectionName, state.provider.key, "chunk").catch(() => 0)
+        : 0;
+
+      let chunkStatus: ChunkEnrichmentMarker["status"];
+      if (state.prefetchFailed || state.chunkEnrichmentFailed) {
+        chunkStatus = "failed";
+      } else if (chunkUnenriched > 0) {
+        chunkStatus = "degraded";
+      } else {
+        chunkStatus = "completed";
+      }
+
       const chunkMarker: Partial<ChunkEnrichmentMarker> = {
+        status: chunkStatus,
+        completedAt: new Date().toISOString(),
+        durationMs: state.chunkEnrichmentDurationMs,
         unenrichedChunks: chunkUnenriched,
       };
       await this.updateEnrichmentMarker(collectionName, {
-        [state.provider.key]: { file: fileMarker, chunk: chunkMarker },
+        [state.provider.key]: { chunk: chunkMarker },
       });
     }
 
@@ -710,7 +719,7 @@ export class EnrichmentCoordinator {
         state.provider.fileSignalTransform,
         this.runStartedAt,
       );
-      state.inFlightWork.push(work);
+      state.fileWork.push(work);
       state.flushApplies++;
 
       const batchChunkMap = this.extractBatchChunkMap(batch.items, pathBase);
@@ -804,7 +813,7 @@ export class EnrichmentCoordinator {
         });
       });
 
-    state.inFlightWork.push(work);
+    state.chunkWork.push(work);
   }
 
   private async backfillMissedFiles(collectionName: string, state: ProviderState): Promise<void> {
