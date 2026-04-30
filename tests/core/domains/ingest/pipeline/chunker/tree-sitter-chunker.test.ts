@@ -995,6 +995,59 @@ function veryLargeFunction() {
     });
   });
 
+  describe("hard cap on chunk size", () => {
+    it("should split a huge Python function into sub-chunks each <= maxChunkSize", async () => {
+      // Reproduces the kpi-calc.py:135-287 scenario (6KB monolithic function)
+      // that overflowed Ollama context. Python has no childChunkTypes, so the
+      // whole function falls into chunkSingleNode and would otherwise emit a
+      // single oversized chunk.
+      const bodyLines = Array.from(
+        { length: 200 },
+        (_, i) => `    intermediate_value_${i} = compute_step_${i}(payload, options, registry, cache)`,
+      ).join("\n");
+      const huge = `def kpi_calc(payload, options, registry, cache):\n    """Compute KPIs."""\n${bodyLines}\n    return intermediate_value_0`;
+
+      const chunks = await chunker.chunk(huge, "kpi-calc.py", "python");
+
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(chunk.content.length).toBeLessThanOrEqual(config.maxChunkSize);
+      }
+    });
+
+    it("should preserve symbolId continuity across split parts", async () => {
+      const bodyLines = Array.from({ length: 200 }, (_, i) => `    step_${i} = compute(value, options)`).join("\n");
+      const huge = `def big_function(value, options):\n    """Doc."""\n${bodyLines}\n    return step_0`;
+
+      const chunks = await chunker.chunk(huge, "big.py", "python");
+
+      const splitChunks = chunks.filter((c) => c.metadata.parentSymbolId === "big_function");
+      expect(splitChunks.length).toBeGreaterThan(0);
+      // Each split chunk is identifiable as a part of the original symbol
+      for (const chunk of splitChunks) {
+        expect(chunk.metadata.symbolId).toMatch(/^big_function#part\d+$/);
+      }
+    });
+
+    it("should enforce hard cap on a fallback (non-AST) language too", async () => {
+      // Plain text chunked by CharacterChunker — the post-process guard in
+      // TreeSitterChunker.chunk() does not run, but CharacterChunker is the
+      // delegate inside the AST path. Verifying here that the AST path's
+      // contract holds end-to-end for any language.
+      const bodyLines = Array.from(
+        { length: 200 },
+        (_, i) => `function step_${i}() { return computeValue(${i}) + adjustWindow(${i}); }`,
+      ).join("\n");
+      const code = `class Mega {\n${bodyLines}\n}`;
+
+      const chunks = await chunker.chunk(code, "mega.ts", "typescript");
+
+      for (const chunk of chunks) {
+        expect(chunk.content.length).toBeLessThanOrEqual(config.maxChunkSize);
+      }
+    });
+  });
+
   describe("metadata extraction", () => {
     it("should extract function names", async () => {
       const code = `

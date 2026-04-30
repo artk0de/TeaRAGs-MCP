@@ -148,13 +148,13 @@ export class TreeSitterChunker implements CodeChunker {
     const definition = LANGUAGE_DEFINITIONS[language];
     if (definition && (definition as LanguageDefinition & { skipTreeSitter?: boolean }).skipTreeSitter) {
       if (definition.isDocumentation) {
-        return this.markdownChunker.chunk(code, filePath, language);
+        return this.enforceMaxChunkSize(await this.markdownChunker.chunk(code, filePath, language));
       }
     }
 
     const langConfig = await this.getLanguageConfig(language);
     if (!langConfig) {
-      return this.fallbackChunker.chunk(code, filePath, language);
+      return this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language));
     }
 
     try {
@@ -167,7 +167,7 @@ export class TreeSitterChunker implements CodeChunker {
         if (content.length < 50) continue;
 
         const hasChildTypes = langConfig.childChunkTypes && langConfig.childChunkTypes.length > 0;
-        const isTooLarge = content.length > this.config.maxChunkSize * 2;
+        const isTooLarge = content.length > this.config.maxChunkSize;
         const shouldExtractChildren = hasChildTypes && (isTooLarge || langConfig.alwaysExtractChildren);
 
         if (shouldExtractChildren) {
@@ -179,12 +179,12 @@ export class TreeSitterChunker implements CodeChunker {
       }
 
       if (chunks.length === 0 && code.length > 100) {
-        return this.fallbackChunker.chunk(code, filePath, language);
+        return this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language));
       }
-      return this.mergeSmallChunks(chunks);
+      return this.enforceMaxChunkSize(this.mergeSmallChunks(chunks));
     } catch (error) {
       console.error(`Tree-sitter parsing failed for ${filePath}:`, error);
-      return this.fallbackChunker.chunk(code, filePath, language);
+      return this.enforceMaxChunkSize(await this.fallbackChunker.chunk(code, filePath, language));
     }
   }
 
@@ -312,7 +312,7 @@ export class TreeSitterChunker implements CodeChunker {
 
     // No valid children found
     const content = code.substring(node.startIndex, node.endIndex);
-    const isTooLarge = content.length > this.config.maxChunkSize * 2;
+    const isTooLarge = content.length > this.config.maxChunkSize;
     if (isTooLarge) {
       await this.chunkOversizedNode(node, parentName, parentType, code, filePath, language, chunks);
       return true;
@@ -421,6 +421,105 @@ export class TreeSitterChunker implements CodeChunker {
     return result;
   }
 
+  /**
+   * Hard cap post-process: split any chunk whose content exceeds maxChunkSize
+   * into N parts that each fit. Splits on line boundaries when possible to
+   * keep code readable; falls back to character-level splits for single-line
+   * monsters (minified bundles, generated code).
+   *
+   * Naming convention for the parts:
+   *  - symbolId  -> `${original}#part${i+1}` so navigation and find_symbol stay
+   *    deterministic; original symbolId becomes parentSymbolId.
+   *  - name      -> `${original} (part i/N)` for human-readable labels.
+   *
+   * Doc chunks (doc:hash symbolId) are split too — `assignNavigationAndDocSymbolId`
+   * later re-derives doc symbolIds from chunkIndex, which we re-number here
+   * so each part gets its own unique hash.
+   */
+  private enforceMaxChunkSize(chunks: CodeChunk[]): CodeChunk[] {
+    const max = this.config.maxChunkSize;
+    const result: CodeChunk[] = [];
+    for (const chunk of chunks) {
+      if (chunk.content.length <= max) {
+        result.push(chunk);
+        continue;
+      }
+      const parts = this.splitOversizedChunk(chunk, max);
+      result.push(...parts);
+    }
+    for (let i = 0; i < result.length; i++) {
+      result[i].metadata.chunkIndex = i;
+    }
+    return result;
+  }
+
+  private splitOversizedChunk(chunk: CodeChunk, max: number): CodeChunk[] {
+    const segments = this.splitContentIntoSegments(chunk.content, max);
+    const totalLines = Math.max(1, chunk.endLine - chunk.startLine + 1);
+    const originalSymbolId = chunk.metadata.symbolId;
+    const originalName = chunk.metadata.name ?? "chunk";
+    const parentSymbolId = originalSymbolId ?? chunk.metadata.parentSymbolId;
+
+    const parts: CodeChunk[] = [];
+    let cursor = 0;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      const segLines = Math.max(1, seg.split("\n").length);
+      const startLine = chunk.startLine + Math.round((cursor / chunk.content.length) * totalLines);
+      cursor += seg.length;
+      const endLine =
+        chunk.startLine + Math.min(totalLines - 1, Math.round((cursor / chunk.content.length) * totalLines));
+      const partSymbolId = originalSymbolId ? `${originalSymbolId}#part${i + 1}` : undefined;
+      parts.push({
+        content: seg,
+        startLine,
+        endLine: Math.max(endLine, startLine + 1),
+        metadata: {
+          ...chunk.metadata,
+          chunkIndex: chunk.metadata.chunkIndex,
+          name: `${originalName} (part ${i + 1}/${segments.length})`,
+          symbolId: partSymbolId,
+          parentSymbolId,
+          methodLines: chunk.metadata.methodLines ?? segLines,
+        },
+      });
+    }
+    return parts;
+  }
+
+  /**
+   * Split text into segments each <= max chars, preferring line boundaries.
+   * If a single line is wider than max, it gets character-sliced.
+   */
+  private splitContentIntoSegments(content: string, max: number): string[] {
+    const lines = content.split("\n");
+    const segments: string[] = [];
+    let current = "";
+    for (const line of lines) {
+      if (line.length > max) {
+        if (current.length > 0) {
+          segments.push(current);
+          current = "";
+        }
+        for (let i = 0; i < line.length; i += max) {
+          segments.push(line.slice(i, i + max));
+        }
+        continue;
+      }
+      const candidate = current.length === 0 ? line : `${current}\n${line}`;
+      if (candidate.length > max) {
+        segments.push(current);
+        current = line;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current.length > 0) {
+      segments.push(current);
+    }
+    return segments.length > 0 ? segments : [content.slice(0, max)];
+  }
+
   supportsLanguage(language: string): boolean {
     return language in LANGUAGE_DEFINITIONS;
   }
@@ -508,7 +607,7 @@ export class TreeSitterChunker implements CodeChunker {
       const childContent = code.substring(childNode.startIndex, childNode.endIndex);
 
       // If child is too large, use character fallback
-      if (childContent.length > this.config.maxChunkSize * 2) {
+      if (childContent.length > this.config.maxChunkSize) {
         const childMethodLines = childNode.endPosition.row - childNode.startPosition.row + 1;
         const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
         for (const subChunk of subChunks) {

@@ -168,7 +168,10 @@ export abstract class BaseIndexingPipeline {
     return new ChunkerPool(this.tuning.chunkerPoolSize, {
       chunkSize,
       chunkOverlap: this.config.chunkOverlap,
-      maxChunkSize: chunkSize * 2,
+      // Hard cap = chunkSize. The chunker MUST emit chunks <= maxChunkSize so
+      // they fit inside the embedding model's context window. Anything wider
+      // is split by enforceMaxChunkSize before reaching the pipeline.
+      maxChunkSize: chunkSize,
     });
   }
 
