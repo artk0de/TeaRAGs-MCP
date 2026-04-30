@@ -1,11 +1,13 @@
 ---
 name: executing-plans
 description:
-  Use when executing a written implementation plan that modifies files — before
-  each Task's edits (Edit/Write/MultiEdit), queries tea-rags git signals for the
-  files about to change and issues a SAFE/CAUTION/UNSAFE verdict. Triggers when
-  superpowers:executing-plans would normally fire on a plan whose Tasks name
-  concrete files. NOT for one-off single-file edits — use direct Edit.
+  USE INSTEAD OF superpowers:executing-plans whenever you are about to execute a
+  written plan whose Tasks edit code (Edit/Write/MultiEdit). This wrapper
+  queries tea-rags git signals on the files each Task will touch and issues a
+  SAFE/CAUTION/UNSAFE verdict BEFORE any edit, then chains into
+  superpowers:executing-plans. Triggers on "execute the plan", "start Task N",
+  "выполни план", "начни задачу", "run the plan", "implement the plan steps".
+  Always prefer this over superpowers:executing-plans for any multi-file plan.
 ---
 
 # dinopowers: executing-plans

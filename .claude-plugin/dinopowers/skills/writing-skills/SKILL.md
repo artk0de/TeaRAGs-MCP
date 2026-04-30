@@ -1,11 +1,14 @@
 ---
 name: writing-skills
 description:
-  Use when creating a new SKILL.md inside .claude-plugin/dinopowers/ or
-  substantially rewriting an existing dinopowers wrapper skill. Triggers on
-  phrases like "create a wrapper skill", "add dinopowers:X", "write SKILL.md for
-  X", or when a plan step requires authoring a dinopowers wrapper over
-  superpowers:*.
+  USE INSTEAD OF superpowers:writing-skills whenever authoring or rewriting a
+  SKILL.md inside .claude-plugin/dinopowers/. This wrapper enforces the
+  dinopowers wrapper pattern (tea-rags enrichment step → chain into
+  superpowers:*) and the description style required to win against parent
+  skills, then chains into superpowers:writing-skills. Triggers on "add
+  dinopowers:X", "create a wrapper skill", "write a SKILL.md", "напиши скилл",
+  "новый wrapper", "новый dinopowers скилл". Always prefer this over
+  superpowers:writing-skills when target is .claude-plugin/dinopowers/.
 ---
 
 # dinopowers: writing-skills

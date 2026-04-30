@@ -1,12 +1,14 @@
 ---
 name: verification-before-completion
 description:
-  Use when about to claim work complete, fixed, or passing — before committing,
-  creating PRs, or saying "done". Queries tea-rags imports/churn signals on
-  just-edited files to surface collateral-damage candidates (files whose
-  dependents could break) that must be verified. Triggers after edits when
-  superpowers:verification-before-completion would normally fire. NOT for
-  exploratory questions or planning (use brainstorming).
+  USE INSTEAD OF superpowers:verification-before-completion whenever about to
+  claim work is complete, fixed, or passing — before any commit, PR, or
+  "готово". This wrapper queries tea-rags imports/churn signals on just-edited
+  files to surface collateral-damage candidates (files whose dependents could
+  break) BEFORE the verification commands run, then chains into
+  superpowers:verification-before-completion. Triggers on "ready to commit",
+  "all done", "should be fixed now", "готово", "проверь перед commit", "все
+  работает". Always prefer this over superpowers:verification-before-completion.
 ---
 
 # dinopowers: verification-before-completion

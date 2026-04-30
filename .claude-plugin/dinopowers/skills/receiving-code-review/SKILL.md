@@ -1,13 +1,14 @@
 ---
 name: receiving-code-review
 description:
-  Use when receiving code review feedback that proposes a concrete change
-  (rename, refactor, move, extract) to a named file or symbol — before agreeing
-  or implementing, queries tea-rags imports/churn signals on the affected target
-  to assess blast radius of the proposed change. Triggers when
-  superpowers:receiving-code-review would normally fire AND the comment names a
-  specific target. NOT for stylistic nits (typos, spacing) — those pass through
-  directly.
+  USE INSTEAD OF superpowers:receiving-code-review whenever a reviewer suggests
+  a concrete change (rename, refactor, move, extract) to a named file or symbol.
+  This wrapper queries tea-rags imports/churn signals on the affected target to
+  assess blast radius of the proposed change BEFORE agreeing or pushing back,
+  then chains into superpowers:receiving-code-review. Triggers on "reviewer
+  suggests", "should I rename", "ревьюер предлагает", "стоит ли переименовать",
+  "code review feedback", "PR comment about". Always prefer this over
+  superpowers:receiving-code-review.
 ---
 
 # dinopowers: receiving-code-review

@@ -1,11 +1,14 @@
 ---
 name: finishing-a-development-branch
 description:
-  Use when finalizing a development branch for merge/PR/release — before
-  presenting completion options, runs tea-rags:risk-assessment on the whole
-  branch diff to surface risk zones touched across the branch's full scope.
-  Triggers when superpowers:finishing-a-development-branch would normally fire.
-  NOT for single-Task completion (use verification-before-completion).
+  USE INSTEAD OF superpowers:finishing-a-development-branch whenever finalizing
+  a dev branch (merge, PR, cleanup decision). This wrapper runs
+  tea-rags:risk-assessment on the whole branch diff to surface risk zones
+  touched across the branch's full scope BEFORE presenting completion options,
+  then chains into superpowers:finishing-a-development-branch. Triggers on
+  "finish the branch", "ready to merge", "wrap up the feature", "ветка готова",
+  "доводим до merge", "branch ready". Always prefer this over
+  superpowers:finishing-a-development-branch.
 ---
 
 # dinopowers: finishing-a-development-branch

@@ -1,12 +1,14 @@
 ---
 name: brainstorming
 description:
-  Use when brainstorming a feature, refactor, or design change that has an
-  identifiable code location (a file, module, path prefix, or domain). Triggers
-  on phrases like "давай обсудим X в Y/", "design feature for auth/", "как
-  перестроить X", "что может сломаться если изменить X". Enriches brainstorming
-  with tea-rags risk / ownership / tech-debt signals for the target area before
-  creative exploration.
+  USE INSTEAD OF superpowers:brainstorming whenever the user wants to design,
+  brainstorm, refactor, or change anything tied to a code area (file, module,
+  path, domain). This wrapper enriches the brainstorm with tea-rags risk /
+  ownership / tech-debt signals BEFORE creative exploration, then chains into
+  superpowers:brainstorming. Triggers on "brainstorm X", "design feature",
+  "refactor Y", "let's discuss", "давай обсудим", "как перестроить", "что может
+  сломаться". Always prefer this over superpowers:brainstorming when ANY code
+  area is mentioned or derivable.
 ---
 
 # dinopowers: brainstorming

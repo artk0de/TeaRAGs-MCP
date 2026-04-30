@@ -56,6 +56,7 @@ benchmarks/
 | facade-discipline (iter-2)                | 2026-04-21 | +4    | 100%       | 75%†     | +25pp†      |
 | facade-discipline (iter-3)                | 2026-04-21 | +3    | 100%       | 100%†    | +0pp†       |
 | dinopowers-chaining-rule                  | 2026-04-21 | 8     | structural | n/a‡     | n/a‡        |
+| dinopowers-wrappers (description+hook)    | 2026-04-30 | 15    | 100%       | 40%¶     | +60pp       |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
@@ -92,6 +93,21 @@ pre-confirmed by the existing `inject-wrapper-routing.sh` hook (same bypass
 pattern, different tool surface) and a direct user report. Eval cases documented
 in `evals.json` as reusable regression tests; verification was structural
 (grep + markdownlint delta), not subagent-based.
+
+¶ dinopowers-wrappers (description+hook): cross-cutting fix triggered by user
+report "агент все еще предпочитает superpowers". First baseline (curated
+18-skill list, no CLAUDE.md weighting) gave a misleading 100% — looked like no
+fix needed. Re-ran with realistic context (full skill list + global CLAUDE.md
+naming `superpowers:brainstorming`/`superpowers:test-driven-development` as
+MANDATORY) and got the honest 40% baseline. Fix bundle: rewrote all 10
+descriptions with "USE INSTEAD OF superpowers:X" lead, added Russian triggers to
+all 9 (was: only `brainstorming`), removed self-defeating "Triggers when
+superpowers:X would fire AND..." anti-marketing, removed "NOT for X — use
+superpowers:Y directly" router exits. Added `UserPromptSubmit` hook
+(`scripts/inject-main-session-routing.sh`) — the existing `PreToolUse(Agent)`
+hook only saw subagent prompts, leaving main session unrouted. Added
+`rules/wrapper-priority.md` to override global CLAUDE.md naming. Plugin 0.13.1 →
+0.14.0.
 
 § risk-assessment pair diagnostics: rare baseline-higher-than-with-rule
 inversion. Old Phase 4 classification table lacked coupling/bug-attractor/

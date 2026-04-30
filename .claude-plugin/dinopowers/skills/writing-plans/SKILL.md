@@ -1,13 +1,13 @@
 ---
 name: writing-plans
 description:
-  Use when authoring an implementation plan that names specific files or a small
-  set of touchable paths. Triggers on phrases like "write a plan for X", "draft
-  implementation plan", "напиши план", "распиши задачи по файлам", or when
-  superpowers:writing-plans would normally fire AND a file list is
-  known/derivable. Enriches the plan's Affected Files section with per-file
-  impact signals (imports, churn, ownership, bugFixRate, taskIds) so
-  decomposition and sequencing are data-driven.
+  USE INSTEAD OF superpowers:writing-plans whenever authoring an implementation
+  plan that touches code. This wrapper enriches the Affected Files section with
+  per-file impact signals (imports, churn, ownership, bugFixRate, taskIds)
+  BEFORE decomposing tasks, then chains into superpowers:writing-plans. Triggers
+  on "write a plan", "draft implementation plan", "напиши план", "распиши задачи
+  по файлам", "plan the refactor". Always prefer this over
+  superpowers:writing-plans for any plan that names files or a code area.
 ---
 
 # dinopowers: writing-plans

@@ -1,12 +1,14 @@
 ---
 name: requesting-code-review
 description:
-  Use when requesting code review on completed changes — before composing the
-  review request, queries tea-rags git signals on diff files to build a reviewer
-  context bundle (ownership, churn, connected taskIds per file). Triggers when
-  superpowers:requesting-code-review would normally fire AND there is a concrete
-  diff to review. NOT for self-review checklists (use
-  verification-before-completion).
+  USE INSTEAD OF superpowers:requesting-code-review whenever requesting review
+  on completed changes — before merging, opening a PR, or asking for sign-off.
+  This wrapper queries tea-rags git signals on diff files to build a reviewer
+  context bundle (ownership, churn, connected taskIds per file) BEFORE composing
+  the review request, then chains into superpowers:requesting-code-review.
+  Triggers on "request review", "open a PR", "ready for review", "готовлю PR",
+  "запрос на ревью", "code review please". Always prefer this over
+  superpowers:requesting-code-review.
 ---
 
 # dinopowers: requesting-code-review

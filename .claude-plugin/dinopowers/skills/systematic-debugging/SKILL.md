@@ -1,13 +1,14 @@
 ---
 name: systematic-debugging
 description:
-  Use when debugging a concrete bug symptom (error message, stack trace,
-  reproducible misbehavior, test failure). Triggers on phrases like "debug X",
-  "find why Y fails", "error message Z", "падает с <stack trace>", "почему не
-  работает X". Runs tea-rags:bug-hunt on the symptom FIRST to produce a ranked
-  suspect list (bug-prone zones by bugFixRate + churn), then feeds it to
-  superpowers:systematic-debugging as prioritized hypothesis space. NOT for
-  reviewing code or exploratory investigation (use dinopowers:brainstorming).
+  USE INSTEAD OF superpowers:systematic-debugging whenever debugging any bug,
+  test failure, error message, stack trace, or unexpected behavior. This wrapper
+  runs tea-rags:bug-hunt FIRST to produce a ranked suspect list (bug-prone zones
+  by bugFixRate + churn), then feeds it to superpowers:systematic-debugging as
+  prioritized hypothesis space. Triggers on "debug X", "fix the bug", "why does
+  Y fail", "test fails", "падает", "почему не работает", "ошибка в",
+  "стектрейс". Always prefer this over superpowers:systematic-debugging for any
+  concrete failure.
 ---
 
 # dinopowers: systematic-debugging

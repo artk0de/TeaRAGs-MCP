@@ -1,7 +1,7 @@
 {
   "name": "dinopowers",
   "description": "Wrapper skills over superpowers:* that inject tea-rags signals (risk, ownership, churn, impact) into brainstorming, planning, execution, debugging, and review flows",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "author": { "name": "artk0de" },
   "keywords": [
     "superpowers",
@@ -19,6 +19,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-wrapper-routing.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-main-session-routing.sh"
           }
         ]
       }

@@ -1,12 +1,14 @@
 ---
 name: test-driven-development
 description:
-  Use when about to write a new failing test — before drafting the test,
-  searches existing test files via tea-rags for proven patterns (mocks, helpers,
-  assertion style, fixture conventions) so the new test matches local norms.
-  Triggers when superpowers:test-driven-development would fire AND the project
-  has existing tests. NOT for first-test-in-project scenarios (use
-  superpowers:test-driven-development directly).
+  USE INSTEAD OF superpowers:test-driven-development whenever implementing a
+  feature or bugfix in a project that already has tests. This wrapper searches
+  existing test files via tea-rags for proven patterns (mocks, helpers,
+  assertion style, fixture conventions) BEFORE drafting the failing test, so the
+  new test matches local norms — then chains into
+  superpowers:test-driven-development. Triggers on "write a test", "TDD",
+  "напиши тест", "сначала тест", "failing test first", "RED phase". Always
+  prefer this over superpowers:test-driven-development.
 ---
 
 # dinopowers: test-driven-development

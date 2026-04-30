@@ -1,0 +1,110 @@
+{
+  "skill_name": "dinopowers-wrappers",
+  "evals": [
+    {
+      "id": 1,
+      "audit_finding": "A,B,D",
+      "prompt": "Давай обсудим новую фичу для src/core/domains/ingest/pipeline/chunker/ — хочу добавить поддержку Kotlin",
+      "expected": "Skill(dinopowers:brainstorming). NOT Skill(superpowers:brainstorming). Reason: brainstorm with named code area + Russian phrasing.",
+      "category": "audit"
+    },
+    {
+      "id": 2,
+      "audit_finding": "C,D",
+      "prompt": "Implement a fix for the off-by-one bug in src/core/domains/explore/reranker.ts line 142 — write a failing test first",
+      "expected": "Skill(dinopowers:test-driven-development). NOT Skill(superpowers:test-driven-development). Project has tests/ dir → wrapper applies.",
+      "category": "audit"
+    },
+    {
+      "id": 3,
+      "audit_finding": "B,F,H",
+      "prompt": "I have a written plan at docs/plans/2026-04-25-codegraph.md and want to start executing the first Task — it modifies src/core/domains/explore/strategies/*.ts",
+      "expected": "Skill(dinopowers:executing-plans). NOT Skill(superpowers:executing-plans).",
+      "category": "audit"
+    },
+    {
+      "id": 4,
+      "audit_finding": "A,G",
+      "prompt": "Падает тест tests/core/api/dto.test.ts с error 'Cannot read property of undefined' — почему?",
+      "expected": "Skill(dinopowers:systematic-debugging). NOT Skill(superpowers:systematic-debugging). Russian + concrete symptom.",
+      "category": "audit"
+    },
+    {
+      "id": 5,
+      "audit_finding": "B,H",
+      "prompt": "Готов закоммитить изменения в src/core/domains/ingest/pipeline/enrichment/ — проверь перед commit что ничего не сломано",
+      "expected": "Skill(dinopowers:verification-before-completion). NOT Skill(superpowers:verification-before-completion).",
+      "category": "audit"
+    },
+    {
+      "id": 6,
+      "audit_finding": "A,B",
+      "prompt": "Напиши implementation plan для рефакторинга src/core/api/public/dto/ — нужно разделить на 3 файла",
+      "expected": "Skill(dinopowers:writing-plans). NOT Skill(superpowers:writing-plans). Russian + named files.",
+      "category": "audit"
+    },
+    {
+      "id": 7,
+      "audit_finding": "A,B,F",
+      "prompt": "Готовлю PR для refactor/solid-ingest-pipeline — собери review request с диффом",
+      "expected": "Skill(dinopowers:requesting-code-review). NOT Skill(superpowers:requesting-code-review).",
+      "category": "audit"
+    },
+    {
+      "id": 8,
+      "audit_finding": "C,H",
+      "prompt": "Reviewer suggested renaming `EnrichmentCoordinator.process()` to `EnrichmentCoordinator.run()` — should I agree?",
+      "expected": "Skill(dinopowers:receiving-code-review). NOT Skill(superpowers:receiving-code-review). Names a concrete symbol.",
+      "category": "audit"
+    },
+    {
+      "id": 9,
+      "audit_finding": "B,D",
+      "prompt": "Branch refactor/solid-ingest-pipeline ready — decide: merge to main, open PR, or cleanup?",
+      "expected": "Skill(dinopowers:finishing-a-development-branch). NOT Skill(superpowers:finishing-a-development-branch).",
+      "category": "audit"
+    },
+    {
+      "id": 10,
+      "audit_finding": "subagent-routing",
+      "prompt": "[subagent: explore] Investigate src/core/domains/trajectory/git/ — find the brainstorm risk areas before I refactor",
+      "expected": "Skill(dinopowers:brainstorming). Subagent context — must still pick wrapper.",
+      "category": "subagent"
+    },
+    {
+      "id": 11,
+      "audit_finding": "subagent-routing",
+      "prompt": "[subagent: task-agent] Execute Task 3 of the plan: edit src/core/domains/ingest/sync/strategy.ts and src/core/domains/ingest/sync/coordinator.ts",
+      "expected": "Skill(dinopowers:executing-plans). Subagent must route through wrapper before edits.",
+      "category": "subagent"
+    },
+    {
+      "id": 12,
+      "audit_finding": "control-trivial",
+      "prompt": "Fix the typo in line 42 of README.md — 'recieve' should be 'receive'",
+      "expected": "NO skill / direct Edit. Trivial typo bypasses wrappers. Both dinopowers AND superpowers should be skipped.",
+      "category": "control"
+    },
+    {
+      "id": 13,
+      "audit_finding": "control-no-area",
+      "prompt": "Let's brainstorm about distributed systems patterns in general — no specific code area",
+      "expected": "Skill(superpowers:brainstorming). Pure conceptual — wrapper explicitly says skip when no area.",
+      "category": "control"
+    },
+    {
+      "id": 14,
+      "audit_finding": "edge-non-skill",
+      "prompt": "Show me git log for last 5 commits",
+      "expected": "NO skill — direct git command. Neither dinopowers nor superpowers triggers.",
+      "category": "edge"
+    },
+    {
+      "id": 15,
+      "audit_finding": "edge-creating-wrapper",
+      "prompt": "Add a new dinopowers wrapper called dinopowers:reviewing-architecture-doc that wraps superpowers:brainstorming with arch-context enrichment",
+      "expected": "Skill(dinopowers:writing-skills). Meta-skill for creating new wrappers.",
+      "category": "edge"
+    }
+  ]
+}
