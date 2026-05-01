@@ -189,7 +189,13 @@ export class IndexingOps {
    *
    * - No modelInfo → return config chunkSize unchanged
    * - User didn't set INGEST_CHUNK_SIZE → use model-derived default
-   * - User's chunkSize exceeds model max → cap to maxAllowed
+   * - User set INGEST_CHUNK_SIZE > defaultChunkSize → cap to defaultChunkSize.
+   *   We do NOT cap to maxAllowed here: maxAllowed is the hard model ceiling,
+   *   while defaultChunkSize already includes the safety factor needed to keep
+   *   tokenized content under the ceiling for dense markdown / non-ASCII text.
+   *   Bypassing the safety factor — as the previous "cap to maxAllowed" branch
+   *   did — let chunks like 4079-char markdown overflow nomic-embed-text's
+   *   2048 token window because chars/token can drop below the assumed ratio.
    * - Otherwise → keep user's chunkSize
    */
   resolveEffectiveChunkSize(modelInfo: ModelInfo | undefined): number {
@@ -199,7 +205,7 @@ export class IndexingOps {
     const defaultChunkSize = Math.floor(maxAllowed * CONTEXT_SAFETY_FACTOR);
 
     if (!this.config.userSetChunkSize) return defaultChunkSize;
-    if (this.config.chunkSize > maxAllowed) return maxAllowed;
+    if (this.config.chunkSize > defaultChunkSize) return defaultChunkSize;
     return this.config.chunkSize;
   }
 

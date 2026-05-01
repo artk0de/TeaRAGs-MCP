@@ -332,11 +332,21 @@ describe("IngestFacade", () => {
       expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(3000);
     });
 
-    it("caps user chunkSize to maxAllowed when exceeding model limit", () => {
+    it("caps user chunkSize to defaultChunkSize (with safety factor) when exceeding it", () => {
       const facade = makeFacadeWithConfig({ chunkSize: 8000, userSetChunkSize: true });
       const modelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
-      // maxAllowed = 4096, 8000 > 4096 → cap to 4096
-      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(4096);
+      // maxAllowed = 4096, default = floor(4096 * 0.8) = 3276
+      // 8000 > 3276 → cap to 3276 so safety factor still applies
+      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(3276);
+    });
+
+    it("caps user chunkSize even when userSet is between default and maxAllowed", () => {
+      // Real-world: CODE_CHUNK_SIZE=4500 + nomic-embed-text (ctx=2048).
+      // maxAllowed=4096, default=3276. 4500 between them previously slipped
+      // through unsplit and overflowed Ollama on dense markdown.
+      const facade = makeFacadeWithConfig({ chunkSize: 4500, userSetChunkSize: true });
+      const modelInfo = { model: "nomic-embed-text", contextLength: 2048, dimensions: 768 };
+      expect(facade.resolveEffectiveChunkSize(modelInfo)).toBe(3276);
     });
 
     it("uses model-derived default for small context models", () => {
