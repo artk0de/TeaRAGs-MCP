@@ -1,3 +1,34 @@
+## [1.22.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.21.0...v1.22.0) (2026-05-05)
+
+### ⚠ BREAKING CHANGES
+
+- **dinopowers:** New UserPromptSubmit hook injects routing context into every
+  user prompt in projects with the dinopowers plugin enabled. Users who don't
+  want this can disable the plugin or comment out the hook in plugin.json.
+
+Benchmark: .claude-plugin/.benchmarks/dinopowers-wrappers/benchmark.md
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+### Features
+
+- **dinopowers:** rewrite descriptions, add main-session hook, override
+  CLAUDE.md naming
+  ([783377c](https://github.com/artk0de/TeaRAGs-MCP/commit/783377c61474ba5d9f4140846d77db8f547ce2dd))
+
+### Bug Fixes
+
+- **chunker:** enforce hard cap on chunk size to prevent Ollama context overflow
+  ([3797b04](https://github.com/artk0de/TeaRAGs-MCP/commit/3797b0434e24a7f84a70e8ed9c01ba1ce16bb1bc)),
+  closes [symbolId#partN](https://github.com/artk0de/symbolId/issues/partN)
+- **ingest:** apply context safety factor even when user sets chunkSize
+  ([dd76155](https://github.com/artk0de/TeaRAGs-MCP/commit/dd76155a44ca0e4813618a8376e39c69f5f38677))
+
+### Code Refactoring
+
+- **ingest:** split file/chunk marker writes in awaitCompletion
+  ([aeb992d](https://github.com/artk0de/TeaRAGs-MCP/commit/aeb992d0b3afc30a60abd9309245ddeda474868b))
+
 ## [1.21.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.20.0...v1.21.0) (2026-04-24)
 
 ### ⚠ BREAKING CHANGES
