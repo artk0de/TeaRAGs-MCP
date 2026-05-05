@@ -1,3 +1,98 @@
+## [1.21.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.20.0...v1.21.0) (2026-04-24)
+
+### ⚠ BREAKING CHANGES
+
+- **qdrant:** QdrantManager constructor 4th parameter changed from
+  `isStarting?: () => boolean` to `daemon?: EmbeddedDaemonProbe`. Internal API
+  only - no public DTO change.
+
+### Features
+
+- **adapters:** add QdrantOptimizationInProgressError
+  ([2b219d7](https://github.com/artk0de/TeaRAGs-MCP/commit/2b219d7ebfa5d549676e64f02b961780e86ea4b8))
+- **adapters:** expose Qdrant status and optimizerStatus in getCollectionInfo
+  ([a4df5a7](https://github.com/artk0de/TeaRAGs-MCP/commit/a4df5a7ffa9ef402b2c81e0a972ae06b07300265))
+- **adapters:** probe collection status on countPoints failure
+  ([ecdccc3](https://github.com/artk0de/TeaRAGs-MCP/commit/ecdccc3706c253ea49805da4746677d8bd4dafec))
+- **config:** embedded-aware delete tuning defaults
+  ([c3960b8](https://github.com/artk0de/TeaRAGs-MCP/commit/c3960b80cc287f27c4f9d634c2cc55a475b953ec))
+- **config:** introduce .qdrant-required-version + rename to
+  EMBEDDED_QDRANT_VERSION
+  ([0b5cc18](https://github.com/artk0de/TeaRAGs-MCP/commit/0b5cc180e7ea5dc661f1c8fabfa0be31c6f109dc))
+- **contracts:** add ChunkSignalOptions with external semaphore support
+  ([94be2e4](https://github.com/artk0de/TeaRAGs-MCP/commit/94be2e4aa946e52a73cefcb13d087aea6f0e4375))
+- **contracts:** add status and optimizerStatus to CollectionInfo DTO
+  ([db74c1e](https://github.com/artk0de/TeaRAGs-MCP/commit/db74c1e23a97532cf7870bbcec6ac07e0e44e16f))
+- **contracts:** surface Qdrant collection status in IndexStatus.infraHealth
+  ([86c5153](https://github.com/artk0de/TeaRAGs-MCP/commit/86c5153eacd6e6a14d7065126b2ae5b51f81b798))
+- **infra:** add async Semaphore for bounded concurrency
+  ([1964e2c](https://github.com/artk0de/TeaRAGs-MCP/commit/1964e2cd1bcf80c6350a8dccba2514e0b3c4e2aa))
+- **ingest:** DeletionOutcome tracks per-path delete success
+  ([b842029](https://github.com/artk0de/TeaRAGs-MCP/commit/b8420294820ed62492f117de4d6cb2937c43df39))
+- **ingest:** ReindexCoordinator gates upsert on delete success per file
+  ([5896815](https://github.com/artk0de/TeaRAGs-MCP/commit/5896815a5a15d5cc5afa4370e653e4bc9a442445))
+- **ingest:** use cached pointsCount for deletion delta reporting
+  ([7fe52a7](https://github.com/artk0de/TeaRAGs-MCP/commit/7fe52a7f264ad819072c4a0fee2e6c7778f04c2b))
+- **pipeline:** AdaptiveBatchSizer halves upsert batch on Qdrant yellow
+  ([2fa202f](https://github.com/artk0de/TeaRAGs-MCP/commit/2fa202f15fe0e31c2ce26a8c70fbcac942175e1a))
+- **pipeline:** ChunkPipeline reduces upsert batch size on Qdrant yellow
+  ([d8a27ca](https://github.com/artk0de/TeaRAGs-MCP/commit/d8a27ca4700d205a1916e0dc3cc3b3291bcd9984))
+- **pipeline:** per-file FILE_INGESTED telemetry with top-N slow-file tracker
+  ([0a393f1](https://github.com/artk0de/TeaRAGs-MCP/commit/0a393f1955eb2b33e500d98921393d08cab1ff86))
+- **pipeline:** register schema v12 in SchemaMigrator
+  ([51f7c50](https://github.com/artk0de/TeaRAGs-MCP/commit/51f7c50ed3c374d91b4b6f69a652dc4bf887974c))
+- **pipeline:** schema v12 migration adds enrichment payload indexes
+  ([3bc3d36](https://github.com/artk0de/TeaRAGs-MCP/commit/3bc3d366563bc5f6777c9dae4d0202f91a551d18))
+- **pipeline:** streaming chunk enrichment per-batch in coordinator
+  ([9012768](https://github.com/artk0de/TeaRAGs-MCP/commit/9012768136fb00f45788bb3f9c1027bb6257d4c7))
+- **qdrant:** enable multi-core defaults for embedded daemon
+  ([66adad5](https://github.com/artk0de/TeaRAGs-MCP/commit/66adad52c72d0585d1ac5b531bd5e3ebb07a87b3))
+- **qdrant:** split embedded daemon startup errors, non-blocking spawn
+  ([146ec62](https://github.com/artk0de/TeaRAGs-MCP/commit/146ec623fdb7ced7df743ec139af5dddd06e0baf))
+- **qdrant:** unify version constant, add external check and downgrade guard
+  ([3978b8e](https://github.com/artk0de/TeaRAGs-MCP/commit/3978b8e1e04da3b69428e18df4deeacec5aa26b4))
+- **signals:** add pair diagnostics layer for architectural interpretation
+  ([5f92166](https://github.com/artk0de/TeaRAGs-MCP/commit/5f92166f5db2e0035b44a10dae0ac764b40e2295))
+
+### Bug Fixes
+
+- **explore:** symmetrize find_symbol payload contract with semantic/hybrid
+  ([dc1a2a1](https://github.com/artk0de/TeaRAGs-MCP/commit/dc1a2a11d2088fc6b38ec342a0b008d4cda2ce75))
+- **ingest:** gate modified-file upsert on delete success per file
+  ([7fe355d](https://github.com/artk0de/TeaRAGs-MCP/commit/7fe355d8bf3e236a1779fd40864e617ace454a00))
+- **ingest:** prevent stale enrichment marker overwriting current run
+  ([b09bcd1](https://github.com/artk0de/TeaRAGs-MCP/commit/b09bcd19bb8426c54bc2b505c75d24d5f8821d6a))
+- **ingest:** recover stale enrichment.in_progress at health-mapper read
+  ([600744d](https://github.com/artk0de/TeaRAGs-MCP/commit/600744de4397fe692ecb924e6018b24e547b8329))
+- **ingest:** run enrichment recovery even on reindex with 0 changes
+  ([9fa596d](https://github.com/artk0de/TeaRAGs-MCP/commit/9fa596d140bea852eff23e1c9bc56b0368ee9f5f))
+- **ingest:** stamp chunk-level enrichedAt for missed files, sync marker with
+  real count
+  ([d74b09a](https://github.com/artk0de/TeaRAGs-MCP/commit/d74b09a74148a1a962eb1443d69b6054c76fae47))
+- **ingest:** surface per-path delete failures via DeletionOutcome
+  ([1a07d70](https://github.com/artk0de/TeaRAGs-MCP/commit/1a07d70d1743c5ab3d67c5c7231d7d6a230aade9))
+- **pipeline:** getIndexStatus reads from alias, not orphan \_v(N+1)
+  ([3311406](https://github.com/artk0de/TeaRAGs-MCP/commit/33114062e2783303ffc44972363207108363f426))
+
+### Performance Improvements
+
+- **qdrant:** scroll+delete-by-IDs and optimizer pause for large-delta reindex
+  ([6220f86](https://github.com/artk0de/TeaRAGs-MCP/commit/6220f8631c77933fb2a6400c83b0de9db7331204))
+
+### Documentation
+
+- **specs:** add sub-collections cold memory design spec
+  ([4aaa873](https://github.com/artk0de/TeaRAGs-MCP/commit/4aaa87376c91eecc6fb1cd3184d09e67f86d001d))
+- **specs:** implementation plans for reindex resilience and yellow handling
+  ([f3b43c2](https://github.com/artk0de/TeaRAGs-MCP/commit/f3b43c2b72cc736ea447d6ea161b44ded437b8ac))
+- **specs:** qdrant yellow-status handling design
+  ([7f75745](https://github.com/artk0de/TeaRAGs-MCP/commit/7f75745c12ec3971119ce0e237ee38bb818515a1))
+
+### Code Refactoring
+
+- **pipeline:** fix FILE_INGESTED type cast and hoist bytes computation
+  ([60fe61f](https://github.com/artk0de/TeaRAGs-MCP/commit/60fe61ffc161b9936e38733f03fa580423c73753))
+
 ## [1.20.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.19.1...v1.20.0) (2026-04-22)
 
 ### ⚠ BREAKING CHANGES

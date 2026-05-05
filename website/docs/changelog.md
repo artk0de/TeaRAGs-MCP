@@ -3,75 +3,198 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.21.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.20.0...v1.21.0) (2026-04-24)
+
+### ⚠ BREAKING CHANGES
+
+* **qdrant:** QdrantManager constructor 4th parameter changed from
+`isStarting?: () =&gt; boolean` to `daemon?: EmbeddedDaemonProbe`. Internal
+API only - no public DTO change.
+
+### Features
+
+* **adapters:** add QdrantOptimizationInProgressError ([2b219d7](https://github.com/artk0de/TeaRAGs-MCP/commit/2b219d7ebfa5d549676e64f02b961780e86ea4b8))
+* **adapters:** expose Qdrant status and optimizerStatus in getCollectionInfo ([a4df5a7](https://github.com/artk0de/TeaRAGs-MCP/commit/a4df5a7ffa9ef402b2c81e0a972ae06b07300265))
+* **adapters:** probe collection status on countPoints failure ([ecdccc3](https://github.com/artk0de/TeaRAGs-MCP/commit/ecdccc3706c253ea49805da4746677d8bd4dafec))
+* **config:** embedded-aware delete tuning defaults ([c3960b8](https://github.com/artk0de/TeaRAGs-MCP/commit/c3960b80cc287f27c4f9d634c2cc55a475b953ec))
+* **config:** introduce .qdrant-required-version + rename to EMBEDDED_QDRANT_VERSION ([0b5cc18](https://github.com/artk0de/TeaRAGs-MCP/commit/0b5cc180e7ea5dc661f1c8fabfa0be31c6f109dc))
+* **contracts:** add ChunkSignalOptions with external semaphore support ([94be2e4](https://github.com/artk0de/TeaRAGs-MCP/commit/94be2e4aa946e52a73cefcb13d087aea6f0e4375))
+* **contracts:** add status and optimizerStatus to CollectionInfo DTO ([db74c1e](https://github.com/artk0de/TeaRAGs-MCP/commit/db74c1e23a97532cf7870bbcec6ac07e0e44e16f))
+* **contracts:** surface Qdrant collection status in IndexStatus.infraHealth ([86c5153](https://github.com/artk0de/TeaRAGs-MCP/commit/86c5153eacd6e6a14d7065126b2ae5b51f81b798))
+* **infra:** add async Semaphore for bounded concurrency ([1964e2c](https://github.com/artk0de/TeaRAGs-MCP/commit/1964e2cd1bcf80c6350a8dccba2514e0b3c4e2aa))
+* **ingest:** DeletionOutcome tracks per-path delete success ([b842029](https://github.com/artk0de/TeaRAGs-MCP/commit/b8420294820ed62492f117de4d6cb2937c43df39))
+* **ingest:** ReindexCoordinator gates upsert on delete success per file ([5896815](https://github.com/artk0de/TeaRAGs-MCP/commit/5896815a5a15d5cc5afa4370e653e4bc9a442445))
+* **ingest:** use cached pointsCount for deletion delta reporting ([7fe52a7](https://github.com/artk0de/TeaRAGs-MCP/commit/7fe52a7f264ad819072c4a0fee2e6c7778f04c2b))
+* **pipeline:** AdaptiveBatchSizer halves upsert batch on Qdrant yellow ([2fa202f](https://github.com/artk0de/TeaRAGs-MCP/commit/2fa202f15fe0e31c2ce26a8c70fbcac942175e1a))
+* **pipeline:** ChunkPipeline reduces upsert batch size on Qdrant yellow ([d8a27ca](https://github.com/artk0de/TeaRAGs-MCP/commit/d8a27ca4700d205a1916e0dc3cc3b3291bcd9984))
+* **pipeline:** per-file FILE_INGESTED telemetry with top-N slow-file tracker ([0a393f1](https://github.com/artk0de/TeaRAGs-MCP/commit/0a393f1955eb2b33e500d98921393d08cab1ff86))
+* **pipeline:** register schema v12 in SchemaMigrator ([51f7c50](https://github.com/artk0de/TeaRAGs-MCP/commit/51f7c50ed3c374d91b4b6f69a652dc4bf887974c))
+* **pipeline:** schema v12 migration adds enrichment payload indexes ([3bc3d36](https://github.com/artk0de/TeaRAGs-MCP/commit/3bc3d366563bc5f6777c9dae4d0202f91a551d18))
+* **pipeline:** streaming chunk enrichment per-batch in coordinator ([9012768](https://github.com/artk0de/TeaRAGs-MCP/commit/9012768136fb00f45788bb3f9c1027bb6257d4c7))
+* **qdrant:** enable multi-core defaults for embedded daemon ([66adad5](https://github.com/artk0de/TeaRAGs-MCP/commit/66adad52c72d0585d1ac5b531bd5e3ebb07a87b3))
+* **qdrant:** split embedded daemon startup errors, non-blocking spawn ([146ec62](https://github.com/artk0de/TeaRAGs-MCP/commit/146ec623fdb7ced7df743ec139af5dddd06e0baf))
+* **qdrant:** unify version constant, add external check and downgrade guard ([3978b8e](https://github.com/artk0de/TeaRAGs-MCP/commit/3978b8e1e04da3b69428e18df4deeacec5aa26b4))
+* **signals:** add pair diagnostics layer for architectural interpretation ([5f92166](https://github.com/artk0de/TeaRAGs-MCP/commit/5f92166f5db2e0035b44a10dae0ac764b40e2295))
+
+### Bug Fixes
+
+* **explore:** symmetrize find_symbol payload contract with semantic/hybrid ([dc1a2a1](https://github.com/artk0de/TeaRAGs-MCP/commit/dc1a2a11d2088fc6b38ec342a0b008d4cda2ce75))
+* **ingest:** gate modified-file upsert on delete success per file ([7fe355d](https://github.com/artk0de/TeaRAGs-MCP/commit/7fe355d8bf3e236a1779fd40864e617ace454a00))
+* **ingest:** prevent stale enrichment marker overwriting current run ([b09bcd1](https://github.com/artk0de/TeaRAGs-MCP/commit/b09bcd19bb8426c54bc2b505c75d24d5f8821d6a))
+* **ingest:** recover stale enrichment.in_progress at health-mapper read ([600744d](https://github.com/artk0de/TeaRAGs-MCP/commit/600744de4397fe692ecb924e6018b24e547b8329))
+* **ingest:** run enrichment recovery even on reindex with 0 changes ([9fa596d](https://github.com/artk0de/TeaRAGs-MCP/commit/9fa596d140bea852eff23e1c9bc56b0368ee9f5f))
+* **ingest:** stamp chunk-level enrichedAt for missed files, sync marker with real count ([d74b09a](https://github.com/artk0de/TeaRAGs-MCP/commit/d74b09a74148a1a962eb1443d69b6054c76fae47))
+* **ingest:** surface per-path delete failures via DeletionOutcome ([1a07d70](https://github.com/artk0de/TeaRAGs-MCP/commit/1a07d70d1743c5ab3d67c5c7231d7d6a230aade9))
+* **pipeline:** getIndexStatus reads from alias, not orphan _v(N+1) ([3311406](https://github.com/artk0de/TeaRAGs-MCP/commit/33114062e2783303ffc44972363207108363f426))
+
+### Performance Improvements
+
+* **qdrant:** scroll+delete-by-IDs and optimizer pause for large-delta reindex ([6220f86](https://github.com/artk0de/TeaRAGs-MCP/commit/6220f8631c77933fb2a6400c83b0de9db7331204))
+
+### Documentation
+
+* **specs:** add sub-collections cold memory design spec ([4aaa873](https://github.com/artk0de/TeaRAGs-MCP/commit/4aaa87376c91eecc6fb1cd3184d09e67f86d001d))
+* **specs:** implementation plans for reindex resilience and yellow handling ([f3b43c2](https://github.com/artk0de/TeaRAGs-MCP/commit/f3b43c2b72cc736ea447d6ea161b44ded437b8ac))
+* **specs:** qdrant yellow-status handling design ([7f75745](https://github.com/artk0de/TeaRAGs-MCP/commit/7f75745c12ec3971119ce0e237ee38bb818515a1))
+
+### Code Refactoring
+
+* **pipeline:** fix FILE_INGESTED type cast and hoist bytes computation ([60fe61f](https://github.com/artk0de/TeaRAGs-MCP/commit/60fe61ffc161b9936e38733f03fa580423c73753))
+
 ## [1.20.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.19.1...v1.20.0) (2026-04-22)
 
 ### ⚠ BREAKING CHANGES
 
-* **config:** TRAJECTORY_GIT_ENABLED default changed from false to true.
-Users who previously relied on the absent-env-var meaning "disabled" must
-now set TRAJECTORY_GIT_ENABLED=false (or CODE_ENABLE_GIT_METADATA=false) to
-opt out. No action needed for users already setting the variable explicitly,
-or for non-git directories (silently skipped either way).
+- **config:** TRAJECTORY_GIT_ENABLED default changed from false to true. Users
+  who previously relied on the absent-env-var meaning "disabled" must now set
+  TRAJECTORY_GIT_ENABLED=false (or CODE_ENABLE_GIT_METADATA=false) to opt out.
+  No action needed for users already setting the variable explicitly, or for
+  non-git directories (silently skipped either way).
 
 Co-Authored-By: Claude Opus 4.7 (1M context) &lt;noreply@anthropic.com&gt;
 
 ### Features
 
-* **dinopowers:** add brainstorming wrapper with 3-preset risk enrichment ([9eb9054](https://github.com/artk0de/TeaRAGs-MCP/commit/9eb9054c7e88a305d9aba500d154fe2e7896e8fc))
-* **dinopowers:** add executing-plans wrapper with per-Task pre-touch guard ([c28b28b](https://github.com/artk0de/TeaRAGs-MCP/commit/c28b28b6c2ce8c3f7c78ac2a6b1be91cb2d267d5))
-* **dinopowers:** add finishing-a-development-branch wrapper with branch-wide risk scan ([b5ccf04](https://github.com/artk0de/TeaRAGs-MCP/commit/b5ccf04c3603e955396a9912978d171e36f8f4d2))
-* **dinopowers:** add receiving-code-review wrapper with impact-verdict ladder ([b770086](https://github.com/artk0de/TeaRAGs-MCP/commit/b7700866f7c1f97c5049ec2c49041d503fe538ae))
-* **dinopowers:** add requesting-code-review wrapper with reviewer-context bundle ([4308ecc](https://github.com/artk0de/TeaRAGs-MCP/commit/4308eccdf934695fbd216606e16e1a79ff1befd6))
-* **dinopowers:** add subagent routing hook, README, versioning rule entry ([a3ae389](https://github.com/artk0de/TeaRAGs-MCP/commit/a3ae38982d15d04042886d6b07d4db3e0386aabd))
-* **dinopowers:** add systematic-debugging wrapper composing with tea-rags:bug-hunt ([4fd8dd9](https://github.com/artk0de/TeaRAGs-MCP/commit/4fd8dd99f67fdc6b1a2d33f3758b7da9cc4215bf))
-* **dinopowers:** add test-driven-development wrapper with proven-test pattern search ([c60129e](https://github.com/artk0de/TeaRAGs-MCP/commit/c60129e6d3a70c1372f7b871d9aeb7cc2805778a))
-* **dinopowers:** add verification-before-completion wrapper with collateral-damage scan ([0167524](https://github.com/artk0de/TeaRAGs-MCP/commit/0167524330fe93e53b42641dce9ee37043a0b686))
-* **dinopowers:** add writing-plans wrapper with per-file impact enrichment ([22f675f](https://github.com/artk0de/TeaRAGs-MCP/commit/22f675f6164c6c44dfd7cdd688e0ac4e1b6680aa))
-* **dinopowers:** scaffold plugin and add writing-skills bootstrap wrapper ([52660b7](https://github.com/artk0de/TeaRAGs-MCP/commit/52660b708e89962879386522481b1a1748e3f928))
+- **dinopowers:** add brainstorming wrapper with 3-preset risk enrichment
+  ([9eb9054](https://github.com/artk0de/TeaRAGs-MCP/commit/9eb9054c7e88a305d9aba500d154fe2e7896e8fc))
+- **dinopowers:** add executing-plans wrapper with per-Task pre-touch guard
+  ([c28b28b](https://github.com/artk0de/TeaRAGs-MCP/commit/c28b28b6c2ce8c3f7c78ac2a6b1be91cb2d267d5))
+- **dinopowers:** add finishing-a-development-branch wrapper with branch-wide
+  risk scan
+  ([b5ccf04](https://github.com/artk0de/TeaRAGs-MCP/commit/b5ccf04c3603e955396a9912978d171e36f8f4d2))
+- **dinopowers:** add receiving-code-review wrapper with impact-verdict ladder
+  ([b770086](https://github.com/artk0de/TeaRAGs-MCP/commit/b7700866f7c1f97c5049ec2c49041d503fe538ae))
+- **dinopowers:** add requesting-code-review wrapper with reviewer-context
+  bundle
+  ([4308ecc](https://github.com/artk0de/TeaRAGs-MCP/commit/4308eccdf934695fbd216606e16e1a79ff1befd6))
+- **dinopowers:** add subagent routing hook, README, versioning rule entry
+  ([a3ae389](https://github.com/artk0de/TeaRAGs-MCP/commit/a3ae38982d15d04042886d6b07d4db3e0386aabd))
+- **dinopowers:** add systematic-debugging wrapper composing with
+  tea-rags:bug-hunt
+  ([4fd8dd9](https://github.com/artk0de/TeaRAGs-MCP/commit/4fd8dd99f67fdc6b1a2d33f3758b7da9cc4215bf))
+- **dinopowers:** add test-driven-development wrapper with proven-test pattern
+  search
+  ([c60129e](https://github.com/artk0de/TeaRAGs-MCP/commit/c60129e6d3a70c1372f7b871d9aeb7cc2805778a))
+- **dinopowers:** add verification-before-completion wrapper with
+  collateral-damage scan
+  ([0167524](https://github.com/artk0de/TeaRAGs-MCP/commit/0167524330fe93e53b42641dce9ee37043a0b686))
+- **dinopowers:** add writing-plans wrapper with per-file impact enrichment
+  ([22f675f](https://github.com/artk0de/TeaRAGs-MCP/commit/22f675f6164c6c44dfd7cdd688e0ac4e1b6680aa))
+- **dinopowers:** scaffold plugin and add writing-skills bootstrap wrapper
+  ([52660b7](https://github.com/artk0de/TeaRAGs-MCP/commit/52660b708e89962879386522481b1a1748e3f928))
 
 ### Improvements
 
-* **config:** enable git trajectory enrichment by default ([f0a9e17](https://github.com/artk0de/TeaRAGs-MCP/commit/f0a9e17ab7183a3c19607354dd8e07529cf75f4b))
+- **config:** enable git trajectory enrichment by default
+  ([f0a9e17](https://github.com/artk0de/TeaRAGs-MCP/commit/f0a9e17ab7183a3c19607354dd8e07529cf75f4b))
 
 ### Bug Fixes
 
-* **dinopowers:** redirect inner superpowers:Y chain-hops to dinopowers:Y wrappers ([6d8f78f](https://github.com/artk0de/TeaRAGs-MCP/commit/6d8f78f3851a40513e15d99a1fbc29f81572b503))
-* **embedding:** detect primary Ollama death mid-session via background probe ([dd4e1f0](https://github.com/artk0de/TeaRAGs-MCP/commit/dd4e1f03be16bde9bc5947be97cba1917d60c8d6))
-* **setup:** correct Node version, use global tea-rags binary, auto-install Ollama on macOS ([98e61cc](https://github.com/artk0de/TeaRAGs-MCP/commit/98e61cc1f4a33d5a60a5bccc2b08df825fb33687))
+- **dinopowers:** redirect inner superpowers:Y chain-hops to dinopowers:Y
+  wrappers
+  ([6d8f78f](https://github.com/artk0de/TeaRAGs-MCP/commit/6d8f78f3851a40513e15d99a1fbc29f81572b503))
+- **embedding:** detect primary Ollama death mid-session via background probe
+  ([dd4e1f0](https://github.com/artk0de/TeaRAGs-MCP/commit/dd4e1f03be16bde9bc5947be97cba1917d60c8d6))
+- **setup:** correct Node version, use global tea-rags binary, auto-install
+  Ollama on macOS
+  ([98e61cc](https://github.com/artk0de/TeaRAGs-MCP/commit/98e61cc1f4a33d5a60a5bccc2b08df825fb33687))
 
 ### Documentation
 
-* add specs and plans for 3 hygiene refactorings ([f2bac4b](https://github.com/artk0de/TeaRAGs-MCP/commit/f2bac4b4e6919579d59251c9569bdf98f13b32fb))
-* document dinopowers plugin in skills page and main README ([b03ae0b](https://github.com/artk0de/TeaRAGs-MCP/commit/b03ae0b0cefbb330dc60fe953e5aa428058815be))
-* **explore:** plan for Reranker.rerank() phase extraction ([8a73803](https://github.com/artk0de/TeaRAGs-MCP/commit/8a738033fada7d86cc06352f87930719d9d55142))
-* **explore:** spec for Reranker.rerank() phase extraction ([a44741a](https://github.com/artk0de/TeaRAGs-MCP/commit/a44741aae75774b7a8e5b0254bdf4bb6cfc2b20b))
-* fix superpowers attribution (obra/superpowers, not anthropic/skills) ([db25657](https://github.com/artk0de/TeaRAGs-MCP/commit/db25657a9e246f5e8bea90ba9feca9f9df00dc87))
-* **readme+website:** fix "not for solo projects" — document GIT SESSIONS mode ([906b308](https://github.com/artk0de/TeaRAGs-MCP/commit/906b308d4575a94b477e316f41f7d08a4303483b)), closes [#git-sessions](https://github.com/artk0de/TeaRAGs-MCP/issues/git-sessions)
-* **readme:** align README with landing page, drop docker/npm clone, add plugin install ([c2b366d](https://github.com/artk0de/TeaRAGs-MCP/commit/c2b366d57b7af15274f18de7b96e1e5d7e061ceb))
-* **website:** fill priority empty sections + mermaid fix ([00c24c0](https://github.com/artk0de/TeaRAGs-MCP/commit/00c24c01e759f2b05e0200531be4dbaf737bd000))
-* **website:** fill remaining extending + knowledge-base stubs ([fdda285](https://github.com/artk0de/TeaRAGs-MCP/commit/fdda2859bf56b88976e249f9d143f36256b288c4))
-* **website:** fill roadmap sections from beads epics ([22934cc](https://github.com/artk0de/TeaRAGs-MCP/commit/22934cc467e76aca6e88e51fedaa6dd0628716a3))
-* **website:** invert quickstart flow, fix claude mcp add syntax ([028cf04](https://github.com/artk0de/TeaRAGs-MCP/commit/028cf042ae41ae60e9ffd04fa1184a4a0b4e1232))
-* **website:** plugin-first quickstart with manual install fallback ([3c25dc6](https://github.com/artk0de/TeaRAGs-MCP/commit/3c25dc6eb14885a7a175b2d79b74b5682313b76d))
-* **website:** restructure usage/, rewrite landing, fix concept drift ([3e78a34](https://github.com/artk0de/TeaRAGs-MCP/commit/3e78a346d355f56e6f693b2f90e0584715794c19))
-* **website:** sync api/config/architecture/agent-integration with current signals and env vars ([4a38f03](https://github.com/artk0de/TeaRAGs-MCP/commit/4a38f0394be90e8d105bbaff8d81b17c1e1a7d11)), closes [#9](https://github.com/artk0de/TeaRAGs-MCP/issues/9)
+- add specs and plans for 3 hygiene refactorings
+  ([f2bac4b](https://github.com/artk0de/TeaRAGs-MCP/commit/f2bac4b4e6919579d59251c9569bdf98f13b32fb))
+- document dinopowers plugin in skills page and main README
+  ([b03ae0b](https://github.com/artk0de/TeaRAGs-MCP/commit/b03ae0b0cefbb330dc60fe953e5aa428058815be))
+- **explore:** plan for Reranker.rerank() phase extraction
+  ([8a73803](https://github.com/artk0de/TeaRAGs-MCP/commit/8a738033fada7d86cc06352f87930719d9d55142))
+- **explore:** spec for Reranker.rerank() phase extraction
+  ([a44741a](https://github.com/artk0de/TeaRAGs-MCP/commit/a44741aae75774b7a8e5b0254bdf4bb6cfc2b20b))
+- fix superpowers attribution (obra/superpowers, not anthropic/skills)
+  ([db25657](https://github.com/artk0de/TeaRAGs-MCP/commit/db25657a9e246f5e8bea90ba9feca9f9df00dc87))
+- **readme+website:** fix "not for solo projects" — document GIT SESSIONS mode
+  ([906b308](https://github.com/artk0de/TeaRAGs-MCP/commit/906b308d4575a94b477e316f41f7d08a4303483b)),
+  closes
+  [#git-sessions](https://github.com/artk0de/TeaRAGs-MCP/issues/git-sessions)
+- **readme:** align README with landing page, drop docker/npm clone, add plugin
+  install
+  ([c2b366d](https://github.com/artk0de/TeaRAGs-MCP/commit/c2b366d57b7af15274f18de7b96e1e5d7e061ceb))
+- **website:** fill priority empty sections + mermaid fix
+  ([00c24c0](https://github.com/artk0de/TeaRAGs-MCP/commit/00c24c01e759f2b05e0200531be4dbaf737bd000))
+- **website:** fill remaining extending + knowledge-base stubs
+  ([fdda285](https://github.com/artk0de/TeaRAGs-MCP/commit/fdda2859bf56b88976e249f9d143f36256b288c4))
+- **website:** fill roadmap sections from beads epics
+  ([22934cc](https://github.com/artk0de/TeaRAGs-MCP/commit/22934cc467e76aca6e88e51fedaa6dd0628716a3))
+- **website:** invert quickstart flow, fix claude mcp add syntax
+  ([028cf04](https://github.com/artk0de/TeaRAGs-MCP/commit/028cf042ae41ae60e9ffd04fa1184a4a0b4e1232))
+- **website:** plugin-first quickstart with manual install fallback
+  ([3c25dc6](https://github.com/artk0de/TeaRAGs-MCP/commit/3c25dc6eb14885a7a175b2d79b74b5682313b76d))
+- **website:** restructure usage/, rewrite landing, fix concept drift
+  ([3e78a34](https://github.com/artk0de/TeaRAGs-MCP/commit/3e78a346d355f56e6f693b2f90e0584715794c19))
+- **website:** sync api/config/architecture/agent-integration with current
+  signals and env vars
+  ([4a38f03](https://github.com/artk0de/TeaRAGs-MCP/commit/4a38f0394be90e8d105bbaff8d81b17c1e1a7d11)),
+  closes [#9](https://github.com/artk0de/TeaRAGs-MCP/issues/9)
 
 ### Code Refactoring
 
-* **bootstrap:** extract resolveInfrastructure + wireComposition from createAppContext ([0fb5772](https://github.com/artk0de/TeaRAGs-MCP/commit/0fb57720349bbeb06baab9c1be3b453f29ca7fe4))
-* **chunker:** extract phase methods from MarkdownChunker[#chunk](https://github.com/artk0de/TeaRAGs-MCP/issues/chunk) ([2ecfc73](https://github.com/artk0de/TeaRAGs-MCP/commit/2ecfc7351c0432192dd075a2182bee6352ec155d))
-* **explore:** add isSimilarityOnly + groupByTop pure helpers for rerank() ([ac830bf](https://github.com/artk0de/TeaRAGs-MCP/commit/ac830bf05651ceded5ca0ac95520b4d8d0d2c310))
-* **explore:** collapse semantic+hybrid dispatchers, extract ctx builders ([e7a60ef](https://github.com/artk0de/TeaRAGs-MCP/commit/e7a60ef2f8c84e937bbab2b7d9417034cd0a8c61))
-* **explore:** extract ExploreOps + close the cosmetic-thinning loophole in facade-discipline ([e24f107](https://github.com/artk0de/TeaRAGs-MCP/commit/e24f107f451737870fbb70dd83dae0c3adb343be))
-* **explore:** extract findSimilar validation into validateFindSimilarRequest ([846a52e](https://github.com/artk0de/TeaRAGs-MCP/commit/846a52eca97cbd44a2e7e9b92238a6ec6adb0acc))
-* **explore:** extract findSymbol into SymbolSearchStrategy + FileOutlineStrategy ([cc9cb8d](https://github.com/artk0de/TeaRAGs-MCP/commit/cc9cb8d5a672f5bb7e7c84c7f61ec3f0d553fcb8))
-* **explore:** extract getIndexMetrics into IndexMetricsQuery ([c0cc189](https://github.com/artk0de/TeaRAGs-MCP/commit/c0cc18929ff5132586a9caf159080121dabd6d78))
-* **explore:** extract resolveMode + scoreResults and rewrite rerank() as orchestrator ([8513700](https://github.com/artk0de/TeaRAGs-MCP/commit/85137007707ac5ada2cf938289b7ff03d570b2b6)), closes [Reranker#resolveMode](https://github.com/artk0de/Reranker/issues/resolveMode) [Reranker#scoreResults](https://github.com/artk0de/Reranker/issues/scoreResults)
-* extract phases from createAppContext and TreeSitterChunker[#chunk](https://github.com/artk0de/TeaRAGs-MCP/issues/chunk) ([2f3047c](https://github.com/artk0de/TeaRAGs-MCP/commit/2f3047cc42f86cde6a987378fa58eace0682a75a))
-* **ingest:** complete IngestFacade under facade-discipline iter-3 ([ce5e9f8](https://github.com/artk0de/TeaRAGs-MCP/commit/ce5e9f8cd944261a55ab09d1395aad0417bb5312))
-* **ingest:** decompose extractSignalValues into trajectory-owned StatsAccumulators ([f8e6967](https://github.com/artk0de/TeaRAGs-MCP/commit/f8e696777d13d11f2b47dc9fb2a7c8732e9ed68a))
-* **ingest:** extract indexCodebase branching into IndexingOps ([38c9412](https://github.com/artk0de/TeaRAGs-MCP/commit/38c94120431ea606f3d39f6624e2381e984ca5bc))
-* **mcp:** replace 5 copy-paste registerToolSafe blocks with SEARCH_TOOLS array ([7ef22c8](https://github.com/artk0de/TeaRAGs-MCP/commit/7ef22c8c170484f0081788b8508bd12a941d9492))
+- **bootstrap:** extract resolveInfrastructure + wireComposition from
+  createAppContext
+  ([0fb5772](https://github.com/artk0de/TeaRAGs-MCP/commit/0fb57720349bbeb06baab9c1be3b453f29ca7fe4))
+- **chunker:** extract phase methods from
+  MarkdownChunker[#chunk](https://github.com/artk0de/TeaRAGs-MCP/issues/chunk)
+  ([2ecfc73](https://github.com/artk0de/TeaRAGs-MCP/commit/2ecfc7351c0432192dd075a2182bee6352ec155d))
+- **explore:** add isSimilarityOnly + groupByTop pure helpers for rerank()
+  ([ac830bf](https://github.com/artk0de/TeaRAGs-MCP/commit/ac830bf05651ceded5ca0ac95520b4d8d0d2c310))
+- **explore:** collapse semantic+hybrid dispatchers, extract ctx builders
+  ([e7a60ef](https://github.com/artk0de/TeaRAGs-MCP/commit/e7a60ef2f8c84e937bbab2b7d9417034cd0a8c61))
+- **explore:** extract ExploreOps + close the cosmetic-thinning loophole in
+  facade-discipline
+  ([e24f107](https://github.com/artk0de/TeaRAGs-MCP/commit/e24f107f451737870fbb70dd83dae0c3adb343be))
+- **explore:** extract findSimilar validation into validateFindSimilarRequest
+  ([846a52e](https://github.com/artk0de/TeaRAGs-MCP/commit/846a52eca97cbd44a2e7e9b92238a6ec6adb0acc))
+- **explore:** extract findSymbol into SymbolSearchStrategy +
+  FileOutlineStrategy
+  ([cc9cb8d](https://github.com/artk0de/TeaRAGs-MCP/commit/cc9cb8d5a672f5bb7e7c84c7f61ec3f0d553fcb8))
+- **explore:** extract getIndexMetrics into IndexMetricsQuery
+  ([c0cc189](https://github.com/artk0de/TeaRAGs-MCP/commit/c0cc18929ff5132586a9caf159080121dabd6d78))
+- **explore:** extract resolveMode + scoreResults and rewrite rerank() as
+  orchestrator
+  ([8513700](https://github.com/artk0de/TeaRAGs-MCP/commit/85137007707ac5ada2cf938289b7ff03d570b2b6)),
+  closes
+  [Reranker#resolveMode](https://github.com/artk0de/Reranker/issues/resolveMode)
+  [Reranker#scoreResults](https://github.com/artk0de/Reranker/issues/scoreResults)
+- extract phases from createAppContext and
+  TreeSitterChunker[#chunk](https://github.com/artk0de/TeaRAGs-MCP/issues/chunk)
+  ([2f3047c](https://github.com/artk0de/TeaRAGs-MCP/commit/2f3047cc42f86cde6a987378fa58eace0682a75a))
+- **ingest:** complete IngestFacade under facade-discipline iter-3
+  ([ce5e9f8](https://github.com/artk0de/TeaRAGs-MCP/commit/ce5e9f8cd944261a55ab09d1395aad0417bb5312))
+- **ingest:** decompose extractSignalValues into trajectory-owned
+  StatsAccumulators
+  ([f8e6967](https://github.com/artk0de/TeaRAGs-MCP/commit/f8e696777d13d11f2b47dc9fb2a7c8732e9ed68a))
+- **ingest:** extract indexCodebase branching into IndexingOps
+  ([38c9412](https://github.com/artk0de/TeaRAGs-MCP/commit/38c94120431ea606f3d39f6624e2381e984ca5bc))
+- **mcp:** replace 5 copy-paste registerToolSafe blocks with SEARCH_TOOLS array
+  ([7ef22c8](https://github.com/artk0de/TeaRAGs-MCP/commit/7ef22c8c170484f0081788b8508bd12a941d9492))
 
 ## [1.19.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.19.0...v1.19.1) (2026-04-10)
 
