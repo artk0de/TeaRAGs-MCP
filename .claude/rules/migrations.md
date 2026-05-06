@@ -110,6 +110,38 @@ detection.
 **Shard count:** Use `readShardCount()` from meta.json, not the default.
 Snapshots may have been created with a different shard count.
 
+## Writing Nested Payload Keys (MANDATORY)
+
+Qdrant's `setPayload` treats top-level keys verbatim. Passing
+`{"git.file.X": v}` produces a flat top-level key literally named `"git.file.X"`
+— NOT a nested write at `git → file → X`. Reranker reads nested paths, so the
+data is invisible.
+
+**Always build nested objects** when migrating dotted-path keys:
+
+```typescript
+// WRONG — creates flat key "git.file.recentDominantAuthor" at payload root
+newPayload["git.file.recentDominantAuthor"] = oldVal;
+
+// RIGHT — writes the nested leaf
+newPayload.git = { file: { recentDominantAuthor: oldVal } };
+```
+
+For multiple leaves, use a `writeNested(target, path, value)` helper that splits
+on `.` and creates intermediate objects (see V13 migration). Top-level keys
+without dots (e.g. `parentSymbolId` in V11) can be written directly.
+
+## Pre-Release Migrations: Edit, Don't Stack
+
+If a migration ships in code that has **not been published to npm**, fix the
+migration in place — do NOT add a follow-up migration to clean up its bugs.
+Developer indexes can be rebuilt with `forceReindex: true` or by deleting the
+collection. Stacking V14 to fix V13's bug pollutes history and makes the next
+release noisier than necessary.
+
+Add a follow-up migration only when buggy code has reached published users —
+their data is real and irreversible without code changes.
+
 ## Execution Guarantees
 
 1. **Sequential** — migrations run sorted by `version` ascending
@@ -155,3 +187,60 @@ Required scenarios:
 2. Migration skips when condition not met (conditional migrations)
 3. Migration is idempotent (re-running produces same result)
 4. Integration with runner: version filtering, ordering
+
+## End-to-End Migration Verification (MANDATORY before claiming "migration works")
+
+Unit tests prove the migration's logic, but they do **not** prove the migration
+actually runs against a real Qdrant collection at index time. Before claiming a
+migration is verified, you MUST execute the live path against an existing
+indexed collection. Skipping this caused real failures — production indexes
+silently kept stale schema versions because the MCP server was running pre-bump
+code.
+
+### Pre-flight (eliminates the most common failure)
+
+1. `npm run build` — produce fresh `build/` from current source.
+2. **Reconnect the MCP server AFTER the build completes** (per
+   `.local/mcp-testing.md`). MCP server runs in a separate process; if you
+   reconnect before the build, the server runs old code and the new migration
+   class is not even registered in `SchemaMigrator`.
+3. Verify the new migration class appears in compiled output:
+   `grep -l <MigrationClassName> build/core/infra/migration/schema_migrations/`.
+
+### Live verification protocol
+
+4. **Roll back schema version** on an existing collection by writing
+   `schemaVersion: <N-1>` to the `__schema_metadata__` point (UUID = sha256 of
+   `__schema_metadata__`, formatted 8-4-4-4-12). Use Qdrant REST
+   `/collections/<c>/points/payload?wait=true`.
+5. **Inject pre-migration state** into a few real points — for rename/backfill
+   migrations, write the OLD payload keys with sentinel values via the same
+   `/points/payload` endpoint.
+6. **Trigger an incremental reindex** (`index_codebase` without `forceReindex`).
+   The schema migrator runs in `prepareReindexContext()` BEFORE the
+   synchronizer/enrichment, so a no-change incremental still exercises it.
+7. **Verify the migration ran** by reading `__schema_metadata__` directly:
+   `schemaVersion` must equal `latestVersion` and `migratedAt` must be after
+   step 6.
+8. **Verify the data effect** by reading affected points:
+   - For rename migrations: old keys absent, new keys present.
+   - For backfill migrations: target keys populated.
+   - **Caveat:** if the trajectory's enrichment refreshes the same fields on
+     every reindex (file-level git enrichment does this), injected sentinel
+     values will be overwritten. Use the `__schema_metadata__` audit
+     (`migratedAt` timestamp) and the absence of legacy keys as proof of
+     migration; trust the unit test for value-preservation correctness.
+9. **Confirm idempotency** by running `index_codebase` again — `migratedAt`
+   should not change (migration skipped because version already current).
+
+### Anti-patterns observed in this project
+
+- Running `forceReindex: true` to "test the migration" — this rewrites payloads
+  from scratch and never exercises the migration's rename/backfill logic on real
+  legacy data.
+- Reading `get_index_metrics` to verify schema state — its `signals` map is
+  derived from descriptors, NOT from current payload keys; stale values there do
+  not indicate migration failure.
+- Trusting `npm test` alone — unit tests use a `MockQdrantManager`; they cannot
+  catch a missing registration in `schema-migrator.ts` or an MCP-server reload
+  gap.
