@@ -14,8 +14,8 @@ import { promisify } from "node:util";
 import git from "isomorphic-git";
 
 import { isDebug } from "../../infra/runtime.js";
-import { parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
-import type { CommitInfo, FileChurnData } from "./types.js";
+import { parseBlameOutput, parseNumstatOutput, parsePathspecOutput } from "./parsers.js";
+import type { BlameLine, CommitInfo, FileChurnData } from "./types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -219,4 +219,25 @@ export async function getCommitsByPathspec(
   }
 
   return getCommitsByPathspecSingle(repoRoot, sinceDate, filePaths, timeoutMs);
+}
+
+// ── Blame primitive ──────────────────────────────────────────────
+
+/**
+ * Run `git blame --porcelain HEAD -- <file>` and return per-line attributions.
+ * Returns an empty array when the file is untracked, missing, or the command
+ * fails — callers treat absence of blame data as "no ownership signal", not as
+ * an error condition.
+ */
+export async function blameFile(repoRoot: string, filePath: string, timeoutMs?: number): Promise<BlameLine[]> {
+  try {
+    const { stdout } = await execFileAsync("git", ["blame", "--porcelain", "HEAD", "--", filePath], {
+      cwd: repoRoot,
+      maxBuffer: Infinity,
+      timeout: timeoutMs,
+    });
+    return parseBlameOutput(stdout);
+  } catch {
+    return [];
+  }
 }

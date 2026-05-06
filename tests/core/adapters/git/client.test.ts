@@ -2,9 +2,13 @@ import { execFile } from "node:child_process";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getCommitsByPathspec, getCommitsByPathspecBatched } from "../../../../src/core/adapters/git/client.js";
-import { parsePathspecOutput } from "../../../../src/core/adapters/git/parsers.js";
-import type { CommitInfo } from "../../../../src/core/adapters/git/types.js";
+import {
+  blameFile,
+  getCommitsByPathspec,
+  getCommitsByPathspecBatched,
+} from "../../../../src/core/adapters/git/client.js";
+import { parseBlameOutput, parsePathspecOutput } from "../../../../src/core/adapters/git/parsers.js";
+import type { BlameLine, CommitInfo } from "../../../../src/core/adapters/git/types.js";
 
 // Mock child_process before imports
 vi.mock("node:child_process", () => ({
@@ -24,6 +28,7 @@ vi.mock("isomorphic-git", () => ({
 vi.mock("../../../../src/core/adapters/git/parsers.js", () => ({
   parseNumstatOutput: vi.fn(),
   parsePathspecOutput: vi.fn(),
+  parseBlameOutput: vi.fn(),
 }));
 
 // Mock runtime
@@ -220,5 +225,47 @@ describe("getCommitsByPathspec", () => {
     expect(result.length).toBeGreaterThanOrEqual(1);
     // Should have 2 execFile calls (2 batches: 500 + 1)
     expect(execFile).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("blameFile", () => {
+  const repoRoot = "/fake/repo";
+  const filePath = "src/foo.ts";
+  const mockParseBlameOutput = parseBlameOutput as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("invokes git blame --porcelain HEAD -- <file> and returns parsed lines", async () => {
+    const blameLine: BlameLine = {
+      lineNumber: 1,
+      sha: "a".repeat(40),
+      author: "Alice",
+      authorEmail: "alice@example.com",
+      timestamp: 1700000000,
+    };
+    mockExecFileResolving("porcelain-stdout");
+    mockParseBlameOutput.mockReturnValue([blameLine]);
+
+    const result = await blameFile(repoRoot, filePath);
+
+    expect(result).toEqual([blameLine]);
+    expect(execFile).toHaveBeenCalledTimes(1);
+    const callArgs = (execFile as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[0]).toBe("git");
+    expect(callArgs[1]).toEqual(["blame", "--porcelain", "HEAD", "--", filePath]);
+    expect(callArgs[2]).toMatchObject({ cwd: repoRoot });
+    expect(mockParseBlameOutput).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns empty array when git blame fails (untracked file)", async () => {
+    mockExecFileRejecting(new Error("fatal: no such path 'src/foo.ts' in HEAD"));
+
+    const result = await blameFile(repoRoot, filePath);
+
+    expect(result).toEqual([]);
+    // Parser must not be called on failure
+    expect(mockParseBlameOutput).not.toHaveBeenCalled();
   });
 });

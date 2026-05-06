@@ -253,3 +253,98 @@ describe("parseNumstatOutput — SHA validation edge cases", () => {
     expect(result.get("file.ts")!.commits).toHaveLength(1);
   });
 });
+
+describe("parseBlameOutput", () => {
+  const sha1 = "a".repeat(40);
+  const sha2 = "b".repeat(40);
+
+  function blameHeader(sha: string, origLine: number, finalLine: number, count?: number): string {
+    return count !== undefined ? `${sha} ${origLine} ${finalLine} ${count}` : `${sha} ${origLine} ${finalLine}`;
+  }
+
+  it("parses single-author file with one commit", () => {
+    const stdout = [
+      blameHeader(sha1, 1, 1, 3),
+      "author Alice",
+      "author-mail <alice@example.com>",
+      "author-time 1700000000",
+      "author-tz +0000",
+      "committer Alice",
+      "committer-mail <alice@example.com>",
+      "committer-time 1700000000",
+      "committer-tz +0000",
+      "summary first commit",
+      "filename foo.ts",
+      "\tline one",
+      blameHeader(sha1, 2, 2),
+      "\tline two",
+      blameHeader(sha1, 3, 3),
+      "\tline three",
+    ].join("\n");
+
+    const result = gitParsers.parseBlameOutput(stdout);
+
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({
+      lineNumber: 1,
+      sha: sha1,
+      author: "Alice",
+      authorEmail: "alice@example.com",
+      timestamp: 1700000000,
+    });
+    expect(result[1].lineNumber).toBe(2);
+    expect(result[2].lineNumber).toBe(3);
+    // All lines share the same author (cached from first occurrence)
+    expect(result[1].author).toBe("Alice");
+    expect(result[2].author).toBe("Alice");
+  });
+
+  it("parses multi-author file (cache headers per sha)", () => {
+    const stdout = [
+      blameHeader(sha1, 1, 1, 1),
+      "author Alice",
+      "author-mail <alice@example.com>",
+      "author-time 1700000000",
+      "author-tz +0000",
+      "committer Alice",
+      "committer-mail <alice@example.com>",
+      "committer-time 1700000000",
+      "committer-tz +0000",
+      "summary alice line",
+      "filename foo.ts",
+      "\talice's line",
+      blameHeader(sha2, 1, 2, 1),
+      "author Bob",
+      "author-mail <bob@example.com>",
+      "author-time 1800000000",
+      "author-tz +0000",
+      "committer Bob",
+      "committer-mail <bob@example.com>",
+      "committer-time 1800000000",
+      "committer-tz +0000",
+      "summary bob line",
+      "filename foo.ts",
+      "\tbob's line",
+      blameHeader(sha1, 2, 3),
+      "\talice's second line",
+    ].join("\n");
+
+    const result = gitParsers.parseBlameOutput(stdout);
+
+    expect(result).toHaveLength(3);
+    expect(result[0].author).toBe("Alice");
+    expect(result[1].author).toBe("Bob");
+    expect(result[2].author).toBe("Alice");
+    expect(result[2].authorEmail).toBe("alice@example.com");
+    expect(result[2].timestamp).toBe(1700000000);
+  });
+
+  it("returns empty array on empty input", () => {
+    expect(gitParsers.parseBlameOutput("")).toEqual([]);
+  });
+
+  it("skips malformed lines without crashing", () => {
+    const stdout = ["garbage line", "another garbage", ""].join("\n");
+    expect(gitParsers.parseBlameOutput(stdout)).toEqual([]);
+  });
+});

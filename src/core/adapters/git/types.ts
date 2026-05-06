@@ -30,3 +30,16 @@ export interface FileChurnData {
   linesAdded: number;
   linesDeleted: number;
 }
+
+/**
+ * A single line attribution from `git blame --porcelain HEAD -- <file>`.
+ * Carries the author of the line as it currently stands in HEAD — the basis for
+ * line-based ownership signals.
+ */
+export interface BlameLine {
+  lineNumber: number;
+  sha: string;
+  author: string;
+  authorEmail: string;
+  timestamp: number; // unix seconds
+}
