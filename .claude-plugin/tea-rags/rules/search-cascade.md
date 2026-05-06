@@ -63,7 +63,7 @@ prerequisites for any tea-rags-driven decision.
 - For explicit full rebuild from scratch — invoke `/tea-rags:force-reindex`
   slash command (zero-downtime, search stays available during rebuild).
 
-**3. Resource references (read on demand, not at session start):**
+**4. Resource references (read on demand, not at session start):**
 
 - `tea-rags://schema/overview` → navigation hub for all resources
 - `tea-rags://schema/search-guide` → parameter examples per tool (read when
