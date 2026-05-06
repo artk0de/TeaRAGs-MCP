@@ -55,6 +55,7 @@ export const STATS_ACCUMULATOR_KEYS = {
   DISTINCT_PATHS: "distinctPaths",
   // Git — populated by domains/trajectory/git/stats/
   AUTHOR_COUNTS: "authorCounts",
+  LINE_AUTHOR_COUNTS: "lineAuthorCounts",
   FILE_TIME_RANGE: "fileTimeRange",
   CHUNK_TIME_RANGE: "chunkTimeRange",
   GIT_DATA_PATHS: "gitDataPaths",

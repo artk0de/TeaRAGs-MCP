@@ -29,6 +29,10 @@ const GitMetadataSchema = z
     lastModifiedAt: z.string().optional(),
     firstCreatedAt: z.string().optional(),
     taskIds: z.array(z.string()).optional(),
+    lineDominantAuthor: z.string().optional().describe("Live-line owner from git blame HEAD"),
+    lineDominantAuthorPct: z.number().optional().describe("Percentage of live lines owned by lineDominantAuthor"),
+    lineAuthors: z.array(z.string()).optional().describe("Distinct authors of live lines (top-N)"),
+    lineContributorCount: z.number().optional().describe("Distinct authors of live lines"),
   })
   .passthrough();
 

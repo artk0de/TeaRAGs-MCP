@@ -134,7 +134,8 @@ export function buildIndexingGuide(): string {
 Set \`CODE_ENABLE_GIT_METADATA=true\` before indexing.
 
 Enables filters:
-- author — filter by dominantAuthor per chunk
+- author — filter by recent-activity dominantAuthor (commit-count based, log window)
+- lineOwner — filter by live-line owner (git blame HEAD)
 - modifiedAfter/modifiedBefore — date range (ISO 8601 format)
 - minAgeDays/maxAgeDays — code age
 - minCommitCount — churn frequency
@@ -169,9 +170,14 @@ export function buildFiltersDoc(): string {
   md += "**Git metadata** (requires enrichment, two levels):\n\n";
   md += "File-level (`git.file.*`): ageDays, commitCount, dominantAuthor, dominantAuthorPct, ";
   md += "contributorCount, authors[], lastModifiedAt, firstCreatedAt, taskIds[], ";
-  md += "bugFixRate, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq\n\n";
+  md += "bugFixRate, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq, ";
+  md += "lineDominantAuthor, lineDominantAuthorPct, lineAuthors[], lineContributorCount\n\n";
   md += "Chunk-level (`git.chunk.*`): ageDays, commitCount, bugFixRate, churnRatio, ";
-  md += "contributorCount, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq\n\n";
+  md += "contributorCount, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq, ";
+  md += "lineDominantAuthor, lineDominantAuthorPct, lineAuthors[], lineContributorCount\n\n";
+  md += "**Ownership semantics:** `dominantAuthor*` reflects recent commit activity within the ";
+  md += "log window (TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS); `lineDominantAuthor*` reflects who owns ";
+  md += "the live lines in HEAD via git blame. Use the latter for true ownership / silo detection.\n\n";
   md += '**⚠ Filter level:** Filters apply to `git.chunk.*` by default. Use `level: "file"` ';
   md += "parameter for file-level filters. For time-based filters (maxAgeDays/minAgeDays), ";
   md += "prefer `level: \"file\"` — chunk-level ageDays=0 means 'no data', not 'recent'.\n\n";

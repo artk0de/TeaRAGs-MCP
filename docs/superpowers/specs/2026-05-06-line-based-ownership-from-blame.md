@@ -422,6 +422,37 @@ Per `.local/plan-beads-sync.md`:
 - Dependencies: 1 → 2 → 3 → 4; 4 → {5, 6, 7}; {5,6,7} → 8 → 9 → 10
 - Link epic to parent feature epic if applicable
 
+### Task 7.5 — Rename pass (runs BEFORE plugin/docs sweeps)
+
+Insert before Task 8 so that plugin SKILL.md and `/website/docs` only need a
+single pass through the new names. Confirmed by user 2026-05-06.
+
+**Renames:**
+
+| Current                                                                                         | Renamed to                                                                                                                    |
+| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `dominantAuthor` / `dominantAuthorEmail` / `authors` / `dominantAuthorPct` / `contributorCount` | `recentDominantAuthor` / `recentDominantAuthorEmail` / `recentAuthors` / `recentDominantAuthorPct` / `recentContributorCount` |
+| `lineDominantAuthor` / `lineDominantAuthorPct` / `lineAuthors` / `lineContributorCount`         | `blameDominantAuthor` / `blameDominantAuthorPct` / `blameAuthors` / `blameContributorCount`                                   |
+
+**Why:** the `dominantAuthor` family is currently ambiguous — it does NOT mean
+"the author"; it means "the most recent committer in the log window". The
+`recent` prefix makes that explicit. The `blame` prefix on the line-based set
+makes it clear those values come from `git blame HEAD`.
+
+**Schema migration:** all renames are payload-key changes — no partial-update
+mechanism exists for Qdrant payloads, so reindex is required. SchemaDriftMonitor
+will detect the rename as removed-old + added-new keys and emit the standard
+"reindex required" warning.
+
+**Scope:** payload-signals.ts keys, GitFileSignals/ChunkChurnOverlay fields, all
+compute/extract sources, derived signal sources (OwnershipSignal,
+KnowledgeSiloSignal, RecentActivityConcentrationSignal), preset overlay masks,
+filters.ts (filter param names follow same logic — `author` becomes
+`recentAuthor`, `lineOwner` becomes `blameOwner`), stats accumulators, MCP
+schemas, registry docs, all tests, plugin SKILL.md (Task 8 will already update
+these — Task 11 is the syntactic rename pass), `/website/docs` (Task 9 covers
+ownership semantics; Task 11 adds the syntactic follow-up).
+
 ## Acceptance criteria (rolled up)
 
 1. Two field families coexist on file and chunk levels with documented

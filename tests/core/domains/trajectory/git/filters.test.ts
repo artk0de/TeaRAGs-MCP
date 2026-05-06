@@ -7,8 +7,8 @@ import { gitPayloadSignalDescriptors } from "../../../../../src/core/domains/tra
 const findFilter = (param: string) => gitFilters.find((f) => f.param === param)!;
 
 describe("git filter descriptors", () => {
-  it("exports 7 filter descriptors", () => {
-    expect(gitFilters).toHaveLength(7);
+  it("exports 8 filter descriptors", () => {
+    expect(gitFilters).toHaveLength(8);
   });
 
   it("each filter has required fields", () => {

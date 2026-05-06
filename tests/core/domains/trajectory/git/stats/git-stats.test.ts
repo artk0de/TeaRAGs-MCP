@@ -11,6 +11,7 @@ import {
   FileTimeRangeAccumulator,
   GitDataPathsAccumulator,
   gitStatsAccumulators,
+  LineAuthorCountsAccumulator,
 } from "../../../../../../src/core/domains/trajectory/git/stats/index.js";
 
 function ctx(overrides: Partial<PointContext> = {}): PointContext {
@@ -47,6 +48,29 @@ describe("AuthorCountsAccumulator", () => {
 
   it("skips points without author", () => {
     const acc = new AuthorCountsAccumulator();
+    acc.accept(point({}), ctx());
+    expect(acc.result().size).toBe(0);
+  });
+});
+
+describe("LineAuthorCountsAccumulator", () => {
+  it("counts per live-line dominant author (flat payload)", () => {
+    const acc = new LineAuthorCountsAccumulator();
+    acc.accept(point({ "git.file.lineDominantAuthor": "Alice" }), ctx());
+    acc.accept(point({ "git.file.lineDominantAuthor": "Alice" }), ctx());
+    acc.accept(point({ "git.file.lineDominantAuthor": "Bob" }), ctx());
+    expect(acc.result().get("Alice")).toBe(2);
+    expect(acc.result().get("Bob")).toBe(1);
+  });
+
+  it("reads nested payload too", () => {
+    const acc = new LineAuthorCountsAccumulator();
+    acc.accept(point({ git: { file: { lineDominantAuthor: "Carol" } } }), ctx());
+    expect(acc.result().get("Carol")).toBe(1);
+  });
+
+  it("skips points without lineDominantAuthor", () => {
+    const acc = new LineAuthorCountsAccumulator();
     acc.accept(point({}), ctx());
     expect(acc.result().size).toBe(0);
   });
@@ -111,11 +135,12 @@ describe("GitDataPathsAccumulator", () => {
 });
 
 describe("gitStatsAccumulators barrel", () => {
-  it("exports four descriptors with well-known keys", () => {
-    expect(gitStatsAccumulators).toHaveLength(4);
+  it("exports five descriptors with well-known keys", () => {
+    expect(gitStatsAccumulators).toHaveLength(5);
     const keys = gitStatsAccumulators.map((d) => d.key);
     expect(keys).toEqual([
       STATS_ACCUMULATOR_KEYS.AUTHOR_COUNTS,
+      STATS_ACCUMULATOR_KEYS.LINE_AUTHOR_COUNTS,
       STATS_ACCUMULATOR_KEYS.FILE_TIME_RANGE,
       STATS_ACCUMULATOR_KEYS.CHUNK_TIME_RANGE,
       STATS_ACCUMULATOR_KEYS.GIT_DATA_PATHS,
