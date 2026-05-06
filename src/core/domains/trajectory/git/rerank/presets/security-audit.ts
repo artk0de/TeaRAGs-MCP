@@ -27,7 +27,14 @@ export class SecurityAuditPreset implements RerankPreset {
     volatility: 0.15,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["ageDays", "dominantAuthorPct", "bugFixRate", "churnVolatility"],
+    file: [
+      "ageDays",
+      "dominantAuthorPct",
+      "lineDominantAuthorPct",
+      "lineContributorCount",
+      "bugFixRate",
+      "churnVolatility",
+    ],
     chunk: ["commitCount", "bugFixRate"],
   };
 }

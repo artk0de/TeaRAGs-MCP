@@ -31,11 +31,21 @@ export class DangerousPreset implements RerankPreset {
       "bugFixRate",
       "churnVolatility",
       "dominantAuthorPct",
+      "lineDominantAuthorPct",
+      "lineContributorCount",
       "contributorCount",
       "ageDays",
       "imports",
       "relativeChurn",
     ],
-    chunk: ["commitCount", "churnRatio", "bugFixRate", "ageDays", "relativeChurn", "contributorCount"],
+    chunk: [
+      "commitCount",
+      "churnRatio",
+      "bugFixRate",
+      "ageDays",
+      "relativeChurn",
+      "contributorCount",
+      "lineContributorCount",
+    ],
   };
 }

@@ -35,6 +35,7 @@ export class HotspotsPreset implements RerankPreset {
       "relativeChurn",
       "imports",
       "dominantAuthorPct",
+      "lineDominantAuthorPct",
       "contributorCount",
     ],
     chunk: ["commitCount", "churnRatio", "bugFixRate", "ageDays", "relativeChurn", "contributorCount"],

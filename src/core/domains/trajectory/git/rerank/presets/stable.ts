@@ -26,7 +26,7 @@ export class StablePreset implements RerankPreset {
     ownership: 0.05,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["commitCount", "ageDays", "churnVolatility", "dominantAuthorPct", "bugFixRate"],
+    file: ["commitCount", "ageDays", "churnVolatility", "dominantAuthorPct", "lineDominantAuthorPct", "bugFixRate"],
     chunk: ["commitCount", "ageDays", "bugFixRate"],
   };
 }

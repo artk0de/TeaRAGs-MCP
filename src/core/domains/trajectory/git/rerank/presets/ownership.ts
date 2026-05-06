@@ -18,7 +18,7 @@ export class OwnershipPreset implements RerankPreset {
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
   readonly weights: ScoringWeights = { similarity: 0.35, ownership: 0.3, knowledgeSilo: 0.25, chunkChurn: 0.1 };
   readonly overlayMask: OverlayMask = {
-    file: ["dominantAuthorPct", "contributorCount"],
-    chunk: ["contributorCount", "commitCount"],
+    file: ["lineDominantAuthorPct", "lineContributorCount", "dominantAuthorPct", "contributorCount"],
+    chunk: ["lineDominantAuthorPct", "lineContributorCount", "contributorCount", "commitCount"],
   };
 }

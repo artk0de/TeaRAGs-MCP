@@ -23,10 +23,11 @@ export class CodeReviewPreset implements RerankPreset {
     density: 0.1,
     chunkChurn: 0.15,
     chunkRelativeChurn: 0.1,
+    recentActivityConcentration: 0.15,
     blockPenalty: -0.1,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["ageDays", "recencyWeightedFreq", "changeDensity"],
+    file: ["ageDays", "recencyWeightedFreq", "changeDensity", "dominantAuthorPct", "lineDominantAuthorPct"],
     chunk: ["commitCount", "churnRatio"],
   };
 }

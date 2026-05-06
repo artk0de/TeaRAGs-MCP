@@ -38,6 +38,7 @@ export class BugHuntPreset implements RerankPreset {
       "ageDays",
       "imports",
       "dominantAuthorPct",
+      "lineDominantAuthorPct",
       "contributorCount",
     ],
     chunk: ["commitCount", "churnRatio", "bugFixRate", "ageDays", "relativeChurn", "contributorCount"],
