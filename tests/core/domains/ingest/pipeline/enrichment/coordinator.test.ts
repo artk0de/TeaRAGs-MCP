@@ -907,6 +907,83 @@ describe("EnrichmentCoordinator — marker counters reflect current run", () => 
   });
 });
 
+describe("EnrichmentCoordinator — countSettledUnenriched re-poll", () => {
+  it("re-polls countUnenriched once after grace period when first count is non-zero", async () => {
+    // Regression: batchSetPayload writes use wait:false, so Qdrant's
+    // payload-filter index can lag the actual point payloads. The first
+    // countUnenriched after Promise.allSettled may report stale "unenriched"
+    // chunks that have already been written but not yet indexed. The marker
+    // must not lock in this transient stale value — re-poll after a grace
+    // period and persist the settled count.
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const mockProvider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    // First poll returns 5 (stale), second returns 0 (filter index caught up)
+    const recovery = {
+      countUnenriched: vi
+        .fn()
+        .mockResolvedValueOnce(5)
+        .mockResolvedValueOnce(3)
+        .mockResolvedValueOnce(0)
+        .mockResolvedValueOnce(0),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery as any);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    // file level: first=5 (non-zero) → re-poll → 3 (2 calls)
+    // chunk level: first=0 (zero) → short-circuit (1 call)
+    // Total: 3 calls, with the helper writing the SETTLED (lower) value 3.
+    expect(recovery.countUnenriched).toHaveBeenCalledTimes(3);
+
+    // Marker must persist the settled (lower) value, not the stale first read.
+    const { calls } = mockQdrant.setPayload.mock;
+    const fileMarker = calls.find((call: any[]) => call[1]?.enrichment?.git?.file?.status === "completed")?.[1]
+      .enrichment.git.file;
+    expect(fileMarker?.unenrichedChunks).toBe(3); // settled value, not stale 5
+  });
+
+  it("short-circuits when first count is zero (no grace period delay)", async () => {
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    const mockProvider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    // Both file and chunk return 0 immediately → no re-poll needed
+    const recovery = {
+      countUnenriched: vi.fn().mockResolvedValue(0),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery as any);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    // Each level (file + chunk) called exactly once — no re-poll because first === 0
+    expect(recovery.countUnenriched).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("EnrichmentCoordinator — file marker writes before chunk completion", () => {
   it("writes file: completed marker even when streaming chunk work is still in flight", async () => {
     const mockQdrant: any = {

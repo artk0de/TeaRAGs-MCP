@@ -560,9 +560,7 @@ export class EnrichmentCoordinator {
     //    so the marker stays honest after partial failures or recovery races.
     //    Counters reflect this run's work, not a frozen full-index total.
     for (const state of this.states.values()) {
-      const fileUnenriched = this.recovery
-        ? await this.recovery.countUnenriched(collectionName, state.provider.key, "file").catch(() => 0)
-        : 0;
+      const fileUnenriched = await this.countSettledUnenriched(collectionName, state.provider.key, "file");
 
       const fileMarker: Partial<FileEnrichmentMarker> = {
         status: state.prefetchFailed ? "failed" : "completed",
@@ -619,9 +617,7 @@ export class EnrichmentCoordinator {
     }
 
     for (const state of this.states.values()) {
-      const chunkUnenriched = this.recovery
-        ? await this.recovery.countUnenriched(collectionName, state.provider.key, "chunk").catch(() => 0)
-        : 0;
+      const chunkUnenriched = await this.countSettledUnenriched(collectionName, state.provider.key, "chunk");
 
       let chunkStatus: ChunkEnrichmentMarker["status"];
       if (state.prefetchFailed || state.chunkEnrichmentFailed) {
@@ -646,6 +642,27 @@ export class EnrichmentCoordinator {
     pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
 
     return metrics;
+  }
+
+  /**
+   * Count chunks missing enrichedAt for the marker. Re-polls once after a brief
+   * grace period when the first count is non-zero — `batchSetPayload` writes
+   * during enrichment use `wait: false`, so Qdrant's payload-filter index can
+   * lag the actual point payloads by a few hundred milliseconds. The first
+   * snapshot may report stale "unenriched" chunks that have already been
+   * written but not yet indexed; the re-poll catches up to ground truth and
+   * keeps the persisted marker honest.
+   */
+  private async countSettledUnenriched(
+    collectionName: string,
+    providerKey: string,
+    level: "file" | "chunk",
+  ): Promise<number> {
+    if (!this.recovery) return 0;
+    const first = await this.recovery.countUnenriched(collectionName, providerKey, level).catch(() => 0);
+    if (first === 0) return 0;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return await this.recovery.countUnenriched(collectionName, providerKey, level).catch(() => first);
   }
 
   /**
