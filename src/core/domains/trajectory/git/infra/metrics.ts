@@ -150,6 +150,10 @@ export function computeFileSignals(
       bugFixRate: 0,
       contributorCount: 0,
       taskIds: [],
+      lineDominantAuthor: "unknown",
+      lineDominantAuthorPct: 0,
+      lineAuthors: [],
+      lineContributorCount: 0,
     };
   }
 
@@ -240,6 +244,11 @@ export function computeFileSignals(
     bugFixRate,
     contributorCount,
     taskIds: Array.from(allTaskIds),
+    // Line-based ownership defaults — populated with real blame data in pipeline wire-in (Task 4).
+    lineDominantAuthor: "unknown",
+    lineDominantAuthorPct: 0,
+    lineAuthors: [],
+    lineContributorCount: 0,
   };
 }
 
@@ -308,5 +317,10 @@ export function computeChunkSignals(
     changeDensity,
     churnVolatility: Math.round(churnVolatility * 100) / 100,
     taskIds: Array.from(acc.taskIds),
+    // Line-based ownership defaults — populated with real blame data in pipeline wire-in (Task 4).
+    lineDominantAuthor: "unknown",
+    lineDominantAuthorPct: 0,
+    lineAuthors: [],
+    lineContributorCount: 0,
   };
 }

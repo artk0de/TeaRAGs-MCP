@@ -49,6 +49,10 @@ export function assembleFileSignals(
       bugFixRate: 0,
       contributorCount: 0,
       taskIds: [],
+      lineDominantAuthor: "unknown",
+      lineDominantAuthorPct: 0,
+      lineAuthors: [],
+      lineContributorCount: 0,
     };
   }
 
@@ -91,5 +95,10 @@ export function assembleFileSignals(
     bugFixRate: computeBugFixRate(countSource ?? commits, bugFixShas),
     contributorCount: authorship.contributorCount,
     taskIds: extractAllTaskIds(commits),
+    // Line-based ownership defaults — populated with real blame data in pipeline wire-in (Task 4).
+    lineDominantAuthor: "unknown",
+    lineDominantAuthorPct: 0,
+    lineAuthors: [],
+    lineContributorCount: 0,
   };
 }

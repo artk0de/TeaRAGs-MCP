@@ -92,6 +92,33 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     essential: true,
   },
 
+  // ── File-level line-based ownership (from git blame HEAD) ──
+  {
+    key: "git.file.lineDominantAuthor",
+    type: "string",
+    description: "Author owning the largest share of live lines (from git blame HEAD)",
+    essential: true,
+  },
+  {
+    key: "git.file.lineDominantAuthorPct",
+    type: "number",
+    description: "Percentage of live lines owned by lineDominantAuthor (0-100)",
+    stats: { labels: { p50: "shared", p75: "concentrated", p90: "silo", p95: "deep-silo" } },
+    essential: true,
+  },
+  {
+    key: "git.file.lineAuthors",
+    type: "string[]",
+    description: "Top-N contributors to live lines, sorted by share desc",
+  },
+  {
+    key: "git.file.lineContributorCount",
+    type: "number",
+    description: "Distinct authors of live lines",
+    stats: { labels: { p25: "solo", p50: "pair", p75: "team", p95: "crowd" } },
+    essential: true,
+  },
+
   // ── Chunk-level signals ──
   {
     key: "git.chunk.churnRatio",
@@ -153,6 +180,33 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.taskIds",
     type: "string[]",
     description: "Task/ticket IDs extracted from commit messages touching this chunk",
+    essential: true,
+  },
+
+  // ── Chunk-level line-based ownership (blame lines inside chunk range) ──
+  {
+    key: "git.chunk.lineDominantAuthor",
+    type: "string",
+    description: "Author owning the largest share of live lines inside the chunk's range",
+    essential: true,
+  },
+  {
+    key: "git.chunk.lineDominantAuthorPct",
+    type: "number",
+    description: "Percentage of chunk's live lines owned by lineDominantAuthor (0-100)",
+    stats: { labels: { p50: "shared", p75: "concentrated", p90: "silo", p95: "deep-silo" } },
+    essential: true,
+  },
+  {
+    key: "git.chunk.lineAuthors",
+    type: "string[]",
+    description: "Top-N contributors to the chunk's live lines, sorted by share desc",
+  },
+  {
+    key: "git.chunk.lineContributorCount",
+    type: "number",
+    description: "Distinct authors of the chunk's live lines",
+    stats: { labels: { p25: "solo", p50: "pair", p75: "team", p95: "crowd" } },
     essential: true,
   },
 ];

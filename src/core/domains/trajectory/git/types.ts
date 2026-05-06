@@ -62,6 +62,16 @@ export interface GitFileSignals extends FileSignalOverlay {
   // Tickets:
   /** Task IDs extracted from commit messages (e.g., ["TD-1234", "#567"]) */
   taskIds: string[];
+
+  // Line-based ownership (from `git blame HEAD`):
+  /** Author owning the largest share of live lines in HEAD */
+  lineDominantAuthor: string;
+  /** Percentage of live lines owned by lineDominantAuthor (0-100) */
+  lineDominantAuthorPct: number;
+  /** Top-N contributors to live lines, sorted by share desc */
+  lineAuthors: string[];
+  /** Distinct authors of live lines */
+  lineContributorCount: number;
 }
 
 /**
@@ -93,4 +103,14 @@ export interface ChunkChurnOverlay extends ChunkSignalOverlay {
   churnVolatility: number;
   /** Task IDs extracted from commit messages touching this chunk */
   taskIds: string[];
+
+  // Line-based ownership for this chunk's range (from `git blame HEAD`):
+  /** Author owning the largest share of live lines inside the chunk's range */
+  lineDominantAuthor: string;
+  /** Percentage of chunk's live lines owned by lineDominantAuthor (0-100) */
+  lineDominantAuthorPct: number;
+  /** Top-N contributors to the chunk's live lines, sorted by share desc */
+  lineAuthors: string[];
+  /** Distinct authors of the chunk's live lines */
+  lineContributorCount: number;
 }
