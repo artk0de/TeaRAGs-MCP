@@ -12,6 +12,10 @@ import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/r
  *   (high bug-fix ratio = unreliable despite low churn).
  * Available in search_code — simple preset for "find me code I can trust".
  * Inverse intent: TechDebtPreset surfaces the opposite — old + churning = debt.
+ * Note: ownership/authorship signals are intentionally NOT used — "stable"
+ * describes code BEHAVIOR (low churn, low bugs), not who wrote it. A file
+ * authored by one person and a file authored by ten can both be equally
+ * stable; existing churn/volatility/bugFix already capture the relevant axis.
  */
 export class StablePreset implements RerankPreset {
   readonly name = "stable";
@@ -23,17 +27,9 @@ export class StablePreset implements RerankPreset {
     age: 0.15,
     bugFix: -0.15,
     volatility: -0.1,
-    ownership: 0.05,
   };
   readonly overlayMask: OverlayMask = {
-    file: [
-      "commitCount",
-      "ageDays",
-      "churnVolatility",
-      "recentDominantAuthorPct",
-      "blameDominantAuthorPct",
-      "bugFixRate",
-    ],
+    file: ["commitCount", "ageDays", "churnVolatility", "bugFixRate"],
     chunk: ["commitCount", "ageDays", "bugFixRate"],
   };
 }

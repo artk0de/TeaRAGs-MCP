@@ -35,6 +35,7 @@ export class TechDebtPreset implements RerankPreset {
       "changeDensity",
       "imports",
       "blameDominantAuthorPct",
+      "blameContributorCount",
       "recentDominantAuthorPct",
       "recentContributorCount",
     ],

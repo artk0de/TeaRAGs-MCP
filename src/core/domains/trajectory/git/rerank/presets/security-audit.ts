@@ -30,6 +30,7 @@ export class SecurityAuditPreset implements RerankPreset {
     file: [
       "ageDays",
       "recentDominantAuthorPct",
+      "recentContributorCount",
       "blameDominantAuthorPct",
       "blameContributorCount",
       "bugFixRate",

@@ -22,7 +22,8 @@ describe("ProvenPreset", () => {
     expect(keys).toContain("stability");
     expect(keys).toContain("age");
     expect(keys).toContain("bugFix");
-    expect(keys).toContain("ownership");
+    // knowledgeSilo replaces ownership: more direct measure of "few people = less peer review"
+    expect(keys).toContain("knowledgeSilo");
     expect(keys).toContain("volatility");
     expect(keys).toHaveLength(6);
   });
@@ -34,19 +35,20 @@ describe("ProvenPreset", () => {
     expect(w.similarity).toBe(0.2);
   });
 
-  it("penalizes bugFix, ownership, and volatility", () => {
+  it("penalizes bugFix, knowledgeSilo, and volatility", () => {
     const w = preset.weights;
     expect(w.bugFix).toBeLessThan(0);
-    expect(w.ownership).toBeLessThan(0);
+    expect(w.knowledgeSilo).toBeLessThan(0);
     expect(w.volatility).toBeLessThan(0);
   });
 
-  it("has overlayMask with relevant raw signals", () => {
+  it("has overlayMask exposing the signals driving the score", () => {
     expect(preset.overlayMask).toBeDefined();
     expect(preset.overlayMask.file).toContain("bugFixRate");
     expect(preset.overlayMask.file).toContain("ageDays");
     expect(preset.overlayMask.file).toContain("commitCount");
-    expect(preset.overlayMask.file).toContain("recentDominantAuthorPct");
+    // blameContributorCount is the source of knowledgeSilo
+    expect(preset.overlayMask.file).toContain("blameContributorCount");
   });
 
   it("has signalLevel file", () => {
