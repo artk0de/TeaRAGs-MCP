@@ -38,6 +38,29 @@ function readPath(payload: Record<string, unknown>, path: string): unknown {
   return cur;
 }
 
+/**
+ * Merge a dotted-path leaf into a nested object, creating intermediate maps as
+ * needed. Required because Qdrant's setPayload treats top-level keys verbatim:
+ * passing {"git.file.recentDominantAuthor": v} produces a flat top-level key
+ * containing dots, NOT a nested write at git → file → recentDominantAuthor.
+ */
+function writeNested(target: Record<string, unknown>, path: string, value: unknown): void {
+  const segments = path.split(".");
+  let cur: Record<string, unknown> = target;
+  for (let i = 0; i < segments.length - 1; i++) {
+    const seg = segments[i];
+    const existing = cur[seg];
+    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+      cur = existing as Record<string, unknown>;
+    } else {
+      const next: Record<string, unknown> = {};
+      cur[seg] = next;
+      cur = next;
+    }
+  }
+  cur[segments[segments.length - 1]] = value;
+}
+
 export class SchemaV13RenameOwnershipPayload implements Migration {
   readonly name = "schema-v13-rename-ownership-payload";
   readonly version = 13;
@@ -60,16 +83,18 @@ export class SchemaV13RenameOwnershipPayload implements Migration {
 
     for (const p of points) {
       const newPayload: Record<string, unknown> = {};
+      let touched = false;
       for (const [oldKey, newKey] of ALL_RENAMES) {
         // Skip if new key already populated for this point (idempotent re-run)
         if (readPath(p.payload, newKey) !== undefined) continue;
         const oldVal = readPath(p.payload, oldKey);
         if (oldVal === undefined) continue;
-        // Build nested write payload — Qdrant's setPayload merges deeply for our usage.
-        // Use the leaf path as-is; downstream batchSetPayload accepts dot-keys verbatim.
-        newPayload[newKey] = oldVal;
+        // Build nested object so Qdrant writes git.file.X as a nested leaf,
+        // not a flat top-level key literally containing dots.
+        writeNested(newPayload, newKey, oldVal);
+        touched = true;
       }
-      if (Object.keys(newPayload).length > 0) {
+      if (touched) {
         ops.push({ points: [p.id], payload: newPayload });
         renamedCount++;
       }

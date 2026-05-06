@@ -63,16 +63,26 @@ describe("SchemaV13RenameOwnershipPayload", () => {
 
     const p1Op = batchedOps.find((o) => o.points[0] === "p1");
     expect(p1Op?.payload).toEqual({
-      "git.file.recentDominantAuthor": "Alice",
-      "git.file.recentAuthors": ["Alice", "Bob"],
-      "git.file.recentContributorCount": 2,
-      "git.chunk.recentContributorCount": 1,
+      git: {
+        file: {
+          recentDominantAuthor: "Alice",
+          recentAuthors: ["Alice", "Bob"],
+          recentContributorCount: 2,
+        },
+        chunk: {
+          recentContributorCount: 1,
+        },
+      },
     });
 
     const p2Op = batchedOps.find((o) => o.points[0] === "p2");
     expect(p2Op?.payload).toEqual({
-      "git.file.recentDominantAuthorPct": 80,
-      "git.file.recentDominantAuthorEmail": "alice@x",
+      git: {
+        file: {
+          recentDominantAuthorPct: 80,
+          recentDominantAuthorEmail: "alice@x",
+        },
+      },
     });
 
     const p3Op = batchedOps.find((o) => o.points[0] === "p3");
