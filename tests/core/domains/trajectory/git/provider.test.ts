@@ -2,6 +2,7 @@ import * as nodeFs from "node:fs";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { blameFile } from "../../../../../src/core/adapters/git/client.js";
 import { buildChunkChurnMap } from "../../../../../src/core/domains/trajectory/git/infra/chunk-reader.js";
 import {
   buildFileSignalMap,
@@ -83,6 +84,48 @@ describe("GitEnrichmentProvider", () => {
       expect(buildFileSignalsForPaths).toHaveBeenCalledWith("/repo", ["src/b.ts"], 60000);
       expect(result.size).toBe(1);
       expect(result.has("src/b.ts")).toBe(true);
+    });
+
+    it("accumulates blameByRelPath across batched buildFileSignals calls", async () => {
+      // Regression: the initial pass populates blame for files A,B; a later
+      // backfill pass for file C must NOT erase blame for A,B — chunk-level
+      // signals are produced AFTER all blame passes via buildChunkChurnMap,
+      // and a missing entry in blameByRelPath produces "unknown" ownership.
+      vi.mocked(nodeFs.existsSync).mockReturnValue(true);
+      const blameLineA = { lineNumber: 1, sha: "shaA", author: "Alice", authorEmail: "a@x", timestamp: 0 };
+      const blameLineB = { lineNumber: 1, sha: "shaB", author: "Bob", authorEmail: "b@x", timestamp: 0 };
+      const blameLineC = { lineNumber: 1, sha: "shaC", author: "Carol", authorEmail: "c@x", timestamp: 0 };
+      vi.mocked(blameFile).mockImplementation(async (_root, relPath) => {
+        if (relPath === "src/a.ts") return [blameLineA];
+        if (relPath === "src/b.ts") return [blameLineB];
+        if (relPath === "src/c.ts") return [blameLineC];
+        return [];
+      });
+
+      const dataAB = new Map([
+        ["src/a.ts", { commits: [], recentAuthors: [] }],
+        ["src/b.ts", { commits: [], recentAuthors: [] }],
+      ]);
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(dataAB as any);
+      await provider.buildFileSignals("/repo", { paths: ["src/a.ts", "src/b.ts"] });
+
+      const dataC = new Map([["src/c.ts", { commits: [], recentAuthors: [] }]]);
+      vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(dataC as any);
+      await provider.buildFileSignals("/repo", { paths: ["src/c.ts"] });
+
+      const chunkMap = new Map([
+        ["src/a.ts", [{ chunkId: "ca", startLine: 1, endLine: 5 }]],
+        ["src/b.ts", [{ chunkId: "cb", startLine: 1, endLine: 5 }]],
+        ["src/c.ts", [{ chunkId: "cc", startLine: 1, endLine: 5 }]],
+      ]);
+      await provider.buildChunkSignals("/repo", chunkMap as any);
+
+      const lastCall = vi.mocked(buildChunkChurnMap).mock.calls.at(-1);
+      const blameByPathArg = lastCall?.[12] as Map<string, unknown>;
+      expect(blameByPathArg).toBeInstanceOf(Map);
+      expect(blameByPathArg.get("src/a.ts")).toEqual([blameLineA]);
+      expect(blameByPathArg.get("src/b.ts")).toEqual([blameLineB]);
+      expect(blameByPathArg.get("src/c.ts")).toEqual([blameLineC]);
     });
 
     it("stores raw data for later chunk enrichment correlation", async () => {

@@ -67,7 +67,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   private readonly blameByChurnData = new WeakMap<FileChurnData, BlameLine[]>();
   /** Blame results keyed by relative path — passed into buildChunkChurnMap so
    *  chunk overlays receive per-range line ownership. Same blame pass as file-level. */
-  private blameByRelPath: Map<string, BlameLine[]> = new Map();
+  private readonly blameByRelPath: Map<string, BlameLine[]> = new Map();
 
   constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
@@ -140,25 +140,30 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
 
   /** Run `git blame HEAD` per file in parallel batches and store results in
    *  the WeakMap for later transform-time lookup. Failures fall back to empty
-   *  arrays — assembleFileSignals will produce unknown ownership. */
+   *  arrays — assembleFileSignals will produce unknown ownership.
+   *
+   *  Accumulates into `this.blameByRelPath` across calls — buildFileSignals
+   *  may be invoked multiple times per indexing run (initial pass + backfill,
+   *  reindex_changes, etc.). chunk enrichment runs AFTER all file passes via
+   *  buildChunkSignals, so the chunk-level blame map must retain entries from
+   *  every prior pass. Replacing the map would erase blame for files indexed
+   *  in earlier batches and produce "unknown" chunk ownership. */
   private async populateBlameMap(root: string, rawData: Map<string, FileChurnData>): Promise<void> {
     const concurrency = Math.max(this.config.chunkConcurrency, 1);
     const entries = Array.from(rawData.entries());
     let cursor = 0;
 
-    const byPath = new Map<string, BlameLine[]>();
     const worker = async (): Promise<void> => {
       while (cursor < entries.length) {
         const i = cursor++;
         const [relPath, churnData] = entries[i];
         const lines = await blameFile(root, relPath, this.config.logTimeoutMs);
         this.blameByChurnData.set(churnData, lines);
-        byPath.set(relPath, lines);
+        this.blameByRelPath.set(relPath, lines);
       }
     };
 
     await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, worker));
-    this.blameByRelPath = byPath;
   }
 
   async buildChunkSignals(
