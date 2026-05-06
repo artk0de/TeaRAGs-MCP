@@ -864,10 +864,17 @@ export class EnrichmentCoordinator {
       return;
     }
 
+    // Scope writes to `git.file` via the `key` parameter so the call only
+    // touches that sub-tree. Without the key, Qdrant treats the payload's
+    // top-level keys as set targets — `{git: {file: ...}}` would replace
+    // the entire `git` payload, clobbering any sibling sub-trees (notably
+    // `git.chunk` written earlier in this same run).
     const operations: {
       payload: Record<string, unknown>;
       points: (string | number)[];
+      key: string;
     }[] = [];
+    const fileKey = `${state.provider.key}.file`;
     let backfilledFiles = 0;
 
     for (const [relPath, chunks] of this.applier.missedFileChunks) {
@@ -881,10 +888,9 @@ export class EnrichmentCoordinator {
       const fileData = this.runStartedAt
         ? { ...(finalData as Record<string, unknown>), enrichedAt: this.runStartedAt }
         : (finalData as Record<string, unknown>);
-      const payload = { [state.provider.key]: { file: fileData } };
 
       for (const chunk of chunks) {
-        operations.push({ payload, points: [chunk.chunkId] });
+        operations.push({ payload: fileData, points: [chunk.chunkId], key: fileKey });
       }
       backfilledFiles++;
     }
@@ -960,7 +966,12 @@ export class EnrichmentCoordinator {
       return;
     }
 
-    const operations: { payload: Record<string, unknown>; points: (string | number)[] }[] = [];
+    // Scope writes to `git.chunk` via the `key` parameter — without it Qdrant
+    // would treat `{git: {chunk: ...}}` as a top-level set, replacing the
+    // entire `git` payload and dropping any `git.file` data written by the
+    // file-backfill / streaming applier earlier in this same run.
+    const operations: { payload: Record<string, unknown>; points: (string | number)[]; key: string }[] = [];
+    const chunkKey = `${state.provider.key}.chunk`;
     const enrichedAt = this.runStartedAt;
     for (const chunkMap of chunkOverlays.values()) {
       for (const [chunkId, overlay] of chunkMap) {
@@ -968,8 +979,9 @@ export class EnrichmentCoordinator {
           ? { ...(overlay as Record<string, unknown>), enrichedAt }
           : (overlay as Record<string, unknown>);
         operations.push({
-          payload: { [state.provider.key]: { chunk: chunkData } },
+          payload: chunkData,
           points: [chunkId],
+          key: chunkKey,
         });
       }
     }

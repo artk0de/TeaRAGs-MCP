@@ -502,14 +502,26 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     expect(backfillChunkCall).toBeDefined();
 
     // The recovered chunk overlay must be written via batchSetPayload — find
-    // an op whose payload carries the chunk-level enrichment we returned.
+    // an op carrying the chunk-level enrichment we returned. Backfill writes
+    // MUST use the `key: "git.chunk"` parameter so Qdrant scopes the set to
+    // that sub-tree. Without `key`, a payload of `{git: {chunk: ...}}` would
+    // replace the entire `git` key and clobber `git.file.enrichedAt` written
+    // by the streaming applier (or file-backfill) earlier in the same run.
     const allOps = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] as any[]);
     const chunkLevelOp = allOps.find((op: any) => {
       const p = op?.payload;
-      const chunkPart = p?.git?.chunk;
-      return chunkPart && (chunkPart.commitCount === 7 || chunkPart.blameDominantAuthor === "Alice");
+      return p && (p.commitCount === 7 || p.blameDominantAuthor === "Alice");
     });
     expect(chunkLevelOp).toBeDefined();
+    expect(chunkLevelOp.key).toBe("git.chunk");
+    // Payload must NOT carry the nested `git` wrapper — that would clobber siblings.
+    expect(chunkLevelOp.payload.git).toBeUndefined();
+
+    // File-level backfill must also use scoped `key: "git.file"` for the same
+    // reason. Find the file-backfill op (the recovered file-data write).
+    const fileLevelOp = allOps.find((op: any) => op?.key === "git.file");
+    expect(fileLevelOp).toBeDefined();
+    expect(fileLevelOp.payload.git).toBeUndefined();
   });
 
   it("handles batchSetPayload error during backfill gracefully", async () => {
@@ -596,11 +608,13 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
 
     await coordinator.awaitCompletion("test-col");
 
-    // Backfill should produce 150 operations → 2 batches (100 + 50)
-    // Filter batchSetPayload calls to only backfill batches (contain "recovered" payload, not just enrichedAt)
+    // Backfill should produce 150 operations → 2 batches (100 + 50).
+    // Filter batchSetPayload calls to only backfill batches: writes use the
+    // scoped key "git.file" (no nested `git` wrapper in payload) and carry
+    // the synthetic `recovered: true` field returned by buildFileSignals.
     const backfillCalls = mockQdrant.batchSetPayload.mock.calls.filter((call: any[]) => {
       const ops = call[1];
-      return ops.length > 0 && ops[0].payload?.git?.file?.recovered === true;
+      return ops.length > 0 && ops[0].key === "git.file" && ops[0].payload?.recovered === true;
     });
     expect(backfillCalls.length).toBeGreaterThanOrEqual(2);
 
@@ -1128,9 +1142,11 @@ describe("EnrichmentCoordinator — backfill with fileSignalTransform", () => {
     // fileSignalTransform should have been called during backfill
     expect(transform).toHaveBeenCalledWith({ rawData: 1 }, 25);
 
-    // The backfill batchSetPayload call should contain the transformed data
+    // The backfill batchSetPayload call should contain the transformed data.
+    // Writes use the scoped key "git.file" so the payload is flat — no nested
+    // `git` wrapper.
     const backfillCalls = mockQdrant.batchSetPayload.mock.calls.filter((call: any[]) =>
-      call[1]?.some?.((op: any) => op?.payload?.git?.file?.transformed === true),
+      call[1]?.some?.((op: any) => op?.key === "git.file" && op?.payload?.transformed === true),
     );
     expect(backfillCalls.length).toBeGreaterThanOrEqual(1);
   });
