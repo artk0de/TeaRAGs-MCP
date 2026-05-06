@@ -95,14 +95,17 @@ describe("reranker", () => {
       expect(reranked).toHaveLength(2);
     });
 
-    it("should use dominantAuthorPct for ownership when available", () => {
+    it("should use lineDominantAuthorPct for ownership when available", () => {
       const results = [
-        createResult(0.8, 30, 5, false, { dominantAuthorPct: 90, authors: ["alice", "bob", "charlie"] as any }),
-        createResult(0.8, 30, 5, false, { dominantAuthorPct: 30, authors: ["a", "b", "c", "d"] as any }),
+        createResult(0.8, 30, 5, false, {
+          lineDominantAuthorPct: 90,
+          lineAuthors: ["alice", "bob", "charlie"] as any,
+        }),
+        createResult(0.8, 30, 5, false, { lineDominantAuthorPct: 30, lineAuthors: ["a", "b", "c", "d"] as any }),
       ];
       const reranked = reranker.rerank(results, "ownership", "semantic_search");
-      // 90% ownership should rank higher
-      expect(reranked[0].payload?.git?.dominantAuthorPct).toBe(90);
+      // 90% live-line ownership should rank higher
+      expect(reranked[0].payload?.git?.lineDominantAuthorPct).toBe(90);
     });
 
     it("should boost density signal in codeReview preset", () => {
@@ -173,19 +176,22 @@ describe("reranker", () => {
     });
 
     it("should flag single-contributor code via knowledgeSilo signal", () => {
-      // Both have SAME dominantAuthorPct=80 -- only knowledgeSilo differentiates
-      // Multi-contributor first -- if signal doesn't exist, order won't change
+      // knowledgeSilo now reads lineContributorCount (live-line authorship)
       const results = [
         createResult(0.8, 30, 5, false, {
-          contributorCount: 5,
-          dominantAuthorPct: 80,
-          authors: ["a", "b", "c", "d", "e"] as any,
+          lineContributorCount: 5,
+          lineDominantAuthorPct: 80,
+          lineAuthors: ["a", "b", "c", "d", "e"] as any,
         }),
-        createResult(0.8, 30, 5, false, { contributorCount: 1, dominantAuthorPct: 80, authors: ["alice"] as any }),
+        createResult(0.8, 30, 5, false, {
+          lineContributorCount: 1,
+          lineDominantAuthorPct: 80,
+          lineAuthors: ["alice"] as any,
+        }),
       ];
       const reranked = reranker.rerank(results, { custom: { similarity: 0.1, knowledgeSilo: 0.9 } }, "semantic_search");
-      // Single contributor (knowledgeSilo=1.0) must be reordered to first
-      expect(reranked[0].payload?.git?.contributorCount).toBe(1);
+      // Single live-line contributor (knowledgeSilo=1.0) must be reordered to first
+      expect(reranked[0].payload?.git?.lineContributorCount).toBe(1);
     });
 
     it("should normalize chunkChurnRatio via chunkRelativeChurn signal", () => {
@@ -220,20 +226,24 @@ describe("reranker", () => {
       expect(reranked[0].payload?.git?.chunk?.bugFixRate).toBe(80);
     });
 
-    it("should prefer chunk contributorCount over file-level contributorCount for knowledgeSilo", () => {
+    it("should prefer chunk lineContributorCount over file-level for knowledgeSilo", () => {
       // With alpha-blending, chunk data needs sufficient chunk.commitCount for alpha=1.0.
       // chunk.commitCount=10 with file commitCount=10 -> alpha=1.0 (pure chunk values).
       // knowledgeSilo uses categorical thresholds (1->1.0, 2->0.5, 3+->0) so needs exact integers.
-      // File has 5 contributors, but this chunk only has 1
-      // vs file with 1 contributor but chunk has 3
-      // Multi-contributor chunk first -- must be reordered if chunk-level preferred
+      // File has 5 line contributors, but this chunk only has 1 — chunk wins via blend.
       const results = [
-        createResult(0.8, 30, 10, false, { contributorCount: 1, chunk: { contributorCount: 3, commitCount: 10 } }),
-        createResult(0.8, 30, 10, false, { contributorCount: 5, chunk: { contributorCount: 1, commitCount: 10 } }),
+        createResult(0.8, 30, 10, false, {
+          lineContributorCount: 1,
+          chunk: { lineContributorCount: 3, commitCount: 10 },
+        }),
+        createResult(0.8, 30, 10, false, {
+          lineContributorCount: 5,
+          chunk: { lineContributorCount: 1, commitCount: 10 },
+        }),
       ];
       const reranked = reranker.rerank(results, { custom: { similarity: 0.1, knowledgeSilo: 0.9 } }, "semantic_search");
-      // Chunk with chunk.contributorCount=1 (silo) should rank first (alpha=1.0 -> pure chunk value)
-      expect(reranked[0].payload?.git?.chunk?.contributorCount).toBe(1);
+      // Chunk with chunk.lineContributorCount=1 (silo) should rank first (alpha=1.0 -> pure chunk value)
+      expect(reranked[0].payload?.git?.chunk?.lineContributorCount).toBe(1);
     });
   });
 
@@ -370,11 +380,11 @@ describe("reranker", () => {
 
     it("should not dampen ownership when commitCount >= 5 (ownership threshold)", () => {
       const results = [
-        createResult(0.8, 30, 6, false, { dominantAuthorPct: 30, authors: ["a", "b", "c", "d"] as any }),
-        createResult(0.8, 30, 6, false, { dominantAuthorPct: 90, authors: ["alice", "bob"] as any }),
+        createResult(0.8, 30, 6, false, { lineDominantAuthorPct: 30, lineAuthors: ["a", "b", "c", "d"] as any }),
+        createResult(0.8, 30, 6, false, { lineDominantAuthorPct: 90, lineAuthors: ["alice", "bob"] as any }),
       ];
       const reranked = reranker.rerank(results, { custom: { ownership: 1.0 } }, "semantic_search");
-      expect(reranked[0].payload?.git?.dominantAuthorPct).toBe(90);
+      expect(reranked[0].payload?.git?.lineDominantAuthorPct).toBe(90);
     });
 
     it("should zero statistical signals when commitCount=0", () => {
@@ -914,9 +924,9 @@ describe("reranker", () => {
               commitCount: 20,
               ageDays: 200,
               bugFixRate: 10,
-              contributorCount: 1,
-              authors: ["solo"],
-              dominantAuthorPct: 100,
+              lineContributorCount: 1,
+              lineAuthors: ["solo"],
+              lineDominantAuthorPct: 100,
               churnVolatility: 5,
               changeDensity: 3,
             },
@@ -934,9 +944,9 @@ describe("reranker", () => {
               commitCount: 20,
               ageDays: 200,
               bugFixRate: 10,
-              contributorCount: 5,
-              authors: ["a", "b", "c", "d", "e"],
-              dominantAuthorPct: 30,
+              lineContributorCount: 5,
+              lineAuthors: ["a", "b", "c", "d", "e"],
+              lineDominantAuthorPct: 30,
               churnVolatility: 5,
               changeDensity: 3,
             },
@@ -944,8 +954,8 @@ describe("reranker", () => {
         },
       };
       const results = reranker.rerank([shared, silo], "techDebt", "semantic_search");
-      // Single-author code should rank higher in techDebt (knowledge silo risk)
-      expect(results[0].payload?.git?.file?.contributorCount).toBe(1);
+      // Single live-line author code should rank higher in techDebt (knowledge silo risk)
+      expect(results[0].payload?.git?.file?.lineContributorCount).toBe(1);
     });
 
     it("should include density signal", () => {

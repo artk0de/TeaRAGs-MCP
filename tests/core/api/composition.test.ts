@@ -18,8 +18,8 @@ describe("createComposition", () => {
 
   it("aggregates derived signals from trajectories + structural", () => {
     const { allDerivedSignals } = createComposition();
-    // Git: 14 derived + structural: 7
-    expect(allDerivedSignals.length).toBe(21);
+    // Git: 15 derived + structural: 7
+    expect(allDerivedSignals.length).toBe(22);
     expect(allDerivedSignals.find((d) => d.name === "recency")).toBeDefined();
     expect(allDerivedSignals.find((d) => d.name === "similarity")).toBeDefined();
   });
