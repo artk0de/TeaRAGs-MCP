@@ -38,11 +38,11 @@ To find knowledge silos:
 
 ### Ownership Decision Table
 
-| dominantAuthorPct | Status           | Action                              |
-|-------------------|------------------|-------------------------------------|
-| < 70%             | Well-distributed | Safe to modify freely               |
-| 70–85%            | Partial silo     | Match dominant author's style       |
-| > 85%             | Knowledge silo   | Flag owner for review before change |
+| blameDominantAuthorPct (label) | Status           | Action                                          |
+|--------------------------------|------------------|-------------------------------------------------|
+| `shared`                       | Well-distributed | Safe to modify freely                           |
+| `concentrated`                 | Partial silo     | Match the live-line owner's style               |
+| `silo` / `deep-silo`           | Knowledge silo   | Flag live-line owner for review before change   |
 
 ### Risk Cross-Reference
 

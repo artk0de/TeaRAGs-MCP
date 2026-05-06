@@ -40,7 +40,7 @@ These aren't predictions — they're observed in empirical studies of GitHub act
 
 - **Nagappan & Ball (2005). ["Use of Relative Code Churn Measures to Predict System Defect Density."](https://www.microsoft.com/en-us/research/publication/use-of-relative-code-churn-measures-to-predict-system-defect-density/)** Classic result: relative churn (lines changed / file size) is the strongest single defect predictor. See [Code Churn Research](/knowledge-base/code-churn-research) for the full treatment.
 - **Tornhill (2018). *Your Code as a Crime Scene* (2nd ed.). Pragmatic Bookshelf.** The "hotspot" model: complexity × change frequency. Works well on human commits; over-flags agent burst commits as hotspots.
-- **Bird et al. (2011). ["Don't Touch My Code! Examining the Effects of Ownership on Software Quality."](https://www.microsoft.com/en-us/research/publication/dont-touch-my-code-examining-the-effects-of-ownership-on-software-quality/)** Concentrated ownership correlates with fewer defects. Agent-co-authored commits dilute ownership signals; `dominantAuthorPct` loses fidelity.
+- **Bird et al. (2011). ["Don't Touch My Code! Examining the Effects of Ownership on Software Quality."](https://www.microsoft.com/en-us/research/publication/dont-touch-my-code-examining-the-effects-of-ownership-on-software-quality/)** Concentrated ownership correlates with fewer defects. Agent-co-authored commits dilute commit-based ownership signals; `recentDominantAuthorPct` loses fidelity. Live-line ownership (`blameDominantAuthorPct`) is more robust on agent-heavy repos because it counts who currently owns the lines, not how many commits each name appeared in.
 
 ---
 
@@ -59,7 +59,7 @@ Effect on each compromised metric:
 | `churnVolatility` | Agent bursts produce extreme stddev | Sessions smooth the burstiness |
 | `relativeChurn` | Cumulative lines changed across retries inflate | Deduplicated at session boundaries |
 
-`dominantAuthor` and `taskIds` are **unaffected** — they're inherently per-author-per-ticket and stay meaningful.
+`recentDominantAuthor` / `blameDominantAuthor` and `taskIds` are **unaffected** by session-mode deduplication — they're inherently per-author-per-ticket (or per live-line) and stay meaningful.
 
 See [Git Enrichment Pipeline → GIT SESSIONS](/architecture/git-enrichment-pipeline#git-sessions) for the implementation detail and default tuning.
 
@@ -71,7 +71,7 @@ A few consequences worth building your agent's behaviour around:
 
 1. **Don't learn from your own hotspots.** If the agent sees a file with `commitCount=40` from its own recent session, that's not "important code" — that's churn from last hour's TDD loop. TeaRAGs' `relativeChurn` normalises by file size, and session mode further de-noises.
 2. **Pair generation with retrieval.** Agents have an unfair advantage: they can query the index cheaply before writing. Use it — [Agentic Data-Driven Engineering](/agent-integration/agentic-data-driven-engineering) shows the retrieval-first generation pattern.
-3. **Freshness beats recency.** `ageDays` changes the moment an agent touches a file. `dominantAuthor` doesn't. Prefer authorship signals over time signals for stability judgements on agent-heavy repos.
+3. **Freshness beats recency.** `ageDays` changes the moment an agent touches a file. `blameDominantAuthor` (live-line ownership) doesn't move just because someone re-saved a file — only when actual lines change owner. Prefer live-line authorship signals over time signals for stability judgements on agent-heavy repos.
 4. **Trust tests, not "it looks right".** AI-generated code often compiles and looks plausible but silently fails edge cases. Trajectory signals like `chunkBugFixRate` are proxy indicators for "this function has been wrong before" — useful even when no test is failing right now.
 
 ---

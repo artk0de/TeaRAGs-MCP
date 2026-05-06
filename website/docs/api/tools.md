@@ -148,7 +148,8 @@ Reorder search results based on git metadata signals.
 | `refactoring`   | Refactoring candidates          | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age |
 | `onboarding`    | Entry points for new devs       | documentation + stability                                              |
 | `securityAudit` | Old code in critical paths      | age + pathRisk + bugFix + ownership + volatility                       |
-| `ownership`     | Knowledge transfer / silos      | ownership + knowledgeSilo (flags single-author code)                   |
+| `ownership`     | Knowledge transfer / silos (live-line, blame-based)      | ownership + knowledgeSilo (flags single-author code, sourced from `git.file.blame*`)                   |
+| `recentActivityConcentration` | Recent committer concentration (commit-window) | recentActivityConcentration (sourced from `git.file.recent*` — who's been actively committing)         |
 
 **Documentation / structural** (automatic or explicit):
 
@@ -170,9 +171,20 @@ formulas: **[Rerank Presets](/usage/advanced/rerank-presets)**.
 ```
 
 Available weight keys: `similarity`, `recency`, `stability`, `churn`, `age`,
-`ownership`, `chunkSize`, `documentation`, `imports`, `bugFix`, `volatility`,
-`density`, `chunkChurn`, `relativeChurnNorm`, `burstActivity`, `pathRisk`,
-`knowledgeSilo`, `chunkRelativeChurn`
+`ownership`, `recentActivityConcentration`, `chunkSize`, `documentation`,
+`imports`, `bugFix`, `volatility`, `density`, `chunkChurn`,
+`relativeChurnNorm`, `burstActivity`, `pathRisk`, `knowledgeSilo`,
+`chunkRelativeChurn`
+
+:::note Two ownership weight keys
+`ownership` and `knowledgeSilo` derive from the **live-line** family
+(`git.file.blame*` — who currently owns the lines in the file), and answer
+authority and bus-factor questions. `recentActivityConcentration` derives from
+the **commit-window** family (`git.file.recent*` — who's been actively
+committing lately) and is the right key for review routing or "who's mentally
+loaded into this area right now". There is no `authors` weight key — use
+`ownership` (negate to favor diffuse ownership) or `recentActivityConcentration`.
+:::
 
 ### `metaOnly` — Metadata Only Response
 
@@ -188,7 +200,12 @@ For `semantic_search` / `hybrid_search` only. Returns metadata without content:
   "chunkType": "function",
   "name": "handleLogin",
   "imports": ["express", "jsonwebtoken", "./utils"],
-  "git": { "ageDays": 5, "commitCount": 12, "dominantAuthor": "alice" }
+  "git": {
+    "ageDays": 5,
+    "commitCount": 12,
+    "recentDominantAuthor": "alice",
+    "blameDominantAuthor": "alice"
+  }
 }
 ```
 

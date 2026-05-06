@@ -33,9 +33,10 @@ Analyzing code ownership patterns, assessing technical debt severity, and identi
 
 | Signal | Risk level | Meaning |
 |--------|-----------|---------|
-| `dominantAuthorPct >= 90` + `contributorCount == 1` | Critical | Single person wrote and maintains this code |
-| `dominantAuthorPct >= 70` + `contributorCount == 2` | High | One person dominates, one occasional contributor |
-| `dominantAuthorPct < 50` + `contributorCount >= 4` | Low | Distributed ownership, healthy bus factor |
+| `blameDominantAuthorPct` label = `deep-silo` + `blameContributorCount` label = `solo` | Critical | Single person currently owns the live lines |
+| `blameDominantAuthorPct` label = `silo` + `blameContributorCount` label = `pair` | High | One person dominates the live lines, one occasional contributor |
+| `blameDominantAuthorPct` label = `shared` + `blameContributorCount` label = `team` or `crowd` | Low | Distributed live-line ownership, healthy bus factor |
+| `blameDominantAuthorPct` label = `silo` but `recentDominantAuthor` differs | Watch | Knowledge handoff in progress — live-line owner has stopped committing, someone new is taking over |
 
 ### Combining ownership with churn
 

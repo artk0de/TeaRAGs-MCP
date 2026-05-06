@@ -83,7 +83,8 @@ structural):
 | `stability`          | git (prefers chunk-level) | Inverse of commitCount                        |
 | `churn`              | git (prefers chunk-level) | Direct commitCount                            |
 | `age`                | git (prefers chunk-level) | Direct ageDays                                |
-| `ownership`          | git                       | Author concentration (dominantAuthorPct)      |
+| `ownership`          | git                       | Live-line owner concentration (`blameDominantAuthorPct` — `git blame HEAD`)  |
+| `recentActivityConcentration` | git              | Recent-commit concentration (`recentDominantAuthorPct` — recent commit window) |
 | `chunkSize`          | chunk metadata            | Lines of code in chunk                        |
 | `documentation`      | chunk metadata            | Is documentation file                         |
 | `imports`            | file metadata             | Import/dependency count                       |
@@ -100,6 +101,15 @@ structural):
 All presets automatically prefer chunk-level data when available (e.g.,
 `chunkCommitCount` over `commitCount` for churn signals).
 
+:::note Two ownership families
+`ownership` and `knowledgeSilo` derive from `git.file.blame*` (live-line
+ownership via `git blame HEAD`) — best for authority and bus-factor
+questions. `recentActivityConcentration` derives from `git.file.recent*`
+(recent commit window) — best for review routing and activity hotspots. When
+the long-time owner has stopped committing, `blame*` and `recent*` disagree,
+and the divergence itself signals a knowledge handoff in progress.
+:::
+
 ## Combining Filters with Reranking
 
 Filters (Qdrant conditions) **narrow** the candidate set. Reranking
@@ -108,7 +118,8 @@ Filters (Qdrant conditions) **narrow** the candidate set. Reranking
 | Goal                       | Filter                                          | Rerank       |
 | -------------------------- | ----------------------------------------------- | ------------ |
 | Recent bugs in auth        | `git.ageDays <= 14` + `pathPattern: **/auth/**` | `hotspots`   |
-| Old single-owner code      | `git.ageDays >= 90` + `git.commitCount >= 5`    | `ownership`  |
+| Old single-owner code      | `git.ageDays >= 90` + `git.commitCount >= 5`    | `ownership` (live-line) |
+| Sole recent driver         | `git.ageDays <= 30` + `git.file.recentContributorCount == 1` | `recentActivityConcentration` |
 | Recently active TypeScript | `language: typescript` + `git.ageDays <= 30`    | `codeReview` |
 | Large stable functions     | `chunkType: function` + `git.commitCount <= 3`  | `onboarding` |
 

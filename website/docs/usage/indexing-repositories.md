@@ -25,7 +25,7 @@ to the MCP server.
 | `INGEST_ENABLE_AST`         | Use AST-aware chunking (tree-sitter) instead of line-based splitting. Preserves semantic boundaries like functions, classes, and methods. | true    |
 | `INGEST_ENABLE_HYBRID`      | Provision BM25 sparse vectors. Required to use the `hybrid_search` tool.                                                                  | true    |
 | `EMBEDDING_TUNE_BATCH_SIZE` | Chunks per embedding batch sent to the provider. Higher = throughput; lower = less memory.                                                | auto    |
-| `TRAJECTORY_GIT_ENABLED`    | Enrich every chunk with git signals: authors, commit count, bug-fix rate, age, task IDs. Required for `hotspots` / `techDebt` / `ownership` / `securityAudit` / etc. presets. Silently skipped for non-git directories. | true    |
+| `TRAJECTORY_GIT_ENABLED`    | Enrich every chunk with git signals: recent committers (`recent*` family), live-line owners (`blame*` family), commit count, bug-fix rate, age, task IDs. Required for `hotspots` / `techDebt` / `ownership` / `recentActivityConcentration` / `securityAudit` / etc. presets. Silently skipped for non-git directories. | true    |
 
 Legacy names (`CODE_CHUNK_SIZE`, `CODE_CHUNK_OVERLAP`, `CODE_ENABLE_AST`, `CODE_ENABLE_HYBRID`, `CODE_BATCH_SIZE`, `CODE_ENABLE_GIT_METADATA`) still work as fallbacks but are deprecated.
 

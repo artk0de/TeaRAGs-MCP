@@ -86,7 +86,7 @@ Real analysis often combines multiple searches. Here's a full workflow for asses
 
 <AiQuery>Show ownership distribution for the payment module, metadata only</AiQuery>
 
-**Goal:** identify knowledge silos. Look at `dominantAuthorPct`, `contributorCount`.
+**Goal:** identify knowledge silos. Look at `blameDominantAuthorPct` and `blameContributorCount` (live-line ownership) for authority/bus-factor; cross-check against `recentDominantAuthor` to spot in-progress handoffs.
 
 ### Step 4: Measure blast radius
 

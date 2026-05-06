@@ -41,7 +41,7 @@ The MSR conference series started in 2004. A few papers define the field:
 
 ### Ownership and bug-proneness
 
-- **Bird, C., Nagappan, N., Murphy, B., Gall, H. & Devanbu, P. (2011). ["Don't Touch My Code! Examining the Effects of Ownership on Software Quality."](https://www.microsoft.com/en-us/research/publication/dont-touch-my-code-examining-the-effects-of-ownership-on-software-quality/) *ESEC/FSE*.** Concentrated ownership → fewer post-release failures. Minor contributors (one or two commits) correlate with more bugs than dominant maintainers. Motivates TeaRAGs' `dominantAuthorPct` and `knowledgeSilo` signals.
+- **Bird, C., Nagappan, N., Murphy, B., Gall, H. & Devanbu, P. (2011). ["Don't Touch My Code! Examining the Effects of Ownership on Software Quality."](https://www.microsoft.com/en-us/research/publication/dont-touch-my-code-examining-the-effects-of-ownership-on-software-quality/) *ESEC/FSE*.** Concentrated ownership → fewer post-release failures. Minor contributors (one or two commits) correlate with more bugs than dominant maintainers. Motivates TeaRAGs' two ownership families: `recentDominantAuthorPct` (commit-window) for "who's been active here lately" and `blameDominantAuthorPct` (live-line via `git blame`) for "who currently owns the lines" — plus the `knowledgeSilo` signal derived from the live-line family.
 - **Rahman, F. & Devanbu, P. (2011). ["Ownership, Experience and Defects: A Fine-Grained Study of Authorship."](https://doi.org/10.1145/1985793.1985860) *ICSE*.** Experience of the author with the specific file matters, not just general tenure. Informs the distinction between dominant-author and author-diversity signals.
 - **Mockus, A. (2010). ["Organizational Volatility and Its Effects on Software Defects."](https://doi.org/10.1145/1882291.1882311) *FSE*.** Organisational churn (contributor turnover) amplifies technical debt accumulation.
 
@@ -69,7 +69,7 @@ The mapping from the literature to what TeaRAGs stores:
 | Research finding | TeaRAGs signal | Where stored |
 |------------------|----------------|--------------|
 | Nagappan & Ball 2005 (relative churn) | `git.file.relativeChurn`, `git.chunk.relativeChurn` | [Data Model](/architecture/data-model) |
-| Bird et al. 2011 (concentrated ownership helps) | `git.file.dominantAuthorPct`, `git.file.contributorCount` | Data Model |
+| Bird et al. 2011 (concentrated ownership helps) | `git.file.blameDominantAuthorPct`, `git.file.blameContributorCount` (live-line) and `git.file.recentDominantAuthorPct`, `git.file.recentContributorCount` (recent commit window) | Data Model |
 | Rahman & Devanbu 2011 (experience matters) | Derived `ownership` signal | Rerank |
 | Mockus & Votta 2000 (bug-fix keyword classification) | `git.file.bugFixRate`, `git.chunk.bugFixRate` | Data Model |
 | Tornhill 2015 (churn × complexity hotspots) | `hotspots` preset | [Rerank presets](/usage/advanced/rerank-presets) |

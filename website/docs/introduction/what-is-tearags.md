@@ -156,7 +156,8 @@ just find code faster. It finds **better code**.
 | Find code by meaning               | ✅                    | ✅                                  |
 | Hybrid search (BM25 + vector)      | ⚠️ some tools         | ✅ RRF fusion                       |
 | Know if code is stable or volatile | ❌                    | ✅ `churnVolatility`, `commitCount` |
-| Know who owns the code             | ❌                    | ✅ `dominantAuthor`, `authors[]`    |
+| Know who owns the code             | ❌                    | ✅ `blameDominantAuthor`, `blameAuthors[]` (live-line owner)    |
+| Know who's been committing lately  | ❌                    | ✅ `recentDominantAuthor`, `recentAuthors[]` (recent window) |
 | Know if code is buggy              | ❌                    | ✅ `bugFixRate` per function        |
 | Know when code was last touched    | ❌                    | ✅ `ageDays`, `lastModifiedAt`      |
 | Link code to JIRA/GitHub tickets   | ❌                    | ✅ `taskIds[]`                      |

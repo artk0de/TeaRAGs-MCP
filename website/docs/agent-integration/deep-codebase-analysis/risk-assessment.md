@@ -158,7 +158,7 @@ Security vulnerabilities concentrate in old code within sensitive paths, with fe
 
 | Signal combination | Audit priority | Reason |
 |-------------------|----------------|--------|
-| `ageDays > 365` + `dominantAuthorPct > 80%` + security path | Critical | Old code, one owner, security-sensitive — highest vulnerability risk |
+| `ageDays > 365` + `blameDominantAuthorPct` label = `silo` or `deep-silo` + security path | Critical | Old code, one live-line owner, security-sensitive — highest vulnerability risk |
 | `ageDays > 180` + `bugFixRate > 30%` + security path | High | Old security code that keeps getting patched |
 | `ageDays > 180` + `churnVolatility > 30` + security path | High | Irregular patching of old security code — reactive maintenance |
 | `ageDays < 30` + multiple contributors + security path | Low | Recently written by multiple people — likely already reviewed |

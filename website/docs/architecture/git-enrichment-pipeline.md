@@ -62,7 +62,9 @@ git log (isomorphic-git, reads .git directly)
       -> GitFileMetadata (stored on all chunks of the file)
 ```
 
-**Output:** `GitFileMetadata` containing commitCount, relativeChurn, recencyWeightedFreq, changeDensity, churnVolatility, bugFixRate, contributorCount, dominantAuthor, and other signals. Stored on **all chunks** of the file via the `git.*` payload namespace.
+**Output:** `GitFileMetadata` containing commitCount, relativeChurn, recencyWeightedFreq, changeDensity, churnVolatility, bugFixRate, two parallel ownership families (`recentDominantAuthor` / `recentDominantAuthorPct` / `recentAuthors` / `recentContributorCount` from the configurable recent commit window, and `blameDominantAuthor` / `blameDominantAuthorPct` / `blameAuthors` / `blameContributorCount` from `git blame HEAD`), and other signals. Stored on **all chunks** of the file via the `git.*` payload namespace.
+
+The two ownership families capture distinct semantics: `recent*` reflects who's been actively committing in the recent window (good for activity / review routing), while `blame*` reflects who currently owns the live lines (good for authority and knowledge-silo analysis). When a long-time owner stops committing, the two diverge, and the divergence itself carries information.
 
 ## Phase 2: Chunk-Level Churn Overlay
 
@@ -79,7 +81,7 @@ git log (last N commits, isomorphic-git)
                (git.chunkCommitCount, etc.)
 ```
 
-**Output:** `ChunkChurnOverlay` containing chunkCommitCount, chunkChurnRatio, chunkContributorCount, chunkBugFixRate, chunkLastModifiedAt, chunkAgeDays. Merged into existing `git.*` payload using dot-notation to avoid overwriting file-level data.
+**Output:** `ChunkChurnOverlay` containing chunkCommitCount, chunkChurnRatio, `git.chunk.recentContributorCount`, `git.chunk.blameContributorCount`, chunkBugFixRate, chunkLastModifiedAt, chunkAgeDays. Merged into existing `git.*` payload using dot-notation to avoid overwriting file-level data.
 
 ## Performance
 
@@ -128,7 +130,9 @@ Session count — not raw commit count — then feeds churn-related signals.
 
 **Impact on signals.** `commitCount`, `chunkCommitCount`, `bugFixRate`,
 `churnVolatility`, and `relativeChurn` all use the deduplicated session count
-when this mode is on. `dominantAuthor` and `taskIds` are unaffected.
+when this mode is on. `recentDominantAuthor`, `blameDominantAuthor`, and
+`taskIds` are unaffected — sessions affect counts, not who owns lines or who
+mentioned which ticket.
 
 **Default is `false`** — opt in per project. Enable via the environment variable
 or the setup wizard (`/tea-rags-setup:install` step 7 — "Configure git

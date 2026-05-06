@@ -92,7 +92,8 @@ Repeat with 2-3 different broad queries ("data processing", "API handlers",
 Step 2: From the collected git metadata, compute for each signal:
   - Minimum, maximum, median, P75, P95 values for:
     commitCount, ageDays, bugFixRate, relativeChurn, churnVolatility,
-    contributorCount, dominantAuthorPct
+    recentContributorCount, recentDominantAuthorPct,
+    blameContributorCount, blameDominantAuthorPct
   - If chunk-level data is available:
     chunkCommitCount, chunkChurnRatio, chunkBugFixRate, chunkAgeDays
 

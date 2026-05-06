@@ -3,6 +3,55 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## Unreleased (2026-05-06)
+
+### ⚠ BREAKING CHANGES
+
+* **signals:** Ownership signals split into **two parallel families**.
+  The legacy `git.file.dominantAuthor*` / `git.file.authors` /
+  `git.file.contributorCount` (and chunk-level `git.chunk.contributorCount`)
+  fields are replaced by:
+  * `recent*` family (commit-based, from a configurable recent commit
+    window) — `git.file.recentDominantAuthor`,
+    `git.file.recentDominantAuthorPct`, `git.file.recentDominantAuthorEmail`,
+    `git.file.recentAuthors`, `git.file.recentContributorCount`,
+    `git.chunk.recentContributorCount`. Use for "who's been actively
+    committing here lately?" — review routing, activity hotspots.
+  * `blame*` family (live-line ownership from `git blame HEAD`) —
+    `git.file.blameDominantAuthor`, `git.file.blameDominantAuthorPct`,
+    `git.file.blameDominantAuthorEmail`, `git.file.blameAuthors`,
+    `git.file.blameContributorCount`, `git.chunk.blameContributorCount`.
+    Use for "who currently owns the live lines?" — authority, knowledge
+    silos, bus factor.
+
+  When a long-time owner stops contributing, `blame*` still says they own
+  (their lines remain), but `recent*` highlights newer committers — the
+  divergence is itself information (knowledge handoff in progress).
+
+  Schema migration v13 handles existing indexes; reindex is required to
+  populate the new `blame*` fields.
+
+* **api:** MCP filter parameters renamed:
+  * `author` → `recentAuthor` (matches `git.file.recentDominantAuthor`).
+  * `lineOwner` → `blameOwner` (matches `git.file.blameDominantAuthor`).
+
+* **rerank:** preset and weight-key changes:
+  * `ownership` preset and `ownership` / `knowledgeSilo` weight keys now
+    source from the **live-line** family (`git.file.blame*`). The preset
+    name is unchanged, but the underlying data has shifted from
+    "commits by author" to "lines currently owned by author".
+  * New `recentActivityConcentration` preset and weight key, sourced from
+    the **commit-window** family (`git.file.recent*`) — for review
+    routing and "who's mentally loaded in" detection.
+  * The (always-incorrect) `authors` weight key has been removed. Use
+    `ownership` (negate to favor diffuse ownership) or
+    `recentActivityConcentration`.
+
+### Features
+
+* **signals:** add `recentActivityConcentration` derived signal and rerank
+  preset on the recent commit-window family.
+
 ## [1.22.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.21.0...v1.22.0) (2026-05-05)
 
 ### ⚠ BREAKING CHANGES

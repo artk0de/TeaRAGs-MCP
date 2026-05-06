@@ -377,8 +377,9 @@ Not every signal uses every method. The table below shows which methods apply to
 | bugFix | bugFixRate / bound | 100 | blendSignal | $(n/k)^2$ | — | 8 |
 | volatility | churnVolatility / bound | 60 | — | $(n/k)^2$ | — | 8 |
 | density | changeDensity / bound | 20 | blendSignal | $(n/k)^2$ | — | 5 |
-| ownership | dominantAuthorPct / 100 | — | — | $(n/k)^2$ | — | 5 |
-| knowledgeSilo | step function | — | blendSignal | $(n/k)^2$ | — | 5 |
+| ownership | blameDominantAuthorPct / 100 (live-line) | — | — | $(n/k)^2$ | — | 5 |
+| knowledgeSilo | step function on `blameContributorCount` (live-line) | — | blendSignal | $(n/k)^2$ | — | 5 |
+| recentActivityConcentration | recentDominantAuthorPct / 100 (commit-window) | — | — | $(n/k)^2$ | — | 5 |
 | relativeChurnNorm | relativeChurn / bound | 5.0 | blendSignal | $(n/k)^2$ | — | 5 |
 | burstActivity | recencyWeightedFreq / bound | 10.0 | blendSignal | — | — | — |
 | chunkChurn | chunk.commitCount / bound | 30 | × alpha | — | — | — |

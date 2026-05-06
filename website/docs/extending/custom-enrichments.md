@@ -15,7 +15,7 @@ Each provider owns a **namespace** in the Qdrant payload (e.g. `git.*`, `static.
 
 - **Raw signals** — fields stored in the payload (`git.file.commitCount`, etc.)
 - **Derived signals** — normalized 0–1 values computed from raw signals at rerank time (`recency`, `ownership`)
-- **Filters** — typed filter parameters (e.g. `author`, `minCommitCount`) translated to Qdrant conditions
+- **Filters** — typed filter parameters (e.g. `recentAuthor`, `blameOwner`, `minCommitCount`) translated to Qdrant conditions
 - **Presets** — rerank weight configurations that use the provider's signals (`techDebt`, `hotspots`)
 - **Enrichment logic** — how to read raw signals from the external system and apply them to chunks
 

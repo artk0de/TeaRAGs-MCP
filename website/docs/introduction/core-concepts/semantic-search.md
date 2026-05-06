@@ -117,7 +117,9 @@ Practical tool with sensible defaults and shorthand filters:
 /mcp__tea-rags__search_code /path "validation" --pathPattern src/api/**
 
 # Filter by git metadata (requires TRAJECTORY_GIT_ENABLED=true)
-/mcp__tea-rags__search_code /path "recent changes" --author alice@example.com
+/mcp__tea-rags__search_code /path "recent changes" --recentAuthor alice@example.com
+# Filter by live-line owner (git blame HEAD)
+/mcp__tea-rags__search_code /path "recent changes" --blameOwner alice@example.com
 
 # Documentation only
 /mcp__tea-rags__search_code /path "setup guide" --documentationOnly true

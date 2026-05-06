@@ -209,10 +209,11 @@ high bug-fix rate, and recent burst activity — at chunk (function) level.
 1), the team faces risk. Traditional tools require manual `git shortlog`
 analysis across hundreds of files.
 
-**Solution:** Use the `ownership` rerank preset or filter by
-`git.dominantAuthorPct >= 90` to instantly surface single-owner code.
+**Solution:** Use the `ownership` rerank preset (live-line, `git blame`-based)
+or filter by adaptive labels — `git.file.blameDominantAuthorPct` flagged as
+`silo` / `deep-silo` — to instantly surface single-owner code.
 
-**Skill:** `/tea-rags:explore [area] — who owns this` · overlay shows `dominantAuthor`, `dominantAuthorPct`, `knowledgeSilo`.
+**Skill:** `/tea-rags:explore [area] — who owns this` · overlay shows `blameDominantAuthor`, `blameDominantAuthorPct`, `knowledgeSilo`.
 
 <AiQuery>/tea-rags:explore who owns the payment processing code?</AiQuery>
 <AiQuery>/tea-rags:explore which critical code has only one contributor?</AiQuery>
@@ -281,7 +282,7 @@ tickets drove modifications.
 **Solution:** Use `git.taskIds` to trace code back to tickets, and churn signals
 to understand evolution patterns.
 
-**Skill:** `/tea-rags:explore [symbol or concept]` — overlay surfaces `taskIds`, `ageDays`, `commitCount`, `dominantAuthor`.
+**Skill:** `/tea-rags:explore [symbol or concept]` — overlay surfaces `taskIds`, `ageDays`, `commitCount`, `recentDominantAuthor`, `blameDominantAuthor`.
 
 <AiQuery>/tea-rags:explore what changes were made for ticket PROJ-123?</AiQuery>
 <AiQuery>/tea-rags:explore how did the retry logic evolve over time?</AiQuery>

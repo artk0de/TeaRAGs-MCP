@@ -247,21 +247,43 @@ than more patches.
 
 ### Ownership filters
 
-Single-owner code is a bus-factor risk. Dominant author percentage shows how
-concentrated knowledge is.
+Ownership is split into **two parallel families**:
+
+- **`recent*`** — based on commits in the configurable recent window. Use for
+  "who has been actively committing here lately?" (review routing, activity
+  spotting).
+- **`blame*`** — based on `git blame HEAD` (live-line ownership). Use for
+  "who actually owns the code that's in the file right now?" (authority,
+  bus-factor, knowledge silos).
+
+Single-owner code is a bus-factor risk. The dominant-author percentage shows
+how concentrated knowledge is — pick the family that matches your intent.
 
 ```json
-// Knowledge silos — one person owns 90%+ of commits
-{ "key": "git.dominantAuthorPct", "range": { "gte": 90 } }
+// Knowledge silos by live-line ownership — one person currently owns 90%+ of the lines
+{ "key": "git.file.blameDominantAuthorPct", "range": { "gte": 90 } }
 
-// Code by a specific author
-{ "key": "git.dominantAuthor", "match": { "value": "Alice" } }
+// Code currently owned (by lines) by a specific author
+{ "key": "git.file.blameDominantAuthor", "match": { "value": "Alice" } }
+
+// Recent activity concentration — one person has authored 90%+ of recent commits
+{ "key": "git.file.recentDominantAuthorPct", "range": { "gte": 90 } }
+
+// Code recently committed mostly by a specific author
+{ "key": "git.file.recentDominantAuthor", "match": { "value": "Alice" } }
 ```
 
-<AiQuery>Find code with a single dominant author</AiQuery>
+You can also use the dedicated MCP filter parameters:
+
+- `blameOwner` — matches `git.file.blameDominantAuthor` (live-line owner).
+- `recentAuthor` — matches `git.file.recentDominantAuthor` (recent committer).
+
+<AiQuery>Find code with a single dominant blame owner</AiQuery>
 
 **Use case:** knowledge transfer planning, onboarding risk assessment,
-identifying areas that need cross-training.
+identifying areas that need cross-training. When `blame*` and `recent*`
+disagree on the dominant author, that's a signal of an in-progress knowledge
+handoff.
 
 ### Chunk-level churn
 
@@ -344,10 +366,14 @@ Requires `TRAJECTORY_GIT_ENABLED=true` during indexing.
 | `git.ageDays`           | integer   | Days since last modification                | Recent changes or legacy code |
 | `git.relativeChurn`     | number    | Churn normalized by file size               | Stronger defect signal        |
 | `git.bugFixRate`        | number    | Bug-fix percentage (0-100)                  | Quality assessment            |
-| `git.dominantAuthor`    | string    | Author with most commits                    | Filter by author              |
-| `git.dominantAuthorPct` | number    | Ownership concentration (0-100)             | Knowledge silo detection      |
-| `git.authors`           | string[]  | All contributors                            | Multi-author queries          |
-| `git.contributorCount`  | integer   | Unique author count                         | Bus factor analysis           |
+| `git.file.recentDominantAuthor`    | string    | Author with most commits in the recent window     | Filter by recent committer    |
+| `git.file.recentDominantAuthorPct` | number    | Recent-commit concentration (0-100)               | Recent activity concentration |
+| `git.file.recentAuthors`           | string[]  | All recent-window contributors                    | Multi-author recent queries   |
+| `git.file.recentContributorCount`  | integer   | Unique recent-author count                        | Recent activity diversity     |
+| `git.file.blameDominantAuthor`     | string    | Live-line owner (most lines per `git blame HEAD`) | Filter by current owner       |
+| `git.file.blameDominantAuthorPct`  | number    | Live-line ownership concentration (0-100)         | Knowledge silo detection      |
+| `git.file.blameAuthors`            | string[]  | All authors with currently-live lines             | Multi-owner queries           |
+| `git.file.blameContributorCount`   | integer   | Unique live-line author count                     | Bus factor analysis           |
 | `git.taskIds`           | string[]  | Ticket IDs (JIRA, GitHub, etc.)             | Trace code to tickets         |
 | `git.lastModifiedAt`    | timestamp | Unix timestamp of last change               | Precise date filtering        |
 | `git.firstCreatedAt`    | timestamp | Unix timestamp of first commit              | Find when code was introduced |
@@ -367,7 +393,8 @@ relevance within it.
 | Goal                       | Filter                                          | Rerank          | Why this combination                                    |
 | -------------------------- | ----------------------------------------------- | --------------- | ------------------------------------------------------- |
 | Recent bugs in auth        | `git.ageDays <= 14` + `pathPattern: **/auth/**` | `hotspots`      | Narrow to recent auth code, then rank by bug signals    |
-| Old single-owner code      | `git.ageDays >= 90` + `git.commitCount >= 5`    | `ownership`     | Find stale churny code, rank by knowledge concentration |
+| Old single-owner code      | `git.ageDays >= 90` + `git.commitCount >= 5`    | `ownership`     | Find stale churny code, rank by live-line concentration (`blame*`) |
+| Recently-active sole committer | `git.ageDays <= 30` + `git.file.recentContributorCount == 1` | `recentActivityConcentration` | Detect feature-in-progress with one driver |
 | Recently active TypeScript | `language: typescript` + `git.ageDays <= 30`    | `codeReview`    | Scope to TS, rank by recent activity intensity          |
 | Large stable functions     | `chunkType: function` + `git.commitCount <= 3`  | `onboarding`    | Find reliable entry points for new team members         |
 | High-churn security code   | `git.commitCount >= 10` + security path pattern | `securityAudit` | Target volatile security-sensitive areas                |

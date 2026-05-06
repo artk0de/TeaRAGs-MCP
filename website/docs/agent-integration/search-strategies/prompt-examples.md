@@ -59,7 +59,7 @@ NEVER:
    - Only use results with chunkBugFixRate < 25%
 2. Check risk: `semantic_search` with `rerank: "hotspots"`, `metaOnly: true`
 3. Check ownership: `semantic_search` with `rerank: "ownership"`, `metaOnly: true`
-   - Flag if dominantAuthorPct > 85%
+   - Flag if `blameDominantAuthorPct` label is `silo` or `deep-silo` (live-line knowledge silo)
 4. Verify identifiers: ripgrep to confirm function names, imports, types exist
 ````
 
@@ -77,7 +77,7 @@ When no preset fits, use `rerank: { "custom": { ... } }` with orthogonal signals
 | Churn frequency | churn · chunkChurn · density · burstActivity         |
 | Churn magnitude | relativeChurnNorm · chunkRelativeChurn               |
 | Age / freshness | age · recency                                        |
-| Ownership       | ownership · knowledgeSilo                            |
+| Ownership       | ownership (live-line) · knowledgeSilo · recentActivityConcentration (recent commits) |
 | Independent     | similarity · stability · bugFix · volatility         |
 | Independent     | chunkSize · documentation · imports · pathRisk       |
 

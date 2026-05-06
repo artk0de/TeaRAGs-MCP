@@ -67,23 +67,37 @@ Written by the git enrichment pipeline (phase 1) on **every chunk of the file**.
 |-------|------|------------------|-------------|
 | `git.file.commitCount` | number | low / typical / high / extreme | Total commits modifying this file |
 | `git.file.ageDays` | number | recent / typical / old / legacy | Days since last modification |
-| `git.file.dominantAuthor` | string | — | Author with most commits |
-| `git.file.authors` | string[] | — | All contributing authors |
-| `git.file.dominantAuthorPct` | number | shared / mixed / concentrated / silo | % of commits by dominant author (0–100) |
+| `git.file.recentDominantAuthor` | string | — | Author with most commits in the recent commit window |
+| `git.file.recentAuthors` | string[] | — | All contributing authors in the recent commit window |
+| `git.file.recentDominantAuthorPct` | number | shared / concentrated / silo / deep-silo | % of recent-window commits by the recent dominant author (0–100) |
+| `git.file.recentContributorCount` | number | solo / pair / team / crowd | Distinct contributors in the recent commit window |
+| `git.file.blameDominantAuthor` | string | — | Author owning the most live lines according to `git blame HEAD` |
+| `git.file.blameAuthors` | string[] | — | All authors with at least one live line according to `git blame HEAD` |
+| `git.file.blameDominantAuthorPct` | number | shared / concentrated / silo / deep-silo | % of live lines owned by the blame dominant author (0–100) |
+| `git.file.blameContributorCount` | number | solo / pair / team / crowd | Distinct authors of currently-live lines |
 | `git.file.fileChurnCount` | number | minimal / moderate / significant / massive | Total lines churned (added + deleted) |
 | `git.file.relativeChurn` | number | normal / high | `(linesAdded + linesDeleted) / currentLines` |
 | `git.file.recencyWeightedFreq` | number | normal / burst | Recency-weighted commit frequency |
 | `git.file.changeDensity` | number | calm / active / intense | Commits per month |
 | `git.file.churnVolatility` | number | stable / erratic | Standard deviation of commit-interval days |
 | `git.file.bugFixRate` | number | healthy / concerning / critical | % of commits classified as bug fixes (0–100) |
-| `git.file.contributorCount` | number | solo / team / crowd | Distinct contributors |
 | `git.file.taskIds` | string[] | — | Task/ticket IDs extracted from commit messages (JIRA, GitHub, AzDO) |
+
+:::note Two ownership families: `recent*` vs `blame*`
+Ownership is captured by **two parallel signal families** with different semantics:
+
+- **`recent*`** (commit-based, from a configurable recent commit window) — answers _"who has been actively committing here lately?"_ Useful for code-review routing, activity hotspots, and detecting feature-in-progress by a sole recent committer.
+- **`blame*`** (live-line ownership from `git blame HEAD`) — answers _"who actually owns the code that is in the file right now?"_ Useful for authority ("who must approve this change"), knowledge silo / bus-factor analysis, and style copy when generating code (the owner's lines are still there).
+
+When a long-time owner stops contributing, `blame*` still says they own (their lines remain), but `recent*` highlights newer committers. This divergence is itself information — it indicates a knowledge handoff in progress.
+:::
 
 #### Provenance fields (not used by rerank, kept for debugging)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `git.file.dominantAuthorEmail` | string | Email of dominant author |
+| `git.file.recentDominantAuthorEmail` | string | Email of the recent dominant author (commit-window) |
+| `git.file.blameDominantAuthorEmail` | string | Email of the blame dominant author (live-line owner) |
 | `git.file.lastModifiedAt` | number | Unix timestamp of last commit |
 | `git.file.firstCreatedAt` | number | Unix timestamp of first commit |
 | `git.file.lastCommitHash` | string | SHA of the last commit touching the file |
@@ -100,7 +114,8 @@ Written by the git enrichment pipeline (phase 2) **only when chunk-level analysi
 | `git.chunk.churnRatio` | number | normal / concentrated | Chunk's share of file churn (0–1) |
 | `git.chunk.commitCount` | number | low / typical / high / extreme | Commits touching this specific chunk |
 | `git.chunk.ageDays` | number | recent / typical / old / legacy | Days since last modification to the chunk |
-| `git.chunk.contributorCount` | number | solo / crowd | Distinct contributors to the chunk |
+| `git.chunk.recentContributorCount` | number | solo / pair / team / crowd | Distinct recent-window contributors to the chunk |
+| `git.chunk.blameContributorCount` | number | solo / pair / team / crowd | Distinct authors of currently-live lines in the chunk |
 | `git.chunk.bugFixRate` | number | healthy / concerning / critical | Chunk-level bug-fix rate (0–100) |
 | `git.chunk.relativeChurn` | number | normal / high | Churn relative to chunk size |
 | `git.chunk.recencyWeightedFreq` | number | normal / burst | Chunk-level recency-weighted frequency |

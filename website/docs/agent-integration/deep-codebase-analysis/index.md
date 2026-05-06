@@ -17,12 +17,12 @@ Every indexed chunk carries both file-level and chunk-level git metrics. They me
 
 ### File-level metrics
 
-File-level metrics (`commitCount`, `relativeChurn`, `bugFixRate`, `ageDays`, `dominantAuthor`) describe the **file as a whole**. All chunks within the same file share identical file-level values.
+File-level metrics (`commitCount`, `relativeChurn`, `bugFixRate`, `ageDays`, `recentDominantAuthor`, `blameDominantAuthor`) describe the **file as a whole**. All chunks within the same file share identical file-level values.
 
 **Use file-level metrics when:**
 
 - **Scanning for general hotspots** — "which files change most?" is a coarse but fast signal. A file with `commitCount >= 20` is worth investigating further.
-- **Ownership analysis** — `dominantAuthor` and `contributorCount` are inherently file-scoped. Git tracks commits per file, not per function.
+- **Ownership analysis** — `blameDominantAuthor` / `blameContributorCount` (live-line ownership from `git blame HEAD`) and `recentDominantAuthor` / `recentContributorCount` (recent commit window) are inherently file-scoped. Git tracks commits per file, not per function. Use `blame*` for authority and silo questions; use `recent*` for "who's been committing here lately?" — when they disagree, a knowledge handoff is in progress.
 - **Relative churn assessment** — `relativeChurn` (lines changed / file size) is the strongest single defect predictor according to [Nagappan & Ball (2005)](/knowledge-base/code-churn-research#why-relative-churn-beats-absolute-churn). It normalizes for file size, so a 50-line file with 100 lines changed (`relativeChurn = 2.0`) ranks higher than a 2000-line file with the same changes (`relativeChurn = 0.05`).
 - **Task traceability** — `taskIds` are extracted from commit messages at file level.
 - **Legacy code discovery** — `ageDays` at file level tells you when the file was last touched, regardless of which function inside it changed.
@@ -50,7 +50,8 @@ Chunk-level metrics (`chunkCommitCount`, `chunkChurnRatio`, `chunkBugFixRate`, `
 | Which *function* changes most? | Chunk | `chunkCommitCount`, `chunkChurnRatio` |
 | Is this file a defect predictor? | File | `relativeChurn` ([Nagappan](/knowledge-base/code-churn-research#why-relative-churn-beats-absolute-churn): 89% accuracy) |
 | Is this *function* buggy? | Chunk | `chunkBugFixRate` |
-| Who owns this area? | File | `dominantAuthor`, `dominantAuthorPct` |
-| Who last touched this function? | Chunk | `chunkAgeDays`, `chunkContributorCount` |
+| Who owns this area (live-line)? | File | `blameDominantAuthor`, `blameDominantAuthorPct` |
+| Who's been committing here lately? | File | `recentDominantAuthor`, `recentDominantAuthorPct` |
+| Who last touched this function? | Chunk | `chunkAgeDays`, `chunkRecentContributorCount` |
 | Is the churn healthy or pathological? | Both | Compare `commitCount` vs `bugFixRate` — high commits + low bugfix = healthy iteration; high commits + high bugfix = pathological |
 | What should I refactor first? | Chunk | `chunkChurnRatio` + `chunkBugFixRate` + chunk size |

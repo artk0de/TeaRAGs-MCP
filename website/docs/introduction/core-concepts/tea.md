@@ -28,14 +28,14 @@ These signals describe _how_ the code was developed over time:
 | ---------------- | ------------------------------------------------------------------ | --------------------------------------------------- |
 | **Temporal**     | `ageDays`, `lastModifiedAt`, `firstCreatedAt`                      | When code was written and last changed              |
 | **Churn**        | `commitCount`, `relativeChurn`, `changeDensity`, `churnVolatility` | How frequently and erratically code changes         |
-| **Authorship**   | `dominantAuthor`, `contributorCount`, `dominantAuthorPct`          | Who owns the code and how concentrated ownership is |
+| **Authorship**   | `recentDominantAuthor` / `recentContributorCount` / `recentDominantAuthorPct` (commit-window) and `blameDominantAuthor` / `blameContributorCount` / `blameDominantAuthorPct` (live-line) | Two parallel families: who's been actively committing lately vs who currently owns the live lines |
 | **Quality**      | `bugFixRate`, `chunkBugFixRate`                                    | How often changes are bug fixes                     |
 | **Traceability** | `taskIds`                                                          | Which tickets/issues drove the changes              |
 
 ### Two Granularity Levels
 
 - **File-level**: all chunks from a file share the same git metadata (e.g.,
-  `dominantAuthor`, `contributorCount`, `commitCount`)
+  `blameDominantAuthor`, `recentContributorCount`, `commitCount`)
 - **Chunk-level**: commits are mapped to specific line ranges via diff hunk
   analysis, giving **per-function/method** churn, bug-fix rate, and age (e.g.,
   `chunkCommitCount`, `chunkBugFixRate`, `chunkAgeDays`) — distinguishes hot
@@ -55,7 +55,8 @@ differently from one with 20 commits and 100% bugFixRate.
 | **Index time**                   | Embed code text as vectors          | Embed code text + attach git trajectory metadata per chunk           |
 | **Retrieval**                    | Rank by cosine similarity           | Rank by similarity, then rerank using trajectory signals             |
 | **"Find risky code"**            | Not possible (no risk signals)      | `rerank: "hotspots"` — boost high-churn, high-bugfix chunks          |
-| **"Who owns this?"**             | Not possible                        | `rerank: "ownership"` — surface single-author knowledge silos        |
+| **"Who owns this?"**             | Not possible                        | `rerank: "ownership"` — surface single-author knowledge silos via live-line ownership (`git blame HEAD`) |
+| **"Who's been committing here lately?"** | Not possible                | `rerank: "recentActivityConcentration"` — surface code with one dominant recent committer |
 | **"What changed for ticket X?"** | Not possible                        | `taskId: "TD-1234"` — trace code to requirements                     |
 | **"Find stable examples"**       | Return whatever is most similar     | `rerank: "stable"` — boost low-churn, well-established code          |
 | **Chunk granularity**            | Same score for all chunks in a file | Per-chunk churn overlay — each function/method tracked independently |
@@ -85,8 +86,9 @@ single line.
    low-bug code as templates (low churn, low bugFixRate, survived production)
 2. **Anti-Pattern Avoidance** (`rerank: "hotspots"`) — identify high-churn,
    bug-prone code to avoid (high bugFixRate, high churnVolatility)
-3. **Style Consistency** (`rerank: "ownership"`) — match the dominant author's
-   patterns for a code area
+3. **Style Consistency** (`rerank: "ownership"`) — match the live-line owner's
+   patterns for a code area (their lines are still in the file, so their style
+   is what's actually there)
 4. **Historical Context** (`taskIds`, `metaOnly: true`) — understand feature
    intent through ticket references
 5. **Risk Assessment** (`rerank: "techDebt"`) — identify legacy code requiring

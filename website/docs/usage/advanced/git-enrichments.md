@@ -38,6 +38,20 @@ tea-rags computes metrics at **two levels**:
 2. **Chunk-level** — per-function granularity (chunkCommitCount,
    chunkChurnRatio, chunkBugFixRate, etc.)
 
+Ownership is captured at the file level by **two parallel signal families**:
+
+- **`recent*`** — derived from commits in the configurable recent commit
+  window. Use these when you want to know who's been actively committing
+  here lately (review routing, activity hotspots, sole-driver detection on
+  in-progress features).
+- **`blame*`** — derived from `git blame HEAD`. Use these when you want to
+  know who currently owns the live lines (authority, knowledge silos / bus
+  factor, "match the owner's style" when generating code).
+
+When a long-time owner stops contributing, `blame*` still says they own
+(their lines remain), but `recent*` highlights newer committers — and the
+divergence itself is information.
+
 For detailed metric definitions, formulas, and research context, see
 [Code Churn: Theory & Research](/knowledge-base/code-churn-research).
 
@@ -51,14 +65,20 @@ For detailed metric definitions, formulas, and research context, see
 | `changeDensity`         | File  | Commits per month                                                       |
 | `churnVolatility`       | File  | Regularity of changes (stddev of commit gaps)                           |
 | `bugFixRate`            | File  | Percentage of bug-fix commits ([detection details](#bug-fix-detection)) |
-| `contributorCount`      | File  | Number of unique authors                                                |
-| `dominantAuthor`        | File  | Author with most commits                                                |
-| `dominantAuthorPct`     | File  | Ownership concentration (0-100)                                         |
+| `recentContributorCount` | File  | Distinct authors within the recent commit window                       |
+| `recentDominantAuthor`   | File  | Author with most commits in the recent window                          |
+| `recentDominantAuthorPct`| File  | Recent-window ownership concentration (0-100)                          |
+| `recentAuthors`          | File  | All authors in the recent commit window                                |
+| `blameContributorCount`  | File  | Distinct authors of currently-live lines (`git blame HEAD`)            |
+| `blameDominantAuthor`    | File  | Author owning the most live lines                                      |
+| `blameDominantAuthorPct` | File  | Live-line ownership concentration (0-100)                              |
+| `blameAuthors`           | File  | All authors with at least one live line                                |
 | `ageDays`               | File  | Days since last modification                                            |
 | `taskIds`               | File  | Extracted ticket IDs (JIRA, GitHub, etc.)                               |
-| `chunkCommitCount`      | Chunk | Commits touching this specific function/block                           |
-| `chunkChurnRatio`       | Chunk | This chunk's share of file churn (0-1)                                  |
-| `chunkContributorCount` | Chunk | Authors who touched this chunk                                          |
+| `chunkCommitCount`            | Chunk | Commits touching this specific function/block                    |
+| `chunkChurnRatio`             | Chunk | This chunk's share of file churn (0-1)                           |
+| `chunkRecentContributorCount` | Chunk | Recent-window authors who touched this chunk                     |
+| `chunkBlameContributorCount`  | Chunk | Authors of currently-live lines inside this chunk                |
 | `chunkBugFixRate`       | Chunk | Bug-fix rate for this chunk specifically                                |
 | `chunkAgeDays`          | Chunk | Days since this chunk was last modified                                 |
 | `chunkTaskIds`          | Chunk | Ticket IDs from commits touching this chunk                             |
@@ -206,9 +226,9 @@ classification even when their individual messages don't mention "fix".
 ## Use Cases
 
 <AiQuery>Show me files with high churn rate</AiQuery> <AiQuery>Find code with a
-single dominant author</AiQuery> <AiQuery>What code changed in the last
-week?</AiQuery> <AiQuery>Find hot functions that change frequently</AiQuery>
-<AiQuery>Show me legacy code with high bug-fix rates</AiQuery>
+single dominant blame owner (knowledge silo)</AiQuery> <AiQuery>What code
+changed in the last week?</AiQuery> <AiQuery>Find hot functions that change
+frequently</AiQuery> <AiQuery>Show me legacy code with high bug-fix rates</AiQuery>
 
 For detailed scenarios — hotspot detection, knowledge silo analysis, tech debt
 assessment, incident-driven search, security audit, and more — see
@@ -225,7 +245,8 @@ All presets automatically prefer chunk-level data when available (e.g.,
 | `techDebt`      | age + churn + bugFix + volatility                                      | Legacy assessment with fix-rate indicator |
 | `codeReview`    | recency + burstActivity + density + chunkChurn                         | Recent changes with activity intensity    |
 | `stable`        | low churn                                                              | Reliable implementations                  |
-| `ownership`     | ownership + knowledgeSilo                                              | Knowledge transfer, bus factor analysis   |
+| `ownership`     | ownership + knowledgeSilo (sourced from `git.file.blame*` — live-line owner) | Knowledge transfer, bus factor analysis (authority) |
+| `recentActivityConcentration` | recentActivityConcentration (sourced from `git.file.recent*` — recent committers) | Recent committer concentration: who's mentally loaded into this area right now |
 | `refactoring`   | chunkChurn + relativeChurnNorm + chunkSize + volatility + bugFix + age | Refactor candidates at chunk level        |
 | `securityAudit` | age + ownership + bugFix + pathRisk + volatility                       | Old critical code in sensitive paths      |
 | `onboarding`    | documentation + stability                                              | Entry points for new team members         |
@@ -241,7 +262,8 @@ Available weight keys for custom reranking:
 | `stability`          | Inverse of commitCount (prefers chunk-level)           | git             |
 | `churn`              | Direct commitCount (prefers chunk-level)               | git             |
 | `age`                | Direct ageDays (prefers chunk-level)                   | git             |
-| `ownership`          | Author concentration via dominantAuthorPct             | git             |
+| `ownership`          | Live-line author concentration via `blameDominantAuthorPct` | git        |
+| `recentActivityConcentration` | Recent-commit concentration via `recentDominantAuthorPct` | git    |
 | `chunkSize`          | Lines of code in chunk                                 | chunk metadata  |
 | `documentation`      | Is documentation file                                  | chunk metadata  |
 | `imports`            | Import/dependency count                                | file metadata   |

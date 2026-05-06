@@ -42,7 +42,7 @@ This is the single most common reason TeaRAGs delivers no value. The tool is ava
 
 ## 2. Using TeaRAGs as Plain Semantic Search
 
-**The mistake:** Treating TeaRAGs as a fancy grep -- searching with `rerank: "relevance"` every time and ignoring the 19 git-derived signals in results. The agent retrieves code, injects it into context, and generates -- without ever looking at `bugFixRate`, `commitCount`, `dominantAuthor`, or any other enrichment signal.
+**The mistake:** Treating TeaRAGs as a fancy grep -- searching with `rerank: "relevance"` every time and ignoring the git-derived signals in results. The agent retrieves code, injects it into context, and generates -- without ever looking at `bugFixRate`, `commitCount`, `blameDominantAuthor`, `recentDominantAuthor`, or any other enrichment signal.
 
 **Why it matters:** You get the same results you'd get from any vector search tool. The trajectory enrichment -- churn, stability, authorship, bug-fix rates -- is computed during indexing but never used. The agent copies the first match, which might be a prototype someone abandoned, a pattern that was reverted three times, or a function that breaks every sprint.
 
@@ -213,7 +213,7 @@ This also means:
 
 - No `bugFixRate` -- can't identify code that keeps breaking
 - No `commitCount` -- can't distinguish stable from churny code
-- No `dominantAuthor` -- can't identify knowledge silos
+- No `blameDominantAuthor` / `recentDominantAuthor` -- can't identify knowledge silos or recent committers
 - No `ageDays` -- can't find legacy code
 - No `taskIds` -- can't trace code to tickets
 
@@ -267,14 +267,14 @@ See [Agentic Flow Template](/agent-integration/search-strategies/preset-mapping#
 
 **The mistake:** The agent finds the code it needs to modify, makes the change, and moves on -- without checking churn history, bug-fix rate, or ownership.
 
-**Why it matters:** Code with `ageDays > 90` and `bugFixRate > 50%` has been rewritten multiple times and keeps breaking. Any new patch has a high probability of introducing another bug. Code with `dominantAuthorPct > 90%` is a knowledge silo -- modifying it without consulting the owner risks breaking undocumented assumptions.
+**Why it matters:** Code with `ageDays > 90` and `bugFixRate > 50%` has been rewritten multiple times and keeps breaking. Any new patch has a high probability of introducing another bug. Code with `blameDominantAuthorPct` labeled `silo` or `deep-silo` is a live-line knowledge silo -- modifying it without consulting the owner risks breaking undocumented assumptions.
 
 **Risk indicators:**
 
 | Signal | Threshold | Risk |
 |--------|-----------|------|
 | `bugFixRate > 40%` + `ageDays > 60` | Legacy fragile | Use wrapper pattern + feature flag |
-| `dominantAuthorPct > 85%` | Knowledge silo | Request review from the owner |
+| `blameDominantAuthorPct` label = `silo` or `deep-silo` | Knowledge silo (live-line) | Request review from the live-line owner |
 | `relativeChurn > 5.0` | Rewritten multiple times | Propose a rewrite, don't patch |
 | `churnVolatility > 30` + `bugFixRate > 40%` | Pathological churn | Needs redesign, not more patches |
 

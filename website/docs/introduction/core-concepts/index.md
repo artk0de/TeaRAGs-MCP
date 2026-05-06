@@ -76,7 +76,7 @@ flowchart TB
     end
 
     subgraph ENRICH["3. Trajectory Enrichment Awareness"]
-        fmeta["File-Level Signals<br/>commitCount · authors · bugFixRate<br/>churnVolatility · taskIds"]
+        fmeta["File-Level Signals<br/>commitCount · recentAuthors · blameAuthors · bugFixRate<br/>churnVolatility · taskIds"]
         cmeta["Chunk-Level Overlay<br/>chunkCommitCount · chunkBugFixRate<br/>chunkAgeDays per function"]
     end
 

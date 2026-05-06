@@ -127,7 +127,7 @@ Without this check, the agent will:
 | Signal | Threshold | Agent action |
 |--------|-----------|-------------|
 | `chunkBugFixRate > 50%` | High bug density | Warn: "This function has a 55% bug-fix rate. Consider redesigning instead of patching." |
-| `dominantAuthorPct > 90%` | Knowledge silo | Warn: "This area is owned by @alice (92%). Request review before merging." |
+| `blameDominantAuthorPct` label = `silo` or `deep-silo` | Knowledge silo (live-line) | Warn: "This area is owned by @alice (live-line silo). Request review before merging." |
 | `chunkChurnRatio > 0.7` | Concentrated churn | Warn: "This function absorbs 70%+ of the file's churn. Consider splitting it." |
 | `relativeChurn > 5.0` | Rewritten multiple times | Warn: "This code has been substantially rewritten. Deeper architectural review needed." |
 | `imports count > 10` | High blast radius | Warn: "This module has 12 downstream importers. Changes here affect the entire system." |
@@ -194,9 +194,9 @@ When evaluating search results as potential templates, use this scoring framewor
 | `chunkBugFixRate` | High | 0-100 | < 15% = excellent, 15-30% = acceptable, > 40% = reject |
 | `chunkAgeDays` | Medium | 0-∞ | > 90 = excellent, 30-90 = acceptable, < 14 = unproven |
 | `chunkCommitCount` | Medium | 0-∞ | 1-3 = excellent, 4-7 = acceptable, > 8 = unstable |
-| `dominantAuthorPct` | Low | 0-100 | > 70% = consistent style, < 40% = mixed styles |
+| `blameDominantAuthorPct` (label) | Low | label-based | `concentrated`/`silo` = consistent style, `shared` = mixed styles |
 | `churnVolatility` | Low | 0-∞ | < 5 = stable, 5-15 = normal, > 20 = erratic |
-| `contributorCount` | Low | 0-∞ | 2-3 = well-reviewed, 1 = silo risk, > 5 = too many cooks |
+| `blameContributorCount` (label) | Low | label-based | `pair` = well-reviewed, `solo` = silo risk, `crowd` = too many cooks |
 
 **Quick decision:**
 

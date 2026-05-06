@@ -175,7 +175,12 @@ Returns metadata without content — significantly reduces response size:
   "chunkType": "function",
   "name": "handleLogin",
   "imports": ["express", "jsonwebtoken", "./utils"],
-  "git": { "ageDays": 5, "commitCount": 12, "dominantAuthor": "alice" }
+  "git": {
+    "ageDays": 5,
+    "commitCount": 12,
+    "recentDominantAuthor": "alice",
+    "blameDominantAuthor": "alice"
+  }
 }
 ```
 

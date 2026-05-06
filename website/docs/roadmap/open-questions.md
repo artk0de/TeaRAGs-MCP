@@ -72,7 +72,7 @@ Open question: is distinguishing human vs agent authorship worth the complexity?
 
 Pros:
 - Enables per-authorship churn metrics ("this file is churny only from humans — genuine activity")
-- Better `dominantAuthor` semantics when agent commits dilute the signal
+- Better `recentDominantAuthor` semantics when agent commits dilute the recent commit window (live-line `blameDominantAuthor` is mostly unaffected, since the agent's commits change lines but the lines still reflect whoever last touched them — but explicit human/agent labelling would let `recent*` separate human activity from agent thrash)
 - Research signal: are agent-authored regions actually more bug-prone? (See [Hicks et al. 2024](/knowledge-base/agent-augmented-development#code-quality-with-ai-assistance) — open question empirically.)
 
 Cons:

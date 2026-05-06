@@ -31,7 +31,7 @@ Empirical surveys (Rebro 2023, Zhang 2025) confirm that **process metrics** (chu
 | Category | tea-rags coverage | Key metrics |
 |----------|-------------------|-------------|
 | Process (churn) | Full | commitCount, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq, bugFixRate |
-| Author (process) | Full | dominantAuthor, dominantAuthorPct, contributorCount, knowledgeSilo |
+| Author (process) | Full | Two parallel families: `recentDominantAuthor`/`recentDominantAuthorPct`/`recentContributorCount` (commit-window) and `blameDominantAuthor`/`blameDominantAuthorPct`/`blameContributorCount` (live-line via `git blame HEAD`); `knowledgeSilo` derived from the live-line family |
 | Network (dependencies) | Partial (fan-out only) | imports[] |
 | Complexity | Planned | cyclomatic, cognitive (via tree-sitter AST) |
 
@@ -112,16 +112,28 @@ Percentage of commits to this file that are bug fixes. Higher values indicate co
 - Quality metrics: track bugFixRate trends across releases.
 - Security audit: high bugFixRate in auth/crypto code warrants review.
 
-#### contributorCount
+#### recentContributorCount / blameContributorCount
 
-**Formula:** `authors.length` (explicit field for filtering)
+**Formula:** `recentAuthors.length` and `blameAuthors.length` (explicit fields for filtering)
 
-Number of unique contributors to this file. Redundant with `authors[]` but provided as a numeric field for Qdrant range filters.
+Two parallel counters of unique contributors:
+
+- **`recentContributorCount`** — distinct authors whose commits fall in the
+  configurable recent commit window. Use for "who's been actively committing
+  here?" (review routing, activity hotspots).
+- **`blameContributorCount`** — distinct authors of currently-live lines per
+  `git blame HEAD`. Use for "who actually owns the code that is in the file
+  right now?" (authority, knowledge silos, bus factor).
 
 **Use cases:**
 
-- Knowledge silo detection: `contributorCount == 1` (bus factor risk).
-- Collaboration metrics: high contributorCount indicates shared ownership.
+- Knowledge silo detection: `blameContributorCount == 1` (bus factor risk on
+  live-line ownership).
+- In-progress handoff detection: `blameContributorCount == 1` but
+  `recentContributorCount > 1` — the historical owner has stopped, others
+  are taking over.
+- Collaboration metrics: high values on either field indicate shared
+  ownership at that timeframe.
 
 ### Chunk-Level Metrics
 
@@ -139,9 +151,12 @@ Unlike file-level `commitCount` (which counts all commits to the file), this cou
 
 Ratio of chunk-specific commits to total file commits. Values close to 1.0 mean this chunk is responsible for most of the file's churn; low values mean the file is churny but this chunk is stable.
 
-#### chunkContributorCount
+#### chunkRecentContributorCount / chunkBlameContributorCount
 
-**Formula:** Count of unique authors whose commits touched this chunk's lines.
+**Formula:** Count of unique authors whose commits within the recent window
+touched this chunk's lines (`chunkRecentContributorCount`) and count of
+unique authors of currently-live lines inside the chunk per `git blame HEAD`
+(`chunkBlameContributorCount`).
 
 #### chunkBugFixRate
 
@@ -159,11 +174,16 @@ A file may have been modified yesterday (file-level `ageDays=1`), but a specific
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `dominantAuthor` | string | Author with most commits to this file |
-| `dominantAuthorEmail` | string | Email of dominant author |
-| `dominantAuthorPct` | number | Percentage of commits by dominant author (0-100) |
-| `authors` | string[] | All unique authors |
-| `contributorCount` | number | Number of unique authors (= authors.length) |
+| `recentDominantAuthor` | string | Author with most commits to this file in the recent commit window |
+| `recentDominantAuthorEmail` | string | Email of the recent dominant author |
+| `recentDominantAuthorPct` | number | Percentage of recent-window commits by the recent dominant author (0-100) |
+| `recentAuthors` | string[] | All authors in the recent commit window |
+| `recentContributorCount` | number | Number of unique recent-window authors (= `recentAuthors.length`) |
+| `blameDominantAuthor` | string | Author owning the most live lines per `git blame HEAD` |
+| `blameDominantAuthorEmail` | string | Email of the blame dominant author |
+| `blameDominantAuthorPct` | number | Percentage of live lines owned by the blame dominant author (0-100) |
+| `blameAuthors` | string[] | All authors with at least one currently-live line |
+| `blameContributorCount` | number | Number of unique live-line authors (= `blameAuthors.length`) |
 | `lastModifiedAt` | number | Unix timestamp of most recent commit |
 | `firstCreatedAt` | number | Unix timestamp of first commit |
 | `lastCommitHash` | string | SHA of most recent commit |

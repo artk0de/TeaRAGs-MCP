@@ -55,11 +55,15 @@ Search for stable templates:
 Assess risk before modifying existing code:
 - Use rerank="hotspots" with metaOnly=true on the target area
 - If chunkBugFixRate > 40% and code is older than 60 days, use wrapper pattern
-- If single author owns > 85%, match their style exactly
+- If `blameDominantAuthorPct` label is `silo` or `deep-silo`, match the
+  live-line owner's style exactly (their lines are still in the file)
 
 Match coding style to domain owner:
-- Use rerank="ownership" on the target directory
-- Follow the dominant author's error handling, naming, and structure patterns
+- Use rerank="ownership" on the target directory (live-line, blame-based)
+- Follow the live-line owner's (`blameDominantAuthor`) error handling,
+  naming, and structure patterns
+- For review routing, prefer `recentDominantAuthor` (recent commit window) —
+  the live-line owner may have moved on
 
 After generating code, verify with ripgrep:
 - Confirm all referenced function names, imports, and types actually exist
@@ -87,9 +91,13 @@ Switch to defensive mode (wrapper pattern) if:
   chunkBugFixRate > 40% AND chunkAgeDays > 60.
 
 STYLE MATCHING:
-Use semantic_search with rerank="ownership" to find the domain owner.
-If dominantAuthorPct > 70%, match their patterns exactly.
-If ownership is distributed, use project-wide conventions.
+Use semantic_search with rerank="ownership" to find the live-line owner
+(`blameDominantAuthor` from `git blame HEAD`).
+If `blameDominantAuthorPct` label is `concentrated`, `silo`, or `deep-silo`,
+match their patterns exactly — their lines are still in the file.
+If ownership label is `shared`, use project-wide conventions.
+For review routing, use `recentDominantAuthor` (recent commit window) — they
+are the ones mentally loaded into the area right now.
 
 POST-GENERATION VERIFICATION (MANDATORY):
 After generating code, use ripgrep to verify ALL referenced identifiers:

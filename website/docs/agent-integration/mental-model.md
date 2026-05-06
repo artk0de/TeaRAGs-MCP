@@ -61,7 +61,7 @@ Search semantically to understand the landscape. Use `rerank: "relevance"` first
 Before using any result, check the trajectory signals:
 - **Low churn + old age** → stable pattern, safe to copy
 - **High churn + high bug-fix rate** → anti-pattern, study but don't replicate
-- **Single dominant author** → domain expert's style, match it
+- **Single live-line owner (`blameDominantAuthor`)** → domain expert's style is what's currently in the file, match it; if `recentDominantAuthor` is someone else, route review to the recent committer
 - **Multiple task IDs** → code evolved through many requirements, understand them before modifying
 - **Recent + high commit count** → active development area, coordinate with the team
 
@@ -111,8 +111,8 @@ TeaRAGs computes these file-level metrics from `git log`:
 | `changeDensity` | commits / months — average change frequency over the analysis window |
 | `churnVolatility` | stddev(days between commits) — erratic patterns suggest reactive patching |
 | `bugFixRate` | % of commits with fix/bug/hotfix keywords — direct measure of defect density |
-| `contributorCount` | Number of unique authors — high counts + high churn = coordination cost |
-| `dominantAuthorPct` | How concentrated ownership is — low % on a high-churn file = no one owns the debt |
+| `recentContributorCount` / `blameContributorCount` | Number of unique authors in the recent window vs across the live lines — high counts + high churn = coordination cost |
+| `recentDominantAuthorPct` / `blameDominantAuthorPct` | How concentrated ownership is in the recent window vs across the live lines — low % on a high-churn file = no one owns the debt; divergence between the two = handoff in progress |
 | `taskIds` | Ticket references from commits — traces debt back to business decisions |
 
 The research behind this approach:

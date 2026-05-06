@@ -26,7 +26,7 @@ For where to place these blocks (CLAUDE.md, .cursorrules, system prompt), see [A
 | Level | Signals |
 |-------|---------|
 | Chunk (function/block) | `chunkBugFixRate`, `chunkCommitCount`, `chunkAgeDays`, `chunkChurnRatio` |
-| File  | `bugFixRate`, `commitCount`, `ageDays`, `dominantAuthorPct`, `relativeChurn`, `churnVolatility`, `imports` |
+| File  | `bugFixRate`, `commitCount`, `ageDays`, `blameDominantAuthorPct` (live-line ownership), `recentDominantAuthorPct` (recent commit window), `relativeChurn`, `churnVolatility`, `imports` |
 
 Chunk-level signals are more granular — use them in threshold tables. File-level signals are used for ownership, blast radius, and filters.
 
@@ -61,7 +61,7 @@ tea-rags is available as an MCP server. Use it for ALL code search.
 | chunkBugFixRate     | < 25%  | 25–40%   | > 40% (wrapper + feature flag)  |
 | chunkCommitCount    | 1–5    | 6–8      | > 8 (simplify, reduce)          |
 | chunkAgeDays        | < 90   | 90–180   | > 180 (minimal changes only)    |
-| dominantAuthorPct   | < 70%  | 70–85%   | > 85% (flag owner for review)   |
+| blameDominantAuthorPct (label) | `shared` | `concentrated` | `silo` / `deep-silo` (flag live-line owner for review) |
 | relativeChurn       | < 2.0  | 2.0–5.0  | > 5.0 (propose rewrite)         |
 
 ### Never:
@@ -134,7 +134,7 @@ tea-rags is available as an MCP server. Use it for ALL code search.
 |---------------------|--------|----------|--------------------------|
 | chunkBugFixRate     | < 15%  | 15–30%   | > 30% (stop, warn user)  |
 | chunkCommitCount    | 1–3    | 4–5      | > 5                      |
-| dominantAuthorPct   | < 80%  | 80–90%   | > 90% (knowledge silo)   |
+| blameDominantAuthorPct (label) | `shared` | `concentrated` | `silo` / `deep-silo` (knowledge silo, live-line) |
 | imports             | < 5    | 5–10     | > 10 (blast radius risk) |
 
 ### Template Quality Gate
