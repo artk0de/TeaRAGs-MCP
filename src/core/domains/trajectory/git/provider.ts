@@ -9,8 +9,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { resolveRepoRoot } from "../../../adapters/git/client.js";
-import type { CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
+import { blameFile, resolveRepoRoot } from "../../../adapters/git/client.js";
+import type { BlameLine, CommitInfo, FileChurnData } from "../../../adapters/git/types.js";
 import type { TrajectoryGitConfig } from "../../../contracts/types/config.js";
 import type {
   ChunkLookupEntry,
@@ -62,16 +62,24 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   /** Bug-fix SHAs resolved from merge branch prefixes. Updated per buildFileSignals() call. */
   private bugFixShas: Set<string> = new Set();
 
+  /** Blame results keyed by FileChurnData identity — populated in buildFileSignals,
+   *  consumed in fileSignalTransform. WeakMap auto-cleans when churnData is GC'd. */
+  private readonly blameByChurnData = new WeakMap<FileChurnData, BlameLine[]>();
+
   constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
     this.squashOpts = squashOpts;
-    this.fileSignalTransform = (data, maxEndLine) =>
-      assembleFileSignals(
-        data as unknown as FileChurnData,
+    this.fileSignalTransform = (data, maxEndLine) => {
+      const churnData = data as unknown as FileChurnData;
+      const blameLines = this.blameByChurnData.get(churnData);
+      return assembleFileSignals(
+        churnData,
         maxEndLine,
         this.squashOpts,
         this.bugFixShas,
+        blameLines,
       ) as unknown as FileSignalOverlay;
+    };
   }
 
   resolveRoot(absolutePath: string): string {
@@ -114,6 +122,10 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     }
     this.bugFixShas = buildBugFixShaSet(Array.from(allCommits.values()));
 
+    // Fetch git blame per file in parallel (throttled by chunkConcurrency).
+    // Stored in WeakMap so fileSignalTransform can look up by churnData identity later.
+    await this.populateBlameMap(root, rawData);
+
     // Return raw FileChurnData — coordinator/applier will call computeFileSignals
     // with actual line count when applying per-file
     const result = new Map<string, FileSignalOverlay>();
@@ -121,6 +133,26 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       result.set(path, churnData as unknown as FileSignalOverlay);
     }
     return result;
+  }
+
+  /** Run `git blame HEAD` per file in parallel batches and store results in
+   *  the WeakMap for later transform-time lookup. Failures fall back to empty
+   *  arrays — assembleFileSignals will produce unknown ownership. */
+  private async populateBlameMap(root: string, rawData: Map<string, FileChurnData>): Promise<void> {
+    const concurrency = Math.max(this.config.chunkConcurrency, 1);
+    const entries = Array.from(rawData.entries());
+    let cursor = 0;
+
+    const worker = async (): Promise<void> => {
+      while (cursor < entries.length) {
+        const i = cursor++;
+        const [relPath, churnData] = entries[i];
+        const lines = await blameFile(root, relPath, this.config.logTimeoutMs);
+        this.blameByChurnData.set(churnData, lines);
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, worker));
   }
 
   async buildChunkSignals(

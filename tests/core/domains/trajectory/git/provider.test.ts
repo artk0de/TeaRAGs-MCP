@@ -16,6 +16,7 @@ vi.mock("node:fs", async () => {
 
 vi.mock("../../../../../src/core/adapters/git/client.js", () => ({
   resolveRepoRoot: vi.fn((p: string) => p),
+  blameFile: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../../../../src/core/domains/trajectory/git/infra/file-reader.js", () => ({

@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { FileChurnData } from "../../../../../../../src/core/adapters/git/types.js";
+import type { BlameLine, FileChurnData } from "../../../../../../../src/core/adapters/git/types.js";
 import { assembleFileSignals } from "../../../../../../../src/core/domains/trajectory/git/infra/metrics/file-assembler.js";
 
 describe("assembleFileSignals", () => {
@@ -79,5 +79,40 @@ describe("assembleFileSignals", () => {
     expect(result.taskIds).toContain("TD-123");
     expect(result.taskIds).toContain("TD-456");
     expect(result.taskIds).toHaveLength(2);
+  });
+
+  it("populates line-based ownership when blameLines provided", () => {
+    const churnData: FileChurnData = {
+      commits: [{ sha: "a1", author: "alice", authorEmail: "a@x.com", timestamp: 1700000000, body: "feat" }],
+      linesAdded: 10,
+      linesDeleted: 0,
+    };
+    const blameLines: BlameLine[] = [
+      { lineNumber: 1, sha: "x", author: "Carol", authorEmail: "c@x.com", timestamp: 1700000000 },
+      { lineNumber: 2, sha: "x", author: "Carol", authorEmail: "c@x.com", timestamp: 1700000000 },
+      { lineNumber: 3, sha: "y", author: "Dave", authorEmail: "d@x.com", timestamp: 1700000100 },
+    ];
+    const result = assembleFileSignals(churnData, 10, undefined, undefined, blameLines);
+
+    // Recent activity (commit-based) — alice is sole committer
+    expect(result.dominantAuthor).toBe("alice");
+    // Live-line ownership — carol owns 2/3 of lines, decoupled from commits
+    expect(result.lineDominantAuthor).toBe("Carol");
+    expect(result.lineDominantAuthorPct).toBe(67);
+    expect(result.lineAuthors).toEqual(["Carol", "Dave"]);
+    expect(result.lineContributorCount).toBe(2);
+  });
+
+  it("falls back to unknown line ownership when blameLines is empty", () => {
+    const churnData: FileChurnData = {
+      commits: [{ sha: "a1", author: "alice", authorEmail: "a@x.com", timestamp: 1700000000, body: "feat" }],
+      linesAdded: 1,
+      linesDeleted: 0,
+    };
+    const result = assembleFileSignals(churnData, 10, undefined, undefined, []);
+
+    expect(result.lineDominantAuthor).toBe("unknown");
+    expect(result.lineDominantAuthorPct).toBe(0);
+    expect(result.lineContributorCount).toBe(0);
   });
 });
