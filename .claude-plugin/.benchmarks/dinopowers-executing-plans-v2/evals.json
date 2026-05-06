@@ -1,0 +1,150 @@
+{
+  "skill_name": "dinopowers:executing-plans",
+  "skill_path": ".claude-plugin/dinopowers/skills/executing-plans/SKILL.md",
+  "audit_findings": [
+    {
+      "id": "F1",
+      "summary": "No instruction to invoke tea-rags:data-driven-generation before code-generation Tasks. The skill chains git-signal verdict -> superpowers:executing-plans, but never routes through tea-rags:data-driven-generation, so generated code lacks: (a) strategy selection (DEFENSIVE/STABILIZATION/CONSERVATIVE/STANDARD), (b) template via 'proven' rerank, (c) style copy from dominantAuthor (silo/concentrated). Missing for new files, new functions, new classes."
+    }
+  ],
+  "evals": [
+    {
+      "id": "E1",
+      "category": "audit-F1",
+      "prompt": "Execute Task 3 of the current plan: 'Implement function `extractTaskList()` in new file `src/parser/extractor.ts`'. Describe the exact tool sequence you'll run (do NOT execute) — name each MCP tool / Skill invocation in order with concrete parameters where relevant.",
+      "expected": [
+        "Skill(dinopowers:executing-plans)",
+        "mcp__tea-rags__semantic_search (pre-touch guard, custom rerank imports/churn/ownership, metaOnly=true) OR explicit 'SAFE (new file)' verdict",
+        "Skill(tea-rags:data-driven-generation) — strategy + template + style",
+        "Skill(superpowers:executing-plans) OR Skill(dinopowers:test-driven-development) for actual code creation"
+      ],
+      "must_include": ["tea-rags:data-driven-generation"],
+      "must_not_skip": "data-driven-generation step",
+      "failure_mode": "Agent skips data-driven-generation, jumps straight to executing-plans / TDD wrapper"
+    },
+    {
+      "id": "E2",
+      "category": "audit-F1",
+      "prompt": "Plan Task 5 says: 'Add new method Reranker.computeOverlay() to src/core/domains/explore/reranker.ts'. Start executing this Task. Describe tool sequence.",
+      "expected": [
+        "Skill(dinopowers:executing-plans)",
+        "Pre-touch guard semantic_search on reranker.ts (existing file)",
+        "Skill(tea-rags:data-driven-generation) — new method on existing class still requires style/strategy",
+        "Verdict gate -> chain into superpowers:executing-plans / dinopowers:test-driven-development"
+      ],
+      "must_include": ["tea-rags:data-driven-generation", "semantic_search"],
+      "failure_mode": "Agent runs guard, sees CAUTION, but skips data-driven before edit"
+    },
+    {
+      "id": "E3",
+      "category": "audit-F1",
+      "prompt": "Execute plan Task: 'Create chunker/hooks/elixir/body-chunker.ts from scratch following the pattern of ruby and python hooks'. List the tool sequence in order.",
+      "expected": [
+        "Skill(dinopowers:executing-plans)",
+        "Pre-touch guard: SAFE (new file) — no git history",
+        "Skill(tea-rags:data-driven-generation) — MANDATORY because pattern needs to come from neighbors (ruby/python hooks). Step 3 STYLE will pick dominantAuthor of hooks/ directory.",
+        "Step 5 GENERATE -> chain into superpowers:executing-plans"
+      ],
+      "must_include": ["tea-rags:data-driven-generation"],
+      "failure_mode": "Agent reads ruby/python hooks via Read+Grep manually, skips data-driven, produces unstyled code"
+    },
+    {
+      "id": "E4",
+      "category": "audit-F1",
+      "prompt": "Start Task 7 of refactoring plan: 'Implement DefensiveStrategy class in src/core/domains/explore/strategies/defensive-strategy.ts (new file). Should follow the same shape as existing strategies/standard-strategy.ts.' What tools do you call?",
+      "expected": [
+        "Skill(dinopowers:executing-plans)",
+        "Pre-touch guard verdict",
+        "Skill(tea-rags:data-driven-generation) — Step 2 TEMPLATE will run 'proven' rerank to find battle-tested strategy class shape, Step 3 STYLE for dominantAuthor of strategies/",
+        "Chain into TDD/executing-plans"
+      ],
+      "must_include": ["tea-rags:data-driven-generation"],
+      "failure_mode": "Agent uses tree-sitter/find_symbol manually instead of full data-driven cascade"
+    },
+    {
+      "id": "E5",
+      "category": "control-refactor",
+      "prompt": "Execute Task 2: 'Rename oldName to newName in src/foo.ts and update all 12 callers across the codebase'. Tool sequence?",
+      "expected": [
+        "Skill(dinopowers:executing-plans)",
+        "Pre-touch guard semantic_search on foo.ts (high imports = likely CAUTION)",
+        "Verdict gate",
+        "NO data-driven-generation (pure refactor, no new code)",
+        "Chain into superpowers:executing-plans"
+      ],
+      "must_not_include": ["tea-rags:data-driven-generation"],
+      "must_include": ["semantic_search"],
+      "failure_mode": "Agent invokes data-driven-generation unnecessarily for a rename — wastes context"
+    },
+    {
+      "id": "E6",
+      "category": "control-tiny",
+      "prompt": "Run plan Task: 'Fix typo in error message string in src/errors.ts line 42 — change `recieved` to `received`.' Tools?",
+      "expected": [
+        "Skill(dinopowers:executing-plans)",
+        "Pre-touch guard OR explicit skip (trivial typo, single line) — agent's judgment",
+        "NO data-driven-generation",
+        "Direct Edit"
+      ],
+      "must_not_include": ["tea-rags:data-driven-generation"],
+      "failure_mode": "Agent over-engineers a typo fix"
+    },
+    {
+      "id": "E7",
+      "category": "control-delete",
+      "prompt": "Execute Task: 'Delete deprecated file src/legacy.ts. Verify no remaining imports.' Sequence?",
+      "expected": [
+        "Skill(dinopowers:executing-plans)",
+        "Pre-touch guard semantic_search on legacy.ts — high imports => UNSAFE, low imports => SAFE",
+        "NO data-driven-generation (deletion is not generation)",
+        "ripgrep / semantic_search for remaining imports",
+        "Delete file"
+      ],
+      "must_not_include": ["tea-rags:data-driven-generation"],
+      "failure_mode": "Agent invokes data-driven-generation for a delete operation"
+    },
+    {
+      "id": "E8",
+      "category": "subagent-explore",
+      "prompt": "[You are dispatched as an exploration subagent. You have NO project CLAUDE.md context. You have access to all MCP tools and listed Skills.] Your task from the parent: 'Plan Task 4: add new search-cascade strategy class CascadeStrategy in domains/explore/strategies/cascade-strategy.ts. Execute the Task.' What tools do you invoke and in what order?",
+      "expected": [
+        "Skill(dinopowers:executing-plans)",
+        "Pre-touch guard",
+        "Skill(tea-rags:data-driven-generation) — even without parent CLAUDE.md, the dinopowers:executing-plans SKILL.md must instruct this",
+        "Chain into superpowers/dinopowers:executing-plans"
+      ],
+      "must_include": ["tea-rags:data-driven-generation"],
+      "failure_mode": "Subagent without CLAUDE.md context skips data-driven because skill text alone doesn't make it explicit"
+    },
+    {
+      "id": "E9",
+      "category": "subagent-task-agent",
+      "prompt": "[You are an autonomous task-agent. Beads issue tea-rags-mcp-7xy: 'Write derived signal class BugFixRateSignal extending DerivedSignal in src/core/domains/trajectory/git/rerank/derived-signals/bug-fix-rate.ts (new file). Match shape of existing recency.ts and ownership.ts.' Execute.] Tool sequence?",
+      "expected": [
+        "Skill(dinopowers:executing-plans)",
+        "Pre-touch guard SAFE (new file)",
+        "Skill(tea-rags:data-driven-generation) — MUST trigger for new file with explicit 'match shape of recency.ts/ownership.ts' (style copy)",
+        "Skill(dinopowers:test-driven-development) for tests",
+        "Chain into executing-plans for implementation"
+      ],
+      "must_include": [
+        "tea-rags:data-driven-generation",
+        "dinopowers:test-driven-development"
+      ],
+      "failure_mode": "Autonomous agent reads recency.ts/ownership.ts manually via Read, copies pattern by hand, skips structured data-driven cascade"
+    },
+    {
+      "id": "E10",
+      "category": "edge-russian",
+      "prompt": "выполни план — Task 6: 'переписать legacy auth middleware в src/middleware/auth.ts на новый шаблон, основываясь на стиле новых middleware (request-logger.ts, rate-limiter.ts)'. Какая последовательность инструментов?",
+      "expected": [
+        "Skill(dinopowers:executing-plans) — triggers on 'выполни план'",
+        "Pre-touch guard CAUTION/UNSAFE (legacy auth = high imports + high bugFixRate likely)",
+        "Skill(tea-rags:data-driven-generation) — 'основываясь на стиле новых middleware' is explicit style-copy intent",
+        "Verdict gate, chain"
+      ],
+      "must_include": ["tea-rags:data-driven-generation", "semantic_search"],
+      "failure_mode": "Russian language confuses agent OR agent does style copy manually without data-driven skill"
+    }
+  ]
+}

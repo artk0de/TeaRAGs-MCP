@@ -4,7 +4,9 @@ description:
   USE INSTEAD OF superpowers:executing-plans whenever you are about to execute a
   written plan whose Tasks edit code (Edit/Write/MultiEdit). This wrapper
   queries tea-rags git signals on the files each Task will touch and issues a
-  SAFE/CAUTION/UNSAFE verdict BEFORE any edit, then chains into
+  SAFE/CAUTION/UNSAFE verdict BEFORE any edit, then for code-generation Tasks
+  invokes tea-rags:data-driven-generation to copy style from silo authors and
+  pull strategy + template from proven neighbors, then chains into
   superpowers:executing-plans. Triggers on "execute the plan", "start Task N",
   "выполни план", "начни задачу", "run the plan", "implement the plan steps".
   Always prefer this over superpowers:executing-plans for any multi-file plan.
@@ -53,6 +55,13 @@ Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
 - `dinopowers:verification-before-completion`
 - `dinopowers:writing-plans`
 - `dinopowers:writing-skills`
+
+Plus the cross-plugin chain for code generation:
+
+- `tea-rags:data-driven-generation` — invoked from Step 5 below for any Task
+  that GENERATES code (new files, new functions, new classes, rewrites). Pulls
+  strategy, template, and silo-author style. Not a `superpowers:Y` redirect —
+  it's an additional MANDATORY step the wrapper inserts.
 
 Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
 imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
@@ -171,6 +180,55 @@ may chain into `superpowers:test-driven-development`,
 `superpowers:finishing-a-development-branch`. Redirect each to the corresponding
 `dinopowers:Y` wrapper — see the Chaining rule section above.
 
+## Step 5 — Code-Gen Cascade (MANDATORY for code-generation Tasks)
+
+After verdict gate clears (SAFE proceeds, CAUTION confirmed, UNSAFE overridden),
+classify the Task by intent BEFORE invoking `superpowers:executing-plans`.
+
+| Task intent                                                                                              | Action                                                                         |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **Generation**: new file, new function, new class, new method on existing class, rewrite-to-new-template | **MUST** invoke `Skill(tea-rags:data-driven-generation)` BEFORE any Edit/Write |
+| **Refactor only**: rename, move, extract, inline, reformat — no new logic                                | Skip Step 5 — no template/style needed                                         |
+| **Modification only**: change behavior in-place (bug fix, condition tweak, log message)                  | Skip Step 5 — agent edits in-context, no new pattern                           |
+| **Deletion**: remove file, remove function, prune dead code                                              | Skip Step 5 — no generation                                                    |
+| **Trivial**: typo, comment update, single-token swap                                                     | Skip Step 5 AND skip wrapper entirely — direct Edit                            |
+
+Why MANDATORY for generation: without `tea-rags:data-driven-generation` the
+agent generates code disconnected from project conventions. It misses:
+
+- **Strategy selection** — DEFENSIVE for buggy zones, STABILIZATION for
+  high-churn, CONSERVATIVE for legacy, STANDARD elsewhere. Reading SKILL.md text
+  alone won't trigger this — only the data-driven skill encodes the
+  label-to-strategy ladder.
+- **Template via "proven" rerank** — battle-tested code (long-lived, low-churn,
+  low-bug, multi-author) found via custom weights
+  `{similarity 0.2, stability 0.3, age 0.3, bugFix -0.15, ownership -0.05}`.
+  Manual `Read` of one sibling file picks an arbitrary example, not a proven
+  one.
+- **Silo-author style copy** — when `dominantAuthorPct ≥ 95%` the data-driven
+  skill instructs exact pattern match AND flags owner for review. Manual style
+  copy via Read skips the silo signal entirely.
+
+How to invoke (one Skill call, no parameters needed — the skill reads area
+context from this conversation):
+
+```
+Skill(tea-rags:data-driven-generation)
+```
+
+If `tea-rags:data-driven-generation` reports it lacks area context (no overlay
+labels in conversation), it will internally chain to `tea-rags:explore` for
+pre-generation gathering. Let it. Do NOT pre-fetch labels yourself — the skill
+owns that workflow.
+
+After Step 5 returns (strategy + template + style decided), THEN invoke
+`Skill(superpowers:executing-plans)` (or its TDD onward chain via
+`Skill(dinopowers:test-driven-development)`) to actually write the code.
+
+**Order matters:** guard (Step 2) → verdict gate (Step 4) → data-driven cascade
+(Step 5) → executing-plans chain. Skipping Step 5 for a generation Task is the
+same severity as skipping the guard for an existing-file Task.
+
 ## Red Flags — STOP and restart from Step 2
 
 - "This Task is small, skip the guard" → if `taskFileList` has ≥1 existing file,
@@ -192,14 +250,24 @@ may chain into `superpowers:test-driven-development`,
   `superpowers:finishing-a-development-branch` without redirecting to the
   `dinopowers:Y` wrapper → intercept and invoke the wrapper instead (see
   Chaining rule)
+- Generation Task ran straight to `Read sibling.ts` + `Write new.ts` without
+  invoking `Skill(tea-rags:data-driven-generation)` → revert (or pause before
+  Edit), restart from Step 5. Manual sibling-Read is exactly what the
+  data-driven skill replaces with structured strategy + proven template + silo
+  style.
+- Invoked `tea-rags:data-driven-generation` for a pure refactor (rename, move,
+  extract) → over-trigger; it adds no value when no new code is being written.
+  Restart from Step 5 classification; refactor row says SKIP.
 
 ## Common Mistakes
 
-| Mistake                                                              | Reality                                                                                              |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| One guard call per plan (not per Task)                               | `dinopowers:writing-plans` does per-plan. This wrapper is per-Task — scope matches edit granularity. |
-| Use `rerank: "codeReview"` because "review before edit" sounds right | `codeReview` lacks `imports` weight — blast-radius invisible                                         |
-| Emit the guard block and proceed without gating                      | The block is not documentation — it's a circuit breaker. CAUTION waits for confirmation.             |
-| Treat UNSAFE as "just a warning"                                     | UNSAFE pauses. User must explicitly override before edits.                                           |
-| Pre-fetch ALL plan files in one guard at plan start                  | Context stale by the time Task 5 runs. Guard is per-Task, just-in-time.                              |
-| Invoke `superpowers:executing-plans` for the whole plan at once      | Wrapper is per-Task — gate each Task separately                                                      |
+| Mistake                                                               | Reality                                                                                                                                             |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One guard call per plan (not per Task)                                | `dinopowers:writing-plans` does per-plan. This wrapper is per-Task — scope matches edit granularity.                                                |
+| Use `rerank: "codeReview"` because "review before edit" sounds right  | `codeReview` lacks `imports` weight — blast-radius invisible                                                                                        |
+| Emit the guard block and proceed without gating                       | The block is not documentation — it's a circuit breaker. CAUTION waits for confirmation.                                                            |
+| Treat UNSAFE as "just a warning"                                      | UNSAFE pauses. User must explicitly override before edits.                                                                                          |
+| Pre-fetch ALL plan files in one guard at plan start                   | Context stale by the time Task 5 runs. Guard is per-Task, just-in-time.                                                                             |
+| Invoke `superpowers:executing-plans` for the whole plan at once       | Wrapper is per-Task — gate each Task separately                                                                                                     |
+| For new-file Task: `Read sibling.ts` then `Write new.ts` directly     | Skips Step 5. Sibling-by-Read picks arbitrary example, ignores `bugFixRate`/`dominantAuthor` signals. Use `Skill(tea-rags:data-driven-generation)`. |
+| Generation Task → guard SAFE (new file) → straight to executing-plans | SAFE (new file) only resolves blast-radius gate. Step 5 is a SEPARATE gate — strategy + template + style still needed. Both gates must clear.       |
