@@ -209,4 +209,48 @@ describe("assembleChunkSignals", () => {
     const result = assembleChunkSignals(acc, 10, undefined, 50);
     expect(result.taskIds).toEqual([]);
   });
+
+  it("populates line-based ownership when ownership argument is provided", () => {
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a"]),
+      authors: new Set(["alice"]),
+      bugFixCount: 0,
+      lastModifiedAt: Date.now() / 1000,
+      linesAdded: 5,
+      linesDeleted: 0,
+      commitTimestamps: [Date.now() / 1000],
+      commitAuthors: ["alice"],
+      taskIds: new Set(),
+    };
+    const result = assembleChunkSignals(acc, 1, undefined, 5, undefined, {
+      lineDominantAuthor: "Carol",
+      lineDominantAuthorPct: 80,
+      lineAuthors: ["Carol", "Bob"],
+      lineContributorCount: 2,
+    });
+
+    expect(result.lineDominantAuthor).toBe("Carol");
+    expect(result.lineDominantAuthorPct).toBe(80);
+    expect(result.lineAuthors).toEqual(["Carol", "Bob"]);
+    expect(result.lineContributorCount).toBe(2);
+  });
+
+  it("falls back to unknown line ownership when ownership omitted", () => {
+    const acc: ChunkAccumulator = {
+      commitShas: new Set(["a"]),
+      authors: new Set(["alice"]),
+      bugFixCount: 0,
+      lastModifiedAt: Date.now() / 1000,
+      linesAdded: 5,
+      linesDeleted: 0,
+      commitTimestamps: [Date.now() / 1000],
+      commitAuthors: ["alice"],
+      taskIds: new Set(),
+    };
+    const result = assembleChunkSignals(acc, 1, undefined, 5);
+
+    expect(result.lineDominantAuthor).toBe("unknown");
+    expect(result.lineDominantAuthorPct).toBe(0);
+    expect(result.lineContributorCount).toBe(0);
+  });
 });

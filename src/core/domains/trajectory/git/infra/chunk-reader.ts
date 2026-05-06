@@ -10,10 +10,11 @@ import { structuredPatch } from "diff";
 import git from "isomorphic-git";
 
 import { getCommitsByPathspec, readBlobAsString } from "../../../../adapters/git/client.js";
-import type { CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
+import type { BlameLine, CommitInfo, FileChurnData } from "../../../../adapters/git/types.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkChurnOverlay } from "../types.js";
+import { computeBlameOwnership } from "./blame-ownership.js";
 import type { GitEnrichmentCache } from "./cache.js";
 import { buildBugFixShaSet } from "./merge-branch-resolver.js";
 import { isBugFixCommitOrBranch, type ChunkAccumulator, type SquashOptions } from "./metrics.js";
@@ -51,6 +52,7 @@ export async function buildChunkChurnMap(
   maxFileLines = MAX_FILE_LINES_DEFAULT,
   externalSemaphore?: ChunkConcurrencySemaphore,
   skipCache = false,
+  blameByPath?: Map<string, BlameLine[]>,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   if (!skipCache) {
     const cached = await enrichmentCache.getChunkChurn(repoRoot);
@@ -68,6 +70,7 @@ export async function buildChunkChurnMap(
     chunkTimeoutMs,
     maxFileLines,
     externalSemaphore,
+    blameByPath,
   );
 
   if (!skipCache) {
@@ -88,6 +91,7 @@ export async function buildChunkChurnMapUncached(
   chunkTimeoutMs = 120000,
   maxFileLines = MAX_FILE_LINES_DEFAULT,
   externalSemaphore?: ChunkConcurrencySemaphore,
+  blameByPath?: Map<string, BlameLine[]>,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
   // Build relative path → entries lookup (chunkMap keys may be absolute paths)
   // Also filter: only files with >1 chunk benefit from chunk-level analysis
@@ -367,6 +371,16 @@ export async function buildChunkChurnMapUncached(
       fileCommitCount = Math.max(fileCommitShas.size, 1);
     }
 
+    // Compute chunk-level line ownership from blame for this file's chunk ranges.
+    const blameLines = blameByPath?.get(relPath);
+    const chunkOwnerships =
+      blameLines && blameLines.length > 0
+        ? computeBlameOwnership(
+            blameLines,
+            entries.map((e) => ({ chunkId: e.chunkId, startLine: e.startLine, endLine: e.endLine })),
+          ).chunks
+        : null;
+
     const overlayMap = new Map<string, ChunkChurnOverlay>();
 
     for (const entry of entries) {
@@ -375,7 +389,14 @@ export async function buildChunkChurnMapUncached(
       const chunkLineCount = entry.endLine - entry.startLine + 1;
       overlayMap.set(
         entry.chunkId,
-        assembleChunkSignals(acc, fileCommitCount, fileContributorCount, chunkLineCount, squashOpts),
+        assembleChunkSignals(
+          acc,
+          fileCommitCount,
+          fileContributorCount,
+          chunkLineCount,
+          squashOpts,
+          chunkOwnerships?.get(entry.chunkId),
+        ),
       );
     }
 

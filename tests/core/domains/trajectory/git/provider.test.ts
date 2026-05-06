@@ -109,6 +109,7 @@ describe("GitEnrichmentProvider", () => {
         10000, // chunkMaxFileLines (default)
         undefined, // externalSemaphore (not passed when no options)
         undefined, // skipCache (not passed when no options)
+        expect.any(Map), // blameByPath populated by populateBlameMap
       );
     });
   });

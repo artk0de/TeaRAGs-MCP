@@ -6,6 +6,7 @@
  */
 
 import type { ChunkChurnOverlay } from "../../types.js";
+import type { BlameOwnership } from "../blame-ownership.js";
 import { SMOOTHING_ALPHA, type ChunkAccumulator, type SquashOptions } from "../metrics.js";
 import { groupTimestampsIntoSessions } from "./sessions.js";
 
@@ -15,6 +16,7 @@ export function assembleChunkSignals(
   fileContributorCount?: number,
   chunkLineCount?: number,
   squashOpts?: SquashOptions,
+  ownership?: BlameOwnership,
 ): ChunkChurnOverlay {
   const nowSec = Date.now() / 1000;
   const totalChurn = acc.linesAdded + acc.linesDeleted;
@@ -76,10 +78,10 @@ export function assembleChunkSignals(
     changeDensity,
     churnVolatility: Math.round(churnVolatility * 100) / 100,
     taskIds: Array.from(acc.taskIds),
-    // Line-based ownership defaults — populated with real blame data in pipeline wire-in (Task 4).
-    lineDominantAuthor: "unknown",
-    lineDominantAuthorPct: 0,
-    lineAuthors: [],
-    lineContributorCount: 0,
+    // Line-based ownership: from blame ownership for this chunk's range when provided.
+    lineDominantAuthor: ownership?.lineDominantAuthor ?? "unknown",
+    lineDominantAuthorPct: ownership?.lineDominantAuthorPct ?? 0,
+    lineAuthors: ownership?.lineAuthors ?? [],
+    lineContributorCount: ownership?.lineContributorCount ?? 0,
   };
 }

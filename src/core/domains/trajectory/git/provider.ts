@@ -65,6 +65,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   /** Blame results keyed by FileChurnData identity — populated in buildFileSignals,
    *  consumed in fileSignalTransform. WeakMap auto-cleans when churnData is GC'd. */
   private readonly blameByChurnData = new WeakMap<FileChurnData, BlameLine[]>();
+  /** Blame results keyed by relative path — passed into buildChunkChurnMap so
+   *  chunk overlays receive per-range line ownership. Same blame pass as file-level. */
+  private blameByRelPath: Map<string, BlameLine[]> = new Map();
 
   constructor(config?: Partial<GitProviderConfig>, squashOpts?: SquashOptions) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config };
@@ -143,16 +146,19 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     const entries = Array.from(rawData.entries());
     let cursor = 0;
 
+    const byPath = new Map<string, BlameLine[]>();
     const worker = async (): Promise<void> => {
       while (cursor < entries.length) {
         const i = cursor++;
         const [relPath, churnData] = entries[i];
         const lines = await blameFile(root, relPath, this.config.logTimeoutMs);
         this.blameByChurnData.set(churnData, lines);
+        byPath.set(relPath, lines);
       }
     };
 
     await Promise.all(Array.from({ length: Math.min(concurrency, entries.length) }, worker));
+    this.blameByRelPath = byPath;
   }
 
   async buildChunkSignals(
@@ -173,6 +179,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
       this.config.chunkMaxFileLines,
       options?.concurrencySemaphore,
       options?.skipCache,
+      this.blameByRelPath,
     );
 
     const result = new Map<string, Map<string, ChunkSignalOverlay>>();
