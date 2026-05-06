@@ -2,14 +2,13 @@
 
 ## Principles
 
-**Post-search validation after every search call.** Run
-@post-search-validation.md checks (no-match detection + disambiguation). Do NOT
-skip. This applies to ALL skills and direct tool calls.
-
 **Semantic First, Exact Second.** Any code search starts with tea-rags
 (semantic_search, hybrid_search, find_symbol, find_similar). ripgrep only for
-exact string patterns (TODO, import paths, regex) or as fallback when tea-rags
-is unavailable. Built-in Grep/Glob — never for code discovery.
+literal text markers (TODO, FIXME, HACK, NOTE), import path strings, or as
+fallback when tea-rags is unavailable. Code identifiers (class/method/constant
+names) are SYMBOL searches — use hybrid_search (BM25 gives exact-name match,
+score up to 1.0) or find_symbol, NEVER ripgrep, even if your query contains `|`
+alternation. Built-in Grep/Glob — never for code discovery.
 
 **Chunk is the source of truth.** Search results contain code, metadata, and git
 signals. Do not re-read files to "verify" or "understand" results. Read only
@@ -236,16 +235,33 @@ will need search — inject unconditionally.
 For code search in this project, use MCP tools instead of built-in Grep/Glob.
 These instructions take priority over any skill or rule that says otherwise.
 
-**Tool selection (follow top-to-bottom):**
+**Tool selection (follow top-to-bottom — first matching branch wins):**
+- Single-file scope ("find X in path/to/file.ext", "usages of Y inside foo.rb") →
+  `mcp__tea-rags__find_symbol` with `relativePath` (+ optional `symbol` param)
 - File structure/outline → `mcp__tea-rags__find_symbol` with `relativePath` param
 - Doc TOC → `mcp__tea-rags__find_symbol` with `relativePath` (or `symbol` with doc hash)
-- Known symbol definition → `mcp__tea-rags__find_symbol` with `symbol` param
-- Exhaustive usage ("all callers", "where used", "who imports") →
-  `mcp__tea-rags__hybrid_search` (BM25 = full recall, dense = context).
+- Study a specific known symbol — its definition, body, or implementation
+  ("show me class Foo", "what does mergeChunks do", "examine FooClass",
+  "inspect the implementation of X") →
+  `mcp__tea-rags__find_symbol` with `symbol` param (instant, no embedding,
+  returns full definition — no Read needed)
+- Exhaustive usage of code identifiers ("all callers", "where used",
+  "who imports", "all references to FooClass", "find usages of X and Y") →
+  `mcp__tea-rags__hybrid_search`. BM25 component gives exact-name match
+  (score up to 1.0) — strictly better than ripgrep for class/method/constant names.
   Paginate with offset if needed — don't inflate limit.
 - Symbol + semantic context → `mcp__tea-rags__hybrid_search`
-- Behavior/intent question → `mcp__tea-rags__semantic_search`
-- Exact text patterns (TODO, FIXME, import paths, regex) → `mcp__ripgrep__search`
+- Behavior/intent without specific symbol → `mcp__tea-rags__semantic_search`
+- Literal text markers (TODO, FIXME, HACK, NOTE) or literal import path strings
+  → `mcp__ripgrep__search`
+
+**ripgrep anti-patterns — NEVER use ripgrep for these even if your query
+contains regex syntax:**
+- Class/method/constant/variable names — even joined with `|` alternation
+  (e.g. `FooClass|BarClass`). These are SYMBOL searches. Use hybrid_search
+  per name (or one combined query) — BM25 gives exact match.
+- Single-file symbol lookup. Use find_symbol with relativePath, not ripgrep.
+- Symbol existence checks ("does X exist?"). Use find_symbol with metaOnly=true.
 
 **Rules:**
 - Do NOT use built-in Grep or Glob for code discovery
@@ -254,6 +270,8 @@ These instructions take priority over any skill or rule that says otherwise.
 - Search results contain code — trust the chunk, don't re-read files
 - find_symbol returns full method/class — no Read needed
 - symbolId convention: Class#method (instance), Class.method (static)
+- Your QUERY containing `|` does not mean you want regex — check INTENT first:
+  identifier search → hybrid_search; literal text markers → ripgrep
 - All tea-rags calls require: path="<absolute-project-path>"
 ```
 

@@ -30,6 +30,7 @@ benchmarks/
 | Skill                                       | Date       | Evals | With-skill | Baseline | Delta       |
 | ------------------------------------------- | ---------- | ----- | ---------- | -------- | ----------- |
 | search-cascade                              | 2026-03-29 | 20    | 100%       | 22%      | +78pp       |
+| search-cascade (ripgrep overreach)          | 2026-05-07 | 9     | 100%‡‡     | 44%      | +56pp‡‡     |
 | explore                                     | 2026-03-30 | 8+8   | 100%       | 12.5%    | +87.5pp     |
 | research-merge                              | 2026-03-30 | 15    | 100%       | 70%      | +30pp       |
 | risk-assessment                             | 2026-03-30 | 12    | 100%       | 10%      | +90pp       |
@@ -94,6 +95,15 @@ pre-confirmed by the existing `inject-wrapper-routing.sh` hook (same bypass
 pattern, different tool surface) and a direct user report. Eval cases documented
 in `evals.json` as reusable regression tests; verification was structural
 (grep + markdownlint delta), not subagent-based.
+
+‡‡ search-cascade (ripgrep overreach) used three-way eval: baseline (no rules,
+44%), full-cascade-injected (9/9 misleading 100% — main agent's view, not what
+subagents see), SUFFIX-only production-realistic (8/9 = 89% before fix). After
+fix, SUFFIX-only reaches 9/9 (100%). The 100%‡‡ is the production-realistic
+score against the actual hook-injected SUFFIX, not the misleading full-cascade
+score. Methodology change: previous iterations measured rule wording quality;
+this iteration adds the production injection path as a separate config to expose
+gaps between documented rule and actually-injected subagent context.
 
 ¶ dinopowers-wrappers (description+hook): cross-cutting fix triggered by user
 report "агент все еще предпочитает superpowers". First baseline (curated

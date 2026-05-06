@@ -162,6 +162,137 @@ Evals: `evals/chunk-grouping-evals.json`
 
 ---
 
+## Iteration 6 — Ripgrep Overreach (2026-05-07)
+
+Context: production transcript showed subagent in foreign repo using ripgrep for
+class/constant/method-name searches with `Foo|Bar|Baz` regex alternation. Iter-5
+evals (10/10 PASS) did not catch the regression because they tested rule wording
+in isolation, not the production injection path (enforce-tearags-search.sh
+SUFFIX, which is the ONLY thing real subagents see).
+
+Evals: `evals/2026-05-07-ripgrep-overreach-evals.json`
+
+### Audit Findings (4 candidate, 1 confirmed)
+
+| #       | Finding                                                                                                                      | Status                                                                                                         |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| FM1     | "regex" in ripgrep allowlist causes false positives for `\|`-joined identifiers (search-cascade + enforce-tearags-search.sh) | Not reproduced; proactive fix                                                                                  |
+| FM2     | No negative prohibitions for ripgrep on class/method/constant names                                                          | Not reproduced; proactive fix                                                                                  |
+| FM3     | enforce-tearags-search.sh SUFFIX missing single-file find_symbol branch — agent picks ripgrep for in-file constant lookup    | **Confirmed (Case 3 FAIL)**                                                                                    |
+| FM4     | BM25 exact-match capability of hybrid_search not surfaced strongly enough                                                    | Not reproduced; phrasing already adequate                                                                      |
+| ~~FM5~~ | Session Start protocol non-firing in Opus 4.7                                                                                | **Out of scope** — already delivered via SessionStart hook (inject-rules.sh); compliance issue, not text issue |
+
+### Three-way eval methodology (NEW — addresses iter-5 measurement gap)
+
+This iteration uses three eval configurations to separate optimistic
+self-evaluation from realistic production behavior:
+
+| Config                    | Context injected                                            | Role                                                   |
+| ------------------------- | ----------------------------------------------------------- | ------------------------------------------------------ |
+| `baseline_no_rules`       | None (only MCP tool list)                                   | Floor — natural intuition                              |
+| `before_fix_full_cascade` | Full search-cascade.md + post-search-validation.md + SUFFIX | Over-optimistic — main agent's view                    |
+| `before_fix_suffix_only`  | Only enforce-tearags-search.sh SUFFIX                       | **Production-realistic** — what subagents actually see |
+| `after_fix_suffix_only`   | New SUFFIX after fix                                        | Verification                                           |
+
+The full-cascade config gives a misleading 100% — the rule appears to work, but
+real subagents never see search-cascade.md (only the hook-injected SUFFIX). The
+suffix-only config exposed FM3.
+
+### Results
+
+| Config                      | Pass Rate      | Delta vs Baseline  |
+| --------------------------- | -------------- | ------------------ |
+| Baseline (no rules)         | 4/9 (44%)      | —                  |
+| Before fix — full cascade   | 9/9 (100%)     | +56pp (misleading) |
+| Before fix — SUFFIX only    | 8/9 (89%)      | +45pp              |
+| **After fix — SUFFIX only** | **9/9 (100%)** | **+56pp**          |
+
+### Per-Eval Detail
+
+| #   | Task                                     | Baseline                    | Before (SUFFIX)    | After (SUFFIX)                    |
+| --- | ---------------------------------------- | --------------------------- | ------------------ | --------------------------------- |
+| 1   | Class rename — find callers of old + new | ❌ search_code with `\|`    | ✅ hybrid_search   | ✅ hybrid_search                  |
+| 2   | Multi-name constants + method            | ❌ ripgrep with `\|`        | ✅ hybrid_search   | ✅ hybrid_search                  |
+| 3   | Single-file constant scope               | ❌ built-in Grep            | **❌ ripgrep**     | **✅ find_symbol(relativePath:)** |
+| 4   | BM25 awareness — class callers           | ❌ find_symbol (wrong tool) | ✅ hybrid_search   | ✅ hybrid_search                  |
+| 5   | Two class identifiers with `\|` syntax   | ❌ ripgrep `\|` literal     | ✅ hybrid_search   | ✅ hybrid_search                  |
+| 6   | Control — TODO/FIXME markers             | ✅ ripgrep                  | ✅ ripgrep         | ✅ ripgrep                        |
+| 7   | Control — literal import path            | ✅ ripgrep                  | ✅ ripgrep         | ✅ ripgrep                        |
+| 8   | Control — known symbol definition        | ✅ find_symbol              | ✅ find_symbol     | ✅ find_symbol                    |
+| 9   | Control — behavioral intent              | ✅ semantic_search          | ✅ semantic_search | ✅ semantic_search                |
+
+### Changes Made
+
+#### `.claude-plugin/tea-rags/scripts/enforce-tearags-search.sh` (49 → 70 lines)
+
+Real subagent injection point. SUFFIX rewrite:
+
+- **Added** "Single-file scope" branch as FIRST matching rule — closes FM3
+- **Replaced** "Known symbol definition" with broader "Study a specific known
+  symbol — its definition, body, or implementation" with new keywords
+  (examine/inspect) per user feedback that routing must be explicit for
+  symbol-study intent
+- **Added** "ripgrep anti-patterns" section: explicit prohibition for class /
+  method / constant / variable names with `|` alternation
+- **Replaced** "Exact text patterns (TODO, FIXME, import paths, regex)" with
+  "Literal text markers (TODO, FIXME, HACK, NOTE) or literal import path
+  strings" — removes "regex" trigger word that caused FM1 false positives
+- **Strengthened** BM25 description: "exact-name match (score up to 1.0) —
+  strictly better than ripgrep for class/method/constant names"
+- **Added** rule: "Your QUERY containing `|` does not mean you want regex —
+  check INTENT first"
+
+#### `.claude-plugin/tea-rags/rules/search-cascade.md` (355 → 377 lines)
+
+Mirrors SUFFIX changes for parent-agent reference. Three sections updated:
+
+1. **Principles** — reformulated "Semantic First, Exact Second" to remove
+   "regex" trigger and add explicit "code identifiers are SYMBOL searches" rule
+2. **Subagent Search Injection block** — synced with new SUFFIX content; both
+   files now share the same canonical rule text
+3. **Single-file scope branch** — new first matching branch in tool-selection
+   list
+
+#### `.claude-plugin/tea-rags/.claude-plugin/plugin.json`
+
+Version bump 0.15.1 → 0.15.2 (patch — text changes to existing rules per
+plugin-versioning rule).
+
+### Key Design Decisions
+
+1. **Three-way eval over two-way** — iter-5 used `with-rule + baseline`. That
+   measures wording quality but misses the production gap: real subagents only
+   see the SUFFIX, not full search-cascade.md. Three configs (baseline +
+   full-cascade + SUFFIX-only) make the gap visible.
+
+2. **Strict triage discipline** — eval said only FM3 reproduced. FM1/2/4 still
+   patched proactively because production transcript provided independent
+   evidence; eval prompts were too clean to reproduce reasoning-chain pollution
+   that triggered FM1 in production.
+
+3. **Lockstep fix between hook script and rule doc** — hook script is the
+   authoritative subagent context; rule doc must mirror it 1:1 or parent agents
+   will reason from out-of-sync rules. Both files share the same canonical rule
+   text now.
+
+4. **FM5 declared out-of-scope** — Session Start protocol non-firing in Opus 4.7
+   is a compliance issue (agent ignores delivered rule), not a text issue.
+   inject-rules.sh hook already delivers the rule. Separate concern, separate
+   fix path (potentially: stronger imperative phrasing, or rule restructure to
+   reduce competition with other system reminders).
+
+### Lessons for Future Iterations
+
+- Always eval the **production injection path**, not just the documented rule.
+  The hook script SUFFIX is the source of truth for subagent behavior.
+- "PASS in eval" doesn't mean "won't fail in production" — clean eval prompts
+  may not reproduce reasoning-chain pollution. Use independent evidence (real
+  transcripts) as a sanity check before declaring findings closed.
+- When two files (hook script + rule doc) share text content, fix them in
+  lockstep or document which is authoritative.
+
+---
+
 ## Iteration 5 — Mid-Session Reindex (2026-04-05)
 
 Context: Agent modifies code (Write/Edit), then searches with tea-rags for a new

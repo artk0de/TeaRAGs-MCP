@@ -1,0 +1,216 @@
+{
+  "skill_name": "search-cascade",
+  "iteration": "ripgrep-overreach",
+  "date": "2026-05-07",
+  "context": "Subagent in foreign repo (Ruby) used ripgrep for class/constant/method-name searches with regex alternation pattern (Foo|Bar|Baz). Existing iter-5 evals (10/10 PASS) did not catch this regression. Four failure modes identified spanning search-cascade.md AND scripts/enforce-tearags-search.sh (the actual subagent inject hook).",
+  "audit_findings": {
+    "FM1": "'regex' trigger word in ripgrep allowlist causes false positives — agent sees `|` in query and routes to ripgrep regardless of intent. Lives in BOTH search-cascade.md:248 AND enforce-tearags-search.sh:29 — must fix in lockstep.",
+    "FM2": "Subagent Search Injection block has positive ripgrep cases but no negative prohibitions — no 'ripgrep NEVER for class/method/constant names'. Both files affected.",
+    "FM3": "Real subagent prompt receives only enforce-tearags-search.sh SUFFIX (~20 lines), NOT search-cascade.md content. SUFFIX lacks intent examples and negative cases — must be self-contained.",
+    "FM4": "BM25 exact-match capability of hybrid_search (score up to 1.0) not surfaced in either file — agent picks ripgrep when wanting 'exact' match for code identifiers."
+  },
+  "out_of_scope": "FM5 (Session Start protocol non-firing in Opus 4.7) — already delivered via SessionStart hook (inject-rules.sh). Compliance gap, not text gap. Separate concern.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "subagent-class-rename-alternation",
+      "audit_finding": "FM1",
+      "prompt": "[subagent: code-review] Parent renamed class ConvertLinksToAutomoved to Links::ConvertToAutomoved. Find all callers of either old or new name across the codebase.",
+      "expected": "hybrid_search per name (or one query 'ConvertLinksToAutomoved Links::ConvertToAutomoved'). NOT mcp__ripgrep__search with `ConvertLinksToAutomoved|Links::ConvertToAutomoved` pattern.",
+      "failure_mode": "Agent sees 2 class names → constructs regex alternation → routes to ripgrep because rule says 'regex → ripgrep'. Misses that intent is 'exhaustive usage of symbol' which is hybrid_search territory.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "FAIL",
+          "reason": "Picked search_code with regex alternation — no rule to redirect"
+        },
+        "before_fix_full_cascade": {
+          "grade": "PASS",
+          "reason": "Full cascade has Prohibited Patterns block — over-optimistic"
+        },
+        "before_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Phrasing 'find all callers' triggered Exhaustive usage branch correctly"
+        },
+        "after_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Confirmed via explicit anti-pattern: 'ripgrep with `|` on class names'"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "subagent-constant-multi-name",
+      "audit_finding": "FM2",
+      "prompt": "[subagent: task-agent] Find all references to RENAMED_MAPPINGS_DIR, RENAMED_MAPPINGS, and renamed_mappings in the codebase. They are constants and a method.",
+      "expected": "hybrid_search per name (or combined). NOT ripgrep with `RENAMED_MAPPINGS_DIR|RENAMED_MAPPINGS|renamed_mappings` pattern.",
+      "failure_mode": "Three identifier names → looks like grep job → ripgrep. No explicit prohibition in Subagent Injection block triggers correction.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "FAIL",
+          "reason": "Picked ripgrep with `|` alternation pattern"
+        },
+        "before_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "'all references' phrasing matched Exhaustive usage branch"
+        },
+        "after_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Anti-pattern citation: 'ripgrep on identifier names is anti-pattern'"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "subagent-single-file-symbol",
+      "audit_finding": "FM3",
+      "prompt": "[subagent: explore] Find all usages of TRIGGER_KINDS constant inside the file app/models/workflow/task.rb only.",
+      "expected": "find_symbol(symbol: 'TRIGGER_KINDS', relativePath: 'app/models/workflow/task.rb') OR find_symbol(relativePath: 'app/models/workflow/task.rb') for outline. NOT mcp__ripgrep__search.",
+      "failure_mode": "Single-file scope + bare constant name → agent thinks 'small scope, exact match → ripgrep'. Subagent block lacks single-file find_symbol guidance.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "FAIL",
+          "reason": "Picked built-in Grep — worst case"
+        },
+        "before_fix_suffix_only": {
+          "grade": "FAIL",
+          "reason": "REPRODUCED — picked ripgrep, citing 'Exact text patterns' branch for single-file constant lookup"
+        },
+        "after_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "FIXED — Single-file scope is now first matching branch in rule"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "bm25-exact-match-awareness",
+      "audit_finding": "FM4",
+      "prompt": "Find all callers of class PaymentProcessor in this TypeScript project. I need exact symbol-name matches, not semantic similarity.",
+      "expected": "hybrid_search query='PaymentProcessor' (rule must surface that BM25 component gives exact-name match score up to 1.0). NOT ripgrep.",
+      "failure_mode": "User says 'exact match, not semantic' → agent picks ripgrep because hybrid_search description sounds 'semantic'. Rule must explicitly say BM25 inside hybrid_search = exact match.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "FAIL",
+          "reason": "Picked find_symbol — returns definition, not callers"
+        },
+        "before_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Existing 'BM25 = full recall' phrasing was sufficient"
+        },
+        "after_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Stronger phrasing 'BM25 exact-name match up to 1.0 — strictly better than ripgrep'"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "name": "subagent-class-name-with-pipe-syntax",
+      "audit_finding": "FM1",
+      "prompt": "[subagent: explore] Find usages of Authenticator|TokenValidator (two adjacent classes that often appear together).",
+      "expected": "hybrid_search per class name (2 calls or one combined). NOT mcp__ripgrep__search with the literal `Authenticator|TokenValidator` pattern.",
+      "failure_mode": "User wrote `|` syntax in their query → agent reads it as 'literal regex request' → ripgrep. Must distinguish: query syntax !== intent. Bare class names = symbol search.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "FAIL",
+          "reason": "Picked ripgrep with `|` literal — natural intuition without rule"
+        },
+        "before_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Agent correctly interpreted `|` as 'two symbols' due to BM25 context"
+        },
+        "after_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Explicit anti-pattern reinforced: 'ripgrep `|` on class names forbidden'"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "name": "control-todo-marker",
+      "audit_finding": "control",
+      "prompt": "Find all TODO and FIXME comments in src/core/.",
+      "expected": "mcp__ripgrep__search with pattern 'TODO|FIXME' in path src/core/. This IS the legitimate ripgrep use case.",
+      "failure_mode": "Agent overcorrects after fix and routes literal TODO/FIXME to tea-rags. Must keep ripgrep allowlist intact for actual literal markers.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS", "reason": "Natural fit" },
+        "before_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Explicit ripgrep case"
+        },
+        "after_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "TODO/FIXME canonical — no overcorrection"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "name": "control-import-path-string",
+      "audit_finding": "control",
+      "prompt": "Find all files that have `from \"./contracts/errors.js\"` import statement.",
+      "expected": "mcp__ripgrep__search for the literal import string. Legitimate ripgrep — exact path string in code.",
+      "failure_mode": "Over-restricting ripgrep would break this case. Import path strings stay in ripgrep territory.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS", "reason": "Natural fit" },
+        "before_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Import paths in allowlist"
+        },
+        "after_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Literal import path string preserved"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "name": "control-known-symbol-definition",
+      "audit_finding": "control",
+      "prompt": "Show me the implementation of the Reranker class.",
+      "expected": "find_symbol(symbol: 'Reranker'). NO Read needed — find_symbol returns full definition. NOT ripgrep, NOT hybrid_search.",
+      "failure_mode": "Regression check — known symbol stays on find_symbol path.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS", "reason": "Natural fit" },
+        "before_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Known symbol branch"
+        },
+        "after_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Known symbol definition — no regression"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "name": "control-behavioral-intent",
+      "audit_finding": "control",
+      "prompt": "Find code that handles retry logic after embedding API failures.",
+      "expected": "semantic_search query='retry logic embedding failure'. Intent-based, no specific symbol name.",
+      "failure_mode": "Regression check — pure intent queries stay on semantic_search.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "PASS",
+          "reason": "Natural fit — semantic intent"
+        },
+        "before_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "Behavior/intent branch"
+        },
+        "after_fix_suffix_only": {
+          "grade": "PASS",
+          "reason": "No regression on intent queries"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "baseline_no_rules": "4/9 (44%)",
+    "before_fix_full_cascade": "9/9 (100%) — over-optimistic, full search-cascade.md visible",
+    "before_fix_suffix_only": "8/9 (89%) — production-realistic, only Case 3 fails (FM3)",
+    "after_fix_suffix_only": "9/9 (100%) — Case 3 fixed via Single-file scope branch",
+    "delta_after_fix_vs_baseline": "+56pp",
+    "iterations": 1
+  }
+}
