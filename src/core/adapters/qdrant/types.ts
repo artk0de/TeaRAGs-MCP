@@ -20,7 +20,15 @@ export interface QdrantIsEmptyCondition {
   is_empty: { key: string };
 }
 
-export type QdrantFilterCondition = QdrantMatchCondition | QdrantRangeCondition | QdrantIsEmptyCondition;
+/**
+ * Nested filter condition — Qdrant supports recursive filter composition
+ * (e.g. `must: [{ should: [a, b] }]` means "AND with (a OR b)").
+ * Using a nested filter wherever a leaf condition is accepted lets a
+ * single FilterDescriptor express "match X OR match Y" without forcing
+ * `should` into `FilterConditionResult` (which would lose AND-semantics
+ * across multiple registered filters).
+ */
+export type QdrantFilterCondition = QdrantMatchCondition | QdrantRangeCondition | QdrantIsEmptyCondition | QdrantFilter;
 
 export interface QdrantFilter {
   must?: QdrantFilterCondition[];

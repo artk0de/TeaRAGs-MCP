@@ -12,10 +12,19 @@ import type { FilterDescriptor, FilterLevel } from "../../../contracts/index.js"
 export const gitFilters: FilterDescriptor[] = [
   {
     param: "recentAuthor",
-    description: "Filter by recent-activity dominant author (commit-count based, within log window)",
+    description:
+      "Filter by recent-activity dominant author (commit-count based, within log window). Matches name OR email.",
     type: "string",
     toCondition: (value: unknown) => ({
-      must: [{ key: "git.file.recentDominantAuthor", match: { value: value as string } }],
+      // (name == value) OR (email == value) — single param, two ways to identify
+      must: [
+        {
+          should: [
+            { key: "git.file.recentDominantAuthor", match: { value: value as string } },
+            { key: "git.file.recentDominantAuthorEmail", match: { value: value as string } },
+          ],
+        },
+      ],
     }),
   },
   {
@@ -24,6 +33,24 @@ export const gitFilters: FilterDescriptor[] = [
     type: "string",
     toCondition: (value: unknown) => ({
       must: [{ key: "git.file.blameDominantAuthor", match: { value: value as string } }],
+    }),
+  },
+  {
+    param: "minRecentContributors",
+    description:
+      "Filter by minimum distinct authors who recently committed to the file (within log window). High = peer-reviewed code.",
+    type: "number",
+    toCondition: (value: unknown) => ({
+      must: [{ key: "git.file.recentContributorCount", range: { gte: value as number } }],
+    }),
+  },
+  {
+    param: "maxRecentContributors",
+    description:
+      "Filter by maximum distinct authors who recently committed to the file. Low (e.g. 1) surfaces panic-mode commits or abandoned ownership.",
+    type: "number",
+    toCondition: (value: unknown) => ({
+      must: [{ key: "git.file.recentContributorCount", range: { lte: value as number } }],
     }),
   },
   {

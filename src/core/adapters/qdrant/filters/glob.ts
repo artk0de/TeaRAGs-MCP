@@ -45,7 +45,9 @@ export function globToTextFilter(pattern: string): FilterConditionResult {
     if (positive.length === 1) {
       result.must = positive;
     } else if (positive.length > 1) {
-      result.must = [{ should: positive } as unknown as FilterConditionResult["must"] extends (infer T)[] ? T : never];
+      // Nested filter condition: must=[{should:[a,b]}] = AND with (a OR b).
+      // Type now permits this directly via QdrantFilterCondition union.
+      result.must = [{ should: positive }];
     }
     if (negative.length > 0) {
       result.must_not = negative;

@@ -7,8 +7,8 @@ import { gitPayloadSignalDescriptors } from "../../../../../src/core/domains/tra
 const findFilter = (param: string) => gitFilters.find((f) => f.param === param)!;
 
 describe("git filter descriptors", () => {
-  it("exports 8 filter descriptors", () => {
-    expect(gitFilters).toHaveLength(8);
+  it("exports 10 filter descriptors", () => {
+    expect(gitFilters).toHaveLength(10);
   });
 
   it("each filter has required fields", () => {
@@ -20,12 +20,39 @@ describe("git filter descriptors", () => {
     }
   });
 
-  it("recentAuthor filter uses git.file.recentDominantAuthor (file-only)", () => {
+  it("recentAuthor filter matches name OR email via should", () => {
     const result = findFilter("recentAuthor").toCondition("alice");
     expect(result.must).toHaveLength(1);
     expect(result.must![0]).toEqual({
-      key: "git.file.recentDominantAuthor",
+      should: [
+        { key: "git.file.recentDominantAuthor", match: { value: "alice" } },
+        { key: "git.file.recentDominantAuthorEmail", match: { value: "alice" } },
+      ],
+    });
+  });
+
+  it("blameOwner filter uses git.file.blameDominantAuthor (file-only)", () => {
+    const result = findFilter("blameOwner").toCondition("alice");
+    expect(result.must).toHaveLength(1);
+    expect(result.must![0]).toEqual({
+      key: "git.file.blameDominantAuthor",
       match: { value: "alice" },
+    });
+  });
+
+  it("minRecentContributors filter is file-level gte range", () => {
+    const result = findFilter("minRecentContributors").toCondition(3);
+    expect(result.must![0]).toEqual({
+      key: "git.file.recentContributorCount",
+      range: { gte: 3 },
+    });
+  });
+
+  it("maxRecentContributors filter is file-level lte range", () => {
+    const result = findFilter("maxRecentContributors").toCondition(1);
+    expect(result.must![0]).toEqual({
+      key: "git.file.recentContributorCount",
+      range: { lte: 1 },
     });
   });
 
