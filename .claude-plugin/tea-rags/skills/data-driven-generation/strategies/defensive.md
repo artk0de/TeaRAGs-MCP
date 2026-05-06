@@ -12,8 +12,9 @@ code with history of bugs.
   for clues)
 - Plan gradual rollout: per-user, per-tenant, or percentage-based
 - Document cleanup date (remove wrapper after 30 days stable in production)
-- If file.dominantAuthorPct "silo" — request review from the owner before
-  merging
+- If `file.blameDominantAuthorPct.label === "silo"` or `"deep-silo"` — request
+  review from the live-line owner (`blameDominantAuthor`) before merging. They
+  wrote the code that's currently there.
 
 ## Why
 

@@ -115,7 +115,9 @@ fabricate.
 
 ## Step 3 — Compute agreement verdict
 
-Extract from payload: `imports`, `commitCount`, `bugFixRate`, `dominantAuthor`.
+Extract from payload: `imports`, `commitCount`, `bugFixRate`,
+`blameDominantAuthor` (live-line owner) + `recentDominantAuthor` (recent
+committer).
 
 Verdict ladder:
 
@@ -133,7 +135,8 @@ Compose response block:
 Target: <symbol or file>
 - imports: <N> (rank <R> of <K> in targetPathPattern)
 - churn: <N> commits, last touched <D> days ago
-- ownership: <dominantAuthor> (<pct>%)
+- live-line owner: <blameDominantAuthor> (<blameDominantAuthorPct>%)
+- recent committer: <recentDominantAuthor> (<recentDominantAuthorPct>%)
 - bugFixRate: <X%>
 
 Verdict: <AGREE-WITH-SCOPE | AGREE-DIRECT | PUSHBACK>

@@ -78,14 +78,21 @@ Quality gate by labels:
 
 ### Step 3: STYLE
 
-Use dominantAuthor from explore pre-gen output.
+Use `blameDominantAuthor` from explore pre-gen output (live-line owner — the
+person whose code you'd actually be matching/extending). Style copy is about
+mirroring CURRENT code, not historical commit activity, so use blame-based.
 
-| file.dominantAuthorPct | Behavior                                        |
-| ---------------------- | ----------------------------------------------- |
-| "silo"                 | Match exactly. Flag owner for review.           |
-| "concentrated"         | Follow dominant patterns, minor flexibility.    |
-| "mixed"                | Follow dominant with awareness of alternatives. |
-| "shared"               | Project conventions. Opportunity to unify.      |
+| file.blameDominantAuthorPct.label | Behavior                                              |
+| --------------------------------- | ----------------------------------------------------- |
+| "deep-silo"                       | Match exactly. Flag the live-line owner for review.   |
+| "silo"                            | Match dominant patterns closely. Owner should review. |
+| "concentrated"                    | Follow dominant patterns, minor flexibility.          |
+| "shared"                          | Project conventions. Opportunity to unify.            |
+
+If `recentDominantAuthor` differs from `blameDominantAuthor` (long-time owner
+left, new contributor took over): defer to `blameDominantAuthor` for style (the
+code they wrote is what's there now), but flag `recentDominantAuthor` as
+secondary reviewer for fastest turnaround.
 
 ### Step 4: GENERATE
 

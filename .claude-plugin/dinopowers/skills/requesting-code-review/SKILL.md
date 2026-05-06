@@ -118,11 +118,18 @@ git-context available". Do not fabricate.
 
 Aggregate by `relativePath`. Per unique file extract:
 
-- `dominantAuthor` + `dominantAuthorPct`
-- `contributorCount`
+- `blameDominantAuthor` + `blameDominantAuthorPct` — live-line owner (who must
+  approve based on current code state)
+- `recentDominantAuthor` + `recentDominantAuthorPct` — recent committer (who's
+  loaded in mentally for fastest turnaround)
+- `blameContributorCount` (live owners) and `recentContributorCount` (recent
+  committers)
 - `commitCount` + `ageDays`
 - `taskIds` (connected tickets)
 - `bugFixRate` (risk signal)
+
+Pick reviewers by `blame*` (authority) and prioritize fast turnaround by
+`recent*` (cache locality).
 
 Compose bundle (this goes INTO the review request, not as a verdict):
 

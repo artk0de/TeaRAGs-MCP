@@ -198,8 +198,8 @@ Label results as "Related risk" (pass 1) or "Cross-domain risk" (pass 2).
 Scope rules are embedded in the two-pass description above.
 
 **Filter by overlay:** Include only results with concerning+ signals (bugFixRate
-concerning+, OR churnVolatility erratic+, OR contributorCount = 1). Healthy
-overlay → ignore.
+concerning+, OR churnVolatility erratic+, OR `blameContributorCount = 1` —
+single live-line owner). Healthy overlay → ignore.
 
 Add qualifying results as "Related risk" under parent Critical candidate.
 
@@ -239,16 +239,21 @@ it whenever the overlay shows more than one strong signal.
   (low)
 - `bugFixRate` separates healthy (stable) from fragile (unstable)
 - `ageDays` inverts churn meaning (old+churn = minefield, young+churn = feature)
-- `dominantAuthorPct` alone does NOT mean silo; pair with bugFixRate or age
+- `blameDominantAuthorPct` alone does NOT mean silo; pair with bugFixRate or age
+- `recentDominantAuthorPct` is about activity concentration (who's been
+  committing lately), NOT about who currently owns the live code — only `blame*`
+  speaks to ownership
 - path heuristic (`dto/`, `schema/`, `generated/`) flags boilerplate churn
 
 **File × chunk refinement.** File-level signals point to which file. Chunk-level
 signals (`chunk.bugFixRate`, `chunk.ageDays`, `chunk.relativeChurn`,
-`chunk.contributorCount`) point to which method inside. When overlay shows both,
-chunk-level locates the exact problem:
+`chunk.blameContributorCount`, `chunk.recentContributorCount`) point to which
+method inside. When overlay shows both, chunk-level locates the exact problem:
 
-- Coupling point → find chunk with highest `chunk.contributorCount` (overloaded
-  API)
+- Coupling point → find chunk with highest `chunk.recentContributorCount`
+  (recently-touched-by-many — overloaded API)
+- Knowledge silo zoom-in → find chunk with `chunk.blameContributorCount = 1`
+  (single live-line owner of a method inside a shared file)
 - Legacy minefield → find chunk with highest
   `chunk.bugFixRate + chunk.relativeChurn`
 - Bug attractor → find chunk with highest `chunk.bugFixRate`
@@ -257,21 +262,21 @@ chunk-level locates the exact problem:
 See `references/signal-interpretation.md` § "Method-level (chunk) pair
 diagnostics" for the full table.
 
-| Classification          | Signature (required pair/triple)                                               |
-| ----------------------- | ------------------------------------------------------------------------------ |
-| **Coupling point**      | churn high+ AND imports high+ AND authors high+                                |
-| **Bug attractor**       | bugFixRate concerning+ AND churn high+ AND imports low                         |
-| **Legacy minefield**    | ageDays legacy AND churn high+ AND bugFixRate concerning+                      |
-| **Fragile legacy**      | ageDays legacy AND bugFixRate concerning+ (churn typical)                      |
-| **Toxic silo**          | dominantAuthorPct high AND bugFixRate concerning+ (OR churn high)              |
-| **Healthy owner**       | dominantAuthorPct high AND churn low AND ageDays legacy AND bugFixRate=healthy |
-| **Feature-in-progress** | churn high+ AND ageDays new AND bugFixRate=healthy AND imports low             |
-| **Boilerplate churn**   | churn high+ AND blockPenalty high+ AND bugFixRate=healthy                      |
-| **Emerging coupling**   | ageDays new AND churn high+ AND imports rising                                 |
-| **Untested hotspot**    | No test file AND tier Critical/High                                            |
-| **Oversized**           | methodLines high+ (labelMap) AND in decomposition top-10                       |
-| **Fragile**             | volatility erratic+ AND burst high+                                            |
-| **Race condition**      | Agent judgment from code content                                               |
+| Classification          | Signature (required pair/triple)                                                                           |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Coupling point**      | churn high+ AND imports high+ AND `recentAuthors` count high+                                              |
+| **Bug attractor**       | bugFixRate concerning+ AND churn high+ AND imports low                                                     |
+| **Legacy minefield**    | ageDays legacy AND churn high+ AND bugFixRate concerning+                                                  |
+| **Fragile legacy**      | ageDays legacy AND bugFixRate concerning+ (churn typical)                                                  |
+| **Toxic silo**          | `blameDominantAuthorPct.label ∈ {silo, deep-silo}` AND bugFixRate concerning+ (OR churn high)              |
+| **Healthy owner**       | `blameDominantAuthorPct.label ∈ {silo, deep-silo}` AND churn low AND ageDays legacy AND bugFixRate=healthy |
+| **Feature-in-progress** | churn high+ AND ageDays new AND bugFixRate=healthy AND imports low                                         |
+| **Boilerplate churn**   | churn high+ AND blockPenalty high+ AND bugFixRate=healthy                                                  |
+| **Emerging coupling**   | ageDays new AND churn high+ AND imports rising                                                             |
+| **Untested hotspot**    | No test file AND tier Critical/High                                                                        |
+| **Oversized**           | methodLines high+ (labelMap) AND in decomposition top-10                                                   |
+| **Fragile**             | volatility erratic+ AND burst high+                                                                        |
+| **Race condition**      | Agent judgment from code content                                                                           |
 
 Multiple classifications per candidate allowed (e.g., god module + oversized).
 Healthy owner, feature-in-progress, and boilerplate churn are **NOT risks** —

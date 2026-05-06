@@ -123,7 +123,8 @@ overlay:
 
 - `imports` score — how many modules import this file (blast radius)
 - `commitCount` — churn indicator
-- `dominantAuthorPct` — silo risk
+- `blameDominantAuthorPct` (with adaptive label) — live-line silo risk (use the
+  label, not a magic percentage — `silo` / `deep-silo` are codebase-relative)
 
 Verdict ladder per edited file:
 

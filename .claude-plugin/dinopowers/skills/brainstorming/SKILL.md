@@ -130,8 +130,8 @@ From the three result sets, compose a compact block (max ~15 lines):
 - <relativePath>:<startLine>-<endLine> — bugFixRate <N>, commitCount <N>, ageDays <N>
 - ... (top 3)
 
-**Knowledge silos (single owner):**
-- <relativePath> — <dominantAuthor> (<pct>%), <commitCount> commits
+**Knowledge silos (single live-line owner):**
+- <relativePath> — <blameDominantAuthor> (<blameDominantAuthorPct>%), <commitCount> commits
 - ... (top 3)
 
 **Tech debt (legacy + churn):**

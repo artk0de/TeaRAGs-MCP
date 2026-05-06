@@ -140,8 +140,15 @@ Structure by what was asked:
   pathPattern for X + `maxAgeDays=14`. Shows recent changes ranked by review
   relevance (recency, burstActivity, chunkChurn).
 - **"Who owns X?" / "Who knows about X?"** → rank_chunks with
-  `rerank="ownership"` + pathPattern. Overlay shows `dominantAuthor`,
-  `dominantAuthorPct`, `authors[]`. Report ownership distribution.
+  `rerank="ownership"` + pathPattern. Overlay shows `blameDominantAuthor`,
+  `blameDominantAuthorPct`, `blameAuthors[]` (live-line ownership from
+  `git blame HEAD`). Report ownership distribution.
+- **"Who recently committed to X?"** → rank_chunks with
+  `rerank="recentActivityConcentration"` + pathPattern. Overlay shows
+  `recentDominantAuthor`, `recentDominantAuthorPct`, `recentAuthors[]`
+  (commit-based, useful for finding who's mentally loaded in for fast review).
+  Different from ownership: a long-time owner who stopped contributing still
+  shows in `blame*` but not in `recent*`.
 - **"Is X tested?" / "Show tests for X"** → find_symbol for X with pathPattern
   targeting test directories. Discover test dir first: Glob for
   `**/{test,tests,spec,specs,__tests__}` to find project's test convention, then
@@ -202,7 +209,10 @@ find_symbol:
 ```
 
 Extract per-symbol: bugFixRate, ageDays, churnVolatility, commitCount,
-dominantAuthor, dominantAuthorPct. These feed DDG strategy selection.
+blameDominantAuthor, blameDominantAuthorPct (live-line owner — used for silo
+detection and "who must approve") and recentDominantAuthor,
+recentDominantAuthorPct (recent committer — used for "who's loaded in"). These
+feed DDG strategy selection.
 
 **Interpretation:** when presenting overlay findings to the user (pre-gen
 context or explore), do not read single signals in isolation. Consult
@@ -228,7 +238,8 @@ Files: [list with pathPattern-ready format]
 Language: [detected language]
 Symbols with overlay:
   - symbolName: { bugFixRate, ageDays, churnVolatility, commitCount,
-                  dominantAuthor, dominantAuthorPct }
+                  blameDominantAuthor, blameDominantAuthorPct,
+                  recentDominantAuthor, recentDominantAuthorPct }
 
 Context for generation:
   - pathPattern: [ready for data-driven-generation]

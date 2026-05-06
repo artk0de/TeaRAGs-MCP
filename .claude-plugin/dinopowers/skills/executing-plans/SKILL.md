@@ -132,16 +132,19 @@ For each unique `relativePath` in results, extract from `payload.git.file.*`:
 
 - `commitCount` — churn magnitude
 - `bugFixRate` — historical quality (percent of commits tagged as fix/bug)
-- `dominantAuthorPct` — silo indicator
+- `blameDominantAuthorPct` (with adaptive label `shared` / `concentrated` /
+  `silo` / `deep-silo`) — live-line silo indicator
 - `imports` score (from ranking overlay) — blast radius proxy
 
-Compute per-file verdict via this ladder:
+Compute per-file verdict via this ladder. Use **adaptive labels**, not magic
+percentages — labels come from per-codebase percentile distributions returned in
+the payload signal `stats.labels` and surfaced through `get_index_metrics`.
 
-| Verdict   | Any of these triggers                                                                                                        |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `UNSAFE`  | `imports` score top 5% of result set AND `bugFixRate ≥ 40%`; OR `dominantAuthorPct ≥ 95%` AND `commitCount ≥ 15` (deep silo) |
-| `CAUTION` | `imports` top 15%; OR `bugFixRate ≥ 30%`; OR `dominantAuthorPct ≥ 85%`                                                       |
-| `SAFE`    | none of the above                                                                                                            |
+| Verdict   | Any of these triggers                                                                                                                                                       |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `UNSAFE`  | `imports` score top 5% of result set AND `bugFixRate.label ∈ {"concerning", "critical"}`; OR `blameDominantAuthorPct.label === "deep-silo"` (one author owns the live code) |
+| `CAUTION` | `imports` top 15%; OR `bugFixRate.label === "concerning"`; OR `blameDominantAuthorPct.label === "silo"`                                                                     |
+| `SAFE`    | none of the above                                                                                                                                                           |
 
 Task verdict = worst of per-file verdicts (UNSAFE dominates CAUTION dominates
 SAFE).
@@ -205,8 +208,9 @@ agent generates code disconnected from project conventions. It misses:
   `{similarity 0.2, stability 0.3, age 0.3, bugFix -0.15, ownership -0.05}`.
   Manual `Read` of one sibling file picks an arbitrary example, not a proven
   one.
-- **Silo-author style copy** — when `dominantAuthorPct ≥ 95%` the data-driven
-  skill instructs exact pattern match AND flags owner for review. Manual style
+- **Silo-author style copy** — when
+  `blameDominantAuthorPct.label === "deep-silo"` the data-driven skill instructs
+  exact pattern match AND flags the live-line owner for review. Manual style
   copy via Read skips the silo signal entirely.
 
 How to invoke (one Skill call, no parameters needed — the skill reads area
@@ -261,13 +265,13 @@ same severity as skipping the guard for an existing-file Task.
 
 ## Common Mistakes
 
-| Mistake                                                               | Reality                                                                                                                                             |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| One guard call per plan (not per Task)                                | `dinopowers:writing-plans` does per-plan. This wrapper is per-Task — scope matches edit granularity.                                                |
-| Use `rerank: "codeReview"` because "review before edit" sounds right  | `codeReview` lacks `imports` weight — blast-radius invisible                                                                                        |
-| Emit the guard block and proceed without gating                       | The block is not documentation — it's a circuit breaker. CAUTION waits for confirmation.                                                            |
-| Treat UNSAFE as "just a warning"                                      | UNSAFE pauses. User must explicitly override before edits.                                                                                          |
-| Pre-fetch ALL plan files in one guard at plan start                   | Context stale by the time Task 5 runs. Guard is per-Task, just-in-time.                                                                             |
-| Invoke `superpowers:executing-plans` for the whole plan at once       | Wrapper is per-Task — gate each Task separately                                                                                                     |
-| For new-file Task: `Read sibling.ts` then `Write new.ts` directly     | Skips Step 5. Sibling-by-Read picks arbitrary example, ignores `bugFixRate`/`dominantAuthor` signals. Use `Skill(tea-rags:data-driven-generation)`. |
-| Generation Task → guard SAFE (new file) → straight to executing-plans | SAFE (new file) only resolves blast-radius gate. Step 5 is a SEPARATE gate — strategy + template + style still needed. Both gates must clear.       |
+| Mistake                                                               | Reality                                                                                                                                                  |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One guard call per plan (not per Task)                                | `dinopowers:writing-plans` does per-plan. This wrapper is per-Task — scope matches edit granularity.                                                     |
+| Use `rerank: "codeReview"` because "review before edit" sounds right  | `codeReview` lacks `imports` weight — blast-radius invisible                                                                                             |
+| Emit the guard block and proceed without gating                       | The block is not documentation — it's a circuit breaker. CAUTION waits for confirmation.                                                                 |
+| Treat UNSAFE as "just a warning"                                      | UNSAFE pauses. User must explicitly override before edits.                                                                                               |
+| Pre-fetch ALL plan files in one guard at plan start                   | Context stale by the time Task 5 runs. Guard is per-Task, just-in-time.                                                                                  |
+| Invoke `superpowers:executing-plans` for the whole plan at once       | Wrapper is per-Task — gate each Task separately                                                                                                          |
+| For new-file Task: `Read sibling.ts` then `Write new.ts` directly     | Skips Step 5. Sibling-by-Read picks arbitrary example, ignores `bugFixRate`/`blameDominantAuthor` signals. Use `Skill(tea-rags:data-driven-generation)`. |
+| Generation Task → guard SAFE (new file) → straight to executing-plans | SAFE (new file) only resolves blast-radius gate. Step 5 is a SEPARATE gate — strategy + template + style still needed. Both gates must clear.            |

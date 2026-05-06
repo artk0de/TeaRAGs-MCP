@@ -128,11 +128,19 @@ Cross-reference returned chunks by `relativePath` (primary key — see
 
 Extract from `payload.git.file.*`:
 
-- `dominantAuthor` + `dominantAuthorPct` — owner, silo indicator
+- `blameDominantAuthor` + `blameDominantAuthorPct` — live-line owner, silo
+  indicator (from `git blame HEAD` — current state, not commit history)
+- `recentDominantAuthor` + `recentDominantAuthorPct` — recent committer
+  (commit-based, useful for review-routing of recently-touched code)
 - `commitCount` — churn proxy
 - `ageDays` — recency
 - `bugFixRate` — historical quality
 - `taskIds` — connected tickets (coordinated-change signal)
+
+Use `blame*` for ownership decisions ("who must approve this change"). Use
+`recent*` for activity-based review routing ("who recently committed and is
+loaded in"). They diverge when a long-time owner stops contributing — `blame*`
+still says they own, `recent*` highlights newer committers.
 
 Compose enrichment block:
 
