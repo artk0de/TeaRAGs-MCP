@@ -93,11 +93,15 @@ export async function buildChunkChurnMapUncached(
   externalSemaphore?: ChunkConcurrencySemaphore,
   blameByPath?: Map<string, BlameLine[]>,
 ): Promise<Map<string, Map<string, ChunkChurnOverlay>>> {
-  // Build relative path → entries lookup (chunkMap keys may be absolute paths)
-  // Also filter: only files with >1 chunk benefit from chunk-level analysis
+  // Build relative path → entries lookup (chunkMap keys may be absolute paths).
+  // Single-chunk files MUST go through the same pipeline as multi-chunk files —
+  // skipping them used to leave `git.chunk = null` and break the system invariant
+  // that every chunk has chunk-level data (recovery counts them as unenriched,
+  // reranker has no overlay to read, etc.). The git work cost is per-COMMIT,
+  // not per-chunk; processing single-chunk files adds no measurable overhead.
   const relativeChunkMap = new Map<string, ChunkLookupEntry[]>();
   for (const [filePath, entries] of chunkMap) {
-    if (entries.length <= 1) continue; // skip single-chunk files
+    if (entries.length === 0) continue;
     const relPath = filePath.startsWith(repoRoot) ? filePath.slice(repoRoot.length + 1) : filePath;
     relativeChunkMap.set(relPath, entries);
   }

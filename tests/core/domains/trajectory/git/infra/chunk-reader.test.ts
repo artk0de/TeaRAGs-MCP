@@ -358,6 +358,92 @@ describe("processCommitEntry — bug fix accumulation", () => {
   });
 });
 
+// ─── buildChunkChurnMapUncached — single-chunk files ─────────────────────────
+
+describe("buildChunkChurnMapUncached — single-chunk files", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("processes single-chunk files through the full pipeline (no skip)", async () => {
+    // Regression: single-chunk files used to be filtered out at the start of
+    // buildChunkChurnMapUncached (`entries.length <= 1 continue`). The skip
+    // left their chunks with `git.chunk = null`, which broke the system
+    // invariant that every chunk has chunk-level data — recovery flagged them
+    // as unenriched forever, reranker had no overlay to read, blame was lost.
+    const commitSha = "a".repeat(40);
+    vi.spyOn(gitClient, "getCommitsByPathspec").mockResolvedValue([
+      {
+        commit: {
+          sha: commitSha,
+          author: "Alice",
+          authorEmail: "alice@ex.com",
+          timestamp: Math.floor(Date.now() / 1000),
+          body: "feat: tiny header file",
+        },
+        changedFiles: ["small.ts"],
+      },
+    ]);
+
+    const git = await import("isomorphic-git");
+    vi.spyOn(git.default, "readCommit").mockResolvedValue({
+      oid: commitSha,
+      commit: {
+        tree: "t".repeat(40),
+        parent: ["p".repeat(40)],
+        author: { name: "Alice", email: "alice@ex.com", timestamp: 12345, timezoneOffset: 0 },
+        committer: { name: "Alice", email: "alice@ex.com", timestamp: 12345, timezoneOffset: 0 },
+        message: "feat: tiny header file",
+      },
+      payload: "",
+    } as any);
+    vi.spyOn(git.default, "readBlob")
+      .mockResolvedValueOnce({ oid: "x".repeat(40), blob: new TextEncoder().encode("") } as any)
+      .mockResolvedValueOnce({
+        oid: "y".repeat(40),
+        blob: new TextEncoder().encode("import x from 'y';\nexport const z = 1;\n"),
+      } as any);
+
+    // SINGLE chunk — file is small enough to be a single block
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
+    chunkMap.set("small.ts", [{ chunkId: "only-chunk", startLine: 1, endLine: 2 }]);
+
+    const blameByPath = new Map<string, any[]>();
+    blameByPath.set("small.ts", [
+      { lineNumber: 1, sha: commitSha, author: "Alice", authorEmail: "alice@ex.com", timestamp: 12345 },
+      { lineNumber: 2, sha: commitSha, author: "Alice", authorEmail: "alice@ex.com", timestamp: 12345 },
+    ]);
+
+    const result = await chunkReader.buildChunkChurnMapUncached(
+      "/fake/repo",
+      chunkMap,
+      {},
+      10,
+      6,
+      undefined,
+      undefined,
+      120000,
+      10000,
+      undefined,
+      blameByPath,
+    );
+
+    // Overlay MUST exist for the single-chunk file — that's the whole point.
+    const overlay = result.get("small.ts");
+    expect(overlay).toBeDefined();
+    const chunkOverlay = overlay!.get("only-chunk");
+    expect(chunkOverlay).toBeDefined();
+
+    // Churn fields populated by the pipeline (commit was fetched + mapped).
+    expect(chunkOverlay!.commitCount).toBeGreaterThanOrEqual(1);
+
+    // Blame populated from blameByPath — chunk == file, so single live-line owner.
+    expect(chunkOverlay!.blameDominantAuthor).toBe("Alice");
+    expect(chunkOverlay!.blameDominantAuthorPct).toBe(100);
+    expect(chunkOverlay!.blameContributorCount).toBe(1);
+  });
+});
+
 // ─── buildChunkChurnMapUncached — without fileChurnDataMap (fallback calc) ──
 
 describe("buildChunkChurnMapUncached — fallback fileCommitCount", () => {
