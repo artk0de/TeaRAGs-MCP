@@ -460,6 +460,58 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
     expect(metrics.matchedFiles).toBeGreaterThanOrEqual(1);
   });
 
+  it("backfill triggers chunk-level enrichment for recovered files", async () => {
+    // Regression: backfillMissedFiles previously wrote ONLY file-level signals,
+    // leaving chunks of recovered files without chunk-level data. The chunk
+    // marker then reported them as "degraded" with non-zero unenrichedChunks.
+    // Expectation: backfill must also call provider.buildChunkSignals for the
+    // recovered paths and apply the resulting chunk overlays.
+    const chunkOverlay = new Map([["c-missed", { commitCount: 7, blameDominantAuthor: "Alice" }]]);
+    mockProvider = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi
+        .fn()
+        .mockResolvedValueOnce(new Map()) // initial prefetch — all files missed
+        .mockResolvedValueOnce(new Map([["src/missed.ts", { recovered: true }]])), // backfill file-level
+      buildChunkSignals: vi
+        .fn()
+        // initial streaming chunk-enrichment call may receive empty map (no batches matched)
+        .mockResolvedValueOnce(new Map())
+        // backfill chunk-enrichment call for missed file
+        .mockResolvedValueOnce(new Map([["src/missed.ts", chunkOverlay]])),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c-missed", chunk: { metadata: { filePath: "/repo/src/missed.ts" }, endLine: 25 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+
+    await coordinator.awaitCompletion("test-col");
+
+    // buildChunkSignals must have been called with the missed path's chunk map.
+    const chunkCalls = mockProvider.buildChunkSignals.mock.calls as any[];
+    const backfillChunkCall = chunkCalls.find((call: any[]) => {
+      const chunkMap = call[1] as Map<string, unknown[]>;
+      return chunkMap?.has("src/missed.ts");
+    });
+    expect(backfillChunkCall).toBeDefined();
+
+    // The recovered chunk overlay must be written via batchSetPayload — find
+    // an op whose payload carries the chunk-level enrichment we returned.
+    const allOps = mockQdrant.batchSetPayload.mock.calls.flatMap((c: any[]) => c[1] as any[]);
+    const chunkLevelOp = allOps.find((op: any) => {
+      const p = op?.payload;
+      const chunkPart = p?.git?.chunk;
+      return chunkPart && (chunkPart.commitCount === 7 || chunkPart.blameDominantAuthor === "Alice");
+    });
+    expect(chunkLevelOp).toBeDefined();
+  });
+
   it("handles batchSetPayload error during backfill gracefully", async () => {
     mockProvider = {
       key: "git",

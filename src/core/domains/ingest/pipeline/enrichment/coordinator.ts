@@ -16,7 +16,7 @@ import { relative } from "node:path";
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
-import type { FileSignalOverlay } from "../../../../contracts/types/provider.js";
+import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry, EnrichmentMetrics } from "../../../../types.js";
 import { INDEXING_METADATA_ID } from "../../constants.js";
@@ -675,9 +675,19 @@ export class EnrichmentCoordinator {
 
       await this.qdrant.setPayload(collectionName, { enrichment }, { points: [INDEXING_METADATA_ID] });
     } catch (error) {
-      if (isDebug()) {
-        console.error("[Enrichment] Failed to update marker:", error);
-      }
+      // ALWAYS surface marker write failures — silent loss leaves the marker
+      // stuck at "in_progress" indefinitely, which the watchdog only flips to
+      // "failed" after one hour. A loud error lets the operator/user catch
+      // the underlying Qdrant issue immediately.
+      console.error(
+        `[Enrichment] Failed to update marker for collection ${collectionName}:`,
+        extractErrorMessage(error),
+      );
+      pipelineLog.enrichmentPhase("MARKER_UPDATE_FAILED", {
+        collection: collectionName,
+        providers: Object.keys(markerMap),
+        error: extractErrorMessage(error),
+      });
     }
   }
 
@@ -887,6 +897,85 @@ export class EnrichmentCoordinator {
       backfilledChunks: operations.length,
       stillMissed: missedPaths.length - backfilledFiles,
       durationMs: backfillDuration,
+    });
+
+    // Backfill chunk-level signals for the same files. Initial chunk
+    // enrichment skipped these paths (their chunks landed with no matching
+    // file metadata in the prefetch); without this pass they would persist
+    // as `git.chunk = null` and the chunk marker would report them as
+    // "degraded" forever.
+    await this.backfillChunkSignals(collectionName, state, backfillData);
+  }
+
+  private async backfillChunkSignals(
+    collectionName: string,
+    state: ProviderState,
+    backfillData: Map<string, FileSignalOverlay>,
+  ): Promise<void> {
+    const backfillChunkMap = new Map<string, ChunkLookupEntry[]>();
+    for (const [relPath, chunks] of this.applier.missedFileChunks) {
+      if (!backfillData.has(relPath)) continue;
+      backfillChunkMap.set(
+        relPath,
+        chunks.map((c) => ({ chunkId: c.chunkId, startLine: c.startLine, endLine: c.endLine })),
+      );
+    }
+    if (backfillChunkMap.size === 0) return;
+
+    const root = state.effectiveRoot;
+    if (!root) return;
+
+    const chunkBackfillStart = Date.now();
+    pipelineLog.enrichmentPhase("CHUNK_BACKFILL_START", {
+      provider: state.provider.key,
+      files: backfillChunkMap.size,
+      chunks: [...backfillChunkMap.values()].reduce((sum, arr) => sum + arr.length, 0),
+    });
+
+    let chunkOverlays: Map<string, Map<string, ChunkSignalOverlay>>;
+    try {
+      chunkOverlays = await state.provider.buildChunkSignals(root, backfillChunkMap);
+    } catch (error) {
+      pipelineLog.enrichmentPhase("CHUNK_BACKFILL_FAILED", {
+        provider: state.provider.key,
+        error: extractErrorMessage(error),
+      });
+      return;
+    }
+
+    const operations: { payload: Record<string, unknown>; points: (string | number)[] }[] = [];
+    const enrichedAt = this.runStartedAt;
+    for (const chunkMap of chunkOverlays.values()) {
+      for (const [chunkId, overlay] of chunkMap) {
+        const chunkData = enrichedAt
+          ? { ...(overlay as Record<string, unknown>), enrichedAt }
+          : (overlay as Record<string, unknown>);
+        operations.push({
+          payload: { [state.provider.key]: { chunk: chunkData } },
+          points: [chunkId],
+        });
+      }
+    }
+
+    if (operations.length > 0) {
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < operations.length; i += BATCH_SIZE) {
+        const batch = operations.slice(i, i + BATCH_SIZE);
+        try {
+          await this.qdrant.batchSetPayload(collectionName, batch);
+        } catch (error) {
+          if (isDebug()) {
+            console.error(`[Enrichment:${state.provider.key}] chunk backfill batch failed:`, error);
+          }
+        }
+      }
+    }
+
+    pipelineLog.enrichmentPhase("CHUNK_BACKFILL_COMPLETE", {
+      provider: state.provider.key,
+      files: backfillChunkMap.size,
+      chunks: operations.length,
+      durationMs: Date.now() - chunkBackfillStart,
     });
   }
 }

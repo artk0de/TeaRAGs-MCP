@@ -26,7 +26,7 @@ export class EnrichmentApplier {
   matchedFiles = 0;
   missedFiles = 0;
   readonly missedPathSamples: string[] = [];
-  readonly missedFileChunks = new Map<string, { chunkId: string; endLine: number }[]>();
+  readonly missedFileChunks = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
 
   constructor(private readonly qdrant: QdrantManager) {}
 
@@ -73,7 +73,11 @@ export class EnrichmentApplier {
         }
         const existing = this.missedFileChunks.get(relativePath) || [];
         for (const item of fileItems) {
-          existing.push({ chunkId: item.chunkId, endLine: item.chunk.endLine });
+          existing.push({
+            chunkId: item.chunkId,
+            startLine: item.chunk.startLine,
+            endLine: item.chunk.endLine,
+          });
         }
         this.missedFileChunks.set(relativePath, existing);
         if (enrichedAt) {
