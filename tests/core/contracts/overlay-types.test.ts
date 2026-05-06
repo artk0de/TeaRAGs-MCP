@@ -27,11 +27,11 @@ describe("RankingOverlay", () => {
       preset: "test",
       file: {
         commitCount: { value: 12, label: "high" },
-        dominantAuthor: "Alice",
+        recentDominantAuthor: "Alice",
       },
       chunk: { commitCount: { value: 8, label: "high" } },
     };
     expect((overlay.file!.commitCount as any).label).toBe("high");
-    expect(overlay.file!.dominantAuthor).toBe("Alice");
+    expect(overlay.file!.recentDominantAuthor).toBe("Alice");
   });
 });

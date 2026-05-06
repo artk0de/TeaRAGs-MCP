@@ -46,8 +46,8 @@ describe("DangerousPreset", () => {
 
   it("has overlayMask with ownership-related raw signals", () => {
     expect(preset.overlayMask).toBeDefined();
-    expect(preset.overlayMask.file).toContain("dominantAuthorPct");
-    expect(preset.overlayMask.file).toContain("contributorCount");
+    expect(preset.overlayMask.file).toContain("recentDominantAuthorPct");
+    expect(preset.overlayMask.file).toContain("recentContributorCount");
     expect(preset.overlayMask.file).toContain("bugFixRate");
   });
 
@@ -64,7 +64,7 @@ describe("DangerousPreset", () => {
     // bugFixRate already covered above; add age + relativeChurn + contributorCount
     expect(preset.overlayMask.chunk).toContain("ageDays");
     expect(preset.overlayMask.chunk).toContain("relativeChurn");
-    expect(preset.overlayMask.chunk).toContain("contributorCount");
+    expect(preset.overlayMask.chunk).toContain("recentContributorCount");
   });
 
   it("has chunk overlay with commit and churn signals", () => {

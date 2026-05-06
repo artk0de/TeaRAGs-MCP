@@ -49,7 +49,7 @@ describe("GitEnrichmentProvider", () => {
   it("has fileSignalTransform that calls computeFileSignals", () => {
     expect(typeof provider.fileSignalTransform).toBe("function");
     // Call with minimal FileChurnData shape to exercise the arrow function
-    const result = provider.fileSignalTransform({ commits: [], authors: [] } as any, 10);
+    const result = provider.fileSignalTransform({ commits: [], recentAuthors: [] } as any, 10);
     expect(result).toBeDefined();
   });
 
@@ -63,7 +63,7 @@ describe("GitEnrichmentProvider", () => {
 
     it("calls buildFileSignalMap when .git exists (no options.paths)", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
-      const fakeData = new Map([["src/a.ts", { commits: [], authors: [] }]]);
+      const fakeData = new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]);
       vi.mocked(buildFileSignalMap).mockResolvedValue(fakeData as any);
 
       const result = await provider.buildFileSignals("/repo");
@@ -75,7 +75,7 @@ describe("GitEnrichmentProvider", () => {
 
     it("calls buildFileSignalsForPaths when options.paths is provided", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
-      const fakeData = new Map([["src/b.ts", { commits: [], authors: [] }]]);
+      const fakeData = new Map([["src/b.ts", { commits: [], recentAuthors: [] }]]);
       vi.mocked(buildFileSignalsForPaths).mockResolvedValue(fakeData as any);
 
       const result = await provider.buildFileSignals("/repo", { paths: ["src/b.ts"] });
@@ -87,7 +87,7 @@ describe("GitEnrichmentProvider", () => {
 
     it("stores raw data for later chunk enrichment correlation", async () => {
       vi.mocked(nodeFs.existsSync).mockReturnValue(true);
-      const fakeData = new Map([["src/a.ts", { commits: [{ hash: "abc" }], authors: ["dev"] }]]);
+      const fakeData = new Map([["src/a.ts", { commits: [{ hash: "abc" }], recentAuthors: ["dev"] }]]);
       vi.mocked(buildFileSignalMap).mockResolvedValue(fakeData as any);
 
       await provider.buildFileSignals("/repo");

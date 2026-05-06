@@ -11,7 +11,7 @@ export class AuthorCountsAccumulator implements StatsAccumulator<Map<string, num
   private readonly counts: Map<string, number> = new Map();
 
   accept(point: StatsPoint, _ctx: PointContext): void {
-    const author = readPayloadPath(point.payload, "git.file.dominantAuthor");
+    const author = readPayloadPath(point.payload, "git.file.recentDominantAuthor");
     if (typeof author === "string") {
       this.counts.set(author, (this.counts.get(author) ?? 0) + 1);
     }
@@ -31,7 +31,7 @@ export class LineAuthorCountsAccumulator implements StatsAccumulator<Map<string,
   private readonly counts: Map<string, number> = new Map();
 
   accept(point: StatsPoint, _ctx: PointContext): void {
-    const author = readPayloadPath(point.payload, "git.file.lineDominantAuthor");
+    const author = readPayloadPath(point.payload, "git.file.blameDominantAuthor");
     if (typeof author === "string") {
       this.counts.set(author, (this.counts.get(author) ?? 0) + 1);
     }

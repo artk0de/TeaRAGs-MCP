@@ -46,7 +46,7 @@ describe("ProvenPreset", () => {
     expect(preset.overlayMask.file).toContain("bugFixRate");
     expect(preset.overlayMask.file).toContain("ageDays");
     expect(preset.overlayMask.file).toContain("commitCount");
-    expect(preset.overlayMask.file).toContain("dominantAuthorPct");
+    expect(preset.overlayMask.file).toContain("recentDominantAuthorPct");
   });
 
   it("has signalLevel file", () => {

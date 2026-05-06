@@ -22,8 +22,8 @@ describe("TechDebtPreset", () => {
     // imports: local tech debt vs coupling point
     expect(preset.overlayMask.file).toContain("imports");
     // ownership pair: moribund code with single owner vs healthy stewardship
-    expect(preset.overlayMask.file).toContain("dominantAuthorPct");
-    expect(preset.overlayMask.file).toContain("contributorCount");
+    expect(preset.overlayMask.file).toContain("recentDominantAuthorPct");
+    expect(preset.overlayMask.file).toContain("recentContributorCount");
   });
 
   it("surfaces method-level (chunk) disambiguators", () => {

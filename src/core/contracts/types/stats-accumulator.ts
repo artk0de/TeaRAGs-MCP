@@ -6,7 +6,7 @@
  * owns its mutable state and reads only the payload fields it understands.
  *
  * Ingest layer MUST NOT import trajectory-specific payload keys (e.g.
- * `git.file.dominantAuthor`). Only the owning trajectory accumulator reads
+ * `git.file.recentDominantAuthor`). Only the owning trajectory accumulator reads
  * them. This preserves the `ingest -/-> trajectory` layering rule.
  */
 

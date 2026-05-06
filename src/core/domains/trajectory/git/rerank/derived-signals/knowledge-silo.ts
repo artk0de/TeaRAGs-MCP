@@ -12,19 +12,19 @@ import { blendSignal, confidenceDampening, fileNum, GIT_FILE_DAMPENING } from ".
  *   (2), undocumented tribal knowledge.
  * Scoring: 1 contributor → 1.0, 2 contributors → 0.5, 3+ → 0.0.
  *   Confidence-dampened by commitCount (low-commit files may simply be new).
- *   L3 alpha-blends file and chunk lineContributorCount.
+ *   L3 alpha-blends file and chunk blameContributorCount.
  * Compare: OwnershipSignal measures continuous concentration percentage
- *   (lineDominantAuthorPct); KnowledgeSiloSignal measures absolute count.
+ *   (blameDominantAuthorPct); KnowledgeSiloSignal measures absolute count.
  */
 export class KnowledgeSiloSignal implements DerivedSignalDescriptor {
   readonly name = "knowledgeSilo";
   readonly description =
-    "Knowledge silo risk by live-line contributors: 1=1.0, 2=0.5, 3+=0. L3 blends file+chunk lineContributorCount.";
-  readonly sources = ["file.lineContributorCount", "chunk.lineContributorCount"];
+    "Knowledge silo risk by live-line contributors: 1=1.0, 2=0.5, 3+=0. L3 blends file+chunk blameContributorCount.";
+  readonly sources = ["file.blameContributorCount", "chunk.blameContributorCount"];
   readonly dampeningSource = GIT_FILE_DAMPENING;
   private static readonly FALLBACK_THRESHOLD = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
-    const effectiveCount = blendSignal(rawSignals, "lineContributorCount", ctx?.signalLevel);
+    const effectiveCount = blendSignal(rawSignals, "blameContributorCount", ctx?.signalLevel);
     let value: number;
     if (effectiveCount <= 0) return 0;
     if (effectiveCount === 1) value = 1.0;

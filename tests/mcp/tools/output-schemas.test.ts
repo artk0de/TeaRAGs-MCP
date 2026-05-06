@@ -60,7 +60,7 @@ describe("SearchResultOutputSchema", () => {
           score: 0.8,
           relativePath: "src/api.ts",
           git: {
-            dominantAuthor: "John",
+            recentDominantAuthor: "John",
             commitCount: 5,
             ageDays: 30,
           },

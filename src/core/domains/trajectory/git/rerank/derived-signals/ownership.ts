@@ -12,7 +12,7 @@ import { confidenceDampening, fileField, fileNum, GIT_FILE_DAMPENING } from "./h
  *   as Alice-owned by line share.
  * Detects: single-owner modules (high score), distributed live ownership
  *   (low score).
- * Scoring: lineDominantAuthorPct/100 when available, otherwise 1/lineAuthors.
+ * Scoring: blameDominantAuthorPct/100 when available, otherwise 1/blameAuthors.
  *   Confidence-dampened by commitCount.
  * Used in: ownership preset (and any custom rerank that weights `ownership`).
  * Compare: KnowledgeSiloSignal uses discrete contributor count
@@ -22,17 +22,17 @@ import { confidenceDampening, fileField, fileNum, GIT_FILE_DAMPENING } from "./h
 export class OwnershipSignal implements DerivedSignalDescriptor {
   readonly name = "ownership";
   readonly description =
-    "Live-line author concentration: single-owner code by blame share scores higher (lineDominantAuthorPct or 1/lineAuthors)";
-  readonly sources = ["file.lineDominantAuthorPct", "file.lineAuthors"];
+    "Live-line author concentration: single-owner code by blame share scores higher (blameDominantAuthorPct or 1/blameAuthors)";
+  readonly sources = ["file.blameDominantAuthorPct", "file.blameAuthors"];
   readonly dampeningSource = GIT_FILE_DAMPENING;
   private static readonly FALLBACK_THRESHOLD = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     let value: number;
-    const pct = fileField(rawSignals, "lineDominantAuthorPct");
+    const pct = fileField(rawSignals, "blameDominantAuthorPct");
     if (typeof pct === "number" && pct > 0) {
       value = pct / 100;
     } else {
-      const authors = fileField(rawSignals, "lineAuthors");
+      const authors = fileField(rawSignals, "blameAuthors");
       if (Array.isArray(authors) && authors.length > 0) {
         value = authors.length === 1 ? 1 : 1 / authors.length;
       } else {

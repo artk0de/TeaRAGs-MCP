@@ -351,7 +351,7 @@ describe("processCommitEntry — bug fix accumulation", () => {
         // Laplace-smoothed: (1 + 0.5) / (1 + 1.0) = 1.5/2.0 = 0.75 → 75
         expect(o.bugFixRate).toBe(75);
         expect(o.ageDays).toBeGreaterThanOrEqual(0);
-        expect(o.contributorCount).toBe(1);
+        expect(o.recentContributorCount).toBe(1);
       }
     }
     expect(anyBugFix).toBe(true);

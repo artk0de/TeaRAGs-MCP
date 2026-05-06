@@ -145,7 +145,7 @@ describe("filterMetaOnly", () => {
         score: 0.7,
         payload: {
           relativePath: "src/c.ts",
-          git: { file: { ageDays: 200, commitCount: 10, authors: ["Alice"] } },
+          git: { file: { ageDays: 200, commitCount: 10, recentAuthors: ["Alice"] } },
         },
       },
     ];
@@ -153,7 +153,7 @@ describe("filterMetaOnly", () => {
     const git = meta[0].git as Record<string, Record<string, unknown>>;
     expect(git.file.ageDays).toBe(200);
     expect(git.file.commitCount).toBe(10);
-    expect(git.file.authors).toBeUndefined(); // not essential
+    expect(git.file.recentAuthors).toBeUndefined(); // not essential
   });
 
   it("includes taskIds in essential fields", () => {
@@ -163,7 +163,7 @@ describe("filterMetaOnly", () => {
         payload: {
           relativePath: "src/c.ts",
           git: {
-            file: { ageDays: 200, taskIds: ["TD-123", "TD-456"], authors: ["Alice"] },
+            file: { ageDays: 200, taskIds: ["TD-123", "TD-456"], recentAuthors: ["Alice"] },
             chunk: { commitCount: 5, taskIds: ["TD-123"] },
           },
         },
@@ -178,7 +178,7 @@ describe("filterMetaOnly", () => {
     const git = meta[0].git as Record<string, Record<string, unknown>>;
     expect(git.file.ageDays).toBe(200);
     expect(git.file.taskIds).toEqual(["TD-123", "TD-456"]);
-    expect(git.file.authors).toBeUndefined(); // not essential
+    expect(git.file.recentAuthors).toBeUndefined(); // not essential
     expect(git.chunk.commitCount).toBe(5);
     expect(git.chunk.taskIds).toEqual(["TD-123"]);
   });
@@ -219,7 +219,7 @@ describe("filterMetaOnly", () => {
         payload: {
           relativePath: "src/b.ts",
           git: {
-            file: { ageDays: 100, commitCount: 5, taskIds: ["TD-123", "TD-456"], authors: ["Alice"] },
+            file: { ageDays: 100, commitCount: 5, taskIds: ["TD-123", "TD-456"], recentAuthors: ["Alice"] },
             chunk: { commitCount: 3, taskIds: ["TD-123"] },
           },
         },
@@ -243,7 +243,7 @@ describe("filterMetaOnly", () => {
     expect(git.chunk.commitCount).toBe(3);
     expect(git.chunk.taskIds).toEqual(["TD-123"]);
     // non-essential fields excluded
-    expect(git.file.authors).toBeUndefined();
+    expect(git.file.recentAuthors).toBeUndefined();
     expect(meta[0].preset).toBe("techDebt");
   });
 
@@ -287,7 +287,7 @@ describe("applyEssentialSignalsToOverlay", () => {
 
   it("filters git.file to only fields named in essentialKeys", () => {
     const result = buildResult(
-      { commitCount: 27, ageDays: 0, taskIds: [], dominantAuthor: "Alice", enrichedAt: "2026-01-01" },
+      { commitCount: 27, ageDays: 0, taskIds: [], recentDominantAuthor: "Alice", enrichedAt: "2026-01-01" },
       { commitCount: 2, relativeChurn: 0.5 },
     );
     const essentialKeys = ["git.file.commitCount", "git.file.ageDays", "git.chunk.commitCount"];
@@ -296,14 +296,14 @@ describe("applyEssentialSignalsToOverlay", () => {
     const { git } = out.payload as any;
 
     expect(Object.keys(git.file).sort()).toEqual(["ageDays", "commitCount"]);
-    expect(git.file.dominantAuthor).toBeUndefined();
+    expect(git.file.recentDominantAuthor).toBeUndefined();
     expect(git.file.enrichedAt).toBeUndefined();
     // Chunk level: only commitCount kept, relativeChurn dropped
     expect(Object.keys(git.chunk)).toEqual(["commitCount"]);
   });
 
   it("preserves non-git payload fields (outline scaffolding untouched)", () => {
-    const result = buildResult({ commitCount: 5, dominantAuthor: "x" });
+    const result = buildResult({ commitCount: 5, recentDominantAuthor: "x" });
     const out = applyEssentialSignalsToOverlay(result, ["git.file.commitCount"]);
 
     // Outline-specific fields preserved
@@ -337,7 +337,7 @@ describe("applyEssentialSignalsToOverlay", () => {
   });
 
   it("drops namespace entirely when no essential fields match", () => {
-    const result = buildResult({ dominantAuthor: "x", enrichedAt: "y" });
+    const result = buildResult({ recentDominantAuthor: "x", enrichedAt: "y" });
     const out = applyEssentialSignalsToOverlay(result, ["git.file.commitCount"]); // no match
     expect((out.payload as any).git).toBeUndefined();
     expect(out.payload?.relativePath).toBe("src/foo.ts"); // non-git preserved

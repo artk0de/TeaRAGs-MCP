@@ -45,8 +45,8 @@ describe("reranker", () => {
       git: {
         ageDays,
         commitCount,
-        dominantAuthor: "alice",
-        authors: ["alice"],
+        recentDominantAuthor: "alice",
+        recentAuthors: ["alice"],
         ...extraGit,
       },
     },
@@ -95,17 +95,17 @@ describe("reranker", () => {
       expect(reranked).toHaveLength(2);
     });
 
-    it("should use lineDominantAuthorPct for ownership when available", () => {
+    it("should use blameDominantAuthorPct for ownership when available", () => {
       const results = [
         createResult(0.8, 30, 5, false, {
-          lineDominantAuthorPct: 90,
-          lineAuthors: ["alice", "bob", "charlie"] as any,
+          blameDominantAuthorPct: 90,
+          blameAuthors: ["alice", "bob", "charlie"] as any,
         }),
-        createResult(0.8, 30, 5, false, { lineDominantAuthorPct: 30, lineAuthors: ["a", "b", "c", "d"] as any }),
+        createResult(0.8, 30, 5, false, { blameDominantAuthorPct: 30, blameAuthors: ["a", "b", "c", "d"] as any }),
       ];
       const reranked = reranker.rerank(results, "ownership", "semantic_search");
       // 90% live-line ownership should rank higher
-      expect(reranked[0].payload?.git?.lineDominantAuthorPct).toBe(90);
+      expect(reranked[0].payload?.git?.blameDominantAuthorPct).toBe(90);
     });
 
     it("should boost density signal in codeReview preset", () => {
@@ -176,22 +176,22 @@ describe("reranker", () => {
     });
 
     it("should flag single-contributor code via knowledgeSilo signal", () => {
-      // knowledgeSilo now reads lineContributorCount (live-line authorship)
+      // knowledgeSilo now reads blameContributorCount (live-line authorship)
       const results = [
         createResult(0.8, 30, 5, false, {
-          lineContributorCount: 5,
-          lineDominantAuthorPct: 80,
-          lineAuthors: ["a", "b", "c", "d", "e"] as any,
+          blameContributorCount: 5,
+          blameDominantAuthorPct: 80,
+          blameAuthors: ["a", "b", "c", "d", "e"] as any,
         }),
         createResult(0.8, 30, 5, false, {
-          lineContributorCount: 1,
-          lineDominantAuthorPct: 80,
-          lineAuthors: ["alice"] as any,
+          blameContributorCount: 1,
+          blameDominantAuthorPct: 80,
+          blameAuthors: ["alice"] as any,
         }),
       ];
       const reranked = reranker.rerank(results, { custom: { similarity: 0.1, knowledgeSilo: 0.9 } }, "semantic_search");
       // Single live-line contributor (knowledgeSilo=1.0) must be reordered to first
-      expect(reranked[0].payload?.git?.lineContributorCount).toBe(1);
+      expect(reranked[0].payload?.git?.blameContributorCount).toBe(1);
     });
 
     it("should normalize chunkChurnRatio via chunkRelativeChurn signal", () => {
@@ -226,24 +226,24 @@ describe("reranker", () => {
       expect(reranked[0].payload?.git?.chunk?.bugFixRate).toBe(80);
     });
 
-    it("should prefer chunk lineContributorCount over file-level for knowledgeSilo", () => {
+    it("should prefer chunk blameContributorCount over file-level for knowledgeSilo", () => {
       // With alpha-blending, chunk data needs sufficient chunk.commitCount for alpha=1.0.
       // chunk.commitCount=10 with file commitCount=10 -> alpha=1.0 (pure chunk values).
       // knowledgeSilo uses categorical thresholds (1->1.0, 2->0.5, 3+->0) so needs exact integers.
       // File has 5 line contributors, but this chunk only has 1 — chunk wins via blend.
       const results = [
         createResult(0.8, 30, 10, false, {
-          lineContributorCount: 1,
-          chunk: { lineContributorCount: 3, commitCount: 10 },
+          blameContributorCount: 1,
+          chunk: { blameContributorCount: 3, commitCount: 10 },
         }),
         createResult(0.8, 30, 10, false, {
-          lineContributorCount: 5,
-          chunk: { lineContributorCount: 1, commitCount: 10 },
+          blameContributorCount: 5,
+          chunk: { blameContributorCount: 1, commitCount: 10 },
         }),
       ];
       const reranked = reranker.rerank(results, { custom: { similarity: 0.1, knowledgeSilo: 0.9 } }, "semantic_search");
-      // Chunk with chunk.lineContributorCount=1 (silo) should rank first (alpha=1.0 -> pure chunk value)
-      expect(reranked[0].payload?.git?.chunk?.lineContributorCount).toBe(1);
+      // Chunk with chunk.blameContributorCount=1 (silo) should rank first (alpha=1.0 -> pure chunk value)
+      expect(reranked[0].payload?.git?.chunk?.blameContributorCount).toBe(1);
     });
   });
 
@@ -265,8 +265,8 @@ describe("reranker", () => {
         git: {
           ageDays: 10,
           commitCount: 20,
-          dominantAuthor: "alice",
-          authors: ["alice"],
+          recentDominantAuthor: "alice",
+          recentAuthors: ["alice"],
           recencyWeightedFreq: 5.0,
           bugFixRate: 40,
           churnVolatility: 20,
@@ -380,11 +380,11 @@ describe("reranker", () => {
 
     it("should not dampen ownership when commitCount >= 5 (ownership threshold)", () => {
       const results = [
-        createResult(0.8, 30, 6, false, { lineDominantAuthorPct: 30, lineAuthors: ["a", "b", "c", "d"] as any }),
-        createResult(0.8, 30, 6, false, { lineDominantAuthorPct: 90, lineAuthors: ["alice", "bob"] as any }),
+        createResult(0.8, 30, 6, false, { blameDominantAuthorPct: 30, blameAuthors: ["a", "b", "c", "d"] as any }),
+        createResult(0.8, 30, 6, false, { blameDominantAuthorPct: 90, blameAuthors: ["alice", "bob"] as any }),
       ];
       const reranked = reranker.rerank(results, { custom: { ownership: 1.0 } }, "semantic_search");
-      expect(reranked[0].payload?.git?.lineDominantAuthorPct).toBe(90);
+      expect(reranked[0].payload?.git?.blameDominantAuthorPct).toBe(90);
     });
 
     it("should zero statistical signals when commitCount=0", () => {
@@ -704,8 +704,8 @@ describe("reranker", () => {
         git: {
           ageDays: 10,
           commitCount: 20,
-          dominantAuthor: "alice",
-          authors: ["alice"],
+          recentDominantAuthor: "alice",
+          recentAuthors: ["alice"],
           recencyWeightedFreq: 5.0,
           bugFixRate: 40,
           churnVolatility: 20,
@@ -924,9 +924,9 @@ describe("reranker", () => {
               commitCount: 20,
               ageDays: 200,
               bugFixRate: 10,
-              lineContributorCount: 1,
-              lineAuthors: ["solo"],
-              lineDominantAuthorPct: 100,
+              blameContributorCount: 1,
+              blameAuthors: ["solo"],
+              blameDominantAuthorPct: 100,
               churnVolatility: 5,
               changeDensity: 3,
             },
@@ -944,9 +944,9 @@ describe("reranker", () => {
               commitCount: 20,
               ageDays: 200,
               bugFixRate: 10,
-              lineContributorCount: 5,
-              lineAuthors: ["a", "b", "c", "d", "e"],
-              lineDominantAuthorPct: 30,
+              blameContributorCount: 5,
+              blameAuthors: ["a", "b", "c", "d", "e"],
+              blameDominantAuthorPct: 30,
               churnVolatility: 5,
               changeDensity: 3,
             },
@@ -955,7 +955,7 @@ describe("reranker", () => {
       };
       const results = reranker.rerank([shared, silo], "techDebt", "semantic_search");
       // Single live-line author code should rank higher in techDebt (knowledge silo risk)
-      expect(results[0].payload?.git?.file?.lineContributorCount).toBe(1);
+      expect(results[0].payload?.git?.file?.blameContributorCount).toBe(1);
     });
 
     it("should include density signal", () => {
@@ -972,7 +972,7 @@ describe("reranker", () => {
               bugFixRate: 10,
               changeDensity: 15,
               churnVolatility: 5,
-              contributorCount: 3,
+              recentContributorCount: 3,
             },
           },
         },
@@ -990,7 +990,7 @@ describe("reranker", () => {
               bugFixRate: 10,
               changeDensity: 1,
               churnVolatility: 5,
-              contributorCount: 3,
+              recentContributorCount: 3,
             },
           },
         },
@@ -1345,8 +1345,8 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
     { key: "git.file.bugFixRate", type: "number" as const, description: "Bug fix rate" },
     { key: "git.file.churnVolatility", type: "number" as const, description: "Churn volatility" },
     { key: "git.file.changeDensity", type: "number" as const, description: "Change density" },
-    { key: "git.file.dominantAuthorPct", type: "number" as const, description: "Dominant author pct" },
-    { key: "git.file.contributorCount", type: "number" as const, description: "Contributors" },
+    { key: "git.file.recentDominantAuthorPct", type: "number" as const, description: "Dominant author pct" },
+    { key: "git.file.recentContributorCount", type: "number" as const, description: "Contributors" },
     { key: "git.file.relativeChurn", type: "number" as const, description: "Relative churn" },
     { key: "git.file.recencyWeightedFreq", type: "number" as const, description: "Recency freq" },
     { key: "git.chunk.commitCount", type: "number" as const, description: "Chunk commits" },
@@ -1681,8 +1681,8 @@ describe("signalLevel: file-level preset suppresses chunk overlay", () => {
           endLine: 50,
           language: "typescript",
           git: {
-            file: { ageDays: 30, commitCount: 10, dominantAuthorPct: 90, contributorCount: 2 },
-            chunk: { contributorCount: 1, commitCount: 8 },
+            file: { ageDays: 30, commitCount: 10, recentDominantAuthorPct: 90, recentContributorCount: 2 },
+            chunk: { recentContributorCount: 1, commitCount: 8 },
           },
         },
       },
@@ -1787,7 +1787,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
   });
 
   it("leaves numeric signals without stats.labels as plain values even with collectionStats", () => {
-    // dominantAuthorPct has stats.labels: { p95: "extreme" }
+    // recentDominantAuthorPct has stats.labels: { p95: "extreme" }
     // contributorCount has stats.labels: { p95: "extreme" }
     // But we add a signal WITHOUT labels to verify it stays plain.
     // Use the techDebt preset + collectionStats that only has commitCount entry.
@@ -2252,7 +2252,7 @@ describe("scoreResults (private phase)", () => {
       startLine: 1,
       endLine: 10,
       language: "typescript",
-      git: { ageDays, commitCount, dominantAuthor: "alice", authors: ["alice"] },
+      git: { ageDays, commitCount, recentDominantAuthor: "alice", recentAuthors: ["alice"] },
     },
   });
 

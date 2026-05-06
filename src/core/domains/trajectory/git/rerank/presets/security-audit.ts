@@ -29,9 +29,9 @@ export class SecurityAuditPreset implements RerankPreset {
   readonly overlayMask: OverlayMask = {
     file: [
       "ageDays",
-      "dominantAuthorPct",
-      "lineDominantAuthorPct",
-      "lineContributorCount",
+      "recentDominantAuthorPct",
+      "blameDominantAuthorPct",
+      "blameContributorCount",
       "bugFixRate",
       "churnVolatility",
     ],

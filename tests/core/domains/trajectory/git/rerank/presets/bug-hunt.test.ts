@@ -45,9 +45,9 @@ describe("BugHuntPreset", () => {
   it("surfaces pair-diagnostic disambiguators for architectural interpretation", () => {
     // imports: separates coupling point from bug attractor (high fan-in vs low)
     expect(preset.overlayMask.file).toContain("imports");
-    // dominantAuthorPct + contributorCount: separates toxic silo from healthy owner
-    expect(preset.overlayMask.file).toContain("dominantAuthorPct");
-    expect(preset.overlayMask.file).toContain("contributorCount");
+    // recentDominantAuthorPct + recentContributorCount: separates toxic silo from healthy owner
+    expect(preset.overlayMask.file).toContain("recentDominantAuthorPct");
+    expect(preset.overlayMask.file).toContain("recentContributorCount");
   });
 
   it("surfaces method-level (chunk) disambiguators", () => {
@@ -57,8 +57,8 @@ describe("BugHuntPreset", () => {
     expect(preset.overlayMask.chunk).toContain("ageDays");
     // chunk.relativeChurn: method-level thrashing normalized by chunk size
     expect(preset.overlayMask.chunk).toContain("relativeChurn");
-    // chunk.contributorCount: shared method inside owned file
-    expect(preset.overlayMask.chunk).toContain("contributorCount");
+    // chunk.recentContributorCount: shared method inside owned file
+    expect(preset.overlayMask.chunk).toContain("recentContributorCount");
   });
 
   it("does not set signalLevel (defaults to chunk)", () => {

@@ -61,7 +61,7 @@ describe("OwnershipSignal self-dampening", () => {
   const signal = new OwnershipSignal();
 
   it("dampens with fallback threshold", () => {
-    const raw = makePayload({ commitCount: 2, lineDominantAuthorPct: 80 });
+    const raw = makePayload({ commitCount: 2, blameDominantAuthorPct: 80 });
     const ctx: ExtractContext = {};
     const value = signal.extract(raw, ctx);
     // base = 0.8, confidence = (2/5)^2 = 0.16 (FALLBACK_THRESHOLD=5)
@@ -69,7 +69,7 @@ describe("OwnershipSignal self-dampening", () => {
   });
 
   it("returns full value when commitCount >= threshold", () => {
-    const raw = makePayload({ commitCount: 10, lineDominantAuthorPct: 80 });
+    const raw = makePayload({ commitCount: 10, blameDominantAuthorPct: 80 });
     const ctx: ExtractContext = {};
     expect(signal.extract(raw, ctx)).toBeCloseTo(0.8);
   });
@@ -93,7 +93,7 @@ describe("KnowledgeSiloSignal self-dampening", () => {
   const signal = new KnowledgeSiloSignal();
 
   it("dampens when commitCount below threshold", () => {
-    const raw = makePayload({ commitCount: 2, lineContributorCount: 1 });
+    const raw = makePayload({ commitCount: 2, blameContributorCount: 1 });
     const ctx: ExtractContext = {};
     const value = signal.extract(raw, ctx);
     // base = 1.0 (1 line contributor), confidence = (2/5)^2 = 0.16 (FALLBACK_THRESHOLD=5)

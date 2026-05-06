@@ -169,8 +169,8 @@ describe("SchemaManager", () => {
   });
 
   describe("LATEST_SCHEMA_VERSION", () => {
-    it("should be 12 with v12 enrichment payload indexes migration", () => {
-      expect(LATEST_SCHEMA_VERSION).toBe(12);
+    it("should be 13 with v13 ownership rename migration", () => {
+      expect(LATEST_SCHEMA_VERSION).toBe(13);
     });
   });
 });

@@ -40,7 +40,7 @@ function makePoints(values: number[]) {
       chunkType: "function",
       isDocumentation: i === 0,
       relativePath: `file${i % 3}.ts`,
-      "git.file.dominantAuthor": i % 2 === 0 ? "Alice" : "Bob",
+      "git.file.recentDominantAuthor": i % 2 === 0 ? "Alice" : "Bob",
     },
   }));
 }
@@ -97,7 +97,7 @@ describe("computeCollectionStats distributions", () => {
         chunkType: "function",
         isDocumentation: false,
         relativePath: `file${i}.ts`,
-        "git.file.dominantAuthor": `Author${i}`,
+        "git.file.recentDominantAuthor": `Author${i}`,
       },
     }));
     const result = computeCollectionStats(points, testSignals, ALL_ACCS);

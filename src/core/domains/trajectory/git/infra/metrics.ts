@@ -131,10 +131,10 @@ export function computeFileSignals(
 
   if (commits.length === 0) {
     return {
-      dominantAuthor: "unknown",
-      dominantAuthorEmail: "",
-      authors: [],
-      dominantAuthorPct: 0,
+      recentDominantAuthor: "unknown",
+      recentDominantAuthorEmail: "",
+      recentAuthors: [],
+      recentDominantAuthorPct: 0,
       lastModifiedAt: 0,
       firstCreatedAt: 0,
       lastCommitHash: "",
@@ -148,12 +148,12 @@ export function computeFileSignals(
       changeDensity: 0,
       churnVolatility: 0,
       bugFixRate: 0,
-      contributorCount: 0,
+      recentContributorCount: 0,
       taskIds: [],
-      lineDominantAuthor: "unknown",
-      lineDominantAuthorPct: 0,
-      lineAuthors: [],
-      lineContributorCount: 0,
+      blameDominantAuthor: "unknown",
+      blameDominantAuthorPct: 0,
+      blameAuthors: [],
+      blameContributorCount: 0,
     };
   }
 
@@ -177,14 +177,14 @@ export function computeFileSignals(
   }
 
   // Find dominant author
-  let dominantAuthor = "";
-  let dominantAuthorEmail = "";
+  let recentDominantAuthor = "";
+  let recentDominantAuthorEmail = "";
   let maxCount = 0;
   for (const [author, data] of authorCounts) {
     if (data.count > maxCount) {
       maxCount = data.count;
-      dominantAuthor = author;
-      dominantAuthorEmail = data.email;
+      recentDominantAuthor = author;
+      recentDominantAuthorEmail = data.email;
     }
   }
 
@@ -225,10 +225,10 @@ export function computeFileSignals(
   const contributorCount = authorCounts.size;
 
   return {
-    dominantAuthor,
-    dominantAuthorEmail,
-    authors: Array.from(authorCounts.keys()),
-    dominantAuthorPct: Math.round((maxCount / commits.length) * 100),
+    recentDominantAuthor,
+    recentDominantAuthorEmail,
+    recentAuthors: Array.from(authorCounts.keys()),
+    recentDominantAuthorPct: Math.round((maxCount / commits.length) * 100),
     lastModifiedAt: lastCommit.timestamp,
     firstCreatedAt: firstCommit.timestamp,
     lastCommitHash: lastCommit.sha,
@@ -242,13 +242,13 @@ export function computeFileSignals(
     changeDensity: Math.round(changeDensity * 100) / 100,
     churnVolatility: Math.round(churnVolatility * 100) / 100,
     bugFixRate,
-    contributorCount,
+    recentContributorCount: contributorCount,
     taskIds: Array.from(allTaskIds),
     // Line-based ownership defaults — populated with real blame data in pipeline wire-in (Task 4).
-    lineDominantAuthor: "unknown",
-    lineDominantAuthorPct: 0,
-    lineAuthors: [],
-    lineContributorCount: 0,
+    blameDominantAuthor: "unknown",
+    blameDominantAuthorPct: 0,
+    blameAuthors: [],
+    blameContributorCount: 0,
   };
 }
 
@@ -304,7 +304,7 @@ export function computeChunkSignals(
   return {
     commitCount,
     churnRatio: Math.round((commitCount / Math.max(fileCommitCount, 1)) * 100) / 100,
-    contributorCount:
+    recentContributorCount:
       fileContributorCount !== undefined ? Math.min(acc.authors.size, fileContributorCount) : acc.authors.size,
     bugFixRate:
       commitCount > 0
@@ -318,9 +318,9 @@ export function computeChunkSignals(
     churnVolatility: Math.round(churnVolatility * 100) / 100,
     taskIds: Array.from(acc.taskIds),
     // Line-based ownership defaults — populated with real blame data in pipeline wire-in (Task 4).
-    lineDominantAuthor: "unknown",
-    lineDominantAuthorPct: 0,
-    lineAuthors: [],
-    lineContributorCount: 0,
+    blameDominantAuthor: "unknown",
+    blameDominantAuthorPct: 0,
+    blameAuthors: [],
+    blameContributorCount: 0,
   };
 }

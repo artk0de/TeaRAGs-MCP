@@ -26,7 +26,7 @@ describe("assembleChunkSignals", () => {
     const result = assembleChunkSignals(acc, 10, undefined, 50);
     expect(result.commitCount).toBe(2);
     expect(result.churnRatio).toBeCloseTo(0.2, 1);
-    expect(result.contributorCount).toBe(1);
+    expect(result.recentContributorCount).toBe(1);
     // Laplace-smoothed: (1 + 0.5) / (2 + 1.0) = 1.5/3.0 = 0.5 → 50
     expect(result.bugFixRate).toBe(50);
     expect(result.ageDays).toBeGreaterThanOrEqual(0);
@@ -69,7 +69,7 @@ describe("assembleChunkSignals", () => {
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 5, 2, 10);
-    expect(result.contributorCount).toBe(2); // capped at fileContributorCount
+    expect(result.recentContributorCount).toBe(2); // capped at fileContributorCount
   });
 
   it("uses chunk authors count when fileContributorCount not provided", () => {
@@ -85,7 +85,7 @@ describe("assembleChunkSignals", () => {
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 5, undefined, 10);
-    expect(result.contributorCount).toBe(2);
+    expect(result.recentContributorCount).toBe(2);
   });
 
   it("computes churnVolatility from commit timestamps (3+ commits)", () => {
@@ -223,16 +223,16 @@ describe("assembleChunkSignals", () => {
       taskIds: new Set(),
     };
     const result = assembleChunkSignals(acc, 1, undefined, 5, undefined, {
-      lineDominantAuthor: "Carol",
-      lineDominantAuthorPct: 80,
-      lineAuthors: ["Carol", "Bob"],
-      lineContributorCount: 2,
+      blameDominantAuthor: "Carol",
+      blameDominantAuthorPct: 80,
+      blameAuthors: ["Carol", "Bob"],
+      blameContributorCount: 2,
     });
 
-    expect(result.lineDominantAuthor).toBe("Carol");
-    expect(result.lineDominantAuthorPct).toBe(80);
-    expect(result.lineAuthors).toEqual(["Carol", "Bob"]);
-    expect(result.lineContributorCount).toBe(2);
+    expect(result.blameDominantAuthor).toBe("Carol");
+    expect(result.blameDominantAuthorPct).toBe(80);
+    expect(result.blameAuthors).toEqual(["Carol", "Bob"]);
+    expect(result.blameContributorCount).toBe(2);
   });
 
   it("falls back to unknown line ownership when ownership omitted", () => {
@@ -249,8 +249,8 @@ describe("assembleChunkSignals", () => {
     };
     const result = assembleChunkSignals(acc, 1, undefined, 5);
 
-    expect(result.lineDominantAuthor).toBe("unknown");
-    expect(result.lineDominantAuthorPct).toBe(0);
-    expect(result.lineContributorCount).toBe(0);
+    expect(result.blameDominantAuthor).toBe("unknown");
+    expect(result.blameDominantAuthorPct).toBe(0);
+    expect(result.blameContributorCount).toBe(0);
   });
 });

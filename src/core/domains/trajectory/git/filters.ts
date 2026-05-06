@@ -11,19 +11,19 @@ import type { FilterDescriptor, FilterLevel } from "../../../contracts/index.js"
 
 export const gitFilters: FilterDescriptor[] = [
   {
-    param: "author",
+    param: "recentAuthor",
     description: "Filter by recent-activity dominant author (commit-count based, within log window)",
     type: "string",
     toCondition: (value: unknown) => ({
-      must: [{ key: "git.file.dominantAuthor", match: { value: value as string } }],
+      must: [{ key: "git.file.recentDominantAuthor", match: { value: value as string } }],
     }),
   },
   {
-    param: "lineOwner",
+    param: "blameOwner",
     description: "Filter by live-line owner — author of most lines in HEAD via git blame",
     type: "string",
     toCondition: (value: unknown) => ({
-      must: [{ key: "git.file.lineDominantAuthor", match: { value: value as string } }],
+      must: [{ key: "git.file.blameDominantAuthor", match: { value: value as string } }],
     }),
   },
   {

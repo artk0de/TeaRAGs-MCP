@@ -115,9 +115,9 @@ describe("assembleFileSignals with squash-aware sessions", () => {
     expect(withSquash.linesDeleted).toBe(without.linesDeleted);
     expect(withSquash.relativeChurn).toBe(without.relativeChurn);
     // Authorship unchanged
-    expect(withSquash.dominantAuthor).toBe(without.dominantAuthor);
-    expect(withSquash.authors).toEqual(without.authors);
-    expect(withSquash.contributorCount).toBe(without.contributorCount);
+    expect(withSquash.recentDominantAuthor).toBe(without.recentDominantAuthor);
+    expect(withSquash.recentAuthors).toEqual(without.recentAuthors);
+    expect(withSquash.recentContributorCount).toBe(without.recentContributorCount);
     // Temporal unchanged
     expect(withSquash.ageDays).toBe(without.ageDays);
   });

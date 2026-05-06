@@ -40,8 +40,8 @@ describe("computeFileSignals", () => {
     const meta = computeFileSignals(data, 100);
 
     expect(meta.commitCount).toBe(0);
-    expect(meta.dominantAuthor).toBe("unknown");
-    expect(meta.authors).toHaveLength(0);
+    expect(meta.recentDominantAuthor).toBe("unknown");
+    expect(meta.recentAuthors).toHaveLength(0);
     expect(meta.relativeChurn).toBe(0);
     expect(meta.recencyWeightedFreq).toBe(0);
     expect(meta.changeDensity).toBe(0);
@@ -58,10 +58,10 @@ describe("computeFileSignals", () => {
     const meta = computeFileSignals(data, 100);
 
     expect(meta.commitCount).toBe(1);
-    expect(meta.dominantAuthor).toBe("Alice");
-    expect(meta.dominantAuthorEmail).toBe("alice@example.com");
-    expect(meta.dominantAuthorPct).toBe(100);
-    expect(meta.authors).toEqual(["Alice"]);
+    expect(meta.recentDominantAuthor).toBe("Alice");
+    expect(meta.recentDominantAuthorEmail).toBe("alice@example.com");
+    expect(meta.recentDominantAuthorPct).toBe(100);
+    expect(meta.recentAuthors).toEqual(["Alice"]);
     expect(meta.lastCommitHash).toBe("a".repeat(40));
     expect(meta.ageDays).toBe(1);
     expect(meta.linesAdded).toBe(50);
@@ -89,12 +89,12 @@ describe("computeFileSignals", () => {
     const data: FileChurnData = { commits, linesAdded: 100, linesDeleted: 20 };
     const meta = computeFileSignals(data, 200);
 
-    expect(meta.dominantAuthor).toBe("Alice");
-    expect(meta.dominantAuthorPct).toBe(60); // 3/5 = 60%
-    expect(meta.authors).toHaveLength(3);
-    expect(meta.authors).toContain("Alice");
-    expect(meta.authors).toContain("Bob");
-    expect(meta.authors).toContain("Charlie");
+    expect(meta.recentDominantAuthor).toBe("Alice");
+    expect(meta.recentDominantAuthorPct).toBe(60); // 3/5 = 60%
+    expect(meta.recentAuthors).toHaveLength(3);
+    expect(meta.recentAuthors).toContain("Alice");
+    expect(meta.recentAuthors).toContain("Bob");
+    expect(meta.recentAuthors).toContain("Charlie");
     expect(meta.commitCount).toBe(5);
   });
 
@@ -144,7 +144,7 @@ describe("computeFileSignals", () => {
     const meta = computeFileSignals(data, 100);
 
     expect(meta.bugFixRate).toBe(0);
-    expect(meta.contributorCount).toBe(0);
+    expect(meta.recentContributorCount).toBe(0);
   });
 
   it("should detect various bug fix patterns", () => {
@@ -186,7 +186,7 @@ describe("computeFileSignals", () => {
     const data: FileChurnData = { commits, linesAdded: 0, linesDeleted: 0 };
     const meta = computeFileSignals(data, 100);
 
-    expect(meta.contributorCount).toBe(3);
+    expect(meta.recentContributorCount).toBe(3);
   });
 
   it("should compute relativeChurn correctly", () => {

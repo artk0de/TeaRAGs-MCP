@@ -24,11 +24,11 @@ describe("assembleFileSignals", () => {
     };
     const result = assembleFileSignals(churnData, 300);
 
-    expect(result.dominantAuthor).toBe("alice");
-    expect(result.dominantAuthorEmail).toBe("a@x.com");
-    expect(result.authors).toContain("alice");
-    expect(result.authors).toContain("bob");
-    expect(result.dominantAuthorPct).toBe(67);
+    expect(result.recentDominantAuthor).toBe("alice");
+    expect(result.recentDominantAuthorEmail).toBe("a@x.com");
+    expect(result.recentAuthors).toContain("alice");
+    expect(result.recentAuthors).toContain("bob");
+    expect(result.recentDominantAuthorPct).toBe(67);
     expect(result.commitCount).toBe(3);
     expect(result.linesAdded).toBe(200);
     expect(result.linesDeleted).toBe(50);
@@ -36,14 +36,14 @@ describe("assembleFileSignals", () => {
     expect(result.relativeChurn).toBeCloseTo(0.83, 1);
     // Laplace-smoothed: (1 + 0.5) / (3 + 1.0) = 1.5/4.0 = 0.375 → 38
     expect(result.bugFixRate).toBe(38);
-    expect(result.contributorCount).toBe(2);
+    expect(result.recentContributorCount).toBe(2);
     expect(result.lastCommitHash).toBe("a3");
   });
 
   it("returns zero-value metadata for empty commits", () => {
     const churnData: FileChurnData = { commits: [], linesAdded: 0, linesDeleted: 0 };
     const result = assembleFileSignals(churnData, 100);
-    expect(result.dominantAuthor).toBe("unknown");
+    expect(result.recentDominantAuthor).toBe("unknown");
     expect(result.commitCount).toBe(0);
     expect(result.fileChurnCount).toBe(0);
     expect(result.bugFixRate).toBe(0);
@@ -51,7 +51,7 @@ describe("assembleFileSignals", () => {
     expect(result.recencyWeightedFreq).toBe(0);
     expect(result.changeDensity).toBe(0);
     expect(result.churnVolatility).toBe(0);
-    expect(result.contributorCount).toBe(0);
+    expect(result.recentContributorCount).toBe(0);
     expect(result.taskIds).toEqual([]);
   });
 
@@ -95,12 +95,12 @@ describe("assembleFileSignals", () => {
     const result = assembleFileSignals(churnData, 10, undefined, undefined, blameLines);
 
     // Recent activity (commit-based) — alice is sole committer
-    expect(result.dominantAuthor).toBe("alice");
+    expect(result.recentDominantAuthor).toBe("alice");
     // Live-line ownership — carol owns 2/3 of lines, decoupled from commits
-    expect(result.lineDominantAuthor).toBe("Carol");
-    expect(result.lineDominantAuthorPct).toBe(67);
-    expect(result.lineAuthors).toEqual(["Carol", "Dave"]);
-    expect(result.lineContributorCount).toBe(2);
+    expect(result.blameDominantAuthor).toBe("Carol");
+    expect(result.blameDominantAuthorPct).toBe(67);
+    expect(result.blameAuthors).toEqual(["Carol", "Dave"]);
+    expect(result.blameContributorCount).toBe(2);
   });
 
   it("falls back to unknown line ownership when blameLines is empty", () => {
@@ -111,8 +111,8 @@ describe("assembleFileSignals", () => {
     };
     const result = assembleFileSignals(churnData, 10, undefined, undefined, []);
 
-    expect(result.lineDominantAuthor).toBe("unknown");
-    expect(result.lineDominantAuthorPct).toBe(0);
-    expect(result.lineContributorCount).toBe(0);
+    expect(result.blameDominantAuthor).toBe("unknown");
+    expect(result.blameDominantAuthorPct).toBe(0);
+    expect(result.blameContributorCount).toBe(0);
   });
 });

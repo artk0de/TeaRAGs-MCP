@@ -8,6 +8,7 @@ import {
   SchemaV10PurgeMarkdownChunks,
   SchemaV11RenameParentSymbolId,
   SchemaV12EnrichmentPayloadIndexes,
+  SchemaV13RenameOwnershipPayload,
 } from "./schema_migrations/index.js";
 import type { EnrichmentStore, IndexStore, Migration, MigrationRunner, SnapshotStore } from "./types.js";
 
@@ -46,6 +47,11 @@ export class SchemaMigrator implements MigrationRunner {
           Required<Pick<IndexStore, "scrollAllPayload" | "batchSetPayload" | "deletePayloadKeys">>,
       ),
       new SchemaV12EnrichmentPayloadIndexes(collection, indexStore),
+      new SchemaV13RenameOwnershipPayload(
+        collection,
+        indexStore as IndexStore &
+          Required<Pick<IndexStore, "scrollAllPayload" | "batchSetPayload" | "deletePayloadKeys">>,
+      ),
     ];
     this.latestVersion = Math.max(...this.migrations.map((m) => m.version));
   }

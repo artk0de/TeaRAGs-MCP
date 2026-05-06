@@ -20,11 +20,11 @@ describe("git filter descriptors", () => {
     }
   });
 
-  it("author filter uses git.file.dominantAuthor (file-only)", () => {
-    const result = findFilter("author").toCondition("alice");
+  it("recentAuthor filter uses git.file.recentDominantAuthor (file-only)", () => {
+    const result = findFilter("recentAuthor").toCondition("alice");
     expect(result.must).toHaveLength(1);
     expect(result.must![0]).toEqual({
-      key: "git.file.dominantAuthor",
+      key: "git.file.recentDominantAuthor",
       match: { value: "alice" },
     });
   });

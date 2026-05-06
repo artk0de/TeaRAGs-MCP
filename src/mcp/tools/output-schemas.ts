@@ -22,17 +22,17 @@ const RankingOverlaySchema = z.object({
 
 const GitMetadataSchema = z
   .object({
-    dominantAuthor: z.string().optional(),
+    recentDominantAuthor: z.string().optional(),
     authors: z.array(z.string()).optional(),
     commitCount: z.number().optional(),
     ageDays: z.number().optional(),
     lastModifiedAt: z.string().optional(),
     firstCreatedAt: z.string().optional(),
     taskIds: z.array(z.string()).optional(),
-    lineDominantAuthor: z.string().optional().describe("Live-line owner from git blame HEAD"),
-    lineDominantAuthorPct: z.number().optional().describe("Percentage of live lines owned by lineDominantAuthor"),
-    lineAuthors: z.array(z.string()).optional().describe("Distinct authors of live lines (top-N)"),
-    lineContributorCount: z.number().optional().describe("Distinct authors of live lines"),
+    blameDominantAuthor: z.string().optional().describe("Live-line owner from git blame HEAD"),
+    blameDominantAuthorPct: z.number().optional().describe("Percentage of live lines owned by blameDominantAuthor"),
+    blameAuthors: z.array(z.string()).optional().describe("Distinct authors of live lines (top-N)"),
+    blameContributorCount: z.number().optional().describe("Distinct authors of live lines"),
   })
   .passthrough();
 

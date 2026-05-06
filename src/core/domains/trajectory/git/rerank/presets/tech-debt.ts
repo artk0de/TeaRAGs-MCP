@@ -34,10 +34,10 @@ export class TechDebtPreset implements RerankPreset {
       "churnVolatility",
       "changeDensity",
       "imports",
-      "lineDominantAuthorPct",
-      "dominantAuthorPct",
-      "contributorCount",
+      "blameDominantAuthorPct",
+      "recentDominantAuthorPct",
+      "recentContributorCount",
     ],
-    chunk: ["commitCount", "churnRatio", "ageDays", "bugFixRate", "relativeChurn", "lineDominantAuthorPct"],
+    chunk: ["commitCount", "churnRatio", "ageDays", "bugFixRate", "relativeChurn", "blameDominantAuthorPct"],
   };
 }

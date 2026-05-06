@@ -151,7 +151,7 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
         param: "author",
         description: "Filter by author",
         type: "string",
-        toCondition: (v) => [{ key: "git.file.dominantAuthor", match: { value: v } }],
+        toCondition: (v) => [{ key: "git.file.recentDominantAuthor", match: { value: v } }],
       },
     ];
     const registry = new TrajectoryRegistry();
@@ -194,7 +194,7 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
         param: "author",
         description: "Author",
         type: "string",
-        toCondition: (v) => ({ must: [{ key: "git.file.dominantAuthor", match: { value: v } }] }),
+        toCondition: (v) => ({ must: [{ key: "git.file.recentDominantAuthor", match: { value: v } }] }),
       },
       {
         param: "minAge",
@@ -209,7 +209,7 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
     const filter = registry.buildFilter({ author: "alice", minAge: 30 });
     expect(filter).toBeDefined();
     expect(filter!.must).toHaveLength(2);
-    expect(filter!.must![0]).toEqual({ key: "git.file.dominantAuthor", match: { value: "alice" } });
+    expect(filter!.must![0]).toEqual({ key: "git.file.recentDominantAuthor", match: { value: "alice" } });
     expect(filter!.must![1]).toEqual({ key: "git.chunk.ageDays", range: { gte: 30 } });
   });
 
@@ -257,7 +257,7 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
         param: "author",
         description: "Author",
         type: "string",
-        toCondition: (v) => ({ must: [{ key: "git.file.dominantAuthor", match: { value: v } }] }),
+        toCondition: (v) => ({ must: [{ key: "git.file.recentDominantAuthor", match: { value: v } }] }),
       },
       {
         param: "minAge",

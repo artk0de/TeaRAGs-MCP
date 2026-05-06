@@ -30,10 +30,10 @@ export class DangerousPreset implements RerankPreset {
     file: [
       "bugFixRate",
       "churnVolatility",
-      "dominantAuthorPct",
-      "lineDominantAuthorPct",
-      "lineContributorCount",
-      "contributorCount",
+      "recentDominantAuthorPct",
+      "blameDominantAuthorPct",
+      "blameContributorCount",
+      "recentContributorCount",
       "ageDays",
       "imports",
       "relativeChurn",
@@ -44,8 +44,8 @@ export class DangerousPreset implements RerankPreset {
       "bugFixRate",
       "ageDays",
       "relativeChurn",
-      "contributorCount",
-      "lineContributorCount",
+      "recentContributorCount",
+      "blameContributorCount",
     ],
   };
 }

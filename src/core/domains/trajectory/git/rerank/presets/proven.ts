@@ -30,7 +30,7 @@ export class ProvenPreset implements RerankPreset {
     volatility: -0.05,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["bugFixRate", "ageDays", "commitCount", "dominantAuthorPct", "lineDominantAuthorPct"],
+    file: ["bugFixRate", "ageDays", "commitCount", "recentDominantAuthorPct", "blameDominantAuthorPct"],
   };
   readonly signalLevel: SignalLevel = "file";
 }

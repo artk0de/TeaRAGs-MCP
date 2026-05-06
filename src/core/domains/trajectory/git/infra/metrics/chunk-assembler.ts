@@ -65,7 +65,7 @@ export function assembleChunkSignals(
   return {
     commitCount,
     churnRatio: Math.round((commitCount / Math.max(fileCommitCount, 1)) * 100) / 100,
-    contributorCount:
+    recentContributorCount:
       fileContributorCount !== undefined ? Math.min(acc.authors.size, fileContributorCount) : acc.authors.size,
     bugFixRate:
       commitCount > 0
@@ -79,9 +79,9 @@ export function assembleChunkSignals(
     churnVolatility: Math.round(churnVolatility * 100) / 100,
     taskIds: Array.from(acc.taskIds),
     // Line-based ownership: from blame ownership for this chunk's range when provided.
-    lineDominantAuthor: ownership?.lineDominantAuthor ?? "unknown",
-    lineDominantAuthorPct: ownership?.lineDominantAuthorPct ?? 0,
-    lineAuthors: ownership?.lineAuthors ?? [],
-    lineContributorCount: ownership?.lineContributorCount ?? 0,
+    blameDominantAuthor: ownership?.blameDominantAuthor ?? "unknown",
+    blameDominantAuthorPct: ownership?.blameDominantAuthorPct ?? 0,
+    blameAuthors: ownership?.blameAuthors ?? [],
+    blameContributorCount: ownership?.blameContributorCount ?? 0,
   };
 }

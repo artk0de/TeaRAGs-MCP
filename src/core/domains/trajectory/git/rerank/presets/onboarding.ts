@@ -27,7 +27,7 @@ export class OnboardingPreset implements RerankPreset {
     volatility: -0.1,
   };
   readonly overlayMask: OverlayMask = {
-    file: ["commitCount", "ageDays", "dominantAuthorPct", "lineDominantAuthorPct", "churnVolatility"],
+    file: ["commitCount", "ageDays", "recentDominantAuthorPct", "blameDominantAuthorPct", "churnVolatility"],
     chunk: ["commitCount", "ageDays"],
   };
 }

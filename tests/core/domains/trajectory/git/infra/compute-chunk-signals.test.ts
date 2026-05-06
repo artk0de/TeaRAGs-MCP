@@ -52,7 +52,7 @@ describe("computeChunkSignals", () => {
     );
     expect(result.commitCount).toBe(2);
     expect(result.churnRatio).toBeCloseTo(0.2, 1);
-    expect(result.contributorCount).toBe(1);
+    expect(result.recentContributorCount).toBe(1);
     expect(result.bugFixRate).toBeGreaterThan(0);
     expect(result.ageDays).toBeGreaterThanOrEqual(0);
     expect(result.relativeChurn).toBeGreaterThan(0);
@@ -95,7 +95,7 @@ describe("computeChunkSignals", () => {
       2,
       10,
     );
-    expect(result.contributorCount).toBe(2);
+    expect(result.recentContributorCount).toBe(2);
   });
 
   it("defaults chunkLineCount to 1 when not provided", () => {

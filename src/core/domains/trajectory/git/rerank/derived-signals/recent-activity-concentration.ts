@@ -12,7 +12,7 @@ import { confidenceDampening, fileField, fileNum, GIT_FILE_DAMPENING } from "./h
  *   this one measures who has been touching the file recently (activity).
  * Detects: feature-in-progress (one author, recent), abandoned ownership
  *   (low concentration despite legacy ownership).
- * Scoring: dominantAuthorPct/100 when available, otherwise 1/authors.
+ * Scoring: recentDominantAuthorPct/100 when available, otherwise 1/authors.
  *   Confidence-dampened by commitCount.
  * Used in: codeReview / onboarding presets — places where "who is in this
  *   code right now" matters more than "who owns the lines."
@@ -21,16 +21,16 @@ export class RecentActivityConcentrationSignal implements DerivedSignalDescripto
   readonly name = "recentActivityConcentration";
   readonly description =
     "Concentration of recent commits in the log window — surfaces the active author, not the long-term owner";
-  readonly sources = ["file.dominantAuthorPct", "file.authors"];
+  readonly sources = ["file.recentDominantAuthorPct", "file.recentAuthors"];
   readonly dampeningSource = GIT_FILE_DAMPENING;
   private static readonly FALLBACK_THRESHOLD = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     let value: number;
-    const pct = fileField(rawSignals, "dominantAuthorPct");
+    const pct = fileField(rawSignals, "recentDominantAuthorPct");
     if (typeof pct === "number" && pct > 0) {
       value = pct / 100;
     } else {
-      const authors = fileField(rawSignals, "authors");
+      const authors = fileField(rawSignals, "recentAuthors");
       if (Array.isArray(authors) && authors.length > 0) {
         value = authors.length === 1 ? 1 : 1 / authors.length;
       } else {

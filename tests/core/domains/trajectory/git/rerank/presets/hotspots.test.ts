@@ -22,8 +22,8 @@ describe("HotspotsPreset", () => {
     // imports: coupling point vs isolated hotspot
     expect(preset.overlayMask.file).toContain("imports");
     // ownership pair: silo vs shared infra
-    expect(preset.overlayMask.file).toContain("dominantAuthorPct");
-    expect(preset.overlayMask.file).toContain("contributorCount");
+    expect(preset.overlayMask.file).toContain("recentDominantAuthorPct");
+    expect(preset.overlayMask.file).toContain("recentContributorCount");
     // relativeChurn: size-normalized activity
     expect(preset.overlayMask.file).toContain("relativeChurn");
   });
@@ -33,6 +33,6 @@ describe("HotspotsPreset", () => {
     expect(preset.overlayMask.chunk).toContain("bugFixRate");
     expect(preset.overlayMask.chunk).toContain("ageDays");
     expect(preset.overlayMask.chunk).toContain("relativeChurn");
-    expect(preset.overlayMask.chunk).toContain("contributorCount");
+    expect(preset.overlayMask.chunk).toContain("recentContributorCount");
   });
 });

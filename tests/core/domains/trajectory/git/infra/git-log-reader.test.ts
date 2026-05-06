@@ -107,7 +107,7 @@ describe("buildChunkChurnMap cache error", () => {
               {
                 commitCount: 1,
                 churnRatio: 1,
-                contributorCount: 1,
+                recentContributorCount: 1,
                 bugFixRate: 0,
                 lastModifiedAt: 0,
                 ageDays: 0,

@@ -89,11 +89,11 @@ describe("GitLogReader (integration)", { retry: 2 }, () => {
 
     // Structure validation
     expect(meta.commitCount).toBeGreaterThan(0);
-    expect(meta.dominantAuthor).toBeTruthy();
-    expect(meta.authors.length).toBeGreaterThan(0);
-    expect(meta.authors).toContain(meta.dominantAuthor);
-    expect(meta.dominantAuthorPct).toBeGreaterThan(0);
-    expect(meta.dominantAuthorPct).toBeLessThanOrEqual(100);
+    expect(meta.recentDominantAuthor).toBeTruthy();
+    expect(meta.recentAuthors.length).toBeGreaterThan(0);
+    expect(meta.recentAuthors).toContain(meta.recentDominantAuthor);
+    expect(meta.recentDominantAuthorPct).toBeGreaterThan(0);
+    expect(meta.recentDominantAuthorPct).toBeLessThanOrEqual(100);
     expect(meta.lastModifiedAt).toBeGreaterThan(0);
     expect(meta.firstCreatedAt).toBeGreaterThan(0);
     expect(meta.firstCreatedAt).toBeLessThanOrEqual(meta.lastModifiedAt);
@@ -184,7 +184,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
           expect(overlay.commitCount).toBeGreaterThanOrEqual(0);
           expect(overlay.churnRatio).toBeGreaterThanOrEqual(0);
           expect(overlay.churnRatio).toBeLessThanOrEqual(1);
-          expect(overlay.contributorCount).toBeGreaterThanOrEqual(0);
+          expect(overlay.recentContributorCount).toBeGreaterThanOrEqual(0);
           expect(overlay.bugFixRate).toBeGreaterThanOrEqual(0);
           expect(overlay.bugFixRate).toBeLessThanOrEqual(100);
           if (overlay.ageDays !== undefined) {
@@ -242,7 +242,7 @@ describe("buildChunkChurnMap (integration)", { retry: 2 }, () => {
     if (!overlayMap) return;
 
     for (const [, overlay] of overlayMap) {
-      expect(overlay.contributorCount).toBeLessThanOrEqual(fileContributors);
+      expect(overlay.recentContributorCount).toBeLessThanOrEqual(fileContributors);
     }
   });
 

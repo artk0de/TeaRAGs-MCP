@@ -219,8 +219,8 @@ describe("SymbolSearchStrategy", () => {
             ageDays: 0,
             taskIds: [],
             // Internal — should NOT leak at metaOnly=true without rerank
-            dominantAuthor: "Alice",
-            dominantAuthorEmail: "alice@example.com",
+            recentDominantAuthor: "Alice",
+            recentDominantAuthorEmail: "alice@example.com",
             lastCommitHash: "abc123",
             lastModifiedAt: 1776952725,
             firstCreatedAt: 1772631366,
@@ -230,8 +230,8 @@ describe("SymbolSearchStrategy", () => {
             fileChurnCount: 1384,
             relativeChurn: 1.09,
             bugFixRate: 27,
-            contributorCount: 2,
-            dominantAuthorPct: 79,
+            recentContributorCount: 2,
+            recentDominantAuthorPct: 79,
           },
           chunk: {
             commitCount: 2,
@@ -258,7 +258,7 @@ describe("SymbolSearchStrategy", () => {
       // File-level: only essential
       expect(Object.keys(git!.file).sort()).toEqual(["ageDays", "commitCount", "taskIds"]);
       // Internal fields gone
-      expect(git!.file.dominantAuthorEmail).toBeUndefined();
+      expect(git!.file.recentDominantAuthorEmail).toBeUndefined();
       expect(git!.file.enrichedAt).toBeUndefined();
       expect(git!.file.lastCommitHash).toBeUndefined();
       expect(git!.file.firstCreatedAt).toBeUndefined();
@@ -267,7 +267,7 @@ describe("SymbolSearchStrategy", () => {
       expect(git!.file.linesDeleted).toBeUndefined();
       expect(git!.file.fileChurnCount).toBeUndefined();
       expect(git!.file.bugFixRate).toBeUndefined();
-      expect(git!.file.dominantAuthorPct).toBeUndefined();
+      expect(git!.file.recentDominantAuthorPct).toBeUndefined();
     });
 
     it("leaves full git payload intact when metaOnly=false (no change to raw path)", async () => {
@@ -281,7 +281,7 @@ describe("SymbolSearchStrategy", () => {
       expect(result).toHaveLength(1);
       const git = result[0].payload?.git as Record<string, Record<string, unknown>> | undefined;
       // Full payload preserved when metaOnly=false
-      expect(git!.file.dominantAuthor).toBe("Alice");
+      expect(git!.file.recentDominantAuthor).toBe("Alice");
       expect(git!.file.enrichedAt).toBeDefined();
     });
 

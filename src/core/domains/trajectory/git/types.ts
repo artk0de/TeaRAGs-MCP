@@ -17,13 +17,13 @@ import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../contracts/i
 export interface GitFileSignals extends FileSignalOverlay {
   // Authorship (file-level):
   /** Author with most commits to this file */
-  dominantAuthor: string;
+  recentDominantAuthor: string;
   /** Email of dominant author */
-  dominantAuthorEmail: string;
-  /** All unique authors who touched this file */
-  authors: string[];
-  /** Percentage of commits by dominant author */
-  dominantAuthorPct: number;
+  recentDominantAuthorEmail: string;
+  /** All unique authors who touched this file (recent activity, log window) */
+  recentAuthors: string[];
+  /** Percentage of commits by recent dominant author */
+  recentDominantAuthorPct: number;
 
   // Temporal:
   /** Unix timestamp of most recent commit */
@@ -56,8 +56,8 @@ export interface GitFileSignals extends FileSignalOverlay {
   // Derived:
   /** Percentage of commits with fix/bug/hotfix/patch keywords (0-100) */
   bugFixRate: number;
-  /** Number of unique contributors (= authors.length, explicit for filtering) */
-  contributorCount: number;
+  /** Number of unique contributors (= recentAuthors.length, explicit for filtering) */
+  recentContributorCount: number;
 
   // Tickets:
   /** Task IDs extracted from commit messages (e.g., ["TD-1234", "#567"]) */
@@ -65,13 +65,13 @@ export interface GitFileSignals extends FileSignalOverlay {
 
   // Line-based ownership (from `git blame HEAD`):
   /** Author owning the largest share of live lines in HEAD */
-  lineDominantAuthor: string;
-  /** Percentage of live lines owned by lineDominantAuthor (0-100) */
-  lineDominantAuthorPct: number;
+  blameDominantAuthor: string;
+  /** Percentage of live lines owned by blameDominantAuthor (0-100) */
+  blameDominantAuthorPct: number;
   /** Top-N contributors to live lines, sorted by share desc */
-  lineAuthors: string[];
+  blameAuthors: string[];
   /** Distinct authors of live lines */
-  lineContributorCount: number;
+  blameContributorCount: number;
 }
 
 /**
@@ -85,8 +85,8 @@ export interface ChunkChurnOverlay extends ChunkSignalOverlay {
   commitCount: number;
   /** commitCount / file.commitCount (0-1) */
   churnRatio: number;
-  /** Unique authors who modified this specific chunk */
-  contributorCount: number;
+  /** Unique authors who modified this specific chunk (recent activity) */
+  recentContributorCount: number;
   /** Percentage of bug-fix commits for this chunk (0-100) */
   bugFixRate: number;
   /** Unix timestamp of last modification to this chunk */
@@ -106,11 +106,11 @@ export interface ChunkChurnOverlay extends ChunkSignalOverlay {
 
   // Line-based ownership for this chunk's range (from `git blame HEAD`):
   /** Author owning the largest share of live lines inside the chunk's range */
-  lineDominantAuthor: string;
-  /** Percentage of chunk's live lines owned by lineDominantAuthor (0-100) */
-  lineDominantAuthorPct: number;
+  blameDominantAuthor: string;
+  /** Percentage of chunk's live lines owned by blameDominantAuthor (0-100) */
+  blameDominantAuthorPct: number;
   /** Top-N contributors to the chunk's live lines, sorted by share desc */
-  lineAuthors: string[];
+  blameAuthors: string[];
   /** Distinct authors of the chunk's live lines */
-  lineContributorCount: number;
+  blameContributorCount: number;
 }

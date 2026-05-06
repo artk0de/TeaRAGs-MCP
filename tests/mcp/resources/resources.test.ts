@@ -39,7 +39,7 @@ const mockPayloadSignals: PayloadSignalDescriptor[] = [
   },
   // Signal without labels — should be excluded
   {
-    key: "git.file.dominantAuthor",
+    key: "git.file.recentDominantAuthor",
     type: "string",
     description: "Primary file author",
   },
@@ -201,7 +201,7 @@ describe("Resource builders", () => {
     it("contains git metadata section", () => {
       const md = buildIndexingGuide();
       expect(md).toContain("CODE_ENABLE_GIT_METADATA");
-      expect(md).toContain("dominantAuthor");
+      expect(md).toContain("recentAuthor");
       expect(md).toContain("ISO 8601");
     });
 
@@ -232,8 +232,8 @@ describe("Resource builders", () => {
 
     it("excludes signals without labels", () => {
       const md = buildSignalLabelsGuide(mockPayloadSignals);
-      // dominantAuthor has no stats.labels
-      expect(md).not.toContain("git.file.dominantAuthor");
+      // recentDominantAuthor has no stats.labels
+      expect(md).not.toContain("git.file.recentDominantAuthor");
       // lastModifiedAt has empty labels
       expect(md).not.toContain("git.file.lastModifiedAt");
     });

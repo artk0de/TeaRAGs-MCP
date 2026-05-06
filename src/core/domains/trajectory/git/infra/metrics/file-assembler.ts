@@ -33,10 +33,10 @@ export function assembleFileSignals(
 
   if (commits.length === 0) {
     return {
-      dominantAuthor: "unknown",
-      dominantAuthorEmail: "",
-      authors: [],
-      dominantAuthorPct: 0,
+      recentDominantAuthor: "unknown",
+      recentDominantAuthorEmail: "",
+      recentAuthors: [],
+      recentDominantAuthorPct: 0,
       lastModifiedAt: 0,
       firstCreatedAt: 0,
       lastCommitHash: "",
@@ -50,12 +50,12 @@ export function assembleFileSignals(
       changeDensity: 0,
       churnVolatility: 0,
       bugFixRate: 0,
-      contributorCount: 0,
+      recentContributorCount: 0,
       taskIds: [],
-      lineDominantAuthor: ownership?.lineDominantAuthor ?? "unknown",
-      lineDominantAuthorPct: ownership?.lineDominantAuthorPct ?? 0,
-      lineAuthors: ownership?.lineAuthors ?? [],
-      lineContributorCount: ownership?.lineContributorCount ?? 0,
+      blameDominantAuthor: ownership?.blameDominantAuthor ?? "unknown",
+      blameDominantAuthorPct: ownership?.blameDominantAuthorPct ?? 0,
+      blameAuthors: ownership?.blameAuthors ?? [],
+      blameContributorCount: ownership?.blameContributorCount ?? 0,
     };
   }
 
@@ -79,10 +79,10 @@ export function assembleFileSignals(
     : null;
 
   return {
-    dominantAuthor: authorship.author,
-    dominantAuthorEmail: authorship.email,
-    authors: authorship.authors,
-    dominantAuthorPct: authorship.pct,
+    recentDominantAuthor: authorship.author,
+    recentDominantAuthorEmail: authorship.email,
+    recentAuthors: authorship.authors,
+    recentDominantAuthorPct: authorship.pct,
     lastModifiedAt: temporal.lastModifiedAt,
     firstCreatedAt: temporal.firstCreatedAt,
     lastCommitHash: temporal.lastCommitHash,
@@ -96,12 +96,12 @@ export function assembleFileSignals(
     changeDensity: computeChangeDensity(countSource ?? commits),
     churnVolatility: computeChurnVolatility(countSource ?? commits),
     bugFixRate: computeBugFixRate(countSource ?? commits, bugFixShas),
-    contributorCount: authorship.contributorCount,
+    recentContributorCount: authorship.contributorCount,
     taskIds: extractAllTaskIds(commits),
     // Line-based ownership: from `git blame HEAD` if provided, otherwise unknown defaults.
-    lineDominantAuthor: ownership?.lineDominantAuthor ?? "unknown",
-    lineDominantAuthorPct: ownership?.lineDominantAuthorPct ?? 0,
-    lineAuthors: ownership?.lineAuthors ?? [],
-    lineContributorCount: ownership?.lineContributorCount ?? 0,
+    blameDominantAuthor: ownership?.blameDominantAuthor ?? "unknown",
+    blameDominantAuthorPct: ownership?.blameDominantAuthorPct ?? 0,
+    blameAuthors: ownership?.blameAuthors ?? [],
+    blameContributorCount: ownership?.blameContributorCount ?? 0,
   };
 }

@@ -32,9 +32,9 @@ function point(payload: Record<string, unknown>): StatsPoint {
 describe("AuthorCountsAccumulator", () => {
   it("counts per dominant author (flat payload)", () => {
     const acc = new AuthorCountsAccumulator();
-    acc.accept(point({ "git.file.dominantAuthor": "Alice" }), ctx());
-    acc.accept(point({ "git.file.dominantAuthor": "Alice" }), ctx());
-    acc.accept(point({ "git.file.dominantAuthor": "Bob" }), ctx());
+    acc.accept(point({ "git.file.recentDominantAuthor": "Alice" }), ctx());
+    acc.accept(point({ "git.file.recentDominantAuthor": "Alice" }), ctx());
+    acc.accept(point({ "git.file.recentDominantAuthor": "Bob" }), ctx());
     const result = acc.result();
     expect(result.get("Alice")).toBe(2);
     expect(result.get("Bob")).toBe(1);
@@ -42,7 +42,7 @@ describe("AuthorCountsAccumulator", () => {
 
   it("reads nested dot-notation payload too", () => {
     const acc = new AuthorCountsAccumulator();
-    acc.accept(point({ git: { file: { dominantAuthor: "Charlie" } } }), ctx());
+    acc.accept(point({ git: { file: { recentDominantAuthor: "Charlie" } } }), ctx());
     expect(acc.result().get("Charlie")).toBe(1);
   });
 
@@ -56,20 +56,20 @@ describe("AuthorCountsAccumulator", () => {
 describe("LineAuthorCountsAccumulator", () => {
   it("counts per live-line dominant author (flat payload)", () => {
     const acc = new LineAuthorCountsAccumulator();
-    acc.accept(point({ "git.file.lineDominantAuthor": "Alice" }), ctx());
-    acc.accept(point({ "git.file.lineDominantAuthor": "Alice" }), ctx());
-    acc.accept(point({ "git.file.lineDominantAuthor": "Bob" }), ctx());
+    acc.accept(point({ "git.file.blameDominantAuthor": "Alice" }), ctx());
+    acc.accept(point({ "git.file.blameDominantAuthor": "Alice" }), ctx());
+    acc.accept(point({ "git.file.blameDominantAuthor": "Bob" }), ctx());
     expect(acc.result().get("Alice")).toBe(2);
     expect(acc.result().get("Bob")).toBe(1);
   });
 
   it("reads nested payload too", () => {
     const acc = new LineAuthorCountsAccumulator();
-    acc.accept(point({ git: { file: { lineDominantAuthor: "Carol" } } }), ctx());
+    acc.accept(point({ git: { file: { blameDominantAuthor: "Carol" } } }), ctx());
     expect(acc.result().get("Carol")).toBe(1);
   });
 
-  it("skips points without lineDominantAuthor", () => {
+  it("skips points without blameDominantAuthor", () => {
     const acc = new LineAuthorCountsAccumulator();
     acc.accept(point({}), ctx());
     expect(acc.result().size).toBe(0);
@@ -152,7 +152,7 @@ describe("gitStatsAccumulators barrel", () => {
     if (!descriptor) throw new Error("gitStatsAccumulators is unexpectedly empty");
     const a = descriptor.factory();
     const b = descriptor.factory();
-    a.accept(point({ "git.file.dominantAuthor": "Alice" }), ctx());
+    a.accept(point({ "git.file.recentDominantAuthor": "Alice" }), ctx());
     const aResult = a.result() as Map<string, number>;
     const bResult = b.result() as Map<string, number>;
     expect(aResult.get("Alice")).toBe(1);

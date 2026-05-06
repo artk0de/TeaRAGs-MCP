@@ -26,17 +26,17 @@ describe("gitDerivedSignals", () => {
         ageDays: 100,
         commitCount: 10,
         bugFixRate: 30,
-        dominantAuthorPct: 80,
+        recentDominantAuthorPct: 80,
         churnVolatility: 20,
         changeDensity: 8,
         relativeChurn: 2.0,
         recencyWeightedFreq: 5,
-        contributorCount: 2,
-        lineDominantAuthorPct: 75,
-        lineAuthors: ["a", "b"],
-        lineContributorCount: 2,
+        recentContributorCount: 2,
+        blameDominantAuthorPct: 75,
+        blameAuthors: ["a", "b"],
+        blameContributorCount: 2,
       },
-      chunk: { commitCount: 5, churnRatio: 0.3, lineContributorCount: 2 },
+      chunk: { commitCount: 5, churnRatio: 0.3, blameContributorCount: 2 },
     });
     for (const d of gitDerivedSignals) {
       const val = d.extract(payload);
@@ -68,34 +68,34 @@ describe("gitDerivedSignals", () => {
       expect(d.extract(fakePayload({ file: { commitCount: 25 } }))).toBeCloseTo(0.5, 2);
     });
 
-    it("ownership: from lineDominantAuthorPct (live-line ownership, not commit-based)", () => {
+    it("ownership: from blameDominantAuthorPct (live-line ownership, not commit-based)", () => {
       const d = gitDerivedSignals.find((s) => s.name === "ownership")!;
-      expect(d.sources).toContain("file.lineDominantAuthorPct");
-      expect(d.sources).toContain("file.lineAuthors");
+      expect(d.sources).toContain("file.blameDominantAuthorPct");
+      expect(d.sources).toContain("file.blameAuthors");
       // commitCount >= fallback threshold (5) so confidence dampening = 1
-      const val = d.extract(fakePayload({ file: { lineDominantAuthorPct: 80, commitCount: 10 } }));
+      const val = d.extract(fakePayload({ file: { blameDominantAuthorPct: 80, commitCount: 10 } }));
       expect(val).toBeCloseTo(0.8, 2);
     });
 
-    it("ownership: from lineAuthors array when no lineDominantAuthorPct", () => {
+    it("ownership: from blameAuthors array when no blameDominantAuthorPct", () => {
       const d = gitDerivedSignals.find((s) => s.name === "ownership")!;
-      expect(d.extract(fakePayload({ file: { lineAuthors: ["a", "b"], commitCount: 10 } }))).toBeCloseTo(0.5, 2);
+      expect(d.extract(fakePayload({ file: { blameAuthors: ["a", "b"], commitCount: 10 } }))).toBeCloseTo(0.5, 2);
     });
 
-    it("recentActivityConcentration: from dominantAuthorPct (commit-based)", () => {
+    it("recentActivityConcentration: from recentDominantAuthorPct (commit-based)", () => {
       const d = gitDerivedSignals.find((s) => s.name === "recentActivityConcentration")!;
-      expect(d.sources).toContain("file.dominantAuthorPct");
-      expect(d.sources).toContain("file.authors");
-      const val = d.extract(fakePayload({ file: { dominantAuthorPct: 80, commitCount: 10 } }));
+      expect(d.sources).toContain("file.recentDominantAuthorPct");
+      expect(d.sources).toContain("file.recentAuthors");
+      const val = d.extract(fakePayload({ file: { recentDominantAuthorPct: 80, commitCount: 10 } }));
       expect(val).toBeCloseTo(0.8, 2);
     });
 
-    it("knowledgeSilo: categorical from lineContributorCount", () => {
+    it("knowledgeSilo: categorical from blameContributorCount", () => {
       const d = gitDerivedSignals.find((s) => s.name === "knowledgeSilo")!;
       // commitCount >= fallback threshold (5) so confidence dampening = 1
-      expect(d.extract(fakePayload({ file: { lineContributorCount: 1, commitCount: 10 } }))).toBeCloseTo(1.0);
-      expect(d.extract(fakePayload({ file: { lineContributorCount: 2, commitCount: 10 } }))).toBeCloseTo(0.5);
-      expect(d.extract(fakePayload({ file: { lineContributorCount: 5, commitCount: 10 } }))).toBe(0);
+      expect(d.extract(fakePayload({ file: { blameContributorCount: 1, commitCount: 10 } }))).toBeCloseTo(1.0);
+      expect(d.extract(fakePayload({ file: { blameContributorCount: 2, commitCount: 10 } }))).toBeCloseTo(0.5);
+      expect(d.extract(fakePayload({ file: { blameContributorCount: 5, commitCount: 10 } }))).toBe(0);
     });
 
     it("blockPenalty: 1 for block without chunk data, 0 for non-block", () => {
@@ -236,14 +236,14 @@ describe("gitDerivedSignals", () => {
       expect(byName("chunkRelativeChurn").extract(payload)).toBeCloseTo(0.25, 2);
     });
 
-    it("knowledgeSilo blends effective lineContributorCount (raw, not normalized)", () => {
-      // file: lineContributorCount=1, commitCount=20, chunk: lineContributorCount=2, commitCount=10
+    it("knowledgeSilo blends effective blameContributorCount (raw, not normalized)", () => {
+      // file: blameContributorCount=1, commitCount=20, chunk: blameContributorCount=2, commitCount=10
       // alpha = 0.5
       // effectiveLineContributorCount = 0.5 * 2 + 0.5 * 1 = 1.5
       // 1.5 is not exactly 1 or 2 → returns 0 (strict equality check)
       const payload = fakePayload({
-        file: { lineContributorCount: 1, commitCount: 20 },
-        chunk: { lineContributorCount: 2, commitCount: 10 },
+        file: { blameContributorCount: 1, commitCount: 20 },
+        chunk: { blameContributorCount: 2, commitCount: 10 },
       });
       expect(byName("knowledgeSilo").extract(payload)).toBe(0);
     });
@@ -300,8 +300,8 @@ describe("gitDerivedSignals", () => {
 
     it("ownership uses dampeningThreshold from ctx instead of collectionStats", () => {
       // commitCount=3, dampeningThreshold=10 → dampening = (3/10)^2 = 0.09
-      // lineDominantAuthorPct=80 → value=0.8 * 0.09 = 0.072
-      const payload = fakePayload({ file: { lineDominantAuthorPct: 80, commitCount: 3 } });
+      // blameDominantAuthorPct=80 → value=0.8 * 0.09 = 0.072
+      const payload = fakePayload({ file: { blameDominantAuthorPct: 80, commitCount: 3 } });
       expect(byName("ownership").extract(payload, { dampeningThreshold: 10 })).toBeCloseTo(0.072, 2);
     });
 
@@ -314,7 +314,7 @@ describe("gitDerivedSignals", () => {
 
     it("falls back to per-signal FALLBACK_THRESHOLD when dampeningThreshold not in ctx", () => {
       // ownership FALLBACK_THRESHOLD=5, commitCount=5 → dampening=(5/5)^2=1
-      const payload = fakePayload({ file: { lineDominantAuthorPct: 80, commitCount: 5 } });
+      const payload = fakePayload({ file: { blameDominantAuthorPct: 80, commitCount: 5 } });
       expect(byName("ownership").extract(payload)).toBeCloseTo(0.8, 2);
     });
 

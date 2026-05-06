@@ -28,17 +28,17 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     essential: true,
   },
   {
-    key: "git.file.dominantAuthor",
+    key: "git.file.recentDominantAuthor",
     type: "string",
     description: "Author with most commits to this file",
   },
   {
-    key: "git.file.authors",
+    key: "git.file.recentAuthors",
     type: "string[]",
     description: "All contributing authors",
   },
   {
-    key: "git.file.dominantAuthorPct",
+    key: "git.file.recentDominantAuthorPct",
     type: "number",
     description: "Percentage of commits by dominant author",
     stats: { labels: { p25: "shared", p50: "mixed", p75: "concentrated", p95: "silo" } },
@@ -80,7 +80,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     stats: { labels: { p50: "healthy", p75: "concerning", p95: "critical" } },
   },
   {
-    key: "git.file.contributorCount",
+    key: "git.file.recentContributorCount",
     type: "number",
     description: "Number of distinct contributors",
     stats: { labels: { p50: "solo", p75: "team", p95: "crowd" } },
@@ -94,25 +94,25 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
 
   // ── File-level line-based ownership (from git blame HEAD) ──
   {
-    key: "git.file.lineDominantAuthor",
+    key: "git.file.blameDominantAuthor",
     type: "string",
     description: "Author owning the largest share of live lines (from git blame HEAD)",
     essential: true,
   },
   {
-    key: "git.file.lineDominantAuthorPct",
+    key: "git.file.blameDominantAuthorPct",
     type: "number",
-    description: "Percentage of live lines owned by lineDominantAuthor (0-100)",
+    description: "Percentage of live lines owned by blameDominantAuthor (0-100)",
     stats: { labels: { p50: "shared", p75: "concentrated", p90: "silo", p95: "deep-silo" } },
     essential: true,
   },
   {
-    key: "git.file.lineAuthors",
+    key: "git.file.blameAuthors",
     type: "string[]",
     description: "Top-N contributors to live lines, sorted by share desc",
   },
   {
-    key: "git.file.lineContributorCount",
+    key: "git.file.blameContributorCount",
     type: "number",
     description: "Distinct authors of live lines",
     stats: { labels: { p25: "solo", p50: "pair", p75: "team", p95: "crowd" } },
@@ -141,7 +141,7 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     essential: true,
   },
   {
-    key: "git.chunk.contributorCount",
+    key: "git.chunk.recentContributorCount",
     type: "number",
     description: "Distinct contributors to this chunk",
     stats: { labels: { p50: "solo", p95: "crowd" } },
@@ -185,25 +185,25 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
 
   // ── Chunk-level line-based ownership (blame lines inside chunk range) ──
   {
-    key: "git.chunk.lineDominantAuthor",
+    key: "git.chunk.blameDominantAuthor",
     type: "string",
     description: "Author owning the largest share of live lines inside the chunk's range",
     essential: true,
   },
   {
-    key: "git.chunk.lineDominantAuthorPct",
+    key: "git.chunk.blameDominantAuthorPct",
     type: "number",
-    description: "Percentage of chunk's live lines owned by lineDominantAuthor (0-100)",
+    description: "Percentage of chunk's live lines owned by blameDominantAuthor (0-100)",
     stats: { labels: { p50: "shared", p75: "concentrated", p90: "silo", p95: "deep-silo" } },
     essential: true,
   },
   {
-    key: "git.chunk.lineAuthors",
+    key: "git.chunk.blameAuthors",
     type: "string[]",
     description: "Top-N contributors to the chunk's live lines, sorted by share desc",
   },
   {
-    key: "git.chunk.lineContributorCount",
+    key: "git.chunk.blameContributorCount",
     type: "number",
     description: "Distinct authors of the chunk's live lines",
     stats: { labels: { p25: "solo", p50: "pair", p75: "team", p95: "crowd" } },

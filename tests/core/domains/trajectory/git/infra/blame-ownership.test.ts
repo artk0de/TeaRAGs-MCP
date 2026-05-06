@@ -25,10 +25,10 @@ describe("computeBlameOwnership — file-level aggregation", () => {
     const result = computeBlameOwnership([]);
 
     expect(result.file).toEqual<BlameOwnership>({
-      lineDominantAuthor: "unknown",
-      lineDominantAuthorPct: 0,
-      lineAuthors: [],
-      lineContributorCount: 0,
+      blameDominantAuthor: "unknown",
+      blameDominantAuthorPct: 0,
+      blameAuthors: [],
+      blameContributorCount: 0,
     });
     expect(result.chunks.size).toBe(0);
   });
@@ -38,10 +38,10 @@ describe("computeBlameOwnership — file-level aggregation", () => {
 
     const { file } = computeBlameOwnership(lines);
 
-    expect(file.lineDominantAuthor).toBe("Alice");
-    expect(file.lineDominantAuthorPct).toBe(100);
-    expect(file.lineAuthors).toEqual(["Alice"]);
-    expect(file.lineContributorCount).toBe(1);
+    expect(file.blameDominantAuthor).toBe("Alice");
+    expect(file.blameDominantAuthorPct).toBe(100);
+    expect(file.blameAuthors).toEqual(["Alice"]);
+    expect(file.blameContributorCount).toBe(1);
   });
 
   it("computes share by lines, not commits (3 Alice / 2 Bob = 60% Alice)", () => {
@@ -55,14 +55,14 @@ describe("computeBlameOwnership — file-level aggregation", () => {
 
     const { file } = computeBlameOwnership(lines);
 
-    expect(file.lineDominantAuthor).toBe("Alice");
-    expect(file.lineDominantAuthorPct).toBe(60);
-    expect(file.lineContributorCount).toBe(2);
-    // lineAuthors sorted by share desc
-    expect(file.lineAuthors).toEqual(["Alice", "Bob"]);
+    expect(file.blameDominantAuthor).toBe("Alice");
+    expect(file.blameDominantAuthorPct).toBe(60);
+    expect(file.blameContributorCount).toBe(2);
+    // blameAuthors sorted by share desc
+    expect(file.blameAuthors).toEqual(["Alice", "Bob"]);
   });
 
-  it("caps lineAuthors at 10 contributors (top-N by line count)", () => {
+  it("caps blameAuthors at 10 contributors (top-N by line count)", () => {
     const lines: BlameLine[] = [];
     // Top author: Alice with 100 lines
     for (let i = 1; i <= 100; i++) lines.push(makeLine(i, "Alice"));
@@ -75,12 +75,12 @@ describe("computeBlameOwnership — file-level aggregation", () => {
 
     const { file } = computeBlameOwnership(lines);
 
-    expect(file.lineContributorCount).toBe(15); // Alice + 14 others
-    expect(file.lineAuthors).toHaveLength(10); // capped
-    expect(file.lineAuthors[0]).toBe("Alice");
+    expect(file.blameContributorCount).toBe(15); // Alice + 14 others
+    expect(file.blameAuthors).toHaveLength(10); // capped
+    expect(file.blameAuthors[0]).toBe("Alice");
     // Top-N retains highest contributors first
-    expect(file.lineAuthors[1]).toBe("Author00"); // 14 lines
-    expect(file.lineAuthors[9]).toBe("Author08"); // 6 lines
+    expect(file.blameAuthors[1]).toBe("Author00"); // 14 lines
+    expect(file.blameAuthors[9]).toBe("Author08"); // 6 lines
   });
 });
 
@@ -103,14 +103,14 @@ describe("computeBlameOwnership — chunk-level aggregation", () => {
 
     const { chunks } = computeBlameOwnership(lines, chunkRanges);
 
-    expect(chunks.get("chunk-a")?.lineDominantAuthor).toBe("Alice");
-    expect(chunks.get("chunk-a")?.lineDominantAuthorPct).toBe(100);
+    expect(chunks.get("chunk-a")?.blameDominantAuthor).toBe("Alice");
+    expect(chunks.get("chunk-a")?.blameDominantAuthorPct).toBe(100);
 
-    expect(chunks.get("chunk-b")?.lineDominantAuthor).toBe("Bob");
-    expect(chunks.get("chunk-b")?.lineDominantAuthorPct).toBe(100);
-    expect(chunks.get("chunk-b")?.lineContributorCount).toBe(1);
+    expect(chunks.get("chunk-b")?.blameDominantAuthor).toBe("Bob");
+    expect(chunks.get("chunk-b")?.blameDominantAuthorPct).toBe(100);
+    expect(chunks.get("chunk-b")?.blameContributorCount).toBe(1);
 
-    expect(chunks.get("chunk-c")?.lineDominantAuthor).toBe("Carol");
+    expect(chunks.get("chunk-c")?.blameDominantAuthor).toBe("Carol");
   });
 
   it("produces unknown ownership for chunk range with no covering blame lines", () => {
@@ -119,10 +119,10 @@ describe("computeBlameOwnership — chunk-level aggregation", () => {
     const { chunks } = computeBlameOwnership(lines, chunkRanges);
 
     expect(chunks.get("ghost-chunk")).toEqual<BlameOwnership>({
-      lineDominantAuthor: "unknown",
-      lineDominantAuthorPct: 0,
-      lineAuthors: [],
-      lineContributorCount: 0,
+      blameDominantAuthor: "unknown",
+      blameDominantAuthorPct: 0,
+      blameAuthors: [],
+      blameContributorCount: 0,
     });
   });
 
@@ -132,8 +132,8 @@ describe("computeBlameOwnership — chunk-level aggregation", () => {
 
     const { chunks } = computeBlameOwnership(lines, chunkRanges);
 
-    expect(chunks.get("single-line")?.lineDominantAuthor).toBe("Bob");
-    expect(chunks.get("single-line")?.lineContributorCount).toBe(1);
+    expect(chunks.get("single-line")?.blameDominantAuthor).toBe("Bob");
+    expect(chunks.get("single-line")?.blameContributorCount).toBe(1);
   });
 
   it("returns empty chunks map when chunkRanges argument is omitted", () => {
@@ -149,9 +149,9 @@ describe("computeBlameOwnership — chunk-level aggregation", () => {
     const { chunks } = computeBlameOwnership(lines, chunkRanges);
 
     const mixed = chunks.get("mixed")!;
-    expect(mixed.lineDominantAuthor).toBe("Bob");
-    expect(mixed.lineDominantAuthorPct).toBe(67); // round(2/3 * 100) = 67
-    expect(mixed.lineContributorCount).toBe(2);
-    expect(mixed.lineAuthors).toEqual(["Bob", "Alice"]);
+    expect(mixed.blameDominantAuthor).toBe("Bob");
+    expect(mixed.blameDominantAuthorPct).toBe(67); // round(2/3 * 100) = 67
+    expect(mixed.blameContributorCount).toBe(2);
+    expect(mixed.blameAuthors).toEqual(["Bob", "Alice"]);
   });
 });

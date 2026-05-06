@@ -1,10 +1,10 @@
 import type { BlameLine } from "../../../../adapters/git/types.js";
 
 export interface BlameOwnership {
-  lineDominantAuthor: string;
-  lineDominantAuthorPct: number;
-  lineAuthors: string[];
-  lineContributorCount: number;
+  blameDominantAuthor: string;
+  blameDominantAuthorPct: number;
+  blameAuthors: string[];
+  blameContributorCount: number;
 }
 
 export interface ChunkRange {
@@ -22,10 +22,10 @@ const TOP_AUTHORS_CAP = 10;
 
 function unknownOwnership(): BlameOwnership {
   return {
-    lineDominantAuthor: "unknown",
-    lineDominantAuthorPct: 0,
-    lineAuthors: [],
-    lineContributorCount: 0,
+    blameDominantAuthor: "unknown",
+    blameDominantAuthorPct: 0,
+    blameAuthors: [],
+    blameContributorCount: 0,
   };
 }
 
@@ -41,10 +41,10 @@ function aggregate(lines: BlameLine[]): BlameOwnership {
   const [topAuthor, topCount] = sorted[0];
 
   return {
-    lineDominantAuthor: topAuthor,
-    lineDominantAuthorPct: Math.round((topCount / lines.length) * 100),
-    lineAuthors: sorted.slice(0, TOP_AUTHORS_CAP).map(([author]) => author),
-    lineContributorCount: counts.size,
+    blameDominantAuthor: topAuthor,
+    blameDominantAuthorPct: Math.round((topCount / lines.length) * 100),
+    blameAuthors: sorted.slice(0, TOP_AUTHORS_CAP).map(([author]) => author),
+    blameContributorCount: counts.size,
   };
 }
 
