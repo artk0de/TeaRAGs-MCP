@@ -32,15 +32,6 @@ describe("EnrichmentCoordinator", () => {
     expect(coordinator.providerKeys).toEqual(["git"]);
   });
 
-  it("providerKey returns first key (deprecated)", () => {
-    expect(coordinator.providerKey).toBe("git");
-  });
-
-  it("providerKey returns empty string when no providers", () => {
-    const empty = new EnrichmentCoordinator(mockQdrant, []);
-    expect(empty.providerKey).toBe("");
-  });
-
   it("logs when provider resolveRoot differs from absolutePath", async () => {
     const divergentProvider: EnrichmentProvider = {
       ...mockProvider,

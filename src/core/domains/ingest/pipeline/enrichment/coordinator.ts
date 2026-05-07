@@ -42,21 +42,7 @@ const EMPTY_METRICS: EnrichmentMetrics = {
   estimatedSavedMs: 0,
 };
 
-/**
- * Post-Task-6 ProviderState is reduced to just the provider reference. Kept as
- * its own type so iteration over providers stays explicit; Tasks 7-8 collapse
- * this further.
- */
-interface ProviderState {
-  provider: EnrichmentProvider;
-}
-
-function createProviderState(provider: EnrichmentProvider): ProviderState {
-  return { provider };
-}
-
 export class EnrichmentCoordinator {
-  private readonly states: Map<string, ProviderState>;
   private contexts: Map<string, ProviderContext>;
   private startTime = 0;
   private runId = "";
@@ -88,13 +74,7 @@ export class EnrichmentCoordinator {
 
   /** All provider keys managed by this coordinator. */
   get providerKeys(): string[] {
-    return [...this.states.keys()];
-  }
-
-  /** @deprecated Use providerKeys instead. Returns the first provider key for backward compat. */
-  get providerKey(): string {
-    const first = this.states.keys().next();
-    return first.done ? "" : first.value;
+    return [...this.contexts.keys()];
   }
 
   constructor(
@@ -116,7 +96,6 @@ export class EnrichmentCoordinator {
       markerStore: this.markerStore,
     });
     const list = Array.isArray(providers) ? providers : [providers];
-    this.states = new Map(list.map((p) => [p.key, createProviderState(p)]));
     // Seed contexts with provider entries so runRecovery works when invoked
     // before prefetch (e.g. recovery-only paths). prefetch() overwrites with
     // resolved effectiveRoot + ignoreFilter for the actual run.
@@ -146,20 +125,20 @@ export class EnrichmentCoordinator {
     this.runStartedAt = new Date().toISOString();
 
     this.contexts = new Map(
-      [...this.states.values()].map((state) => {
-        const effectiveRoot = state.provider.resolveRoot(absolutePath);
+      [...this.contexts.values()].map((ctx) => {
+        const effectiveRoot = ctx.provider.resolveRoot(absolutePath);
         if (effectiveRoot !== absolutePath) {
           pipelineLog.enrichmentPhase("REPO_ROOT_DIFFERS", {
-            provider: state.provider.key,
+            provider: ctx.provider.key,
             absolutePath,
             effectiveRoot,
           });
         }
         return [
-          state.provider.key,
+          ctx.provider.key,
           {
-            key: state.provider.key,
-            provider: state.provider,
+            key: ctx.provider.key,
+            provider: ctx.provider,
             effectiveRoot,
             ignoreFilter: ignoreFilter ?? null,
           },
@@ -172,7 +151,7 @@ export class EnrichmentCoordinator {
 
     // Write per-provider initial marker: file=in_progress, chunk=pending
     if (collectionName) {
-      void this.markerStore.markStart(collectionName, [...this.states.keys()], this.runId, this.runStartedAt);
+      void this.markerStore.markStart(collectionName, [...this.contexts.keys()], this.runId, this.runStartedAt);
     }
 
     this.filePhase.startPrefetch(changedPaths);
@@ -201,7 +180,7 @@ export class EnrichmentCoordinator {
    * Wait for all in-flight enrichment work to complete across all providers.
    */
   async awaitCompletion(collectionName: string): Promise<EnrichmentMetrics> {
-    if (this.states.size === 0) return EMPTY_METRICS;
+    if (this.contexts.size === 0) return EMPTY_METRICS;
     return this.completion.run(
       collectionName,
       this.contexts,
