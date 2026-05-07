@@ -21,10 +21,26 @@ import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";
 import { ChunkPhase } from "./chunk-phase.js";
+import { CompletionRunner } from "./completion-runner.js";
 import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import type { EnrichmentRecovery } from "./recovery.js";
-import type { ChunkFinalInput, EnrichmentProvider, ProviderContext } from "./types.js";
+import type { EnrichmentProvider, ProviderContext } from "./types.js";
+
+const EMPTY_METRICS: EnrichmentMetrics = {
+  prefetchDurationMs: 0,
+  overlapMs: 0,
+  overlapRatio: 0,
+  streamingApplies: 0,
+  flushApplies: 0,
+  chunkChurnDurationMs: 0,
+  totalDurationMs: 0,
+  matchedFiles: 0,
+  missedFiles: 0,
+  missedPathSamples: [],
+  gitLogFileCount: 0,
+  estimatedSavedMs: 0,
+};
 
 /**
  * Post-Task-6 ProviderState is reduced to just the provider reference. Kept as
@@ -52,6 +68,7 @@ export class EnrichmentCoordinator {
   private readonly backfiller: EnrichmentBackfiller;
   private readonly filePhase: FilePhase;
   private readonly chunkPhase: ChunkPhase;
+  private readonly completion: CompletionRunner;
 
   /**
    * Optional callback fired after ALL providers complete chunk enrichment.
@@ -91,6 +108,13 @@ export class EnrichmentCoordinator {
     this.chunkPhase = new ChunkPhase(this.applier);
     this.filePhase = new FilePhase(this.applier, this.markerStore);
     this.filePhase.bindChunkPhase(this.chunkPhase);
+    this.completion = new CompletionRunner({
+      filePhase: this.filePhase,
+      chunkPhase: this.chunkPhase,
+      backfiller: this.backfiller,
+      applier: this.applier,
+      markerStore: this.markerStore,
+    });
     const list = Array.isArray(providers) ? providers : [providers];
     this.states = new Map(list.map((p) => [p.key, createProviderState(p)]));
     // Seed contexts with provider entries so runRecovery works when invoked
@@ -177,118 +201,14 @@ export class EnrichmentCoordinator {
    * Wait for all in-flight enrichment work to complete across all providers.
    */
   async awaitCompletion(collectionName: string): Promise<EnrichmentMetrics> {
-    if (this.states.size === 0) {
-      return {
-        prefetchDurationMs: 0,
-        overlapMs: 0,
-        overlapRatio: 0,
-        streamingApplies: 0,
-        flushApplies: 0,
-        chunkChurnDurationMs: 0,
-        totalDurationMs: 0,
-        matchedFiles: 0,
-        missedFiles: 0,
-        missedPathSamples: [],
-        gitLogFileCount: 0,
-        estimatedSavedMs: 0,
-      };
-    }
-
-    // 1. Wait for all prefetch promises
-    await this.filePhase.awaitPrefetch();
-
-    // 2. Wait for all in-flight FILE work (applyFileSignals). Chunk work runs
-    //    independently and is awaited separately so the file marker can be
-    //    finalized without waiting for git blame to finish.
-    await this.filePhase.drain();
-
-    // 3. Backfill file+chunk overlays for paths missed by prefetch.
-    if (this.applier.getMissedFileChunks().size > 0) {
-      for (const ctx of this.contexts.values()) {
-        if (this.filePhase.hasPrefetchFailed(ctx.key)) continue;
-        await this.backfiller.runFor(collectionName, ctx, this.runStartedAt);
-      }
-    }
-
-    // 4. Write FILE marker now — file work is fully drained, chunk work is
-    //    still in flight. unenrichedChunks read from storage (not hardcoded)
-    //    so the marker stays honest after partial failures or recovery races.
-    //    Counters reflect this run's work, not a frozen full-index total.
-    for (const state of this.states.values()) {
-      const providerKey = state.provider.key;
-      const fileUnenriched = await this.countSettledUnenriched(collectionName, providerKey, "file");
-      const prefetchFailed = this.filePhase.hasPrefetchFailed(providerKey);
-      await this.markerStore.markFileFinal(collectionName, providerKey, {
-        status: prefetchFailed ? "failed" : "completed",
-        durationMs: this.filePhase.getPrefetchDurationMs(providerKey),
-        unenrichedChunks: fileUnenriched,
-        matchedFiles: this.applier.matchedFiles,
-        missedFiles: this.applier.missedFiles,
-      });
-    }
-
-    // 5. Aggregate metrics across all providers (file-side numbers are final;
-    //    chunk durations may grow as chunkWork drains).
-    const fileMetrics = this.filePhase.getMetrics();
-    const chunkMetrics = this.chunkPhase.getMetrics();
-
-    const metrics: EnrichmentMetrics = {
-      prefetchDurationMs: fileMetrics.maxPrefetchDurationMs,
-      overlapMs: 0,
-      overlapRatio: 0,
-      streamingApplies: fileMetrics.totalStreamingApplies,
-      flushApplies: fileMetrics.totalFlushApplies,
-      chunkChurnDurationMs: chunkMetrics.totalChunkEnrichmentDurationMs,
-      totalDurationMs: Date.now() - (this.startTime || Date.now()),
-      matchedFiles: this.applier.matchedFiles,
-      missedFiles: this.applier.missedFiles,
-      missedPathSamples: [...this.applier.missedPathSamples],
-      gitLogFileCount: fileMetrics.totalFileMetadataCount,
-      estimatedSavedMs: 0,
-    };
-
-    // Use the first provider's timings for overlap calculation (backward compat).
-    const first = fileMetrics.firstProvider;
-    if (first && first.prefetchEndTime > 0 && first.pipelineFlushTime > 0) {
-      const overlapEnd = Math.min(first.prefetchEndTime, first.pipelineFlushTime);
-      metrics.overlapMs = Math.max(0, overlapEnd - first.prefetchStartTime);
-      metrics.overlapRatio =
-        metrics.prefetchDurationMs > 0 ? Math.min(1, metrics.overlapMs / metrics.prefetchDurationMs) : 0;
-    }
-    metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
-
-    // 6. Wait for chunk work (streaming + post-flush) and finalize chunk marker.
-    //    Chunk status writes inside startChunkEnrichment may already mark
-    //    chunk=completed; here we sync unenrichedChunks with storage as the
-    //    last word, in case streaming completed before backfill or recovery raced.
-    await this.chunkPhase.drain();
-
-    const finalChunkMetrics = this.chunkPhase.getMetrics();
-    metrics.chunkChurnDurationMs = finalChunkMetrics.totalChunkEnrichmentDurationMs;
-
-    for (const state of this.states.values()) {
-      const providerKey = state.provider.key;
-      const chunkUnenriched = await this.countSettledUnenriched(collectionName, providerKey, "chunk");
-
-      let chunkStatus: ChunkFinalInput["status"];
-      if (this.filePhase.hasPrefetchFailed(providerKey) || this.chunkPhase.hasChunkEnrichmentFailed(providerKey)) {
-        chunkStatus = "failed";
-      } else if (chunkUnenriched > 0) {
-        chunkStatus = "degraded";
-      } else {
-        chunkStatus = "completed";
-      }
-
-      await this.markerStore.markChunkFinal(collectionName, providerKey, {
-        status: chunkStatus,
-        durationMs: finalChunkMetrics.totalChunkEnrichmentDurationMs,
-        unenrichedChunks: chunkUnenriched,
-      });
-    }
-
-    pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
-
-    return metrics;
+    if (this.states.size === 0) return EMPTY_METRICS;
+    return this.completion.run(
+      collectionName,
+      this.contexts,
+      this.startTime,
+      async (coll, providerKey, level) => this.countSettledUnenriched(coll, providerKey, level),
+      this.runStartedAt,
+    );
   }
 
   /**
