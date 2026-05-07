@@ -81,9 +81,12 @@ export class IngestFacade {
       modelGuard: deps.modelGuard,
     });
 
-    // Fire-and-forget stats refresh when chunk enrichment finishes.
+    // Stats refresh when chunk enrichment finishes. Awaited so the
+    // coordinator's allSettled-then chain (itself fire-and-forget) only
+    // resolves after the cache is updated — keeps callback semantics
+    // observable for tests and ordered for any downstream chain.
     enrichment.onChunkEnrichmentComplete = async (collectionName) => {
-      void this.indexingOps.refreshStatsByCollection(collectionName);
+      await this.indexingOps.refreshStatsByCollection(collectionName);
     };
   }
 

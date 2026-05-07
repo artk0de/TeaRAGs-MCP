@@ -26,6 +26,7 @@ const SAMPLE_STATS: CollectionSignalStats = {
     chunkType: {},
     documentation: { docs: 0, code: 0 },
     topAuthors: [],
+    topBlameAuthors: [],
     othersCount: 0,
   },
 };

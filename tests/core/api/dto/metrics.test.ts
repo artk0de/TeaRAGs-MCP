@@ -14,6 +14,7 @@ describe("IndexMetrics DTO", () => {
         chunkType: { function: 800 },
         documentation: { docs: 150, code: 1559 },
         topAuthors: [{ name: "Alice", chunks: 1400 }],
+        topBlameAuthors: [],
         othersCount: 309,
       },
       signals: {
@@ -42,6 +43,7 @@ describe("IndexMetrics DTO", () => {
         chunkType: { function: 60 },
         documentation: { docs: 5, code: 95 },
         topAuthors: [],
+        topBlameAuthors: [],
         othersCount: 0,
       },
       signals: {
@@ -78,6 +80,7 @@ describe("IndexMetrics DTO", () => {
         chunkType: {},
         documentation: { docs: 0, code: 0 },
         topAuthors: [],
+        topBlameAuthors: [],
         othersCount: 0,
       },
       signals: {

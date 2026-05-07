@@ -31,6 +31,7 @@ describe("StatsCache v3", () => {
       chunkType: { function: 60, block: 40 },
       documentation: { docs: 15, code: 85 },
       topAuthors: [{ name: "Alice", chunks: 60 }],
+      topBlameAuthors: [],
       othersCount: 40,
     },
     computedAt: Date.now(),

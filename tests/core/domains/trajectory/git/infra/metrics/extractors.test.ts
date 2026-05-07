@@ -65,6 +65,25 @@ describe("computeDominantAuthor", () => {
     expect(result.pct).toBe(100);
     expect(result.contributorCount).toBe(1);
   });
+
+  it("caps authors at top-10, sorted by commit count descending", () => {
+    // 15 distinct authors: author0 has 15 commits, author1 has 14, ..., author14 has 1
+    const commits: CommitInfo[] = [];
+    for (let i = 0; i < 15; i++) {
+      const count = 15 - i;
+      for (let j = 0; j < count; j++) {
+        commits.push(makeCommit({ author: `author${i}`, authorEmail: `a${i}@x.com` }));
+      }
+    }
+    const result = computeDominantAuthor(commits);
+
+    expect(result.contributorCount).toBe(15);
+    expect(result.authors).toHaveLength(10);
+    expect(result.authors[0]).toBe("author0");
+    expect(result.authors[9]).toBe("author9");
+    expect(result.authors).not.toContain("author10");
+    expect(result.authors).not.toContain("author14");
+  });
 });
 
 // ─── computeTemporalMetrics ─────────────────────────────────────────────────

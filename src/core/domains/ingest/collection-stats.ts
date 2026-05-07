@@ -181,6 +181,7 @@ interface ExtractedValues {
   codeCount: number;
   distinctPaths: Set<string>;
   authorCounts: Map<string, number>;
+  blameAuthorCounts: Map<string, number>;
   /** File-level: min firstCreatedAt */
   fileOldest: number | undefined;
   /** File-level: max lastModifiedAt */
@@ -227,7 +228,11 @@ function extractSignalValues(
   const distinctPaths =
     (instances.get(STATS_ACCUMULATOR_KEYS.DISTINCT_PATHS)?.result() as Set<string>) ?? new Set<string>();
   const authorCounts =
-    (instances.get(STATS_ACCUMULATOR_KEYS.AUTHOR_COUNTS)?.result() as Map<string, number>) ?? new Map<string, number>();
+    (instances.get(STATS_ACCUMULATOR_KEYS.RECENT_AUTHOR_COUNTS)?.result() as Map<string, number>) ??
+    new Map<string, number>();
+  const blameAuthorCounts =
+    (instances.get(STATS_ACCUMULATOR_KEYS.BLAME_AUTHOR_COUNTS)?.result() as Map<string, number>) ??
+    new Map<string, number>();
   const fileRange = (instances.get(STATS_ACCUMULATOR_KEYS.FILE_TIME_RANGE)?.result() as
     | { fileOldest: number | undefined; fileNewest: number | undefined }
     | undefined) ?? { fileOldest: undefined, fileNewest: undefined };
@@ -245,6 +250,7 @@ function extractSignalValues(
     codeCount: docsCode.codeCount,
     distinctPaths,
     authorCounts,
+    blameAuthorCounts,
     fileOldest: fileRange.fileOldest,
     fileNewest: fileRange.fileNewest,
     chunkOldest: chunkRange.chunkOldest,
@@ -309,6 +315,9 @@ function buildDistributions(
   const topAuthors = sortedAuthors.slice(0, 10).map(([name, chunks]) => ({ name, chunks }));
   const othersCount = sortedAuthors.slice(10).reduce((sum, [, chunks]) => sum + chunks, 0);
 
+  const sortedBlameAuthors = Array.from(extracted.blameAuthorCounts.entries()).sort((a, b) => b[1] - a[1]);
+  const topBlameAuthors = sortedBlameAuthors.slice(0, 10).map(([name, chunks]) => ({ name, chunks }));
+
   const hasFileRange = extracted.fileOldest !== undefined && extracted.fileNewest !== undefined;
   const enrichmentTimeRange = hasFileRange
     ? {
@@ -335,6 +344,7 @@ function buildDistributions(
     chunkType: extracted.chunkTypeCounts,
     documentation: { docs: extracted.docsCount, code: extracted.codeCount },
     topAuthors,
+    topBlameAuthors,
     othersCount,
     enrichmentTimeRange,
   };

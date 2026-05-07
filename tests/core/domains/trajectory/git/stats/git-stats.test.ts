@@ -6,12 +6,12 @@ import {
   type StatsPoint,
 } from "../../../../../../src/core/contracts/types/stats-accumulator.js";
 import {
-  AuthorCountsAccumulator,
+  BlameAuthorCountsAccumulator,
   ChunkTimeRangeAccumulator,
   FileTimeRangeAccumulator,
   GitDataPathsAccumulator,
   gitStatsAccumulators,
-  LineAuthorCountsAccumulator,
+  RecentAuthorCountsAccumulator,
 } from "../../../../../../src/core/domains/trajectory/git/stats/index.js";
 
 function ctx(overrides: Partial<PointContext> = {}): PointContext {
@@ -29,9 +29,9 @@ function point(payload: Record<string, unknown>): StatsPoint {
   return { payload };
 }
 
-describe("AuthorCountsAccumulator", () => {
+describe("RecentAuthorCountsAccumulator", () => {
   it("counts per dominant author (flat payload)", () => {
-    const acc = new AuthorCountsAccumulator();
+    const acc = new RecentAuthorCountsAccumulator();
     acc.accept(point({ "git.file.recentDominantAuthor": "Alice" }), ctx());
     acc.accept(point({ "git.file.recentDominantAuthor": "Alice" }), ctx());
     acc.accept(point({ "git.file.recentDominantAuthor": "Bob" }), ctx());
@@ -41,21 +41,21 @@ describe("AuthorCountsAccumulator", () => {
   });
 
   it("reads nested dot-notation payload too", () => {
-    const acc = new AuthorCountsAccumulator();
+    const acc = new RecentAuthorCountsAccumulator();
     acc.accept(point({ git: { file: { recentDominantAuthor: "Charlie" } } }), ctx());
     expect(acc.result().get("Charlie")).toBe(1);
   });
 
   it("skips points without author", () => {
-    const acc = new AuthorCountsAccumulator();
+    const acc = new RecentAuthorCountsAccumulator();
     acc.accept(point({}), ctx());
     expect(acc.result().size).toBe(0);
   });
 });
 
-describe("LineAuthorCountsAccumulator", () => {
+describe("BlameAuthorCountsAccumulator", () => {
   it("counts per live-line dominant author (flat payload)", () => {
-    const acc = new LineAuthorCountsAccumulator();
+    const acc = new BlameAuthorCountsAccumulator();
     acc.accept(point({ "git.file.blameDominantAuthor": "Alice" }), ctx());
     acc.accept(point({ "git.file.blameDominantAuthor": "Alice" }), ctx());
     acc.accept(point({ "git.file.blameDominantAuthor": "Bob" }), ctx());
@@ -64,13 +64,13 @@ describe("LineAuthorCountsAccumulator", () => {
   });
 
   it("reads nested payload too", () => {
-    const acc = new LineAuthorCountsAccumulator();
+    const acc = new BlameAuthorCountsAccumulator();
     acc.accept(point({ git: { file: { blameDominantAuthor: "Carol" } } }), ctx());
     expect(acc.result().get("Carol")).toBe(1);
   });
 
   it("skips points without blameDominantAuthor", () => {
-    const acc = new LineAuthorCountsAccumulator();
+    const acc = new BlameAuthorCountsAccumulator();
     acc.accept(point({}), ctx());
     expect(acc.result().size).toBe(0);
   });
@@ -139,8 +139,8 @@ describe("gitStatsAccumulators barrel", () => {
     expect(gitStatsAccumulators).toHaveLength(5);
     const keys = gitStatsAccumulators.map((d) => d.key);
     expect(keys).toEqual([
-      STATS_ACCUMULATOR_KEYS.AUTHOR_COUNTS,
-      STATS_ACCUMULATOR_KEYS.LINE_AUTHOR_COUNTS,
+      STATS_ACCUMULATOR_KEYS.RECENT_AUTHOR_COUNTS,
+      STATS_ACCUMULATOR_KEYS.BLAME_AUTHOR_COUNTS,
       STATS_ACCUMULATOR_KEYS.FILE_TIME_RANGE,
       STATS_ACCUMULATOR_KEYS.CHUNK_TIME_RANGE,
       STATS_ACCUMULATOR_KEYS.GIT_DATA_PATHS,

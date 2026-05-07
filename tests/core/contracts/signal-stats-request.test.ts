@@ -54,6 +54,7 @@ describe("Distributions", () => {
       chunkType: { function: 60, class: 30, block: 10 },
       documentation: { docs: 15, code: 85 },
       topAuthors: [{ name: "Alice", chunks: 50 }],
+      topBlameAuthors: [],
       othersCount: 50,
     };
     expect(dist.totalFiles).toBe(100);
@@ -72,6 +73,7 @@ describe("CollectionSignalStats", () => {
         chunkType: {},
         documentation: { docs: 0, code: 0 },
         topAuthors: [],
+        topBlameAuthors: [],
         othersCount: 0,
       },
       computedAt: Date.now(),

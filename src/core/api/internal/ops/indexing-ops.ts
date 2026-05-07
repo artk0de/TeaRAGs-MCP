@@ -170,17 +170,41 @@ export class IndexingOps {
     }
   }
 
-  /** Recompute stats by collection name. Public so enrichment callback can bind to it. */
+  /**
+   * Recompute stats by collection name. Public so enrichment callback can bind to it.
+   *
+   * Translates the incoming `collectionName` (which may be an internal versioned
+   * target like `code_v2` during forceReindex) to its public alias (`code`)
+   * before writing the cache. Without this translation, callbacks fired with a
+   * target write to `<target>.stats.json` — a file `get_index_metrics` never
+   * reads, since it always loads `<alias>.stats.json`.
+   */
   async refreshStatsByCollection(collectionName: string): Promise<void> {
     if (!this.statsCache || !this.allPayloadSignals) return;
     try {
       const points = await scrollAllPoints(this.qdrant, collectionName);
       const stats = computeCollectionStats(points, this.allPayloadSignals, this.statsAccumulators, this.gitTimePeriods);
       const payloadFieldKeys = [...this.allPayloadSignals.map((d) => d.key), "navigation"];
-      this.statsCache.save(collectionName, stats, payloadFieldKeys);
+      const cacheKey = await this.resolveAliasForCache(collectionName);
+      this.statsCache.save(cacheKey, stats, payloadFieldKeys);
       this.reranker?.invalidateStats();
     } catch (error) {
       console.error("[StatsCache] Failed to refresh collection stats after chunk enrichment:", error);
+    }
+  }
+
+  /**
+   * If `name` is the target of a Qdrant alias, return the alias name. Otherwise
+   * return `name` unchanged. Used to keep StatsCache keyed under the public
+   * alias regardless of whether the caller passed alias or internal target.
+   */
+  private async resolveAliasForCache(name: string): Promise<string> {
+    try {
+      const aliases = await this.qdrant.aliases.listAliases();
+      const match = aliases.find((a) => a.collectionName === name);
+      return match ? match.aliasName : name;
+    } catch {
+      return name;
     }
   }
 

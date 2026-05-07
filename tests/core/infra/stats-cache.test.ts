@@ -15,7 +15,15 @@ function makeTmpDir(): string {
   return dir;
 }
 
-const emptyDistributions: Distributions = { totalFiles: 0, language: {}, chunkType: {} };
+const emptyDistributions: Distributions = {
+  totalFiles: 0,
+  language: {},
+  chunkType: {},
+  documentation: { docs: 0, code: 0 },
+  topAuthors: [],
+  topBlameAuthors: [],
+  othersCount: 0,
+};
 
 function makeStats(overrides?: Partial<CollectionSignalStats>): CollectionSignalStats {
   return {

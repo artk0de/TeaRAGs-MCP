@@ -7,7 +7,7 @@
 
 import type { FileChurnData } from "../../../../adapters/git/types.js";
 import type { ChunkChurnOverlay, GitFileSignals } from "../types.js";
-import { extractTaskIds } from "./utils.js";
+import { computeDominantAuthor, extractAllTaskIds } from "./metrics/extractors.js";
 
 /**
  * Accumulated raw data for a single chunk, collected during hunk mapping.
@@ -160,33 +160,11 @@ export function computeFileSignals(
   // Sort commits by timestamp ascending
   const sorted = [...commits].sort((a, b) => a.timestamp - b.timestamp);
 
-  // Author aggregation (by commit count)
-  const authorCounts = new Map<string, { count: number; email: string }>();
-  const allTaskIds = new Set<string>();
+  // Author aggregation + dominant author (delegates to extractor for cap+sort)
+  const authorship = computeDominantAuthor(commits);
 
-  for (const c of commits) {
-    const existing = authorCounts.get(c.author);
-    if (existing) {
-      existing.count++;
-    } else {
-      authorCounts.set(c.author, { count: 1, email: c.authorEmail });
-    }
-    for (const tid of extractTaskIds(c.body)) {
-      allTaskIds.add(tid);
-    }
-  }
-
-  // Find dominant author
-  let recentDominantAuthor = "";
-  let recentDominantAuthorEmail = "";
-  let maxCount = 0;
-  for (const [author, data] of authorCounts) {
-    if (data.count > maxCount) {
-      maxCount = data.count;
-      recentDominantAuthor = author;
-      recentDominantAuthorEmail = data.email;
-    }
-  }
+  // Task ID collection (delegates to extractor for dedup)
+  const taskIds = extractAllTaskIds(commits);
 
   const lastCommit = sorted[sorted.length - 1];
   const firstCommit = sorted[0];
@@ -222,13 +200,12 @@ export function computeFileSignals(
   const effectiveBugFixShas = bugFixShas ?? new Set<string>();
   const bugFixCount = commits.filter((c) => isBugFixCommitOrBranch(c.body, c.sha, effectiveBugFixShas)).length;
   const bugFixRate = Math.round(((bugFixCount + SMOOTHING_ALPHA) / (commits.length + 2 * SMOOTHING_ALPHA)) * 100);
-  const contributorCount = authorCounts.size;
 
   return {
-    recentDominantAuthor,
-    recentDominantAuthorEmail,
-    recentAuthors: Array.from(authorCounts.keys()),
-    recentDominantAuthorPct: Math.round((maxCount / commits.length) * 100),
+    recentDominantAuthor: authorship.author,
+    recentDominantAuthorEmail: authorship.email,
+    recentAuthors: authorship.authors,
+    recentDominantAuthorPct: authorship.pct,
     lastModifiedAt: lastCommit.timestamp,
     firstCreatedAt: firstCommit.timestamp,
     lastCommitHash: lastCommit.sha,
@@ -242,8 +219,8 @@ export function computeFileSignals(
     changeDensity: Math.round(changeDensity * 100) / 100,
     churnVolatility: Math.round(churnVolatility * 100) / 100,
     bugFixRate,
-    recentContributorCount: contributorCount,
-    taskIds: Array.from(allTaskIds),
+    recentContributorCount: authorship.contributorCount,
+    taskIds,
     // Line-based ownership defaults — populated with real blame data in pipeline wire-in (Task 4).
     blameDominantAuthor: "unknown",
     blameDominantAuthorPct: 0,

@@ -7,7 +7,7 @@ import {
 } from "../../../../contracts/types/stats-accumulator.js";
 import { readPayloadPath } from "./utils.js";
 
-export class AuthorCountsAccumulator implements StatsAccumulator<Map<string, number>> {
+export class RecentAuthorCountsAccumulator implements StatsAccumulator<Map<string, number>> {
   private readonly counts: Map<string, number> = new Map();
 
   accept(point: StatsPoint, _ctx: PointContext): void {
@@ -22,12 +22,12 @@ export class AuthorCountsAccumulator implements StatsAccumulator<Map<string, num
   }
 }
 
-export const authorCountsDescriptor: StatsAccumulatorDescriptor<Map<string, number>> = {
-  key: STATS_ACCUMULATOR_KEYS.AUTHOR_COUNTS,
-  factory: () => new AuthorCountsAccumulator(),
+export const recentAuthorCountsDescriptor: StatsAccumulatorDescriptor<Map<string, number>> = {
+  key: STATS_ACCUMULATOR_KEYS.RECENT_AUTHOR_COUNTS,
+  factory: () => new RecentAuthorCountsAccumulator(),
 };
 
-export class LineAuthorCountsAccumulator implements StatsAccumulator<Map<string, number>> {
+export class BlameAuthorCountsAccumulator implements StatsAccumulator<Map<string, number>> {
   private readonly counts: Map<string, number> = new Map();
 
   accept(point: StatsPoint, _ctx: PointContext): void {
@@ -42,7 +42,7 @@ export class LineAuthorCountsAccumulator implements StatsAccumulator<Map<string,
   }
 }
 
-export const lineAuthorCountsDescriptor: StatsAccumulatorDescriptor<Map<string, number>> = {
-  key: STATS_ACCUMULATOR_KEYS.LINE_AUTHOR_COUNTS,
-  factory: () => new LineAuthorCountsAccumulator(),
+export const blameAuthorCountsDescriptor: StatsAccumulatorDescriptor<Map<string, number>> = {
+  key: STATS_ACCUMULATOR_KEYS.BLAME_AUTHOR_COUNTS,
+  factory: () => new BlameAuthorCountsAccumulator(),
 };

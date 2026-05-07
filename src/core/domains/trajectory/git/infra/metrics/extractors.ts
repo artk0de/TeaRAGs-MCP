@@ -19,6 +19,8 @@ export interface AuthorshipResult {
   contributorCount: number;
 }
 
+const TOP_AUTHORS_CAP = 10;
+
 export interface TemporalResult {
   lastModifiedAt: number;
   firstCreatedAt: number;
@@ -56,7 +58,10 @@ export function computeDominantAuthor(commits: CommitInfo[]): AuthorshipResult {
     author: dominant,
     email: dominantEmail,
     pct: Math.round((maxCount / commits.length) * 100),
-    authors: Array.from(authorCounts.keys()),
+    authors: Array.from(authorCounts.entries())
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, TOP_AUTHORS_CAP)
+      .map(([author]) => author),
     contributorCount: authorCounts.size,
   };
 }

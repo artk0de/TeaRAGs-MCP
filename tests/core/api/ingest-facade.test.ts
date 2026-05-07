@@ -85,6 +85,13 @@ describe("IngestFacade", () => {
         status: "green" as const,
         optimizerStatus: "ok",
       }),
+      // Alias lookup is used by the post-enrichment stats refresh wiring to
+      // translate target collection name (e.g. "code_v2") to its public alias
+      // (e.g. "code") so stats are saved under the name that get_index_metrics
+      // reads. Default returns no aliases — incremental case where target == alias.
+      aliases: {
+        listAliases: vi.fn().mockResolvedValue([]),
+      },
       url: "http://localhost:6333",
     };
 
@@ -213,6 +220,42 @@ describe("IngestFacade", () => {
     const coordinator = mockCoordinatorInstances[0];
     await coordinator.onChunkEnrichmentComplete("test_col");
     expect(mockScrollAllPoints).not.toHaveBeenCalled();
+  });
+
+  // Regression for forceReindex stats-stale bug: forceReindex creates a NEW
+  // versioned target collection (e.g. "code_v2") and only swaps the public
+  // alias ("code") to point at it after indexing. EnrichmentCoordinator fires
+  // onChunkEnrichmentComplete with the TARGET name. Without target→alias
+  // translation, stats are saved under "code_v2.stats.json" — a file that
+  // get_index_metrics never reads (it loads "code.stats.json"). Result: stats
+  // appear permanently stale to the user after every forceReindex.
+  it("saves stats under public alias when callback receives target collection name (forceReindex)", async () => {
+    mockScrollAllPoints.mockClear();
+    mockComputeStats.mockClear();
+    const { statsCache, qdrant } = makeFacade({ withStats: true, withReranker: true });
+    qdrant.aliases.listAliases.mockResolvedValue([{ aliasName: "code", collectionName: "code_v2" }]);
+
+    const coordinator = mockCoordinatorInstances[0];
+    await coordinator.onChunkEnrichmentComplete("code_v2");
+
+    expect(statsCache!.save).toHaveBeenCalledWith("code", expect.anything(), expect.anything());
+  });
+
+  // Regression guard for incremental indexing path: target == alias (no
+  // versioned collection created), listAliases returns no entry mapping to
+  // this name, so save uses the name as-is. Locks "single canonical save key"
+  // behavior so future refactors of forceReindex don't accidentally regress
+  // incremental.
+  it("saves stats under same name when no alias points to the target (incremental)", async () => {
+    mockScrollAllPoints.mockClear();
+    mockComputeStats.mockClear();
+    const { statsCache, qdrant } = makeFacade({ withStats: true, withReranker: true });
+    qdrant.aliases.listAliases.mockResolvedValue([]);
+
+    const coordinator = mockCoordinatorInstances[0];
+    await coordinator.onChunkEnrichmentComplete("code");
+
+    expect(statsCache!.save).toHaveBeenCalledWith("code", expect.anything(), expect.anything());
   });
 
   it("passes migrations from reindexChanges through incremental indexCodebase", async () => {

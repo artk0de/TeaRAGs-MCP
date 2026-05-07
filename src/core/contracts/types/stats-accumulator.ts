@@ -54,8 +54,8 @@ export const STATS_ACCUMULATOR_KEYS = {
   DOCS_CODE_COUNTS: "docsCodeCounts",
   DISTINCT_PATHS: "distinctPaths",
   // Git — populated by domains/trajectory/git/stats/
-  AUTHOR_COUNTS: "authorCounts",
-  LINE_AUTHOR_COUNTS: "lineAuthorCounts",
+  RECENT_AUTHOR_COUNTS: "recentAuthorCounts",
+  BLAME_AUTHOR_COUNTS: "blameAuthorCounts",
   FILE_TIME_RANGE: "fileTimeRange",
   CHUNK_TIME_RANGE: "chunkTimeRange",
   GIT_DATA_PATHS: "gitDataPaths",

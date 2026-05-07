@@ -79,7 +79,10 @@ export interface Distributions {
   language: Record<string, number>;
   chunkType: Record<string, number>;
   documentation: { docs: number; code: number };
+  /** Top dominant authors by commit-based attribution (recentDominantAuthor). */
   topAuthors: { name: string; chunks: number }[];
+  /** Top dominant authors by line-based attribution (blameDominantAuthor from `git blame HEAD`). */
+  topBlameAuthors: { name: string; chunks: number }[];
   othersCount: number;
   /** Time range of git enrichment data. Undefined when no git data present. */
   enrichmentTimeRange?: EnrichmentTimeRange;
