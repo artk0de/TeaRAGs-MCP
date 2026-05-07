@@ -83,3 +83,10 @@ export interface RecoveryResultInput {
   chunkStatus: "completed" | "degraded" | "failed";
   chunkUnenriched: number;
 }
+
+/** Per-chunk reference for files whose chunks landed without file metadata. */
+export interface MissedFileChunk {
+  chunkId: string;
+  startLine: number;
+  endLine: number;
+}

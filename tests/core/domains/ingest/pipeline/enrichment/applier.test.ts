@@ -102,8 +102,8 @@ describe("EnrichmentApplier", () => {
       );
 
       expect(applier.missedFiles).toBe(1);
-      expect(applier.missedFileChunks.size).toBe(1);
-      expect(applier.missedFileChunks.get("src/missing.ts")).toEqual([{ chunkId: "chunk-1", endLine: 50 }]);
+      expect(applier.getMissedFileChunks().size).toBe(1);
+      expect(applier.getMissedFileChunks().get("src/missing.ts")).toEqual([{ chunkId: "chunk-1", endLine: 50 }]);
     });
 
     it("catches batchSetPayload error in applyFileSignals without throwing", async () => {

@@ -16,13 +16,13 @@ import { relative } from "node:path";
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
-import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contracts/types/provider.js";
+import type { FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry, EnrichmentMetrics } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
-import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier } from "./applier.js";
+import { EnrichmentBackfiller } from "./backfiller.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import type { EnrichmentRecovery } from "./recovery.js";
 import type { ChunkFinalInput, EnrichmentProvider } from "./types.js";
@@ -154,6 +154,7 @@ export class EnrichmentCoordinator {
   // Delegates
   private readonly applier: EnrichmentApplier;
   private readonly markerStore: EnrichmentMarkerStore;
+  private readonly backfiller: EnrichmentBackfiller;
 
   /**
    * Shared concurrency limiter for chunk enrichment (git blame).
@@ -188,6 +189,7 @@ export class EnrichmentCoordinator {
   ) {
     this.applier = new EnrichmentApplier(qdrant);
     this.markerStore = new EnrichmentMarkerStore(qdrant);
+    this.backfiller = new EnrichmentBackfiller(this.applier, qdrant);
     const list = Array.isArray(providers) ? providers : [providers];
     this.states = new Map(list.map((p) => [p.key, createProviderState(p)]));
   }
@@ -515,12 +517,20 @@ export class EnrichmentCoordinator {
       }
     }
 
-    // 3. Backfill file-level metadata for missed files (per provider)
-    if (this.applier.missedFileChunks.size > 0) {
+    // 3. Backfill file+chunk overlays for paths missed by prefetch.
+    if (this.applier.getMissedFileChunks().size > 0) {
       for (const state of this.states.values()) {
-        if (state.effectiveRoot && !state.prefetchFailed) {
-          await this.backfillMissedFiles(collectionName, state);
-        }
+        if (state.prefetchFailed) continue;
+        await this.backfiller.runFor(
+          collectionName,
+          {
+            key: state.provider.key,
+            provider: state.provider,
+            effectiveRoot: state.effectiveRoot,
+            ignoreFilter: state.ignoreFilter,
+          },
+          this.runStartedAt,
+        );
       }
     }
 
@@ -746,170 +756,5 @@ export class EnrichmentCoordinator {
       });
 
     state.chunkWork.push(work);
-  }
-
-  private async backfillMissedFiles(collectionName: string, state: ProviderState): Promise<void> {
-    const missedPaths = Array.from(this.applier.missedFileChunks.keys());
-    pipelineLog.enrichmentPhase("BACKFILL_START", {
-      provider: state.provider.key,
-      missedFiles: missedPaths.length,
-    });
-
-    const backfillStart = Date.now();
-    let backfillData: Map<string, FileSignalOverlay>;
-    try {
-      const root = state.effectiveRoot;
-      if (!root) return;
-      backfillData = await state.provider.buildFileSignals(root, { paths: missedPaths });
-    } catch (error) {
-      pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
-        provider: state.provider.key,
-        error: extractErrorMessage(error),
-      });
-      return;
-    }
-
-    // Scope writes to `git.file` via the `key` parameter so the call only
-    // touches that sub-tree. Without the key, Qdrant treats the payload's
-    // top-level keys as set targets — `{git: {file: ...}}` would replace
-    // the entire `git` payload, clobbering any sibling sub-trees (notably
-    // `git.chunk` written earlier in this same run).
-    const operations: {
-      payload: Record<string, unknown>;
-      points: (string | number)[];
-      key: string;
-    }[] = [];
-    const fileKey = `${state.provider.key}.file`;
-    let backfilledFiles = 0;
-
-    for (const [relPath, chunks] of this.applier.missedFileChunks) {
-      const data = backfillData.get(relPath);
-      if (!data) continue;
-
-      const maxEndLine = chunks.reduce((max, c) => Math.max(max, c.endLine), 0);
-      const finalData = state.provider.fileSignalTransform
-        ? state.provider.fileSignalTransform(data, maxEndLine)
-        : data;
-      const fileData = this.runStartedAt
-        ? { ...(finalData as Record<string, unknown>), enrichedAt: this.runStartedAt }
-        : (finalData as Record<string, unknown>);
-
-      for (const chunk of chunks) {
-        operations.push({ payload: fileData, points: [chunk.chunkId], key: fileKey });
-      }
-      backfilledFiles++;
-    }
-
-    if (operations.length > 0) {
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < operations.length; i += BATCH_SIZE) {
-        const batch = operations.slice(i, i + BATCH_SIZE);
-        try {
-          await this.qdrant.batchSetPayload(collectionName, batch);
-        } catch (error) {
-          if (isDebug()) {
-            console.error(`[Enrichment:${state.provider.key}] backfill batch failed:`, error);
-          }
-        }
-      }
-    }
-
-    const backfillDuration = Date.now() - backfillStart;
-    this.applier.matchedFiles += backfilledFiles;
-    this.applier.missedFiles -= backfilledFiles;
-
-    pipelineLog.enrichmentPhase("BACKFILL_COMPLETE", {
-      provider: state.provider.key,
-      missedFiles: missedPaths.length,
-      backfilledFiles,
-      backfilledChunks: operations.length,
-      stillMissed: missedPaths.length - backfilledFiles,
-      durationMs: backfillDuration,
-    });
-
-    // Backfill chunk-level signals for the same files. Initial chunk
-    // enrichment skipped these paths (their chunks landed with no matching
-    // file metadata in the prefetch); without this pass they would persist
-    // as `git.chunk = null` and the chunk marker would report them as
-    // "degraded" forever.
-    await this.backfillChunkSignals(collectionName, state, backfillData);
-  }
-
-  private async backfillChunkSignals(
-    collectionName: string,
-    state: ProviderState,
-    backfillData: Map<string, FileSignalOverlay>,
-  ): Promise<void> {
-    const backfillChunkMap = new Map<string, ChunkLookupEntry[]>();
-    for (const [relPath, chunks] of this.applier.missedFileChunks) {
-      if (!backfillData.has(relPath)) continue;
-      backfillChunkMap.set(
-        relPath,
-        chunks.map((c) => ({ chunkId: c.chunkId, startLine: c.startLine, endLine: c.endLine })),
-      );
-    }
-    if (backfillChunkMap.size === 0) return;
-
-    const root = state.effectiveRoot;
-    if (!root) return;
-
-    const chunkBackfillStart = Date.now();
-    pipelineLog.enrichmentPhase("CHUNK_BACKFILL_START", {
-      provider: state.provider.key,
-      files: backfillChunkMap.size,
-      chunks: [...backfillChunkMap.values()].reduce((sum, arr) => sum + arr.length, 0),
-    });
-
-    let chunkOverlays: Map<string, Map<string, ChunkSignalOverlay>>;
-    try {
-      chunkOverlays = await state.provider.buildChunkSignals(root, backfillChunkMap);
-    } catch (error) {
-      pipelineLog.enrichmentPhase("CHUNK_BACKFILL_FAILED", {
-        provider: state.provider.key,
-        error: extractErrorMessage(error),
-      });
-      return;
-    }
-
-    // Scope writes to `git.chunk` via the `key` parameter — without it Qdrant
-    // would treat `{git: {chunk: ...}}` as a top-level set, replacing the
-    // entire `git` payload and dropping any `git.file` data written by the
-    // file-backfill / streaming applier earlier in this same run.
-    const operations: { payload: Record<string, unknown>; points: (string | number)[]; key: string }[] = [];
-    const chunkKey = `${state.provider.key}.chunk`;
-    const enrichedAt = this.runStartedAt;
-    for (const chunkMap of chunkOverlays.values()) {
-      for (const [chunkId, overlay] of chunkMap) {
-        const chunkData = enrichedAt
-          ? { ...(overlay as Record<string, unknown>), enrichedAt }
-          : (overlay as Record<string, unknown>);
-        operations.push({
-          payload: chunkData,
-          points: [chunkId],
-          key: chunkKey,
-        });
-      }
-    }
-
-    if (operations.length > 0) {
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < operations.length; i += BATCH_SIZE) {
-        const batch = operations.slice(i, i + BATCH_SIZE);
-        try {
-          await this.qdrant.batchSetPayload(collectionName, batch);
-        } catch (error) {
-          if (isDebug()) {
-            console.error(`[Enrichment:${state.provider.key}] chunk backfill batch failed:`, error);
-          }
-        }
-      }
-    }
-
-    pipelineLog.enrichmentPhase("CHUNK_BACKFILL_COMPLETE", {
-      provider: state.provider.key,
-      files: backfillChunkMap.size,
-      chunks: operations.length,
-      durationMs: Date.now() - chunkBackfillStart,
-    });
   }
 }
