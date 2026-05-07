@@ -59,3 +59,27 @@ export interface EnrichmentProviderHealth {
 
 /** API-facing enrichment health map */
 export type EnrichmentHealthMap = Record<string, EnrichmentProviderHealth>;
+
+/** Input for EnrichmentMarkerStore.markFileFinal. */
+export interface FileFinalInput {
+  status: "completed" | "failed";
+  durationMs: number;
+  unenrichedChunks: number;
+  matchedFiles: number;
+  missedFiles: number;
+}
+
+/** Input for EnrichmentMarkerStore.markChunkFinal. */
+export interface ChunkFinalInput {
+  status: "completed" | "degraded" | "failed";
+  durationMs: number;
+  unenrichedChunks: number;
+}
+
+/** Input for EnrichmentMarkerStore.markRecoveryResult. */
+export interface RecoveryResultInput {
+  fileStatus: "completed" | "failed";
+  fileUnenriched: number;
+  chunkStatus: "completed" | "degraded" | "failed";
+  chunkUnenriched: number;
+}

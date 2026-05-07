@@ -213,12 +213,9 @@ export abstract class BaseIndexingPipeline {
     absolutePath: string,
   ): () => EnrichmentStatusResult {
     if (chunkMap.size === 0) {
-      // Prefetch may have set marker to "in_progress" — clear it
-      const completedMarker: Record<string, { file: { status: "completed"; unenrichedChunks: number } }> = {};
-      for (const key of this.enrichment.providerKeys) {
-        completedMarker[key] = { file: { status: "completed", unenrichedChunks: 0 } };
-      }
-      this.enrichment.updateEnrichmentMarker(collectionName, completedMarker).catch(() => {});
+      // Prefetch may have set marker to "in_progress" — drain through awaitCompletion
+      // which writes the final file/chunk markers (status=completed when no work).
+      this.enrichment.awaitCompletion(collectionName).catch(() => {});
       return () => ({ status: "skipped" });
     }
 
