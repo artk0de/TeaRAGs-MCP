@@ -25,7 +25,7 @@ import { EnrichmentApplier } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import type { EnrichmentRecovery } from "./recovery.js";
-import type { ChunkFinalInput, EnrichmentProvider } from "./types.js";
+import type { ChunkFinalInput, EnrichmentProvider, ProviderContext } from "./types.js";
 
 /** Max concurrent git-blame operations shared across all providers + streaming calls. */
 const CHUNK_ENRICHMENT_CONCURRENCY = 10;
@@ -147,6 +147,7 @@ function aggregateProviderMetrics(states: Map<string, ProviderState>): Aggregate
 
 export class EnrichmentCoordinator {
   private readonly states: Map<string, ProviderState>;
+  private contexts: Map<string, ProviderContext>;
   private startTime = 0;
   private runId = "";
   private runStartedAt = "";
@@ -192,6 +193,12 @@ export class EnrichmentCoordinator {
     this.backfiller = new EnrichmentBackfiller(this.applier, qdrant);
     const list = Array.isArray(providers) ? providers : [providers];
     this.states = new Map(list.map((p) => [p.key, createProviderState(p)]));
+    // Seed contexts with provider entries so runRecovery works when invoked
+    // before prefetch (e.g. recovery-only paths). prefetch() overwrites with
+    // resolved effectiveRoot + ignoreFilter for the actual run.
+    this.contexts = new Map(
+      list.map((provider) => [provider.key, { key: provider.key, provider, effectiveRoot: null, ignoreFilter: null }]),
+    );
   }
 
   /**
@@ -201,18 +208,7 @@ export class EnrichmentCoordinator {
    */
   async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
     if (!this.recovery) return;
-    const ctx = new Map(
-      [...this.states.values()].map((state) => [
-        state.provider.key,
-        {
-          key: state.provider.key,
-          provider: state.provider,
-          effectiveRoot: state.effectiveRoot,
-          ignoreFilter: state.ignoreFilter,
-        },
-      ]),
-    );
-    await this.recovery.recoverAll(collectionName, absolutePath, ctx, this.markerStore);
+    await this.recovery.recoverAll(collectionName, absolutePath, this.contexts, this.markerStore);
   }
 
   /**
@@ -224,6 +220,21 @@ export class EnrichmentCoordinator {
     this.startTime = Date.now();
     this.runId = randomUUID().slice(0, 8);
     this.runStartedAt = new Date().toISOString();
+
+    this.contexts = new Map(
+      [...this.states.values()].map((state) => {
+        const effectiveRoot = state.provider.resolveRoot(absolutePath);
+        return [
+          state.provider.key,
+          {
+            key: state.provider.key,
+            provider: state.provider,
+            effectiveRoot,
+            ignoreFilter: ignoreFilter ?? null,
+          },
+        ];
+      }),
+    );
 
     // Write per-provider initial marker: file=in_progress, chunk=pending
     if (collectionName) {
@@ -492,18 +503,9 @@ export class EnrichmentCoordinator {
 
     // 3. Backfill file+chunk overlays for paths missed by prefetch.
     if (this.applier.getMissedFileChunks().size > 0) {
-      for (const state of this.states.values()) {
-        if (state.prefetchFailed) continue;
-        await this.backfiller.runFor(
-          collectionName,
-          {
-            key: state.provider.key,
-            provider: state.provider,
-            effectiveRoot: state.effectiveRoot,
-            ignoreFilter: state.ignoreFilter,
-          },
-          this.runStartedAt,
-        );
+      for (const ctx of this.contexts.values()) {
+        if (this.states.get(ctx.key)?.prefetchFailed) continue;
+        await this.backfiller.runFor(collectionName, ctx, this.runStartedAt);
       }
     }
 

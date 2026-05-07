@@ -1,8 +1,24 @@
+import type { Ignore } from "ignore";
+
+import type { EnrichmentProvider } from "../../../../contracts/types/provider.js";
+
 export type {
   ChunkSignalOptions,
   EnrichmentProvider,
   FileSignalTransform,
 } from "../../../../contracts/types/provider.js";
+
+/**
+ * Per-run, immutable context for a single enrichment provider. Computed once
+ * by EnrichmentCoordinator.prefetch() and shared read-only with all phases
+ * (FilePhase, ChunkPhase, Backfiller, EnrichmentRecovery).
+ */
+export interface ProviderContext {
+  readonly key: string;
+  readonly provider: EnrichmentProvider;
+  readonly effectiveRoot: string | null;
+  readonly ignoreFilter: Ignore | null;
+}
 
 // --- Enrichment marker types (per-provider, per-level) ---
 

@@ -13,31 +13,15 @@
  * earlier in this same run.
  */
 
-import type { Ignore } from "ignore";
-
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
-import type {
-  ChunkSignalOverlay,
-  EnrichmentProvider,
-  FileSignalOverlay,
-} from "../../../../contracts/types/provider.js";
+import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import { isDebug } from "../infra/runtime.js";
 import type { EnrichmentApplier } from "./applier.js";
+import type { ProviderContext } from "./types.js";
 
 const BATCH_SIZE = 100;
-
-/**
- * Transitional shape — Task 4 will replace this with the canonical
- * `ProviderContext` exported from types.ts.
- */
-export interface BackfillerProviderContext {
-  readonly key: string;
-  readonly provider: EnrichmentProvider;
-  readonly effectiveRoot: string | null;
-  readonly ignoreFilter: Ignore | null;
-}
 
 export class EnrichmentBackfiller {
   constructor(
@@ -45,7 +29,7 @@ export class EnrichmentBackfiller {
     private readonly qdrant: QdrantManager,
   ) {}
 
-  async runFor(coll: string, ctx: BackfillerProviderContext, runStartedAt: string): Promise<void> {
+  async runFor(coll: string, ctx: ProviderContext, runStartedAt: string): Promise<void> {
     const missed = this.applier.getMissedFileChunks();
     if (missed.size === 0) return;
     if (!ctx.effectiveRoot) return;
@@ -121,7 +105,7 @@ export class EnrichmentBackfiller {
 
   private async backfillChunkSignals(
     coll: string,
-    ctx: BackfillerProviderContext,
+    ctx: ProviderContext,
     backfillData: Map<string, FileSignalOverlay>,
     runStartedAt: string,
   ): Promise<void> {

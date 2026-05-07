@@ -10,11 +10,8 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
-// Reuse the BackfillerProviderContext shape introduced in Task 2 — Task 4 will
-// rename it to ProviderContext.
-import type { BackfillerProviderContext } from "./backfiller.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
-import type { EnrichmentProvider } from "./types.js";
+import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
 export interface RecoveryResult {
   recoveredFiles: number;
@@ -192,7 +189,7 @@ export class EnrichmentRecovery {
   async recoverAll(
     coll: string,
     absolutePath: string,
-    contexts: ReadonlyMap<string, BackfillerProviderContext>,
+    contexts: ReadonlyMap<string, ProviderContext>,
     markerStore: EnrichmentMarkerStore,
   ): Promise<void> {
     const enrichedAt = new Date().toISOString();
