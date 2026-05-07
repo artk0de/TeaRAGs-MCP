@@ -63,4 +63,37 @@ describe("ChunkPhase", () => {
     await new Promise((r) => setImmediate(r));
     expect(cb).toHaveBeenCalledWith("coll");
   });
+
+  it("onChunkEnrichmentComplete callback waits for streaming work to settle", async () => {
+    // Regression: when remaining.size === 0 (full reindex — streaming covered
+    // every file), providerPromises = [Promise.resolve(true)] settles
+    // instantly. Callback must wait for in-flight streaming work as well —
+    // otherwise downstream refreshStatsByCollection reads partial chunk
+    // payloads and caches stale stats.
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+
+    let streamingResolved = false;
+    const buildChunkSignals = vi.fn().mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+      streamingResolved = true;
+      return new Map();
+    });
+    const ctx = buildCtx(buildChunkSignals);
+    const phase = new ChunkPhase(applier);
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "ts");
+
+    let callbackFiredWhileStreamPending = false;
+    phase.setOnComplete(async () => {
+      if (!streamingResolved) callbackFiredWhileStreamPending = true;
+    });
+
+    phase.onBatch("coll", "/repo", items);
+    phase.enrichRemaining("coll", "/repo", new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]));
+
+    await phase.drain();
+    await new Promise((r) => setImmediate(r));
+
+    expect(callbackFiredWhileStreamPending).toBe(false);
+  });
 });

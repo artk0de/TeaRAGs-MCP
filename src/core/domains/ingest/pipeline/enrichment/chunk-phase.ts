@@ -184,8 +184,18 @@ export class ChunkPhase {
 
     if (providerPromises.length > 0 && this.onComplete) {
       const cb = this.onComplete;
-      void Promise.allSettled(providerPromises).then(async (results) => {
-        if (!results.some((r) => r.status === "fulfilled" && r.value === true)) {
+      // Wait for both post-flush providerPromises AND streaming chunkWork in
+      // flight. When remaining.size === 0 for all providers (full reindex —
+      // streaming covered every file), providerPromises = [Promise.resolve(true)]
+      // settles instantly; without this, the callback fires while streaming
+      // Qdrant writes are still pending and the bound refreshStatsByCollection
+      // caches partial stats.
+      const streamingInFlight = [...this.states.values()].flatMap((s) => s.chunkWork);
+      void Promise.allSettled([...providerPromises, ...streamingInFlight]).then(async (results) => {
+        // The "any succeeded" check applies to providerPromises only —
+        // streaming chunkWork resolves to void, not boolean.
+        const providerResults = results.slice(0, providerPromises.length);
+        if (!providerResults.some((r) => r.status === "fulfilled" && r.value === true)) {
           return;
         }
         try {
