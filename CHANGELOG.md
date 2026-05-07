@@ -1,3 +1,10 @@
+## [1.23.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.23.0...v1.23.1) (2026-05-07)
+
+### Bug Fixes
+
+- **plugin:** drop type:mcp_tool hooks — Opus 4.7 timing makes them unusable
+  ([72fdd2b](https://github.com/artk0de/TeaRAGs-MCP/commit/72fdd2bf6968968c2b0fdd0dd87f8f4d13405bdc))
+
 ## [1.23.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.22.0...v1.23.0) (2026-05-07)
 
 ### ⚠ BREAKING CHANGES
