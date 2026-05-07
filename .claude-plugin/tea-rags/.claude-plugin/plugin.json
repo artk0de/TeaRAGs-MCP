@@ -1,7 +1,7 @@
 {
   "name": "tea-rags",
   "description": "Data-driven code generation strategies powered by TeaRAGs git signals",
-  "version": "0.16.1",
+  "version": "0.16.2",
   "author": { "name": "artk0de" },
   "keywords": ["code-generation", "git-signals", "strategies", "search"],
   "hooks": {
@@ -12,24 +12,6 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh"
-          },
-          {
-            "type": "mcp_tool",
-            "server": "tea-rags",
-            "tool": "get_index_status",
-            "input": { "path": "${CLAUDE_PROJECT_DIR}" }
-          },
-          {
-            "type": "mcp_tool",
-            "server": "tea-rags",
-            "tool": "get_index_metrics",
-            "input": { "path": "${CLAUDE_PROJECT_DIR}" }
-          },
-          {
-            "type": "mcp_tool",
-            "server": "tea-rags",
-            "tool": "index_codebase",
-            "input": { "path": "${CLAUDE_PROJECT_DIR}" }
           }
         ]
       }
@@ -52,18 +34,6 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/inject-rules.sh"
-          },
-          {
-            "type": "mcp_tool",
-            "server": "tea-rags",
-            "tool": "get_index_status",
-            "input": { "path": "${CLAUDE_PROJECT_DIR}" }
-          },
-          {
-            "type": "mcp_tool",
-            "server": "tea-rags",
-            "tool": "get_index_metrics",
-            "input": { "path": "${CLAUDE_PROJECT_DIR}" }
           }
         ]
       }

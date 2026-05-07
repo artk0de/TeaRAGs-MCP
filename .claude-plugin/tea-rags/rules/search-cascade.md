@@ -17,23 +17,18 @@ returns the full method/class definition — no Read needed.
 
 **MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
 
-## Session Start (EXECUTE IMMEDIATELY — auto-fired by SessionStart hook)
+## Session Start (EXECUTE IMMEDIATELY)
 
-The plugin's SessionStart hook auto-fires the three steps below via
-`type: "mcp_tool"` hook entries. Their results are injected into your context
-before you respond to the first user message — no LLM-side action required for
-the calls themselves.
-
-**This section also serves as fallback/documentation:** if the hook fails (MCP
-server not yet connected, `type: "mcp_tool"` unavailable in the running Claude
-Code build), execute these calls yourself BEFORE responding to the first user
-message. Do NOT skip — index health, label thresholds, and freshness are
-prerequisites for any tea-rags-driven decision.
+**BEFORE responding to the user's first message**, run these tools yourself.
+Hooks deliver this rule text but do NOT auto-execute the calls — your compliance
+is required. Index health, label thresholds, and freshness are prerequisites for
+any tea-rags-driven decision; skipping them produces wrong search results,
+miscalibrated overlays, and stale data.
 
 **1. Check index health — MANDATORY:**
 
-- `get_index_status` for the current project path. Auto-fired.
-- If `get_index_status` returns an error (`isError: true`):
+- Call `get_index_status` with the current project path.
+- If it returns an error (`isError: true`):
   1. Parse `[CODE]` from the response text (e.g. `[QDRANT_UNAVAILABLE]`,
      `[OLLAMA_UNAVAILABLE]`, `[NOT_INDEXED]`).
   2. Read the `Hint:` section — it contains the concrete fix action.
@@ -43,23 +38,23 @@ prerequisites for any tea-rags-driven decision.
 
 **2. Memorize label thresholds + detect polyglot — MANDATORY:**
 
-- `get_index_metrics` for the project path. Auto-fired. Remember label values.
-  Signals are scoped by `source`/`test`:
+- Call `get_index_metrics` with the project path. Remember label values. Signals
+  are scoped by `source`/`test`:
   `signals["typescript"]["git.file.commitCount"]["source"].labelMap` →
   `{ low: 1, typical: 3, high: 8, extreme: 20 }` means 8 commits = "high" for
   source code in THIS codebase.
 - Check language distribution in metrics. If 2+ languages each have >10% of
   chunks → **polyglot codebase**. See `references/polyglot-rule.md`.
 
-**3. Refresh stale index — MANDATORY when status is stale:**
+**3. Refresh index when stale — MANDATORY for the bootstrap step:**
 
-- `index_codebase` with `path` for the current project. Auto-fired. Behavior:
-  - Status `[NOT_INDEXED]` (collection missing) → full background index.
-  - Status `indexed` AND `lastIndexedAt` older than 24h → incremental reindex of
-    changed files (cheap — uses git diff vs cached state, fast no-op when
-    nothing changed).
-  - Status `indexed` AND fresh (< 24h since last update) → no-op, returns
-    immediately.
+- After step 1, decide based on `get_index_status` response:
+  - Status `[NOT_INDEXED]` (collection missing) → invoke `/tea-rags:index` slash
+    command for full background index.
+  - Status `indexed` AND `lastIndexedAt` older than 24h → call `index_codebase`
+    for incremental reindex of changed files (cheap — uses git diff vs cached
+    state, fast no-op when nothing changed).
+  - Status `indexed` AND fresh (< 24h since last update) → skip, no action.
 - For explicit full rebuild from scratch — invoke `/tea-rags:force-reindex`
   slash command (zero-downtime, search stays available during rebuild).
 
