@@ -201,45 +201,18 @@ export class EnrichmentCoordinator {
    */
   async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
     if (!this.recovery) return;
-
-    const enrichedAt = new Date().toISOString();
-
-    for (const state of this.states.values()) {
-      const { provider } = state;
-
-      // Snapshot runId BEFORE recovery work. If a newer pipeline run stamps a
-      // different runId during recovery, our unenriched counts become stale —
-      // writing them back would overwrite the fresher run's `completed` status
-      // with an outdated `degraded`. The dispatchRecovery call is fire-and-forget
-      // (indexing-ops.ts:313), so this race is real.
-      const baselineRunId = await this.markerStore.getRunId(collectionName, provider.key);
-
-      const fileResult = await this.recovery.recoverFileLevel(collectionName, absolutePath, provider, enrichedAt);
-      const chunkResult = await this.recovery.recoverChunkLevel(collectionName, absolutePath, provider, enrichedAt);
-
-      const currentRunId = await this.markerStore.getRunId(collectionName, provider.key);
-      if (baselineRunId !== currentRunId) {
-        pipelineLog.enrichmentPhase("RECOVERY_SKIP_STALE", {
-          provider: provider.key,
-          baselineRunId,
-          currentRunId,
-        });
-        continue;
-      }
-
-      // Use remainingUnenriched from recovery results — no extra scroll needed
-      const fileCount = fileResult.remainingUnenriched;
-      const chunkCount = chunkResult.remainingUnenriched;
-
-      const fileStatus: "completed" | "failed" = fileCount === 0 ? "completed" : "failed";
-      const chunkStatus: "completed" | "degraded" | "failed" = chunkCount === 0 ? "completed" : "degraded";
-      await this.markerStore.markRecoveryResult(collectionName, provider.key, {
-        fileStatus,
-        fileUnenriched: fileCount,
-        chunkStatus,
-        chunkUnenriched: chunkCount,
-      });
-    }
+    const ctx = new Map(
+      [...this.states.values()].map((state) => [
+        state.provider.key,
+        {
+          key: state.provider.key,
+          provider: state.provider,
+          effectiveRoot: state.effectiveRoot,
+          ignoreFilter: state.ignoreFilter,
+        },
+      ]),
+    );
+    await this.recovery.recoverAll(collectionName, absolutePath, ctx, this.markerStore);
   }
 
   /**

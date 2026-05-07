@@ -10,6 +10,10 @@ import type { ChunkLookupEntry } from "../../../../types.js";
 import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
+// Reuse the BackfillerProviderContext shape introduced in Task 2 — Task 4 will
+// rename it to ProviderContext.
+import type { BackfillerProviderContext } from "./backfiller.js";
+import type { EnrichmentMarkerStore } from "./marker-store.js";
 import type { EnrichmentProvider } from "./types.js";
 
 export interface RecoveryResult {
@@ -178,6 +182,40 @@ export class EnrichmentRecovery {
   async countUnenriched(collectionName: string, providerKey: string, level: "file" | "chunk"): Promise<number> {
     const filter = this.buildUnenrichedFilter(providerKey, level);
     return this.qdrant.countPoints(collectionName, filter);
+  }
+
+  /**
+   * High-level recovery entry. Snapshots runId, runs both levels, re-checks
+   * runId; only writes the recovery marker when no concurrent run has
+   * stamped a fresher runId.
+   */
+  async recoverAll(
+    coll: string,
+    absolutePath: string,
+    contexts: ReadonlyMap<string, BackfillerProviderContext>,
+    markerStore: EnrichmentMarkerStore,
+  ): Promise<void> {
+    const enrichedAt = new Date().toISOString();
+    for (const ctx of contexts.values()) {
+      const baselineRunId = await markerStore.getRunId(coll, ctx.key);
+
+      const fileResult = await this.recoverFileLevel(coll, absolutePath, ctx.provider, enrichedAt);
+      const chunkResult = await this.recoverChunkLevel(coll, absolutePath, ctx.provider, enrichedAt);
+
+      const currentRunId = await markerStore.getRunId(coll, ctx.key);
+      if (baselineRunId !== currentRunId) {
+        // A concurrent run has rewritten the marker; our counts are stale.
+        // Skip the marker write to avoid clobbering the fresher state.
+        continue;
+      }
+
+      await markerStore.markRecoveryResult(coll, ctx.key, {
+        fileStatus: fileResult.remainingUnenriched === 0 ? "completed" : "failed",
+        fileUnenriched: fileResult.remainingUnenriched,
+        chunkStatus: chunkResult.remainingUnenriched === 0 ? "completed" : "degraded",
+        chunkUnenriched: chunkResult.remainingUnenriched,
+      });
+    }
   }
 
   /**

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { INDEXING_METADATA_ID } from "../../../../../../src/core/domains/ingest/constants.js";
+import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
 import { EnrichmentRecovery } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/recovery.js";
 
 describe("EnrichmentRecovery", () => {
@@ -349,5 +352,52 @@ describe("EnrichmentRecovery", () => {
       const call = mockQdrant.scrollFiltered.mock.calls[0];
       expect(call[3]).toBeUndefined();
     });
+  });
+});
+
+describe("EnrichmentRecovery.recoverAll race guard", () => {
+  it("skips marker write when runId changed between snapshot and finalize", async () => {
+    const qdrant = new MockQdrantManager();
+    await qdrant.createCollection("coll", 384);
+    // Real Qdrant set_payload requires the point to exist; production seeds
+    // INDEXING_METADATA_ID via storeIndexingMarker before enrichment starts.
+    await qdrant.addPoints("coll", [{ id: INDEXING_METADATA_ID, vector: new Array(384).fill(0), payload: {} }]);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    await marker.markStart("coll", ["git"], "BASELINE", "2026-05-07T10:00:00Z");
+
+    const applier = {
+      applyFileSignals: vi.fn().mockResolvedValue(undefined),
+      applyChunkSignals: vi.fn().mockResolvedValue(0),
+    };
+    const recovery = new EnrichmentRecovery(qdrant as any, applier as any);
+
+    // Stub recoverFileLevel and recoverChunkLevel to flip the runId during the call.
+    vi.spyOn(recovery, "recoverFileLevel").mockImplementation(async () => {
+      // simulate concurrent run rewriting the marker
+      await marker.markStart("coll", ["git"], "NEW_RUN", "2026-05-07T11:00:00Z");
+      return { recoveredFiles: 0, recoveredChunks: 0, remainingUnenriched: 0 };
+    });
+    vi.spyOn(recovery, "recoverChunkLevel").mockResolvedValue({
+      recoveredFiles: 0,
+      recoveredChunks: 0,
+      remainingUnenriched: 0,
+    });
+
+    const provider = {
+      key: "git",
+      resolveRoot: (p: string) => p,
+      buildFileSignals: vi.fn(),
+      buildChunkSignals: vi.fn(),
+    } as any;
+    const ctx = new Map([["git", { key: "git", provider, effectiveRoot: "/repo", ignoreFilter: null }]]);
+
+    await recovery.recoverAll("coll", "/repo", ctx, marker);
+
+    const m = (await marker.read("coll"))!.git as any;
+    // file/chunk status MUST stay at the values from the new run (in_progress / pending),
+    // not be overwritten by the stale recovery's "completed".
+    expect(m.file.status).toBe("in_progress");
+    expect(m.chunk.status).toBe("pending");
+    expect(m.runId).toBe("NEW_RUN");
   });
 });
