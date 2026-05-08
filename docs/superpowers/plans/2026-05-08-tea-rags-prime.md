@@ -320,7 +320,6 @@ describe("formatPrime — status section", () => {
         status: "indexed",
         collectionName: "code_27622aef",
         chunksCount: 4218,
-        languages: ["typescript"],
       }),
       metrics: null,
       drift: null,
@@ -466,8 +465,14 @@ function metricsFixture(): IndexMetrics {
   };
 }
 
+function monolingualMetricsFixture(): IndexMetrics {
+  const m = metricsFixture();
+  m.distributions = { language: { typescript: 4218 } };
+  return m;
+}
+
 describe("formatPrime — polyglot + thresholds", () => {
-  it("emits Polyglot section with primary language and others when languages.length > 1", () => {
+  it("emits Polyglot section with primary language (highest count) and others, sorted desc", () => {
     const out = formatPrime({
       path: "/p",
       status: statusFixture({
@@ -475,7 +480,6 @@ describe("formatPrime — polyglot + thresholds", () => {
         status: "indexed",
         collectionName: "c",
         chunksCount: 4218,
-        languages: ["typescript", "javascript", "markdown"],
       }),
       metrics: metricsFixture(),
       drift: null,
@@ -488,7 +492,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     );
   });
 
-  it("emits Language section (not Polyglot) when only one language", () => {
+  it("emits Language section (not Polyglot) when distributions has only one language", () => {
     const out = formatPrime({
       path: "/p",
       status: statusFixture({
@@ -496,9 +500,8 @@ describe("formatPrime — polyglot + thresholds", () => {
         status: "indexed",
         collectionName: "c",
         chunksCount: 4218,
-        languages: ["typescript"],
       }),
-      metrics: metricsFixture(),
+      metrics: monolingualMetricsFixture(),
       drift: null,
     });
     expect(out).toContain("## Language");
@@ -514,9 +517,8 @@ describe("formatPrime — polyglot + thresholds", () => {
         status: "indexed",
         collectionName: "c",
         chunksCount: 4218,
-        languages: ["typescript"],
       }),
-      metrics: metricsFixture(),
+      metrics: monolingualMetricsFixture(),
       drift: null,
     });
     expect(out).toContain("## Signal thresholds — typescript");
@@ -524,7 +526,7 @@ describe("formatPrime — polyglot + thresholds", () => {
     expect(out).toContain("low ≤2 / normal ≤5 / high ≤9 / extreme >9");
   });
 
-  it("omits Signal thresholds when metrics is null (e.g. no enrichment yet)", () => {
+  it("omits Polyglot/Language and Signal thresholds when metrics is null (e.g. no enrichment yet)", () => {
     const out = formatPrime({
       path: "/p",
       status: statusFixture({
@@ -532,7 +534,6 @@ describe("formatPrime — polyglot + thresholds", () => {
         status: "indexed",
         collectionName: "c",
         chunksCount: 4218,
-        languages: ["typescript"],
       }),
       metrics: null,
       drift: null,
@@ -549,7 +550,14 @@ Run: `npx vitest run tests/cli/prime/format.test.ts` Expected: 4 new tests FAIL.
 
 - [ ] **Step 3: Implement polyglot + thresholds formatting.**
 
-Modify `src/cli/prime/format.ts` — extend `formatDigest`:
+First, add the `IndexMetrics` import at the top of `src/cli/prime/format.ts`
+(alongside the existing `IndexStatus` import):
+
+```typescript
+import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
+```
+
+Then modify `formatDigest` and add helpers:
 
 ```typescript
 function formatDigest(data: PrimeData): string {
@@ -563,7 +571,10 @@ function formatDigest(data: PrimeData): string {
     return lines.join("\n") + "\n";
   }
 
-  const languages = data.status.languages ?? [];
+  // Primary language is derived from IndexMetrics.distributions.language
+  // (Record<string, number>, sorted by chunk count desc). IndexStatus.languages
+  // is declared but never populated by any producer — do not use it.
+  const languages = sortedLanguages(data.metrics);
   if (languages.length > 0) {
     lines.push("");
     lines.push(...formatLanguageSection(languages));
@@ -580,6 +591,13 @@ function formatDigest(data: PrimeData): string {
   }
 
   return lines.join("\n") + "\n";
+}
+
+function sortedLanguages(metrics: IndexMetrics | null): string[] {
+  if (!metrics?.distributions?.language) return [];
+  return Object.entries(metrics.distributions.language)
+    .sort(([, a], [, b]) => b - a)
+    .map(([lang]) => lang);
 }
 
 function formatLanguageSection(languages: string[]): string[] {
@@ -659,7 +677,6 @@ describe("formatPrime — schema drift", () => {
         status: "indexed",
         collectionName: "c",
         chunksCount: 100,
-        languages: ["typescript"],
       }),
       metrics: null,
       drift: null,
@@ -676,7 +693,6 @@ describe("formatPrime — schema drift", () => {
         status: "indexed",
         collectionName: "c",
         chunksCount: 100,
-        languages: ["typescript"],
       }),
       metrics: null,
       drift:
@@ -724,7 +740,7 @@ function formatDigest(data: PrimeData): string {
   lines.push("## Schema drift");
   lines.push(data.drift ?? "none");
 
-  const languages = data.status.languages ?? [];
+  const languages = sortedLanguages(data.metrics);
   if (languages.length > 0) {
     lines.push("");
     lines.push(...formatLanguageSection(languages));
@@ -820,13 +836,12 @@ describe("runPrime — happy path", () => {
       status: "indexed",
       collectionName: "c",
       chunksCount: 100,
-      languages: ["typescript"],
     });
     const getMetricsMock = vi.fn().mockResolvedValue({
       collection: "c",
       totalChunks: 100,
       totalFiles: 10,
-      distributions: {},
+      distributions: { language: { typescript: 100 } },
       signals: {},
     });
     const checkDriftMock = vi.fn().mockResolvedValue(null);
