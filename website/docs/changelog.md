@@ -3,11 +3,25 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.23.2](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.23.1...v1.23.2) (2026-05-08)
+
+### Bug Fixes
+
+* **enrichment:** FIFO serialize concurrent prefetch in EnrichmentCoordinator ([5943a87](https://github.com/artk0de/TeaRAGs-MCP/commit/5943a872b2f7e79767c2b5e3c772c4469ddde8ee)), closes [#2](https://github.com/artk0de/TeaRAGs-MCP/issues/2)
+* **enrichment:** per-run RunState container in EnrichmentCoordinator ([b8bb167](https://github.com/artk0de/TeaRAGs-MCP/commit/b8bb16734f568e20ea465b76138010f60fb86216)), closes [#1](https://github.com/artk0de/TeaRAGs-MCP/issues/1)
+* **stats:** re-fire onChunkEnrichmentComplete after backfill ([8e40ed8](https://github.com/artk0de/TeaRAGs-MCP/commit/8e40ed8ccabbed7ffd967636cbeddb307fa494a3))
+
+### Documentation
+
+* **plans:** enrichment RunState — implementation plan ([2d1e6e9](https://github.com/artk0de/TeaRAGs-MCP/commit/2d1e6e96ca20837b1312c3908ec082b97244cff2))
+* **specs:** enrichment RunState — per-run state container ([d11fa3c](https://github.com/artk0de/TeaRAGs-MCP/commit/d11fa3cd725b245a5c51297448030afbfdbf98eb)), closes [#1](https://github.com/artk0de/TeaRAGs-MCP/issues/1) [#2](https://github.com/artk0de/TeaRAGs-MCP/issues/2)
+
 ## [1.23.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.23.0...v1.23.1) (2026-05-07)
 
 ### Bug Fixes
 
-* **plugin:** drop type:mcp_tool hooks — Opus 4.7 timing makes them unusable ([72fdd2b](https://github.com/artk0de/TeaRAGs-MCP/commit/72fdd2bf6968968c2b0fdd0dd87f8f4d13405bdc))
+- **plugin:** drop type:mcp_tool hooks — Opus 4.7 timing makes them unusable
+  ([72fdd2b](https://github.com/artk0de/TeaRAGs-MCP/commit/72fdd2bf6968968c2b0fdd0dd87f8f4d13405bdc))
 
 ## [1.23.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.22.0...v1.23.0) (2026-05-07)
 
