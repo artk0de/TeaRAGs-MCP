@@ -6,8 +6,9 @@
  * 2. Per-batch: apply file signals as chunks arrive — owned by FilePhase
  * 3. Streaming + post-flush chunk overlays — owned by ChunkPhase
  *
- * Supports multiple providers in parallel — each with independent state.
- * Provider-agnostic — works with any EnrichmentProvider implementation.
+ * Per-run state is bounded inside a `RunState` container. Each `prefetch()`
+ * builds a fresh RunState; old promise closures from previous runs mutate
+ * their own (now-orphaned) RunState and have zero effect on the current run.
  */
 
 import { randomUUID } from "node:crypto";
@@ -42,26 +43,32 @@ const EMPTY_METRICS: EnrichmentMetrics = {
   estimatedSavedMs: 0,
 };
 
-export class EnrichmentCoordinator {
-  private contexts: Map<string, ProviderContext>;
-  private startTime = 0;
-  private runId = "";
-  private runStartedAt = "";
+interface RunState {
+  runId: string;
+  startTime: number;
+  startedAt: string;
+  applier: EnrichmentApplier;
+  filePhase: FilePhase;
+  chunkPhase: ChunkPhase;
+  backfiller: EnrichmentBackfiller;
+  completion: CompletionRunner;
+  contexts: Map<string, ProviderContext>;
+  donePromise: Promise<EnrichmentMetrics>;
+  resolveDone: (m: EnrichmentMetrics) => void;
+  rejectDone: (e: unknown) => void;
+}
 
-  // Delegates
-  private readonly applier: EnrichmentApplier;
+export class EnrichmentCoordinator {
   private readonly markerStore: EnrichmentMarkerStore;
-  private readonly backfiller: EnrichmentBackfiller;
-  private readonly filePhase: FilePhase;
-  private readonly chunkPhase: ChunkPhase;
-  private readonly completion: CompletionRunner;
+  private currentRun: RunState | null = null;
+  private readonly providers: EnrichmentProvider[];
 
   /**
    * Optional callback fired after ALL providers complete chunk enrichment.
    * Receives the collectionName. Only fires if at least one provider succeeded.
    * Errors in the callback are caught and logged — they do not affect enrichment.
-   * Backed by ChunkPhase.setOnComplete; getter exposes the stored callback for
-   * tests and external assertions.
+   * Bound to the current RunState's chunkPhase on assignment; subsequent
+   * prefetch() calls re-bind to the new run's chunkPhase.
    */
   private _onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
   get onChunkEnrichmentComplete(): ((collectionName: string) => Promise<void>) | undefined {
@@ -69,12 +76,12 @@ export class EnrichmentCoordinator {
   }
   set onChunkEnrichmentComplete(cb: ((collectionName: string) => Promise<void>) | undefined) {
     this._onChunkEnrichmentComplete = cb;
-    if (cb) this.chunkPhase.setOnComplete(cb);
+    if (cb && this.currentRun) this.currentRun.chunkPhase.setOnComplete(cb);
   }
 
   /** All provider keys managed by this coordinator. */
   get providerKeys(): string[] {
-    return [...this.contexts.keys()];
+    return this.providers.map((p) => p.key);
   }
 
   constructor(
@@ -82,26 +89,8 @@ export class EnrichmentCoordinator {
     providers: EnrichmentProvider | EnrichmentProvider[],
     private readonly recovery?: EnrichmentRecovery,
   ) {
-    this.applier = new EnrichmentApplier(qdrant);
     this.markerStore = new EnrichmentMarkerStore(qdrant);
-    this.backfiller = new EnrichmentBackfiller(this.applier, qdrant);
-    this.chunkPhase = new ChunkPhase(this.applier);
-    this.filePhase = new FilePhase(this.applier, this.markerStore);
-    this.filePhase.bindChunkPhase(this.chunkPhase);
-    this.completion = new CompletionRunner({
-      filePhase: this.filePhase,
-      chunkPhase: this.chunkPhase,
-      backfiller: this.backfiller,
-      applier: this.applier,
-      markerStore: this.markerStore,
-    });
-    const list = Array.isArray(providers) ? providers : [providers];
-    // Seed contexts with provider entries so runRecovery works when invoked
-    // before prefetch (e.g. recovery-only paths). prefetch() overwrites with
-    // resolved effectiveRoot + ignoreFilter for the actual run.
-    this.contexts = new Map(
-      list.map((provider) => [provider.key, { key: provider.key, provider, effectiveRoot: null, ignoreFilter: null }]),
-    );
+    this.providers = Array.isArray(providers) ? providers : [providers];
   }
 
   /**
@@ -111,7 +100,13 @@ export class EnrichmentCoordinator {
    */
   async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
     if (!this.recovery) return;
-    await this.recovery.recoverAll(collectionName, absolutePath, this.contexts, this.markerStore);
+    // Recovery uses a transient context map seeded from providers — no
+    // persistent RunState needed (recovery completes synchronously per
+    // collection, before any prefetch).
+    const contexts = new Map<string, ProviderContext>(
+      this.providers.map((p) => [p.key, { key: p.key, provider: p, effectiveRoot: null, ignoreFilter: null }]),
+    );
+    await this.recovery.recoverAll(collectionName, absolutePath, contexts, this.markerStore);
   }
 
   /**
@@ -120,25 +115,30 @@ export class EnrichmentCoordinator {
    * All providers prefetch in parallel.
    */
   prefetch(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore, changedPaths?: string[]): void {
-    this.startTime = Date.now();
-    this.runId = randomUUID().slice(0, 8);
-    this.runStartedAt = new Date().toISOString();
+    // Build a fresh RunState. Per-run instances guarantee old promise closures
+    // mutate their orphaned RunState, never the current one.
+    const runState = this.createRunState();
+    this.currentRun = runState;
 
-    this.contexts = new Map(
-      [...this.contexts.values()].map((ctx) => {
-        const effectiveRoot = ctx.provider.resolveRoot(absolutePath);
+    if (this._onChunkEnrichmentComplete) {
+      runState.chunkPhase.setOnComplete(this._onChunkEnrichmentComplete);
+    }
+
+    runState.contexts = new Map(
+      this.providers.map((provider) => {
+        const effectiveRoot = provider.resolveRoot(absolutePath);
         if (effectiveRoot !== absolutePath) {
           pipelineLog.enrichmentPhase("REPO_ROOT_DIFFERS", {
-            provider: ctx.provider.key,
+            provider: provider.key,
             absolutePath,
             effectiveRoot,
           });
         }
         return [
-          ctx.provider.key,
+          provider.key,
           {
-            key: ctx.provider.key,
-            provider: ctx.provider,
+            key: provider.key,
+            provider,
             effectiveRoot,
             ignoreFilter: ignoreFilter ?? null,
           },
@@ -146,15 +146,19 @@ export class EnrichmentCoordinator {
       }),
     );
 
-    this.filePhase.init(this.contexts, collectionName ?? "", this.runId, this.runStartedAt);
-    this.chunkPhase.init(this.contexts, collectionName ?? "", this.runStartedAt);
+    runState.filePhase.init(runState.contexts, collectionName ?? "", runState.runId, runState.startedAt);
+    runState.chunkPhase.init(runState.contexts, collectionName ?? "", runState.startedAt);
 
-    // Write per-provider initial marker: file=in_progress, chunk=pending
     if (collectionName) {
-      void this.markerStore.markStart(collectionName, [...this.contexts.keys()], this.runId, this.runStartedAt);
+      void this.markerStore.markStart(
+        collectionName,
+        [...runState.contexts.keys()],
+        runState.runId,
+        runState.startedAt,
+      );
     }
 
-    this.filePhase.startPrefetch(changedPaths);
+    runState.filePhase.startPrefetch(changedPaths);
   }
 
   /**
@@ -164,8 +168,9 @@ export class EnrichmentCoordinator {
    * batches — instead of waiting for a single post-flush catch-up.
    */
   onChunksStored(collectionName: string, absolutePath: string, items: ChunkItem[]): void {
-    this.filePhase.onBatch(collectionName, absolutePath, items);
-    this.chunkPhase.onBatch(collectionName, absolutePath, items);
+    if (!this.currentRun) return;
+    this.currentRun.filePhase.onBatch(collectionName, absolutePath, items);
+    this.currentRun.chunkPhase.onBatch(collectionName, absolutePath, items);
   }
 
   /**
@@ -173,21 +178,67 @@ export class EnrichmentCoordinator {
    * Each provider runs independently.
    */
   startChunkEnrichment(collectionName: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
-    this.chunkPhase.enrichRemaining(collectionName, absolutePath, chunkMap);
+    if (!this.currentRun) return;
+    this.currentRun.chunkPhase.enrichRemaining(collectionName, absolutePath, chunkMap);
   }
 
   /**
    * Wait for all in-flight enrichment work to complete across all providers.
    */
   async awaitCompletion(collectionName: string): Promise<EnrichmentMetrics> {
-    if (this.contexts.size === 0) return EMPTY_METRICS;
-    return this.completion.run(
-      collectionName,
-      this.contexts,
-      this.startTime,
-      async (coll, providerKey, level) => this.countSettledUnenriched(coll, providerKey, level),
-      this.runStartedAt,
-    );
+    const run = this.currentRun;
+    if (!run || run.contexts.size === 0) return EMPTY_METRICS;
+    try {
+      const metrics = await run.completion.run(
+        collectionName,
+        run.contexts,
+        run.startTime,
+        async (coll, providerKey, level) => this.countSettledUnenriched(coll, providerKey, level),
+        run.startedAt,
+      );
+      run.resolveDone(metrics);
+      return metrics;
+    } catch (error) {
+      run.rejectDone(error);
+      throw error;
+    }
+  }
+
+  private createRunState(): RunState {
+    const applier = new EnrichmentApplier(this.qdrant);
+    const chunkPhase = new ChunkPhase(applier);
+    const filePhase = new FilePhase(applier, this.markerStore);
+    filePhase.bindChunkPhase(chunkPhase);
+    const backfiller = new EnrichmentBackfiller(applier, this.qdrant);
+    const completion = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: this.markerStore,
+    });
+
+    let resolveDone!: (m: EnrichmentMetrics) => void;
+    let rejectDone!: (e: unknown) => void;
+    const donePromise = new Promise<EnrichmentMetrics>((resolve, reject) => {
+      resolveDone = resolve;
+      rejectDone = reject;
+    });
+
+    return {
+      runId: randomUUID().slice(0, 8),
+      startTime: Date.now(),
+      startedAt: new Date().toISOString(),
+      applier,
+      filePhase,
+      chunkPhase,
+      backfiller,
+      completion,
+      contexts: new Map(),
+      donePromise,
+      resolveDone,
+      rejectDone,
+    };
   }
 
   /**

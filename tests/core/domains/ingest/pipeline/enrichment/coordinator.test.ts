@@ -1710,3 +1710,123 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
     expect(recoveryWrite).toBeDefined();
   });
 });
+
+describe("EnrichmentCoordinator — RunState isolation", () => {
+  let mockQdrant: any;
+  let provider: EnrichmentProvider;
+
+  beforeEach(() => {
+    mockQdrant = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+    provider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      // Empty file metadata on every prefetch — every applied chunk will be "missed".
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+  });
+
+  it("run 2's backfill does not include zombie missed paths from run 1", async () => {
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
+
+    // Run 1 — chunk for "missed-1.ts" is applied; with empty fileMetadata it
+    // becomes a missed path. Backfill runs against that single path.
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/missed-1.ts" }, endLine: 5 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    await coordinator.awaitCompletion("test-col");
+
+    // Run 2 — DIFFERENT path "missed-2.ts". With shared applier (current bug),
+    // _missedFileChunks still holds "missed-1.ts" zombie, so run 2's backfill
+    // will see paths=["missed-1.ts","missed-2.ts"]. With per-run RunState the
+    // backfill must see paths=["missed-2.ts"] only.
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c2", chunk: { metadata: { filePath: "/repo/missed-2.ts" }, endLine: 5 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    await coordinator.awaitCompletion("test-col");
+
+    // Inspect every buildFileSignals call that carries a `paths` argument
+    // (those are backfill calls, not prefetch).
+    const backfillCalls = (provider.buildFileSignals as any).mock.calls.filter(
+      (call: any[]) => call[1]?.paths !== undefined,
+    );
+    expect(backfillCalls.length).toBe(2);
+
+    // Run 2's backfill (last one) must contain ONLY "missed-2.ts".
+    const lastBackfillPaths = backfillCalls[1][1].paths as string[];
+    expect(lastBackfillPaths).toEqual(["missed-2.ts"]);
+    expect(lastBackfillPaths).not.toContain("missed-1.ts");
+  });
+
+  it("re-binds onChunkEnrichmentComplete to current run when set after prefetch", async () => {
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Set the callback AFTER prefetch — this hits the `if (cb && this.currentRun)`
+    // branch that re-binds to the active RunState's chunkPhase.
+    const cb = vi.fn().mockResolvedValue(undefined);
+    coordinator.onChunkEnrichmentComplete = cb;
+
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/x.ts" }, endLine: 5 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    coordinator.startChunkEnrichment("test-col", "/repo", new Map());
+    await coordinator.awaitCompletion("test-col");
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Callback was bound to current run's chunkPhase post-prefetch and fired on completion.
+    expect(cb).toHaveBeenCalledWith("test-col");
+  });
+
+  it("rejects awaitCompletion donePromise when completion.run throws", async () => {
+    // All awaited calls inside CompletionRunner.run wrap their own errors
+    // (Promise.allSettled, internal try/catch, marker-store.write swallowing).
+    // To exercise the catch block in awaitCompletion we stub the current run's
+    // CompletionRunner directly — same boundary the catch protects.
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/x.ts" }, endLine: 5 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const runState = (coordinator as any).currentRun;
+    expect(runState).not.toBeNull();
+    const boom = new Error("completion exploded");
+    vi.spyOn(runState.completion, "run").mockRejectedValue(boom);
+
+    // The catch block re-throws after rejecting the donePromise.
+    await expect(coordinator.awaitCompletion("test-col")).rejects.toThrow("completion exploded");
+
+    // The donePromise on the orphaned RunState is also rejected (line 202).
+    await expect(runState.donePromise).rejects.toThrow("completion exploded");
+  });
+
+  it("exposes the onChunkEnrichmentComplete callback via getter", () => {
+    const coordinator = new EnrichmentCoordinator(mockQdrant, provider);
+
+    // Unset by default — getter returns undefined.
+    expect(coordinator.onChunkEnrichmentComplete).toBeUndefined();
+
+    // Set the callback — getter returns the same function reference.
+    const cb = vi.fn().mockResolvedValue(undefined);
+    coordinator.onChunkEnrichmentComplete = cb;
+    expect(coordinator.onChunkEnrichmentComplete).toBe(cb);
+  });
+});
