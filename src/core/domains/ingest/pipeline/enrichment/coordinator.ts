@@ -64,11 +64,21 @@ export class EnrichmentCoordinator {
   private readonly providers: EnrichmentProvider[];
 
   /**
-   * Optional callback fired after ALL providers complete chunk enrichment.
-   * Receives the collectionName. Only fires if at least one provider succeeded.
-   * Errors in the callback are caught and logged — they do not affect enrichment.
+   * Optional callback fired after enrichment milestones. Invoked at most twice
+   * per run:
+   * 1. After ChunkPhase streaming + initial chunk enrichment settles.
+   * 2. After CompletionRunner finishes file backfill + chunk backfill (only
+   *    when backfill produced overlays).
+   *
+   * Both fires receive the collectionName. Errors in the callback are caught
+   * and logged — they do not affect enrichment. Listeners must be idempotent
+   * (e.g. IngestFacade.refreshStatsByCollection overwrites stats cache, so a
+   * second call simply supersedes the first).
+   *
    * Bound to the current RunState's chunkPhase on assignment; subsequent
-   * prefetch() calls re-bind to the new run's chunkPhase.
+   * prefetch() calls re-bind to the new run's chunkPhase. The 896f343c
+   * contract is preserved: the first fire still awaits streaming work inside
+   * ChunkPhase before invoking the callback.
    */
   private _onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
   get onChunkEnrichmentComplete(): ((collectionName: string) => Promise<void>) | undefined {

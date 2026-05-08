@@ -86,6 +86,22 @@ export class ChunkPhase {
   }
 
   /**
+   * Manually invoke the bound onComplete callback. Used by CompletionRunner to
+   * fire a second stats-refresh after backfill writes file-level overlays.
+   * No-op if no callback is bound. Errors are caught and logged with the same
+   * semantics as the streaming-end fire site.
+   */
+  async fireOnComplete(coll: string): Promise<void> {
+    const cb = this.onComplete;
+    if (!cb) return;
+    try {
+      await cb(coll);
+    } catch (error) {
+      console.error("[Enrichment] onChunkEnrichmentComplete (post-backfill) callback failed:", error);
+    }
+  }
+
+  /**
    * Mark a provider's prefetch as in-flight — onBatch will queue instead of
    * dispatch until markReady() resolves the lifecycle.
    */

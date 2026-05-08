@@ -54,7 +54,9 @@ export class CompletionRunner {
     await filePhase.drain();
 
     // 3. backfill per ctx
+    let backfillOccurred = false;
     if (applier.getMissedFileChunks().size > 0) {
+      backfillOccurred = true;
       for (const ctx of contexts.values()) {
         if (filePhase.hasPrefetchFailed(ctx.key)) continue;
         await backfiller.runFor(coll, ctx, runStartedAt);
@@ -120,6 +122,14 @@ export class CompletionRunner {
         durationMs: finalChunkMetrics.totalChunkEnrichmentDurationMs,
         unenrichedChunks: chunkUnenriched,
       });
+    }
+
+    // 8. Re-fire stats callback if backfill wrote post-streaming overlays.
+    // First fire (streaming end inside ChunkPhase) preserves the 896f343c
+    // contract; this is a strictly-later second fire so listeners (StatsCache)
+    // reflect post-backfill state. Listeners must be idempotent.
+    if (backfillOccurred) {
+      await chunkPhase.fireOnComplete(coll);
     }
 
     pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });

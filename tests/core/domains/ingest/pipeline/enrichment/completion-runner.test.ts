@@ -107,4 +107,107 @@ describe("CompletionRunner", () => {
     expect(reader).toHaveBeenCalledWith("coll", "git", "file");
     expect(reader).toHaveBeenCalledWith("coll", "git", "chunk");
   });
+
+  it("re-fires chunkPhase.onComplete after backfill produces overlays", async () => {
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const filePhase = new FilePhase(applier, marker);
+    const chunkPhase = new ChunkPhase(applier);
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+    });
+
+    const ctx = {
+      key: "git",
+      provider: {
+        key: "git",
+        // Empty prefetch + backfill — applier.getMissedFileChunks() will be non-empty.
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        resolveRoot: (p: string) => p,
+        fileSignalTransform: undefined,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    const contexts = new Map([[ctx.key, ctx]]);
+
+    filePhase.init(contexts, "coll", "run-3", "ts");
+    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.startPrefetch();
+    await marker.markStart("coll", ["git"], "run-3", "ts");
+
+    // Push a chunk for a path that's not in fileMetadata — populates _missedFileChunks
+    // so step 3 (backfill) runs and sets backfillOccurred=true.
+    await new Promise((r) => setTimeout(r, 20));
+    filePhase.onBatch("coll", "/repo", [
+      { chunkId: "c-missed", chunk: { metadata: { filePath: "/repo/missed.ts" }, endLine: 5 } } as any,
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const cb = vi.fn().mockResolvedValue(undefined);
+    chunkPhase.setOnComplete(cb);
+
+    await runner.run("coll", contexts, Date.now());
+
+    // Backfill ran (missed > 0) → fireOnComplete invoked once with collectionName.
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith("coll");
+  });
+
+  it("does NOT re-fire chunkPhase.onComplete when backfill is skipped", async () => {
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const filePhase = new FilePhase(applier, marker);
+    const chunkPhase = new ChunkPhase(applier);
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any);
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+    });
+
+    const ctx = {
+      key: "git",
+      provider: {
+        key: "git",
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        resolveRoot: (p: string) => p,
+        fileSignalTransform: undefined,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    const contexts = new Map([[ctx.key, ctx]]);
+
+    filePhase.init(contexts, "coll", "run-4", "ts");
+    chunkPhase.init(contexts, "coll", "ts");
+    filePhase.startPrefetch();
+    await marker.markStart("coll", ["git"], "run-4", "ts");
+
+    // No onBatch call — _missedFileChunks stays empty, backfill skipped.
+    const cb = vi.fn().mockResolvedValue(undefined);
+    chunkPhase.setOnComplete(cb);
+
+    await runner.run("coll", contexts, Date.now());
+
+    // No backfill → no second fire. Callback may have been invoked by streaming
+    // (runner.run drains chunkPhase but no chunkWork was queued either), so
+    // strict assertion: the post-backfill fire MUST NOT have fired.
+    expect(cb).not.toHaveBeenCalled();
+  });
 });
