@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { formatPrime } from "../../../src/cli/prime/format.js";
 import type { IndexStatus } from "../../../src/core/api/public/dto/ingest.js";
+import type { IndexMetrics } from "../../../src/core/api/public/dto/metrics.js";
 
 function statusFixture(overrides: Partial<IndexStatus>): IndexStatus {
   return {
@@ -9,6 +10,35 @@ function statusFixture(overrides: Partial<IndexStatus>): IndexStatus {
     status: "not_indexed",
     ...overrides,
   };
+}
+
+function metricsFixture(): IndexMetrics {
+  return {
+    collection: "code_27622aef",
+    totalChunks: 4218,
+    totalFiles: 327,
+    distributions: {
+      language: { typescript: 3104, javascript: 612, markdown: 502 },
+    },
+    signals: {
+      typescript: {
+        "git.file.commitCount": {
+          source: { min: 1, max: 41, count: 250, labelMap: { low: 2, normal: 5, high: 9, extreme: 9 } },
+          test: { min: 1, max: 12, count: 60, labelMap: { low: 1, normal: 3, high: 6, extreme: 6 } },
+        },
+        "git.file.ageDays": {
+          source: { min: 0, max: 600, count: 250, labelMap: { recent: 14, typical: 45, legacy: 45 } },
+          test: { min: 0, max: 600, count: 60, labelMap: { recent: 14, typical: 45, legacy: 45 } },
+        },
+      },
+    },
+  };
+}
+
+function monolingualMetricsFixture(): IndexMetrics {
+  const m = metricsFixture();
+  m.distributions = { language: { typescript: 4218 } };
+  return m;
 }
 
 describe("formatPrime", () => {
@@ -74,5 +104,75 @@ describe("formatPrime", () => {
       });
       expect(out).toContain("indexed · collection `code_27622aef` · 4218 chunks");
     });
+  });
+});
+
+describe("formatPrime — polyglot + thresholds", () => {
+  it("emits Polyglot section with primary language (highest count) and others, sorted desc", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({
+        isIndexed: true,
+        status: "indexed",
+        collectionName: "c",
+        chunksCount: 4218,
+      }),
+      metrics: metricsFixture(),
+      drift: null,
+    });
+    expect(out).toContain("## Polyglot");
+    expect(out).toContain("primary: typescript");
+    expect(out).toContain("also: javascript, markdown");
+    expect(out).toContain("for non-primary languages, call `get_index_metrics`");
+  });
+
+  it("emits Language section (not Polyglot) when distributions has only one language", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({
+        isIndexed: true,
+        status: "indexed",
+        collectionName: "c",
+        chunksCount: 4218,
+      }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+    });
+    expect(out).toContain("## Language");
+    expect(out).toContain("typescript");
+    expect(out).not.toContain("## Polyglot");
+  });
+
+  it("emits Signal thresholds section with table for primary language", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({
+        isIndexed: true,
+        status: "indexed",
+        collectionName: "c",
+        chunksCount: 4218,
+      }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+    });
+    expect(out).toContain("## Signal thresholds — typescript");
+    expect(out).toContain("git.file.commitCount");
+    expect(out).toContain("low ≤2 / normal ≤5 / high ≤9 / extreme >9");
+  });
+
+  it("omits Polyglot/Language and Signal thresholds when metrics is null (e.g. no enrichment yet)", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({
+        isIndexed: true,
+        status: "indexed",
+        collectionName: "c",
+        chunksCount: 4218,
+      }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("## Status");
+    expect(out).not.toContain("## Signal thresholds");
   });
 });
