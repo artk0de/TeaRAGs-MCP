@@ -363,16 +363,21 @@ change lands.
    `tea-rags prime "$CLAUDE_PROJECT_DIR"`.
 10. Plugin version bumped to `0.17.0`.
 
-## Open Items (resolve during implementation)
+## Locked details (resolved 2026-05-08)
 
-- Exact shape of `getIndexMetrics` `labelMap` — read from `core/api/public/dto/`
-  (or wherever `IndexMetrics` DTO is declared) and finalize formatter table
-  headers.
-- Source of per-language chunks count for primary-language detection — verify
-  whether it lives in `IndexStatus`, `IndexMetrics`, or both. Pick the
-  lighter-weight call if both have it.
-- Pick the lightweight Qdrant ping endpoint — likely `GET /` or `GET /healthz`,
-  whichever Qdrant 1.17 supports without auth.
-- If `tea-rags` is not on PATH at hook time, the hook silently fails (Claude
-  Code logs the error). Consider documenting global install requirement in the
-  README install section. NOT in scope of this spec.
+- **`IndexMetrics.labelMap` shape**: `Record<string, number>` (label name →
+  threshold value, e.g. `{ "high": 12, "extreme": 30 }`). Source:
+  `src/core/api/public/dto/metrics.ts` `SignalMetrics.labelMap`.
+- **Primary-language source**: `IndexMetrics.distributions.language`
+  (`Record<string, number>` of language → chunk count). Sort entries by count
+  desc and take the first key. Reason: `IndexStatus.languages` is declared in
+  the DTO but **never populated** by any producer (`StatusModule` does not set
+  it) — the field is dead. `IndexMetrics.signals` keys come from
+  `perLanguage.keys()` insertion order and are NOT sorted by count, so they
+  cannot be used directly. The `chunkCounts` field referenced earlier in the
+  spec does NOT exist.
+- **Qdrant ping endpoint**: `GET /readyz` with `AbortSignal.timeout(200)`.
+  Pattern matches `src/core/adapters/qdrant/embedded/daemon.ts:153` (which uses
+  2000ms; we use 200ms for SessionStart fast-fail).
+- **Out of scope**: README global-install requirement remains undocumented in
+  this spec — covered by separate doc work.
