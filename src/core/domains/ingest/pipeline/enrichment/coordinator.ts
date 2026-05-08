@@ -113,8 +113,17 @@ export class EnrichmentCoordinator {
    * Start file-level metadata prefetch at T=0. Non-blocking.
    * Call before pipeline.start() to maximize overlap.
    * All providers prefetch in parallel.
+   *
+   * Concurrent prefetch calls are serialized FIFO: a new prefetch defers its
+   * provider.buildFileSignals call behind the previous run's donePromise.
+   * Init (createRunState, filePhase/chunkPhase init, markerStore.markStart)
+   * stays synchronous so onChunksStored / startChunkEnrichment calls that
+   * arrive between this prefetch and the queued buildFileSignals enqueue into
+   * the correct (current) RunState.
    */
   prefetch(absolutePath: string, collectionName?: string, ignoreFilter?: Ignore, changedPaths?: string[]): void {
+    const previousDone = this.currentRun?.donePromise;
+
     // Build a fresh RunState. Per-run instances guarantee old promise closures
     // mutate their orphaned RunState, never the current one.
     const runState = this.createRunState();
@@ -158,7 +167,18 @@ export class EnrichmentCoordinator {
       );
     }
 
-    runState.filePhase.startPrefetch(changedPaths);
+    // Defer ONLY the provider buildFileSignals call behind the previous run's
+    // donePromise. Failure of run N must not block run N+1 — `.catch(() => undefined)`
+    // converts rejection into resolution at this gate.
+    if (previousDone) {
+      void previousDone
+        .catch(() => undefined)
+        .then(() => {
+          runState.filePhase.startPrefetch(changedPaths);
+        });
+    } else {
+      runState.filePhase.startPrefetch(changedPaths);
+    }
   }
 
   /**

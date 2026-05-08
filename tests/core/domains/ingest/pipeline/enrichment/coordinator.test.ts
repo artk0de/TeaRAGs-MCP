@@ -1829,4 +1829,133 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     coordinator.onChunkEnrichmentComplete = cb;
     expect(coordinator.onChunkEnrichmentComplete).toBe(cb);
   });
+
+  it("serializes concurrent prefetch calls FIFO behind the previous run's donePromise", async () => {
+    const buildFileSignalsRoots: string[] = [];
+    let resolveFirstBuild!: (value: Map<string, unknown>) => void;
+    const firstBuildPromise = new Promise<Map<string, unknown>>((r) => {
+      resolveFirstBuild = r;
+    });
+
+    const slowProvider: EnrichmentProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockImplementation(async (root: string) => {
+        buildFileSignalsRoots.push(root);
+        // First call resolves only when the test signals; later calls resolve immediately.
+        return buildFileSignalsRoots.length === 1 ? firstBuildPromise : Promise.resolve(new Map());
+      }),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, slowProvider);
+
+    // Run 1 — prefetch is held open by the unresolved firstBuildPromise.
+    coordinator.prefetch("/repo-1", "test-col");
+    const completion1 = coordinator.awaitCompletion("test-col");
+
+    // Run 2 — call prefetch while Run 1 is still pending.
+    // FIFO contract: Run 2 must NOT call provider.buildFileSignals until Run 1 resolves.
+    coordinator.prefetch("/repo-2", "test-col");
+
+    // Pump several microtask cycles; Run 2's prefetch must still be queued.
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(buildFileSignalsRoots).toEqual(["/repo-1"]);
+
+    // Release Run 1.
+    resolveFirstBuild(new Map());
+    await completion1;
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Now Run 2 must have started.
+    expect(buildFileSignalsRoots).toEqual(["/repo-1", "/repo-2"]);
+  });
+
+  it("queues onChunksStored arriving between prefetch and serialized buildFileSignals start", async () => {
+    // While Run 2's prefetch is still queued behind Run 1, callers may invoke
+    // onChunksStored. The chunks must enqueue into Run 2's filePhase pendingBatches
+    // (init runs synchronously) and drain once the deferred buildFileSignals resolves.
+    const buildFileSignalsCalls: { root: string; opts?: unknown }[] = [];
+    let resolveFirstBuild!: () => void;
+    const firstBuildPromise = new Promise<Map<string, unknown>>((r) => {
+      resolveFirstBuild = () => {
+        r(new Map());
+      };
+    });
+
+    const queuingProvider: EnrichmentProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockImplementation(async (root: string, opts?: unknown) => {
+        buildFileSignalsCalls.push({ root, opts });
+        return buildFileSignalsCalls.length === 1 ? firstBuildPromise : Promise.resolve(new Map());
+      }),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, queuingProvider);
+
+    // Run 1 — open.
+    coordinator.prefetch("/repo-1", "test-col");
+    const completion1 = coordinator.awaitCompletion("test-col");
+
+    // Run 2 — prefetch deferred.
+    coordinator.prefetch("/repo-2", "test-col");
+
+    // Caller invokes onChunksStored on Run 2's collection BEFORE Run 1 finishes.
+    // Init was synchronous in prefetch(); chunks must enqueue, not be silently dropped.
+    coordinator.onChunksStored("test-col", "/repo-2", [
+      { chunkId: "queued-c1", chunk: { metadata: { filePath: "/repo-2/queued.ts" }, endLine: 5 } } as any,
+    ]);
+
+    // Resolve Run 1 → Run 2's prefetch unblocks → buffered batch drains.
+    resolveFirstBuild();
+    await completion1;
+    await new Promise((r) => setTimeout(r, 30));
+    await coordinator.awaitCompletion("test-col");
+
+    // Run 2's buildFileSignals must have been called exactly once with /repo-2 (no opts.paths
+    // means it's the prefetch call, not a backfill).
+    const run2Prefetch = buildFileSignalsCalls.find(
+      (c) => c.root === "/repo-2" && (c.opts as { paths?: string[] } | undefined)?.paths === undefined,
+    );
+    expect(run2Prefetch).toBeDefined();
+  });
+
+  it("does not block run 2 when run 1's donePromise rejects", async () => {
+    const buildFileSignalsRoots: string[] = [];
+    const flakyProvider: EnrichmentProvider = {
+      key: "git",
+      signals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockImplementation(async (root: string) => {
+        buildFileSignalsRoots.push(root);
+        return Promise.resolve(new Map());
+      }),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+
+    const coordinator = new EnrichmentCoordinator(mockQdrant, flakyProvider);
+
+    // Run 1 — force completion to throw, which rejects donePromise.
+    coordinator.prefetch("/repo-1", "test-col");
+    const runState1 = (coordinator as { currentRun: { completion: { run: unknown } } | null }).currentRun;
+    expect(runState1).not.toBeNull();
+    vi.spyOn(runState1!.completion, "run" as never).mockRejectedValue(new Error("run 1 failed") as never);
+    await expect(coordinator.awaitCompletion("test-col")).rejects.toThrow("run 1 failed");
+
+    // Run 2 — must still start (the .catch(() => undefined) gate swallows run 1's rejection).
+    coordinator.prefetch("/repo-2", "test-col");
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(buildFileSignalsRoots).toContain("/repo-2");
+  });
 });
