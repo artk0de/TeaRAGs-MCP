@@ -3,37 +3,44 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.23.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.23.0...v1.23.1) (2026-05-07)
+
+### Bug Fixes
+
+* **plugin:** drop type:mcp_tool hooks — Opus 4.7 timing makes them unusable ([72fdd2b](https://github.com/artk0de/TeaRAGs-MCP/commit/72fdd2bf6968968c2b0fdd0dd87f8f4d13405bdc))
+
 ## [1.23.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.22.0...v1.23.0) (2026-05-07)
 
 ### ⚠ BREAKING CHANGES
 
-* **stats:** STATS_ACCUMULATOR_KEYS.AUTHOR_COUNTS / LINE_AUTHOR_COUNTS keys
-were renamed to RECENT_AUTHOR_COUNTS / BLAME_AUTHOR_COUNTS. Any external code
-referencing the old keys must be updated. Distributions DTO gains a new required
-field topBlameAuthors.
+- **stats:** STATS_ACCUMULATOR_KEYS.AUTHOR_COUNTS / LINE_AUTHOR_COUNTS keys were
+  renamed to RECENT_AUTHOR_COUNTS / BLAME_AUTHOR_COUNTS. Any external code
+  referencing the old keys must be updated. Distributions DTO gains a new
+  required field topBlameAuthors.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) &lt;noreply@anthropic.com&gt;
-* **presets:** proven preset ranking shifts. Files where ownership and
-knowledgeSilo disagreed (concentrated author share with ≥3 contributors)
-no longer get penalized. Stable preset top-N also moves slightly.
+
+- **presets:** proven preset ranking shifts. Files where ownership and
+  knowledgeSilo disagreed (concentrated author share with ≥3 contributors) no
+  longer get penalized. Stable preset top-N also moves slightly.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) &lt;noreply@anthropic.com&gt;
-* **signals:** payload field renames break existing search queries that
-filter by `git.file.dominantAuthor`, `git.file.authors`,
-`git.file.contributorCount`, or `git.chunk.contributorCount`. Schema
-migration applies on next index_codebase run; agents/skills must update to
-the new field names. Filter params `author` and `lineOwner` removed; use
-`recentAuthor` and `blameOwner`.
+
+- **signals:** payload field renames break existing search queries that filter
+  by `git.file.dominantAuthor`, `git.file.authors`, `git.file.contributorCount`,
+  or `git.chunk.contributorCount`. Schema migration applies on next
+  index_codebase run; agents/skills must update to the new field names. Filter
+  params `author` and `lineOwner` removed; use `recentAuthor` and `blameOwner`.
 
 Refs spec 2026-05-06-line-based-ownership-from-blame.md (Task 7.5).
 
 Co-Authored-By: Claude Opus 4.7 (1M context) &lt;noreply@anthropic.com&gt;
-* **signals:** rerank: "ownership" returns different top-N than before.
-Files written long ago by a now-departed author who still owns the live
-lines now rank as silos correctly; files only recently fix-touched no
-longer falsely register as concentrated. Plugin heuristics that read raw
-ownership values must reindex with forceReindex=true to populate
-lineDominantAuthor* fields.
+
+- **signals:** rerank: "ownership" returns different top-N than before. Files
+  written long ago by a now-departed author who still owns the live lines now
+  rank as silos correctly; files only recently fix-touched no longer falsely
+  register as concentrated. Plugin heuristics that read raw ownership values
+  must reindex with forceReindex=true to populate lineDominantAuthor\* fields.
 
 Refs spec 2026-05-06-line-based-ownership-from-blame.md (Task 5).
 
@@ -41,54 +48,97 @@ Co-Authored-By: Claude Opus 4.7 (1M context) &lt;noreply@anthropic.com&gt;
 
 ### Features
 
-* **api:** expose line-based ownership in filters, stats, MCP schemas ([eb6649a](https://github.com/artk0de/TeaRAGs-MCP/commit/eb6649af5f3a4f5b5a57c34b16c6b56685986a08))
-* **filters:** name-or-email author match + recent-contributor range ([75b1ecb](https://github.com/artk0de/TeaRAGs-MCP/commit/75b1ecb6525bddd13f4dc48c2015c6ecdf62f0c4))
-* **git:** add blame primitive for line-based ownership ([807b78b](https://github.com/artk0de/TeaRAGs-MCP/commit/807b78bc8b1bc959c306d8085f9f6d783f49a115))
-* **plugin:** auto-fire session start protocol via mcp_tool hooks ([ecbbcd1](https://github.com/artk0de/TeaRAGs-MCP/commit/ecbbcd1fa4e7402a6fbb4684434c03a3f84d8b75)), closes [#26112](https://github.com/artk0de/TeaRAGs-MCP/issues/26112)
-* **presets:** add line-based ownership to overlays + recentActivityConcentration weight ([68b4aa2](https://github.com/artk0de/TeaRAGs-MCP/commit/68b4aa27376a0925edce4b5ce2fa4166c33e7327))
-* **signals:** add blame ownership extractor for line-based signals ([3d4bd1b](https://github.com/artk0de/TeaRAGs-MCP/commit/3d4bd1b1059382eafb37594811a7cacdb2698d44))
-* **signals:** add line-based ownership payload schema ([45f12cf](https://github.com/artk0de/TeaRAGs-MCP/commit/45f12cf24f656fe36acb3a44e346efed455c9986))
-* **signals:** reorient ownership/knowledgeSilo to live-line authorship ([d2ea7cc](https://github.com/artk0de/TeaRAGs-MCP/commit/d2ea7cc436a6588ca055c99c78f3c886f3d914b9))
-* **signals:** wire blame ownership into chunk-level overlays ([2d3f844](https://github.com/artk0de/TeaRAGs-MCP/commit/2d3f8445853223ab0c10a55524694e9da4f2bc6d))
-* **signals:** wire git blame into file-level ownership signals ([b639eaf](https://github.com/artk0de/TeaRAGs-MCP/commit/b639eaff600a0d0c748b9164d5cd58c37fb6a7b6))
+- **api:** expose line-based ownership in filters, stats, MCP schemas
+  ([eb6649a](https://github.com/artk0de/TeaRAGs-MCP/commit/eb6649af5f3a4f5b5a57c34b16c6b56685986a08))
+- **filters:** name-or-email author match + recent-contributor range
+  ([75b1ecb](https://github.com/artk0de/TeaRAGs-MCP/commit/75b1ecb6525bddd13f4dc48c2015c6ecdf62f0c4))
+- **git:** add blame primitive for line-based ownership
+  ([807b78b](https://github.com/artk0de/TeaRAGs-MCP/commit/807b78bc8b1bc959c306d8085f9f6d783f49a115))
+- **plugin:** auto-fire session start protocol via mcp_tool hooks
+  ([ecbbcd1](https://github.com/artk0de/TeaRAGs-MCP/commit/ecbbcd1fa4e7402a6fbb4684434c03a3f84d8b75)),
+  closes [#26112](https://github.com/artk0de/TeaRAGs-MCP/issues/26112)
+- **presets:** add line-based ownership to overlays +
+  recentActivityConcentration weight
+  ([68b4aa2](https://github.com/artk0de/TeaRAGs-MCP/commit/68b4aa27376a0925edce4b5ce2fa4166c33e7327))
+- **signals:** add blame ownership extractor for line-based signals
+  ([3d4bd1b](https://github.com/artk0de/TeaRAGs-MCP/commit/3d4bd1b1059382eafb37594811a7cacdb2698d44))
+- **signals:** add line-based ownership payload schema
+  ([45f12cf](https://github.com/artk0de/TeaRAGs-MCP/commit/45f12cf24f656fe36acb3a44e346efed455c9986))
+- **signals:** reorient ownership/knowledgeSilo to live-line authorship
+  ([d2ea7cc](https://github.com/artk0de/TeaRAGs-MCP/commit/d2ea7cc436a6588ca055c99c78f3c886f3d914b9))
+- **signals:** wire blame ownership into chunk-level overlays
+  ([2d3f844](https://github.com/artk0de/TeaRAGs-MCP/commit/2d3f8445853223ab0c10a55524694e9da4f2bc6d))
+- **signals:** wire git blame into file-level ownership signals
+  ([b639eaf](https://github.com/artk0de/TeaRAGs-MCP/commit/b639eaff600a0d0c748b9164d5cd58c37fb6a7b6))
 
 ### Improvements
 
-* **dinopowers:** chain executing-plans into tea-rags:data-driven-generation for code-gen Tasks ([48f090b](https://github.com/artk0de/TeaRAGs-MCP/commit/48f090b4528d1ef949342b139f7f16e7c9402d15))
-* **presets:** knowledgeSilo for proven, drop ownership from stable ([9970121](https://github.com/artk0de/TeaRAGs-MCP/commit/9970121053885bb3b582655434ac657594a3280f))
+- **dinopowers:** chain executing-plans into tea-rags:data-driven-generation for
+  code-gen Tasks
+  ([48f090b](https://github.com/artk0de/TeaRAGs-MCP/commit/48f090b4528d1ef949342b139f7f16e7c9402d15))
+- **presets:** knowledgeSilo for proven, drop ownership from stable
+  ([9970121](https://github.com/artk0de/TeaRAGs-MCP/commit/9970121053885bb3b582655434ac657594a3280f))
 
 ### Bug Fixes
 
-* **enrichment:** chunk-level backfill + surface marker write failures ([03faeb4](https://github.com/artk0de/TeaRAGs-MCP/commit/03faeb4762b18fe825eb59f2a0b7bd3cb46310ca))
-* **enrichment:** re-poll unenriched count after grace period for marker ([d940199](https://github.com/artk0de/TeaRAGs-MCP/commit/d940199e9ce4c5657499d4ce44a1b12fcbf03859))
-* **enrichment:** use scoped key for backfill writes (clobber prevention) ([449fed2](https://github.com/artk0de/TeaRAGs-MCP/commit/449fed2f5d1a0fdb759282b3d918f0ce717cb74a))
-* **enrichment:** wait for streaming work before firing onChunkEnrichmentComplete ([fe7e457](https://github.com/artk0de/TeaRAGs-MCP/commit/fe7e45726daf05cf84ea00fd71d84bb44c01bbe4))
-* **migration:** write nested git.* keys instead of flat dot-keys in V13 ([2a625cc](https://github.com/artk0de/TeaRAGs-MCP/commit/2a625ccc4513384dabb9eca59dcbaad35f11162a))
-* **rules:** correct duplicate step 3 numbering in Session Start section ([024657d](https://github.com/artk0de/TeaRAGs-MCP/commit/024657d2a46e8e4cb6a2bcc3cd1a62a7f476626a))
-* **signals:** accumulate blameByRelPath across batched buildFileSignals calls ([fdd2adf](https://github.com/artk0de/TeaRAGs-MCP/commit/fdd2adf2a54ed923d57109fce05ee18395ffa193))
-* **signals:** process single-chunk files through chunk-level pipeline ([73b7341](https://github.com/artk0de/TeaRAGs-MCP/commit/73b73415f9bace7a23e7bf33f5814fccdd1be095))
-* **stats:** write enrichment stats under public alias + clarify author taxonomy ([6ae9d83](https://github.com/artk0de/TeaRAGs-MCP/commit/6ae9d832d9c433204dd8dc4334dd5a93ef8dacd0))
+- **enrichment:** chunk-level backfill + surface marker write failures
+  ([03faeb4](https://github.com/artk0de/TeaRAGs-MCP/commit/03faeb4762b18fe825eb59f2a0b7bd3cb46310ca))
+- **enrichment:** re-poll unenriched count after grace period for marker
+  ([d940199](https://github.com/artk0de/TeaRAGs-MCP/commit/d940199e9ce4c5657499d4ce44a1b12fcbf03859))
+- **enrichment:** use scoped key for backfill writes (clobber prevention)
+  ([449fed2](https://github.com/artk0de/TeaRAGs-MCP/commit/449fed2f5d1a0fdb759282b3d918f0ce717cb74a))
+- **enrichment:** wait for streaming work before firing
+  onChunkEnrichmentComplete
+  ([fe7e457](https://github.com/artk0de/TeaRAGs-MCP/commit/fe7e45726daf05cf84ea00fd71d84bb44c01bbe4))
+- **migration:** write nested git.\* keys instead of flat dot-keys in V13
+  ([2a625cc](https://github.com/artk0de/TeaRAGs-MCP/commit/2a625ccc4513384dabb9eca59dcbaad35f11162a))
+- **rules:** correct duplicate step 3 numbering in Session Start section
+  ([024657d](https://github.com/artk0de/TeaRAGs-MCP/commit/024657d2a46e8e4cb6a2bcc3cd1a62a7f476626a))
+- **signals:** accumulate blameByRelPath across batched buildFileSignals calls
+  ([fdd2adf](https://github.com/artk0de/TeaRAGs-MCP/commit/fdd2adf2a54ed923d57109fce05ee18395ffa193))
+- **signals:** process single-chunk files through chunk-level pipeline
+  ([73b7341](https://github.com/artk0de/TeaRAGs-MCP/commit/73b73415f9bace7a23e7bf33f5814fccdd1be095))
+- **stats:** write enrichment stats under public alias + clarify author taxonomy
+  ([6ae9d83](https://github.com/artk0de/TeaRAGs-MCP/commit/6ae9d832d9c433204dd8dc4334dd5a93ef8dacd0))
 
 ### Documentation
 
-* **dinopowers,tea-rags:** switch plugin skills to recent*/blame* ownership split ([1fac677](https://github.com/artk0de/TeaRAGs-MCP/commit/1fac6778cdd2a84a462b720b68540da69cc0e565))
-* **plan:** add enrichment-coordinator split implementation plan ([90d4375](https://github.com/artk0de/TeaRAGs-MCP/commit/90d43756ea0f449a1d04f7bf447396819f0b9df9))
-* **rules:** add end-to-end verification and nested-write guidance for migrations ([0400cd1](https://github.com/artk0de/TeaRAGs-MCP/commit/0400cd119945633a3020cccd0f2ca9c7ea3b7c47))
-* **spec:** add enrichment-coordinator split design ([7d272c6](https://github.com/artk0de/TeaRAGs-MCP/commit/7d272c632a4d4b41ac231ae039d21e3026ef6305))
-* **specs:** add codegraph symbols sub-trajectory vertical slice 1 design ([391fb49](https://github.com/artk0de/TeaRAGs-MCP/commit/391fb4930251e8e0e70890b5d54c3df5d2245760))
-* **website,rules:** document recent*/blame* ownership split ([8ab19c2](https://github.com/artk0de/TeaRAGs-MCP/commit/8ab19c2bd2262305cc74eee588607941d536ccb6)), closes [#6](https://github.com/artk0de/TeaRAGs-MCP/issues/6)
+- **dinopowers,tea-rags:** switch plugin skills to recent*/blame* ownership
+  split
+  ([1fac677](https://github.com/artk0de/TeaRAGs-MCP/commit/1fac6778cdd2a84a462b720b68540da69cc0e565))
+- **plan:** add enrichment-coordinator split implementation plan
+  ([90d4375](https://github.com/artk0de/TeaRAGs-MCP/commit/90d43756ea0f449a1d04f7bf447396819f0b9df9))
+- **rules:** add end-to-end verification and nested-write guidance for
+  migrations
+  ([0400cd1](https://github.com/artk0de/TeaRAGs-MCP/commit/0400cd119945633a3020cccd0f2ca9c7ea3b7c47))
+- **spec:** add enrichment-coordinator split design
+  ([7d272c6](https://github.com/artk0de/TeaRAGs-MCP/commit/7d272c632a4d4b41ac231ae039d21e3026ef6305))
+- **specs:** add codegraph symbols sub-trajectory vertical slice 1 design
+  ([391fb49](https://github.com/artk0de/TeaRAGs-MCP/commit/391fb4930251e8e0e70890b5d54c3df5d2245760))
+- **website,rules:** document recent*/blame* ownership split
+  ([8ab19c2](https://github.com/artk0de/TeaRAGs-MCP/commit/8ab19c2bd2262305cc74eee588607941d536ccb6)),
+  closes [#6](https://github.com/artk0de/TeaRAGs-MCP/issues/6)
 
 ### Code Refactoring
 
-* **enrichment:** coordinator finalization + barrel cleanup ([1059748](https://github.com/artk0de/TeaRAGs-MCP/commit/10597481f04d8b7fdfb5744328489590aa7caa7c))
-* **enrichment:** extract ChunkPhase with shared Semaphore + streaming dedup ([3e6574c](https://github.com/artk0de/TeaRAGs-MCP/commit/3e6574cd56fbf7b95d9fa966cf13a01420900b4f))
-* **enrichment:** extract CompletionRunner with explicit 7-step run ([1a7489c](https://github.com/artk0de/TeaRAGs-MCP/commit/1a7489ce059fa3abb445d9f2ad44c3a96b3af44b))
-* **enrichment:** extract EnrichmentBackfiller; narrow applier accessors ([5c21270](https://github.com/artk0de/TeaRAGs-MCP/commit/5c21270cd493c4f47eb988518d98819fb849e13e))
-* **enrichment:** extract EnrichmentMarkerStore from coordinator ([ca3f3c0](https://github.com/artk0de/TeaRAGs-MCP/commit/ca3f3c02aeb74b222c2b6ba5c427176edbe8e16f))
-* **enrichment:** extract FilePhase with prefetch + per-batch apply ([1ca1899](https://github.com/artk0de/TeaRAGs-MCP/commit/1ca1899a6a53f2dcbc82a75209cd9f76edf45e37))
-* **enrichment:** introduce ProviderContext type computed in prefetch ([575beff](https://github.com/artk0de/TeaRAGs-MCP/commit/575beff6383e540ed0b984378d55810abe60f0cb))
-* **enrichment:** move runRecovery race-guard into EnrichmentRecovery.recoverAll ([db36cab](https://github.com/artk0de/TeaRAGs-MCP/commit/db36cab0a324307bafe69ef2fddc19633eb256d0))
-* **signals:** rename ownership payload fields with semantic prefixes ([85e4916](https://github.com/artk0de/TeaRAGs-MCP/commit/85e4916f9154c5698fa305ae89bf75e9b4d1851d))
+- **enrichment:** coordinator finalization + barrel cleanup
+  ([1059748](https://github.com/artk0de/TeaRAGs-MCP/commit/10597481f04d8b7fdfb5744328489590aa7caa7c))
+- **enrichment:** extract ChunkPhase with shared Semaphore + streaming dedup
+  ([3e6574c](https://github.com/artk0de/TeaRAGs-MCP/commit/3e6574cd56fbf7b95d9fa966cf13a01420900b4f))
+- **enrichment:** extract CompletionRunner with explicit 7-step run
+  ([1a7489c](https://github.com/artk0de/TeaRAGs-MCP/commit/1a7489ce059fa3abb445d9f2ad44c3a96b3af44b))
+- **enrichment:** extract EnrichmentBackfiller; narrow applier accessors
+  ([5c21270](https://github.com/artk0de/TeaRAGs-MCP/commit/5c21270cd493c4f47eb988518d98819fb849e13e))
+- **enrichment:** extract EnrichmentMarkerStore from coordinator
+  ([ca3f3c0](https://github.com/artk0de/TeaRAGs-MCP/commit/ca3f3c02aeb74b222c2b6ba5c427176edbe8e16f))
+- **enrichment:** extract FilePhase with prefetch + per-batch apply
+  ([1ca1899](https://github.com/artk0de/TeaRAGs-MCP/commit/1ca1899a6a53f2dcbc82a75209cd9f76edf45e37))
+- **enrichment:** introduce ProviderContext type computed in prefetch
+  ([575beff](https://github.com/artk0de/TeaRAGs-MCP/commit/575beff6383e540ed0b984378d55810abe60f0cb))
+- **enrichment:** move runRecovery race-guard into EnrichmentRecovery.recoverAll
+  ([db36cab](https://github.com/artk0de/TeaRAGs-MCP/commit/db36cab0a324307bafe69ef2fddc19633eb256d0))
+- **signals:** rename ownership payload fields with semantic prefixes
+  ([85e4916](https://github.com/artk0de/TeaRAGs-MCP/commit/85e4916f9154c5698fa305ae89bf75e9b4d1851d))
 
 ## [1.22.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.21.0...v1.22.0) (2026-05-05)
 
