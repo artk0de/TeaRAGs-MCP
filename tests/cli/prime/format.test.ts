@@ -176,3 +176,48 @@ describe("formatPrime — polyglot + thresholds", () => {
     expect(out).not.toContain("## Signal thresholds");
   });
 });
+
+describe("formatPrime — schema drift", () => {
+  it("emits 'none' when drift is null", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({
+        isIndexed: true,
+        status: "indexed",
+        collectionName: "c",
+        chunksCount: 100,
+      }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("## Schema drift");
+    expect(out).toContain("none");
+  });
+
+  it("includes drift warning text when drift is non-null", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({
+        isIndexed: true,
+        status: "indexed",
+        collectionName: "c",
+        chunksCount: 100,
+      }),
+      metrics: null,
+      drift: "New fields: navigation. Run index_codebase with forceReindex=true.",
+    });
+    expect(out).toContain("## Schema drift");
+    expect(out).toContain("New fields: navigation");
+    expect(out).toContain("Run index_codebase with forceReindex=true");
+  });
+
+  it("omits drift section when status is not 'indexed'", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ status: "not_indexed" }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).not.toContain("## Schema drift");
+  });
+});

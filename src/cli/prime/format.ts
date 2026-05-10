@@ -32,6 +32,10 @@ function formatDigest(data: PrimeData): string {
     return `${lines.join("\n")}\n`;
   }
 
+  lines.push("");
+  lines.push("## Schema drift");
+  lines.push(data.drift ?? "none");
+
   // Primary language is derived from IndexMetrics.distributions.language
   // (Record<string, number>, sorted by chunk count desc). IndexStatus.languages
   // is declared but never populated by any producer — do not use it.
