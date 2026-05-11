@@ -30,6 +30,10 @@ State that explicitly — do not fabricate an area.
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
+`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
+the first tea-rags call.
+
 ## Step 1 — Extract target area
 
 From the user request identify:

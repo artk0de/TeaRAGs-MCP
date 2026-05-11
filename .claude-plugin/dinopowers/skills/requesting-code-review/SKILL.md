@@ -34,6 +34,10 @@ directly. Do not fabricate.
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
+`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
+the first tea-rags call.
+
 ## Step 1 — Collect diff file list
 
 From `git diff --name-only <base>...HEAD` (branch diff) or `git diff --staged`

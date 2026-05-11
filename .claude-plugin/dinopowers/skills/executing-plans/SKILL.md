@@ -48,6 +48,10 @@ workflow never runs.
 **Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
 redirects superpowers:X. NEVER bypass the wrapper.
 
+**Index freshness:** see [FRESHNESS.md](../../FRESHNESS.md) — MUST run
+`mcp__tea-rags__reindex_changes` if any file was edited in this session, BEFORE
+the first tea-rags call.
+
 Plus the cross-plugin chain for code generation:
 
 - `tea-rags:data-driven-generation` — invoked from Step 5 below for any Task
