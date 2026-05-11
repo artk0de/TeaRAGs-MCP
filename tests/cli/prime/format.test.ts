@@ -221,3 +221,66 @@ describe("formatPrime — schema drift", () => {
     expect(out).not.toContain("## Schema drift");
   });
 });
+
+describe("formatPrime — staleness (lastUpdated)", () => {
+  const NOW = new Date("2026-05-11T12:00:00Z");
+
+  function indexedFixture(lastUpdated?: Date): IndexStatus {
+    return statusFixture({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "c",
+      chunksCount: 100,
+      lastUpdated,
+    });
+  }
+
+  it("renders 'last indexed: 2h ago' when lastUpdated is 2h before now", () => {
+    const lastUpdated = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
+    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    expect(out).toContain("last indexed: 2h ago");
+  });
+
+  it("renders 'last indexed: 5d ago' when lastUpdated is 5d before now", () => {
+    const lastUpdated = new Date(NOW.getTime() - 5 * 24 * 60 * 60 * 1000);
+    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    expect(out).toContain("last indexed: 5d ago");
+  });
+
+  it("renders 'last indexed: 30m ago' when lastUpdated is 30 minutes before now", () => {
+    const lastUpdated = new Date(NOW.getTime() - 30 * 60 * 1000);
+    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    expect(out).toContain("last indexed: 30m ago");
+  });
+
+  it("does NOT emit stale warning when lastUpdated is ≤24h before now", () => {
+    const lastUpdated = new Date(NOW.getTime() - 23 * 60 * 60 * 1000);
+    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    expect(out).not.toContain("Index is stale");
+    expect(out).not.toContain("Run `index_codebase`");
+  });
+
+  it("emits stale warning recommending index_codebase when lastUpdated > 24h before now", () => {
+    const lastUpdated = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    expect(out).toContain("⚠ Index is stale (last updated 3d ago)");
+    expect(out).toContain("Run `index_codebase` before the next tea-rags search/explore");
+  });
+
+  it("places stale warning AFTER Status block and BEFORE Schema drift", () => {
+    const lastUpdated = new Date(NOW.getTime() - 2 * 24 * 60 * 60 * 1000);
+    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    const statusIdx = out.indexOf("## Status");
+    const warnIdx = out.indexOf("⚠ Index is stale");
+    const driftIdx = out.indexOf("## Schema drift");
+    expect(statusIdx).toBeGreaterThanOrEqual(0);
+    expect(warnIdx).toBeGreaterThan(statusIdx);
+    expect(driftIdx).toBeGreaterThan(warnIdx);
+  });
+
+  it("omits 'last indexed' line entirely when lastUpdated is undefined", () => {
+    const out = formatPrime({ path: "/p", status: indexedFixture(undefined), metrics: null, drift: null }, NOW);
+    expect(out).not.toContain("last indexed");
+    expect(out).not.toContain("Index is stale");
+  });
+});

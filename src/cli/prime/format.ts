@@ -2,11 +2,13 @@ import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
 import type { PrimeData, PrimeFailureReason } from "./types.js";
 
-export function formatPrime(input: PrimeData | PrimeFailureReason): string {
+const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+
+export function formatPrime(input: PrimeData | PrimeFailureReason, now: Date = new Date()): string {
   if ("kind" in input) {
     return formatFailure(input);
   }
-  return formatDigest(input);
+  return formatDigest(input, now);
 }
 
 function formatFailure(reason: PrimeFailureReason): string {
@@ -21,15 +23,24 @@ function formatFailure(reason: PrimeFailureReason): string {
   }
 }
 
-function formatDigest(data: PrimeData): string {
+function formatDigest(data: PrimeData, now: Date): string {
   const lines: string[] = [];
   lines.push(`# tea-rags prime — ${data.path}`);
   lines.push("");
   lines.push("## Status");
-  lines.push(formatStatusLine(data.status));
+  lines.push(formatStatusLine(data.status, now));
 
   if (data.status.status !== "indexed") {
     return `${lines.join("\n")}\n`;
+  }
+
+  const staleness = computeStaleness(data.status.lastUpdated, now);
+  if (staleness?.stale) {
+    lines.push("");
+    lines.push(
+      `⚠ Index is stale (last updated ${staleness.ago} ago). ` +
+        "Run `index_codebase` before the next tea-rags search/explore.",
+    );
   }
 
   lines.push("");
@@ -97,7 +108,7 @@ function formatLabelMap(labelMap: Record<string, number>): string {
     .replace(/extreme ≤(\d+)/, "extreme >$1");
 }
 
-function formatStatusLine(status: IndexStatus): string {
+function formatStatusLine(status: IndexStatus, now: Date): string {
   switch (status.status) {
     case "not_indexed":
       return "not indexed. Run `/tea-rags:index` to index this codebase.";
@@ -108,9 +119,27 @@ function formatStatusLine(status: IndexStatus): string {
       );
     case "indexing":
       return `indexing in progress (${status.chunksCount ?? 0} chunks so far). Re-prime after completion.`;
-    case "indexed":
-      return `indexed · collection \`${status.collectionName ?? "unknown"}\` · ${status.chunksCount ?? 0} chunks`;
+    case "indexed": {
+      const base = `indexed · collection \`${status.collectionName ?? "unknown"}\` · ${status.chunksCount ?? 0} chunks`;
+      const staleness = computeStaleness(status.lastUpdated, now);
+      return staleness ? `${base} · last indexed: ${staleness.ago} ago` : base;
+    }
     case "unavailable":
       return "index unavailable.";
   }
+}
+
+function computeStaleness(lastUpdated: Date | undefined, now: Date): { ago: string; stale: boolean } | null {
+  if (!lastUpdated) return null;
+  const diffMs = now.getTime() - new Date(lastUpdated).getTime();
+  return { ago: formatRelativeTime(diffMs), stale: diffMs > STALE_THRESHOLD_MS };
+}
+
+function formatRelativeTime(diffMs: number): string {
+  const minutes = Math.floor(diffMs / (60 * 1000));
+  if (minutes < 60) return `${Math.max(0, minutes)}m`;
+  const hours = Math.floor(diffMs / (60 * 60 * 1000));
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  return `${days}d`;
 }
