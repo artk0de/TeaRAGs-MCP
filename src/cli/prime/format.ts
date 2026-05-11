@@ -85,9 +85,14 @@ function formatDigest(data: PrimeData, now: Date): string {
   return `${lines.join("\n")}\n`;
 }
 
+// Chunker artifacts that aren't real programming languages (markdown code blocks,
+// misclassified extensions). Drop them from the polyglot list to keep the digest signal-clean.
+const POLYGLOT_BLACKLIST = new Set(["code", "bash", "text", "gitignore", "powershell", "ts", "yaml", "json"]);
+
 function sortedLanguages(metrics: IndexMetrics | null): string[] {
   if (!metrics?.distributions?.language) return [];
   return Object.entries(metrics.distributions.language)
+    .filter(([lang]) => !POLYGLOT_BLACKLIST.has(lang))
     .sort(([, a], [, b]) => b - a)
     .map(([lang]) => lang);
 }
@@ -121,9 +126,13 @@ function formatThresholdsSection(
 
 function formatLabelMap(labelMap: Record<string, number>): string {
   return Object.entries(labelMap)
-    .map(([label, threshold]) => `${label} ≤${threshold}`)
+    .map(([label, threshold]) => `${label} ≤${roundTwo(threshold)}`)
     .join(" / ")
     .replace(/extreme ≤(\d+)/, "extreme >$1");
+}
+
+function roundTwo(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 function formatStatusLine(status: IndexStatus, now: Date): string {

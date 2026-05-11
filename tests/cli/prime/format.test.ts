@@ -521,3 +521,81 @@ describe("formatPrime — filesCount and embeddingModel", () => {
     expect(out).not.toMatch(/^embedding:/m);
   });
 });
+
+describe("formatPrime — polyglot whitelist + threshold rounding", () => {
+  function indexedStatus(): IndexStatus {
+    return statusFixture({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "c",
+      chunksCount: 100,
+    });
+  }
+
+  it("drops chunker artifacts (code, bash, text, gitignore, powershell, ts, yaml, json) from polyglot list", () => {
+    const dirtyMetrics: IndexMetrics = {
+      collection: "c",
+      totalChunks: 1000,
+      totalFiles: 100,
+      distributions: {
+        language: {
+          typescript: 800,
+          python: 100,
+          code: 50,
+          bash: 30,
+          text: 10,
+          gitignore: 5,
+          powershell: 3,
+          ts: 1,
+          yaml: 1,
+          json: 1,
+        },
+      },
+      signals: {},
+    };
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: dirtyMetrics, drift: null });
+    expect(out).toContain("primary: typescript");
+    expect(out).toContain("also: python");
+    for (const artifact of ["code", "bash", "text", "gitignore", "powershell", "yaml", "json"]) {
+      expect(out).not.toContain(`also: ${artifact}`);
+      expect(out).not.toContain(`, ${artifact},`);
+      expect(out).not.toContain(`, ${artifact}\n`);
+    }
+    // ts artifact (separate from typescript) — should also be dropped
+    expect(out).not.toMatch(/, ts(,|\n|$)/);
+  });
+
+  it("rounds threshold values to 2 decimals (no IEEE float artifacts)", () => {
+    const noisyMetrics: IndexMetrics = {
+      collection: "c",
+      totalChunks: 100,
+      totalFiles: 10,
+      distributions: { language: { typescript: 100 } },
+      signals: {
+        typescript: {
+          "git.file.bugFixRate": {
+            source: {
+              min: 0,
+              max: 100,
+              count: 100,
+              labelMap: { healthy: 25, concerning: 38, critical: 53.24999999999977 },
+            },
+          },
+          "git.file.churnVolatility": {
+            source: {
+              min: 0,
+              max: 100,
+              count: 100,
+              labelMap: { stable: 7.879999999999999, erratic: 14.010000000000002 },
+            },
+          },
+        },
+      },
+    };
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: noisyMetrics, drift: null });
+    expect(out).toContain("critical ≤53.25");
+    expect(out).toContain("stable ≤7.88");
+    expect(out).toContain("erratic ≤14.01");
+    expect(out).not.toMatch(/\.\d{4,}/); // no four-or-more-decimal artifacts
+  });
+});
