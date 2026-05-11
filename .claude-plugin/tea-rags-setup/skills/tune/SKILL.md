@@ -1,10 +1,13 @@
 ---
 name: tune
 description:
-  Auto-tune TeaRAGs performance parameters for your hardware. Benchmarks
-  embedding throughput, Qdrant storage, pipeline concurrency, and git trajectory.
-  Results saved to ~/.tea-rags/setup-progress.json and displayed as a summary.
-  Can be run standalone or as part of /tea-rags-setup:install.
+  Benchmark this hardware and write optimal performance parameters
+  (embedding throughput, Qdrant storage, pipeline concurrency, git
+  trajectory) into ~/.tea-rags/setup-progress.json. Triggers on "indexing
+  is slow", "tune performance", "benchmark my hardware", "find optimal
+  batch sizes", "поднастрой производительность". NOT for first-time
+  install — use install for that. Can run standalone or as part of
+  /tea-rags-setup:install.
 argument-hint: [--provider ollama|onnx] [--full]
 ---
 

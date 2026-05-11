@@ -1,10 +1,13 @@
 ---
 name: install
 description:
-  Automated TeaRAGs installation wizard. Detects environment, installs
-  dependencies (Node.js, tea-rags, Ollama/ONNX, Qdrant), tunes performance,
-  configures MCP server. Progress saves to ~/.tea-rags/setup-progress.json for
-  resumable installation.
+  Run the automated TeaRAGs installation wizard from scratch — detects
+  environment, installs dependencies (Node.js, tea-rags, Ollama/ONNX, Qdrant),
+  tunes performance, configures the MCP server. Progress saves to
+  ~/.tea-rags/setup-progress.json for resumable installation. Triggers on
+  "install tea-rags", "set up TeaRAGs MCP", "configure tea-rags from scratch",
+  "поставить tea-rags в проект". NOT for tuning an existing install — use tune
+  for that.
 argument-hint: [project path]
 ---
 
