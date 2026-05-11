@@ -1,6 +1,11 @@
 ---
 name: add-derived-signal
-description: Add a new derived signal to a trajectory provider (git or static)
+description:
+  Define a new normalized 0-1 ranking signal computed from raw payload fields at
+  rerank time, registered under a trajectory provider (git or static). Triggers
+  on "add freshness signal", "new churn metric", "score code by ownership",
+  "новый сигнал для git churn". NOT for adding a rerank preset that combines
+  existing signals — use add-rerank-preset for that.
 ---
 
 # Add Derived Signal

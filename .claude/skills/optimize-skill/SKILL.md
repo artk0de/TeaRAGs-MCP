@@ -10,6 +10,28 @@ argument-hint: [skill path or name to optimize]
 
 # Optimize Skill
 
+## Non-Negotiables (MUST honor in every run)
+
+- **PERSIST results to .benchmarks/<skill-name>/** after Phase 4/5. Skipping =
+  work is unverifiable.
+- **MEASURE before fixing** — Phase 2 baseline eval confirms problems exist
+  before applying any change.
+- **DELTA is the metric** — a skill scoring 100% but baseline 90% adds little
+  value. Target +50pp minimum.
+- **NEVER skip Phase 6** — benchmark.md and evals.json are committed artifacts;
+  without them the optimization is unrepeatable.
+
+🛑 STOP — these survive over individual phase sequence. Cross-check every Phase
+4/5 completion against the Non-Negotiables.
+
+## Top Anti-Patterns (DO NOT)
+
+- **Skipping PERSIST** — Phase 6 is not optional, execute inline immediately
+  after verify
+- **Fixing before measuring** — audit findings are hypotheses; eval-confirm them
+  first
+- **Skipping baseline** — without it, you cannot measure delta
+
 Structured eval-driven methodology for optimizing Claude Code skills. Measures
 actual agent behavior against expected tool selection, identifies gaps, fixes
 them, and verifies fixes.
@@ -266,6 +288,8 @@ agent know which tool to pick). Use Phase 2 first — it's faster. Escalate to
 Phase 8 only when tool selection is correct but output quality is uncertain.
 
 ## Anti-patterns
+
+Top 3 are duplicated near the top — read both.
 
 - **Skipping PERSIST** — benchmark artifacts are proof of work. Without
   evals.json and benchmark.md, the optimization is unverifiable and

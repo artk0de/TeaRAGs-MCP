@@ -1,6 +1,10 @@
 ---
 name: add-dto
-description: Add a new DTO (Data Transfer Object) to the api/public/dto layer
+description:
+  Define a request or response shape exposed via the public API to MCP tools,
+  living in api/public/dto. Triggers on "add DTO", "new request type for X
+  tool", "add response shape", "новый DTO для tool'а". NOT for changing internal
+  types — those live in contracts/ and are not part of the public API surface.
 ---
 
 # Add DTO to public/dto

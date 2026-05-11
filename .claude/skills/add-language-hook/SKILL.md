@@ -1,6 +1,11 @@
 ---
 name: add-language-hook
-description: Add a new language-specific chunking hook to the ingest pipeline
+description:
+  Define how a programming language's source files are split into searchable
+  chunks (classes, functions, comments) by adding a hook to the ingest chunker.
+  Triggers on "add Kotlin support", "improve TypeScript class chunking", "fix
+  Ruby comment extraction", "add language X". NOT for tweaking generic chunker
+  behavior — edit the chunker base directly for language-agnostic changes.
 ---
 
 # Add Language Hook

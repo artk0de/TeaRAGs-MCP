@@ -1,12 +1,47 @@
 ---
 name: add-migration
 description:
-  Add a new migration to an existing pipeline (schema, snapshot, or sparse). Use
-  when persisted state needs upgrading — new Qdrant indexes, payload backfills,
-  snapshot format changes, sparse vector rebuilds.
+  Upgrade persisted on-disk state by adding a migration to an existing pipeline
+  (schema, snapshot, or sparse). Triggers on "new Qdrant index", "backfill
+  payload field", "snapshot format change", "rebuild sparse vectors", "новая
+  миграция". NOT for code-only changes that don't touch persisted state on disk.
 ---
 
 # Add Migration
+
+## Pick Template First (MUST decide before scrolling)
+
+| Migration intent                                            | Pipeline target | Template to use                                  |
+| ----------------------------------------------------------- | --------------- | ------------------------------------------------ |
+| Create new Qdrant index on existing collection              | schema          | Template A — Schema migration (index creation)   |
+| Add a new schema migration that may be skipped by flag      | schema          | Template B — Schema migration (conditional)      |
+| Backfill or transform a new payload field across all points | schema          | Template C — Schema migration (payload backfill) |
+| Rebuild BM25 / sparse vectors with a new model              | sparse          | Template D — Sparse migration                    |
+| Change snapshot file format on disk                         | snapshot        | Template E — Snapshot migration                  |
+
+🛑 Pick ONE row before scrolling further. Do NOT merge templates.
+
+## Store Interface First (MUST do before any template)
+
+🛑 If your migration needs new store capability (interface method), STOP and add
+the interface FIRST. Migrations against missing interfaces silently no-op.
+
+### Extend Store Interface (if needed)
+
+If the migration needs capabilities not in the existing store interface:
+
+1. Add method to interface in `src/core/infra/migration/types.ts`
+2. Implement in adapter: `src/core/infra/migration/adapters/<store>-adapter.ts`
+3. Update mock in tests
+
+**Do NOT** inject `QdrantManager` or other concrete classes directly into
+migrations.
+
+### Update Factory (if needed)
+
+If the migration requires new constructor arguments, update
+`src/core/domains/ingest/factory.ts` → `createIngestDependencies()` to pass
+them.
 
 Step-by-step process for adding a migration to one of three pipelines.
 
@@ -206,20 +241,13 @@ this.migrations = [
 
 ## Step 4: Extend Store Interface (if needed)
 
-If the migration needs capabilities not in the existing store interface:
-
-1. Add method to interface in `src/core/infra/migration/types.ts`
-2. Implement in adapter: `src/core/infra/migration/adapters/<store>-adapter.ts`
-3. Update mock in tests
-
-**Do NOT** inject `QdrantManager` or other concrete classes directly into
-migrations.
+Hoisted to top of file under "Store Interface First" — if not yet handled, STOP
+and complete it before continuing.
 
 ## Step 5: Update Factory (if needed)
 
-If the migration requires new constructor arguments, update
-`src/core/domains/ingest/factory.ts` → `createIngestDependencies()` to pass
-them.
+Hoisted to top of file under "Store Interface First" — if not yet handled, STOP
+and complete it before continuing.
 
 ## Step 6: Write Tests
 

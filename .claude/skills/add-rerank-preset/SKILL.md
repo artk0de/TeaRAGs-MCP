@@ -1,6 +1,11 @@
 ---
 name: add-rerank-preset
-description: Add a new rerank preset to a trajectory provider
+description:
+  Define a named ranking strategy that combines derived signals with weights and
+  an overlay mask, exposed as an enum option to MCP tools. Triggers on "new
+  tech-debt preset", "create hotspot detector", "security-audit ranking", "rank
+  by ownership and churn". NOT for adding a single signal — use
+  add-derived-signal for that.
 ---
 
 # Add Rerank Preset

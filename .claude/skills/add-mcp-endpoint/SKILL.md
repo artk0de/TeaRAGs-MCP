@@ -1,10 +1,45 @@
 ---
 name: add-mcp-endpoint
 description:
-  Add a new MCP tool endpoint with schema, App method, and documentation
+  Expose a new tool to LLM clients via the MCP protocol — schema, handler, App
+  method, and documentation in one coordinated change. Triggers on "add MCP
+  tool", "new endpoint that returns X", "expose Y as a tool", "новый MCP tool".
+  NOT for modifying an existing tool's schema — just edit the tool file
+  directly.
 ---
 
 # Add MCP Endpoint
+
+## Implementation Checklist (MUST complete in order)
+
+- [ ] DTO created in `public/dto/<domain>.ts` (via add-dto skill)
+- [ ] DTO re-exported via barrel chain: `dto/<domain>.ts` → `dto/index.ts` →
+      `public/index.ts` → `api/index.ts`
+- [ ] Work placed correctly per `facade-discipline.md` three-question tree:
+      strategy (`domains/explore/strategies/`), query
+      (`domains/explore/queries/`), ops (`api/internal/ops/`), or pure facade
+      dispatcher
+- [ ] Facade method is ≤ 20 lines (resolve → guard → [ensureStats] → dispatch →
+      finalize); no inline filter construction, no `Map`/`reduce` aggregation,
+      no indexing-mode branching
+- [ ] Filter building (if any) uses `registry.buildMergedFilter()` — not
+      hand-built `{ must: [...] }` shapes in the facade
+- [ ] Validation >5 lines extracted to a named validator function
+- [ ] App interface method added in `public/app.ts`
+- [ ] `createApp()` wiring added in `public/app.ts` (delegate to
+      facade/ops/query/strategy)
+- [ ] `AppDeps` updated if a new internal class was introduced
+- [ ] Zod schema in `mcp/tools/schemas.ts`
+- [ ] Tool registered in `mcp/tools/<domain>.ts`
+- [ ] If reranking supported: tool name added to preset `tools[]` arrays and
+      `getSchemaDescriptors` list
+- [ ] Tests written next to the implementation (strategy/query/ops test — not a
+      facade test) and passing
+- [ ] Docusaurus docs updated (`website/docs/api/tools.md` + relevant pages)
+- [ ] `CLAUDE.local.md` updated
+- [ ] Build + full test suite passing
+
+🛑 Each row is a gate — do NOT proceed to next without finishing the current.
 
 Two-phase process: define the endpoint in core, then expose it via MCP.
 
@@ -72,10 +107,10 @@ interface in the same file and instantiate it in `createApp()`.
 
 ### 1.3 Implement in internal
 
-**Read `.claude/rules/facade-discipline.md` first.** Facades are thin
-dispatchers — they never contain business logic. The facade method is the last
-thing you write, not the first. Put the work in the correct class, then add a
-≤20-line dispatcher to the facade.
+**MUST read `.claude/rules/facade-discipline.md` first.** Facades are thin
+dispatchers — they MUST NEVER contain business logic. The facade method is the
+last thing you write, not the first. Put the work in the correct class, then add
+a ≤20-line dispatcher to the facade.
 
 **Where the actual work lives** (answer the three questions in order; first
 "yes" wins):
@@ -87,26 +122,34 @@ thing you write, not the first. Put the work in the correct class, then add a
 | 3. Mutates / branches indexing or CRUD?        | new **ops** in `api/internal/ops/`                | resolve + guard + `this.<name>Ops.run(...)`          |
 | None of the above (pure forwarding 1-4 lines)  | stays in facade as dispatcher                     | the one-liner itself (e.g. `clearIndex`)             |
 
-**Existing ops** (`CollectionOps`, `DocumentOps`) — extend them only if the new
-method belongs to the same responsibility. A new CRUD area gets a new ops class.
+**Existing ops** (`CollectionOps`, `DocumentOps`) — MUST extend them only if the
+new method belongs to the same responsibility. A new CRUD area MUST get a new
+ops class.
 
-**Never do in the facade:** inline Qdrant filter construction
-(`{ must: [...] }`), `Map`/`reduce` aggregation, multi-branch `if/else` for
-indexing modes, parallel `scrollFiltered` calls with dedup, preset resolution.
-These are the patterns `facade-discipline.md` explicitly forbids.
+**MUST NEVER do in the facade** (these are the patterns `facade-discipline.md`
+explicitly forbids):
 
-**Filter building:** use
+- **MUST NEVER inline Qdrant filter construction** (`{ must: [...] }`) in the
+  facade.
+- **MUST NEVER perform `Map`/`reduce` aggregation** in the facade.
+- **MUST NEVER branch on indexing modes** with multi-branch `if/else` in the
+  facade.
+- **MUST NEVER call parallel `scrollFiltered` with dedup** in the facade.
+- **MUST NEVER resolve presets** in the facade.
+
+**Filter building (MUST):** use
 `registry.buildMergedFilter(typedParams, rawFilter, level)` from the facade,
-pass the result via `ExploreContext.filter` into the strategy. The facade never
-constructs filter shapes itself.
+pass the result via `ExploreContext.filter` into the strategy. The facade MUST
+NEVER construct filter shapes itself.
 
-**Validation** of request shape (mutex params, cross-field rules): up to ~5
-lines may live inline in the facade as the guard step. Past that, extract a
-named validator function (e.g. `validateFindByTaskIdRequest`) into
-`api/errors.ts` or alongside, and throw typed errors per `typed-errors.md`.
+**Validation (MUST):** request-shape validation (mutex params, cross-field
+rules) up to ~5 lines MAY live inline in the facade as the guard step. Past
+that, MUST extract a named validator function (e.g.
+`validateFindByTaskIdRequest`) into `api/errors.ts` or alongside, and MUST throw
+typed errors per `typed-errors.md`.
 
-After placing the work, update `AppDeps` in `public/app.ts` if a new internal
-class was created, and wire it in `createApp()`.
+After placing the work, MUST update `AppDeps` in `public/app.ts` if a new
+internal class was created, and MUST wire it in `createApp()`.
 
 ### 1.4 Verify core layer
 
@@ -236,29 +279,4 @@ After code changes, request MCP server reconnect before integration testing with
 
 ## Checklist
 
-- [ ] DTO created in `public/dto/<domain>.ts` (via add-dto skill)
-- [ ] DTO re-exported via barrel chain: `dto/<domain>.ts` → `dto/index.ts` →
-      `public/index.ts` → `api/index.ts`
-- [ ] Work placed correctly per `facade-discipline.md` three-question tree:
-      strategy (`domains/explore/strategies/`), query
-      (`domains/explore/queries/`), ops (`api/internal/ops/`), or pure facade
-      dispatcher
-- [ ] Facade method is ≤ 20 lines (resolve → guard → [ensureStats] → dispatch →
-      finalize); no inline filter construction, no `Map`/`reduce` aggregation,
-      no indexing-mode branching
-- [ ] Filter building (if any) uses `registry.buildMergedFilter()` — not
-      hand-built `{ must: [...] }` shapes in the facade
-- [ ] Validation >5 lines extracted to a named validator function
-- [ ] App interface method added in `public/app.ts`
-- [ ] `createApp()` wiring added in `public/app.ts` (delegate to
-      facade/ops/query/strategy)
-- [ ] `AppDeps` updated if a new internal class was introduced
-- [ ] Zod schema in `mcp/tools/schemas.ts`
-- [ ] Tool registered in `mcp/tools/<domain>.ts`
-- [ ] If reranking supported: tool name added to preset `tools[]` arrays and
-      `getSchemaDescriptors` list
-- [ ] Tests written next to the implementation (strategy/query/ops test — not a
-      facade test) and passing
-- [ ] Docusaurus docs updated (`website/docs/api/tools.md` + relevant pages)
-- [ ] `CLAUDE.local.md` updated
-- [ ] Build + full test suite passing
+Phase 2 checklist hoisted to top — see Implementation Checklist.
