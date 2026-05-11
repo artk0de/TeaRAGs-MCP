@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
 import { formatPrime } from "./format.js";
+import { discoverQdrantUrl } from "./qdrant-discovery.js";
 import { pingQdrant } from "./qdrant-ping.js";
 import type { PrimeData } from "./types.js";
 
@@ -17,7 +18,7 @@ export async function runPrime(path: string): Promise<void> {
   }
 
   const config = parseAppConfig();
-  const qdrantUrl = config.qdrantUrl ?? "http://localhost:6333";
+  const qdrantUrl = discoverQdrantUrl(config);
   const reachable = await pingQdrant(qdrantUrl);
   if (!reachable) {
     process.stdout.write(formatPrime({ kind: "qdrant-cold", path }));
