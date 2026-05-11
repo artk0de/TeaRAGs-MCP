@@ -1,8 +1,12 @@
 ---
 name: data-driven-generation
 description:
-  Use when generating or modifying code — selects generation strategy based on
-  git signal labels from TeaRAGs
+  Decide HOW to write new code by inspecting git signals on neighbors — pulls
+  strategy and templates from proven, low-churn nearby implementations rather
+  than guessing from training data. Triggers on "implement function X", "add
+  method to class Y", "write a helper for Z", "напиши функцию", "добавь метод".
+  NOT for discovery or exploration — use tea-rags:explore for that. This skill
+  activates ONCE the agent is about to write code.
 ---
 
 # Data-Driven Generation

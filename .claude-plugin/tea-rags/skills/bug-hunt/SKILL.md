@@ -1,8 +1,11 @@
 ---
 name: bug-hunt
 description:
-  Use when debugging a specific bug or unexpected behavior — developer describes
-  the symptom, skill directs search toward historically buggy code
+  Search for the source of a concrete failure by ranking historically buggy code
+  (high bugFixRate + churn) against the symptom. Triggers on "debug X", "why
+  does Y fail", "test fails", "stack trace says Z", "падает", "почему не
+  работает". NOT for code health scanning without a specific symptom — use
+  risk-assessment for that.
 argument-hint: [bug description or symptom]
 ---
 

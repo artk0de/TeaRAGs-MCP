@@ -14,6 +14,50 @@ argument-hint: [what to explore — feature, module, or question]
 
 # Explore
 
+## Intent Classification (REQUIRED — pick ONE row before any tool call)
+
+| User intent contains                                | Strategy | Skip if                                  |
+| --------------------------------------------------- | -------- | ---------------------------------------- |
+| "how does X work", "explain Y", "what does Z do"    | EXPLAIN  | active bug → bug-hunt                    |
+| "where is X used", "find all X", "imports of X"     | TRACE    | structural-only → use find_symbol direct |
+| "before I refactor X", "what should I know about Y" | PRE-GEN  | already mid-refactor → executing-plans   |
+| "best example of X", "antipatterns in Y"            | EXEMPLAR | no rerank corpus → ripgrep               |
+
+🛑 If unsure, ask the user. NEVER assume strategy from partial signals.
+
+## Risk intent → delegate to risk-assessment
+
+If $ARGUMENTS contains risk-assessment signals ("risk surface", "risk zones",
+"code health", "assess risks", "problematic areas") → delegate to
+`risk-assessment/SKILL.md`. This check runs BEFORE the intent table — risk
+intent overrides EXPLAIN/TRACE/PRE-GEN/EXEMPLAR keywords.
+
+## Pattern-search keyword groups (used by EXEMPLAR routing)
+
+| Strategy        | Keywords (any match)                                                                                                        |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Collect**     | all, every, each, find all, list all, enumerate, gather, all implementations, all uses, all instances, everywhere, wherever |
+| **Spread**      | across, across modules, between modules, compare implementations, variations of, side by side, divergence, per module       |
+| **Antipattern** | antipattern, smell, debt, violation, deprecated, fragile, risky, refactor, cleanup, too complex, duplicate, decompose       |
+| **Reference**   | best, correct, canonical, reference implementation, cleanest, template, pattern to follow, recommended way, good example    |
+
+**Exception:** If the EXPLAIN reference (sub-pattern table) has a specific
+pattern for this intent (e.g., "What calls X?" with "all call sites"), the
+EXPLAIN pattern wins over keyword classification. EXPLAIN is more specific than
+generic Collect.
+
+## Strategy references
+
+- Strategy: see
+  [references/explain-pattern.md](./references/explain-pattern.md).
+- Strategy: see [references/trace-pattern.md](./references/trace-pattern.md).
+- Strategy: see
+  [references/pre-gen-pattern.md](./references/pre-gen-pattern.md).
+- Strategy: see
+  [references/exemplar-pattern.md](./references/exemplar-pattern.md).
+
+---
+
 Unified code investigation. Breadth-first discovery → depth-first tracing →
 output shaped by intent (human explanation OR pre-generation context).
 
@@ -25,52 +69,18 @@ Search results are complete — no ripgrep verification passes.
 Translate $ARGUMENTS to English (if not already). If user's language differs,
 optionally run a secondary query in the original language for non-English docs.
 
-### Pre-generation intent → PRE-GEN flow
+Apply the Intent Classification table above. Then:
 
-Check $ARGUMENTS for pre-generation signals. **First match wins** → PRE-GEN flow
-(skip all other classification).
-
-| Signal                    | Examples                                                               |
-| ------------------------- | ---------------------------------------------------------------------- |
-| Explicit coding intent    | "before I modify/change/refactor/add/implement", "before coding"       |
-| Research request + coding | "research X — I need to add Y", "what should I know before touching X" |
-| Context for generation    | "context for changing X", "risks before refactoring X"                 |
-
-**Match found → go to PRE-GEN flow (below).**
-
-### Risk intent → delegate to risk-assessment
-
-If $ARGUMENTS contains risk-assessment signals ("risk surface", "risk zones",
-"code health", "assess risks", "problematic areas") → delegate to
-`risk-assessment/SKILL.md`. This check runs BEFORE keyword matching below — risk
-intent overrides Spread/Collect keywords.
-
-### Pattern-search intents → delegate
-
-Check $ARGUMENTS against these keyword groups. **First match wins** → delegate.
-
-| Strategy        | Keywords (any match)                                                                                                        |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Collect**     | all, every, each, find all, list all, enumerate, gather, all implementations, all uses, all instances, everywhere, wherever |
-| **Spread**      | across, across modules, between modules, compare implementations, variations of, side by side, divergence, per module       |
-| **Antipattern** | antipattern, smell, debt, violation, deprecated, fragile, risky, refactor, cleanup, too complex, duplicate, decompose       |
-| **Reference**   | best, correct, canonical, reference implementation, cleanest, template, pattern to follow, recommended way, good example    |
-
-**No match** → continue to explore flow (Step 1).
-
-**Exception:** If EXPLAIN section (Step 3) has a specific pattern for this
-intent (e.g., "What calls X?" with "all call sites"), the EXPLAIN pattern wins
-over keyword classification. EXPLAIN is more specific than generic Collect.
-
-**Match found (no EXPLAIN override) → STOP and delegate.** Do NOT continue to
-explore flow.
-
-- Antipattern + broad scope (no specific entity) → read and follow
-  `refactoring-scan/SKILL.md`
-- All other matches → read and follow `pattern-search/SKILL.md`
-
-Delegated skill handles everything — search, output, formatting. Do NOT search
-yourself before or after delegating.
+1. If risk intent matches → delegate to `risk-assessment/SKILL.md`.
+2. If EXEMPLAR row matches → delegate per
+   [references/exemplar-pattern.md](./references/exemplar-pattern.md)
+   (refactoring-scan for broad antipattern, pattern-search otherwise).
+3. If PRE-GEN row matches → follow
+   [references/pre-gen-pattern.md](./references/pre-gen-pattern.md).
+4. If EXPLAIN row matches → continue to Explore Flow below, then format per
+   [references/explain-pattern.md](./references/explain-pattern.md).
+5. If TRACE row matches → continue to Explore Flow below, then format per
+   [references/trace-pattern.md](./references/trace-pattern.md).
 
 ### Scope extraction
 
@@ -119,131 +129,14 @@ For each interesting result:
 
 Repeat as needed. Fewer deep dives > many shallow ones.
 
-### 3. EXPLAIN
+### 3. EXPLAIN / TRACE / PRE-GEN
 
-Structure by what was asked:
+Format the answer per the strategy reference selected in Step 0:
 
-- **"How does X work?"** → flow: entry → processing → output. Key files + roles.
-- **"Architecture of X?"** → components, responsibilities, connections,
-  boundaries.
-- **"Where is X used?"** → hybrid_search (BM25 = full recall for exact symbol
-  names, dense = semantic context). Paginate with offset until all usages found
-  (see `references/pagination.md`).
-- **"How is X different from Y?"** → contrastive decomposition:
-  1. ONE hybrid_search for the shared concept (e.g., "preloading" for
-     lazy_preload vs includes) — BM25 catches both names, semantic catches
-     context
-  2. Scan results for X-only, Y-only, and both groups by file path
-  3. Present as three groups: only-X, only-Y, both Do NOT run two separate
-     semantic searches — close concepts produce 80%+ overlap.
-- **"What changed recently in X?"** → rank_chunks with `rerank="codeReview"` +
-  pathPattern for X + `maxAgeDays=14`. Shows recent changes ranked by review
-  relevance (recency, burstActivity, chunkChurn).
-- **"Who owns X?" / "Who knows about X?"** → rank_chunks with
-  `rerank="ownership"` + pathPattern. Overlay shows `blameDominantAuthor`,
-  `blameDominantAuthorPct`, `blameAuthors[]` (live-line ownership from
-  `git blame HEAD`). Report ownership distribution.
-- **"Who recently committed to X?"** → rank_chunks with
-  `rerank="recentActivityConcentration"` + pathPattern. Overlay shows
-  `recentDominantAuthor`, `recentDominantAuthorPct`, `recentAuthors[]`
-  (commit-based, useful for finding who's mentally loaded in for fast review).
-  Different from ownership: a long-time owner who stopped contributing still
-  shows in `blame*` but not in `recent*`.
-- **"Is X tested?" / "Show tests for X"** → find_symbol for X with pathPattern
-  targeting test directories. Discover test dir first: Glob for
-  `**/{test,tests,spec,specs,__tests__}` to find project's test convention, then
-  use that as pathPattern. `metaOnly=true` for existence check, `metaOnly=false`
-  for test content. Fallback: hybrid_search for X name + pathPattern if
-  find_symbol returns 0 results (test files may not use exact symbolId).
-- **"What calls X?" (backward trace)** → iterative hybrid_search. Start:
-  hybrid_search for X → note callers from results → hybrid_search for each
-  caller → repeat until entry point or 3 levels deep. Present as chain:
-  `A → B → C → X`.
-- **"What does X call?" / "What does X depend on?" (forward trace)** → two
-  levels of resolution, both from find_symbol (instant, no embedding):
-  1. **File-level:** find_symbol for X → chunk payload has `imports[]` array
-     showing all file dependencies. This is the dependency graph.
-  2. **Method-level:** from the same find_symbol result, read the method body →
-     note called methods → find_symbol for each → repeat up to 3 levels. Present
-     both: file deps as flat list, method calls as tree:
-     `X → { Y.method(), Z.method() } → { ... }`.
-
-Code citations: `file:line`. Quote 3-5 relevant lines, don't dump functions.
-
----
-
-## PRE-GEN Flow (pre-generation context)
-
-Triggered by Step 0 classification. Gathers actionable context for code
-generation — files, risk signals, overlay labels.
-
-### PG-1. DISCOVER
-
-Find target area files. Select tool directly:
-
-- **Behavior/intent query** → `semantic_search` (query=$ARGUMENTS,
-  metaOnly=true, limit=10, documentation="exclude")
-- **Known symbol + context** → `hybrid_search` (query=$ARGUMENTS, metaOnly=true,
-  limit=10, documentation="exclude")
-
-Add `pathPattern` if module is known. Add `language` if polyglot codebase.
-`documentation="exclude"` prevents RFC/docs from taking result slots.
-
-**Checkpoint:** Found target files (3-5 paths)?
-
-- YES → extract pathPattern, proceed to PG-2
-- NO → reformulate query (narrower scope, different angle), retry once
-
-### PG-2. SIGNAL LOOKUP
-
-For each key symbol from PG-1 (2-5 symbols), call `find_symbol` with rerank to
-get overlay labels. One call per symbol — find_symbol is instant (scroll, no
-embedding).
-
-```
-find_symbol:
-  symbolId: <symbol name from PG-1>
-  path: <project>
-  rerank: "techDebt"          ← any preset works, overlay is preset-independent
-  metaOnly: false             ← need overlay labels
-```
-
-Extract per-symbol: bugFixRate, ageDays, churnVolatility, commitCount,
-blameDominantAuthor, blameDominantAuthorPct (live-line owner — used for silo
-detection and "who must approve") and recentDominantAuthor,
-recentDominantAuthorPct (recent committer — used for "who's loaded in"). These
-feed DDG strategy selection.
-
-**Interpretation:** when presenting overlay findings to the user (pre-gen
-context or explore), do not read single signals in isolation. Consult
-`references/signal-interpretation.md` for pair diagnostics — especially when
-churn, age, or ownership are high. Single-signal conclusions mislead (high churn
-≠ active development; mono ownership ≠ silo risk).
-
-### PG-3. DEEP TRACE (optional)
-
-If specific symbols need structural understanding before generation:
-
-- `find_symbol` for 1-2 key symbols (definition + imports)
-- Fallback: `hybrid_search` if find_symbol returns 0
-
-**Limit:** Do NOT trace call chains or dependency trees.
-
-### PG-4. OUTPUT
-
-```
-Pre-generation context for: [area]
-
-Files: [list with pathPattern-ready format]
-Language: [detected language]
-Symbols with overlay:
-  - symbolName: { bugFixRate, ageDays, churnVolatility, commitCount,
-                  blameDominantAuthor, blameDominantAuthorPct,
-                  recentDominantAuthor, recentDominantAuthorPct }
-
-Context for generation:
-  - pathPattern: [ready for data-driven-generation]
-  - overlay labels: [per-symbol from PG-2]
-```
-
-Output is self-contained. data-driven-generation reads overlay labels directly.
+- EXPLAIN intents →
+  [references/explain-pattern.md](./references/explain-pattern.md)
+- TRACE intents → [references/trace-pattern.md](./references/trace-pattern.md)
+- PRE-GEN intents →
+  [references/pre-gen-pattern.md](./references/pre-gen-pattern.md)
+- EXEMPLAR intents →
+  [references/exemplar-pattern.md](./references/exemplar-pattern.md)

@@ -10,6 +10,35 @@ argument-hint: "[scope — domain, subsystem, or 'whole project']"
 
 # Risk Assessment
 
+## Phase Order (MANDATORY — do not skip any phase)
+
+🛑 STOP — read all 5 phases before scanning.
+
+1. Phase 1 — SCAN with primary preset
+2. Phase 2 — SCAN with stratified second preset (**MUST run, even if Phase 1
+   found enough hits — single-preset risk maps are biased**)
+3. Phase 3 — MERGE results with negativeIds dedup (**MUST use negativeIds, NEVER
+   manual filtering**)
+4. Phase 4 — CLASSIFY into severity tiers
+5. Phase 5 — REPORT pair-diagnostics (**MUST surface signal pairs, single-signal
+   reports are misleading**)
+
+## Top Anti-patterns (read before scanning)
+
+- **Using bug-hunt for risk assessment.** bug-hunt finds ONE root cause. This
+  skill scans the risk surface.
+- **Single unfiltered scan for broad scope.** Dominant-churn domain takes 100%
+  of slots. Always run stratified second scan with `!**/dominant/**`.
+- **Classifying from a single signal.** "High churn" alone does not imply any
+  class. Check companion signals (`imports`, `bugFixRate`, `ageDays`,
+  `blockPenalty`) before picking a label. See
+  `references/signal-interpretation.md`.
+
+See [references/anti-patterns.md](./references/anti-patterns.md) for the full
+list.
+
+---
+
 Multi-dimensional risk scan using rank_chunks with 4 rerank presets,
 cross-referenced by overlap count. Semantic/hybrid search resolves intent-based
 scopes.
@@ -262,29 +291,8 @@ method inside. When overlay shows both, chunk-level locates the exact problem:
 See `references/signal-interpretation.md` § "Method-level (chunk) pair
 diagnostics" for the full table.
 
-| Classification          | Signature (required pair/triple)                                                                           |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Coupling point**      | churn high+ AND imports high+ AND `recentAuthors` count high+                                              |
-| **Bug attractor**       | bugFixRate concerning+ AND churn high+ AND imports low                                                     |
-| **Legacy minefield**    | ageDays legacy AND churn high+ AND bugFixRate concerning+                                                  |
-| **Fragile legacy**      | ageDays legacy AND bugFixRate concerning+ (churn typical)                                                  |
-| **Toxic silo**          | `blameDominantAuthorPct.label ∈ {silo, deep-silo}` AND bugFixRate concerning+ (OR churn high)              |
-| **Healthy owner**       | `blameDominantAuthorPct.label ∈ {silo, deep-silo}` AND churn low AND ageDays legacy AND bugFixRate=healthy |
-| **Feature-in-progress** | churn high+ AND ageDays new AND bugFixRate=healthy AND imports low                                         |
-| **Boilerplate churn**   | churn high+ AND blockPenalty high+ AND bugFixRate=healthy                                                  |
-| **Emerging coupling**   | ageDays new AND churn high+ AND imports rising                                                             |
-| **Untested hotspot**    | No test file AND tier Critical/High                                                                        |
-| **Oversized**           | methodLines high+ (labelMap) AND in decomposition top-10                                                   |
-| **Fragile**             | volatility erratic+ AND burst high+                                                                        |
-| **Race condition**      | Agent judgment from code content                                                                           |
-
-Multiple classifications per candidate allowed (e.g., god module + oversized).
-Healthy owner, feature-in-progress, and boilerplate churn are **NOT risks** —
-report them as "benign" and exclude from risk count.
-
-**Single strong signal?** If only one overlay signal is strong (everything else
-typical/missing) → insufficient evidence. Report candidate but do not classify.
-See anti-pattern #7 in signal-interpretation.md.
+See [references/classification-tiers.md](./references/classification-tiers.md)
+for the full 13-tier table.
 
 ## Phase 5: OUTPUT
 
@@ -324,32 +332,3 @@ Count only. "Show medium risks" to expand.
 
 **Label mapping:** Use labelMap from `get_index_metrics` (session start). Show
 raw value + label: `bugFix:58% concerning`.
-
-## Anti-patterns
-
-- **Using bug-hunt for risk assessment.** bug-hunt finds ONE root cause. This
-  skill scans the risk surface.
-- **Exhaustive scope resolution.** One semantic/hybrid call. Don't find_similar
-  to expand scope — that's pattern-search's job.
-- **Reading full files.** Chunk coordinates exist. Use them.
-- **Paginating all 3 presets to page 3.** If gradient drops on page 1 — stop.
-- **Reporting 1/N overlap as risk.** Single-preset hits are noise. Minimum 2/N
-  for Medium.
-- **find_similar from Medium candidates.** Only Critical warrants expansion.
-- **Braces with slashes in pathPattern.** Extract directory prefixes instead.
-- **Single unfiltered scan for broad scope.** Dominant-churn domain takes 100%
-  of slots. Always run stratified second scan with `!**/dominant/**`.
-- **find_similar without negativeIds.** Healthy-demoted candidates from MERGE
-  are free negative examples. Always pass them to shift results toward
-  antipatterns and away from active-but-clean code.
-- **Classifying from a single signal.** "High churn" alone does not imply any
-  class. Check companion signals (`imports`, `bugFixRate`, `ageDays`,
-  `blockPenalty`) before picking a label. See
-  `references/signal-interpretation.md`.
-- **Treating mono ownership as a risk by default.** Healthy owner of stable
-  mature code is an asset. Toxic silo requires pairing with bugFixRate or churn.
-- **Ignoring `imports` when classifying churn-heavy files.** Without fan-in, god
-  module and bug attractor look identical — they need opposite remediation.
-- **Reporting feature-in-progress or boilerplate churn as risks.** High churn on
-  a new single-author file with healthy bugFixRate is normal development. High
-  churn on a DTO with high blockPenalty is boilerplate, not a hotspot.
