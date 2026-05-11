@@ -1,14 +1,15 @@
 ---
 name: receiving-code-review
 description:
-  USE INSTEAD OF superpowers:receiving-code-review whenever a reviewer suggests
-  a concrete change (rename, refactor, move, extract) to a named file or symbol.
-  This wrapper queries tea-rags imports/churn signals on the affected target to
-  assess blast radius of the proposed change BEFORE agreeing or pushing back,
-  then chains into superpowers:receiving-code-review. Triggers on "reviewer
-  suggests", "should I rename", "ревьюер предлагает", "стоит ли переименовать",
-  "code review feedback", "PR comment about". Always prefer this over
-  superpowers:receiving-code-review.
+  Assess a reviewer's suggested change (rename, refactor, move, extract) by
+  querying tea-rags imports/churn signals on the affected target to measure
+  blast radius before agreeing or pushing back. Triggers on "reviewer suggests",
+  "should I rename", "ревьюер предлагает", "стоит ли переименовать", "code
+  review feedback", "PR comment about", "review feedback says", "PR comment
+  wants", "address the review", "сделай как просит ревьюер", "code review wants
+  me to", "let's refactor this per review". NOT for vague stylistic nits without
+  a named symbol. Wraps superpowers:receiving-code-review with tea-rags
+  blast-radius signals.
 ---
 
 # dinopowers: receiving-code-review
@@ -31,34 +32,8 @@ If the comment is stylistic-only (typo, spacing, unclear name without structural
 change): skip wrapper, pass through to `superpowers:receiving-code-review`. Do
 not fabricate a target.
 
-## Chaining rule (MANDATORY)
-
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
-
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
-
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
-
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Extract review target
 

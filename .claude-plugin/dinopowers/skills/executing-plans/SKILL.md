@@ -1,15 +1,14 @@
 ---
 name: executing-plans
 description:
-  USE INSTEAD OF superpowers:executing-plans whenever you are about to execute a
-  written plan whose Tasks edit code (Edit/Write/MultiEdit). This wrapper
-  queries tea-rags git signals on the files each Task will touch and issues a
-  SAFE/CAUTION/UNSAFE verdict BEFORE any edit, then for code-generation Tasks
-  invokes tea-rags:data-driven-generation to copy style from silo authors and
-  pull strategy + template from proven neighbors, then chains into
-  superpowers:executing-plans. Triggers on "execute the plan", "start Task N",
-  "выполни план", "начни задачу", "run the plan", "implement the plan steps".
-  Always prefer this over superpowers:executing-plans for any multi-file plan.
+  Execute a written implementation plan whose Tasks edit code, with a per-Task
+  SAFE/CAUTION/UNSAFE git-signal verdict before any edit AND a code-style
+  cascade for code-generation Tasks (style from silo authors, strategy and
+  template from proven neighbors). Triggers on "execute the plan", "start Task
+  N", "выполни план", "начни задачу", "run the plan", "implement the plan
+  steps". NOT for one-off edits without a written plan. Wraps
+  superpowers:executing-plans with tea-rags git-signal verdicts and
+  tea-rags:data-driven-generation cascade.
 ---
 
 # dinopowers: executing-plans
@@ -35,26 +34,19 @@ If a Task is purely additive (creates new files, touches no existing ones): skip
 the guard for that Task — state it explicitly. Do not invent a pathPattern to
 justify a guard call.
 
-## Chaining rule (MANDATORY)
+## Mandatory Step Order (DO NOT SKIP)
 
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
+1. Step 2 — git-signal SAFE/CAUTION/UNSAFE verdict per Task before any edit
+2. Step 4 — verdict-gating: STOP and ask user if any UNSAFE
+3. **MUST** Step 5 — Code-Gen Cascade for code-generation Tasks (invoke
+   `tea-rags:data-driven-generation`)
+4. Step 6 — chain into `superpowers:executing-plans`
 
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
+⚠️ Skipping Step 5 produces ungrounded code. Skipping Step 6 means the parent
+workflow never runs.
 
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 Plus the cross-plugin chain for code generation:
 
@@ -62,14 +54,6 @@ Plus the cross-plugin chain for code generation:
   that GENERATES code (new files, new functions, new classes, rewrites). Pulls
   strategy, template, and silo-author style. Not a `superpowers:Y` redirect —
   it's an additional MANDATORY step the wrapper inserts.
-
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
 
 ## Step 1 — Extract Task's file list
 

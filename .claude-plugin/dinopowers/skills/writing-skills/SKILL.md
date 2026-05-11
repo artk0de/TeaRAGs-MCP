@@ -1,14 +1,15 @@
 ---
 name: writing-skills
 description:
-  USE INSTEAD OF superpowers:writing-skills whenever authoring or rewriting a
-  SKILL.md inside .claude-plugin/dinopowers/. This wrapper enforces the
-  dinopowers wrapper pattern (tea-rags enrichment step → chain into
-  superpowers:*) and the description style required to win against parent
-  skills, then chains into superpowers:writing-skills. Triggers on "add
+  Author or rewrite a SKILL.md inside .claude-plugin/dinopowers/, enforcing the
+  wrapper pattern (tea-rags enrichment step then chain into superpowers:*) and
+  the description style required to win against parent skills. Triggers on "add
   dinopowers:X", "create a wrapper skill", "write a SKILL.md", "напиши скилл",
-  "новый wrapper", "новый dinopowers скилл". Always prefer this over
-  superpowers:writing-skills when target is .claude-plugin/dinopowers/.
+  "новый wrapper", "новый dinopowers скилл", "edit dinopowers wrapper", "rewrite
+  dinopowers SKILL.md", "fix skill description", "improve a dinopowers skill",
+  "tweak SKILL.md frontmatter". NOT for SKILL.md files outside
+  .claude-plugin/dinopowers/. Wraps superpowers:writing-skills with the
+  dinopowers wrapper-pattern enforcement.
 ---
 
 # dinopowers: writing-skills
@@ -27,34 +28,8 @@ point of this wrapper. The core value of every dinopowers wrapper is correct
 tea-rags tool selection — this skill bootstraps that correctness for all future
 wrappers.
 
-## Chaining rule (MANDATORY)
-
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
-
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
-
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
-
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Extract intent
 

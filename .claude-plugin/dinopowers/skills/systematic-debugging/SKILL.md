@@ -1,14 +1,13 @@
 ---
 name: systematic-debugging
 description:
-  USE INSTEAD OF superpowers:systematic-debugging whenever debugging any bug,
-  test failure, error message, stack trace, or unexpected behavior. This wrapper
-  runs tea-rags:bug-hunt FIRST to produce a ranked suspect list (bug-prone zones
-  by bugFixRate + churn), then feeds it to superpowers:systematic-debugging as
-  prioritized hypothesis space. Triggers on "debug X", "fix the bug", "why does
-  Y fail", "test fails", "падает", "почему не работает", "ошибка в",
-  "стектрейс". Always prefer this over superpowers:systematic-debugging for any
-  concrete failure.
+  Debug a concrete failure by first running tea-rags:bug-hunt to produce a
+  ranked suspect list (bug-prone zones by bugFixRate + churn) and feeding it as
+  prioritized hypothesis space, so investigation starts with code history
+  actually says is fragile. Triggers on "debug X", "fix the bug", "why does Y
+  fail", "test fails", "падает", "почему не работает", "ошибка в", "стектрейс".
+  NOT for code review or general code-health questions. Wraps
+  superpowers:systematic-debugging with a tea-rags:bug-hunt suspect ranking.
 ---
 
 # dinopowers: systematic-debugging
@@ -31,34 +30,8 @@ If the "bug" is purely speculative ("maybe there's a race condition somewhere")
 with no symptom: skip the wrapper, invoke `superpowers:systematic-debugging`
 directly. Do not fabricate a symptom to justify `bug-hunt`.
 
-## Chaining rule (MANDATORY)
-
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
-
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
-
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
-
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Frame the symptom
 

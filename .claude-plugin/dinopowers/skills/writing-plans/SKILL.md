@@ -1,13 +1,13 @@
 ---
 name: writing-plans
 description:
-  USE INSTEAD OF superpowers:writing-plans whenever authoring an implementation
-  plan that touches code. This wrapper enriches the Affected Files section with
-  per-file impact signals (imports, churn, ownership, bugFixRate, taskIds)
-  BEFORE decomposing tasks, then chains into superpowers:writing-plans. Triggers
-  on "write a plan", "draft implementation plan", "напиши план", "распиши задачи
-  по файлам", "plan the refactor". Always prefer this over
-  superpowers:writing-plans for any plan that names files or a code area.
+  Author an implementation plan with the Affected Files section enriched by
+  per-file imports, churn, ownership, bugFixRate, and taskIds drawn from
+  tea-rags, so task decomposition reflects real impact and risk. Triggers on
+  "write a plan", "draft implementation plan", "напиши план", "распиши задачи по
+  файлам", "plan the refactor". NOT for plans with no named files or code area
+  to enrich. Wraps superpowers:writing-plans with per-file tea-rags signal
+  enrichment.
 ---
 
 # dinopowers: writing-plans
@@ -32,34 +32,8 @@ If the plan is conceptual with no file list derivable (e.g. "plan for migrating
 to Postgres") — skip enrichment and invoke `superpowers:writing-plans` directly.
 State it. Do not fabricate a file list.
 
-## Chaining rule (MANDATORY)
-
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
-
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
-
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
-
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Collect target file set
 
@@ -137,10 +111,18 @@ Extract from `payload.git.file.*`:
 - `bugFixRate` — historical quality
 - `taskIds` — connected tickets (coordinated-change signal)
 
-Use `blame*` for ownership decisions ("who must approve this change"). Use
-`recent*` for activity-based review routing ("who recently committed and is
-loaded in"). They diverge when a long-time owner stops contributing — `blame*`
-still says they own, `recent*` highlights newer committers.
+MUST pick the right column or downstream rerank presets misroute reviewers.
+
+**Signal-column selection (MUST decide BEFORE filling the enrichment block):**
+
+| Decision context                   | Column to use     |
+| ---------------------------------- | ----------------- |
+| Ownership / who-knows-this-code    | `blame*`          |
+| Recent activity / review routing   | `recent*`         |
+| Both contexts present in same Task | List both columns |
+
+They diverge when a long-time owner stops contributing — `blame*` still says
+they own, `recent*` highlights newer committers.
 
 Compose enrichment block:
 

@@ -1,14 +1,14 @@
 ---
 name: test-driven-development
 description:
-  USE INSTEAD OF superpowers:test-driven-development whenever implementing a
-  feature or bugfix in a project that already has tests. This wrapper searches
-  existing test files via tea-rags for proven patterns (mocks, helpers,
-  assertion style, fixture conventions) BEFORE drafting the failing test, so the
-  new test matches local norms — then chains into
-  superpowers:test-driven-development. Triggers on "write a test", "TDD",
-  "напиши тест", "сначала тест", "failing test first", "RED phase". Always
-  prefer this over superpowers:test-driven-development.
+  Write a failing test BEFORE implementation, matching project conventions found
+  via tea-rags search of existing test files (mocks, helpers, assertion style,
+  fixture conventions) so the new test fits local norms. Triggers on "write a
+  test", "TDD", "напиши тест", "сначала тест", "failing test first", "RED
+  phase", "implement feature X", "add test for Y", "fix bug Z". NOT for projects
+  with no existing tests — fall back to superpowers:test-driven-development
+  directly. Wraps superpowers:test-driven-development with tea-rags test-pattern
+  search.
 ---
 
 # dinopowers: test-driven-development
@@ -31,34 +31,8 @@ correct ordering (search BEFORE draft) is the core value.
 If this is the first test in the project (no existing tests): skip pattern
 search, invoke `superpowers:test-driven-development` directly. State it.
 
-## Chaining rule (MANDATORY)
-
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
-
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
-
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
-
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Frame the test intent
 

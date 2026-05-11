@@ -1,14 +1,14 @@
 ---
 name: finishing-a-development-branch
 description:
-  USE INSTEAD OF superpowers:finishing-a-development-branch whenever finalizing
-  a dev branch (merge, PR, cleanup decision). This wrapper runs
-  tea-rags:risk-assessment on the whole branch diff to surface risk zones
-  touched across the branch's full scope BEFORE presenting completion options,
-  then chains into superpowers:finishing-a-development-branch. Triggers on
-  "finish the branch", "ready to merge", "wrap up the feature", "ветка готова",
-  "доводим до merge", "branch ready". Always prefer this over
-  superpowers:finishing-a-development-branch.
+  Finalize a dev branch (merge, PR, or cleanup decision) with a
+  tea-rags:risk-assessment over the full branch diff so completion options are
+  weighed against the risk zones touched across the entire branch scope.
+  Triggers on "finish the branch", "ready to merge", "wrap up the feature",
+  "ветка готова", "доводим до merge", "branch ready", "PR time", "shipping the
+  branch", "merge ready". NOT for mid-branch interim commits. Wraps
+  superpowers:finishing-a-development-branch with tea-rags:risk-assessment over
+  the branch diff.
 ---
 
 # dinopowers: finishing-a-development-branch
@@ -32,34 +32,8 @@ there's nothing to complete. If branch has only trivial changes (docs-only,
 renames-only): risk-assessment may be skipped with note "trivial scope — no risk
 scan needed".
 
-## Chaining rule (MANDATORY)
-
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
-
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
-
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
-
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Determine branch scope
 

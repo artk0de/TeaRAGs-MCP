@@ -1,14 +1,14 @@
 ---
 name: verification-before-completion
 description:
-  USE INSTEAD OF superpowers:verification-before-completion whenever about to
-  claim work is complete, fixed, or passing — before any commit, PR, or
-  "готово". This wrapper queries tea-rags imports/churn signals on just-edited
-  files to surface collateral-damage candidates (files whose dependents could
-  break) BEFORE the verification commands run, then chains into
-  superpowers:verification-before-completion. Triggers on "ready to commit",
+  Before claiming work is complete, run tea-rags imports/churn signals on
+  just-edited files to surface collateral-damage candidates (files whose
+  dependents could break), then run verification commands so success claims are
+  backed by evidence and blast-radius awareness. Triggers on "ready to commit",
   "all done", "should be fixed now", "готово", "проверь перед commit", "все
-  работает". Always prefer this over superpowers:verification-before-completion.
+  работает". NOT for mid-work sanity checks without a completion claim. Wraps
+  superpowers:verification-before-completion with a tea-rags collateral-damage
+  scan.
 ---
 
 # dinopowers: verification-before-completion
@@ -32,34 +32,20 @@ recommendation) = core value.
 If only new files were created (no edits to existing files): skip scan with
 verdict `SAFE (no existing-file edits)`. Do not fabricate pathPattern.
 
-## Chaining rule (MANDATORY)
+## Verdict Ladder (PRESCRIPTIVE — apply before claiming done)
 
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
+🛑 STOP — read the ladder, then act.
 
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
+| Verdict        | Triggers                                                     |
+| -------------- | ------------------------------------------------------------ |
+| `HIGH-BLAST`   | `imports` top 10% of result set (or absolute: >20 importers) |
+| `MEDIUM-BLAST` | `imports` top 30% (or 5-20 importers)                        |
+| `LOW-BLAST`    | `imports` ≤ 5 importers                                      |
 
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
+Block is prescriptive, not informational — DO NOT skip ladder evaluation.
 
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Collect edited file set
 
@@ -126,13 +112,7 @@ overlay:
 - `blameDominantAuthorPct` (with adaptive label) — live-line silo risk (use the
   label, not a magic percentage — `silo` / `deep-silo` are codebase-relative)
 
-Verdict ladder per edited file:
-
-| Verdict        | Triggers                                                     |
-| -------------- | ------------------------------------------------------------ |
-| `HIGH-BLAST`   | `imports` top 10% of result set (or absolute: >20 importers) |
-| `MEDIUM-BLAST` | `imports` top 30% (or 5-20 importers)                        |
-| `LOW-BLAST`    | `imports` ≤ 5 importers                                      |
+Verdict ladder per edited file: See Verdict Ladder near top.
 
 Aggregate:
 

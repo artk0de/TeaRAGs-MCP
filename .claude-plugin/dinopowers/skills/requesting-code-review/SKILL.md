@@ -1,14 +1,13 @@
 ---
 name: requesting-code-review
 description:
-  USE INSTEAD OF superpowers:requesting-code-review whenever requesting review
-  on completed changes — before merging, opening a PR, or asking for sign-off.
-  This wrapper queries tea-rags git signals on diff files to build a reviewer
-  context bundle (ownership, churn, connected taskIds per file) BEFORE composing
-  the review request, then chains into superpowers:requesting-code-review.
-  Triggers on "request review", "open a PR", "ready for review", "готовлю PR",
-  "запрос на ревью", "code review please". Always prefer this over
-  superpowers:requesting-code-review.
+  Prepare a code-review request bundle with per-file ownership, churn, and
+  connected taskIds drawn from tea-rags git signals before composing the review
+  request, so reviewers know who to ping and where the risk lives. Triggers on
+  "request review", "open a PR", "ready for review", "готовлю PR", "запрос на
+  ревью", "code review please". NOT for self-review or draft-PR exploration.
+  Wraps superpowers:requesting-code-review with a tea-rags reviewer-context
+  bundle.
 ---
 
 # dinopowers: requesting-code-review
@@ -32,34 +31,8 @@ the core value.
 If diff is empty: skip wrapper, invoke `superpowers:requesting-code-review`
 directly. Do not fabricate.
 
-## Chaining rule (MANDATORY)
-
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
-
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
-
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
-
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Collect diff file list
 

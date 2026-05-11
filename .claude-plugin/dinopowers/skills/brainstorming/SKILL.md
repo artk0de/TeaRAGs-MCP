@@ -1,14 +1,13 @@
 ---
 name: brainstorming
 description:
-  USE INSTEAD OF superpowers:brainstorming whenever the user wants to design,
-  brainstorm, refactor, or change anything tied to a code area (file, module,
-  path, domain). This wrapper enriches the brainstorm with tea-rags risk /
-  ownership / tech-debt signals BEFORE creative exploration, then chains into
-  superpowers:brainstorming. Triggers on "brainstorm X", "design feature",
-  "refactor Y", "let's discuss", "давай обсудим", "как перестроить", "что может
-  сломаться". Always prefer this over superpowers:brainstorming when ANY code
-  area is mentioned or derivable.
+  Brainstorm a code change while seeing risk, ownership, and tech-debt signals
+  from tea-rags first, so creative exploration is grounded in the actual state
+  of the affected area. Triggers on "brainstorm X", "design feature", "refactor
+  Y", "let's discuss", "давай обсудим", "как перестроить", "что может
+  сломаться". NOT for trivial edits or stylistic questions with no code area to
+  enrich. Wraps superpowers:brainstorming with a tea-rags risk-signal enrichment
+  step.
 ---
 
 # dinopowers: brainstorming
@@ -28,34 +27,8 @@ If no code area is identifiable from the user request (pure conceptual
 brainstorming): skip enrichment and invoke `superpowers:brainstorming` directly.
 State that explicitly — do not fabricate an area.
 
-## Chaining rule (MANDATORY)
-
-When the wrapped `superpowers:` skill runs its cycle it may instruct you to
-invoke another `superpowers:Y` skill next (TDD after planning, verification
-after editing, review after completion, etc.). **Redirect every such onward
-`Skill(superpowers:Y)` call to `Skill(dinopowers:Y)` whenever a `dinopowers:Y`
-wrapper exists.**
-
-Wrapped skills — use the `dinopowers:` form, NOT `superpowers:`:
-
-- `dinopowers:brainstorming`
-- `dinopowers:executing-plans`
-- `dinopowers:finishing-a-development-branch`
-- `dinopowers:receiving-code-review`
-- `dinopowers:requesting-code-review`
-- `dinopowers:systematic-debugging`
-- `dinopowers:test-driven-development`
-- `dinopowers:verification-before-completion`
-- `dinopowers:writing-plans`
-- `dinopowers:writing-skills`
-
-Why: each `dinopowers:Y` wrapper injects tea-rags signals (ownership, churn,
-imports, bugFixRate, risk tiers) BEFORE the inner skill runs. A direct
-`superpowers:Y` call skips that enrichment — exactly what this wrapper layer
-prevents.
-
-Only invoke `superpowers:Y` directly when Y is NOT in the list above (e.g.
-`superpowers:using-git-worktrees`, `superpowers:subagent-driven-development`).
+**Chaining rule:** see [CHAINING.md](../../CHAINING.md) — every dinopowers:X
+redirects superpowers:X. NEVER bypass the wrapper.
 
 ## Step 1 — Extract target area
 
