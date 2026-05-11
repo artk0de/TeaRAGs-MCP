@@ -1,0 +1,246 @@
+{
+  "name": "Wave 1 — Triggering eval (all 28 skills)",
+  "purpose": "Validate that current skill `description` fields fire the correct skill under Opus 4.7's literal classifier. Compare against a baseline where the agent only sees skill names (no descriptions).",
+  "model_target": "claude-opus-4-7",
+  "skill_universe": [
+    "dinopowers:brainstorming",
+    "dinopowers:executing-plans",
+    "dinopowers:finishing-a-development-branch",
+    "dinopowers:receiving-code-review",
+    "dinopowers:requesting-code-review",
+    "dinopowers:systematic-debugging",
+    "dinopowers:test-driven-development",
+    "dinopowers:verification-before-completion",
+    "dinopowers:writing-plans",
+    "dinopowers:writing-skills",
+    "tea-rags:bug-hunt",
+    "tea-rags:data-driven-generation",
+    "tea-rags:explore",
+    "tea-rags:force-reindex",
+    "tea-rags:index",
+    "tea-rags:risk-assessment",
+    "tea-rags-setup:install",
+    "tea-rags-setup:tune",
+    "project:add-derived-signal",
+    "project:add-dto",
+    "project:add-language-hook",
+    "project:add-mcp-endpoint",
+    "project:add-migration",
+    "project:add-rerank-preset",
+    "project:debug-pipeline-log",
+    "project:optimize-skill"
+  ],
+  "note": "pattern-search and refactoring-scan are user-invocable: false — excluded from eval. They cannot trigger via natural language.",
+  "cases": [
+    {
+      "id": 1,
+      "prompt": "Add a new derived signal called 'freshness' that scores files by recency",
+      "expected": "project:add-derived-signal",
+      "alt_ok": [],
+      "rationale": "Specific intent matches add-derived-signal directly. Should NOT fire dinopowers:executing-plans (no plan)."
+    },
+    {
+      "id": 2,
+      "prompt": "Мне нужен новый DTO для tool'а который возвращает trajectory stats",
+      "expected": "project:add-dto",
+      "alt_ok": [],
+      "rationale": "Adding a DTO — specific add-* skill applies. Russian phrasing tests literal classifier robustness."
+    },
+    {
+      "id": 3,
+      "prompt": "Add Kotlin support to the chunker — it should handle classes, functions, and imports",
+      "expected": "project:add-language-hook",
+      "alt_ok": [],
+      "rationale": "Language-specific chunking hook is the exact intent."
+    },
+    {
+      "id": 4,
+      "prompt": "I need a new MCP tool that returns project-wide statistics",
+      "expected": "project:add-mcp-endpoint",
+      "alt_ok": [],
+      "rationale": "Adding MCP tool endpoint — specific skill exists."
+    },
+    {
+      "id": 5,
+      "prompt": "Schema needs a new payload field, write the migration",
+      "expected": "project:add-migration",
+      "alt_ok": [],
+      "rationale": "Migration to existing pipeline — clear add-migration use case."
+    },
+    {
+      "id": 6,
+      "prompt": "I want a new ranking strategy that boosts security-audit code",
+      "expected": "project:add-rerank-preset",
+      "alt_ok": [],
+      "rationale": "Adding rerank preset — specific skill applies."
+    },
+    {
+      "id": 7,
+      "prompt": "Indexing is slow today, can you check the latest pipeline debug log?",
+      "expected": "project:debug-pipeline-log",
+      "alt_ok": [],
+      "rationale": "Pipeline debug log analysis — exact match."
+    },
+    {
+      "id": 8,
+      "prompt": "This skill description doesn't fire on prompts that should match it, can we improve it?",
+      "expected": "project:optimize-skill",
+      "alt_ok": [],
+      "rationale": "Skill optimization — meta-skill match."
+    },
+    {
+      "id": 9,
+      "prompt": "Set up tea-rags in this fresh repo from scratch",
+      "expected": "tea-rags-setup:install",
+      "alt_ok": [],
+      "rationale": "Installation wizard — exact match."
+    },
+    {
+      "id": 10,
+      "prompt": "My indexing is too slow, can we benchmark and tune the performance parameters?",
+      "expected": "tea-rags-setup:tune",
+      "alt_ok": [],
+      "rationale": "Performance tuning — exact match."
+    },
+    {
+      "id": 11,
+      "prompt": "Index the codebase at /Users/me/project",
+      "expected": "tea-rags:index",
+      "alt_ok": [],
+      "rationale": "Indexing command — exact match."
+    },
+    {
+      "id": 12,
+      "prompt": "I want to rebuild the index from scratch with zero downtime",
+      "expected": "tea-rags:force-reindex",
+      "alt_ok": [],
+      "rationale": "Force reindex — exact match."
+    },
+    {
+      "id": 13,
+      "prompt": "How does the EnrichmentCoordinator handle concurrent prefetch?",
+      "expected": "tea-rags:explore",
+      "alt_ok": [],
+      "rationale": "Code understanding question — explore skill."
+    },
+    {
+      "id": 14,
+      "prompt": "Test fails with TypeError: cannot read property 'chunks' of undefined in chunker.test.ts",
+      "expected": "dinopowers:systematic-debugging",
+      "alt_ok": ["tea-rags:bug-hunt"],
+      "rationale": "Concrete failure — debugging skill should fire. Wrapper preferred over parent superpowers:systematic-debugging."
+    },
+    {
+      "id": 15,
+      "prompt": "Падает миграционный тест на CI, не понимаю почему",
+      "expected": "dinopowers:systematic-debugging",
+      "alt_ok": ["tea-rags:bug-hunt"],
+      "rationale": "Russian debugging intent — wrapper should still fire."
+    },
+    {
+      "id": 16,
+      "prompt": "Write a failing test for the new RecencySignal extract() method",
+      "expected": "dinopowers:test-driven-development",
+      "alt_ok": [],
+      "rationale": "TDD wrapper should fire on test-writing intent."
+    },
+    {
+      "id": 17,
+      "prompt": "Implementation is done, all tests pass, ready to commit",
+      "expected": "dinopowers:verification-before-completion",
+      "alt_ok": [],
+      "rationale": "Pre-commit verification — wrapper should fire."
+    },
+    {
+      "id": 18,
+      "prompt": "готово, можно коммитить и пушить",
+      "expected": "dinopowers:verification-before-completion",
+      "alt_ok": [],
+      "rationale": "Russian completion claim — wrapper trigger phrase exists."
+    },
+    {
+      "id": 19,
+      "prompt": "Time to open a PR for this branch and request review",
+      "expected": "dinopowers:requesting-code-review",
+      "alt_ok": [],
+      "rationale": "PR/review request — wrapper should fire."
+    },
+    {
+      "id": 20,
+      "prompt": "Reviewer suggested I rename loadConfig to readConfig — should I?",
+      "expected": "dinopowers:receiving-code-review",
+      "alt_ok": [],
+      "rationale": "Receiving review feedback with rename — exact wrapper trigger."
+    },
+    {
+      "id": 21,
+      "prompt": "PR comment says I should extract this into a helper. Concerned about blast radius.",
+      "expected": "dinopowers:receiving-code-review",
+      "alt_ok": [],
+      "rationale": "Same skill — different wording. Tests if 'PR comment about' trigger holds."
+    },
+    {
+      "id": 22,
+      "prompt": "Let's brainstorm how to redesign the chunker hook system",
+      "expected": "dinopowers:brainstorming",
+      "alt_ok": [],
+      "rationale": "Brainstorm + code area — wrapper should fire."
+    },
+    {
+      "id": 23,
+      "prompt": "Давай обсудим как разбить enrichment на модули",
+      "expected": "dinopowers:brainstorming",
+      "alt_ok": [],
+      "rationale": "Russian brainstorm — wrapper trigger phrase exists."
+    },
+    {
+      "id": 24,
+      "prompt": "Draft an implementation plan for adding sparse vector rebuild migration",
+      "expected": "dinopowers:writing-plans",
+      "alt_ok": [],
+      "rationale": "Plan writing for code change — wrapper should fire."
+    },
+    {
+      "id": 25,
+      "prompt": "Execute Task 3 from the trajectory enrichment plan",
+      "expected": "dinopowers:executing-plans",
+      "alt_ok": [],
+      "rationale": "Plan execution — wrapper should fire."
+    },
+    {
+      "id": 26,
+      "prompt": "Branch is ready to merge to main",
+      "expected": "dinopowers:finishing-a-development-branch",
+      "alt_ok": [],
+      "rationale": "Merge readiness — wrapper should fire."
+    },
+    {
+      "id": 27,
+      "prompt": "Create a new dinopowers wrapper skill for refactoring",
+      "expected": "dinopowers:writing-skills",
+      "alt_ok": [],
+      "rationale": "Wrapper-skill authoring — meta-skill match."
+    },
+    {
+      "id": 28,
+      "prompt": "How healthy is the trajectory domain? Are there hotspot files?",
+      "expected": "tea-rags:risk-assessment",
+      "alt_ok": [],
+      "rationale": "Health/hotspot assessment — risk-assessment skill."
+    },
+    {
+      "id": 29,
+      "prompt": "Implement a function that parses git log output into commit objects",
+      "expected": "tea-rags:data-driven-generation",
+      "alt_ok": [],
+      "rationale": "Code generation intent — data-driven-generation should fire to pull style/templates."
+    },
+    {
+      "id": 30,
+      "prompt": "What's the weather in Moscow today?",
+      "expected": "NONE",
+      "alt_ok": [],
+      "rationale": "Distractor — no skill should fire. Tests false-positive rate."
+    }
+  ]
+}
