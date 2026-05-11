@@ -447,3 +447,77 @@ describe("formatPrime — infra-health and enrichment", () => {
     expect(langIdx).toBeGreaterThan(enrichIdx);
   });
 });
+
+describe("formatPrime — filesCount and embeddingModel", () => {
+  function indexedStatus(overrides: Partial<IndexStatus> = {}): IndexStatus {
+    return statusFixture({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "c",
+      chunksCount: 100,
+      ...overrides,
+    });
+  }
+
+  it("renders filesCount alongside chunks when filesCount is present", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({ filesCount: 327, chunksCount: 4218 }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("indexed · collection `c` · 327 files / 4218 chunks");
+  });
+
+  it("falls back to chunks-only when filesCount is undefined", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({ filesCount: undefined, chunksCount: 4218 }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("indexed · collection `c` · 4218 chunks");
+    expect(out).not.toContain("files /");
+  });
+
+  it("emits 'embedding: <model>' line below status when embeddingModel is set", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({ embeddingModel: "nomic-embed-text" }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("embedding: nomic-embed-text");
+  });
+
+  it("appends '· sparse v<N>' when sparseVersion is set", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({ embeddingModel: "nomic-embed-text", sparseVersion: 3 }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("embedding: nomic-embed-text · sparse v3");
+  });
+
+  it("omits the 'sparse v<N>' suffix when sparseVersion is undefined", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({ embeddingModel: "nomic-embed-text" }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("embedding: nomic-embed-text");
+    expect(out).not.toContain("sparse v");
+  });
+
+  it("omits the embedding line entirely when embeddingModel is undefined", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({ embeddingModel: undefined, sparseVersion: 3 }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).not.toMatch(/^embedding:/m);
+  });
+});

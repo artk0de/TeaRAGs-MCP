@@ -37,6 +37,11 @@ function formatDigest(data: PrimeData, now: Date): string {
     return `${lines.join("\n")}\n`;
   }
 
+  if (data.status.embeddingModel) {
+    const sparse = data.status.sparseVersion !== undefined ? ` · sparse v${data.status.sparseVersion}` : "";
+    lines.push(`embedding: ${data.status.embeddingModel}${sparse}`);
+  }
+
   const staleness = computeStaleness(data.status.lastUpdated, now);
   if (staleness?.stale) {
     lines.push("");
@@ -133,7 +138,12 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
     case "indexing":
       return `indexing in progress (${status.chunksCount ?? 0} chunks so far). Re-prime after completion.`;
     case "indexed": {
-      const base = `indexed · collection \`${status.collectionName ?? "unknown"}\` · ${status.chunksCount ?? 0} chunks`;
+      const collection = `\`${status.collectionName ?? "unknown"}\``;
+      const counts =
+        status.filesCount !== undefined
+          ? `${status.filesCount} files / ${status.chunksCount ?? 0} chunks`
+          : `${status.chunksCount ?? 0} chunks`;
+      const base = `indexed · collection ${collection} · ${counts}`;
       const staleness = computeStaleness(status.lastUpdated, now);
       return staleness ? `${base} · last indexed: ${staleness.ago} ago` : base;
     }
