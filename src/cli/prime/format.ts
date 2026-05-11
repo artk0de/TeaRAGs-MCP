@@ -2,6 +2,9 @@ import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
 import type { PrimeData, PrimeFailureReason } from "./types.js";
 
+type InfraHealth = NonNullable<IndexStatus["infraHealth"]>;
+type EnrichmentMap = NonNullable<IndexStatus["enrichment"]>;
+
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
 export function formatPrime(input: PrimeData | PrimeFailureReason, now: Date = new Date()): string {
@@ -46,6 +49,16 @@ function formatDigest(data: PrimeData, now: Date): string {
   lines.push("");
   lines.push("## Schema drift");
   lines.push(data.drift ?? "none");
+
+  if (data.status.infraHealth) {
+    lines.push("");
+    lines.push(...formatInfraSection(data.status.infraHealth));
+  }
+
+  if (data.status.enrichment) {
+    lines.push("");
+    lines.push(...formatEnrichmentSection(data.status.enrichment));
+  }
 
   // Primary language is derived from IndexMetrics.distributions.language
   // (Record<string, number>, sorted by chunk count desc). IndexStatus.languages
@@ -133,6 +146,34 @@ function computeStaleness(lastUpdated: Date | undefined, now: Date): { ago: stri
   if (!lastUpdated) return null;
   const diffMs = now.getTime() - new Date(lastUpdated).getTime();
   return { ago: formatRelativeTime(diffMs), stale: diffMs > STALE_THRESHOLD_MS };
+}
+
+function formatInfraSection(infra: InfraHealth): string[] {
+  const lines = ["## Infra"];
+  const q = infra.qdrant;
+  let qLine = `qdrant: ${q.status ?? "unknown"} (optimizer ${q.optimizerStatus ?? "unknown"}) at ${q.url}`;
+  if (q.status === "yellow") {
+    qLine += " — background optimization in progress";
+  } else if (q.status === "red") {
+    qLine += " — UNAVAILABLE, search will fail";
+  }
+  lines.push(qLine);
+
+  const e = infra.embedding;
+  const availability = e.available ? "available" : "unavailable";
+  const eAt = e.url ? ` at ${e.url}` : "";
+  lines.push(`embedding: ${availability} · ${e.provider}${eAt}`);
+  return lines;
+}
+
+function formatEnrichmentSection(enrichment: EnrichmentMap): string[] {
+  const lines = ["## Enrichment"];
+  for (const [provider, health] of Object.entries(enrichment)) {
+    const inProgress = health.file.status === "in_progress" || health.chunk.status === "in_progress";
+    const suffix = inProgress ? " (in progress)" : "";
+    lines.push(`${provider}: file ${health.file.status}, chunk ${health.chunk.status}${suffix}`);
+  }
+  return lines;
 }
 
 function formatRelativeTime(diffMs: number): string {

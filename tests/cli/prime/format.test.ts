@@ -284,3 +284,166 @@ describe("formatPrime — staleness (lastUpdated)", () => {
     expect(out).not.toContain("Index is stale");
   });
 });
+
+describe("formatPrime — infra-health and enrichment", () => {
+  function indexedStatus(overrides: Partial<IndexStatus> = {}): IndexStatus {
+    return statusFixture({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "c",
+      chunksCount: 100,
+      ...overrides,
+    });
+  }
+
+  it("omits ## Infra section when infraHealth is undefined", () => {
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null });
+    expect(out).not.toContain("## Infra");
+  });
+
+  it("emits ## Infra with qdrant + embedding lines when infraHealth is present", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({
+        infraHealth: {
+          qdrant: { available: true, url: "http://127.0.0.1:63995", status: "green", optimizerStatus: "ok" },
+          embedding: { available: true, provider: "ollama", url: "http://localhost:11434" },
+        },
+      }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("## Infra");
+    expect(out).toContain("qdrant: green (optimizer ok) at http://127.0.0.1:63995");
+    expect(out).toContain("embedding: available · ollama at http://localhost:11434");
+  });
+
+  it("appends 'background optimization in progress' suffix when qdrant status is yellow", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({
+        infraHealth: {
+          qdrant: { available: true, url: "http://127.0.0.1:63995", status: "yellow", optimizerStatus: "ok" },
+          embedding: { available: true, provider: "ollama" },
+        },
+      }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain(
+      "qdrant: yellow (optimizer ok) at http://127.0.0.1:63995 — background optimization in progress",
+    );
+  });
+
+  it("appends 'UNAVAILABLE, search will fail' suffix when qdrant status is red", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({
+        infraHealth: {
+          qdrant: { available: false, url: "http://127.0.0.1:63995", status: "red" },
+          embedding: { available: true, provider: "ollama" },
+        },
+      }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("qdrant: red");
+    expect(out).toContain("— UNAVAILABLE, search will fail");
+  });
+
+  it("renders embedding as 'unavailable' when infraHealth.embedding.available is false", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({
+        infraHealth: {
+          qdrant: { available: true, url: "x", status: "green", optimizerStatus: "ok" },
+          embedding: { available: false, provider: "ollama", url: "http://localhost:11434" },
+        },
+      }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("embedding: unavailable · ollama at http://localhost:11434");
+  });
+
+  it("omits embedding url when undefined", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({
+        infraHealth: {
+          qdrant: { available: true, url: "x", status: "green", optimizerStatus: "ok" },
+          embedding: { available: true, provider: "onnx" },
+        },
+      }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("embedding: available · onnx");
+    expect(out).not.toContain("at undefined");
+  });
+
+  it("omits ## Enrichment section when enrichment is undefined", () => {
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null });
+    expect(out).not.toContain("## Enrichment");
+  });
+
+  it("emits ## Enrichment with per-provider file/chunk status", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({
+        enrichment: {
+          git: {
+            file: { status: "healthy" },
+            chunk: { status: "healthy" },
+          },
+        },
+      }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("## Enrichment");
+    expect(out).toContain("git: file healthy, chunk healthy");
+  });
+
+  it("appends '(in progress)' suffix when any sub-status is 'in_progress'", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({
+        enrichment: {
+          git: {
+            file: { status: "healthy" },
+            chunk: { status: "in_progress" },
+          },
+        },
+      }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).toContain("git: file healthy, chunk in_progress (in progress)");
+  });
+
+  it("places ## Infra and ## Enrichment AFTER Schema drift, BEFORE Polyglot", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexedStatus({
+        infraHealth: {
+          qdrant: { available: true, url: "x", status: "green", optimizerStatus: "ok" },
+          embedding: { available: true, provider: "ollama" },
+        },
+        enrichment: {
+          git: { file: { status: "healthy" }, chunk: { status: "healthy" } },
+        },
+      }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+    });
+    const driftIdx = out.indexOf("## Schema drift");
+    const infraIdx = out.indexOf("## Infra");
+    const enrichIdx = out.indexOf("## Enrichment");
+    const langIdx = out.indexOf("## Language");
+    expect(driftIdx).toBeGreaterThanOrEqual(0);
+    expect(infraIdx).toBeGreaterThan(driftIdx);
+    expect(enrichIdx).toBeGreaterThan(infraIdx);
+    expect(langIdx).toBeGreaterThan(enrichIdx);
+  });
+});
