@@ -79,3 +79,30 @@ describe("runPrime — happy path", () => {
     expect(cleanupMock).toHaveBeenCalled();
   });
 });
+
+describe("runPrime — failure paths", () => {
+  it("does NOT call createAppContext when path is missing", async () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+    createAppContextMock.mockClear();
+    pingMock.mockClear();
+
+    await runPrime("/missing/dir");
+
+    expect(createAppContextMock).not.toHaveBeenCalled();
+    expect(pingMock).not.toHaveBeenCalled();
+    expect(writeMock).toHaveBeenCalledTimes(1);
+    expect(writeMock.mock.calls[0][0]).toContain("Path not found: /missing/dir");
+  });
+
+  it("does NOT call createAppContext when Qdrant ping fails", async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(false);
+    createAppContextMock.mockClear();
+
+    await runPrime("/some/project");
+
+    expect(createAppContextMock).not.toHaveBeenCalled();
+    expect(writeMock).toHaveBeenCalledTimes(1);
+    expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
+  });
+});
