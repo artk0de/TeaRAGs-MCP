@@ -599,3 +599,40 @@ describe("formatPrime — polyglot whitelist + threshold rounding", () => {
     expect(out).not.toMatch(/\.\d{4,}/); // no four-or-more-decimal artifacts
   });
 });
+
+describe("formatPrime — refresh footer", () => {
+  function indexedStatus(): IndexStatus {
+    return statusFixture({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "c",
+      chunksCount: 100,
+    });
+  }
+
+  it("appends shell-command refresh hint at the end of an indexed digest", () => {
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null });
+    expect(out).toContain('→ run `tea-rags prime "$CLAUDE_PROJECT_DIR"` to refresh this digest after re-indexing');
+    const lastLine = out
+      .trimEnd()
+      .split("\n")
+      .filter((l) => l.length > 0)
+      .pop();
+    expect(lastLine).toContain("→ run `tea-rags prime");
+  });
+
+  it("does NOT append refresh hint when status is not 'indexed'", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ status: "not_indexed" }),
+      metrics: null,
+      drift: null,
+    });
+    expect(out).not.toContain('tea-rags prime "$CLAUDE_PROJECT_DIR"');
+  });
+
+  it("does NOT append refresh hint to placeholder failures", () => {
+    const out = formatPrime({ kind: "qdrant-cold", path: "/p" });
+    expect(out).not.toContain("refresh this digest");
+  });
+});

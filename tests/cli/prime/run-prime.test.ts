@@ -105,4 +105,28 @@ describe("runPrime — failure paths", () => {
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
   });
+
+  it("emits qdrant-cold placeholder + cleans up when getIndexStatus rejects after bootstrap", async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    pingMock.mockResolvedValue(true);
+    const cleanupMock = vi.fn();
+    const getStatusMock = vi.fn().mockRejectedValue(new Error("connection refused"));
+    const getMetricsMock = vi.fn().mockResolvedValue({});
+    const checkDriftMock = vi.fn().mockResolvedValue(null);
+
+    createAppContextMock.mockResolvedValue({
+      app: {
+        getIndexStatus: getStatusMock,
+        getIndexMetrics: getMetricsMock,
+        checkSchemaDrift: checkDriftMock,
+      },
+      cleanup: cleanupMock,
+    });
+
+    await runPrime("/some/project");
+
+    expect(writeMock).toHaveBeenCalledTimes(1);
+    expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
+    expect(cleanupMock).toHaveBeenCalled();
+  });
 });

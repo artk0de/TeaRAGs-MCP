@@ -82,6 +82,9 @@ function formatDigest(data: PrimeData, now: Date): string {
     }
   }
 
+  lines.push("");
+  lines.push('→ run `tea-rags prime "$CLAUDE_PROJECT_DIR"` to refresh this digest after re-indexing');
+
   return `${lines.join("\n")}\n`;
 }
 
