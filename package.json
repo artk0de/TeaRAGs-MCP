@@ -61,7 +61,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
-    "@qdrant/js-client-rest": "^1.17.0",
+    "@qdrant/js-client-rest": "1.17.0",
     "bottleneck": "^2.19.5",
     "cohere-ai": "^7.21.0",
     "diff": "^8.0.4",
