@@ -34,7 +34,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
       ctx.filter,
     );
 
-    // Client-side grouping for file level (queryGroups doesn't support RRF fusion)
+    // queryGroups has no fusion=rrf option; fetch limit*3 above and group client-side.
     if (ctx.level === "file") {
       return this.groupByFile(results, ctx.limit);
     }
