@@ -201,9 +201,9 @@ reports.
 **MCP tool:** `hybrid_search`
 
 Combines **semantic (vector)** similarity with **keyword (BM25)** matching and
-merges rankings via **Reciprocal Rank Fusion (RRF)**. Returns the same
-structured JSON as `semantic_search`, with the same features (metaOnly, filters,
-all rerank presets).
+merges rankings **server-side** via Qdrant's **Reciprocal Rank Fusion (RRF)**.
+Returns the same structured JSON as `semantic_search`, with the same features
+(metaOnly, filters, all rerank presets).
 
 ### When to use
 
@@ -219,11 +219,14 @@ identifiers:
 
 1. **Dense vector generation** — your query is embedded using the configured
    provider (Ollama, OpenAI, etc.)
-2. **Sparse vector generation** — the query is tokenized and BM25 scores are
-   calculated
-3. **Parallel search** — both vector types are searched simultaneously in Qdrant
-4. **Result fusion** — RRF combines rankings from both searches
-5. **Final ranking** — merged results with combined relevance scores
+2. **Sparse vector generation** — the query is tokenized and BM25 term-frequency
+   weights are calculated (IDF is applied server-side by Qdrant)
+3. **Single Qdrant query** — both vectors are sent in one `query` request with
+   `prefetch[]`; dense and sparse retrieval run inside Qdrant
+4. **Server-side RRF fusion** — Qdrant 1.17 merges the two rankings and returns
+   a single result set
+5. **Optional reranking** — if a `rerank` preset or custom weights are supplied,
+   tea-rags applies signal-based reweighting on top of the RRF result
 
 ### RRF formula
 
@@ -231,18 +234,22 @@ Rankings from the semantic and keyword searches are fused using Reciprocal Rank
 Fusion:
 
 ```
-score = sum( 1 / (k + rank_i) )   where k = 60 (default)
+score = sum( 1 / (k + rank_i) )   where k = 60 (Qdrant default)
 ```
 
 RRF does not require score normalization and is robust to differences in score
-scales between the two retrieval methods.
+scales between the two retrieval methods — a high-confidence BM25 match at rank
+1 contributes the same `1/(k+0)` regardless of its absolute score, so exact
+identifier hits cannot be drowned out by mediocre semantic scores.
 
 ### BM25 sparse vectors
 
-The server uses a lightweight BM25 implementation for sparse vectors:
+The server uses a code-aware BM25 implementation for sparse vectors:
 
-- **Tokenization**: lowercase + whitespace splitting
-- **IDF scoring**: inverse document frequency
+- **Tokenization**: code-aware splitting of camelCase, PascalCase, snake_case,
+  SCREAMING_CASE, kebab-case and digit-letter boundaries; lowercased after split
+- **IDF scoring**: applied server-side by Qdrant via the collection's
+  `modifier: "idf"` setting (clients send TF-only weights)
 - **Parameters**: k1 = 1.2, b = 0.75
 
 ### Comparison: Semantic vs Hybrid
@@ -265,7 +272,8 @@ Existing collections cannot be converted to hybrid after creation.
 
 - **Storage**: hybrid collections require more space (dense + sparse vectors)
 - **Indexing**: slightly slower due to dual vector generation
-- **Query time**: two parallel searches plus RRF fusion
+- **Query time**: single round-trip — Qdrant runs both prefetches and RRF
+  fusion server-side; no client-side score normalization or blending
 - **Scalability**: Qdrant optimizes both vector types efficiently
 
 ## Filtered Search
