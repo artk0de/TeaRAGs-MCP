@@ -18,11 +18,13 @@ import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
 import type { EmbeddingModelGuard } from "../../infra/embedding-model-guard.js";
+import type { ProjectInfo } from "../../infra/registry/index.js";
 import type { SchemaDriftMonitor } from "../../infra/schema-drift-monitor.js";
 import type { ExploreFacade } from "../internal/facades/explore-facade.js";
 import type { IngestFacade } from "../internal/facades/ingest-facade.js";
 import { CollectionOps } from "../internal/ops/collection-ops.js";
 import { DocumentOps } from "../internal/ops/document-ops.js";
+import type { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
 import type {
   AddDocumentsRequest,
   ChangeStats,
@@ -83,6 +85,14 @@ export interface App {
 
   // -- Drift monitoring (→ SchemaDriftMonitor via deps) --
   checkSchemaDrift: (ref: { path: string } | { collection: string }) => Promise<string | null>;
+
+  // -- Project registry (→ internal/ops/project-registry-ops.ts) --
+  registerProject: (input: {
+    path: string;
+    name: string;
+  }) => Promise<{ collectionName: string; alreadyIndexed: boolean }>;
+  listProjects: () => Promise<{ projects: ProjectInfo[] }>;
+  unregisterProject: (input: { name: string }) => Promise<{ removed: boolean }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +106,7 @@ export interface AppDeps {
   explore: ExploreFacade;
   reranker: Reranker;
   schemaDriftMonitor: SchemaDriftMonitor;
+  projectRegistryOps: ProjectRegistryOps;
   quantizationScalar: boolean;
   modelGuard?: EmbeddingModelGuard;
 }
@@ -159,5 +170,10 @@ export function createApp(deps: AppDeps): App {
       if ("path" in ref) return deps.schemaDriftMonitor.checkAndConsume(ref.path);
       return deps.schemaDriftMonitor.checkByCollectionName(ref.collection);
     },
+
+    // -- Project registry — delegate to ProjectRegistryOps --
+    registerProject: async (input) => deps.projectRegistryOps.register(input),
+    listProjects: async () => deps.projectRegistryOps.list(),
+    unregisterProject: async (input) => deps.projectRegistryOps.unregister(input),
   };
 }

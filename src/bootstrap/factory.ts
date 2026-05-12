@@ -18,6 +18,7 @@ import {
   SchemaBuilder,
   type App,
 } from "../core/api/index.js";
+import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
@@ -178,6 +179,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     ioConcurrency: zodConfig.ingest.tune.ioConcurrency,
   };
 
+  const collectionRegistry = new CollectionRegistry(config.paths.appData);
   const ingest = new IngestFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -192,13 +194,20 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     syncTuning,
     snapshotDir: config.paths.snapshots,
     modelGuard: infra.modelGuard,
+    collectionRegistry,
+    teaRagsVersion: pkg.version,
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [
     ...composition.allPayloadSignalDescriptors.map((d) => d.key),
     "navigation",
   ]);
-  const collectionRegistry = new CollectionRegistry(config.paths.appData);
+  const projectRegistryOps = new ProjectRegistryOps({
+    registry: collectionRegistry,
+    qdrant: infra.qdrant,
+    embeddings: infra.embeddings,
+    snapshotDir: config.paths.snapshots,
+  });
   const explore = new ExploreFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -218,6 +227,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     explore,
     reranker: composition.reranker,
     schemaDriftMonitor,
+    projectRegistryOps,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     modelGuard: infra.modelGuard,
   });
