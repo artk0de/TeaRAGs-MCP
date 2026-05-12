@@ -1,5 +1,6 @@
 import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
+import { formatForPrime } from "../update-check/format.js";
 import type { PrimeData, PrimeFailureReason } from "./types.js";
 
 type InfraHealth = NonNullable<IndexStatus["infraHealth"]>;
@@ -79,6 +80,14 @@ function formatDigest(data: PrimeData, now: Date): string {
     if (primary && data.metrics.signals[primary]) {
       lines.push("");
       lines.push(...formatThresholdsSection(primary, data.metrics.signals[primary]));
+    }
+  }
+
+  if (data.update !== null) {
+    const updateLines = formatForPrime(data.update);
+    if (updateLines.length > 0) {
+      lines.push("");
+      lines.push(...updateLines);
     }
   }
 

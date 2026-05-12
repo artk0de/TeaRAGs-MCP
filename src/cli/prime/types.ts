@@ -1,14 +1,18 @@
 import type { IndexMetrics, IndexStatus } from "../../core/api/public/dto/index.js";
+import type { UpdateStatus } from "../update-check/types.js";
 
 /**
  * Successful prime data — index reachable, status fetched.
  * `metrics` is null when the project is not yet indexed (status !== "indexed").
+ * `update` is null when the prime path did not request an update check
+ *   (e.g. degraded path) or the field was never populated.
  */
 export interface PrimeData {
   path: string;
   status: IndexStatus;
   metrics: IndexMetrics | null;
   drift: string | null;
+  update: UpdateStatus | null;
 }
 
 /**

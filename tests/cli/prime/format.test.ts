@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { formatPrime } from "../../../src/cli/prime/format.js";
+import { available, unavailable, upToDate } from "../../../src/cli/update-check/types.js";
 import type { IndexStatus } from "../../../src/core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../../src/core/api/public/dto/metrics.js";
 
@@ -62,6 +63,7 @@ describe("formatPrime", () => {
         status: statusFixture({ status: "not_indexed" }),
         metrics: null,
         drift: null,
+        update: null,
       });
       expect(out).toContain("## Status");
       expect(out).toContain("not indexed. Run `/tea-rags:index`");
@@ -73,6 +75,7 @@ describe("formatPrime", () => {
         status: statusFixture({ status: "stale_indexing" }),
         metrics: null,
         drift: null,
+        update: null,
       });
       expect(out).toContain("stale indexing marker");
       expect(out).toContain("Re-run /tea-rags:index");
@@ -84,6 +87,7 @@ describe("formatPrime", () => {
         status: statusFixture({ status: "indexing", chunksCount: 412 }),
         metrics: null,
         drift: null,
+        update: null,
       });
       expect(out).toContain("indexing in progress (412 chunks so far)");
       expect(out).not.toContain("## Polyglot");
@@ -101,6 +105,7 @@ describe("formatPrime", () => {
         }),
         metrics: null,
         drift: null,
+        update: null,
       });
       expect(out).toContain("indexed · collection `code_27622aef` · 4218 chunks");
     });
@@ -119,6 +124,7 @@ describe("formatPrime — polyglot + thresholds", () => {
       }),
       metrics: metricsFixture(),
       drift: null,
+      update: null,
     });
     expect(out).toContain("## Polyglot");
     expect(out).toContain("primary: typescript");
@@ -137,6 +143,7 @@ describe("formatPrime — polyglot + thresholds", () => {
       }),
       metrics: monolingualMetricsFixture(),
       drift: null,
+      update: null,
     });
     expect(out).toContain("## Language");
     expect(out).toContain("typescript");
@@ -154,6 +161,7 @@ describe("formatPrime — polyglot + thresholds", () => {
       }),
       metrics: monolingualMetricsFixture(),
       drift: null,
+      update: null,
     });
     expect(out).toContain("## Signal thresholds — typescript");
     expect(out).toContain("git.file.commitCount");
@@ -171,6 +179,7 @@ describe("formatPrime — polyglot + thresholds", () => {
       }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("## Status");
     expect(out).not.toContain("## Signal thresholds");
@@ -189,6 +198,7 @@ describe("formatPrime — schema drift", () => {
       }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("## Schema drift");
     expect(out).toContain("none");
@@ -205,6 +215,7 @@ describe("formatPrime — schema drift", () => {
       }),
       metrics: null,
       drift: "New fields: navigation. Run index_codebase with forceReindex=true.",
+      update: null,
     });
     expect(out).toContain("## Schema drift");
     expect(out).toContain("New fields: navigation");
@@ -217,6 +228,7 @@ describe("formatPrime — schema drift", () => {
       status: statusFixture({ status: "not_indexed" }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).not.toContain("## Schema drift");
   });
@@ -237,39 +249,57 @@ describe("formatPrime — staleness (lastUpdated)", () => {
 
   it("renders 'last indexed: 2h ago' when lastUpdated is 2h before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 2 * 60 * 60 * 1000);
-    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    const out = formatPrime(
+      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      NOW,
+    );
     expect(out).toContain("last indexed: 2h ago");
   });
 
   it("renders 'last indexed: 5d ago' when lastUpdated is 5d before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 5 * 24 * 60 * 60 * 1000);
-    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    const out = formatPrime(
+      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      NOW,
+    );
     expect(out).toContain("last indexed: 5d ago");
   });
 
   it("renders 'last indexed: 30m ago' when lastUpdated is 30 minutes before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 30 * 60 * 1000);
-    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    const out = formatPrime(
+      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      NOW,
+    );
     expect(out).toContain("last indexed: 30m ago");
   });
 
   it("does NOT emit stale warning when lastUpdated is ≤24h before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 23 * 60 * 60 * 1000);
-    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    const out = formatPrime(
+      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      NOW,
+    );
     expect(out).not.toContain("Index is stale");
     expect(out).not.toContain("Run `index_codebase`");
   });
 
   it("emits stale warning recommending index_codebase when lastUpdated > 24h before now", () => {
     const lastUpdated = new Date(NOW.getTime() - 3 * 24 * 60 * 60 * 1000);
-    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    const out = formatPrime(
+      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      NOW,
+    );
     expect(out).toContain("⚠ Index is stale (last updated 3d ago)");
     expect(out).toContain("Run `index_codebase` before the next tea-rags search/explore");
   });
 
   it("places stale warning AFTER Status block and BEFORE Schema drift", () => {
     const lastUpdated = new Date(NOW.getTime() - 2 * 24 * 60 * 60 * 1000);
-    const out = formatPrime({ path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null }, NOW);
+    const out = formatPrime(
+      { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
+      NOW,
+    );
     const statusIdx = out.indexOf("## Status");
     const warnIdx = out.indexOf("⚠ Index is stale");
     const driftIdx = out.indexOf("## Schema drift");
@@ -279,7 +309,10 @@ describe("formatPrime — staleness (lastUpdated)", () => {
   });
 
   it("omits 'last indexed' line entirely when lastUpdated is undefined", () => {
-    const out = formatPrime({ path: "/p", status: indexedFixture(undefined), metrics: null, drift: null }, NOW);
+    const out = formatPrime(
+      { path: "/p", status: indexedFixture(undefined), metrics: null, drift: null, update: null },
+      NOW,
+    );
     expect(out).not.toContain("last indexed");
     expect(out).not.toContain("Index is stale");
   });
@@ -297,7 +330,7 @@ describe("formatPrime — infra-health and enrichment", () => {
   }
 
   it("omits ## Infra section when infraHealth is undefined", () => {
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null });
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null, update: null });
     expect(out).not.toContain("## Infra");
   });
 
@@ -312,6 +345,7 @@ describe("formatPrime — infra-health and enrichment", () => {
       }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("## Infra");
     expect(out).toContain("qdrant: green (optimizer ok) at http://127.0.0.1:63995");
@@ -329,6 +363,7 @@ describe("formatPrime — infra-health and enrichment", () => {
       }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain(
       "qdrant: yellow (optimizer ok) at http://127.0.0.1:63995 — background optimization in progress",
@@ -346,6 +381,7 @@ describe("formatPrime — infra-health and enrichment", () => {
       }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("qdrant: red");
     expect(out).toContain("— UNAVAILABLE, search will fail");
@@ -362,6 +398,7 @@ describe("formatPrime — infra-health and enrichment", () => {
       }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("embedding: unavailable · ollama at http://localhost:11434");
   });
@@ -377,13 +414,14 @@ describe("formatPrime — infra-health and enrichment", () => {
       }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("embedding: available · onnx");
     expect(out).not.toContain("at undefined");
   });
 
   it("omits ## Enrichment section when enrichment is undefined", () => {
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null });
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null, update: null });
     expect(out).not.toContain("## Enrichment");
   });
 
@@ -400,6 +438,7 @@ describe("formatPrime — infra-health and enrichment", () => {
       }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("## Enrichment");
     expect(out).toContain("git: file healthy, chunk healthy");
@@ -418,6 +457,7 @@ describe("formatPrime — infra-health and enrichment", () => {
       }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("git: file healthy, chunk in_progress (in progress)");
   });
@@ -436,6 +476,7 @@ describe("formatPrime — infra-health and enrichment", () => {
       }),
       metrics: monolingualMetricsFixture(),
       drift: null,
+      update: null,
     });
     const driftIdx = out.indexOf("## Schema drift");
     const infraIdx = out.indexOf("## Infra");
@@ -465,6 +506,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
       status: indexedStatus({ filesCount: 327, chunksCount: 4218 }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("indexed · collection `c` · 327 files / 4218 chunks");
   });
@@ -475,6 +517,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
       status: indexedStatus({ filesCount: undefined, chunksCount: 4218 }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("indexed · collection `c` · 4218 chunks");
     expect(out).not.toContain("files /");
@@ -486,6 +529,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
       status: indexedStatus({ embeddingModel: "nomic-embed-text" }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("embedding: nomic-embed-text");
   });
@@ -496,6 +540,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
       status: indexedStatus({ embeddingModel: "nomic-embed-text", sparseVersion: 3 }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("embedding: nomic-embed-text · sparse v3");
   });
@@ -506,6 +551,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
       status: indexedStatus({ embeddingModel: "nomic-embed-text" }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).toContain("embedding: nomic-embed-text");
     expect(out).not.toContain("sparse v");
@@ -517,6 +563,7 @@ describe("formatPrime — filesCount and embeddingModel", () => {
       status: indexedStatus({ embeddingModel: undefined, sparseVersion: 3 }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).not.toMatch(/^embedding:/m);
   });
@@ -553,7 +600,7 @@ describe("formatPrime — polyglot whitelist + threshold rounding", () => {
       },
       signals: {},
     };
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: dirtyMetrics, drift: null });
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: dirtyMetrics, drift: null, update: null });
     expect(out).toContain("primary: typescript");
     expect(out).toContain("also: python");
     for (const artifact of ["code", "bash", "text", "gitignore", "powershell", "yaml", "json"]) {
@@ -592,7 +639,7 @@ describe("formatPrime — polyglot whitelist + threshold rounding", () => {
         },
       },
     };
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: noisyMetrics, drift: null });
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: noisyMetrics, drift: null, update: null });
     expect(out).toContain("critical ≤53.25");
     expect(out).toContain("stable ≤7.88");
     expect(out).toContain("erratic ≤14.01");
@@ -611,7 +658,7 @@ describe("formatPrime — refresh footer", () => {
   }
 
   it("appends shell-command refresh hint at the end of an indexed digest", () => {
-    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null });
+    const out = formatPrime({ path: "/p", status: indexedStatus(), metrics: null, drift: null, update: null });
     expect(out).toContain('→ run `tea-rags prime "$CLAUDE_PROJECT_DIR"` to refresh this digest after re-indexing');
     const lastLine = out
       .trimEnd()
@@ -627,6 +674,7 @@ describe("formatPrime — refresh footer", () => {
       status: statusFixture({ status: "not_indexed" }),
       metrics: null,
       drift: null,
+      update: null,
     });
     expect(out).not.toContain('tea-rags prime "$CLAUDE_PROJECT_DIR"');
   });
@@ -634,5 +682,54 @@ describe("formatPrime — refresh footer", () => {
   it("does NOT append refresh hint to placeholder failures", () => {
     const out = formatPrime({ kind: "qdrant-cold", path: "/p" });
     expect(out).not.toContain("refresh this digest");
+  });
+});
+
+describe("formatPrime — tea-rags package section", () => {
+  it("includes the `## tea-rags package` section when update.kind === 'available'", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ status: "indexed", chunksCount: 1, collectionName: "c" }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+      update: available("1.23.1", "1.24.0"),
+    });
+    expect(out).toContain("## tea-rags package");
+    expect(out).toContain("current:   1.23.1");
+    expect(out).toContain("available: 1.24.0");
+    expect(out).toContain("changelog: https://github.com/artk0de/TeaRAGs-MCP/releases/tag/v1.24.0");
+  });
+
+  it("omits the section when update.kind === 'up-to-date'", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ status: "indexed", chunksCount: 1, collectionName: "c" }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+      update: upToDate("1.23.1"),
+    });
+    expect(out).not.toContain("## tea-rags package");
+  });
+
+  it("omits the section when update.kind === 'unavailable'", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ status: "indexed", chunksCount: 1, collectionName: "c" }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+      update: unavailable("timeout"),
+    });
+    expect(out).not.toContain("## tea-rags package");
+  });
+
+  it("omits the section when update is null", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ status: "indexed", chunksCount: 1, collectionName: "c" }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+      update: null,
+    });
+    expect(out).not.toContain("## tea-rags package");
   });
 });
