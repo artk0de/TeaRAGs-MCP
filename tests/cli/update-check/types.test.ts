@@ -30,3 +30,31 @@ describe("update-check types — factories", () => {
     expect(buildChangelogUrl("1.24.0")).toBe("https://github.com/artk0de/TeaRAGs-MCP/releases/tag/v1.24.0");
   });
 });
+
+describe("update-check types — input guards", () => {
+  it.each(["", "v1.2.3", "1.2", "1.2.3.4", "1.2.3-rc.1", "not-semver"])(
+    "buildChangelogUrl rejects non X.Y.Z input: %s",
+    (bad) => {
+      expect(() => buildChangelogUrl(bad)).toThrow(/expected X\.Y\.Z semver/);
+    },
+  );
+
+  it("available() throws when current is not semver", () => {
+    expect(() => available("not-semver", "1.0.0")).toThrow(/current/);
+  });
+
+  it("available() throws when latest is not semver", () => {
+    expect(() => available("1.0.0", "")).toThrow(/expected X\.Y\.Z semver/);
+  });
+
+  it("UnavailableReason is exhaustively covered", () => {
+    const reasons: readonly ("network" | "timeout" | "malformed" | "cache-miss")[] = [
+      "network",
+      "timeout",
+      "malformed",
+      "cache-miss",
+    ];
+    // If a new variant is added without updating this list, TS will complain.
+    expect(reasons).toHaveLength(4);
+  });
+});

@@ -14,24 +14,35 @@ export type UnavailableReason = "network" | "timeout" | "malformed" | "cache-mis
 
 /** Cached on-disk envelope around UpdateStatus. */
 export interface CacheEntry {
-  status: UpdateStatus;
-  fetchedAt: number; // epoch ms
-  ttlMs: number; // 86_400_000 positive / 300_000 negative
+  readonly status: UpdateStatus;
+  readonly fetchedAt: number;
+  readonly ttlMs: number;
 }
 
 /** Options consumed by UpdateCheckService.checkForUpdate. */
 export interface CheckOptions {
-  allowNetwork: boolean;
-  timeoutMs?: number;
-  preferCache: boolean;
+  readonly allowNetwork: boolean;
+  readonly timeoutMs?: number;
+  readonly preferCache: boolean;
 }
+
+// Duplicated intentionally — Task 2 introduces semver.ts and dedupes.
+// Keeping inline here keeps Task 1 independent of Task 2.
+const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
 /** GitHub release URL for a given tea-rags version tag. */
 export function buildChangelogUrl(version: string): string {
+  if (!SEMVER_RE.test(version)) {
+    throw new Error(`buildChangelogUrl: expected X.Y.Z semver, got: ${version}`);
+  }
   return `https://github.com/artk0de/TeaRAGs-MCP/releases/tag/v${version}`;
 }
 
 export function available(current: string, latest: string): UpdateStatus {
+  if (!SEMVER_RE.test(current)) {
+    throw new Error(`available: expected X.Y.Z semver for current, got: ${current}`);
+  }
+  // buildChangelogUrl validates `latest` for us.
   return {
     kind: "available",
     current,
