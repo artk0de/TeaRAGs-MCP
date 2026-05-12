@@ -1,9 +1,11 @@
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
+import { listProjectsCommand } from "./commands/list-projects.js";
 import { registerProjectCommand } from "./commands/register-project.js";
 import { serverCommand } from "./commands/server.js";
 import { tuneCommand } from "./commands/tune.js";
+import { unregisterProjectCommand } from "./commands/unregister-project.js";
 
 /**
  * Create a yargs CLI instance.
@@ -15,6 +17,8 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .command(serverCommand)
     .command(tuneCommand)
     .command(registerProjectCommand)
+    .command(listProjectsCommand)
+    .command(unregisterProjectCommand)
     .demandCommand(1, "Please specify a command. Run with --help to see available commands.")
     .strict()
     .help();
