@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { QdrantClient } from "@qdrant/js-client-rest";
 
+import { InvalidQueryError } from "../../domains/explore/errors.js";
 import { QdrantAliasManager } from "./aliases.js";
 import type { StartupPhase } from "./embedded/types.js";
 import {
@@ -944,8 +945,14 @@ export class QdrantManager {
   }
 
   /**
-   * Performs hybrid search combining semantic vector search with sparse vector (keyword) search.
-   * Runs both searches in parallel, normalizes scores via min-max, and blends with semanticWeight.
+   * Performs hybrid search combining dense and sparse retrieval using Qdrant's
+   * server-side RRF (Reciprocal Rank Fusion) via the Query API. Issues a single
+   * request with two prefetches.
+   *
+   * @param semanticWeight Optional weight for the dense sub-query in weighted RRF.
+   *                       If omitted, plain RRF (equal weights, Qdrant default k)
+   *                       is used. If provided, must be in [0, 1]; the sparse
+   *                       weight is implicitly (1 - semanticWeight).
    */
   async hybridSearch(
     collectionName: string,
@@ -953,10 +960,15 @@ export class QdrantManager {
     sparseVector: SparseVector,
     fetchLimit: number,
     filter?: Record<string, unknown>,
-    semanticWeight = 0.7,
+    semanticWeight?: number,
   ): Promise<SearchResult[]> {
-    // Convert simple key-value filter to Qdrant filter format
-    let qdrantFilter: Record<string, unknown> | null | undefined;
+    if (semanticWeight !== undefined) {
+      if (!Number.isFinite(semanticWeight) || semanticWeight < 0 || semanticWeight > 1) {
+        throw new InvalidQueryError("semanticWeight must be a finite number in [0, 1]");
+      }
+    }
+
+    let qdrantFilter: Record<string, unknown> | undefined;
     if (filter && Object.keys(filter).length > 0) {
       if (filter.must || filter.should || filter.must_not) {
         qdrantFilter = filter;
@@ -970,69 +982,30 @@ export class QdrantManager {
       }
     }
 
-    const sparseWeight = 1 - semanticWeight;
+    const fusionQuery =
+      semanticWeight === undefined
+        ? { fusion: "rrf" as const }
+        : { rrf: { weights: [semanticWeight, 1 - semanticWeight] } };
 
     try {
-      // Run dense and sparse searches in parallel
-      const [denseResults, sparseResults] = await Promise.all([
-        this.call(async () =>
-          this.client.search(collectionName, {
-            vector: { name: "dense", vector: denseVector },
-            limit: fetchLimit,
-            filter: qdrantFilter,
-            with_payload: true,
-          }),
-        ),
-        this.call(async () =>
-          this.client.search(collectionName, {
-            vector: { name: "text", vector: sparseVector },
-            limit: fetchLimit,
-            filter: qdrantFilter,
-            with_payload: true,
-          }),
-        ),
-      ]);
+      const response = await this.call(async () =>
+        this.client.query(collectionName, {
+          prefetch: [
+            { query: denseVector, using: "dense", limit: fetchLimit, filter: qdrantFilter },
+            { query: sparseVector, using: "text", limit: fetchLimit, filter: qdrantFilter },
+          ],
+          query: fusionQuery,
+          limit: fetchLimit,
+          filter: qdrantFilter,
+          with_payload: true,
+        } as Parameters<QdrantClient["query"]>[1]),
+      );
 
-      // Min-max normalize scores per source
-      const normDense = minMaxNorm(denseResults.map((r) => r.score));
-      const normSparse = minMaxNorm(sparseResults.map((r) => r.score));
-
-      // Build score maps: id -> normalized score
-      const denseScores = new Map<string, number>();
-      for (let i = 0; i < denseResults.length; i++) {
-        denseScores.set(String(denseResults[i].id), normDense[i]);
-      }
-      const sparseScores = new Map<string, number>();
-      for (let i = 0; i < sparseResults.length; i++) {
-        sparseScores.set(String(sparseResults[i].id), normSparse[i]);
-      }
-
-      // Merge: union of all IDs, weighted combination
-      const allIds = new Map<string, true>();
-      denseScores.forEach((_, id) => allIds.set(id, true));
-      sparseScores.forEach((_, id) => allIds.set(id, true));
-      const merged: SearchResult[] = [];
-
-      allIds.forEach((_, id) => {
-        const ds = denseScores.get(id) ?? 0;
-        const ss = sparseScores.get(id) ?? 0;
-        const score = semanticWeight * ds + sparseWeight * ss;
-
-        // Get payload from whichever source has it
-        const point = denseResults.find((r) => String(r.id) === id) ?? sparseResults.find((r) => String(r.id) === id);
-
-        if (point) {
-          merged.push({
-            id: point.id,
-            score,
-            payload: (point.payload as Record<string, unknown> | null | undefined) ?? undefined,
-          });
-        }
-      });
-
-      // Sort by fused score descending
-      merged.sort((a, b) => b.score - a.score);
-      return merged;
+      return (response.points ?? []).map((point) => ({
+        id: point.id,
+        score: point.score ?? 0,
+        payload: (point.payload as Record<string, unknown> | null | undefined) ?? undefined,
+      }));
     } catch (error: unknown) {
       if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
@@ -1346,14 +1319,4 @@ function isConnectionError(error: unknown): boolean {
   }
 
   return false;
-}
-
-/** Min-max normalize an array of scores to [0, 1]. */
-function minMaxNorm(scores: number[]): number[] {
-  if (scores.length === 0) return [];
-  const min = Math.min(...scores);
-  const max = Math.max(...scores);
-  const range = max - min;
-  if (range === 0) return scores.map(() => 1);
-  return scores.map((s) => (s - min) / range);
 }
