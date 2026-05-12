@@ -265,6 +265,18 @@ Once the MCP server is registered, install the skills plugin to get
 - [Create Your First Index](/quickstart/create-first-index) — index a codebase
 - [Skills](/usage/skills) — playbooks the skills plugin activates
 
+## Keeping up to date
+
+When a newer version of tea-rags is published, run:
+
+```bash
+tea-rags update
+```
+
+This pulls the latest version from npm. The `tea-rags prime` command also
+surfaces a notice when a new version is available — see [Keeping tea-rags
+up to date](../usage/updating.md) for the full mechanics.
+
 ## Build from Source (contributors)
 
 <details>
