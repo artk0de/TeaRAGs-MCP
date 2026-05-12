@@ -22,7 +22,9 @@ describe("project registry errors", () => {
 
   it("ProjectNameInvalidError reports reason", () => {
     const e = new ProjectNameInvalidError("BAD", "regex");
-    expect(e.message).toContain("regex");
+    expect(e.message).toContain("contains invalid characters");
+    expect(new ProjectNameInvalidError("X", "tooLong").message).toContain("exceeds maximum length");
+    expect(new ProjectNameInvalidError("", "empty").message).toContain("is empty");
   });
 
   it("PathDoesNotExistError quotes the path", () => {

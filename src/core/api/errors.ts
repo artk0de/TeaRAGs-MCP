@@ -91,11 +91,23 @@ export class ProjectNameNotUniqueError extends InputValidationError {
  */
 export class ProjectNameInvalidError extends InputValidationError {
   constructor(name: string, reason: "regex" | "tooLong" | "empty") {
+    const reasonPhrase = ProjectNameInvalidError.reasonToPhrase(reason);
     super({
       code: "INPUT_PROJECT_NAME_INVALID",
-      message: `Project name '${name}' is invalid: ${reason}`,
+      message: `Project name '${name}' is invalid: ${reasonPhrase}`,
       hint: "Names must be non-empty, within length limits, and match the allowed character set.",
     });
+  }
+
+  private static reasonToPhrase(reason: "regex" | "tooLong" | "empty"): string {
+    switch (reason) {
+      case "regex":
+        return "contains invalid characters";
+      case "tooLong":
+        return "exceeds maximum length";
+      case "empty":
+        return "is empty";
+    }
   }
 }
 
@@ -105,7 +117,7 @@ export class ProjectNameInvalidError extends InputValidationError {
 export class PathDoesNotExistError extends InputValidationError {
   constructor(path: string) {
     super({
-      code: "INPUT_PROJECT_PATH_NOT_EXISTS",
+      code: "INPUT_PATH_NOT_EXISTS",
       message: `Path '${path}' does not exist`,
       hint: "Provide an absolute path to an existing directory.",
     });
