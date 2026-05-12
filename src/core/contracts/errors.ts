@@ -57,6 +57,9 @@ export type ErrorCode =
   // Infra — Git
   | "INFRA_GIT_CLI_NOT_FOUND"
   | "INFRA_GIT_CLI_TIMEOUT"
+  // Infra — Registry
+  | "INFRA_REGISTRY_FILE_CORRUPTED"
+  | "INFRA_REGISTRY_WRITE_FAILED"
   // Domain — Ingest
   | "INGEST_NOT_INDEXED"
   | "INGEST_COLLECTION_EXISTS"
