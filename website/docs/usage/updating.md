@@ -3,8 +3,6 @@ title: Keeping tea-rags up to date
 description: How tea-rags notifies you about new versions and how to upgrade.
 ---
 
-# Keeping tea-rags up to date
-
 tea-rags is published to npm as `tea-rags`. New releases land automatically
 through `semantic-release` on every merge to `main`, so the version gap
 between an installed copy and the published one can grow without you
@@ -94,3 +92,14 @@ There is no opt-out flag today. If you need one, please file an issue
 describing your use case; the design reserves space for an environment
 variable like `TEA_RAGS_DISABLE_UPDATE_CHECK=1` but it is not wired up
 until there is a concrete need.
+
+## Troubleshooting
+
+For failure modes — `tea-rags update` exit codes, missing `npm` in `PATH`,
+stuck cache, `EACCES` on global install, postinstall skipped — see
+[Update Check Issues](../operations/troubleshooting-and-error-codes.md#update-check-issues).
+
+The cache file lives at `~/.tea-rags/update-check.json`; deleting it is
+always safe and forces a fresh registry fetch on next `tea-rags prime`.
+See the [Data Directories table](../config/environment-variables.md#data-directories)
+for the full inventory under `~/.tea-rags/`.

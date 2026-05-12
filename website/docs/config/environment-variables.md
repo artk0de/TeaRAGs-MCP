@@ -115,7 +115,8 @@ bottlenecks.
 
 The server stores data in `~/.tea-rags/`:
 
-| Directory    | Purpose                                              |
-| ------------ | ---------------------------------------------------- |
-| `snapshots/` | Sharded file hash snapshots for incremental indexing |
-| `logs/`      | Debug logs when `DEBUG=1` is enabled                 |
+| Path                | Purpose                                                                                                                                                                                       |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `snapshots/`        | Sharded file hash snapshots for incremental indexing                                                                                                                                          |
+| `logs/`             | Debug logs when `DEBUG=1` is enabled                                                                                                                                                          |
+| `update-check.json` | Cached npm registry response used by `tea-rags prime`. Positive TTL 24h, negative TTL 5min. Safe to delete — regenerated on next prime. See [Keeping tea-rags up to date](../usage/updating.md). |

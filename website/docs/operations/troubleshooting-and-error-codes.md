@@ -67,6 +67,23 @@ sidebar_position: 3
 
 ---
 
+## Update Check Issues
+
+`tea-rags update` and the `## tea-rags package` section of `tea-rags prime` share the same update-check pipeline. Failures are non-fatal — they surface as exit codes or as an omitted prime section.
+
+| Issue                                       | Symptom                                                                                 | Solution                                                                                                                                                                                                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`tea-rags update` exits 1**               | `Couldn't check for updates (reason: network/timeout/malformed)`                        | Registry unreachable, DNS failure, or response not parseable. Retry; check `curl https://registry.npmjs.org/tea-rags/latest`. A 5-min negative cache is written so repeats are cheap.                                                                       |
+| **`tea-rags update` exits 127**             | `npm not found in PATH. Install Node.js or update tea-rags manually.`                   | `npm` binary missing. Reinstall Node.js or add `npm` to `PATH`. The command never falls back to `pnpm`/`yarn`/`bun` — invoke them yourself: `pnpm add -g tea-rags@latest`, `yarn global add tea-rags@latest`, `bun add -g tea-rags@latest`.                  |
+| **postinstall doesn't run on update**       | After `tea-rags update`, native binaries or setup hooks weren't refreshed               | tea-rags forces `npm_config_ignore_scripts=false` in the spawn env, so even a user-level `ignore-scripts=true` in `~/.npmrc` is overridden. If postinstall still doesn't run, check the npm exit code in your terminal output — a non-zero code is forwarded. |
+| **`EACCES` during `npm install -g`**        | Permission denied writing to global prefix                                              | Either use `sudo npm install -g tea-rags@latest` once, or set a user-writable prefix: `npm config set prefix ~/.npm-global` then add `~/.npm-global/bin` to `PATH`. Then re-run `tea-rags update`.                                                          |
+| **prime never shows the package section**   | Even when you know a newer version exists                                               | Cache may be stuck on an old "up-to-date" response. Delete `~/.tea-rags/update-check.json` to force a fresh fetch on next prime.                                                                                                                            |
+| **prime hangs on update check**             | Digest takes >2s to render                                                              | The HTTP call has a 1.5s timeout running in parallel with Qdrant queries. If it consistently times out, the negative cache (5min) skips the check entirely on subsequent runs. Confirm registry reachability outside tea-rags.                              |
+| **Corrupt cache JSON**                      | No symptom — self-heals                                                                  | If `~/.tea-rags/update-check.json` becomes unparseable or has a wrong schema, the next read deletes it and returns null. Next prime/update re-fetches and rewrites.                                                                                          |
+| **Downgrade scenario (installed > latest)** | prime stays silent; `tea-rags update` reports `is up to date`                            | By design — when installed semver is **greater** than registry latest (e.g. testing a pre-release locally), the status is `up-to-date`. No downgrade is offered.                                                                                            |
+
+---
+
 ## Error Codes Reference
 
 Full table of all structured error codes returned by the MCP server.
