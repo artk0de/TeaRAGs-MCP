@@ -179,6 +179,65 @@ describe("SchemaBuilder", () => {
     });
   });
 
+  describe("collectionIdentifier", () => {
+    it("returns a Zod object with collection, project, path as optional fields", () => {
+      const schema = SchemaBuilder.collectionIdentifier();
+      expect(schema).toBeInstanceOf(z.ZodObject);
+
+      const { shape } = schema;
+      expect(shape).toHaveProperty("collection");
+      expect(shape).toHaveProperty("project");
+      expect(shape).toHaveProperty("path");
+    });
+
+    it("accepts empty object (all fields optional)", () => {
+      const schema = SchemaBuilder.collectionIdentifier();
+      expect(schema.safeParse({}).success).toBe(true);
+    });
+
+    it("accepts valid project name matching ^[a-z0-9][a-z0-9_-]{0,63}$", () => {
+      const schema = SchemaBuilder.collectionIdentifier();
+      expect(schema.safeParse({ project: "valid-name" }).success).toBe(true);
+      expect(schema.safeParse({ project: "my_project_2" }).success).toBe(true);
+      expect(schema.safeParse({ project: "a" }).success).toBe(true);
+      expect(schema.safeParse({ project: "0abc" }).success).toBe(true);
+    });
+
+    it("rejects project name with uppercase letters", () => {
+      const schema = SchemaBuilder.collectionIdentifier();
+      expect(schema.safeParse({ project: "BAD" }).success).toBe(false);
+      expect(schema.safeParse({ project: "Mixed" }).success).toBe(false);
+    });
+
+    it("rejects project name starting with non-alphanumeric character", () => {
+      const schema = SchemaBuilder.collectionIdentifier();
+      expect(schema.safeParse({ project: "-leading-dash" }).success).toBe(false);
+      expect(schema.safeParse({ project: "_leading-underscore" }).success).toBe(false);
+    });
+
+    it("rejects project name with invalid characters", () => {
+      const schema = SchemaBuilder.collectionIdentifier();
+      expect(schema.safeParse({ project: "has space" }).success).toBe(false);
+      expect(schema.safeParse({ project: "has.dot" }).success).toBe(false);
+      expect(schema.safeParse({ project: "has/slash" }).success).toBe(false);
+    });
+
+    it("rejects project name longer than 64 characters", () => {
+      const schema = SchemaBuilder.collectionIdentifier();
+      const tooLong = `a${"b".repeat(64)}`; // 65 chars
+      expect(schema.safeParse({ project: tooLong }).success).toBe(false);
+      const justRight = `a${"b".repeat(63)}`; // 64 chars exactly
+      expect(schema.safeParse({ project: justRight }).success).toBe(true);
+    });
+
+    it("accepts collection and path as plain optional strings", () => {
+      const schema = SchemaBuilder.collectionIdentifier();
+      expect(schema.safeParse({ collection: "code_abc123" }).success).toBe(true);
+      expect(schema.safeParse({ path: "/some/path" }).success).toBe(true);
+      expect(schema.safeParse({ collection: "code_abc", path: "/path", project: "name" }).success).toBe(true);
+    });
+  });
+
   describe("buildRerankSchema", () => {
     it("produces union of preset enum + custom object for semantic_search", () => {
       const builder = new SchemaBuilder(createMockReranker() as Reranker);
