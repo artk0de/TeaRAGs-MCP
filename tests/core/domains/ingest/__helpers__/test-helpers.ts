@@ -177,6 +177,7 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     _sparseVector: any,
     limit: number,
     filter?: any,
+    _semanticWeight?: number,
   ): Promise<any[]> {
     return this.search(collectionName, vector, limit, filter);
   }
