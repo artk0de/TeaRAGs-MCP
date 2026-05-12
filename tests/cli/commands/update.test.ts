@@ -69,7 +69,10 @@ describe("runUpdateCommand", () => {
     expect(spawn).toHaveBeenCalledWith(
       "npm",
       ["install", "-g", "tea-rags@latest"],
-      expect.objectContaining({ stdio: "inherit" }),
+      expect.objectContaining({
+        stdio: "inherit",
+        env: expect.objectContaining({ npm_config_ignore_scripts: "false" }),
+      }),
     );
     expect(exitMock).toHaveBeenCalledWith(0);
   });

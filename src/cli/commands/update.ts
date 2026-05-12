@@ -52,7 +52,12 @@ export async function runUpdateCommand(depsOverride?: Partial<RunUpdateDeps>): P
 
 function runNpmInstall(status: Extract<UpdateStatus, { kind: "available" }>, deps: RunUpdateDeps): void {
   process.stdout.write(`Updating tea-rags ${status.current} → ${status.latest}...\n`);
-  const child = deps.spawn("npm", ["install", "-g", "tea-rags@latest"], { stdio: "inherit" });
+  // Force postinstall to run even if user's ~/.npmrc has ignore-scripts=true.
+  // tea-rags' postinstall (scripts/postinstall.js) is required for proper setup.
+  const child = deps.spawn("npm", ["install", "-g", "tea-rags@latest"], {
+    stdio: "inherit",
+    env: { ...process.env, npm_config_ignore_scripts: "false" },
+  });
 
   child.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT" || /ENOENT|not found/i.test(err.message)) {
