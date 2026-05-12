@@ -1,6 +1,6 @@
 # Search Cascade Benchmark
 
-Last updated: 2026-04-03 (chunk-grouping iteration) Original: 2026-03-29
+Last updated: 2026-05-13 (post-search-navigation iteration) Original: 2026-03-29
 
 ## Summary
 
@@ -340,3 +340,196 @@ correctly prevents unnecessary reindex when only ripgrep is used.
 - Added "After Code Changes (mid-session reindex)" section between Session Start
   and Decision Tree
 - Covers: when to reindex, when NOT to, how (index_codebase), subagent note
+
+---
+
+## Iteration 7 — Post-Search Navigation (2026-05-13)
+
+Context: user report on Opus 4.7 — "agent should navigate via
+semantic/hybrid_search, then use find_symbol, but Opus 4.7 does not do this.
+Also: agent should understand find_symbol can show doc TOC." Target model:
+claude-opus-4-7.
+
+Evals: `evals/2026-05-13-post-search-navigation-evals.json` (22 cases across 4
+groups: post-search-navigation, doc-toc, regression controls,
+implicit-real-user).
+
+### Audit Findings (6 candidate)
+
+| #       | Finding                                                                                                                                       | Status                                                                                            |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| AUDIT-1 | Decision Tree has `Already have search results → NAVIGATE → find_symbol` branch but without explicit triggers                                 | Hoist-fixed proactively (Wave 2 < line 150 visibility)                                            |
+| AUDIT-2 | "Chunk is the source of truth" reads as "don't touch the result" — no distinction between bad Read-to-verify and good find_symbol-to-navigate | Fixed via explicit After-Search Navigation table                                                  |
+| AUDIT-3 | Chunk Navigation example (line 270+) at bottom of file — Opus 4.7 reliably skips this depth                                                   | Fixed via hoist                                                                                   |
+| AUDIT-4 | `enforce-tearags-search.sh` SUFFIX (the ONLY thing real subagents see) had no post-search navigation hint AND no doc TOC branch               | **Critical fix** — hook is the production-impacting gap, not search-cascade.md text               |
+| AUDIT-5 | `navigation.prevSymbolId`/`nextSymbolId` documented in isolated section, not connected to Decision Tree                                       | Surfaced in hoisted table                                                                         |
+| AUDIT-6 | Rerank Decision (line 199-207) prescribed `hybrid_search → Read → semantic_search` for docs — contradicts doc TOC pattern                     | Fixed — replaced with `find_symbol(relativePath:) → find_symbol(symbol: doc:<hash>) → Read` chain |
+
+### Methodology
+
+Two eval waves to test instruction visibility, not just text correctness:
+
+1. **Explicit cases (1-14)** — user clearly states intent ("the chunk is
+   truncated, I need full body"). Tests whether rule branches map intent → tool.
+2. **Implicit cases (15-22)** — user phrases naturally ("How does X work?").
+   Tests whether agent _autonomously_ triggers post-search navigation when no
+   explicit signal is given.
+
+Each wave run against four configurations:
+
+- **baseline_no_rules** — only MCP tool descriptions
+- **old_suffix** — what real subagents got BEFORE fix (pre-Iter-7 SUFFIX)
+- **fixed_suffix** — what real subagents get AFTER fix
+- **full_fixed_skill** — full search-cascade.md (main-agent view)
+
+### Results
+
+| Configuration               | Pass Rate                                                     | Notes                                                                                 |
+| --------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| baseline_no_rules           | 18/22 (82%)                                                   | Fails: Case 10 (intent→hybrid), 12 (callers→ripgrep), 17/21 (doc Read instead of TOC) |
+| old_suffix (pre-fix)        | ~22/22 with minor `metaOnly=true` misuse on outline/TOC cases | Existing branches transferred well; no explicit post-search rule                      |
+| **fixed_suffix (post-fix)** | **22/22 — clean**                                             | Explicit doc TOC branch + After-Search Navigation block                               |
+| full_fixed_skill            | 22/22                                                         | After-Search Navigation hoisted in top 50 lines                                       |
+
+**Delta baseline→fixed_suffix: +18pp.** Real-world impact is larger than this
+synthetic number because:
+
+- Eval prompts are _short and focused_; real subagent prompts are _long_, with
+  SUFFIX competing for attention against task-specific instructions. Wave 2
+  confirmed Opus 4.7 reliably skips content past line ~150.
+- Old SUFFIX leaned on adjacent branches ("Single-file scope", "Study a specific
+  known symbol") for outline/TOC needs. New SUFFIX has _direct, dedicated_
+  branches.
+- Old SUFFIX had zero text about _what to do AFTER a search returns a chunk_.
+  New SUFFIX has an explicit block with 5 typical patterns + 2 anti-patterns
+  ("NEVER Read after find_symbol", "NEVER re-run semantic_search").
+
+### Per-Eval Detail (selected)
+
+| #   | Group      | Task                                        | Baseline                           | Old SUFFIX               | Fixed SUFFIX                    |
+| --- | ---------- | ------------------------------------------- | ---------------------------------- | ------------------------ | ------------------------------- |
+| 7   | doc-toc    | doc-toc-from-search-result (parentSymbolId) | ⚠️ relativePath fallback           | ⚠️ relativePath fallback | ✅ uses parentSymbolId directly |
+| 10  | regression | behavioral intent → semantic_search         | ❌ chose hybrid_search             | ✅                       | ✅                              |
+| 12  | regression | all callers → hybrid_search                 | ❌ chose ripgrep with `*.ts` glob  | ✅                       | ✅                              |
+| 17  | implicit   | summarize doc                               | ❌ adds Read on top of find_symbol | ✅                       | ✅ pure TOC-then-section        |
+| 21  | implicit   | doc section deep-dive                       | ⚠️ Read(offset/limit) for section  | ✅                       | ✅                              |
+
+### Changes Made
+
+**1. `.claude-plugin/tea-rags/rules/search-cascade.md`**
+
+- Added `## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)` block
+  right after `## Principles` (line ~20, well within Wave 2 visibility budget).
+  Contains a 7-row decision table mapping search-result shapes → next
+  `find_symbol` call.
+- Rewrote `## Rerank Decision` → `Documentation search` flow: TOC-first via
+  `find_symbol(relativePath:)`, then section drill via
+  `find_symbol(symbol: doc:<hash>)`. `Read` is only for continuous prose
+  summarization.
+- Net file size: 384 → 425 lines (+41 lines, +11%). Hoisted content is the only
+  addition; no existing sections removed.
+
+**2. `.claude-plugin/tea-rags/scripts/enforce-tearags-search.sh` (THE CRITICAL
+FIX)**
+
+- Added two new branches to Tool selection block:
+  `File structure / outline → find_symbol(relativePath:)` and
+  `Documentation table of contents → find_symbol(relativePath:) → find_symbol(symbol: doc:<hash>)`.
+- Added a top-level paragraph + 5-bullet decision block:
+  `**After ANY search returns a chunk — your work is rarely done.** ... your next call is find_symbol — NOT another search, NOT Read.`
+  Covers truncated chunks, file structure, navigation neighbors, doc
+  parentSymbolId, helper deep-dive.
+- Added explicit anti-patterns: `NEVER Read after find_symbol`,
+  `NEVER re-run semantic_search on an area you already searched; navigate instead.`
+- bash syntax verified with `bash -n`.
+
+### Why eval pass-rate doesn't capture the real impact
+
+Phase 2 baseline already showed `old_suffix` at parity with `fixed_suffix` on
+these synthetic prompts. The fix's value lies in **discoverability under
+attention pressure**:
+
+- In production, the subagent prompt = parent's task description + SUFFIX. When
+  the task description is 200+ lines (typical for plan-executor or explore
+  subagents), the SUFFIX sits past Opus 4.7's reliable-attention budget.
+- Without an explicit post-search rule, the agent falls back on a heuristic ("I
+  got a chunk, I'll synthesize an answer"). With the explicit rule, the rule
+  survives the attention drop because it is the _only_ prescriptive content
+  matching the post-search intent — agents pattern-match on uniqueness.
+- The doc TOC branch is the doc-specific analogue. Without it, agent infers from
+  "Single-file scope" and lands on `find_symbol(relativePath:)` _most of the
+  time_, but adds `metaOnly=true` (wrong) or falls back to `Read` under
+  uncertainty.
+
+### What was NOT fixed
+
+- The classification of `find_symbol` modes (symbol, relativePath, both) is
+  still implicit. Future eval should test whether agents correctly pick `symbol`
+  vs `relativePath` mode for ambiguous cases (e.g., "show me everything about
+  Reranker"). Not in scope for this iteration.
+- `metaOnly=true` semantics not surfaced in SUFFIX. Old SUFFIX agents misused it
+  as "give me less detail" rather than "give me only metadata, no content". Out
+  of scope.
+
+---
+
+## Iteration 7b — Depth vs Breadth Smoothing (2026-05-13)
+
+Context: user pointed out that the initial Iteration 7 rule "NEVER re-run
+semantic_search on an area you already searched; navigate instead" was too
+rigid. It conflated two distinct intents — **depth** (same result, dig deeper)
+which genuinely belongs to `find_symbol`, and **breadth** (different subsystem,
+different terminology, different language slice in a polyglot repo, pagination,
+or a different angle like tests) which legitimately needs another search.
+
+Evals: extended `evals/2026-05-13-post-search-navigation-evals.json` with 8
+breadth/depth cases (B1-B8).
+
+### Fix Applied
+
+Replaced the absolute "NEVER re-run semantic_search" line in both
+`enforce-tearags-search.sh` (production SUFFIX) and `search-cascade.md`
+(Subagent block) with an explicit DEPTH vs BREADTH split:
+
+- **Depth** (same result, dig deeper) → `find_symbol`. Don't re-run the same
+  search to "verify" or extract more from the same hit.
+- **Breadth** (different subsystem, different angle, different terminology,
+  another language in a polyglot repo, pagination) → re-run `semantic_search` /
+  `hybrid_search` with a NEW query / pathPattern / offset.
+- **Rule of thumb**: can you name a specific symbol/file/section? →
+  `find_symbol`. Still surveying the landscape? → another search.
+
+### Results (with-rule vs baseline-no-rule, both claude-opus-4-7)
+
+| #   | Group   | Task                                              | Baseline (no rule)                                                                             | Fixed SUFFIX v2                                                                                   |
+| --- | ------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| B1  | breadth | other subsystems with retry logic                 | ⚠️ `find_similar` only — adequate for "same pattern" but loses scope variants                  | ✅ `semantic_search('retry logic backoff')` → per-hit `find_symbol` (broader scan + body confirm) |
+| B2  | breadth | empty result → reformulate vocabulary             | ✅ `hybrid_search('auth guard permission')`                                                    | ✅ `semantic_search` with synonyms                                                                |
+| B3  | breadth | polyglot — same intent in different language      | ✅ `semantic_search + language='python'`                                                       | ✅ `semantic_search + language='python'`                                                          |
+| B4  | breadth | pagination — show ALL usages                      | ✅ `hybrid_search offset=10,20,30…`                                                            | ✅ `hybrid_search offset=10,20,30…`                                                               |
+| B5  | breadth | different angle (tests for same subsystem)        | ✅ `hybrid_search pathPattern='**/{test,tests,__tests__,spec}/**'`                             | ✅ `semantic_search pathPattern='**/tests/**'`                                                    |
+| B6  | depth   | trap — repeat question on same fully-visible body | ✅ "No tool call — answer directly from chunk"                                                 | ✅ "No tool call — answer from already-visible body"                                              |
+| B7  | breadth | failed query → reformulate to codebase vocabulary | ✅ `hybrid_search('rate budget tracker')`                                                      | ✅ `hybrid_search('rate budget tracker')`                                                         |
+| B8  | depth   | known symbol named in chunk → fetch it            | ❌ `find_symbol('ConnectionPool.initialize')` — wrong separator (`.` = static, `#` = instance) | ✅ `find_symbol('ConnectionPool#initialize')` — correct convention                                |
+
+**Fixed SUFFIX v2: 8/8.** **Baseline: 7/8** — B8 failed on `Class.method` vs
+`Class#method` convention; B1 stayed adequate with `find_similar`-only but lost
+the chain depth (the rule's pattern explicitly does "broader scan → per-hit body
+confirm", which gives the user actionable variants, not just "similar lines").
+**Hard delta: +1pp; qualitative delta: cleaner chain on breadth tasks and
+convention discipline on depth tasks.**
+
+No regressions on the original 22 cases (same SUFFIX text covers them — same
+results as Iteration 7).
+
+### Why this matters
+
+The original Iteration 7 SUFFIX, in trying to suppress redundant `Read`s after
+search, accidentally encoded "don't search twice" as an absolute. In practice
+agents need to re-search constantly when broadening scope. The fix preserves the
+original anti-pattern (don't re-search the same query to dump more results from
+the same hit) without blocking legitimate landscape surveying.
+
+This is a textbook case of a rule that scored 22/22 on Iteration 7's eval set
+but would have caused real regressions on breadth-shaped tasks the eval did not
+exercise — surfaced only by the user's design intuition, not by metrics.

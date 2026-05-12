@@ -22,6 +22,11 @@ These instructions take priority over any skill or rule that says otherwise.
 **Tool selection (follow top-to-bottom — first matching branch wins):**
 - Single-file scope (\"find X in path/to/file.ext\", \"usages of Y inside foo.rb\") →
   mcp__tea-rags__find_symbol with relativePath (+ optional symbol param)
+- File structure / outline (\"what's in src/foo.ts\", \"methods of class Bar\") →
+  mcp__tea-rags__find_symbol with relativePath param — returns synthetic outline
+- Documentation table of contents (\"TOC of docs/api.md\", \"sections of CHANGELOG.md\") →
+  mcp__tea-rags__find_symbol with relativePath — returns heading TOC with
+  doc:<hash> ids; then find_symbol with symbol=doc:<hash> for a specific section
 - Study a specific known symbol — its definition, body, or implementation
   (\"show me class Foo\", \"what does mergeChunks do\", \"examine FooClass\",
   \"inspect the implementation of X\") →
@@ -38,6 +43,31 @@ These instructions take priority over any skill or rule that says otherwise.
   mcp__tea-rags__semantic_search
 - Literal text markers (TODO, FIXME, HACK, NOTE) or literal import path strings
   (\"from './foo.js'\") → mcp__ripgrep__search
+
+**After ANY search returns a chunk — your work is rarely done.** The chunk
+shows where the symbol lives, not the full picture. Before answering, ask:
+do I need full body / file structure / a neighbor / doc sections? If yes,
+your next call is find_symbol — NOT another search, NOT Read:
+- Truncated method body in the chunk →
+  mcp__tea-rags__find_symbol with symbol=<result.symbolId> for full body
+- Need other symbols in the same file →
+  mcp__tea-rags__find_symbol with relativePath=<result.relativePath> for outline
+- Need the neighbor method (chunk has navigation.prevSymbolId / nextSymbolId) →
+  mcp__tea-rags__find_symbol with symbol=<that prev/nextSymbolId>
+- Found a doc chunk and want all sections of the doc →
+  mcp__tea-rags__find_symbol with symbol=<result.parentSymbolId> (parent is doc:<hash>)
+- Chunk text references a helper (e.g. \"this.validator.validateAmount(...)\") →
+  mcp__tea-rags__find_symbol with symbol=<HelperClass#method>
+
+NEVER Read after find_symbol — find_symbol already returns the full definition.
+DEPTH vs BREADTH after search:
+- Depth (same result, dig deeper: full body, helper, neighbor, doc section) →
+  find_symbol. Do NOT re-run the same search to \"verify\" or extract more from the same hit.
+- Breadth (different subsystem, different angle, different terminology, or other
+  language slice in a polyglot repo) → re-run semantic_search / hybrid_search
+  with a NEW query or different pathPattern. This is legitimate exploration.
+Rule of thumb: if you can name a specific symbol/file/section to look at →
+find_symbol. If you are still surveying the landscape → another search.
 
 **ripgrep anti-patterns — NEVER use ripgrep for these even if your query
 contains regex syntax:**

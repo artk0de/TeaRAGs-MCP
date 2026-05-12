@@ -1,0 +1,491 @@
+{
+  "skill_name": "search-cascade",
+  "iteration": "post-search-navigation",
+  "date": "2026-05-13",
+  "target_model": "claude-opus-4-7",
+  "context": "User report: 'find_symbol is used incorrectly. Agent should be able to navigate via semantic/hybrid_search, then use find_symbol, but Opus 4.7 does not do this.' Additionally: agent should understand find_symbol can show documentation TOC.",
+  "audit_findings": {
+    "AUDIT-1": "Decision Tree has 'Already have search results → NAVIGATE → find_symbol' branch but without explicit triggers WHEN this applies.",
+    "AUDIT-2": "'Chunk is the source of truth. Do not re-read files' reads as 'don't do anything with result'. No distinction between Read-to-verify (bad) and find_symbol-to-navigate (good).",
+    "AUDIT-3": "Navigation chain example (line 299-305) is at the bottom — Wave 2 confirms Opus 4.7 skips content below line ~150.",
+    "AUDIT-4": "Subagent injection HOOK (enforce-tearags-search.sh) — the actual SUFFIX delivered to real subagents — had no post-search navigation hint AND no doc TOC branch. This is the production-impacting gap, not the search-cascade.md text.",
+    "AUDIT-5": "navigation.prevSymbolId/nextSymbolId documented in isolated Chunk Navigation section, not connected to Decision Tree.",
+    "AUDIT-6 (Rerank conflict)": "Rerank Decision section line 199-207 prescribed 'hybrid_search → Read → semantic_search' for docs, contradicting doc TOC pattern. Read is heavier than necessary; find_symbol gives TOC + section content."
+  },
+  "fixes_applied": {
+    "Fix-1": "Hoisted 'After-Search Navigation' block right after Principles in search-cascade.md — compact 7-row decision table covering truncated chunk / file structure / adjacent method / helper / doc TOC. Visible in first 50 lines (Wave 2 hoist pattern).",
+    "Fix-2": "Rewrote Rerank Decision 'Documentation search' flow: now TOC-first via find_symbol(relativePath:), then section drill via find_symbol(symbol: doc:<hash>); Read only for continuous prose.",
+    "Fix-3": "Subagent injection (search-cascade.md AND enforce-tearags-search.sh hook): added 'After ANY search returns a chunk...' block with 5 post-search navigation patterns + 'NEVER Read after find_symbol, NEVER re-run semantic_search on same area' anti-patterns. Hook is THE critical fix — it is what reaches production subagents."
+  },
+  "evals": [
+    {
+      "id": 1,
+      "name": "post-search-truncated-chunk",
+      "audit_finding": "AUDIT-1,AUDIT-2",
+      "group": "post-search-navigation",
+      "prompt": "Truncated chunk for Reranker#rerank received from semantic_search; need complete implementation.",
+      "expected": "find_symbol(symbol: 'Reranker#rerank'). NOT Read, NOT another search.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "PASS",
+          "reason": "Opus 4.7 already knows find_symbol pattern"
+        },
+        "old_suffix": {
+          "grade": "PASS",
+          "reason": "Existing 'Study a specific known symbol' branch sufficient"
+        },
+        "fixed_suffix": {
+          "grade": "PASS",
+          "reason": "Explicit 'Truncated method body → find_symbol with symbolId' rule"
+        },
+        "full_fixed_skill": {
+          "grade": "PASS",
+          "reason": "After-Search Navigation table top-of-skill"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "post-search-need-file-structure",
+      "audit_finding": "AUDIT-1,AUDIT-3",
+      "group": "post-search-navigation",
+      "prompt": "Need overall structure of src/middleware/auth.ts after semantic_search returned one chunk.",
+      "expected": "find_symbol(relativePath: 'src/middleware/auth.ts'). NOT Read.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": {
+          "grade": "PASS but used metaOnly=true (minor)",
+          "reason": "Old rule had no explicit 'file structure' branch; agent inferred from 'Single-file scope'"
+        },
+        "fixed_suffix": {
+          "grade": "PASS",
+          "reason": "New explicit 'File structure / outline' branch"
+        },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 3,
+      "name": "post-search-adjacent-via-navigation",
+      "audit_finding": "AUDIT-5",
+      "group": "post-search-navigation",
+      "prompt": "Navigate to navigation.prevSymbolId from hybrid_search result.",
+      "expected": "find_symbol(symbol: navigation.prevSymbolId). NOT new search.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 4,
+      "name": "post-search-deeper-into-helper",
+      "audit_finding": "AUDIT-1",
+      "group": "post-search-navigation",
+      "prompt": "Drill into helper validateAmount referenced inside a charge() chunk.",
+      "expected": "find_symbol(symbol: 'validateAmount' or 'Validator#validateAmount').",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 5,
+      "name": "post-search-class-outline-for-discovery",
+      "audit_finding": "AUDIT-1,AUDIT-2",
+      "group": "post-search-navigation",
+      "prompt": "Need full public API of EnrichmentCoordinator after seeing constructor chunk.",
+      "expected": "find_symbol(symbol: 'EnrichmentCoordinator') or find_symbol(relativePath: result.relativePath).",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 6,
+      "name": "doc-toc-by-path",
+      "audit_finding": "AUDIT-3",
+      "group": "doc-toc",
+      "prompt": "TOC of docs/architecture.md without reading full file.",
+      "expected": "find_symbol(relativePath: 'docs/architecture.md').",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": {
+          "grade": "PASS but minor metaOnly misuse",
+          "reason": "Inferred from existing branches"
+        },
+        "fixed_suffix": {
+          "grade": "PASS",
+          "reason": "New explicit 'Documentation TOC' branch"
+        },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 7,
+      "name": "doc-toc-from-search-result",
+      "audit_finding": "AUDIT-3,AUDIT-5",
+      "group": "doc-toc",
+      "prompt": "All sections of docs/signals.md given a chunk with parentSymbolId='doc:7c12d9b4e8a1'.",
+      "expected": "find_symbol(symbol: 'doc:7c12d9b4e8a1').",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "PARTIAL",
+          "reason": "Used relativePath instead of parentSymbolId — works but misses navigation shortcut"
+        },
+        "old_suffix": {
+          "grade": "PASS but used relativePath (alternative path)"
+        },
+        "fixed_suffix": {
+          "grade": "PASS — chose parentSymbolId path",
+          "reason": "Explicit 'Found a doc chunk → find_symbol(symbol: parentSymbolId)' rule"
+        },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 8,
+      "name": "doc-toc-multi-orientation",
+      "audit_finding": "AUDIT-3",
+      "group": "doc-toc",
+      "prompt": "TOCs of 3 docs in parallel for orientation.",
+      "expected": "3 parallel find_symbol(relativePath:) calls.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 9,
+      "name": "regression-direct-symbol-definition",
+      "audit_finding": "control",
+      "group": "regression",
+      "prompt": "Show me the implementation of the Reranker class.",
+      "expected": "find_symbol(symbol: 'Reranker').",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 10,
+      "name": "regression-behavioral-intent",
+      "audit_finding": "control",
+      "group": "regression",
+      "prompt": "Find code that handles retry logic after embedding API failures.",
+      "expected": "semantic_search.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "FAIL",
+          "reason": "Picked hybrid_search instead of semantic_search for pure intent"
+        },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 11,
+      "name": "regression-todo-marker",
+      "audit_finding": "control",
+      "group": "regression",
+      "prompt": "Find all TODO and FIXME comments in src/core/.",
+      "expected": "ripgrep with pattern 'TODO|FIXME'.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 12,
+      "name": "regression-exhaustive-usage",
+      "audit_finding": "control",
+      "group": "regression",
+      "prompt": "Find all callers of class PaymentProcessor.",
+      "expected": "hybrid_search query='PaymentProcessor'. NOT ripgrep, NOT find_symbol (returns def only).",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "FAIL",
+          "reason": "Picked ripgrep with glob='*.ts'"
+        },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 13,
+      "name": "subagent-post-search-navigation",
+      "audit_finding": "AUDIT-4",
+      "group": "subagent",
+      "prompt": "[subagent: explore] Truncated chunk for rerank() — complete the analysis.",
+      "expected": "find_symbol(symbol: 'Reranker#rerank') for full body.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 14,
+      "name": "subagent-doc-toc",
+      "audit_finding": "AUDIT-3,AUDIT-4",
+      "group": "subagent",
+      "prompt": "[subagent: task-agent] v18→v19 section of docs/migration-guide.md via TOC first.",
+      "expected": "find_symbol(relativePath:) then find_symbol(symbol: doc:<hash>).",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 15,
+      "name": "implicit-explain-method",
+      "audit_finding": "AUDIT-1,AUDIT-2",
+      "group": "implicit-real-user",
+      "prompt": "User asks: How does Reranker.rerank work? Walk me through the algorithm.",
+      "expected": "find_symbol(symbol: 'Reranker#rerank') → follow-up find_symbol on each helper referenced in body.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 16,
+      "name": "implicit-explain-class",
+      "audit_finding": "AUDIT-1,AUDIT-2",
+      "group": "implicit-real-user",
+      "prompt": "User asks: Explain how PaymentProcessor handles failed transactions.",
+      "expected": "find_symbol(symbol: 'PaymentProcessor') → drill into failure-handling methods.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 17,
+      "name": "implicit-understand-doc",
+      "audit_finding": "AUDIT-6",
+      "group": "implicit-real-user",
+      "prompt": "User asks: What's in docs/architecture.md? Give me a summary.",
+      "expected": "find_symbol(relativePath:) for TOC → find_symbol(symbol: doc:hash) per section.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "PARTIAL FAIL",
+          "reason": "Added unnecessary Read on the file (heavy)"
+        },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS — pure TOC-then-section" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 18,
+      "name": "implicit-trace-call",
+      "audit_finding": "AUDIT-1,AUDIT-5",
+      "group": "implicit-real-user",
+      "prompt": "User asks: Trace HTTP request → auth middleware → controller.",
+      "expected": "semantic_search → find_symbol chain along the request path.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS — but added ripgrep cleanup" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 19,
+      "name": "implicit-found-but-shallow",
+      "audit_finding": "AUDIT-1,AUDIT-2",
+      "group": "implicit-real-user",
+      "prompt": "EnrichmentCoordinator lifecycle (start/processing/shutdown) from a shallow first chunk.",
+      "expected": "find_symbol on outline + lifecycle methods + referenced collaborators (queue.drain, providers).",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 20,
+      "name": "implicit-find-similar-pattern",
+      "audit_finding": "control",
+      "group": "implicit-real-user",
+      "prompt": "User asks: Other places using retry-with-backoff pattern like Reranker#retryEmbedding.",
+      "expected": "find_symbol → find_similar.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 21,
+      "name": "implicit-doc-section-deep-dive",
+      "audit_finding": "AUDIT-6",
+      "group": "implicit-real-user",
+      "prompt": "User asks: What does the migration guide say about v18→v19 sparse vector rebuild?",
+      "expected": "semantic_search OR find_symbol(relativePath:) → find_symbol(symbol: doc:hash) for section.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "PARTIAL FAIL",
+          "reason": "Used Read(offset/limit) for the section instead of find_symbol(symbol: doc:hash)"
+        },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 22,
+      "name": "implicit-multi-file-comparison",
+      "audit_finding": "AUDIT-1",
+      "group": "implicit-real-user",
+      "prompt": "User asks: Compare auth structure across 3 middleware files.",
+      "expected": "Parallel find_symbol(relativePath:) outlines + find_symbol(symbol:) per comparable method.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "old_suffix": { "grade": "PASS" },
+        "fixed_suffix": { "grade": "PASS" },
+        "full_fixed_skill": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": "B1",
+      "name": "breadth-different-subsystem",
+      "audit_finding": "Iter-7b breadth",
+      "group": "breadth-vs-depth",
+      "prompt": "After finding Reranker#retryEmbedding via semantic_search, user wants to see OTHER components with retry logic.",
+      "expected": "New semantic_search/hybrid_search with broader query, then find_symbol per interesting hit. NOT just find_symbol on first result.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "PARTIAL",
+          "reason": "Chose find_similar only — covers 'same pattern' but loses chain depth (no body-confirm per variant)"
+        },
+        "fixed_suffix_v2": {
+          "grade": "PASS",
+          "reason": "semantic_search('retry logic backoff') + per-hit find_symbol — perfect breadth→depth chain"
+        }
+      }
+    },
+    {
+      "id": "B2",
+      "name": "breadth-different-terminology",
+      "audit_finding": "Iter-7b breadth",
+      "group": "breadth-vs-depth",
+      "prompt": "Empty result for 'authorization middleware' — codebase uses different vocabulary.",
+      "expected": "Reformulate query with synonyms (guard, permission, auth) via new semantic_search. NOT fall back to ripgrep.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "fixed_suffix_v2": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": "B3",
+      "name": "breadth-polyglot-language-slice",
+      "audit_finding": "Iter-7b breadth",
+      "group": "breadth-vs-depth",
+      "prompt": "Polyglot TS+Python repo. Got TS results; user wants Python implementation of same feature.",
+      "expected": "New semantic_search with language='python' or pathPattern='**/*.py'. NOT find_symbol guesswork.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "fixed_suffix_v2": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": "B4",
+      "name": "breadth-pagination",
+      "audit_finding": "Iter-7b breadth",
+      "group": "breadth-vs-depth",
+      "prompt": "10 hits returned; user wants ALL usages.",
+      "expected": "hybrid_search with offset=10, 20, 30 until empty. Pagination is breadth.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "fixed_suffix_v2": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": "B5",
+      "name": "breadth-different-angle-tests",
+      "audit_finding": "Iter-7b breadth",
+      "group": "breadth-vs-depth",
+      "prompt": "Found production code; user wants the tests for it.",
+      "expected": "New semantic_search with pathPattern='**/tests/**' or pathPattern='**/*.test.*'.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "fixed_suffix_v2": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": "B6",
+      "name": "depth-control-same-hit",
+      "audit_finding": "Iter-7b depth control",
+      "group": "breadth-vs-depth",
+      "prompt": "Got full PaymentProcessor#charge body; user re-asks same question more pointedly. TRAP: do NOT re-search.",
+      "expected": "Answer from existing body; no new search call. Optional find_symbol on referenced helper if user descends.",
+      "results": {
+        "fixed_suffix_v2": {
+          "grade": "PASS — agent explicitly said 'Answer directly from already-visible body; no tool call'"
+        }
+      }
+    },
+    {
+      "id": "B7",
+      "name": "breadth-failed-query-reformulate",
+      "audit_finding": "Iter-7b breadth",
+      "group": "breadth-vs-depth",
+      "prompt": "Failed 'quota manager' query; chunk text reveals codebase uses 'rate budget tracker'.",
+      "expected": "New hybrid_search('rate budget tracker') with corrected vocabulary.",
+      "results": {
+        "baseline_no_rules": { "grade": "PASS" },
+        "fixed_suffix_v2": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": "B8",
+      "name": "depth-control-known-symbol-after-search",
+      "audit_finding": "Iter-7b depth control",
+      "group": "breadth-vs-depth",
+      "prompt": "Chunk reveals ConnectionPool class with initialize method; user wants initialize body.",
+      "expected": "find_symbol(symbol: 'ConnectionPool#initialize'). NOT a new search.",
+      "results": {
+        "baseline_no_rules": {
+          "grade": "FAIL",
+          "reason": "find_symbol('ConnectionPool.initialize') — wrong separator (. = static, # = instance); rules surface the convention"
+        },
+        "fixed_suffix_v2": { "grade": "PASS" }
+      }
+    }
+  ],
+  "summary": {
+    "baseline_no_rules": "~18/22 (82%) — Opus 4.7 default behavior",
+    "old_suffix_pre_fix": "~22/22 with minor metaOnly misuse — but lacks explicit post-search navigation rule which matters in long real prompts",
+    "fixed_suffix_post_fix": "22/22 — clean, with explicit doc TOC + post-search navigation branches",
+    "fixed_suffix_v2_breadth_depth": "8/8 PASS on B1-B8 (breadth/depth cases). Confirms the softened rule still routes depth questions to find_symbol while explicitly allowing legitimate breadth re-searches (different subsystem, different terminology, polyglot language slice, pagination, different angle).",
+    "full_fixed_skill": "22/22",
+    "delta_baseline_to_fixed_suffix": "+18pp",
+    "iterations": 2,
+    "iteration_7b_context": "Initial Iteration 7 SUFFIX said 'NEVER re-run semantic_search on an area you already searched; navigate instead.' User pointed out this conflates depth (find_symbol territory) with breadth (legitimately needs new search). Iteration 7b replaced the absolute prohibition with explicit DEPTH vs BREADTH guidance + rule of thumb.",
+    "key_insight": "On clean eval prompts, Opus 4.7 selects tools correctly even without rules — the description of find_symbol is self-explanatory. The fix's value is NOT measurable pass-rate uplift on synthetic prompts; it is hardening for real-world long-prompt subagent contexts where the SUFFIX is competing for attention with task-specific instructions. Explicit 'After ANY search returns a chunk → navigate via find_symbol' converts a heuristic into a discoverable rule. Iteration 7b also demonstrates eval blind spots: 22/22 on Iter-7 cases would have masked breadth-shaped regressions — surfaced only by user design intuition."
+  }
+}

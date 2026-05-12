@@ -17,6 +17,28 @@ returns the full method/class definition — no Read needed.
 
 **MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
 
+## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
+
+**The first search rarely returns a complete answer.** A chunk shows where the
+symbol lives — not the whole picture. Before synthesizing an answer from a
+single chunk, ask: _do I need full body / file structure / a neighbor / doc
+sections?_ If yes — your next call is `find_symbol`, NOT another search and NOT
+`Read`. `find_symbol` is instant (no embedding) and returns merged definitions,
+file outlines, or doc TOCs from the same index.
+
+| After search returns…                       | If you need…                           | Next call                                                             |
+| ------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------- |
+| Chunk with method body truncated            | Full method body                       | `find_symbol(symbol: result.symbolId)`                                |
+| Chunk from one file                         | File structure / other methods in file | `find_symbol(relativePath: result.relativePath)` → synthetic outline  |
+| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                    | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`        |
+| Chunk that calls a helper / class           | The helper / class definition          | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text |
+| Chunk from a `.md` doc                      | All sections of that doc (TOC)         | `find_symbol(symbol: result.parentSymbolId)` — parent is `doc:<hash>` |
+| Just a doc path (no search yet)             | Table of contents of that doc          | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes |
+| Class chunk (constructor or one method)     | All methods / public API of the class  | `find_symbol(symbol: "ClassName")` → full class outline + bodies      |
+
+Read only when you need continuous prose spanning many chunks, or to modify the
+file. Chunk-by-chunk navigation via `find_symbol` is cheaper and exact.
+
 ## After Code Changes (mid-session reindex)
 
 When you (or a subagent) modified files via Write/Edit and then need to search
@@ -148,11 +170,15 @@ Documentation search? (language: "markdown" OR documentation: "only")
 ├─ Yes → no explicit rerank needed
 │     → facade auto-applies "documentationRelevance" preset
 │     → heading-weighted ranking is automatic
-│     Note: tea-rags is a good index and compass for docs, but not a
-│     replacement for reading when full context matters. Optimal flow:
-│       1. hybrid_search — find the doc and related files
-│       2. Read — full text when complete picture needed
-│       3. semantic_search — find similar patterns across docs
+│     Optimal flow for navigating docs:
+│       1. find_symbol(relativePath: "docs/file.md") — TOC of one doc, OR
+│          hybrid_search/semantic_search with pathPattern: "docs/**" — to
+│          discover which doc covers a topic
+│       2. find_symbol(symbol: "doc:<parentHash>") — drill into a specific
+│          section taken from search result's parentSymbolId or from the TOC
+│       3. Read — only when you need continuous prose spanning many sections
+│          (e.g. summarizing the whole doc); otherwise step 2 already gave the
+│          full section content as a chunk
 │
 └─ No → continue to preset selection below
 
@@ -221,6 +247,28 @@ contains regex syntax:**
   per name (or one combined query) — BM25 gives exact match.
 - Single-file symbol lookup. Use find_symbol with relativePath, not ripgrep.
 - Symbol existence checks ("does X exist?"). Use find_symbol with metaOnly=true.
+
+**After any search returns a chunk — navigate, don't re-search:**
+- Need full method body / class outline / a helper called inside the chunk?
+  → `mcp__tea-rags__find_symbol(symbol: <symbolId from result or chunk text>)`
+- Need other symbols in the same file (file structure)?
+  → `mcp__tea-rags__find_symbol(relativePath: <result.relativePath>)`
+- Need the neighbor chunk? Use `navigation.prevSymbolId` / `nextSymbolId`
+  from the result → `find_symbol(symbol: <that id>)`
+- Need all sections of a doc you found (TOC)?
+  → `find_symbol(symbol: <result.parentSymbolId>)` — parent is `doc:<hash>`
+- Want the TOC of a doc by path?
+  → `find_symbol(relativePath: "docs/file.md")` — heading TOC, no Read
+
+NEVER `Read` after `find_symbol` — `find_symbol` returns the full definition.
+Depth vs breadth after a search:
+- **Depth** (same result, dig deeper) → `find_symbol`. Don't re-run the same
+  search to "verify" or extract more from the same hit.
+- **Breadth** (different subsystem, different angle, different terminology,
+  another language in a polyglot repo, pagination) → re-run
+  `semantic_search` / `hybrid_search` with a NEW query / pathPattern / offset.
+Rule of thumb: can you name a specific symbol/file/section? → `find_symbol`.
+Still surveying the landscape? → another search.
 
 **Rules:**
 - Do NOT use built-in Grep or Glob for code discovery
