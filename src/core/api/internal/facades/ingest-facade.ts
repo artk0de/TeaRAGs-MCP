@@ -17,7 +17,7 @@ import type { PayloadSignalDescriptor } from "../../../contracts/types/trajector
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { createIngestDependencies, type SynchronizerTuning } from "../../../domains/ingest/factory.js";
 import { IndexPipeline } from "../../../domains/ingest/indexing.js";
-import type { PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
+import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
@@ -26,6 +26,7 @@ import type { DeletionConfig } from "../../../domains/ingest/sync/deletion-strat
 import { GitEnrichmentProvider } from "../../../domains/trajectory/git/provider.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
+import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
@@ -54,6 +55,8 @@ export interface IngestFacadeDeps {
   syncTuning?: SynchronizerTuning;
   snapshotDir?: string;
   modelGuard?: EmbeddingModelGuard;
+  collectionRegistry?: CollectionRegistry;
+  teaRagsVersion?: string;
 }
 
 export class IngestFacade {
@@ -153,7 +156,19 @@ export class IngestFacade {
 
     const recovery = providers.length > 0 ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant)) : undefined;
     const enrichment = new EnrichmentCoordinator(qdrant, providers, recovery);
-    const indexing = new IndexPipeline(qdrant, embeddings, config, enrichment, ingestDeps, pipelineTuning);
+    const registryDeps: PipelineRegistryDeps = {
+      registry: deps.collectionRegistry,
+      teaRagsVersion: deps.teaRagsVersion,
+    };
+    const indexing = new IndexPipeline(
+      qdrant,
+      embeddings,
+      config,
+      enrichment,
+      ingestDeps,
+      pipelineTuning,
+      registryDeps,
+    );
     const reindex = new ReindexPipeline(
       qdrant,
       embeddings,
@@ -162,6 +177,7 @@ export class IngestFacade {
       ingestDeps,
       deleteConfig,
       pipelineTuning,
+      registryDeps,
     );
 
     return { enrichment, indexing, reindex, gitTimePeriods };

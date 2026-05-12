@@ -63,4 +63,95 @@ describe("ProjectRegistryOps", () => {
     const out2 = await ops.unregister({ name: "alpha" });
     expect(out2.removed).toBe(true);
   });
+
+  describe("recoverFromQdrant", () => {
+    it("populates registry from Qdrant collections + sample payload", async () => {
+      const recDir = mkdtempSync(join(tmpdir(), "rec-"));
+      try {
+        const registry = new CollectionRegistry(recDir);
+        const qdrant = {
+          url: "http://localhost:6333",
+          listCollections: async () => ["code_abc", "code_def"],
+          getCollectionInfo: async (n: string) => ({
+            name: n,
+            vectorSize: n === "code_abc" ? 384 : 768,
+            pointsCount: 0,
+            distance: "Cosine" as const,
+            hybridEnabled: false,
+            status: "green" as const,
+            optimizerStatus: "ok",
+          }),
+          scrollFiltered: async () => [{ id: "x", payload: { embeddingModel: "m-fake" } }],
+        };
+        const embeddings = {
+          getModel: () => "m-fake",
+          getDimensions: () => 384,
+        };
+        const recOps = new ProjectRegistryOps({
+          registry,
+          qdrant: qdrant as never,
+          embeddings: embeddings as never,
+          snapshotDir: "/no/snapshots",
+        });
+        await recOps.recoverFromQdrant();
+        const list = registry.list();
+        expect(list).toHaveLength(2);
+        expect(list.find((e) => e.collectionName === "code_abc")?.embeddingDimensions).toBe(384);
+        expect(list.find((e) => e.collectionName === "code_def")?.embeddingDimensions).toBe(768);
+        expect(list.find((e) => e.collectionName === "code_abc")?.embeddingModel).toBe("m-fake");
+        expect(list.find((e) => e.collectionName === "code_abc")?.qdrantUrl).toBe("http://localhost:6333");
+      } finally {
+        rmSync(recDir, { recursive: true, force: true });
+      }
+    });
+
+    it("skips collections already present in registry", async () => {
+      const recDir = mkdtempSync(join(tmpdir(), "rec-skip-"));
+      try {
+        const registry = new CollectionRegistry(recDir);
+        registry.record({
+          collectionName: "code_abc",
+          path: "/existing/path",
+          embeddingModel: "existing-model",
+          embeddingDimensions: 512,
+          qdrantUrl: "http://existing",
+          indexedAt: "2026-01-01T00:00:00Z",
+          teaRagsVersion: "1.0.0",
+          chunksCount: 99,
+        });
+        const qdrant = {
+          url: "http://localhost:6333",
+          listCollections: async () => ["code_abc"],
+          getCollectionInfo: async () => ({
+            name: "code_abc",
+            vectorSize: 384,
+            pointsCount: 0,
+            distance: "Cosine" as const,
+            hybridEnabled: false,
+            status: "green" as const,
+            optimizerStatus: "ok",
+          }),
+          scrollFiltered: async () => [{ id: "x", payload: { embeddingModel: "m-fake" } }],
+        };
+        const recOps = new ProjectRegistryOps({ registry, qdrant: qdrant as never });
+        await recOps.recoverFromQdrant();
+        const entry = registry.get("code_abc");
+        expect(entry?.embeddingModel).toBe("existing-model");
+        expect(entry?.embeddingDimensions).toBe(512);
+        expect(entry?.chunksCount).toBe(99);
+      } finally {
+        rmSync(recDir, { recursive: true, force: true });
+      }
+    });
+
+    it("throws if recoverFromQdrant called without qdrant injected", async () => {
+      const recDir = mkdtempSync(join(tmpdir(), "rec2-"));
+      try {
+        const recOps = new ProjectRegistryOps({ registry: new CollectionRegistry(recDir) });
+        await expect(recOps.recoverFromQdrant()).rejects.toThrow();
+      } finally {
+        rmSync(recDir, { recursive: true, force: true });
+      }
+    });
+  });
 });

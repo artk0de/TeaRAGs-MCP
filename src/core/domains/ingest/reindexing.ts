@@ -8,7 +8,12 @@
 
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../types.js";
 import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "./errors.js";
-import { BaseIndexingPipeline, type PipelineTuning, type ProcessingContext } from "./pipeline/base.js";
+import {
+  BaseIndexingPipeline,
+  type PipelineRegistryDeps,
+  type PipelineTuning,
+  type ProcessingContext,
+} from "./pipeline/base.js";
 import { processRelativeFiles } from "./pipeline/file-processor.js";
 import { storeIndexingMarker } from "./pipeline/indexing-marker.js";
 import { pipelineLog } from "./pipeline/infra/debug-logger.js";
@@ -37,8 +42,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     deps: ConstructorParameters<typeof BaseIndexingPipeline>[4],
     private readonly deleteConfig: DeletionConfig = { batchSize: 500, concurrency: 8 },
     tuning?: PipelineTuning,
+    registryDeps?: PipelineRegistryDeps,
   ) {
-    super(qdrant, embeddings, config, enrichment, deps, tuning);
+    super(qdrant, embeddings, config, enrichment, deps, tuning, registryDeps);
   }
 
   async reindexChanges(
@@ -364,6 +370,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     await storeIndexingMarker(this.qdrant, this.embeddings, ctx.collectionName, true);
     await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
     await ctx.synchronizer.deleteCheckpoint();
+    await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);
 
     const enrichmentResult = getEnrichmentStatus();
     stats.enrichmentStatus = enrichmentResult.status;
