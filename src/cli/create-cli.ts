@@ -4,6 +4,7 @@ import { hideBin } from "yargs/helpers";
 import { primeCommand } from "./commands/prime.js";
 import { serverCommand } from "./commands/server.js";
 import { tuneCommand } from "./commands/tune.js";
+import { updateCommand } from "./commands/update.js";
 
 /**
  * Create a yargs CLI instance.
@@ -15,6 +16,7 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .command(serverCommand)
     .command(tuneCommand)
     .command(primeCommand)
+    .command(updateCommand)
     .demandCommand(1, "Please specify a command. Run with --help to see available commands.")
     .strict()
     .help();
