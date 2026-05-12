@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyProjectDefaults } from "../../src/cli/registry-resolver.ts";
+import { applyProjectDefaults } from "../../src/cli/registry-resolver.js";
 import { CollectionRegistry } from "../../src/core/infra/registry/collection-registry.js";
 
 describe("applyProjectDefaults", () => {
