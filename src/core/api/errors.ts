@@ -56,3 +56,58 @@ export class InvalidParameterError extends InputValidationError {
     });
   }
 }
+
+/**
+ * Thrown when a request references a project name that is not present in the registry.
+ */
+export class ProjectNotRegisteredError extends InputValidationError {
+  constructor(name: string, available: string[]) {
+    const list = available.length > 0 ? available.join(", ") : "(none)";
+    super({
+      code: "INPUT_PROJECT_NOT_REGISTERED",
+      message: `Project '${name}' is not registered. Available: ${list}`,
+      hint: "Register the project via index_codebase, or pick a name from the available list.",
+    });
+  }
+}
+
+/**
+ * Thrown when a project name collides with an already-registered collection.
+ */
+export class ProjectNameNotUniqueError extends InputValidationError {
+  constructor(name: string, existingCollectionName: string) {
+    super({
+      code: "INPUT_PROJECT_NAME_NOT_UNIQUE",
+      message: `Project name '${name}' is not unique — already used by '${existingCollectionName}'`,
+      hint: "Choose a different name or remove the existing project.",
+    });
+  }
+}
+
+/**
+ * Thrown when a project name violates the naming contract.
+ *
+ * @param reason - "regex" (invalid characters), "tooLong", or "empty"
+ */
+export class ProjectNameInvalidError extends InputValidationError {
+  constructor(name: string, reason: "regex" | "tooLong" | "empty") {
+    super({
+      code: "INPUT_PROJECT_NAME_INVALID",
+      message: `Project name '${name}' is invalid: ${reason}`,
+      hint: "Names must be non-empty, within length limits, and match the allowed character set.",
+    });
+  }
+}
+
+/**
+ * Thrown when a request provides a filesystem path that does not exist.
+ */
+export class PathDoesNotExistError extends InputValidationError {
+  constructor(path: string) {
+    super({
+      code: "INPUT_PROJECT_PATH_NOT_EXISTS",
+      message: `Path '${path}' does not exist`,
+      hint: "Provide an absolute path to an existing directory.",
+    });
+  }
+}
