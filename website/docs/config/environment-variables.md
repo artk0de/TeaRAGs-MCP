@@ -113,9 +113,17 @@ bottlenecks.
 
 ## Data Directories
 
-The server stores data in `~/.tea-rags/`:
+The server stores data in `$TEA_RAGS_DATA_DIR` (default `~/.tea-rags/`).
 
-| Directory    | Purpose                                              |
-| ------------ | ---------------------------------------------------- |
-| `snapshots/` | Sharded file hash snapshots for incremental indexing |
-| `logs/`      | Debug logs when `DEBUG=1` is enabled                 |
+| Variable            | Description                                          | Default        |
+| ------------------- | ---------------------------------------------------- | -------------- |
+| `TEA_RAGS_DATA_DIR` | Root directory for all per-machine tea-rags state    | `~/.tea-rags/` |
+
+Layout under the data directory:
+
+| Path             | Purpose                                                                                                        |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- |
+| `snapshots/`     | Sharded file hash snapshots for incremental indexing                                                           |
+| `logs/`          | Debug logs when `DEBUG=1` is enabled                                                                           |
+| `qdrant/`        | Embedded Qdrant binary and storage (when `QDRANT_URL` is unset or `embedded`)                                  |
+| `registry.json`  | Project registry: aliases + collection metadata. See [Project Registry](/usage/advanced/project-registry)      |
