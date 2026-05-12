@@ -18,6 +18,7 @@ import {
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
+import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import { InvalidParameterError } from "../../errors.js";
@@ -38,6 +39,7 @@ export interface ExploreFacadeDeps {
   embeddings: EmbeddingProvider;
   reranker: Reranker;
   registry: TrajectoryRegistry;
+  collectionRegistry: CollectionRegistry;
   statsCache?: StatsCache;
   schemaDriftMonitor?: SchemaDriftMonitor;
   payloadSignals?: PayloadSignalDescriptor[];
@@ -54,6 +56,7 @@ export class ExploreFacade {
       embeddings: deps.embeddings,
       reranker: deps.reranker,
       registry: deps.registry,
+      collectionRegistry: deps.collectionRegistry,
       statsCache: deps.statsCache,
       schemaDriftMonitor: deps.schemaDriftMonitor,
       payloadSignals: deps.payloadSignals ?? [],

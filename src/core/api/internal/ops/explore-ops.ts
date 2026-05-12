@@ -30,9 +30,9 @@ import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
+import type { CollectionRegistry } from "../../../infra/registry/index.js";
 import type { SchemaDriftMonitor } from "../../../infra/schema-drift-monitor.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
-import { CollectionNotProvidedError } from "../../errors.js";
 import {
   stripInternalFields,
   type ExploreCodeRequest,
@@ -50,6 +50,7 @@ export interface ExploreOpsDeps {
   embeddings: EmbeddingProvider;
   reranker: Reranker;
   registry: TrajectoryRegistry;
+  collectionRegistry: CollectionRegistry;
   statsCache?: StatsCache;
   schemaDriftMonitor?: SchemaDriftMonitor;
   payloadSignals: PayloadSignalDescriptor[];
@@ -62,6 +63,7 @@ export class ExploreOps {
   private readonly embeddings: EmbeddingProvider;
   private readonly reranker: Reranker;
   private readonly registry: TrajectoryRegistry;
+  private readonly collectionRegistry: CollectionRegistry;
   private readonly statsCache?: StatsCache;
   private readonly schemaDriftMonitor?: SchemaDriftMonitor;
   private readonly payloadSignals: PayloadSignalDescriptor[];
@@ -77,6 +79,7 @@ export class ExploreOps {
     this.embeddings = deps.embeddings;
     this.reranker = deps.reranker;
     this.registry = deps.registry;
+    this.collectionRegistry = deps.collectionRegistry;
     this.statsCache = deps.statsCache;
     this.schemaDriftMonitor = deps.schemaDriftMonitor;
     this.payloadSignals = deps.payloadSignals;
@@ -121,7 +124,7 @@ export class ExploreOps {
   }
 
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "rank_chunks");
     const filter = this.buildFilter(request, level);
     return this.executeExplore(
@@ -146,14 +149,14 @@ export class ExploreOps {
   }
 
   async findSimilar(request: FindSimilarRequest, strategy: SimilarSearchStrategy): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     const level = resolveEffectiveLevel(request.level, request.rerank, this.reranker, "semantic_search");
     const filter = this.buildFilter(request, level);
     return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path);
   }
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     return this.executeExplore(
       this.buildFindSymbolStrategy(request),
       buildFindSymbolContext(request, collectionName),
@@ -218,7 +221,7 @@ export class ExploreOps {
     request: SemanticSearchRequest | HybridSearchRequest,
     strategy: BaseExploreStrategy,
   ): Promise<ExploreResponse> {
-    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path);
+    const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     const { embedding } = await this.embeddings.embed(request.query);
     const rerank = resolveDocRerank(request.rerank, request.documentation, request.language);
     const level = resolveEffectiveLevel(request.level, rerank, this.reranker, "semantic_search");
@@ -267,9 +270,9 @@ export class ExploreOps {
   private async resolveAndGuard(
     collection?: string,
     path?: string,
+    project?: string,
   ): Promise<{ collectionName: string; path?: string }> {
-    if (!collection && !path) throw new CollectionNotProvidedError();
-    const resolved = resolveCollection(collection, path);
+    const resolved = resolveCollection(this.collectionRegistry, { collection, project, path });
     const exists = await this.qdrant.collectionExists(resolved.collectionName);
     if (!exists) throw new DomainCollectionNotFoundError(resolved.collectionName);
     await this.modelGuard?.ensureMatch(resolved.collectionName);

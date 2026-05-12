@@ -22,6 +22,7 @@ import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/in
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
+import { CollectionRegistry } from "../core/infra/registry/index.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
 import type { HealthProbes } from "../mcp/middleware/error-handler.js";
@@ -197,11 +198,13 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     ...composition.allPayloadSignalDescriptors.map((d) => d.key),
     "navigation",
   ]);
+  const collectionRegistry = new CollectionRegistry(config.paths.appData);
   const explore = new ExploreFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
     reranker: composition.reranker,
     registry: composition.registry,
+    collectionRegistry,
     statsCache,
     schemaDriftMonitor,
     payloadSignals: composition.allPayloadSignalDescriptors,
