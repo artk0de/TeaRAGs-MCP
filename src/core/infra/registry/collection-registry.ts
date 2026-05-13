@@ -1,14 +1,7 @@
+import { ProjectNameNotUniqueError } from "../../api/errors.js";
+import { PROJECT_NAME_RE } from "./constants.js";
 import { loadRegistryFile, saveRegistryFile } from "./registry-file.js";
 import type { CollectionEntry, RecordEntryInput, RegistryFileV1 } from "./types.js";
-
-export class ProjectNameNotUniqueError extends Error {
-  constructor(name: string, existingCollectionName: string) {
-    super(`Project name '${name}' is not unique — already used by '${existingCollectionName}'`);
-    this.name = "ProjectNameNotUniqueError";
-  }
-}
-
-const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export class CollectionRegistry {
   private cache: Map<string, CollectionEntry> | null = null;
@@ -74,8 +67,8 @@ export class CollectionRegistry {
       throw new Error(`Collection '${collectionName}' not in registry`);
     }
     if (name !== null) {
-      if (!NAME_RE.test(name)) {
-        throw new Error(`Name '${name}' does not match ${NAME_RE.source}`);
+      if (!PROJECT_NAME_RE.test(name)) {
+        throw new Error(`Name '${name}' does not match ${PROJECT_NAME_RE.source}`);
       }
       for (const other of map.values()) {
         if (other.name === name && other.collectionName !== collectionName) {

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { CollectionNotProvidedError, InputValidationError } from "../../../src/core/api/errors.js";
+import {
+  CollectionNotProvidedError,
+  InputValidationError,
+  ProjectNameNotUniqueError,
+} from "../../../src/core/api/errors.js";
 import { TeaRagsError } from "../../../src/core/infra/errors.js";
 
 describe("InputValidationError hierarchy", () => {
@@ -83,5 +87,18 @@ describe("InputValidationError hierarchy", () => {
       expect(err.message).toContain("collection");
       expect(err).toBeInstanceOf(InputValidationError);
     });
+  });
+});
+
+describe("ProjectNameNotUniqueError dedup (audit #4)", () => {
+  it("is an InputValidationError so the MCP middleware maps it to 400", () => {
+    const err = new ProjectNameNotUniqueError("foo", "code_abc");
+    expect(err).toBeInstanceOf(InputValidationError);
+  });
+
+  it("has a single definition in the codebase", async () => {
+    const fromApi = await import("../../../src/core/api/errors.js");
+    const fromRegistry = await import("../../../src/core/infra/registry/index.js");
+    expect(fromApi.ProjectNameNotUniqueError).toBe(fromRegistry.ProjectNameNotUniqueError);
   });
 });
