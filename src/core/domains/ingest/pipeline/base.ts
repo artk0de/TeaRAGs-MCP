@@ -12,6 +12,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
+import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";
@@ -53,8 +54,16 @@ const DEFAULT_TUNING: PipelineTuning = {
 /** Heartbeat interval: how often (ms) to update lastHeartbeat in the indexing marker */
 const HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
 
+/** Optional collaborators wired by the facade — kept out of the long positional list. */
+export interface PipelineRegistryDeps {
+  registry?: CollectionRegistry;
+  teaRagsVersion?: string;
+}
+
 export abstract class BaseIndexingPipeline {
   protected readonly tuning: PipelineTuning;
+  protected readonly registry: CollectionRegistry | undefined;
+  protected readonly teaRagsVersion: string;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
@@ -64,8 +73,11 @@ export abstract class BaseIndexingPipeline {
     protected readonly enrichment: EnrichmentCoordinator,
     protected readonly deps: IngestDependencies,
     tuning?: PipelineTuning,
+    registryDeps?: PipelineRegistryDeps,
   ) {
     this.tuning = tuning ?? DEFAULT_TUNING;
+    this.registry = registryDeps?.registry;
+    this.teaRagsVersion = registryDeps?.teaRagsVersion ?? "0.0.0";
   }
 
   /**
@@ -159,6 +171,33 @@ export abstract class BaseIndexingPipeline {
   ): Promise<() => EnrichmentStatusResult> {
     await this.flushAndShutdown(ctx.chunkPipeline, ctx.chunkerPool);
     return this.startEnrichment(chunkMap, collectionName, absolutePath);
+  }
+
+  /**
+   * Persist a project-registry entry for the freshly indexed collection.
+   * Failure is logged to stderr but never aborts the indexing run — the
+   * registry is an out-of-band catalogue, not part of the index transaction.
+   *
+   * MUST be called with the canonical (alias) name, not the versioned target.
+   * countPoints transparently resolves the alias to its current collection.
+   */
+  protected async recordRegistryEntry(collectionName: string, absolutePath: string): Promise<void> {
+    if (!this.registry) return;
+    try {
+      const chunksCount = await this.qdrant.countPoints(collectionName);
+      this.registry.record({
+        collectionName,
+        path: absolutePath,
+        embeddingModel: this.embeddings.getModel(),
+        embeddingDimensions: this.embeddings.getDimensions(),
+        qdrantUrl: this.qdrant.url,
+        indexedAt: new Date().toISOString(),
+        teaRagsVersion: this.teaRagsVersion,
+        chunksCount,
+      });
+    } catch (err) {
+      process.stderr.write(`[tea-rags] registry record failed: ${(err as Error).message}\n`);
+    }
   }
 
   // ── Processing components (private) ────────────────────

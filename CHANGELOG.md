@@ -1,3 +1,17 @@
+## Unreleased
+
+### Features
+
+- **registry:** project registry (`registry.json`) — auto-populated collection
+  metadata + named project bindings.
+  - New MCP tools: `register_project`, `list_projects`, `unregister_project`.
+  - New CLI commands: `register-project`, `list-projects`, `unregister-project`.
+  - All project-aware tools and commands accept an optional `project` parameter
+    (resolution priority: `collection > project > path`).
+  - `BaseIndexingPipeline.finalizeProcessing` records collection metadata to the
+    registry after Qdrant writes complete.
+  - `ProjectRegistryOps.recoverFromQdrant` for future doctor usage.
+
 ## [1.23.2](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.23.1...v1.23.2) (2026-05-08)
 
 ### Bug Fixes

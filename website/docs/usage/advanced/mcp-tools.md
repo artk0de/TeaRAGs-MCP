@@ -5,14 +5,21 @@ sidebar_position: 1
 
 # MCP Tools Atlas
 
-TeaRAGs exposes **17 MCP tools** grouped into 6 categories. Most user workflows
+TeaRAGs exposes **20 MCP tools** grouped into 7 categories. Most user workflows
 run through [Skills](/usage/skills/) which compose these tools automatically.
 Use this page when you want to build a custom workflow or understand what each
 tool does.
 
-All tools accept `path` (absolute project path) to auto-resolve the collection
-name. Most tools also accept an explicit `collection` parameter for multi-codebase
-scenarios ([collection management](./collections)).
+All project-aware tools accept three project resolvers, applied in strict order:
+
+| Parameter    | When to use                                              |
+| ------------ | -------------------------------------------------------- |
+| `collection` | You already know the collection name (highest priority) |
+| `project`    | A registered alias from the [Project Registry](./project-registry) |
+| `path`       | Absolute project path (auto-resolves the collection)    |
+
+At least one must be supplied — the MCP server does not fall back to its own
+`cwd`. See [Collections](./collections) for multi-codebase scenarios.
 
 ## Search
 
@@ -174,6 +181,21 @@ ad-hoc experiments or augmenting an existing index.
 Under normal usage, documents flow through `index_codebase` (chunking + embedding
 + enrichment). These tools are for cases where you want to inject a single
 artifact without re-indexing.
+
+## Project Registry
+
+Manage the per-machine registry at `~/.tea-rags/registry.json` that maps short
+aliases to indexed projects.
+
+| Tool                 | Purpose                                                                       |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `register_project`   | Bind a short name to a project path. Lets later calls use `project: "<name>"` |
+| `list_projects`      | List all registered projects with collection metadata                         |
+| `unregister_project` | Remove a name (idempotent; does NOT delete the Qdrant collection)             |
+
+The registered alias resolves to the project's path and collection name across
+every search and indexing tool — see [Project Registry](./project-registry)
+for the full guide, file format, and CLI equivalents.
 
 ## Tool → Skill Quick Reference
 

@@ -10,6 +10,9 @@ import { registerCodeTools } from "./code.js";
 import { registerCollectionTools } from "./collection.js";
 import { registerDocumentTools } from "./document.js";
 import { registerSearchTools } from "./explore.js";
+import { registerProjectTools } from "./list-projects.js";
+import { registerRegisterProjectTool } from "./register-project.js";
+import { registerUnregisterProjectTool } from "./unregister-project.js";
 
 export interface ToolDependencies {
   app: App;
@@ -27,6 +30,9 @@ export function registerAllTools(server: McpServer, deps: ToolDependencies): voi
   registerDocumentTools(server, { app: deps.app, register });
   registerSearchTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
   registerCodeTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
+  registerProjectTools(server, { app: deps.app, register });
+  registerRegisterProjectTool(server, { app: deps.app, register });
+  registerUnregisterProjectTool(server, { app: deps.app, register });
 }
 
 // Re-export schemas for external use

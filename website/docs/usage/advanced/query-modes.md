@@ -131,7 +131,7 @@ like `metaOnly`, Qdrant native filters, and all rerank presets.
 | Qdrant native filter syntax   | —                             | yes                                     |
 | `pathPattern` (glob)          | yes                           | yes                                     |
 | Rerank presets                | 4 (relevance, recent, stable, proven) | 15 (techDebt, hotspots, ownership, dangerous, bugHunt, ...) |
-| Requires collection name      | no (uses path)                | no (path or collection)                 |
+| Requires collection name      | no (uses path or project alias) | no (path, project alias, or collection) |
 
 ### When to use
 

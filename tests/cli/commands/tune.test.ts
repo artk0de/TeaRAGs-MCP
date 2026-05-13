@@ -1,9 +1,13 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { tuneCommand } from "../../../src/cli/commands/tune.js";
+import { CollectionRegistry } from "../../../src/core/infra/registry/collection-registry.js";
 
 vi.mock("node:child_process", () => ({
   spawn: vi.fn(),
@@ -130,5 +134,68 @@ describe("tune command", () => {
     expect(opts.env?.EMBEDDING_BASE_URL).toBeUndefined();
     expect(opts.env?.EMBEDDING_MODEL).toBeUndefined();
     expect(opts.env?.EMBEDDING_PROVIDER).toBeUndefined();
+  });
+
+  describe("--project option", () => {
+    let dataDir: string;
+
+    beforeEach(() => {
+      dataDir = mkdtempSync(join(tmpdir(), "tune-proj-"));
+      process.env.TEA_RAGS_DATA_DIR = dataDir;
+      const registry = new CollectionRegistry(dataDir);
+      registry.record({
+        collectionName: "code_xyz",
+        path: "/repo/x",
+        embeddingModel: "model-z",
+        embeddingDimensions: 512,
+        qdrantUrl: "http://qd:6333",
+        indexedAt: "2026-05-13T00:00:00Z",
+        teaRagsVersion: "0.1",
+        chunksCount: 0,
+      });
+      registry.setName("code_xyz", "alpha");
+    });
+
+    afterEach(() => {
+      delete process.env.TEA_RAGS_DATA_DIR;
+      rmSync(dataDir, { recursive: true, force: true });
+    });
+
+    it("resolves --project to path/qdrant-url/model from registry", () => {
+      (tuneCommand.handler as (args: object) => void)({ project: "alpha", full: false });
+
+      const [, args, opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(args).toContain("--path");
+      expect(args).toContain("/repo/x");
+      expect(opts.env?.QDRANT_URL).toBe("http://qd:6333");
+      expect(opts.env?.EMBEDDING_MODEL).toBe("model-z");
+    });
+
+    it("explicit flags win over registry defaults", () => {
+      (tuneCommand.handler as (args: object) => void)({
+        project: "alpha",
+        path: "/override",
+        model: "override-model",
+        full: false,
+      });
+
+      const [, args, opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(args).toContain("/override");
+      expect(args).not.toContain("/repo/x");
+      expect(opts.env?.EMBEDDING_MODEL).toBe("override-model");
+      // qdrant-url falls back to registry
+      expect(opts.env?.QDRANT_URL).toBe("http://qd:6333");
+    });
+
+    it("unknown project name exits with code 1", () => {
+      const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+        throw new Error("exit");
+      }) as (code?: number) => never);
+      expect(() => {
+        (tuneCommand.handler as (args: object) => void)({ project: "ghost", full: false });
+      }).toThrow("exit");
+      expect(exitSpy).toHaveBeenCalledWith(1);
+      exitSpy.mockRestore();
+    });
   });
 });

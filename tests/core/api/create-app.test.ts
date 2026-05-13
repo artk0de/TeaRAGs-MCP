@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
 import { createApp, type AppDeps, type ExploreFacade, type IngestFacade } from "../../../src/core/api/index.js";
+import type { ProjectRegistryOps } from "../../../src/core/api/internal/ops/project-registry-ops.js";
 import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
 import type { SchemaDriftMonitor } from "../../../src/core/infra/schema-drift-monitor.js";
 
@@ -88,6 +89,14 @@ function createMockDriftMonitor(): SchemaDriftMonitor {
   } as unknown as SchemaDriftMonitor;
 }
 
+function createMockProjectRegistryOps(): ProjectRegistryOps {
+  return {
+    register: vi.fn().mockResolvedValue({ collectionName: "code_test", alreadyIndexed: false }),
+    list: vi.fn().mockResolvedValue({ projects: [] }),
+    unregister: vi.fn().mockResolvedValue({ removed: false }),
+  } as unknown as ProjectRegistryOps;
+}
+
 function createMockDeps(): AppDeps {
   return {
     qdrant: createMockQdrant(),
@@ -96,6 +105,8 @@ function createMockDeps(): AppDeps {
     ingest: createMockIngestFacade(),
     reranker: createMockReranker(),
     schemaDriftMonitor: createMockDriftMonitor(),
+    projectRegistryOps: createMockProjectRegistryOps(),
+    quantizationScalar: true,
   };
 }
 

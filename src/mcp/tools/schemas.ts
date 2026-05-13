@@ -21,6 +21,21 @@ const coerceNumber = () => z.preprocess((v) => (typeof v === "string" ? Number(v
 /** Coerce string→boolean for MCP params (agents sometimes send "true" instead of true) */
 const coerceBoolean = () => z.preprocess((v) => (typeof v === "string" ? v === "true" : v), z.boolean());
 
+/**
+ * Optional project alias field. Mirrors the regex used by CollectionRegistry
+ * and SchemaBuilder.collectionIdentifier(). Exposed on every project-aware
+ * MCP tool as an alternative to `collection` / `path`.
+ */
+const projectField = () =>
+  z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, "Project name must match ^[a-z0-9][a-z0-9_-]{0,63}$")
+    .optional()
+    .describe(
+      "Project alias from registry (alternative to 'collection' or 'path'). " +
+        "Resolution priority: collection > project > path.",
+    );
+
 // ---------------------------------------------------------------------------
 // Collection management schemas (static)
 // ---------------------------------------------------------------------------
@@ -75,6 +90,7 @@ export const DeleteDocumentsSchema = {
 
 export const IndexCodebaseSchema = {
   path: z.string().describe("Absolute or relative path to codebase root directory"),
+  project: projectField(),
   forceReindex: coerceBoolean().optional().describe("Force full re-index even if already indexed (default: false)"),
   extensions: z.array(z.string()).optional().describe("Custom file extensions to index (e.g., ['.proto', '.graphql'])"),
   ignorePatterns: z
@@ -85,18 +101,22 @@ export const IndexCodebaseSchema = {
 
 export const ReindexChangesSchema = {
   path: z.string().describe("Path to codebase"),
+  project: projectField(),
 };
 
 export const GetIndexStatusSchema = {
   path: z.string().describe("Path to codebase"),
+  project: projectField(),
 };
 
 export const ClearIndexSchema = {
   path: z.string().describe("Path to codebase"),
+  project: projectField(),
 };
 
 export const GetIndexMetricsSchema = {
   path: z.string().describe("Path to codebase"),
+  project: projectField(),
 };
 
 // FindSymbolSchema is dynamic (needs rerank presets) — see createSearchSchemas()
@@ -106,16 +126,20 @@ export const GetIndexMetricsSchema = {
 // ---------------------------------------------------------------------------
 
 /**
- * Shared fields for collection/path resolution used in semantic/hybrid search.
+ * Shared fields for collection/path/project resolution used by every
+ * project-aware search tool. Mirrors the {@link CollectionIdentifier} DTO
+ * mixin (resolution priority: collection > project > path).
  */
 function collectionPathFields() {
   return {
-    collection: z.string().optional().describe("Collection name. Provide either 'collection' or 'path', not both."),
+    collection: z.string().optional().describe("Collection name. Provide one of 'collection', 'project', or 'path'."),
+    project: projectField(),
     path: z
       .string()
       .optional()
       .describe(
-        "Path to indexed codebase (auto-resolves collection name). Provide either 'path' or 'collection', not both.",
+        "Path to indexed codebase (auto-resolves collection name). " +
+          "Provide one of 'collection', 'project', or 'path'.",
       ),
   };
 }
@@ -261,6 +285,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
 
   const SearchCodeSchema = {
     path: z.string().describe("Path to codebase (must be indexed first)"),
+    project: projectField(),
     query: z.string().describe("Natural language search query (e.g., 'authentication logic')"),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10, max: 100)"),
     pathPattern: z

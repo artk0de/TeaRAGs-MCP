@@ -184,3 +184,74 @@ describe("HybridSearchSchema coercion", () => {
     expect(result.metaOnly).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// project field — exposed on every project-aware tool (T21)
+// ---------------------------------------------------------------------------
+
+describe("SemanticSearchSchema — project field", () => {
+  it("accepts optional project name", () => {
+    const result = parseSemanticSearch({ query: "x", project: "alpha" });
+    expect(result.project).toBe("alpha");
+  });
+
+  it("rejects invalid project name regex", () => {
+    expect(() => parseSemanticSearch({ query: "x", project: "BAD!" })).toThrow();
+  });
+
+  it("accepts project with hyphens, underscores and digits", () => {
+    const result = parseSemanticSearch({ query: "x", project: "my_project-123" });
+    expect(result.project).toBe("my_project-123");
+  });
+
+  it("rejects project name starting with hyphen", () => {
+    expect(() => parseSemanticSearch({ query: "x", project: "-bad" })).toThrow();
+  });
+
+  it("rejects empty project name", () => {
+    expect(() => parseSemanticSearch({ query: "x", project: "" })).toThrow();
+  });
+
+  it("accepts missing project (still optional)", () => {
+    const result = parseSemanticSearch({ query: "x" });
+    expect(result.project).toBeUndefined();
+  });
+});
+
+describe("HybridSearchSchema — project field", () => {
+  it("accepts optional project name", () => {
+    const result = parseHybridSearch({ query: "x", project: "alpha" });
+    expect(result.project).toBe("alpha");
+  });
+
+  it("rejects invalid project name regex", () => {
+    expect(() => parseHybridSearch({ query: "x", project: "Bad Name" })).toThrow();
+  });
+});
+
+describe("SearchCodeSchema — project field", () => {
+  it("accepts optional project name alongside path", () => {
+    const result = parseSearchCode({ path: "/tmp", query: "x", project: "alpha" });
+    expect(result.project).toBe("alpha");
+  });
+
+  it("rejects invalid project name regex", () => {
+    expect(() => parseSearchCode({ path: "/tmp", query: "x", project: "BAD!" })).toThrow();
+  });
+});
+
+describe("IndexCodebaseSchema — project field", () => {
+  it("accepts optional project name alongside path", () => {
+    const result = parseIndexCodebase({ path: "/tmp", project: "alpha" });
+    expect(result.project).toBe("alpha");
+  });
+
+  it("rejects invalid project name regex", () => {
+    expect(() => parseIndexCodebase({ path: "/tmp", project: "Bad!" })).toThrow();
+  });
+
+  it("accepts missing project (still optional)", () => {
+    const result = parseIndexCodebase({ path: "/tmp" });
+    expect(result.project).toBeUndefined();
+  });
+});

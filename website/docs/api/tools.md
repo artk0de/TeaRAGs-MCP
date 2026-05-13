@@ -31,6 +31,19 @@ sidebar_position: 1
 | `get_index_status` | Get indexing status and statistics for a codebase                          |
 | `clear_index`      | Delete all indexed data for a codebase                                     |
 
+## Project Registry
+
+| Tool                 | Description                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| `register_project`   | Register a short alias for a project path. Persists in `~/.tea-rags/registry.json`          |
+| `list_projects`      | List all registered projects with collection metadata (embedding model, chunks count, etc.) |
+| `unregister_project` | Remove a project alias by name (idempotent, does NOT delete the Qdrant collection)          |
+
+Once registered, the alias can be passed as `project` to any project-aware tool
+instead of `path` or `collection`. Resolution priority:
+`collection > project > path`. See
+**[Project Registry](/usage/advanced/project-registry)** for the full guide.
+
 ## Similarity Search
 
 | Tool           | Description                                                                 |

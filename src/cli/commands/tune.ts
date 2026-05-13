@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url";
 
 import type { CommandModule } from "yargs";
 
+import { applyProjectDefaults } from "../registry-resolver.js";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 interface TuneArgs {
+  project?: string;
   path?: string;
   full?: boolean;
   "qdrant-url"?: string;
@@ -52,6 +55,10 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
         describe: "Subcommand: embeddings (embedding-only tune)",
         choices: ["embeddings"],
       })
+      .option("project", {
+        type: "string",
+        describe: "Resolve --path / --qdrant-url / --model from registry by project name",
+      })
       .option("path", {
         type: "string",
         describe: "Path to project directory (uses source files as benchmark corpus)",
@@ -83,11 +90,12 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
         default: false,
       }),
   handler: (argv) => {
+    const resolved = applyProjectDefaults(argv as TuneArgs);
     const sub = argv.subcommand as string | undefined;
     if (sub === "embeddings") {
-      runScript("benchmark-embeddings.mjs", argv);
+      runScript("benchmark-embeddings.mjs", resolved);
     } else {
-      runScript("tune.mjs", argv);
+      runScript("tune.mjs", resolved);
     }
   },
 };

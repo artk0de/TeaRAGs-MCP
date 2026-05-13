@@ -14,8 +14,37 @@ import { z } from "zod";
 import { ConfigValueInvalidError } from "../../../../bootstrap/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 
+/**
+ * Zod schema for an optional project name. Mirrors the regex used by
+ * CollectionRegistry (`src/core/infra/registry/collection-registry.ts`).
+ */
+const projectNameSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, "Project name must match ^[a-z0-9][a-z0-9_-]{0,63}$")
+  .optional();
+
+/**
+ * Shared collection identifier schema: a DTO addressing a single collection
+ * by either `collection` name, `project` alias, or `path`.
+ * Resolution priority (in the resolver layer, not enforced here): collection > project > path.
+ */
+const collectionIdentifierSchema = z.object({
+  collection: z.string().optional(),
+  project: projectNameSchema,
+  path: z.string().optional(),
+});
+
 export class SchemaBuilder {
   constructor(private readonly reranker: Reranker) {}
+
+  /**
+   * Static — does not depend on instance state.
+   * Returns the shared Zod object schema for the CollectionIdentifier DTO mixin
+   * (`src/core/api/public/dto/common.ts`).
+   */
+  static collectionIdentifier(): typeof collectionIdentifierSchema {
+    return collectionIdentifierSchema;
+  }
 
   /**
    * Build Zod schema for custom scoring weights.
