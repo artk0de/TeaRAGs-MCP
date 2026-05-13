@@ -101,7 +101,11 @@ export class ProjectRegistryOps {
     }
     let { embeddingModel } = fallback;
     try {
-      const sample = await qdrant.scrollFiltered(collectionName, {}, 1);
+      // Scroll the indexing-marker point (_type=indexing_metadata, one per
+      // collection). Its payload carries embeddingModel set by the pipeline;
+      // regular code chunks do not.
+      const markerFilter = { must: [{ key: "_type", match: { value: "indexing_metadata" } }] };
+      const sample = await qdrant.scrollFiltered(collectionName, markerFilter, 1);
       const payload = (sample[0]?.payload ?? {}) as { embeddingModel?: unknown };
       const { embeddingModel: candidate } = payload;
       if (typeof candidate === "string" && candidate.length > 0) {
@@ -156,7 +160,8 @@ export class ProjectRegistryOps {
       }
       let embeddingModel = "";
       try {
-        const sample = await qdrant.scrollFiltered(collectionName, {}, 1);
+        const markerFilter = { must: [{ key: "_type", match: { value: "indexing_metadata" } }] };
+        const sample = await qdrant.scrollFiltered(collectionName, markerFilter, 1);
         const [first] = sample;
         const payload = (first?.payload ?? {}) as { embeddingModel?: unknown };
         const { embeddingModel: candidate } = payload;
