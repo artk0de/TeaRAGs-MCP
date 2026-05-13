@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   CollectionRegistry,
   loadRegistryFile,
-  ProjectNameNotUniqueError,
   RegistryFileCorruptedError,
+  RegistryNameConflictError,
   RegistryWriteError,
   saveRegistryFile,
 } from "../../../../src/core/infra/registry/index.js";
@@ -12,9 +12,9 @@ import {
 describe("infra/registry barrel", () => {
   it("re-exports all public API surface", () => {
     expect(CollectionRegistry).toBeDefined();
-    expect(ProjectNameNotUniqueError).toBeDefined();
     expect(RegistryFileCorruptedError).toBeDefined();
     expect(RegistryWriteError).toBeDefined();
+    expect(RegistryNameConflictError).toBeDefined();
     expect(typeof loadRegistryFile).toBe("function");
     expect(typeof saveRegistryFile).toBe("function");
   });

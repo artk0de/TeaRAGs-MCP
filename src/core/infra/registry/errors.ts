@@ -52,3 +52,21 @@ export class RegistryConcurrencyError extends InfraError {
     });
   }
 }
+
+/**
+ * Thrown by CollectionRegistry.setName when the requested name is already
+ * bound to a different collection. Infra-level defensive check — api callers
+ * (ProjectRegistryOps.register) pre-validate via findByName and raise the
+ * api-level InputValidationError first, so this only fires for direct registry
+ * users that bypassed the api layer.
+ */
+export class RegistryNameConflictError extends InfraError {
+  constructor(name: string, existingCollectionName: string) {
+    super({
+      code: "INFRA_REGISTRY_NAME_CONFLICT",
+      message: `Project name '${name}' is not unique — already used by '${existingCollectionName}'`,
+      hint: "Pre-validate via CollectionRegistry.findByName before calling setName, or surface this as a 409 to the user.",
+      httpStatus: 409,
+    });
+  }
+}
