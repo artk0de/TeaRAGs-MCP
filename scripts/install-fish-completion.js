@@ -22,7 +22,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const MARKER = "# tea-rags-fish-completion-v1";
+// Bump on every payload change so the auto-installer overwrites older
+// completion files (the installer checks `startsWith(MARKER)` — a fresh
+// header forces a rewrite for users on prior versions).
+const MARKER = "# tea-rags-fish-completion-v2";
+const OLD_MARKERS = ["# tea-rags-fish-completion-v1"];
 
 const COMPLETION_SCRIPT = `${MARKER}
 # Auto-installed by tea-rags postinstall. Overwritten on every package update.
@@ -37,7 +41,14 @@ function __tea_rags_complete
     tea-rags --get-yargs-completions (commandline -opc) (commandline -ct) 2>/dev/null
 end
 
+# Default: disable fish's built-in file completion so subcommand / flag
+# completion (emitted by our wrapper via yargs) is not buried under filenames.
 complete -c tea-rags -f -a "(__tea_rags_complete)"
+
+# Per-option override: \`--path\` ALWAYS takes a filesystem path. Re-enable
+# file completion just for this option (\`-F\` = force-files), overriding the
+# \`-f\` default above.
+complete -c tea-rags -l path -r -F
 `;
 
 function hasFish() {
@@ -78,7 +89,8 @@ function main() {
   if (existsSync(target)) {
     try {
       const current = readFileSync(target, "utf8");
-      if (!current.startsWith(MARKER)) {
+      const isOurFile = current.startsWith(MARKER) || OLD_MARKERS.some((old) => current.startsWith(old));
+      if (!isOurFile) {
         console.error(`[tea-rags] fish completion: ${target} exists and was not written by tea-rags; leaving it alone`);
         return;
       }

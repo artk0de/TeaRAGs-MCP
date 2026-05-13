@@ -53,9 +53,12 @@ describe("scripts/install-fish-completion", () => {
     const target = join(dir, "fish", "completions", "tea-rags.fish");
     expect(existsSync(target)).toBe(true);
     const body = readFileSync(target, "utf8");
-    expect(body).toContain("# tea-rags-fish-completion-v1");
+    expect(body).toContain("# tea-rags-fish-completion-v2");
     expect(body).toContain("__tea_rags_complete");
-    expect(body).toContain("complete -c tea-rags");
+    expect(body).toContain("complete -c tea-rags -f");
+    // Per-option file completion override for --path so file completion
+    // still works at that position.
+    expect(body).toContain("complete -c tea-rags -l path -r -F");
   });
 
   it("is a no-op when fish is not on PATH", () => {

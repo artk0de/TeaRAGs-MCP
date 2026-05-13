@@ -122,12 +122,23 @@ describe("CLI completion helpers", () => {
       expect(maybeCompleteProjectName(["projects", "info", "--name", ""], ["projects", "info"])).toEqual(["alpha"]);
     });
 
-    it("does NOT complete --name for 'projects register' (new alias being invented)", () => {
+    it("returns empty list for --name under 'projects register' (new alias, nothing to suggest)", () => {
       seedAlpha();
-      expect(maybeCompleteProjectName(["projects", "register", "--name", ""], ["projects", "register"])).toBeNull();
+      // Empty array — distinct from null. Signals "we have no suggestions"
+      // so the shell doesn't fall through to yargs flag-list defaults.
+      expect(maybeCompleteProjectName(["projects", "register", "--name", ""], ["projects", "register"])).toEqual([]);
     });
 
-    it("returns null when previous token is not a name/project flag", () => {
+    it("returns empty list for --path so the shell can do file completion", () => {
+      seedAlpha();
+      // --path always takes a filesystem path. We emit zero lines and let
+      // fish/bash fall back to its built-in file completion (via per-option
+      // -F rule in the fish wrapper).
+      expect(maybeCompleteProjectName(["tune", "--path", ""], ["tune"])).toEqual([]);
+      expect(maybeCompleteProjectName(["projects", "register", "--path", ""], ["projects", "register"])).toEqual([]);
+    });
+
+    it("returns null when previous token is not a name/project/path flag", () => {
       seedAlpha();
       expect(maybeCompleteProjectName(["tune", "--qdrant-url", ""], ["tune"])).toBeNull();
       expect(maybeCompleteProjectName(["projects", "list"], ["projects", "list"])).toBeNull();

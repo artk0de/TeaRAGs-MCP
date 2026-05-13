@@ -55,6 +55,14 @@ export function maybeCompleteProjectName(
     return listProjectNames();
   }
 
+  // `--path` always takes a filesystem path. We don't know any paths
+  // ourselves — return an empty list so the shell falls back to its own
+  // file completion (fish does this automatically when the wrapper emits
+  // zero lines AND the `complete -c` registration is not `-f`/--no-files).
+  if (last === "--path") {
+    return [];
+  }
+
   if (last === "--name" || last === "-n") {
     // yargs places the script name as positionals[0] in completion mode.
     // Drop it so we can check the real top-level command + subcommand.
@@ -62,6 +70,13 @@ export function maybeCompleteProjectName(
     const [topLevel, sub] = cleaned;
     if (topLevel === "projects" && typeof sub === "string" && NAME_FLAG_EXISTS_SUBCOMMANDS.has(sub)) {
       return listProjectNames();
+    }
+    // Under `projects register --name <TAB>` the user is inventing a new
+    // alias — we have nothing to suggest. Emit empty so the shell shows
+    // nothing (rather than yargs's default flag list which would be wrong
+    // at this value position).
+    if (topLevel === "projects") {
+      return [];
     }
   }
 
