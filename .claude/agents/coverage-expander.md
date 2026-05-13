@@ -35,9 +35,12 @@ nothing.
 2. **NEVER `grep` / `awk` / `sed` coverage stdout.** Parse
    `coverage/coverage-summary.json` instead — typed numeric shape, not regex on
    pretty-printed tables.
-3. **NEVER `Read` files under
-   `src/**/\*.ts`** to understand them. Use `mcp**tea-rags**find_symbol`(full class/function body) and`mcp**tea-rags**hybrid_search`(neighbors, patterns, existing tests).`Read`is permitted ONLY for`coverage/coverage-summary.json`, `coverage/coverage-final.json`, `vitest.config.ts`, `package.json`,
-   and existing test files you are about to extend.
+3. **NEVER `Read` source files** (anything under `src/`, including `.ts` /
+   `.tsx`). Use `mcp__tea-rags__find_symbol` (full class/function body) and
+   `mcp__tea-rags__hybrid_search` (neighbors, patterns, existing tests). `Read`
+   is permitted ONLY for `coverage/coverage-summary.json`,
+   `coverage/coverage-final.json`, `vitest.config.ts`, `package.json`, and
+   existing test files you are about to extend.
 4. **ONLY write test files** under `tests/`. Never modify production code,
    configs, or thresholds.
 5. **NEVER add `v8 ignore` / `eslint-disable` / `c8 ignore`** to production
