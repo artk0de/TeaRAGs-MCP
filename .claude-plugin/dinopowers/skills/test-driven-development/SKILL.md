@@ -61,7 +61,8 @@ Compose:
 Issue ONE `mcp__tea-rags__semantic_search` call:
 
 ```
-path:        <current project path>
+project:     <alias from list_projects — RECOMMENDED, omit path when set>
+path:        <current project path — fallback when no alias is registered>
 query:       <intent from Step 1>
 pathPattern: <pathHint, e.g. "tests/chunker/**">  ← optional; omit to search all tests
 testFile:    "only"                                ← built-in filter for test files

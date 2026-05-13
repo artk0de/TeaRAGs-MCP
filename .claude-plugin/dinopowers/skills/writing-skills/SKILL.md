@@ -48,7 +48,8 @@ Compose a single-sentence intent. This becomes the `query` in Step 2.
 Call `mcp__tea-rags__semantic_search` with these exact parameters:
 
 ```
-path:        <current project path>
+project:     <alias from list_projects — RECOMMENDED, omit path when set>
+path:        <current project path — fallback when no alias is registered>
 query:       <intent sentence from Step 1>
 pathPattern: "**/SKILL.md"
 limit:       8

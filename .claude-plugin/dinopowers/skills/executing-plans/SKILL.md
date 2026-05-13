@@ -83,7 +83,8 @@ Issue ONE `mcp__tea-rags__semantic_search` call — SAME idiom as
 `dinopowers:writing-plans` Step 2:
 
 ```
-path:        <current project path>
+project:     <alias from list_projects — RECOMMENDED, omit path when set>
+path:        <current project path — fallback when no alias is registered>
 query:       <taskIntent from Step 1>
 pathPattern: "{taskFile1,taskFile2,...}"   ← brace expansion
 rerank:      { custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }
