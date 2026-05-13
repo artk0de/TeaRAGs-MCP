@@ -53,4 +53,18 @@ describe("CLI unregister-project", () => {
     spy.mockRestore();
     expect(out.join("")).toMatch(/'ghost' was not registered/);
   });
+
+  it("builder declares required --name option", () => {
+    const calls: [string, Record<string, unknown>][] = [];
+    const yargsStub = {
+      option(name: string, opts: Record<string, unknown>) {
+        calls.push([name, opts]);
+        return this;
+      },
+    };
+    const builder = unregisterProjectCommand.builder as (y: typeof yargsStub) => typeof yargsStub;
+    builder(yargsStub);
+    const name = calls.find(([n]) => n === "name");
+    expect(name?.[1]).toMatchObject({ type: "string", demandOption: true });
+  });
 });

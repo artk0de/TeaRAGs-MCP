@@ -6,6 +6,7 @@ import {
   ProjectNameNotUniqueError,
   ProjectNotRegisteredError,
 } from "../../../src/core/api/errors.js";
+import { RegistryFileCorruptedError, RegistryWriteError } from "../../../src/core/infra/registry/errors.js";
 
 describe("project registry errors", () => {
   it("ProjectNotRegisteredError lists available names in message", () => {
@@ -30,5 +31,24 @@ describe("project registry errors", () => {
   it("PathDoesNotExistError quotes the path", () => {
     const e = new PathDoesNotExistError("/nope");
     expect(e.message).toContain("/nope");
+  });
+
+  it("RegistryFileCorruptedError exposes the path and reason", () => {
+    const e = new RegistryFileCorruptedError("/data/registry.json", "JSON parse failed: bad token");
+    expect(e.message).toContain("/data/registry.json");
+    expect(e.message).toContain("JSON parse failed");
+    expect(e.code).toBe("INFRA_REGISTRY_FILE_CORRUPTED");
+  });
+
+  it("RegistryWriteError keeps Error cause and drops non-Error cause", () => {
+    const inner = new Error("disk full");
+    const withError = new RegistryWriteError("/data/registry.json", inner);
+    expect(withError.cause).toBe(inner);
+    expect(withError.code).toBe("INFRA_REGISTRY_WRITE_FAILED");
+
+    // Non-Error cause (e.g. a thrown string) is intentionally dropped to keep
+    // the typed-error contract: `cause` is `Error | undefined`.
+    const withString = new RegistryWriteError("/data/registry.json", "raw string");
+    expect(withString.cause).toBeUndefined();
   });
 });

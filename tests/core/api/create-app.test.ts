@@ -45,6 +45,9 @@ function createMockExploreFacade(): ExploreFacade {
     hybridSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
     rankChunks: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
     searchCode: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
+    findSimilar: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
+    findSymbol: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
+    getIndexMetrics: vi.fn().mockResolvedValue({ total: 0, byLanguage: {}, byType: {}, signals: {} }),
   } as unknown as ExploreFacade;
 }
 
@@ -188,6 +191,53 @@ describe("createApp", () => {
       await app.searchCode(req);
 
       expect(deps.explore.searchCode).toHaveBeenCalledWith(req);
+    });
+
+    it("delegates findSimilar to ExploreFacade", async () => {
+      const app = createApp(deps);
+      const req = { positive: ["x"], collection: "c" };
+      await app.findSimilar(req as never);
+      expect(deps.explore.findSimilar).toHaveBeenCalledWith(req);
+    });
+
+    it("delegates findSymbol to ExploreFacade", async () => {
+      const app = createApp(deps);
+      const req = { symbol: "Foo.bar", collection: "c" };
+      await app.findSymbol(req as never);
+      expect(deps.explore.findSymbol).toHaveBeenCalledWith(req);
+    });
+
+    it("delegates getIndexMetrics to ExploreFacade", async () => {
+      const app = createApp(deps);
+      await app.getIndexMetrics("/foo");
+      expect(deps.explore.getIndexMetrics).toHaveBeenCalledWith("/foo");
+    });
+  });
+
+  // =========================================================================
+  // Project registry delegation
+  // =========================================================================
+
+  describe("project registry delegation", () => {
+    it("delegates registerProject to ProjectRegistryOps", async () => {
+      const app = createApp(deps);
+      const out = await app.registerProject({ path: "/repo", name: "alpha" });
+      expect(deps.projectRegistryOps.register).toHaveBeenCalledWith({ path: "/repo", name: "alpha" });
+      expect(out.collectionName).toBe("code_test");
+    });
+
+    it("delegates listProjects to ProjectRegistryOps", async () => {
+      const app = createApp(deps);
+      const out = await app.listProjects();
+      expect(deps.projectRegistryOps.list).toHaveBeenCalled();
+      expect(out.projects).toEqual([]);
+    });
+
+    it("delegates unregisterProject to ProjectRegistryOps", async () => {
+      const app = createApp(deps);
+      const out = await app.unregisterProject({ name: "alpha" });
+      expect(deps.projectRegistryOps.unregister).toHaveBeenCalledWith({ name: "alpha" });
+      expect(out.removed).toBe(false);
     });
   });
 

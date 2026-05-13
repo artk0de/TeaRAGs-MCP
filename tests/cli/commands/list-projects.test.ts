@@ -68,4 +68,19 @@ describe("CLI list-projects", () => {
     rmSync(emptyDir, { recursive: true, force: true });
     expect(out.join("")).toMatch(/no projects registered/);
   });
+
+  it("builder declares the --json flag with a boolean default", () => {
+    // End-to-end yargs option registration: the builder function defines the
+    // CLI surface. We capture the call to ensure --json is wired correctly.
+    const calls: [string, unknown][] = [];
+    const yargsStub = {
+      option(name: string, opts: unknown) {
+        calls.push([name, opts]);
+        return this;
+      },
+    };
+    const builder = listProjectsCommand.builder as (y: typeof yargsStub) => typeof yargsStub;
+    builder(yargsStub);
+    expect(calls.find(([n]) => n === "json")?.[1]).toMatchObject({ type: "boolean", default: false });
+  });
 });
