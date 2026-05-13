@@ -24,7 +24,8 @@ const coerceBoolean = () => z.preprocess((v) => (typeof v === "string" ? v === "
 /**
  * Optional project alias field. Mirrors the regex used by CollectionRegistry
  * and SchemaBuilder.collectionIdentifier(). Exposed on every project-aware
- * MCP tool as an alternative to `collection` / `path`.
+ * MCP tool as the RECOMMENDED way to address a codebase — see register_project
+ * to create an alias.
  */
 const projectField = () =>
   z
@@ -32,7 +33,10 @@ const projectField = () =>
     .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, "Project name must match ^[a-z0-9][a-z0-9_-]{0,63}$")
     .optional()
     .describe(
-      "Project alias from registry (alternative to 'collection' or 'path'). " +
+      "[RECOMMENDED] Project alias from registry — stable name that survives " +
+        "path moves and pulls qdrantUrl / embeddingModel from the registered " +
+        "entry. Use this when an alias exists; fall back to 'collection' or " +
+        "'path' only when no alias is registered. " +
         "Resolution priority: collection > project > path.",
     );
 
@@ -100,22 +104,46 @@ export const IndexCodebaseSchema = {
 };
 
 export const ReindexChangesSchema = {
-  path: z.string().optional().describe("Path to codebase. Provide one of 'collection', 'project', or 'path'."),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Filesystem path to codebase. " +
+        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
+    ),
   project: projectField(),
 };
 
 export const GetIndexStatusSchema = {
-  path: z.string().optional().describe("Path to codebase. Provide one of 'collection', 'project', or 'path'."),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Filesystem path to codebase. " +
+        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
+    ),
   project: projectField(),
 };
 
 export const ClearIndexSchema = {
-  path: z.string().optional().describe("Path to codebase. Provide one of 'collection', 'project', or 'path'."),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Filesystem path to codebase. " +
+        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
+    ),
   project: projectField(),
 };
 
 export const GetIndexMetricsSchema = {
-  path: z.string().optional().describe("Path to codebase. Provide one of 'collection', 'project', or 'path'."),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Filesystem path to codebase. " +
+        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
+    ),
   project: projectField(),
 };
 
@@ -132,14 +160,20 @@ export const GetIndexMetricsSchema = {
  */
 function collectionPathFields() {
   return {
-    collection: z.string().optional().describe("Collection name. Provide one of 'collection', 'project', or 'path'."),
+    collection: z
+      .string()
+      .optional()
+      .describe(
+        "Internal Qdrant collection name (lowest-level handle). " +
+          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
+      ),
     project: projectField(),
     path: z
       .string()
       .optional()
       .describe(
-        "Path to indexed codebase (auto-resolves collection name). " +
-          "Provide one of 'collection', 'project', or 'path'.",
+        "Filesystem path to indexed codebase (auto-resolves to a collection). " +
+          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
       ),
   };
 }
