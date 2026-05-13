@@ -7,7 +7,12 @@
 - If qdrantMode is "docker" or "native" → verify
   `curl -sf http://localhost:6333/healthz`. If not → remind user to start
   Qdrant.
-- If qdrantMode is "embedded" → no check needed (tea-rags starts it).
+- If qdrantMode is "embedded" → do NOT verify port 6333 (the embedded daemon
+  uses a random port) and do NOT try to wake the daemon via an MCP tool — MCP is
+  not configured yet at this step. Just verify the embedded binary exists:
+  `test -x "$HOME/.tea-rags/qdrant/bin/qdrant"`. The `tune` skill will tell
+  `tea-rags tune` to spawn the daemon on its own (see `tune` skill section 1a —
+  pass NO `--qdrant-url` for embedded mode).
 
 Invoke the `/tea-rags-setup:tune` skill. It will:
 

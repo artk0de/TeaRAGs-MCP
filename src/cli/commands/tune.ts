@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import type { CommandModule } from "yargs";
 
+import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -30,8 +31,9 @@ function buildEnv(argv: TuneArgs): NodeJS.ProcessEnv {
   return env;
 }
 
-/** Run a benchmark script with forwarded args and env */
-function runScript(script: string, argv: TuneArgs): void {
+/** Run a benchmark script with forwarded args and env, releasing the embedded
+ *  daemon ref (if any) before exiting. */
+function runScript(script: string, argv: TuneArgs, release?: () => void): void {
   const scriptPath = join(__dirname, "../../../benchmarks", script);
   const args: string[] = [];
   if (argv.path) args.push("--path", argv.path);
@@ -42,7 +44,10 @@ function runScript(script: string, argv: TuneArgs): void {
     env: buildEnv(argv),
   });
 
-  child.on("exit", (code) => process.exit(code ?? 1));
+  child.on("exit", (code) => {
+    release?.();
+    process.exit(code ?? 1);
+  });
 }
 
 export const tuneCommand: CommandModule<object, TuneArgs> = {
@@ -65,7 +70,8 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
       })
       .option("qdrant-url", {
         type: "string",
-        describe: "Qdrant URL (default: http://localhost:6333)",
+        describe:
+          "Qdrant URL. If omitted: probes http://localhost:6333, then spawns the embedded daemon (~/.tea-rags/qdrant) and uses its random port.",
       })
       .option("embedding-url", {
         type: "string",
@@ -89,13 +95,14 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
         describe: "Run full calibration (slower, more accurate)",
         default: false,
       }),
-  handler: (argv) => {
+  handler: async (argv) => {
     const resolved = applyProjectDefaults(argv as TuneArgs);
-    const sub = argv.subcommand as string | undefined;
-    if (sub === "embeddings") {
-      runScript("benchmark-embeddings.mjs", resolved);
-    } else {
-      runScript("tune.mjs", resolved);
+    const resolution = await resolveTuneQdrantUrl(resolved["qdrant-url"]);
+    if (resolution.url) {
+      resolved["qdrant-url"] = resolution.url;
     }
+    const sub = argv.subcommand as string | undefined;
+    const script = sub === "embeddings" ? "benchmark-embeddings.mjs" : "tune.mjs";
+    runScript(script, resolved, resolution.release);
   },
 };
