@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { formatPrime } from "../../src/cli/prime/format.js";
-import type { PrimeData } from "../../src/cli/prime/types.js";
+import { formatPrime } from "../../../src/cli/prime/format.js";
+import type { PrimeData } from "../../../src/cli/prime/types.js";
 
 const baseStatus = {
   status: "indexed" as const,

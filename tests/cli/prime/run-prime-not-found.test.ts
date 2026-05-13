@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runPrime } from "../../src/cli/prime/run-prime.js";
+import { runPrime } from "../../../src/cli/prime/run-prime.js";
 
-vi.mock("../../src/bootstrap/factory.js", () => ({
+vi.mock("../../../src/bootstrap/factory.js", () => ({
   createAppContext: vi.fn(),
 }));
 
