@@ -13,6 +13,9 @@ function fakeQdrant(opts: {
   count?: number;
   vectorSize?: number;
   model?: string;
+  teaRagsVersion?: string;
+  indexedAt?: string;
+  completedAt?: string;
   throwOn?: "exists" | "count" | "info" | "scroll";
 }): never {
   return {
@@ -39,7 +42,17 @@ function fakeQdrant(opts: {
     },
     scrollFiltered: async () => {
       if (opts.throwOn === "scroll") throw new Error("scroll fail");
-      return [{ id: "x", payload: { embeddingModel: opts.model ?? "" } }];
+      return [
+        {
+          id: "x",
+          payload: {
+            embeddingModel: opts.model ?? "",
+            ...(opts.teaRagsVersion !== undefined && { teaRagsVersion: opts.teaRagsVersion }),
+            ...(opts.indexedAt !== undefined && { indexedAt: opts.indexedAt }),
+            ...(opts.completedAt !== undefined && { completedAt: opts.completedAt }),
+          },
+        },
+      ];
     },
   } as never;
 }
@@ -212,5 +225,47 @@ describe("ProjectRegistryOps.register — enrichment & uniqueness", () => {
     expect(out.alreadyIndexed).toBe(true);
     expect(registry.findByName("new-name")?.chunksCount).toBe(5);
     expect(registry.findByName("old-name")).toBeNull();
+  });
+
+  it("reads teaRagsVersion and indexedAt from indexing-marker payload", async () => {
+    const registry = new CollectionRegistry(dir);
+    const qdrant = fakeQdrant({
+      existing: true,
+      count: 42,
+      vectorSize: 384,
+      model: "real-model",
+      teaRagsVersion: "1.24.0",
+      indexedAt: "2026-05-13T12:00:00.000Z",
+    });
+    await new ProjectRegistryOps({ registry, qdrant }).register({ path: realPath, name: "with-version" });
+
+    const entry = registry.findByName("with-version");
+    expect(entry?.teaRagsVersion).toBe("1.24.0");
+    expect(entry?.indexedAt).toBe("2026-05-13T12:00:00.000Z");
+    expect(entry?.embeddingModel).toBe("real-model");
+  });
+
+  it("falls back to completedAt when indexedAt is missing (older markers)", async () => {
+    const registry = new CollectionRegistry(dir);
+    const qdrant = fakeQdrant({
+      existing: true,
+      count: 10,
+      vectorSize: 384,
+      model: "m",
+      // Older markers wrote only completedAt, no indexedAt.
+      completedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await new ProjectRegistryOps({ registry, qdrant }).register({ path: realPath, name: "legacy" });
+
+    expect(registry.findByName("legacy")?.indexedAt).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("keeps empty teaRagsVersion when marker has none (pre-v5js indexes)", async () => {
+    const registry = new CollectionRegistry(dir);
+    // No teaRagsVersion in payload (legacy marker).
+    const qdrant = fakeQdrant({ existing: true, count: 1, vectorSize: 384, model: "m" });
+    await new ProjectRegistryOps({ registry, qdrant }).register({ path: realPath, name: "no-version" });
+
+    expect(registry.findByName("no-version")?.teaRagsVersion).toBe("");
   });
 });

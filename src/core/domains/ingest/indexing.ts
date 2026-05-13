@@ -229,7 +229,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
 
     const schemaManager = this.deps.createSchemaManager(versionedName);
     await schemaManager.initializeSchema(versionedName);
-    await storeIndexingMarker(this.qdrant, this.embeddings, versionedName, false, undefined);
+    await storeIndexingMarker(this.qdrant, this.embeddings, versionedName, false, undefined, this.teaRagsVersion);
 
     return {
       ready: true,

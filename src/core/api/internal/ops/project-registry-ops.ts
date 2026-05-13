@@ -114,28 +114,58 @@ export class ProjectRegistryOps {
     } catch {
       // keep fallback
     }
-    let { embeddingModel } = fallback;
+    let { embeddingModel, teaRagsVersion, indexedAt } = fallback;
     try {
       // Scroll the indexing-marker point (_type=indexing_metadata, one per
-      // collection). Its payload carries embeddingModel set by the pipeline;
-      // regular code chunks do not.
+      // collection). Its payload carries embeddingModel, teaRagsVersion and
+      // (after completion) indexedAt — set by storeIndexingMarker. Regular
+      // code chunks do not.
       const markerFilter = { must: [{ key: "_type", match: { value: "indexing_metadata" } }] };
       const sample = await qdrant.scrollFiltered(collectionName, markerFilter, 1);
-      const payload = (sample[0]?.payload ?? {}) as { embeddingModel?: unknown };
-      const { embeddingModel: candidate } = payload;
-      if (typeof candidate === "string" && candidate.length > 0) {
-        embeddingModel = candidate;
+      const payload = (sample[0]?.payload ?? {}) as {
+        embeddingModel?: unknown;
+        teaRagsVersion?: unknown;
+        indexedAt?: unknown;
+        completedAt?: unknown;
+      };
+      const { embeddingModel: modelCandidate, teaRagsVersion: versionCandidate } = payload;
+      if (typeof modelCandidate === "string" && modelCandidate.length > 0) {
+        embeddingModel = modelCandidate;
+      }
+      if (typeof versionCandidate === "string" && versionCandidate.length > 0) {
+        teaRagsVersion = versionCandidate;
+      }
+      // Prefer the explicit indexedAt; fall back to completedAt for markers
+      // written by older versions that only had completedAt.
+      const markerIndexedAt =
+        typeof payload.indexedAt === "string" && payload.indexedAt.length > 0
+          ? payload.indexedAt
+          : typeof payload.completedAt === "string" && payload.completedAt.length > 0
+            ? payload.completedAt
+            : "";
+      if (markerIndexedAt.length > 0) {
+        indexedAt = markerIndexedAt;
       }
     } catch {
       // keep fallback
     }
+    // Prefer the marker-derived indexedAt. If the marker had nothing and the
+    // collection is non-empty (i.e. it was indexed by code that predates the
+    // marker writing indexedAt), stamp a best-effort "now" timestamp so the
+    // entry isn't permanently blank — at least one re-register surfaces it.
+    const resolvedIndexedAt =
+      indexedAt.length > 0
+        ? indexedAt
+        : chunksCount > 0 && !fallback.indexedAt
+          ? new Date().toISOString()
+          : fallback.indexedAt;
     return {
       chunksCount,
       embeddingModel,
       embeddingDimensions,
       qdrantUrl: qdrant.url,
-      indexedAt: chunksCount > 0 && !fallback.indexedAt ? new Date().toISOString() : fallback.indexedAt,
-      teaRagsVersion: fallback.teaRagsVersion,
+      indexedAt: resolvedIndexedAt,
+      teaRagsVersion,
     };
   }
 
@@ -174,17 +204,43 @@ export class ProjectRegistryOps {
         // ignore — fall back to default
       }
       let embeddingModel = "";
+      let teaRagsVersion = "";
+      let indexedAt = "";
       try {
         const markerFilter = { must: [{ key: "_type", match: { value: "indexing_metadata" } }] };
         const sample = await qdrant.scrollFiltered(collectionName, markerFilter, 1);
         const [first] = sample;
-        const payload = (first?.payload ?? {}) as { embeddingModel?: unknown };
-        const { embeddingModel: candidate } = payload;
-        if (typeof candidate === "string") {
-          embeddingModel = candidate;
+        const payload = (first?.payload ?? {}) as {
+          embeddingModel?: unknown;
+          teaRagsVersion?: unknown;
+          indexedAt?: unknown;
+          completedAt?: unknown;
+        };
+        const {
+          embeddingModel: modelCandidate,
+          teaRagsVersion: versionCandidate,
+          indexedAt: indexedAtCandidate,
+          completedAt: completedAtCandidate,
+        } = payload;
+        if (typeof modelCandidate === "string") {
+          embeddingModel = modelCandidate;
+        }
+        if (typeof versionCandidate === "string") {
+          teaRagsVersion = versionCandidate;
+        }
+        if (typeof indexedAtCandidate === "string" && indexedAtCandidate.length > 0) {
+          indexedAt = indexedAtCandidate;
+        } else if (typeof completedAtCandidate === "string") {
+          indexedAt = completedAtCandidate;
         }
       } catch {
         // ignore — fall back to default
+      }
+      let chunksCount = 0;
+      try {
+        chunksCount = await qdrant.countPoints(collectionName);
+      } catch {
+        // ignore — keep 0
       }
       this.deps.registry.record({
         collectionName,
@@ -192,9 +248,9 @@ export class ProjectRegistryOps {
         embeddingModel,
         embeddingDimensions: dimensions,
         qdrantUrl: qdrant.url,
-        indexedAt: "",
-        teaRagsVersion: "",
-        chunksCount: 0,
+        indexedAt,
+        teaRagsVersion,
+        chunksCount,
       });
     }
   }
