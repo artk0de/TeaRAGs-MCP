@@ -35,3 +35,20 @@ export class RegistryWriteError extends InfraError {
     });
   }
 }
+
+/**
+ * Thrown when the CAS retry loop in flush() exhausts its attempts because
+ * another process keeps mutating registry.json. Indicates sustained
+ * contention; the caller should log and move on (pipeline) or surface to
+ * the user (interactive CLI).
+ */
+export class RegistryConcurrencyError extends InfraError {
+  constructor(path: string, attempts: number) {
+    super({
+      code: "INFRA_REGISTRY_CONCURRENCY",
+      message: `Registry file at ${path} was modified concurrently across ${attempts} attempts`,
+      hint: "Retry the operation; if it persists, check for runaway tea-rags processes.",
+      httpStatus: 503,
+    });
+  }
+}

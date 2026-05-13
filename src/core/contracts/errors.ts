@@ -64,6 +64,7 @@ export type ErrorCode =
   // Infra — Registry
   | "INFRA_REGISTRY_FILE_CORRUPTED"
   | "INFRA_REGISTRY_WRITE_FAILED"
+  | "INFRA_REGISTRY_CONCURRENCY"
   // Domain — Ingest
   | "INGEST_NOT_INDEXED"
   | "INGEST_COLLECTION_EXISTS"
