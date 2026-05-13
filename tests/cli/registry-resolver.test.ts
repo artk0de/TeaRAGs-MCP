@@ -57,4 +57,45 @@ describe("applyProjectDefaults", () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
     exitSpy.mockRestore();
   });
+
+  it("unknown project + no other named entries → '(none)' fallback in stderr", () => {
+    // Wipe the seed entry so there are zero registered names — exercises the
+    // `names.join(", ") || "(none)"` branch.
+    const emptyDir = mkdtempSync(join(tmpdir(), "cli-rr-empty-"));
+    process.env.TEA_RAGS_DATA_DIR = emptyDir;
+    const stderr: string[] = [];
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(((m: string) => {
+      stderr.push(String(m));
+      return true;
+    }) as never);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as any);
+    try {
+      expect(() => applyProjectDefaults({ project: "ghost" })).toThrow("exit");
+      expect(stderr.join("")).toMatch(/Available: \(none\)/);
+    } finally {
+      exitSpy.mockRestore();
+      stderrSpy.mockRestore();
+      rmSync(emptyDir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to ~/.tea-rags when TEA_RAGS_DATA_DIR is unset", () => {
+    // When env var is unset and project is requested, the resolver must look
+    // up the home directory. We don't have a registry at ~/.tea-rags/registry.json
+    // in tests, so the project is "unknown" and the function exits — but the
+    // path through resolveDataDir's homedir() branch is exercised.
+    delete process.env.TEA_RAGS_DATA_DIR;
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as any);
+    try {
+      expect(() => applyProjectDefaults({ project: "definitely-not-registered-xyz" })).toThrow("exit");
+    } finally {
+      exitSpy.mockRestore();
+      stderrSpy.mockRestore();
+    }
+  });
 });

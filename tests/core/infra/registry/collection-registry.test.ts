@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CollectionRegistry } from "../../../../src/core/infra/registry/collection-registry.js";
 import type { CollectionEntry } from "../../../../src/core/infra/registry/types.js";
@@ -95,5 +95,49 @@ describe("CollectionRegistry", () => {
     r.setName("code_abc", "alpha");
     r.setName("code_abc", null);
     expect(r.get("code_abc")?.name).toBeNull();
+  });
+
+  it("recovers as empty when registry.json is corrupt (writes warning, no throw)", () => {
+    // Pre-write a corrupt file. CollectionRegistry must log to stderr and
+    // start with an empty map — this is the safety net for users with a
+    // damaged registry, exercised end-to-end via the first ensureLoaded() call.
+    writeFileSync(join(dir, "registry.json"), "{not-json", "utf-8");
+    const stderr: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(((m: string) => {
+      stderr.push(String(m));
+      return true;
+    }) as never);
+    try {
+      const r = new CollectionRegistry(dir);
+      expect(r.list()).toEqual([]);
+      expect(r.get("anything")).toBeNull();
+      // After fallback, a record() must still work and persist.
+      r.record(makeEntry());
+      expect(r.get("code_abc")?.path).toBe("/repo/a");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(stderr.join("")).toMatch(/registry corrupt/);
+  });
+
+  it("setName() throws when collection is not in registry", () => {
+    const r = new CollectionRegistry(dir);
+    expect(() => {
+      r.setName("code_missing", "alpha");
+    }).toThrow(/not in registry/);
+  });
+
+  it("setName() rejects names that do not match the NAME_RE", () => {
+    const r = new CollectionRegistry(dir);
+    r.record(makeEntry());
+    expect(() => {
+      r.setName("code_abc", "BAD NAME!");
+    }).toThrow(/does not match/);
+    expect(() => {
+      r.setName("code_abc", "-leading-dash");
+    }).toThrow(/does not match/);
+    expect(() => {
+      r.setName("code_abc", "");
+    }).toThrow(/does not match/);
   });
 });

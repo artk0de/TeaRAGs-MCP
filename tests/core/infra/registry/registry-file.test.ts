@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { RegistryFileCorruptedError } from "../../../../src/core/infra/registry/errors.js";
+import { RegistryFileCorruptedError, RegistryWriteError } from "../../../../src/core/infra/registry/errors.js";
 import { loadRegistryFile, saveRegistryFile } from "../../../../src/core/infra/registry/registry-file.js";
 import type { RegistryFileV1 } from "../../../../src/core/infra/registry/types.js";
 
@@ -50,5 +50,29 @@ describe("registry-file", () => {
     const nested = join(dir, "deeper");
     saveRegistryFile(nested, { version: 1, collections: {} });
     expect(existsSync(join(nested, "registry.json"))).toBe(true);
+  });
+
+  it("loadRegistryFile rejects when JSON root is a primitive (string)", () => {
+    // typeof "hi" === "string" -> root-not-object branch
+    writeFileSync(join(dir, "registry.json"), JSON.stringify("hi"), "utf-8");
+    expect(() => loadRegistryFile(dir)).toThrow(/root is not an object/);
+  });
+
+  it("loadRegistryFile rejects when collections is not an object", () => {
+    writeFileSync(join(dir, "registry.json"), JSON.stringify({ version: 1, collections: "oops" }), "utf-8");
+    expect(() => loadRegistryFile(dir)).toThrow(/collections is not an object/);
+  });
+
+  it("loadRegistryFile rejects when JSON root is `null` literal", () => {
+    writeFileSync(join(dir, "registry.json"), "null", "utf-8");
+    expect(() => loadRegistryFile(dir)).toThrow(/root is not an object/);
+  });
+
+  it("saveRegistryFile wraps fs errors in RegistryWriteError when target is unwritable", () => {
+    // Make registry.json an existing *directory* — rename(tmp, registry.json) fails.
+    mkdirSync(join(dir, "registry.json"), { recursive: true });
+    expect(() => {
+      saveRegistryFile(dir, { version: 1, collections: {} });
+    }).toThrow(RegistryWriteError);
   });
 });

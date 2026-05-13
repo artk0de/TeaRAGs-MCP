@@ -76,4 +76,20 @@ describe("CLI register-project", () => {
       stderrSpy.mockRestore();
     }
   });
+
+  it("builder declares required --path and --name options", () => {
+    const calls: [string, Record<string, unknown>][] = [];
+    const yargsStub = {
+      option(name: string, opts: Record<string, unknown>) {
+        calls.push([name, opts]);
+        return this;
+      },
+    };
+    const builder = registerProjectCommand.builder as (y: typeof yargsStub) => typeof yargsStub;
+    builder(yargsStub);
+    const path = calls.find(([n]) => n === "path");
+    const name = calls.find(([n]) => n === "name");
+    expect(path?.[1]).toMatchObject({ type: "string", demandOption: true });
+    expect(name?.[1]).toMatchObject({ type: "string", demandOption: true });
+  });
 });
