@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -114,6 +114,9 @@ describe("CollectionRegistry", () => {
       // After fallback, a record() must still work and persist.
       r.record(makeEntry());
       expect(r.get("code_abc")?.path).toBe("/repo/a");
+      // The corrupt file must have been preserved as a .bak before fallback.
+      const filesAfter = readdirSync(dir);
+      expect(filesAfter.some((f: string) => f.startsWith("registry.json.corrupt-"))).toBe(true);
     } finally {
       spy.mockRestore();
     }
