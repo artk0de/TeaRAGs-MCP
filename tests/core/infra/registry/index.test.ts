@@ -7,7 +7,7 @@ import {
   RegistryFileCorruptedError,
   RegistryWriteError,
   saveRegistryFile,
-} from "../../src/core/infra/registry/index.js";
+} from "../../../../src/core/infra/registry/index.js";
 
 describe("infra/registry barrel", () => {
   it("re-exports all public API surface", () => {

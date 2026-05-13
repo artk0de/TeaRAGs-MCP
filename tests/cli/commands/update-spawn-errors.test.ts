@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { runUpdateCommand } from "../../src/cli/commands/update.js";
+import { runUpdateCommand } from "../../../src/cli/commands/update.js";
 
 function makeChild(): EventEmitter {
   return new EventEmitter();
