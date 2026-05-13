@@ -43,6 +43,21 @@ export class ProjectRegistryOps {
     }
 
     const existing = this.deps.registry.get(collectionName);
+
+    // Rename-only fast path: entry is already populated (chunksCount > 0).
+    // Skip Qdrant round-trip + record() — index_codebase owns enrichment
+    // freshness; register_project is just about the alias. Calling record()
+    // here would risk overwriting live data with a transient fallback if
+    // Qdrant blips during the read.
+    if (existing && existing.chunksCount > 0) {
+      this.deps.registry.setName(collectionName, input.name);
+      return { collectionName, alreadyIndexed: true };
+    }
+
+    // First register OR stub entry (chunksCount === 0, e.g. from
+    // recoverFromQdrant or register-before-index): try to populate from live
+    // Qdrant. Preserves the zkaz fix where re-register after index can
+    // surface chunksCount / embeddingModel into a previously-empty entry.
     const enriched = await this.tryEnrichFromQdrant(collectionName, existing);
 
     this.deps.registry.record({

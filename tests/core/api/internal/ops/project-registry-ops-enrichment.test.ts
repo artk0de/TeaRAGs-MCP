@@ -129,4 +129,88 @@ describe("ProjectRegistryOps.register — enrichment & uniqueness", () => {
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe("alpha");
   });
+
+  it("re-register on populated entry SKIPS Qdrant enrichment (rename-only fast path)", async () => {
+    const registry = new CollectionRegistry(dir);
+    // First register: enrich from live Qdrant — populates chunksCount > 0.
+    const liveQdrant = fakeQdrant({ existing: true, count: 100, vectorSize: 768, model: "first-model" });
+    await new ProjectRegistryOps({ registry, qdrant: liveQdrant }).register({ path: realPath, name: "alpha" });
+
+    // Second register: Qdrant mock now reports DIFFERENT data, but fast path
+    // must NOT call into it. We assert by recording call counts.
+    let exists = 0;
+    let count = 0;
+    let info = 0;
+    let scroll = 0;
+    const trapQdrant = {
+      url: "http://localhost:7777",
+      collectionExists: async () => {
+        exists++;
+        return true;
+      },
+      countPoints: async () => {
+        count++;
+        return 9999;
+      },
+      getCollectionInfo: async () => {
+        info++;
+        return {
+          name: "x",
+          vectorSize: 4096,
+          pointsCount: 9999,
+          distance: "Cosine" as const,
+          hybridEnabled: false,
+          status: "green" as const,
+          optimizerStatus: "ok",
+        };
+      },
+      scrollFiltered: async () => {
+        scroll++;
+        return [{ id: "x", payload: { embeddingModel: "trap-model" } }];
+      },
+    } as never;
+    const out = await new ProjectRegistryOps({ registry, qdrant: trapQdrant }).register({
+      path: realPath,
+      name: "alpha-renamed",
+    });
+
+    expect(out.alreadyIndexed).toBe(true);
+    expect({ exists, count, info, scroll }).toEqual({ exists: 0, count: 0, info: 0, scroll: 0 });
+    // Enrichment preserved — name updated.
+    const entry = registry.findByName("alpha-renamed");
+    expect(entry?.chunksCount).toBe(100);
+    expect(entry?.embeddingModel).toBe("first-model");
+    expect(entry?.embeddingDimensions).toBe(768);
+    expect(entry?.qdrantUrl).toBe("http://localhost:6333");
+    // Old name freed.
+    expect(registry.findByName("alpha")).toBeNull();
+  });
+
+  it("re-register on stub entry (chunksCount=0) DOES re-enrich (preserves zkaz fix)", async () => {
+    const registry = new CollectionRegistry(dir);
+    // First register without qdrant → stub with chunksCount=0.
+    await new ProjectRegistryOps({ registry }).register({ path: realPath, name: "stub" });
+    expect(registry.findByName("stub")?.chunksCount).toBe(0);
+
+    // Second register with live qdrant → populates fields.
+    const qdrant = fakeQdrant({ existing: true, count: 42, vectorSize: 384, model: "post-index-model" });
+    const out = await new ProjectRegistryOps({ registry, qdrant }).register({ path: realPath, name: "stub" });
+
+    expect(out.alreadyIndexed).toBe(true);
+    const entry = registry.findByName("stub");
+    expect(entry?.chunksCount).toBe(42);
+    expect(entry?.embeddingModel).toBe("post-index-model");
+  });
+
+  it("rename via re-register (populated, different name) does not require Qdrant", async () => {
+    const registry = new CollectionRegistry(dir);
+    const qdrant = fakeQdrant({ existing: true, count: 5, vectorSize: 384, model: "m" });
+    await new ProjectRegistryOps({ registry, qdrant }).register({ path: realPath, name: "old-name" });
+
+    // Rename works WITHOUT injecting qdrant at all.
+    const out = await new ProjectRegistryOps({ registry }).register({ path: realPath, name: "new-name" });
+    expect(out.alreadyIndexed).toBe(true);
+    expect(registry.findByName("new-name")?.chunksCount).toBe(5);
+    expect(registry.findByName("old-name")).toBeNull();
+  });
 });
