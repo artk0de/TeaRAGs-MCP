@@ -38,8 +38,9 @@ export function listProjectNames(): string[] {
  *   --name / -n              ONLY under `projects unregister` / `projects info`
  *
  * `tokens` is `process.argv` minus runtime + script path (i.e. the args yargs
- * actually parses). The yargs completion fn passes `argv._` for parsed
- * positionals; we use it to identify the active subcommand.
+ * actually parses). yargs's completion fn passes `argv._` for parsed
+ * positionals — but the first positional is the script name itself
+ * (yargs convention under `--get-yargs-completions`), so we drop it.
  */
 export function maybeCompleteProjectName(
   tokens: readonly string[],
@@ -47,7 +48,7 @@ export function maybeCompleteProjectName(
 ): string[] | null {
   // The token immediately before the one we're completing tells us which flag
   // is taking a value. `tokens` includes the (possibly partial) current word
-  // as the last entry under bash completion, so look one back from the end.
+  // as the last entry under shell completion, so look one back from the end.
   const last = tokens[tokens.length - 2] ?? "";
 
   if (last === "--project" || last === "-p") {
@@ -55,7 +56,10 @@ export function maybeCompleteProjectName(
   }
 
   if (last === "--name" || last === "-n") {
-    const [topLevel, sub] = parsedPositionals;
+    // yargs places the script name as positionals[0] in completion mode.
+    // Drop it so we can check the real top-level command + subcommand.
+    const cleaned = parsedPositionals[0] === "tea-rags" ? parsedPositionals.slice(1) : parsedPositionals;
+    const [topLevel, sub] = cleaned;
     if (topLevel === "projects" && typeof sub === "string" && NAME_FLAG_EXISTS_SUBCOMMANDS.has(sub)) {
       return listProjectNames();
     }

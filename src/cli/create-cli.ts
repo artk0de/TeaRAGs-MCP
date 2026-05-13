@@ -24,14 +24,28 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .completion(
       "completion",
       "Print the shell completion script (bash/zsh). Eval its output in your rc file.",
-      (_current, parsedArgv: { _?: unknown[] } | undefined) => {
+      // yargs treats this as a "fallback completion function" only when
+      // fn.length > 3 (see yargs/lib/completion.js isFallbackCompletionFunction).
+      // With 4 params yargs ignores the return value entirely — results MUST
+      // be emitted via either `defaultCompletions()` (yargs builds defaults)
+      // or `done(matches)` (our custom list).
+      (
+        _current: string,
+        parsedArgv: { _?: unknown[] } | undefined,
+        defaultCompletions: () => void,
+        done: (completions: string[]) => void,
+      ) => {
         const rawPositionals: unknown[] = parsedArgv?._ ?? [];
         const positionals = rawPositionals.map((v) => String(v));
-        // process.argv excludes the runtime + script; tokens we care about start
-        // after `--get-yargs-completions` (added by the install script).
         const tokens = argvSource;
         const projectMatches = maybeCompleteProjectName(tokens, positionals);
-        return projectMatches ?? [];
+        if (projectMatches !== null) {
+          done(projectMatches);
+          return;
+        }
+        // Let yargs emit its built-in completions (subcommands, flags) for any
+        // position we don't intercept.
+        defaultCompletions();
       },
     )
     .demandCommand(1, "Please specify a command. Run with --help to see available commands.")
