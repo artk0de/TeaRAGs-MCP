@@ -176,35 +176,59 @@ If `project` does not exist in the registry the call throws
 
 The same operations are available from the shell, useful in scripts and CI.
 
-### `tea-rags register-project`
+All project-registry operations live under the `tea-rags projects` command
+group. Running `tea-rags projects` with no subcommand is equivalent to
+`tea-rags projects list`.
+
+### `tea-rags projects register`
 
 ```bash
-tea-rags register-project --path /Users/alice/projects/shop-backend --name shop-backend
+tea-rags projects register --path /Users/alice/projects/shop-backend --name shop-backend
 ```
 
 Both `--path` and `--name` are required. On success prints
 `Registered '<name>' -> <collectionName>` (and `(already indexed)` when the
 collection already had chunks).
 
-### `tea-rags list-projects`
+### `tea-rags projects list`
 
 ```bash
-tea-rags list-projects
+tea-rags projects list
 # (no projects registered)         # when empty
 # shop-backend  code_8f42a1b3  /Users/alice/projects/shop-backend
 ```
 
-Add `--json` for a machine-readable dump of the full registry entries.
+Add `--json` for a machine-readable dump of the full registry entries. `tea-rags
+projects` (no subcommand) is an alias for `tea-rags projects list`.
 
-### `tea-rags unregister-project`
+### `tea-rags projects info`
 
 ```bash
-tea-rags unregister-project --name shop-backend
+tea-rags projects info --name shop-backend
+# name:                shop-backend
+# collectionName:      code_8f42a1b3
+# path:                /Users/alice/projects/shop-backend
+# qdrantUrl:           http://127.0.0.1:6333
+# embeddingModel:      unclemusclez/jina-embeddings-v2-base-code:latest
+# embeddingDimensions: 768
+# chunksCount:         3832
+# indexedAt:           2026-05-13T01:15:45.019Z
+# teaRagsVersion:      1.24.0
+```
+
+Add `--json` for a machine-readable single-entry dump. Exits 1 with
+`'<name>' was not registered` on stderr when the name is unknown.
+
+### `tea-rags projects unregister`
+
+```bash
+tea-rags projects unregister --name shop-backend
 # Removed 'shop-backend'
 ```
 
 Idempotent. Exits 0 with the message `'<name>' was not registered` when the
-project is absent.
+project is absent. Does not touch the underlying Qdrant collection — to delete
+the indexed data, use `clear_index` or `delete_collection`.
 
 ### `--project` flag on other commands
 
