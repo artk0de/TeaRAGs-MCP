@@ -43,10 +43,18 @@ nothing.
    existing test files you are about to extend.
 4. **ONLY write test files** under `tests/`. Never modify production code,
    configs, or thresholds.
-5. **NEVER add `v8 ignore` / `eslint-disable` / `c8 ignore`** to production
+5. **MIRROR `src/` → `tests/` STRUCTURE EXACTLY.** A test for
+   `src/core/foo/bar.ts` MUST live at `tests/core/foo/bar.test.ts`. NEVER create
+   test buckets like `tests/coverage-fill/`, `tests/gaps/`, `tests/misc/`,
+   `tests/uncovered/`, or any directory not mirroring a source directory. If a
+   test logically extends an existing test file, EDIT that file in place. If it
+   covers a new source file, place the new test at the mirrored path. Bucket
+   directories accumulate as garbage and hide which source the test covers;
+   reviewers cannot locate them by source path.
+6. **NEVER add `v8 ignore` / `eslint-disable` / `c8 ignore`** to production
    code.
-6. **NEVER rewrite existing passing tests.** Only append new tests.
-7. **Do NOT commit.** The parent agent handles commits.
+7. **NEVER rewrite existing passing tests.** Only append new tests.
+8. **Do NOT commit.** The parent agent handles commits.
 
 ## Workflow
 
@@ -103,8 +111,12 @@ output.
 For each target file:
 
 - One scenario per test. End-to-end behavior, not single-line drills.
-- Mirror `src/` → `tests/` (`src/core/foo/bar.ts` →
-  `tests/core/foo/bar.test.ts`).
+- Mirror `src/` → `tests/` EXACTLY (per Hard rule 5):
+  - `src/core/foo/bar.ts` → `tests/core/foo/bar.test.ts`
+  - `src/cli/commands/baz.ts` → `tests/cli/commands/baz.test.ts`
+  - If `tests/core/foo/bar.test.ts` already exists → `Edit` (append a new
+    `describe` / `it` block); do NOT create `tests/coverage-fill/bar.test.ts` or
+    any side-bucket variant.
 - Reuse mocks/helpers found in Step 3 (e.g.,
   `tests/core/domains/ingest/__helpers__/test-helpers.ts`).
 - `import { describe, expect, it, vi, beforeEach } from "vitest"`.
