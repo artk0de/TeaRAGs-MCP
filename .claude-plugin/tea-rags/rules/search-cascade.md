@@ -17,6 +17,25 @@ returns the full method/class definition — no Read needed.
 
 **MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
 
+## Addressing the Codebase (every tea-rags call)
+
+Every tea-rags tool that touches a collection accepts THREE addressing
+parameters; pick the first one available in this priority:
+
+1. **`project="<alias>"`** — preferred. Survives path moves, pulls registered
+   qdrantUrl + embeddingModel automatically. Aliases are listed in
+   `list_projects` and surfaced in the prime digest's `## Project` section.
+2. **`collection="<qdrant-name>"`** — when you already have a Qdrant collection
+   name (e.g. from a previous `list_collections` call).
+3. **`path="<absolute-project-path>"`** — fallback when no alias is registered.
+   Path is hashed into a collection name on the fly.
+
+Resolution priority used by the resolver: `collection > project > path`.
+Mix-and-match is allowed but redundant: if `project` resolves to a registered
+collection, the path is taken from the registry — passing `path` alongside is
+ignored. When unsure, register the project first (`register_project`) so all
+subsequent calls can use the stable alias.
+
 ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
 
 **The first search rarely returns a complete answer.** A chunk shows where the
@@ -279,10 +298,16 @@ Still surveying the landscape? → another search.
 - symbolId convention: Class#method (instance), Class.method (static)
 - Your QUERY containing `|` does not mean you want regex — check INTENT first:
   identifier search → hybrid_search; literal text markers → ripgrep
-- All tea-rags calls require: path="<absolute-project-path>"
+- All tea-rags calls require ONE of: `project="<alias>"` (PREFERRED when an
+  alias is registered — stable name, pulls registered qdrantUrl /
+  embeddingModel from the registry), `path="<absolute-project-path>"`, or
+  `collection="<qdrant-name>"`. Resolution priority: collection > project > path.
+  Check `list_projects` or the prime digest for known aliases.
 ```
 
-Replace `<absolute-project-path>` with the actual working directory path.
+Replace `<alias>` / `<absolute-project-path>` with the registered project name
+or actual working directory path. When both a project alias and a path are
+available, pass `project` — it resolves the rest from the registry.
 
 ## Prohibited Patterns
 
