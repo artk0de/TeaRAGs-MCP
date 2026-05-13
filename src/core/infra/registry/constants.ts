@@ -14,7 +14,7 @@
  * **Intended single source of truth.** Callers are being migrated to
  * import this constant instead of redeclaring the literal:
  *
- * - CollectionRegistry.setName — migrated in PR1 Task 2
+ * - CollectionRegistry.setName — migrating in PR1 Task 2
  * - ProjectRegistryOps.register — migrating in PR1 Task 5
  * - mcp/tools/register-project — migrating in PR1 Task 5
  *
