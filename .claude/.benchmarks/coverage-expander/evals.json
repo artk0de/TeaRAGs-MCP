@@ -1,0 +1,175 @@
+{
+  "skill": "coverage-expander",
+  "skill_path": ".claude/agents/coverage-expander.md",
+  "eval_method": "tool-selection plan, simulated subagents",
+  "cases": [
+    {
+      "id": 1,
+      "name": "Typical failure (real user scenario)",
+      "prompt": "Pre-commit failed: statements=96.68% (need 96.9%), functions=96.68% (need 97%). 23 new files in src/core/infra/registry/, src/cli/commands/*, src/mcp/tools/*. Plan tool sequence.",
+      "audit_finding": "Old skill used grep-on-stdout + Read on src + multiple coverage runs",
+      "assertions": [
+        { "key": "coverage_runs", "expected": "<=2", "weight": 1 },
+        {
+          "key": "uses_grep_on_coverage_stdout",
+          "expected": "no",
+          "weight": 1
+        },
+        { "key": "uses_Read_on_src", "expected": "no", "weight": 1 },
+        { "key": "uses_tea_rags_for_source", "expected": "yes", "weight": 1 }
+      ],
+      "results": {
+        "new_skill": {
+          "coverage_runs": 2,
+          "uses_grep_on_coverage_stdout": "no",
+          "uses_Read_on_src": "no",
+          "uses_tea_rags_for_source": "yes",
+          "pass": "4/4"
+        },
+        "old_skill": {
+          "coverage_runs": 3,
+          "uses_grep_on_coverage_stdout": "yes",
+          "uses_Read_on_src": "yes",
+          "uses_tea_rags_for_source": "no",
+          "pass": "0/4"
+        },
+        "baseline": {
+          "coverage_runs": 4,
+          "uses_grep_on_coverage_stdout": "yes",
+          "uses_Read_on_src": "yes",
+          "uses_tea_rags_for_source": "no",
+          "pass": "0/4"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Already passing (early exit)",
+      "prompt": "Pre-commit reports coverage failed, but a re-run shows all metrics above thresholds. What do you do?",
+      "audit_finding": "Old skill has no early-exit clause before Step 1 baseline",
+      "assertions": [
+        { "key": "early_exit_when_passing", "expected": "yes", "weight": 1 },
+        { "key": "coverage_runs", "expected": "0", "weight": 1 }
+      ],
+      "results": {
+        "new_skill": {
+          "early_exit_when_passing": "yes",
+          "coverage_runs": 0,
+          "pass": "2/2"
+        },
+        "old_skill": {
+          "early_exit_when_passing": "yes-after-1-run",
+          "coverage_runs": 1,
+          "pass": "1/2"
+        },
+        "baseline": {
+          "early_exit_when_passing": "no",
+          "coverage_runs": 1,
+          "pass": "0/2"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Hard cap",
+      "prompt": "First verify round failed: still below threshold. What's your maximum extra effort before stopping?",
+      "audit_finding": "Old skill says 'go back to Step 2 and pick more files' with no cap — unbounded retry",
+      "assertions": [
+        { "key": "hard_cap_respected", "expected": "yes", "weight": 1 },
+        { "key": "coverage_runs", "expected": "<=3", "weight": 1 }
+      ],
+      "results": {
+        "new_skill": {
+          "hard_cap_respected": "yes",
+          "coverage_runs": 3,
+          "pass": "2/2"
+        },
+        "old_skill": {
+          "hard_cap_respected": "no",
+          "coverage_runs": "4+",
+          "pass": "0/2"
+        },
+        "baseline": {
+          "hard_cap_respected": "no",
+          "coverage_runs": "4+",
+          "pass": "0/2"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Understanding a 200-line target",
+      "prompt": "Picked src/core/api/internal/ops/project-registry-ops.ts (low coverage). How do you understand its behavior?",
+      "audit_finding": "Old skill: 'Read the source file to understand its purpose' — no tea-rags",
+      "assertions": [
+        { "key": "uses_tea_rags_for_source", "expected": "yes", "weight": 1 },
+        { "key": "uses_Read_on_src", "expected": "no", "weight": 1 }
+      ],
+      "results": {
+        "new_skill": {
+          "uses_tea_rags_for_source": "yes",
+          "uses_Read_on_src": "no",
+          "pass": "2/2"
+        },
+        "old_skill": {
+          "uses_tea_rags_for_source": "no",
+          "uses_Read_on_src": "yes",
+          "pass": "0/2"
+        },
+        "baseline": {
+          "uses_tea_rags_for_source": "no",
+          "uses_Read_on_src": "yes",
+          "pass": "0/2"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "name": "Subagent context, no CLAUDE.md",
+      "prompt": "You are invoked as a subagent with no project rules visible — only your own definition. Reproduce Case 1 plan.",
+      "audit_finding": "Skill must be self-sufficient; cannot rely on project CLAUDE.md to enforce constraints",
+      "assertions": [
+        { "key": "coverage_runs", "expected": "<=2", "weight": 1 },
+        {
+          "key": "uses_grep_on_coverage_stdout",
+          "expected": "no",
+          "weight": 1
+        },
+        { "key": "uses_Read_on_src", "expected": "no", "weight": 1 },
+        { "key": "uses_tea_rags_for_source", "expected": "yes", "weight": 1 }
+      ],
+      "results": {
+        "new_skill": {
+          "coverage_runs": 2,
+          "uses_grep_on_coverage_stdout": "no",
+          "uses_Read_on_src": "no",
+          "uses_tea_rags_for_source": "yes",
+          "pass": "4/4"
+        },
+        "old_skill": {
+          "coverage_runs": 3,
+          "uses_grep_on_coverage_stdout": "yes",
+          "uses_Read_on_src": "yes",
+          "uses_tea_rags_for_source": "no",
+          "pass": "0/4"
+        },
+        "baseline": {
+          "coverage_runs": 4,
+          "uses_grep_on_coverage_stdout": "yes",
+          "uses_Read_on_src": "yes",
+          "uses_tea_rags_for_source": "no",
+          "pass": "0/4"
+        }
+      }
+    }
+  ],
+  "totals": {
+    "new_skill": { "passed": 14, "total": 14, "pct": 100.0 },
+    "old_skill": { "passed": 1, "total": 14, "pct": 7.1 },
+    "baseline": { "passed": 0, "total": 14, "pct": 0.0 }
+  },
+  "delta_pp": {
+    "new_vs_old": 92.9,
+    "new_vs_baseline": 100.0
+  }
+}

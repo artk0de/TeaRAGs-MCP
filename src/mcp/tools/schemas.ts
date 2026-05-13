@@ -100,22 +100,22 @@ export const IndexCodebaseSchema = {
 };
 
 export const ReindexChangesSchema = {
-  path: z.string().describe("Path to codebase"),
+  path: z.string().optional().describe("Path to codebase. Provide one of 'collection', 'project', or 'path'."),
   project: projectField(),
 };
 
 export const GetIndexStatusSchema = {
-  path: z.string().describe("Path to codebase"),
+  path: z.string().optional().describe("Path to codebase. Provide one of 'collection', 'project', or 'path'."),
   project: projectField(),
 };
 
 export const ClearIndexSchema = {
-  path: z.string().describe("Path to codebase"),
+  path: z.string().optional().describe("Path to codebase. Provide one of 'collection', 'project', or 'path'."),
   project: projectField(),
 };
 
 export const GetIndexMetricsSchema = {
-  path: z.string().describe("Path to codebase"),
+  path: z.string().optional().describe("Path to codebase. Provide one of 'collection', 'project', or 'path'."),
   project: projectField(),
 };
 

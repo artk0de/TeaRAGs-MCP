@@ -5,7 +5,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
-import type { ProjectInfo } from "../../../infra/registry/types.js";
+import type { CollectionEntry, ProjectInfo } from "../../../infra/registry/types.js";
 import { PathDoesNotExistError, ProjectNameInvalidError, ProjectNameNotUniqueError } from "../../errors.js";
 
 const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -36,32 +36,88 @@ export class ProjectRegistryOps {
     const realPath = await validatePath(input.path);
     const collectionName = resolveCollectionName(realPath);
 
-    const existing = this.deps.registry.get(collectionName);
-    const alreadyIndexed = existing !== null && existing.chunksCount > 0;
+    // Uniqueness check BEFORE any record() — prevents orphan-stub on conflict.
+    const conflicting = this.deps.registry.findByName(input.name);
+    if (conflicting && conflicting.collectionName !== collectionName) {
+      throw new ProjectNameNotUniqueError(input.name, conflicting.collectionName);
+    }
 
-    if (existing === null) {
-      this.deps.registry.record({
-        collectionName,
-        path: realPath,
-        embeddingModel: "",
-        embeddingDimensions: 0,
-        qdrantUrl: "",
-        indexedAt: "",
-        teaRagsVersion: "",
-        chunksCount: 0,
-      });
-    }
+    const existing = this.deps.registry.get(collectionName);
+    const enriched = await this.tryEnrichFromQdrant(collectionName, existing);
+
+    this.deps.registry.record({
+      collectionName,
+      path: realPath,
+      embeddingModel: enriched.embeddingModel,
+      embeddingDimensions: enriched.embeddingDimensions,
+      qdrantUrl: enriched.qdrantUrl,
+      indexedAt: enriched.indexedAt,
+      teaRagsVersion: enriched.teaRagsVersion,
+      chunksCount: enriched.chunksCount,
+    });
+    this.deps.registry.setName(collectionName, input.name);
+    return { collectionName, alreadyIndexed: enriched.chunksCount > 0 };
+  }
+
+  private async tryEnrichFromQdrant(
+    collectionName: string,
+    existing: CollectionEntry | null,
+  ): Promise<{
+    chunksCount: number;
+    embeddingModel: string;
+    embeddingDimensions: number;
+    qdrantUrl: string;
+    indexedAt: string;
+    teaRagsVersion: string;
+  }> {
+    const fallback = {
+      chunksCount: existing?.chunksCount ?? 0,
+      embeddingModel: existing?.embeddingModel ?? "",
+      embeddingDimensions: existing?.embeddingDimensions ?? 0,
+      qdrantUrl: existing?.qdrantUrl ?? "",
+      indexedAt: existing?.indexedAt ?? "",
+      teaRagsVersion: existing?.teaRagsVersion ?? "",
+    };
+    const { qdrant } = this.deps;
+    if (!qdrant) return fallback;
     try {
-      this.deps.registry.setName(collectionName, input.name);
-    } catch (err) {
-      const msg = (err as Error).message ?? "";
-      if (msg.includes("not unique")) {
-        const other = this.deps.registry.list().find((e) => e.name === input.name);
-        throw new ProjectNameNotUniqueError(input.name, other?.collectionName ?? "");
-      }
-      throw err;
+      const exists = await qdrant.collectionExists(collectionName);
+      if (!exists) return fallback;
+    } catch {
+      return fallback;
     }
-    return { collectionName, alreadyIndexed };
+    let { chunksCount } = fallback;
+    try {
+      chunksCount = await qdrant.countPoints(collectionName);
+    } catch {
+      // keep fallback
+    }
+    let { embeddingDimensions } = fallback;
+    try {
+      const info = await qdrant.getCollectionInfo(collectionName);
+      embeddingDimensions = info.vectorSize ?? embeddingDimensions;
+    } catch {
+      // keep fallback
+    }
+    let { embeddingModel } = fallback;
+    try {
+      const sample = await qdrant.scrollFiltered(collectionName, {}, 1);
+      const payload = (sample[0]?.payload ?? {}) as { embeddingModel?: unknown };
+      const { embeddingModel: candidate } = payload;
+      if (typeof candidate === "string" && candidate.length > 0) {
+        embeddingModel = candidate;
+      }
+    } catch {
+      // keep fallback
+    }
+    return {
+      chunksCount,
+      embeddingModel,
+      embeddingDimensions,
+      qdrantUrl: qdrant.url,
+      indexedAt: chunksCount > 0 && !fallback.indexedAt ? new Date().toISOString() : fallback.indexedAt,
+      teaRagsVersion: fallback.teaRagsVersion,
+    };
   }
 
   async list(): Promise<{ projects: ProjectInfo[] }> {

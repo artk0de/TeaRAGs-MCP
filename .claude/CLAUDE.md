@@ -93,3 +93,30 @@ rounds.
 - `fileSignalTransform` (NOT fileTransform)
 - `Signal` type (NOT FieldDoc)
 - `gitSignals: Signal[]` (NOT gitPayloadFields: FieldDoc[])
+
+## Automation Agents
+
+### coverage-expander (MANDATORY when commit fails coverage threshold)
+
+When a pre-commit hook fails with
+`ERROR: Coverage for <metric> (X%) does not meet global threshold (Y%)`, you
+MUST delegate to the `coverage-expander` subagent rather than writing tests
+inline. The agent is defined at `.claude/agents/coverage-expander.md` and is
+optimized for this exact scenario:
+
+- parses `coverage/coverage-summary.json` instead of grepping vitest stdout
+- uses `mcp__tea-rags__find_symbol` / `hybrid_search` instead of `Read` for
+  source discovery
+- runs `vitest --coverage` at most 2× (3× with one retry) per invocation —
+  hard-capped to keep latency bounded
+- never modifies production code, configs, or thresholds; never adds `v8 ignore`
+  / `eslint-disable`; never rewrites passing tests
+
+Invoke it via the `Agent` tool with `subagent_type: "coverage-expander"`. Pass
+the failing pre-commit output and (if relevant) which files the commit
+introduced. The agent writes test files only — the parent session handles the
+follow-up commit.
+
+Do NOT use `coverage-expander` for unrelated coverage exploration or test
+authoring outside a failing pre-commit hook — its early-exit clause stops it
+when thresholds are already met.

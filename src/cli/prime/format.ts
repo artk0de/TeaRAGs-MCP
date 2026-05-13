@@ -34,6 +34,15 @@ function formatDigest(data: PrimeData, now: Date): string {
   lines.push("## Status");
   lines.push(formatStatusLine(data.status, now));
 
+  if (data.projectName) {
+    lines.push("");
+    lines.push("## Project");
+    lines.push(`name: \`${data.projectName}\``);
+    lines.push(
+      `[hint] Use \`project: "${data.projectName}"\` as the preferred parameter in MCP tool calls (over path / collection).`,
+    );
+  }
+
   if (data.status.status !== "indexed") {
     return `${lines.join("\n")}\n`;
   }

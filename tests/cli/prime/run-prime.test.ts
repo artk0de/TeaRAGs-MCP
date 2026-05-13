@@ -76,7 +76,7 @@ describe("runPrime — happy path", () => {
       updateService: stubUpdateService(),
     });
 
-    await runPrime("/some/project");
+    await runPrime({ path: "/some/project" });
 
     expect(getStatusMock).toHaveBeenCalledWith("/some/project");
     expect(getMetricsMock).toHaveBeenCalledWith("/some/project");
@@ -93,7 +93,7 @@ describe("runPrime — failure paths", () => {
     createAppContextMock.mockClear();
     pingMock.mockClear();
 
-    await runPrime("/missing/dir");
+    await runPrime({ path: "/missing/dir" });
 
     expect(createAppContextMock).not.toHaveBeenCalled();
     expect(pingMock).not.toHaveBeenCalled();
@@ -106,7 +106,7 @@ describe("runPrime — failure paths", () => {
     pingMock.mockResolvedValue(false);
     createAppContextMock.mockClear();
 
-    await runPrime("/some/project");
+    await runPrime({ path: "/some/project" });
 
     expect(createAppContextMock).not.toHaveBeenCalled();
     expect(writeMock).toHaveBeenCalledTimes(1);
@@ -131,7 +131,7 @@ describe("runPrime — failure paths", () => {
       updateService: stubUpdateService(),
     });
 
-    await runPrime("/some/project");
+    await runPrime({ path: "/some/project" });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("warm-up pending");
@@ -169,7 +169,7 @@ describe("runPrime — update-check integration", () => {
     const ctx = buildFullCtx(vi.fn().mockResolvedValue(available("1.0.0", "1.1.0")));
     createAppContextMock.mockResolvedValue(ctx);
 
-    await runPrime("/some/project");
+    await runPrime({ path: "/some/project" });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("## tea-rags package");
@@ -181,7 +181,7 @@ describe("runPrime — update-check integration", () => {
     const ctx = buildFullCtx(vi.fn().mockResolvedValue(upToDate("1.0.0")));
     createAppContextMock.mockResolvedValue(ctx);
 
-    await runPrime("/some/project");
+    await runPrime({ path: "/some/project" });
 
     expect(writeMock.mock.calls[0][0]).not.toContain("## tea-rags package");
   });
@@ -192,7 +192,7 @@ describe("runPrime — update-check integration", () => {
     const ctx = buildFullCtx(vi.fn().mockRejectedValue(new Error("boom")));
     createAppContextMock.mockResolvedValue(ctx);
 
-    await runPrime("/some/project");
+    await runPrime({ path: "/some/project" });
 
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("# tea-rags prime");
@@ -205,7 +205,7 @@ describe("runPrime — update-check integration", () => {
     const ctx = buildFullCtx(checkForUpdateMock);
     createAppContextMock.mockResolvedValue(ctx);
 
-    await runPrime("/some/project");
+    await runPrime({ path: "/some/project" });
 
     expect(checkForUpdateMock).toHaveBeenCalledWith({
       allowNetwork: true,
