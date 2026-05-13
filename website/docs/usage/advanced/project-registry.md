@@ -244,6 +244,28 @@ tea-rags tune --project shop-backend
 If the project name is not registered the command fails fast with
 `Project '<name>' not registered. Available: <list of names>`.
 
+### Shell completion
+
+`tea-rags` ships with bash/zsh tab-completion that suggests registered project
+aliases for `--project <TAB>`, `tea-rags projects info --name <TAB>`, and
+`tea-rags projects unregister --name <TAB>`. The `register` subcommand
+deliberately does NOT complete `--name` — there the value is a new alias the
+user is inventing.
+
+Install once per shell:
+
+```bash
+# bash
+tea-rags completion >> ~/.bashrc
+
+# zsh
+tea-rags completion >> ~/.zshrc
+```
+
+Then `source` the rc file (or open a new shell). After indexing and
+registering a project, `--project ` followed by TAB will autocomplete with the
+alias names from `~/.tea-rags/registry.json`.
+
 ## Storage Location
 
 The registry path follows the same convention as the rest of the per-machine
