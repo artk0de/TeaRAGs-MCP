@@ -246,25 +246,24 @@ If the project name is not registered the command fails fast with
 
 ### Shell completion
 
-`tea-rags` ships with bash/zsh tab-completion that suggests registered project
-aliases for `--project <TAB>`, `tea-rags projects info --name <TAB>`, and
+`tea-rags` ships with tab-completion that suggests registered project aliases
+for `--project <TAB>`, `tea-rags projects info --name <TAB>`, and
 `tea-rags projects unregister --name <TAB>`. The `register` subcommand
 deliberately does NOT complete `--name` — there the value is a new alias the
 user is inventing.
 
-Install once per shell:
+| Shell | Install |
+| ----- | ------- |
+| **fish** | Auto-installed by `postinstall` when fish is detected on `PATH`. Re-runs on every package update. Manual cleanup: `rm ~/.config/fish/completions/tea-rags.fish` |
+| **bash** | `tea-rags completion >> ~/.bashrc` (one-time) |
+| **zsh** | `tea-rags completion >> ~/.zshrc` (one-time) |
 
-```bash
-# bash
-tea-rags completion >> ~/.bashrc
+For bash/zsh, `source` the rc file (or open a new shell) after installing.
+Fish auto-discovers completions from `~/.config/fish/completions/` — no rc
+edit needed.
 
-# zsh
-tea-rags completion >> ~/.zshrc
-```
-
-Then `source` the rc file (or open a new shell). After indexing and
-registering a project, `--project ` followed by TAB will autocomplete with the
-alias names from `~/.tea-rags/registry.json`.
+After indexing and registering a project, `--project ` followed by TAB will
+autocomplete with the alias names from `~/.tea-rags/registry.json`.
 
 ## Storage Location
 
