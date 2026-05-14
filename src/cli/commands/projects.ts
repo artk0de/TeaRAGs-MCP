@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -116,13 +117,35 @@ export function runInfo(args: InfoArgs): void {
     process.exit(1);
     return;
   }
+
+  // Compute live realpath. Missing on disk → null sentinel rendered as
+  // "(missing on disk)" in text mode and omitted from JSON. Audit #13.
+  let realpath: string | null;
+  try {
+    realpath = realpathSync(entry.path);
+  } catch {
+    realpath = null;
+  }
+  const realpathDiffers = realpath !== null && realpath !== entry.path;
+
   if (args.json) {
-    process.stdout.write(`${JSON.stringify(entry, null, 2)}\n`);
+    const payload: Record<string, unknown> = { ...entry };
+    if (realpathDiffers) {
+      payload.realpath = realpath;
+    }
+    process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     return;
   }
+
   process.stdout.write(`name:                ${entry.name ?? "(no name)"}\n`);
   process.stdout.write(`collectionName:      ${entry.collectionName}\n`);
   process.stdout.write(`path:                ${entry.path}\n`);
+  if (realpath === null) {
+    process.stdout.write(`realpath:            (missing on disk)\n`);
+  } else if (realpathDiffers) {
+    process.stdout.write(`realpath:            ${realpath}\n`);
+    process.stdout.write(`                     (symlink or moved mount — re-register to refresh)\n`);
+  }
   process.stdout.write(`qdrantUrl:           ${entry.qdrantUrl || "(none)"}\n`);
   process.stdout.write(`embeddingModel:      ${entry.embeddingModel || "(none)"}\n`);
   process.stdout.write(`embeddingDimensions: ${entry.embeddingDimensions || 0}\n`);

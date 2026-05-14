@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -465,6 +465,141 @@ describe("CLI 'projects' command group", () => {
         expect(deleteCollection).not.toHaveBeenCalled();
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         expect(out).toContain("was not registered");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+  });
+
+  describe("info — symlink/realpath mismatch (audit #13)", () => {
+    it("text mode adds a realpath line + hint when path diverges from realpathSync", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const realDir = join(dir, "real");
+        const linkDir = join(dir, "link");
+        mkdirSync(realDir);
+        writeFileSync(join(realDir, ".keep"), "");
+        symlinkSync(realDir, linkDir);
+
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_link",
+          path: linkDir,
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 0,
+        });
+        reg.setName("code_link", "linky");
+        runInfo({ name: "linky" });
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain(`path:                ${linkDir}`);
+        expect(out).toContain(`realpath:`);
+        expect(out).toContain(realDir);
+        expect(out.toLowerCase()).toContain("symlink");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("text mode omits the realpath line when stored path already equals realpathSync", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_direct",
+          path: realpathSync(repo),
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 0,
+        });
+        reg.setName("code_direct", "direct");
+        runInfo({ name: "direct" });
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).not.toContain("realpath:");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("text mode reports '(missing on disk)' when realpathSync throws", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_gone",
+          path: join(dir, "nonexistent-subdir"),
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 0,
+        });
+        reg.setName("code_gone", "gone");
+        runInfo({ name: "gone" });
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out.toLowerCase()).toContain("missing on disk");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--json includes realpath only when it differs from stored path", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const realDir = join(dir, "real-json");
+        const linkDir = join(dir, "link-json");
+        mkdirSync(realDir);
+        writeFileSync(join(realDir, ".keep"), "");
+        symlinkSync(realDir, linkDir);
+
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_jsonlink",
+          path: linkDir,
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 0,
+        });
+        reg.setName("code_jsonlink", "jsonlink");
+        runInfo({ name: "jsonlink", json: true });
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        const parsed = JSON.parse(out.trim());
+        expect(parsed.path).toBe(linkDir);
+        expect(parsed.realpath).toBe(realpathSync(linkDir));
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--json omits realpath when path already equals realpathSync", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_direct_json",
+          path: realpathSync(repo),
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 0,
+        });
+        reg.setName("code_direct_json", "directjson");
+        runInfo({ name: "directjson", json: true });
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        const parsed = JSON.parse(out.trim());
+        expect(parsed.realpath).toBeUndefined();
       } finally {
         stdout.mockRestore();
       }
