@@ -15,6 +15,7 @@ interface RegisterArgs {
 }
 interface UnregisterArgs {
   name: string;
+  purge?: boolean;
 }
 interface ListArgs {
   json?: boolean;
@@ -52,10 +53,37 @@ export async function runRegister(args: RegisterArgs): Promise<void> {
   }
 }
 
-export async function runUnregister(args: UnregisterArgs): Promise<void> {
-  const { ops } = newOps();
+export async function runUnregister(
+  args: UnregisterArgs,
+  qdrant?: Pick<QdrantManager, "deleteCollection" | "countPoints">,
+): Promise<void> {
+  const { registry, ops } = newOps();
+  // Capture the collectionName before the entry is removed so we can purge it.
+  const entry = registry.findByName(args.name);
   const out = await ops.unregister({ name: args.name });
-  process.stdout.write(out.removed ? `Removed '${args.name}'\n` : `'${args.name}' was not registered\n`);
+  if (!out.removed) {
+    process.stdout.write(`'${args.name}' was not registered\n`);
+    return;
+  }
+  const collectionName = entry?.collectionName ?? "(unknown)";
+  if (args.purge) {
+    const client = qdrant ?? (await defaultQdrant());
+    const chunkCount = await safeCount(client, collectionName);
+    try {
+      await client.deleteCollection(collectionName);
+      process.stdout.write(
+        `Removed '${args.name}' from registry; deleted Qdrant collection '${collectionName}' (${chunkCount} chunks)\n`,
+      );
+    } catch (err) {
+      process.stdout.write(
+        `Removed '${args.name}' from registry; failed to delete Qdrant collection '${collectionName}': ${(err as Error).message}\n`,
+      );
+    }
+    return;
+  }
+  process.stdout.write(
+    `Removed '${args.name}' from registry. Note: Qdrant collection '${collectionName}' is still present. Run 'tea-rags projects unregister --name ${args.name} --purge' to remove it.\n`,
+  );
 }
 
 export function runList(args: ListArgs): void {
@@ -182,9 +210,14 @@ export const projectsCommand: CommandModule = {
       )
       .command<UnregisterArgs>(
         "unregister",
-        "Remove a registered project by name (does not touch Qdrant)",
-        (y) => y.option("name", { type: "string", demandOption: true, describe: "Project name to remove" }),
-        async (argv) => runUnregister({ name: argv.name }),
+        "Remove a registered project by name (optionally also delete the Qdrant collection)",
+        (y) =>
+          y.option("name", { type: "string", demandOption: true, describe: "Project name to remove" }).option("purge", {
+            type: "boolean",
+            default: false,
+            describe: "Also delete the underlying Qdrant collection",
+          }),
+        async (argv) => runUnregister({ name: argv.name, purge: argv.purge }),
       )
       .command<OrphansArgs>(
         "orphans",

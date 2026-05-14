@@ -302,4 +302,106 @@ describe("CLI 'projects' command group", () => {
       }
     });
   });
+
+  describe("unregister --purge (audit #8 purge half) + verbose hint (audit #12)", () => {
+    it("--purge calls qdrant.deleteCollection on the removed entry", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_purgeme",
+          path: repo,
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 99,
+        });
+        reg.setName("code_purgeme", "victim");
+        const deleteCollection = vi.fn().mockResolvedValue(undefined);
+        const countPoints = vi.fn().mockResolvedValue(99);
+        const fakeQdrant = { deleteCollection, countPoints } as never;
+        const { runUnregister } = await import("../../../src/cli/commands/projects.js");
+        await runUnregister({ name: "victim", purge: true }, fakeQdrant);
+        expect(deleteCollection).toHaveBeenCalledWith("code_purgeme");
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain("Removed 'victim'");
+        expect(out).toContain("code_purgeme");
+        expect(out.toLowerCase()).toContain("deleted");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--purge still completes when qdrant.deleteCollection rejects", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_qfail",
+          path: repo,
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 5,
+        });
+        reg.setName("code_qfail", "qfail");
+        const deleteCollection = vi.fn().mockRejectedValue(new Error("network down"));
+        const countPoints = vi.fn().mockResolvedValue(5);
+        const fakeQdrant = { deleteCollection, countPoints } as never;
+        const { runUnregister } = await import("../../../src/cli/commands/projects.js");
+        await runUnregister({ name: "qfail", purge: true }, fakeQdrant);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain("Removed 'qfail' from registry");
+        expect(out.toLowerCase()).toContain("failed to delete");
+        expect(out).toContain("network down");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("without --purge prints a hint that the Qdrant collection is still present", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_keep",
+          path: repo,
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 5,
+        });
+        reg.setName("code_keep", "ghost");
+        const { runUnregister } = await import("../../../src/cli/commands/projects.js");
+        await runUnregister({ name: "ghost", purge: false });
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain("Removed 'ghost'");
+        expect(out).toContain("code_keep");
+        expect(out.toLowerCase()).toContain("still present");
+        expect(out).toContain("--purge");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("unregister of a missing name reports it without trying to delete", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const deleteCollection = vi.fn();
+        const { runUnregister } = await import("../../../src/cli/commands/projects.js");
+        await runUnregister({ name: "ghost-missing", purge: true }, { deleteCollection } as never);
+        expect(deleteCollection).not.toHaveBeenCalled();
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain("was not registered");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+  });
 });
