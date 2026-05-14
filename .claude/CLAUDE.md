@@ -120,3 +120,58 @@ follow-up commit.
 Do NOT use `coverage-expander` for unrelated coverage exploration or test
 authoring outside a failing pre-commit hook — its early-exit clause stops it
 when thresholds are already met.
+
+## MCP Integration Testing — `npm link` workflow
+
+The tea-rags MCP server registered in Claude Code uses the **globally-installed
+npm package** (`npm i -g tea-rags-mcp`), NOT the local `build/` artifact in this
+checkout. Local `npm run build` produces JS in `build/` but the running MCP
+server keeps pointing at the global install. Without re-linking, MCP-side
+integration tests via `mcp__tea-rags__*` tools cannot validate local changes —
+they exercise whatever the global install was when last published.
+
+### Worktree → master link-flip
+
+When testing a build that lives in a worktree branch:
+
+```bash
+# 1. In the worktree: build + link the local checkout as the global tea-rags
+npm run build
+npm link
+
+# 2. Reconnect MCP servers in Claude Code (deferred-tools refresh).
+#    Then mcp__tea-rags__* tools exercise the worktree build.
+
+# 3. After validation (or before switching back to main work), restore master
+cd /Users/artk0re/Dev/Tools/tea-rags-mcp     # main checkout
+npm run build
+npm link
+
+# 4. Reconnect MCP servers again.
+```
+
+### Why both `npm run build` AND `npm link`
+
+- `npm link` registers the current `package.json` path as the source for the
+  global symlink. It does NOT trigger a build — the consumer (MCP server) will
+  load whatever `build/` happens to contain when it next starts.
+- The `npm run build` step ensures `build/` reflects current source. Skipping it
+  leaves the link pointing at stale compiled output.
+
+### When to skip the link-flip
+
+- Pure docs / spec / plan changes that don't touch `src/` — no rebuild needed.
+- Type-only changes that don't alter runtime behavior — local `npm test` is
+  enough; MCP-side run gives the same result.
+- Anything in worktree branch that hasn't been built yet — `npm link` without a
+  fresh `build/` exposes stale JS.
+
+### Anti-patterns
+
+- **Linking without building.** Leaves stale `build/` content under the link.
+  Run `npm run build` first.
+- **Forgetting to re-link on master.** Subsequent sessions in main checkout
+  exercise the worktree's stale `build/` until master's `npm link` overwrites.
+- **Publishing instead of linking** as a quick test path. `npm publish` is
+  permanent; the link is reversible (`npm unlink` or another `npm link` on a
+  different checkout).
