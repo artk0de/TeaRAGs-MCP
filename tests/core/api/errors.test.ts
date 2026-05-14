@@ -101,3 +101,19 @@ describe("InputValidationError hierarchy", () => {
     });
   });
 });
+
+describe("ProjectPathMissingError (audit #6/#7, PR3 prereq)", () => {
+  it("is an InputValidationError so middleware maps it to 400", async () => {
+    const { ProjectPathMissingError, InputValidationError } = await import("../../../src/core/api/errors.js");
+    const err = new ProjectPathMissingError("alpha", "Run: tea-rags projects register --path <dir> --name alpha");
+    expect(err).toBeInstanceOf(InputValidationError);
+    expect(err.code).toBe("INPUT_PROJECT_PATH_MISSING");
+  });
+
+  it("exposes the hint string passed to the constructor", async () => {
+    const { ProjectPathMissingError } = await import("../../../src/core/api/errors.js");
+    const hint = "Run: tea-rags projects register --path /repo --name alpha";
+    const err = new ProjectPathMissingError("alpha", hint);
+    expect(err.hint).toBe(hint);
+  });
+});
