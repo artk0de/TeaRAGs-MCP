@@ -145,6 +145,16 @@ export interface ExtractContext {
   bounds?: Record<string, number>;
   /** Confidence dampening threshold resolved by Reranker from collection stats. */
   dampeningThreshold?: number;
+  /**
+   * Unified confidence declaration from the raw payload signal descriptor.
+   * Derived signals that previously hardcoded `dampeningSource` and a static
+   * `FALLBACK_THRESHOLD` SHOULD read parameters from here:
+   * `ctx.confidence?.support` + `ctx.confidence?.score?.threshold`.
+   * Populated by Reranker from the raw descriptor's `stats.confidence`.
+   * Coexists with `dampeningThreshold` during migration — see
+   * `.claude/rules/signal-confidence.md`.
+   */
+  confidence?: SignalConfidence;
   /** Collection-level signal statistics for signals needing specific percentiles (p50, p25, etc.) */
   collectionStats?: CollectionSignalStats;
   /** Signal level from preset — when "file", forces alpha=0 (pure file signals). */
