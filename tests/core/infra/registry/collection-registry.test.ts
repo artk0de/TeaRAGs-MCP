@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -142,5 +142,39 @@ describe("CollectionRegistry", () => {
     expect(() => {
       r.setName("code_abc", "");
     }).toThrow(/does not match/);
+  });
+
+  it("tombstone prevents resurrection when concurrent disk write reintroduces removed entry (audit #1)", () => {
+    const r = new CollectionRegistry(dir);
+    r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
+    // Confirm baseline.
+    expect(r.get("code_a")?.path).toBe("/repo/a");
+    // Remove A — tombstone is set, file is written without A.
+    expect(r.remove("code_a")).toBe(true);
+    // Simulate a concurrent writer that reintroduces A on disk.
+    const registryPath = join(dir, "registry.json");
+    const onDisk = JSON.parse(readFileSync(registryPath, "utf-8")) as {
+      collections: Record<string, unknown>;
+    };
+    onDisk.collections.code_a = {
+      collectionName: "code_a",
+      path: "/repo/zombie",
+      name: null,
+      embeddingModel: "m",
+      embeddingDimensions: 384,
+      qdrantUrl: "http://localhost:6333",
+      indexedAt: "2026-05-12T00:00:00.000Z",
+      teaRagsVersion: "0.1.0",
+      chunksCount: 10,
+    };
+    writeFileSync(registryPath, JSON.stringify(onDisk, null, 2), "utf-8");
+    // Now perform another flush via a record() of an unrelated collection.
+    r.record(makeEntry({ collectionName: "code_b", path: "/repo/b" }));
+    // The tombstone in our process must keep A out of the merged file.
+    const finalDisk = JSON.parse(readFileSync(registryPath, "utf-8")) as {
+      collections: Record<string, unknown>;
+    };
+    expect(finalDisk.collections.code_a).toBeUndefined();
+    expect(finalDisk.collections.code_b).toBeDefined();
   });
 });

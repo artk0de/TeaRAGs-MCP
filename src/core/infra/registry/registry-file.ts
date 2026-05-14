@@ -125,8 +125,9 @@ export function mergeRegistryDelta(
 }
 
 function sleepSync(ms: number): void {
-  // flush() is sync today; this matches the existing API. Busy-wait is
-  // bounded (max 160ms per retry, max 5 retries → ~310ms worst case).
+  // flush() is sync today; this matches the existing API. Busy-wait bounded:
+  // max single sleep 80 ms (10 · 2^3), 4 sleeps total before the final
+  // attempt → ~150 ms cumulative wait worst case.
   const end = Date.now() + ms;
   while (Date.now() < end) {
     /* spin */
@@ -147,11 +148,14 @@ function statOrNull(path: string): { ino: number; mtimeMs: number } | null {
 /**
  * Flush an in-memory delta to disk under cross-process CAS. Retries up to
  * CAS_MAX_ATTEMPTS times with exponential backoff if another writer mutates
- * the file between our read and our rename. Throws RegistryConcurrencyError
- * on exhaustion. Closes audit #1.
+ * the file between our read and our rename. Closes audit #1.
  *
  * Optional `tombstones` carry intentional remove() requests so the merge
  * can drop those keys instead of resurrecting them from disk.
+ *
+ * @throws RegistryConcurrencyError when the retry budget is exhausted
+ *   because the on-disk file keeps changing between our stat-before and
+ *   stat-after.
  */
 export function flushWithCAS(
   dataDir: string,
