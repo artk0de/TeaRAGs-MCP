@@ -1,7 +1,11 @@
 import fs, { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { RegistryConcurrencyError, RegistryFileCorruptedError, RegistryWriteError } from "./errors.js";
+import {
+  RegistryConcurrencyError,
+  RegistryFileCorruptedError,
+  RegistryWriteError,
+} from "../../adapters/registry/errors.js";
 import type { CollectionEntry, RegistryFileV1 } from "./types.js";
 
 const FILE_NAME = "registry.json";

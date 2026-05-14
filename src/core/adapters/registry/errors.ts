@@ -1,8 +1,13 @@
 /**
- * Project Registry — infrastructure errors.
+ * Project Registry — adapter-layer errors.
+ *
+ * Lives under `core/adapters/registry/` because each class extends
+ * `InfraError` (declared in `core/adapters/errors.ts`); keeping the file under
+ * `core/infra/registry/` would force an `infra -> adapters` upward import
+ * which `.claude/rules/domain-boundaries.md` forbids.
  */
 
-import { InfraError } from "../../adapters/errors.js";
+import { InfraError } from "../errors.js";
 
 /**
  * Thrown when registry.json cannot be parsed (invalid JSON, wrong version,

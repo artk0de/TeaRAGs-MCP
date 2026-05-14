@@ -4,9 +4,12 @@ import { resolve } from "node:path";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
-import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
-import { PROJECT_NAME_RE } from "../../../infra/registry/constants.js";
-import type { CollectionEntry, ProjectInfo } from "../../../infra/registry/types.js";
+import {
+  PROJECT_NAME_RE,
+  type CollectionEntry,
+  type CollectionRegistry,
+  type ProjectInfo,
+} from "../../../infra/registry/index.js";
 import { PathDoesNotExistError, ProjectNameInvalidError, ProjectNameNotUniqueError } from "../../errors.js";
 
 export interface ProjectRegistryOpsDeps {

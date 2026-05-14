@@ -8,7 +8,7 @@ import {
   RegistryConcurrencyError,
   RegistryFileCorruptedError,
   RegistryWriteError,
-} from "../../../../src/core/infra/registry/errors.js";
+} from "../../../../src/core/adapters/registry/errors.js";
 import {
   flushWithCAS,
   loadRegistryFile,

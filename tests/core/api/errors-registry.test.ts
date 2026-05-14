@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { RegistryFileCorruptedError, RegistryWriteError } from "../../../src/core/adapters/registry/errors.js";
 import {
   PathDoesNotExistError,
   ProjectNameInvalidError,
   ProjectNameNotUniqueError,
   ProjectNotRegisteredError,
 } from "../../../src/core/api/errors.js";
-import { RegistryFileCorruptedError, RegistryWriteError } from "../../../src/core/infra/registry/errors.js";
 
 describe("project registry errors", () => {
   it("ProjectNotRegisteredError lists available names in message", () => {

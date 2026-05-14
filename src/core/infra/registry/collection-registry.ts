@@ -1,7 +1,7 @@
 import { watch, type FSWatcher } from "node:fs";
 
+import { RegistryNameConflictError } from "../../adapters/registry/errors.js";
 import { PROJECT_NAME_RE } from "./constants.js";
-import { RegistryNameConflictError } from "./errors.js";
 import { flushWithCAS, loadRegistryFile } from "./registry-file.js";
 import type { CollectionEntry, RecordEntryInput } from "./types.js";
 
