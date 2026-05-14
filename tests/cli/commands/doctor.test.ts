@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import yargs from "yargs";
 
+import { CollectionRegistry } from "../../../src/core/infra/registry/collection-registry.js";
+
 describe("CLI 'doctor' command", () => {
   let dir: string;
   let repo: string;
@@ -323,5 +325,80 @@ describe("CLI 'doctor' command", () => {
       stderr.mockRestore();
       exitSpy.mockRestore();
     }
+  });
+
+  describe("--recover-registry (audit #6, #7)", () => {
+    it("calls ProjectRegistryOps.recoverFromQdrant and reports the result", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        // Empty registry; Qdrant has two collections.
+        const fakeQdrant = {
+          url: "http://localhost:6333",
+          checkHealth: vi.fn().mockResolvedValue(true),
+          listCollections: vi.fn().mockResolvedValue(["code_a", "code_b"]),
+          countPoints: vi.fn().mockResolvedValue(0),
+          getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 384 }),
+          scrollFiltered: vi.fn().mockResolvedValue([]),
+        };
+        const fakeEmbeddings = {
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: () => "ollama",
+        };
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor(
+          { json: false, recoverRegistry: true },
+          {
+            qdrant: fakeQdrant as never,
+            embeddings: fakeEmbeddings as never,
+          },
+        );
+
+        // Verify recovery actually wrote registry entries.
+        const reg = new CollectionRegistry(dir);
+        const names = reg
+          .list()
+          .map((e) => e.collectionName)
+          .sort();
+        expect(names).toEqual(["code_a", "code_b"]);
+
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out.toLowerCase()).toContain("recovered");
+        expect(out).toContain("re-register");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--json includes a `recovery` block when --recover-registry is set", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const fakeQdrant = {
+          url: "http://localhost:6333",
+          checkHealth: vi.fn().mockResolvedValue(true),
+          listCollections: vi.fn().mockResolvedValue(["code_a"]),
+          countPoints: vi.fn().mockResolvedValue(0),
+          getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 384 }),
+          scrollFiltered: vi.fn().mockResolvedValue([]),
+        };
+        const fakeEmbeddings = {
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: () => "ollama",
+        };
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor(
+          { json: true, recoverRegistry: true },
+          {
+            qdrant: fakeQdrant as never,
+            embeddings: fakeEmbeddings as never,
+          },
+        );
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        const parsed = JSON.parse(out.trim());
+        expect(parsed.recovery).toBeDefined();
+        expect(parsed.recovery.recovered).toBe(1);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
   });
 });

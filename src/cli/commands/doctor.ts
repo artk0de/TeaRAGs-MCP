@@ -5,6 +5,7 @@ import type { Argv, CommandModule } from "yargs";
 
 import type { EmbeddingProvider } from "../../core/adapters/embeddings/base.js";
 import { QdrantManager } from "../../core/adapters/qdrant/client.js";
+import { ProjectRegistryOps } from "../../core/api/internal/ops/project-registry-ops.js";
 import { CollectionRegistry } from "../../core/infra/registry/collection-registry.js";
 
 interface DoctorArgs {
@@ -17,7 +18,10 @@ interface DoctorArgs {
  * The `Pick` types make it trivial for tests to pass plain object mocks.
  */
 interface DoctorDeps {
-  qdrant: Pick<QdrantManager, "url" | "checkHealth" | "listCollections">;
+  qdrant: Pick<
+    QdrantManager,
+    "url" | "checkHealth" | "listCollections" | "getCollectionInfo" | "countPoints" | "scrollFiltered"
+  >;
   embeddings: Pick<EmbeddingProvider, "checkHealth" | "getProviderName" | "getBaseUrl">;
 }
 
@@ -40,8 +44,9 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 
 /**
  * `tea-rags doctor` — read-only infrastructure + registry health summary.
- * The `--recover-registry` flag is declared in the yargs schema but its
- * handler is wired in PR2 Task 6 (next commit).
+ * When `--recover-registry` is set, delegates to
+ * `ProjectRegistryOps.recoverFromQdrant` to repopulate registry stubs for
+ * every Qdrant collection not yet known to the registry (audit #6, #7).
  *
  * `deps` is an injection point for tests; production constructs Qdrant +
  * embeddings via the same bootstrap path the server uses.
@@ -52,11 +57,29 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
 
   const qdrantOk = await safe(async () => qdrant.checkHealth(), false);
   const embeddingsOk = await safe(async () => embeddings.checkHealth(), false);
-  const projectCount = registry.list().length;
   const collections = await safe(async () => qdrant.listCollections(), [] as string[]);
-  const registered = new Set(registry.list().map((e) => e.collectionName));
-  const orphanCount = collections.filter((c) => !registered.has(c)).length;
+  const registeredBefore = new Set(registry.list().map((e) => e.collectionName));
+  const orphanCount = collections.filter((c) => !registeredBefore.has(c)).length;
   const embeddingUrl = typeof embeddings.getBaseUrl === "function" ? embeddings.getBaseUrl() : undefined;
+
+  let recovery: { recovered: number } | undefined;
+  if (args.recoverRegistry) {
+    const before = registeredBefore.size;
+    const ops = new ProjectRegistryOps({
+      registry,
+      // ProjectRegistryOps expects full QdrantManager; the mock + real
+      // QdrantManager both satisfy the subset of methods recoverFromQdrant
+      // actually calls (listCollections, getCollectionInfo, countPoints,
+      // scrollFiltered, url).
+      qdrant: qdrant as never,
+    });
+    await ops.recoverFromQdrant();
+    const after = registry.list().length;
+    recovery = { recovered: after - before };
+  }
+
+  const projectCount = registry.list().length;
+  const remainingOrphanCount = args.recoverRegistry ? 0 : orphanCount;
 
   if (args.json) {
     process.stdout.write(
@@ -68,7 +91,8 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
             url: embeddingUrl,
             reachable: embeddingsOk,
           },
-          registry: { projectCount, orphanCount },
+          registry: { projectCount, orphanCount: remainingOrphanCount },
+          ...(recovery ? { recovery } : {}),
         },
         null,
         2,
@@ -82,7 +106,11 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
     `${statusPrefix(embeddingsOk)} Embeddings (${embeddings.getProviderName()})${embeddingUrl ? `: ${embeddingUrl}` : ""}\n`,
   );
   process.stdout.write(`${statusPrefix(true)} Registry: ${projectCount} project(s)\n`);
-  if (orphanCount > 0) {
+  if (recovery) {
+    process.stdout.write(
+      `${statusPrefix(true)} Recovered ${recovery.recovered} entry/entries from Qdrant; paths are empty — re-register them with 'tea-rags projects register --path <dir> --name <alias>' to enable alias resolution.\n`,
+    );
+  } else if (orphanCount > 0) {
     process.stdout.write(
       `${statusPrefix(true, true)} Registry: ${orphanCount} orphan collection(s) — run 'tea-rags doctor --recover-registry' or 'tea-rags projects orphans' to inspect\n`,
     );
@@ -113,9 +141,8 @@ async function defaultDeps(): Promise<DoctorDeps> {
 }
 
 /**
- * `tea-rags doctor` yargs subcommand. The `--recover-registry` flag is
- * declared here but ignored in T5 — Task 6 wires its handler via
- * ProjectRegistryOps.recoverFromQdrant.
+ * `tea-rags doctor` yargs subcommand. `--recover-registry` delegates to
+ * `ProjectRegistryOps.recoverFromQdrant` via `runDoctor`.
  */
 export const doctorCommand: CommandModule<unknown, DoctorArgs> = {
   command: "doctor",
@@ -130,7 +157,7 @@ export const doctorCommand: CommandModule<unknown, DoctorArgs> = {
       .option("recover-registry", {
         type: "boolean",
         default: false,
-        describe: "Repopulate the project registry from live Qdrant state (wired in PR2 Task 6)",
+        describe: "Repopulate the project registry from live Qdrant state",
       }),
   handler: async (argv) => {
     await runDoctor({
