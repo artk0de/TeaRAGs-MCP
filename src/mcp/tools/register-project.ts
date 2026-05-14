@@ -10,6 +10,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { App } from "../../core/api/index.js";
+import { PROJECT_NAME_RE } from "../../core/infra/registry/index.js";
 import { formatMcpResponse } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 
@@ -17,7 +18,7 @@ const RegisterProjectSchema = {
   path: z.string().min(1).describe("Absolute path to project root"),
   name: z
     .string()
-    .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, "Project name must match ^[a-z0-9][a-z0-9_-]{0,63}$")
+    .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
     .describe("Short alias to register for this project (lowercase, digits, '-', '_'; max 64 chars)"),
 };
 

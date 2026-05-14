@@ -14,6 +14,7 @@
 import { z } from "zod";
 
 import type { SchemaBuilder } from "../../core/api/index.js";
+import { PROJECT_NAME_RE } from "../../core/infra/registry/index.js";
 
 /** Coerce string→number for MCP params (agents sometimes send "5" instead of 5) */
 const coerceNumber = () => z.preprocess((v) => (typeof v === "string" ? Number(v) : v), z.number());
@@ -30,7 +31,7 @@ const coerceBoolean = () => z.preprocess((v) => (typeof v === "string" ? v === "
 const projectField = () =>
   z
     .string()
-    .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, "Project name must match ^[a-z0-9][a-z0-9_-]{0,63}$")
+    .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
     .optional()
     .describe(
       "[RECOMMENDED] Project alias from registry — stable name that survives " +

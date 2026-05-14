@@ -5,6 +5,7 @@ import type { Argv, CommandModule } from "yargs";
 
 import { ProjectRegistryOps } from "../../core/api/internal/ops/project-registry-ops.js";
 import { CollectionRegistry } from "../../core/infra/registry/collection-registry.js";
+import { PROJECT_NAME_RE } from "../../core/infra/registry/index.js";
 import type { CollectionEntry } from "../../core/infra/registry/types.js";
 
 interface RegisterArgs {
@@ -112,7 +113,7 @@ export const projectsCommand: CommandModule = {
             .option("name", {
               type: "string",
               demandOption: true,
-              describe: "Short name to register (regex /^[a-z0-9][a-z0-9_-]{0,63}$/)",
+              describe: `Short name to register (regex ${PROJECT_NAME_RE.source})`,
             }),
         async (argv) => runRegister({ path: argv.path, name: argv.name }),
       )

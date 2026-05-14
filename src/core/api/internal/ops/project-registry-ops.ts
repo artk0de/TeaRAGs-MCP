@@ -5,10 +5,9 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
+import { PROJECT_NAME_RE } from "../../../infra/registry/constants.js";
 import type { CollectionEntry, ProjectInfo } from "../../../infra/registry/types.js";
 import { PathDoesNotExistError, ProjectNameInvalidError, ProjectNameNotUniqueError } from "../../errors.js";
-
-const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export interface ProjectRegistryOpsDeps {
   registry: CollectionRegistry;
@@ -27,7 +26,7 @@ export class ProjectRegistryOps {
     if (input.name.length > 64) {
       throw new ProjectNameInvalidError(input.name, "tooLong");
     }
-    if (!NAME_RE.test(input.name)) {
+    if (!PROJECT_NAME_RE.test(input.name)) {
       throw new ProjectNameInvalidError(input.name, "regex");
     }
     if (!existsSync(resolve(input.path))) {
