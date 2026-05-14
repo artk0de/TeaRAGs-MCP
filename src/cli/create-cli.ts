@@ -1,6 +1,7 @@
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
+import { doctorCommand } from "./commands/doctor.js";
 import { primeCommand } from "./commands/prime.js";
 import { projectsCommand } from "./commands/projects.js";
 import { serverCommand } from "./commands/server.js";
@@ -21,6 +22,7 @@ export function createCli(argv?: string[]): ReturnType<typeof yargs> {
     .command(primeCommand)
     .command(updateCommand)
     .command(projectsCommand)
+    .command(doctorCommand)
     .completion(
       "completion",
       "Print the shell completion script (bash/zsh). Eval its output in your rc file.",
