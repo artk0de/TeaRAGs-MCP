@@ -2,19 +2,28 @@ import type { ScoringWeights } from "../../../../../contracts/types/provider.js"
 import type { OverlayMask, RerankPreset } from "../../../../../contracts/types/reranker.js";
 
 /**
- * Identify frequently-changing, bug-prone code hotspots.
+ * Surface frequently-changing code areas at chunk granularity: methods/blocks
+ * with high commit density, recent activity bursts, and erratic timing.
  *
- * Use when: investigating recurring bugs, finding areas that break often,
- *   or identifying chunks that attract constant fixes.
- * Query examples: "error handling", "database queries", "validation logic".
- * Key signals: chunkChurn + chunkRelativeChurn (chunk-level commit activity),
- *   burstActivity (recent spike), volatility (erratic timing), bugFix (fix history).
- * Compare: BugHuntPreset emphasizes temporal patterns (bursts, volatility);
- *   HotspotsPreset leans on chunk-level churn metrics for intra-file hotspots.
+ * Use when: "which methods inside this file are churning", "where is recent
+ *   commit activity concentrated at the chunk level", "what's been edited
+ *   most often around this query".
+ * Query examples: "validation logic", "request handlers", "scheduler".
+ * Key signals: chunkChurn + chunkRelativeChurn (intra-file churn share, ~30%),
+ *   burstActivity + volatility (recent timing pattern, ~30%),
+ *   bugFix (~10%, minor — kept as historical tiebreaker between equally
+ *   churning chunks; NOT a bug-history lens — for that use BugHuntPreset or
+ *   custom rerank weights with high `bugFix`).
+ * Compare: BugHuntPreset and HotspotsPreset overlap on temporal signals
+ *   (burst, volatility); they differ in granularity. HotspotsPreset weighs
+ *   chunk-scoped churn (`chunkChurn`, `chunkRelativeChurn`) — finds the
+ *   problem method inside a file. BugHuntPreset weighs file-normalized
+ *   churn (`relativeChurnNorm`) — finds the problem file.
  */
 export class HotspotsPreset implements RerankPreset {
   readonly name = "hotspots";
-  readonly description = "Identify frequently-changing bug-prone code areas";
+  readonly description =
+    "Surface frequently-changing code areas (chunk-level churn, burst activity, timing volatility)";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
   readonly weights: ScoringWeights = {
     similarity: 0.2,

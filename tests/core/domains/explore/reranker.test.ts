@@ -1471,13 +1471,24 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
   });
 });
 
-describe("Reranker — per-signal dampeningSource", () => {
+describe("Reranker — per-signal dampening (legacy dampeningSource + unified confidence)", () => {
   const payloadSignals: PayloadSignalDescriptor[] = [
     { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
     { key: "git.file.bugFixRate", type: "number", description: "Bug fix rate", stats: { percentiles: [95] } },
+    { key: "git.file.churnVolatility", type: "number", description: "Volatility", stats: { percentiles: [95] } },
   ];
 
-  // bugFix signal uses dampening (FALLBACK_THRESHOLD=8) and has dampeningSource
+  // VolatilitySignal still uses the legacy dampeningSource path — exercise adaptive route through it.
+  const volatilityDescriptor = allDescriptors.filter((d) => d.name === "volatility" || d.name === "similarity");
+  const volatilityPreset: RerankPreset = {
+    name: "volatilityOnly",
+    description: "test",
+    tools: ["semantic_search"],
+    weights: { volatility: 1.0 },
+    overlayMask: {},
+  };
+
+  // BugFixSignal migrated to confidence — exercise descriptor-driven route through it.
   const bugFixDescriptor = allDescriptors.filter((d) => d.name === "bugFix" || d.name === "similarity");
   const bugFixPreset: RerankPreset = {
     name: "bugFixOnly",
@@ -1492,8 +1503,8 @@ describe("Reranker — per-signal dampeningSource", () => {
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
   });
 
-  it("resolves dampeningThreshold per-signal from descriptor.dampeningSource", () => {
-    const reranker = new Reranker(bugFixDescriptor, [bugFixPreset], payloadSignals);
+  it("legacy path: resolves dampeningThreshold per-signal from descriptor.dampeningSource (VolatilitySignal)", () => {
+    const reranker = new Reranker(volatilityDescriptor, [volatilityPreset], payloadSignals);
 
     // Collection: commitCount p25=20
     const collectionStats: CollectionSignalStats = {
@@ -1512,22 +1523,20 @@ describe("Reranker — per-signal dampeningSource", () => {
     };
     reranker.setCollectionStats(collectionStats);
 
-    // bugFix.dampeningSource = { key: "git.file.commitCount", percentile: 25 }
-    // commitCount=4, dampeningThreshold=20 → dampening=(4/20)^2=0.04
-    // bugFixRate=100, bound=100 → normalized=1.0, damped=0.04
-    const results = [makeResult(0.9, { file: { bugFixRate: 100, commitCount: 4 } })];
-    const ranked = reranker.rerank(results, "bugFixOnly", "semantic_search");
+    // volatility.dampeningSource = GIT_FILE_DAMPENING → commitCount p25 = 20
+    // commitCount=4 → dampening=(4/20)^2=0.04
+    const results = [makeResult(0.9, { file: { churnVolatility: 100, commitCount: 4 } })];
+    const ranked = reranker.rerank(results, "volatilityOnly", "semantic_search");
 
     expect(ranked[0].score).toBeLessThan(0.1);
   });
 
-  it("falls back to per-signal FALLBACK_THRESHOLD when no collectionStats", () => {
-    const reranker = new Reranker(bugFixDescriptor, [bugFixPreset], payloadSignals);
-    // No setCollectionStats
-
-    // commitCount=4, FALLBACK_THRESHOLD=8 → dampening=(4/8)^2=0.25
-    const results = [makeResult(0.9, { file: { bugFixRate: 100, commitCount: 4 } })];
-    const ranked = reranker.rerank(results, "bugFixOnly", "semantic_search");
+  it("legacy path: falls back to per-signal FALLBACK_THRESHOLD when no collectionStats", () => {
+    const reranker = new Reranker(volatilityDescriptor, [volatilityPreset], payloadSignals);
+    // No setCollectionStats — VolatilitySignal falls back to its own FALLBACK_THRESHOLD=8.
+    // commitCount=4 → dampening=(4/8)^2=0.25
+    const results = [makeResult(0.9, { file: { churnVolatility: 100, commitCount: 4 } })];
+    const ranked = reranker.rerank(results, "volatilityOnly", "semantic_search");
 
     expect(ranked[0].score).toBeGreaterThan(0.15);
     expect(ranked[0].score).toBeLessThan(0.4);
@@ -1539,9 +1548,45 @@ describe("Reranker — per-signal dampeningSource", () => {
     expect(simDescriptor[0].dampeningSource).toBeUndefined();
   });
 
-  it("bugFix descriptor declares dampeningSource", () => {
+  it("BugFixSignal: dampeningSource removed (migrated to descriptor.stats.confidence)", () => {
     const bf = allDescriptors.find((d) => d.name === "bugFix")!;
-    expect(bf.dampeningSource).toEqual({ key: "git.file.commitCount", percentile: 25 });
+    expect(bf.dampeningSource).toBeUndefined();
+  });
+
+  it("unified path: BugFixSignal reads threshold from raw descriptor's stats.confidence.score", () => {
+    // Declare bugFixRate descriptor with confidence.score.threshold=20 (custom).
+    const customPayloadSignals: PayloadSignalDescriptor[] = [
+      { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+      {
+        key: "git.file.bugFixRate",
+        type: "number",
+        description: "Bug fix rate",
+        stats: {
+          percentiles: [95],
+          confidence: {
+            support: "commitCount",
+            score: { threshold: 20 },
+          },
+        },
+      },
+    ];
+    const reranker = new Reranker(bugFixDescriptor, [bugFixPreset], customPayloadSignals);
+    // commitCount=4 with threshold=20 → dampening=(4/20)^2=0.04
+    const results = [makeResult(0.9, { file: { bugFixRate: 100, commitCount: 4 } })];
+    const ranked = reranker.rerank(results, "bugFixOnly", "semantic_search");
+
+    expect(ranked[0].score).toBeLessThan(0.1);
+  });
+
+  it("unified path: BugFixSignal falls back to FALLBACK_K=10 when no confidence block declared", () => {
+    // payloadSignals (top-of-describe) declares bugFixRate WITHOUT confidence — BugFixSignal
+    // uses FALLBACK_K=10. commitCount=4 → dampening=(4/10)^2=0.16
+    const reranker = new Reranker(bugFixDescriptor, [bugFixPreset], payloadSignals);
+    const results = [makeResult(0.9, { file: { bugFixRate: 100, commitCount: 4 } })];
+    const ranked = reranker.rerank(results, "bugFixOnly", "semantic_search");
+
+    expect(ranked[0].score).toBeGreaterThan(0.1);
+    expect(ranked[0].score).toBeLessThan(0.25);
   });
 });
 

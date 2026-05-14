@@ -77,7 +77,19 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.bugFixRate",
     type: "number",
     description: "Percentage of bug-fix commits (0-100)",
-    stats: { labels: { p50: "healthy", p75: "concerning", p95: "critical" } },
+    stats: {
+      labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+      confidence: {
+        support: "commitCount",
+        score: { threshold: 10 },
+        label: {
+          rules: [
+            { whenSupportBelow: 5, ceiling: "healthy" },
+            { whenSupportBelow: 10, ceiling: "concerning" },
+          ],
+        },
+      },
+    },
   },
   {
     key: "git.file.recentContributorCount",
@@ -150,7 +162,19 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.bugFixRate",
     type: "number",
     description: "Bug-fix rate for this chunk (0-100)",
-    stats: { labels: { p50: "healthy", p75: "concerning", p95: "critical" } },
+    stats: {
+      labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+      confidence: {
+        support: "commitCount",
+        score: { threshold: 10 },
+        label: {
+          rules: [
+            { whenSupportBelow: 5, ceiling: "healthy" },
+            { whenSupportBelow: 10, ceiling: "concerning" },
+          ],
+        },
+      },
+    },
   },
   {
     key: "git.chunk.relativeChurn",

@@ -19,7 +19,11 @@ import type {
   RerankPreset,
   SignalLevel,
 } from "../../contracts/types/reranker.js";
-import type { CollectionSignalStats, PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
+import type {
+  CollectionSignalStats,
+  PayloadSignalDescriptor,
+  SignalConfidence,
+} from "../../contracts/types/trajectory.js";
 import { detectScope } from "../../infra/scope-detection.js";
 import { p95 } from "../../infra/signal-utils.js";
 import { resolveLabel } from "./label-resolver.js";
@@ -304,9 +308,11 @@ export class Reranker {
         bounds[source] = Math.max(sourceBound, floor);
       }
       const dampeningThreshold = this.resolveDampeningThreshold(d);
+      const confidence = this.resolveDerivedConfidence(d);
       signals[d.name] = d.extract(payload, {
         bounds,
         dampeningThreshold,
+        confidence,
         collectionStats: this.collectionStats,
         signalLevel,
         query,
@@ -326,6 +332,24 @@ export class Reranker {
     const { key, percentile } = descriptor.dampeningSource;
     const stats = this.collectionStats.perSignal.get(key);
     return stats?.percentiles?.[percentile];
+  }
+
+  /**
+   * Look up the raw payload descriptor's `stats.confidence` block for a derived
+   * signal. Walks the derived's `sources` (e.g. "file.bugFixRate", "chunk.bugFixRate"),
+   * resolves each to a full payload key, finds the matching PayloadSignalDescriptor,
+   * and returns the first non-empty `stats.confidence`. Returns undefined when no
+   * source descriptor declares confidence — derived signal then falls back to
+   * legacy `dampeningSource`/`FALLBACK_THRESHOLD` path during migration.
+   */
+  private resolveDerivedConfidence(descriptor: DerivedSignalDescriptor): SignalConfidence | undefined {
+    for (const source of descriptor.sources) {
+      const fullKey = this.signalKeyMap.get(source);
+      if (!fullKey) continue;
+      const raw = this.payloadSignals.find((ps) => ps.key === fullKey);
+      if (raw?.stats?.confidence) return raw.stats.confidence;
+    }
+    return undefined;
   }
 
   /**
@@ -433,6 +457,14 @@ export class Reranker {
   ): void {
     if (!this.collectionStats) return;
 
+    // Capture sibling raw values once before the loop mutates overlay entries.
+    // `confidence.support` is bare-name same-scope, so the overlay record itself
+    // (keyed by bare names at this scope) is the sibling table.
+    const siblingValues: Record<string, number> = {};
+    for (const [k, v] of Object.entries(overlay)) {
+      if (typeof v === "number") siblingValues[k] = v;
+    }
+
     for (const field of Object.keys(overlay)) {
       const value = overlay[field];
       if (typeof value !== "number") continue;
@@ -459,7 +491,10 @@ export class Reranker {
       const signalStats = scope === "test" && scopedStats.test ? scopedStats.test : scopedStats.source;
       if (!signalStats?.percentiles) continue;
 
-      const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles);
+      const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles, {
+        siblingValues,
+        confidence: descriptor.stats.confidence,
+      });
       overlay[field] = { value, label };
     }
   }

@@ -14,12 +14,54 @@ export interface SignalStatsRequest {
    * Labels are used in ranking overlay and get_index_metrics labelMap.
    */
   labels?: Record<string, string>;
+  /**
+   * Optional confidence declaration — when this signal is a ratio or aggregate
+   * whose reliability depends on a sibling support signal (e.g. bugFixRate
+   * depends on commitCount), declare the support + how score-side dampening
+   * and label-side clamp consume it. See SignalConfidence for shape.
+   */
+  confidence?: SignalConfidence;
   /** Compute arithmetic mean */
   mean?: boolean;
   /** Compute standard deviation */
   stddev?: boolean;
   /** Only include points where payload.chunkType matches this value. */
   chunkTypeFilter?: string;
+}
+
+/**
+ * One label-clamp rule: when the support sibling's value is below
+ * `whenSupportBelow`, the signal's overlay label is capped at `ceiling`.
+ * `ceiling` MUST be one of the values in the descriptor's `labels` map;
+ * runtime resolver enforces this and throws on misconfiguration.
+ */
+export interface ConfidenceClampRule {
+  whenSupportBelow: number;
+  ceiling: string;
+}
+
+/**
+ * Unified confidence declaration for a raw payload signal.
+ *
+ * Lives on `PayloadSignalDescriptor.stats.confidence`. Drives two consumers
+ * that share one source of truth:
+ * 1. Score-side: `confidenceDampening(supportValue, score.threshold)` in
+ *    derived-signal extraction. Replaces per-signal-class `dampeningSource` +
+ *    `FALLBACK_THRESHOLD` constants.
+ * 2. Label-side: walks `label.rules` to cap overlay labels at low-support
+ *    bins. Raw value is preserved; only the bin shifts.
+ *
+ * `support` is a bare sibling signal name resolved at the SAME scope as the
+ * signal being labeled — file-scope descriptors read file-scope siblings,
+ * chunk-scope read chunk-scope. Cross-scope reads are out of scope.
+ */
+export interface SignalConfidence {
+  /** Bare sibling name (e.g. "commitCount"). Same-scope resolution only. */
+  support: string;
+  /** Optional continuous dampening parameters for score path. */
+  score?: { threshold: number };
+  /** Optional categorical clamp rules for label path. */
+  label?: { rules: ConfidenceClampRule[] };
 }
 
 /** Raw Qdrant payload field descriptor — key + type + description. */
@@ -103,6 +145,16 @@ export interface ExtractContext {
   bounds?: Record<string, number>;
   /** Confidence dampening threshold resolved by Reranker from collection stats. */
   dampeningThreshold?: number;
+  /**
+   * Unified confidence declaration from the raw payload signal descriptor.
+   * Derived signals that previously hardcoded `dampeningSource` and a static
+   * `FALLBACK_THRESHOLD` SHOULD read parameters from here:
+   * `ctx.confidence?.support` + `ctx.confidence?.score?.threshold`.
+   * Populated by Reranker from the raw descriptor's `stats.confidence`.
+   * Coexists with `dampeningThreshold` during migration — see
+   * `.claude/rules/signal-confidence.md`.
+   */
+  confidence?: SignalConfidence;
   /** Collection-level signal statistics for signals needing specific percentiles (p50, p25, etc.) */
   collectionStats?: CollectionSignalStats;
   /** Signal level from preset — when "file", forces alpha=0 (pure file signals). */
