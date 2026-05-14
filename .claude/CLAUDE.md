@@ -188,3 +188,57 @@ evolved further.
 - **Publishing instead of linking** as a quick test path. `npm publish` is
   permanent; the link is reversible (`npm unlink` or another `npm link` on a
   different checkout).
+
+### Re-index when testing new functionality
+
+`npm link` makes the MCP server load the new JS, but the **Qdrant index** is a
+separate concern. Queries read payloads that were written at index time, so any
+change that touches:
+
+- payload signal descriptors (new `stats.confidence` block, new fields)
+- payload builder / enrichment provider (new keys, renamed keys, value shape)
+- migration pipelines (schema migration that hasn't run on current index)
+
+requires re-indexing the project being tested against. Otherwise the MCP server
+runs on new code but reads old payloads — the new code paths see undefined
+fields or stale shape and silently behave as before.
+
+```bash
+# Standard: incremental reindex (added + modified files only)
+mcp__tea-rags__index_codebase project=<alias>
+```
+
+### Schema drift — reindex from scratch (tea-rags self-test only)
+
+When testing **new payload schema** on the tea-rags project itself
+(`code_8b243ffe`), the existing index was built by the previous schema.
+Incremental reindex won't reset payloads of unchanged files — the schema-drift
+guard rejects the run. Force full re-index instead:
+
+```bash
+mcp__tea-rags__force_reindex project=tea-rags    # explicit user confirmation required
+```
+
+Or via CLI: `tea-rags reindex --force /Users/artk0re/Dev/Tools/tea-rags-mcp`.
+
+Only do this on the tea-rags self-test index. For real user projects (`production-rails-app`,
+etc.) wait for the regular incremental migration path — force reindex on a large
+project is hours and is rarely the right tool for testing unreleased changes.
+
+### Test sequence when new functionality affects payload
+
+```bash
+# 1. Worktree: build + link + reindex tea-rags + (optionally production-rails-app)
+cd .claude/worktrees/<branch>
+npm run build
+npm link
+# → reconnect MCP servers
+mcp__tea-rags__force_reindex project=tea-rags   # schema drift: full reset
+mcp__tea-rags__index_codebase project=production-rails-app    # other projects: incremental
+
+# 2. Validate via mcp__tea-rags__semantic_search / find_symbol against
+#    the freshly indexed payload.
+
+# 3. Merge, build+link main, reconnect MCP, leave indices as-is
+#    (master's payload schema should match worktree's after merge).
+```
