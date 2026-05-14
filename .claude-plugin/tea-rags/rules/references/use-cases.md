@@ -21,6 +21,39 @@ Organized by agent task. Each references a Decision Tree branch from
 | Hotspots                     | semantic_search + hotspots            | "payment processing", pathPattern="\*\*/payments/\*\*" |
 | Most unstable code in domain | semantic_search + hotspots or custom  | pathPattern for domain scope                           |
 | Recent changes for review    | semantic_search + codeReview          | maxAgeDays=7                                           |
+| Fragile Silo discovery       | semantic_search + custom (recipe below) | pathPattern by domain (e.g. `**/services/**`)        |
+
+### Recipe: Fragile Silo discovery
+
+Find low-churn, historically buggy, single-owner files (Fragile silo pattern
+from `signal-interpretation.md`). Surfaces files that _look_ stable but have
+a track record of regressions concentrated under one author.
+
+```json
+{
+  "path": "/project",
+  "query": "<domain or symptom keyword>",
+  "rerank": {
+    "custom": {
+      "bugFix": 0.45,
+      "knowledgeSilo": 0.3,
+      "similarity": 0.15,
+      "churn": -0.1
+    }
+  },
+  "metaOnly": true,
+  "pathPattern": "<optional domain glob>"
+}
+```
+
+Read results expecting `bugFixRate concerning+` with `commitCount` in the
+`typical` band. Files with `commitCount` below the confidence-clamp thresholds
+(currently `< 5`) will have `bugFixRate.label` clamped to `healthy` — they
+will NOT classify as Fragile silo even if raw value is high, because the
+structural evidence is insufficient. This is correct behavior, inherited
+from the unified confidence mechanism. Pair confirmed findings with the
+`Fragile silo` pattern entry in `signal-interpretation.md` for remediation
+steps.
 
 ## Exhaustive usage (need ALL references)
 
