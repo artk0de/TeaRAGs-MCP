@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CollectionRegistry } from "../../../../src/core/infra/registry/collection-registry.js";
+import { saveRegistryFile } from "../../../../src/core/infra/registry/registry-file.js";
 import type { CollectionEntry } from "../../../../src/core/infra/registry/types.js";
 
 function makeEntry(over: Partial<CollectionEntry> = {}): Omit<CollectionEntry, "name"> {
@@ -228,5 +229,66 @@ describe("CollectionRegistry", () => {
     };
     expect(finalDisk.collections.code_a).toBeUndefined();
     expect(finalDisk.collections.code_b).toBeDefined();
+  });
+
+  describe("startWatching() — fs.watch cache invalidation (audit #2)", () => {
+    it("returns a stop function", () => {
+      const r = new CollectionRegistry(dir);
+      const stop = r.startWatching();
+      expect(typeof stop).toBe("function");
+      stop();
+    });
+
+    it("invalidates the cache when registry.json changes on disk", async () => {
+      const r = new CollectionRegistry(dir);
+      r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
+      const stop = r.startWatching();
+      expect(r.get("code_a")?.path).toBe("/repo/a");
+      // Yield so fs.watch finishes attaching to the file's inode
+      // (kqueue/inotify subscription is set up asynchronously).
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // External writer (simulating a parallel CLI/pipeline process) mutates
+      // registry.json behind r's back. Then r.get must re-read and see it.
+      saveRegistryFile(dir, {
+        version: 1,
+        collections: {
+          code_a: {
+            collectionName: "code_a",
+            path: "/repo/b-external",
+            name: null,
+            embeddingModel: "m",
+            embeddingDimensions: 384,
+            qdrantUrl: "http://localhost:6333",
+            indexedAt: "2026-05-13T00:00:00.000Z",
+            teaRagsVersion: "0.1.0",
+            chunksCount: 10,
+          },
+        },
+      });
+
+      // Allow fs.watch event to dispatch.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(r.get("code_a")?.path).toBe("/repo/b-external");
+      stop();
+    });
+
+    it("is idempotent — second call returns the same stop handle", () => {
+      const r = new CollectionRegistry(dir);
+      const stop1 = r.startWatching();
+      const stop2 = r.startWatching();
+      expect(stop1).toBe(stop2);
+      stop1();
+    });
+
+    it("tolerates a missing file at construction time (does not throw)", () => {
+      // dir is empty — no registry.json has been created yet. startWatching
+      // must not throw; the watcher may or may not actually attach, but the
+      // method returns a stop fn either way.
+      const r = new CollectionRegistry(dir);
+      const stop = r.startWatching();
+      expect(typeof stop).toBe("function");
+      stop();
+    });
   });
 });

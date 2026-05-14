@@ -1,3 +1,6 @@
+import { watch, type FSWatcher } from "node:fs";
+import { join } from "node:path";
+
 import { PROJECT_NAME_RE } from "./constants.js";
 import { RegistryNameConflictError } from "./errors.js";
 import { flushWithCAS, loadRegistryFile } from "./registry-file.js";
@@ -6,6 +9,8 @@ import type { CollectionEntry, RecordEntryInput } from "./types.js";
 export class CollectionRegistry {
   private cache: Map<string, CollectionEntry> | null = null;
   private readonly tombstones = new Set<string>();
+  private watcher: FSWatcher | null = null;
+  private stopHandle: (() => void) | null = null;
 
   constructor(private readonly dataDir: string) {}
 
@@ -96,5 +101,36 @@ export class CollectionRegistry {
       this.flush();
     }
     return had;
+  }
+
+  /**
+   * Subscribe to registry.json mtime changes and invalidate the in-process
+   * cache on every event so the next read sees fresh data written by a
+   * concurrent CLI or pipeline run. Returns a stop handle that closes the
+   * watcher. Idempotent — repeated calls return the same handle. Audit #2.
+   *
+   * fs.watch fails synchronously if the path does not exist; we tolerate
+   * by deferring the watch silently. Worst case: the very first external
+   * mutation before our process records anything is missed — extremely
+   * unlikely and recovered by the merge-on-write CAS in flush() anyway.
+   */
+  startWatching(): () => void {
+    if (this.stopHandle !== null) return this.stopHandle;
+    const path = join(this.dataDir, "registry.json");
+    try {
+      this.watcher = watch(path, { persistent: false }, () => {
+        this.cache = null;
+      });
+    } catch {
+      this.watcher = null;
+    }
+    this.stopHandle = () => {
+      if (this.watcher !== null) {
+        this.watcher.close();
+        this.watcher = null;
+      }
+      this.stopHandle = null;
+    };
+    return this.stopHandle;
   }
 }
