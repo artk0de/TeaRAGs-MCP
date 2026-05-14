@@ -21,7 +21,14 @@ interface DoctorDeps {
   qdrant: Pick<
     QdrantManager,
     "url" | "checkHealth" | "listCollections" | "getCollectionInfo" | "countPoints" | "scrollFiltered"
-  >;
+  > & {
+    /**
+     * Optional — older Qdrant servers or partial mocks may omit it.
+     * Used to exclude physical collections that back an alias from the orphan
+     * count (mirrors FixB in src/cli/commands/projects.ts:runOrphans).
+     */
+    aliases?: Pick<QdrantManager["aliases"], "listAliases">;
+  };
   embeddings: Pick<EmbeddingProvider, "checkHealth" | "getProviderName" | "getBaseUrl">;
 }
 
@@ -59,7 +66,16 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
   const embeddingsOk = await safe(async () => embeddings.checkHealth(), false);
   const collections = await safe(async () => qdrant.listCollections(), [] as string[]);
   const registeredBefore = new Set(registry.list().map((e) => e.collectionName));
-  const orphanCount = collections.filter((c) => !registeredBefore.has(c)).length;
+  // Aliased-to physical collections must NOT count as orphans — they back a
+  // registered (or unregistered) alias and removing them destroys live data.
+  // Mirrors FixB in src/cli/commands/projects.ts:runOrphans so `tea-rags doctor`
+  // and `tea-rags projects orphans` report consistent counts.
+  const aliasedTargets = await safe<Set<string>>(async () => {
+    if (typeof qdrant.aliases?.listAliases !== "function") return new Set();
+    const aliases = await qdrant.aliases.listAliases();
+    return new Set(aliases.map((a) => a.collectionName));
+  }, new Set<string>());
+  const orphanCount = collections.filter((c) => !registeredBefore.has(c) && !aliasedTargets.has(c)).length;
   const embeddingUrl = typeof embeddings.getBaseUrl === "function" ? embeddings.getBaseUrl() : undefined;
 
   let recovery: { recovered: number } | undefined;

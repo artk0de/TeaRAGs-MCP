@@ -401,4 +401,107 @@ describe("CLI 'doctor' command", () => {
       }
     });
   });
+
+  describe("orphan count excludes aliased physical collections (FixC)", () => {
+    it("text mode reports 0 orphans when all physical collections are aliased", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const fakeQdrant = {
+          url: "http://localhost:6333",
+          checkHealth: vi.fn().mockResolvedValue(true),
+          listCollections: vi.fn().mockResolvedValue(["code_a_v1", "code_b_v2"]),
+          aliases: {
+            listAliases: vi.fn().mockResolvedValue([
+              { aliasName: "code_a", collectionName: "code_a_v1" },
+              { aliasName: "code_b", collectionName: "code_b_v2" },
+            ]),
+          },
+        };
+        const fakeEmbeddings = {
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: () => "ollama",
+        };
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor(
+          { json: false, recoverRegistry: false },
+          {
+            qdrant: fakeQdrant as never,
+            embeddings: fakeEmbeddings as never,
+          },
+        );
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        // No orphan warning line — all physicals are aliased.
+        expect(out).not.toMatch(/orphan collection\(s\)/);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("json mode reports orphanCount=0 when all physical collections are aliased", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const fakeQdrant = {
+          url: "http://localhost:6333",
+          checkHealth: vi.fn().mockResolvedValue(true),
+          listCollections: vi.fn().mockResolvedValue(["code_a_v1", "code_b_v2", "code_truly_orphan"]),
+          aliases: {
+            listAliases: vi.fn().mockResolvedValue([
+              { aliasName: "code_a", collectionName: "code_a_v1" },
+              { aliasName: "code_b", collectionName: "code_b_v2" },
+            ]),
+          },
+        };
+        const fakeEmbeddings = {
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: () => "ollama",
+        };
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor(
+          { json: true, recoverRegistry: false },
+          {
+            qdrant: fakeQdrant as never,
+            embeddings: fakeEmbeddings as never,
+          },
+        );
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        const parsed = JSON.parse(out.trim());
+        // Only the genuinely orphan one counts.
+        expect(parsed.registry.orphanCount).toBe(1);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("falls back gracefully when aliases.listAliases is unavailable", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const fakeQdrant = {
+          url: "http://localhost:6333",
+          checkHealth: vi.fn().mockResolvedValue(true),
+          listCollections: vi.fn().mockResolvedValue(["code_a", "code_b"]),
+          aliases: {
+            listAliases: vi.fn().mockRejectedValue(new Error("not supported")),
+          },
+        };
+        const fakeEmbeddings = {
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: () => "ollama",
+        };
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor(
+          { json: true, recoverRegistry: false },
+          {
+            qdrant: fakeQdrant as never,
+            embeddings: fakeEmbeddings as never,
+          },
+        );
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        const parsed = JSON.parse(out.trim());
+        // Without alias info, both physicals appear as orphans (best-effort).
+        expect(parsed.registry.orphanCount).toBe(2);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+  });
 });
