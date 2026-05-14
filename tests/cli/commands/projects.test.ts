@@ -210,4 +210,96 @@ describe("CLI 'projects' command group", () => {
       expect(String(projectsCommand.describe)).toMatch(/info/i);
     });
   });
+
+  describe("orphans (audit #8 listing half)", () => {
+    it("lists Qdrant collections not present in the registry", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_known",
+          path: repo,
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 0,
+        });
+        const fakeQdrant = {
+          listCollections: vi.fn().mockResolvedValue(["code_known", "code_orphan_1", "code_orphan_2"]),
+          countPoints: vi.fn().mockResolvedValue(123),
+        };
+        const { runOrphans } = await import("../../../src/cli/commands/projects.js");
+        await runOrphans({ json: false }, fakeQdrant as never);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain("code_orphan_1");
+        expect(out).toContain("code_orphan_2");
+        expect(out).not.toContain("code_known");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("prints '(no orphan collections)' when registry matches Qdrant", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        reg.record({
+          collectionName: "code_known",
+          path: repo,
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 0,
+        });
+        const fakeQdrant = {
+          listCollections: vi.fn().mockResolvedValue(["code_known"]),
+          countPoints: vi.fn().mockResolvedValue(0),
+        };
+        const { runOrphans } = await import("../../../src/cli/commands/projects.js");
+        await runOrphans({ json: false }, fakeQdrant as never);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain("(no orphan collections)");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--json emits a structured array", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const fakeQdrant = {
+          listCollections: vi.fn().mockResolvedValue(["code_a", "code_b"]),
+          countPoints: vi.fn().mockResolvedValue(99),
+        };
+        const { runOrphans } = await import("../../../src/cli/commands/projects.js");
+        await runOrphans({ json: true }, fakeQdrant as never);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        const parsed = JSON.parse(out.trim());
+        expect(Array.isArray(parsed)).toBe(true);
+        expect(parsed.map((e: { collectionName: string }) => e.collectionName).sort()).toEqual(["code_a", "code_b"]);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("reports 0 chunks when countPoints throws (safeCount catch branch)", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const fakeQdrant = {
+          listCollections: vi.fn().mockResolvedValue(["code_broken"]),
+          countPoints: vi.fn().mockRejectedValue(new Error("boom")),
+        };
+        const { runOrphans } = await import("../../../src/cli/commands/projects.js");
+        await runOrphans({ json: false }, fakeQdrant as never);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toMatch(/^code_broken\t0$/m);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+  });
 });

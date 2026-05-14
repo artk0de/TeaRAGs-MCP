@@ -105,4 +105,40 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
     expect(out).toMatch(/no projects registered/);
   });
+
+  it("orphans subcommand closure invokes runOrphans via real defaultQdrant path", async () => {
+    // Mock the modules dynamically imported inside defaultQdrant so the
+    // yargs handler closure exercises the production wiring (parseAppConfig
+    // + resolveQdrantUrl + new QdrantManager) without touching the network.
+    vi.doMock("../../../src/bootstrap/config/index.js", () => ({
+      parseAppConfig: () => ({ qdrantUrl: "http://stub", qdrantApiKey: undefined, paths: { appData: "/tmp/x" } }),
+    }));
+    vi.doMock("../../../src/core/adapters/qdrant/embedded/daemon.js", () => ({
+      resolveQdrantUrl: async () => ({ mode: "external", url: "http://stub" }),
+    }));
+    vi.doMock("../../../src/core/adapters/qdrant/client.js", () => ({
+      QdrantManager: class {
+        listCollections = vi.fn().mockResolvedValue(["code_floating"]);
+        countPoints = vi.fn().mockResolvedValue(7);
+      },
+    }));
+    try {
+      vi.resetModules();
+      const { projectsCommand: fresh } = await import("../../../src/cli/commands/projects.js");
+      const cli = yargs([])
+        .command(fresh)
+        .exitProcess(false)
+        .fail((msg, err) => {
+          throw err ?? new Error(msg);
+        });
+      await cli.parseAsync(["projects", "orphans"]);
+      const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+      expect(out).toContain("code_floating");
+    } finally {
+      vi.doUnmock("../../../src/bootstrap/config/index.js");
+      vi.doUnmock("../../../src/core/adapters/qdrant/embedded/daemon.js");
+      vi.doUnmock("../../../src/core/adapters/qdrant/client.js");
+      vi.resetModules();
+    }
+  });
 });

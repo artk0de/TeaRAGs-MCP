@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { Argv, CommandModule } from "yargs";
 
+import { QdrantManager } from "../../core/adapters/qdrant/client.js";
 import { ProjectRegistryOps } from "../../core/api/internal/ops/project-registry-ops.js";
 import { CollectionRegistry } from "../../core/infra/registry/collection-registry.js";
 import { PROJECT_NAME_RE } from "../../core/infra/registry/index.js";
@@ -22,6 +23,12 @@ interface InfoArgs {
   name: string;
   json?: boolean;
 }
+interface OrphansArgs {
+  json?: boolean;
+}
+
+/** Narrow surface of QdrantManager that runOrphans needs (allows test injection). */
+type QdrantSurface = Pick<QdrantManager, "listCollections" | "countPoints">;
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
@@ -91,13 +98,69 @@ export function runInfo(args: InfoArgs): void {
 }
 
 /**
- * `tea-rags projects [register|list|unregister|info]` — grouped subcommands
+ * List Qdrant collections that are not represented in the project registry.
+ * Read-only — does not mutate either side. Audit #8 listing half.
+ *
+ * `qdrant` is an injection point: production code constructs a real
+ * QdrantManager via parseAppConfig + resolveQdrantUrl; tests pass a mock.
+ */
+export async function runOrphans(args: OrphansArgs, qdrant?: QdrantSurface): Promise<void> {
+  const { registry } = newOps();
+  const client = qdrant ?? (await defaultQdrant());
+  const registered = new Set(registry.list().map((e) => e.collectionName));
+  const collections = await client.listCollections();
+  const orphans = collections.filter((c) => !registered.has(c));
+
+  if (args.json) {
+    const rows = await Promise.all(
+      orphans.map(async (collectionName) => ({
+        collectionName,
+        chunksCount: await safeCount(client, collectionName),
+      })),
+    );
+    process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
+    return;
+  }
+
+  if (orphans.length === 0) {
+    process.stdout.write("(no orphan collections)\n");
+    return;
+  }
+
+  for (const collectionName of orphans) {
+    const count = await safeCount(client, collectionName);
+    process.stdout.write(`${collectionName}\t${count}\n`);
+  }
+}
+
+async function safeCount(client: Pick<QdrantManager, "countPoints">, collectionName: string): Promise<number> {
+  try {
+    return await client.countPoints(collectionName);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Build a QdrantManager pointed at the same URL the MCP server would use.
+ * Resolves via parseAppConfig + resolveQdrantUrl so embedded mode is honored.
+ */
+async function defaultQdrant(): Promise<QdrantManager> {
+  const { parseAppConfig } = await import("../../bootstrap/config/index.js");
+  const { resolveQdrantUrl } = await import("../../core/adapters/qdrant/embedded/daemon.js");
+  const config = parseAppConfig();
+  const resolution = await resolveQdrantUrl(config.qdrantUrl, config.paths.appData);
+  return new QdrantManager(resolution.url, config.qdrantApiKey);
+}
+
+/**
+ * `tea-rags projects [register|list|unregister|info|orphans]` — grouped subcommands
  * for project registry management. `list` is the default when no subcommand
  * is given.
  */
 export const projectsCommand: CommandModule = {
   command: "projects",
-  describe: "Manage registered projects (register | list | unregister | info). Defaults to list.",
+  describe: "Manage registered projects (register | list | unregister | info | orphans). Defaults to list.",
   builder: (yargs: Argv) =>
     yargs
       .command<RegisterArgs>(
@@ -122,6 +185,14 @@ export const projectsCommand: CommandModule = {
         "Remove a registered project by name (does not touch Qdrant)",
         (y) => y.option("name", { type: "string", demandOption: true, describe: "Project name to remove" }),
         async (argv) => runUnregister({ name: argv.name }),
+      )
+      .command<OrphansArgs>(
+        "orphans",
+        "List Qdrant collections without a registry entry",
+        (y) => y.option("json", { type: "boolean", default: false, describe: "Output as JSON" }),
+        async (argv) => {
+          await runOrphans({ json: argv.json });
+        },
       )
       .command<ListArgs>(
         "list",
