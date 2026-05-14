@@ -253,13 +253,11 @@ describe("tune command", () => {
       expect(opts.env?.QDRANT_URL).toBe("http://qd:6333");
     });
 
-    it("unknown project name exits with code 1", async () => {
-      const localExitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
-        throw new Error("exit");
-      }) as (code?: number) => never);
-      await expect((tuneCommand.handler as TuneHandler)({ project: "ghost", full: false })).rejects.toThrow("exit");
-      expect(localExitSpy).toHaveBeenCalledWith(1);
-      localExitSpy.mockRestore();
+    it("unknown project name propagates ProjectNotRegisteredError (PR3-T2 will wrap)", async () => {
+      const { ProjectNotRegisteredError } = await import("../../../src/core/api/errors.js");
+      await expect((tuneCommand.handler as TuneHandler)({ project: "ghost", full: false })).rejects.toBeInstanceOf(
+        ProjectNotRegisteredError,
+      );
     });
   });
 });
