@@ -128,50 +128,63 @@ npm package** (`npm i -g tea-rags-mcp`), NOT the local `build/` artifact in this
 checkout. Local `npm run build` produces JS in `build/` but the running MCP
 server keeps pointing at the global install. Without re-linking, MCP-side
 integration tests via `mcp__tea-rags__*` tools cannot validate local changes —
-they exercise whatever the global install was when last published.
+they exercise whatever was published last.
 
-### Worktree → master link-flip
+### Sequence (worktree → merge → main link)
 
-When testing a build that lives in a worktree branch:
+The link is **flipped twice** with a merge between. Skip neither step.
 
 ```bash
-# 1. In the worktree: build + link the local checkout as the global tea-rags
+# 1. Worktree: build the worktree branch + point global tea-rags at it
+cd .claude/worktrees/<branch>
 npm run build
 npm link
 
-# 2. Reconnect MCP servers in Claude Code (deferred-tools refresh).
-#    Then mcp__tea-rags__* tools exercise the worktree build.
+# 2. Reconnect MCP servers in Claude Code.
+#    Run mcp__tea-rags__* integration tests against the worktree build.
 
-# 3. After validation (or before switching back to main work), restore master
-cd /Users/artk0re/Dev/Tools/tea-rags-mcp     # main checkout
+# 3. After tests pass: MERGE the worktree branch into main.
+cd /Users/artk0re/Dev/Tools/tea-rags-mcp
+git merge worktree-<branch> --no-ff
+
+# 4. Main: build the merged code + re-link so global tea-rags reflects main.
 npm run build
 npm link
 
-# 4. Reconnect MCP servers again.
+# 5. Reconnect MCP servers again. Subsequent sessions see merged content.
 ```
 
-### Why both `npm run build` AND `npm link`
+The reason step 4 happens AFTER the merge (not before, not skipped): the link in
+step 1 pointed at the worktree's working tree. After the merge integrates the
+worktree's commits into main, only main has the canonical post-merge state.
+Re-linking main at step 4 makes the global tea-rags reflect what is actually
+committed on main — not a stale worktree directory that may be removed or
+evolved further.
+
+### Why build AND link each time
 
 - `npm link` registers the current `package.json` path as the source for the
-  global symlink. It does NOT trigger a build — the consumer (MCP server) will
-  load whatever `build/` happens to contain when it next starts.
+  global symlink. It does NOT trigger a build — the consumer (MCP server) loads
+  whatever `build/` happens to contain when it next starts.
 - The `npm run build` step ensures `build/` reflects current source. Skipping it
   leaves the link pointing at stale compiled output.
 
-### When to skip the link-flip
+### When to skip the link-flip entirely
 
 - Pure docs / spec / plan changes that don't touch `src/` — no rebuild needed.
-- Type-only changes that don't alter runtime behavior — local `npm test` is
-  enough; MCP-side run gives the same result.
-- Anything in worktree branch that hasn't been built yet — `npm link` without a
-  fresh `build/` exposes stale JS.
+- Type-only changes that don't alter runtime behavior — local `npm test` covers
+  the regression surface; MCP-side run gives the same result.
 
 ### Anti-patterns
 
 - **Linking without building.** Leaves stale `build/` content under the link.
   Run `npm run build` first.
-- **Forgetting to re-link on master.** Subsequent sessions in main checkout
-  exercise the worktree's stale `build/` until master's `npm link` overwrites.
+- **Building+linking main BEFORE merging.** Main's `build/` doesn't yet contain
+  the worktree's changes. The global link will point at main's pre-merge state
+  and MCP tests regress to the un-tested baseline.
+- **Skipping the post-merge re-link.** Global tea-rags stays pinned to the
+  worktree directory. If that worktree is removed (`git worktree remove`) the
+  link breaks; if it evolves further, MCP exercises mismatched code.
 - **Publishing instead of linking** as a quick test path. `npm publish` is
   permanent; the link is reversible (`npm unlink` or another `npm link` on a
   different checkout).
