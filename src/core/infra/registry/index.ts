@@ -6,6 +6,6 @@
  */
 
 export type { CollectionEntry, ProjectInfo, RecordEntryInput, RegistryFileV1 } from "./types.js";
-export { RegistryFileCorruptedError, RegistryWriteError } from "./errors.js";
+export { PROJECT_NAME_RE } from "./constants.js";
 export { loadRegistryFile, saveRegistryFile } from "./registry-file.js";
-export { CollectionRegistry, ProjectNameNotUniqueError } from "./collection-registry.js";
+export { CollectionRegistry } from "./collection-registry.js";

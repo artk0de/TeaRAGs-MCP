@@ -13,14 +13,15 @@ import { z } from "zod";
 
 import { ConfigValueInvalidError } from "../../../../bootstrap/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
+import { PROJECT_NAME_RE } from "../../../infra/registry/constants.js";
 
 /**
- * Zod schema for an optional project name. Mirrors the regex used by
- * CollectionRegistry (`src/core/infra/registry/collection-registry.ts`).
+ * Zod schema for an optional project name. Sourced from PROJECT_NAME_RE
+ * (`src/core/infra/registry/constants.ts`) — the single source of truth.
  */
 const projectNameSchema = z
   .string()
-  .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/, "Project name must match ^[a-z0-9][a-z0-9_-]{0,63}$")
+  .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
   .optional();
 
 /**

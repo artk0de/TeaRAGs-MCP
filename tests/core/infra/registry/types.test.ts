@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { RegistryFileCorruptedError, RegistryWriteError } from "../../../../src/core/infra/registry/errors.js";
+import { RegistryFileCorruptedError, RegistryWriteError } from "../../../../src/core/adapters/registry/errors.js";
 import type {
   CollectionEntry,
   ProjectInfo,

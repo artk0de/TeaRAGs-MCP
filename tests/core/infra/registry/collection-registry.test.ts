@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CollectionRegistry } from "../../../../src/core/infra/registry/collection-registry.js";
+import { saveRegistryFile } from "../../../../src/core/infra/registry/registry-file.js";
 import type { CollectionEntry } from "../../../../src/core/infra/registry/types.js";
 
 function makeEntry(over: Partial<CollectionEntry> = {}): Omit<CollectionEntry, "name"> {
@@ -114,6 +115,9 @@ describe("CollectionRegistry", () => {
       // After fallback, a record() must still work and persist.
       r.record(makeEntry());
       expect(r.get("code_abc")?.path).toBe("/repo/a");
+      // The corrupt file must have been preserved as a .bak before fallback.
+      const filesAfter = readdirSync(dir);
+      expect(filesAfter.some((f: string) => f.startsWith("registry.json.corrupt-"))).toBe(true);
     } finally {
       spy.mockRestore();
     }
@@ -139,5 +143,227 @@ describe("CollectionRegistry", () => {
     expect(() => {
       r.setName("code_abc", "");
     }).toThrow(/does not match/);
+  });
+
+  describe("record() input validation (audit #11)", () => {
+    it("rejects empty collectionName", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ collectionName: "" }));
+      }).toThrow(/collectionName/);
+    });
+
+    it("rejects whitespace-only collectionName", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ collectionName: "   " }));
+      }).toThrow(/collectionName/);
+    });
+
+    it("rejects negative embeddingDimensions", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ embeddingDimensions: -1 }));
+      }).toThrow(/embeddingDimensions/);
+    });
+
+    it("rejects negative chunksCount", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ chunksCount: -5 }));
+      }).toThrow(/chunksCount/);
+    });
+
+    it("accepts entries with empty embeddingModel and qdrantUrl (stub from future recoverFromQdrant)", () => {
+      // PR2 audit #5 will tighten this — for now ensure stubs still round-trip.
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ embeddingModel: "", qdrantUrl: "", indexedAt: "" }));
+      }).not.toThrow();
+    });
+
+    it("accepts zero embeddingDimensions (stub entries from doctor recovery)", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ embeddingDimensions: 0 }));
+      }).not.toThrow();
+    });
+
+    it("accepts zero chunksCount (just-created empty collection)", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ chunksCount: 0 }));
+      }).not.toThrow();
+    });
+  });
+
+  it("tombstone prevents resurrection when concurrent disk write reintroduces removed entry (audit #1)", () => {
+    const r = new CollectionRegistry(dir);
+    r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
+    // Confirm baseline.
+    expect(r.get("code_a")?.path).toBe("/repo/a");
+    // Remove A — tombstone is set, file is written without A.
+    expect(r.remove("code_a")).toBe(true);
+    // Simulate a concurrent writer that reintroduces A on disk.
+    const registryPath = join(dir, "registry.json");
+    const onDisk = JSON.parse(readFileSync(registryPath, "utf-8")) as {
+      collections: Record<string, unknown>;
+    };
+    onDisk.collections.code_a = {
+      collectionName: "code_a",
+      path: "/repo/zombie",
+      name: null,
+      embeddingModel: "m",
+      embeddingDimensions: 384,
+      qdrantUrl: "http://localhost:6333",
+      indexedAt: "2026-05-12T00:00:00.000Z",
+      teaRagsVersion: "0.1.0",
+      chunksCount: 10,
+    };
+    writeFileSync(registryPath, JSON.stringify(onDisk, null, 2), "utf-8");
+    // Now perform another flush via a record() of an unrelated collection.
+    r.record(makeEntry({ collectionName: "code_b", path: "/repo/b" }));
+    // The tombstone in our process must keep A out of the merged file.
+    const finalDisk = JSON.parse(readFileSync(registryPath, "utf-8")) as {
+      collections: Record<string, unknown>;
+    };
+    expect(finalDisk.collections.code_a).toBeUndefined();
+    expect(finalDisk.collections.code_b).toBeDefined();
+  });
+
+  describe("startWatching() — fs.watch cache invalidation (audit #2)", () => {
+    it("returns a stop function", () => {
+      const r = new CollectionRegistry(dir);
+      const stop = r.startWatching();
+      expect(typeof stop).toBe("function");
+      stop();
+    });
+
+    it("invalidates the cache when registry.json changes on disk", async () => {
+      const r = new CollectionRegistry(dir);
+      r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
+      const stop = r.startWatching();
+      expect(r.get("code_a")?.path).toBe("/repo/a");
+      // Yield so fs.watch finishes attaching to the file's inode
+      // (kqueue/inotify subscription is set up asynchronously).
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // External writer (simulating a parallel CLI/pipeline process) mutates
+      // registry.json behind r's back. Then r.get must re-read and see it.
+      saveRegistryFile(dir, {
+        version: 1,
+        collections: {
+          code_a: {
+            collectionName: "code_a",
+            path: "/repo/b-external",
+            name: null,
+            embeddingModel: "m",
+            embeddingDimensions: 384,
+            qdrantUrl: "http://localhost:6333",
+            indexedAt: "2026-05-13T00:00:00.000Z",
+            teaRagsVersion: "0.1.0",
+            chunksCount: 10,
+          },
+        },
+      });
+
+      // Allow fs.watch event to dispatch.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(r.get("code_a")?.path).toBe("/repo/b-external");
+      stop();
+    });
+
+    it("is idempotent — second call returns the same stop handle", () => {
+      const r = new CollectionRegistry(dir);
+      const stop1 = r.startWatching();
+      const stop2 = r.startWatching();
+      expect(stop1).toBe(stop2);
+      stop1();
+    });
+
+    it("tolerates a missing file at construction time (does not throw)", () => {
+      // dir is empty — no registry.json has been created yet. startWatching
+      // must not throw; the watcher may or may not actually attach, but the
+      // method returns a stop fn either way.
+      const r = new CollectionRegistry(dir);
+      const stop = r.startWatching();
+      expect(typeof stop).toBe("function");
+      stop();
+    });
+  });
+
+  describe("startWatching survives multiple atomic renames (regression for fs.watch dangling inode)", () => {
+    it("invalidates cache across N consecutive saveRegistryFile calls", async () => {
+      const r = new CollectionRegistry(dir);
+      r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
+      const stop = r.startWatching();
+      try {
+        // First external write — replaces inode #1 with inode #2.
+        saveRegistryFile(dir, {
+          version: 1,
+          collections: {
+            code_a: {
+              collectionName: "code_a",
+              path: "/repo/external-1",
+              name: null,
+              embeddingModel: "m",
+              embeddingDimensions: 384,
+              qdrantUrl: "http://localhost:6333",
+              indexedAt: "",
+              teaRagsVersion: "",
+              chunksCount: 1,
+            },
+          },
+        });
+        await new Promise((r) => setTimeout(r, 150));
+        expect(r.get("code_a")?.path).toBe("/repo/external-1");
+
+        // Second external write — replaces inode #2 with inode #3. With the
+        // old file-level fs.watch on macOS, the watcher was bound to inode #1
+        // (or whichever was current when startWatching ran) and silently
+        // detached after the first rename. With directory-level watching,
+        // the watcher sees this change too.
+        saveRegistryFile(dir, {
+          version: 1,
+          collections: {
+            code_a: {
+              collectionName: "code_a",
+              path: "/repo/external-2",
+              name: null,
+              embeddingModel: "m",
+              embeddingDimensions: 384,
+              qdrantUrl: "http://localhost:6333",
+              indexedAt: "",
+              teaRagsVersion: "",
+              chunksCount: 2,
+            },
+          },
+        });
+        await new Promise((r) => setTimeout(r, 150));
+        expect(r.get("code_a")?.path).toBe("/repo/external-2");
+
+        // Third — same story.
+        saveRegistryFile(dir, {
+          version: 1,
+          collections: {
+            code_a: {
+              collectionName: "code_a",
+              path: "/repo/external-3",
+              name: null,
+              embeddingModel: "m",
+              embeddingDimensions: 384,
+              qdrantUrl: "http://localhost:6333",
+              indexedAt: "",
+              teaRagsVersion: "",
+              chunksCount: 3,
+            },
+          },
+        });
+        await new Promise((r) => setTimeout(r, 150));
+        expect(r.get("code_a")?.path).toBe("/repo/external-3");
+      } finally {
+        stop();
+      }
+    });
   });
 });

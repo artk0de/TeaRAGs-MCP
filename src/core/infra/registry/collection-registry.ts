@@ -1,17 +1,15 @@
-import { loadRegistryFile, saveRegistryFile } from "./registry-file.js";
-import type { CollectionEntry, RecordEntryInput, RegistryFileV1 } from "./types.js";
+import { watch, type FSWatcher } from "node:fs";
 
-export class ProjectNameNotUniqueError extends Error {
-  constructor(name: string, existingCollectionName: string) {
-    super(`Project name '${name}' is not unique — already used by '${existingCollectionName}'`);
-    this.name = "ProjectNameNotUniqueError";
-  }
-}
-
-const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+import { RegistryNameConflictError } from "../../adapters/registry/errors.js";
+import { PROJECT_NAME_RE } from "./constants.js";
+import { flushWithCAS, loadRegistryFile } from "./registry-file.js";
+import type { CollectionEntry, RecordEntryInput } from "./types.js";
 
 export class CollectionRegistry {
   private cache: Map<string, CollectionEntry> | null = null;
+  private readonly tombstones = new Set<string>();
+  private watcher: FSWatcher | null = null;
+  private stopHandle: (() => void) | null = null;
 
   constructor(private readonly dataDir: string) {}
 
@@ -34,20 +32,27 @@ export class CollectionRegistry {
 
   private flush(): void {
     const map = this.ensureLoaded();
-    const file: RegistryFileV1 = {
-      version: 1,
-      collections: Object.fromEntries(map.entries()),
-    };
-    saveRegistryFile(this.dataDir, file);
+    flushWithCAS(this.dataDir, map, this.tombstones);
   }
 
   record(entry: RecordEntryInput): void {
+    if (typeof entry.collectionName !== "string" || entry.collectionName.trim().length === 0) {
+      throw new Error(`Invalid collectionName: ${JSON.stringify(entry.collectionName)}`);
+    }
+    if (typeof entry.embeddingDimensions !== "number" || entry.embeddingDimensions < 0) {
+      throw new Error(`Invalid embeddingDimensions: ${entry.embeddingDimensions}`);
+    }
+    if (typeof entry.chunksCount !== "number" || entry.chunksCount < 0) {
+      throw new Error(`Invalid chunksCount: ${entry.chunksCount}`);
+    }
     const map = this.ensureLoaded();
     const existing = map.get(entry.collectionName);
     map.set(entry.collectionName, {
       ...entry,
       name: existing?.name ?? null,
     });
+    // Re-registering a previously-removed collection clears its tombstone.
+    this.tombstones.delete(entry.collectionName);
     this.flush();
   }
 
@@ -74,12 +79,12 @@ export class CollectionRegistry {
       throw new Error(`Collection '${collectionName}' not in registry`);
     }
     if (name !== null) {
-      if (!NAME_RE.test(name)) {
-        throw new Error(`Name '${name}' does not match ${NAME_RE.source}`);
+      if (!PROJECT_NAME_RE.test(name)) {
+        throw new Error(`Name '${name}' does not match ${PROJECT_NAME_RE.source}`);
       }
       for (const other of map.values()) {
         if (other.name === name && other.collectionName !== collectionName) {
-          throw new ProjectNameNotUniqueError(name, other.collectionName);
+          throw new RegistryNameConflictError(name, other.collectionName);
         }
       }
     }
@@ -90,7 +95,48 @@ export class CollectionRegistry {
   remove(collectionName: string): boolean {
     const map = this.ensureLoaded();
     const had = map.delete(collectionName);
-    if (had) this.flush();
+    if (had) {
+      this.tombstones.add(collectionName);
+      this.flush();
+    }
     return had;
+  }
+
+  /**
+   * Subscribe to registry.json mtime changes and invalidate the in-process
+   * cache on every event so the next read sees fresh data written by a
+   * concurrent CLI or pipeline run. Returns a stop handle that closes the
+   * watcher. Idempotent — repeated calls return the same handle. Audit #2.
+   *
+   * fs.watch fails synchronously if the path does not exist; we tolerate
+   * by deferring the watch silently. Worst case: the very first external
+   * mutation before our process records anything is missed — extremely
+   * unlikely and recovered by the merge-on-write CAS in flush() anyway.
+   */
+  startWatching(): () => void {
+    if (this.stopHandle !== null) return this.stopHandle;
+    // Watch the data directory, not the file itself. macOS kqueue (and
+    // similar platforms) binds file-level watchers to inodes; our atomic
+    // rename in saveRegistryFile replaces the inode on every write, so a
+    // file-level watcher detaches after the first rename. A directory
+    // watcher survives the rename cycle and lets us filter by filename.
+    // Audit #2 regression fix.
+    try {
+      this.watcher = watch(this.dataDir, { persistent: false }, (_eventType, filename) => {
+        if (filename === "registry.json" || filename === null) {
+          this.cache = null;
+        }
+      });
+    } catch {
+      this.watcher = null;
+    }
+    this.stopHandle = () => {
+      if (this.watcher !== null) {
+        this.watcher.close();
+        this.watcher = null;
+      }
+      this.stopHandle = null;
+    };
+    return this.stopHandle;
   }
 }

@@ -123,3 +123,19 @@ export class PathDoesNotExistError extends InputValidationError {
     });
   }
 }
+
+/**
+ * Thrown when a registry entry was recovered (e.g. via `tea-rags doctor
+ * --recover-registry`) but its `path` is empty, so commands that rely on the
+ * alias to resolve a filesystem location cannot proceed. The hint carries
+ * the exact shell command the user should run to re-register the project.
+ */
+export class ProjectPathMissingError extends InputValidationError {
+  constructor(name: string, hint: string) {
+    super({
+      code: "INPUT_PROJECT_PATH_MISSING",
+      message: `Project '${name}' has no path stored — re-register it before using as an alias`,
+      hint,
+    });
+  }
+}

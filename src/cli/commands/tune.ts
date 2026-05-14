@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import type { CommandModule } from "yargs";
 
+import { InputValidationError } from "../../core/api/errors.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
 
@@ -96,7 +97,16 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
         default: false,
       }),
   handler: async (argv) => {
-    const resolved = applyProjectDefaults(argv as TuneArgs);
+    let resolved: TuneArgs;
+    try {
+      resolved = applyProjectDefaults(argv as TuneArgs);
+    } catch (err) {
+      if (err instanceof InputValidationError) {
+        process.stderr.write(`${err.message}\nHint: ${err.hint}\n`);
+        process.exit(1);
+      }
+      throw err;
+    }
     const resolution = await resolveTuneQdrantUrl(resolved["qdrant-url"]);
     if (resolution.url) {
       resolved["qdrant-url"] = resolution.url;

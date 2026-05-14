@@ -180,6 +180,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   };
 
   const collectionRegistry = new CollectionRegistry(config.paths.appData);
+  const registryWatchStop = collectionRegistry.startWatching();
   const ingest = new IngestFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -233,6 +234,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   });
 
   const cleanup = () => {
+    registryWatchStop();
     if ("terminate" in infra.embeddings && typeof infra.embeddings.terminate === "function") {
       void (infra.embeddings as { terminate: () => Promise<void> }).terminate();
     }
