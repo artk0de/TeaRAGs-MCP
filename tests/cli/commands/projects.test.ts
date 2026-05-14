@@ -301,6 +301,72 @@ describe("CLI 'projects' command group", () => {
         stdout.mockRestore();
       }
     });
+
+    it("excludes aliased physical collections from the orphan list", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const reg = new CollectionRegistry(dir);
+        // Registry has the alias name.
+        reg.record({
+          collectionName: "code_aliased",
+          path: repo,
+          embeddingModel: "m",
+          embeddingDimensions: 1,
+          qdrantUrl: "http://q",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 0,
+        });
+        reg.setName("code_aliased", "live-project");
+
+        const fakeQdrant = {
+          // Qdrant returns the physical name + a truly orphan one.
+          listCollections: vi.fn().mockResolvedValue([
+            "code_aliased_v3", // physical backing of the alias
+            "code_truly_orphan", // genuine orphan
+          ]),
+          // The alias mapping says code_aliased points at code_aliased_v3.
+          aliases: {
+            listAliases: vi.fn().mockResolvedValue([{ aliasName: "code_aliased", collectionName: "code_aliased_v3" }]),
+          },
+          countPoints: vi.fn().mockResolvedValue(100),
+        };
+
+        const { runOrphans } = await import("../../../src/cli/commands/projects.js");
+        await runOrphans({ json: false }, fakeQdrant as never);
+
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        // Aliased-to physical must be hidden.
+        expect(out).not.toContain("code_aliased_v3");
+        // Genuine orphan still listed.
+        expect(out).toContain("code_truly_orphan");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("falls back gracefully when listAliases is missing or throws", async () => {
+      // Defensive — if the Qdrant client doesn't expose aliases (e.g. older
+      // server), orphans should still work, just including all physical names.
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        const fakeQdrant = {
+          listCollections: vi.fn().mockResolvedValue(["code_a", "code_b"]),
+          aliases: {
+            listAliases: vi.fn().mockRejectedValue(new Error("not supported")),
+          },
+          countPoints: vi.fn().mockResolvedValue(0),
+        };
+        const { runOrphans } = await import("../../../src/cli/commands/projects.js");
+        await runOrphans({ json: false }, fakeQdrant as never);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        // Without alias info, both appear (best-effort fallback).
+        expect(out).toContain("code_a");
+        expect(out).toContain("code_b");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
   });
 
   describe("unregister --purge (audit #8 purge half) + verbose hint (audit #12)", () => {

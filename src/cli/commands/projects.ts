@@ -29,7 +29,13 @@ interface OrphansArgs {
 }
 
 /** Narrow surface of QdrantManager that runOrphans needs (allows test injection). */
-type QdrantSurface = Pick<QdrantManager, "listCollections" | "countPoints">;
+type QdrantSurface = Pick<QdrantManager, "listCollections" | "countPoints"> & {
+  /**
+   * Optional — older Qdrant servers or partial mocks may omit it.
+   * Used to exclude physical collections that back an alias from the orphan list.
+   */
+  aliases?: Pick<QdrantManager["aliases"], "listAliases">;
+};
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
@@ -136,8 +142,23 @@ export async function runOrphans(args: OrphansArgs, qdrant?: QdrantSurface): Pro
   const { registry } = newOps();
   const client = qdrant ?? (await defaultQdrant());
   const registered = new Set(registry.list().map((e) => e.collectionName));
+
+  // Aliased-to physical collections must NOT appear as orphans — they back a
+  // registered (or unregistered) alias and removing them destroys live data.
+  // Qdrant's listCollections returns physical names (e.g. `code_8b243ffe_v2`);
+  // the registry stores alias names (e.g. `code_8b243ffe`). Subtract the alias
+  // targets so the user is never told a live backing collection is "orphaned".
+  let aliasedTargets = new Set<string>();
+  try {
+    const aliases = (await client.aliases?.listAliases()) ?? [];
+    aliasedTargets = new Set(aliases.map((a) => a.collectionName));
+  } catch {
+    // Best-effort fallback — older Qdrant servers without alias support fall
+    // back to pre-fix behaviour (all physical names visible).
+  }
+
   const collections = await client.listCollections();
-  const orphans = collections.filter((c) => !registered.has(c));
+  const orphans = collections.filter((c) => !registered.has(c) && !aliasedTargets.has(c));
 
   if (args.json) {
     const rows = await Promise.all(
