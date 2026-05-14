@@ -1,10 +1,11 @@
 import { PROJECT_NAME_RE } from "./constants.js";
 import { RegistryNameConflictError } from "./errors.js";
-import { loadRegistryFile, saveRegistryFile } from "./registry-file.js";
-import type { CollectionEntry, RecordEntryInput, RegistryFileV1 } from "./types.js";
+import { flushWithCAS, loadRegistryFile } from "./registry-file.js";
+import type { CollectionEntry, RecordEntryInput } from "./types.js";
 
 export class CollectionRegistry {
   private cache: Map<string, CollectionEntry> | null = null;
+  private readonly tombstones = new Set<string>();
 
   constructor(private readonly dataDir: string) {}
 
@@ -27,11 +28,7 @@ export class CollectionRegistry {
 
   private flush(): void {
     const map = this.ensureLoaded();
-    const file: RegistryFileV1 = {
-      version: 1,
-      collections: Object.fromEntries(map.entries()),
-    };
-    saveRegistryFile(this.dataDir, file);
+    flushWithCAS(this.dataDir, map, this.tombstones);
   }
 
   record(entry: RecordEntryInput): void {
@@ -41,6 +38,8 @@ export class CollectionRegistry {
       ...entry,
       name: existing?.name ?? null,
     });
+    // Re-registering a previously-removed collection clears its tombstone.
+    this.tombstones.delete(entry.collectionName);
     this.flush();
   }
 
@@ -83,7 +82,10 @@ export class CollectionRegistry {
   remove(collectionName: string): boolean {
     const map = this.ensureLoaded();
     const had = map.delete(collectionName);
-    if (had) this.flush();
+    if (had) {
+      this.tombstones.add(collectionName);
+      this.flush();
+    }
     return had;
   }
 }

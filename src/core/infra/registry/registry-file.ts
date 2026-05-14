@@ -1,11 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { RegistryFileCorruptedError, RegistryWriteError } from "./errors.js";
-import type { RegistryFileV1 } from "./types.js";
+import { RegistryConcurrencyError, RegistryFileCorruptedError, RegistryWriteError } from "./errors.js";
+import type { CollectionEntry, RegistryFileV1 } from "./types.js";
 
 const FILE_NAME = "registry.json";
 const CURRENT_VERSION = 1 as const;
+const CAS_MAX_ATTEMPTS = 5;
+const CAS_BACKOFF_MS_BASE = 10;
 
 /**
  * Registered migrations transform an older on-disk shape into the current
@@ -78,4 +80,100 @@ export function saveRegistryFile(dataDir: string, file: RegistryFileV1): void {
   } catch (err) {
     throw new RegistryWriteError(path, err);
   }
+}
+
+/**
+ * Per-collection last-writer-wins with a directional bias on the sticky
+ * `name` field:
+ *
+ *   - in-memory non-null wins (explicit user action via setName)
+ *   - in-memory null + disk non-null → disk wins (don't erase concurrent rename)
+ *
+ * All other fields take the in-memory value (the local process is the
+ * authoritative source for chunksCount / indexedAt / etc.).
+ */
+export function mergeRegistryEntries(disk: CollectionEntry, mem: CollectionEntry): CollectionEntry {
+  const name = mem.name !== null ? mem.name : disk.name;
+  return { ...mem, name };
+}
+
+/**
+ * Merge an in-memory delta (Map<collectionName, CollectionEntry>) into the
+ * on-disk RegistryFileV1. Disk-only entries are preserved; delta-only
+ * entries are inserted; overlapping entries go through mergeRegistryEntries.
+ *
+ * Optional `tombstones` carry intentional removes: any collection name in
+ * the set is dropped from the merged result even if it is still on disk.
+ */
+export function mergeRegistryDelta(
+  disk: RegistryFileV1 | null,
+  delta: Map<string, CollectionEntry>,
+  tombstones?: ReadonlySet<string>,
+): RegistryFileV1 {
+  const out: Record<string, CollectionEntry> = {};
+  if (disk) {
+    for (const [k, v] of Object.entries(disk.collections)) out[k] = v;
+  }
+  for (const [k, v] of delta.entries()) {
+    const onDisk = out[k];
+    out[k] = onDisk ? mergeRegistryEntries(onDisk, v) : v;
+  }
+  if (tombstones) {
+    for (const k of tombstones) delete out[k];
+  }
+  return { version: CURRENT_VERSION, collections: out };
+}
+
+function sleepSync(ms: number): void {
+  // flush() is sync today; this matches the existing API. Busy-wait is
+  // bounded (max 160ms per retry, max 5 retries → ~310ms worst case).
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    /* spin */
+  }
+}
+
+function statOrNull(path: string): { ino: number; mtimeMs: number } | null {
+  try {
+    // Use the default fs namespace so vi.spyOn(fs, "statSync") can intercept
+    // in tests (named ESM imports are read-only bindings).
+    const s = fs.statSync(path);
+    return { ino: Number(s.ino), mtimeMs: s.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Flush an in-memory delta to disk under cross-process CAS. Retries up to
+ * CAS_MAX_ATTEMPTS times with exponential backoff if another writer mutates
+ * the file between our read and our rename. Throws RegistryConcurrencyError
+ * on exhaustion. Closes audit #1.
+ *
+ * Optional `tombstones` carry intentional remove() requests so the merge
+ * can drop those keys instead of resurrecting them from disk.
+ */
+export function flushWithCAS(
+  dataDir: string,
+  delta: Map<string, CollectionEntry>,
+  tombstones?: ReadonlySet<string>,
+): void {
+  const path = filePath(dataDir);
+  for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
+    const before = statOrNull(path);
+    const disk = loadRegistryFile(dataDir);
+    const merged = mergeRegistryDelta(disk, delta, tombstones);
+    const after = statOrNull(path);
+    const stable =
+      (before === null && after === null) ||
+      (before !== null && after !== null && before.ino === after.ino && before.mtimeMs === after.mtimeMs);
+    if (stable) {
+      saveRegistryFile(dataDir, merged);
+      return;
+    }
+    if (attempt < CAS_MAX_ATTEMPTS - 1) {
+      sleepSync(CAS_BACKOFF_MS_BASE * 2 ** attempt);
+    }
+  }
+  throw new RegistryConcurrencyError(path, CAS_MAX_ATTEMPTS);
 }
