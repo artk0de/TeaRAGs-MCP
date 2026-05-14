@@ -25,7 +25,7 @@ truth that both the reranker score path AND the label overlay path read.
       score: { threshold: 10 },          // continuous dampening (k)
       label: {
         rules: [
-          { whenSupportBelow: 5,  ceiling: "typical"    },
+          { whenSupportBelow: 5,  ceiling: "healthy"    },
           { whenSupportBelow: 10, ceiling: "concerning" },
         ],
       },
@@ -114,7 +114,7 @@ Rules are walked ascending. First match wins. Convention: at most
 
 ```ts
 rules: [
-  { whenSupportBelow: 5,  ceiling: "typical"    },  // demote noise to harmless
+  { whenSupportBelow: 5,  ceiling: "healthy"    },  // demote noise to harmless (lowest label in bugFixRate map)
   { whenSupportBelow: 10, ceiling: "concerning" },  // moderate-N: cap at concerning
 ]
 // commitCount >= 10 → no clamp, full label severity

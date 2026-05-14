@@ -419,7 +419,7 @@ bd update <task3-id> --status=in_progress
 Cover:
 - reranker, given a payload with `bugFixRate=63, commitCount=3` and a
   mock descriptor declaring `confidence.label.rules`, emits overlay
-  with `bugFixRate.label === "typical"` and raw `value === 63`.
+  with `bugFixRate.label === "healthy"` and raw `value === 63`.
 - reranker passes `ExtractContext.confidence` (with `support` and
   `score.threshold`) to derived-signal extract when raw descriptor
   declares `confidence.score`.
@@ -504,7 +504,7 @@ confidence: {
   score: { threshold: 10 },
   label: {
     rules: [
-      { whenSupportBelow: 5,  ceiling: "typical"    },
+      { whenSupportBelow: 5,  ceiling: "healthy"    },
       { whenSupportBelow: 10, ceiling: "concerning" },
     ],
   },
@@ -1075,7 +1075,7 @@ limit: 5
 metaOnly: true
 ```
 
-Expected in overlay: `bugFixRate: { value: 63, label: "typical" }`
+Expected in overlay: `bugFixRate: { value: 63, label: "healthy" }`
 (NOT `"critical"`). Confirms Spec 3 end-to-end.
 
 **Step 6: Manual recipe reproduction**
@@ -1114,7 +1114,7 @@ bd dolt push
 The plan is complete when ALL of the following hold:
 
 1. User's trigger case (`bugFixRate=63, commitCount=3`) emits
-   `{ value: 63, label: "typical" }` in overlay (verified Task 11
+   `{ value: 63, label: "healthy" }` in overlay (verified Task 11
    Step 5).
 2. `bugFix` derived score is numerically identical before/after Task 5
    refactor (verified Task 5 Step 7 regression test).
