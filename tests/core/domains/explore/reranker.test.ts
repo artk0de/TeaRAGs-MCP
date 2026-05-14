@@ -1588,6 +1588,85 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     expect(ranked[0].score).toBeGreaterThan(0.1);
     expect(ranked[0].score).toBeLessThan(0.25);
   });
+
+  it("regression: confidence clamp fires even when support sibling is NOT in overlay mask", () => {
+    // Real-world bug surfaced via MCP query against a large Rails monorepo:
+    // HotspotsPreset.overlayMask.file contains bugFixRate but NOT commitCount.
+    // Previous implementation read siblingValues from the projected overlay,
+    // so commitCount was invisible → clamp couldn't find its support sibling
+    // → file-scope label stayed "critical" for bugFixRate=38 commitCount=3.
+    // After fix: siblingValues come from the RAW payload at scope, not from
+    // the mask-filtered overlay, so the clamp fires regardless of preset mask.
+    const customPayloadSignals: PayloadSignalDescriptor[] = [
+      { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+      {
+        key: "git.file.bugFixRate",
+        type: "number",
+        description: "Bug fix rate",
+        stats: {
+          labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+          confidence: {
+            support: "commitCount",
+            label: {
+              rules: [
+                { whenSupportBelow: 5, ceiling: "healthy" },
+                { whenSupportBelow: 10, ceiling: "concerning" },
+              ],
+            },
+          },
+        },
+      },
+    ];
+    // Mask intentionally OMITS commitCount — the bug condition.
+    const maskedPreset: RerankPreset = {
+      name: "bugFixMasked",
+      description: "test",
+      tools: ["semantic_search"],
+      weights: { bugFix: 1.0 },
+      overlayMask: { file: ["bugFixRate"] },
+    };
+    const reranker = new Reranker(bugFixDescriptor, [maskedPreset], customPayloadSignals);
+
+    // Provide collection stats so label resolution actually runs.
+    const collectionStats: CollectionSignalStats = {
+      perSignal: new Map(),
+      perLanguage: new Map([
+        [
+          "ruby",
+          new Map([["git.file.bugFixRate", { source: { count: 100, percentiles: { 50: 17, 75: 25, 95: 31 } } }]]),
+        ],
+      ]),
+      distributions: {
+        totalFiles: 0,
+        language: {},
+        chunkType: {},
+        documentation: { docs: 0, code: 0 },
+        topAuthors: [],
+        topBlameAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    };
+    reranker.setCollectionStats(collectionStats);
+
+    // bugFixRate=38 commitCount=3, language=ruby
+    const result: RerankableResult = {
+      score: 0.9,
+      payload: {
+        relativePath: "app/services/foo.rb",
+        startLine: 1,
+        endLine: 10,
+        language: "ruby",
+        chunkType: "function",
+        git: { file: { bugFixRate: 38, commitCount: 3 } },
+      },
+    };
+    const ranked = reranker.rerank([result], "bugFixMasked", "semantic_search");
+    const overlay = ranked[0].rankingOverlay?.file?.["bugFixRate"];
+    // Without the fix: { value: 38, label: "critical" } (clamp didn't fire — commitCount missing from siblings).
+    // With the fix: { value: 38, label: "healthy" } (clamp fires from raw payload).
+    expect(overlay).toEqual({ value: 38, label: "healthy" });
+  });
 });
 
 describe("Reranker — collection-level p95 fallback for adaptive bounds", () => {

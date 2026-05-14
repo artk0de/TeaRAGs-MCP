@@ -431,8 +431,8 @@ export class Reranker {
     const chunkType = typeof result.payload?.["chunkType"] === "string" ? result.payload["chunkType"] : undefined;
     const relativePath = typeof result.payload?.["relativePath"] === "string" ? result.payload["relativePath"] : "";
 
-    this.applyLabelResolution(rawFile, "file", language, chunkType, relativePath);
-    this.applyLabelResolution(rawChunk, "chunk", language, chunkType, relativePath);
+    this.applyLabelResolution(rawFile, "file", result.payload, language, chunkType, relativePath);
+    this.applyLabelResolution(rawChunk, "chunk", result.payload, language, chunkType, relativePath);
 
     return {
       preset: presetName,
@@ -451,19 +451,20 @@ export class Reranker {
   private applyLabelResolution(
     overlay: Record<string, unknown>,
     level: "file" | "chunk",
+    rawPayload: Record<string, unknown> | undefined,
     language?: string,
     chunkType?: string,
     relativePath?: string,
   ): void {
     if (!this.collectionStats) return;
 
-    // Capture sibling raw values once before the loop mutates overlay entries.
-    // `confidence.support` is bare-name same-scope, so the overlay record itself
-    // (keyed by bare names at this scope) is the sibling table.
-    const siblingValues: Record<string, number> = {};
-    for (const [k, v] of Object.entries(overlay)) {
-      if (typeof v === "number") siblingValues[k] = v;
-    }
+    // Read sibling values from RAW PAYLOAD at this scope, NOT from the projected
+    // overlay. The overlay is mask-filtered — fields not in the preset's mask
+    // (e.g. commitCount absent from HotspotsPreset.overlayMask.file) would
+    // otherwise be invisible to the resolver, breaking confidence clamp for any
+    // signal whose support sibling isn't independently surfaced. Raw payload is
+    // the unfiltered source of truth at each scope.
+    const siblingValues = this.collectScopeSiblings(rawPayload, level);
 
     for (const field of Object.keys(overlay)) {
       const value = overlay[field];
@@ -497,6 +498,42 @@ export class Reranker {
       });
       overlay[field] = { value, label };
     }
+  }
+
+  /**
+   * Build a sibling-values map from the RAW payload at a given scope.
+   * Handles both nested (payload.git.file.*) and flat (payload['git.file.commitCount'])
+   * shapes. Returns bare-name keys (`commitCount`, not `git.file.commitCount`)
+   * so `SignalConfidence.support: "commitCount"` resolves directly.
+   */
+  private collectScopeSiblings(
+    rawPayload: Record<string, unknown> | undefined,
+    scope: "file" | "chunk",
+  ): Record<string, number> {
+    if (!rawPayload) return {};
+    const out: Record<string, number> = {};
+
+    // Nested format: payload.git.{file,chunk}.{signalName}
+    const { git } = rawPayload as { git?: unknown };
+    if (git && typeof git === "object") {
+      const scoped = (git as Record<string, unknown>)[scope];
+      if (scoped && typeof scoped === "object") {
+        for (const [k, v] of Object.entries(scoped as Record<string, unknown>)) {
+          if (typeof v === "number") out[k] = v;
+        }
+      }
+    }
+
+    // Flat-format fallback: payload["git.{scope}.{signalName}"]
+    const prefix = `git.${scope}.`;
+    for (const [k, v] of Object.entries(rawPayload)) {
+      if (typeof v === "number" && k.startsWith(prefix)) {
+        const bare = k.slice(prefix.length);
+        if (!(bare in out)) out[bare] = v;
+      }
+    }
+
+    return out;
   }
 
   /**
