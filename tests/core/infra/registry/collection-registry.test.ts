@@ -144,6 +144,58 @@ describe("CollectionRegistry", () => {
     }).toThrow(/does not match/);
   });
 
+  describe("record() input validation (audit #11)", () => {
+    it("rejects empty collectionName", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ collectionName: "" }));
+      }).toThrow(/collectionName/);
+    });
+
+    it("rejects whitespace-only collectionName", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ collectionName: "   " }));
+      }).toThrow(/collectionName/);
+    });
+
+    it("rejects negative embeddingDimensions", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ embeddingDimensions: -1 }));
+      }).toThrow(/embeddingDimensions/);
+    });
+
+    it("rejects negative chunksCount", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ chunksCount: -5 }));
+      }).toThrow(/chunksCount/);
+    });
+
+    it("accepts entries with empty embeddingModel and qdrantUrl (stub from future recoverFromQdrant)", () => {
+      // PR2 audit #5 will tighten this — for now ensure stubs still round-trip.
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ embeddingModel: "", qdrantUrl: "", indexedAt: "" }));
+      }).not.toThrow();
+    });
+
+    it("accepts zero embeddingDimensions (stub entries from doctor recovery)", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ embeddingDimensions: 0 }));
+      }).not.toThrow();
+    });
+
+    it("accepts zero chunksCount (just-created empty collection)", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.record(makeEntry({ chunksCount: 0 }));
+      }).not.toThrow();
+    });
+  });
+
   it("tombstone prevents resurrection when concurrent disk write reintroduces removed entry (audit #1)", () => {
     const r = new CollectionRegistry(dir);
     r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));

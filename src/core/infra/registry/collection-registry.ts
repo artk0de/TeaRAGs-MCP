@@ -32,6 +32,15 @@ export class CollectionRegistry {
   }
 
   record(entry: RecordEntryInput): void {
+    if (typeof entry.collectionName !== "string" || entry.collectionName.trim().length === 0) {
+      throw new Error(`Invalid collectionName: ${JSON.stringify(entry.collectionName)}`);
+    }
+    if (typeof entry.embeddingDimensions !== "number" || entry.embeddingDimensions < 0) {
+      throw new Error(`Invalid embeddingDimensions: ${entry.embeddingDimensions}`);
+    }
+    if (typeof entry.chunksCount !== "number" || entry.chunksCount < 0) {
+      throw new Error(`Invalid chunksCount: ${entry.chunksCount}`);
+    }
     const map = this.ensureLoaded();
     const existing = map.get(entry.collectionName);
     map.set(entry.collectionName, {
