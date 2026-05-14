@@ -42,7 +42,18 @@ sidebar_position: 1
 Once registered, the alias can be passed as `project` to any project-aware tool
 instead of `path` or `collection`. Resolution priority:
 `collection > project > path`. See
-**[Project Registry](/usage/advanced/project-registry)** for the full guide.
+**[Project Registry](/usage/advanced/project-registry)** for the full guide,
+including the `tea-rags doctor` command, `--recover-registry`, orphan
+collection inspection, and the `--purge` flag for destructive cleanup.
+
+:::note No `purge` on MCP `unregister_project`
+The MCP `unregister_project` tool removes the registry entry only — it has
+no `purge` parameter. Destructive removal of the underlying Qdrant
+collection is exposed only via the CLI
+(`tea-rags projects unregister --name <alias> --purge`). From an MCP
+client, follow `unregister_project` with `clear_index` or
+`delete_collection` if you need to remove the chunks.
+:::
 
 ## Similarity Search
 

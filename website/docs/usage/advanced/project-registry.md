@@ -61,12 +61,35 @@ defaults `--path` to `process.cwd()`.
   fragment.
 - `name` is **sticky** across reindex — re-indexing a project preserves its
   registered name while overwriting all other fields.
-- Atomic writes (write to `.tmp.<pid>`, rename) make the file safe for parallel
-  tea-rags processes.
+- Writes are atomic (write to `.tmp.<pid>`, then rename) AND protected by a
+  compare-and-swap (CAS) retry loop — 5 attempts with exponential backoff
+  (10ms → 160ms). The CAS read-modify-write protects parallel tea-rags
+  processes from clobbering each other's entries; exhausting the budget
+  throws `RegistryConcurrencyError` (`INFRA_REGISTRY_CONCURRENCY`).
+- The long-lived MCP server installs a directory-level `fs.watch` on
+  `$TEA_RAGS_DATA_DIR` so external writes (an indexing run from a parallel
+  CLI process, `tea-rags projects register` from a shell, `tea-rags doctor
+  --recover-registry`) invalidate the in-memory cache without an MCP
+  reconnect.
 
-Loading a `registry.json` with `version != 1` throws
-`RegistryFileCorruptedError`. A missing file is fine — the in-memory map starts
-empty and gets written on first `register_project`.
+### Loading and migrations
+
+`loadRegistryFile` reads `registry.json` through a small migration framework:
+
+- A missing file is fine — the in-memory map starts empty and gets written
+  on first `register_project`.
+- For `version: 1` (current), the file is loaded as-is.
+- For older `version` values, the file is passed through
+  `KNOWN_MIGRATIONS[version]` if a transformer is registered. The reserved
+  framework is in place; no migrations are registered yet because v1 is the
+  initial schema.
+- Any other case (JSON parse failure, malformed shape, unsupported version)
+  is treated as **corruption**: the bad file is renamed to
+  `registry.json.corrupt-<ISO>.bak` so it is recoverable by hand, and
+  `RegistryFileCorruptedError` (`INFRA_REGISTRY_FILE_CORRUPTED`) is thrown.
+  The next boot sees no file and starts with an empty map; in this state
+  `tea-rags doctor --recover-registry` can repopulate stubs directly from
+  Qdrant (see [Doctor and Recovery](#doctor-and-recovery)).
 
 ## MCP Tools
 
@@ -102,12 +125,16 @@ Associate a short alias with an absolute project path.
 }
 ```
 
-**Errors:**
+**Errors** (all mapped to HTTP 400 — `InputValidationError` subclasses):
 
-- `ProjectNameInvalidError` — name empty, longer than 64 chars, or fails the
-  regex.
-- `PathDoesNotExistError` — `path` does not exist on disk.
-- `ProjectNameNotUniqueError` — another entry already owns this name.
+- `ProjectNameInvalidError` (`INPUT_PROJECT_NAME_INVALID`) — name empty,
+  longer than 64 chars, or fails the regex.
+- `PathDoesNotExistError` (`INPUT_PATH_NOT_EXISTS`) — `path` does not exist
+  on disk.
+- `ProjectNameNotUniqueError` (`INPUT_PROJECT_NAME_NOT_UNIQUE`) — another
+  entry already owns this name. The infra layer raises
+  `RegistryNameConflictError` (`INFRA_REGISTRY_NAME_CONFLICT`) as a
+  defensive backstop if a caller bypasses the api-layer pre-check.
 
 ### `list_projects`
 
@@ -142,8 +169,8 @@ Remove an alias by name. **Idempotent** — returns `removed: false` when the
 project was not registered. Does **not** delete the underlying Qdrant
 collection or any indexed chunks.
 
-| Parameter | Type     | Required | Description           |
-| --------- | -------- | -------- | --------------------- |
+| Parameter | Type     | Required | Description            |
+| --------- | -------- | -------- | ---------------------- |
 | `name`    | `string` | yes      | Project name to remove |
 
 **Returns:**
@@ -152,8 +179,11 @@ collection or any indexed chunks.
 { "removed": true }
 ```
 
-To delete chunks as well, follow with `clear_index` or `delete_collection` on
-the collection name returned by `list_projects`.
+The MCP `unregister_project` tool has **no** `purge` parameter — destructive
+removal of the Qdrant collection is exposed only via the CLI
+(`tea-rags projects unregister --name <alias> --purge`, see
+[CLI Commands](#cli-commands)). From an MCP client, follow `unregister_project`
+with `clear_index` or `delete_collection` to remove the chunks.
 
 ## The `project` parameter on other tools
 
@@ -170,7 +200,22 @@ Resolves through the registry to the project's collection and path, then runs
 the query exactly as if `path` had been supplied.
 
 If `project` does not exist in the registry the call throws
-`ProjectNotRegisteredError`.
+`ProjectNotRegisteredError` (`INPUT_PROJECT_NOT_REGISTERED`). If the entry
+exists but its `path` is an empty string — the shape produced by
+`tea-rags doctor --recover-registry` for a Qdrant collection that has no
+matching directory yet — the call throws `ProjectPathMissingError`
+(`INPUT_PROJECT_PATH_MISSING`), with a hint telling the user to run
+`tea-rags projects register --path <dir> --name <alias>` to fill the path
+back in.
+
+:::note Long-lived MCP sessions
+The MCP server watches `$TEA_RAGS_DATA_DIR` with `fs.watch` at the
+directory level, so registry changes made by external CLI invocations
+(`tea-rags projects register`, `tea-rags projects unregister`,
+`tea-rags doctor --recover-registry`) become visible to in-flight tool
+calls without an MCP reconnect. The directory-level watch survives the
+atomic `.tmp.<pid>` -> rename cycle that a file-level watch would miss.
+:::
 
 ## CLI Commands
 
@@ -219,16 +264,52 @@ tea-rags projects info --name shop-backend
 Add `--json` for a machine-readable single-entry dump. Exits 1 with
 `'<name>' was not registered` on stderr when the name is unknown.
 
+**Realpath divergence and missing paths.** `projects info` calls
+`realpathSync(entry.path)` and renders the result on a dedicated line when
+the live filesystem disagrees with the stored value:
+
+| Situation                                                    | Text-mode output                                                                                     | JSON output                                              |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Stored `path` resolves to itself                             | (no `realpath` line)                                                                                 | no `realpath` field                                      |
+| Stored `path` resolves to a different absolute path (symlink retargeted, mount moved) | `realpath:` line with the resolved path plus a hint to re-register | `realpath` field set to the resolved path                |
+| Stored `path` is gone from disk entirely                     | `realpath:            (missing on disk)`                                                             | no `realpath` field (sentinel is render-only)            |
+
+When `indexedAt` is missing (e.g. a recovered registry stub from
+`tea-rags doctor --recover-registry` where Qdrant had no indexing marker),
+text mode renders `(never)`. The earlier behaviour of synthesising
+`indexedAt = new Date()` during enrichment has been removed — an empty
+field stays empty.
+
 ### `tea-rags projects unregister`
 
 ```bash
 tea-rags projects unregister --name shop-backend
-# Removed 'shop-backend'
+# Removed 'shop-backend' from registry. Note: Qdrant collection 'code_8f42a1b3' is still present.
+# Run 'tea-rags projects unregister --name shop-backend --purge' to remove it.
 ```
 
 Idempotent. Exits 0 with the message `'<name>' was not registered` when the
-project is absent. Does not touch the underlying Qdrant collection — to delete
-the indexed data, use `clear_index` or `delete_collection`.
+project is absent. By default it touches only the registry — the underlying
+Qdrant collection (and its indexed chunks) is preserved, and the message
+above tells the user how to remove it.
+
+Pass `--purge` to also delete the Qdrant collection in one step:
+
+```bash
+tea-rags projects unregister --name shop-backend --purge
+# Removed 'shop-backend' from registry; deleted Qdrant collection 'code_8f42a1b3' (3832 chunks)
+```
+
+If the Qdrant `deleteCollection` call fails (server unreachable, alias in
+use), the registry entry is **still removed**, but the message reports the
+delete failure so the user can retry with `delete_collection`:
+
+```
+Removed 'shop-backend' from registry; failed to delete Qdrant collection 'code_8f42a1b3': <reason>
+```
+
+For non-destructive inspection of Qdrant collections that no longer have a
+registry entry, see [Doctor and Recovery](#doctor-and-recovery).
 
 ### `--project` flag on other commands
 
@@ -241,8 +322,19 @@ tea-rags tune --project shop-backend
 # resolves --path, --qdrant-url, --model from the registry entry
 ```
 
-If the project name is not registered the command fails fast with
-`Project '<name>' not registered. Available: <list of names>`.
+Resolution is performed by `applyProjectDefaults`, which throws typed
+`InputValidationError` subclasses (it does not call `process.exit` itself —
+the CLI command wraps the call and prints `message + Hint` to stderr):
+
+- `ProjectNotRegisteredError` (`INPUT_PROJECT_NOT_REGISTERED`) — the alias
+  is unknown. Stderr lists the available aliases (or `(none)`).
+- `ProjectPathMissingError` (`INPUT_PROJECT_PATH_MISSING`) — the alias
+  exists but its `path` is empty (recovered stub). The hint tells the user
+  to run `tea-rags projects register --path <dir> --name <alias>`.
+
+Empty-string `embeddingModel` / `qdrantUrl` values on a recovered stub are
+coerced to `undefined` before nullish-coalesce, so downstream commands fall
+through to their own defaults instead of being poisoned with `""`.
 
 ### Shell completion
 
@@ -264,6 +356,107 @@ edit needed.
 
 After indexing and registering a project, `--project ` followed by TAB will
 autocomplete with the alias names from `~/.tea-rags/registry.json`.
+
+## Doctor and Recovery
+
+The `tea-rags doctor` command is a read-only health summary plus an
+opt-in recovery path that rebuilds the registry from live Qdrant state. It
+is a CLI-only command — there is no MCP equivalent, by design (destructive
+or repair operations should never be one MCP call away).
+
+### `tea-rags doctor`
+
+```bash
+tea-rags doctor
+# [OK]   Qdrant: http://127.0.0.1:6333
+# [OK]   Embeddings (ollama): http://127.0.0.1:11434
+# [OK]   Registry: 3 project(s)
+# [WARN] Registry: 2 orphan collection(s) — run 'tea-rags doctor --recover-registry' or 'tea-rags projects orphans' to inspect
+```
+
+The summary lines are:
+
+| Line          | Meaning                                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Qdrant`      | URL the same bootstrap path as the MCP server resolves to (embedded daemon socket or `QDRANT_URL`). `[OK]` / `[FAIL]` reflects the `checkHealth` probe.                |
+| `Embeddings`  | Provider name (`ollama`, `onnx`, `openai`, ...), base URL where applicable, and reachability via the provider's own `checkHealth`.                                     |
+| `Registry`    | Count of registered projects. A second `[WARN]` line appears when Qdrant has collections without a registry entry — see "orphan collection" definition below.          |
+
+Add `--json` for a machine-readable dump:
+
+```json
+{
+  "qdrant":     { "url": "http://127.0.0.1:6333", "reachable": true },
+  "embeddings": { "provider": "ollama", "url": "http://127.0.0.1:11434", "reachable": true },
+  "registry":   { "projectCount": 3, "orphanCount": 2 }
+}
+```
+
+The `[FAIL]` lines never crash doctor — the command is read-only and a
+failed probe is a legitimate finding. Doctor never spawns the embedded
+Qdrant daemon (connection refused is a real symptom worth reporting).
+
+### `tea-rags doctor --recover-registry`
+
+When the registry has been wiped, corrupted, or you've moved
+`registry.json` between machines, this flag repopulates entries from live
+Qdrant state. Doctor calls `ProjectRegistryOps.recoverFromQdrant`, which
+walks `listCollections()` and inserts a registry entry for every Qdrant
+collection that does not already have one.
+
+```bash
+tea-rags doctor --recover-registry
+# [OK]   Qdrant: http://127.0.0.1:6333
+# [OK]   Embeddings (ollama): http://127.0.0.1:11434
+# [OK]   Registry: 5 project(s)
+# [OK]   Recovered 2 entry/entries from Qdrant; paths are empty — re-register them with 'tea-rags projects register --path <dir> --name <alias>' to enable alias resolution.
+```
+
+**Recovered entries have `path: ""`.** Qdrant stores the collection name,
+the chunk count, and the indexing metadata, but it does not store the
+original filesystem path. Recovered stubs are fully usable for direct
+`collection` operations (`semantic_search` with `collection: code_…`), but
+attempting to use them as an `--project <alias>` shortcut throws
+`ProjectPathMissingError` until the user re-registers with the real path.
+
+The recovered set is also visible in the JSON output as a `recovery`
+field, useful for scripts:
+
+```json
+{
+  ...,
+  "recovery": { "recovered": 2 }
+}
+```
+
+### `tea-rags projects orphans`
+
+Read-only listing of Qdrant collections that have no registry entry. This
+is the inspection counterpart to `doctor --recover-registry`:
+
+```bash
+tea-rags projects orphans
+# code_a1b2c3d4    4218
+# code_55667788     931
+```
+
+Each line is `<collectionName>\t<chunkCount>`. Add `--json` for a
+machine-readable list of `{ collectionName, chunksCount }` records.
+
+**Alias-aware.** Qdrant's zero-downtime reindex builds versioned physical
+collections (e.g. `code_8b243ffe_v2`) that are pointed to by an alias
+(`code_8b243ffe`). The orphan listing subtracts the alias targets from
+`listCollections()` so a live backing collection never appears as orphan
+data the user might be tempted to delete. The same filter is applied to
+the `orphanCount` reported by `tea-rags doctor` — the two views agree.
+
+### `tea-rags projects unregister --purge`
+
+Documented in detail under [CLI Commands → projects
+unregister](#tea-rags-projects-unregister); included here for the
+recovery checklist. Combined with `tea-rags projects orphans` it gives a
+two-step "find then remove" workflow for collections that should not
+exist any more.
 
 ## Storage Location
 
