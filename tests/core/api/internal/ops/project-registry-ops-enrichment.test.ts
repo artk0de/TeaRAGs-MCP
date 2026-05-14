@@ -86,7 +86,9 @@ describe("ProjectRegistryOps.register — enrichment & uniqueness", () => {
     expect(entry?.embeddingDimensions).toBe(768);
     expect(entry?.embeddingModel).toBe("real-model");
     expect(entry?.qdrantUrl).toBe("http://localhost:6333");
-    expect(entry?.indexedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // Marker payload had no indexedAt/completedAt → honest empty string,
+    // not a faked new Date() stamp. Audit #14.
+    expect(entry?.indexedAt).toBe("");
   });
 
   it("falls back to stub when Qdrant collection does not exist", async () => {

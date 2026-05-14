@@ -148,16 +148,10 @@ export class ProjectRegistryOps {
     } catch {
       // keep fallback
     }
-    // Prefer the marker-derived indexedAt. If the marker had nothing and the
-    // collection is non-empty (i.e. it was indexed by code that predates the
-    // marker writing indexedAt), stamp a best-effort "now" timestamp so the
-    // entry isn't permanently blank — at least one re-register surfaces it.
-    const resolvedIndexedAt =
-      indexedAt.length > 0
-        ? indexedAt
-        : chunksCount > 0 && !fallback.indexedAt
-          ? new Date().toISOString()
-          : fallback.indexedAt;
+    // Marker-derived value wins; otherwise stay honest. We do NOT stamp
+    // new Date() to fake a timestamp the collection never had — `projects
+    // info` renders empty indexedAt as "(unknown)". Audit #14.
+    const resolvedIndexedAt = indexedAt.length > 0 ? indexedAt : fallback.indexedAt;
     return {
       chunksCount,
       embeddingModel,

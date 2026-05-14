@@ -2,8 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import {
   PathDoesNotExistError,
   ProjectNameInvalidError,
@@ -152,6 +153,81 @@ describe("ProjectRegistryOps", () => {
       } finally {
         rmSync(recDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe("tryEnrichFromQdrant honesty (audit #14)", () => {
+    it("leaves indexedAt empty when marker payload is absent (no fake Date.now stamp)", async () => {
+      const qdrant = {
+        url: "http://localhost:6333",
+        collectionExists: vi.fn().mockResolvedValue(true),
+        countPoints: vi.fn().mockResolvedValue(42), // non-zero chunks
+        getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 384 }),
+        scrollFiltered: vi.fn().mockResolvedValue([]), // no marker
+      } as unknown as QdrantManager;
+
+      const registry = new CollectionRegistry(dir);
+      const opsWithQdrant = new ProjectRegistryOps({ registry, qdrant });
+      await opsWithQdrant.register({ path: realPath, name: "alpha" });
+
+      const stored = registry.list()[0];
+      // Old code: stamped new Date() here. New code: leaves "" honestly.
+      expect(stored.indexedAt).toBe("");
+      // Sanity: not a freshly-minted 2026-XX timestamp.
+      expect(stored.indexedAt).not.toMatch(/^2026-/);
+    });
+
+    it("preserves marker-derived indexedAt when payload has it", async () => {
+      const qdrant = {
+        url: "http://localhost:6333",
+        collectionExists: vi.fn().mockResolvedValue(true),
+        countPoints: vi.fn().mockResolvedValue(42),
+        getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 384 }),
+        scrollFiltered: vi.fn().mockResolvedValue([
+          {
+            payload: {
+              embeddingModel: "jina-v2",
+              teaRagsVersion: "1.25.0",
+              indexedAt: "2026-05-01T00:00:00.000Z",
+              _type: "indexing_metadata",
+            },
+          },
+        ]),
+      } as unknown as QdrantManager;
+
+      const registry = new CollectionRegistry(dir);
+      const opsWithQdrant = new ProjectRegistryOps({ registry, qdrant });
+      await opsWithQdrant.register({ path: realPath, name: "beta" });
+
+      const stored = registry.list()[0];
+      expect(stored.indexedAt).toBe("2026-05-01T00:00:00.000Z");
+      expect(stored.embeddingModel).toBe("jina-v2");
+      expect(stored.teaRagsVersion).toBe("1.25.0");
+    });
+
+    it("falls back to completedAt when only completedAt is set", async () => {
+      const qdrant = {
+        url: "http://localhost:6333",
+        collectionExists: vi.fn().mockResolvedValue(true),
+        countPoints: vi.fn().mockResolvedValue(42),
+        getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 384 }),
+        scrollFiltered: vi.fn().mockResolvedValue([
+          {
+            payload: {
+              embeddingModel: "jina-v2",
+              completedAt: "2026-05-02T00:00:00.000Z",
+              _type: "indexing_metadata",
+            },
+          },
+        ]),
+      } as unknown as QdrantManager;
+
+      const registry = new CollectionRegistry(dir);
+      const opsWithQdrant = new ProjectRegistryOps({ registry, qdrant });
+      await opsWithQdrant.register({ path: realPath, name: "gamma" });
+
+      const stored = registry.list()[0];
+      expect(stored.indexedAt).toBe("2026-05-02T00:00:00.000Z");
     });
   });
 });
