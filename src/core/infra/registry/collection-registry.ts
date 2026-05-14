@@ -1,5 +1,4 @@
 import { watch, type FSWatcher } from "node:fs";
-import { join } from "node:path";
 
 import { PROJECT_NAME_RE } from "./constants.js";
 import { RegistryNameConflictError } from "./errors.js";
@@ -116,10 +115,17 @@ export class CollectionRegistry {
    */
   startWatching(): () => void {
     if (this.stopHandle !== null) return this.stopHandle;
-    const path = join(this.dataDir, "registry.json");
+    // Watch the data directory, not the file itself. macOS kqueue (and
+    // similar platforms) binds file-level watchers to inodes; our atomic
+    // rename in saveRegistryFile replaces the inode on every write, so a
+    // file-level watcher detaches after the first rename. A directory
+    // watcher survives the rename cycle and lets us filter by filename.
+    // Audit #2 regression fix.
     try {
-      this.watcher = watch(path, { persistent: false }, () => {
-        this.cache = null;
+      this.watcher = watch(this.dataDir, { persistent: false }, (_eventType, filename) => {
+        if (filename === "registry.json" || filename === null) {
+          this.cache = null;
+        }
       });
     } catch {
       this.watcher = null;

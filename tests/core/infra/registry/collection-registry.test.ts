@@ -291,4 +291,79 @@ describe("CollectionRegistry", () => {
       stop();
     });
   });
+
+  describe("startWatching survives multiple atomic renames (regression for fs.watch dangling inode)", () => {
+    it("invalidates cache across N consecutive saveRegistryFile calls", async () => {
+      const r = new CollectionRegistry(dir);
+      r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
+      const stop = r.startWatching();
+      try {
+        // First external write — replaces inode #1 with inode #2.
+        saveRegistryFile(dir, {
+          version: 1,
+          collections: {
+            code_a: {
+              collectionName: "code_a",
+              path: "/repo/external-1",
+              name: null,
+              embeddingModel: "m",
+              embeddingDimensions: 384,
+              qdrantUrl: "http://localhost:6333",
+              indexedAt: "",
+              teaRagsVersion: "",
+              chunksCount: 1,
+            },
+          },
+        });
+        await new Promise((r) => setTimeout(r, 150));
+        expect(r.get("code_a")?.path).toBe("/repo/external-1");
+
+        // Second external write — replaces inode #2 with inode #3. With the
+        // old file-level fs.watch on macOS, the watcher was bound to inode #1
+        // (or whichever was current when startWatching ran) and silently
+        // detached after the first rename. With directory-level watching,
+        // the watcher sees this change too.
+        saveRegistryFile(dir, {
+          version: 1,
+          collections: {
+            code_a: {
+              collectionName: "code_a",
+              path: "/repo/external-2",
+              name: null,
+              embeddingModel: "m",
+              embeddingDimensions: 384,
+              qdrantUrl: "http://localhost:6333",
+              indexedAt: "",
+              teaRagsVersion: "",
+              chunksCount: 2,
+            },
+          },
+        });
+        await new Promise((r) => setTimeout(r, 150));
+        expect(r.get("code_a")?.path).toBe("/repo/external-2");
+
+        // Third — same story.
+        saveRegistryFile(dir, {
+          version: 1,
+          collections: {
+            code_a: {
+              collectionName: "code_a",
+              path: "/repo/external-3",
+              name: null,
+              embeddingModel: "m",
+              embeddingDimensions: 384,
+              qdrantUrl: "http://localhost:6333",
+              indexedAt: "",
+              teaRagsVersion: "",
+              chunksCount: 3,
+            },
+          },
+        });
+        await new Promise((r) => setTimeout(r, 150));
+        expect(r.get("code_a")?.path).toBe("/repo/external-3");
+      } finally {
+        stop();
+      }
+    });
+  });
 });
