@@ -253,11 +253,81 @@ describe("tune command", () => {
       expect(opts.env?.QDRANT_URL).toBe("http://qd:6333");
     });
 
-    it("unknown project name propagates ProjectNotRegisteredError (PR3-T2 will wrap)", async () => {
-      const { ProjectNotRegisteredError } = await import("../../../src/core/api/errors.js");
-      await expect((tuneCommand.handler as TuneHandler)({ project: "ghost", full: false })).rejects.toBeInstanceOf(
-        ProjectNotRegisteredError,
-      );
+    it("unknown project name is caught: writes hint to stderr and exits 1", async () => {
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      exitSpy.mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as never);
+      try {
+        await expect((tuneCommand.handler as TuneHandler)({ project: "ghost", full: false })).rejects.toThrow(
+          /process\.exit\(1\)/,
+        );
+        const errOut = stderr.mock.calls.map((c) => String(c[0])).join("");
+        expect(errOut).toMatch(/not registered/i);
+        expect(errOut.toLowerCase()).toContain("hint");
+      } finally {
+        stderr.mockRestore();
+      }
+    });
+  });
+
+  describe("tune handler catches applyProjectDefaults typed errors (audit #15 consumer)", () => {
+    it("writes message + hint to stderr and exits 1 on ProjectNotRegisteredError", async () => {
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      exitSpy.mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as never);
+      const tmp = mkdtempSync(join(tmpdir(), "pr3-tune-"));
+      process.env.TEA_RAGS_DATA_DIR = tmp;
+      try {
+        const { tuneCommand: cmd } = await import("../../../src/cli/commands/tune.js");
+        const handler = cmd.handler as (argv: Record<string, unknown>) => Promise<void>;
+        await expect(handler({ project: "ghost-alias", _: ["tune"], $0: "tea-rags" } as never)).rejects.toThrow(
+          /process\.exit\(1\)/,
+        );
+        const errOut = stderr.mock.calls.map((c) => String(c[0])).join("");
+        expect(errOut).toMatch(/not registered/i);
+        expect(errOut.toLowerCase()).toContain("hint");
+      } finally {
+        stderr.mockRestore();
+        rmSync(tmp, { recursive: true, force: true });
+        delete process.env.TEA_RAGS_DATA_DIR;
+      }
+    });
+
+    it("writes path-missing hint to stderr on ProjectPathMissingError", async () => {
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      exitSpy.mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as never);
+      const tmp = mkdtempSync(join(tmpdir(), "pr3-tune-"));
+      process.env.TEA_RAGS_DATA_DIR = tmp;
+      try {
+        const reg = new CollectionRegistry(tmp);
+        reg.record({
+          collectionName: "code_recovered",
+          path: "",
+          embeddingModel: "",
+          embeddingDimensions: 0,
+          qdrantUrl: "",
+          indexedAt: "",
+          teaRagsVersion: "",
+          chunksCount: 0,
+        });
+        reg.setName("code_recovered", "rec");
+        const { tuneCommand: cmd } = await import("../../../src/cli/commands/tune.js");
+        const handler = cmd.handler as (argv: Record<string, unknown>) => Promise<void>;
+        await expect(handler({ project: "rec", _: ["tune"], $0: "tea-rags" } as never)).rejects.toThrow(
+          /process\.exit\(1\)/,
+        );
+        const errOut = stderr.mock.calls.map((c) => String(c[0])).join("");
+        expect(errOut.toLowerCase()).toContain("has no path stored");
+        expect(errOut).toContain("tea-rags projects register");
+      } finally {
+        stderr.mockRestore();
+        rmSync(tmp, { recursive: true, force: true });
+        delete process.env.TEA_RAGS_DATA_DIR;
+      }
     });
   });
 });
