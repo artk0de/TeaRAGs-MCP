@@ -110,4 +110,29 @@ describe("BugFixSignal — confidence-driven dampening", () => {
     // (10/20)^2 = 0.25; blendNormalized ≈ 0.5; 0.5 * 0.25 = 0.125
     expect(score).toBeCloseTo(0.125, 3);
   });
+
+  it("ADAPTIVE wins over descriptor floor when both are present (regression for tea-rags-mcp-2h45)", () => {
+    // Both adaptive (dampeningThreshold=20 from collection p25) AND descriptor
+    // floor (confidence.score.threshold=10) are passed. Adaptive must win.
+    // Before the fix: descriptor floor won, ignoring adaptive entirely.
+    const score = signal.extract(payload(50, 10), {
+      bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
+      dampeningThreshold: 20,
+      confidence,
+    });
+    // With adaptive k=20: (10/20)^2 = 0.25; ≈ 0.5 * 0.25 = 0.125
+    // With static k=10 (wrong): (10/10)^2 = 1; ≈ 0.5 (would be ~0.5)
+    expect(score).toBeCloseTo(0.125, 3);
+  });
+
+  it("descriptor floor used when collectionStats absent (no dampeningThreshold)", () => {
+    // No collection stats → reranker can't compute adaptive → ctx.dampeningThreshold
+    // is undefined. Falls back to descriptor's confidence.score.threshold=10.
+    const score = signal.extract(payload(63, 3), {
+      bounds: { "file.bugFixRate": 100, "chunk.bugFixRate": 100 },
+      confidence,
+    });
+    // k=10 (floor): (3/10)^2 = 0.09; blend ≈ 0.63; 0.63 * 0.09 ≈ 0.0567
+    expect(score).toBeCloseTo(0.0567, 3);
+  });
 });

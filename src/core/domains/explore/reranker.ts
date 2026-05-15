@@ -323,15 +323,44 @@ export class Reranker {
   }
 
   /**
-   * Resolve dampening threshold for a specific descriptor from its dampeningSource.
-   * Returns undefined if descriptor has no dampeningSource or collectionStats is not loaded —
-   * derived signals fall back to their per-signal FALLBACK_THRESHOLD.
+   * Resolve ADAPTIVE dampening threshold for a derived signal from collection stats.
+   *
+   * Two source paths, tried in order:
+   * 1. UNIFIED: raw descriptor's `stats.confidence.support` (e.g. "commitCount").
+   *    Reranker looks up `git.file.{support}` percentile (default p25) from collection
+   *    stats. This is the path for signals migrated to the unified mechanism
+   *    (currently `BugFixSignal`).
+   * 2. LEGACY: derived signal's `dampeningSource = { key, percentile }`. Used by
+   *    signals still on the old pattern (VolatilitySignal, OwnershipSignal, etc.).
+   *
+   * Returns undefined when neither path yields a value — derived signals then fall
+   * back to their per-signal floor (`confidence.score.threshold` or FALLBACK_K).
+   * The static floor is intentionally a LAST RESORT — adaptive takes priority so
+   * the dampening threshold scales with the actual codebase's commit distribution.
    */
   private resolveDampeningThreshold(descriptor: DerivedSignalDescriptor): number | undefined {
-    if (!this.collectionStats || !descriptor.dampeningSource) return undefined;
-    const { key, percentile } = descriptor.dampeningSource;
-    const stats = this.collectionStats.perSignal.get(key);
-    return stats?.percentiles?.[percentile];
+    if (!this.collectionStats) return undefined;
+
+    // Unified path: derive from confidence.support on the raw payload descriptor
+    const confidence = this.resolveDerivedConfidence(descriptor);
+    if (confidence?.support) {
+      // Default to p25 of file-scope support signal (matches legacy GIT_FILE_DAMPENING)
+      const supportFullKey = this.signalKeyMap.get(`file.${confidence.support}`);
+      if (supportFullKey) {
+        const stats = this.collectionStats.perSignal.get(supportFullKey);
+        const adaptive = stats?.percentiles?.[25];
+        if (adaptive !== undefined) return adaptive;
+      }
+    }
+
+    // Legacy path: per-class dampeningSource
+    if (descriptor.dampeningSource) {
+      const { key, percentile } = descriptor.dampeningSource;
+      const stats = this.collectionStats.perSignal.get(key);
+      return stats?.percentiles?.[percentile];
+    }
+
+    return undefined;
   }
 
   /**
