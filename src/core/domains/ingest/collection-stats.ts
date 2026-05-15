@@ -261,6 +261,79 @@ function extractSignalValues(
   };
 }
 
+/**
+ * Walk all descriptors with `stats.confidence` and collect the set of
+ * percentiles each support signal must provide (via `labels` keys OR
+ * `percentilesToCompute`). Returns Map<supportSignalKey, Set<percentile>>.
+ *
+ * Scope handling: descriptor's own key carries the scope prefix
+ * (`git.{file|chunk}.X`). The support is bare-name (`commitCount`), resolved
+ * at the SAME scope as the descriptor — so `git.file.bugFixRate` with
+ * `support: "commitCount"` resolves to `git.file.commitCount`.
+ */
+function collectReferencedPercentiles(signals: PayloadSignalDescriptor[]): Map<string, Set<number>> {
+  const result = new Map<string, Set<number>>();
+  for (const sig of signals) {
+    const conf = sig.stats?.confidence;
+    if (!conf?.support) continue;
+    const m = /^git\.(file|chunk)\./.exec(sig.key);
+    if (!m) continue;
+    const scope = m[1];
+    const supportFullKey = `git.${scope}.${conf.support}`;
+    let set = result.get(supportFullKey);
+    if (!set) {
+      set = new Set<number>();
+      result.set(supportFullKey, set);
+    }
+    if (typeof conf.score?.adaptivePercentile === "number") set.add(conf.score.adaptivePercentile);
+    for (const rule of conf.label?.rules ?? []) {
+      if (typeof rule.whenSupportBelow === "string") {
+        const p = Number(rule.whenSupportBelow.slice(1));
+        if (Number.isFinite(p)) set.add(p);
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Validate that every percentile referenced by a descriptor's confidence block
+ * is declared on the support signal — either via its `stats.labels` keys
+ * (as `pN`) OR via `stats.percentilesToCompute`. Throws at descriptor-load
+ * time if any reference is unwired. Loud failure is intentional: silent
+ * fallback to `rule.fallback` masks misconfiguration.
+ *
+ * Call at composition time after assembling all trajectories' signals into
+ * a single descriptor list.
+ */
+export function validateSignalDependencies(signals: PayloadSignalDescriptor[]): void {
+  const referenced = collectReferencedPercentiles(signals);
+  for (const [supportKey, percentiles] of referenced) {
+    const supportSig = signals.find((s) => s.key === supportKey);
+    if (!supportSig) {
+      throw new Error(
+        `Signal dependency error: a descriptor references support "${supportKey}" via confidence.support, but no such PayloadSignalDescriptor is declared.`,
+      );
+    }
+    const declaredFromLabels = new Set<number>(
+      Object.keys(supportSig.stats?.labels ?? {})
+        .map((k) => Number(k.slice(1)))
+        .filter((n) => Number.isFinite(n)),
+    );
+    const declaredFromCompute = new Set<number>(supportSig.stats?.percentilesToCompute ?? []);
+    for (const p of percentiles) {
+      if (!declaredFromLabels.has(p) && !declaredFromCompute.has(p)) {
+        throw new Error(
+          `Signal dependency error: a descriptor references "${supportKey}" percentile p${p} ` +
+            `(via confidence.score.adaptivePercentile or confidence.label.rules[].whenSupportBelow), ` +
+            `but ${supportKey} declares neither p${p} in stats.labels nor ${p} in stats.percentilesToCompute. ` +
+            `Add ${p} to ${supportKey}.stats.percentilesToCompute (or p${p} to stats.labels if it should be a labeled tier).`,
+        );
+      }
+    }
+  }
+}
+
 function computePerSignalStats(
   valueArrays: Map<string, number[]>,
   statsSignals: PayloadSignalDescriptor[],
@@ -285,6 +358,17 @@ function computePerSignalStats(
       for (const key of Object.keys(req.labels)) {
         const p = parseInt(key.slice(1), 10);
         if (!isNaN(p)) {
+          result.percentiles[p] = percentile(values, p);
+        }
+      }
+    }
+
+    // Compute any extra percentiles declared for cross-signal references
+    // (e.g. another descriptor's confidence block references "p10" of this
+    // signal — percentilesToCompute lets the support signal opt in).
+    if (req.percentilesToCompute) {
+      for (const p of req.percentilesToCompute) {
+        if (Number.isFinite(p) && result.percentiles[p] === undefined) {
           result.percentiles[p] = percentile(values, p);
         }
       }

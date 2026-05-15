@@ -1,6 +1,6 @@
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import { blendNormalized, confidenceDampening, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
+import { blendNormalized, confidenceDampening, fileNum } from "./helpers.js";
 
 /**
  * Measures commit frequency normalized by time — commits per month.
@@ -17,7 +17,6 @@ export class DensitySignal implements DerivedSignalDescriptor {
   readonly description = "Change density: commits per month. L3 blends chunk+file changeDensity.";
   readonly sources = ["file.changeDensity", "chunk.changeDensity"];
   readonly defaultBound = 20;
-  readonly dampeningSource = GIT_FILE_DAMPENING;
   private static readonly FALLBACK_THRESHOLD = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const fb = ctx?.bounds?.["file.changeDensity"] ?? this.defaultBound;

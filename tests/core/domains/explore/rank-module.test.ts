@@ -223,5 +223,77 @@ describe("RankModule", () => {
 
       expect(mockScroll).toHaveBeenCalledWith("test-col", expect.anything(), 30, filter);
     });
+
+    it("returns empty when scatter-gather yields zero merged points", async () => {
+      // All scroll calls return empty arrays — merged dedup also empty.
+      // rankChunks must bail out with [] before calling rerank, not crash on
+      // an empty rerank input.
+      const mockScroll = vi.fn().mockResolvedValue([]);
+      const mockReranker = createMockReranker();
+      const module = new RankModule(mockReranker, [chunkSizeDesc]);
+
+      const results = await module.rankChunks("test-col", {
+        weights: { chunkSize: 1.0 },
+        level: "chunk",
+        limit: 10,
+        scrollFn: mockScroll,
+      });
+
+      expect(results).toEqual([]);
+      expect(mockReranker.rerank).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the first source with git prefix when level-prefixed and unprefixed forms are absent", async () => {
+      // Descriptor whose sources are all level-prefixed but for a DIFFERENT level
+      // (file.X when asking for chunk) — neither rule 1 nor rule 2 matches,
+      // so resolvePayloadField uses the third fallback branch.
+      const fileOnlyDesc: DerivedSignalDescriptor = {
+        name: "fileOnly",
+        description: "file-only signal",
+        sources: ["file.commitCount"], // no chunk-prefixed source, no unprefixed source
+        defaultBound: 50,
+        extract: (raw) => {
+          const git = raw.git as Record<string, Record<string, number>> | undefined;
+          return Math.min(1, (git?.file?.commitCount ?? 0) / 50);
+        },
+      };
+      const scrollData = new Map([["git.file.commitCount", [{ id: "x", payload: {} }]]]);
+      const mockScroll = createMockScrollFn(scrollData);
+      const module = new RankModule(createMockReranker(), [fileOnlyDesc]);
+
+      const fields = module.resolveOrderByFields({ fileOnly: 1.0 }, "chunk");
+
+      // Fallback rule: `git.${sources[0]}` → "git.file.commitCount"
+      expect(fields).toEqual([{ key: "git.file.commitCount", direction: "desc" }]);
+      // Behaviorally: scroll is called against that fallback field.
+      await module.rankChunks("test-col", {
+        weights: { fileOnly: 1.0 },
+        level: "chunk",
+        limit: 5,
+        scrollFn: mockScroll,
+      });
+      expect(mockScroll).toHaveBeenCalledWith(
+        "test-col",
+        { key: "git.file.commitCount", direction: "desc" },
+        15,
+        undefined,
+      );
+    });
+
+    it("skips descriptors whose sources list is empty (resolvePayloadField returns undefined)", async () => {
+      // Edge case: a descriptor with no sources at all — all three resolve
+      // branches return undefined. resolveOrderByFields filters that entry.
+      const sourcelessDesc: DerivedSignalDescriptor = {
+        name: "sourceless",
+        description: "no sources",
+        sources: [],
+        defaultBound: 1,
+        extract: () => 0,
+      };
+      const module = new RankModule(createMockReranker(), [sourcelessDesc]);
+
+      const fields = module.resolveOrderByFields({ sourceless: 1.0 }, "chunk");
+      expect(fields).toEqual([]);
+    });
   });
 });

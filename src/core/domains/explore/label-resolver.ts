@@ -53,17 +53,23 @@ export function resolveLabel(
   return applyConfidenceClamp(resolved, entries, ctx);
 }
 
-function applyConfidenceClamp(
-  baseLabel: string,
-  entries: { p: number; label: string }[],
-  ctx?: LabelContext,
-): string {
-  const clamp = ctx?.confidence?.label;
-  if (!clamp) return baseLabel;
-  const support = ctx?.siblingValues?.[ctx.confidence!.support];
+function applyConfidenceClamp(baseLabel: string, entries: { p: number; label: string }[], ctx?: LabelContext): string {
+  const confidence = ctx?.confidence;
+  const clamp = confidence?.label;
+  if (!clamp || !confidence) return baseLabel;
+  const support = ctx?.siblingValues?.[confidence.support];
   if (support === undefined) return baseLabel;
 
-  const sortedRules = [...clamp.rules].sort((a, b) => a.whenSupportBelow - b.whenSupportBelow);
+  // Rules pass through Reranker.preResolveConfidenceClamp before reaching here,
+  // so whenSupportBelow values should be numbers. Defensive filter drops any
+  // leftover strings (would indicate a bug in pre-resolution OR a caller that
+  // bypassed the reranker — clamp would silently misfire if we let strings
+  // through, so we treat them as unresolved/non-firing).
+  const numericRules = clamp.rules.filter(
+    (r): r is { whenSupportBelow: number; ceiling: string; fallback?: number } =>
+      typeof r.whenSupportBelow === "number",
+  );
+  const sortedRules = [...numericRules].sort((a, b) => a.whenSupportBelow - b.whenSupportBelow);
   for (const rule of sortedRules) {
     if (support < rule.whenSupportBelow) {
       const ceilingIndex = entries.findIndex((e) => e.label === rule.ceiling);

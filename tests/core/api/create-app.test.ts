@@ -178,6 +178,49 @@ describe("createApp", () => {
 
       expect(deps.explore.searchCode).toHaveBeenCalledWith(req);
     });
+
+    it("delegates findSimilar to ExploreFacade.findSimilar", async () => {
+      // The ExploreFacade mock doesn't define findSimilar by default; add it
+      // and call through to verify the App lambda forwards verbatim.
+      (deps.explore as any).findSimilar = vi.fn().mockResolvedValue({ results: [], driftWarning: null });
+      const app = createApp(deps);
+      const req = { collection: "col", positiveIds: ["uuid-1"] };
+      await app.findSimilar(req as any);
+
+      expect((deps.explore as any).findSimilar).toHaveBeenCalledWith(req);
+    });
+
+    it("delegates findSymbol to ExploreFacade.findSymbol", async () => {
+      (deps.explore as any).findSymbol = vi.fn().mockResolvedValue({ results: [], driftWarning: null });
+      const app = createApp(deps);
+      const req = { collection: "col", symbol: "FooClass" };
+      await app.findSymbol(req as any);
+
+      expect((deps.explore as any).findSymbol).toHaveBeenCalledWith(req);
+    });
+
+    it("delegates getIndexMetrics to ExploreFacade.getIndexMetrics", async () => {
+      (deps.explore as any).getIndexMetrics = vi.fn().mockResolvedValue({
+        collection: "code_xyz",
+        totalChunks: 0,
+        totalFiles: 0,
+        distributions: {
+          language: {},
+          chunkType: {},
+          documentation: { docs: 0, code: 0 },
+          topAuthors: [],
+          othersCount: 0,
+          totalFiles: 0,
+        },
+        signals: {},
+        enrichment: undefined,
+      });
+      const app = createApp(deps);
+      const result = await app.getIndexMetrics("/foo");
+
+      expect((deps.explore as any).getIndexMetrics).toHaveBeenCalledWith("/foo");
+      expect(result.collection).toBe("code_xyz");
+    });
   });
 
   // =========================================================================

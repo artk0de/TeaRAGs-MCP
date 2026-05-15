@@ -18,6 +18,7 @@ import type { PayloadSignalDescriptor } from "../../../contracts/types/trajector
 import { CollectionNotFoundError as DomainCollectionNotFoundError } from "../../../domains/explore/errors.js";
 import { IndexMetricsQuery } from "../../../domains/explore/queries/index-metrics.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
+import { StatsRecomputeService } from "../../../domains/explore/stats-recompute.js";
 import {
   createExploreStrategy,
   FileOutlineStrategy,
@@ -71,6 +72,7 @@ export class ExploreOps {
   private readonly hybridStrategy: BaseExploreStrategy;
   private readonly scrollRankStrategy: BaseExploreStrategy;
   private readonly indexMetricsQuery?: IndexMetricsQuery;
+  private readonly recomputeService?: StatsRecomputeService;
 
   constructor(deps: ExploreOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -105,6 +107,7 @@ export class ExploreOps {
     );
     if (deps.statsCache) {
       this.indexMetricsQuery = new IndexMetricsQuery(deps.qdrant, deps.statsCache, this.payloadSignals);
+      this.recomputeService = new StatsRecomputeService(deps.qdrant, deps.statsCache);
     }
   }
 
@@ -280,7 +283,26 @@ export class ExploreOps {
     if (!this.statsCache || this.reranker.hasCollectionStats) return;
     try {
       const stats = this.statsCache.load(collectionName);
-      if (stats) this.reranker.setCollectionStats(stats);
+      if (!stats) return;
+      // Lazy hot recompute: if descriptors reference percentiles missing from
+      // a stale index, scroll those signals once now (await), persist back,
+      // then publish stats to the reranker. The rerank path stays sync —
+      // by the time it runs, all referenced percentiles are present.
+      // No-op when no descriptor references a missing percentile.
+      if (this.recomputeService) {
+        try {
+          await this.recomputeService.ensureCoverage(
+            collectionName,
+            stats,
+            this.payloadSignals,
+            stats.payloadFieldKeys,
+          );
+        } catch {
+          // ensureCoverage swallows per-signal failures internally;
+          // outer catch is paranoia, never block search on recompute.
+        }
+      }
+      this.reranker.setCollectionStats(stats);
     } catch {
       // Stats loading failure must not prevent search.
     }

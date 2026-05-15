@@ -80,11 +80,26 @@ subtle and the silo owner is the only person who knows the invariants.
 
 **Disambiguators:**
 
-- `commitCount` low + `bugFixRate critical` → confidence-low classification; the
-  bug-fix ratio is computed from a small sample. Treat as suggestive, not
-  diagnostic. (See `bugfixrate-label-confidence-design.md` for label-layer fix.)
-- If `bugFixRate concerning+` AND `commitCount high+` → upgrade to **Bug
-  attractor** if `imports ↓`, or **Toxic silo** if churn rises with it.
+- **Confidence-clamped label suppresses small-N matches automatically.** Once
+  the unified `stats.confidence` mechanism ships (see
+  `bugfixrate-label-confidence-design.md`), `bugFixRate.label` for files with
+  `commitCount < 5` is clamped to `typical` and `< 10` to `concerning`.
+  Consequence: a noise-only file (e.g. 2 fix commits out of 3) does NOT satisfy
+  the `bugFixRate concerning+` floor of this signature — it gets `typical` and
+  falls out of Fragile Silo. This is correct behavior; classification into a
+  real risk tier should require structural evidence, not small-N noise.
+- **Edge band `commitCount` 5..9.** Raw `bugFixRate` ≥ critical threshold gets
+  clamped to `concerning`, which DOES match the signature. Mark such
+  classifications as "moderate confidence" in risk reports — the evidence is
+  structural enough to fire the tier, but support is at the low end of the
+  confident range.
+- **If reading raw values rather than labels:** apply anti-pattern #8 from
+  `signal-interpretation.md` (class-level small-N rule for any confidence-aware
+  signal). Don't conclude "Fragile Silo" from raw `value: 63%` alone if
+  `commitCount < 5`.
+- **Upgrade paths:** if `bugFixRate concerning+` AND `commitCount high+` →
+  upgrade to **Bug attractor** when `imports ↓`, or **Toxic silo** when churn
+  rises with it.
 ```
 
 ### D3: Tier entry in `classification-tiers.md`

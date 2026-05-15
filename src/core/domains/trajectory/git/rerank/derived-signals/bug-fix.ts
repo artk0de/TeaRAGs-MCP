@@ -32,7 +32,11 @@ export class BugFixSignal implements DerivedSignalDescriptor {
     const fb = ctx?.bounds?.["file.bugFixRate"] ?? this.defaultBound;
     const cb = ctx?.bounds?.["chunk.bugFixRate"] ?? this.defaultBound;
     let value = blendNormalized(rawSignals, "bugFixRate", fb, cb, ctx?.signalLevel);
-    const k = ctx?.confidence?.score?.threshold ?? ctx?.dampeningThreshold ?? BugFixSignal.FALLBACK_K;
+    // Precedence: ADAPTIVE (from collection stats via reranker.resolveDampeningThreshold)
+    // > descriptor FLOOR (confidence.score.threshold) > FALLBACK_K (defensive constant).
+    // The static threshold on the descriptor is the floor, not the primary —
+    // adaptive scales with the codebase's commit distribution.
+    const k = ctx?.dampeningThreshold ?? ctx?.confidence?.score?.threshold ?? BugFixSignal.FALLBACK_K;
     const supportName = ctx?.confidence?.support ?? "commitCount";
     value *= confidenceDampening(fileNum(rawSignals, supportName), k);
     return value;

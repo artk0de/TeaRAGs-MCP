@@ -268,6 +268,27 @@ describe("filterMetaOnly", () => {
     expect(meta[0].imports).toEqual(["./utils", "./types"]);
     expect(meta[0].content).toBeUndefined();
   });
+
+  it("attaches overlay.preset to meta even when overlay has no file/chunk signal data", () => {
+    // A reranker may emit a ranking overlay with only the preset name and
+    // no file/chunk signal entries (e.g. a preset matched but no signals
+    // were extracted). The "preset-only" overlay branch must still carry
+    // the preset name through so consumers can attribute the score.
+    const results: SearchResult[] = [
+      {
+        score: 0.42,
+        payload: { relativePath: "src/empty-overlay.ts" },
+        rankingOverlay: {
+          preset: "stable",
+          // No file/chunk entries — hasOverlayData returns false.
+        } as any,
+      },
+    ];
+    const meta = filterMetaOnly(results, payloadSignals, []);
+    expect(meta[0].preset).toBe("stable");
+    // No git block produced since overlay had no data and no essentials requested.
+    expect(meta[0].git).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

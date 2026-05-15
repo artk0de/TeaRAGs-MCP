@@ -43,6 +43,16 @@ Rationale per term:
 Total positive weight = 0.90, total negative = 0.10. Score remains in
 predictable range.
 
+**Small-N is auto-handled by the unified confidence mechanism.** After
+`bugfixrate-label-confidence-design.md` ships, the `bugFix` derived signal score
+is already dampened by `commitCount` via the `stats.confidence.score` block on
+the `bugFixRate` raw descriptor. A file with `bugFixRate=67%` over 3 commits
+contributes a heavily-dampened `bugFix` value to the recipe's weighted sum —
+much less than a file with `bugFixRate=30%` over 200 commits. The recipe
+inherits this dampening for free; no per-recipe `confidenceDampening` call
+needed, no extra weight term. Recipes that name `bugFix` as a positive weight
+automatically respect the confidence guarantees of the signal layer.
+
 ### D2: Documentation location and format
 
 **File:** `.claude-plugin/tea-rags/rules/references/use-cases.md`
@@ -84,9 +94,14 @@ track record of regressions concentrated under one author.
 }
 ```
 
-Read results expecting `bugFixRate concerning+` with `commitCount typical` or
-low. Pair findings with `Fragile silo` pattern entry in
-`signal-interpretation.md` for remediation steps.
+Read results expecting `bugFixRate concerning+` with `commitCount` in the
+`typical` band. Files with `commitCount` below the confidence-clamp thresholds
+(currently `< 5`) will have `bugFixRate.label` clamped to `typical` — they will
+NOT classify as Fragile Silo even if raw value is high, because the structural
+evidence is insufficient. This is correct behavior, inherited from the unified
+confidence mechanism (`bugfixrate-label-confidence-design.md`). Pair confirmed
+findings with the `Fragile silo` pattern entry in `signal-interpretation.md` for
+remediation steps.
 ````
 
 ### D3: Cross-link from `signal-interpretation.md`

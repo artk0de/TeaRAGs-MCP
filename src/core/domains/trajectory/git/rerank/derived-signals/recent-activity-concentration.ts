@@ -1,6 +1,6 @@
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import { confidenceDampening, fileField, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
+import { confidenceDampening, fileField, fileNum } from "./helpers.js";
 
 /**
  * Measures concentration of recent commit activity — how dominated the
@@ -22,7 +22,6 @@ export class RecentActivityConcentrationSignal implements DerivedSignalDescripto
   readonly description =
     "Concentration of recent commits in the log window — surfaces the active author, not the long-term owner";
   readonly sources = ["file.recentDominantAuthorPct", "file.recentAuthors"];
-  readonly dampeningSource = GIT_FILE_DAMPENING;
   private static readonly FALLBACK_THRESHOLD = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     let value: number;
