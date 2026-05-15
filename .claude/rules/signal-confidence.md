@@ -92,22 +92,77 @@ the signal's own `labels` keys imply. Example:
 }
 ```
 
-### Lazy recompute (future, per spec)
+### Lazy recompute (operative — at rerank time)
 
-If a descriptor's `pN` reference passes validation (it's declared on the
-support) BUT collection stats don't yet contain that percentile (stale index —
-`percentilesToCompute` was added after the last full reindex), the system can
-lazily recompute the missing percentile via Qdrant scroll and PERSIST it back to
-stats-cache without re-running the whole index.
+**Status:** Live. `StatsRecomputeService`
+(`src/core/domains/explore/stats-recompute.ts`) runs at **rerank time**, not at
+stats-load. `Reranker.rerank()` is async; its pre-pass calls
+`recomputeService.ensureCoverage(collection, stats, payloadSignals, payloadFieldKeys)`
+_before_ scoring. Only the specific `(supportKey, percentile)` references
+missing from in-memory stats trigger work; everything else is a Map-lookup
+no-op.
+
+**Trigger ladder.** Per query:
+
+1. Caller hits `Reranker.rerank()` (semantic_search, hybrid_search, rank_chunks,
+   find_similar, find_symbol, search_code — anywhere a confidence-aware preset
+   renders labels).
+2. If preset is similarity-only (`relevance` / similarity weight only) →
+   `isSimilarityOnly` early-return; **no recompute, no scroll**.
+3. Otherwise `ensureNeededPercentiles` → `ensureCoverage` walks every
+   `PayloadSignalDescriptor.stats.confidence` and collects missing
+   `(supportSignalKey, percentile)` pairs.
+4. Empty set → early-return; **no scroll**. Common case: warm stats.
+5. Non-empty set: group by signalKey, parallel `backfillSignal` per group. Each
+   backfill is **one scroll of one signal across the collection**, batch
+   computing every missing percentile of that signal in one sort. One save at
+   the end of `ensureCoverage` (full snapshot via `StatsCache.save`, all other
+   fields preserved exactly).
+
+**What's `lazy` exactly.**
+
+- Lazy at the **point of label rendering** — the scroll fires the first time a
+  rerank consults a missing reference, not eagerly at process start.
+- Lazy at the **granularity of percentile** — only the specific `pN` that's
+  missing gets computed (not the whole `SignalStats`, not the whole signal's
+  percentile set if only one is missing).
+- Lazy at the **scope of signal** — one scroll per missing signal, not per
+  missing percentile of that signal.
+
+**Invariants the implementation enforces.**
+
+- Partial update preserves every other `SignalStats` field exactly: `count`,
+  `min`/`max`, `mean`, `stddev`, every pre-existing percentile.
+- Per-(collection, signal) **in-flight memo** so concurrent reranks don't
+  duplicate-scroll the same signal.
+- One `statsCache.save` per `ensureCoverage` call (single atomic snapshot
+  rewrite), even when multiple signals were backfilled.
+- 60s **failure backoff** per (collection, signal): scroll errors or
+  empty-after-scroll results don't retry storm; other signals proceed
+  independently.
+- Idempotent across reranks — once a percentile is in stats, the next rerank's
+  check finds it and skips the scroll.
+
+**Wiring (`ExploreOps`).** When stats are loaded for a collection:
+
+```ts
+this.reranker.setRecomputeService(this.recomputeService);
+this.reranker.setCollectionStats(stats, {
+  collectionName,
+  payloadFieldKeys: stats.payloadFieldKeys,
+});
+```
+
+No `ensureCoverage` call here — load is fast and side-effect-free. The service
+is wired so the next `rerank()` can drive its own lazy backfill.
+
+**Stale-index escape hatch.** If recompute service isn't wired (test fixtures,
+missing qdrant/statsCache) or a scroll fails, the label path falls back to
+`rule.fallback` and the score path to `confidence.score.threshold` — both
+declared on the descriptor. Force-reindex restores all percentiles from scratch
+via the normal ingest path.
 
 Spec: `docs/superpowers/specs/2026-05-15-lazy-percentile-recompute-design.md`.
-**Critical invariant** for the lazy recompute: partial update preserves ALL
-other `SignalStats` fields (`count`, `min`/`max`, `mean`, `stddev`, other
-percentiles). Only the missing `percentiles[N]` is added.
-
-Until the lazy-recompute service ships, stale-index cases fall back to
-`rule.fallback` (label path) or `confidence.score.threshold` (score path).
-Force-reindex restores full adaptive behavior.
 
 ## When to declare `confidence`
 
