@@ -11,6 +11,7 @@ import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-acc
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
+import { validateSignalDependencies } from "../../domains/ingest/collection-stats.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
@@ -30,6 +31,12 @@ export function createComposition(): CompositionResult {
   registry.register(new GitTrajectory());
 
   const allPayloadSignalDescriptors = registry.getAllPayloadSignalDescriptors();
+  // Fail-loud at composition time: if any descriptor's confidence block
+  // references a percentile that the support signal doesn't declare
+  // (neither stats.labels nor stats.percentilesToCompute), this throws.
+  // Prevents silent fallback to rule.fallback in production due to
+  // misconfigured wiring. See `validateSignalDependencies` for details.
+  validateSignalDependencies(allPayloadSignalDescriptors);
   const allDerivedSignals = registry.getAllDerivedSignals();
   const allStatsAccumulators = registry.getAllStatsAccumulators();
   const resolvedPresets = resolvePresets(registry.getAllPresets(), []);

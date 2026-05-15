@@ -17,7 +17,13 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.file.commitCount",
     type: "number",
     description: "Total commits modifying this file",
-    stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
+    stats: {
+      labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" },
+      // Bug-fix-rate confidence block references "p10" of file-scope commitCount
+      // as a label-clamp threshold (and "p25" via the labels declaration above).
+      // Declare p10 here so collection-stats computes it at index time.
+      percentilesToCompute: [10],
+    },
     essential: true,
   },
   {
@@ -142,7 +148,12 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
     key: "git.chunk.commitCount",
     type: "number",
     description: "Commits touching this specific chunk",
-    stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
+    stats: {
+      labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" },
+      // Mirrors git.file.commitCount — bugFixRate confidence references "p10"
+      // of chunk-scope commitCount too.
+      percentilesToCompute: [10],
+    },
     essential: true,
   },
   {

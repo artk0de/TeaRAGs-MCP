@@ -15,6 +15,19 @@ export interface SignalStatsRequest {
    */
   labels?: Record<string, string>;
   /**
+   * Extra percentiles to compute at index time beyond those declared via
+   * `labels` keys. Required when OTHER descriptors reference this signal via
+   * `confidence.support` and need percentiles not part of this signal's own
+   * labelMap. Example: `git.file.commitCount` declares p25/p50/p75/p95 in
+   * labels but must add p10 here because `bugFixRate.confidence` references
+   * "p10" of commitCount as a label clamp threshold.
+   *
+   * Validation: `validateSignalDependencies` (collection-stats.ts) throws at
+   * descriptor-load time if any signal references a percentile that's not
+   * declared in EITHER labels keys OR percentilesToCompute on the support.
+   */
+  percentilesToCompute?: number[];
+  /**
    * Optional confidence declaration — when this signal is a ratio or aggregate
    * whose reliability depends on a sibling support signal (e.g. bugFixRate
    * depends on commitCount), declare the support + how score-side dampening

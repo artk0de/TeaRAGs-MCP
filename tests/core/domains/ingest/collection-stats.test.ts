@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/types/trajectory.js";
-import { computeCollectionStats } from "../../../../src/core/domains/ingest/collection-stats.js";
+import {
+  computeCollectionStats,
+  validateSignalDependencies,
+} from "../../../../src/core/domains/ingest/collection-stats.js";
 import { gitStatsAccumulators } from "../../../../src/core/domains/trajectory/git/stats/index.js";
 import { staticStatsAccumulators } from "../../../../src/core/domains/trajectory/static/stats/index.js";
 
@@ -713,6 +716,180 @@ describe("computeCollectionStats distributions", () => {
       expect(globalML).toBeDefined();
       // Global should only have source values
       expect(globalML!.count).toBe(10);
+    });
+  });
+
+  describe("percentilesToCompute", () => {
+    it("computes extra percentiles declared via percentilesToCompute beyond labels", () => {
+      // commitCount declares p25/p50/p75/p95 via labels, plus p10 via
+      // percentilesToCompute (needed so another descriptor's confidence block
+      // can reference "p10" of commitCount as a label clamp threshold).
+      const signals: PayloadSignalDescriptor[] = [
+        {
+          key: "git.file.commitCount",
+          type: "number",
+          description: "test",
+          stats: {
+            labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" },
+            percentilesToCompute: [10],
+          },
+        },
+      ];
+      const points = makePoints([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      const result = computeCollectionStats(points, signals, ALL_ACCS);
+      const stats = result.perSignal.get("git.file.commitCount");
+      expect(stats).toBeDefined();
+      // All labelled percentiles plus the extra p10 are present.
+      expect(stats!.percentiles[10]).toBeDefined();
+      expect(stats!.percentiles[25]).toBeDefined();
+      expect(stats!.percentiles[50]).toBeDefined();
+      // p10 over [1..10] sits at the bottom of the distribution.
+      expect(stats!.percentiles[10]).toBeLessThanOrEqual(stats!.percentiles[25]);
+      expect(stats!.percentiles[10]).toBeLessThan(stats!.percentiles[50]);
+    });
+
+    it("does not recompute percentiles already produced by labels", () => {
+      // p25 appears in BOTH labels and percentilesToCompute — the second
+      // pass must skip it (undefined-check) so we don't double-compute or
+      // overwrite. Behavioral assertion: result still has a sane p25 value.
+      const signals: PayloadSignalDescriptor[] = [
+        {
+          key: "git.file.commitCount",
+          type: "number",
+          description: "test",
+          stats: {
+            labels: { p25: "low", p50: "typical" },
+            percentilesToCompute: [10, 25],
+          },
+        },
+      ];
+      const points = makePoints([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      const result = computeCollectionStats(points, signals, ALL_ACCS);
+      const stats = result.perSignal.get("git.file.commitCount")!;
+      expect(stats.percentiles[10]).toBeDefined();
+      expect(stats.percentiles[25]).toBeDefined();
+      expect(stats.percentiles[50]).toBeDefined();
+      // p10 < p25 < p50 — ordering preserved despite duplicate request.
+      expect(stats.percentiles[10]).toBeLessThan(stats.percentiles[25]);
+      expect(stats.percentiles[25]).toBeLessThan(stats.percentiles[50]);
+    });
+  });
+
+  describe("validateSignalDependencies", () => {
+    const bugFixRateNeedsP10: PayloadSignalDescriptor = {
+      key: "git.file.bugFixRate",
+      type: "number",
+      description: "test",
+      stats: {
+        labels: { p50: "healthy", p75: "concerning", p95: "critical" },
+        confidence: {
+          support: "commitCount",
+          label: {
+            rules: [
+              { whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" },
+              { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" },
+            ],
+          },
+        },
+      },
+    };
+
+    it("passes when all referenced percentiles are declared via labels", () => {
+      const commitCountAllPercentiles: PayloadSignalDescriptor = {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "test",
+        stats: { labels: { p10: "very-low", p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
+      };
+      expect(() => {
+        validateSignalDependencies([bugFixRateNeedsP10, commitCountAllPercentiles]);
+      }).not.toThrow();
+    });
+
+    it("passes when missing percentile is declared via percentilesToCompute", () => {
+      const commitCountWithCompute: PayloadSignalDescriptor = {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "test",
+        stats: {
+          labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" },
+          percentilesToCompute: [10],
+        },
+      };
+      expect(() => {
+        validateSignalDependencies([bugFixRateNeedsP10, commitCountWithCompute]);
+      }).not.toThrow();
+    });
+
+    it("throws when referenced percentile is not declared on support", () => {
+      const commitCountMissingP10: PayloadSignalDescriptor = {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "test",
+        stats: { labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" } },
+      };
+      expect(() => {
+        validateSignalDependencies([bugFixRateNeedsP10, commitCountMissingP10]);
+      }).toThrow(/p10/);
+    });
+
+    it("throws when support signal is not declared at all", () => {
+      expect(() => {
+        validateSignalDependencies([bugFixRateNeedsP10]);
+      }).toThrow(/no such PayloadSignalDescriptor/);
+    });
+
+    it("validates score.adaptivePercentile too (not just label rules)", () => {
+      const bugFixScoreOnly: PayloadSignalDescriptor = {
+        key: "git.file.bugFixRate",
+        type: "number",
+        description: "test",
+        stats: {
+          confidence: {
+            support: "commitCount",
+            score: { threshold: 10, adaptivePercentile: 7 },
+          },
+        },
+      };
+      const commitCountWithoutP7: PayloadSignalDescriptor = {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "test",
+        stats: { labels: { p25: "low" } },
+      };
+      expect(() => {
+        validateSignalDependencies([bugFixScoreOnly, commitCountWithoutP7]);
+      }).toThrow(/p7/);
+    });
+
+    it("handles chunk-scope references symmetrically", () => {
+      const chunkBugFix: PayloadSignalDescriptor = {
+        key: "git.chunk.bugFixRate",
+        type: "number",
+        description: "test",
+        stats: {
+          confidence: {
+            support: "commitCount",
+            label: { rules: [{ whenSupportBelow: "p10", fallback: 5, ceiling: "low" }] },
+          },
+          labels: { p50: "low" },
+        },
+      };
+      const fileCC: PayloadSignalDescriptor = {
+        key: "git.file.commitCount",
+        type: "number",
+        description: "test",
+        stats: { labels: { p10: "x", p25: "low" } },
+      };
+      const chunkCC: PayloadSignalDescriptor = {
+        key: "git.chunk.commitCount",
+        type: "number",
+        description: "test",
+        stats: { labels: { p25: "low" } },
+      };
+      expect(() => {
+        validateSignalDependencies([chunkBugFix, fileCC, chunkCC]);
+      }).toThrow(/git\.chunk\.commitCount.*p10/);
     });
   });
 });
