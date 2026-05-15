@@ -1,3 +1,14 @@
+## [1.25.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.25.0...v1.25.1) (2026-05-15)
+
+### Bug Fixes
+
+- **scripts:** escape curly braces in changelog for MDX safety
+  ([41dad25](https://github.com/artk0de/TeaRAGs-MCP/commit/41dad257933e1156a732eb503df4a9722716bfac)),
+  closes [#123](https://github.com/artk0de/TeaRAGs-MCP/issues/123)
+  [#125](https://github.com/artk0de/TeaRAGs-MCP/issues/125)
+- **website:** unbreak docs build after 1.25.0 release
+  ([04d12e0](https://github.com/artk0de/TeaRAGs-MCP/commit/04d12e09a593f018297b985bd89ef4048a56aab6))
+
 ## [1.25.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.24.0...v1.25.0) (2026-05-15)
 
 ### ⚠ BREAKING CHANGES
