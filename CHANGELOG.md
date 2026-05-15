@@ -1,3 +1,286 @@
+## [1.25.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.24.0...v1.25.0) (2026-05-15)
+
+### ⚠ BREAKING CHANGES
+
+- **explore:** Reranker.rerank() returns Promise. External callers must await.
+  setCollectionStats accepts an optional opts arg with { collectionName,
+  payloadFieldKeys } — wiring needed for lazy backfill persistence.
+  setRecomputeService(service) is the new injection point; ExploreOps wires it
+  before publishing stats.
+
+Tests: rerank.test.ts (94 calls), rerank-rank-chunks-fixes.test.ts,
+decomposition.test.ts updated to await + async it() callbacks. explore-facade
+tests get setRecomputeService mock; post-process tests await the now-async free
+function. 4300+ tests green.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+- **cli:** the standalone commands `tea-rags register-project`,
+  `tea-rags list-projects`, and `tea-rags unregister-project` are removed. Use
+  `tea-rags projects register`, `tea-rags projects list`, and
+  `tea-rags projects unregister` instead.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **api:** resolveCollection(collection, path) signature removed; internal
+  callers migrated. No public API impact (this function is internal to core/).
+
+### Features
+
+- **api:** add ProjectPathMissingError typed validation error
+  ([f063c22](https://github.com/artk0de/TeaRAGs-MCP/commit/f063c22d2ef17fbc65426f739b72772172cfbc44)),
+  closes [6/#7](https://github.com/6/TeaRAGs-MCP/issues/7)
+- **api:** add ProjectRegistryOps for register/list/unregister
+  ([47a0928](https://github.com/artk0de/TeaRAGs-MCP/commit/47a0928e9dd96512dbc6770cd0a7d06c28e9d9ef))
+- **api:** add ProjectRegistryOps.recoverFromQdrant for doctor
+  ([a8dd1f3](https://github.com/artk0de/TeaRAGs-MCP/commit/a8dd1f34776a58f00cb7d7809cbd136de8bb7fa1))
+- **api:** add ProjectRegistryOps.recoverFromQdrant for doctor (impl + tests)
+  ([4961ae7](https://github.com/artk0de/TeaRAGs-MCP/commit/4961ae7b905d2e2695c252b848c447449a795189))
+- **api:** add projectSchema with regex validation to SchemaBuilder
+  ([f2bf971](https://github.com/artk0de/TeaRAGs-MCP/commit/f2bf971cbbda5dc9b275dbf886d9bbb53d1f766c))
+- **api:** expose registerProject/listProjects/unregisterProject on App
+  ([8360d0f](https://github.com/artk0de/TeaRAGs-MCP/commit/8360d0f5d1afdf7ca4a491a522318a5885c046c1))
+- **bootstrap:** start CollectionRegistry watcher for MCP server context
+  ([7ea0793](https://github.com/artk0de/TeaRAGs-MCP/commit/7ea0793108b7dc025c1179493fde8340c2cd78b4)),
+  closes [#2](https://github.com/artk0de/TeaRAGs-MCP/issues/2)
+- **cli:** 'tea-rags projects unregister --purge' + verbose hint
+  ([41960e2](https://github.com/artk0de/TeaRAGs-MCP/commit/41960e25ca267f842f4b8da69ca6bbc255fce79f)),
+  closes [#8](https://github.com/artk0de/TeaRAGs-MCP/issues/8)
+  [#12](https://github.com/artk0de/TeaRAGs-MCP/issues/12)
+- **cli:** add --project option to tune command
+  ([481d10f](https://github.com/artk0de/TeaRAGs-MCP/commit/481d10f61133114c230d3cb03e87fbf020ee22e5))
+- **cli:** add 'tea-rags doctor' health summary
+  ([bb7687d](https://github.com/artk0de/TeaRAGs-MCP/commit/bb7687d8f904ebb953d9f61e781a6e5136d86e81)),
+  closes [6/#7](https://github.com/6/TeaRAGs-MCP/issues/7)
+- **cli:** add 'tea-rags projects orphans' subcommand
+  ([1823d77](https://github.com/artk0de/TeaRAGs-MCP/commit/1823d77ab2a5cba0f48a8bcc54e03ac5a5605247)),
+  closes [#8](https://github.com/artk0de/TeaRAGs-MCP/issues/8)
+- **cli:** add applyProjectDefaults helper for --project resolution
+  ([07324bd](https://github.com/artk0de/TeaRAGs-MCP/commit/07324bd13828c7f61c3d588faf7870b984e876f3))
+- **cli:** add register-project command
+  ([8f9884b](https://github.com/artk0de/TeaRAGs-MCP/commit/8f9884bf24a1652d5e0d22f0e760c56ad2ea7f36))
+- **cli:** add tab-completion for --project alias values (bash/zsh)
+  ([4dd22f1](https://github.com/artk0de/TeaRAGs-MCP/commit/4dd22f13faa05327c02f61c2de1fdaa7f7fdea44))
+- **cli:** auto-install fish completion via postinstall when fish is detected
+  ([b622ba7](https://github.com/artk0de/TeaRAGs-MCP/commit/b622ba7e96e8f9f1a914cb8c1ae91f14caebf8a5))
+- **cli:** register 'doctor' command in createCli
+  ([70096c9](https://github.com/artk0de/TeaRAGs-MCP/commit/70096c979e800e6638a5d7773d8ac377359d3f7a)),
+  closes [7/#8](https://github.com/7/TeaRAGs-MCP/issues/8)
+- **cli:** replace flat project-\* commands with 'tea-rags projects [sub]' group
+  ([e1078e8](https://github.com/artk0de/TeaRAGs-MCP/commit/e1078e8d0bf688e72c67a1f7ecedaba18ea9be02))
+- **cli:** wire 'tea-rags doctor --recover-registry' to ProjectRegistryOps
+  ([1f32ece](https://github.com/artk0de/TeaRAGs-MCP/commit/1f32ece31c5bd35abf55ed2d8215384d246a411f)),
+  closes [#7](https://github.com/artk0de/TeaRAGs-MCP/issues/7)
+- **contracts:** add SignalConfidence + ConfidenceClampRule types
+  ([9a3cc8d](https://github.com/artk0de/TeaRAGs-MCP/commit/9a3cc8d9313e9902df96ac3faff9d9dc04aa471b))
+- **contracts:** add typed errors for project registry validation
+  ([6926b84](https://github.com/artk0de/TeaRAGs-MCP/commit/6926b84386ac9741470a069d0e9abd549dea14b4))
+- **dto:** add CollectionIdentifier mixin with optional project field
+  ([09d2e92](https://github.com/artk0de/TeaRAGs-MCP/commit/09d2e925fdf7e9ab9d451bf5b5f6d8d6faadf6c0))
+- **explore:** confidence-aware label resolution
+  ([0cbe54e](https://github.com/artk0de/TeaRAGs-MCP/commit/0cbe54e48491822ceb7a4968f35dec9415f6dd65))
+- **explore:** lazy hot recompute for missing percentiles
+  ([3e0a948](https://github.com/artk0de/TeaRAGs-MCP/commit/3e0a948063f3abeae4032d396450d0a690acd5ad))
+- **explore:** plumb confidence context through reranker
+  ([bc38780](https://github.com/artk0de/TeaRAGs-MCP/commit/bc3878073d4a3eec7437806dcd965373b28890a2))
+- **mcp:** add list_projects tool
+  ([dbf823e](https://github.com/artk0de/TeaRAGs-MCP/commit/dbf823ee53fae8e92d4e4affa2edfc607f94ccf6))
+- **mcp:** add register_project tool
+  ([65a42e6](https://github.com/artk0de/TeaRAGs-MCP/commit/65a42e60c1b75b6c26aa918667868c9ab2130d08))
+- **mcp:** add unregister_project tool
+  ([0c72652](https://github.com/artk0de/TeaRAGs-MCP/commit/0c7265291a1eff1df37fb4f597122ddc271cdc35))
+- **mcp:** add unregister_project tool source
+  ([d8c076f](https://github.com/artk0de/TeaRAGs-MCP/commit/d8c076fca216688d694364734c872fb38ee195d1))
+- **mcp:** expose project parameter in project-aware tools
+  ([482cbb3](https://github.com/artk0de/TeaRAGs-MCP/commit/482cbb337a9a4dcf9c41b8bc37a562feadbca7b4))
+- **metrics:** percentilesToCompute + validateSignalDependencies +
+  lazy-recompute spec
+  ([c5cc24c](https://github.com/artk0de/TeaRAGs-MCP/commit/c5cc24c0963090b555d66293a30cfec9f2055bab))
+- **registry:** add atomic registry file IO
+  ([3011d57](https://github.com/artk0de/TeaRAGs-MCP/commit/3011d571ad777cad3606e3f717ba4b4a10d491be))
+- **registry:** add CollectionRegistry class
+  ([191b80d](https://github.com/artk0de/TeaRAGs-MCP/commit/191b80ddad331aa4ddbbaa5dc2fce8c90bc578dd))
+- **registry:** add foundation types, errors, barrel for project registry
+  ([ab59d9f](https://github.com/artk0de/TeaRAGs-MCP/commit/ab59d9f32c58765eabf33522e1d327ec731fba84))
+- **registry:** add migration framework and corrupt-file backup
+  ([1a316f9](https://github.com/artk0de/TeaRAGs-MCP/commit/1a316f9aac3d6199a0b8dcfae219088caa304aa9)),
+  closes [#3](https://github.com/artk0de/TeaRAGs-MCP/issues/3)
+  [#10](https://github.com/artk0de/TeaRAGs-MCP/issues/10)
+- **registry:** add PROJECT_NAME_RE constant and RegistryConcurrencyError
+  ([fa393f4](https://github.com/artk0de/TeaRAGs-MCP/commit/fa393f44e50424cd70de05e7dc851daf62cdcb8a)),
+  closes [#9](https://github.com/artk0de/TeaRAGs-MCP/issues/9)
+  [#1](https://github.com/artk0de/TeaRAGs-MCP/issues/1)
+- **registry:** fs.watch-based cache invalidation in CollectionRegistry
+  ([a8b4ad3](https://github.com/artk0de/TeaRAGs-MCP/commit/a8b4ad3e12f5e00f42d71edba3ea9bf52762942b))
+- **registry:** reject malformed entries in CollectionRegistry.record()
+  ([1da2aec](https://github.com/artk0de/TeaRAGs-MCP/commit/1da2aec53f384bfa3580c0aa1ea8339e808dc69a)),
+  closes [#5](https://github.com/artk0de/TeaRAGs-MCP/issues/5)
+- **signals:** bugFixRate opts in to unified confidence
+  ([b6f12c1](https://github.com/artk0de/TeaRAGs-MCP/commit/b6f12c114ffbe18ae66303bfbebe674c6ce3c330))
+
+### Improvements
+
+- **agents:** forbid test buckets in coverage-expander
+  ([9ea760c](https://github.com/artk0de/TeaRAGs-MCP/commit/9ea760cf43974974b929b88abc71a1c7823ab3ed)),
+  closes [#5](https://github.com/artk0de/TeaRAGs-MCP/issues/5)
+- **agents:** rewrite coverage-expander to use tea-rags + json coverage
+  ([38afdbf](https://github.com/artk0de/TeaRAGs-MCP/commit/38afdbfa889c0f249d6a58c3e27254714b2cd2a1))
+- **api:** drop fake new Date() stamp in tryEnrichFromQdrant
+  ([37cd902](https://github.com/artk0de/TeaRAGs-MCP/commit/37cd902af9c613f72998626121d8c38d9156c08e)),
+  closes [#14](https://github.com/artk0de/TeaRAGs-MCP/issues/14)
+  [#5](https://github.com/artk0de/TeaRAGs-MCP/issues/5)
+- **api:** register_project rename-only fast path skips Qdrant for populated
+  entries
+  ([76c5d38](https://github.com/artk0de/TeaRAGs-MCP/commit/76c5d38f64f5fc9461d7c5ac384aa7ca51458b2f))
+- **cli:** 'projects info' surfaces realpath divergence and missing-on-disk
+  ([1ba4c4c](https://github.com/artk0de/TeaRAGs-MCP/commit/1ba4c4cea1c5f676bd5e57df920f937d5556a067))
+- **cli:** applyProjectDefaults throws typed errors and ignores empty-string
+  registry stubs
+  ([a285165](https://github.com/artk0de/TeaRAGs-MCP/commit/a285165d542ef8b2bbd4a6ac79816a74239544d0)),
+  closes [#15](https://github.com/artk0de/TeaRAGs-MCP/issues/15)
+- **cli:** tune handler catches InputValidationError from applyProjectDefaults
+  ([86eaf03](https://github.com/artk0de/TeaRAGs-MCP/commit/86eaf0361038ac0ea1facd6fe1b6450d5ed74085)),
+  closes [#15](https://github.com/artk0de/TeaRAGs-MCP/issues/15)
+- **mcp:** mark project as RECOMMENDED in MCP tool descriptions
+  ([1f8f5cc](https://github.com/artk0de/TeaRAGs-MCP/commit/1f8f5cc05d711dccb59afc4dd33b88ef36266b3e))
+- **qdrant:** tune auto-spawns embedded daemon when no Qdrant URL given
+  ([1b056ca](https://github.com/artk0de/TeaRAGs-MCP/commit/1b056ca48416f0728a5fc72a94105ff5402422fd))
+- **rules:** document typed filters + MCP resource fetching in search-cascade
+  ([ddbbdbd](https://github.com/artk0de/TeaRAGs-MCP/commit/ddbbdbd590b1cd445b0131089863bc3455fbdb54))
+- **tea-rags:** index skill offers to register project after first-time index
+  ([1f085af](https://github.com/artk0de/TeaRAGs-MCP/commit/1f085af200cc25aaa74e41ba7f284d2face58d6c))
+
+### Bug Fixes
+
+- **agents:** repair prettier-corrupted tea-rags tool names in coverage-expander
+  ([695bbe1](https://github.com/artk0de/TeaRAGs-MCP/commit/695bbe14270dad1fd4ef1dfe86505826e52d3e98))
+- **api:** register_project recovers teaRagsVersion + indexedAt from
+  indexing-marker
+  ([f2d9401](https://github.com/artk0de/TeaRAGs-MCP/commit/f2d9401107ffaa7374d1022b523fae998615cd32))
+- **cli:** align 'doctor' orphan count with 'projects orphans' alias filter
+  ([a5bf55a](https://github.com/artk0de/TeaRAGs-MCP/commit/a5bf55a5af100a052811b0c47de78311ea4b0004))
+- **cli:** exclude aliased physical collections from 'projects orphans'
+  ([a4621f9](https://github.com/artk0de/TeaRAGs-MCP/commit/a4621f91d1383df2e128e35467279a3b32475676))
+- **cli:** per-option file completion for --path; suppress noise for --name
+  register
+  ([0e30ab4](https://github.com/artk0de/TeaRAGs-MCP/commit/0e30ab4e0f9f5bb1d2c9ac3fbe1ecd63a58d07b3))
+- **cli:** tab-completion fires properly through yargs fallback-fn protocol
+  ([53dfa61](https://github.com/artk0de/TeaRAGs-MCP/commit/53dfa61bbbc98817935d86723cd5bdcb0bf969a1))
+- **explore:** siblingValues for confidence clamp come from raw payload
+  ([5654101](https://github.com/artk0de/TeaRAGs-MCP/commit/56541018bcb3fddce1b4107191768b6edc22056a))
+- **registry:** enrichment reads embeddingModel from indexing-marker, not random
+  chunk
+  ([91ae98c](https://github.com/artk0de/TeaRAGs-MCP/commit/91ae98c81ebd1a28055554a8f56e55347e777fc6))
+- **registry:** merge-on-write with inode+mtime CAS in flush()
+  ([02a1d40](https://github.com/artk0de/TeaRAGs-MCP/commit/02a1d4094098b3cd40c383c22cb5ab14fd9080f0)),
+  closes [#1](https://github.com/artk0de/TeaRAGs-MCP/issues/1)
+- **registry:** T4 review — rename PATH_NOT_EXISTS code, humanize invalid-name
+  reason
+  ([64102b9](https://github.com/artk0de/TeaRAGs-MCP/commit/64102b92878523c69f849cc325d7c7f38c237094))
+- **registry:** watch dataDir instead of registry.json (fs.watch inode
+  regression)
+  ([b5fb94e](https://github.com/artk0de/TeaRAGs-MCP/commit/b5fb94ebcb9e86f9bc7ef799fe6891b74243f573)),
+  closes [#2](https://github.com/artk0de/TeaRAGs-MCP/issues/2)
+- **signals:** restore adaptive precedence for BugFixSignal dampening
+  ([88a3534](https://github.com/artk0de/TeaRAGs-MCP/commit/88a3534bb296fb8a1b1ff9a21d15a7462e7bbfb3))
+- **test:** T16 review — use .js extension for ESM import
+  ([c41b127](https://github.com/artk0de/TeaRAGs-MCP/commit/c41b127411ee7030e3f798b465070a2e9ea9fc1a))
+
+### Documentation
+
+- **dinopowers:** wrappers prefer project alias over path in enrichment calls
+  ([05b4803](https://github.com/artk0de/TeaRAGs-MCP/commit/05b480397284c914309ab36a70846ac2db61caad))
+- document project registry MCP tools and CLI commands
+  ([0588d78](https://github.com/artk0de/TeaRAGs-MCP/commit/0588d78aa6744e62ecb534f40a761141d6f10bfe))
+- **plans:** add PR1 implementation plan for project registry hardening
+  ([12c4c00](https://github.com/artk0de/TeaRAGs-MCP/commit/12c4c000cd63257194bdd8dec1c92c950f4dffe5)),
+  closes [#1](https://github.com/artk0de/TeaRAGs-MCP/issues/1)
+  [#2](https://github.com/artk0de/TeaRAGs-MCP/issues/2)
+  [#3](https://github.com/artk0de/TeaRAGs-MCP/issues/3)
+  [#4](https://github.com/artk0de/TeaRAGs-MCP/issues/4)
+  [#9](https://github.com/artk0de/TeaRAGs-MCP/issues/9)
+  [#10](https://github.com/artk0de/TeaRAGs-MCP/issues/10)
+- **plans:** add PR2 implementation plan for project registry recovery + UX
+  ([fab86ab](https://github.com/artk0de/TeaRAGs-MCP/commit/fab86abe50d54b58467f5137c1ba5c09876d1a80)),
+  closes [#5](https://github.com/artk0de/TeaRAGs-MCP/issues/5)
+  [#6](https://github.com/artk0de/TeaRAGs-MCP/issues/6)
+  [#7](https://github.com/artk0de/TeaRAGs-MCP/issues/7)
+  [#8](https://github.com/artk0de/TeaRAGs-MCP/issues/8)
+  [#12](https://github.com/artk0de/TeaRAGs-MCP/issues/12)
+- **plans:** add PR3 implementation plan for project registry polish
+  ([a2fd2ae](https://github.com/artk0de/TeaRAGs-MCP/commit/a2fd2ae5469516bf3d69b31351c4b6c746bbc84b)),
+  closes [#5](https://github.com/artk0de/TeaRAGs-MCP/issues/5)
+  [#13](https://github.com/artk0de/TeaRAGs-MCP/issues/13)
+  [#15](https://github.com/artk0de/TeaRAGs-MCP/issues/15)
+- **plans:** add project registry implementation plan
+  ([d9e4e0a](https://github.com/artk0de/TeaRAGs-MCP/commit/d9e4e0a493d8f5cb47c0d49533ce2ba172185cfb))
+- **plans:** unified plan for hotspot signal interpretation rework
+  ([8f3a9d0](https://github.com/artk0de/TeaRAGs-MCP/commit/8f3a9d0a08eaf811e67c267b517218e328c88f84))
+- **presets:** align HotspotsPreset docstring with weights
+  ([eb21700](https://github.com/artk0de/TeaRAGs-MCP/commit/eb21700b102e410f1634a0c7ebf38294b6f2837e))
+- **registry:** clarify PROJECT_NAME_RE SoT scope and align barrel order
+  ([4475aec](https://github.com/artk0de/TeaRAGs-MCP/commit/4475aec058e5a9068777cd6387f548a4095765df))
+- **registry:** correct CAS worst-case comment +
+  [@throws](https://github.com/throws) JSDoc + tombstone test
+  ([264dc91](https://github.com/artk0de/TeaRAGs-MCP/commit/264dc910c56a82e7e8f1ecd32b0c46b59e1ef890)),
+  closes [audit-#1](https://github.com/artk0de/audit-/issues/1)
+- **registry:** document partial nature of registry/errors layer relocation
+  ([01763f7](https://github.com/artk0de/TeaRAGs-MCP/commit/01763f752782c481746af56ccdeee493a811062f))
+- **rules,website:** update confidence/label docs for adaptive thresholds +
+  percentilesToCompute
+  ([4ce41b3](https://github.com/artk0de/TeaRAGs-MCP/commit/4ce41b302cbc10a913a0674221119d4c5c31c56c))
+- **rules,website:** update signal-confidence + reranking for lazy-at-rerank
+  ([1a673fa](https://github.com/artk0de/TeaRAGs-MCP/commit/1a673faa08bdf3e855b578ff5f5fe506f9ef9308))
+- **rules:** add npm link workflow for MCP integration testing in worktrees
+  ([40b2179](https://github.com/artk0de/TeaRAGs-MCP/commit/40b2179ca976a2cf06e7aa41150b72ce8def4ed4))
+- **rules:** add reindex / schema-drift guidance to MCP integration testing
+  ([a664dc9](https://github.com/artk0de/TeaRAGs-MCP/commit/a664dc9d82c00bfa6bb435889ac7b5ee043d3302))
+- **rules:** clarify npm link sequence — merge between worktree and main
+  ([a7b7bff](https://github.com/artk0de/TeaRAGs-MCP/commit/a7b7bff4a3e78a9765ba7065f58498c2633357e2))
+- **rules:** Fragile Silo pattern + small-N anti-pattern + recipe
+  ([fe96954](https://github.com/artk0de/TeaRAGs-MCP/commit/fe96954405fb216dcbfd6757ffa353a857aebaca)),
+  closes [#8](https://github.com/artk0de/TeaRAGs-MCP/issues/8)
+- **rules:** how to use SignalConfidence in payload signal descriptors
+  ([08a16a2](https://github.com/artk0de/TeaRAGs-MCP/commit/08a16a2b5c4786e44af353bbcc69726094641e05))
+- **specs:** add project registry design (gr4o ∪ 2mrz)
+  ([557bfe3](https://github.com/artk0de/TeaRAGs-MCP/commit/557bfe33a14757034f42fae3dd80e5e3252388e4))
+- **specs:** add project registry hardening design
+  ([bd78bd4](https://github.com/artk0de/TeaRAGs-MCP/commit/bd78bd462d173e4d60277976e538971522132915))
+- **specs:** split hotspot/bug-prone signal interpretation into six per-problem
+  specs
+  ([86e4b23](https://github.com/artk0de/TeaRAGs-MCP/commit/86e4b231faac187199679f42dc2933399c749745)),
+  closes [#8](https://github.com/artk0de/TeaRAGs-MCP/issues/8)
+- **tea-rags:** teach search-cascade to prefer project alias over path
+  ([698ccbb](https://github.com/artk0de/TeaRAGs-MCP/commit/698ccbb832ac54f2c66e124d5a12a9ab4438be63))
+- **website:** add Project Registry pages
+  ([267e1d2](https://github.com/artk0de/TeaRAGs-MCP/commit/267e1d2c531a0acc4527e7f85b75131e616636b4))
+- **website:** document project registry doctor command, orphans, --purge, and
+  new typed errors
+  ([33c7bd5](https://github.com/artk0de/TeaRAGs-MCP/commit/33c7bd58b731292dba9d624c7a0e330285da55a6))
+- **website:** drop lazy-backfill subsection from core-concepts/reranking
+  ([287514f](https://github.com/artk0de/TeaRAGs-MCP/commit/287514f73e1660da0519f7c95a866b9298c8ee73))
+
+### Code Refactoring
+
+- **api:** resolveCollection accepts registry+project; plumb registry via DI
+  ([05b59e3](https://github.com/artk0de/TeaRAGs-MCP/commit/05b59e3369cda7bb9a51e07dbdb224196d8b1e59))
+- **explore:** move stats recompute from stats-load to rerank-time
+  ([39ce11a](https://github.com/artk0de/TeaRAGs-MCP/commit/39ce11a1eb121db12003f66e9c13d20792b9e0e9))
+- **registry:** introduce RegistryNameConflictError for infra-level conflict
+  ([138cf7f](https://github.com/artk0de/TeaRAGs-MCP/commit/138cf7f546a1b39f04ec2c56747bceee4884e6df)),
+  closes [#4](https://github.com/artk0de/TeaRAGs-MCP/issues/4)
+- **registry:** relocate registry errors to adapters layer + barrel-import
+  cleanup
+  ([bb30458](https://github.com/artk0de/TeaRAGs-MCP/commit/bb304586d32f11398db5c70ce922ea6750317ff8))
+- **registry:** route all PROJECT_NAME_RE callers to shared constant
+  ([2cd113f](https://github.com/artk0de/TeaRAGs-MCP/commit/2cd113f6df7258dc0ffde7187f362ada679a0628)),
+  closes [#9](https://github.com/artk0de/TeaRAGs-MCP/issues/9)
+- **signals:** BugFixSignal reads dampening from descriptor
+  ([4ea7d27](https://github.com/artk0de/TeaRAGs-MCP/commit/4ea7d279eb5cfe8b45cca0070be430d01a4d1ec5))
+- **signals:** migrate 6 remaining derived signals to unified confidence +
+  adaptive labels
+  ([654b838](https://github.com/artk0de/TeaRAGs-MCP/commit/654b83856799d98e71024503263a3e039a5ca45f))
+
 ## Unreleased
 
 ### Features
