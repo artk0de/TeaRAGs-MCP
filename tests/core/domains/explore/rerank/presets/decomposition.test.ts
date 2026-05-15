@@ -38,13 +38,13 @@ describe("DecompositionPreset", () => {
 describe("Decomposition reranking produces scores in 0-1", () => {
   const reranker = new Reranker(staticDerivedSignals, [new DecompositionPreset()]);
 
-  it("scores large dense methods higher than small sparse ones", () => {
+  it("scores large dense methods higher than small sparse ones", async () => {
     const results = [
       { score: 0.8, payload: { chunkType: "function", methodLines: 200, methodDensity: 80 } },
       { score: 0.9, payload: { chunkType: "function", methodLines: 10, methodDensity: 30 } },
     ];
 
-    const ranked = reranker.rerank(results, "decomposition", "semantic_search");
+    const ranked = await reranker.rerank(results, "decomposition", "semantic_search");
 
     for (const r of ranked) {
       expect(r.score).toBeGreaterThanOrEqual(0);
@@ -55,7 +55,7 @@ describe("Decomposition reranking produces scores in 0-1", () => {
     expect(ranked[0].payload?.methodLines).toBe(200);
   });
 
-  it("split sub-chunks with same methodLines/methodDensity score equally on size/density", () => {
+  it("split sub-chunks with same methodLines/methodDensity score equally on size/density", async () => {
     const results = [
       {
         score: 0.8,
@@ -67,16 +67,16 @@ describe("Decomposition reranking produces scores in 0-1", () => {
       },
     ];
 
-    const ranked = reranker.rerank(results, "decomposition", "semantic_search");
+    const ranked = await reranker.rerank(results, "decomposition", "semantic_search");
 
     // Both should have identical scores (same methodLines, same methodDensity, same similarity)
     expect(ranked[0].score).toBeCloseTo(ranked[1].score, 5);
   });
 
-  it("ranking overlay includes file.methodLines raw value", () => {
+  it("ranking overlay includes file.methodLines raw value", async () => {
     const results = [{ score: 0.8, payload: { chunkType: "function", methodLines: 100, methodDensity: 60 } }];
 
-    const ranked = reranker.rerank(results, "decomposition", "semantic_search");
+    const ranked = await reranker.rerank(results, "decomposition", "semantic_search");
     const overlay = ranked[0].rankingOverlay;
 
     expect(overlay).toBeDefined();

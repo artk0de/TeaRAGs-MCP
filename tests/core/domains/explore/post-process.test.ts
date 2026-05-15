@@ -62,13 +62,13 @@ describe("postProcess", () => {
     { id: "3", score: 0.7, payload: { relativePath: "test/c.test.ts" } },
   ];
 
-  it("returns results trimmed to limit", () => {
-    const result = postProcess(sampleResults, { limit: 2, reranker: mockReranker });
+  it("returns results trimmed to limit", async () => {
+    const result = await postProcess(sampleResults, { limit: 2, reranker: mockReranker });
     expect(result).toHaveLength(2);
   });
 
-  it("pathPattern in postProcess is a no-op (pre-filter handles it)", () => {
-    const result = postProcess(sampleResults, {
+  it("pathPattern in postProcess is a no-op (pre-filter handles it)", async () => {
+    const result = await postProcess(sampleResults, {
       limit: 10,
       pathPattern: "src/**",
       reranker: mockReranker,
@@ -77,23 +77,23 @@ describe("postProcess", () => {
     expect(result).toHaveLength(3);
   });
 
-  it("applies reranking for non-relevance preset", () => {
-    postProcess(sampleResults, { limit: 10, rerank: "hotspots", reranker: mockReranker });
+  it("applies reranking for non-relevance preset", async () => {
+    await postProcess(sampleResults, { limit: 10, rerank: "hotspots", reranker: mockReranker });
     expect(mockReranker.rerank).toHaveBeenCalledWith(sampleResults, "hotspots", "semantic_search", {
       signalLevel: undefined,
       query: undefined,
     });
   });
 
-  it("skips reranking for relevance preset", () => {
+  it("skips reranking for relevance preset", async () => {
     const reranker = { rerank: vi.fn() } as unknown as Reranker;
-    postProcess(sampleResults, { limit: 10, rerank: "relevance", reranker });
+    await postProcess(sampleResults, { limit: 10, rerank: "relevance", reranker });
     expect(reranker.rerank).not.toHaveBeenCalled();
   });
 
-  it("skips reranking when no rerank option", () => {
+  it("skips reranking when no rerank option", async () => {
     const reranker = { rerank: vi.fn() } as unknown as Reranker;
-    postProcess(sampleResults, { limit: 10, reranker });
+    await postProcess(sampleResults, { limit: 10, reranker });
     expect(reranker.rerank).not.toHaveBeenCalled();
   });
 });

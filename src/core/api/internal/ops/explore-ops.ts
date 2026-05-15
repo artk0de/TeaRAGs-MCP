@@ -287,25 +287,18 @@ export class ExploreOps {
     try {
       const stats = this.statsCache.load(collectionName);
       if (!stats) return;
-      // Lazy hot recompute: if descriptors reference percentiles missing from
-      // a stale index, scroll those signals once now (await), persist back,
-      // then publish stats to the reranker. The rerank path stays sync —
-      // by the time it runs, all referenced percentiles are present.
-      // No-op when no descriptor references a missing percentile.
+      // Wire the recompute service into the reranker so lazy-at-rerank
+      // backfill of missing confidence-referenced percentiles can fire
+      // at the moment of need (inside Reranker.rerank). No scroll fires
+      // here at load time — only at the first rerank that actually
+      // consults a missing percentile.
       if (this.recomputeService) {
-        try {
-          await this.recomputeService.ensureCoverage(
-            collectionName,
-            stats,
-            this.payloadSignals,
-            stats.payloadFieldKeys,
-          );
-        } catch {
-          // ensureCoverage swallows per-signal failures internally;
-          // outer catch is paranoia, never block search on recompute.
-        }
+        this.reranker.setRecomputeService(this.recomputeService);
       }
-      this.reranker.setCollectionStats(stats);
+      this.reranker.setCollectionStats(stats, {
+        collectionName,
+        payloadFieldKeys: stats.payloadFieldKeys,
+      });
     } catch {
       // Stats loading failure must not prevent search.
     }

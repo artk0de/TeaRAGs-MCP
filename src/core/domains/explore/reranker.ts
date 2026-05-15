@@ -27,6 +27,7 @@ import type {
 import { detectScope } from "../../infra/scope-detection.js";
 import { p95 } from "../../infra/signal-utils.js";
 import { resolveLabel } from "./label-resolver.js";
+import type { StatsRecomputeService } from "./stats-recompute.js";
 
 // Re-export types as part of search module's public API
 export type { ScoringWeights } from "../../contracts/types/provider.js";
@@ -67,6 +68,9 @@ export class Reranker {
   private readonly signalKeyMap: Map<string, string>;
   private readonly payloadSignals: PayloadSignalDescriptor[];
   private collectionStats?: CollectionSignalStats;
+  private collectionName?: string;
+  private payloadFieldKeys?: string[];
+  private recomputeService?: StatsRecomputeService;
 
   constructor(
     private readonly descriptors: DerivedSignalDescriptor[],
@@ -87,30 +91,49 @@ export class Reranker {
   }
 
   /** Set collection-wide signal stats (computed after indexing). */
-  setCollectionStats(stats: CollectionSignalStats): void {
+  setCollectionStats(
+    stats: CollectionSignalStats,
+    opts?: { collectionName?: string; payloadFieldKeys?: string[] },
+  ): void {
     this.collectionStats = stats;
+    this.collectionName = opts?.collectionName;
+    this.payloadFieldKeys = opts?.payloadFieldKeys;
+  }
+
+  /**
+   * Wire the lazy stats-recompute service. Required for the rerank-time
+   * lazy backfill of missing confidence-referenced percentiles. Without
+   * this, missing adaptive percentiles fall back to `rule.fallback` /
+   * `score.threshold` for every query — useful for tests / fixtures.
+   */
+  setRecomputeService(service: StatsRecomputeService): void {
+    this.recomputeService = service;
   }
 
   /** Invalidate stats (called when reindex starts). */
   invalidateStats(): void {
     this.collectionStats = undefined;
+    this.collectionName = undefined;
+    this.payloadFieldKeys = undefined;
   }
 
   /**
    * Rerank results with ranking overlay.
    *
-   * Synchronous: any lazy percentile recompute happens at stats-load time
-   * (see `StatsRecomputeService.ensureCoverage`, called from
-   * `ExploreOps.ensureStats`). By the time rerank() runs, the loaded
-   * stats already contain every percentile referenced by descriptor
-   * confidence blocks — score and label paths just read.
+   * Lazy-at-rerank: BEFORE scoring, walks every confidence reference declared
+   * by payload signals (score `adaptivePercentile`, label rule `whenSupportBelow: "pN"`)
+   * and awaits a single-percentile scroll for each one missing from current
+   * collection stats. Idempotent across reranks — `requestRecompute` checks
+   * in-memory stats first, so a percentile populated by an earlier rerank
+   * skips the scroll on subsequent reranks. Net effect: scroll fires ONLY
+   * when actually needed, at the moment of need.
    */
-  rerank<T extends RerankableResult>(
+  async rerank<T extends RerankableResult>(
     results: T[],
     mode: RerankMode<string>,
     presetSet: "semantic_search" | "search_code" | "rank_chunks",
     options?: RerankOptions,
-  ): (T & { rankingOverlay?: RankingOverlay })[] {
+  ): Promise<(T & { rankingOverlay?: RankingOverlay })[]> {
     const resolved = this.resolveMode(mode, presetSet);
     if (options?.signalLevel) {
       resolved.signalLevel = options.signalLevel;
@@ -118,10 +141,33 @@ export class Reranker {
     if (isSimilarityOnly(resolved.weights)) {
       return results.map((r) => ({ ...r }));
     }
+    await this.ensureNeededPercentiles();
     const bounds = this.computeAdaptiveBounds(results);
     const scored = this.scoreResults(results, bounds, resolved, options?.query);
     const sorted = scored.sort((a, b) => b.score - a.score);
     return resolved.groupBy ? groupByTop(sorted, resolved.groupBy) : sorted;
+  }
+
+  /**
+   * Lazy pre-pass: walk confidence references on payload signals, identify
+   * percentiles missing from loaded stats, await their backfill. Cheap when
+   * everything is present (Map lookups). Scrolls only fire for missing
+   * percentiles; the recompute service groups by signal (one scroll per
+   * support signal, multiple percentiles share that scroll) and persists
+   * via stats-cache once.
+   *
+   * No-op when the recompute service / stats / collectionName aren't wired
+   * (e.g. tests without infra). Adaptive resolution then degrades to the
+   * static `score.threshold` / `rule.fallback` path.
+   */
+  private async ensureNeededPercentiles(): Promise<void> {
+    if (!this.recomputeService || !this.collectionStats || !this.collectionName) return;
+    await this.recomputeService.ensureCoverage(
+      this.collectionName,
+      this.collectionStats,
+      this.payloadSignals,
+      this.payloadFieldKeys,
+    );
   }
 
   /** Resolve `mode` to weights, mask, groupBy, signalLevel. Pure lookup, no side effects. */

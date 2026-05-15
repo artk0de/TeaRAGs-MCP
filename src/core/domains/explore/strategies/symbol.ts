@@ -77,12 +77,15 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
    * fields (not present in payloadSignals), so we apply a targeted git
    * filter via applyEssentialGitToResult instead.
    */
-  protected override postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
+  protected override async postProcess(
+    results: ExploreResult[],
+    originalCtx: ExploreContext,
+  ): Promise<ExploreResult[]> {
     let processed = results;
 
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
     if (rerank) {
-      processed = this.reranker.rerank(processed, rerank, "semantic_search");
+      processed = await this.reranker.rerank(processed, rerank, "semantic_search");
     }
 
     const offset = originalCtx.offset ?? 0;
