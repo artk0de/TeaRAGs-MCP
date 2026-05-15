@@ -110,6 +110,64 @@ the long-time owner has stopped committing, `blame*` and `recent*` disagree,
 and the divergence itself signals a knowledge handoff in progress.
 :::
 
+## Confidence-Aware Signals
+
+Some signals are **ratios** or **small-sample aggregates** where the value
+is statistically unreliable when the underlying sample is small. Reading
+`bugFixRate=67%` as "this file is dangerously buggy" makes sense when
+there were 200 commits; with 3 commits, 2/3 produces the same 67% but is
+just noise.
+
+To avoid agents over-reading small-sample noise, confidence-aware signals
+declare a **support sibling** (typically `commitCount`) that gates how
+much the signal contributes to ranking and which overlay label it surfaces.
+
+### Two consumers, one declaration
+
+A confidence-aware signal declares ONE block that drives both:
+
+- **Score dampening** — derived-signal contribution is multiplied by
+  `(supportValue / k)²` (capped at 1). Small samples score lower; large
+  samples pass through unchanged. `k` is read **adaptively** from the
+  support signal's percentile distribution at query time, so the
+  dampening curve scales with the codebase rather than a hardcoded
+  constant.
+- **Label clamp** — overlay label is capped (less-severe ceiling) when
+  support is below a per-rule threshold. Raw `value` in overlay is
+  preserved; only the bin (label) shifts. Clamp thresholds support
+  adaptive forms (`whenSupportBelow: "pN"` reads percentile of support
+  from collection stats) with static `fallback` for stale-index cases.
+
+The result: an agent reading `bugFixRate: { value: 67, label: "healthy" }`
+in overlay knows the sample size doesn't support a higher-severity bin,
+without having to cross-reference `commitCount` manually.
+
+### Current confidence-aware signals
+
+| Raw signal        | Support       | Score dampening | Label clamp                          |
+| ----------------- | ------------- | --------------- | ------------------------------------ |
+| `bugFixRate`      | `commitCount` | adaptive p25    | `<p10 → healthy`, `<p25 → concerning` (per-codebase percentiles) |
+| `churnVolatility` | `commitCount` | adaptive p25    | none                                 |
+| `relativeChurn`   | `commitCount` | adaptive p25    | none                                 |
+| `changeDensity`   | `commitCount` | adaptive p25    | none                                 |
+| `recentDominantAuthorPct` | `commitCount` | adaptive p25 | none                            |
+| `blameDominantAuthorPct`  | `commitCount` | adaptive p25 | none                            |
+| `blameContributorCount`   | `commitCount` | adaptive p25 | none                            |
+
+Score dampening applies to all 7 confidence-aware signals; label clamp
+is currently only declared for `bugFixRate` (the signal most prone to
+agent misread on small-N).
+
+### Reading confidence-clamped overlays
+
+When you see `{ value, label }` in overlay, the label has ALREADY been
+clamped if the support sibling was low. Trust the label. If you read raw
+`value` directly, pair it with the support's overlay label
+(`commitCount.label`) — at "low" or below, treat the value as suggestive,
+not diagnostic. See the agent-facing
+[interpretation anti-pattern #8](../../agent-integration/signal-interpretation.md)
+for the full rule.
+
 ## Combining Filters with Reranking
 
 Filters (Qdrant conditions) **narrow** the candidate set. Reranking
