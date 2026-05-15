@@ -47,6 +47,7 @@
     "build/",
     "benchmarks/",
     "scripts/postinstall.js",
+    "scripts/install-fish-completion.js",
     "prompts.json",
     ".qdrant-required-version"
   ],

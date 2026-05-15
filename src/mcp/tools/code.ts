@@ -4,12 +4,34 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../core/api/errors.js";
 import type { App, IndexStatus, SchemaBuilder } from "../../core/api/index.js";
 import { appendDriftWarning, formatMcpText, sanitizeRerank } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { formatEnrichmentStatus } from "./formatters/enrichment.js";
 import { createSearchSchemas } from "./schemas.js";
 import * as schemas from "./schemas.js";
+
+/**
+ * Resolve {path?, project?} → absolute path for indexing-pipeline tools whose
+ * App methods only accept a path. When `project` is given but `path` is not,
+ * look up the project alias via app.listProjects() (which reads CollectionRegistry).
+ * Mirrors the priority `path > project` used elsewhere — but with no `collection`
+ * support since these tools do not accept a collection name directly.
+ */
+async function resolvePathFromProject(args: { path?: string; project?: string }, app: App): Promise<string> {
+  if (args.path) return args.path;
+  if (args.project) {
+    const { projects } = await app.listProjects();
+    const entry = projects.find((e) => e.name === args.project);
+    if (!entry) {
+      const available = projects.map((p) => p.name).filter((n): n is string => n !== null);
+      throw new ProjectNotRegisteredError(args.project, available);
+    }
+    return entry.path;
+  }
+  throw new CollectionNotProvidedError();
+}
 
 export function registerCodeTools(
   server: McpServer,
@@ -137,7 +159,8 @@ export function registerCodeTools(
       inputSchema: schemas.ReindexChangesSchema,
       annotations: { idempotentHint: true },
     },
-    async ({ path }) => {
+    async ({ path: pathArg, project }) => {
+      const path = await resolvePathFromProject({ path: pathArg, project }, app);
       const stats = await app.reindexChanges(path, (progress) => {
         console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
       });
@@ -185,7 +208,8 @@ export function registerCodeTools(
       inputSchema: schemas.GetIndexStatusSchema,
       annotations: { readOnlyHint: true },
     },
-    async ({ path }) => {
+    async ({ path: pathArg, project }) => {
+      const path = await resolvePathFromProject({ path: pathArg, project }, app);
       // Qdrant connectivity errors (unavailable / starting / recovering) are
       // thrown as typed errors by QdrantManager and handled by the MCP error
       // middleware — we don't mask them here by returning a text response.
@@ -254,7 +278,8 @@ export function registerCodeTools(
       inputSchema: schemas.GetIndexMetricsSchema,
       annotations: { readOnlyHint: true },
     },
-    async ({ path }) => {
+    async ({ path: pathArg, project }) => {
+      const path = await resolvePathFromProject({ path: pathArg, project }, app);
       const metrics = await app.getIndexMetrics(path);
       return {
         content: [{ type: "text" as const, text: JSON.stringify(metrics, null, 2) }],
@@ -273,7 +298,8 @@ export function registerCodeTools(
       inputSchema: schemas.ClearIndexSchema,
       annotations: { destructiveHint: true },
     },
-    async ({ path }) => {
+    async ({ path: pathArg, project }) => {
+      const path = await resolvePathFromProject({ path: pathArg, project }, app);
       await app.clearIndex(path);
       return formatMcpText(`Index cleared for codebase at "${path}".`);
     },

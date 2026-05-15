@@ -6,6 +6,7 @@
 
 import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import type { EnrichmentMetrics, IndexingStatus, ProgressUpdate } from "../../../types.js";
+import type { CollectionIdentifier } from "./common.js";
 
 // ---------------------------------------------------------------------------
 // Indexing options
@@ -16,6 +17,17 @@ export interface IndexOptions {
   extensions?: string[];
   ignorePatterns?: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Indexing inputs
+// ---------------------------------------------------------------------------
+
+/**
+ * Input DTO for `indexCodebase`. Identifies the target collection via
+ * {@link CollectionIdentifier} (collection > project > path) and carries
+ * optional indexing knobs.
+ */
+export interface IndexCodebaseInput extends CollectionIdentifier, IndexOptions {}
 
 // ---------------------------------------------------------------------------
 // Indexing results

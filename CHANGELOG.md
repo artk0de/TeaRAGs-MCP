@@ -1,111 +1,16 @@
-## [1.24.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.23.2...v1.24.0) (2026-05-12)
+## Unreleased
 
 ### Features
 
-- **cli:** add FileCacheStore for ~/.tea-rags/update-check.json
-  ([f13dcd4](https://github.com/artk0de/TeaRAGs-MCP/commit/f13dcd42dfbb211b8810701adc414f2442795491))
-- **cli:** add filesCount and embeddingModel to prime status
-  ([923a6c4](https://github.com/artk0de/TeaRAGs-MCP/commit/923a6c4797b88356e23ca0416f0d39c556aed6eb))
-- **cli:** add formatForCli/formatForPrime for update-check
-  ([eb4769f](https://github.com/artk0de/TeaRAGs-MCP/commit/eb4769ff6997e09b611db43473f996c3fa389df9))
-- **cli:** add infra-health and enrichment blocks to prime digest
-  ([5c7097d](https://github.com/artk0de/TeaRAGs-MCP/commit/5c7097d9a943b010e58d3522f197ff27423a0bfb))
-- **cli:** add NpmRegistryClient for fetching latest tea-rags version
-  ([35d2ed7](https://github.com/artk0de/TeaRAGs-MCP/commit/35d2ed73ef5bbc5bd12ae946ac43b63717af8b1b))
-- **cli:** add refresh-hint footer to prime digest
-  ([7376b9a](https://github.com/artk0de/TeaRAGs-MCP/commit/7376b9ab9f4d4326fd4c7c0b3561a4dcb6eeb051))
-- **cli:** add schema drift section to prime digest
-  ([062ae8e](https://github.com/artk0de/TeaRAGs-MCP/commit/062ae8eefc1fb9c3144426050dfc9786b4ceccf7))
-- **cli:** add semver compare helper for update-check
-  ([e571337](https://github.com/artk0de/TeaRAGs-MCP/commit/e5713372b406e7e5fd918c6a1d2e42342330b993))
-- **cli:** add stale-index warning + lastUpdated to prime digest
-  ([4fbaa75](https://github.com/artk0de/TeaRAGs-MCP/commit/4fbaa754c13f28e24327e8d196dd2ef62326634c))
-- **cli:** add tea-rags update subcommand
-  ([3f930d2](https://github.com/artk0de/TeaRAGs-MCP/commit/3f930d2f47efa104532ac45ab46fc79f2eeffc3a))
-- **cli:** add UpdateCheckService orchestrator
-  ([c04c8d3](https://github.com/artk0de/TeaRAGs-MCP/commit/c04c8d3e99f7dd904b7662b0024ff1e241ab1f51))
-- **cli:** add UpdateStatus discriminated union for auto-update
-  ([55a399c](https://github.com/artk0de/TeaRAGs-MCP/commit/55a399c402fa02d64c299a3d4e1e2b4c84eebe61))
-- **cli:** add VersionSource for current tea-rags semver
-  ([b7bb4d5](https://github.com/artk0de/TeaRAGs-MCP/commit/b7bb4d5ebf7b406b815e028e9c125ae1b329cc7a))
-- **cli:** format polyglot detection and signal thresholds
-  ([e7cc7f7](https://github.com/artk0de/TeaRAGs-MCP/commit/e7cc7f73937d48d3128b69a950f70e1d79382c0a))
-- **cli:** format status section for all IndexingStatus variants
-  ([21d8a92](https://github.com/artk0de/TeaRAGs-MCP/commit/21d8a92b82de96c26938eae5762674195010ea6c))
-- **cli:** register update subcommand in createCli
-  ([7aa5b58](https://github.com/artk0de/TeaRAGs-MCP/commit/7aa5b58c2428a61a9d6c1c6bc5b4c03a39b82a31))
-- **cli:** runPrime orchestration with App facade calls
-  ([40e3fbb](https://github.com/artk0de/TeaRAGs-MCP/commit/40e3fbb86fcde9611504fab22ae42530f2e1abf8))
-- **cli:** scaffold prime formatter with placeholder cases
-  ([4d216cd](https://github.com/artk0de/TeaRAGs-MCP/commit/4d216cd106636e7608b28ee0ecc904dd887c1efb))
-- **cli:** wire prime subcommand into yargs
-  ([ac89e59](https://github.com/artk0de/TeaRAGs-MCP/commit/ac89e59e55d6c42e8c97312b58fcfe03e30b1183))
-- **dinopowers:** add Index Freshness Protocol via shared FRESHNESS.md
-  ([22d44e3](https://github.com/artk0de/TeaRAGs-MCP/commit/22d44e3c61c1b8e6ca676c69cb75d6a961506b8d))
-- **hybrid:** migrate hybridSearch to server-side RRF fusion
-  ([be41ca2](https://github.com/artk0de/TeaRAGs-MCP/commit/be41ca2989be4235343a63d7bd1965903ef609b7))
-- **plugin:** add /tea-rags:prime slash command + drop stale prompt
-  ([b51dd57](https://github.com/artk0de/TeaRAGs-MCP/commit/b51dd57bd7be60603e6ea20d543b267036a9fad5))
-- **plugin:** autofire tea-rags prime in SessionStart + PreCompact
-  ([ec39783](https://github.com/artk0de/TeaRAGs-MCP/commit/ec3978317ffddca2be4570e36f1e6f7242d9a0be))
-
-### Improvements
-
-- **cli:** polyglot whitelist + threshold rounding in prime
-  ([abbb2ae](https://github.com/artk0de/TeaRAGs-MCP/commit/abbb2aebbc971f85c29f5ae42054237fd4fcde84))
-- **cli:** surface tea-rags package updates in prime digest
-  ([707d319](https://github.com/artk0de/TeaRAGs-MCP/commit/707d319142205a9dc5dd14f2f7ae208445336049))
-- **config:** add worktree paths to default ignore patterns
-  ([a638149](https://github.com/artk0de/TeaRAGs-MCP/commit/a6381497c44fc2b5ce88dabdf755877db00c4eb7))
-- **dinopowers:** restructure descriptions and extract Chaining-rule for Opus
-  4.7
-  ([ea88a33](https://github.com/artk0de/TeaRAGs-MCP/commit/ea88a33d71bfe89c18181aeb51f1119752a654c5))
-- **mcp:** surface post-search find_symbol navigation + doc TOC in subagent
-  SUFFIX
-  ([321aa26](https://github.com/artk0de/TeaRAGs-MCP/commit/321aa269b765badcb520d740f4308c11ab981bb3))
-- **setup:** rewrite install/tune descriptions for Opus 4.7 triggering
-  ([1a57580](https://github.com/artk0de/TeaRAGs-MCP/commit/1a575809cdd05a7fe6d31d316bfe27f60e64f52f))
-- **skills:** restructure project add-\* and meta-skill descriptions for Opus
-  4.7
-  ([29a7f40](https://github.com/artk0de/TeaRAGs-MCP/commit/29a7f40d9a7a3be0045847cb6e655655de519b30))
-- **tea-rags:** restructure long skills and rewrite descriptions for Opus 4.7
-  ([c85fc45](https://github.com/artk0de/TeaRAGs-MCP/commit/c85fc45b1246f71105bf8561d8d5a0b00f197e6e))
-
-### Bug Fixes
-
-- **cli:** discover embedded Qdrant port via daemon.port
-  ([baac591](https://github.com/artk0de/TeaRAGs-MCP/commit/baac591e17e0cfd68d1451f1117de7fa746591e6))
-- **cli:** force postinstall to run during tea-rags update
-  ([eb9da35](https://github.com/artk0de/TeaRAGs-MCP/commit/eb9da35105763e270f19c9f770e3de1d3ff0d042))
-
-### Documentation
-
-- **hybrid:** tighten queryGroups workaround comment
-  ([59ab02b](https://github.com/artk0de/TeaRAGs-MCP/commit/59ab02baa14c9723412d69242bcfc82c8a79932e))
-- **hybrid:** update query-modes for server-side RRF fusion
-  ([d52bb83](https://github.com/artk0de/TeaRAGs-MCP/commit/d52bb8313261c6a2e1026a74067e3e575daf7305))
-- **plans:** add tea-rags prime implementation plan
-  ([2ead044](https://github.com/artk0de/TeaRAGs-MCP/commit/2ead044fdbc6dd1c10c8bb1c37877d0d0028f410))
-- **plans:** correct primary-language source after Task 1 discovery
-  ([23f25c6](https://github.com/artk0de/TeaRAGs-MCP/commit/23f25c6b87d05f7cc16db56592a1ed2d8efe5e84))
-- **skills:** add Wave 1+2 Opus 4.7 migration benchmarks
-  ([5b6921f](https://github.com/artk0de/TeaRAGs-MCP/commit/5b6921fc84a4dfba62c593b36e0e007ceaba3936))
-- **specs:** add poison-pill file quarantine design
-  ([a71bb17](https://github.com/artk0de/TeaRAGs-MCP/commit/a71bb1790b6b3a7cbb6b0cd9ebd3ab2a34628b0c))
-- **specs:** add server-side RRF fusion design for hybridSearch
-  ([a443a14](https://github.com/artk0de/TeaRAGs-MCP/commit/a443a14c31d38b2b87b48b21d0315fa2864db758))
-- **specs:** add tea-rags auto-update design
-  ([daa2220](https://github.com/artk0de/TeaRAGs-MCP/commit/daa2220d2ca2e5188644a027cd0bdac63e3dee7c))
-- **specs:** add tea-rags auto-update implementation plan
-  ([dcea545](https://github.com/artk0de/TeaRAGs-MCP/commit/dcea545c66ef7724b65722cbee70e2363f3fd240))
-- **specs:** add tea-rags prime CLI autofire design
-  ([7cf5aa8](https://github.com/artk0de/TeaRAGs-MCP/commit/7cf5aa8754942f4de87c9f12fd313cc69cd820b2))
-- **specs:** lock open items in tea-rags prime design
-  ([f8b525d](https://github.com/artk0de/TeaRAGs-MCP/commit/f8b525d493b3b0d5ef70566358051c96575317be))
-- **website:** document tea-rags update and prime update notice
-  ([be26623](https://github.com/artk0de/TeaRAGs-MCP/commit/be266230e3c075d860af2e482a0eb5feb48b170c))
-- **website:** expand auto-update coverage in env vars and troubleshooting
-  ([aef59b7](https://github.com/artk0de/TeaRAGs-MCP/commit/aef59b7206649131926e0fa27dab3a83205b142c))
+- **registry:** project registry (`registry.json`) — auto-populated collection
+  metadata + named project bindings.
+  - New MCP tools: `register_project`, `list_projects`, `unregister_project`.
+  - New CLI commands: `register-project`, `list-projects`, `unregister-project`.
+  - All project-aware tools and commands accept an optional `project` parameter
+    (resolution priority: `collection > project > path`).
+  - `BaseIndexingPipeline.finalizeProcessing` records collection metadata to the
+    registry after Qdrant writes complete.
+  - `ProjectRegistryOps.recoverFromQdrant` for future doctor usage.
 
 ## [1.23.2](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.23.1...v1.23.2) (2026-05-08)
 

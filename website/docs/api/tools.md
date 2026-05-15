@@ -31,6 +31,30 @@ sidebar_position: 1
 | `get_index_status` | Get indexing status and statistics for a codebase                          |
 | `clear_index`      | Delete all indexed data for a codebase                                     |
 
+## Project Registry
+
+| Tool                 | Description                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| `register_project`   | Register a short alias for a project path. Persists in `~/.tea-rags/registry.json`          |
+| `list_projects`      | List all registered projects with collection metadata (embedding model, chunks count, etc.) |
+| `unregister_project` | Remove a project alias by name (idempotent, does NOT delete the Qdrant collection)          |
+
+Once registered, the alias can be passed as `project` to any project-aware tool
+instead of `path` or `collection`. Resolution priority:
+`collection > project > path`. See
+**[Project Registry](/usage/advanced/project-registry)** for the full guide,
+including the `tea-rags doctor` command, `--recover-registry`, orphan
+collection inspection, and the `--purge` flag for destructive cleanup.
+
+:::note No `purge` on MCP `unregister_project`
+The MCP `unregister_project` tool removes the registry entry only — it has
+no `purge` parameter. Destructive removal of the underlying Qdrant
+collection is exposed only via the CLI
+(`tea-rags projects unregister --name <alias> --purge`). From an MCP
+client, follow `unregister_project` with `clear_index` or
+`delete_collection` if you need to remove the chunks.
+:::
+
 ## Similarity Search
 
 | Tool           | Description                                                                 |

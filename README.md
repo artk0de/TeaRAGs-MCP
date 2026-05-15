@@ -205,6 +205,32 @@ For other MCP clients, CI, or air-gapped setups, see the
 [manual install](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation#option-b--manual-install)
 (Node + `npm install -g tea-rags` + Ollama/ONNX/OpenAI/Cohere/Voyage).
 
+## 🗂️ Project Registry
+
+TeaRAGs maintains a per-machine registry at `~/.tea-rags/registry.json` (or
+`$TEA_RAGS_DATA_DIR/registry.json`) that records collection metadata and lets
+you address indexed projects by a short name instead of an absolute path or
+opaque collection id.
+
+**CLI:**
+
+```bash
+tea-rags register-project --path ./my-repo --name myrepo
+tea-rags list-projects
+tea-rags list-projects --json
+tea-rags tune --project myrepo
+tea-rags unregister-project --name myrepo
+```
+
+**MCP tools:** `register_project`, `list_projects`, `unregister_project`.
+
+Every project-aware tool and command also accepts an optional `project`
+parameter alongside `path` and `collection`. Resolution priority is
+`collection > project > path`. The registry is auto-populated at the end of each
+indexing / reindexing run with the embedding model, embedding dimensions, Qdrant
+URL, `indexedAt` timestamp, tea-rags version, and chunk count — no manual
+`register-project` call is required for collections you index through tea-rags.
+
 ## 📚 Documentation
 
 **[artk0de.github.io/TeaRAGs-MCP](https://artk0de.github.io/TeaRAGs-MCP/)**

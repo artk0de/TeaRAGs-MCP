@@ -2,6 +2,8 @@
  * DTO barrel — re-exports all domain DTOs.
  */
 
+export type { CollectionIdentifier } from "./common.js";
+
 export type {
   // Explore
   CollectionRef,
@@ -22,6 +24,7 @@ export type {
 export type {
   // Ingest
   IndexOptions,
+  IndexCodebaseInput,
   IndexStats,
   IndexStatus,
   ChangeStats,

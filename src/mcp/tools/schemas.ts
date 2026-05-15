@@ -14,12 +14,32 @@
 import { z } from "zod";
 
 import type { SchemaBuilder } from "../../core/api/index.js";
+import { PROJECT_NAME_RE } from "../../core/infra/registry/index.js";
 
 /** Coerce string→number for MCP params (agents sometimes send "5" instead of 5) */
 const coerceNumber = () => z.preprocess((v) => (typeof v === "string" ? Number(v) : v), z.number());
 
 /** Coerce string→boolean for MCP params (agents sometimes send "true" instead of true) */
 const coerceBoolean = () => z.preprocess((v) => (typeof v === "string" ? v === "true" : v), z.boolean());
+
+/**
+ * Optional project alias field. Mirrors the regex used by CollectionRegistry
+ * and SchemaBuilder.collectionIdentifier(). Exposed on every project-aware
+ * MCP tool as the RECOMMENDED way to address a codebase — see register_project
+ * to create an alias.
+ */
+const projectField = () =>
+  z
+    .string()
+    .regex(PROJECT_NAME_RE, `Project name must match ${PROJECT_NAME_RE.source}`)
+    .optional()
+    .describe(
+      "[RECOMMENDED] Project alias from registry — stable name that survives " +
+        "path moves and pulls qdrantUrl / embeddingModel from the registered " +
+        "entry. Use this when an alias exists; fall back to 'collection' or " +
+        "'path' only when no alias is registered. " +
+        "Resolution priority: collection > project > path.",
+    );
 
 // ---------------------------------------------------------------------------
 // Collection management schemas (static)
@@ -75,6 +95,7 @@ export const DeleteDocumentsSchema = {
 
 export const IndexCodebaseSchema = {
   path: z.string().describe("Absolute or relative path to codebase root directory"),
+  project: projectField(),
   forceReindex: coerceBoolean().optional().describe("Force full re-index even if already indexed (default: false)"),
   extensions: z.array(z.string()).optional().describe("Custom file extensions to index (e.g., ['.proto', '.graphql'])"),
   ignorePatterns: z
@@ -84,19 +105,47 @@ export const IndexCodebaseSchema = {
 };
 
 export const ReindexChangesSchema = {
-  path: z.string().describe("Path to codebase"),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Filesystem path to codebase. " +
+        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
+    ),
+  project: projectField(),
 };
 
 export const GetIndexStatusSchema = {
-  path: z.string().describe("Path to codebase"),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Filesystem path to codebase. " +
+        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
+    ),
+  project: projectField(),
 };
 
 export const ClearIndexSchema = {
-  path: z.string().describe("Path to codebase"),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Filesystem path to codebase. " +
+        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
+    ),
+  project: projectField(),
 };
 
 export const GetIndexMetricsSchema = {
-  path: z.string().describe("Path to codebase"),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Filesystem path to codebase. " +
+        "Prefer 'project' when an alias is registered; provide one of 'project' or 'path'.",
+    ),
+  project: projectField(),
 };
 
 // FindSymbolSchema is dynamic (needs rerank presets) — see createSearchSchemas()
@@ -106,16 +155,26 @@ export const GetIndexMetricsSchema = {
 // ---------------------------------------------------------------------------
 
 /**
- * Shared fields for collection/path resolution used in semantic/hybrid search.
+ * Shared fields for collection/path/project resolution used by every
+ * project-aware search tool. Mirrors the {@link CollectionIdentifier} DTO
+ * mixin (resolution priority: collection > project > path).
  */
 function collectionPathFields() {
   return {
-    collection: z.string().optional().describe("Collection name. Provide either 'collection' or 'path', not both."),
+    collection: z
+      .string()
+      .optional()
+      .describe(
+        "Internal Qdrant collection name (lowest-level handle). " +
+          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
+      ),
+    project: projectField(),
     path: z
       .string()
       .optional()
       .describe(
-        "Path to indexed codebase (auto-resolves collection name). Provide either 'path' or 'collection', not both.",
+        "Filesystem path to indexed codebase (auto-resolves to a collection). " +
+          "Prefer 'project' when an alias is registered; provide one of 'project', 'collection', or 'path'.",
       ),
   };
 }
@@ -261,6 +320,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
 
   const SearchCodeSchema = {
     path: z.string().describe("Path to codebase (must be indexed first)"),
+    project: projectField(),
     query: z.string().describe("Natural language search query (e.g., 'authentication logic')"),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10, max: 100)"),
     pathPattern: z

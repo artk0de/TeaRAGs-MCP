@@ -33,9 +33,45 @@ or detect from current MCP config. Default: `ollama`.
 
 **Full mode**: from argument `--full`. Default: quick mode (~2-3 min).
 
-**Qdrant URL**: from progress file `qdrantUrl`, or auto-detect (embedded).
+**Qdrant URL**: omit `--qdrant-url` whenever possible — see section 1a. Use the
+value from progress file `qdrantUrl` only when it is a real external URL.
 
 **Embedding URL**: from progress file or default `http://localhost:11434`.
+
+### 1a. Embedded Qdrant: do NOT pass --qdrant-url (CRITICAL for the install wizard)
+
+**Why this matters.** The install wizard runs tune at step 6, BEFORE the MCP
+harness is configured at step 8. That means at tune time:
+
+- The MCP server is not in `~/.claude.json` yet, so `mcp__tea-rags__*` tools are
+  unavailable to you.
+- The embedded Qdrant daemon has not been started by anyone —
+  `setup-qdrant.sh embedded` only downloaded the binary.
+- The embedded daemon binds a RANDOM port, not 6333, so hard-coding
+  `--qdrant-url http://localhost:6333` will fail with a connection error.
+
+**What to do.** Just omit `--qdrant-url`. The `tea-rags tune` CLI handles the
+full cascade internally:
+
+1. Probes `http://localhost:6333` — uses it if a Docker/native Qdrant answers.
+2. Otherwise spawns the embedded daemon from `~/.tea-rags/qdrant/` (downloads
+   the binary first if needed), reads its random port from `daemon.port`, and
+   targets `http://127.0.0.1:<port>` for the benchmark.
+3. Releases the daemon ref on exit so the idle watcher can shut it down ~30 s
+   later if nothing else is using it.
+
+**When to pass `--qdrant-url` explicitly.** Only if `qdrantMode` is `docker` or
+`native` and the progress file's `qdrantUrl` is a real http URL (not the literal
+string `"embedded"`). For embedded mode the value in the progress file is
+`"embedded"` — that is a marker, not a URL, and must NOT be passed on the
+command line.
+
+**Sanity check before invoking tune in embedded mode:**
+
+```bash
+# Confirm the embedded binary is present — tune relies on it.
+test -x "$HOME/.tea-rags/qdrant/bin/qdrant" || echo "Embedded binary missing — re-run setup-qdrant.sh embedded"
+```
 
 ### 2. Run the benchmark
 
@@ -44,7 +80,7 @@ Execute in background (this takes 2-3 minutes in quick mode, 10-15 in full):
 ```bash
 tea-rags tune \
   --provider <provider> \
-  --qdrant-url <url> \
+  [--qdrant-url <url>] \       # OMIT for embedded mode (tune auto-spawns daemon)
   --embedding-url <url> \
   [--full]
 ```
@@ -144,7 +180,12 @@ ONNX tune is not yet fully supported. When provider is `onnx`:
 
 - **tea-rags not installed**: show error, suggest `/tea-rags-setup:install`
 - **Qdrant not running**: show error with specific fix (start Docker, brew
-  services start, etc.)
+  services start, etc.). For embedded mode this should never happen — tune
+  spawns the daemon itself. If it does, check the embedded binary at
+  `~/.tea-rags/qdrant/bin/qdrant` and re-run `setup-qdrant.sh embedded`.
+- **`Cannot connect to Qdrant at http://localhost:6333` in embedded mode**: you
+  passed `--qdrant-url` explicitly with the literal string `"embedded"` or
+  `http://localhost:6333`. Re-run tune WITHOUT `--qdrant-url` — see section 1a.
 - **Ollama not running**: show error, suggest starting Ollama
 - **Tune fails mid-run**: save partial results if env file exists, warn user
 - **Tune times out (>10 min quick, >20 min full)**: kill process, save defaults

@@ -4,19 +4,21 @@
 
 import type { RankingOverlay, SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import type { CollectionIdentifier } from "./common.js";
 
 // ---------------------------------------------------------------------------
 // Collection reference (shared by search requests)
 // ---------------------------------------------------------------------------
 
 /**
- * Identifies a collection by name or by codebase path (resolved to collection name internally).
- * At least one of collection or path must be provided. Runtime validation enforces this.
+ * Identifies a collection by name, by registered project alias, or by codebase
+ * path (resolved to collection name internally). At least one of collection,
+ * project, or path must be provided. Runtime validation enforces this.
+ *
+ * Alias of {@link CollectionIdentifier} retained for backward compatibility
+ * with the legacy CollectionRef API surface.
  */
-export interface CollectionRef {
-  collection?: string;
-  path?: string;
-}
+export type CollectionRef = CollectionIdentifier;
 
 // ---------------------------------------------------------------------------
 // Typed filter params (shared across all search requests)

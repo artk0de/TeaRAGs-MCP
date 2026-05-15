@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "../../src/bootstrap/config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts } from "../../src/bootstrap/factory.js";
+import { CollectionRegistry } from "../../src/core/infra/registry/index.js";
 import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
 
 // Mock heavy dependencies — use function() (not =>) so `new` works
@@ -150,6 +151,20 @@ describe("createAppContext", () => {
     expect(ctx.app).toBeDefined();
     expect(ctx.schemaBuilder).toBeDefined();
     expect(ctx.cleanup).toBeDefined();
+  });
+
+  it("wires CollectionRegistry.startWatching and stops it in cleanup (audit #2)", async () => {
+    const stop = vi.fn();
+    const startWatching = vi.spyOn(CollectionRegistry.prototype, "startWatching").mockReturnValue(stop);
+    try {
+      const ctx = await createAppContext(makeConfig());
+      expect(startWatching).toHaveBeenCalledTimes(1);
+      expect(stop).not.toHaveBeenCalled();
+      ctx.cleanup?.();
+      expect(stop).toHaveBeenCalledTimes(1);
+    } finally {
+      startWatching.mockRestore();
+    }
   });
 });
 

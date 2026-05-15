@@ -67,7 +67,8 @@ tool call block), each with `metaOnly: true` (we want signals, not content):
 Exact parameters for each call:
 
 ```
-path:        <current project path>
+project:     <alias from list_projects — RECOMMENDED, omit path when set>
+path:        <current project path — fallback when no alias is registered>
 query:       <intent sentence from Step 1>
 pathPattern: <pathPattern from Step 1>
 rerank:      "hotspots" | "ownership" | "techDebt"

@@ -9,7 +9,8 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { resolve } from "node:path";
 
-import { CollectionNotProvidedError } from "../api/errors.js";
+import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../api/errors.js";
+import type { CollectionRegistry } from "./registry/collection-registry.js";
 
 /**
  * Validate path — resolves to realpath if exists, absolute path otherwise.
@@ -33,15 +34,47 @@ export function resolveCollectionName(path: string): string {
 }
 
 /**
- * Resolve collection name from either explicit name or path.
- *
- * Callers must validate that at least one of collection/path is provided
- * before calling this function (throw CollectionNotProvidedError from api/errors).
+ * Input for resolveCollection — 3-priority resolution:
+ *   collection > project > path > error.
  */
-export function resolveCollection(collection?: string, path?: string): { collectionName: string; path?: string } {
-  if (!collection && !path) {
-    throw new CollectionNotProvidedError();
+export interface ResolveInput {
+  collection?: string;
+  project?: string;
+  path?: string;
+}
+
+/**
+ * Resolve a collection identifier from a request.
+ *
+ * Priority:
+ *   1. `collection` — explicit Qdrant collection name, used as-is.
+ *   2. `project` — registry lookup by sticky name; throws if unknown.
+ *   3. `path` — deterministic hash of the absolute path.
+ *   4. none — CollectionNotProvidedError.
+ */
+export function resolveCollection(
+  registry: CollectionRegistry,
+  input: ResolveInput,
+): { collectionName: string; path?: string } {
+  if (input.collection) {
+    return { collectionName: input.collection, path: input.path };
   }
-  const collectionName = collection || resolveCollectionName(path as string);
-  return { collectionName, path };
+  if (input.project) {
+    const entry = registry.findByName(input.project);
+    if (!entry) {
+      const available = registry
+        .list()
+        .map((e) => e.name)
+        .filter((n): n is string => n !== null);
+      throw new ProjectNotRegisteredError(input.project, available);
+    }
+    return { collectionName: entry.collectionName, path: entry.path };
+  }
+  if (input.path) {
+    return {
+      collectionName: resolveCollectionName(input.path),
+      path: input.path,
+    };
+  }
+  throw new CollectionNotProvidedError();
 }

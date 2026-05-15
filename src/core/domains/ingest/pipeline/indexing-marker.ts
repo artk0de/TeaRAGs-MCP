@@ -14,6 +14,11 @@ import { INDEXING_METADATA_ID } from "../constants.js";
  *
  * When `complete=false`: creates a new marker point (start of indexing).
  * When `complete=true`: updates the existing marker to mark completion.
+ *
+ * `teaRagsVersion` (when provided) is written into the initial marker payload
+ * so that `register_project` on an already-indexed collection can recover it
+ * via `tryEnrichFromQdrant` — the registry stores it but the registry file
+ * may be missing or stale when registering an out-of-band collection.
  */
 export async function storeIndexingMarker(
   qdrant: QdrantManager,
@@ -21,13 +26,17 @@ export async function storeIndexingMarker(
   collectionName: string,
   complete: boolean,
   modelInfo?: { model: string; contextLength: number; dimensions: number },
+  teaRagsVersion?: string,
 ): Promise<void> {
   try {
     if (complete) {
+      const completedAt = new Date().toISOString();
       try {
         await qdrant.setPayload(
           collectionName,
-          { indexingComplete: true, completedAt: new Date().toISOString() },
+          // `indexedAt` mirrors `completedAt` for registry-enrichment readers
+          // that want a single source-of-truth field name.
+          { indexingComplete: true, completedAt, indexedAt: completedAt },
           { points: [INDEXING_METADATA_ID], wait: true },
         );
       } catch (error) {
@@ -41,7 +50,8 @@ export async function storeIndexingMarker(
             payload: {
               _type: "indexing_metadata",
               indexingComplete: true,
-              completedAt: new Date().toISOString(),
+              completedAt,
+              indexedAt: completedAt,
             },
           },
         ]);
@@ -58,6 +68,7 @@ export async function storeIndexingMarker(
       indexingComplete: false,
       startedAt: new Date().toISOString(),
       embeddingModel: embeddings.getModel(),
+      ...(teaRagsVersion && teaRagsVersion.length > 0 && { teaRagsVersion }),
       ...(modelInfo && { modelInfo }),
     };
 

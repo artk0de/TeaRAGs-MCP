@@ -1,8 +1,13 @@
+import { mkdtempSync, rmSync } from "node:fs";
 import { realpath } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../src/core/api/errors.js";
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../src/core/infra/collection-name.js";
+import { CollectionRegistry } from "../../../src/core/infra/registry/index.js";
 
 describe("collection-name utilities", () => {
   describe("resolveCollectionName", () => {
@@ -37,26 +42,57 @@ describe("collection-name utilities", () => {
     });
   });
 
-  describe("resolveCollection", () => {
-    it("returns collection name when provided directly", () => {
-      const result = resolveCollection("my_collection", undefined);
-      expect(result.collectionName).toBe("my_collection");
-      expect(result.path).toBeUndefined();
+  describe("resolveCollection (new signature)", () => {
+    let dir: string;
+    let registry: CollectionRegistry;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), "rc-"));
+      registry = new CollectionRegistry(dir);
     });
 
-    it("resolves collection name from path", () => {
-      const result = resolveCollection(undefined, "/tmp/project");
-      expect(result.collectionName).toMatch(/^code_[a-f0-9]{8}$/);
-      expect(result.path).toBe("/tmp/project");
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
     });
 
-    it("prefers collection over path", () => {
-      const result = resolveCollection("explicit", "/tmp/project");
-      expect(result.collectionName).toBe("explicit");
+    it("priority 1: collection wins over everything", () => {
+      const out = resolveCollection(registry, {
+        collection: "explicit",
+        project: "x",
+        path: "/x",
+      });
+      expect(out.collectionName).toBe("explicit");
     });
 
-    it("throws programming error when neither provided", () => {
-      expect(() => resolveCollection(undefined, undefined)).toThrow(/collection.*or.*path.*required/i);
+    it("priority 2: project resolves via registry", () => {
+      registry.record({
+        collectionName: "code_abc",
+        path: "/repo",
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "u",
+        indexedAt: "t",
+        teaRagsVersion: "v",
+        chunksCount: 0,
+      });
+      registry.setName("code_abc", "alpha");
+      const out = resolveCollection(registry, { project: "alpha" });
+      expect(out.collectionName).toBe("code_abc");
+      expect(out.path).toBe("/repo");
+    });
+
+    it("priority 2 failure: unknown project throws ProjectNotRegisteredError", () => {
+      expect(() => resolveCollection(registry, { project: "ghost" })).toThrow(ProjectNotRegisteredError);
+    });
+
+    it("priority 3: path computes deterministic hash", () => {
+      const out = resolveCollection(registry, { path: "/some/abs/path" });
+      expect(out.collectionName).toMatch(/^code_[a-f0-9]{8}$/);
+      expect(out.path).toBe("/some/abs/path");
+    });
+
+    it("priority 4: nothing -> CollectionNotProvidedError", () => {
+      expect(() => resolveCollection(registry, {})).toThrow(CollectionNotProvidedError);
     });
   });
 });

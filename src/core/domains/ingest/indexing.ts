@@ -116,6 +116,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         await this.finalizeAlias(collectionName, setup);
         await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true, overrides?.modelInfo);
         await this.saveSnapshot(absolutePath, collectionName, files, stats, setup.aliasVersion);
+        await this.recordRegistryEntry(collectionName, absolutePath);
 
         const enrichmentResult = getEnrichmentStatus();
         stats.enrichmentStatus = enrichmentResult.status;
@@ -228,7 +229,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
 
     const schemaManager = this.deps.createSchemaManager(versionedName);
     await schemaManager.initializeSchema(versionedName);
-    await storeIndexingMarker(this.qdrant, this.embeddings, versionedName, false, undefined);
+    await storeIndexingMarker(this.qdrant, this.embeddings, versionedName, false, undefined, this.teaRagsVersion);
 
     return {
       ready: true,

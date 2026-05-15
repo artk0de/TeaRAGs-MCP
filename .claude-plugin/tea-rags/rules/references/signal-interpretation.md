@@ -264,40 +264,37 @@ pair rotation, knowledge transfer, or splitting ownership.
 
 **What it is:** Stable-looking, low-churn module owned by a single author whose
 commit history is dominated by bug fixes. Distinct from Toxic silo (requires
-high churn or legacy age) and Fragile legacy (requires high age). The file
-does not look like a hotspot — it has not been touched recently — but every
-historical commit to it has been a regression fix. Often a domain-edge
-component (calculation, invariant enforcement, data conversion) where each
-defect is subtle and the silo owner is the only person who knows the
-invariants.
+high churn or legacy age) and Fragile legacy (requires high age). The file does
+not look like a hotspot — it has not been touched recently — but every
+historical commit to it has been a regression fix. Often a domain-edge component
+(calculation, invariant enforcement, data conversion) where each defect is
+subtle and the silo owner is the only person who knows the invariants.
 
 **Remediation:**
 
-- Regression-suite hardening on the silo owner's invariants before any
-  change.
+- Regression-suite hardening on the silo owner's invariants before any change.
 - Pair review on touch — the silo owner co-reviews any external change.
 - NOT merge coordination (no merge contention — file is calm).
 - NOT strangler rewrite (no legacy debt — file is recent).
 
 **Disambiguators:**
 
-- **Confidence-clamped label suppresses small-N matches automatically.**
-  When the unified `stats.confidence` mechanism is active,
-  `bugFixRate.label` for files with `commitCount < 5` is clamped to
-  `healthy` and `< 10` to `concerning`. A noise-only file (e.g. 2 fix
-  commits out of 3) does NOT satisfy the `bugFixRate concerning+` floor
-  of this signature — it gets `healthy` and falls out of Fragile silo.
-  Correct behavior; classification into a real risk tier should require
-  structural evidence, not small-N noise.
-- **Edge band `commitCount` 5..9.** Raw `bugFixRate` ≥ critical threshold
-  gets clamped to `concerning`, which DOES match the signature. Mark
-  such classifications as "moderate confidence" in risk reports.
+- **Confidence-clamped label suppresses small-N matches automatically.** When
+  the unified `stats.confidence` mechanism is active, `bugFixRate.label` for
+  files with `commitCount < 5` is clamped to `healthy` and `< 10` to
+  `concerning`. A noise-only file (e.g. 2 fix commits out of 3) does NOT satisfy
+  the `bugFixRate concerning+` floor of this signature — it gets `healthy` and
+  falls out of Fragile silo. Correct behavior; classification into a real risk
+  tier should require structural evidence, not small-N noise.
+- **Edge band `commitCount` 5..9.** Raw `bugFixRate` ≥ critical threshold gets
+  clamped to `concerning`, which DOES match the signature. Mark such
+  classifications as "moderate confidence" in risk reports.
 - **If reading raw values rather than labels:** apply anti-pattern #8
   (class-level small-N rule). Don't conclude "Fragile silo" from raw
   `value: 63%` alone if `commitCount < 5`.
-- **Upgrade paths:** if `bugFixRate concerning+` AND `commitCount high+`
-  → upgrade to **Bug attractor** when `imports ↓`, or **Toxic silo**
-  when churn rises with it.
+- **Upgrade paths:** if `bugFixRate concerning+` AND `commitCount high+` →
+  upgrade to **Bug attractor** when `imports ↓`, or **Toxic silo** when churn
+  rises with it.
 
 To discover Fragile silo files via search, see the `Fragile Silo discovery`
 recipe in `use-cases.md`.
@@ -413,20 +410,19 @@ Agents consistently make these mistakes when reading overlay:
    yourself.
 
    **How to read confidence-aware signals:**
-
    - **Always pair the signal's label with its `support` sibling's label.** If
      `support` is `low` or below the signal's stated thresholds → treat the
-     signal's value/label as suggestive only. Use it to _ask_ "is this worth
-     a closer look?", not to conclude.
+     signal's value/label as suggestive only. Use it to _ask_ "is this worth a
+     closer look?", not to conclude.
    - **`support` typical+ → trust the label.** The structural fix has left the
      label as-is because the sample is large enough.
-   - **Discoverability:** the per-signal `confidence` block is published via
-     the index-metrics resource — `support` field name and threshold rules are
+   - **Discoverability:** the per-signal `confidence` block is published via the
+     index-metrics resource — `support` field name and threshold rules are
      introspectable. Don't guess; look up.
 
-   Examples of confidence-aware signals (current set will grow):
-   `bugFixRate` (support `commitCount`). The full authoritative set is the
-   union of raw signal descriptors carrying `stats.confidence`.
+   Examples of confidence-aware signals (current set will grow): `bugFixRate`
+   (support `commitCount`). The full authoritative set is the union of raw
+   signal descriptors carrying `stats.confidence`.
 
 ## Custom rerank weights for architectural queries
 

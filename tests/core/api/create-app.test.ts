@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
 import { createApp, type AppDeps, type ExploreFacade, type IngestFacade } from "../../../src/core/api/index.js";
+import type { ProjectRegistryOps } from "../../../src/core/api/internal/ops/project-registry-ops.js";
 import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
 import type { SchemaDriftMonitor } from "../../../src/core/infra/schema-drift-monitor.js";
 
@@ -44,6 +45,9 @@ function createMockExploreFacade(): ExploreFacade {
     hybridSearch: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
     rankChunks: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
     searchCode: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
+    findSimilar: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
+    findSymbol: vi.fn().mockResolvedValue({ results: [], driftWarning: null }),
+    getIndexMetrics: vi.fn().mockResolvedValue({ total: 0, byLanguage: {}, byType: {}, signals: {} }),
   } as unknown as ExploreFacade;
 }
 
@@ -88,6 +92,14 @@ function createMockDriftMonitor(): SchemaDriftMonitor {
   } as unknown as SchemaDriftMonitor;
 }
 
+function createMockProjectRegistryOps(): ProjectRegistryOps {
+  return {
+    register: vi.fn().mockResolvedValue({ collectionName: "code_test", alreadyIndexed: false }),
+    list: vi.fn().mockResolvedValue({ projects: [] }),
+    unregister: vi.fn().mockResolvedValue({ removed: false }),
+  } as unknown as ProjectRegistryOps;
+}
+
 function createMockDeps(): AppDeps {
   return {
     qdrant: createMockQdrant(),
@@ -96,6 +108,8 @@ function createMockDeps(): AppDeps {
     ingest: createMockIngestFacade(),
     reranker: createMockReranker(),
     schemaDriftMonitor: createMockDriftMonitor(),
+    projectRegistryOps: createMockProjectRegistryOps(),
+    quantizationScalar: true,
   };
 }
 
@@ -179,47 +193,51 @@ describe("createApp", () => {
       expect(deps.explore.searchCode).toHaveBeenCalledWith(req);
     });
 
-    it("delegates findSimilar to ExploreFacade.findSimilar", async () => {
-      // The ExploreFacade mock doesn't define findSimilar by default; add it
-      // and call through to verify the App lambda forwards verbatim.
-      (deps.explore as any).findSimilar = vi.fn().mockResolvedValue({ results: [], driftWarning: null });
+    it("delegates findSimilar to ExploreFacade", async () => {
       const app = createApp(deps);
-      const req = { collection: "col", positiveIds: ["uuid-1"] };
-      await app.findSimilar(req as any);
-
-      expect((deps.explore as any).findSimilar).toHaveBeenCalledWith(req);
+      const req = { positive: ["x"], collection: "c" };
+      await app.findSimilar(req as never);
+      expect(deps.explore.findSimilar).toHaveBeenCalledWith(req);
     });
 
-    it("delegates findSymbol to ExploreFacade.findSymbol", async () => {
-      (deps.explore as any).findSymbol = vi.fn().mockResolvedValue({ results: [], driftWarning: null });
+    it("delegates findSymbol to ExploreFacade", async () => {
       const app = createApp(deps);
-      const req = { collection: "col", symbol: "FooClass" };
-      await app.findSymbol(req as any);
-
-      expect((deps.explore as any).findSymbol).toHaveBeenCalledWith(req);
+      const req = { symbol: "Foo.bar", collection: "c" };
+      await app.findSymbol(req as never);
+      expect(deps.explore.findSymbol).toHaveBeenCalledWith(req);
     });
 
-    it("delegates getIndexMetrics to ExploreFacade.getIndexMetrics", async () => {
-      (deps.explore as any).getIndexMetrics = vi.fn().mockResolvedValue({
-        collection: "code_xyz",
-        totalChunks: 0,
-        totalFiles: 0,
-        distributions: {
-          language: {},
-          chunkType: {},
-          documentation: { docs: 0, code: 0 },
-          topAuthors: [],
-          othersCount: 0,
-          totalFiles: 0,
-        },
-        signals: {},
-        enrichment: undefined,
-      });
+    it("delegates getIndexMetrics to ExploreFacade", async () => {
       const app = createApp(deps);
-      const result = await app.getIndexMetrics("/foo");
+      await app.getIndexMetrics("/foo");
+      expect(deps.explore.getIndexMetrics).toHaveBeenCalledWith("/foo");
+    });
+  });
 
-      expect((deps.explore as any).getIndexMetrics).toHaveBeenCalledWith("/foo");
-      expect(result.collection).toBe("code_xyz");
+  // =========================================================================
+  // Project registry delegation
+  // =========================================================================
+
+  describe("project registry delegation", () => {
+    it("delegates registerProject to ProjectRegistryOps", async () => {
+      const app = createApp(deps);
+      const out = await app.registerProject({ path: "/repo", name: "alpha" });
+      expect(deps.projectRegistryOps.register).toHaveBeenCalledWith({ path: "/repo", name: "alpha" });
+      expect(out.collectionName).toBe("code_test");
+    });
+
+    it("delegates listProjects to ProjectRegistryOps", async () => {
+      const app = createApp(deps);
+      const out = await app.listProjects();
+      expect(deps.projectRegistryOps.list).toHaveBeenCalled();
+      expect(out.projects).toEqual([]);
+    });
+
+    it("delegates unregisterProject to ProjectRegistryOps", async () => {
+      const app = createApp(deps);
+      const out = await app.unregisterProject({ name: "alpha" });
+      expect(deps.projectRegistryOps.unregister).toHaveBeenCalledWith({ name: "alpha" });
+      expect(out.removed).toBe(false);
     });
   });
 

@@ -58,6 +58,20 @@ sidebar_position: 3
 | **Git not available** | `TRAJECTORY_GIT_NOT_AVAILABLE`   | Ensure git is installed and in PATH |
 | **File parse failed** | `TRAJECTORY_STATIC_PARSE_FAILED` | File may have syntax errors         |
 
+## Project Registry Issues
+
+| Issue                                                    | Error Code                       | Solution                                                                                                                                                                                                                                          |
+| -------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`registry.json` corrupt or unsupported version**       | `INFRA_REGISTRY_FILE_CORRUPTED`  | The old file is preserved at `registry.json.corrupt-<ISO>.bak`; tea-rags continues with an empty in-memory map. Run `tea-rags doctor --recover-registry` to repopulate stubs from live Qdrant state.                                              |
+| **Atomic write of `registry.json` failed**               | `INFRA_REGISTRY_WRITE_FAILED`    | Check disk space and write permissions on `$TEA_RAGS_DATA_DIR` (default `~/.tea-rags/`). Retry — non-fatal for indexing, the pipeline logs and continues.                                                                                         |
+| **Concurrent registry writers exhausted CAS budget**     | `INFRA_REGISTRY_CONCURRENCY`     | 5 CAS attempts with exponential backoff (10ms → 160ms) failed. Sustained contention from parallel tea-rags processes — check for runaway processes (`ps aux \| grep tea-rags`). Retrying usually resolves transient cases.                        |
+| **Project name not unique (infra defensive check)**      | `INFRA_REGISTRY_NAME_CONFLICT`   | The user-facing surface is `INPUT_PROJECT_NAME_NOT_UNIQUE` (the api layer validates first); this infra-level error only fires when a caller bypasses the api. Choose a different name, or `tea-rags projects unregister --name <alias>` first.    |
+| **Project alias has empty path (recovered stub)**        | `INPUT_PROJECT_PATH_MISSING`     | Registry entry exists for the alias but its `path` is empty — typical for stubs produced by `tea-rags doctor --recover-registry`. Re-register: `tea-rags projects register --path <dir> --name <alias>`.                                          |
+| **Project alias unknown**                                | `INPUT_PROJECT_NOT_REGISTERED`   | The `--project` flag or MCP `project` parameter referenced a name not in the registry. Run `tea-rags projects list` to see registered aliases, or `tea-rags projects register --path <dir> --name <alias>` to add one.                            |
+
+See **[Project Registry](/usage/advanced/project-registry)** for the full
+guide, including the doctor command and orphan-collection workflows.
+
 ## Configuration Issues
 
 | Issue                       | Error Code             | Solution                              |
@@ -120,6 +134,15 @@ Full table of all structured error codes returned by the MCP server.
 | `TRAJECTORY_STATIC_PARSE_FAILED`       | `StaticParseFailedError`     | 500  | Failed to parse "`{file}`"                                     | File may have syntax errors                                            |
 | `CONFIG_VALUE_INVALID`                 | `ConfigValueInvalidError`    | 400  | Invalid value "`{value}`" for field "`{field}`"                | Expected one of: `{expected}`                                          |
 | `CONFIG_VALUE_MISSING`                 | `ConfigValueMissingError`    | 400  | Required field "`{field}`" is not set                          | Set the `{envVar}` environment variable                                |
+| `INFRA_REGISTRY_FILE_CORRUPTED`        | `RegistryFileCorruptedError` | 500  | Registry file at "`{path}`" is corrupted: `{reason}`           | Delete the file and re-run indexing, or run `tea-rags doctor` to regenerate from Qdrant |
+| `INFRA_REGISTRY_WRITE_FAILED`          | `RegistryWriteError`         | 500  | Failed to write registry file at "`{path}`"                    | Check disk space and write permissions on the data directory          |
+| `INFRA_REGISTRY_CONCURRENCY`           | `RegistryConcurrencyError`   | 503  | Registry file at "`{path}`" was modified concurrently across `{attempts}` attempts | Retry the operation; if it persists, check for runaway tea-rags processes |
+| `INFRA_REGISTRY_NAME_CONFLICT`         | `RegistryNameConflictError`  | 409  | Project name "`{name}`" is not unique — already used by "`{existingCollectionName}`" | Pre-validate via `findByName` before `setName`, or surface as 409 to the user |
+| `INPUT_PROJECT_NOT_REGISTERED`         | `ProjectNotRegisteredError`  | 400  | Project "`{name}`" is not registered. Available: `{list}`      | Register the project via `index_codebase`, or pick a name from the available list |
+| `INPUT_PROJECT_NAME_NOT_UNIQUE`        | `ProjectNameNotUniqueError`  | 400  | Project name "`{name}`" is not unique — already used by "`{existingCollectionName}`" | Choose a different name or remove the existing project                |
+| `INPUT_PROJECT_NAME_INVALID`           | `ProjectNameInvalidError`    | 400  | Project name "`{name}`" is invalid: `{reasonPhrase}`           | Names must be non-empty, within length limits, and match the allowed character set |
+| `INPUT_PATH_NOT_EXISTS`                | `PathDoesNotExistError`      | 400  | Path "`{path}`" does not exist                                 | Provide an absolute path to an existing directory                     |
+| `INPUT_PROJECT_PATH_MISSING`           | `ProjectPathMissingError`    | 400  | Project "`{name}`" has no path stored — re-register it before using as an alias | Run `tea-rags projects register --path <dir> --name <alias>`          |
 
 ---
 

@@ -22,7 +22,7 @@ export class RecentActivityConcentrationSignal implements DerivedSignalDescripto
   readonly description =
     "Concentration of recent commits in the log window — surfaces the active author, not the long-term owner";
   readonly sources = ["file.recentDominantAuthorPct", "file.recentAuthors"];
-  private static readonly FALLBACK_THRESHOLD = 5;
+  private static readonly FALLBACK_K = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     let value: number;
     const pct = fileField(rawSignals, "recentDominantAuthorPct");
@@ -36,8 +36,10 @@ export class RecentActivityConcentrationSignal implements DerivedSignalDescripto
         return 0;
       }
     }
-    const k = ctx?.dampeningThreshold ?? RecentActivityConcentrationSignal.FALLBACK_THRESHOLD;
-    value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
+    const k =
+      ctx?.dampeningThreshold ?? ctx?.confidence?.score?.threshold ?? RecentActivityConcentrationSignal.FALLBACK_K;
+    const supportName = ctx?.confidence?.support ?? "commitCount";
+    value *= confidenceDampening(fileNum(rawSignals, supportName), k);
     return value;
   }
 }

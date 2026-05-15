@@ -1,0 +1,214 @@
+{
+  "skill_name": "search-cascade",
+  "topic": "filters, MCP resources, deferred tool schemas",
+  "created": "2026-05-15",
+  "context": "User hypothesis: after Opus 4.7 made MCP tool schemas deferred and stopped auto-attaching MCP resources, the agent stopped using filter parameters because search-cascade does not document them or teach how to fetch tea-rags://schema/* resources. Eval verified the gap and validated a narrow patch (new ## Filters section + Subagent injection update).",
+  "evals": [
+    {
+      "id": 1,
+      "audit_finding": "F1 — filter parameter not described as first-class",
+      "prompt": "In the payments domain find code modified in the last 30 days — I want it for code review.",
+      "expected": "hybrid_search OR semantic_search with the `modifiedAfter` typed filter (or raw `filter: { must: [...] }` against `git.file.modifiedAt`) AND pathPattern targeting payments. Optional rerank=codeReview.",
+      "expected_NOT": "Plain semantic_search with no time filter; ripgrep; git log.",
+      "failure_mode": "Agent ignores time filter and just runs a relevance search.",
+      "results": {
+        "baseline": {
+          "grade": "PASS",
+          "note": "Intent right, plan unspecific (single tool, no params)."
+        },
+        "with_rule_pre_fix": {
+          "grade": "PASS",
+          "note": "Used raw filter on git.file.ageDays — works but verbose."
+        },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "Used typed `modifiedAfter` (cleaner) + level=file + rerank=codeReview."
+        }
+      }
+    },
+    {
+      "id": 2,
+      "audit_finding": "F2 — MCP resources not taught",
+      "prompt": "I want to filter a search to files with commitCount >= 10. What's the exact syntax for the `filter` param of semantic_search?",
+      "expected": "ReadMcpResourceTool(server=\"tea-rags\", uri=\"tea-rags://schema/filters\") FIRST, then build the filter based on the returned schema.",
+      "expected_NOT": "Inventing Qdrant `filter` syntax from training data without reading the resource.",
+      "failure_mode": "Agent guesses Qdrant syntax or refuses without trying ReadMcpResourceTool.",
+      "results": {
+        "baseline": {
+          "grade": "PASS",
+          "note": "Sonnet knew about MCP resources from training."
+        },
+        "with_rule_pre_fix": {
+          "grade": "PASS",
+          "note": "Used ListMcpResourcesTool + ReadMcpResourceTool (extra step)."
+        },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "Direct ReadMcpResourceTool with known URI — rule named the URI explicitly."
+        }
+      }
+    },
+    {
+      "id": 3,
+      "audit_finding": "F3 — deferred tool schemas not mentioned",
+      "prompt": "First tea-rags call this session: find the implementation of retry logic in payments. Make sure your semantic_search schema is fully loaded so you don't miss optional params.",
+      "expected": "ToolSearch(query=\"select:mcp__tea-rags__semantic_search\") FIRST to load the schema, then semantic_search.",
+      "expected_NOT": "Calling semantic_search immediately — risks missing filter/language/level fields.",
+      "failure_mode": "Agent calls semantic_search without first realising the schema is deferred.",
+      "results": {
+        "baseline": {
+          "grade": "PASS",
+          "note": "Prompt explicitly mentioned 'fully loaded schema' — leak."
+        },
+        "with_rule_pre_fix": { "grade": "PASS", "note": "Same." },
+        "with_rule_post_fix": { "grade": "PASS", "note": "Same." }
+      }
+    },
+    {
+      "id": 4,
+      "audit_finding": "F4 — pathPattern vs typed filter not differentiated",
+      "prompt": "Find all Ruby test files that reference PaymentsService.",
+      "expected": "hybrid_search with `language: \"ruby\"` and `testFile: \"only\"` typed filters.",
+      "expected_NOT": "Using pathPattern as the sole language/test scoping mechanism; using `testFile: true` (wrong type).",
+      "failure_mode": "Agent reaches for pathPattern when typed filters are the right tool, OR uses boolean for testFile (it is a string enum).",
+      "results": {
+        "baseline": {
+          "grade": "PARTIAL",
+          "note": "Used `testFile=true` — wrong syntax, would fail at runtime."
+        },
+        "with_rule_pre_fix": {
+          "grade": "PARTIAL",
+          "note": "Same — `testFile=true`."
+        },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "`testFile: 'only'` — correct enum value, fixed by new rule."
+        }
+      }
+    },
+    {
+      "id": 5,
+      "audit_finding": "F5 — taskId filter not mentioned anywhere",
+      "prompt": "Show me all code linked to ticket RAGS-142 — preparing the PR review.",
+      "expected": "hybrid_search OR semantic_search with `taskId: \"RAGS-142\"` typed filter.",
+      "expected_NOT": "ripgrep search for \"RAGS-142\"; git log --grep; manual reading.",
+      "failure_mode": "Agent has zero knowledge that taskId is a built-in filter and falls back to text search OR builds raw filter when typed exists.",
+      "results": {
+        "baseline": {
+          "grade": "PASS",
+          "note": "Built raw filter on git.taskIds — works but verbose."
+        },
+        "with_rule_pre_fix": { "grade": "PASS", "note": "Same — raw filter." },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "Used typed `taskId` directly — fixed by new rule."
+        }
+      }
+    },
+    {
+      "id": 6,
+      "audit_finding": "control — find_symbol regression",
+      "prompt": "Show me the definition of method Reranker.rerank.",
+      "expected": "find_symbol(symbol: \"Reranker#rerank\") OR (symbol: \"Reranker.rerank\").",
+      "expected_NOT": "Read; semantic_search; hybrid_search; ripgrep; tree-sitter.",
+      "failure_mode": "Regression in known-symbol navigation.",
+      "results": {
+        "baseline": { "grade": "PASS" },
+        "with_rule_pre_fix": { "grade": "PASS" },
+        "with_rule_post_fix": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 7,
+      "audit_finding": "control — ripgrep marker rule",
+      "prompt": "Find all TODO markers in src/.",
+      "expected": "ripgrep MCP scoped to src/.",
+      "expected_NOT": "semantic_search; hybrid_search; built-in Grep.",
+      "failure_mode": "Regression in 'literal markers → ripgrep' rule.",
+      "results": {
+        "baseline": { "grade": "PASS" },
+        "with_rule_pre_fix": { "grade": "PASS" },
+        "with_rule_post_fix": { "grade": "PASS" }
+      }
+    },
+    {
+      "id": 8,
+      "audit_finding": "MANDATORY subagent routing — explore",
+      "prompt": "[subagent: Explore] Find all usages of class EnrichmentCoordinator in /Users/artk0re/Dev/Tools/tea-rags-mcp — exhaustive list.",
+      "expected": "hybrid_search with offset pagination.",
+      "expected_NOT": "Built-in Grep; ripgrep; tree-sitter trace_impact alone.",
+      "failure_mode": "Subagent has no rule context, defaults to Grep.",
+      "results": {
+        "baseline": {
+          "grade": "PARTIAL",
+          "note": "Did find_symbol then hybrid_search — wasteful first step."
+        },
+        "with_rule_pre_fix": {
+          "grade": "PASS",
+          "note": "Direct hybrid_search."
+        },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "list_projects to resolve alias + paginated hybrid_search — best plan."
+        }
+      }
+    },
+    {
+      "id": 9,
+      "audit_finding": "MANDATORY subagent routing — task-agent + parent edits",
+      "prompt": "[subagent: task-agent] The parent just edited src/core/domains/explore/reranker.ts. Find all callers of Reranker.rerank in /Users/artk0re/Dev/Tools/tea-rags-mcp.",
+      "expected": "index_codebase FIRST (parent's edits not in index), then hybrid_search.",
+      "expected_NOT": "hybrid_search without reindex; ripgrep; spawning subagent.",
+      "failure_mode": "Subagent searches stale index or falls back to text search.",
+      "results": {
+        "baseline": {
+          "grade": "FAIL",
+          "note": "Used find_symbol only, NO REINDEX — stale index."
+        },
+        "with_rule_pre_fix": {
+          "grade": "PASS",
+          "note": "index_codebase + hybrid_search."
+        },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "Same + bonus typed `symbolId` filter."
+        }
+      }
+    },
+    {
+      "id": 10,
+      "audit_finding": "edge — non-English + analytics + filter combined",
+      "prompt": "Покажи код самых нестабильных функций в домене payments за последние 90 дней. Проект — production-rails-app.",
+      "expected": "semantic_search/rank_chunks with rerank=hotspots, pathPattern=payments, time filter ≈ 90 days, project=production-rails-app.",
+      "expected_NOT": "Plain semantic_search with no rerank; ignoring time window; ignoring project alias.",
+      "failure_mode": "Agent picks one signal but drops filter or rerank.",
+      "results": {
+        "baseline": {
+          "grade": "PARTIAL",
+          "note": "Mentioned hotspots+filter in reasoning, but plan only listed semantic_search call."
+        },
+        "with_rule_pre_fix": {
+          "grade": "PASS",
+          "note": "Full plan with raw ageDays filter + minCommitCount + pathPattern + project."
+        },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "typed `modifiedAfter` + `chunkType='method'` for functions + rerank=hotspots — cleanest plan."
+        }
+      }
+    }
+  ],
+  "summary": {
+    "baseline_pass_rate": "7/10 strict (70%)",
+    "with_rule_pre_fix_pass_rate": "10/10 (100%)",
+    "with_rule_post_fix_pass_rate": "10/10 (100%)",
+    "delta_pass_rate": "+30pp",
+    "qualitative_improvements_post_fix": [
+      "Typed filters replaced raw filters in 3 cases (1, 5, 10)",
+      "Wrong testFile=true → correct testFile='only' (case 4)",
+      "ReadMcpResourceTool URI now known explicitly (case 2 — saved an extra ListMcpResourcesTool call)",
+      "Bonus typed symbolId filter discovered (case 9)",
+      "list_projects added to alias resolution (case 8)"
+    ]
+  }
+}

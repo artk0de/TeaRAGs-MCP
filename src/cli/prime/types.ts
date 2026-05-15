@@ -9,6 +9,8 @@ import type { UpdateStatus } from "../update-check/types.js";
  */
 export interface PrimeData {
   path: string;
+  /** Registered alias for this project, null when no registry entry has a name. */
+  projectName: string | null;
   status: IndexStatus;
   metrics: IndexMetrics | null;
   drift: string | null;

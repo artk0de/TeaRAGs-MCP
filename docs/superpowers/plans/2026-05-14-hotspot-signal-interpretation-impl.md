@@ -1,21 +1,21 @@
 # Hotspot Signal Interpretation Rework — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `dinopowers:executing-plans` (NOT `superpowers:executing-plans` directly —
-> the dinopowers wrapper enriches with tea-rags signals first).
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `dinopowers:executing-plans`
+> (NOT `superpowers:executing-plans` directly — the dinopowers wrapper enriches
+> with tea-rags signals first).
 
 **Goal:** Implement a unified `stats.confidence` mechanism for signal
-descriptors (label clamp + score dampening declared once per raw signal),
-opt `bugFixRate` in as the first consumer, and complement with catalog +
-recipe documentation that names the Fragile Silo architectural pattern.
+descriptors (label clamp + score dampening declared once per raw signal), opt
+`bugFixRate` in as the first consumer, and complement with catalog + recipe
+documentation that names the Fragile Silo architectural pattern.
 
 **Architecture:** One `confidence` block per raw payload descriptor in
-`payload-signals.ts` carries both `score` (continuous dampening
-parameters, replacing today's scattered `dampeningSource`/`FALLBACK_THRESHOLD`
-in derived-signal classes) and `label` (categorical clamp rules consumed
-by the reranker's overlay label resolver). Both consumers read from the
-same descriptor — no duplication. Initial application: `bugFixRate`. Six
-follow-up signals can opt in via one-line descriptor additions.
+`payload-signals.ts` carries both `score` (continuous dampening parameters,
+replacing today's scattered `dampeningSource`/`FALLBACK_THRESHOLD` in
+derived-signal classes) and `label` (categorical clamp rules consumed by the
+reranker's overlay label resolver). Both consumers read from the same descriptor
+— no duplication. Initial application: `bugFixRate`. Six follow-up signals can
+opt in via one-line descriptor additions.
 
 **Tech Stack:** TypeScript, Zod for validation, vitest, tea-rags MCP for
 verification of the user trigger case.
@@ -34,9 +34,9 @@ worktree, in `docs/superpowers/specs/`):
 
 ## Pre-Implementation Verification (READ FIRST)
 
-Three open assumptions to verify on the first read by the executing
-agent. Each assumption resolves to "proceed as planned" or "flag the
-plan and consult user". Do NOT skip.
+Three open assumptions to verify on the first read by the executing agent. Each
+assumption resolves to "proceed as planned" or "flag the plan and consult user".
+Do NOT skip.
 
 ### V1: Does preset `description` propagate via `SchemaBuilder`?
 
@@ -48,11 +48,11 @@ grep -rn "preset.description\|presets\[.*\]\.description" src/
 ```
 
 **If `SchemaBuilder` reads `preset.description`:** Task 7 changes the
-MCP-visible API schema text. Still semver-compatible (description-only)
-but note in commit message and release notes.
+MCP-visible API schema text. Still semver-compatible (description-only) but note
+in commit message and release notes.
 
-**If `SchemaBuilder` does not consume `description`:** Task 7 is purely
-internal docstring; no MCP surface change.
+**If `SchemaBuilder` does not consume `description`:** Task 7 is purely internal
+docstring; no MCP surface change.
 
 ### V2: Do snapshot tests cover preset `description` or JSDoc text?
 
@@ -63,8 +63,8 @@ grep -rn "HotspotsPreset\|hotspots.*description\|frequently-changing" tests/
 grep -rn "__snapshots__" tests/ | head
 ```
 
-**If snapshot tests assert `HotspotsPreset.description`:** Task 7
-regenerates snapshots intentionally; +30 min effort.
+**If snapshot tests assert `HotspotsPreset.description`:** Task 7 regenerates
+snapshots intentionally; +30 min effort.
 
 **If no snapshot coverage:** Task 7 stays at ~30 min total.
 
@@ -77,13 +77,12 @@ grep -rn "confidenceDampening\|dampeningSource\|FALLBACK_THRESHOLD" \
   src/core/domains/trajectory/git/rerank/derived-signals/
 ```
 
-**If ≤2 signals with simple migration:** Task 5 covers all of them in
-one commit.
+**If ≤2 signals with simple migration:** Task 5 covers all of them in one
+commit.
 
-**If ≥3 signals or non-trivial migration shape per signal:** Task 5
-covers only `BugFixSignal`; non-bugFix migrations split off into a
-follow-up spec. State this explicitly in commit message and create a
-beads task for the follow-up.
+**If ≥3 signals or non-trivial migration shape per signal:** Task 5 covers only
+`BugFixSignal`; non-bugFix migrations split off into a follow-up spec. State
+this explicitly in commit message and create a beads task for the follow-up.
 
 ---
 
@@ -91,26 +90,26 @@ beads task for the follow-up.
 
 Impact enrichment from tea-rags (`rerank: imports+churn+ownership`):
 
-| File | Owner | Churn | Age | Notes |
-|------|-------|-------|-----|-------|
-| `src/core/contracts/types/trajectory.ts` | Artur Korochanskii (57% shared) | 15 commits high | 15d | Type contracts — compile-wide blast |
-| `src/core/domains/explore/reranker.ts` | Artur Korochanskii (68% shared) | 10 commits high | 15d | Orchestrator; integration point for Spec 3 |
-| `src/core/domains/trajectory/git/payload-signals.ts` | Artur Korochanskii (58% shared) | 6 commits typical | 0d | Descriptor opt-in location |
-| `src/core/domains/explore/label-resolver.ts` | (lower impact) | — | — | Resolver algorithm |
-| `src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts` | (lower impact) | — | — | Score-side migration target |
-| `src/core/domains/trajectory/git/rerank/derived-signals/helpers.ts` | (lower impact) | — | — | `GIT_FILE_DAMPENING` constant home |
-| `src/core/domains/trajectory/git/rerank/presets/hotspots.ts` | (lower impact) | — | — | Docstring fix (Spec 1) |
-| `.claude-plugin/tea-rags/rules/references/signal-interpretation.md` | — | — | — | Catalog + anti-pattern #8 |
-| `.claude-plugin/tea-rags/skills/risk-assessment/references/classification-tiers.md` | — | — | — | 14th tier row |
-| `.claude-plugin/tea-rags/rules/references/use-cases.md` | — | — | — | Fragile Silo recipe |
-| `.claude-plugin/tea-rags/.claude-plugin/plugin.json` | — | — | — | Minor version bump |
+| File                                                                                | Owner                           | Churn             | Age | Notes                                      |
+| ----------------------------------------------------------------------------------- | ------------------------------- | ----------------- | --- | ------------------------------------------ |
+| `src/core/contracts/types/trajectory.ts`                                            | Artur Korochanskii (57% shared) | 15 commits high   | 15d | Type contracts — compile-wide blast        |
+| `src/core/domains/explore/reranker.ts`                                              | Artur Korochanskii (68% shared) | 10 commits high   | 15d | Orchestrator; integration point for Spec 3 |
+| `src/core/domains/trajectory/git/payload-signals.ts`                                | Artur Korochanskii (58% shared) | 6 commits typical | 0d  | Descriptor opt-in location                 |
+| `src/core/domains/explore/label-resolver.ts`                                        | (lower impact)                  | —                 | —   | Resolver algorithm                         |
+| `src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts`                 | (lower impact)                  | —                 | —   | Score-side migration target                |
+| `src/core/domains/trajectory/git/rerank/derived-signals/helpers.ts`                 | (lower impact)                  | —                 | —   | `GIT_FILE_DAMPENING` constant home         |
+| `src/core/domains/trajectory/git/rerank/presets/hotspots.ts`                        | (lower impact)                  | —                 | —   | Docstring fix (Spec 1)                     |
+| `.claude-plugin/tea-rags/rules/references/signal-interpretation.md`                 | —                               | —                 | —   | Catalog + anti-pattern #8                  |
+| `.claude-plugin/tea-rags/skills/risk-assessment/references/classification-tiers.md` | —                               | —                 | —   | 14th tier row                              |
+| `.claude-plugin/tea-rags/rules/references/use-cases.md`                             | —                               | —                 | —   | Fragile Silo recipe                        |
+| `.claude-plugin/tea-rags/.claude-plugin/plugin.json`                                | —                               | —                 | —   | Minor version bump                         |
 
 **Ownership flag:** zero silo-owned files in scope. All shared (≥2
 contributors). No mandatory owner-review gating. Top blast-radius:
 `trajectory.ts` (types propagate), `reranker.ts` (integration point).
 
-**Coordinated change candidates:** none — empty taskIds across the set.
-Sequence freely.
+**Coordinated change candidates:** none — empty taskIds across the set. Sequence
+freely.
 
 ---
 
@@ -152,8 +151,8 @@ bd label add $EPIC_ID api
 
 **Step 4: Create 11 tasks linked to the epic**
 
-For each Task below, run (substituting `<title>` and `<label>` per the
-table after this step):
+For each Task below, run (substituting `<title>` and `<label>` per the table
+after this step):
 
 ```bash
 TASK_ID=$(bd create --title="<title>" \
@@ -166,19 +165,19 @@ echo "Task N → $TASK_ID"
 
 Task table (run loop 11 times):
 
-| N | Title | Label |
-|---|-------|-------|
-| 1 | Add SignalConfidence + ConfidenceClampRule types + Zod | architecture |
-| 2 | Confidence-aware label resolver | architecture |
-| 3 | Plumb confidence context through reranker | architecture |
-| 4 | bugFixRate descriptor opts in to unified confidence | metrics |
-| 5 | BugFixSignal reads dampening from descriptor | architecture |
-| 6 | Unit tests for unified confidence mechanism | metrics |
-| 7 | Align HotspotsPreset docstring with weights | docs |
-| 8 | Fragile Silo pattern + anti-pattern + recipe (docs bundle) | dx |
-| 9 | Record bugProneness signal as deferred | architecture |
-| 10 | tea-rags plugin minor bump | dx |
-| 11 | Pre-merge verification | metrics |
+| N   | Title                                                      | Label        |
+| --- | ---------------------------------------------------------- | ------------ |
+| 1   | Add SignalConfidence + ConfidenceClampRule types + Zod     | architecture |
+| 2   | Confidence-aware label resolver                            | architecture |
+| 3   | Plumb confidence context through reranker                  | architecture |
+| 4   | bugFixRate descriptor opts in to unified confidence        | metrics      |
+| 5   | BugFixSignal reads dampening from descriptor               | architecture |
+| 6   | Unit tests for unified confidence mechanism                | metrics      |
+| 7   | Align HotspotsPreset docstring with weights                | docs         |
+| 8   | Fragile Silo pattern + anti-pattern + recipe (docs bundle) | dx           |
+| 9   | Record bugProneness signal as deferred                     | architecture |
+| 10  | tea-rags plugin minor bump                                 | dx           |
+| 11  | Pre-merge verification                                     | metrics      |
 
 **Step 5: Add sequential dependencies (Task N depends on Task N-1)**
 
@@ -197,8 +196,8 @@ bd show $EPIC_ID
 bd ready
 ```
 
-Expected: epic shows 11 children; `bd ready` returns Task 1 as the only
-ready task.
+Expected: epic shows 11 children; `bd ready` returns Task 1 as the only ready
+task.
 
 **Step 7: Commit beads state**
 
@@ -212,18 +211,17 @@ bd dolt push
 
 ## Task 1: Add SignalConfidence + ConfidenceClampRule types + Zod
 
-**Spec reference:** Spec 3 D1 + D5 (types only — descriptor opt-in is
-Task 4).
+**Spec reference:** Spec 3 D1 + D5 (types only — descriptor opt-in is Task 4).
 
 **Files:**
-- Modify: `src/core/contracts/types/trajectory.ts` (extend
-  `SignalStatsRequest`)
+
+- Modify: `src/core/contracts/types/trajectory.ts` (extend `SignalStatsRequest`)
 - Create OR modify Zod schemas alongside (likely
-  `src/core/contracts/types/trajectory.ts` or a sibling `*-zod.ts` —
-  agent decides based on existing convention found via:
+  `src/core/contracts/types/trajectory.ts` or a sibling `*-zod.ts` — agent
+  decides based on existing convention found via:
   `grep -rn "z.object\|zod" src/core/contracts/types/`)
-- Create: `tests/core/contracts/types/signal-confidence.test.ts` (Zod
-  validation tests only)
+- Create: `tests/core/contracts/types/signal-confidence.test.ts` (Zod validation
+  tests only)
 
 **Step 1: Mark task in_progress**
 
@@ -234,15 +232,15 @@ bd update <task1-id> --status=in_progress
 **Step 2: Write failing Zod validation tests first**
 
 Create the test file enumerating:
+
 - valid `confidence` block with both `score` and `label` sub-blocks
 - valid `confidence` with only `score`
 - valid `confidence` with only `label`
 - invalid: `label.rules[].ceiling` not in `labels` values → reject
 - invalid: `support` not a string → reject
-- invalid: `rules` not sorted ascending by `whenSupportBelow` (or
-  unsorted — agent decides whether to enforce sort at validation time
-  or runtime; spec doesn't pin; default: allow unsorted, resolver
-  sorts at use)
+- invalid: `rules` not sorted ascending by `whenSupportBelow` (or unsorted —
+  agent decides whether to enforce sort at validation time or runtime; spec
+  doesn't pin; default: allow unsorted, resolver sorts at use)
 
 Run:
 
@@ -255,15 +253,17 @@ Expected: FAIL (`SignalConfidence` not defined).
 **Step 3: Implement types**
 
 Per Spec 3 D5, define in `trajectory.ts`:
+
 - `interface SignalConfidence` with `support: string`, optional
-  `score: { threshold: number }`, optional `label: { rules: ConfidenceClampRule[] }`
+  `score: { threshold: number }`, optional
+  `label: { rules: ConfidenceClampRule[] }`
 - `interface ConfidenceClampRule` with `whenSupportBelow: number`,
   `ceiling: string`
 - Extend `SignalStatsRequest` with optional `confidence?: SignalConfidence`
 
 Add Zod schemas next to existing schema definitions. Cross-validate
-`ceiling ∈ Object.values(labels)` either inline in the Zod refinement or
-in a separate validator that loads alongside descriptors.
+`ceiling ∈ Object.values(labels)` either inline in the Zod refinement or in a
+separate validator that loads alongside descriptors.
 
 **Step 4: Run tests to verify they pass**
 
@@ -307,9 +307,10 @@ bd close <task1-id> --reason="types landed; descriptor opt-in in Task 4"
 **Spec reference:** Spec 3 D3 + D5 (algorithm).
 
 **Files:**
+
 - Modify: `src/core/domains/explore/label-resolver.ts`
-- Test: `tests/core/domains/explore/label-resolver.test.ts`
-  (create if absent; if present, extend)
+- Test: `tests/core/domains/explore/label-resolver.test.ts` (create if absent;
+  if present, extend)
 
 **Step 1: Mark in_progress**
 
@@ -320,17 +321,18 @@ bd update <task2-id> --status=in_progress
 **Step 2: Write failing resolver tests**
 
 Cover, per Spec 3 D5 resolver algorithm + Acceptance Criteria 5-6:
+
 - descriptor without `confidence` → no-op (base label returned)
-- descriptor with `confidence.label` but missing support in
-  `siblingValues` → no-op
-- value `>= p95` percentile (would be `critical`) + support `< 5` →
-  return `typical`
+- descriptor with `confidence.label` but missing support in `siblingValues` →
+  no-op
+- value `>= p95` percentile (would be `critical`) + support `< 5` → return
+  `typical`
 - same value + support `5..9` → return `concerning`
 - same value + support `>= 10` → return `critical` (unchanged)
-- ceiling cannot RAISE severity (if base label is `healthy` and
-  ceiling rule says `concerning`, result stays `healthy`)
-- synthetic descriptor with `support: "fooCount"` and arbitrary rules
-  behaves identically to `bugFixRate`-specific shape
+- ceiling cannot RAISE severity (if base label is `healthy` and ceiling rule
+  says `concerning`, result stays `healthy`)
+- synthetic descriptor with `support: "fooCount"` and arbitrary rules behaves
+  identically to `bugFixRate`-specific shape
 
 Run:
 
@@ -343,19 +345,20 @@ Expected: FAIL (algorithm not yet implementing confidence).
 **Step 3: Implement updated resolver**
 
 Per Spec 3 D3, extend `resolveLabel`:
+
 - Accept optional `LabelContext { siblingValues?, descriptor? }`.
 - Compute base label via existing percentile binning.
 - If `descriptor.stats.confidence?.label` undefined → return base.
 - If `support = siblingValues[confidence.support]` undefined → return base.
-- Walk `confidence.label.rules` ascending by `whenSupportBelow`. First
-  matching rule (`support < rule.whenSupportBelow`) provides ceiling.
-- Compare ceiling to base label via label-ordering derived from
-  `labels` percentile keys (lower percentile = less severe). Return
-  less-severe of {base, ceiling}.
+- Walk `confidence.label.rules` ascending by `whenSupportBelow`. First matching
+  rule (`support < rule.whenSupportBelow`) provides ceiling.
+- Compare ceiling to base label via label-ordering derived from `labels`
+  percentile keys (lower percentile = less severe). Return less-severe of {base,
+  ceiling}.
 
-Label-ordering helper: given the `labels` map (e.g. `{p50: "healthy",
-p75: "concerning", p95: "critical"}`), order is ascending percentile.
-A label is "less severe" if its percentile key is lower.
+Label-ordering helper: given the `labels` map (e.g.
+`{p50: "healthy", p75: "concerning", p95: "critical"}`), order is ascending
+percentile. A label is "less severe" if its percentile key is lower.
 
 **Step 4: Run resolver tests**
 
@@ -375,10 +378,10 @@ Run:
 npm test
 ```
 
-Expected: PASS or fail only in areas Task 3 will touch (`reranker.ts`
-hasn't been updated yet — if reranker tests fail because they don't
-pass `descriptor`, that's expected; document but don't fix in Task 2).
-If unrelated tests fail, STOP and consult.
+Expected: PASS or fail only in areas Task 3 will touch (`reranker.ts` hasn't
+been updated yet — if reranker tests fail because they don't pass `descriptor`,
+that's expected; document but don't fix in Task 2). If unrelated tests fail,
+STOP and consult.
 
 **Step 6: Commit**
 
@@ -402,10 +405,11 @@ bd close <task2-id>
 `ExtractContext.confidence` from raw descriptor).
 
 **Files:**
-- Modify: `src/core/domains/explore/reranker.ts`
-  (focus areas: `applyLabelResolution` at lines ~420-465,
-  `extractAllDerived` at lines ~282-317, `buildOverlay` at lines
-  ~362-418 — verify exact locations via current code)
+
+- Modify: `src/core/domains/explore/reranker.ts` (focus areas:
+  `applyLabelResolution` at lines ~420-465, `extractAllDerived` at lines
+  ~282-317, `buildOverlay` at lines ~362-418 — verify exact locations via
+  current code)
 - Test: `tests/core/domains/explore/reranker.test.ts` (extend)
 
 **Step 1: Mark in_progress**
@@ -417,12 +421,13 @@ bd update <task3-id> --status=in_progress
 **Step 2: Write reranker integration tests**
 
 Cover:
-- reranker, given a payload with `bugFixRate=63, commitCount=3` and a
-  mock descriptor declaring `confidence.label.rules`, emits overlay
-  with `bugFixRate.label === "healthy"` and raw `value === 63`.
+
+- reranker, given a payload with `bugFixRate=63, commitCount=3` and a mock
+  descriptor declaring `confidence.label.rules`, emits overlay with
+  `bugFixRate.label === "healthy"` and raw `value === 63`.
 - reranker passes `ExtractContext.confidence` (with `support` and
-  `score.threshold`) to derived-signal extract when raw descriptor
-  declares `confidence.score`.
+  `score.threshold`) to derived-signal extract when raw descriptor declares
+  `confidence.score`.
 - when descriptor has no `confidence` block → no-op pass-through.
 
 Run:
@@ -436,15 +441,15 @@ Expected: FAIL (reranker plumbing not yet present).
 **Step 3: Implement reranker plumbing**
 
 Per Spec 3 D4:
-- Build scope-aware `siblingValues` map at the same scope (file or
-  chunk) as the signal being labeled. Helper `collectNumericSiblings`
-  if not already present.
+
+- Build scope-aware `siblingValues` map at the same scope (file or chunk) as the
+  signal being labeled. Helper `collectNumericSiblings` if not already present.
 - Pass `{siblingValues, descriptor}` to `resolveLabel`.
-- For derived-signal extraction (`extractAllDerived` or similar): when
-  raw descriptor declares `confidence.score`, build
-  `ExtractContext.confidence = { support, threshold }` so derived
-  classes can call `confidenceDampening(supportValue, threshold)`
-  without hardcoded constants.
+- For derived-signal extraction (`extractAllDerived` or similar): when raw
+  descriptor declares `confidence.score`, build
+  `ExtractContext.confidence = { support, threshold }` so derived classes can
+  call `confidenceDampening(supportValue, threshold)` without hardcoded
+  constants.
 
 **Step 4: Run reranker tests**
 
@@ -460,9 +465,9 @@ Expected: PASS new cases; existing reranker tests still PASS.
 npm test
 ```
 
-Expected: PASS. Spec 3 D6 promises numerical equivalence for `bugFix`
-derived score before/after refactor — confirmed in Task 6, but at this
-checkpoint nothing should regress.
+Expected: PASS. Spec 3 D6 promises numerical equivalence for `bugFix` derived
+score before/after refactor — confirmed in Task 6, but at this checkpoint
+nothing should regress.
 
 **Step 6: Commit**
 
@@ -485,6 +490,7 @@ bd close <task3-id>
 **Spec reference:** Spec 3 D5 (descriptor block contents).
 
 **Files:**
+
 - Modify: `src/core/domains/trajectory/git/payload-signals.ts`
 
 **Step 1: Mark in_progress**
@@ -511,9 +517,8 @@ confidence: {
 }
 ```
 
-Both file-scope and chunk-scope descriptors — `support: "commitCount"`
-is bare-name and resolves at the descriptor's own scope (D4 scope
-convention).
+Both file-scope and chunk-scope descriptors — `support: "commitCount"` is
+bare-name and resolves at the descriptor's own scope (D4 scope convention).
 
 **Step 3: Type-check**
 
@@ -526,8 +531,8 @@ Expected: PASS (the type was added in Task 1).
 **Step 4: Run Zod descriptor validation tests**
 
 If the project has a "descriptor-load validation" test (likely in
-`tests/core/domains/trajectory/git/payload-signals.test.ts` or
-similar — discover via `grep -rn "payloadSignals\|bugFixRate" tests/`):
+`tests/core/domains/trajectory/git/payload-signals.test.ts` or similar —
+discover via `grep -rn "payloadSignals\|bugFixRate" tests/`):
 
 ```bash
 npx vitest run tests/core/domains/trajectory/git/payload-signals.test.ts
@@ -535,10 +540,9 @@ npx vitest run tests/core/domains/trajectory/git/payload-signals.test.ts
 
 Expected: PASS. Zod from Task 1 validates the new block at load.
 
-If no such test exists, write one that loads `payloadSignals` and
-asserts the `confidence` block is present on both bugFixRate descriptors
-with the exact `support` / `score.threshold` / `label.rules` values
-above.
+If no such test exists, write one that loads `payloadSignals` and asserts the
+`confidence` block is present on both bugFixRate descriptors with the exact
+`support` / `score.threshold` / `label.rules` values above.
 
 **Step 5: Commit**
 
@@ -561,10 +565,12 @@ bd close <task4-id>
 **Spec reference:** Spec 3 D8 (score-side migration).
 
 **Files:**
+
 - Modify: `src/core/domains/trajectory/git/rerank/derived-signals/bug-fix.ts`
 - Modify: `src/core/domains/trajectory/git/rerank/derived-signals/helpers.ts`
   (`GIT_FILE_DAMPENING` constant — remove or mark deprecated)
-- Test: `tests/core/domains/trajectory/git/rerank/derived-signals/bug-fix.test.ts`
+- Test:
+  `tests/core/domains/trajectory/git/rerank/derived-signals/bug-fix.test.ts`
   (extend with score-equivalence regression test)
 
 **Step 1: Run V3 verification (open assumption from top of plan)**
@@ -574,11 +580,11 @@ grep -rn "confidenceDampening\|dampeningSource\|FALLBACK_THRESHOLD" \
   src/core/domains/trajectory/git/rerank/derived-signals/
 ```
 
-Record findings. **If only `BugFixSignal` uses `confidenceDampening`:**
-proceed with full removal of `GIT_FILE_DAMPENING`. **If other signals
-use it:** keep the constant exported but mark its usage in those signals
-with a `// TODO: migrate to descriptor.stats.confidence` comment AND
-create a follow-up beads task documenting the deferred migrations.
+Record findings. **If only `BugFixSignal` uses `confidenceDampening`:** proceed
+with full removal of `GIT_FILE_DAMPENING`. **If other signals use it:** keep the
+constant exported but mark its usage in those signals with a
+`// TODO: migrate to descriptor.stats.confidence` comment AND create a follow-up
+beads task documenting the deferred migrations.
 
 **Step 2: Mark in_progress**
 
@@ -588,28 +594,30 @@ bd update <task5-id> --status=in_progress
 
 **Step 3: Write score-equivalence regression test**
 
-Per Spec 3 D8 Acceptance: numerically identical `bugFix` score before
-vs after refactor.
+Per Spec 3 D8 Acceptance: numerically identical `bugFix` score before vs after
+refactor.
 
 Cover:
-- Mock payload: `bugFixRate=63, commitCount=3` → `bugFix` score X
-  (record from pre-refactor run; either snapshot the actual value or
-  compute analytically via `confidenceDampening((3/10)^2) * (63/100)`).
-- Same payload + descriptor with `confidence: {support:"commitCount",
-  score:{threshold:10}}` → `bugFix` score must equal X.
-- Multiple `(bugFixRate, commitCount)` combinations from a fixture
-  table to cover the dampening curve.
 
-If a pre-refactor reference value cannot be obtained from the current
-codebase before edits land, capture it via a tiny one-off script in
-Step 4 BEFORE making the refactor edits.
+- Mock payload: `bugFixRate=63, commitCount=3` → `bugFix` score X (record from
+  pre-refactor run; either snapshot the actual value or compute analytically via
+  `confidenceDampening((3/10)^2) * (63/100)`).
+- Same payload + descriptor with
+  `confidence: {support:"commitCount", score:{threshold:10}}` → `bugFix` score
+  must equal X.
+- Multiple `(bugFixRate, commitCount)` combinations from a fixture table to
+  cover the dampening curve.
+
+If a pre-refactor reference value cannot be obtained from the current codebase
+before edits land, capture it via a tiny one-off script in Step 4 BEFORE making
+the refactor edits.
 
 ```bash
 npx vitest run tests/core/domains/trajectory/git/rerank/derived-signals/bug-fix.test.ts
 ```
 
-Expected: FAIL (descriptor-driven path not yet implemented OR refactor
-not yet made; precise failure mode depends on TDD order).
+Expected: FAIL (descriptor-driven path not yet implemented OR refactor not yet
+made; precise failure mode depends on TDD order).
 
 **Step 4: Capture pre-refactor reference values (if needed)**
 
@@ -626,33 +634,33 @@ for (const [bfr, cc] of [[63,3],[63,8],[63,50],[30,4],[12,2]]) {
 "
 ```
 
-Record the printed values; bake them into the regression test as
-expected outputs.
+Record the printed values; bake them into the regression test as expected
+outputs.
 
 **Step 5: Refactor `BugFixSignal`**
 
 Per Spec 3 D8:
+
 - Remove `readonly dampeningSource = GIT_FILE_DAMPENING;`
 - Remove `private static readonly FALLBACK_THRESHOLD = 10;`
 - `extract` reads `ctx.confidence?.support` + `ctx.confidence?.score?.threshold`
   (populated by reranker from raw descriptor — see Task 3). Falls back
-  gracefully if `ctx.confidence` absent (e.g. for tests using legacy
-  context shape — keep a safe default of `support="commitCount"` and
-  `threshold=10` only as a temporary backstop during migration; remove
-  once all callers verified).
+  gracefully if `ctx.confidence` absent (e.g. for tests using legacy context
+  shape — keep a safe default of `support="commitCount"` and `threshold=10` only
+  as a temporary backstop during migration; remove once all callers verified).
 
 **Step 6: Audit + migrate / defer non-BugFix signals**
 
 Per V3 finding:
-- **Single migration:** if only `BugFixSignal` uses
-  `confidenceDampening`, remove the `GIT_FILE_DAMPENING` export.
-- **Multiple signals, all simple:** migrate them all in this commit;
-  add their `confidence.score` blocks to their respective descriptors
-  in `payload-signals.ts` (Task 4 scope expands).
-- **Multiple signals, non-trivial:** keep `GIT_FILE_DAMPENING` exported
-  with a `@deprecated` JSDoc comment; create a follow-up beads task
-  `Migrate remaining derived signals to unified confidence` linked to
-  this epic.
+
+- **Single migration:** if only `BugFixSignal` uses `confidenceDampening`,
+  remove the `GIT_FILE_DAMPENING` export.
+- **Multiple signals, all simple:** migrate them all in this commit; add their
+  `confidence.score` blocks to their respective descriptors in
+  `payload-signals.ts` (Task 4 scope expands).
+- **Multiple signals, non-trivial:** keep `GIT_FILE_DAMPENING` exported with a
+  `@deprecated` JSDoc comment; create a follow-up beads task
+  `Migrate remaining derived signals to unified confidence` linked to this epic.
 
 **Step 7: Run regression test**
 
@@ -697,10 +705,11 @@ bd create --title="Migrate remaining derived signals to unified confidence" \
 **Spec reference:** Spec 3 Acceptance Criteria 5-7.
 
 **Files:**
-- Modify (likely): test files from Tasks 2, 3, 5 — augment with
-  cross-cutting genericity tests
-- OR create: `tests/core/domains/explore/confidence-mechanism.test.ts`
-  for genericity coverage that doesn't fit any one file
+
+- Modify (likely): test files from Tasks 2, 3, 5 — augment with cross-cutting
+  genericity tests
+- OR create: `tests/core/domains/explore/confidence-mechanism.test.ts` for
+  genericity coverage that doesn't fit any one file
 
 **Step 1: Mark in_progress**
 
@@ -711,15 +720,16 @@ bd update <task6-id> --status=in_progress
 **Step 2: Add mechanism genericity tests**
 
 Cover:
+
 - Synthetic raw descriptor with `support: "fooCount"` and
-  `label.rules: [{whenSupportBelow: 7, ceiling: "low"}]` — resolver
-  emits the synthetic ceiling correctly.
-- Synthetic descriptor with `score.threshold: 42` — derived signal
-  extract receives `42` as threshold (not hardcoded 10).
-- Edge: `confidence.label.rules` empty array → resolver treats as no
-  clamp (base label preserved).
-- Edge: `confidence` declared without `score` and without `label` —
-  resolver and extractor both no-op on confidence path.
+  `label.rules: [{whenSupportBelow: 7, ceiling: "low"}]` — resolver emits the
+  synthetic ceiling correctly.
+- Synthetic descriptor with `score.threshold: 42` — derived signal extract
+  receives `42` as threshold (not hardcoded 10).
+- Edge: `confidence.label.rules` empty array → resolver treats as no clamp (base
+  label preserved).
+- Edge: `confidence` declared without `score` and without `label` — resolver and
+  extractor both no-op on confidence path.
 - Edge: chunk-scope descriptor with `support: "commitCount"` reads
   `chunk.commitCount`, not `file.commitCount` (D4 scope convention).
 
@@ -739,9 +749,9 @@ Run:
 npx vitest run --coverage
 ```
 
-Expected: confidence mechanism files at ≥90% line coverage. If gaps,
-add tests targeting uncovered branches (NEVER use
-`/* v8 ignore */` — see `.claude/rules/test-patterns.md`).
+Expected: confidence mechanism files at ≥90% line coverage. If gaps, add tests
+targeting uncovered branches (NEVER use `/* v8 ignore */` — see
+`.claude/rules/test-patterns.md`).
 
 **Step 5: Commit**
 
@@ -763,15 +773,15 @@ bd close <task6-id>
 **Spec reference:** Spec 1 D1-D4.
 
 **Files:**
+
 - Modify: `src/core/domains/trajectory/git/rerank/presets/hotspots.ts`
 
 **Step 1: Run V1 + V2 verifications (from top of plan)**
 
-Per V1: check if `SchemaBuilder` consumes `preset.description`. Per V2:
-check if snapshot tests cover preset description text.
+Per V1: check if `SchemaBuilder` consumes `preset.description`. Per V2: check if
+snapshot tests cover preset description text.
 
-If V1 hits AND V2 hits: this task includes snapshot regeneration; add
-~30 min.
+If V1 hits AND V2 hits: this task includes snapshot regeneration; add ~30 min.
 
 **Step 2: Mark in_progress**
 
@@ -781,21 +791,19 @@ bd update <task7-id> --status=in_progress
 
 **Step 3: Rewrite JSDoc and description**
 
-Per Spec 1 D1, replace JSDoc block (currently lines ~4-14) and
-`description` field (currently line ~17). Exact text in Spec 1 D1.
+Per Spec 1 D1, replace JSDoc block (currently lines ~4-14) and `description`
+field (currently line ~17). Exact text in Spec 1 D1.
 
 Key points the new text must satisfy:
-- Removes substring "bug-prone" from JSDoc and `description`.
-- Honestly lists `bugFix` as `~10% minor tiebreaker, NOT a
-  bug-history lens`.
-- Replaces misleading "merge contention" framing with chunk-level
-  granularity language.
-- Compare line distinguishes by granularity (chunk-level vs
-  file-normalized churn), not "presence vs absence of temporal
-  signals".
 
-Per Spec 1 D2-D4: do NOT change `weights`, `tools`, `overlayMask`,
-or `name`.
+- Removes substring "bug-prone" from JSDoc and `description`.
+- Honestly lists `bugFix` as `~10% minor tiebreaker, NOT a bug-history lens`.
+- Replaces misleading "merge contention" framing with chunk-level granularity
+  language.
+- Compare line distinguishes by granularity (chunk-level vs file-normalized
+  churn), not "presence vs absence of temporal signals".
+
+Per Spec 1 D2-D4: do NOT change `weights`, `tools`, `overlayMask`, or `name`.
 
 **Step 4: Verify no behavior change**
 
@@ -807,8 +815,7 @@ grep -rln "HotspotsPreset" tests/
 npx vitest run <matched test files>
 ```
 
-Expected: PASS — only docstring/description changed; behavior is
-identical.
+Expected: PASS — only docstring/description changed; behavior is identical.
 
 **Step 5: Regenerate snapshots if V2 hit**
 
@@ -847,22 +854,22 @@ bd close <task7-id>
 
 ## Task 8: Fragile Silo pattern + anti-pattern + recipe (docs bundle)
 
-**Spec reference:** Spec 2 (D2, D3, D5) + Spec 4 (D1, D2, D3) + Spec 5
-(D1-D4).
+**Spec reference:** Spec 2 (D2, D3, D5) + Spec 4 (D1, D2, D3) + Spec 5 (D1-D4).
 
 **Files:**
+
 - Modify: `.claude-plugin/tea-rags/rules/references/signal-interpretation.md`
   (Spec 2 catalog entry + Spec 2 cross-links + Spec 4 anti-pattern #8)
-- Modify: `.claude-plugin/tea-rags/skills/risk-assessment/references/classification-tiers.md`
+- Modify:
+  `.claude-plugin/tea-rags/skills/risk-assessment/references/classification-tiers.md`
   (Spec 2 14th tier row)
-- Modify: `.claude-plugin/tea-rags/rules/references/use-cases.md`
-  (Spec 5 Fragile Silo discovery recipe + table row)
+- Modify: `.claude-plugin/tea-rags/rules/references/use-cases.md` (Spec 5
+  Fragile Silo discovery recipe + table row)
 
-**Combination rationale:** these three files are independent text edits
-with no compile coupling. Combining them into one Task and one commit
-keeps the docs change reviewable as a unified update to the
-"Fragile Silo support surface". Splitting per file would inflate commit
-count without functional benefit.
+**Combination rationale:** these three files are independent text edits with no
+compile coupling. Combining them into one Task and one commit keeps the docs
+change reviewable as a unified update to the "Fragile Silo support surface".
+Splitting per file would inflate commit count without functional benefit.
 
 **Step 1: Mark in_progress**
 
@@ -874,24 +881,23 @@ bd update <task8-id> --status=in_progress
 
 Three insertions, in this order to keep edit ranges stable:
 
-1. **Fragile silo pattern section** — insert after the `Toxic silo`
-   section in "Architectural patterns catalog". Content: Signature,
-   What it is, Remediation, Disambiguators per Spec 2 D2.
-2. **Cross-links from `Toxic silo` and `Fragile legacy`** — small
-   edits to those existing sections per Spec 2 D5.
-3. **Anti-pattern #8** — append to "Interpretation anti-patterns"
-   list. Class-level wording per Spec 4 D1. Items 1-7 untouched (no
-   renumbering).
+1. **Fragile silo pattern section** — insert after the `Toxic silo` section in
+   "Architectural patterns catalog". Content: Signature, What it is,
+   Remediation, Disambiguators per Spec 2 D2.
+2. **Cross-links from `Toxic silo` and `Fragile legacy`** — small edits to those
+   existing sections per Spec 2 D5.
+3. **Anti-pattern #8** — append to "Interpretation anti-patterns" list.
+   Class-level wording per Spec 4 D1. Items 1-7 untouched (no renumbering).
 
 **Step 3: Edit `classification-tiers.md`**
 
-Add 14th tier row to the table per Spec 2 D3. Position: between
-`Toxic silo` and `Healthy owner`.
+Add 14th tier row to the table per Spec 2 D3. Position: between `Toxic silo` and
+`Healthy owner`.
 
 **Step 4: Edit `use-cases.md`**
 
-Add Fragile Silo discovery recipe per Spec 5 D2 — table row + code
-block with copy-paste template.
+Add Fragile Silo discovery recipe per Spec 5 D2 — table row + code block with
+copy-paste template.
 
 **Step 5: Lint the markdown**
 
@@ -904,8 +910,8 @@ npx markdownlint .claude-plugin/tea-rags/rules/references/signal-interpretation.
   .claude-plugin/tea-rags/rules/references/use-cases.md
 ```
 
-Expected: clean. Fix any violations before commit. If
-markdownlint is unavailable, skip and note in commit message.
+Expected: clean. Fix any violations before commit. If markdownlint is
+unavailable, skip and note in commit message.
 
 **Step 6: Manual smoke check — links resolve**
 
@@ -917,8 +923,8 @@ grep -n "fragile-silo-pattern-design\|bugfixrate-label-confidence-design\|fragil
 ```
 
 Expected: every reference points to a file that exists in
-`docs/superpowers/specs/`. Run a corroborating `ls
-docs/superpowers/specs/2026-05-14-*.md` to confirm.
+`docs/superpowers/specs/`. Run a corroborating
+`ls docs/superpowers/specs/2026-05-14-*.md` to confirm.
 
 **Step 7: Commit**
 
@@ -977,10 +983,11 @@ bd close <task9-id> --reason="bugProneness deferred follow-up filed and closed a
 
 ## Task 10: tea-rags plugin minor bump
 
-**Spec reference:** Spec 2 Plugin Version Bump (minor — new pattern
-content); Specs 4 + 5 (patch each — absorbed into the same minor bump).
+**Spec reference:** Spec 2 Plugin Version Bump (minor — new pattern content);
+Specs 4 + 5 (patch each — absorbed into the same minor bump).
 
 **Files:**
+
 - Modify: `.claude-plugin/tea-rags/.claude-plugin/plugin.json`
 
 **Step 1: Mark in_progress**
@@ -997,8 +1004,8 @@ Read current version:
 grep '"version"' .claude-plugin/tea-rags/.claude-plugin/plugin.json
 ```
 
-Bump to next minor. Example: `0.6.3` → `0.7.0`. Use Edit tool to change
-exactly the version line; do not touch the rest of `plugin.json`.
+Bump to next minor. Example: `0.6.3` → `0.7.0`. Use Edit tool to change exactly
+the version line; do not touch the rest of `plugin.json`.
 
 **Step 3: Verify**
 
@@ -1055,16 +1062,16 @@ Expected: clean.
 npm test
 ```
 
-Expected: all tests PASS. Note coverage threshold compliance — if a
-coverage check fails on the pre-commit hook of a previous task, that
-should have been resolved at that task; if it surfaces here as a
-regression, STOP and re-open the relevant task.
+Expected: all tests PASS. Note coverage threshold compliance — if a coverage
+check fails on the pre-commit hook of a previous task, that should have been
+resolved at that task; if it surfaces here as a regression, STOP and re-open the
+relevant task.
 
 **Step 5: Manual reproduction of user trigger case via MCP**
 
-Manually drive `mcp__tea-rags__semantic_search` against a project that
-contains `app/services/getting_paid/proposals/update_package_invoice.rb`
-(or an equivalent file with `bugFixRate=63, commitCount=3`):
+Manually drive `mcp__tea-rags__semantic_search` against a project that contains
+`app/services/getting_paid/proposals/update_package_invoice.rb` (or an
+equivalent file with `bugFixRate=63, commitCount=3`):
 
 ```
 project: <project alias>
@@ -1075,8 +1082,8 @@ limit: 5
 metaOnly: true
 ```
 
-Expected in overlay: `bugFixRate: { value: 63, label: "healthy" }`
-(NOT `"critical"`). Confirms Spec 3 end-to-end.
+Expected in overlay: `bugFixRate: { value: 63, label: "healthy" }` (NOT
+`"critical"`). Confirms Spec 3 end-to-end.
 
 **Step 6: Manual recipe reproduction**
 
@@ -1086,8 +1093,8 @@ Run the Fragile Silo discovery recipe from Task 8:
 rerank: { custom: { bugFix: 0.45, knowledgeSilo: 0.30, similarity: 0.15, churn: -0.10 } }
 ```
 
-against the same project. Expected: the trigger file ranks near the
-top of results.
+against the same project. Expected: the trigger file ranks near the top of
+results.
 
 **Step 7: Close epic**
 
@@ -1114,40 +1121,38 @@ bd dolt push
 The plan is complete when ALL of the following hold:
 
 1. User's trigger case (`bugFixRate=63, commitCount=3`) emits
-   `{ value: 63, label: "healthy" }` in overlay (verified Task 11
-   Step 5).
-2. `bugFix` derived score is numerically identical before/after Task 5
-   refactor (verified Task 5 Step 7 regression test).
-3. risk-assessment skill classifies the trigger file as `Fragile silo`
-   (High tier) under updated `classification-tiers.md` (manual review
-   of skill output against Task 8 changes).
-4. Fragile Silo discovery recipe ranks the trigger file near top of
-   its scope (verified Task 11 Step 6).
-5. `rerank: "hotspots"` results unchanged numerically; only the
-   MCP-visible `description` text changes (verified Task 7 Step 4 +
-   Task 11 Step 4).
-6. `npm run build`, `npm test`, `npm run typecheck` all clean at
-   Task 11 (Steps 2-4).
-7. Beads epic has 11 closed children + 1 deferred follow-up; `bd
-   stats` reflects this.
-8. `git log --oneline` shows the 7 expected commits in order (one per
-   Task 1-8 + Task 10; Tasks 9, 11 are commit-less).
+   `{ value: 63, label: "healthy" }` in overlay (verified Task 11 Step 5).
+2. `bugFix` derived score is numerically identical before/after Task 5 refactor
+   (verified Task 5 Step 7 regression test).
+3. risk-assessment skill classifies the trigger file as `Fragile silo` (High
+   tier) under updated `classification-tiers.md` (manual review of skill output
+   against Task 8 changes).
+4. Fragile Silo discovery recipe ranks the trigger file near top of its scope
+   (verified Task 11 Step 6).
+5. `rerank: "hotspots"` results unchanged numerically; only the MCP-visible
+   `description` text changes (verified Task 7 Step 4 + Task 11 Step 4).
+6. `npm run build`, `npm test`, `npm run typecheck` all clean at Task 11 (Steps
+   2-4).
+7. Beads epic has 11 closed children + 1 deferred follow-up; `bd stats` reflects
+   this.
+8. `git log --oneline` shows the 7 expected commits in order (one per Task 1-8 +
+   Task 10; Tasks 9, 11 are commit-less).
 
 ---
 
 ## Краткое summary для пользователя
 
-План разбит на **12 шагов**: Task 0 (beads bootstrap) + 11 tasks
-(7 кодовых + 1 docs-bundle + 1 admin + 1 release + 1 verification).
+План разбит на **12 шагов**: Task 0 (beads bootstrap) + 11 tasks (7 кодовых + 1
+docs-bundle + 1 admin + 1 release + 1 verification).
 
 **Порядок:**
+
 1. **Types + Zod** (Task 1) — фундамент в `trajectory.ts`
 2. **Resolver** (Task 2) — алгоритм label clamp в `label-resolver.ts`
-3. **Reranker plumbing** (Task 3) — sibling map + ExtractContext в
-   `reranker.ts`
+3. **Reranker plumbing** (Task 3) — sibling map + ExtractContext в `reranker.ts`
 4. **Descriptor opt-in** (Task 4) — bugFixRate в `payload-signals.ts`
-5. **Score-side migration** (Task 5) — `BugFixSignal` читает из
-   descriptor'а; audit других сигналов
+5. **Score-side migration** (Task 5) — `BugFixSignal` читает из descriptor'а;
+   audit других сигналов
 6. **Mechanism tests** (Task 6) — генеричность + score-equivalence
 7. **HotspotsPreset docstring** (Task 7) — Spec 1
 8. **Docs bundle** (Task 8) — Specs 2 + 4 + 5 в одном коммите
@@ -1155,14 +1160,13 @@ The plan is complete when ALL of the following hold:
 10. **Plugin minor bump** (Task 10) — `tea-rags/.claude-plugin/plugin.json`
 11. **Verification** (Task 11) — build/test/typecheck + manual MCP
 
-**Перед стартом** агент-исполнитель проверяет три открытых
-предположения (V1: SchemaBuilder consumer; V2: snapshot tests на JSDoc;
-V3: сколько derived signals помимо BugFixSignal используют
-`confidenceDampening`). Каждое предположение либо подтверждается и
-двигает план дальше, либо вешает flag и требует консультации.
+**Перед стартом** агент-исполнитель проверяет три открытых предположения (V1:
+SchemaBuilder consumer; V2: snapshot tests на JSDoc; V3: сколько derived signals
+помимо BugFixSignal используют `confidenceDampening`). Каждое предположение либо
+подтверждается и двигает план дальше, либо вешает flag и требует консультации.
 
-**Что НЕ в плане:** `git push`, branch merge, push в Slack/issues —
-пользователь контролирует.
+**Что НЕ в плане:** `git push`, branch merge, push в Slack/issues — пользователь
+контролирует.
 
-**Acceptance criteria — 8 пунктов**, последний из которых проверяет
-что в git history ровно 7 коммитов в правильном порядке.
+**Acceptance criteria — 8 пунктов**, последний из которых проверяет что в git
+history ровно 7 коммитов в правильном порядке.

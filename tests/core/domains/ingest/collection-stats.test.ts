@@ -719,6 +719,62 @@ describe("computeCollectionStats distributions", () => {
     });
   });
 
+  describe("percentilesToCompute", () => {
+    it("computes extra percentiles declared via percentilesToCompute beyond labels", () => {
+      // commitCount declares p25/p50/p75/p95 via labels, plus p10 via
+      // percentilesToCompute (needed so another descriptor's confidence block
+      // can reference "p10" of commitCount as a label clamp threshold).
+      const signals: PayloadSignalDescriptor[] = [
+        {
+          key: "git.file.commitCount",
+          type: "number",
+          description: "test",
+          stats: {
+            labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" },
+            percentilesToCompute: [10],
+          },
+        },
+      ];
+      const points = makePoints([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      const result = computeCollectionStats(points, signals, ALL_ACCS);
+      const stats = result.perSignal.get("git.file.commitCount");
+      expect(stats).toBeDefined();
+      // All labelled percentiles plus the extra p10 are present.
+      expect(stats!.percentiles[10]).toBeDefined();
+      expect(stats!.percentiles[25]).toBeDefined();
+      expect(stats!.percentiles[50]).toBeDefined();
+      // p10 over [1..10] sits at the bottom of the distribution.
+      expect(stats!.percentiles[10]).toBeLessThanOrEqual(stats!.percentiles[25]);
+      expect(stats!.percentiles[10]).toBeLessThan(stats!.percentiles[50]);
+    });
+
+    it("does not recompute percentiles already produced by labels", () => {
+      // p25 appears in BOTH labels and percentilesToCompute — the second
+      // pass must skip it (undefined-check) so we don't double-compute or
+      // overwrite. Behavioral assertion: result still has a sane p25 value.
+      const signals: PayloadSignalDescriptor[] = [
+        {
+          key: "git.file.commitCount",
+          type: "number",
+          description: "test",
+          stats: {
+            labels: { p25: "low", p50: "typical" },
+            percentilesToCompute: [10, 25],
+          },
+        },
+      ];
+      const points = makePoints([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      const result = computeCollectionStats(points, signals, ALL_ACCS);
+      const stats = result.perSignal.get("git.file.commitCount")!;
+      expect(stats.percentiles[10]).toBeDefined();
+      expect(stats.percentiles[25]).toBeDefined();
+      expect(stats.percentiles[50]).toBeDefined();
+      // p10 < p25 < p50 — ordering preserved despite duplicate request.
+      expect(stats.percentiles[10]).toBeLessThan(stats.percentiles[25]);
+      expect(stats.percentiles[25]).toBeLessThan(stats.percentiles[50]);
+    });
+  });
+
   describe("validateSignalDependencies", () => {
     const bugFixRateNeedsP10: PayloadSignalDescriptor = {
       key: "git.file.bugFixRate",

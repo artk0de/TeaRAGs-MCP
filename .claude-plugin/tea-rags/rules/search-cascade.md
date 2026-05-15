@@ -17,6 +17,25 @@ returns the full method/class definition — no Read needed.
 
 **MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
 
+## Addressing the Codebase (every tea-rags call)
+
+Every tea-rags tool that touches a collection accepts THREE addressing
+parameters; pick the first one available in this priority:
+
+1. **`project="<alias>"`** — preferred. Survives path moves, pulls registered
+   qdrantUrl + embeddingModel automatically. Aliases are listed in
+   `list_projects` and surfaced in the prime digest's `## Project` section.
+2. **`collection="<qdrant-name>"`** — when you already have a Qdrant collection
+   name (e.g. from a previous `list_collections` call).
+3. **`path="<absolute-project-path>"`** — fallback when no alias is registered.
+   Path is hashed into a collection name on the fly.
+
+Resolution priority used by the resolver: `collection > project > path`.
+Mix-and-match is allowed but redundant: if `project` resolves to a registered
+collection, the path is taken from the registry — passing `path` alongside is
+ignored. When unsure, register the project first (`register_project`) so all
+subsequent calls can use the stable alias.
+
 ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)
 
 **The first search rarely returns a complete answer.** A chunk shows where the
@@ -196,13 +215,58 @@ attractor, healthy owner vs toxic silo, legacy minefield vs proven stable),
 consult `references/signal-interpretation.md`. Single overlay signals are
 ambiguous — pair diagnostics there map combinations to patterns.
 
+## Filters
+
+Two ways to constrain a search beyond `query` + `pathPattern`. Pick the right
+mechanism — they compose.
+
+**Typed filters** (top-level params on every search request — fast path):
+
+| Field            | Values / type                          | When to use                             |
+| ---------------- | -------------------------------------- | --------------------------------------- |
+| `language`       | string (e.g. `"ruby"`, `"typescript"`) | scope to one language layer             |
+| `fileExtension`  | string \| string[]                     | constrain by file extension(s)          |
+| `chunkType`      | string (e.g. `"method"`, `"class"`)    | only chunks of this type                |
+| `documentation`  | `"only" \| "exclude" \| "include"`     | docs vs code (string enum, not boolean) |
+| `testFile`       | `"only" \| "exclude" \| "include"`     | tests vs production (string enum)       |
+| `symbolId`       | string                                 | scope to one symbol                     |
+| `author`         | string                                 | files where this author dominates blame |
+| `modifiedAfter`  | ISO date string \| Date                | recent changes                          |
+| `modifiedBefore` | ISO date string \| Date                | exclude recent changes                  |
+| `minAgeDays`     | number                                 | min file age (use `level: "file"`)      |
+| `maxAgeDays`     | number                                 | max file age (use `level: "file"`)      |
+| `minCommitCount` | number                                 | drop one-off scripts                    |
+| `taskId`         | string (e.g. `"RAGS-142"`)             | code linked to a ticket via git.taskIds |
+
+**Raw `filter` param** (escape hatch — Qdrant `must`/`should`/`must_not`
+condition tree). Use only when typed filters cannot express the constraint
+(custom payload key, OR-of-conditions, range on a non-typed field). For exact
+syntax and the full list of payload keys, **read the resource — do not invent
+syntax**:
+
+```
+ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/filters")
+```
+
+Other schema resources, fetched the same way when needed:
+`tea-rags://schema/{overview,presets,signals,search-guide,indexing-guide,signal-labels}`.
+They are NOT auto-attached to the session — call `ReadMcpResourceTool` when you
+need details (e.g. before building a custom rerank or a non-trivial filter).
+
+**Typed filter vs `pathPattern`:** for `language`, `documentation`, `testFile` —
+use the typed filter (intent-clear, survives directory restructures).
+`pathPattern` is for arbitrary directory globs (`**/payments/**`,
+`{file1.rb,file2.rb}`) where no typed filter applies. They compose: e.g.
+`language: "ruby"` + `pathPattern: "**/services/**"`.
+
 ## Filter Level: file vs chunk
 
 - **`level: "chunk"`** (default) — filters against `git.chunk.*` fields
 - **`level: "file"`** — filters against `git.file.*` fields
 
 **Warning:** At chunk level, `ageDays=0` means "no git history for this chunk"
-(not "just created"). **Use `level: "file"` for time-based filters.**
+(not "just created"). **Use `level: "file"` for time-based filters
+(`modifiedAfter`, `modifiedBefore`, `minAgeDays`, `maxAgeDays`).**
 
 ## Subagent Search Injection (MANDATORY — ALL subagents)
 
@@ -279,10 +343,34 @@ Still surveying the landscape? → another search.
 - symbolId convention: Class#method (instance), Class.method (static)
 - Your QUERY containing `|` does not mean you want regex — check INTENT first:
   identifier search → hybrid_search; literal text markers → ripgrep
-- All tea-rags calls require: path="<absolute-project-path>"
+- All tea-rags calls require ONE of: `project="<alias>"` (PREFERRED when an
+  alias is registered — stable name, pulls registered qdrantUrl /
+  embeddingModel from the registry), `path="<absolute-project-path>"`, or
+  `collection="<qdrant-name>"`. Resolution priority: collection > project > path.
+  Check `list_projects` or the prime digest for known aliases.
+
+**Typed filters (top-level params, no nesting required) — use BEFORE reaching
+for raw `filter`:**
+- Language scope: `language: "ruby"` (not pathPattern, not nested filter)
+- Tests vs production: `testFile: "only" | "exclude" | "include"` (string enum,
+  not boolean)
+- Docs vs code: `documentation: "only" | "exclude" | "include"`
+- Time window: `modifiedAfter` / `modifiedBefore` (ISO date) +
+  `level: "file"` (chunk-level git times are unreliable)
+- Min age: `minAgeDays` / `maxAgeDays` + `level: "file"`
+- Drop one-offs: `minCommitCount: 5` (or higher)
+- Ticket linkage: `taskId: "JIRA-123"` (matches git.file.taskIds)
+- Author dominance: `author: "Alice"` (blame-based)
+
+Raw `filter: { must: [...] }` only when typed fields cannot express it. For
+syntax and payload keys, fetch on demand:
+`ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/filters")`.
+Schema resources are NOT auto-attached.
 ```
 
-Replace `<absolute-project-path>` with the actual working directory path.
+Replace `<alias>` / `<absolute-project-path>` with the registered project name
+or actual working directory path. When both a project alias and a path are
+available, pass `project` — it resolves the rest from the registry.
 
 ## Prohibited Patterns
 

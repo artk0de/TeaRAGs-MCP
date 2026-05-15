@@ -475,6 +475,8 @@ describe("App interface", () => {
       hybridSearch: true,
       rankChunks: true,
       searchCode: true,
+      findSimilar: true,
+      findSymbol: true,
       indexCodebase: true,
       reindexChanges: true,
       getIndexStatus: true,
@@ -485,10 +487,14 @@ describe("App interface", () => {
       deleteCollection: true,
       addDocuments: true,
       deleteDocuments: true,
+      getIndexMetrics: true,
       getSchemaDescriptors: true,
       checkSchemaDrift: true,
+      registerProject: true,
+      listProjects: true,
+      unregisterProject: true,
     };
-    expect(Object.keys(_methods)).toHaveLength(16);
+    expect(Object.keys(_methods)).toHaveLength(22);
   });
 
   it("method return types are Promises (except getSchemaDescriptors)", () => {
