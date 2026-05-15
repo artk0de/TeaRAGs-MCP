@@ -1,25 +1,32 @@
 # Search Cascade Benchmark
 
-Last updated: 2026-05-13 (post-search-navigation iteration) Original: 2026-03-29
+Last updated: 2026-05-15 (filters-and-MCP-resources iteration) Original:
+2026-03-29
 
 ## Summary
 
 Optimized search-cascade rule from 502-line monolith to 227-line core + 3
-reference files (382 total). Evaluated tool selection accuracy across 20 unique
-test cases in 3 iterations.
+reference files (382 total). Evaluated tool selection accuracy across 30 unique
+test cases in 4 iterations.
 
 ## Results by Iteration
 
-| Iteration | Version                                | Evals | Pass Rate  | Key Change                       |
-| --------- | -------------------------------------- | ----- | ---------- | -------------------------------- |
-| 1         | baseline (no rule)                     | 9     | 22% (2/9)  | Grep/Glob dominate               |
-| 1         | v1 (original 502-line)                 | 9     | 89% (8/9)  | eval-10 fail: subagent injection |
-| 2         | v2 (modularized, LSP removed)          | 9     | 100% (9/9) | Subagent injection fixed         |
-| 3         | v3 (skills-first, search_code blocked) | 9     | 100% (9/9) | Skills routing + new patterns    |
+| Iteration | Version                                | Evals | Pass Rate    | Key Change                                                 |
+| --------- | -------------------------------------- | ----- | ------------ | ---------------------------------------------------------- |
+| 1         | baseline (no rule)                     | 9     | 22% (2/9)    | Grep/Glob dominate                                         |
+| 1         | v1 (original 502-line)                 | 9     | 89% (8/9)    | eval-10 fail: subagent injection                           |
+| 2         | v2 (modularized, LSP removed)          | 9     | 100% (9/9)   | Subagent injection fixed                                   |
+| 3         | v3 (skills-first, search_code blocked) | 9     | 100% (9/9)   | Skills routing + new patterns                              |
+| 4         | baseline 2026-05-15 (no rule, Sonnet)  | 10    | 70% (7/10)   | Misses reindex-after-edit; raw filters when typed exists   |
+| 4         | v4 pre-fix (skill text v3)             | 10    | 100% (10/10) | All PASS but raw filters in 3 cases, wrong testFile=true   |
+| 4         | v4 post-fix (added ## Filters section) | 10    | 100% (10/10) | Typed filters everywhere, correct enums, taskId discovered |
 
 ## Delta: with-rule vs without-rule
 
-**+78 percentage points** (22% → 100%)
+- Iterations 1–3: **+78 percentage points** (22% → 100%)
+- Iteration 4 (filters/MCP-resources slice): **+30 pp pass rate** but the real
+  win is qualitative — typed filters replaced raw, enum syntax fixed, taskId
+  filter surfaced.
 
 ## Eval Results Detail
 
@@ -533,3 +540,107 @@ the same hit) without blocking legitimate landscape surveying.
 This is a textbook case of a rule that scored 22/22 on Iteration 7's eval set
 but would have caused real regressions on breadth-shaped tasks the eval did not
 exercise — surfaced only by the user's design intuition, not by metrics.
+
+---
+
+## Iteration 4 — Filters & MCP Resources (2026-05-15)
+
+### Trigger
+
+User observation: after Opus 4.7 made MCP tool schemas deferred (only loaded via
+`ToolSearch select:<name>`) and stopped auto-attaching MCP resources, the agent
+appeared to stop using `filter` parameters in tea-rags calls. Hypothesis: the
+rule never documented the typed-filter surface or how to fetch
+`tea-rags://schema/*` resources, so under stricter context conditions the agent
+forgot they existed.
+
+### Audit findings
+
+| #   | Finding                                                                             | Severity |
+| --- | ----------------------------------------------------------------------------------- | -------- |
+| F1  | `filter` param described only in scattered fragments; no field table                | HIGH     |
+| F2  | `tea-rags://schema/*` resources mentioned but no `ReadMcpResourceTool` instructions | HIGH     |
+| F3  | Deferred-tool-schema regime not mentioned (Opus 4.7 behavior)                       | HIGH     |
+| F4  | `pathPattern` vs typed filter — no rule of thumb                                    | MED      |
+| F5  | `taskId` typed filter never mentioned anywhere                                      | MED      |
+
+### Eval design — 10 cases
+
+5 audit-finding cases (F1–F5), 2 controls (find_symbol regression, ripgrep TODO
+regression), 2 mandatory subagent routing cases (Explore + task-agent), 1 edge
+case (non-English Russian + analytics + filter combined). See
+`evals/2026-05-15-filters-and-mcp-resources-evals.json`.
+
+### Triage outcome
+
+Eval surprised us: Sonnet handles most filter cases adequately even without the
+rule (training-time MCP knowledge). The real gap is **quality of the plan**, not
+PASS/FAIL: agents reach for raw `filter:{must:…}` when typed param exists, use
+wrong enum types (`testFile=true` instead of `'only'`), don't discover `taskId`.
+
+The one strict regression vs baseline: case 9 (subagent reindex after parent
+edit) — already covered by the existing rule, no fix needed.
+
+Findings F1, F4, F5 confirmed → fix. F2 (MCP resource reading) and F3 (deferred
+schema) — Sonnet already does this; documented in fix anyway because Opus 4.7
+behavior may differ from Sonnet baseline.
+
+### Fix
+
+Single new section `## Filters` inserted before `## Filter Level: file vs chunk`
+(+37 lines, file grew from 406 → 443):
+
+1. **Typed filters table** — 13 fields with type / enum values / when-to-use
+2. **Raw `filter` escape-hatch block** — points at
+   `ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/filters")`
+3. **List of all `tea-rags://schema/*` URIs** with explicit "NOT auto-attached —
+   fetch on demand"
+4. **Typed-vs-pathPattern rule of thumb** — language/documentation/testFile use
+   typed; arbitrary path globs use pathPattern
+5. **Subagent injection block** also gets a typed-filters mini-list (subagents
+   inherit the rule via the injected block, not via this file)
+
+### Per-eval results (iteration 4)
+
+| #   | Case                        | Baseline                | v4 pre-fix              | v4 post-fix                              |
+| --- | --------------------------- | ----------------------- | ----------------------- | ---------------------------------------- |
+| 1   | filter for time window      | PASS (vague)            | PASS raw filter         | **PASS typed `modifiedAfter`**           |
+| 2   | filter syntax help          | PASS (List+Read)        | PASS (List+Read)        | **PASS direct ReadMcpResourceTool**      |
+| 3   | ToolSearch first call       | PASS                    | PASS                    | PASS                                     |
+| 4   | language + testFile typed   | PARTIAL (testFile=true) | PARTIAL (testFile=true) | **PASS testFile='only'**                 |
+| 5   | taskId filter               | PASS raw filter         | PASS raw filter         | **PASS typed `taskId`**                  |
+| 6   | find_symbol Reranker.rerank | PASS                    | PASS                    | PASS                                     |
+| 7   | ripgrep TODO                | PASS                    | PASS                    | PASS                                     |
+| 8   | subagent exhaustive         | PARTIAL (extra step)    | PASS                    | **PASS list_projects + paginated**       |
+| 9   | subagent reindex            | **FAIL no reindex**     | PASS                    | **PASS + bonus typed symbolId**          |
+| 10  | non-English hotspots+filter | PARTIAL (vague)         | PASS raw ageDays        | **PASS typed modifiedAfter + chunkType** |
+
+### Hard metrics
+
+- Pass rate: baseline 70% → with-rule 100% (+30pp)
+- Typed-filter usage rate: baseline 4/10 → post-fix 6/10 (+1 bonus)
+- Wrong-enum cases: 1 → 0
+- File length: 406 → 443 (+37 lines, well under 500-line target)
+
+### Key design decisions
+
+- **Did NOT add a "deferred tool schemas" section** — eval showed Sonnet figures
+  this out from the deferred-tools system reminder. Adding it to search-cascade
+  would duplicate the system reminder; if Opus 4.7 in production needs it, the
+  fix belongs in a separate, more-targeted rule (or in the prime hook output).
+- **Did NOT rewrite the Decision Tree** — it already mentions filters in a few
+  places. The new `## Filters` section is referenced indirectly; agents that
+  follow the tree to a leaf naturally reach a search call and now see the filter
+  surface as a first-class concept.
+- **Did add typed-filter list to subagent injection block** — subagents do NOT
+  read this file, only the injected block. If we don't repeat the table there,
+  the fix benefits the parent agent only.
+
+### What this iteration did NOT validate
+
+- Does Opus 4.7 in a real production session actually use typed filters now? The
+  eval is Sonnet-based. Confirming Opus 4.7 behavior requires a follow-up with
+  the actual model and the actual MCP server attached.
+- Is the `## Filters` table complete? It mirrors `TypedFilterParams` in
+  `src/core/api/public/dto/explore.ts` as of 2026-05-15. New typed fields added
+  to that interface MUST be added here.
