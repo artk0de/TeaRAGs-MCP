@@ -168,45 +168,6 @@ not diagnostic. See the agent-facing
 [interpretation anti-pattern #8](../../agent-integration/signal-interpretation.md)
 for the full rule.
 
-### Lazy backfill of confidence percentiles
-
-The adaptive `pN` references (score `adaptivePercentile`, label rule
-`whenSupportBelow: "pN"`) need the corresponding percentile of the
-support signal to be present in collection stats. After a full index,
-all referenced percentiles are present. After a **descriptor change**
-that adds a new `pN` reference, the existing index is stale relative
-to the new declaration — the percentile is missing on disk.
-
-Tea-rags handles this transparently: the first rerank that consults a
-missing reference triggers a **single-percentile scroll** of the
-support signal across the collection, computes the percentile,
-mutates the in-memory stats in place (every other field of the
-support's `SignalStats` is preserved exactly), and persists back to
-the stats-cache snapshot. No full reindex required.
-
-Properties of the backfill:
-
-- **Lazy at rerank time.** Similarity-only presets (`relevance`) never
-  trigger work; they early-return before the coverage check.
-- **One scroll per support signal.** If a single signal has multiple
-  missing percentiles referenced by different rules, they share one
-  scroll and one sort.
-- **One save per rerank.** Multiple signals backfilled across the
-  same call commit to disk in a single atomic snapshot write.
-- **Concurrent reranks dedup.** In-flight memo per
-  `(collection, signal)` — two queries that both trigger backfill of
-  the same support produce ONE scroll, not two.
-- **Idempotent.** Subsequent reranks see the freshly populated
-  percentile in memory and skip the scroll path entirely.
-- **Graceful degradation.** If the scroll fails (Qdrant unavailable
-  for that signal), the label path falls back to `rule.fallback` and
-  the score path to `confidence.score.threshold` — the query still
-  returns, just with the less-precise static threshold. A 60s
-  per-signal backoff prevents retry storms.
-
-The full design is in
-`docs/superpowers/specs/2026-05-15-lazy-percentile-recompute-design.md`.
-
 ## Combining Filters with Reranking
 
 Filters (Qdrant conditions) **narrow** the candidate set. Reranking
