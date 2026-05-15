@@ -9,7 +9,7 @@ sidebar_position: 99
 
 * **explore:** Reranker.rerank() returns Promise. External callers
 must await. setCollectionStats accepts an optional opts arg with
-{ collectionName, payloadFieldKeys } — wiring needed for lazy
+`{ collectionName, payloadFieldKeys }` — wiring needed for lazy
 backfill persistence. setRecomputeService(service) is the new
 injection point; ExploreOps wires it before publishing stats.
 

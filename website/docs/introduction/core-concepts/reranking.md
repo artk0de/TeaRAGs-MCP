@@ -164,9 +164,9 @@ When you see `{ value, label }` in overlay, the label has ALREADY been
 clamped if the support sibling was low. Trust the label. If you read raw
 `value` directly, pair it with the support's overlay label
 (`commitCount.label`) — at "low" or below, treat the value as suggestive,
-not diagnostic. See the agent-facing
-[interpretation anti-pattern #8](../../agent-integration/signal-interpretation.md)
-for the full rule.
+not diagnostic. See
+[signal scoring methods](../../knowledge-base/signal-scoring-methods.md)
+for the full confidence-dampening rule.
 
 ## Combining Filters with Reranking
 
