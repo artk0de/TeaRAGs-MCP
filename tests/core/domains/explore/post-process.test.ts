@@ -62,13 +62,13 @@ describe("postProcess", () => {
     { id: "3", score: 0.7, payload: { relativePath: "test/c.test.ts" } },
   ];
 
-  it("returns results trimmed to limit", () => {
-    const result = postProcess(sampleResults, { limit: 2, reranker: mockReranker });
+  it("returns results trimmed to limit", async () => {
+    const result = await postProcess(sampleResults, { limit: 2, reranker: mockReranker });
     expect(result).toHaveLength(2);
   });
 
-  it("pathPattern in postProcess is a no-op (pre-filter handles it)", () => {
-    const result = postProcess(sampleResults, {
+  it("pathPattern in postProcess is a no-op (pre-filter handles it)", async () => {
+    const result = await postProcess(sampleResults, {
       limit: 10,
       pathPattern: "src/**",
       reranker: mockReranker,
@@ -77,23 +77,23 @@ describe("postProcess", () => {
     expect(result).toHaveLength(3);
   });
 
-  it("applies reranking for non-relevance preset", () => {
-    postProcess(sampleResults, { limit: 10, rerank: "hotspots", reranker: mockReranker });
+  it("applies reranking for non-relevance preset", async () => {
+    await postProcess(sampleResults, { limit: 10, rerank: "hotspots", reranker: mockReranker });
     expect(mockReranker.rerank).toHaveBeenCalledWith(sampleResults, "hotspots", "semantic_search", {
       signalLevel: undefined,
       query: undefined,
     });
   });
 
-  it("skips reranking for relevance preset", () => {
+  it("skips reranking for relevance preset", async () => {
     const reranker = { rerank: vi.fn() } as unknown as Reranker;
-    postProcess(sampleResults, { limit: 10, rerank: "relevance", reranker });
+    await postProcess(sampleResults, { limit: 10, rerank: "relevance", reranker });
     expect(reranker.rerank).not.toHaveBeenCalled();
   });
 
-  it("skips reranking when no rerank option", () => {
+  it("skips reranking when no rerank option", async () => {
     const reranker = { rerank: vi.fn() } as unknown as Reranker;
-    postProcess(sampleResults, { limit: 10, reranker });
+    await postProcess(sampleResults, { limit: 10, reranker });
     expect(reranker.rerank).not.toHaveBeenCalled();
   });
 });
@@ -267,6 +267,27 @@ describe("filterMetaOnly", () => {
     const meta = filterMetaOnly(results, signalsWithImports, []);
     expect(meta[0].imports).toEqual(["./utils", "./types"]);
     expect(meta[0].content).toBeUndefined();
+  });
+
+  it("attaches overlay.preset to meta even when overlay has no file/chunk signal data", () => {
+    // A reranker may emit a ranking overlay with only the preset name and
+    // no file/chunk signal entries (e.g. a preset matched but no signals
+    // were extracted). The "preset-only" overlay branch must still carry
+    // the preset name through so consumers can attribute the score.
+    const results: SearchResult[] = [
+      {
+        score: 0.42,
+        payload: { relativePath: "src/empty-overlay.ts" },
+        rankingOverlay: {
+          preset: "stable",
+          // No file/chunk entries — hasOverlayData returns false.
+        } as any,
+      },
+    ];
+    const meta = filterMetaOnly(results, payloadSignals, []);
+    expect(meta[0].preset).toBe("stable");
+    // No git block produced since overlay had no data and no essentials requested.
+    expect(meta[0].git).toBeUndefined();
   });
 });
 

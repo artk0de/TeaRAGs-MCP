@@ -53,49 +53,49 @@ describe("reranker", () => {
   });
 
   describe("new signals: bugFix, volatility, density, chunkChurn", () => {
-    it("should normalize bugFix signal correctly (50% -> 0.5)", () => {
+    it("should normalize bugFix signal correctly (50% -> 0.5)", async () => {
       const results = [
         createResult(0.8, 30, 5, false, { bugFixRate: 50 }),
         createResult(0.8, 30, 5, false, { bugFixRate: 0 }),
       ];
-      const reranked = reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
       // 50% bugFixRate should rank higher
       expect(reranked[0].payload?.git?.bugFixRate).toBe(50);
       expect(reranked[0].score).toBeGreaterThan(reranked[1].score);
     });
 
-    it("should prefer chunk-level churn over file-level in hotspots", () => {
+    it("should prefer chunk-level churn over file-level in hotspots", async () => {
       const results = [
         // File has high churn (20), but this chunk is cold (chunk.commitCount=1)
         createResult(0.8, 10, 20, false, { chunk: { commitCount: 1 } }),
         // File has low churn (3), but this chunk is hot (chunk.commitCount=15)
         createResult(0.8, 10, 3, false, { chunk: { commitCount: 15 } }),
       ];
-      const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+      const reranked = await reranker.rerank(results, "hotspots", "semantic_search");
       // Chunk with high chunk.commitCount should rank higher
       expect(reranked[0].payload?.git?.chunk?.commitCount).toBe(15);
     });
 
-    it("should boost high bugFixRate + old code in techDebt preset", () => {
+    it("should boost high bugFixRate + old code in techDebt preset", async () => {
       const results = [
         createResult(0.8, 200, 10, false, { bugFixRate: 80, churnVolatility: 30 }),
         createResult(0.8, 10, 10, false, { bugFixRate: 5, churnVolatility: 2 }),
       ];
-      const reranked = reranker.rerank(results, "techDebt", "semantic_search");
+      const reranked = await reranker.rerank(results, "techDebt", "semantic_search");
       // High bugFixRate + old code should rank higher
       expect(reranked[0].payload?.git?.bugFixRate).toBe(80);
     });
 
-    it("should not crash when mixing chunk-level and file-level results", () => {
+    it("should not crash when mixing chunk-level and file-level results", async () => {
       const results = [
         createResult(0.9, 10, 5, false, { chunk: { commitCount: 8 } }),
         createResult(0.8, 20, 3, false), // no chunk-level data
       ];
-      const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+      const reranked = await reranker.rerank(results, "hotspots", "semantic_search");
       expect(reranked).toHaveLength(2);
     });
 
-    it("should use blameDominantAuthorPct for ownership when available", () => {
+    it("should use blameDominantAuthorPct for ownership when available", async () => {
       const results = [
         createResult(0.8, 30, 5, false, {
           blameDominantAuthorPct: 90,
@@ -103,30 +103,30 @@ describe("reranker", () => {
         }),
         createResult(0.8, 30, 5, false, { blameDominantAuthorPct: 30, blameAuthors: ["a", "b", "c", "d"] as any }),
       ];
-      const reranked = reranker.rerank(results, "ownership", "semantic_search");
+      const reranked = await reranker.rerank(results, "ownership", "semantic_search");
       // 90% live-line ownership should rank higher
       expect(reranked[0].payload?.git?.blameDominantAuthorPct).toBe(90);
     });
 
-    it("should boost density signal in codeReview preset", () => {
+    it("should boost density signal in codeReview preset", async () => {
       const results = [
         createResult(0.8, 5, 3, false, { changeDensity: 15 }), // high density
         createResult(0.8, 5, 3, false, { changeDensity: 1 }), // low density
       ];
-      const reranked = reranker.rerank(results, "codeReview", "semantic_search");
+      const reranked = await reranker.rerank(results, "codeReview", "semantic_search");
       expect(reranked[0].payload?.git?.changeDensity).toBe(15);
     });
   });
 
   describe("new signals: relativeChurnNorm, burstActivity, pathRisk, knowledgeSilo, chunkRelativeChurn", () => {
-    it("should normalize relativeChurn via relativeChurnNorm signal", () => {
+    it("should normalize relativeChurn via relativeChurnNorm signal", async () => {
       // LOW relativeChurn first -- if signal doesn't exist, order won't change
       const results = [
         createResult(0.8, 100, 10, false, { relativeChurn: 0.1 }),
         createResult(0.8, 100, 10, false, { relativeChurn: 4.0 }),
       ];
       // Isolate the signal via custom weights
-      const reranked = reranker.rerank(
+      const reranked = await reranker.rerank(
         results,
         { custom: { similarity: 0.1, relativeChurnNorm: 0.9 } },
         "semantic_search",
@@ -135,18 +135,22 @@ describe("reranker", () => {
       expect(reranked[0].payload?.git?.relativeChurn).toBe(4.0);
     });
 
-    it("should normalize recencyWeightedFreq via burstActivity signal", () => {
+    it("should normalize recencyWeightedFreq via burstActivity signal", async () => {
       // LOW burst first -- if signal doesn't exist, order won't change
       const results = [
         createResult(0.8, 5, 3, false, { recencyWeightedFreq: 0.5 }),
         createResult(0.8, 5, 3, false, { recencyWeightedFreq: 8.0 }),
       ];
-      const reranked = reranker.rerank(results, { custom: { similarity: 0.1, burstActivity: 0.9 } }, "semantic_search");
+      const reranked = await reranker.rerank(
+        results,
+        { custom: { similarity: 0.1, burstActivity: 0.9 } },
+        "semantic_search",
+      );
       // High burstActivity must be reordered to first
       expect(reranked[0].payload?.git?.recencyWeightedFreq).toBe(8.0);
     });
 
-    it("should wire pathRisk into securityAudit preset", () => {
+    it("should wire pathRisk into securityAudit preset", async () => {
       // Non-auth path first -- securityAudit must reorder auth path to top
       const results: RerankableResult[] = [
         {
@@ -170,12 +174,12 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, "securityAudit", "semantic_search");
+      const reranked = await reranker.rerank(results, "securityAudit", "semantic_search");
       // Auth path should rank higher due to pathRisk signal
       expect(reranked[0].payload?.relativePath).toBe("src/auth/login.ts");
     });
 
-    it("should flag single-contributor code via knowledgeSilo signal", () => {
+    it("should flag single-contributor code via knowledgeSilo signal", async () => {
       // knowledgeSilo now reads blameContributorCount (live-line authorship)
       const results = [
         createResult(0.8, 30, 5, false, {
@@ -189,18 +193,22 @@ describe("reranker", () => {
           blameAuthors: ["alice"] as any,
         }),
       ];
-      const reranked = reranker.rerank(results, { custom: { similarity: 0.1, knowledgeSilo: 0.9 } }, "semantic_search");
+      const reranked = await reranker.rerank(
+        results,
+        { custom: { similarity: 0.1, knowledgeSilo: 0.9 } },
+        "semantic_search",
+      );
       // Single live-line contributor (knowledgeSilo=1.0) must be reordered to first
       expect(reranked[0].payload?.git?.blameContributorCount).toBe(1);
     });
 
-    it("should normalize chunkChurnRatio via chunkRelativeChurn signal", () => {
+    it("should normalize chunkChurnRatio via chunkRelativeChurn signal", async () => {
       // Same chunk.commitCount -- only ratio differs. LOW ratio first.
       const results = [
         createResult(0.8, 10, 10, false, { chunk: { commitCount: 5, churnRatio: 0.1 } }),
         createResult(0.8, 10, 10, false, { chunk: { commitCount: 5, churnRatio: 0.9 } }),
       ];
-      const reranked = reranker.rerank(
+      const reranked = await reranker.rerank(
         results,
         { custom: { similarity: 0.1, chunkRelativeChurn: 0.9 } },
         "semantic_search",
@@ -211,7 +219,7 @@ describe("reranker", () => {
   });
 
   describe("chunk-level preference for bugFix and knowledgeSilo", () => {
-    it("should prefer chunk bugFixRate over file-level bugFixRate", () => {
+    it("should prefer chunk bugFixRate over file-level bugFixRate", async () => {
       // With alpha-blending, chunk data needs sufficient chunk.commitCount for alpha > 0.
       // chunk.commitCount=8 with file commitCount=10 -> alpha=0.8 (chunk dominates).
       // File has low bugFixRate (10%), but chunk has high bugFixRate (80%)
@@ -221,12 +229,12 @@ describe("reranker", () => {
         createResult(0.8, 30, 10, false, { bugFixRate: 80, chunk: { bugFixRate: 10, commitCount: 8 } }),
         createResult(0.8, 30, 10, false, { bugFixRate: 10, chunk: { bugFixRate: 80, commitCount: 8 } }),
       ];
-      const reranked = reranker.rerank(results, { custom: { similarity: 0.1, bugFix: 0.9 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { similarity: 0.1, bugFix: 0.9 } }, "semantic_search");
       // Chunk with high chunk.bugFixRate should rank first (alpha=0.8 makes chunk dominate)
       expect(reranked[0].payload?.git?.chunk?.bugFixRate).toBe(80);
     });
 
-    it("should prefer chunk blameContributorCount over file-level for knowledgeSilo", () => {
+    it("should prefer chunk blameContributorCount over file-level for knowledgeSilo", async () => {
       // With alpha-blending, chunk data needs sufficient chunk.commitCount for alpha=1.0.
       // chunk.commitCount=10 with file commitCount=10 -> alpha=1.0 (pure chunk values).
       // knowledgeSilo uses categorical thresholds (1->1.0, 2->0.5, 3+->0) so needs exact integers.
@@ -241,7 +249,11 @@ describe("reranker", () => {
           chunk: { blameContributorCount: 1, commitCount: 10 },
         }),
       ];
-      const reranked = reranker.rerank(results, { custom: { similarity: 0.1, knowledgeSilo: 0.9 } }, "semantic_search");
+      const reranked = await reranker.rerank(
+        results,
+        { custom: { similarity: 0.1, knowledgeSilo: 0.9 } },
+        "semantic_search",
+      );
       // Chunk with chunk.blameContributorCount=1 (silo) should rank first (alpha=1.0 -> pure chunk value)
       expect(reranked[0].payload?.git?.chunk?.blameContributorCount).toBe(1);
     });
@@ -275,72 +287,72 @@ describe("reranker", () => {
       },
     });
 
-    it("should penalize block chunks without chunk-level data in hotspots", () => {
+    it("should penalize block chunks without chunk-level data in hotspots", async () => {
       const results = [
         // Block chunk with only file-level data (no chunkCommitCount) -- should be penalized
         createResultWithChunkType(0.8, "block", {}),
         // Function chunk with same file-level data -- should NOT be penalized
         createResultWithChunkType(0.8, "function", {}),
       ];
-      const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+      const reranked = await reranker.rerank(results, "hotspots", "semantic_search");
       // Function should rank higher due to block penalty
       expect(reranked[0].payload?.chunkType).toBe("function");
     });
 
-    it("should NOT penalize block chunks that have chunk-level data", () => {
+    it("should NOT penalize block chunks that have chunk-level data", async () => {
       const results = [
         // Block with chunk-level data -- should NOT be penalized
         createResultWithChunkType(0.8, "block", { chunk: { commitCount: 15, churnRatio: 0.8 } }),
         // Function without chunk-level data -- no penalty either
         createResultWithChunkType(0.8, "function", {}),
       ];
-      const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+      const reranked = await reranker.rerank(results, "hotspots", "semantic_search");
       // Block with chunk data should rank at least as high (it has high chunk.commitCount)
       expect(reranked[0].payload?.chunkType).toBe("block");
     });
 
-    it("should NOT penalize function/class/interface chunks", () => {
+    it("should NOT penalize function/class/interface chunks", async () => {
       const results = [
         createResultWithChunkType(0.8, "function", {}),
         createResultWithChunkType(0.8, "class", {}),
         createResultWithChunkType(0.8, "interface", {}),
       ];
-      const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+      const reranked = await reranker.rerank(results, "hotspots", "semantic_search");
       // All scores should be equal (no penalties applied)
       expect(reranked[0].score).toBeCloseTo(reranked[1].score, 5);
       expect(reranked[1].score).toBeCloseTo(reranked[2].score, 5);
     });
 
-    it("should apply blockPenalty in techDebt preset", () => {
+    it("should apply blockPenalty in techDebt preset", async () => {
       const results = [
         createResultWithChunkType(0.8, "block", { ageDays: 200 }),
         createResultWithChunkType(0.8, "function", { ageDays: 200 }),
       ];
-      const reranked = reranker.rerank(results, "techDebt", "semantic_search");
+      const reranked = await reranker.rerank(results, "techDebt", "semantic_search");
       expect(reranked[0].payload?.chunkType).toBe("function");
     });
 
-    it("should apply blockPenalty in codeReview preset", () => {
+    it("should apply blockPenalty in codeReview preset", async () => {
       const results = [
         createResultWithChunkType(0.8, "block", { changeDensity: 15 }),
         createResultWithChunkType(0.8, "function", { changeDensity: 15 }),
       ];
-      const reranked = reranker.rerank(results, "codeReview", "semantic_search");
+      const reranked = await reranker.rerank(results, "codeReview", "semantic_search");
       expect(reranked[0].payload?.chunkType).toBe("function");
     });
 
-    it("should apply blockPenalty in refactoring preset", () => {
+    it("should apply blockPenalty in refactoring preset", async () => {
       const results = [
         createResultWithChunkType(0.8, "block", { relativeChurn: 3.0 }),
         createResultWithChunkType(0.8, "function", { relativeChurn: 3.0 }),
       ];
-      const reranked = reranker.rerank(results, "refactoring", "semantic_search");
+      const reranked = await reranker.rerank(results, "refactoring", "semantic_search");
       expect(reranked[0].payload?.chunkType).toBe("function");
     });
 
-    it("should support blockPenalty as custom negative weight", () => {
+    it("should support blockPenalty as custom negative weight", async () => {
       const results = [createResultWithChunkType(0.8, "block", {}), createResultWithChunkType(0.7, "function", {})];
-      const reranked = reranker.rerank(
+      const reranked = await reranker.rerank(
         results,
         { custom: { similarity: 0.5, churn: 0.3, blockPenalty: -0.3 } },
         "semantic_search",
@@ -349,45 +361,45 @@ describe("reranker", () => {
       expect(reranked[0].payload?.chunkType).toBe("function");
     });
 
-    it("should not affect presets without blockPenalty (e.g., onboarding)", () => {
+    it("should not affect presets without blockPenalty (e.g., onboarding)", async () => {
       const results = [createResultWithChunkType(0.9, "block", {}), createResultWithChunkType(0.7, "function", {})];
-      const reranked = reranker.rerank(results, "onboarding", "semantic_search");
+      const reranked = await reranker.rerank(results, "onboarding", "semantic_search");
       // Block should still rank first (higher similarity, no penalty in this preset)
       expect(reranked[0].payload?.chunkType).toBe("block");
     });
   });
 
   describe("confidence dampening for small sample sizes", () => {
-    it("should dampen bugFixRate=100% on commitCount=1 vs reliable commitCount=10", () => {
+    it("should dampen bugFixRate=100% on commitCount=1 vs reliable commitCount=10", async () => {
       // Without dampening: bugFix signal = 100/100=1.0 vs 50/100=0.5 -> first wins
       // With quadratic dampening (k=8): 1.0*(1/8)^2~=0.016 vs 0.5*1.0=0.5 -> second wins
       const results = [
         createResult(0.8, 30, 1, false, { bugFixRate: 100 }),
         createResult(0.8, 30, 10, false, { bugFixRate: 50 }),
       ];
-      const reranked = reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
       expect(reranked[0].payload?.git?.commitCount).toBe(10);
     });
 
-    it("should not dampen bugFix when commitCount >= 8 (bugFix threshold)", () => {
+    it("should not dampen bugFix when commitCount >= 8 (bugFix threshold)", async () => {
       const results = [
         createResult(0.8, 30, 10, false, { bugFixRate: 30 }),
         createResult(0.8, 30, 10, false, { bugFixRate: 80 }),
       ];
-      const reranked = reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
       expect(reranked[0].payload?.git?.bugFixRate).toBe(80);
     });
 
-    it("should not dampen ownership when commitCount >= 5 (ownership threshold)", () => {
+    it("should not dampen ownership when commitCount >= 5 (ownership threshold)", async () => {
       const results = [
         createResult(0.8, 30, 6, false, { blameDominantAuthorPct: 30, blameAuthors: ["a", "b", "c", "d"] as any }),
         createResult(0.8, 30, 6, false, { blameDominantAuthorPct: 90, blameAuthors: ["alice", "bob"] as any }),
       ];
-      const reranked = reranker.rerank(results, { custom: { ownership: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { ownership: 1.0 } }, "semantic_search");
       expect(reranked[0].payload?.git?.blameDominantAuthorPct).toBe(90);
     });
 
-    it("should zero statistical signals when commitCount=0", () => {
+    it("should zero statistical signals when commitCount=0", async () => {
       const results: RerankableResult[] = [
         {
           score: 0.7,
@@ -398,12 +410,12 @@ describe("reranker", () => {
           payload: { relativePath: "b.ts", startLine: 1, endLine: 50, git: { commitCount: 0, bugFixRate: 0 } },
         },
       ];
-      const reranked = reranker.rerank(results, { custom: { similarity: 0.5, bugFix: 0.5 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { similarity: 0.5, bugFix: 0.5 } }, "semantic_search");
       // bugFix zeroed by confidence=0, similarity decides
       expect(reranked[0].payload?.relativePath).toBe("b.ts");
     });
 
-    it("should NOT dampen recency (factual signal)", () => {
+    it("should NOT dampen recency (factual signal)", async () => {
       // Both have commitCount=1. Recency is factual -- should NOT be dampened.
       // If recency were dampened, both would have ~0 recency and similarity would decide (tie).
       // If recency is NOT dampened, the recent file (ageDays=5) should win.
@@ -411,12 +423,12 @@ describe("reranker", () => {
         createResult(0.8, 200, 1), // old, 1 commit
         createResult(0.8, 5, 1), // recent, 1 commit
       ];
-      const reranked = reranker.rerank(results, { custom: { recency: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { recency: 1.0 } }, "semantic_search");
       // Recent file must rank first -- recency not dampened
       expect(reranked[0].payload?.git?.ageDays).toBe(5);
     });
 
-    it("should dampen ownership for single-commit chunks in hotspots", () => {
+    it("should dampen ownership for single-commit chunks in hotspots", async () => {
       // commitCount=1: inflated bugFixRate=100%, ownership trivially 100%
       // commitCount=10: moderate bugFixRate=40%, real ownership=80%
       // Hotspots uses bugFix and volatility which should be dampened
@@ -434,13 +446,13 @@ describe("reranker", () => {
           churnVolatility: 20,
         }),
       ];
-      const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+      const reranked = await reranker.rerank(results, "hotspots", "semantic_search");
       expect(reranked[0].payload?.git?.commitCount).toBe(10);
     });
   });
 
   describe("adaptive normalization bounds", () => {
-    it("should distinguish high-churn from moderate-churn in monorepo results", () => {
+    it("should distinguish high-churn from moderate-churn in monorepo results", async () => {
       const highChurn: RerankableResult = {
         score: 0.5,
         payload: {
@@ -459,11 +471,11 @@ describe("reranker", () => {
           git: { file: { commitCount: 51, ageDays: 100 } },
         },
       };
-      const results = reranker.rerank([moderateChurn, highChurn], "techDebt", "semantic_search");
+      const results = await reranker.rerank([moderateChurn, highChurn], "techDebt", "semantic_search");
       expect(results[0].payload?.git?.file?.commitCount).toBe(300);
     });
 
-    it("should not reduce bounds below DEFAULT_BOUNDS", () => {
+    it("should not reduce bounds below DEFAULT_BOUNDS", async () => {
       const a: RerankableResult = {
         score: 0.5,
         payload: {
@@ -482,13 +494,13 @@ describe("reranker", () => {
           git: { file: { commitCount: 5, ageDays: 10 } },
         },
       };
-      const results = reranker.rerank([a, b], "techDebt", "semantic_search");
+      const results = await reranker.rerank([a, b], "techDebt", "semantic_search");
       expect(results).toHaveLength(2);
       expect(results[0].score).toBeGreaterThanOrEqual(0);
       expect(results[1].score).toBeGreaterThanOrEqual(0);
     });
 
-    it("should produce different scores for values that clamp identically under static bounds", () => {
+    it("should produce different scores for values that clamp identically under static bounds", async () => {
       const results: RerankableResult[] = [
         {
           score: 0.5,
@@ -518,12 +530,12 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, "techDebt", "semantic_search");
+      const reranked = await reranker.rerank(results, "techDebt", "semantic_search");
       expect(reranked[0].payload?.git?.file?.commitCount).toBe(500);
       expect(reranked[1].payload?.git?.file?.commitCount).toBe(200);
     });
 
-    it("should adapt ageDays bounds for very old codebases", () => {
+    it("should adapt ageDays bounds for very old codebases", async () => {
       const results: RerankableResult[] = [
         {
           score: 0.5,
@@ -544,13 +556,13 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, "techDebt", "semantic_search");
+      const reranked = await reranker.rerank(results, "techDebt", "semantic_search");
       expect(reranked[0].payload?.git?.file?.ageDays).toBe(2000);
     });
   });
 
   describe("L3 alpha-blending", () => {
-    it("should blend chunk and file bugFixRate based on alpha (low alpha -> effective ~= file value)", () => {
+    it("should blend chunk and file bugFixRate based on alpha (low alpha -> effective ~= file value)", async () => {
       // chunk.commitCount=1 in a 50-commit file -> alpha ~= 0.007 (very low)
       // So effective bugFixRate should be almost entirely file's value
       // Result A: file bugFix=80, chunk bugFix=10  -> effective ~= 80 (alpha low, file dominates)
@@ -582,12 +594,12 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
       // File's bugFixRate=80 should dominate because alpha is tiny
       expect(reranked[0].payload?.relativePath).toBe("b.ts");
     });
 
-    it("should give high alpha to chunk with many commits relative to file (8/10 -> alpha=0.8)", () => {
+    it("should give high alpha to chunk with many commits relative to file (8/10 -> alpha=0.8)", async () => {
       // chunk.commitCount=8, file.commitCount=10 -> coverage=0.8, maturity=min(1,8/3)=1 -> alpha=0.8
       // Result A: file bugFix=20, chunk bugFix=90 -> effective = 0.8*90 + 0.2*20 = 76
       // Result B: file bugFix=80, chunk bugFix=10 -> effective = 0.8*10 + 0.2*80 = 24
@@ -618,12 +630,12 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
       // With high alpha, chunk bugFix=90 dominates -> a.ts first
       expect(reranked[0].payload?.relativePath).toBe("a.ts");
     });
 
-    it("should degenerate to file-only when chunk data absent (backward compat)", () => {
+    it("should degenerate to file-only when chunk data absent (backward compat)", async () => {
       // No chunk data -> alpha=0 -> effective = file value
       const results: RerankableResult[] = [
         {
@@ -649,12 +661,12 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
       // Pure file-level: bugFixRate=80 > 20
       expect(reranked[0].payload?.relativePath).toBe("a.ts");
     });
 
-    it("should set alpha=0 when chunk.commitCount=0", () => {
+    it("should set alpha=0 when chunk.commitCount=0", async () => {
       // chunk.commitCount=0 -> alpha=0 -> file values used entirely
       const results: RerankableResult[] = [
         {
@@ -682,7 +694,7 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { bugFix: 1.0 } }, "semantic_search");
       // alpha=0 means file values used: 80 > 20
       expect(reranked[0].payload?.relativePath).toBe("b.ts");
     });
@@ -714,7 +726,7 @@ describe("reranker", () => {
       },
     });
 
-    it("should give continuous discount for blocks with partial chunk data (alpha=0.5 -> discount=0.5)", () => {
+    it("should give continuous discount for blocks with partial chunk data (alpha=0.5 -> discount=0.5)", async () => {
       // file.commitCount=10, chunk.commitCount=5 -> coverage=0.5, maturity=1.0 -> alpha=0.5
       // discount = 1.0 - 0.5 = 0.5 (partial penalty)
       const results: RerankableResult[] = [
@@ -745,35 +757,39 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, { custom: { similarity: 0.5, blockPenalty: -0.5 } }, "semantic_search");
+      const reranked = await reranker.rerank(
+        results,
+        { custom: { similarity: 0.5, blockPenalty: -0.5 } },
+        "semantic_search",
+      );
       // Block gets partial discount (0.5), function gets 0. Function should rank higher.
       expect(reranked[0].payload?.chunkType).toBe("function");
       // But the gap should be smaller than full penalty
       expect(reranked[0].score - reranked[1].score).toBeLessThan(0.3);
     });
 
-    it("should give full discount for blocks without chunk data (alpha=0 -> discount=1.0)", () => {
+    it("should give full discount for blocks without chunk data (alpha=0 -> discount=1.0)", async () => {
       // No chunk data -> alpha=0 -> discount=1.0 (full penalty, same as old behavior)
       const results = [createResultWithChunkType(0.8, "block", {}), createResultWithChunkType(0.8, "function", {})];
-      const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+      const reranked = await reranker.rerank(results, "hotspots", "semantic_search");
       // Function should rank higher -- block gets full discount
       expect(reranked[0].payload?.chunkType).toBe("function");
     });
 
-    it("should give no discount for function/class chunks regardless of alpha", () => {
+    it("should give no discount for function/class chunks regardless of alpha", async () => {
       // Even with no chunk data, function/class/interface never get discount
       const results = [
         createResultWithChunkType(0.8, "function", {}),
         createResultWithChunkType(0.8, "class", {}),
         createResultWithChunkType(0.8, "interface", {}),
       ];
-      const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+      const reranked = await reranker.rerank(results, "hotspots", "semantic_search");
       // All scores should be equal (no discount applied to any)
       expect(reranked[0].score).toBeCloseTo(reranked[1].score, 5);
       expect(reranked[1].score).toBeCloseTo(reranked[2].score, 5);
     });
 
-    it("should give zero discount for blocks with rich chunk data (alpha=1.0)", () => {
+    it("should give zero discount for blocks with rich chunk data (alpha=1.0)", async () => {
       // chunk.commitCount=10, file.commitCount=10 -> coverage=1.0, maturity=1.0 -> alpha=1.0
       // discount = 1.0 - 1.0 = 0.0
       const results: RerankableResult[] = [
@@ -804,7 +820,7 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(
+      const reranked = await reranker.rerank(
         results,
         { custom: { similarity: 0.5, chunkChurn: 0.3, blockPenalty: -0.3 } },
         "semantic_search",
@@ -815,7 +831,7 @@ describe("reranker", () => {
   });
 
   describe("chunk-level temporal signal blending", () => {
-    it("should blend chunk and file burstActivity via alpha", () => {
+    it("should blend chunk and file burstActivity via alpha", async () => {
       const results: RerankableResult[] = [
         {
           score: 0.8,
@@ -842,12 +858,12 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, { custom: { burstActivity: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { burstActivity: 1.0 } }, "semantic_search");
       // Alpha=0.8 -> effective a.ts = 0.8*8.0+0.2*1.0=6.6, b.ts=0.8*1.0+0.2*8.0=2.4
       expect(reranked[0].payload?.relativePath).toBe("a.ts");
     });
 
-    it("should blend chunk and file changeDensity via alpha", () => {
+    it("should blend chunk and file changeDensity via alpha", async () => {
       const results: RerankableResult[] = [
         {
           score: 0.8,
@@ -874,12 +890,12 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, { custom: { density: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { density: 1.0 } }, "semantic_search");
       // Alpha=0.8 -> effective a.ts = 0.8*15+0.2*1=12.2, b.ts=0.8*1+0.2*15=3.8
       expect(reranked[0].payload?.relativePath).toBe("a.ts");
     });
 
-    it("should fall back to file-level when chunk has no temporal signals", () => {
+    it("should fall back to file-level when chunk has no temporal signals", async () => {
       const results: RerankableResult[] = [
         {
           score: 0.8,
@@ -905,14 +921,14 @@ describe("reranker", () => {
           },
         },
       ];
-      const reranked = reranker.rerank(results, { custom: { burstActivity: 1.0 } }, "semantic_search");
+      const reranked = await reranker.rerank(results, { custom: { burstActivity: 1.0 } }, "semantic_search");
       // Pure file values: 8.0 > 1.0 -> a.ts first
       expect(reranked[0].payload?.relativePath).toBe("a.ts");
     });
   });
 
   describe("redesigned techDebt preset", () => {
-    it("should include knowledgeSilo signal", () => {
+    it("should include knowledgeSilo signal", async () => {
       const silo: RerankableResult = {
         score: 0.5,
         payload: {
@@ -953,12 +969,12 @@ describe("reranker", () => {
           },
         },
       };
-      const results = reranker.rerank([shared, silo], "techDebt", "semantic_search");
+      const results = await reranker.rerank([shared, silo], "techDebt", "semantic_search");
       // Single live-line author code should rank higher in techDebt (knowledge silo risk)
       expect(results[0].payload?.git?.file?.blameContributorCount).toBe(1);
     });
 
-    it("should include density signal", () => {
+    it("should include density signal", async () => {
       const highDensity: RerankableResult = {
         score: 0.5,
         payload: {
@@ -995,32 +1011,32 @@ describe("reranker", () => {
           },
         },
       };
-      const results = reranker.rerank([lowDensity, highDensity], "techDebt", "semantic_search");
+      const results = await reranker.rerank([lowDensity, highDensity], "techDebt", "semantic_search");
       // High density (sustained change pressure) should rank higher
       expect(results[0].payload?.git?.file?.changeDensity).toBe(15);
     });
   });
 
   describe("edge cases", () => {
-    it("should handle empty results", () => {
-      const result = reranker.rerank([], "techDebt", "semantic_search");
+    it("should handle empty results", async () => {
+      const result = await reranker.rerank([], "techDebt", "semantic_search");
       expect(result).toEqual([]);
     });
 
-    it("should handle single result", () => {
+    it("should handle single result", async () => {
       const single = [createResult(0.9, 10, 5)];
-      const result = reranker.rerank(single, "techDebt", "semantic_search");
+      const result = await reranker.rerank(single, "techDebt", "semantic_search");
       expect(result).toHaveLength(1);
     });
 
-    it("should handle results with missing payload", () => {
+    it("should handle results with missing payload", async () => {
       const noPayload: RerankableResult[] = [{ score: 0.9 }, { score: 0.8 }];
-      const result = reranker.rerank(noPayload, "techDebt", "semantic_search");
+      const result = await reranker.rerank(noPayload, "techDebt", "semantic_search");
       expect(result).toHaveLength(2);
     });
 
-    it("should handle unknown preset gracefully", () => {
-      const result = reranker.rerank([createResult(0.9, 10, 5)], "unknownPreset" as any, "semantic_search");
+    it("should handle unknown preset gracefully", async () => {
+      const result = await reranker.rerank([createResult(0.9, 10, 5)], "unknownPreset" as any, "semantic_search");
       // Should fall back to relevance
       expect(result).toHaveLength(1);
     });
@@ -1043,20 +1059,20 @@ describe("Reranker (v2 class)", () => {
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git },
   });
 
-  it("returns results for relevance preset (no overlay)", () => {
+  it("returns results for relevance preset (no overlay)", async () => {
     const results = [makeResult(0.9), makeResult(0.7)];
-    const ranked = reranker.rerank(results, "relevance", "semantic_search");
+    const ranked = await reranker.rerank(results, "relevance", "semantic_search");
     expect(ranked).toHaveLength(2);
     // relevance = similarity-only -> no reranking, no overlay
     expect(ranked[0].rankingOverlay).toBeUndefined();
   });
 
-  it("reranks by techDebt preset with overlay", () => {
+  it("reranks by techDebt preset with overlay", async () => {
     const results = [
       makeResult(0.9, { file: { ageDays: 5, commitCount: 1 } }),
       makeResult(0.7, { file: { ageDays: 300, commitCount: 40 } }),
     ];
-    const ranked = reranker.rerank(results, "techDebt", "semantic_search");
+    const ranked = await reranker.rerank(results, "techDebt", "semantic_search");
     // techDebt boosts old + high churn -> second result should rank higher
     expect(ranked[0].payload?.git).toBeDefined();
     // Overlay present
@@ -1064,18 +1080,18 @@ describe("Reranker (v2 class)", () => {
     expect(ranked[0].rankingOverlay!.preset).toBe("techDebt");
   });
 
-  it("overlay contains only raw signals (no derived)", () => {
+  it("overlay contains only raw signals (no derived)", async () => {
     const results = [makeResult(0.9, { file: { ageDays: 200, commitCount: 30, bugFixRate: 10 } })];
-    const ranked = reranker.rerank(results, "techDebt", "semantic_search");
+    const ranked = await reranker.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
     // techDebt overlayMask has raw.file only — no derived
     expect(overlay).not.toHaveProperty("derived");
     expect(overlay.file).toBeDefined();
   });
 
-  it("overlay contains raw file-level signals from descriptor sources", () => {
+  it("overlay contains raw file-level signals from descriptor sources", async () => {
     const results = [makeResult(0.9, { file: { ageDays: 200, commitCount: 30 } })];
-    const ranked = reranker.rerank(results, "techDebt", "semantic_search");
+    const ranked = await reranker.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
     // techDebt uses age (source: ageDays) and churn (source: commitCount)
     expect(overlay.file).toBeDefined();
@@ -1083,24 +1099,24 @@ describe("Reranker (v2 class)", () => {
     expect(overlay.file!.commitCount).toBe(30);
   });
 
-  it("overlay includes chunk-level raw signals when chunk data exists", () => {
+  it("overlay includes chunk-level raw signals when chunk data exists", async () => {
     const results = [makeResult(0.8, { file: { commitCount: 20 }, chunk: { commitCount: 8, churnRatio: 0.4 } })];
     // hotspots uses chunkChurn (source: chunk.commitCount) and chunkRelativeChurn (source: chunk.churnRatio)
-    const ranked = reranker.rerank(results, "hotspots", "semantic_search");
+    const ranked = await reranker.rerank(results, "hotspots", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
     expect(overlay.chunk).toBeDefined();
     expect(overlay.chunk!.commitCount).toBe(8);
     expect(overlay.chunk!.churnRatio).toBe(0.4);
   });
 
-  it("overlay is undefined when preset has no non-similarity weights (relevance)", () => {
+  it("overlay is undefined when preset has no non-similarity weights (relevance)", async () => {
     const results = [makeResult(0.9, { file: { ageDays: 100, commitCount: 20, bugFixRate: 10 } })];
-    const ranked = reranker.rerank(results, "relevance", "semantic_search");
+    const ranked = await reranker.rerank(results, "relevance", "semantic_search");
     // relevance has similarity:1.0 only — no reranking, no overlay
     expect(ranked[0].rankingOverlay).toBeUndefined();
   });
 
-  it("decomposition preset includes file.methodLines in overlay", () => {
+  it("decomposition preset includes file.methodLines in overlay", async () => {
     const results = [
       makeResult(0.8, undefined, {
         contentSize: 5000,
@@ -1111,7 +1127,7 @@ describe("Reranker (v2 class)", () => {
       }),
       makeResult(0.7, undefined, { contentSize: 500, startLine: 1, endLine: 10, methodLines: 9, methodDensity: 55.6 }),
     ];
-    const ranked = reranker.rerank(results, "decomposition", "semantic_search");
+    const ranked = await reranker.rerank(results, "decomposition", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
     expect(overlay.preset).toBe("decomposition");
     expect(overlay).not.toHaveProperty("derived");
@@ -1119,12 +1135,12 @@ describe("Reranker (v2 class)", () => {
     expect(overlay.file!.methodLines).toBeGreaterThan(0);
   });
 
-  it("supports custom weights with overlay", () => {
+  it("supports custom weights with overlay", async () => {
     const results = [
       makeResult(0.5, undefined, { isDocumentation: true }),
       makeResult(0.9, undefined, { isDocumentation: false }),
     ];
-    const ranked = reranker.rerank(results, { custom: { documentation: 1.0 } }, "semantic_search");
+    const ranked = await reranker.rerank(results, { custom: { documentation: 1.0 } }, "semantic_search");
     expect(ranked[0].payload?.isDocumentation).toBe(true);
     expect(ranked[0].rankingOverlay!.preset).toBe("custom");
     // custom weights use fallback: extract raw sources for each active weight
@@ -1132,13 +1148,13 @@ describe("Reranker (v2 class)", () => {
     expect(ranked[0].rankingOverlay!).not.toHaveProperty("derived");
   });
 
-  it("handles empty results", () => {
-    const ranked = reranker.rerank([], "techDebt", "semantic_search");
+  it("handles empty results", async () => {
+    const ranked = await reranker.rerank([], "techDebt", "semantic_search");
     expect(ranked).toHaveLength(0);
   });
 
-  it("handles single result", () => {
-    const ranked = reranker.rerank([makeResult(0.8)], "techDebt", "semantic_search");
+  it("handles single result", async () => {
+    const ranked = await reranker.rerank([makeResult(0.8)], "techDebt", "semantic_search");
     expect(ranked).toHaveLength(1);
     expect(ranked[0].rankingOverlay).toBeDefined();
   });
@@ -1184,16 +1200,16 @@ describe("Reranker (v2 class)", () => {
     expect(techDebt!.tools).toContain("semantic_search");
   });
 
-  it("search_code presets work", () => {
+  it("search_code presets work", async () => {
     const results = [makeResult(0.8, { file: { ageDays: 200 } }), makeResult(0.8, { file: { ageDays: 5 } })];
-    const ranked = reranker.rerank(results, "recent", "search_code");
+    const ranked = await reranker.rerank(results, "recent", "search_code");
     expect(ranked[0].rankingOverlay!.preset).toBe("recent");
     expect(ranked[0].rankingOverlay!.file).toBeDefined();
     expect(ranked[0].rankingOverlay!.file!.ageDays).toBeDefined();
   });
 
   describe("confidence dampening via descriptors", () => {
-    it("dampens bugFix for low commit counts (needsConfidence=true)", () => {
+    it("dampens bugFix for low commit counts (needsConfidence=true)", async () => {
       // bugFix descriptor has needsConfidence=true, confidenceField="commitCount"
       // With commitCount=2, confidence = (2/8)^2 = 0.0625
       // bugFix raw = normalize(bugFixRate=100, 100) = 1.0
@@ -1201,37 +1217,37 @@ describe("Reranker (v2 class)", () => {
       // Compare: same bugFixRate with low vs high commitCount
       const lowCC = [makeResult(0.5, { file: { commitCount: 2, bugFixRate: 100, ageDays: 100 } })];
       const highCC = [makeResult(0.5, { file: { commitCount: 20, bugFixRate: 100, ageDays: 100 } })];
-      const rankedLow = reranker.rerank(lowCC, "techDebt", "semantic_search");
-      const rankedHigh = reranker.rerank(highCC, "techDebt", "semantic_search");
+      const rankedLow = await reranker.rerank(lowCC, "techDebt", "semantic_search");
+      const rankedHigh = await reranker.rerank(highCC, "techDebt", "semantic_search");
       // Low commitCount should produce lower score due to dampening
       expect(rankedLow[0].score).toBeLessThan(rankedHigh[0].score);
     });
 
-    it("does not dampen signals without needsConfidence (recency)", () => {
+    it("does not dampen signals without needsConfidence (recency)", async () => {
       // recency has needsConfidence=undefined -- no dampening
       // Same ageDays, different commitCount should yield same recency contribution
       const lowCC = [makeResult(0.5, { file: { ageDays: 182.5, commitCount: 1 } })];
       const highCC = [makeResult(0.5, { file: { ageDays: 182.5, commitCount: 20 } })];
-      const rankedLow = reranker.rerank(lowCC, { custom: { recency: 1.0 } }, "semantic_search");
-      const rankedHigh = reranker.rerank(highCC, { custom: { recency: 1.0 } }, "semantic_search");
+      const rankedLow = await reranker.rerank(lowCC, { custom: { recency: 1.0 } }, "semantic_search");
+      const rankedHigh = await reranker.rerank(highCC, { custom: { recency: 1.0 } }, "semantic_search");
       // recency = 1 - 182.5/365 = 0.5 regardless of commitCount
       expect(rankedLow[0].score).toBeCloseTo(rankedHigh[0].score, 2);
     });
 
-    it("full confidence when commitCount exceeds threshold", () => {
+    it("full confidence when commitCount exceeds threshold", async () => {
       // bugFix: k=8, commitCount=10 -> confidence=(10/8)^2 capped at 1
       // vs commitCount=20 -> confidence also 1. Both should score the same.
       const cc10 = [makeResult(0.5, { file: { commitCount: 10, bugFixRate: 50, ageDays: 100 } })];
       const cc20 = [makeResult(0.5, { file: { commitCount: 20, bugFixRate: 50, ageDays: 100 } })];
-      const ranked10 = reranker.rerank(cc10, { custom: { bugFix: 1.0 } }, "semantic_search");
-      const ranked20 = reranker.rerank(cc20, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const ranked10 = await reranker.rerank(cc10, { custom: { bugFix: 1.0 } }, "semantic_search");
+      const ranked20 = await reranker.rerank(cc20, { custom: { bugFix: 1.0 } }, "semantic_search");
       // Both above threshold -> same score
       expect(ranked10[0].score).toBeCloseTo(ranked20[0].score, 2);
     });
   });
 
   describe("adaptive bounds", () => {
-    it("expands bounds when p95 exceeds default (prevents saturation)", () => {
+    it("expands bounds when p95 exceeds default (prevents saturation)", async () => {
       // Create results where ageDays >> defaultBound (365)
       // Without adaptive bounds: all would saturate at 1.0
       // With adaptive bounds: spread based on p95
@@ -1241,7 +1257,7 @@ describe("Reranker (v2 class)", () => {
         makeResult(0.5, { file: { ageDays: 600, commitCount: 5 } }),
         makeResult(0.5, { file: { ageDays: 100, commitCount: 5 } }),
       ];
-      const ranked = reranker.rerank(results, { custom: { age: 1.0 } }, "semantic_search");
+      const ranked = await reranker.rerank(results, { custom: { age: 1.0 } }, "semantic_search");
       // With adaptive bounds, age=100 should NOT be ~0.27 (100/365) but ~0.1 (100/1000)
       // Find the result with ageDays=100
       const low = ranked.find((r) => r.payload?.git?.file?.ageDays === 100);
@@ -1309,7 +1325,7 @@ describe("Reranker with resolvedPresets", () => {
     expect(reranker.getPreset("nonexistent", "semantic_search")).toBeUndefined();
   });
 
-  it("rerank uses resolved preset weights", () => {
+  it("rerank uses resolved preset weights", async () => {
     const heavyRecency: RerankPreset = {
       name: "heavyRecency",
       description: "Heavy recency",
@@ -1328,7 +1344,7 @@ describe("Reranker with resolvedPresets", () => {
         payload: { relativePath: "new.ts", startLine: 1, endLine: 50, git: { file: { ageDays: 5, commitCount: 5 } } },
       },
     ];
-    const ranked = reranker.rerank(results, "heavyRecency", "semantic_search");
+    const ranked = await reranker.rerank(results, "heavyRecency", "semantic_search");
     // With 90% recency weight, recent file should rank first despite lower similarity
     expect(ranked[0].payload?.relativePath).toBe("new.ts");
   });
@@ -1364,13 +1380,13 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, ...extra, git },
   });
 
-  it("reads file-level raw signals via signalKeyMap for adaptive bounds", () => {
+  it("reads file-level raw signals via signalKeyMap for adaptive bounds", async () => {
     const results = [
       makeResult(0.9, { file: { ageDays: 200, commitCount: 30 } }),
       makeResult(0.7, { file: { ageDays: 5, commitCount: 2 } }),
     ];
     // techDebt uses age + churn which need adaptive bounds from readRawSource
-    const ranked = rerankerWithPayload.rerank(results, "techDebt", "semantic_search");
+    const ranked = await rerankerWithPayload.rerank(results, "techDebt", "semantic_search");
     expect(ranked[0].rankingOverlay).toBeDefined();
     expect(ranked[0].rankingOverlay!.preset).toBe("techDebt");
     // Overlay should contain raw file signals
@@ -1379,50 +1395,50 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
     expect(ranked[0].rankingOverlay!.file!.commitCount).toBeDefined();
   });
 
-  it("reads chunk-level raw signals via signalKeyMap for overlay", () => {
+  it("reads chunk-level raw signals via signalKeyMap for overlay", async () => {
     const results = [makeResult(0.8, { file: { commitCount: 20 }, chunk: { commitCount: 8, churnRatio: 0.4 } })];
-    const ranked = rerankerWithPayload.rerank(results, "hotspots", "semantic_search");
+    const ranked = await rerankerWithPayload.rerank(results, "hotspots", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
     expect(overlay.chunk).toBeDefined();
     expect(overlay.chunk!.commitCount).toBe(8);
     expect(overlay.chunk!.churnRatio).toBe(0.4);
   });
 
-  it("resolves short name to full path for adaptive bounds", () => {
+  it("resolves short name to full path for adaptive bounds", async () => {
     // ageDays -> git.file.ageDays, commitCount -> git.file.commitCount
     // readRawSource("ageDays") should find value via signalKeyMap
     const results = [
       makeResult(0.9, { file: { ageDays: 100, commitCount: 10 } }),
       makeResult(0.8, { file: { ageDays: 300, commitCount: 50 } }),
     ];
-    const ranked = rerankerWithPayload.rerank(results, "techDebt", "semantic_search");
+    const ranked = await rerankerWithPayload.rerank(results, "techDebt", "semantic_search");
     // Both should have overlays with actual raw values
     const firstOverlay = ranked[0].rankingOverlay!;
     expect(firstOverlay.file!.ageDays).toBeDefined();
     expect(typeof firstOverlay.file!.ageDays).toBe("number");
   });
 
-  it("chunk.commitCount maps to git.chunk.commitCount (2-segment suffix)", () => {
+  it("chunk.commitCount maps to git.chunk.commitCount (2-segment suffix)", async () => {
     const results = [
       makeResult(0.8, {
         file: { commitCount: 20, bugFixRate: 10, churnVolatility: 5, recencyWeightedFreq: 3 },
         chunk: { commitCount: 15, churnRatio: 0.9 },
       }),
     ];
-    const ranked = rerankerWithPayload.rerank(results, "hotspots", "semantic_search");
+    const ranked = await rerankerWithPayload.rerank(results, "hotspots", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
     expect(overlay.chunk!.commitCount).toBe(15);
   });
 
-  it("falls back gracefully without payloadSignals (default empty)", () => {
+  it("falls back gracefully without payloadSignals (default empty)", async () => {
     const rerankerNoPayload = new Reranker(allDescriptors, testPresets);
     const results = [makeResult(0.9, { file: { ageDays: 200 } })];
     // Should not crash, but readRawSource returns undefined for short names
-    const ranked = rerankerNoPayload.rerank(results, "techDebt", "semantic_search");
+    const ranked = await rerankerNoPayload.rerank(results, "techDebt", "semantic_search");
     expect(ranked).toHaveLength(1);
   });
 
-  it("supports non-git payload namespace via PayloadSignalDescriptor", () => {
+  it("supports non-git payload namespace via PayloadSignalDescriptor", async () => {
     // Create a custom descriptor that reads from "metrics.file.responseTime"
     const customPayloadSignals = [
       { key: "metrics.file.responseTime", type: "number" as const, description: "Response time" },
@@ -1463,7 +1479,7 @@ describe("Reranker with PayloadSignalDescriptor (generic payload reading)", () =
         payload: { relativePath: "b.ts", startLine: 1, endLine: 10, metrics: { file: { responseTime: 4000 } } },
       },
     ];
-    const ranked = customReranker.rerank(results, "slowEndpoints", "semantic_search");
+    const ranked = await customReranker.rerank(results, "slowEndpoints", "semantic_search");
     // Overlay should contain the raw signal from non-git namespace
     expect(ranked[0].rankingOverlay!.file).toBeDefined();
     expect(ranked[0].rankingOverlay!.file!.responseTime).toBeDefined();
@@ -1505,7 +1521,7 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
   });
 
-  it("unified path: VolatilitySignal resolves adaptive threshold via confidence.support (commitCount p25)", () => {
+  it("unified path: VolatilitySignal resolves adaptive threshold via confidence.support (commitCount p25)", async () => {
     // Raw descriptor declares confidence — reranker reads `git.file.commitCount` p25.
     const customPayloadSignals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
@@ -1543,12 +1559,12 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
 
     // Adaptive k=20 (p25 from collection stats). commitCount=4 → (4/20)^2=0.04
     const results = [makeResult(0.9, { file: { churnVolatility: 100, commitCount: 4 } })];
-    const ranked = reranker.rerank(results, "volatilityOnly", "semantic_search");
+    const ranked = await reranker.rerank(results, "volatilityOnly", "semantic_search");
 
     expect(ranked[0].score).toBeLessThan(0.1);
   });
 
-  it("unified path: VolatilitySignal falls back to confidence.score.threshold when no collectionStats", () => {
+  it("unified path: VolatilitySignal falls back to confidence.score.threshold when no collectionStats", async () => {
     const customPayloadSignals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
       {
@@ -1568,7 +1584,7 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     // No setCollectionStats → adaptive unavailable → falls back to confidence.score.threshold=8.
     // commitCount=4 → (4/8)^2=0.25
     const results = [makeResult(0.9, { file: { churnVolatility: 100, commitCount: 4 } })];
-    const ranked = reranker.rerank(results, "volatilityOnly", "semantic_search");
+    const ranked = await reranker.rerank(results, "volatilityOnly", "semantic_search");
 
     expect(ranked[0].score).toBeGreaterThan(0.15);
     expect(ranked[0].score).toBeLessThan(0.4);
@@ -1590,7 +1606,7 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     expect(vs.dampeningSource).toBeUndefined();
   });
 
-  it("unified path: BugFixSignal reads threshold from raw descriptor's stats.confidence.score", () => {
+  it("unified path: BugFixSignal reads threshold from raw descriptor's stats.confidence.score", async () => {
     // Declare bugFixRate descriptor with confidence.score.threshold=20 (custom).
     const customPayloadSignals: PayloadSignalDescriptor[] = [
       { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
@@ -1610,23 +1626,23 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     const reranker = new Reranker(bugFixDescriptor, [bugFixPreset], customPayloadSignals);
     // commitCount=4 with threshold=20 → dampening=(4/20)^2=0.04
     const results = [makeResult(0.9, { file: { bugFixRate: 100, commitCount: 4 } })];
-    const ranked = reranker.rerank(results, "bugFixOnly", "semantic_search");
+    const ranked = await reranker.rerank(results, "bugFixOnly", "semantic_search");
 
     expect(ranked[0].score).toBeLessThan(0.1);
   });
 
-  it("unified path: BugFixSignal falls back to FALLBACK_K=10 when no confidence block declared", () => {
+  it("unified path: BugFixSignal falls back to FALLBACK_K=10 when no confidence block declared", async () => {
     // payloadSignals (top-of-describe) declares bugFixRate WITHOUT confidence — BugFixSignal
     // uses FALLBACK_K=10. commitCount=4 → dampening=(4/10)^2=0.16
     const reranker = new Reranker(bugFixDescriptor, [bugFixPreset], payloadSignals);
     const results = [makeResult(0.9, { file: { bugFixRate: 100, commitCount: 4 } })];
-    const ranked = reranker.rerank(results, "bugFixOnly", "semantic_search");
+    const ranked = await reranker.rerank(results, "bugFixOnly", "semantic_search");
 
     expect(ranked[0].score).toBeGreaterThan(0.1);
     expect(ranked[0].score).toBeLessThan(0.25);
   });
 
-  it("regression: confidence clamp fires even when support sibling is NOT in overlay mask", () => {
+  it("regression: confidence clamp fires even when support sibling is NOT in overlay mask", async () => {
     // Real-world bug surfaced via MCP query against a large Rails monorepo:
     // HotspotsPreset.overlayMask.file contains bugFixRate but NOT commitCount.
     // Previous implementation read siblingValues from the projected overlay,
@@ -1698,7 +1714,7 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
         git: { file: { bugFixRate: 38, commitCount: 3 } },
       },
     };
-    const ranked = reranker.rerank([result], "bugFixMasked", "semantic_search");
+    const ranked = await reranker.rerank([result], "bugFixMasked", "semantic_search");
     const overlay = ranked[0].rankingOverlay?.file?.["bugFixRate"];
     // Without the fix: { value: 38, label: "critical" } (clamp didn't fire — commitCount missing from siblings).
     // With the fix: { value: 38, label: "healthy" } (clamp fires from raw payload).
@@ -1727,7 +1743,7 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
   });
 
-  it("uses collection-level p95 as floor instead of static defaultBound", () => {
+  it("uses collection-level p95 as floor instead of static defaultBound", async () => {
     const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
 
     // Collection p95=2000 (much larger than defaultBound=365)
@@ -1751,13 +1767,13 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     // Without collection stats: bound = max(200, 365) = 365 → age=200/365 ≈ 0.548
     // With collection stats:    bound = max(200, 2000) = 2000 → age=200/2000 = 0.10
     const results = [makeResult(0.9, { file: { ageDays: 200 } })];
-    const ranked = reranker.rerank(results, "ageOnly", "semantic_search");
+    const ranked = await reranker.rerank(results, "ageOnly", "semantic_search");
 
     // Score should be ~0.10 (collection p95=2000 as bound), not ~0.55 (defaultBound=365)
     expect(ranked[0].score).toBeLessThan(0.2);
   });
 
-  it("does NOT use defaultBound as floor when collectionStats loaded (collP95 < defaultBound)", () => {
+  it("does NOT use defaultBound as floor when collectionStats loaded (collP95 < defaultBound)", async () => {
     const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
 
     // Collection p95=15 (young codebase, much less than defaultBound=365)
@@ -1781,27 +1797,27 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     // Current (defaultBound as floor): bound = max(10, 365) = 365 → age=10/365 = 0.027
     // Expected (adaptive):             bound = max(10, 15)  = 15  → age=10/15  = 0.667
     const results = [makeResult(0.9, { file: { ageDays: 10 } })];
-    const ranked = reranker.rerank(results, "ageOnly", "semantic_search");
+    const ranked = await reranker.rerank(results, "ageOnly", "semantic_search");
 
     // With adaptive bounds, age=10/15≈0.667. With static floor, age=10/365≈0.027.
     expect(ranked[0].score).toBeGreaterThan(0.5);
   });
 
-  it("falls back to defaultBound when no collection stats exist", () => {
+  it("falls back to defaultBound when no collection stats exist", async () => {
     const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
     // No setCollectionStats
 
     // Batch: ageDays=[100, 200] → batchP95≈200
     // Bound = max(200, 365) = 365 → age=200/365 ≈ 0.548
     const results = [makeResult(0.9, { file: { ageDays: 200 } })];
-    const ranked = reranker.rerank(results, "ageOnly", "semantic_search");
+    const ranked = await reranker.rerank(results, "ageOnly", "semantic_search");
 
     // Score should be ~0.55 (defaultBound=365 as floor)
     expect(ranked[0].score).toBeGreaterThan(0.4);
     expect(ranked[0].score).toBeLessThan(0.7);
   });
 
-  it("uses max(batchP95, collectionP95) — batch wins when larger", () => {
+  it("uses max(batchP95, collectionP95) — batch wins when larger", async () => {
     const reranker = new Reranker(ageOnlyDescriptor, [ageOnlyPreset], payloadSignals);
 
     // Collection p95=50 (small codebase)
@@ -1826,7 +1842,7 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
     // But also max(800, defaultBound=365) = 800 anyway
     // age=800/800 = 1.0
     const results = [makeResult(0.9, { file: { ageDays: 800 } })];
-    const ranked = reranker.rerank(results, "ageOnly", "semantic_search");
+    const ranked = await reranker.rerank(results, "ageOnly", "semantic_search");
 
     // Score should be ~1.0 (batch p95 dominates)
     expect(ranked[0].score).toBeGreaterThan(0.8);
@@ -1836,7 +1852,7 @@ describe("Reranker — collection-level p95 fallback for adaptive bounds", () =>
 describe("signalLevel: file-level preset suppresses chunk overlay", () => {
   const reranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
 
-  it("ownership (file-level preset) should not include chunk in overlay", () => {
+  it("ownership (file-level preset) should not include chunk in overlay", async () => {
     const results: RerankableResult[] = [
       {
         score: 0.8,
@@ -1852,13 +1868,13 @@ describe("signalLevel: file-level preset suppresses chunk overlay", () => {
         },
       },
     ];
-    const reranked = reranker.rerank(results, "ownership", "semantic_search");
+    const reranked = await reranker.rerank(results, "ownership", "semantic_search");
     expect(reranked[0].rankingOverlay).toBeDefined();
     expect(reranked[0].rankingOverlay!.chunk).toBeUndefined();
     expect(reranked[0].rankingOverlay!.file).toBeDefined();
   });
 
-  it("hotspots (chunk-level preset) should include chunk in overlay", () => {
+  it("hotspots (chunk-level preset) should include chunk in overlay", async () => {
     const results: RerankableResult[] = [
       {
         score: 0.8,
@@ -1874,12 +1890,12 @@ describe("signalLevel: file-level preset suppresses chunk overlay", () => {
         },
       },
     ];
-    const reranked = reranker.rerank(results, "hotspots", "semantic_search");
+    const reranked = await reranker.rerank(results, "hotspots", "semantic_search");
     expect(reranked[0].rankingOverlay).toBeDefined();
     expect(reranked[0].rankingOverlay!.chunk).toBeDefined();
   });
 
-  it("overrideSignalLevel=file should suppress chunk overlay even for chunk-level preset", () => {
+  it("overrideSignalLevel=file should suppress chunk overlay even for chunk-level preset", async () => {
     const results: RerankableResult[] = [
       {
         score: 0.8,
@@ -1895,7 +1911,7 @@ describe("signalLevel: file-level preset suppresses chunk overlay", () => {
         },
       },
     ];
-    const reranked = reranker.rerank(results, "hotspots", "semantic_search", { signalLevel: "file" });
+    const reranked = await reranker.rerank(results, "hotspots", "semantic_search", { signalLevel: "file" });
     expect(reranked[0].rankingOverlay).toBeDefined();
     expect(reranked[0].rankingOverlay!.chunk).toBeUndefined();
   });
@@ -1914,7 +1930,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, language: "typescript", git },
   });
 
-  it("produces { value, label } for a numeric signal with stats.labels when collectionStats loaded", () => {
+  it("produces { value, label } for a numeric signal with stats.labels when collectionStats loaded", async () => {
     // git.file.commitCount has stats.labels: { p25: "low", p50: "typical", p75: "high", p95: "extreme" }
     const tsSignals = new Map([
       [
@@ -1942,7 +1958,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
 
     // techDebt preset has overlayMask with file: ["ageDays", "commitCount"] (via mask.file)
     const results = [makeResult({ file: { ageDays: 200, commitCount: 30 } })];
-    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const ranked = await rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
 
     // commitCount=30 is >= p25(5), p50(15), p75(40)? No: 30 < 40. So label should be "typical" (p50=15 passed, p75=40 not)
@@ -1952,7 +1968,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.invalidateStats();
   });
 
-  it("leaves numeric signals without stats.labels as plain values even with collectionStats", () => {
+  it("leaves numeric signals without stats.labels as plain values even with collectionStats", async () => {
     // recentDominantAuthorPct has stats.labels: { p95: "extreme" }
     // contributorCount has stats.labels: { p95: "extreme" }
     // But we add a signal WITHOUT labels to verify it stays plain.
@@ -1984,7 +2000,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.setCollectionStats(collectionStats);
 
     const results = [makeResult({ file: { ageDays: 200, commitCount: 30 } })];
-    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const ranked = await rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
 
     // commitCount has stats.labels + collectionStats entry → labeled
@@ -1999,11 +2015,11 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.invalidateStats();
   });
 
-  it("returns plain number when collectionStats not loaded (no percentiles available)", () => {
+  it("returns plain number when collectionStats not loaded (no percentiles available)", async () => {
     // No setCollectionStats — reranker freshly created without stats
     const freshReranker = new Reranker(allDescriptors, testPresets, testPayloadSignals);
     const results = [makeResult({ file: { ageDays: 200, commitCount: 30 } })];
-    const ranked = freshReranker.rerank(results, "techDebt", "semantic_search");
+    const ranked = await freshReranker.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
 
     // Without collectionStats, no percentiles → plain number
@@ -2011,7 +2027,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     expect(overlay.file!.commitCount).toBe(30);
   });
 
-  it("returns plain number for signal with stats.labels but no percentile entry in collectionStats", () => {
+  it("returns plain number for signal with stats.labels but no percentile entry in collectionStats", async () => {
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([
         // Only ageDays in stats, NOT commitCount
@@ -2038,7 +2054,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.setCollectionStats(collectionStats);
 
     const results = [makeResult({ file: { ageDays: 200, commitCount: 30 } })];
-    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const ranked = await rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
 
     // commitCount has no stats entry → plain number
@@ -2048,7 +2064,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.invalidateStats();
   });
 
-  it("uses per-language percentiles when available", () => {
+  it("uses per-language percentiles when available", async () => {
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 3, 50: 8, 75: 12, 95: 50 } }]]),
       perLanguage: new Map([
@@ -2088,7 +2104,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
         },
       },
     ];
-    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const ranked = await rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
 
     // Should use ruby stats: p75=6, value=7 >= 6 → "high"
@@ -2097,7 +2113,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.invalidateStats();
   });
 
-  it("returns raw number when language not in perLanguage (no global fallback)", () => {
+  it("returns raw number when language not in perLanguage (no global fallback)", async () => {
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map([["git.file.commitCount", { count: 100, percentiles: { 25: 5, 50: 8, 75: 12, 95: 50 } }]]),
       perLanguage: new Map(),
@@ -2127,7 +2143,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
         },
       },
     ];
-    const ranked = rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
+    const ranked = await rerankerWithLabels.rerank(results, "techDebt", "semantic_search");
     const overlay = ranked[0].rankingOverlay!;
 
     expect(typeof overlay.file!.commitCount).toBe("number");
@@ -2136,7 +2152,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.invalidateStats();
   });
 
-  it("uses test scope thresholds for test chunks", () => {
+  it("uses test scope thresholds for test chunks", async () => {
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map(),
       perLanguage: new Map([
@@ -2169,7 +2185,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     // Test chunk with commitCount: 10 should get "typical" (test p50=12, 10 < 12 → stays at p25 label "low")
     // Actually: walk labels p25=5(passed,10>=5→"low"), p50=12(10<12→stop). Result: "low"
     // With source thresholds: p75=10, 10>=10 → "high". Different result proves scope works.
-    const testResult = rerankerWithLabels.rerank(
+    const testResult = await rerankerWithLabels.rerank(
       [
         {
           score: 0.8,
@@ -2191,7 +2207,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     expect(testOverlay.file!.commitCount).toEqual({ value: 10, label: "low" });
 
     // Source chunk with same commitCount: 10 should get "high" (source p75=10, 10>=10 → "high")
-    const sourceResult = rerankerWithLabels.rerank(
+    const sourceResult = await rerankerWithLabels.rerank(
       [
         {
           score: 0.8,
@@ -2215,7 +2231,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.invalidateStats();
   });
 
-  it("falls back to source thresholds when test stats undefined", () => {
+  it("falls back to source thresholds when test stats undefined", async () => {
     const collectionStats: CollectionSignalStats = {
       perSignal: new Map(),
       perLanguage: new Map([
@@ -2246,7 +2262,7 @@ describe("Reranker — label resolution in buildOverlay()", () => {
     rerankerWithLabels.setCollectionStats(collectionStats);
 
     // Test chunk — no test stats, should fall back to source thresholds
-    const testResult = rerankerWithLabels.rerank(
+    const testResult = await rerankerWithLabels.rerank(
       [
         {
           score: 0.8,

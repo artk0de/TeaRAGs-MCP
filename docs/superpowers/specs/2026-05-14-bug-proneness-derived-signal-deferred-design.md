@@ -40,15 +40,27 @@ Follows the existing pattern of `KnowledgeSiloSignal`, `OwnershipSignal`,
 
 ```
 bugProneness =
-  blendNormalized(bugFixRate)
-  * confidenceDampening(commitCount, k=10)
+  blendNormalized(bugFixRate)             // dampened by commitCount via the
+                                          // unified confidence block on the
+                                          // bugFixRate raw descriptor
+                                          // (declared in spec 3, D5+D8)
   * knowledgeSiloFactor(blameContributorCount)
 ```
 
 Where `knowledgeSiloFactor` mirrors `KnowledgeSiloSignal`: `1.0` for solo, `0.5`
 for pair, `0.0` for 3+ owners. Multiplication (not weighted sum) is deliberate —
-Fragile Silo requires **all three** signals to be present. Weighted sum would
-let high `bugFix` alone score high, defeating the point.
+Fragile Silo requires **both** factors to be present. Weighted sum would let
+high `bugFix` alone score high, defeating the point.
+
+**No standalone `confidenceDampening` call.** After spec 3 lands, the dampening
+of `bugFixRate` by `commitCount` is declared once on the raw `bugFixRate`
+descriptor (`stats.confidence.score.threshold = 10`) and applied uniformly by
+the reranker's derived-signal extraction path. `bugProneness` inherits the
+dampened value through `blendNormalized` and does NOT duplicate the
+`support: "commitCount"` / `threshold: 10` parameters. If `bugProneness` ever
+needs an additional confidence axis (e.g. dampen by `blameContributorCount`
+reliability), it would declare its own `confidence` block on a NEW raw signal it
+consumes — never re-declare parameters already owned by `bugFixRate`.
 
 ### D3: Registration
 

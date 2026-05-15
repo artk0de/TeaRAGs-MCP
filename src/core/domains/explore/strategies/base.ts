@@ -28,7 +28,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   async execute(ctx: ExploreContext): Promise<ExploreResult[]> {
     const prepared = this.applyDefaults(ctx);
     const rawResults = await this.executeExplore(prepared);
-    return this.postProcess(rawResults, ctx);
+    return await this.postProcess(rawResults, ctx);
   }
 
   /** Concrete strategy implements the actual search call. */
@@ -55,14 +55,14 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    *   2. Trim to requested limit
    *   3. metaOnly formatting (if ctx.metaOnly)
    */
-  protected postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
+  protected async postProcess(results: ExploreResult[], originalCtx: ExploreContext): Promise<ExploreResult[]> {
     const requestedLimit = Math.max(originalCtx.limit ?? 0, 5);
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
 
     // 1. Rerank
     let filtered =
       rerank && rerank !== "relevance"
-        ? this.reranker.rerank(results, rerank, "semantic_search", {
+        ? await this.reranker.rerank(results, rerank, "semantic_search", {
             signalLevel: originalCtx.level as SignalLevel | undefined,
             query: originalCtx.query,
           })

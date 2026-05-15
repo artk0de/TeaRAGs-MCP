@@ -124,7 +124,10 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     });
   }
 
-  protected override postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
+  protected override async postProcess(
+    results: ExploreResult[],
+    originalCtx: ExploreContext,
+  ): Promise<ExploreResult[]> {
     let processed = results;
 
     // File-level dedup: keep highest-scored chunk per file

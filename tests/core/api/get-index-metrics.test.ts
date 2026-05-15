@@ -247,4 +247,102 @@ describe("getIndexMetrics", () => {
     statsCache.load.mockReturnValue(null);
     await expect(facade.getIndexMetrics("/project")).rejects.toThrow("is not indexed");
   });
+
+  it("returns no per-language signal buckets when perLanguage is undefined in cached stats", async () => {
+    // Older stats payloads (pre-perLanguage migration) may load with no
+    // perLanguage map. buildLanguageSignals must defensively skip the
+    // language fold rather than throwing — the appendGlobalSignalsIfPolyglot
+    // path still runs (codeLanguageCount=0 ≠ 1 → adds "global").
+    const { facade, statsCache } = makeExploreFacade();
+    statsCache.load.mockReturnValue({
+      perSignal: new Map(),
+      perLanguage: undefined,
+      distributions: {
+        totalFiles: 10,
+        language: { typescript: 10 },
+        chunkType: {},
+        documentation: { docs: 0, code: 10 },
+        topAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    });
+
+    const result = await facade.getIndexMetrics("/project");
+    // No per-language buckets; only the polyglot-global fallback (empty signals).
+    expect(result.signals["typescript"]).toBeUndefined();
+    expect(result.signals["ruby"]).toBeUndefined();
+  });
+
+  it("skips signals whose descriptor has no labels declared", async () => {
+    // Coverage for the `if (!descriptor?.stats?.labels) continue;` branch
+    // in buildSignalMetrics. A signal that appears in perSignal but has no
+    // matching descriptor (or a descriptor without `stats.labels`) gets
+    // omitted from the metrics output — not rendered as `labelMap: {}`.
+    const { facade, statsCache } = makeExploreFacade();
+    statsCache.load.mockReturnValue({
+      perSignal: new Map([
+        [
+          "git.file.unknownSignal", // no matching PayloadSignalDescriptor in mock
+          { count: 50, min: 1, max: 10, percentiles: { 25: 2, 50: 5, 75: 8, 95: 10 }, mean: 5 },
+        ],
+        [
+          "git.file.commitCount",
+          { count: 100, min: 1, max: 47, percentiles: { 25: 2, 50: 5, 75: 12, 95: 30 }, mean: 8.3 },
+        ],
+      ]),
+      // Multi-language so the polyglot branch runs and the global bucket exercises buildSignalMetrics.
+      perLanguage: new Map([
+        [
+          "typescript",
+          new Map([
+            [
+              "git.file.commitCount",
+              { source: { count: 80, min: 1, max: 40, percentiles: { 25: 3, 50: 6, 75: 14, 95: 28 }, mean: 7.5 } },
+            ],
+          ]),
+        ],
+        [
+          "ruby",
+          new Map([
+            [
+              "git.file.commitCount",
+              { source: { count: 20, min: 1, max: 10, percentiles: { 25: 1, 50: 3, 75: 5, 95: 8 }, mean: 3.2 } },
+            ],
+          ]),
+        ],
+      ]),
+      distributions: {
+        totalFiles: 50,
+        language: { typescript: 80, ruby: 20 },
+        chunkType: {},
+        documentation: { docs: 0, code: 100 },
+        topAuthors: [],
+        othersCount: 0,
+      },
+      computedAt: Date.now(),
+    });
+
+    const result = await facade.getIndexMetrics("/project");
+    // unknownSignal must NOT appear in global signals — no descriptor labels.
+    expect(result.signals["global"]?.["git.file.unknownSignal"]).toBeUndefined();
+    // commitCount has labels and is rendered.
+    expect(result.signals["global"]?.["git.file.commitCount"]).toBeDefined();
+  });
+
+  it("returns undefined enrichment when the indexing-metadata marker fetch rejects", async () => {
+    // loadEnrichmentHealth wraps qdrant.getPoint with `.catch(() => null)`.
+    // When the underlying Qdrant call rejects (transient network, missing
+    // marker point), the metrics path must keep working and return
+    // `enrichment: undefined` rather than propagate the failure.
+    const { facade, qdrant } = makeExploreFacade();
+    qdrant.getPoint.mockRejectedValue(new Error("qdrant transient failure"));
+
+    const result = await facade.getIndexMetrics("/project");
+
+    expect(result.enrichment).toBeUndefined();
+    // The rest of the response remains intact.
+    expect(result.totalChunks).toBe(100);
+    expect(result.collection).toContain("code_");
+  });
 });

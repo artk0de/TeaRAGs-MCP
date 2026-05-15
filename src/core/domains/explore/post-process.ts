@@ -66,13 +66,13 @@ export function computeFetchLimit(
 /**
  * Apply post-processing pipeline: glob filter → rerank → trim to limit.
  */
-export function postProcess(results: SearchResult[], options: PostProcessOptions): SearchResult[] {
+export async function postProcess(results: SearchResult[], options: PostProcessOptions): Promise<SearchResult[]> {
   // pathPattern is now resolved as a Qdrant pre-filter BEFORE the query.
   // No client-side glob filtering needed here.
   let filtered: SearchResult[] = results;
 
   if (options.rerank && options.rerank !== "relevance") {
-    filtered = options.reranker.rerank(filtered, options.rerank, "semantic_search", {
+    filtered = await options.reranker.rerank(filtered, options.rerank, "semantic_search", {
       signalLevel: options.level,
       query: options.query,
     });

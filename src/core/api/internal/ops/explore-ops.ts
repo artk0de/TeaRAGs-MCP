@@ -18,6 +18,7 @@ import type { PayloadSignalDescriptor } from "../../../contracts/types/trajector
 import { CollectionNotFoundError as DomainCollectionNotFoundError } from "../../../domains/explore/errors.js";
 import { IndexMetricsQuery } from "../../../domains/explore/queries/index-metrics.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
+import { StatsRecomputeService } from "../../../domains/explore/stats-recompute.js";
 import {
   createExploreStrategy,
   FileOutlineStrategy,
@@ -73,6 +74,7 @@ export class ExploreOps {
   private readonly hybridStrategy: BaseExploreStrategy;
   private readonly scrollRankStrategy: BaseExploreStrategy;
   private readonly indexMetricsQuery?: IndexMetricsQuery;
+  private readonly recomputeService?: StatsRecomputeService;
 
   constructor(deps: ExploreOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -108,6 +110,7 @@ export class ExploreOps {
     );
     if (deps.statsCache) {
       this.indexMetricsQuery = new IndexMetricsQuery(deps.qdrant, deps.statsCache, this.payloadSignals);
+      this.recomputeService = new StatsRecomputeService(deps.qdrant, deps.statsCache);
     }
   }
 
@@ -283,7 +286,19 @@ export class ExploreOps {
     if (!this.statsCache || this.reranker.hasCollectionStats) return;
     try {
       const stats = this.statsCache.load(collectionName);
-      if (stats) this.reranker.setCollectionStats(stats);
+      if (!stats) return;
+      // Wire the recompute service into the reranker so lazy-at-rerank
+      // backfill of missing confidence-referenced percentiles can fire
+      // at the moment of need (inside Reranker.rerank). No scroll fires
+      // here at load time — only at the first rerank that actually
+      // consults a missing percentile.
+      if (this.recomputeService) {
+        this.reranker.setRecomputeService(this.recomputeService);
+      }
+      this.reranker.setCollectionStats(stats, {
+        collectionName,
+        payloadFieldKeys: stats.payloadFieldKeys,
+      });
     } catch {
       // Stats loading failure must not prevent search.
     }

@@ -14,14 +14,14 @@ import { DecompositionPreset } from "../../../../src/core/domains/trajectory/sta
 describe("rank_chunks scoring fixes", () => {
   const reranker = new Reranker(staticDerivedSignals, [new DecompositionPreset()]);
 
-  it("supports preset+custom combo: custom weights for scoring, preset mask for overlay", () => {
+  it("supports preset+custom combo: custom weights for scoring, preset mask for overlay", async () => {
     const results = [
       { score: 0, payload: { chunkType: "function", methodLines: 200, methodDensity: 80 } },
       { score: 0, payload: { chunkType: "function", methodLines: 50, methodDensity: 40 } },
     ];
 
     // Pass custom weights without similarity, but reference preset for overlay mask
-    const ranked = reranker.rerank(
+    const ranked = await reranker.rerank(
       results,
       { custom: { chunkSize: 0.667, chunkDensity: 0.333 }, preset: "decomposition" },
       "rank_chunks",
@@ -37,10 +37,10 @@ describe("rank_chunks scoring fixes", () => {
     expect(ranked[0].rankingOverlay?.file?.methodLines).toBeGreaterThan(0);
   });
 
-  it("scores large methods near 1.0 when similarity is excluded", () => {
+  it("scores large methods near 1.0 when similarity is excluded", async () => {
     const results = [{ score: 0, payload: { chunkType: "function", methodLines: 500, methodDensity: 120 } }];
 
-    const ranked = reranker.rerank(results, { custom: { chunkSize: 0.667, chunkDensity: 0.333 } }, "rank_chunks");
+    const ranked = await reranker.rerank(results, { custom: { chunkSize: 0.667, chunkDensity: 0.333 } }, "rank_chunks");
 
     // With methodLines at defaultBound (500) and density at defaultBound (120),
     // both signals should be ~1.0, so score should be ~1.0
@@ -49,14 +49,14 @@ describe("rank_chunks scoring fixes", () => {
 });
 
 describe("overlay raw values visibility", () => {
-  it("overlay includes file.methodLines when decomposition mask is applied", () => {
+  it("overlay includes file.methodLines when decomposition mask is applied", async () => {
     // This tests the formatSearchResults metaOnly path
     // When overlay has file signals, it should be included
     const reranker = new Reranker(staticDerivedSignals, [new DecompositionPreset()]);
 
     const results = [{ score: 0, payload: { chunkType: "function", methodLines: 100, methodDensity: 60 } }];
 
-    const ranked = reranker.rerank(
+    const ranked = await reranker.rerank(
       results,
       { custom: { chunkSize: 0.667, chunkDensity: 0.333 }, preset: "decomposition" },
       "rank_chunks",
@@ -71,7 +71,7 @@ describe("overlay raw values visibility", () => {
 });
 
 describe("chunkDensity requires methodLines", () => {
-  it("returns 0 when methodLines is 0 (documentation/non-method chunks)", () => {
+  it("returns 0 when methodLines is 0 (documentation/non-method chunks)", async () => {
     const reranker = new Reranker(staticDerivedSignals, [new DecompositionPreset()]);
 
     const results = [
@@ -79,7 +79,7 @@ describe("chunkDensity requires methodLines", () => {
       { score: 0, payload: { chunkType: "function", methodLines: 100, methodDensity: 60 } }, // real method
     ];
 
-    const ranked = reranker.rerank(results, { custom: { chunkSize: 0.667, chunkDensity: 0.333 } }, "rank_chunks");
+    const ranked = await reranker.rerank(results, { custom: { chunkSize: 0.667, chunkDensity: 0.333 } }, "rank_chunks");
 
     // Markdown should score 0 (both chunkSize and chunkDensity return 0)
     const markdownResult = ranked.find((r) => !r.payload?.methodLines);

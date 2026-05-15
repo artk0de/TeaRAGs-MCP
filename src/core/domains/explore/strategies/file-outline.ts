@@ -60,7 +60,10 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
    * BaseExploreStrategy.applyMetaOnly signal-filtered shape, which would
    * erase the outline structure).
    */
-  protected override postProcess(results: ExploreResult[], originalCtx: ExploreContext): ExploreResult[] {
+  protected override async postProcess(
+    results: ExploreResult[],
+    originalCtx: ExploreContext,
+  ): Promise<ExploreResult[]> {
     let processed = results;
 
     if (originalCtx.metaOnly) {
@@ -74,7 +77,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
 
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
     if (rerank) {
-      processed = this.reranker.rerank(processed, rerank, "semantic_search");
+      processed = await this.reranker.rerank(processed, rerank, "semantic_search");
     }
 
     return processed;

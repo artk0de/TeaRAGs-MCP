@@ -262,4 +262,60 @@ describe("SimilarSearchStrategy", () => {
 
     expect(embeddings.embedBatch).not.toHaveBeenCalled();
   });
+
+  it("re-throws non-QdrantPointNotFoundError errors from qdrant.query unchanged", async () => {
+    // The strategy wraps QdrantPointNotFoundError → ChunkNotFoundError, but any
+    // other failure must propagate verbatim (e.g. connection errors). This
+    // covers the `throw error;` rethrow branch.
+    const qdrant = createMockQdrant();
+    const rawError = new Error("unrelated qdrant failure");
+    (qdrant.query as ReturnType<typeof vi.fn>).mockRejectedValue(rawError);
+    const strategy = createStrategy({ qdrant, positiveIds: ["uuid-1"] });
+
+    await expect(strategy.execute({ collectionName: "col", limit: 10 })).rejects.toBe(rawError);
+  });
+
+  it("groups results by relativePath when ctx.level is 'file' (client-side file-scope dedup)", async () => {
+    // At file level, the strategy overfetches and then collapses chunks by
+    // relativePath, keeping at most one chunk per file. Multiple chunks
+    // pointing to the same file should yield exactly one result.
+    const qdrant = createMockQdrant([
+      { id: "1", score: 0.95, payload: { relativePath: "src/a.ts" } },
+      { id: "2", score: 0.9, payload: { relativePath: "src/a.ts" } }, // same file
+      { id: "3", score: 0.85, payload: { relativePath: "src/b.ts" } },
+    ]);
+    const strategy = createStrategy({ qdrant });
+
+    const results = await strategy.execute({ collectionName: "col", limit: 5, level: "file" });
+
+    // Exactly 2 unique files; same file collapsed to 1 entry.
+    expect(results).toHaveLength(2);
+    const paths = results.map((r) => r.payload?.relativePath).filter(Boolean);
+    expect(new Set(paths)).toEqual(new Set(["src/a.ts", "src/b.ts"]));
+    // File level requests an overfetch limit (combination of BaseExploreStrategy's
+    // overfetch factor and similar.ts's own 3× for file-level dedup).
+    const callArgs = (qdrant.query as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(callArgs.limit).toBeGreaterThan(5); // strictly greater than user-requested limit
+  });
+
+  it("returns userFilter unchanged when buildFilter produces no must clauses (empty must, has should)", async () => {
+    // Edge case: userFilter only has `should`/`must_not` (no must, no extensions).
+    // mustClauses stays empty after the merge loop → buildFilter returns the
+    // original userFilter as-is so should/must_not are preserved.
+    const qdrant = createMockQdrant();
+    const strategy = createStrategy({ qdrant });
+    const userFilter = {
+      should: [{ key: "language", match: { value: "ruby" } }],
+    };
+
+    await strategy.execute({
+      collectionName: "col",
+      limit: 10,
+      filter: userFilter,
+    });
+
+    const callArgs = (qdrant.query as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    // Original filter passed through, not wrapped/rebuilt.
+    expect(callArgs.filter).toBe(userFilter);
+  });
 });
