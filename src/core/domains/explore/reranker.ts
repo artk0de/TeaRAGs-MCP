@@ -325,42 +325,26 @@ export class Reranker {
   /**
    * Resolve ADAPTIVE dampening threshold for a derived signal from collection stats.
    *
-   * Two source paths, tried in order:
-   * 1. UNIFIED: raw descriptor's `stats.confidence.support` (e.g. "commitCount").
-   *    Reranker looks up `git.file.{support}` percentile (default p25) from collection
-   *    stats. This is the path for signals migrated to the unified mechanism
-   *    (currently `BugFixSignal`).
-   * 2. LEGACY: derived signal's `dampeningSource = { key, percentile }`. Used by
-   *    signals still on the old pattern (VolatilitySignal, OwnershipSignal, etc.).
+   * Reads `stats.confidence.support` (the support sibling name) from the raw
+   * payload descriptor and looks up its `adaptivePercentile` (default 25) in
+   * `git.file.{support}` collection stats. Returns undefined when collection
+   * stats are absent OR no confidence block is declared — derived signals then
+   * fall back to `confidence.score.threshold` (descriptor floor) or their own
+   * defensive constant.
    *
-   * Returns undefined when neither path yields a value — derived signals then fall
-   * back to their per-signal floor (`confidence.score.threshold` or FALLBACK_K).
-   * The static floor is intentionally a LAST RESORT — adaptive takes priority so
-   * the dampening threshold scales with the actual codebase's commit distribution.
+   * The static floor is intentionally a last resort — adaptive takes priority
+   * so the dampening threshold scales with the actual codebase's commit
+   * distribution.
    */
   private resolveDampeningThreshold(descriptor: DerivedSignalDescriptor): number | undefined {
     if (!this.collectionStats) return undefined;
-
-    // Unified path: derive from confidence.support on the raw payload descriptor
     const confidence = this.resolveDerivedConfidence(descriptor);
-    if (confidence?.support) {
-      // Default to p25 of file-scope support signal (matches legacy GIT_FILE_DAMPENING)
-      const supportFullKey = this.signalKeyMap.get(`file.${confidence.support}`);
-      if (supportFullKey) {
-        const stats = this.collectionStats.perSignal.get(supportFullKey);
-        const adaptive = stats?.percentiles?.[25];
-        if (adaptive !== undefined) return adaptive;
-      }
-    }
-
-    // Legacy path: per-class dampeningSource
-    if (descriptor.dampeningSource) {
-      const { key, percentile } = descriptor.dampeningSource;
-      const stats = this.collectionStats.perSignal.get(key);
-      return stats?.percentiles?.[percentile];
-    }
-
-    return undefined;
+    if (!confidence?.support) return undefined;
+    const supportFullKey = this.signalKeyMap.get(`file.${confidence.support}`);
+    if (!supportFullKey) return undefined;
+    const stats = this.collectionStats.perSignal.get(supportFullKey);
+    const percentile = confidence.score?.adaptivePercentile ?? 25;
+    return stats?.percentiles?.[percentile];
   }
 
   /**
@@ -521,9 +505,10 @@ export class Reranker {
       const signalStats = scope === "test" && scopedStats.test ? scopedStats.test : scopedStats.source;
       if (!signalStats?.percentiles) continue;
 
+      const resolvedConfidence = this.preResolveConfidenceClamp(descriptor.stats.confidence, level);
       const label = resolveLabel(value, descriptor.stats.labels, signalStats.percentiles, {
         siblingValues,
-        confidence: descriptor.stats.confidence,
+        confidence: resolvedConfidence,
       });
       overlay[field] = { value, label };
     }
@@ -563,6 +548,41 @@ export class Reranker {
     }
 
     return out;
+  }
+
+  /**
+   * Pre-resolve adaptive `whenSupportBelow` percentile strings to concrete numbers.
+   *
+   * When a clamp rule has `whenSupportBelow: "pN"`, looks up the Nth percentile of
+   * `git.{scope}.{confidence.support}` in collection stats. Falls back to
+   * `rule.fallback` if collection stats absent OR the support signal has no
+   * recorded percentile. Returns the descriptor's confidence with rules normalized
+   * to numeric thresholds — resolveLabel sees a clean numeric shape regardless
+   * of source.
+   */
+  private preResolveConfidenceClamp(
+    confidence: SignalConfidence | undefined,
+    scope: "file" | "chunk",
+  ): SignalConfidence | undefined {
+    if (!confidence?.label) return confidence;
+    const supportFullKey = this.signalKeyMap.get(`${scope}.${confidence.support}`);
+    const supportStats = supportFullKey ? this.collectionStats?.perSignal.get(supportFullKey) : undefined;
+    const resolvedRules = confidence.label.rules.map((rule) => {
+      if (typeof rule.whenSupportBelow === "number") return rule;
+      const pct = Number(rule.whenSupportBelow.slice(1));
+      const adaptive = supportStats?.percentiles?.[pct];
+      const threshold = adaptive ?? rule.fallback;
+      if (threshold === undefined) {
+        // No adaptive and no fallback — rule cannot fire safely. Use 0 as a
+        // never-matches sentinel (support < 0 is structurally impossible).
+        return { ...rule, whenSupportBelow: 0 };
+      }
+      return { ...rule, whenSupportBelow: threshold };
+    });
+    return {
+      ...confidence,
+      label: { rules: resolvedRules },
+    };
   }
 
   /**

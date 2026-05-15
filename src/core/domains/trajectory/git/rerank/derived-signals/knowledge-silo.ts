@@ -1,6 +1,6 @@
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import { blendSignal, confidenceDampening, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
+import { blendSignal, confidenceDampening, fileNum } from "./helpers.js";
 
 /**
  * Measures bus factor risk — code with only one or two distinct authors of
@@ -21,8 +21,7 @@ export class KnowledgeSiloSignal implements DerivedSignalDescriptor {
   readonly description =
     "Knowledge silo risk by live-line contributors: 1=1.0, 2=0.5, 3+=0. L3 blends file+chunk blameContributorCount.";
   readonly sources = ["file.blameContributorCount", "chunk.blameContributorCount"];
-  readonly dampeningSource = GIT_FILE_DAMPENING;
-  private static readonly FALLBACK_THRESHOLD = 5;
+  private static readonly FALLBACK_K = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     const effectiveCount = blendSignal(rawSignals, "blameContributorCount", ctx?.signalLevel);
     let value: number;
@@ -30,8 +29,9 @@ export class KnowledgeSiloSignal implements DerivedSignalDescriptor {
     if (effectiveCount === 1) value = 1.0;
     else if (effectiveCount === 2) value = 0.5;
     else return 0;
-    const k = ctx?.dampeningThreshold ?? KnowledgeSiloSignal.FALLBACK_THRESHOLD;
-    value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
+    const k = ctx?.dampeningThreshold ?? ctx?.confidence?.score?.threshold ?? KnowledgeSiloSignal.FALLBACK_K;
+    const supportName = ctx?.confidence?.support ?? "commitCount";
+    value *= confidenceDampening(fileNum(rawSignals, supportName), k);
     return value;
   }
 }

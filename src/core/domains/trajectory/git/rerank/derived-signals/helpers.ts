@@ -11,8 +11,6 @@ import { blend, computeAlpha, normalize } from "../../../../../infra/signal-util
 
 // Re-export generic functions used directly by signal classes
 export { blend, computeAlpha, confidenceDampening, normalize } from "../../../../../infra/signal-utils.js";
-// Re-export git constants
-export { GIT_FILE_DAMPENING } from "../constants.js";
 
 // ---------------------------------------------------------------------------
 // Payload accessors (support nested and flat formats)

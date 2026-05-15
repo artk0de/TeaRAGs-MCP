@@ -1,6 +1,6 @@
 import type { DerivedSignalDescriptor } from "../../../../../contracts/types/reranker.js";
 import type { ExtractContext } from "../../../../../contracts/types/trajectory.js";
-import { confidenceDampening, fileField, fileNum, GIT_FILE_DAMPENING } from "./helpers.js";
+import { confidenceDampening, fileField, fileNum } from "./helpers.js";
 
 /**
  * Measures live-line author concentration — how much one person owns the
@@ -24,8 +24,7 @@ export class OwnershipSignal implements DerivedSignalDescriptor {
   readonly description =
     "Live-line author concentration: single-owner code by blame share scores higher (blameDominantAuthorPct or 1/blameAuthors)";
   readonly sources = ["file.blameDominantAuthorPct", "file.blameAuthors"];
-  readonly dampeningSource = GIT_FILE_DAMPENING;
-  private static readonly FALLBACK_THRESHOLD = 5;
+  private static readonly FALLBACK_K = 5;
   extract(rawSignals: Record<string, unknown>, ctx?: ExtractContext): number {
     let value: number;
     const pct = fileField(rawSignals, "blameDominantAuthorPct");
@@ -39,8 +38,9 @@ export class OwnershipSignal implements DerivedSignalDescriptor {
         return 0;
       }
     }
-    const k = ctx?.dampeningThreshold ?? OwnershipSignal.FALLBACK_THRESHOLD;
-    value *= confidenceDampening(fileNum(rawSignals, "commitCount"), k);
+    const k = ctx?.dampeningThreshold ?? ctx?.confidence?.score?.threshold ?? OwnershipSignal.FALLBACK_K;
+    const supportName = ctx?.confidence?.support ?? "commitCount";
+    value *= confidenceDampening(fileNum(rawSignals, supportName), k);
     return value;
   }
 }

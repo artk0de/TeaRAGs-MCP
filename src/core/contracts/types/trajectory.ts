@@ -34,9 +34,21 @@ export interface SignalStatsRequest {
  * `whenSupportBelow`, the signal's overlay label is capped at `ceiling`.
  * `ceiling` MUST be one of the values in the descriptor's `labels` map;
  * runtime resolver enforces this and throws on misconfiguration.
+ *
+ * `whenSupportBelow` accepts two forms:
+ *   • `number` — static threshold, used as-is.
+ *   • `"pN"` — adaptive percentile of the SUPPORT signal (e.g. "p25" reads
+ *     p25 of `git.{scope}.{confidence.support}` from collection stats).
+ *     Reranker pre-resolves the string to a number before applying.
+ *
+ * `fallback` is the static threshold used when `whenSupportBelow` is a
+ * percentile string AND collection stats are unavailable (or the support
+ * signal has no recorded percentile). Required when `whenSupportBelow` is
+ * a string; ignored when it's a number.
  */
 export interface ConfidenceClampRule {
-  whenSupportBelow: number;
+  whenSupportBelow: number | `p${number}`;
+  fallback?: number;
   ceiling: string;
 }
 
@@ -58,8 +70,18 @@ export interface ConfidenceClampRule {
 export interface SignalConfidence {
   /** Bare sibling name (e.g. "commitCount"). Same-scope resolution only. */
   support: string;
-  /** Optional continuous dampening parameters for score path. */
-  score?: { threshold: number };
+  /**
+   * Optional continuous dampening parameters for score path.
+   *   • `threshold` — STATIC floor used when collection stats are unavailable
+   *     OR when `adaptivePercentile` is not declared.
+   *   • `adaptivePercentile` — percentile of the support sibling read from
+   *     collection stats as the adaptive `k` for `confidenceDampening`. When
+   *     declared, reranker passes the resolved adaptive value via
+   *     `ExtractContext.dampeningThreshold`. Default behavior in the reranker
+   *     (when this field is absent) is to look up p25 for backwards
+   *     compatibility with the legacy `GIT_FILE_DAMPENING` convention.
+   */
+  score?: { threshold: number; adaptivePercentile?: number };
   /** Optional categorical clamp rules for label path. */
   label?: { rules: ConfidenceClampRule[] };
 }
@@ -161,17 +183,6 @@ export interface ExtractContext {
   signalLevel?: SignalLevel;
   /** Search query text for query-dependent signals (e.g. heading relevance). */
   query?: string;
-}
-
-/**
- * Declares which collection-level statistic to use as confidence dampening threshold.
- * Each trajectory provides its own dampening config (e.g., git uses commitCount p25).
- */
-export interface DampeningConfig {
-  /** Full Qdrant payload key (e.g. "git.file.commitCount") */
-  readonly key: string;
-  /** Which percentile to use as threshold (e.g. 25) */
-  readonly percentile: number;
 }
 
 /**

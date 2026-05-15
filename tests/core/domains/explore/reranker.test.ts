@@ -1478,7 +1478,9 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     { key: "git.file.churnVolatility", type: "number", description: "Volatility", stats: { percentiles: [95] } },
   ];
 
-  // VolatilitySignal still uses the legacy dampeningSource path — exercise adaptive route through it.
+  // VolatilitySignal migrated in tea-rags-mcp-1wqz. Now exercises the unified
+  // confidence.support adaptive path (raw descriptor declares confidence; reranker
+  // resolves adaptive percentile from collection stats).
   const volatilityDescriptor = allDescriptors.filter((d) => d.name === "volatility" || d.name === "similarity");
   const volatilityPreset: RerankPreset = {
     name: "volatilityOnly",
@@ -1503,8 +1505,24 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     payload: { relativePath: "src/a.ts", startLine: 1, endLine: 50, git },
   });
 
-  it("legacy path: resolves dampeningThreshold per-signal from descriptor.dampeningSource (VolatilitySignal)", () => {
-    const reranker = new Reranker(volatilityDescriptor, [volatilityPreset], payloadSignals);
+  it("unified path: VolatilitySignal resolves adaptive threshold via confidence.support (commitCount p25)", () => {
+    // Raw descriptor declares confidence — reranker reads `git.file.commitCount` p25.
+    const customPayloadSignals: PayloadSignalDescriptor[] = [
+      { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+      {
+        key: "git.file.churnVolatility",
+        type: "number",
+        description: "Volatility",
+        stats: {
+          percentiles: [95],
+          confidence: {
+            support: "commitCount",
+            score: { threshold: 8, adaptivePercentile: 25 },
+          },
+        },
+      },
+    ];
+    const reranker = new Reranker(volatilityDescriptor, [volatilityPreset], customPayloadSignals);
 
     // Collection: commitCount p25=20
     const collectionStats: CollectionSignalStats = {
@@ -1523,18 +1541,32 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     };
     reranker.setCollectionStats(collectionStats);
 
-    // volatility.dampeningSource = GIT_FILE_DAMPENING → commitCount p25 = 20
-    // commitCount=4 → dampening=(4/20)^2=0.04
+    // Adaptive k=20 (p25 from collection stats). commitCount=4 → (4/20)^2=0.04
     const results = [makeResult(0.9, { file: { churnVolatility: 100, commitCount: 4 } })];
     const ranked = reranker.rerank(results, "volatilityOnly", "semantic_search");
 
     expect(ranked[0].score).toBeLessThan(0.1);
   });
 
-  it("legacy path: falls back to per-signal FALLBACK_THRESHOLD when no collectionStats", () => {
-    const reranker = new Reranker(volatilityDescriptor, [volatilityPreset], payloadSignals);
-    // No setCollectionStats — VolatilitySignal falls back to its own FALLBACK_THRESHOLD=8.
-    // commitCount=4 → dampening=(4/8)^2=0.25
+  it("unified path: VolatilitySignal falls back to confidence.score.threshold when no collectionStats", () => {
+    const customPayloadSignals: PayloadSignalDescriptor[] = [
+      { key: "git.file.commitCount", type: "number", description: "Commits", stats: { percentiles: [25, 95] } },
+      {
+        key: "git.file.churnVolatility",
+        type: "number",
+        description: "Volatility",
+        stats: {
+          percentiles: [95],
+          confidence: {
+            support: "commitCount",
+            score: { threshold: 8, adaptivePercentile: 25 },
+          },
+        },
+      },
+    ];
+    const reranker = new Reranker(volatilityDescriptor, [volatilityPreset], customPayloadSignals);
+    // No setCollectionStats → adaptive unavailable → falls back to confidence.score.threshold=8.
+    // commitCount=4 → (4/8)^2=0.25
     const results = [makeResult(0.9, { file: { churnVolatility: 100, commitCount: 4 } })];
     const ranked = reranker.rerank(results, "volatilityOnly", "semantic_search");
 
@@ -1542,8 +1574,8 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
     expect(ranked[0].score).toBeLessThan(0.4);
   });
 
-  it("signals without dampeningSource get no threshold (always use fallback)", () => {
-    // similarity has no dampeningSource → always uses its own logic (no dampening)
+  it("signals without dampeningSource AND without confidence get no adaptive threshold", () => {
+    // similarity has neither — always uses its own logic (no dampening)
     const simDescriptor = allDescriptors.filter((d) => d.name === "similarity");
     expect(simDescriptor[0].dampeningSource).toBeUndefined();
   });
@@ -1551,6 +1583,11 @@ describe("Reranker — per-signal dampening (legacy dampeningSource + unified co
   it("BugFixSignal: dampeningSource removed (migrated to descriptor.stats.confidence)", () => {
     const bf = allDescriptors.find((d) => d.name === "bugFix")!;
     expect(bf.dampeningSource).toBeUndefined();
+  });
+
+  it("VolatilitySignal: dampeningSource removed (migrated to descriptor.stats.confidence)", () => {
+    const vs = allDescriptors.find((d) => d.name === "volatility")!;
+    expect(vs.dampeningSource).toBeUndefined();
   });
 
   it("unified path: BugFixSignal reads threshold from raw descriptor's stats.confidence.score", () => {

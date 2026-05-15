@@ -81,11 +81,11 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
       labels: { p50: "healthy", p75: "concerning", p95: "critical" },
       confidence: {
         support: "commitCount",
-        score: { threshold: 10 },
+        score: { threshold: 10, adaptivePercentile: 25 },
         label: {
           rules: [
-            { whenSupportBelow: 5, ceiling: "healthy" },
-            { whenSupportBelow: 10, ceiling: "concerning" },
+            { whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" },
+            { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" },
           ],
         },
       },
@@ -166,11 +166,11 @@ export const gitPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
       labels: { p50: "healthy", p75: "concerning", p95: "critical" },
       confidence: {
         support: "commitCount",
-        score: { threshold: 10 },
+        score: { threshold: 10, adaptivePercentile: 25 },
         label: {
           rules: [
-            { whenSupportBelow: 5, ceiling: "healthy" },
-            { whenSupportBelow: 10, ceiling: "concerning" },
+            { whenSupportBelow: "p10", fallback: 5, ceiling: "healthy" },
+            { whenSupportBelow: "p25", fallback: 10, ceiling: "concerning" },
           ],
         },
       },

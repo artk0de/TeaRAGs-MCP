@@ -3,11 +3,17 @@
  */
 
 import type { ScoringWeights } from "./provider.js";
-import type { DampeningConfig, ExtractContext } from "./trajectory.js";
+import type { ExtractContext } from "./trajectory.js";
 
 /**
  * Derived signal descriptor — defines how to compute a normalized signal
  * from raw payload data. Used by reranker for scoring and ranking overlay.
+ *
+ * Confidence dampening is declared once on the raw `PayloadSignalDescriptor.stats.confidence`
+ * block — reranker pre-resolves `support` + `adaptivePercentile` + `threshold`
+ * (floor) and passes them via `ExtractContext.confidence` and
+ * `ExtractContext.dampeningThreshold`. Derived signal classes never declare
+ * dampening directly; they only consume from ctx.
  */
 export interface DerivedSignalDescriptor {
   /** Derived signal name (weight key in presets) */
@@ -21,8 +27,6 @@ export interface DerivedSignalDescriptor {
   extract: (rawSignals: Record<string, unknown>, ctx?: ExtractContext) => number;
   /** Default upper bound for normalization */
   defaultBound?: number;
-  /** Dampening source: which collection stat to use as confidence threshold. */
-  dampeningSource?: DampeningConfig;
   /** Whether this signal inverts the raw value (1 - normalize pattern).
    *  Used by rank_chunks to determine scroll direction: inverted=true → asc. */
   inverted?: boolean;
