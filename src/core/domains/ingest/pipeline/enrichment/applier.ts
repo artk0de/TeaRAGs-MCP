@@ -19,17 +19,29 @@ import type {
 import { pipelineLog } from "../infra/debug-logger.js";
 import { isDebug } from "../infra/runtime.js";
 import type { ChunkItem } from "../types.js";
+import { MissedFileTracker } from "./missed-file-tracker.js";
 import type { MissedFileChunk } from "./types.js";
 
 const BATCH_SIZE = 100;
+const MISSED_PATH_SAMPLE_LIMIT = 10;
 
 export class EnrichmentApplier {
   matchedFiles = 0;
-  missedFiles = 0;
-  readonly missedPathSamples: string[] = [];
-  private readonly _missedFileChunks = new Map<string, MissedFileChunk[]>();
+  private readonly missedTracker = new MissedFileTracker({
+    sampleLimit: MISSED_PATH_SAMPLE_LIMIT,
+  });
 
   constructor(private readonly qdrant: QdrantManager) {}
+
+  /** Count of files whose chunks landed without matching file metadata. */
+  get missedFiles(): number {
+    return this.missedTracker.missedCount;
+  }
+
+  /** Bounded sample of missed paths (capped at MISSED_PATH_SAMPLE_LIMIT). */
+  get missedPathSamples(): readonly string[] {
+    return this.missedTracker.samples;
+  }
 
   /**
    * Apply file-level signals to a batch of chunks.
@@ -68,19 +80,14 @@ export class EnrichmentApplier {
       const relativePath = relative(pathBase, filePath);
       const data = fileMetadata.get(relativePath);
       if (!data) {
-        this.missedFiles++;
-        if (this.missedPathSamples.length < 10) {
-          this.missedPathSamples.push(relativePath);
-        }
-        const existing = this._missedFileChunks.get(relativePath) || [];
-        for (const item of fileItems) {
-          existing.push({
+        this.missedTracker.track(
+          relativePath,
+          fileItems.map((item) => ({
             chunkId: item.chunkId,
             startLine: item.chunk.startLine,
             endLine: item.chunk.endLine,
-          });
-        }
-        this._missedFileChunks.set(relativePath, existing);
+          })),
+        );
         if (enrichedAt) {
           for (const item of fileItems) {
             // File-level stamp: marks "we tried, no git history".
@@ -225,12 +232,12 @@ export class EnrichmentApplier {
 
   /** Read-only snapshot of files whose chunks landed without matching file metadata. */
   getMissedFileChunks(): ReadonlyMap<string, readonly MissedFileChunk[]> {
-    return this._missedFileChunks;
+    return this.missedTracker.chunkMap;
   }
 
   /** Adjust matched/missed counters after a successful backfill. */
   markBackfilled(count: number): void {
     this.matchedFiles += count;
-    this.missedFiles -= count;
+    this.missedTracker.decrementMissed(count);
   }
 }
