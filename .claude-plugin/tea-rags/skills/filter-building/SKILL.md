@@ -1,20 +1,26 @@
 ---
 name: filter-building
 description:
-  Construct a tea-rags filter beyond `pathPattern`. Covers typed sugar fields
-  (`language`, `testFile`, `documentation`, `author`, `taskId`, `minAgeDays` /
-  `maxAgeDays`, `minCommitCount`, `modifiedAfter` / `modifiedBefore`,
-  `fileExtension`, `chunkType`, `symbolId`), the `level: "file" | "chunk"`
-  switch (mandatory for time-based fields), picomatch negation in `pathPattern`
-  (`!**/test/**`), and the escape hatch into raw `filter` (Qdrant
-  `must`/`should`/`must_not`) when a payload key has no typed sugar. Invoke
-  when the agent is about to issue a tea-rags search and recognizes intent
-  like "scope to tests only", "exclude vendor dirs", "filter by author
-  Alice", "code modified after 2026-03-01", "drop one-off scripts under 5
-  commits", "files linked to ticket JIRA-1234", "raw filter for a non-typed
-  payload field". NOT for picking a rerank preset — use
-  `tea-rags:analytics-rerank` for that. NOT for general project exploration
-  — use `tea-rags:explore`.
+  Construct a tea-rags filter beyond `pathPattern`. Invoke whenever the agent's
+  internal reasoning before a tea-rags search includes a SCOPE — a domain,
+  language, author, time window, ticket, prod-vs-test split, or directory
+  exclusion. The user almost never says "filter"; they name the scope ("in the
+  X domain", "Ruby code", "Alice's work", "modified this week", "for ticket
+  RAGS-142", "production code"). Translate every such scope into the correct
+  typed sugar field (`language`, `testFile`, `documentation`, `author`,
+  `taskId`, `minAgeDays` / `maxAgeDays`, `minCommitCount`, `modifiedAfter` /
+  `modifiedBefore`, `fileExtension`, `chunkType`, `symbolId`), the
+  `level: "file" | "chunk"` switch (mandatory for time-based fields),
+  picomatch negation in `pathPattern` (`!**/test/**`), or the raw `filter`
+  escape hatch (Qdrant `must`/`should`/`must_not`) for payload keys without
+  typed sugar. Cases the skill must handle: "tests of AuthService" → implicit
+  `testFile: "only"`; "Alice's recent code" → `author + modifiedAfter`; "old
+  payments code" → `minAgeDays + level=file`; "what's new this week" →
+  `modifiedAfter` + `level=file`; "production code, not tests" → `testFile:
+  "exclude"`; "code linked to JIRA-1234" → `taskId`; "exclude vendor dir" →
+  `pathPattern: "!**/vendor/**"`. NOT for picking a rerank preset — use
+  `tea-rags:analytics-rerank`. NOT for general project exploration — use
+  `tea-rags:explore`.
 user-invocable: false
 ---
 
@@ -22,6 +28,36 @@ user-invocable: false
 
 Two ways to constrain a tea-rags search beyond `query` + `pathPattern`. Pick the
 right mechanism — they compose.
+
+## Implicit signals — when a filter is needed but the user didn't say "filter"
+
+Triggers in the agent's reasoning chain. If you find yourself thinking any of
+these BEFORE composing a tea-rags search, this skill applies — translate the
+SCOPE into typed sugar:
+
+| User said... (paraphrased)                         | Filter to add                                    |
+| -------------------------------------------------- | ------------------------------------------------ |
+| "in the X domain / module / area"                  | `pathPattern: "**/X/**"`                         |
+| "tests of X" / "test coverage of X"                | `testFile: "only"` (+ symbolId or query)         |
+| "production code for X" / "actual implementation"  | `testFile: "exclude"`                            |
+| "Ruby / TypeScript / Python code"                  | `language: "<lang>"` (NOT pathPattern `**/*.rb`) |
+| "modified recently" / "changed this week"          | `modifiedAfter: <ISO>` + `level: "file"`         |
+| "old code" / "legacy" / "untouched for a while"    | `minAgeDays: <N>` + `level: "file"`              |
+| "what's new" / "fresh additions" / "sprint review" | `modifiedAfter: <ISO>` + `level: "file"`         |
+| "who's been working on X" / "Alice's code"         | `author: "Alice"` (blame-dominant)               |
+| "related to ticket JIRA-X" / "for issue #N"        | `taskId: "JIRA-X"`                               |
+| "drop one-off scripts" / "real code, not snippets" | `minCommitCount: 5`+                             |
+| "docs about X" / "what's documented"               | `documentation: "only"`                          |
+| "code, not docs"                                   | `documentation: "exclude"`                       |
+| "AuthService class" (specific class)               | `symbolId: "AuthService"` OR `hybrid_search`     |
+| "in /full/abs/path/" (subagent context)            | `pathPattern: "/full/abs/path/**"`               |
+| "exclude vendor / generated / migrations"          | `pathPattern: "!**/vendor/**"` (no typed sugar)  |
+
+**Rule of thumb:** the user almost never says "filter". They name a SCOPE —
+domain, language, author, time window, ticket, prod-vs-test. Translate the scope
+into the right typed sugar; never leave it ambient ("query alone will sort it
+out"). An unfiltered `semantic_search` over a broad project returns results
+dominated by the highest-churn domain — the rest is invisible.
 
 ## Typed filters (fast path)
 

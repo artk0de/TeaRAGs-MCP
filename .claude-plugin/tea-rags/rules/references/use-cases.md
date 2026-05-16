@@ -25,34 +25,11 @@ Organized by agent task. Each references a Decision Tree branch from
 
 ### Recipe: Fragile Silo discovery
 
-Find low-churn, historically buggy, single-owner files (Fragile silo pattern
-from `signal-interpretation.md`). Surfaces files that _look_ stable but have a
-track record of regressions concentrated under one author.
-
-```json
-{
-  "path": "/project",
-  "query": "<domain or symptom keyword>",
-  "rerank": {
-    "custom": {
-      "bugFix": 0.45,
-      "knowledgeSilo": 0.3,
-      "similarity": 0.15,
-      "churn": -0.1
-    }
-  },
-  "metaOnly": true,
-  "pathPattern": "<optional domain glob>"
-}
-```
-
-Read results expecting `bugFixRate concerning+` with `commitCount` in the
-`typical` band. Files with `commitCount` below the confidence-clamp thresholds
-(currently `< 5`) will have `bugFixRate.label` clamped to `healthy` — they will
-NOT classify as Fragile silo even if raw value is high, because the structural
-evidence is insufficient. This is correct behavior, inherited from the unified
-confidence mechanism. Pair confirmed findings with the `Fragile silo` pattern
-entry in `signal-interpretation.md` for remediation steps.
+Surfaces files that _look_ stable but have a track record of regressions
+concentrated under one author. Full recipe and signal-confidence semantics live
+in **`tea-rags:analytics-rerank`** (custom weights for Fragile Silo). Pair
+confirmed findings with the `Fragile silo` pattern entry in
+`signal-interpretation.md` for remediation steps.
 
 ## Exhaustive usage (need ALL references)
 
@@ -88,10 +65,10 @@ examples. Combined with `strategy: "best_score"`, this returns code MAXIMALLY
 UNLIKE the negatives — i.e. outliers in the codebase relative to a known bad
 pattern.
 
-| Task                                  | Inputs                                                       |
-| ------------------------------------- | ------------------------------------------------------------ |
-| Find code unlike a known anti-pattern | `negativeCode: "<the anti-pattern>"`, `strategy: "best_score"` |
-| Outlier detection vs a cluster        | `negativeIds: [<cluster chunk IDs>]`, `strategy: "best_score"` |
+| Task                                  | Inputs                                                            |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| Find code unlike a known anti-pattern | `negativeCode: "<the anti-pattern>"`, `strategy: "best_score"`    |
+| Outlier detection vs a cluster        | `negativeIds: [<cluster chunk IDs>]`, `strategy: "best_score"`    |
 | Find code dissimilar to legacy module | `negativeCode: <legacy snippet>` + `pathPattern: "<modern area>"` |
 
 Different mental model from "find similar to X" — useful for novelty surfacing,
@@ -117,25 +94,13 @@ than fixed numbers from a different project. Full schema +
 `get_index_status.infraHealth` health probe are described in
 `references/runtime-introspection.md`.
 
-## Sugar filters quick reference
+## Sugar filters
 
-These are top-level params on every search tool — no nesting, no raw `filter:`
-block. Listed in `search-cascade.md` Filters table; pairing examples here.
-
-| Sugar field                           | Resolves to                              | Pair with                       |
-| ------------------------------------- | ---------------------------------------- | ------------------------------- |
-| `minAgeDays` / `maxAgeDays`           | `git.file.ageDays` range                 | `level: "file"` (mandatory)     |
-| `minCommitCount`                      | `git.file.commitCount` lower bound       | drop one-off scripts            |
-| `modifiedAfter` / `modifiedBefore`    | `git.file.lastModifiedAt` range          | `level: "file"`                 |
-| `author`                              | blame-dominant author equals             | ownership analysis              |
-| `taskId`                              | `git.file.taskIds` array contains        | trace code to a ticket          |
-| `testFile`                            | `"only" \| "exclude" \| "include"`       | scope to prod vs test           |
-| `documentation`                       | `"only" \| "exclude" \| "include"`       | scope to docs vs code           |
-| `fileExtension`                       | one or more extensions                   | language-adjacent constraints   |
-| `language`                            | one language                             | polyglot scoping                |
-
-`level: "file"` is required for time-based fields because chunk-level
-`ageDays = 0` means "no git history for this chunk", NOT "just created".
+Full typed-sugar field catalog and the `level: "file"` enforcement rule for
+time-based filters (`modifiedAfter`/`Before`, `minAgeDays`/`maxAgeDays`) live in
+**`tea-rags:filter-building`**. Invoke that skill whenever the search needs a
+SCOPE (language, time window, author, testFile, taskId, `minCommitCount`,
+doc/code split, etc.).
 
 ## External tools (complement tea-rags)
 
