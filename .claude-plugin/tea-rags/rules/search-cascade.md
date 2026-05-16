@@ -17,6 +17,30 @@ returns the full method/class definition — no Read needed.
 
 **MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
 
+## Embedding Unavailable (ollama / EMBEDDING_URL down)
+
+If the prime digest shows `embedding: unavailable`, or `get_index_status`
+reports an embedding error, or any tea-rags semantic call fails with an
+embedding/connection error — STOP and ask the user to bring the embedding
+backend back up BEFORE falling back to anything else.
+
+- **First action**: tell the user the embedding backend (`ollama` at the URL
+  shown in the prime digest, or the configured `EMBEDDING_URL`) is unreachable
+  and ask, via `AskUserQuestion`, to start it (`ollama serve` for local) or
+  repoint `EMBEDDING_URL` at a working host. Wait for an explicit answer.
+- **Do NOT silently downgrade to `ripgrep` / built-in Grep / `Read`** for code
+  discovery. The Fallback Chains below assume tea-rags is unavailable
+  _structurally_ (MCP server gone, project not indexed), NOT that embedding is
+  _temporarily_ down. Substituting text search loses recall the user did not
+  agree to trade away.
+- **Skip the prompt only when** the task does not need semantic search at all:
+  literal `TODO` / `FIXME` / `HACK` scan, reading a known file by exact path,
+  exact import-string lookup. Proceed with ripgrep / Read directly in those
+  cases.
+- After the user confirms the backend is up, re-run the failed tea-rags call. If
+  the user refuses to start it, state the degradation explicitly in your reply
+  and continue with the reduced toolset.
+
 ## Addressing the Codebase (every tea-rags call)
 
 Every tea-rags tool that touches a collection accepts THREE addressing
