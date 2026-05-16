@@ -34,4 +34,20 @@ describe("DeletionRetryHelper partial outcome", () => {
     expect(outcome.succeeded).toEqual(new Set(["A", "C"]));
     expect(outcome.failed).toEqual(new Set(["B"]));
   });
+
+  it("emits failed entry per id when retries exhaust", async () => {
+    const helper = new DeletionRetryHelper({ maxRetries: 2, backoffMs: 0 });
+
+    let attempts = 0;
+    const attempt = vi.fn(async () => {
+      attempts++;
+      throw new Error("transient error");
+    });
+
+    const outcome = await helper.execute(["X"], attempt);
+
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    expect(outcome.failed.has("X")).toBe(true);
+    expect(outcome.succeeded.size).toBe(0);
+  });
 });
