@@ -13,6 +13,7 @@
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../types.js";
 import { cleanupOrphanedVersions } from "./alias-cleanup.js";
 import { IndexingFailedError } from "./errors.js";
+import { OptimizerLifecycle } from "./optimizer-lifecycle.js";
 import { BaseIndexingPipeline, type ProcessingContext } from "./pipeline/base.js";
 import { processFiles } from "./pipeline/file-processor.js";
 import { storeIndexingMarker } from "./pipeline/indexing-marker.js";
@@ -86,9 +87,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // upserts otherwise throttles ingest; deferring to a single post-ingest
       // pass is 2-3× faster on large codebases. `deleted_threshold` pause is
       // harmless here (no deletes during initial index).
-      await this.qdrant.pauseOptimizer(setup.targetCollection);
-
-      try {
+      return await new OptimizerLifecycle(this.qdrant).with(setup.targetCollection, async () => {
         const result = await this.processAndTrack(files, absolutePath, ctx, progressCallback);
         stats.filesIndexed = result.filesProcessed;
         stats.chunksCreated = result.chunksCreated;
@@ -123,13 +122,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         stats.enrichmentMetrics = enrichmentResult.metrics;
         stats.durationMs = Date.now() - startTime;
         return stats;
-      } finally {
-        // Revert thresholds: triggers one optimizer pass over freshly-indexed
-        // points. Non-fatal on failure — next run's pause/resume heals it.
-        await this.qdrant.resumeOptimizer(setup.targetCollection).catch((err) => {
-          if (isDebug()) console.error(`[Index] resumeOptimizer failed (next reindex will heal):`, err);
-        });
-      }
+      });
     } catch (error) {
       this.wrapUnexpectedError(error, IndexingFailedError);
     } finally {
