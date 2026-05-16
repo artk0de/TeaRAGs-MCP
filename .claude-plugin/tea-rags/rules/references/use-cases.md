@@ -81,6 +81,62 @@ entry in `signal-interpretation.md` for remediation steps.
 | Find fresh example   | semantic_search + recent         | Latest changes = current style           |
 | Assess change impact | semantic_search + custom weights | imports: 0.5, churn: 0.3, ownership: 0.2 |
 
+## Anti-pattern / outlier detection (find_similar with only negatives)
+
+`find_similar` accepts `negativeCode` / `negativeIds` WITHOUT any positive
+examples. Combined with `strategy: "best_score"`, this returns code MAXIMALLY
+UNLIKE the negatives — i.e. outliers in the codebase relative to a known bad
+pattern.
+
+| Task                                  | Inputs                                                       |
+| ------------------------------------- | ------------------------------------------------------------ |
+| Find code unlike a known anti-pattern | `negativeCode: "<the anti-pattern>"`, `strategy: "best_score"` |
+| Outlier detection vs a cluster        | `negativeIds: [<cluster chunk IDs>]`, `strategy: "best_score"` |
+| Find code dissimilar to legacy module | `negativeCode: <legacy snippet>` + `pathPattern: "<modern area>"` |
+
+Different mental model from "find similar to X" — useful for novelty surfacing,
+refactor candidates that diverged from a deprecated pattern, or code that
+escaped a stylistic norm.
+
+## Project calibration (per-project thresholds)
+
+When you need to pick a meaningful threshold for filters like `minCommitCount`,
+`minAgeDays`, or `maxAgeDays`, don't guess. Call
+`get_index_metrics(project: "<alias>")` and read
+`signals[language][signalKey][scope].labelMap` — those are the actual
+percentile-based label boundaries for THIS codebase.
+
+| Question                              | Field to read                                              |
+| ------------------------------------- | ---------------------------------------------------------- |
+| What counts as `high` churn here?     | `signals[lang]["git.file.commitCount"]["source"].labelMap` |
+| What counts as `legacy` age here?     | `signals[lang]["git.file.ageDays"]["source"].labelMap`     |
+| Test scope vs source scope thresholds | Same key with `scope: "test"` instead of `"source"`        |
+
+Use this to phrase filters in terms of the codebase's own distribution rather
+than fixed numbers from a different project. Full schema +
+`get_index_status.infraHealth` health probe are described in
+`references/runtime-introspection.md`.
+
+## Sugar filters quick reference
+
+These are top-level params on every search tool — no nesting, no raw `filter:`
+block. Listed in `search-cascade.md` Filters table; pairing examples here.
+
+| Sugar field                           | Resolves to                              | Pair with                       |
+| ------------------------------------- | ---------------------------------------- | ------------------------------- |
+| `minAgeDays` / `maxAgeDays`           | `git.file.ageDays` range                 | `level: "file"` (mandatory)     |
+| `minCommitCount`                      | `git.file.commitCount` lower bound       | drop one-off scripts            |
+| `modifiedAfter` / `modifiedBefore`    | `git.file.lastModifiedAt` range          | `level: "file"`                 |
+| `author`                              | blame-dominant author equals             | ownership analysis              |
+| `taskId`                              | `git.file.taskIds` array contains        | trace code to a ticket          |
+| `testFile`                            | `"only" \| "exclude" \| "include"`       | scope to prod vs test           |
+| `documentation`                       | `"only" \| "exclude" \| "include"`       | scope to docs vs code           |
+| `fileExtension`                       | one or more extensions                   | language-adjacent constraints   |
+| `language`                            | one language                             | polyglot scoping                |
+
+`level: "file"` is required for time-based fields because chunk-level
+`ageDays = 0` means "no git history for this chunk", NOT "just created".
+
 ## External tools (complement tea-rags)
 
 - **Call-sites, imports, exact patterns** → ripgrep MCP (not tea-rags)

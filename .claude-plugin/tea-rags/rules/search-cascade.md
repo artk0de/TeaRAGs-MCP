@@ -82,6 +82,25 @@ file outlines, or doc TOCs from the same index.
 Read only when you need continuous prose spanning many chunks, or to modify the
 file. Chunk-by-chunk navigation via `find_symbol` is cheaper and exact.
 
+**Single-call diagnostic — `find_symbol` + `rerank`.** When you want both the
+definition AND its risk signals in one call, pass a `rerank` preset to
+`find_symbol`:
+
+```jsonc
+{ "symbol": "PaymentService#charge", "rerank": "hotspots" }
+// → returns the method body PLUS rankingOverlay with churn / bugFixRate /
+//   ownership / age labels. No second semantic_search needed for enrichment.
+```
+
+Equivalent for `find_similar`. `rank_chunks` is the inverse — preset-driven
+ranking without a query (`metaOnly: true` by default — batch analytics, not
+online search). See `references/runtime-introspection.md` for how to read the
+returned overlay.
+
+**Pagination — `offset` works on every search tool**, not just `find_similar`.
+When a single page is exhausted but you need more, retry with `offset: N`
+instead of inflating `limit`. Full rules in `references/pagination.md`.
+
 ## After Code Changes (mid-session reindex)
 
 When you (or a subagent) modified files via Write/Edit and then need to search
@@ -471,6 +490,9 @@ Always extract directory-level prefixes for pathPattern globs.
 
 - GOOD: `**/enrichment/**` (directory prefix)
 - GOOD: `{file1.rb,file2.rb}` (flat file names, no slashes)
+- GOOD: `!**/test/**` (negation — picomatch supports `!` prefix to exclude a
+  directory subtree). Prefer this over `testFile: "exclude"` only when you want
+  to exclude a non-test directory (e.g. `!**/vendor/**`).
 - BAD: `{app/services/foo.rb,app/models/bar.rb}` (slashes inside braces)
 
 Skills have their own pathPattern extraction logic (how to derive pathPattern
@@ -490,3 +512,15 @@ For detailed guidance on specific topics, read these when needed:
 - `references/signal-interpretation.md` — pair diagnostics for overlay signals
   (god module vs bug attractor, healthy owner vs toxic silo, legacy minefield vs
   proven stable, interpretation anti-patterns)
+- `references/runtime-introspection.md` — MCP resources catalog (presets /
+  signals / filters / labels), `infraHealth`, `driftWarning`, and
+  `rankingOverlay` explanation layer. Read when: building a custom rerank and
+  unsure which weight keys exist; a search returned `driftWarning`; debugging
+  qdrant/embedding/enrichment health.
+
+**MCP Resources are the canonical source for presets, signal keys, and filter
+syntax.** They are generated from the live registry, so they reflect what THIS
+build supports. Read them via
+`ReadMcpResourceTool(server: "tea-rags", uri: "tea-rags://schema/<name>")`
+rather than guessing names from training data. Catalog of URIs and when to read
+each is in `references/runtime-introspection.md`.
