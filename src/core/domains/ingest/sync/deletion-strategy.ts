@@ -10,6 +10,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { ProgressCallback } from "../../../types.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
+import { BatchDeleteExecutor } from "./batch-delete-executor.js";
 import { createDeletionOutcome, type DeletionOutcome } from "./deletion-outcome.js";
 import { DeletionRetryHelper } from "./deletion-retry-helper.js";
 
@@ -93,16 +94,14 @@ export async function performDeletion(
       console.error(`[Reindex] FALLBACK L2: Starting INDIVIDUAL deletions for ${filesToDelete.length} paths (SLOW!)`);
 
       const individualStart = Date.now();
+      const executor = new BatchDeleteExecutor(qdrant, collectionName);
       const retryHelper = new DeletionRetryHelper({ maxRetries: 1, backoffMs: 0 });
-      const l2Outcome = await retryHelper.execute(filesToDelete, async ([relativePath]) => {
+      const l2Outcome = await retryHelper.execute(filesToDelete, async (paths) => {
         try {
-          const filter = {
-            must: [{ key: "relativePath", match: { value: relativePath } }],
-          };
-          await qdrant.deletePointsByFilter(collectionName, filter);
+          await executor.deleteBatch(paths);
         } catch (innerError) {
           if (isDebug()) {
-            console.error(`[Reindex] FALLBACK L2: Failed to delete ${relativePath}:`, innerError);
+            console.error(`[Reindex] FALLBACK L2: Failed to delete ${paths[0]}:`, innerError);
           }
           throw innerError;
         }
