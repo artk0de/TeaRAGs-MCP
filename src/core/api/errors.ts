@@ -2,15 +2,28 @@
  * API-layer error classes — input validation errors thrown by facades.
  */
 
-import type { ErrorCode } from "../contracts/errors.js";
 import { TeaRagsError } from "../infra/errors.js";
+
+/**
+ * Input validation error codes. Local strict union — used by InputValidationError
+ * subclasses. Aggregates into the runtime ErrorCode = string contract.
+ */
+export type InputErrorCode =
+  | "INPUT_COLLECTION_NOT_PROVIDED"
+  | "INPUT_MISSING_ARGUMENT"
+  | "INPUT_INVALID_PARAMETER"
+  | "INPUT_PROJECT_NOT_REGISTERED"
+  | "INPUT_PROJECT_NAME_NOT_UNIQUE"
+  | "INPUT_PROJECT_NAME_INVALID"
+  | "INPUT_PROJECT_PATH_MISSING"
+  | "INPUT_PATH_NOT_EXISTS";
 
 /**
  * Abstract base for all input validation errors (httpStatus 400).
  * Facades throw these when request parameters are invalid.
  */
 export abstract class InputValidationError extends TeaRagsError {
-  constructor(opts: { code: ErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
+  constructor(opts: { code: InputErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
     super({
       ...opts,
       httpStatus: opts.httpStatus ?? 400,
