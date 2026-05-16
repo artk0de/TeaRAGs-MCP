@@ -138,8 +138,11 @@ export class ExploreOps {
   }
 
   async searchCode(request: ExploreCodeRequest): Promise<ExploreResponse> {
-    const absolutePath = await validatePath(request.path);
-    const collectionName = resolveCollectionName(absolutePath);
+    const { collectionName, path } = resolveCollection(this.collectionRegistry, {
+      collection: request.collection,
+      project: request.project,
+      path: request.path,
+    });
     await this.modelGuard?.ensureMatch(collectionName);
     const { embedding } = await this.embeddings.embed(request.query);
     const level = resolveEffectiveLevel(undefined, request.rerank, this.reranker, "search_code");
@@ -147,7 +150,7 @@ export class ExploreOps {
     return this.executeExplore(
       this.vectorStrategy,
       buildSearchCodeContext(request, collectionName, embedding, filter),
-      absolutePath,
+      path,
     );
   }
 

@@ -27,7 +27,8 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       inputSchema: schemas.IndexCodebaseSchema,
       annotations: { idempotentHint: true },
     },
-    async ({ path, forceReindex, extensions, ignorePatterns }) => {
+    async ({ path: pathArg, project, forceReindex, extensions, ignorePatterns }) => {
+      const path = await resolvePathFromProject({ path: pathArg, project }, app);
       const stats = await app.indexCodebase(path, { forceReindex, extensions, ignorePatterns }, (progress) => {
         console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
       });

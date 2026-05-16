@@ -294,6 +294,23 @@ describe("CollectionRegistry", () => {
 
   describe("startWatching survives multiple atomic renames (regression for fs.watch dangling inode)", () => {
     it("invalidates cache across N consecutive saveRegistryFile calls", async () => {
+      // Polling waiter — fs.watch event delivery under concurrent vitest
+      // load can exceed any fixed sleep. Loop until the cache reflects the
+      // expected value or hit a generous overall timeout.
+      const waitForPath = async (registry: CollectionRegistry, expected: string, timeoutMs = 2000): Promise<void> => {
+        const deadline = Date.now() + timeoutMs;
+
+        while (true) {
+          if (registry.get("code_a")?.path === expected) return;
+          if (Date.now() >= deadline) {
+            // Final assertion to surface the actual value in the failure message.
+            expect(registry.get("code_a")?.path).toBe(expected);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 25));
+        }
+      };
+
       const r = new CollectionRegistry(dir);
       r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
       const stop = r.startWatching();
@@ -315,8 +332,7 @@ describe("CollectionRegistry", () => {
             },
           },
         });
-        await new Promise((r) => setTimeout(r, 150));
-        expect(r.get("code_a")?.path).toBe("/repo/external-1");
+        await waitForPath(r, "/repo/external-1");
 
         // Second external write — replaces inode #2 with inode #3. With the
         // old file-level fs.watch on macOS, the watcher was bound to inode #1
@@ -339,8 +355,7 @@ describe("CollectionRegistry", () => {
             },
           },
         });
-        await new Promise((r) => setTimeout(r, 150));
-        expect(r.get("code_a")?.path).toBe("/repo/external-2");
+        await waitForPath(r, "/repo/external-2");
 
         // Third — same story.
         saveRegistryFile(dir, {
@@ -359,8 +374,7 @@ describe("CollectionRegistry", () => {
             },
           },
         });
-        await new Promise((r) => setTimeout(r, 150));
-        expect(r.get("code_a")?.path).toBe("/repo/external-3");
+        await waitForPath(r, "/repo/external-3");
       } finally {
         stop();
       }
