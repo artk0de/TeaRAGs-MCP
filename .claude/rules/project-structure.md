@@ -74,6 +74,7 @@ core/
 
     ingest/                            # Indexing pipeline
       collection-stats.ts              # computeCollectionStats orchestrator + SignalValuesAccumulator
+      stats-recompute.ts               # StatsRecomputeService: lazy percentile backfill at rerank time (injected into Reranker via DI)
       pipeline/
         enrichment/                    # coordinator, applier
 

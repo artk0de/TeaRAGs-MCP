@@ -18,7 +18,6 @@ import type { PayloadSignalDescriptor } from "../../../contracts/types/trajector
 import { CollectionNotFoundError as DomainCollectionNotFoundError } from "../../../domains/explore/errors.js";
 import { IndexMetricsQuery } from "../../../domains/explore/queries/index-metrics.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { StatsRecomputeService } from "../../../domains/explore/stats-recompute.js";
 import {
   createExploreStrategy,
   FileOutlineStrategy,
@@ -28,6 +27,7 @@ import {
   type ExploreContext,
 } from "../../../domains/explore/strategies/index.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
+import { StatsRecomputeService } from "../../../domains/ingest/stats-recompute.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import { resolveCollection, resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
