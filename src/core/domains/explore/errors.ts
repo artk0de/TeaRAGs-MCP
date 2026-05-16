@@ -2,15 +2,24 @@
  * Explore domain errors — search, hybrid, query validation.
  */
 
-import type { ErrorCode } from "../../contracts/errors.js";
 import { TeaRagsError } from "../../infra/errors.js";
+
+/**
+ * Explore domain error codes. Local strict union.
+ */
+export type ExploreErrorCode =
+  | "EXPLORE_COLLECTION_NOT_FOUND"
+  | "EXPLORE_HYBRID_NOT_ENABLED"
+  | "EXPLORE_INVALID_QUERY"
+  | "EXPLORE_INVALID_STRATEGY"
+  | "EXPLORE_CHUNK_NOT_FOUND";
 
 /**
  * Abstract base for all explore domain errors.
  * Default httpStatus: 400.
  */
 export abstract class ExploreError extends TeaRagsError {
-  constructor(opts: { code: ErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
+  constructor(opts: { code: ExploreErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
     super({ ...opts, httpStatus: opts.httpStatus ?? 400 });
   }
 }
