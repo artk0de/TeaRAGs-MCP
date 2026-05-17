@@ -49,15 +49,15 @@ export class Service2 {
   assert(initialStats.chunksCreated > 0, `Initial chunks created: ${initialStats.chunksCreated}`);
 
   // === TEST 2: Re-indexing without forceReindex should return early ===
-  log("info", "Testing early return when collection exists...");
+  log("info", "Testing auto-incremental on re-run (no forceReindex)...");
+  // Post-SOLID: IngestFacade auto-detects existing collection and switches to
+  // incremental reindex silently (no error). Old CodeIndexer used to surface
+  // "Collection already exists" — that assertion is gone with the new behavior.
+  // Outcome we verify: zero work done because nothing changed.
   const reindexStats = await ingest.indexCodebase(forceTestDir);
   assert(reindexStats.status === "completed", `Reindex returns completed status`);
-  assert(reindexStats.filesIndexed === 0, `No files indexed on re-run without force: ${reindexStats.filesIndexed}`);
-  assert(reindexStats.chunksCreated === 0, `No chunks created on re-run without force: ${reindexStats.chunksCreated}`);
-  assert(
-    reindexStats.errors?.some((e) => e.includes("Collection already exists")),
-    "Error message mentions collection exists",
-  );
+  assert(reindexStats.filesIndexed === 0, `No new/modified files: ${reindexStats.filesIndexed}`);
+  assert(reindexStats.chunksCreated === 0, `No new chunks: ${reindexStats.chunksCreated}`);
 
   // === TEST 3: Re-indexing with forceReindex should work ===
   log("info", "Testing forceReindex=true...");

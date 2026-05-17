@@ -18,9 +18,11 @@ import { promises as fs } from "node:fs";
 
 // Post-SOLID build paths: build/code/ → build/core/, with adapter relocation.
 // CodeIndexer (legacy) is gone; cleanup uses createTestFacades() helper.
+// Qdrant URL resolution mirrors production cascade (env → localhost probe →
+// embedded daemon) via resolveTestQdrant() — see config.mjs.
 import { OllamaEmbeddings } from "../../build/core/adapters/embeddings/ollama.js";
 import { QdrantManager } from "../../build/core/adapters/qdrant/client.js";
-import { config, TEST_DIR } from "./config.mjs";
+import { config, isOllamaReachable, resolveTestQdrant, TEST_DIR } from "./config.mjs";
 import { c, counters, createTestFacades, log, printSummary, resources, section, timing } from "./helpers.mjs";
 // Import all test suites
 import { testEmbeddings } from "./suites/01-embeddings.mjs";
@@ -153,6 +155,25 @@ async function cleanup(qdrant, embeddings) {
   log("info", `Cleanup complete: ${cleanedCount} resources cleaned, ${errorCount} errors`);
 }
 
+// Suites that need embeddings — skipped when Ollama is unreachable so the
+// run still validates Qdrant-only suites cleanly instead of crashing on
+// network errors mid-flight.
+const OLLAMA_DEPENDENT_SUITES = new Set([
+  "embeddings",
+  "indexing",
+  "hash",
+  "ignore",
+  "chunks",
+  "multilang",
+  "ruby",
+  "search",
+  "edge",
+  "batch",
+  "concurrent",
+  "reindex",
+  "git",
+]);
+
 async function main() {
   // Start global timer
   timing.start();
@@ -163,9 +184,18 @@ async function main() {
   console.log(`${c.bold}╚═══════════════════════════════════════════════════════╝${c.reset}`);
   console.log();
 
+  // Resolve Qdrant via production cascade (env → localhost → embedded daemon).
+  // Embedded mode spawns ~/.tea-rags/qdrant on a random port and returns a
+  // release() handle the cleanup phase must call to decrement the refcount.
+  const qdrantResolution = await resolveTestQdrant();
+  const ollamaUp = await isOllamaReachable();
+
   console.log(`${c.dim}Configuration:${c.reset}`);
-  console.log(`  Qdrant:  ${config.QDRANT_URL}`);
-  console.log(`  Ollama:  ${config.EMBEDDING_BASE_URL}`);
+  console.log(`  Qdrant:  ${qdrantResolution.url} ${c.dim}(${qdrantResolution.mode})${c.reset}`);
+  if (qdrantResolution.mode === "embedded" && qdrantResolution.pid) {
+    console.log(`  Daemon:  pid ${qdrantResolution.pid}, storage ${qdrantResolution.storagePath}`);
+  }
+  console.log(`  Ollama:  ${config.EMBEDDING_BASE_URL} ${c.dim}(${ollamaUp ? "reachable" : "DOWN"})${c.reset}`);
   console.log(`  Model:   ${config.EMBEDDING_MODEL}`);
   console.log(`  TestDir: ${TEST_DIR}`);
 
@@ -179,9 +209,18 @@ async function main() {
   // Track TEST_DIR for cleanup
   resources.trackTempDir(TEST_DIR);
 
-  // Initialize clients
+  // Initialize clients. QdrantManager receives the reconnect hook from
+  // embedded resolution so it can survive daemon respawns transparently.
   const embeddings = new OllamaEmbeddings(config.EMBEDDING_MODEL, 768, undefined, config.EMBEDDING_BASE_URL);
-  const qdrant = new QdrantManager(config.QDRANT_URL);
+  const daemonInfo =
+    qdrantResolution.mode === "embedded"
+      ? {
+          startupPhase: qdrantResolution.startupPhase,
+          pid: qdrantResolution.pid,
+          storagePath: qdrantResolution.storagePath,
+        }
+      : undefined;
+  const qdrant = new QdrantManager(qdrantResolution.url, undefined, qdrantResolution.reconnect, daemonInfo);
 
   // Build args map
   const argsMap = { embeddings, qdrant };
@@ -202,11 +241,25 @@ async function main() {
         suites.forEach((s, i) => console.log(`  ${i + 1}. ${s.name}`));
         process.exit(1);
       }
+      if (!ollamaUp && OLLAMA_DEPENDENT_SUITES.has(suite.name)) {
+        console.error(
+          `${c.red}Suite ${suite.name} requires Ollama at ${config.EMBEDDING_BASE_URL}, which is unreachable.${c.reset}`,
+        );
+        console.error(
+          `${c.dim}Start Ollama (ollama serve) or set EMBEDDING_BASE_URL to a reachable provider.${c.reset}`,
+        );
+        process.exit(1);
+      }
       const args = suite.args.map((a) => argsMap[a]);
       await suite.fn(...args);
     } else {
       // Run all suites in order
       for (const suite of suites) {
+        if (!ollamaUp && OLLAMA_DEPENDENT_SUITES.has(suite.name)) {
+          log("skip", `${suite.name}: Ollama unreachable at ${config.EMBEDDING_BASE_URL}`);
+          counters.skipped++;
+          continue;
+        }
         try {
           const args = suite.args.map((a) => argsMap[a]);
           await suite.fn(...args);
@@ -235,8 +288,13 @@ async function main() {
       console.error("Cleanup also failed:", cleanupError.message);
     }
 
+    // Release embedded daemon ref before exiting
+    qdrantResolution.release?.();
     process.exit(1);
   }
+
+  // Release embedded daemon ref so the idle watcher can shut it down
+  qdrantResolution.release?.();
 
   // Print summary
   const success = printSummary();
