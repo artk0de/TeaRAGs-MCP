@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { isDebug } from "../pipeline/infra/runtime.js";
+import { isDebug } from "../../pipeline/infra/runtime.js";
 
 /**
  * Cleans up stale snapshot artifacts for a specific collection.

@@ -24,7 +24,7 @@ import {
   type FileMetadata,
   type LoadedSnapshot,
   type SnapshotSaveOptions,
-} from "./sharded-snapshot.js";
+} from "./snapshot/sharded-snapshot.js";
 
 export { parallelLimit };
 

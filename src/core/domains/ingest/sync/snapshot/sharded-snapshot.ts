@@ -12,9 +12,9 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { SnapshotCorruptedError } from "../errors.js";
-import { ConsistentHash } from "./consistent-hash.js";
-import { MerkleTree } from "./merkle.js";
+import { SnapshotCorruptedError } from "../../errors.js";
+import { ConsistentHash } from "../consistent-hash.js";
+import { MerkleTree } from "../merkle.js";
 
 /**
  * File metadata for fast change detection

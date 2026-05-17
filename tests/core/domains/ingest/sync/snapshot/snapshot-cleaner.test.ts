@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { SnapshotCleaner } from "../../../../../src/core/domains/ingest/sync/snapshot-cleaner.js";
+import { SnapshotCleaner } from "../../../../../../src/core/domains/ingest/sync/snapshot/snapshot-cleaner.js";
 
 describe("SnapshotCleaner", () => {
   let tempDir: string;

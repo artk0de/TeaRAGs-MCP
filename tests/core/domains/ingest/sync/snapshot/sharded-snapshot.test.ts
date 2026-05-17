@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ShardedSnapshotManager,
   type FileMetadata,
-} from "../../../../../src/core/domains/ingest/sync/sharded-snapshot.js";
+} from "../../../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
 
 describe("ShardedSnapshotManager", () => {
   let testDir: string;

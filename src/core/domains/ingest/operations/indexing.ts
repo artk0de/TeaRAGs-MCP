@@ -20,8 +20,8 @@ import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
-import { ShardedSnapshotManager } from "../sync/sharded-snapshot.js";
-import { SnapshotCleaner } from "../sync/snapshot-cleaner.js";
+import { ShardedSnapshotManager } from "../sync/snapshot/sharded-snapshot.js";
+import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 
 /**
  * Result of collection setup phase.

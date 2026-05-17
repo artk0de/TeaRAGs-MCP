@@ -23,7 +23,7 @@ import type { DeletionOutcome } from "../sync/deletion-outcome.js";
 import { performDeletion, type DeletionConfig } from "../sync/deletion-strategy.js";
 import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { ReindexCoordinator } from "../sync/reindex-coordinator.js";
-import { SnapshotCleaner } from "../sync/snapshot-cleaner.js";
+import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 
 interface ReindexContext {
   absolutePath: string;
