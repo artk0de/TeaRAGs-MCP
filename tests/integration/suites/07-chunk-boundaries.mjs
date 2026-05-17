@@ -5,9 +5,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, resources, section } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, resources, searchCode, section } from "../helpers.mjs";
 
 export async function testChunkBoundaries(qdrant, embeddings) {
   section("7. Chunk Boundaries & Line Numbers");
@@ -56,21 +55,19 @@ function helperFunction() {
 
   await createTestFile(chunkTestDir, "large.ts", largeContent);
 
-  const indexer = new CodeIndexer(
-    qdrant,
-    embeddings,
-    getIndexerConfig({
+  const { ingest, explore } = createTestFacades(qdrant, embeddings, {
+    config: getIndexerConfig({
       chunkSize: 300, // Small chunks to force splitting
       chunkOverlap: 30,
     }),
-  );
+  });
 
   resources.trackIndexedPath(chunkTestDir);
-  const stats = await indexer.indexCodebase(chunkTestDir, { forceReindex: true });
+  const stats = await ingest.indexCodebase(chunkTestDir, { forceReindex: true });
   assert(stats.chunksCreated > 1, `Multiple chunks created: ${stats.chunksCreated}`);
 
   // Search for content in different sections
-  const magicResults = await indexer.searchCode(chunkTestDir, "MAGIC_NUMBER_ALPHA");
+  const magicResults = await searchCode(explore, chunkTestDir, "MAGIC_NUMBER_ALPHA");
   assert(magicResults.length > 0, `Found MAGIC_NUMBER: ${magicResults.length} results`);
 
   // Line numbers should be defined and non-negative
@@ -81,9 +78,9 @@ function helperFunction() {
     magicResults[0].endLine >= magicResults[0].startLine;
   assert(hasValidLineNumbers, `Line numbers valid: ${magicResults[0].startLine}-${magicResults[0].endLine}`);
 
-  const processResults = await indexer.searchCode(chunkTestDir, "processData split map filter");
+  const processResults = await searchCode(explore, chunkTestDir, "processData split map filter");
   assert(processResults.length > 0, `Found processData function: ${processResults.length}`);
 
-  const helperResults = await indexer.searchCode(chunkTestDir, "helperFunction timestamp");
+  const helperResults = await searchCode(explore, chunkTestDir, "helperFunction timestamp");
   assert(helperResults.length > 0, `Found helper function: ${helperResults.length}`);
 }

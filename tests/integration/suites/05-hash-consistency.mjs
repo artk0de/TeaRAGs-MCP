@@ -5,14 +5,13 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, hashContent, resources, section } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, hashContent, resources, section } from "../helpers.mjs";
 
 export async function testHashConsistency(qdrant, embeddings) {
   section("5. Hash & Snapshot Consistency");
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
+  const { ingest } = createTestFacades(qdrant, embeddings, { config: getIndexerConfig() });
 
   const hashTestDir = join(TEST_DIR, "hash_test");
   await fs.mkdir(hashTestDir, { recursive: true });
@@ -26,13 +25,13 @@ export async function testHashConsistency(qdrant, embeddings) {
 
   // Index initial version
   resources.trackIndexedPath(hashTestDir);
-  await indexer.indexCodebase(hashTestDir, { forceReindex: true });
+  await ingest.indexCodebase(hashTestDir, { forceReindex: true });
 
   // Calculate expected hash
   const expectedHash1 = hashContent(content1);
 
   // Reindex should detect no changes for same content
-  const noChangeStats = await indexer.reindexChanges(hashTestDir);
+  const noChangeStats = await ingest.reindexChanges(hashTestDir);
   assert(
     noChangeStats.filesAdded === 0 && noChangeStats.filesModified === 0,
     `No changes detected for unchanged file: +${noChangeStats.filesAdded} ~${noChangeStats.filesModified}`,
@@ -47,11 +46,11 @@ export async function testHashConsistency(qdrant, embeddings) {
   );
 
   // Reindex should detect change
-  const changeStats = await indexer.reindexChanges(hashTestDir);
+  const changeStats = await ingest.reindexChanges(hashTestDir);
   assert(changeStats.filesModified >= 1, `Modified file detected by hash: ${changeStats.filesModified}`);
 
   // Revert to original (different size again)
   await fs.writeFile(join(hashTestDir, "version.ts"), content1);
-  const revertStats = await indexer.reindexChanges(hashTestDir);
+  const revertStats = await ingest.reindexChanges(hashTestDir);
   assert(revertStats.filesModified >= 1, `Reverted file detected: ${revertStats.filesModified}`);
 }

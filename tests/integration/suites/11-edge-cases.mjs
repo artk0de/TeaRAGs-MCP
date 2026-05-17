@@ -5,9 +5,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, resources, section } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, resources, searchCode, section } from "../helpers.mjs";
 
 export async function testEdgeCases(qdrant, embeddings) {
   section("10. Edge Cases");
@@ -34,13 +33,13 @@ export async function testEdgeCases(qdrant, embeddings) {
   await fs.mkdir(join(edgeTestDir, "a/b/c/d/e"), { recursive: true });
   await createTestFile(edgeTestDir, "a/b/c/d/e/deep.ts", "export const DEEP = true;");
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
+  const { ingest, explore } = createTestFacades(qdrant, embeddings, { config: getIndexerConfig() });
 
   // Should not crash
   resources.trackIndexedPath(edgeTestDir);
   let errorOccurred = false;
   try {
-    await indexer.indexCodebase(edgeTestDir, { forceReindex: true });
+    await ingest.indexCodebase(edgeTestDir, { forceReindex: true });
   } catch (e) {
     errorOccurred = true;
     console.log(`    Error: ${e.message}`);
@@ -48,6 +47,6 @@ export async function testEdgeCases(qdrant, embeddings) {
   assert(!errorOccurred, "Edge cases don't crash indexer");
 
   // Deep file should be indexed
-  const deepResults = await indexer.searchCode(edgeTestDir, "DEEP");
+  const deepResults = await searchCode(explore, edgeTestDir, "DEEP");
   assert(deepResults.length > 0, `Deeply nested file indexed: ${deepResults.length}`);
 }
