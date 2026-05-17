@@ -3,12 +3,6 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { IngestFacade } from "../../../../src/core/api/index.js";
-import { PartialDeletionError } from "../../../../src/core/domains/ingest/errors.js";
-import { EnrichmentCoordinator } from "../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
-import { ParallelFileSynchronizer } from "../../../../src/core/domains/ingest/sync/parallel-synchronizer.js";
-import { Migrator } from "../../../../src/core/infra/migration/migrator.js";
-import type { IngestCodeConfig } from "../../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
@@ -17,7 +11,13 @@ import {
   defaultTrajectoryConfig,
   MockEmbeddingProvider,
   MockQdrantManager,
-} from "./__helpers__/test-helpers.js";
+} from "../__helpers__/test-helpers.js";
+import { IngestFacade } from "../../../../../src/core/api/index.js";
+import { PartialDeletionError } from "../../../../../src/core/domains/ingest/errors.js";
+import { EnrichmentCoordinator } from "../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
+import { ParallelFileSynchronizer } from "../../../../../src/core/domains/ingest/sync/parallel-synchronizer.js";
+import { Migrator } from "../../../../../src/core/infra/migration/migrator.js";
+import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {

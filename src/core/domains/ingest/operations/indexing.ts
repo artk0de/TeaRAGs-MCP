@@ -10,16 +10,16 @@
  * - Migration: converts real collection to alias scheme
  */
 
-import type { IndexOptions, IndexStats, ProgressCallback } from "../../types.js";
-import { cleanupOrphanedVersions } from "./alias-cleanup.js";
-import { IndexingFailedError } from "./errors.js";
-import { BaseIndexingPipeline, type ProcessingContext } from "./pipeline/base.js";
-import { processFiles } from "./pipeline/file-processor.js";
-import { storeIndexingMarker } from "./pipeline/indexing-marker.js";
-import { isDebug } from "./pipeline/infra/runtime.js";
-import type { FileScanner } from "./pipeline/scanner.js";
-import { ShardedSnapshotManager } from "./sync/sharded-snapshot.js";
-import { SnapshotCleaner } from "./sync/snapshot-cleaner.js";
+import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
+import { cleanupOrphanedVersions } from "../alias-cleanup.js";
+import { IndexingFailedError } from "../errors.js";
+import { BaseIndexingPipeline, type ProcessingContext } from "../pipeline/base.js";
+import { processFiles } from "../pipeline/file-processor.js";
+import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
+import { isDebug } from "../pipeline/infra/runtime.js";
+import type { FileScanner } from "../pipeline/scanner.js";
+import { ShardedSnapshotManager } from "../sync/sharded-snapshot.js";
+import { SnapshotCleaner } from "../sync/snapshot-cleaner.js";
 
 /**
  * Result of collection setup phase.

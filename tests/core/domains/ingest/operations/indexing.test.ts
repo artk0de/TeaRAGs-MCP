@@ -2,10 +2,6 @@ import { promises as fs } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { OllamaUnavailableError } from "../../../../src/core/adapters/embeddings/ollama/errors.js";
-import { IngestFacade } from "../../../../src/core/api/index.js";
-import { IndexingFailedError } from "../../../../src/core/domains/ingest/errors.js";
-import type { IngestCodeConfig } from "../../../../src/core/types.js";
 import {
   cleanupTempDir,
   createTempTestDir,
@@ -14,7 +10,11 @@ import {
   defaultTrajectoryConfig,
   MockEmbeddingProvider,
   MockQdrantManager,
-} from "./__helpers__/test-helpers.js";
+} from "../__helpers__/test-helpers.js";
+import { OllamaUnavailableError } from "../../../../../src/core/adapters/embeddings/ollama/errors.js";
+import { IngestFacade } from "../../../../../src/core/api/index.js";
+import { IndexingFailedError } from "../../../../../src/core/domains/ingest/errors.js";
+import type { IngestCodeConfig } from "../../../../../src/core/types.js";
 
 vi.mock("tree-sitter", () => ({
   default: class MockParser {
@@ -391,7 +391,7 @@ function third() {
       // Now force reindex with a broken synchronizer
       // We mock the ParallelFileSynchronizer's updateSnapshot to throw
       const { ParallelFileSynchronizer } =
-        await import("../../../../src/core/domains/ingest/sync/parallel-synchronizer.js");
+        await import("../../../../../src/core/domains/ingest/sync/parallel-synchronizer.js");
       const origUpdateSnapshot = ParallelFileSynchronizer.prototype.updateSnapshot;
       ParallelFileSynchronizer.prototype.updateSnapshot = async function () {
         throw new Error("Disk full: cannot save snapshot");
@@ -516,7 +516,7 @@ function third() {
 
       // Simulate legacy: create a real collection (not via indexCodebase to avoid alias)
       const { resolveCollectionName, validatePath } =
-        await import("../../../../src/core/domains/ingest/pipeline/../../../infra/collection-name.js");
+        await import("../../../../../src/core/domains/ingest/pipeline/../../../infra/collection-name.js");
       const absPath = await validatePath(codebaseDir);
       const collName = resolveCollectionName(absPath);
       await qdrant.createCollection(collName, 384, "Cosine");
@@ -569,7 +569,7 @@ function third() {
       await ingest.indexCodebase(codebaseDir);
 
       // Import and spy on cleanup
-      const aliasCleanup = await import("../../../../src/core/domains/ingest/alias-cleanup.js");
+      const aliasCleanup = await import("../../../../../src/core/domains/ingest/alias-cleanup.js");
       const cleanupSpy = vi.spyOn(aliasCleanup, "cleanupOrphanedVersions");
 
       // Force reindex

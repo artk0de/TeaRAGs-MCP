@@ -10,13 +10,13 @@ const { mockIndexCodebase, mockReindexChanges, mockScrollAllPoints, mockComputeS
   mockComputeStats: vi.fn().mockReturnValue({ computedAt: Date.now(), perSignal: new Map() }),
 }));
 
-vi.mock("../../../src/core/domains/ingest/indexing.js", () => ({
+vi.mock("../../../src/core/domains/ingest/operations/indexing.js", () => ({
   IndexPipeline: class {
     indexCodebase = mockIndexCodebase;
   },
 }));
 
-vi.mock("../../../src/core/domains/ingest/reindexing.js", () => ({
+vi.mock("../../../src/core/domains/ingest/operations/reindexing.js", () => ({
   ReindexPipeline: class {
     reindexChanges = mockReindexChanges;
   },

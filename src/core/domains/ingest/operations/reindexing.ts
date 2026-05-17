@@ -6,24 +6,24 @@
  * File processing logic is delegated to FileProcessor.
  */
 
-import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../types.js";
-import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "./errors.js";
+import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
+import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "../errors.js";
 import {
   BaseIndexingPipeline,
   type PipelineRegistryDeps,
   type PipelineTuning,
   type ProcessingContext,
-} from "./pipeline/base.js";
-import { processRelativeFiles } from "./pipeline/file-processor.js";
-import { storeIndexingMarker } from "./pipeline/indexing-marker.js";
-import { pipelineLog } from "./pipeline/infra/debug-logger.js";
-import { isDebug } from "./pipeline/infra/runtime.js";
-import type { FileScanner } from "./pipeline/scanner.js";
-import type { DeletionOutcome } from "./sync/deletion-outcome.js";
-import { performDeletion, type DeletionConfig } from "./sync/deletion-strategy.js";
-import type { ParallelFileSynchronizer } from "./sync/parallel-synchronizer.js";
-import { ReindexCoordinator } from "./sync/reindex-coordinator.js";
-import { SnapshotCleaner } from "./sync/snapshot-cleaner.js";
+} from "../pipeline/base.js";
+import { processRelativeFiles } from "../pipeline/file-processor.js";
+import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
+import { pipelineLog } from "../pipeline/infra/debug-logger.js";
+import { isDebug } from "../pipeline/infra/runtime.js";
+import type { FileScanner } from "../pipeline/scanner.js";
+import type { DeletionOutcome } from "../sync/deletion-outcome.js";
+import { performDeletion, type DeletionConfig } from "../sync/deletion-strategy.js";
+import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
+import { ReindexCoordinator } from "../sync/reindex-coordinator.js";
+import { SnapshotCleaner } from "../sync/snapshot-cleaner.js";
 
 interface ReindexContext {
   absolutePath: string;
