@@ -33,10 +33,14 @@
  * See spec: docs/superpowers/specs/2026-05-15-lazy-percentile-recompute-design.md
  */
 
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import { scrollAllPoints } from "../../adapters/qdrant/scroll.js";
-import type { CollectionSignalStats, PayloadSignalDescriptor, SignalStats } from "../../contracts/types/trajectory.js";
-import type { StatsCache } from "../../infra/stats-cache.js";
+import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
+import type {
+  CollectionSignalStats,
+  PayloadSignalDescriptor,
+  SignalStats,
+} from "../../../contracts/types/trajectory.js";
+import type { StatsCache } from "../../../infra/stats-cache.js";
 
 const FAILURE_BACKOFF_MS = 60_000;
 

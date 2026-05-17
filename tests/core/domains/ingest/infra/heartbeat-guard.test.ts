@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { HeartbeatGuard } from "../../../../src/core/domains/ingest/heartbeat-guard.js";
+import { HeartbeatGuard } from "../../../../../src/core/domains/ingest/infra/heartbeat-guard.js";
 
 describe("HeartbeatGuard", () => {
   it("stops the heartbeat even if the wrapped function throws", async () => {

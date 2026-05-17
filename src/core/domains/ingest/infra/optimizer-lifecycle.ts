@@ -6,8 +6,8 @@
  * pause/resume pair is idempotent and heals state on failure.
  */
 
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
-import { isDebug } from "./pipeline/infra/runtime.js";
+import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { isDebug } from "../pipeline/infra/runtime.js";
 
 export class OptimizerLifecycle {
   constructor(private readonly qdrant: QdrantManager) {}

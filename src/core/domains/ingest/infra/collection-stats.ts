@@ -12,15 +12,15 @@ import {
   type StatsAccumulator,
   type StatsAccumulatorDescriptor,
   type StatsPoint,
-} from "../../contracts/types/stats-accumulator.js";
+} from "../../../contracts/types/stats-accumulator.js";
 import type {
   CollectionSignalStats,
   PayloadSignalDescriptor,
   ScopedSignalStats,
   SignalStats,
-} from "../../contracts/types/trajectory.js";
-import { detectScope, type ScopeDetectionConfig } from "../../infra/scope-detection.js";
-import { CODE_LANGUAGES } from "./pipeline/chunker/config.js";
+} from "../../../contracts/types/trajectory.js";
+import { detectScope, type ScopeDetectionConfig } from "../../../infra/scope-detection.js";
+import { CODE_LANGUAGES } from "../pipeline/chunker/config.js";
 
 const MIN_SAMPLE_SIZE = 10;
 const MIN_LANGUAGE_SHARE = 0.05;

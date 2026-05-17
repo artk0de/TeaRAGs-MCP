@@ -59,7 +59,7 @@ vi.mock("../../../src/core/adapters/qdrant/scroll.js", () => ({
   scrollAllPoints: (...args: any[]) => mockScrollAllPoints(...args),
 }));
 
-vi.mock("../../../src/core/domains/ingest/collection-stats.js", () => ({
+vi.mock("../../../src/core/domains/ingest/infra/collection-stats.js", () => ({
   computeCollectionStats: (...args: any[]) => mockComputeStats(...args),
 }));
 

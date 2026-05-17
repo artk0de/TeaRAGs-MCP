@@ -11,10 +11,10 @@
  */
 
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
-import { cleanupOrphanedVersions } from "../alias-cleanup.js";
 import { IndexingFailedError } from "../errors.js";
-import { HeartbeatGuard } from "../heartbeat-guard.js";
-import { OptimizerLifecycle } from "../optimizer-lifecycle.js";
+import { cleanupOrphanedVersions } from "../infra/alias-cleanup.js";
+import { HeartbeatGuard } from "../infra/heartbeat-guard.js";
+import { OptimizerLifecycle } from "../infra/optimizer-lifecycle.js";
 import { BaseIndexingPipeline, type ProcessingContext } from "../pipeline/base.js";
 import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";

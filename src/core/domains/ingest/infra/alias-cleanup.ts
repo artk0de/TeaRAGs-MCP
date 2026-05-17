@@ -1,4 +1,4 @@
-import type { QdrantManager } from "../../adapters/qdrant/client.js";
+import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 
 /**
  * Deletes versioned collections that are no longer pointed to by an alias.

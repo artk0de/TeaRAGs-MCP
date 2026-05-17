@@ -569,7 +569,7 @@ function third() {
       await ingest.indexCodebase(codebaseDir);
 
       // Import and spy on cleanup
-      const aliasCleanup = await import("../../../../../src/core/domains/ingest/alias-cleanup.js");
+      const aliasCleanup = await import("../../../../../src/core/domains/ingest/infra/alias-cleanup.js");
       const cleanupSpy = vi.spyOn(aliasCleanup, "cleanupOrphanedVersions");
 
       // Force reindex

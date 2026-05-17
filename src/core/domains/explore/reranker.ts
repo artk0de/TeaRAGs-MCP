@@ -26,7 +26,7 @@ import type {
 } from "../../contracts/types/trajectory.js";
 import { detectScope } from "../../infra/scope-detection.js";
 import { p95 } from "../../infra/signal-utils.js";
-import type { StatsRecomputeService } from "../ingest/stats-recompute.js";
+import type { StatsRecomputeService } from "../ingest/infra/stats-recompute.js";
 import { resolveLabel } from "./label-resolver.js";
 
 // Re-export types as part of search module's public API

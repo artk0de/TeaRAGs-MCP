@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { QdrantManager } from "../../../../src/core/adapters/qdrant/client.js";
-import { cleanupOrphanedVersions } from "../../../../src/core/domains/ingest/alias-cleanup.js";
+import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
+import { cleanupOrphanedVersions } from "../../../../../src/core/domains/ingest/infra/alias-cleanup.js";
 
 function createMockQdrant(aliases: { aliasName: string; collectionName: string }[], collections: string[]) {
   return {
