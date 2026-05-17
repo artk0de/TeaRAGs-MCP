@@ -23,17 +23,19 @@ re-exports the public API of that domain.
    `import { Reranker } from "../../domains/explore/reranker.js"`, use
    `import { Reranker } from "../../domains/explore/index.js"`.
 
-2. **Deep imports are OK within the same domain.** Files inside `explore/` can
-   import directly from `explore/strategies/base.js` without going through
-   barrels.
+2. **Deep imports are OK within the same subdomain.** Files inside
+   `explore/strategies/` can import each other directly without going through
+   `strategies/index.ts`. But once you cross a subdomain boundary (e.g. from
+   `ingest/operations/` into `ingest/infra/`), Rule #3 applies — go through the
+   subdomain barrel.
 
 3. **Every subdomain directory MUST have an `index.ts` barrel.** A "subdomain"
    is a directory under a domain (`domains/<x>/`) that groups multiple files
    with a shared public surface — examples: `ingest/operations/`,
-   `ingest/infra/`, `ingest/sync/snapshot/`, `ingest/sync/deletion/`,
-   `ingest/sync/infra/`. Single-file helper directories (e.g. `__helpers__/`) do
-   not need a barrel. Cross-subdomain imports MUST go through the barrel, not
-   the file directly.
+   `ingest/infra/`, `ingest/sync/`, `ingest/sync/snapshot/`,
+   `ingest/sync/deletion/`, `ingest/sync/infra/`. Single-file helper directories
+   (e.g. `__helpers__/`) do not need a barrel. Cross-subdomain imports MUST go
+   through the barrel, not the file directly.
 
 4. **When adding new public exports to a domain**, update the domain barrel. If
    the export is internal to the domain, don't add it.
