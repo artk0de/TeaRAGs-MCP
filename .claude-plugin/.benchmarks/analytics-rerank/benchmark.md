@@ -19,9 +19,23 @@ shape).
 
 ## Results
 
-| Coverage | With-rule    | Without-rule | Delta |
-| -------- | ------------ | ------------ | ----- |
-| Trigger  | 12/12 (100%) | 6/12 (50%)   | +50pp |
+| Coverage           | With-rule    | Without-rule | Delta |
+| ------------------ | ------------ | ------------ | ----- |
+| Trigger            | 12/12 (100%) | 6/12 (50%)   | +50pp |
+| Phase 8 (live MCP) | 5/5 (100%)   | n/a          | n/a   |
+
+**Phase 8 — Full Integration Eval (2026-05-17)** — real tea-rags MCP calls on
+the `tea-rags` project (collection `code_8b243ffe`). Cases A8-1 through A8-5
+verify preset acceptance, custom-recipe shapes, rankingOverlay structure, and
+the schema's behavior on wrong weight keys. Full results: `phase8-evals.json`.
+Key finding: **A8-3 shows that the wrong weight key `bugFixRate` is SILENTLY
+DROPPED — not rejected.** The call succeeds, the ranking does NOT reflect the
+intended `bugFix` weighting, no warning. Baseline subagents using `bugFixRate`
+(5/12 Phase 2 cases) would get ranked results that look fine but ignore the key
+entirely. The skill's pointer to `tea-rags://schema/signals` as the canonical
+catalog is the only defence against this silent degradation. A8-5 also verified
+the single-call diagnostic claim (`find_symbol + rerank` attaches full
+`rankingOverlay` to symbol-mode results).
 
 ## Where the skill matters most (per-eval delta)
 

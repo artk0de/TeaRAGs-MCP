@@ -11,16 +11,17 @@ across 42 unique test cases over 5 iterations.
 
 ## Results by Iteration
 
-| Iteration | Version                                       | Evals | Pass Rate    | Key Change                                                                                       |
-| --------- | --------------------------------------------- | ----- | ------------ | ------------------------------------------------------------------------------------------------ |
-| 1         | baseline (no rule)                            | 9     | 22% (2/9)    | Grep/Glob dominate                                                                               |
-| 1         | v1 (original 502-line)                        | 9     | 89% (8/9)    | eval-10 fail: subagent injection                                                                 |
-| 2         | v2 (modularized, LSP removed)                 | 9     | 100% (9/9)   | Subagent injection fixed                                                                         |
-| 3         | v3 (skills-first, search_code blocked)        | 9     | 100% (9/9)   | Skills routing + new patterns                                                                    |
-| 4         | baseline 2026-05-15 (no rule, Sonnet)         | 10    | 70% (7/10)   | Misses reindex-after-edit; raw filters when typed exists                                         |
-| 4         | v4 pre-fix (skill text v3)                    | 10    | 100% (10/10) | All PASS but raw filters in 3 cases, wrong testFile=true                                         |
-| 4         | v4 post-fix (added ## Filters section)        | 10    | 100% (10/10) | Typed filters everywhere, correct enums, taskId discovered                                       |
-| 5         | v5 post-split (526 → 245 lines, 2 new skills) | 12    | 100% (12/12) | Filter and rerank deep guidance moved into invocable skills; routing branches verified unchanged |
+| Iteration | Version                                       | Evals | Pass Rate    | Key Change                                                                                                                     |
+| --------- | --------------------------------------------- | ----- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| 1         | baseline (no rule)                            | 9     | 22% (2/9)    | Grep/Glob dominate                                                                                                             |
+| 1         | v1 (original 502-line)                        | 9     | 89% (8/9)    | eval-10 fail: subagent injection                                                                                               |
+| 2         | v2 (modularized, LSP removed)                 | 9     | 100% (9/9)   | Subagent injection fixed                                                                                                       |
+| 3         | v3 (skills-first, search_code blocked)        | 9     | 100% (9/9)   | Skills routing + new patterns                                                                                                  |
+| 4         | baseline 2026-05-15 (no rule, Sonnet)         | 10    | 70% (7/10)   | Misses reindex-after-edit; raw filters when typed exists                                                                       |
+| 4         | v4 pre-fix (skill text v3)                    | 10    | 100% (10/10) | All PASS but raw filters in 3 cases, wrong testFile=true                                                                       |
+| 4         | v4 post-fix (added ## Filters section)        | 10    | 100% (10/10) | Typed filters everywhere, correct enums, taskId discovered                                                                     |
+| 5         | v5 post-split (526 → 245 lines, 2 new skills) | 12    | 100% (12/12) | Filter and rerank deep guidance moved into invocable skills; routing branches verified unchanged                               |
+| 6         | v5 + Phase 8 integration (live MCP)           | 2     | 100% (2/2)   | infraHealth + labelMap shapes verified against live tea-rags; references/runtime-introspection.md claims operationally correct |
 
 ## Delta: with-rule vs without-rule
 

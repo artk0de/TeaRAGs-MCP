@@ -21,10 +21,20 @@ Two eval coverages:
 
 ## Results
 
-| Coverage  | With-rule    | Without-rule | Delta |
-| --------- | ------------ | ------------ | ----- |
-| Execution | 12/12 (100%) | not run\*    | n/a   |
-| Trigger   | 10/10 (100%) | 2/10 (20%)   | +80pp |
+| Coverage           | With-rule    | Without-rule | Delta |
+| ------------------ | ------------ | ------------ | ----- |
+| Execution          | 12/12 (100%) | not run\*    | n/a   |
+| Trigger            | 10/10 (100%) | 2/10 (20%)   | +80pp |
+| Phase 8 (live MCP) | 5/5 (100%)   | n/a          | n/a   |
+
+**Phase 8 — Full Integration Eval (2026-05-17)** — real tea-rags MCP calls on
+the `tea-rags` project (collection `code_8b243ffe`, 4124 chunks). Cases F8-1
+through F8-5 verify schema acceptance and behavior of skill claims. Full
+results: `phase8-evals.json`. Key finding: **F8-4 confirms that `testFile: true`
+(boolean) is REJECTED by the live schema** with MCP error -32602 — the most
+common baseline failure mode (4/10 Phase 2 trigger cases) would fail in
+production, not just produce poor output. The skill's enforcement of enum
+strings is required for the call to succeed at all.
 
 \* Execution prompts are explicit ("filter to tests only") — without-rule
 baseline would only test whether the agent knows tea-rags accepts typed sugar.
