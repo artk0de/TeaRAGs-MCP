@@ -69,8 +69,9 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
       "interface_declaration",
       "type_alias_declaration",
       "enum_declaration",
+      "call_expression", // Filtered by testDslFilterHook to DSL calls in test files
     ],
-    childChunkTypes: ["method_definition"],
+    childChunkTypes: ["method_definition", "call_expression"],
     alwaysExtractChildren: true,
     hooks: typescriptHooks,
   },

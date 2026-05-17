@@ -1,5 +1,25 @@
 # tea-rags — Project Rules
 
+## Rule File Convention (MANDATORY)
+
+Every file in `.claude/rules/*.md` MUST begin with a YAML frontmatter block
+declaring the source-tree paths the rule scopes to. Format:
+
+```yaml
+---
+paths:
+  - "src/core/<glob/of/affected/files>"
+  - "tests/<glob/optional>"
+---
+```
+
+The `paths` list is glob patterns (picomatch) that pinpoint the code areas this
+rule constrains. Tools that surface rules by file location use the frontmatter
+to filter which rules apply to a given edit. A rule without frontmatter is
+invisible to those tools — treat the missing block as a broken rule. When the
+rule applies project-wide (no narrow scope), declare `paths: ["**/*"]`
+explicitly rather than omitting the block.
+
 ## Process Rules
 
 - `.claude/rules/silo-pairing.md` — process rule for commits touching deep-silo

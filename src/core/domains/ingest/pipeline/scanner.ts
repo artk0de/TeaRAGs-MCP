@@ -10,7 +10,7 @@ import ignore, { type Ignore } from "ignore";
 import type { ScannerConfig } from "../../../types.js";
 
 export class FileScanner {
-  private readonly ig: Ignore = ignore();
+  private ig: Ignore = ignore();
   private readonly supportedExts: Set<string>;
 
   constructor(private readonly config: ScannerConfig) {
@@ -18,9 +18,14 @@ export class FileScanner {
   }
 
   /**
-   * Load ignore patterns from .gitignore, .dockerignore, .npmignore, .contextignore, and .contextignore.local
+   * Load ignore patterns from .gitignore, .dockerignore, .npmignore, .contextignore, and .contextignore.local.
+   *
+   * Recreates the underlying ignore matcher on every call so reloads after
+   * an ignore file is removed drop the now-stale patterns. Long-running
+   * indexers (MCP server) reuse a single FileScanner across many syncs.
    */
   async loadIgnorePatterns(rootPath: string): Promise<void> {
+    this.ig = ignore();
     const ignoreFiles = [".gitignore", ".dockerignore", ".npmignore", ".contextignore", ".contextignore.local"];
 
     for (const ignoreFile of ignoreFiles) {
