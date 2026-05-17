@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { ConsistentHash } from "../../../../../src/core/domains/ingest/sync/consistent-hash.js";
+import { ConsistentHash } from "../../../../../../src/core/domains/ingest/sync/infra/consistent-hash.js";
 
 describe("ConsistentHash", () => {
   describe("constructor", () => {

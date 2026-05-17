@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { MerkleTree } from "../../../../../../src/core/domains/ingest/sync/merkle.js";
+import { MerkleTree } from "../../../../../../src/core/domains/ingest/sync/infra/merkle.js";
 import { SnapshotManager } from "../../../../../../src/core/domains/ingest/sync/snapshot/snapshot.js";
 
 describe("SnapshotManager", () => {

@@ -11,7 +11,7 @@
 import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 
-import { MerkleTree } from "../merkle.js";
+import { MerkleTree } from "../infra/merkle.js";
 
 /**
  * File metadata for fast change detection

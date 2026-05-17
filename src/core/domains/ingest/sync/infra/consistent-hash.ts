@@ -7,7 +7,7 @@
 
 import { createHash } from "node:crypto";
 
-import { IngestInvariantError } from "../errors.js";
+import { IngestInvariantError } from "../../errors.js";
 
 export interface ConsistentHashOptions {
   virtualNodesPerShard?: number;

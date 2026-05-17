@@ -13,8 +13,8 @@ import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { SnapshotCorruptedError } from "../../errors.js";
-import { ConsistentHash } from "../consistent-hash.js";
-import { MerkleTree } from "../merkle.js";
+import { ConsistentHash } from "../infra/consistent-hash.js";
+import { MerkleTree } from "../infra/merkle.js";
 
 /**
  * File metadata for fast change detection
