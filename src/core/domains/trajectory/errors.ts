@@ -4,15 +4,23 @@
  * Re-exports subdomain errors for convenience.
  */
 
-import type { ErrorCode } from "../../contracts/errors.js";
 import { TeaRagsError } from "../../infra/errors.js";
+
+/**
+ * Trajectory domain error codes (git + static).
+ */
+export type TrajectoryErrorCode =
+  | "TRAJECTORY_GIT_BLAME_FAILED"
+  | "TRAJECTORY_GIT_LOG_TIMEOUT"
+  | "TRAJECTORY_GIT_NOT_AVAILABLE"
+  | "TRAJECTORY_STATIC_PARSE_FAILED";
 
 /**
  * Abstract base for all trajectory domain errors.
  * Default httpStatus: 500.
  */
 export abstract class TrajectoryError extends TeaRagsError {
-  constructor(opts: { code: ErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
+  constructor(opts: { code: TrajectoryErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
     super({ ...opts, httpStatus: opts.httpStatus ?? 500 });
   }
 }

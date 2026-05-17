@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { ConsistentHash } from "../../../build/code/sync/consistent-hash.js";
 import { SnapshotMigrator } from "../../../build/code/sync/migration.js";
 import { ParallelFileSynchronizer } from "../../../build/code/sync/parallel-synchronizer.js";
-import { ShardedSnapshotManager } from "../../../build/code/sync/sharded-snapshot.js";
+import { ShardedSnapshotManager } from "../../../build/code/sync/snapshot/sharded-snapshot.js";
 import { TEST_DIR } from "../config.mjs";
 import { assert, createTestFile, log, section } from "../helpers.mjs";
 

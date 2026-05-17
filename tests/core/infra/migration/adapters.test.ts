@@ -188,7 +188,8 @@ describe("SnapshotStoreAdapter", () => {
       await adapter.invalidateByExtensions([".md"]);
 
       // Reload snapshot to verify mtime was zeroed (forces hash recompute in synchronizer)
-      const { ShardedSnapshotManager } = await import("../../../../src/core/domains/ingest/sync/sharded-snapshot.js");
+      const { ShardedSnapshotManager } =
+        await import("../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js");
       const manager = new ShardedSnapshotManager(snapshotDir, collectionName);
       const snapshot = await manager.load();
       expect(snapshot).not.toBeNull();

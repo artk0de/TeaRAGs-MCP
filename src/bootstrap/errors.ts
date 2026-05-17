@@ -5,10 +5,19 @@
 import { TeaRagsError } from "../core/infra/errors.js";
 
 /**
+ * Bootstrap config error codes.
+ */
+export type ConfigErrorCode = "CONFIG_VALUE_INVALID" | "CONFIG_VALUE_MISSING" | "CONFIG_NOT_INITIALIZED";
+
+/**
  * Abstract base for all configuration errors.
  * Default httpStatus: 400 (client misconfiguration).
  */
-export abstract class ConfigError extends TeaRagsError {}
+export abstract class ConfigError extends TeaRagsError {
+  constructor(opts: { code: ConfigErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
+    super({ ...opts, httpStatus: opts.httpStatus ?? 400 });
+  }
+}
 
 /**
  * Thrown when a configuration field has an invalid value.

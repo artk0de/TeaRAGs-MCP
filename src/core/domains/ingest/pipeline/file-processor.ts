@@ -11,7 +11,7 @@ import { join, relative } from "node:path";
 
 import { isTestPath } from "../../../infra/scope-detection.js";
 import type { ChunkLookupEntry, CodeChunk } from "../../../types.js";
-import type { ReindexCoordinator } from "../sync/reindex-coordinator.js";
+import type { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
 import type { ChunkPipeline } from "./chunk-pipeline.js";
 import type { ChunkerPool } from "./chunker/infra/pool.js";
 import { generateChunkId } from "./chunker/utils/chunk-id.js";

@@ -17,14 +17,14 @@ import { join, relative } from "node:path";
 import type { FileChanges } from "../../../types.js";
 import { parallelLimit } from "../pipeline/infra/parallel.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
-import { ConsistentHash } from "./consistent-hash.js";
-import { MerkleTree } from "./merkle.js";
+import { ConsistentHash } from "./infra/consistent-hash.js";
+import { MerkleTree } from "./infra/merkle.js";
 import {
   ShardedSnapshotManager,
   type FileMetadata,
   type LoadedSnapshot,
   type SnapshotSaveOptions,
-} from "./sharded-snapshot.js";
+} from "./snapshot/sharded-snapshot.js";
 
 export { parallelLimit };
 

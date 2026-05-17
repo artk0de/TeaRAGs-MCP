@@ -1,0 +1,60 @@
+{
+  "skill_name": "filter-building",
+  "phase": "Phase 8 — Full Integration Eval",
+  "topic": "Real tea-rags MCP calls verifying that the skill's claims (typed sugar enums, level=file enforcement, picomatch negation) are actually accepted by the server, and that the failure modes the skill prevents (testFile boolean) are actually rejected.",
+  "created": "2026-05-17",
+  "project_under_test": {
+    "alias": "tea-rags",
+    "collection": "code_8b243ffe",
+    "chunks": 4124
+  },
+  "summary": { "pass_rate": "5/5 (100%)", "iterations": 0 },
+  "cases": [
+    {
+      "id": "F8-1",
+      "claim": "testFile: \"only\" is accepted by schema as enum string",
+      "call": "semantic_search(project: tea-rags, query: \"reranker\", testFile: \"only\", limit: 3, metaOnly: true)",
+      "expected": "Schema accepts; response is a valid SearchResponse (results may be empty)",
+      "observed": "{ results: [] } — schema accepted, no error",
+      "verdict": "PASS",
+      "skill_claim_verified": "Typed enum testFile: 'only' works end-to-end"
+    },
+    {
+      "id": "F8-2",
+      "claim": "level: \"file\" + minAgeDays: 30 enforces file-level time filter",
+      "call": "semantic_search(query: \"reranker\", level: \"file\", minAgeDays: 30, limit: 3)",
+      "expected": "Response includes level: \"file\" echo and only files with ageDays >= 30",
+      "observed": "5 results, response field level: \"file\", all results with git.file.ageDays in [31, 33, 34, 39] — all >= 30",
+      "verdict": "PASS",
+      "skill_claim_verified": "level=file enforcement for time-based filters works"
+    },
+    {
+      "id": "F8-3",
+      "claim": "pathPattern picomatch negation !**/test/** excludes test subtree",
+      "call": "semantic_search(query: \"reranker scoring\", pathPattern: \"!**/test/**\", limit: 5, metaOnly: true)",
+      "expected": "Response excludes any path containing /test/",
+      "observed": "5 results — all paths in website/docs/, src/core/, none under /test/",
+      "verdict": "PASS",
+      "skill_claim_verified": "Picomatch negation in pathPattern works as a typed-sugar-equivalent for directory exclusion"
+    },
+    {
+      "id": "F8-4",
+      "claim": "testFile: true (boolean) is REJECTED by schema — this is the baseline failure mode the skill prevents",
+      "call": "semantic_search(query: \"reranker\", testFile: true)",
+      "expected": "MCP schema error — invalid enum, expected 'only'|'exclude'|'include'",
+      "observed": "MCP error -32602: \"Input validation error: ... Invalid option: expected one of \\\"only\\\"|\\\"exclude\\\"|\\\"include\\\"\"",
+      "verdict": "PASS",
+      "skill_claim_verified": "Boolean testFile is rejected by the live server — Phase 2 baseline subagents that proposed testFile: true/false would have failed in production. Skill's enforcement of enum strings is CRITICAL for end-to-end correctness."
+    },
+    {
+      "id": "F8-5",
+      "claim": "taskId typed sugar is accepted by schema",
+      "call": "semantic_search(query: \"migration\", taskId: \"RAGS-142\")",
+      "expected": "Schema accepts; response valid (RAGS-142 is fictitious — empty results expected)",
+      "observed": "{ results: [] } — schema accepted, no matching task ids (as expected)",
+      "verdict": "PASS",
+      "skill_claim_verified": "Typed taskId sugar works"
+    }
+  ],
+  "verdict": "All 5 Phase 8 cases passed. Critical finding: F8-4 confirms that the schema rejects boolean testFile — the most common baseline failure mode (4/10 baseline cases in Phase 2 trigger coverage) would fail in production with MCP error -32602. The skill's enforcement of enum strings is not stylistic; it is required for the call to succeed."
+}

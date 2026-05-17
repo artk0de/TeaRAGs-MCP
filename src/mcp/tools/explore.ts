@@ -77,8 +77,10 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     name: "rank_chunks",
     title: "Rank Chunks",
     description:
-      "Rank all chunks by rerank signals without vector search. " +
-      "Top-N by signal, not by query similarity.\n\n" +
+      "Batch analytics: rank all chunks by rerank signals without a query. " +
+      "metaOnly defaults to true (unlike other search tools) — this endpoint is " +
+      "for offline scoring (hotspot scan, ownership report, decomposition " +
+      "candidates), NOT online search. Pair with pathPattern to scope a domain.\n\n" +
       "For examples see tea-rags://schema/search-guide\n" +
       "For parameter docs see tea-rags://schema/overview",
     schemaKey: "RankChunksSchema",
@@ -96,7 +98,10 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Primary use case: paste a code block into positiveCode to discover similar patterns, " +
       "duplicates, or related implementations across the indexed codebase. " +
       "Also accepts chunk IDs from previous search results. " +
-      "Supports negative examples to exclude unwanted patterns.\n\n" +
+      "Supports negative examples to exclude unwanted patterns. " +
+      "Anti-pattern mode: pass ONLY negativeCode / negativeIds with " +
+      'strategy="best_score" to find code maximally UNLIKE the negatives — ' +
+      "outlier / novelty / refactor-candidate detection.\n\n" +
       "For parameter docs see tea-rags://schema/overview",
     schemaKey: "FindSimilarSchema",
     invoke: async (app, { rerank, ...rest }) =>
@@ -111,10 +116,14 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     description:
       "Find symbol by name or file outline by relativePath — direct lookup, no embedding. " +
       "symbol mode: merged definition for functions, outline + members for classes. " +
-      "relativePath mode: file-level outline (code symbols or doc TOC). " +
+      "relativePath mode: file-level outline (code symbols or doc TOC with doc:<hash> ids). " +
       "Uses Qdrant text match. Partial match supported: " +
       "'Reranker' finds the class and all its methods. " +
-      "symbolId convention: Class#method (instance), Class.method (static).",
+      "symbolId convention: Class#method (instance), Class.method (static). " +
+      'Single-call diagnostic: pass a `rerank` preset (e.g. "hotspots") to ' +
+      "attach a rankingOverlay with churn/ownership/bugFixRate labels alongside " +
+      "the definition — no second semantic_search needed. " +
+      'Supports `level: "file" | "chunk"` like other search tools.',
     schemaKey: "FindSymbolSchema",
     invoke: async (app, { rerank, ...rest }) =>
       app.findSymbol({

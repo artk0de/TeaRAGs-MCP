@@ -115,37 +115,77 @@ export interface AppDeps {
 // Factory
 // ---------------------------------------------------------------------------
 
+/**
+ * wireFacades — returns the pre-assembled domain facades from deps.
+ *
+ * Facades (ExploreFacade, IngestFacade) are constructed upstream by
+ * createComposition() in api/internal/composition.ts. createApp() does not
+ * instantiate them — it only exposes them through the App interface. This
+ * helper exists to make the facade-vs-ops layer split explicit at the
+ * composition root: the App contract has two distinct groups of dependencies,
+ * and each group has its own wire-up step.
+ *
+ * File-private — do NOT export.
+ */
+function wireFacades(deps: AppDeps): { explore: ExploreFacade; ingest: IngestFacade } {
+  return { explore: deps.explore, ingest: deps.ingest };
+}
+
+/**
+ * wireOps — instantiates the App-layer ops classes and forwards the
+ * pre-injected ProjectRegistryOps.
+ *
+ * Ops classes (CollectionOps, DocumentOps) own collection/document CRUD and
+ * are created here because they are App-layer wiring concerns — they do not
+ * fit inside any domain facade. ProjectRegistryOps is supplied via deps
+ * because its construction requires bootstrap-only state (the registry file
+ * path).
+ *
+ * File-private — do NOT export.
+ */
+function wireOps(deps: AppDeps): {
+  collection: CollectionOps;
+  document: DocumentOps;
+  projectRegistry: ProjectRegistryOps;
+} {
+  return {
+    collection: new CollectionOps(deps.qdrant, deps.embeddings, deps.quantizationScalar, deps.modelGuard),
+    document: new DocumentOps(deps.qdrant, deps.embeddings, deps.modelGuard),
+    projectRegistry: deps.projectRegistryOps,
+  };
+}
+
 export function createApp(deps: AppDeps): App {
-  const collectionOps = new CollectionOps(deps.qdrant, deps.embeddings, deps.quantizationScalar, deps.modelGuard);
-  const documentOps = new DocumentOps(deps.qdrant, deps.embeddings, deps.modelGuard);
+  const facades = wireFacades(deps);
+  const ops = wireOps(deps);
 
   return {
     // -- Search — delegate to ExploreFacade --
-    semanticSearch: async (req) => deps.explore.semanticSearch(req),
-    hybridSearch: async (req) => deps.explore.hybridSearch(req),
-    rankChunks: async (req) => deps.explore.rankChunks(req),
-    searchCode: async (req) => deps.explore.searchCode(req),
-    findSimilar: async (req) => deps.explore.findSimilar(req),
-    findSymbol: async (req) => deps.explore.findSymbol(req),
+    semanticSearch: async (req) => facades.explore.semanticSearch(req),
+    hybridSearch: async (req) => facades.explore.hybridSearch(req),
+    rankChunks: async (req) => facades.explore.rankChunks(req),
+    searchCode: async (req) => facades.explore.searchCode(req),
+    findSimilar: async (req) => facades.explore.findSimilar(req),
+    findSymbol: async (req) => facades.explore.findSymbol(req),
 
     // -- Indexing — delegate to IngestFacade --
-    indexCodebase: async (path, options, progress) => deps.ingest.indexCodebase(path, options, progress),
-    reindexChanges: async (path, progress) => deps.ingest.reindexChanges(path, progress),
-    getIndexStatus: async (path) => deps.ingest.getIndexStatus(path),
-    clearIndex: async (path) => deps.ingest.clearIndex(path),
+    indexCodebase: async (path, options, progress) => facades.ingest.indexCodebase(path, options, progress),
+    reindexChanges: async (path, progress) => facades.ingest.reindexChanges(path, progress),
+    getIndexStatus: async (path) => facades.ingest.getIndexStatus(path),
+    clearIndex: async (path) => facades.ingest.clearIndex(path),
 
     // -- Collections — delegate to CollectionOps --
-    createCollection: async (req) => collectionOps.create(req),
-    listCollections: async () => collectionOps.list(),
-    getCollectionInfo: async (name) => collectionOps.getInfo(name),
-    deleteCollection: async (name) => collectionOps.delete(name),
+    createCollection: async (req) => ops.collection.create(req),
+    listCollections: async () => ops.collection.list(),
+    getCollectionInfo: async (name) => ops.collection.getInfo(name),
+    deleteCollection: async (name) => ops.collection.delete(name),
 
     // -- Documents — delegate to DocumentOps --
-    addDocuments: async (req) => documentOps.add(req),
-    deleteDocuments: async (req) => documentOps.delete(req),
+    addDocuments: async (req) => ops.document.add(req),
+    deleteDocuments: async (req) => ops.document.delete(req),
 
     // -- Index metrics --
-    getIndexMetrics: async (path) => deps.explore.getIndexMetrics(path),
+    getIndexMetrics: async (path) => facades.explore.getIndexMetrics(path),
 
     // -- Schema descriptors --
     getSchemaDescriptors: () => {
@@ -172,8 +212,8 @@ export function createApp(deps: AppDeps): App {
     },
 
     // -- Project registry — delegate to ProjectRegistryOps --
-    registerProject: async (input) => deps.projectRegistryOps.register(input),
-    listProjects: async () => deps.projectRegistryOps.list(),
-    unregisterProject: async (input) => deps.projectRegistryOps.unregister(input),
+    registerProject: async (input) => ops.projectRegistry.register(input),
+    listProjects: async () => ops.projectRegistry.list(),
+    unregisterProject: async (input) => ops.projectRegistry.unregister(input),
   };
 }

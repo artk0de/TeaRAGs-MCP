@@ -5,6 +5,7 @@ export {
   InvalidQueryError,
   InvalidStrategyError,
 } from "./errors.js";
+export type { ExploreErrorCode } from "./errors.js";
 export { Reranker } from "./reranker.js";
 export type { ScoringWeights, RerankableResult, RerankMode } from "./reranker.js";
 export { RankModule, type RankOptions } from "./rank-module.js";

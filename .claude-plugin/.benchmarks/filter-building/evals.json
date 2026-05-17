@@ -1,0 +1,285 @@
+{
+  "skill_name": "filter-building",
+  "topic": "tea-rags filter construction beyond pathPattern — typed sugar, level=file/chunk, picomatch negation, raw filter escape hatch, trigger-coverage for implicit scopes",
+  "created": "2026-05-16",
+  "context": "New agent-only skill (user-invocable: false) extracted from search-cascade.md. Two eval coverages: (1) execution_coverage — agent receives an explicit filter intent and must build the correct shape; (2) trigger_coverage — agent receives a prompt that does NOT use the word 'filter' but where a SCOPE is implicit (domain, language, author, time window, ticket, prod-vs-test), and the agent must self-trigger the skill and translate the scope into typed sugar. Trigger coverage is the harder probe because it tests whether the description and Implicit-signals table reliably steer the agent.",
+  "skill_path": ".claude-plugin/tea-rags/skills/filter-building/SKILL.md",
+  "summary": {
+    "execution_coverage": {
+      "with_rule": "12/12 (100%)",
+      "baseline_skipped": "trigger is explicit in prompt; baseline irrelevant",
+      "delta": "n/a"
+    },
+    "trigger_coverage": {
+      "with_rule": "10/10 (100%)",
+      "without_rule": "2/10 (20%)",
+      "delta": "+80pp"
+    },
+    "iterations": 0,
+    "lines": {
+      "before_run": 159,
+      "after_run": 175,
+      "delta": "+16 (added Implicit-signals table)"
+    }
+  },
+  "execution_coverage": [
+    {
+      "id": "E1",
+      "audit_finding": "typed-sugar selection for modifiedAfter + level=file",
+      "prompt": "In the payments domain, find code modified after 2026-03-01 for sprint review.",
+      "expected": "semantic_search/hybrid_search with modifiedAfter + level=file + pathPattern: '**/payments/**'",
+      "expected_NOT": "raw filter on git.file.modifiedAt; chunk-level time filter; ripgrep",
+      "failure_mode": "Agent omits level=file (chunk-level time filter rejects all chunks)",
+      "result": {
+        "with_rule": "PASS",
+        "note": "modifiedAfter + level=file + pathPattern, correct shape"
+      }
+    },
+    {
+      "id": "E2",
+      "audit_finding": "testFile enum semantics (string, not boolean)",
+      "prompt": "Search for tests of AuthService — only test files.",
+      "expected": "hybrid_search with testFile: 'only' (string enum)",
+      "expected_NOT": "testFile: true (boolean); pathPattern '**/*spec*'; raw filter",
+      "failure_mode": "Agent passes a boolean; tea-rags rejects",
+      "result": { "with_rule": "PASS", "note": "testFile: 'only' string" }
+    },
+    {
+      "id": "E3",
+      "audit_finding": "typed language vs pathPattern extension glob",
+      "prompt": "Find Ruby code that handles retries in the services directory.",
+      "expected": "semantic_search with query + language: 'ruby' + pathPattern: '**/services/**'",
+      "expected_NOT": "pathPattern: '**/*.rb' (extension glob instead of typed language)",
+      "failure_mode": "Agent uses extension glob, misses index typing benefits",
+      "result": {
+        "with_rule": "PASS",
+        "note": "language + pathPattern composition"
+      }
+    },
+    {
+      "id": "E4",
+      "audit_finding": "typed taskId for ticket linkage",
+      "prompt": "Show code related to ticket RAGS-142.",
+      "expected": "tea-rags search with taskId: 'RAGS-142'",
+      "expected_NOT": "ripgrep on 'RAGS-142'; raw filter on git.file.taskIds; query-only search",
+      "failure_mode": "Agent treats ticket id as a free-text query",
+      "result": { "with_rule": "PASS", "note": "taskId typed filter" }
+    },
+    {
+      "id": "E5",
+      "audit_finding": "typed author for blame dominance",
+      "prompt": "Find code primarily authored by Alice.",
+      "expected": "tea-rags search with author: 'Alice'",
+      "expected_NOT": "git blame, git log --author, raw filter on git.file.blameDominantAuthor",
+      "failure_mode": "Agent shells out to git",
+      "result": { "with_rule": "PASS", "note": "author typed filter" }
+    },
+    {
+      "id": "E6",
+      "audit_finding": "minCommitCount drop one-off scripts",
+      "prompt": "Find production code in the auth module, drop one-off scripts.",
+      "expected": "search with pathPattern: '**/auth/**' + testFile: 'exclude' + minCommitCount: 5+",
+      "expected_NOT": "no minCommitCount; manual post-filter",
+      "failure_mode": "Agent doesn't surface minCommitCount",
+      "result": {
+        "with_rule": "PASS",
+        "note": "pathPattern + testFile + minCommitCount: 5"
+      }
+    },
+    {
+      "id": "E7",
+      "audit_finding": "level=file enforcement for minAgeDays",
+      "prompt": "Find code at least 90 days old in payments.",
+      "expected": "minAgeDays: 90 + level: 'file' + pathPattern: '**/payments/**'",
+      "expected_NOT": "missing level=file (chunk ageDays=0 means no data)",
+      "failure_mode": "Default chunk level silently drops chunks without git data",
+      "result": { "with_rule": "PASS", "note": "minAgeDays + level=file" }
+    },
+    {
+      "id": "E8",
+      "audit_finding": "pathPattern picomatch negation",
+      "prompt": "Search the project excluding the vendor directory.",
+      "expected": "pathPattern: '!**/vendor/**'",
+      "expected_NOT": "raw filter with must_not on path; regex syntax",
+      "failure_mode": "Agent doesn't know picomatch supports ! prefix",
+      "result": { "with_rule": "PASS", "note": "picomatch negation" }
+    },
+    {
+      "id": "E9",
+      "audit_finding": "raw filter escape + ReadMcpResourceTool",
+      "prompt": "Build a filter for files with commitCount >= 10. What's the exact raw filter syntax?",
+      "expected": "ReadMcpResourceTool(server: 'tea-rags', uri: 'tea-rags://schema/filters') FIRST, then build raw filter",
+      "expected_NOT": "Invent Qdrant syntax from memory",
+      "failure_mode": "Agent guesses syntax instead of consulting the live schema resource",
+      "result": { "with_rule": "PASS", "note": "ReadMcpResourceTool first" }
+    },
+    {
+      "id": "E10",
+      "audit_finding": "non-overlap — rerank-choice belongs to analytics-rerank",
+      "prompt": "Rank the most bug-prone code in auth using high bugFix and ownership weights — custom rerank.",
+      "expected": "Invoke tea-rags:analytics-rerank for the custom weight set; filter-building may still scope pathPattern in parallel",
+      "expected_NOT": "filter-building tries to compose the rerank weights itself",
+      "failure_mode": "Skill overlap — wrong skill handles rerank choice",
+      "result": {
+        "with_rule": "PASS",
+        "note": "Correctly routed to analytics-rerank"
+      }
+    },
+    {
+      "id": "E11",
+      "audit_finding": "stratified scanning via pathPattern negation",
+      "prompt": "Hotspot scan but exclude the dominant ingest domain.",
+      "expected": "pathPattern: '!**/ingest/**' + rerank: 'hotspots' (rerank choice delegated)",
+      "expected_NOT": "no path exclusion; manual post-filter",
+      "failure_mode": "Agent doesn't combine negation with rerank skill",
+      "result": {
+        "with_rule": "PASS",
+        "note": "Stratified negation + hotspots preset"
+      }
+    },
+    {
+      "id": "E12",
+      "audit_finding": "subagent context — absolute path + testFile=exclude + modifiedAfter",
+      "prompt": "[subagent: task-agent] Find usages of paymentService function in /Users/me/proj/src/payments/. Exclude test files. Code modified after 2026-02-01.",
+      "expected": "hybrid_search with query + pathPattern: '/Users/me/proj/src/payments/**' + testFile: 'exclude' + modifiedAfter: '2026-02-01' + level: 'file'",
+      "expected_NOT": "ripgrep on identifier; missing level=file",
+      "failure_mode": "Subagent context strips skill rules; without skill the typed sugar is missed",
+      "result": {
+        "with_rule": "PASS",
+        "note": "hybrid_search + absolute path + testFile + modifiedAfter + level=file"
+      }
+    }
+  ],
+  "trigger_coverage": [
+    {
+      "id": "T1",
+      "audit_finding": "implicit author + time-window + domain (no word 'filter')",
+      "prompt": "What did Alice ship in payments last week?",
+      "expected": "author: 'Alice' + modifiedAfter: <last week ISO> + level: 'file' + pathPattern: '**/payments/**'",
+      "expected_NOT": "missing level=file; raw filter; missing author typed sugar",
+      "failure_mode": "Agent fails to detect implicit scope (author/time/domain) and runs unfiltered search",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "Raw filter on git.dominantAuthor + git.ageDays. NO level=file — chunk-level ageDays=0 silently drops chunks. Functional but fragile."
+      }
+    },
+    {
+      "id": "T2",
+      "audit_finding": "implicit testFile from 'tests of X' (no word 'filter')",
+      "prompt": "Show me the tests for the AuthService class.",
+      "expected": "hybrid_search with query + testFile: 'only' (string enum)",
+      "expected_NOT": "testFile: true (boolean); pathPattern '**/*spec*'",
+      "failure_mode": "Agent uses boolean type or pathPattern guess",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "testFile: true — boolean, wrong type. tea-rags expects 'only'|'exclude'|'include' enum."
+      }
+    },
+    {
+      "id": "T3",
+      "audit_finding": "implicit testFile=exclude from 'not tests'",
+      "prompt": "Production code that handles checkout, not tests.",
+      "expected": "testFile: 'exclude' (string enum)",
+      "expected_NOT": "testFile: false (boolean)",
+      "failure_mode": "Boolean instead of enum",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "testFile: false — boolean again."
+      }
+    },
+    {
+      "id": "T4",
+      "audit_finding": "implicit modifiedAfter + level=file from 'this sprint'",
+      "prompt": "What's new in the auth module this sprint?",
+      "expected": "modifiedAfter: <sprint window ISO> + level: 'file' + pathPattern: '**/auth/**'",
+      "expected_NOT": "raw filter; missing level=file",
+      "failure_mode": "Time-based filter on chunk level rejects all chunks",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "Raw filter on git.ageDays lte:14, no level=file."
+      }
+    },
+    {
+      "id": "T5",
+      "audit_finding": "control — language from explicit 'Ruby code'",
+      "prompt": "Find Ruby code that does retries.",
+      "expected": "language: 'ruby'",
+      "expected_NOT": "pathPattern: '**/*.rb'",
+      "failure_mode": "Extension glob instead of typed language",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "without_rule_note": "Correctly picked language: 'ruby'. Both versions handle this — control case showing baseline isn't completely broken."
+      }
+    },
+    {
+      "id": "T6",
+      "audit_finding": "implicit minAgeDays + level=file from 'old, untouched'",
+      "prompt": "Old, untouched parts of the ingest domain.",
+      "expected": "minAgeDays: 180 + level: 'file' + pathPattern: '**/ingest/**'",
+      "expected_NOT": "raw filter; missing level=file",
+      "failure_mode": "Time-based on chunk level drops chunks",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "Raw filter on git.ageDays gte:180, no level=file."
+      }
+    },
+    {
+      "id": "T7",
+      "audit_finding": "implicit taskId from 'ticket JIRA-1234'",
+      "prompt": "Code related to ticket JIRA-1234.",
+      "expected": "taskId: 'JIRA-1234' (typed sugar)",
+      "expected_NOT": "raw filter on git.file.taskIds (functional but verbose)",
+      "failure_mode": "Misses typed sugar, uses raw filter",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "without_rule_note": "Raw filter on git.taskIds — functional. Borderline pass: typed taskId is the canonical form but the raw filter shape works."
+      }
+    },
+    {
+      "id": "T8",
+      "audit_finding": "implicit testFile=exclude + minCommitCount from 'real production, not throwaway'",
+      "prompt": "Help me onboard — show real production modules, not throwaway scripts.",
+      "expected": "testFile: 'exclude' + minCommitCount: 5+",
+      "expected_NOT": "missing minCommitCount; testFile boolean",
+      "failure_mode": "Agent picks one constraint, misses 'throwaway' → minCommitCount",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "testFile: false (boolean) + custom rerank, no minCommitCount filter."
+      }
+    },
+    {
+      "id": "T9",
+      "audit_finding": "implicit documentation='only' from 'docs on X'",
+      "prompt": "Where's the docs on rerank presets?",
+      "expected": "semantic_search with query + documentation: 'only' (auto-applies documentationRelevance preset)",
+      "expected_NOT": "find_symbol with a free-text 'rerank presets' symbol query",
+      "failure_mode": "Agent treats it as a symbol lookup, misses documentation typed sugar",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "find_symbol with symbol='rerank presets' and relativePath='docs/' — symbol lookup won't match a doc topic."
+      }
+    },
+    {
+      "id": "T10",
+      "audit_finding": "subagent context — absolute path + implicit testFile=exclude from 'skip tests'",
+      "prompt": "[subagent: task-agent] Look up usages of paymentService in /Users/me/proj/src/payments/. Skip tests.",
+      "expected": "hybrid_search + pathPattern: '/Users/me/proj/src/payments/**' + testFile: 'exclude'",
+      "expected_NOT": "testFile: false (boolean); ripgrep on identifier",
+      "failure_mode": "Subagent context with skill missing falls into boolean filter type",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "testFile: false — boolean again."
+      }
+    }
+  ]
+}

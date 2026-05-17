@@ -25,34 +25,11 @@ Organized by agent task. Each references a Decision Tree branch from
 
 ### Recipe: Fragile Silo discovery
 
-Find low-churn, historically buggy, single-owner files (Fragile silo pattern
-from `signal-interpretation.md`). Surfaces files that _look_ stable but have a
-track record of regressions concentrated under one author.
-
-```json
-{
-  "path": "/project",
-  "query": "<domain or symptom keyword>",
-  "rerank": {
-    "custom": {
-      "bugFix": 0.45,
-      "knowledgeSilo": 0.3,
-      "similarity": 0.15,
-      "churn": -0.1
-    }
-  },
-  "metaOnly": true,
-  "pathPattern": "<optional domain glob>"
-}
-```
-
-Read results expecting `bugFixRate concerning+` with `commitCount` in the
-`typical` band. Files with `commitCount` below the confidence-clamp thresholds
-(currently `< 5`) will have `bugFixRate.label` clamped to `healthy` — they will
-NOT classify as Fragile silo even if raw value is high, because the structural
-evidence is insufficient. This is correct behavior, inherited from the unified
-confidence mechanism. Pair confirmed findings with the `Fragile silo` pattern
-entry in `signal-interpretation.md` for remediation steps.
+Surfaces files that _look_ stable but have a track record of regressions
+concentrated under one author. Full recipe and signal-confidence semantics live
+in **`tea-rags:analytics-rerank`** (custom weights for Fragile Silo). Pair
+confirmed findings with the `Fragile silo` pattern entry in
+`signal-interpretation.md` for remediation steps.
 
 ## Exhaustive usage (need ALL references)
 
@@ -80,6 +57,50 @@ entry in `signal-interpretation.md` for remediation steps.
 | Find stable template | semantic_search + stable         | Low churn = proven pattern               |
 | Find fresh example   | semantic_search + recent         | Latest changes = current style           |
 | Assess change impact | semantic_search + custom weights | imports: 0.5, churn: 0.3, ownership: 0.2 |
+
+## Anti-pattern / outlier detection (find_similar with only negatives)
+
+`find_similar` accepts `negativeCode` / `negativeIds` WITHOUT any positive
+examples. Combined with `strategy: "best_score"`, this returns code MAXIMALLY
+UNLIKE the negatives — i.e. outliers in the codebase relative to a known bad
+pattern.
+
+| Task                                  | Inputs                                                            |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| Find code unlike a known anti-pattern | `negativeCode: "<the anti-pattern>"`, `strategy: "best_score"`    |
+| Outlier detection vs a cluster        | `negativeIds: [<cluster chunk IDs>]`, `strategy: "best_score"`    |
+| Find code dissimilar to legacy module | `negativeCode: <legacy snippet>` + `pathPattern: "<modern area>"` |
+
+Different mental model from "find similar to X" — useful for novelty surfacing,
+refactor candidates that diverged from a deprecated pattern, or code that
+escaped a stylistic norm.
+
+## Project calibration (per-project thresholds)
+
+When you need to pick a meaningful threshold for filters like `minCommitCount`,
+`minAgeDays`, or `maxAgeDays`, don't guess. Call
+`get_index_metrics(project: "<alias>")` and read
+`signals[language][signalKey][scope].labelMap` — those are the actual
+percentile-based label boundaries for THIS codebase.
+
+| Question                              | Field to read                                              |
+| ------------------------------------- | ---------------------------------------------------------- |
+| What counts as `high` churn here?     | `signals[lang]["git.file.commitCount"]["source"].labelMap` |
+| What counts as `legacy` age here?     | `signals[lang]["git.file.ageDays"]["source"].labelMap`     |
+| Test scope vs source scope thresholds | Same key with `scope: "test"` instead of `"source"`        |
+
+Use this to phrase filters in terms of the codebase's own distribution rather
+than fixed numbers from a different project. Full schema +
+`get_index_status.infraHealth` health probe are described in
+`references/runtime-introspection.md`.
+
+## Sugar filters
+
+Full typed-sugar field catalog and the `level: "file"` enforcement rule for
+time-based filters (`modifiedAfter`/`Before`, `minAgeDays`/`maxAgeDays`) live in
+**`tea-rags:filter-building`**. Invoke that skill whenever the search needs a
+SCOPE (language, time window, author, testFile, taskId, `minCommitCount`,
+doc/code split, etc.).
 
 ## External tools (complement tea-rags)
 
