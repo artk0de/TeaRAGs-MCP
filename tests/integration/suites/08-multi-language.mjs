@@ -5,9 +5,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, resources, section } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, resources, searchCode, section } from "../helpers.mjs";
 
 export async function testMultiLanguage(qdrant, embeddings) {
   section("8. Multi-Language Support");
@@ -72,28 +71,26 @@ end
 `,
   );
 
-  const indexer = new CodeIndexer(
-    qdrant,
-    embeddings,
-    getIndexerConfig({
+  const { ingest, explore } = createTestFacades(qdrant, embeddings, {
+    config: getIndexerConfig({
       supportedExtensions: [".ts", ".js", ".py", ".rb"],
     }),
-  );
+  });
 
   resources.trackIndexedPath(langTestDir);
-  const stats = await indexer.indexCodebase(langTestDir, { forceReindex: true });
+  const stats = await ingest.indexCodebase(langTestDir, { forceReindex: true });
   assert(stats.filesIndexed === 4, `All language files indexed: ${stats.filesIndexed}`);
 
   // Search in each language
-  const tsResults = await indexer.searchCode(langTestDir, "TypeScriptClass");
+  const tsResults = await searchCode(explore, langTestDir, "TypeScriptClass");
   assert(tsResults.length > 0, `TypeScript searchable: ${tsResults.length}`);
 
-  const jsResults = await indexer.searchCode(langTestDir, "javascriptFunction");
+  const jsResults = await searchCode(explore, langTestDir, "javascriptFunction");
   assert(jsResults.length > 0, `JavaScript searchable: ${jsResults.length}`);
 
-  const pyResults = await indexer.searchCode(langTestDir, "PythonClass");
+  const pyResults = await searchCode(explore, langTestDir, "PythonClass");
   assert(pyResults.length > 0, `Python searchable: ${pyResults.length}`);
 
-  const rbResults = await indexer.searchCode(langTestDir, "RubyService process");
+  const rbResults = await searchCode(explore, langTestDir, "RubyService process");
   assert(rbResults.length > 0, `Ruby searchable: ${rbResults.length}`);
 }
