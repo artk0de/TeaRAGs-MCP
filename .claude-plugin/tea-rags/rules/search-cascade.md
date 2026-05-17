@@ -54,15 +54,17 @@ sections?_ If yes — your next call is `find_symbol`, NOT another search and NO
 `Read`. `find_symbol` is instant (no embedding) and returns merged definitions,
 file outlines, or doc TOCs from the same index.
 
-| After search returns…                       | If you need…                           | Next call                                                             |
-| ------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------- |
-| Chunk with method body truncated            | Full method body                       | `find_symbol(symbol: result.symbolId)`                                |
-| Chunk from one file                         | File structure / other methods in file | `find_symbol(relativePath: result.relativePath)` → synthetic outline  |
-| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                    | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`        |
-| Chunk that calls a helper / class           | The helper / class definition          | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text |
-| Chunk from a `.md` doc                      | All sections of that doc (TOC)         | `find_symbol(symbol: result.parentSymbolId)` — parent is `doc:<hash>` |
-| Just a doc path (no search yet)             | Table of contents of that doc          | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes |
-| Class chunk (constructor or one method)     | All methods / public API of the class  | `find_symbol(symbol: "ClassName")` → full class outline + bodies      |
+| After search returns…                       | If you need…                           | Next call                                                              |
+| ------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
+| Chunk with method body truncated            | Full method body                       | `find_symbol(symbol: result.symbolId)`                                 |
+| Chunk from one file                         | File structure / other methods in file | `find_symbol(relativePath: result.relativePath)` → synthetic outline   |
+| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                    | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`         |
+| Chunk that calls a helper / class           | The helper / class definition          | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text  |
+| Chunk from a `.md` doc                      | All sections of that doc (TOC)         | `find_symbol(symbol: result.parentSymbolId)` — parent is `doc:<hash>`  |
+| Just a doc path (no search yet)             | Table of contents of that doc          | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes  |
+| Class chunk (constructor or one method)     | All methods / public API of the class  | `find_symbol(symbol: "ClassName")` → full class outline + bodies       |
+| Chunk from production src + diff context    | Tests describing affected scenarios    | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`              |
+| Describe-it scope name from a stacktrace    | Leaf scope chunk with inherited setup  | `find_symbol(symbol: "<Parent>.<scope>")` + filter `chunkType: "test"` |
 
 `find_symbol` accepts a `rerank` preset for single-call diagnostic (definition +
 rankingOverlay in one call). `offset` pagination works on every search tool;

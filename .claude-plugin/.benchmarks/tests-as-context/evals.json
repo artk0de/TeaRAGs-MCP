@@ -1,0 +1,121 @@
+{
+  "skill_name": "tests-as-context",
+  "topic": "DSL test chunks as enrichment for review / verify / refactor / TDD — five recipes (tests-at-risk, fixture-lookup, regression-archaeology, test-flakiness, spec-extraction) with hard cross-language constraint (no runner names in output).",
+  "created": "2026-05-17",
+  "context": "Newly authored agentic-only skill (user-invocable: false). Authored as part of feature implementation, not standalone optimization. Phase 2 (parallel with-rule/without-rule subagent runs) deferred to next session — eval cases persisted here as regression artifacts per skill-creator Phase 6 mandate. Audit applied 4 fixes inline: (F1) brace-expansion exclusion replaced with raw must_not filter, (F2) preflight fallback for missing prime digest, (F3) imports weight removed from tests-at-risk rerank, (F4) receiving-code-review clarifies single-element affectedFiles. Eval cases below are READY TO RUN — no design changes needed; just spawn subagents.",
+  "skill_path": ".claude-plugin/tea-rags/skills/tests-as-context/SKILL.md",
+  "consumer_wrappers": [
+    ".claude-plugin/dinopowers/skills/test-driven-development/SKILL.md",
+    ".claude-plugin/dinopowers/skills/requesting-code-review/SKILL.md",
+    ".claude-plugin/dinopowers/skills/verification-before-completion/SKILL.md",
+    ".claude-plugin/dinopowers/skills/receiving-code-review/SKILL.md"
+  ],
+  "spec": "docs/superpowers/specs/2026-05-17-tests-as-context-design.md",
+  "summary": {
+    "phase_status": "BASELINE_DEFERRED",
+    "reason": "Feature-creation session, not optimization. Phase 6 PERSIST executed inline per mandate; Phase 2 baseline + iteration deferred to a future eval session.",
+    "iterations": 0,
+    "lines": {
+      "tests_as_context_skill": 220,
+      "consumer_wrappers_added": "~85 lines across 4 wrappers (Step 3a sections + Step 2a refactor in TDD)"
+    }
+  },
+  "evals": [
+    {
+      "id": "T1",
+      "category": "recipe-routing",
+      "audit_finding": "recipe selection from caller intent",
+      "prompt": "[subagent: task-agent] Я в середине verification-before-completion workflow. Изменены src/core/api/errors.ts и src/core/domains/explore/strategies/hybrid.ts. Какой recipe из tests-as-context я должен использовать чтобы получить targeted список сценариев для проверки?",
+      "expected": "Agent picks recipe 'tests-at-risk' with affectedFiles = [errors.ts, hybrid.ts]. Does NOT pick fixture-lookup (that's for new test drafting) or test-flakiness (that's for unstable scopes).",
+      "failure_mode": "Recipe confusion — picks fixture-lookup or test-flakiness because they mention 'tests'"
+    },
+    {
+      "id": "T2",
+      "category": "cross-language-guard",
+      "audit_finding": "MUST NOT name runners in output",
+      "prompt": "[subagent: explore] You ran tests-at-risk recipe on src/payments/charge.ts and got back 3 scenarios in tests/payments/charge.test.ts. Compose the recommendation line for the verification verdict bundle.",
+      "expected": "Generic phrasing: 'run the tests for tests/payments/charge.test.ts' or 'execute the affected scenarios via the project's standard test command'. Does NOT contain: vitest, jest, pytest, npm test, yarn test, mocha, rspec.",
+      "failure_mode": "Agent emits 'vitest run tests/payments/charge.test.ts' or 'npm test -- tests/payments/charge.test.ts' violating cross-language contract"
+    },
+    {
+      "id": "T3",
+      "category": "preflight-skip",
+      "audit_finding": "DSL absence handling",
+      "prompt": "[subagent: task-agent] Я работаю в Ruby проекте через tea-rags. Prime digest показывает: всем git.chunk.* signals для Ruby стоит 'test: —' (прочерк). User просит surface tests-at-risk для измененных моделей. Что делаешь?",
+      "expected": "Step 0 preflight detects no DSL test chunks. Returns SKIP verdict with explicit reason (DSL TS-only currently). Does NOT silently fall back to testFile:only without disclosure. Does NOT generate fake test list.",
+      "failure_mode": "Agent silently uses testFile:only fallback (loses granularity claim), or fabricates a 'no tests found' result without preflight"
+    },
+    {
+      "id": "T4",
+      "category": "filter-choice",
+      "audit_finding": "chunkType vs testFile",
+      "prompt": "[subagent: task-agent] TypeScript проект, DSL chunks indexed. Нужно найти fixture setup для 'user with admin role and active subscription'. Какой filter использовать?",
+      "expected": "chunkType: 'test_setup' (not testFile: 'only', not chunkType: 'test'). Recipe = fixture-lookup. Rerank = 'proven'.",
+      "failure_mode": "Picks testFile: 'only' (file-level noise) or chunkType: 'test' (gets scenarios instead of setups)"
+    },
+    {
+      "id": "T5",
+      "category": "single-symbol-input",
+      "audit_finding": "F1 fix — must_not over relativePath array",
+      "prompt": "[subagent: task-agent] receiving-code-review wrapper. Reviewer suggests renaming ChunkGrouper.group → ChunkGrouper.aggregate. ChunkGrouper lives in src/core/ingest/chunk-grouper.ts. Какой shape вызова tests-as-context?",
+      "expected": "recipe='tests-at-risk', affectedFiles=['src/core/ingest/chunk-grouper.ts'] (single-element array). Internal filter form { must_not: [{ key: 'relativePath', match: { any: [...] }}] } works for one or many.",
+      "failure_mode": "Agent uses pathPattern brace expansion '!{src/core/ingest/chunk-grouper.ts}' which is invalid picomatch for single element"
+    },
+    {
+      "id": "T6",
+      "category": "recipe-routing",
+      "audit_finding": "regression archaeology vs spec-extraction",
+      "prompt": "[subagent: explore] User asks: 'когда добавили первый тест на orphan handling в queue worker?' Какой recipe?",
+      "expected": "recipe='regression-archaeology' (not spec-extraction). regression-archaeology surfaces oldest matching scenarios sorted by git.chunk.ageDays ascending. spec-extraction gives full module TOC, wrong fit for 'когда добавили'.",
+      "failure_mode": "Picks spec-extraction because both involve listing tests"
+    },
+    {
+      "id": "T7",
+      "category": "cross-language-guard",
+      "audit_finding": "wrapper-side runner mention",
+      "prompt": "[subagent: explore] dinopowers:verification-before-completion Step 3a получил от tests-as-context список таргетированных сценариев. Compose the targeted scenarios block для verdict.",
+      "expected": "Block contains generic phrasing 'run the tests for these scenarios via the project's standard test command'. Forbidden tokens absent: vitest, jest, pytest, mocha, rspec, npm/yarn/pnpm scripts, go test, dotnet test, JUnit.",
+      "failure_mode": "Wrapper emits 'run: npx vitest run tests/...' or similar runner-specific command"
+    },
+    {
+      "id": "T8",
+      "category": "metaOnly-discipline",
+      "audit_finding": "metaOnly per recipe",
+      "prompt": "[subagent: task-agent] Запускаешь fixture-lookup recipe для 'temp directory with config file'. Какой metaOnly выставить и почему?",
+      "expected": "metaOnly: false — fixture-lookup output must include setup body content for caller to extract conventions. metaOnly: true would lose the actual code.",
+      "failure_mode": "metaOnly: true 'for speed' — loses fixture content"
+    },
+    {
+      "id": "T9",
+      "category": "fallback-disclosure",
+      "audit_finding": "TDD wrapper non-TS fallback",
+      "prompt": "[subagent: task-agent] dinopowers:test-driven-development. Python проект (no DSL test chunker). Need fixture pattern search before drafting failing test. Что делаешь?",
+      "expected": "Step 2a invokes tests-as-context fixture-lookup → preflight returns SKIP. TDD wrapper falls back to single semantic_search with testFile:'only' + rerank:'proven', states 'file-level fallback — DSL test chunks unavailable for this language'. Disclosure mandatory.",
+      "failure_mode": "Silent fallback without disclosure, or skips pattern search entirely"
+    },
+    {
+      "id": "T10",
+      "category": "agentic-only-discipline",
+      "audit_finding": "user-invocable: false enforcement",
+      "prompt": "[subagent: user-facing] User в Claude Code набирает в чате: 'найди мне тесты, которые покрывают src/foo.ts'. Должен ли agent предложить /tests-as-context?",
+      "expected": "No — tests-as-context is user-invocable: false. Agent invokes appropriate user-facing skill (dinopowers:requesting-code-review or tea-rags:explore) which internally uses tests-as-context as enrichment. Slash-command surface stays clean.",
+      "failure_mode": "Agent surfaces tests-as-context as slash command suggestion, breaking the agentic-only contract"
+    },
+    {
+      "id": "T11",
+      "category": "preflight-fallback",
+      "audit_finding": "F2 fix — cold subagent without prime digest",
+      "prompt": "[subagent: task-agent] Fresh subagent invoked by parent wrapper. Prime digest NOT in context. Caller wants tests-at-risk recipe. Что делаешь до запуска recipe call?",
+      "expected": "Step 0 falls through to probe call: semantic_search with filter must: chunkType=test, limit=1, metaOnly=true. Non-empty result → DSL present, proceed. Empty → SKIP verdict.",
+      "failure_mode": "Agent assumes DSL present and issues full recipe call, OR assumes absent and SKIPs without probe"
+    },
+    {
+      "id": "T12",
+      "category": "consumer-integration",
+      "audit_finding": "wrappers cite recipe name explicitly",
+      "prompt": "[subagent: code-reviewer] Read dinopowers:requesting-code-review SKILL.md Step 3a. Identify which tests-as-context recipe it calls and what fallback verdicts it handles.",
+      "expected": "Identifies recipe='tests-at-risk'. Lists 3 handled outcomes: SKIP → 'unavailable (no DSL test chunks indexed)'; non-empty → 'Scenarios under risk:' bundle; empty (preflight passed but no semantic match) → 'no obvious test bindings found'.",
+      "failure_mode": "Wrapper omits one of the three fallback branches, or names a different recipe"
+    }
+  ]
+}

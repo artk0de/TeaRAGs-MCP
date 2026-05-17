@@ -131,10 +131,46 @@ Aggregate:
 | tests/explore/strategies.test.ts | 0 | 2 commits | LOW-BLAST |
 
 **Verify before claiming done:**
-- `errors.ts` imported by 47 modules → run full test suite (not just tests/errors/)
-- `client.ts` imported by 12 modules → run integration tests touching qdrant
-- `strategies.test.ts` → no dependents; unit test is sufficient
+- `errors.ts` imported by 47 modules → run the project's test suite covering all dependents
+- `client.ts` imported by 12 modules → run integration tests touching the qdrant adapter
+- `strategies.test.ts` → no dependents; the file's own tests are sufficient
 ```
+
+Phrasing stays generic — never name specific runners (vitest, jest, pytest,
+rspec, etc.). The reading agent resolves the project's actual test command from
+project context (package.json scripts, Makefile, CI config).
+
+## Step 3a — Tests-at-risk lookup (targeted verification)
+
+Invoke `Skill(tea-rags:tests-as-context)` with:
+
+```
+recipe: "tests-at-risk"
+affectedFiles: <editedFiles from Step 1>
+intent: <intent from Step 1>
+```
+
+The recipe surfaces DSL leaf test chunks semantically bound to the change. For
+each HIGH-BLAST or MEDIUM-BLAST file whose result list is non-empty, augment the
+verdict block with a targeted recommendation:
+
+```
+**Targeted scenarios for high-blast files:**
+- src/core/contracts/errors.ts → run the tests for these scenarios:
+  - tests/errors/typed-errors.test.ts:42 — TypedError > propagates cause
+  - tests/api/handler-errors.test.ts:78 — handler > error response shape
+```
+
+Output stays runner-agnostic. Phrasing: "run the tests for these files",
+"execute these scenarios via the project's standard test command". Never name a
+specific runner.
+
+If recipe returned SKIP (no DSL test chunks indexed): leave the verdict block
+as-is and add
+`**Targeted scenarios:** unavailable (no DSL test chunks indexed) — verification scope guided by blast-radius signals only`.
+
+If recipe returned empty list (preflight passed but no semantic match): add
+`**Targeted scenarios:** no obvious test bindings — run general verification covering blast-radius dependents`.
 
 ## Step 4 — Invoke superpowers:verification-before-completion
 

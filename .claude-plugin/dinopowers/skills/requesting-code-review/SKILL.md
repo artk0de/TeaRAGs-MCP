@@ -135,6 +135,47 @@ Compose bundle (this goes INTO the review request, not as a verdict):
 If bundle would exceed 20 lines: truncate per-file table to top 10 by `imports`
 score, note "N more files omitted".
 
+## Step 3a — Tests at risk (scenarios under threat)
+
+Invoke `Skill(tea-rags:tests-as-context)` with:
+
+```
+recipe: "tests-at-risk"
+affectedFiles: <diffFiles from Step 1>
+intent: <intent from Step 1>
+```
+
+The recipe internally queries DSL leaf test chunks semantically bound to the
+change. Output is a ranked list of scenarios at risk.
+
+Add to the bundle one of:
+
+- If recipe returned SKIP (no DSL test chunks indexed):
+
+  ```
+  **Scenarios under risk:** unavailable (no DSL test chunks indexed)
+  ```
+
+- If recipe returned a non-empty list:
+
+  ```
+  **Scenarios under risk:**
+  - <file>:<line> — <describe-it path>
+  - <file>:<line> — <describe-it path>
+  ```
+
+  Cap at top 8 scenarios; note "N more omitted" if truncated. Reviewers see the
+  contract surface affected by the diff, not just the metadata.
+
+- If recipe returned empty result (preflight passed but no semantic match):
+  ```
+  **Scenarios under risk:** no obvious test bindings found — reviewer should
+  verify whether new behavior needs new tests
+  ```
+
+Do NOT name specific test runners in this section. Phrasing stays generic; the
+actual command to run is left to the reviewer / CI / pre-commit hook.
+
 ## Step 4 — Invoke superpowers:requesting-code-review
 
 Invoke the `Skill` tool with `superpowers:requesting-code-review`. Prepend the
