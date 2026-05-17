@@ -351,6 +351,31 @@ export async function searchCode(explore, path, query, opts = {}) {
 }
 
 /**
+ * Same-shape wrapper over ExploreFacade.semanticSearch.
+ *
+ * Use this (not searchCode) when you need:
+ *   - level: "file" — searchCode hardcodes level=undefined, so file-scope
+ *     filters (author, taskId, maxAgeDays/minAgeDays, modifiedAfter/Before,
+ *     minCommitCount) silently run at chunk-scope where git.chunk.* signals
+ *     are unreliable. semanticSearch DOES expose `level`.
+ *   - Explicit rerank preset — semanticSearch lets the caller override the
+ *     default level/rerank resolution.
+ *
+ * Returns the same flattened { content, filePath, ...payload } shape as
+ * searchCode so test assertions stay homogeneous.
+ */
+export async function semanticSearch(explore, path, query, opts = {}) {
+  const response = await explore.semanticSearch({ path, query, ...opts });
+  return response.results.map((r) => ({
+    id: r.id,
+    score: r.score,
+    content: r.payload?.content,
+    filePath: r.payload?.relativePath,
+    ...r.payload,
+  }));
+}
+
+/**
  * Print test summary with total duration
  */
 export function printSummary() {
