@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { createDeletionOutcome } from "../../../../../src/core/domains/ingest/sync/deletion-outcome.js";
-import { ReindexCoordinator } from "../../../../../src/core/domains/ingest/sync/reindex-coordinator.js";
+import { createDeletionOutcome } from "../../../../../../src/core/domains/ingest/sync/deletion/outcome.js";
+import { ReindexCoordinator } from "../../../../../../src/core/domains/ingest/sync/deletion/reindex-coordinator.js";
 
 describe("ReindexCoordinator", () => {
   it("allows upsert by default when no outcome has been applied", () => {

@@ -9,8 +9,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MockQdrantManager } from "../__helpers__/test-helpers.js";
-import { performDeletion } from "../../../../../src/core/domains/ingest/sync/deletion-strategy.js";
+import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
+import { performDeletion } from "../../../../../../src/core/domains/ingest/sync/deletion/strategy.js";
 
 describe("performDeletion", () => {
   let qdrant: MockQdrantManager;

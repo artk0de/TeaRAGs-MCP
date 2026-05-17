@@ -22,7 +22,7 @@ import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/inge
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
-import type { DeletionConfig } from "../../../domains/ingest/sync/deletion-strategy.js";
+import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
 import { GitEnrichmentProvider } from "../../../domains/trajectory/git/provider.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";

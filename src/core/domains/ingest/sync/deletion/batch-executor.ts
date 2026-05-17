@@ -12,7 +12,7 @@
  * helper's contract iterates per id.
  */
 
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 
 export class BatchDeleteExecutor {
   constructor(

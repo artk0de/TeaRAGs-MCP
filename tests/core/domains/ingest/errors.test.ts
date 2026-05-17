@@ -9,7 +9,7 @@ import {
   SnapshotCorruptedError,
   SnapshotMissingError,
 } from "../../../../src/core/domains/ingest/errors.js";
-import { createDeletionOutcome } from "../../../../src/core/domains/ingest/sync/deletion-outcome.js";
+import { createDeletionOutcome } from "../../../../src/core/domains/ingest/sync/deletion/outcome.js";
 import { TeaRagsError } from "../../../../src/core/infra/errors.js";
 
 describe("IngestError hierarchy", () => {

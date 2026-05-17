@@ -1,4 +1,4 @@
-import type { DeletionOutcome } from "./deletion-outcome.js";
+import type { DeletionOutcome } from "./outcome.js";
 
 /**
  * Coordinates per-file reindex decisions after a deletion pass.

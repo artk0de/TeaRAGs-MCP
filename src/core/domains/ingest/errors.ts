@@ -3,7 +3,7 @@
  */
 
 import { TeaRagsError } from "../../infra/errors.js";
-import type { DeletionOutcome } from "./sync/deletion-outcome.js";
+import type { DeletionOutcome } from "./sync/deletion/outcome.js";
 
 /**
  * Ingest domain error codes. Local strict union.

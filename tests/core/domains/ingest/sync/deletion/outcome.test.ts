@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createDeletionOutcome } from "../../../../../src/core/domains/ingest/sync/deletion-outcome.js";
+import { createDeletionOutcome } from "../../../../../../src/core/domains/ingest/sync/deletion/outcome.js";
 
 describe("createDeletionOutcome", () => {
   it("handles empty input", () => {

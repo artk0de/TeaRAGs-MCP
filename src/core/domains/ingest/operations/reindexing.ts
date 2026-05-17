@@ -19,10 +19,10 @@ import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
 import type { FileScanner } from "../pipeline/scanner.js";
-import type { DeletionOutcome } from "../sync/deletion-outcome.js";
-import { performDeletion, type DeletionConfig } from "../sync/deletion-strategy.js";
+import type { DeletionOutcome } from "../sync/deletion/outcome.js";
+import { ReindexCoordinator } from "../sync/deletion/reindex-coordinator.js";
+import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.js";
 import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
-import { ReindexCoordinator } from "../sync/reindex-coordinator.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 
 interface ReindexContext {

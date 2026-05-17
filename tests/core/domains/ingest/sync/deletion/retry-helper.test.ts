@@ -13,7 +13,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DeletionRetryHelper } from "../../../../../src/core/domains/ingest/sync/deletion-retry-helper.js";
+import { DeletionRetryHelper } from "../../../../../../src/core/domains/ingest/sync/deletion/retry-helper.js";
 
 describe("DeletionRetryHelper partial outcome", () => {
   afterEach(() => {

@@ -10,10 +10,10 @@
  * boundary (a BatchDeleteExecutor.deleteBatch in production); helper stays
  * free of Qdrant types.
  *
- * Used by: src/core/domains/ingest/sync/deletion-strategy.ts (L2 fallback).
+ * Used by: src/core/domains/ingest/sync/deletion/strategy.ts (L2 fallback).
  */
 
-import { createDeletionOutcome, type DeletionOutcome } from "./deletion-outcome.js";
+import { createDeletionOutcome, type DeletionOutcome } from "./outcome.js";
 
 export interface RetryOptions {
   /** Total attempt budget per id. `1` = no retry (single shot). MUST be ≥ 1. */
@@ -61,7 +61,7 @@ export class DeletionRetryHelper {
       if (!succeeded) {
         outcome.markFailed(id);
         // lastError intentionally swallowed: caller observes via outcome.failed
-        // and downstream logging in deletion-strategy.ts. Re-throwing here
+        // and downstream logging in strategy.ts. Re-throwing here
         // would defeat the partial-outcome contract.
         void lastError;
       }
