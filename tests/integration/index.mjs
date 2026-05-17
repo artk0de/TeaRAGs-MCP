@@ -16,12 +16,12 @@
  */
 import { promises as fs } from "node:fs";
 
-import { CodeIndexer } from "../../build/code/indexer.js";
-// Import from build
-import { OllamaEmbeddings } from "../../build/embeddings/ollama.js";
-import { QdrantManager } from "../../build/qdrant/client.js";
-import { config, getIndexerConfig, TEST_DIR } from "./config.mjs";
-import { c, counters, log, printSummary, resources, section, timing } from "./helpers.mjs";
+// Post-SOLID build paths: build/code/ → build/core/, with adapter relocation.
+// CodeIndexer (legacy) is gone; cleanup uses createTestFacades() helper.
+import { OllamaEmbeddings } from "../../build/core/adapters/embeddings/ollama.js";
+import { QdrantManager } from "../../build/core/adapters/qdrant/client.js";
+import { config, TEST_DIR } from "./config.mjs";
+import { c, counters, createTestFacades, log, printSummary, resources, section, timing } from "./helpers.mjs";
 // Import all test suites
 import { testEmbeddings } from "./suites/01-embeddings.mjs";
 import { testQdrantOperations } from "./suites/02-qdrant-operations.mjs";
@@ -79,10 +79,10 @@ async function cleanup(qdrant, embeddings) {
   // 1. Clear indexed paths (removes Qdrant collection + snapshots)
   if (resources.indexedPaths.size > 0) {
     log("info", `Clearing ${resources.indexedPaths.size} indexed codebases (Qdrant collections + snapshots)...`);
-    const cleanupIndexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
+    const { ingest: cleanupIngest } = createTestFacades(qdrant, embeddings);
     for (const indexPath of resources.indexedPaths) {
       try {
-        await cleanupIndexer.clearIndex(indexPath);
+        await cleanupIngest.clearIndex(indexPath);
         log("pass", `Cleared index + Qdrant collection: ${indexPath}`);
         cleanedCount++;
       } catch (_e) {

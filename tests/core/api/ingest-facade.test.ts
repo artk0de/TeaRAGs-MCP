@@ -10,13 +10,13 @@ const { mockIndexCodebase, mockReindexChanges, mockScrollAllPoints, mockComputeS
   mockComputeStats: vi.fn().mockReturnValue({ computedAt: Date.now(), perSignal: new Map() }),
 }));
 
-vi.mock("../../../src/core/domains/ingest/indexing.js", () => ({
+vi.mock("../../../src/core/domains/ingest/operations/indexing.js", () => ({
   IndexPipeline: class {
     indexCodebase = mockIndexCodebase;
   },
 }));
 
-vi.mock("../../../src/core/domains/ingest/reindexing.js", () => ({
+vi.mock("../../../src/core/domains/ingest/operations/reindexing.js", () => ({
   ReindexPipeline: class {
     reindexChanges = mockReindexChanges;
   },
@@ -59,7 +59,7 @@ vi.mock("../../../src/core/adapters/qdrant/scroll.js", () => ({
   scrollAllPoints: (...args: any[]) => mockScrollAllPoints(...args),
 }));
 
-vi.mock("../../../src/core/domains/ingest/collection-stats.js", () => ({
+vi.mock("../../../src/core/domains/ingest/infra/collection-stats.js", () => ({
   computeCollectionStats: (...args: any[]) => mockComputeStats(...args),
 }));
 

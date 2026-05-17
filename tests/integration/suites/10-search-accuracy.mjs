@@ -5,9 +5,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, resources, section } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, resources, searchCode, section } from "../helpers.mjs";
 
 export async function testSearchAccuracy(qdrant, embeddings) {
   section("9. Search Accuracy");
@@ -79,32 +78,30 @@ export class CacheService {
 `,
   );
 
-  const indexer = new CodeIndexer(
-    qdrant,
-    embeddings,
-    getIndexerConfig({
+  const { ingest, explore } = createTestFacades(qdrant, embeddings, {
+    config: getIndexerConfig({
       chunkSize: 1000,
       chunkOverlap: 100,
     }),
-  );
+  });
 
   resources.trackIndexedPath(searchTestDir);
-  await indexer.indexCodebase(searchTestDir, { forceReindex: true });
+  await ingest.indexCodebase(searchTestDir, { forceReindex: true });
 
   // Semantic search tests - verify that search returns meaningful content
-  const authQuery = await indexer.searchCode(searchTestDir, "user authentication login password", { limit: 5 });
+  const authQuery = await searchCode(explore, searchTestDir, "user authentication login password", { limit: 5 });
   const authHasContent = authQuery.some((r) => r.content && r.content.length > 0);
   assert(authHasContent, `Auth query returns results with content: ${authQuery.length} results`);
 
-  const dbQuery = await indexer.searchCode(searchTestDir, "database connection SQL query", { limit: 5 });
+  const dbQuery = await searchCode(explore, searchTestDir, "database connection SQL query", { limit: 5 });
   const dbHasContent = dbQuery.some((r) => r.content && r.content.length > 0);
   assert(dbHasContent, `DB query returns results with content: ${dbQuery.length} results`);
 
-  const cacheQuery = await indexer.searchCode(searchTestDir, "cache key value TTL", { limit: 5 });
+  const cacheQuery = await searchCode(explore, searchTestDir, "cache key value TTL", { limit: 5 });
   const cacheHasContent = cacheQuery.some((r) => r.content && r.content.length > 0);
   assert(cacheHasContent, `Cache query returns results with content: ${cacheQuery.length} results`);
 
   // Limit parameter
-  const limitResults = await indexer.searchCode(searchTestDir, "service", { limit: 2 });
+  const limitResults = await searchCode(explore, searchTestDir, "service", { limit: 2 });
   assert(limitResults.length <= 2, `Limit respected: ${limitResults.length} <= 2`);
 }

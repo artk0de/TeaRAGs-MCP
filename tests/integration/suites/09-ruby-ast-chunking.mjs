@@ -5,9 +5,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, log, resources, section } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, log, resources, searchCode, section } from "../helpers.mjs";
 
 export async function testRubyASTChunking(qdrant, embeddings) {
   section("8b. Ruby AST Chunking (Rails Patterns)");
@@ -97,16 +96,14 @@ end
 `,
   );
 
-  const indexer = new CodeIndexer(
-    qdrant,
-    embeddings,
-    getIndexerConfig({
+  const { ingest, explore } = createTestFacades(qdrant, embeddings, {
+    config: getIndexerConfig({
       supportedExtensions: [".rb"],
     }),
-  );
+  });
 
   resources.trackIndexedPath(rubyTestDir);
-  const stats = await indexer.indexCodebase(rubyTestDir, { forceReindex: true });
+  const stats = await ingest.indexCodebase(rubyTestDir, { forceReindex: true });
   assert(stats.filesIndexed === 3, `Ruby files indexed: ${stats.filesIndexed}`);
   assert(stats.chunksCreated > 0, `Ruby chunks created: ${stats.chunksCreated}`);
 
@@ -114,23 +111,23 @@ end
   log("info", "Testing Ruby semantic search...");
 
   // Error handling
-  const rescueResults = await indexer.searchCode(rubyTestDir, "error handling rescue exception");
+  const rescueResults = await searchCode(explore, rubyTestDir, "error handling rescue exception");
   assert(rescueResults.length > 0, `Rescue/error handling found: ${rescueResults.length}`);
 
   // Service object pattern
-  const serviceResults = await indexer.searchCode(rubyTestDir, "UserService find create");
+  const serviceResults = await searchCode(explore, rubyTestDir, "UserService find create");
   assert(serviceResults.length > 0, `Service object found: ${serviceResults.length}`);
 
   // Concern/module
-  const concernResults = await indexer.searchCode(rubyTestDir, "Authenticatable authenticate current_user");
+  const concernResults = await searchCode(explore, rubyTestDir, "Authenticatable authenticate current_user");
   assert(concernResults.length > 0, `Concern/module found: ${concernResults.length}`);
 
   // Lambda/proc
-  const lambdaResults = await indexer.searchCode(rubyTestDir, "lambda validation rules");
+  const lambdaResults = await searchCode(explore, rubyTestDir, "lambda validation rules");
   assert(lambdaResults.length > 0, `Lambda/validation found: ${lambdaResults.length}`);
 
   // Block operations
-  const blockResults = await indexer.searchCode(rubyTestDir, "map select transform");
+  const blockResults = await searchCode(explore, rubyTestDir, "map select transform");
   assert(blockResults.length > 0, `Block operations found: ${blockResults.length}`);
 
   log("pass", "Ruby AST chunking works for Rails patterns");

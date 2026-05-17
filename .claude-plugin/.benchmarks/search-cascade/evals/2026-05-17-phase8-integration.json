@@ -1,0 +1,33 @@
+{
+  "skill_name": "search-cascade",
+  "phase": "Phase 8 — Full Integration Eval",
+  "topic": "Real tea-rags MCP calls verifying the observability claims search-cascade points at: infraHealth in get_index_status, labelMap shape in get_index_metrics (calibration claim from references/runtime-introspection.md).",
+  "created": "2026-05-17",
+  "project_under_test": {
+    "alias": "tea-rags",
+    "collection": "code_8b243ffe",
+    "chunks": 4125
+  },
+  "summary": { "pass_rate": "2/2 (100%)" },
+  "cases": [
+    {
+      "id": "S8-1",
+      "claim": "get_index_status returns an infraHealth-like block (Qdrant URL/status, embedding URL/reachability, per-trajectory enrichment health). See references/runtime-introspection.md → 'get_index_status — Infra Health'.",
+      "call": "get_index_status(project: tea-rags)",
+      "expected": "Response carries Infrastructure block (Qdrant, embedding) AND enrichment.git.{file,chunk} health",
+      "observed": "Infrastructure: Qdrant: available (http://127.0.0.1:53578), Embedding (ollama): available (http://localhost:11434). enrichment.git.file.status = healthy, enrichment.git.chunk.status = healthy. Both timestamps + durationMs present.",
+      "verdict": "PASS",
+      "skill_claim_verified": "First-debug-step health probe works as documented in references/runtime-introspection.md"
+    },
+    {
+      "id": "S8-2",
+      "claim": "get_index_metrics returns signals[lang][key][scope].labelMap with percentile-based thresholds — calibration source for the 'project calibration' recipe in references/runtime-introspection.md and analytics-rerank skill.",
+      "call": "get_index_metrics(project: tea-rags)",
+      "expected": "Response has signals.{language}.{key}.{source|test}.labelMap with named percentile buckets",
+      "observed": "Full shape returned for TypeScript scope. Sample labelMaps: git.file.commitCount.source = { low:2, typical:4, high:9, extreme:25.5 }. git.file.ageDays.source = { recent:12, typical:31, old:46, legacy:55 }. git.file.bugFixRate.source = { healthy:25, concerning:38, critical:50 }. git.file.churnVolatility.source = { stable:8.76, erratic:17.05 }. Plus distributions: 2071 typescript chunks, 1317 markdown, topAuthors with chunk counts. Plus enrichmentTimeRange windows.",
+      "verdict": "PASS",
+      "skill_claim_verified": "Calibration via labelMap is real and granular: per-language × per-scope × per-signal percentile thresholds. Agents can phrase filters in terms of THIS project's distribution rather than hard-coded numbers."
+    }
+  ],
+  "verdict": "Both observability claims verified. search-cascade's pointer to references/runtime-introspection.md for infraHealth + labelMap calibration is operationally correct on live tea-rags."
+}

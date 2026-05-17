@@ -2,16 +2,30 @@
  * Ingest domain errors — indexing, collections, snapshots.
  */
 
-import type { ErrorCode } from "../../contracts/errors.js";
 import { TeaRagsError } from "../../infra/errors.js";
-import type { DeletionOutcome } from "./sync/deletion-outcome.js";
+import type { DeletionOutcome } from "./sync/deletion/outcome.js";
+
+/**
+ * Ingest domain error codes. Local strict union.
+ */
+export type IngestErrorCode =
+  | "INGEST_NOT_INDEXED"
+  | "INGEST_COLLECTION_EXISTS"
+  | "INGEST_SNAPSHOT_MISSING"
+  | "INGEST_SNAPSHOT_CORRUPTED"
+  | "INGEST_MIGRATION_FAILED"
+  | "INGEST_REINDEX_FAILED"
+  | "INGEST_INDEXING_FAILED"
+  | "INGEST_PARTIAL_DELETION"
+  | "INGEST_PIPELINE_NOT_STARTED"
+  | "INGEST_INVARIANT_VIOLATED";
 
 /**
  * Abstract base for all ingest domain errors.
  * Default httpStatus: 400.
  */
 export abstract class IngestError extends TeaRagsError {
-  constructor(opts: { code: ErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
+  constructor(opts: { code: IngestErrorCode; message: string; hint: string; httpStatus?: number; cause?: Error }) {
     super({ ...opts, httpStatus: opts.httpStatus ?? 400 });
   }
 }

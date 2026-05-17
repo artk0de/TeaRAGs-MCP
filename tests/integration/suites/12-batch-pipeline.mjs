@@ -5,9 +5,13 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
+// `batchSize: 50` (pre-SOLID CodeIndexer config) had no replacement in
+// IngestCodeConfig — batch tuning now lives under pipelineTuning. The test
+// scenarios below verify correctness, not throughput, so default batch
+// sizes work fine. Add explicit pipelineTuning override only if a future
+// test depends on batch-flush count.
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, log, resources, section, sleep } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, log, resources, searchCode, section, sleep } from "../helpers.mjs";
 
 export async function testBatchPipeline(qdrant, embeddings) {
   section("11. Batch Pipeline in CodeIndexer");
@@ -15,13 +19,7 @@ export async function testBatchPipeline(qdrant, embeddings) {
   const batchTestDir = join(TEST_DIR, "batch_pipeline_test");
   await fs.mkdir(batchTestDir, { recursive: true });
 
-  const indexer = new CodeIndexer(
-    qdrant,
-    embeddings,
-    getIndexerConfig({
-      batchSize: 50, // Small batch to test multiple flushes
-    }),
-  );
+  const { ingest, explore } = createTestFacades(qdrant, embeddings, { config: getIndexerConfig() });
 
   // === TEST: indexCodebase uses optimized batch upsert ===
   log("info", "Testing indexCodebase batch upsert...");
@@ -59,13 +57,13 @@ export class Service${i} {
   }
 
   resources.trackIndexedPath(batchTestDir);
-  const indexStats = await indexer.indexCodebase(batchTestDir, { forceReindex: true });
+  const indexStats = await ingest.indexCodebase(batchTestDir, { forceReindex: true });
   assert(indexStats.filesIndexed === 5, `All files indexed: ${indexStats.filesIndexed}`);
   assert(indexStats.chunksCreated > 0, `Chunks created: ${indexStats.chunksCreated}`);
 
   // Verify all services are searchable
   for (let i = 0; i < 5; i++) {
-    const results = await indexer.searchCode(batchTestDir, `Service${i} process fetchData`);
+    const results = await searchCode(explore, batchTestDir, `Service${i} process fetchData`);
     assert(results.length > 0, `Service${i} searchable after batch index`);
   }
 
@@ -77,19 +75,19 @@ export class Service${i} {
   await fs.unlink(join(batchTestDir, "service3.ts"));
   await sleep(100);
 
-  const deleteStats = await indexer.reindexChanges(batchTestDir);
+  const deleteStats = await ingest.reindexChanges(batchTestDir);
   assert(deleteStats.filesDeleted === 2, `Batch delete detected: ${deleteStats.filesDeleted} files`);
 
   // Deleted services should not be findable
-  const deleted1 = await indexer.searchCode(batchTestDir, "Service1 unique identifier");
-  const deleted3 = await indexer.searchCode(batchTestDir, "Service3 unique identifier");
+  const deleted1 = await searchCode(explore, batchTestDir, "Service1 unique identifier");
+  const deleted3 = await searchCode(explore, batchTestDir, "Service3 unique identifier");
   // Note: semantic search may still find similar content, but file path should not match
   log("info", `Service1 results after delete: ${deleted1.length}, Service3: ${deleted3.length}`);
 
   // Remaining services should still be searchable
-  const remaining0 = await indexer.searchCode(batchTestDir, "Service0");
-  const remaining2 = await indexer.searchCode(batchTestDir, "Service2");
-  const remaining4 = await indexer.searchCode(batchTestDir, "Service4");
+  const remaining0 = await searchCode(explore, batchTestDir, "Service0");
+  const remaining2 = await searchCode(explore, batchTestDir, "Service2");
+  const remaining4 = await searchCode(explore, batchTestDir, "Service4");
   assert(remaining0.length > 0, "Service0 still searchable after batch delete");
   assert(remaining2.length > 0, "Service2 still searchable after batch delete");
   assert(remaining4.length > 0, "Service4 still searchable after batch delete");
@@ -114,12 +112,12 @@ export async function handle${i}(req: Request): Promise<Response> {
   }
   await sleep(100);
 
-  const addStats = await indexer.reindexChanges(batchTestDir);
+  const addStats = await ingest.reindexChanges(batchTestDir);
   assert(addStats.filesAdded === 3, `Batch add detected: ${addStats.filesAdded} files`);
 
   // New handlers should be searchable
   for (let i = 5; i < 8; i++) {
-    const results = await indexer.searchCode(batchTestDir, `handle${i} Request Response`);
+    const results = await searchCode(explore, batchTestDir, `handle${i} Request Response`);
     assert(results.length > 0, `Handler${i} searchable after batch add`);
   }
 
@@ -152,15 +150,15 @@ export function utilityFunction(): number {
   );
   await sleep(100);
 
-  const mixedStats = await indexer.reindexChanges(batchTestDir);
+  const mixedStats = await ingest.reindexChanges(batchTestDir);
   assert(mixedStats.filesModified >= 1, `Mixed: modified ${mixedStats.filesModified}`);
   assert(mixedStats.filesDeleted >= 1, `Mixed: deleted ${mixedStats.filesDeleted}`);
   assert(mixedStats.filesAdded >= 1, `Mixed: added ${mixedStats.filesAdded}`);
 
   // Verify modifications
-  const modifiedResults = await indexer.searchCode(batchTestDir, "Service0Modified newMethod modified_content");
+  const modifiedResults = await searchCode(explore, batchTestDir, "Service0Modified newMethod modified_content");
   assert(modifiedResults.length > 0, "Modified Service0 content searchable");
 
-  const utilityResults = await indexer.searchCode(batchTestDir, "utilityFunction");
+  const utilityResults = await searchCode(explore, batchTestDir, "utilityFunction");
   assert(utilityResults.length > 0, "New utility file searchable");
 }

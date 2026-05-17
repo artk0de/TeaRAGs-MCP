@@ -1,0 +1,179 @@
+{
+  "skill_name": "analytics-rerank",
+  "topic": "rerank preset selection, custom weight composition, analytics-driven search recipes — trigger coverage for implicit analytics intent",
+  "created": "2026-05-16",
+  "context": "New agent-only skill (user-invocable: false) extracted from search-cascade.md. Trigger-coverage probe: prompt names an analytics intent (bug-prone, tech debt, ownership, fragile-silo, blast-radius) but never says 'rerank' or names a preset. Tests whether the agent self-triggers the skill, picks the right preset (or builds the right custom recipe), and routes correctly between siblings (risk-assessment for multi-dim, bug-hunt for debug, filter-building for filter shape).",
+  "skill_path": ".claude-plugin/tea-rags/skills/analytics-rerank/SKILL.md",
+  "summary": {
+    "trigger_coverage": {
+      "with_rule": "12/12 (100%)",
+      "without_rule": "6/12 (50%)",
+      "delta": "+50pp"
+    },
+    "iterations": 0
+  },
+  "trigger_coverage": [
+    {
+      "id": "T1",
+      "audit_finding": "well-known preset — hotspots",
+      "prompt": "Where are the bug-prone areas in payments?",
+      "expected": "rerank: 'hotspots' + pathPattern: '**/payments/**'",
+      "expected_NOT": "raw weight set reinventing hotspots; risk-assessment for a single-preset request",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "without_rule_note": "Correct preset; routed to risk-assessment (skill-routing imperfect but functional)"
+      }
+    },
+    {
+      "id": "T2",
+      "audit_finding": "well-known preset — techDebt",
+      "prompt": "What's tech debt looking like in the ingest pipeline?",
+      "expected": "rerank: 'techDebt' + pathPattern: '**/ingest/**'",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "without_rule_note": "Correct preset, slight extra filter overhead"
+      }
+    },
+    {
+      "id": "T3",
+      "audit_finding": "well-known preset — ownership",
+      "prompt": "Who owns the auth module — single-author silos?",
+      "expected": "rerank: 'ownership' + pathPattern: '**/auth/**'",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "without_rule_note": "Correct preset"
+      }
+    },
+    {
+      "id": "T4",
+      "audit_finding": "preset + sugar — codeReview + maxAgeDays",
+      "prompt": "Review the recent changes in payments domain — last week.",
+      "expected": "rerank: 'codeReview' + maxAgeDays: 7 (or modifiedAfter)",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "without_rule_note": "Preset right; used raw filter on git.ageDays instead of typed maxAgeDays. Functional."
+      }
+    },
+    {
+      "id": "T5",
+      "audit_finding": "preset + pathPattern — securityAudit",
+      "prompt": "Old code in our crypto/auth paths — security audit candidates.",
+      "expected": "rerank: 'securityAudit' + pathPattern targeting auth/crypto",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "without_rule_note": "Preset and pathPattern right"
+      }
+    },
+    {
+      "id": "T6",
+      "audit_finding": "custom recipe — Fragile Silo (NOT a preset)",
+      "prompt": "Find code in payments that LOOKS stable but breaks a lot.",
+      "expected": "custom: { bugFix: 0.45, knowledgeSilo: 0.3, similarity: 0.15, churn: -0.1 } — exactly the Fragile Silo recipe with negative churn weight",
+      "expected_NOT": "wrong weight key 'bugFixRate' (should be 'bugFix'); missing 'knowledgeSilo' signal; treated as stable/bug-hunt task",
+      "failure_mode": "Agent reinvents the recipe with wrong key names and loses the silo signal",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "Custom { stability, bugFixRate, recency }. Wrong weight key 'bugFixRate'. Missing 'knowledgeSilo' signal — recipe is incomplete. Routed to bug-hunt (debug skill, not analytics)."
+      }
+    },
+    {
+      "id": "T7",
+      "audit_finding": "custom recipe — impact analysis",
+      "prompt": "Files that everyone imports — high blast radius before I refactor.",
+      "expected": "custom: { imports: 0.5, churn: 0.3, ownership: 0.2 }",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "PASS",
+        "without_rule_note": "Close enough — { imports: 0.6, churn: 0.2, ownership: 0.2 }. All weight keys correct."
+      }
+    },
+    {
+      "id": "T8",
+      "audit_finding": "preset — proven (lesser-known)",
+      "prompt": "Find stable reference implementations of pagination, low bug history.",
+      "expected": "rerank: 'proven' OR 'stable'",
+      "expected_NOT": "Reinvent with wrong weight keys",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "Custom { similarity, stability, bugFixRate: -0.2 }. WRONG weight key 'bugFixRate' (should be 'bugFix'). Missed the proven/stable preset."
+      }
+    },
+    {
+      "id": "T9",
+      "audit_finding": "custom recipe — Active driver concentration (NOT ownership)",
+      "prompt": "Who's been actively driving the auth area lately?",
+      "expected": "custom: { recentActivityConcentration: 0.5, burstActivity: 0.3, similarity: 0.2 } — commit-window family, NOT blame-based ownership",
+      "expected_NOT": "ownership preset/weight (that's blame-based — who CURRENTLY owns the lines, not who's actively driving)",
+      "failure_mode": "Agent conflates 'driving' (recent activity) with 'owning' (blame). Different signal families.",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "Custom { ownership: 0.4, recency: 0.4 }. Wrong signal family — used ownership (blame) instead of recentActivityConcentration (commit-window). Recent and active driver are different questions."
+      }
+    },
+    {
+      "id": "T10",
+      "audit_finding": "preset — refactoring",
+      "prompt": "Refactor candidates in payments — large, unstable methods.",
+      "expected": "rerank: 'refactoring' (the preset already combines chunkSize + volatility + bugFix + age + relativeChurnNorm)",
+      "expected_NOT": "Reinventing the preset as custom weights with wrong key names",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "Custom { chunkSize, churn, bugFixRate, similarity }. WRONG weight key 'bugFixRate'. Reinvented the refactoring preset poorly — missed volatility, relativeChurnNorm, age."
+      }
+    },
+    {
+      "id": "T11",
+      "audit_finding": "non-overlap boundary — multi-dim risk → risk-assessment, NOT analytics-rerank",
+      "prompt": "Run a full code health scan over the whole project — bugs, hotspots, debt, silos all at once.",
+      "expected": "Delegate to tea-rags:risk-assessment (4-preset overlap classification, not single preset / single custom weight)",
+      "expected_NOT": "Single semantic_search with custom weights pretending to cover all four dimensions",
+      "failure_mode": "Agent flattens multi-dim into one custom weight call instead of using the cross-preset overlap mechanism",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "Invoked risk-assessment skill name but ran a SINGLE semantic_search with custom { bugFixRate, churn, age, ownership } — that's the analytics-rerank shape, not the risk-assessment 4-preset overlap. Also wrong key 'bugFixRate'."
+      }
+    },
+    {
+      "id": "T12",
+      "audit_finding": "subagent — preset + filter composition",
+      "prompt": "[subagent: task-agent] In /Users/me/proj/, find legacy code in src/auth/ that hasn't been touched in over a year and has high bug-fix history.",
+      "expected": "rerank: 'securityAudit' (combines age + pathRisk + bugFix + ownership) + pathPattern: 'src/auth/**' + raw filter on git.ageDays >= 365",
+      "result": {
+        "with_rule": "PASS",
+        "without_rule": "FAIL",
+        "without_rule_note": "Custom { bugFixRate, age, similarity }. WRONG weight key 'bugFixRate'. Missed the securityAudit preset which is the curated combination for this exact case."
+      }
+    }
+  ],
+  "failure_taxonomy_without_rule": {
+    "wrong_weight_key_bugFixRate_instead_of_bugFix": [
+      "T6",
+      "T8",
+      "T10",
+      "T11",
+      "T12"
+    ],
+    "missing_specialty_signal": [
+      "T6 (knowledgeSilo)",
+      "T9 (recentActivityConcentration)"
+    ],
+    "reinventing_preset_as_custom": [
+      "T8 (proven)",
+      "T10 (refactoring)",
+      "T12 (securityAudit)"
+    ],
+    "wrong_skill_routing_for_multidim": [
+      "T11 (multi-dim flattened to single search)"
+    ]
+  }
+}

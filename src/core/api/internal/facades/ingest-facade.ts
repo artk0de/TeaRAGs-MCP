@@ -16,13 +16,13 @@ import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { createIngestDependencies, type SynchronizerTuning } from "../../../domains/ingest/factory.js";
-import { IndexPipeline } from "../../../domains/ingest/indexing.js";
+import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
+import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
-import { ReindexPipeline } from "../../../domains/ingest/reindexing.js";
-import type { DeletionConfig } from "../../../domains/ingest/sync/deletion-strategy.js";
+import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
 import { GitEnrichmentProvider } from "../../../domains/trajectory/git/provider.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
