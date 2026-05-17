@@ -3,12 +3,90 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.26.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.25.1...v1.26.0) (2026-05-17)
+
+### ⚠ BREAKING CHANGES
+
+* **contracts:** External consumers typing against the global ErrorCode
+union must now import the per-domain unions (IngestErrorCode etc.) for
+strict typing. Loose string typing continues to work for runtime checks.
+
+Co-Authored-By: Claude Opus 4.7 &lt;noreply@anthropic.com&gt;
+
+### Features
+
+* **chunker:** add TypeScript test-spec DSL chunking + orchestrator hook claim invariant ([e5e6880](https://github.com/artk0de/TeaRAGs-MCP/commit/e5e68808c8cee9328ba9baa44f836ffb8bdf001e))
+* **skills:** add agent-invocable filter-building and analytics-rerank skills ([6d186ad](https://github.com/artk0de/TeaRAGs-MCP/commit/6d186ad889e8c3420be7307ecb1bade7d820c2e1))
+* **tea-rags,dinopowers:** add tests-as-context skill + DSL test chunk integration ([644b1e3](https://github.com/artk0de/TeaRAGs-MCP/commit/644b1e30d558bdcf9cfb885c31ecd579035646f5))
+
+### Bug Fixes
+
+* **api:** make path optional in search_code + index_codebase; stabilize fs.watch flaky test ([b3a574b](https://github.com/artk0de/TeaRAGs-MCP/commit/b3a574b465632a461ad7fc93dd9fb3dc9c7b04f5))
+* **hooks:** merge worktree-refactor-ingest-restructure pre-commit fix ([7b43908](https://github.com/artk0de/TeaRAGs-MCP/commit/7b43908083fe8772308207eadd5f8eb5650ee6fe))
+* **hooks:** skip plugin-version-bump check on merge commits ([1529bb4](https://github.com/artk0de/TeaRAGs-MCP/commit/1529bb4c34459425fcc3d523620237fdffbe3ee5))
+* **tea-rags:** spec-extraction recipe uses semantic_search not find_symbol ([aa44ab3](https://github.com/artk0de/TeaRAGs-MCP/commit/aa44ab3fea1196501bf042878d2f11b38ae0ae8c))
+* **tests:** clear remaining 6 git-filter + limit drifts — all assertions green ([de7d255](https://github.com/artk0de/TeaRAGs-MCP/commit/de7d255de64c13cb99376feeacd6d96b8cc09ad1))
+* **tests:** embedded Qdrant cascade + smoke-run drift fixes ([3d61840](https://github.com/artk0de/TeaRAGs-MCP/commit/3d61840ef7fbd51ff0bbba3f1ce887e05285cf63))
+
+### Documentation
+
+* **bench:** update spec-extraction recipe shape in summary table ([14d6b7e](https://github.com/artk0de/TeaRAGs-MCP/commit/14d6b7e323d881a05959c6d0f1a76998f7037d01))
+* **chunker:** add TypeScript test DSL chunking design spec ([396c642](https://github.com/artk0de/TeaRAGs-MCP/commit/396c642f040eb12c937be6d0015be43738c03e55))
+* **mcp:** expose hidden tea-rags functionality in tool descriptions, MCP resources, and search-cascade ([949f9d1](https://github.com/artk0de/TeaRAGs-MCP/commit/949f9d1124c0d4138253c2617375778f4e20c3f4))
+* **plans:** archive ingest-restructure plan from completed refactor ([020e9a1](https://github.com/artk0de/TeaRAGs-MCP/commit/020e9a1b20d2446c4bf1c5b19cdc441ee0b3f1a2))
+* **rules:** add silo-pairing process rule ([8064cd0](https://github.com/artk0de/TeaRAGs-MCP/commit/8064cd0bff6552bd9c2c5bcfd363b491e9228aac))
+* **rules:** clarify subdomain import boundaries in barrel rule ([4058481](https://github.com/artk0de/TeaRAGs-MCP/commit/4058481305df26996689d4465225cd46fc027087))
+* **rules:** document Stats vs Metrics taxonomy ([bfbc69f](https://github.com/artk0de/TeaRAGs-MCP/commit/bfbc69f2a68322738417f03900bff7c882c15976)), closes [IndexMetricsQuery#buildSignalMetrics](https://github.com/artk0de/IndexMetricsQuery/issues/buildSignalMetrics)
+* **rules:** link silo-pairing.md from CLAUDE.md ([45c69c8](https://github.com/artk0de/TeaRAGs-MCP/commit/45c69c87500f7231c774dfef4b60600ee8cdd7a5))
+* **rules:** mandatory subdomain barrels for ingest restructure ([2da2bb8](https://github.com/artk0de/TeaRAGs-MCP/commit/2da2bb80ee575219f0e9a2bbcbb08e86d8aea874))
+* **rules:** require asking user to start ollama when embedding is down ([a3a962b](https://github.com/artk0de/TeaRAGs-MCP/commit/a3a962b915c6b74b021eb48493d1e3e32c2527c1))
+* **superpowers:** add tech-debt Q2 2026 epic design ([68fd853](https://github.com/artk0de/TeaRAGs-MCP/commit/68fd853d6c6049a0013441779f1dc72ea19777ad))
+* **superpowers:** add tech-debt Q2 2026 implementation plan ([b122c89](https://github.com/artk0de/TeaRAGs-MCP/commit/b122c89ee4f5c87f434dd033ff41ffc964c2b329))
+* **website:** fix three rerank documentation drifts in api/tools.md ([ad88ffd](https://github.com/artk0de/TeaRAGs-MCP/commit/ad88ffda88debb6f83e4674a6e69a75b42c40eee))
+
+### Code Refactoring
+
+* **adapters:** extract InfraErrorCode local union ([06f0c6b](https://github.com/artk0de/TeaRAGs-MCP/commit/06f0c6b6a03cbe1098d6b0fce098bdfe108a1238))
+* **api:** extract InputErrorCode local union from contracts ([6190ec2](https://github.com/artk0de/TeaRAGs-MCP/commit/6190ec2d12b777c36e0a80e596009c53d36b6579))
+* **api:** extract wireFacades + wireOps from createApp ([9c67fd2](https://github.com/artk0de/TeaRAGs-MCP/commit/9c67fd2649097902b5488caef45a997d7f8f29fb))
+* **config:** extract ConfigErrorCode local union ([6755193](https://github.com/artk0de/TeaRAGs-MCP/commit/6755193d6927311e88181d995abbf308a18874ed))
+* **contracts:** collapse ErrorCode union to loose string contract ([9f016a8](https://github.com/artk0de/TeaRAGs-MCP/commit/9f016a8cfc1f2483e3dd221b31c25b3a69012dab))
+* **explore:** extract ExploreErrorCode local union ([e3cab76](https://github.com/artk0de/TeaRAGs-MCP/commit/e3cab7650e5a26099458403c7ca5e885df99af8c))
+* **ingest:** decompose reindexing block (158 -&gt; 3 phases) ([32a00ac](https://github.com/artk0de/TeaRAGs-MCP/commit/32a00ac9ea54b8269bc5a827a0a49a17c275430e))
+* **ingest:** extract BatchDeleteExecutor from performDeletion ([19a4534](https://github.com/artk0de/TeaRAGs-MCP/commit/19a45349a9247bbce50021d9c1e4696c51488af4))
+* **ingest:** extract DeletionRetryHelper from performDeletion ([922605b](https://github.com/artk0de/TeaRAGs-MCP/commit/922605b46aa2bbfeb6ff8e4a01432661f1ce0a5b))
+* **ingest:** extract DeletionRetryHelper from performDeletion ([b769043](https://github.com/artk0de/TeaRAGs-MCP/commit/b769043b5ba14770349d9fb067de305897d9459d))
+* **ingest:** extract HeartbeatGuard from IndexPipeline ([4283a5e](https://github.com/artk0de/TeaRAGs-MCP/commit/4283a5ecd7b649a44635a97d8e63e43094f5d0fb))
+* **ingest:** extract IngestErrorCode local union, re-export from barrel ([add496c](https://github.com/artk0de/TeaRAGs-MCP/commit/add496ca07a5085f98a365bcb006af22acb5de28))
+* **ingest:** extract MissedFileTracker from EnrichmentApplier ([9226cdf](https://github.com/artk0de/TeaRAGs-MCP/commit/9226cdf2f41eed3dc6dfe2903d6dd1097b838405))
+* **ingest:** extract OptimizerLifecycle from IndexPipeline ([4362feb](https://github.com/artk0de/TeaRAGs-MCP/commit/4362feb278e2e6770d0e1eff3765d9d0e9458937))
+* **ingest:** group cross-cutting helpers under infra/ ([5d85893](https://github.com/artk0de/TeaRAGs-MCP/commit/5d85893fe0ff79d94e9b536b12fa5e86afdd7d5a))
+* **ingest:** move IndexPipeline/ReindexPipeline into operations/ ([5a1c2e5](https://github.com/artk0de/TeaRAGs-MCP/commit/5a1c2e526ec346a8f36fb28c154826e6d927a43a))
+* **ingest:** move stats-recompute from explore to ingest ([b3f52b1](https://github.com/artk0de/TeaRAGs-MCP/commit/b3f52b1fd46d0807e6b80aebf4a1003a8176c45e))
+* **ingest:** wire sync/ barrel + repoint ingest/ barrel to new paths ([d6f2f16](https://github.com/artk0de/TeaRAGs-MCP/commit/d6f2f1645485f0a0cc34eee2bca8e69b0d75a810))
+* **mcp:** split registerCodeTools by tool family (326 -&gt; 5 modules) ([746e114](https://github.com/artk0de/TeaRAGs-MCP/commit/746e114135e4df1aaace1638f0080433cd38d4fa))
+* **skills:** slim search-cascade, extract filter/analytics skills, eval coverage ([6598eac](https://github.com/artk0de/TeaRAGs-MCP/commit/6598eac2ab82d6065bb15785c2a862aac934a77e))
+* **sync:** extract merkle + consistent-hash into sync/infra/ ([db4fc9a](https://github.com/artk0de/TeaRAGs-MCP/commit/db4fc9af2e3f4153956739b059fc9a85d2875b33))
+* **sync:** group snapshot persistence under sync/snapshot/ ([035bcbf](https://github.com/artk0de/TeaRAGs-MCP/commit/035bcbf060cbc941a2588ece292b124b43540811))
+* **sync:** split deletion cascade into sync/deletion/ with shorter names ([e7b85be](https://github.com/artk0de/TeaRAGs-MCP/commit/e7b85bef7bb4390e316d69fbff3fe036e5526de8))
+* **tests:** post-SOLID integration test infrastructure ([0d47f9c](https://github.com/artk0de/TeaRAGs-MCP/commit/0d47f9c65d760d06049858741bee4fa96684dbb6))
+* **tests:** remap easy integration suites to build/core paths ([00d071d](https://github.com/artk0de/TeaRAGs-MCP/commit/00d071d08e50e3eb40253662f04b723c74c17bcb))
+* **tests:** rewrite chunk-A integration suites under IngestFacade/ExploreFacade ([69582a5](https://github.com/artk0de/TeaRAGs-MCP/commit/69582a5eb11ba5b56133d0e63bf82aaf0d809208))
+* **tests:** rewrite chunk-B integration suites under IngestFacade/ExploreFacade ([82ddc59](https://github.com/artk0de/TeaRAGs-MCP/commit/82ddc5993919b53f8ec7bd2122370485e37c4ef1))
+* **tests:** rewrite chunk-C integration suites under IngestFacade/ExploreFacade ([dfd6a25](https://github.com/artk0de/TeaRAGs-MCP/commit/dfd6a25a1a85064a87b7e80262a5607449cfe435))
+* **tests:** rewrite chunk-D integration suites under IngestFacade/ExploreFacade ([625c8c3](https://github.com/artk0de/TeaRAGs-MCP/commit/625c8c396086b04fe282c01f2fe715dd4cc4f25a))
+* **trajectory:** extract TrajectoryErrorCode local union ([9f2d401](https://github.com/artk0de/TeaRAGs-MCP/commit/9f2d4016c58ecd5df8bade4561d661ffa8267b0e))
+
 ## [1.25.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.25.0...v1.25.1) (2026-05-15)
 
 ### Bug Fixes
 
-* **scripts:** escape curly braces in changelog for MDX safety ([41dad25](https://github.com/artk0de/TeaRAGs-MCP/commit/41dad257933e1156a732eb503df4a9722716bfac)), closes [#123](https://github.com/artk0de/TeaRAGs-MCP/issues/123) [#125](https://github.com/artk0de/TeaRAGs-MCP/issues/125)
-* **website:** unbreak docs build after 1.25.0 release ([04d12e0](https://github.com/artk0de/TeaRAGs-MCP/commit/04d12e09a593f018297b985bd89ef4048a56aab6))
+- **scripts:** escape curly braces in changelog for MDX safety
+  ([41dad25](https://github.com/artk0de/TeaRAGs-MCP/commit/41dad257933e1156a732eb503df4a9722716bfac)),
+  closes [#123](https://github.com/artk0de/TeaRAGs-MCP/issues/123)
+  [#125](https://github.com/artk0de/TeaRAGs-MCP/issues/125)
+- **website:** unbreak docs build after 1.25.0 release
+  ([04d12e0](https://github.com/artk0de/TeaRAGs-MCP/commit/04d12e09a593f018297b985bd89ef4048a56aab6))
 
 ## [1.25.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.24.0...v1.25.0) (2026-05-15)
 
