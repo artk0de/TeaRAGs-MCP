@@ -135,7 +135,10 @@ export class AuthService {
   assert(gitMeta !== undefined, "Git metadata present in chunk");
   assert(typeof gitMeta?.lastModifiedAt === "number", `lastModifiedAt is number: ${gitMeta?.lastModifiedAt}`);
   assert(typeof gitMeta?.firstCreatedAt === "number", `firstCreatedAt is number: ${gitMeta?.firstCreatedAt}`);
-  assert(typeof gitMeta?.recentDominantAuthor === "string", `recentDominantAuthor is string: ${gitMeta?.recentDominantAuthor}`);
+  assert(
+    typeof gitMeta?.recentDominantAuthor === "string",
+    `recentDominantAuthor is string: ${gitMeta?.recentDominantAuthor}`,
+  );
   assert(
     typeof gitMeta?.recentDominantAuthorEmail === "string",
     `recentDominantAuthorEmail is string: ${gitMeta?.recentDominantAuthorEmail}`,
@@ -150,7 +153,10 @@ export class AuthService {
   assert(Array.isArray(gitMeta?.taskIds), `taskIds is array: ${JSON.stringify(gitMeta?.taskIds)}`);
 
   assert(gitMeta?.recentDominantAuthor === "Test User", `Correct author: ${gitMeta?.recentDominantAuthor}`);
-  assert(gitMeta?.recentDominantAuthorEmail === "test@example.com", `Correct email: ${gitMeta?.recentDominantAuthorEmail}`);
+  assert(
+    gitMeta?.recentDominantAuthorEmail === "test@example.com",
+    `Correct email: ${gitMeta?.recentDominantAuthorEmail}`,
+  );
 
   // === TEST 4: Verify task ID extraction ===
   log("info", "Verifying task ID extraction...");
@@ -173,6 +179,7 @@ export class AuthService {
 
   const authorResults = await searchCode(explore, gitTestDir, "service", {
     author: "Test User",
+    level: "file", // git filters apply at file scope; chunk-scope git.* signals are unreliable
   });
   assert(authorResults.length > 0, `Author filter returns results: ${authorResults.length}`);
   assert(
@@ -185,6 +192,7 @@ export class AuthService {
 
   const taskResults = await searchCode(explore, gitTestDir, "service", {
     taskId: "TD-1234",
+    level: "file",
   });
   assert(taskResults.length > 0, `Task ID filter returns results: ${taskResults.length}`);
   assert(
@@ -197,11 +205,13 @@ export class AuthService {
 
   const freshResults = await searchCode(explore, gitTestDir, "service", {
     maxAgeDays: 1,
+    level: "file",
   });
   assert(freshResults.length > 0, `maxAgeDays filter works: ${freshResults.length} results`);
 
   const oldResults = await searchCode(explore, gitTestDir, "service", {
     minAgeDays: 100,
+    level: "file",
   });
   assert(oldResults.length === 0, `minAgeDays filter excludes fresh code: ${oldResults.length} results`);
 
@@ -214,11 +224,13 @@ export class AuthService {
   const dateRangeResults = await searchCode(explore, gitTestDir, "service", {
     modifiedAfter: yesterday,
     modifiedBefore: tomorrow,
+    level: "file",
   });
   assert(dateRangeResults.length > 0, `Date range filter works: ${dateRangeResults.length} results`);
 
   const futureResults = await searchCode(explore, gitTestDir, "service", {
     modifiedAfter: tomorrow,
+    level: "file",
   });
   assert(futureResults.length === 0, `Future modifiedAfter returns nothing: ${futureResults.length}`);
 
@@ -227,6 +239,7 @@ export class AuthService {
 
   const churnResults = await searchCode(explore, gitTestDir, "service", {
     minCommitCount: 2,
+    level: "file",
   });
   const highChurnCount = churnResults.filter((r) => r.git?.file?.commitCount >= 2).length;
   log("info", `High churn chunks (commitCount >= 2): ${highChurnCount}`);
@@ -265,6 +278,7 @@ export class NewService {
   // Corner case 1: Empty search result (no matching author)
   const noMatchAuthor = await searchCode(explore, gitTestDir, "service", {
     author: "Nonexistent Author",
+    level: "file",
   });
   assert(noMatchAuthor.length === 0, `No results for nonexistent author: ${noMatchAuthor.length}`);
 
@@ -272,12 +286,14 @@ export class NewService {
   const combinedFilters = await searchCode(explore, gitTestDir, "service", {
     author: "Test User",
     maxAgeDays: 1,
+    level: "file",
   });
   assert(combinedFilters.length > 0, `Combined filters work: ${combinedFilters.length}`);
 
   // Corner case 3: Very old date filter (before repo existed)
   const ancientResults = await searchCode(explore, gitTestDir, "service", {
     modifiedBefore: "2000-01-01",
+    level: "file",
   });
   assert(ancientResults.length === 0, `No results before repo existed: ${ancientResults.length}`);
 

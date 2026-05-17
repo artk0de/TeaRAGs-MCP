@@ -116,8 +116,11 @@ export async function testPipelineWorkerpool(_qdrant) {
   log("info", "Testing BatchAccumulator timeout flush...");
 
   const timeoutBatches = [];
+  // minBatchSize: 0 disables defer-until-half-full behavior introduced post-SOLID;
+  // without it scheduleFlush defers single-item batches up to MAX_DEFERS times
+  // and the 100ms wait below isn't long enough to observe the eventual flush.
   const timeoutAccumulator = new BatchAccumulator(
-    { batchSize: 10, flushTimeoutMs: 50, maxQueueSize: 10 },
+    { batchSize: 10, flushTimeoutMs: 50, maxQueueSize: 10, minBatchSize: 0 },
     "delete",
     (batch) => timeoutBatches.push(batch),
   );
