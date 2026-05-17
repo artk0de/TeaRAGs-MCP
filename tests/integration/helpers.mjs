@@ -5,7 +5,16 @@
 
 import { createHash, randomUUID as cryptoRandomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
+
+// Facade composition for post-SOLID architecture.
+// CodeIndexer was split into IngestFacade (write side) + ExploreFacade (read side).
+import { createComposition } from "../../build/core/api/internal/composition.js";
+import { ExploreFacade } from "../../build/core/api/internal/facades/explore-facade.js";
+import { IngestFacade } from "../../build/core/api/internal/facades/ingest-facade.js";
+import { CollectionRegistry } from "../../build/core/infra/registry/index.js";
+import { StatsCache } from "../../build/core/infra/stats-cache.js";
 
 // ANSI colors
 export const c = {
@@ -233,6 +242,84 @@ export function hashContent(content) {
  */
 export function randomUUID() {
   return cryptoRandomUUID();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FACADE CONSTRUCTION FOR INTEGRATION TESTS
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Build minimal IngestCodeConfig for tests. Suites can pass overrides.
+ */
+export function buildTestIngestConfig(overrides = {}) {
+  return {
+    chunkSize: 500,
+    chunkOverlap: 50,
+    supportedExtensions: [".ts"],
+    ignorePatterns: [],
+    enableHybridSearch: false,
+    quantizationScalar: false,
+    enableGitMetadata: false,
+    ...overrides,
+  };
+}
+
+/**
+ * Build minimal TrajectoryIngestConfig for tests.
+ */
+export function buildTestTrajectoryConfig(overrides = {}) {
+  return {
+    enableGitMetadata: false,
+    ...overrides,
+  };
+}
+
+/**
+ * Construct IngestFacade + ExploreFacade sharing a single composition graph.
+ *
+ * Replaces `new CodeIndexer(qdrant, embeddings, config)` from the pre-SOLID era.
+ *
+ * @param qdrant       Already-constructed QdrantManager (from runner).
+ * @param embeddings   Already-constructed EmbeddingProvider.
+ * @param overrides    Optional: { config, trajectoryConfig, snapshotDir, pipelineTuning, syncTuning }.
+ * @returns            { ingest, explore, statsCache, collectionRegistry, composition, snapshotDir }
+ */
+export function createTestFacades(qdrant, embeddings, overrides = {}) {
+  const composition = createComposition();
+  const dataDir = process.env.TEA_RAGS_DATA_DIR || join(homedir(), ".tea-rags");
+  const snapshotDir = overrides.snapshotDir || join(dataDir, "snapshots");
+
+  const statsCache = new StatsCache(snapshotDir);
+  const collectionRegistry = new CollectionRegistry(dataDir);
+
+  const ingest = new IngestFacade({
+    qdrant,
+    embeddings,
+    config: buildTestIngestConfig(overrides.config),
+    trajectoryConfig: buildTestTrajectoryConfig(overrides.trajectoryConfig),
+    statsCache,
+    allPayloadSignals: composition.allPayloadSignalDescriptors,
+    statsAccumulators: composition.allStatsAccumulators,
+    reranker: composition.reranker,
+    snapshotDir,
+    collectionRegistry,
+    ...(overrides.pipelineTuning ? { pipelineTuning: overrides.pipelineTuning } : {}),
+    ...(overrides.syncTuning ? { syncTuning: overrides.syncTuning } : {}),
+  });
+
+  const essentialKeys = composition.registry.getEssentialPayloadKeys();
+  const explore = new ExploreFacade({
+    qdrant,
+    embeddings,
+    reranker: composition.reranker,
+    registry: composition.registry,
+    collectionRegistry,
+    statsCache,
+    payloadSignals: composition.allPayloadSignalDescriptors,
+    essentialKeys,
+  });
+
+  return { ingest, explore, statsCache, collectionRegistry, composition, snapshotDir };
 }
 
 /**

@@ -14,18 +14,23 @@ export const TEST_DIR = `/tmp/qdrant_integration_test_${Date.now()}`;
 export const indexedPaths = new Set();
 
 /**
- * Default config for CodeIndexer
+ * Default IngestCodeConfig for createTestFacades().
+ *
+ * Post-SOLID: CodeIndexer-era fields like `batchSize`, `defaultSearchLimit`,
+ * `enableASTChunking` are no longer part of the ingest config (batching is
+ * controlled via pipelineTuning, AST chunking is always-on, search limit is
+ * per-request). Suites that need small-batch behavior pass `pipelineTuning`
+ * to createTestFacades() directly.
  */
 export function getIndexerConfig(overrides = {}) {
   return {
     chunkSize: 500,
     chunkOverlap: 50,
-    enableASTChunking: true,
     supportedExtensions: [".ts"],
     ignorePatterns: [],
-    batchSize: 100,
-    defaultSearchLimit: 10,
     enableHybridSearch: false,
+    quantizationScalar: false,
+    enableGitMetadata: false,
     ...overrides,
   };
 }
