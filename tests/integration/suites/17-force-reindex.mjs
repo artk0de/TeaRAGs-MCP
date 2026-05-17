@@ -5,9 +5,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, log, resources, section } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, log, resources, searchCode, section } from "../helpers.mjs";
 
 export async function testForceReindexBehavior(qdrant, embeddings) {
   section("16. ForceReindex Early Return & Parallel Indexing");
@@ -39,37 +38,37 @@ export class Service2 {
 `,
   );
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
+  const { ingest, explore } = createTestFacades(qdrant, embeddings, { config: getIndexerConfig() });
 
   // === TEST 1: Initial indexing should succeed ===
   log("info", "Testing initial indexing...");
   resources.trackIndexedPath(forceTestDir);
-  const initialStats = await indexer.indexCodebase(forceTestDir);
+  const initialStats = await ingest.indexCodebase(forceTestDir);
   assert(initialStats.status === "completed", `Initial indexing completed: ${initialStats.status}`);
   assert(initialStats.filesIndexed >= 2, `Initial files indexed: ${initialStats.filesIndexed}`);
   assert(initialStats.chunksCreated > 0, `Initial chunks created: ${initialStats.chunksCreated}`);
 
   // === TEST 2: Re-indexing without forceReindex should return early ===
-  log("info", "Testing early return when collection exists...");
-  const reindexStats = await indexer.indexCodebase(forceTestDir);
+  log("info", "Testing auto-incremental on re-run (no forceReindex)...");
+  // Post-SOLID: IngestFacade auto-detects existing collection and switches to
+  // incremental reindex silently (no error). Old CodeIndexer used to surface
+  // "Collection already exists" — that assertion is gone with the new behavior.
+  // Outcome we verify: zero work done because nothing changed.
+  const reindexStats = await ingest.indexCodebase(forceTestDir);
   assert(reindexStats.status === "completed", `Reindex returns completed status`);
-  assert(reindexStats.filesIndexed === 0, `No files indexed on re-run without force: ${reindexStats.filesIndexed}`);
-  assert(reindexStats.chunksCreated === 0, `No chunks created on re-run without force: ${reindexStats.chunksCreated}`);
-  assert(
-    reindexStats.errors?.some((e) => e.includes("Collection already exists")),
-    "Error message mentions collection exists",
-  );
+  assert(reindexStats.filesIndexed === 0, `No new/modified files: ${reindexStats.filesIndexed}`);
+  assert(reindexStats.chunksCreated === 0, `No new chunks: ${reindexStats.chunksCreated}`);
 
   // === TEST 3: Re-indexing with forceReindex should work ===
   log("info", "Testing forceReindex=true...");
-  const forceStats = await indexer.indexCodebase(forceTestDir, { forceReindex: true });
+  const forceStats = await ingest.indexCodebase(forceTestDir, { forceReindex: true });
   assert(forceStats.status === "completed", `Force reindex completed: ${forceStats.status}`);
   assert(forceStats.filesIndexed >= 2, `Force reindex indexed files: ${forceStats.filesIndexed}`);
   assert(forceStats.chunksCreated > 0, `Force reindex created chunks: ${forceStats.chunksCreated}`);
 
   // === TEST 4: Verify search still works after force reindex ===
   log("info", "Testing search after force reindex...");
-  const searchResults = await indexer.searchCode(forceTestDir, "process data");
+  const searchResults = await searchCode(explore, forceTestDir, "process data");
   assert(searchResults.length > 0, `Search returns results after force reindex: ${searchResults.length}`);
 
   // === TEST 5: Parallel processing validation ===
@@ -103,7 +102,7 @@ export class Module${i} {
 
   resources.trackIndexedPath(parallelDir);
   const startTime = Date.now();
-  const parallelStats = await indexer.indexCodebase(parallelDir);
+  const parallelStats = await ingest.indexCodebase(parallelDir);
   const duration = Date.now() - startTime;
 
   assert(parallelStats.status === "completed", `Parallel indexing completed: ${parallelStats.status}`);
@@ -111,9 +110,9 @@ export class Module${i} {
   assert(parallelStats.chunksCreated > 0, `Chunks created: ${parallelStats.chunksCreated}`);
 
   // Verify random samples are searchable
-  const sampleResults1 = await indexer.searchCode(parallelDir, "Module5 process");
-  const sampleResults2 = await indexer.searchCode(parallelDir, "Module15 getName");
-  const sampleResults3 = await indexer.searchCode(parallelDir, "Module25 id");
+  const sampleResults1 = await searchCode(explore, parallelDir, "Module5 process");
+  const sampleResults2 = await searchCode(explore, parallelDir, "Module15 getName");
+  const sampleResults3 = await searchCode(explore, parallelDir, "Module25 id");
 
   assert(sampleResults1.length > 0, `Module5 searchable: ${sampleResults1.length}`);
   assert(sampleResults2.length > 0, `Module15 searchable: ${sampleResults2.length}`);

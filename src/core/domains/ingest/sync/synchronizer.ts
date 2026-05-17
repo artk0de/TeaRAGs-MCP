@@ -15,8 +15,8 @@ import { join, relative } from "node:path";
 
 import type { FileChanges } from "../../../types.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
-import { MerkleTree } from "./merkle.js";
-import { SnapshotManager } from "./snapshot.js";
+import { MerkleTree } from "./infra/merkle.js";
+import { SnapshotManager } from "./snapshot/snapshot.js";
 
 /**
  * File metadata for fast change detection

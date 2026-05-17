@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ensure-beads-redirect.sh",
+            "statusMessage": "Ensuring beads redirect in worktree"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [],
     "PostToolUse": [
       {

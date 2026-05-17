@@ -122,6 +122,41 @@ Target: <symbol or file>
 Verdict: <AGREE-WITH-SCOPE | AGREE-DIRECT | PUSHBACK>
 ```
 
+## Step 3a — Tests bound to the target
+
+When the proposed change is rename / move / extract / signature change on a
+symbol, the tests bound to the current name or signature need to be identified
+BEFORE agreeing. Invoke `Skill(tea-rags:tests-as-context)` with:
+
+```
+recipe: "tests-at-risk"
+affectedFiles: [<file containing the target symbol>]   ← single-element array OK
+intent: <intent from Step 1, e.g. "rename ChunkGrouper.group to aggregate">
+```
+
+The recipe accepts a single-element `affectedFiles` for symbol-scoped changes —
+internally it uses a `must_not relativePath any-of` filter, which works
+identically for one or many paths.
+
+The recipe surfaces DSL leaf test chunks that exercise the affected symbol.
+Append to the impact block:
+
+```
+**Tests bound to current name/signature:**
+- <file>:<line> — <describe-it path>
+- <file>:<line> — <describe-it path>
+```
+
+If recipe returned SKIP: append
+`**Tests bound:** unavailable (no DSL test chunks indexed)`. If recipe returned
+empty list: append
+`**Tests bound:** no obvious test bindings — the change may still affect untested paths`.
+
+The bound-test list raises the cost of the proposed change visibly: agreeing to
+a rename that breaks 6 named scenarios is a different conversation than agreeing
+to one with no test bindings. Phrasing stays runner-agnostic — list scenarios,
+never name a runner.
+
 ## Step 4 — Invoke superpowers:receiving-code-review
 
 Invoke the `Skill` tool with `superpowers:receiving-code-review`. Prepend the

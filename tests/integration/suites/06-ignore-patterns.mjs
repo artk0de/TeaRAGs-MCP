@@ -5,9 +5,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, resources, section } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, resources, searchCode, section } from "../helpers.mjs";
 
 export async function testIgnorePatterns(qdrant, embeddings) {
   section("6. Ignore Patterns");
@@ -25,16 +24,14 @@ export async function testIgnorePatterns(qdrant, embeddings) {
   await createTestFile(ignoreTestDir, "dist/bundle.ts", "export const DIST = 'build';");
   await createTestFile(ignoreTestDir, "test.spec.ts", "describe('test', () => {});");
 
-  const indexer = new CodeIndexer(
-    qdrant,
-    embeddings,
-    getIndexerConfig({
+  const { ingest, explore } = createTestFacades(qdrant, embeddings, {
+    config: getIndexerConfig({
       ignorePatterns: ["node_modules", ".git", "dist", "*.spec.ts"],
     }),
-  );
+  });
 
   resources.trackIndexedPath(ignoreTestDir);
-  const stats = await indexer.indexCodebase(ignoreTestDir, { forceReindex: true });
+  const stats = await ingest.indexCodebase(ignoreTestDir, { forceReindex: true });
 
   // Should only index src/app.ts
   assert(stats.filesIndexed === 1, `Only non-ignored files indexed: ${stats.filesIndexed}`);
@@ -42,7 +39,7 @@ export async function testIgnorePatterns(qdrant, embeddings) {
   // Verify ignored content not searchable by checking result paths
   // Note: Semantic search may return results, but they should NOT be from ignored paths
   // CodeSearchResult interface uses filePath, not relativePath
-  const allResults = await indexer.searchCode(ignoreTestDir, "export const", { limit: 10 });
+  const allResults = await searchCode(explore, ignoreTestDir, "export const", { limit: 10 });
 
   // Helper to check if any result is from ignored path
   const hasIgnoredPath = (results, pattern) => results.some((r) => r.filePath && r.filePath.includes(pattern));
@@ -53,6 +50,6 @@ export async function testIgnorePatterns(qdrant, embeddings) {
   assert(!allResults.some((r) => r.filePath?.endsWith(".spec.ts")), "*.spec.ts content not indexed");
 
   // But main app should be searchable
-  const appResults = await indexer.searchCode(ignoreTestDir, "APP main");
+  const appResults = await searchCode(explore, ignoreTestDir, "APP main");
   assert(appResults.length > 0, `Main app indexed and searchable: ${appResults.length}`);
 }

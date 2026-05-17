@@ -586,9 +586,6 @@ export function extractBodyChunks(
 export const rubyBodyChunkingHook: ChunkingHook = {
   name: "rubyBodyChunking",
   process(ctx) {
-    // Skip if another hook (e.g., rspec-scope-chunker) already produced body chunks
-    if (ctx.bodyChunks.length > 0) return;
-
     ctx.bodyChunks = extractBodyChunks(ctx.containerNode, ctx.validChildren, ctx.code, ctx.excludedRows, ctx.config);
   },
 };

@@ -5,9 +5,8 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { CodeIndexer } from "../../../build/code/indexer.js";
 import { getIndexerConfig, TEST_DIR } from "../config.mjs";
-import { assert, createTestFile, resources, section } from "../helpers.mjs";
+import { assert, createTestFacades, createTestFile, resources, searchCode, section } from "../helpers.mjs";
 
 export async function testConcurrentSafety(qdrant, embeddings) {
   section("12. Concurrent Operations");
@@ -19,19 +18,19 @@ export async function testConcurrentSafety(qdrant, embeddings) {
     await createTestFile(concTestDir, `file${i}.ts`, `export const FILE_${i} = ${i};`);
   }
 
-  const indexer = new CodeIndexer(qdrant, embeddings, getIndexerConfig());
+  const { ingest, explore } = createTestFacades(qdrant, embeddings, { config: getIndexerConfig() });
 
   // Index first
   resources.trackIndexedPath(concTestDir);
-  await indexer.indexCodebase(concTestDir, { forceReindex: true });
+  await ingest.indexCodebase(concTestDir, { forceReindex: true });
 
   // Concurrent searches should not interfere
   const searches = await Promise.all([
-    indexer.searchCode(concTestDir, "FILE_0"),
-    indexer.searchCode(concTestDir, "FILE_1"),
-    indexer.searchCode(concTestDir, "FILE_2"),
-    indexer.searchCode(concTestDir, "FILE_3"),
-    indexer.searchCode(concTestDir, "FILE_4"),
+    searchCode(explore, concTestDir, "FILE_0"),
+    searchCode(explore, concTestDir, "FILE_1"),
+    searchCode(explore, concTestDir, "FILE_2"),
+    searchCode(explore, concTestDir, "FILE_3"),
+    searchCode(explore, concTestDir, "FILE_4"),
   ]);
 
   assert(
@@ -41,9 +40,9 @@ export async function testConcurrentSafety(qdrant, embeddings) {
 
   // Concurrent status checks
   const statuses = await Promise.all([
-    indexer.getIndexStatus(concTestDir),
-    indexer.getIndexStatus(concTestDir),
-    indexer.getIndexStatus(concTestDir),
+    ingest.getIndexStatus(concTestDir),
+    ingest.getIndexStatus(concTestDir),
+    ingest.getIndexStatus(concTestDir),
   ]);
 
   assert(

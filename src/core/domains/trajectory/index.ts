@@ -12,3 +12,4 @@ export {
   GitNotAvailableError,
   StaticParseFailedError,
 } from "./errors.js";
+export type { TrajectoryErrorCode } from "./errors.js";
