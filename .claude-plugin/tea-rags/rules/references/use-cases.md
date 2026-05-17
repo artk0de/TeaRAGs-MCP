@@ -102,11 +102,32 @@ time-based filters (`modifiedAfter`/`Before`, `minAgeDays`/`maxAgeDays`) live in
 SCOPE (language, time window, author, testFile, taskId, `minCommitCount`,
 doc/code split, etc.).
 
+## Tests as context
+
+DSL test chunking emits two chunk types: `chunkType: "test"` (leaf-scope
+`it`/`test` scenarios with inherited `beforeEach`/`beforeAll` baked into
+content) and `chunkType: "test_setup"` (fixture / setup chunks). Use these
+filters for chunk-level granularity instead of the file-level `testFile: "only"`
+when DSL test chunks are indexed.
+
+| Task                                              | Tool + filter                                                                    | Skill / recipe                                         |
+| ------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| What tests describe this scenario / changed file? | `semantic_search` + `chunkType: "test"`                                          | `tea-rags:tests-as-context` / `tests-at-risk`          |
+| Tests as executable spec for onboarding           | `semantic_search` + `chunkType: "test"` + behavior query                         | direct call, no recipe                                 |
+| When was the test for X first added?              | `semantic_search` + `chunkType: "test"` + sort `git.chunk.ageDays` ascending     | `tea-rags:tests-as-context` / `regression-archaeology` |
+| Find a proven fixture for this setup intent       | `semantic_search` + `chunkType: "test_setup"` + `rerank: "proven"`               | `tea-rags:tests-as-context` / `fixture-lookup`         |
+| Flaky / unstable test sources                     | `semantic_search` + `chunkType: "test"` or `"test_setup"` + `rerank: "hotspots"` | `tea-rags:tests-as-context` / `test-flakiness`         |
+| Living spec / scenario TOC for a module           | `find_symbol(relativePath:)` + raw filter `chunkType: "test"`                    | `tea-rags:tests-as-context` / `spec-extraction`        |
+| Find the test for a specific symbol               | `find_symbol(symbol:)` + filter `chunkType: "test"`                              | direct call, no recipe                                 |
+
+Preflight: DSL test chunks are absent if no `git.chunk.*` signal in the prime
+digest shows a `test:` threshold row. In that case fall back to file-level
+`testFile: "only"` with explicit "DSL test chunks unavailable" note. Currently
+only TypeScript has a DSL test chunker — Ruby / Python / Go / others get
+file-level granularity only.
+
 ## External tools (complement tea-rags)
 
 - **Call-sites, imports, exact patterns** → ripgrep MCP (not tea-rags)
 - **File structure (methods, classes)** → tree-sitter
 - **Read specific lines** → Read with offset + limit (not whole file)
-- **Spec/test file content** → tea-rags with pathPattern targeting test dirs. If
-  index returns 0 chunks (specs excluded via `.contextignore`), fall back to
-  ripgrep MCP.

@@ -81,6 +81,26 @@ and survives directory restructures.
 | `minCommitCount` | number                                 | drop one-off scripts                    |
 | `taskId`         | string (e.g. `"RAGS-142"`)             | code linked to a ticket via git.taskIds |
 
+## Test filter levels (file vs chunk granularity)
+
+Two test-related filters address different granularity. They compose freely.
+
+| Need                                                     | Filter combo                             |
+| -------------------------------------------------------- | ---------------------------------------- |
+| Any chunk from test files (helpers, imports, DSL chunks) | `testFile: "only"`                       |
+| Only leaf-scope DSL test scenarios                       | `chunkType: "test"`                      |
+| Only DSL fixture / setup chunks                          | `chunkType: "test_setup"`                |
+| Strict DSL leaves in test files only (defense-in-depth)  | `testFile: "only"` + `chunkType: "test"` |
+| Production code, not tests                               | `testFile: "exclude"`                    |
+
+**`chunkType: "test"` and `chunkType: "test_setup"` require DSL test chunking.**
+Currently only TypeScript has a DSL test chunker (`test-scope-chunker.ts`). For
+Ruby / Python / Go / others, file-level `testFile: "only"` is the only option.
+Detect availability via the prime digest: DSL chunks are absent if no
+`git.chunk.*` signal shows a `test:` threshold row. For recipes that depend on
+DSL chunks, see `tea-rags:tests-as-context` (Step 0 preflight handles this
+automatically).
+
 ## Filter Level: file vs chunk
 
 - **`level: "chunk"`** (default) — filters against `git.chunk.*` fields.
