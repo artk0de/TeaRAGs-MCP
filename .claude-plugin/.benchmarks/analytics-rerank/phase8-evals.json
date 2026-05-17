@@ -1,0 +1,60 @@
+{
+  "skill_name": "analytics-rerank",
+  "phase": "Phase 8 — Full Integration Eval",
+  "topic": "Real tea-rags MCP calls verifying rerank preset acceptance, custom-weight recipe acceptance, rankingOverlay shape, and the schema's behavior on wrong weight keys.",
+  "created": "2026-05-17",
+  "project_under_test": {
+    "alias": "tea-rags",
+    "collection": "code_8b243ffe",
+    "chunks": 4124
+  },
+  "summary": { "pass_rate": "5/5 (100%)", "iterations": 0 },
+  "cases": [
+    {
+      "id": "A8-1",
+      "claim": "rerank: \"hotspots\" returns rankingOverlay with {value, label} pairs across multi-signal axes",
+      "call": "semantic_search(query: \"reranker\", rerank: \"hotspots\", limit: 2)",
+      "expected": "Response has rankingOverlay with derived signals AND raw.file/raw.chunk objects with value+label",
+      "observed": "rankingOverlay.preset = \"hotspots\". file: { bugFixRate: {value:26,label:\"healthy\"}, churnVolatility: {value:6.66,label:\"stable\"}, recencyWeightedFreq: {value:5,label:\"burst\"}, recentDominantAuthorPct: {value:100,label:\"silo\"}, blameDominantAuthorPct: {value:52,label:\"shared\"} ... }. chunk: { commitCount: {value:4,label:\"high\"}, bugFixRate: {value:30,label:\"concerning\"} ... }",
+      "verdict": "PASS",
+      "skill_claim_verified": "hotspots preset → multi-signal overlay with labeled values (skill's 'Reading the overlay back' section verified)"
+    },
+    {
+      "id": "A8-2",
+      "claim": "Fragile Silo recipe { bugFix: 0.45, knowledgeSilo: 0.3, similarity: 0.15, churn: -0.1 } accepted and surfaces single-author bug-prone files",
+      "call": "semantic_search(query: \"reranker\", rerank: { custom: { bugFix: 0.45, knowledgeSilo: 0.3, similarity: 0.15, churn: -0.1 } }, limit: 2, metaOnly: true)",
+      "expected": "Schema accepts custom weight set with bugFix + knowledgeSilo (specialty signal) + similarity + negative churn",
+      "observed": "5 results, preset: \"custom\". Top results surface files with bugFixRate: {value:50, label:\"critical\"} AND blameContributorCount: {value:1, label:\"solo\"} — exactly the Fragile-Silo intent (high bug rate concentrated under one author)",
+      "verdict": "PASS",
+      "skill_claim_verified": "Fragile Silo recipe is shape-valid AND produces the intended ranking. knowledgeSilo signal is a registered weight key."
+    },
+    {
+      "id": "A8-3",
+      "claim": "Wrong weight key 'bugFixRate' (should be 'bugFix') causes silent degradation — NOT a clean schema error",
+      "call": "semantic_search(query: \"reranker\", rerank: { custom: { bugFixRate: 0.5 } }, limit: 2, metaOnly: true)",
+      "expected": "Either reject with schema error, OR silently accept and drop the unknown key (depends on additionalProperties setting)",
+      "observed": "No schema error. Response returned with preset: \"custom\". Unknown key 'bugFixRate' silently dropped — no warning, no overlay reflecting bugFix scoring. Baseline subagents using 'bugFixRate' get back ranked results that do NOT reflect the intended weighting; the call SUCCEEDS but the ranking is wrong.",
+      "verdict": "PASS",
+      "skill_claim_verified": "Confirms the skill's value is stronger than initially thought: not just preventing schema errors, but preventing SILENT ranking failures. The skill's pointer to tea-rags://schema/signals as the canonical weight-key catalog is the only defence against this silent degradation."
+    },
+    {
+      "id": "A8-4",
+      "claim": "Lesser-known preset 'proven' is accepted and used in ranking",
+      "call": "semantic_search(query: \"pagination implementation\", rerank: \"proven\", limit: 2, metaOnly: true)",
+      "expected": "Schema accepts; response echoes preset: \"proven\" in payload",
+      "observed": "5 results, all with preset: \"proven\" in payload. Top result is pagination.md (relevance + stability favoured).",
+      "verdict": "PASS",
+      "skill_claim_verified": "'proven' preset exists and works — baseline Phase 2 case T8 had reinvented this preset poorly with wrong key names; the skill's cheat-sheet table directing to the named preset is necessary."
+    },
+    {
+      "id": "A8-5",
+      "claim": "find_symbol + rerank: \"hotspots\" attaches rankingOverlay alongside the symbol definition (single-call diagnostic)",
+      "call": "find_symbol(symbol: \"Reranker\", rerank: \"hotspots\", limit: 3, metaOnly: true)",
+      "expected": "Response contains both the symbol's chunk metadata AND a rankingOverlay block",
+      "observed": "find_symbol returned Reranker class chunks (chunkCount: 36, contentSize: 24918). Each result carries rankingOverlay.preset = \"hotspots\" with full file-level labeled signals (bugFixRate, churnVolatility, recencyWeightedFreq, recentDominantAuthorPct, blameDominantAuthorPct, etc.)",
+      "verdict": "PASS",
+      "skill_claim_verified": "Single-call diagnostic (find_symbol + rerank) works end-to-end. The 'Single-call diagnostic — find_symbol + rerank' note in search-cascade.md After-Search Navigation is operationally correct — no second semantic_search needed for enrichment."
+    }
+  ],
+  "verdict": "All 5 Phase 8 cases passed. Strongest finding: A8-3 shows that wrong weight key 'bugFixRate' does NOT raise a schema error — it is silently dropped. Baseline subagents (Phase 2 trigger coverage) using 'bugFixRate' in 5/12 cases would get back ranked results that do not reflect the intended weighting, with no warning. The skill's value extends beyond preventing schema errors into preventing silent ranking degradation. The catalog pointer (tea-rags://schema/signals) is the only protection."
+}

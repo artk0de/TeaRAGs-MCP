@@ -6,6 +6,7 @@ export {
   PipelineNotStartedError,
   IngestInvariantError,
 } from "./errors.js";
+export type { IngestErrorCode } from "./errors.js";
 export { IndexPipeline } from "./operations/indexing.js";
 export { ReindexPipeline } from "./operations/reindexing.js";
 export { computeCollectionStats } from "./collection-stats.js";

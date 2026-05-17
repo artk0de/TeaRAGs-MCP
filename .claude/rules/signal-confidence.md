@@ -95,8 +95,11 @@ the signal's own `labels` keys imply. Example:
 ### Lazy recompute (operative — at rerank time)
 
 **Status:** Live. `StatsRecomputeService`
-(`src/core/domains/explore/stats-recompute.ts`) runs at **rerank time**, not at
-stats-load. `Reranker.rerank()` is async; its pre-pass calls
+(`src/core/domains/ingest/stats-recompute.ts`) runs at **rerank time**, not at
+stats-load. The service lives in `ingest/` because it does ingest work (scroll →
+compute percentiles → write to stats cache); it is consumed by `Reranker` via DI
+(`setRecomputeService`) from the `explore/` domain. `Reranker.rerank()` is
+async; its pre-pass calls
 `recomputeService.ensureCoverage(collection, stats, payloadSignals, payloadFieldKeys)`
 _before_ scoring. Only the specific `(supportKey, percentile)` references
 missing from in-memory stats trigger work; everything else is a Map-lookup

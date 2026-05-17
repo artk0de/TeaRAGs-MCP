@@ -94,7 +94,13 @@ export const DeleteDocumentsSchema = {
 // ---------------------------------------------------------------------------
 
 export const IndexCodebaseSchema = {
-  path: z.string().describe("Absolute or relative path to codebase root directory"),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Absolute or relative path to codebase root directory. " +
+        "Prefer 'project' for re-indexing an already-registered alias; provide 'path' for first-time index.",
+    ),
   project: projectField(),
   forceReindex: coerceBoolean().optional().describe("Force full re-index even if already indexed (default: false)"),
   extensions: z.array(z.string()).optional().describe("Custom file extensions to index (e.g., ['.proto', '.graphql'])"),
@@ -319,8 +325,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
   const HybridSearchSchema = vectorSearchSchema(semanticSearchRerankSchema);
 
   const SearchCodeSchema = {
-    path: z.string().describe("Path to codebase (must be indexed first)"),
-    project: projectField(),
+    ...collectionPathFields(),
     query: z.string().describe("Natural language search query (e.g., 'authentication logic')"),
     limit: coerceNumber().optional().describe("Maximum number of results (default: 10, max: 100)"),
     pathPattern: z

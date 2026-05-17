@@ -90,7 +90,9 @@ export interface RankChunksRequest extends CollectionRef, TypedFilterParams {
 }
 
 export interface ExploreCodeRequest extends TypedFilterParams {
-  path: string;
+  collection?: string;
+  project?: string;
+  path?: string;
   query: string;
   limit?: number;
   offset?: number;

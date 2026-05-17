@@ -16,7 +16,7 @@ import type {
   PayloadSignalDescriptor,
   SignalStats,
 } from "../../../../src/core/contracts/types/trajectory.js";
-import { StatsRecomputeService } from "../../../../src/core/domains/explore/stats-recompute.js";
+import { StatsRecomputeService } from "../../../../src/core/domains/ingest/stats-recompute.js";
 
 function makeStats(perSignalEntries: [string, SignalStats][]): CollectionSignalStats {
   return {

@@ -10,7 +10,9 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { ProgressCallback } from "../../../types.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 import { isDebug } from "../pipeline/infra/runtime.js";
+import { BatchDeleteExecutor } from "./batch-delete-executor.js";
 import { createDeletionOutcome, type DeletionOutcome } from "./deletion-outcome.js";
+import { DeletionRetryHelper } from "./deletion-retry-helper.js";
 
 export interface DeletionConfig {
   batchSize: number;
@@ -91,25 +93,24 @@ export async function performDeletion(
       console.error(`[Reindex] FALLBACK L2: deletePointsByPaths also failed:`, fallbackErrorMsg);
       console.error(`[Reindex] FALLBACK L2: Starting INDIVIDUAL deletions for ${filesToDelete.length} paths (SLOW!)`);
 
-      let deleted = 0;
-      let failed = 0;
       const individualStart = Date.now();
-
-      for (const relativePath of filesToDelete) {
+      const executor = new BatchDeleteExecutor(qdrant, collectionName);
+      const retryHelper = new DeletionRetryHelper({ maxRetries: 1, backoffMs: 0 });
+      const l2Outcome = await retryHelper.execute(filesToDelete, async (paths) => {
         try {
-          const filter = {
-            must: [{ key: "relativePath", match: { value: relativePath } }],
-          };
-          await qdrant.deletePointsByFilter(collectionName, filter);
-          deleted++;
+          await executor.deleteBatch(paths);
         } catch (innerError) {
-          outcome.markFailed(relativePath);
-          failed++;
           if (isDebug()) {
-            console.error(`[Reindex] FALLBACK L2: Failed to delete ${relativePath}:`, innerError);
+            console.error(`[Reindex] FALLBACK L2: Failed to delete ${paths[0]}:`, innerError);
           }
+          throw innerError;
         }
+      });
+      for (const failedPath of l2Outcome.failed) {
+        outcome.markFailed(failedPath);
       }
+      const deleted = l2Outcome.succeeded.size;
+      const failed = l2Outcome.failed.size;
 
       pipelineLog.step({ component: "Reindex" }, "FALLBACK_L2_COMPLETE", {
         deleted,
