@@ -32,9 +32,8 @@ tea-rags skills.
    libraries, or package managers in output. Generic phrasing only: "run the
    tests for these files", "the project's standard test command", "execute the
    affected scenarios".
-3. **Single-shot** — each recipe is one `semantic_search` (or one `find_symbol`
-   for spec-extraction). No retry loops, no expansion. Caller composes recipes
-   if it needs multiple.
+3. **Single-shot** — each recipe is one `semantic_search` call. No retry loops,
+   no expansion. Caller composes recipes if it needs multiple.
 4. **Filter is `chunkType`, not `testFile`** — `chunkType: "test"` and
    `chunkType: "test_setup"` are chunk-level DSL filters. `testFile: "only"` is
    a file-level fallback used only when DSL chunks are absent.
@@ -262,21 +261,29 @@ and getting rewritten".
 
 **Caller inputs:**
 
-- `modulePath`: relative path to the module being documented (file or directory)
+- `modulePath`: relative path or pathPattern of the test file / dir being
+  documented (e.g. `tests/core/domains/explore/reranker.test.ts` or
+  `tests/core/domains/explore/**`)
+- `intent` (optional): high-level theme to bias the query toward; omit for
+  full-module enumeration
 
 **Call:**
 
 ```
-mcp__tea-rags__find_symbol:
-  project:      <alias>
-  relativePath: <modulePath>
-  filter:       { must: [{ key: "chunkType", match: { value: "test" } }] }
-  metaOnly:     true
-  limit:        50
+mcp__tea-rags__semantic_search:
+  project:     <alias>
+  query:       <intent if provided, else generic theme like "scenarios">
+  pathPattern: <modulePath>
+  chunkType:   "test"
+  limit:       50
+  metaOnly:    true
 ```
 
-Uses `find_symbol(relativePath:)` to enumerate chunks of the module's test
-surface; raw filter narrows to DSL leaf chunks only.
+Why `semantic_search` not `find_symbol`: `find_symbol(relativePath:)` returns a
+file-level outline and does NOT accept a `filter` parameter, so it can't narrow
+to `chunkType: "test"` from inside the tool. The `pathPattern` + `chunkType`
+combo on `semantic_search` enumerates DSL leaf scenarios of the test surface
+directly, with full describe-it path in `parentSymbolId` / `symbolId`.
 
 **Output:** scenario TOC, grouped by `parentSymbolId` (describe block):
 

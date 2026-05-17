@@ -13,13 +13,13 @@ New agentic-only skill (`user-invocable: false`) that turns DSL test chunks
 refactor / TDD enrichment. Five recipes, all single-shot, all runner-agnostic in
 output.
 
-| Recipe                   | Callers                                                                       | Filter shape                                        |
-| ------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------- |
-| `tests-at-risk`          | requesting-code-review, verification-before-completion, receiving-code-review | `chunkType: "test"` + `must_not relativePath`       |
-| `fixture-lookup`         | test-driven-development (Step 2a)                                             | `chunkType: "test_setup"` + `rerank: "proven"`      |
-| `regression-archaeology` | direct caller, `use-cases.md`                                                 | `chunkType: "test"` + heavy age weight              |
-| `test-flakiness`         | direct caller, `use-cases.md`                                                 | `chunkType: "test"` or `"test_setup"` + `hotspots`  |
-| `spec-extraction`        | direct caller, `use-cases.md`                                                 | `find_symbol(relativePath:)` + raw chunkType filter |
+| Recipe                   | Callers                                                                       | Filter shape                                                      |
+| ------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `tests-at-risk`          | requesting-code-review, verification-before-completion, receiving-code-review | `chunkType: "test"` + `must_not relativePath`                     |
+| `fixture-lookup`         | test-driven-development (Step 2a)                                             | `chunkType: "test_setup"` + `rerank: "proven"`                    |
+| `regression-archaeology` | direct caller, `use-cases.md`                                                 | `chunkType: "test"` + heavy age weight                            |
+| `test-flakiness`         | direct caller, `use-cases.md`                                                 | `chunkType: "test"` or `"test_setup"` + `hotspots`                |
+| `spec-extraction`        | direct caller, `use-cases.md`                                                 | `semantic_search` + `pathPattern: <module>` + `chunkType: "test"` |
 
 ## Phase status
 
@@ -80,6 +80,42 @@ docs/superpowers/specs/2026-05-17-tests-as-context-design.md                    
 .claude-plugin/.benchmarks/tests-as-context/evals.json                          (NEW — 12 eval cases)
 .claude-plugin/.benchmarks/tests-as-context/benchmark.md                        (this file)
 ```
+
+## Integration test results (2026-05-17)
+
+Live execution of all 5 recipes against the `tea-rags` self-index — no subagent
+simulation, real `mcp__tea-rags__semantic_search` / `mcp__tea-rags__find_symbol`
+calls.
+
+| Recipe                   | Status  | Findings                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests-at-risk`          | ✅ PASS | `must_not relativePath` filter excludes self correctly; rerank custom returns 5 relevant test chunks (`QdrantManager.describe "ensurePayloadIndex"`, etc.) with describe-it paths in `parentSymbolId`                                                                                                                                                                  |
+| `fixture-lookup`         | ✅ PASS | `chunkType: "test_setup"` + `rerank: "proven"` surfaces battle-tested setup chunks (low bugFixRate 13-17%, age 41-64d). `level: "file"` returned because proven preset has `signalLevel: "file"` — expected.                                                                                                                                                           |
+| `regression-archaeology` | ✅ PASS | `chunkType: "test"` + custom rerank with negative recency (or `age: 0.8`) surfaces oldest matching test chunks (ageDays 41-57). Score range -0.10 to 0.03 reflects intentional age-over-similarity weighting.                                                                                                                                                          |
+| `test-flakiness`         | ✅ PASS | `chunkType: "test"` + `rerank: "hotspots"` returns chunks from `client.test.ts` with high file churn (24 commits, `relativeChurn: 2.52 "high"`, chunk `bugFixRate: 30% "concerning"`). Correctly identifies test code in high-churn zones.                                                                                                                             |
+| `spec-extraction`        | ⚠ FIXED | Initial design used `find_symbol(relativePath:)` + raw filter — but `find_symbol` does NOT support `filter` parameter; returned file-level summary only. Re-tested via `semantic_search` with `pathPattern: <module>` + `chunkType: "test"` → returned 10 leaf scope chunks forming clean scenario TOC. **SKILL.md updated** to use `semantic_search` for this recipe. |
+
+### Filter / typed-sugar verification
+
+- `chunkType: "test"` works as **typed sugar parameter** on `semantic_search` —
+  no need for raw `filter: { must: [{ key: ... }] }` block. Recipe call shapes
+  simplified accordingly.
+- `chunkType: "test_setup"` same.
+- `filter: { must_not: [{ key: "relativePath", match: { any: [...] }}] }` raw
+  filter accepted alongside typed sugar (used in `tests-at-risk`).
+  Single-element array works (F1 fix verified).
+
+### Cross-language guard verification
+
+Test data returned `imports: ["vitest"]` as **index metadata**, but the recipe
+never echoes this in its formatted output. The consumer wrapper formats from
+`relativePath` + `parentSymbolId` only — no runner names leak. Cross-language
+safety contract holds end-to-end.
+
+### Patch applied
+
+- tea-rags 0.23.0 → 0.23.1 (text-only fix in `tests-as-context/SKILL.md`
+  spec-extraction recipe call shape).
 
 ## Next eval session — what to run
 
