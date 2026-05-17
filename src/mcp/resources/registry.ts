@@ -14,16 +14,35 @@ export function buildOverview(): string {
 
 ## Available Resources
 - tea-rags://schema/presets — rerank presets reference
-- tea-rags://schema/signals — custom weight signals reference
+- tea-rags://schema/signals — custom weight signals reference (the canonical
+  catalog of weight keys — read BEFORE building a custom rerank)
 - tea-rags://schema/filters — Qdrant filter syntax and examples
 
 ## Tools Quick Reference
 - search_code — quick semantic lookup, human-readable output
 - semantic_search — analytical, structured JSON, full metadata
 - hybrid_search — semantic + BM25, best for symbol name + context
-- rank_chunks — rank by signals without query
-- find_similar — find code similar to examples
-- find_symbol — symbol definition by name OR file outline/doc TOC by relativePath (no embedding)
+- rank_chunks — batch analytics by signals (metaOnly default true; offline scoring, not online search)
+- find_similar — find code similar to examples; negative-only inputs + strategy="best_score" → anti-pattern detection
+- find_symbol — symbol definition by name OR file outline/doc TOC by relativePath (no embedding);
+  pass a rerank preset for a single-call diagnostic (definition + rankingOverlay)
+
+## Observability hooks
+- get_index_status returns an \`infraHealth\` block: qdrant url/status/optimizer,
+  embedding url/reachable, per-trajectory enrichment health. First debug-point
+  when search fails or returns unexpected results.
+- Every search response can include \`driftWarning\` when the live schema added
+  payload fields that the current index has not been reindexed for. Surface it
+  to the user; do NOT auto-trigger force_reindex.
+- Every reranked result carries \`rankingOverlay.derived\` + \`rankingOverlay.raw.{file,chunk}\`
+  that explains the score (normalized derived signals + raw values with labels).
+  Read tea-rags://schema/signal-labels for the label resolution algorithm.
+
+## Project calibration
+get_index_metrics returns per-language × per-scope (source/test) percentile
+labelMaps for every signal. Use \`signals[lang][key][scope].labelMap\` to pick
+thresholds for filters like minCommitCount / minAgeDays — what counts as "high"
+or "legacy" varies by codebase.
 
 ## Guides
 - tea-rags://schema/search-guide — search tool routing, use cases, examples
@@ -111,11 +130,43 @@ parameter examples for each tool.
 - Doc TOC → relativePath="docs/api.md" (heading TOC with doc:<hash> references)
 - From search result → find_symbol(symbol: parentSymbolId) for class or doc parent
 
-## rank_chunks Examples
+## rank_chunks Examples (batch analytics, not online search)
+
+rank_chunks scrolls and ranks ALL chunks by the chosen rerank — metaOnly is
+true by default. Use it for offline scoring across a domain, NOT for
+query-driven search.
 
 - Decomposition candidates → rerank="refactoring"
 - Hotspot detection → rerank="hotspots"
 - Ownership reports → rerank="ownership", metaOnly=true
+- Domain scoping → pair any of the above with pathPattern="**/payments/**"
+
+## find_similar Examples
+
+- Find similar to a snippet → positiveCode="<paste>"
+- Find similar to previous results → positiveIds=[<chunk ids>]
+- Anti-pattern detection → negativeCode="<the anti-pattern>", strategy="best_score"
+  (no positives — returns code maximally UNLIKE the negative; outlier / novelty
+  / refactor-candidate detection)
+
+## Pagination
+
+Every search tool accepts offset for cursor-style pagination. When a result
+page is exhausted but you need more, retry with offset=N instead of inflating
+limit. Don't paginate past the point where results stop matching the intent —
+reformulate the query instead.
+
+## Single-call diagnostic recipes
+
+- Class with risk overlay →
+  find_symbol(symbol: "PaymentService", rerank: "hotspots")
+  Returns merged outline + bodies PLUS rankingOverlay with churn/ownership/bugFixRate.
+- Method with risk overlay →
+  find_symbol(symbol: "PaymentService#charge", rerank: "hotspots")
+- File-scoped outline → find_symbol(relativePath: "src/payments/service.ts")
+- Doc-TOC mode → find_symbol(relativePath: "docs/api.md") returns heading
+  list with doc:<hash> ids; second find_symbol(symbol: "doc:<hash>") returns
+  that section. Works on any markdown corpus, not just code.
 `;
 }
 

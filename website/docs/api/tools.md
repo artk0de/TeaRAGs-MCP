@@ -156,7 +156,7 @@ Reorder search results based on git metadata signals.
 | Preset      | Use Case                            | Signals                                                         |
 | ----------- | ----------------------------------- | --------------------------------------------------------------- |
 | `relevance` | Default semantic similarity         | similarity only                                                 |
-| `recent`    | Find recently modified code         | recency + similarity                                            |
+| `recent`    | Find recently modified code         | similarity + recency + burstActivity + density + churn          |
 | `stable`    | Find stable implementation examples | stability + similarity                                          |
 | `proven`    | Battle-tested low-bug code          | stability + ownership + low bugFix + similarity                 |
 
@@ -173,7 +173,10 @@ Reorder search results based on git metadata signals.
 | `onboarding`    | Entry points for new devs       | documentation + stability                                              |
 | `securityAudit` | Old code in critical paths      | age + pathRisk + bugFix + ownership + volatility                       |
 | `ownership`     | Knowledge transfer / silos (live-line, blame-based)      | ownership + knowledgeSilo (flags single-author code, sourced from `git.file.blame*`)                   |
-| `recentActivityConcentration` | Recent committer concentration (commit-window) | recentActivityConcentration (sourced from `git.file.recent*` — who's been actively committing)         |
+
+`recentActivityConcentration` is a **weight key**, not a preset — use it via
+custom weights (see Available weight keys below) when you want to surface
+recent committer concentration rather than live-line authority.
 
 **Documentation / structural** (automatic or explicit):
 
@@ -195,10 +198,17 @@ formulas: **[Rerank Presets](/usage/advanced/rerank-presets)**.
 ```
 
 Available weight keys: `similarity`, `recency`, `stability`, `churn`, `age`,
-`ownership`, `recentActivityConcentration`, `chunkSize`, `documentation`,
-`imports`, `bugFix`, `volatility`, `density`, `chunkChurn`,
-`relativeChurnNorm`, `burstActivity`, `pathRisk`, `knowledgeSilo`,
-`chunkRelativeChurn`
+`ownership`, `recentActivityConcentration`, `chunkSize`, `chunkDensity`,
+`documentation`, `headingRelevance`, `imports`, `bugFix`, `volatility`,
+`density`, `chunkChurn`, `relativeChurnNorm`, `burstActivity`, `pathRisk`,
+`knowledgeSilo`, `chunkRelativeChurn`, `blockPenalty`
+
+:::note Live catalog
+This list is hand-maintained and may drift from the live registry. For the
+canonical, build-current weight-key catalog (with descriptions), read the
+`tea-rags://schema/signals` MCP resource — it is generated from the running
+server's signal registry.
+:::
 
 :::note Two ownership weight keys
 `ownership` and `knowledgeSilo` derive from the **live-line** family
