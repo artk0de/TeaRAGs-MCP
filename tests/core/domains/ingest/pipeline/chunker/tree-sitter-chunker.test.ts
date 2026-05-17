@@ -175,6 +175,38 @@ export type EnrichmentStatusValue = "pending" | "in_progress" | "completed" | "p
         expect(chunk.endLine).toBeGreaterThan(chunk.startLine);
       }
     });
+
+    it("should emit chunkType='test' for describe blocks in TS test files (hook-chain claim invariant)", async () => {
+      // End-to-end coverage of the hook-chain claim invariant
+      // (.claude/rules/chunker-hooks.md): once test-scope-chunker populates
+      // ctx.bodyChunks for a describe(...) container, the orchestrator must
+      // stop the chain so typescriptBodyChunkingHook can't overwrite it.
+      // Regression for the bug where chunks shipped with chunkType='block'
+      // because the generic body chunker reassigned ctx.bodyChunks.
+      const code = `import { describe, expect, it } from "vitest";
+
+describe("findClassBody", () => {
+  it("returns the class_body node from a class declaration", () => {
+    const decl = parse("class Foo { x: number; }");
+    expect(decl).toBeDefined();
+    expect(decl.type).toBe("class_declaration");
+  });
+
+  it("returns null when container has no class_body child", () => {
+    const decl = parse("interface Bar { x: number; }");
+    expect(decl.type).toBe("interface_declaration");
+  });
+});
+`;
+      const chunks = await chunker.chunk(
+        code,
+        "tests/core/domains/ingest/pipeline/chunker/hooks/typescript/utils.test.ts",
+        "typescript",
+      );
+      const testChunks = chunks.filter((c) => c.metadata.chunkType === "test");
+      expect(testChunks.length).toBeGreaterThan(0);
+      expect(testChunks[0].metadata.symbolId).toContain("findClassBody");
+    });
   });
 
   describe("chunk - Python", () => {

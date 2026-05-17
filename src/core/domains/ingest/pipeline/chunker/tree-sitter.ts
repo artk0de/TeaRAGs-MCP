@@ -247,6 +247,9 @@ export class TreeSitterChunker implements CodeChunker {
     if (validChildren.length > 0) {
       const ctx = createHookContext(node, validChildren, code, { maxChunkSize: this.config.maxChunkSize }, filePath);
       for (const hook of langConfig.hooks ?? []) {
+        // Hook chain stops as soon as a writer claims this container by
+        // populating ctx.bodyChunks. See .claude/rules/chunker-hooks.md.
+        if (ctx.bodyChunks.length > 0) break;
         hook.process(ctx);
       }
 
@@ -651,6 +654,7 @@ export class TreeSitterChunker implements CodeChunker {
           filePath,
         );
         for (const hook of langConfig.hooks ?? []) {
+          if (childCtx.bodyChunks.length > 0) break;
           hook.process(childCtx);
         }
 

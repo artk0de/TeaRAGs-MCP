@@ -90,6 +90,40 @@ describe("FileScanner", () => {
       expect(files.some((f) => f.endsWith("app.ts"))).toBe(true);
       expect(files.some((f) => f.endsWith("keys.secret.ts"))).toBe(false);
     });
+
+    it("should drop stale patterns when .contextignore.local is removed between reloads", async () => {
+      // Regression: long-running indexers (MCP server) reuse the same
+      // FileScanner instance. loadIgnorePatterns must produce a fresh
+      // ignore matcher each call — otherwise removing .contextignore.local
+      // leaves its stale patterns active, so newly-unignored files stay
+      // hidden from subsequent scans.
+      const { rmSync } = await import("node:fs");
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-reload-"));
+      writeFileSync(join(tmpDir, "app.ts"), "export const app = 1;");
+      writeFileSync(join(tmpDir, "feature.ts"), "export const feature = 2;");
+      const ignorePath = join(tmpDir, ".contextignore.local");
+      writeFileSync(ignorePath, "feature.ts\n");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts"],
+        ignorePatterns: [],
+      });
+
+      // First load: feature.ts is ignored.
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const before = await localScanner.scanDirectory(tmpDir);
+      expect(before.some((f) => f.endsWith("app.ts"))).toBe(true);
+      expect(before.some((f) => f.endsWith("feature.ts"))).toBe(false);
+
+      // Remove the override and reload patterns on the SAME scanner.
+      rmSync(ignorePath);
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const after = await localScanner.scanDirectory(tmpDir);
+
+      // feature.ts must come back — its ignore pattern no longer exists.
+      expect(after.some((f) => f.endsWith("app.ts"))).toBe(true);
+      expect(after.some((f) => f.endsWith("feature.ts"))).toBe(true);
+    });
   });
 
   describe("getSupportedExtensions", () => {
