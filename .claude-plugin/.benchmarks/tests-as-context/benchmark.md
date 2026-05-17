@@ -13,13 +13,13 @@ New agentic-only skill (`user-invocable: false`) that turns DSL test chunks
 refactor / TDD enrichment. Five recipes, all single-shot, all runner-agnostic in
 output.
 
-| Recipe                   | Callers                                                                       | Filter shape                                        |
-| ------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------- |
-| `tests-at-risk`          | requesting-code-review, verification-before-completion, receiving-code-review | `chunkType: "test"` + `must_not relativePath`       |
-| `fixture-lookup`         | test-driven-development (Step 2a)                                             | `chunkType: "test_setup"` + `rerank: "proven"`      |
-| `regression-archaeology` | direct caller, `use-cases.md`                                                 | `chunkType: "test"` + heavy age weight              |
-| `test-flakiness`         | direct caller, `use-cases.md`                                                 | `chunkType: "test"` or `"test_setup"` + `hotspots`  |
-| `spec-extraction`        | direct caller, `use-cases.md`                                                 | `find_symbol(relativePath:)` + raw chunkType filter |
+| Recipe                   | Callers                                                                       | Filter shape                                                      |
+| ------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `tests-at-risk`          | requesting-code-review, verification-before-completion, receiving-code-review | `chunkType: "test"` + `must_not relativePath`                     |
+| `fixture-lookup`         | test-driven-development (Step 2a)                                             | `chunkType: "test_setup"` + `rerank: "proven"`                    |
+| `regression-archaeology` | direct caller, `use-cases.md`                                                 | `chunkType: "test"` + heavy age weight                            |
+| `test-flakiness`         | direct caller, `use-cases.md`                                                 | `chunkType: "test"` or `"test_setup"` + `hotspots`                |
+| `spec-extraction`        | direct caller, `use-cases.md`                                                 | `semantic_search` + `pathPattern: <module>` + `chunkType: "test"` |
 
 ## Phase status
 
