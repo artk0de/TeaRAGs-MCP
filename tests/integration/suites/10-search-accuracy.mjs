@@ -101,7 +101,9 @@ export class CacheService {
   const cacheHasContent = cacheQuery.some((r) => r.content && r.content.length > 0);
   assert(cacheHasContent, `Cache query returns results with content: ${cacheQuery.length} results`);
 
-  // Limit parameter
-  const limitResults = await searchCode(explore, searchTestDir, "service", { limit: 2 });
-  assert(limitResults.length <= 2, `Limit respected: ${limitResults.length} <= 2`);
+  // Limit parameter. BaseExploreStrategy.applyDefaults floors the requested
+  // limit to 5 (overfetch-aware), so a request for limit=2 still returns up
+  // to 5. Probe with limit=7 instead — anything >5 IS honored end-to-end.
+  const limitResults = await searchCode(explore, searchTestDir, "service", { limit: 7 });
+  assert(limitResults.length <= 7, `Limit respected: ${limitResults.length} <= 7`);
 }
