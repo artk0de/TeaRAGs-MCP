@@ -11,7 +11,7 @@ import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-acc
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
-import { validateSignalDependencies } from "../../domains/ingest/collection-stats.js";
+import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";

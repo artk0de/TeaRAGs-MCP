@@ -33,5 +33,5 @@ Trade-off: extra Qdrant call per cycle, acceptable given <50ms latency.
 
 ## Why no test-time enforcement
 
-This rule is process-only — automated enforcement (commitlint check) would
-catch false positives on non-deep-silo files. Reviewers verify on PR.
+This rule is process-only — automated enforcement (commitlint check) would catch
+false positives on non-deep-silo files. Reviewers verify on PR.

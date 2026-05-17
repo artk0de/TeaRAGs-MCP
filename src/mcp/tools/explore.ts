@@ -100,7 +100,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Also accepts chunk IDs from previous search results. " +
       "Supports negative examples to exclude unwanted patterns. " +
       "Anti-pattern mode: pass ONLY negativeCode / negativeIds with " +
-      "strategy=\"best_score\" to find code maximally UNLIKE the negatives — " +
+      'strategy="best_score" to find code maximally UNLIKE the negatives — ' +
       "outlier / novelty / refactor-candidate detection.\n\n" +
       "For parameter docs see tea-rags://schema/overview",
     schemaKey: "FindSimilarSchema",
@@ -120,10 +120,10 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       "Uses Qdrant text match. Partial match supported: " +
       "'Reranker' finds the class and all its methods. " +
       "symbolId convention: Class#method (instance), Class.method (static). " +
-      "Single-call diagnostic: pass a `rerank` preset (e.g. \"hotspots\") to " +
+      'Single-call diagnostic: pass a `rerank` preset (e.g. "hotspots") to ' +
       "attach a rankingOverlay with churn/ownership/bugFixRate labels alongside " +
       "the definition — no second semantic_search needed. " +
-      "Supports `level: \"file\" | \"chunk\"` like other search tools.",
+      'Supports `level: "file" | "chunk"` like other search tools.',
     schemaKey: "FindSymbolSchema",
     invoke: async (app, { rerank, ...rest }) =>
       app.findSymbol({

@@ -2,8 +2,8 @@
 
 ## Process Rules
 
-- `.claude/rules/silo-pairing.md` — process rule for commits touching
-  deep-silo files (must include `Why:` line).
+- `.claude/rules/silo-pairing.md` — process rule for commits touching deep-silo
+  files (must include `Why:` line).
 
 ## Terminology (MANDATORY)
 

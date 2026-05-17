@@ -8,7 +8,7 @@
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 
-import { ShardedSnapshotManager } from "../../../domains/ingest/sync/sharded-snapshot.js";
+import { ShardedSnapshotManager } from "../../../domains/ingest/sync/snapshot/sharded-snapshot.js";
 import type { SnapshotStore } from "../types.js";
 
 interface OldSnapshotV1 {

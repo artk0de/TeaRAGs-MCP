@@ -130,7 +130,7 @@ describe("Enrichment status detection", () => {
       buildPayload: (chunk: any, cp: string) => ({ content: chunk.content, codebasePath: cp }),
     });
     (ingest as any).indexingOps.indexing = new (
-      await import("../../../../src/core/domains/ingest/indexing.js")
+      await import("../../../../src/core/domains/ingest/operations/indexing.js")
     ).IndexPipeline(qdrant, embeddings, config, slowEnrichment, deps);
 
     await createTestFile(
@@ -185,7 +185,7 @@ describe("Enrichment status detection", () => {
     });
     (ingest as any).indexingOps.enrichment = deferredEnrichment;
     (ingest as any).indexingOps.indexing = new (
-      await import("../../../../src/core/domains/ingest/indexing.js")
+      await import("../../../../src/core/domains/ingest/operations/indexing.js")
     ).IndexPipeline(qdrant, embeddings, config, deferredEnrichment, deps);
 
     await createTestFile(codebaseDir, "test.ts", "export function compute(x: number): number {\n  return x * 2;\n}");
