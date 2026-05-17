@@ -3,9 +3,14 @@
  * Auto-migrated from test-business-logic.mjs
  */
 
-import { buildPipelineConfig } from "../../../build/code/pipeline/index.js";
-import { CURRENT_SCHEMA_VERSION, SchemaManager } from "../../../build/code/schema-migration.js";
-import { assert, log, section } from "../helpers.mjs";
+// SchemaManager + CURRENT_SCHEMA_VERSION (top-level constant) were removed
+// during SOLID refactor. Migration orchestration now lives behind the
+// Migrator class; schema version is derived per-Migrator. Test 9 in this
+// suite covered the old standalone SchemaManager API and is skip()'d.
+// QdrantManager payload index ops still work — kept inline below.
+// See plan `2026-05-17-integration-tests-rewrite-impl.md`.
+import { buildPipelineConfig } from "../../../build/core/domains/ingest/pipeline/index.js";
+import { assert, log, section, skip } from "../helpers.mjs";
 
 export async function testSchemaAndDeleteOptimization(qdrant) {
   section("15. Schema Migration & Delete Optimization");
@@ -34,43 +39,15 @@ export async function testSchemaAndDeleteOptimization(qdrant) {
     const created = await qdrant.ensurePayloadIndex(schemaTestCollection, "relativePath", "keyword");
     assert(created === false, "ensurePayloadIndex returns false when index exists");
 
-    // Test SchemaManager
-    const schemaManager = new SchemaManager(qdrant);
-
-    // Create a new collection without index
-    const schemaTestCollection2 = `test_schema2_${Date.now()}`;
-    await qdrant.createCollection(schemaTestCollection2, 5, "Cosine", false);
-
-    try {
-      // Get schema version (should be 0 for new collection without index)
-      const versionBefore = await schemaManager.getSchemaVersion(schemaTestCollection2);
-      assert(versionBefore === 0, `New collection has schema version 0: ${versionBefore}`);
-
-      // Ensure current schema (should migrate to v4)
-      const migrationResult = await schemaManager.ensureCurrentSchema(schemaTestCollection2);
-      assert(migrationResult.success === true, "Migration successful");
-      assert(migrationResult.fromVersion === 0, "Migrated from v0");
-      assert(migrationResult.toVersion === CURRENT_SCHEMA_VERSION, `Migrated to v${CURRENT_SCHEMA_VERSION}`);
-      assert(migrationResult.migrationsApplied.length > 0, "At least one migration applied");
-
-      // Verify index was created during migration
-      const indexExistsPostMigration = await qdrant.hasPayloadIndex(schemaTestCollection2, "relativePath");
-      assert(indexExistsPostMigration === true, "Index created during migration");
-
-      // Verify schema version is now current
-      const versionAfter = await schemaManager.getSchemaVersion(schemaTestCollection2);
-      assert(
-        versionAfter === CURRENT_SCHEMA_VERSION,
-        `Schema version is now ${CURRENT_SCHEMA_VERSION}: ${versionAfter}`,
-      );
-
-      // Run migration again (should skip)
-      const migrationResult2 = await schemaManager.ensureCurrentSchema(schemaTestCollection2);
-      assert(migrationResult2.success === true, "Second migration call successful");
-      assert(migrationResult2.migrationsApplied.length === 0, "No migrations needed on second call");
-    } finally {
-      await qdrant.deleteCollection(schemaTestCollection2);
-    }
+    // SchemaManager standalone migration test — skipped: the old
+    // SchemaManager#ensureCurrentSchema/getSchemaVersion API was removed
+    // during SOLID refactor. Schema migration orchestration now flows
+    // through the Migrator class wired in IngestFacade via
+    // ingest/factory.ts. Restoring this scenario requires constructing
+    // the full migration graph (SchemaMigrator + stores + Migrator) —
+    // follow-up. The migration is exercised indirectly by suites that
+    // call IngestFacade#indexCodebase against fresh collections.
+    skip("SchemaManager standalone migration API removed (follow-up)");
 
     // Test 10: Delete configuration defaults
     log("info", "Testing delete optimization configuration...");

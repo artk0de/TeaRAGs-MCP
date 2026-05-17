@@ -3,7 +3,7 @@
  * Auto-migrated from test-business-logic.mjs
  */
 
-import { createAccumulator, PointsAccumulator } from "../../../build/qdrant/accumulator.js";
+import { createAccumulator, PointsAccumulator } from "../../../build/core/adapters/qdrant/accumulator.js";
 import { assert, log, randomUUID, section, sleep } from "../helpers.mjs";
 
 export async function testPointsAccumulator(qdrant) {

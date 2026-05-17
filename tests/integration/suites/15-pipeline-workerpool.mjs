@@ -3,7 +3,12 @@
  * Auto-migrated from test-business-logic.mjs
  */
 
-import { BatchAccumulator, ChunkPipeline, PipelineManager, WorkerPool } from "../../../build/code/pipeline/index.js";
+import {
+  BatchAccumulator,
+  ChunkPipeline,
+  PipelineManager,
+  WorkerPool,
+} from "../../../build/core/domains/ingest/pipeline/index.js";
 import { assert, log, section } from "../helpers.mjs";
 
 export async function testPipelineWorkerpool(_qdrant) {
