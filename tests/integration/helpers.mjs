@@ -323,6 +323,34 @@ export function createTestFacades(qdrant, embeddings, overrides = {}) {
 }
 
 /**
+ * Pre-SOLID-compatible searchCode shim.
+ *
+ * Old CodeIndexer.searchCode(path, query, opts?) returned a flat array of
+ * { content, filePath, score, ... }. New ExploreFacade.searchCode takes an
+ * ExploreCodeRequest object and returns { results: SearchResult[], ... }
+ * where content / relativePath live inside SearchResult.payload.
+ *
+ * This shim adapts new to old so suites keep their original assertions
+ * (`r.content`, `r.filePath`, `r.score`) without rewriting every callsite.
+ * It also restores `r.relativePath` and the rest of payload by spread.
+ *
+ * @param explore   ExploreFacade instance
+ * @param path      Codebase path
+ * @param query     Search query
+ * @param opts      Optional ExploreCodeRequest extras (limit, rerank, pathPattern, ...)
+ */
+export async function searchCode(explore, path, query, opts = {}) {
+  const response = await explore.searchCode({ path, query, ...opts });
+  return response.results.map((r) => ({
+    id: r.id,
+    score: r.score,
+    content: r.payload?.content,
+    filePath: r.payload?.relativePath,
+    ...r.payload,
+  }));
+}
+
+/**
  * Print test summary with total duration
  */
 export function printSummary() {
