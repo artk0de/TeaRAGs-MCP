@@ -52,9 +52,13 @@ export async function testSchemaAndDeleteOptimization(qdrant) {
     // Test 10: Delete configuration defaults
     log("info", "Testing delete optimization configuration...");
 
-    // Build config with known values to verify the factory
+    // buildPipelineConfig signature post-SOLID: (pipelineConcurrency, embeddingTune, qdrantTune).
+    // Embedding tune carries upsert batch / flush / ordering; qdrantTune carries delete
+    // batch / concurrency / flush. The split mirrors src/bootstrap/config so the same
+    // factory is reused in production wiring.
     const testConfig = buildPipelineConfig(
-      { concurrency: 1, batchSize: 1024, batchTimeoutMs: 2000 },
+      1, // pipelineConcurrency
+      { batchSize: 1024, upsertBatchSize: 1024, upsertFlushIntervalMs: 2000, upsertOrdering: "weak" },
       { deleteConcurrency: 8, deleteBatchSize: 500, deleteFlushTimeoutMs: 1000 },
     );
 

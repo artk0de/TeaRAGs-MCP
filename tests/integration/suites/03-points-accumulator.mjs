@@ -68,7 +68,14 @@ export async function testPointsAccumulator(qdrant) {
   // === TEST: Factory function with env vars ===
   log("info", "Testing createAccumulator factory...");
 
-  const factoryAcc = createAccumulator(qdrant, testCollection, false);
+  // createAccumulator now requires a QdrantTuneConfig slice — post-SOLID
+  // the factory pulls values from the centralized tune config instead of
+  // accepting ad-hoc options. Pass minimal test values.
+  const factoryAcc = createAccumulator(qdrant, testCollection, false, {
+    upsertBatchSize: 10,
+    upsertFlushIntervalMs: 0,
+    upsertOrdering: "weak",
+  });
   assert(factoryAcc instanceof PointsAccumulator, "Factory returns PointsAccumulator");
 
   // === TEST: Timer-based auto-flush ===
