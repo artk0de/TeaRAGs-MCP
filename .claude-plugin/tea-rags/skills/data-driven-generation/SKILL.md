@@ -68,17 +68,26 @@ Read `## When` section. Custom conditions evaluated before hard rules.
 
 ### Step 2: TEMPLATE
 
-Follow search-cascade: pass best verified result as code/chunk example (cascade
-→ find_similar) + custom "proven" rerank:
-`{ similarity: 0.2, stability: 0.3, age: 0.3, bugFix: -0.15, ownership: -0.05 }`.
-This finds battle-tested code: long-lived, low-churn, low-bug, multi-author.
-Fallback: follow search-cascade with behavior query + same custom weights.
+Delegate to `tea-rags:extract-project-patterns` with:
 
-Quality gate by labels:
+- `positiveIds` | `positiveCode` = best verified result from Step 1 cascade (or
+  set `behaviorQuery` if no chunk/code is available)
+- `pathPatternL1` = pathPattern from explore PG-OUTPUT
+- `limit` = 10
 
-- **Ideal:** commitCount "low"/"typical" + ageDays "old"/"legacy" + bugFixRate
-  "healthy"
-- **Reject:** bugFixRate "critical" OR (ageDays "recent" + commitCount "low")
+Read `templates[0]` as the reference for Step 4 (GENERATE). The recipe owns the
+locality cascade (L1 = subdomain, L2 = first 2 segments, L3 = project) and the
+quality gate (commitCount low/typical + ageDays old/legacy + bugFixRate healthy;
+reject if bugFixRate critical or ageDays recent + commitCount low).
+
+Read `locality` to inform Step 3 (STYLE):
+
+- `L1` → use template's `blameDominantAuthor` for style and review routing.
+- `L2` → `blameDominantAuthor` reviews the technique, not exact code.
+- `L3` → `blameDominantAuthor` reviews the technique only; verify architectural
+  fit before adopting verbatim.
+- `none` → no template; generate from scratch and surface this to the user so
+  they know to scrutinize the result.
 
 ### Step 3: STYLE
 
