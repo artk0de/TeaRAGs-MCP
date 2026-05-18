@@ -151,6 +151,41 @@ Compose enrichment block:
 Cap table at fileList size. If a file has no git data (new file, not yet
 committed): row shows `— (new)`. Do NOT drop the row silently.
 
+## Step 3.5 — Per-Task proven-template enrichment (code-generation Tasks)
+
+For each Task in the plan draft (or each unit you intend to decompose into a
+Task) where the title or description mentions code generation / modification —
+heuristic keywords: "implement", "add", "write", "extend", "refactor", "modify"
+combined with "function", "method", "class", "helper", "module" — invoke
+`tea-rags:extract-project-patterns`:
+
+1. Derive `pathPatternL1` from the Task's Affected Files (deepest common
+   ancestor as a `**/<dir>/**` glob).
+2. Invoke `tea-rags:extract-project-patterns` with:
+   - `pathPatternL1` from step 1
+   - `behaviorQuery` = Task title
+   - `limit` = 5
+3. Attach the result to the Task body under a `**Proven templates**` subsection:
+
+   ```
+   **Proven templates** (extract-project-patterns, locality: L1|L2|L3|none)
+   - top: <path> (commitCount X, ageDays Y, bugFixRate Z)
+   - reviewer: <blameDominantAuthor>
+     - locality L1 → review style + code
+     - locality L2/L3 → review technique only
+   ```
+
+4. If `locality = "none"`, attach the diagnostic verbatim so the plan reader
+   knows this Task has no proven precedent in the project.
+
+This step runs BEFORE Step 4 so the per-Task enrichment is visible to the
+superpowers:writing-plans authoring cycle and surfaces in the final plan
+document.
+
+**Skip clause:** if no Task is classified as code-generation /
+code-modification, skip this step entirely. Pure-config or pure-test plans have
+no template need.
+
 ## Step 4 — Invoke superpowers:writing-plans
 
 Invoke the `Skill` tool with `superpowers:writing-plans`. Prepend the enrichment
