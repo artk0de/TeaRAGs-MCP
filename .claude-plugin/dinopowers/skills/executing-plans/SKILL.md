@@ -172,6 +172,31 @@ may chain into `superpowers:test-driven-development`,
 `superpowers:finishing-a-development-branch`. Redirect each to the corresponding
 `dinopowers:Y` wrapper — see the Chaining rule section above.
 
+## Step 4.5 — Per-Task proven-template lookup (code-generation Tasks)
+
+For the Task you are about to execute, if it is classified as code-generation /
+code-modification (per the same heuristic as `dinopowers:writing-plans` Step
+3.5: keywords "implement", "add", "write", "extend", "refactor", "modify"
+
+- "function | method | class | helper | module"):
+
+1. If the plan document already carries a `**Proven templates**` subsection for
+   this Task (written by writing-plans Step 3.5), USE that. Skip the recipe
+   re-invocation — the writing-plans output is canonical for this Task.
+2. If the plan does NOT carry per-Task templates (older plan, or plan written
+   without the Step 3.5 enrichment), invoke `tea-rags:extract-project-patterns`
+   with:
+   - `pathPatternL1` = deepest common ancestor of the Task's Affected Files
+   - `behaviorQuery` = Task title
+   - `limit` = 5 Use the returned `templates[0]` and `locality` directly.
+
+Load the chosen template into the session as `tea-rags:data-driven-generation`
+Step 2 (TEMPLATE) input — so the Code-Gen Cascade (Step 5) starts from the
+correct reference without re-invoking the recipe.
+
+**Skip clause:** non-code Tasks (config, test, doc) bypass this step and proceed
+directly to Step 5.
+
 ## Step 5 — Code-Gen Cascade (MANDATORY for code-generation Tasks)
 
 After verdict gate clears (SAFE proceeds, CAUTION confirmed, UNSAFE overridden),
