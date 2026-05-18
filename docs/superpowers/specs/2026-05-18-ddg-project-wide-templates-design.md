@@ -19,10 +19,10 @@ inline custom weights:
 This produces two problems:
 
 1. **Subdomain starvation.** When the target subdomain is young, sparse, or
-   under active churn, no chunk passes the quality gate (commitCount low/typical
-   - ageDays old/legacy + bugFixRate healthy). The agent either degrades to a
-     noisy reference or fabricates a pattern from training data. Both regress
-     the code-quality intent of DDG.
+   under active churn, no chunk passes the quality gate (`commitCount`
+   "low"/"typical" AND `ageDays` "old"/"legacy" AND `bugFixRate` "healthy"). The
+   agent either degrades to a noisy reference or fabricates a pattern from
+   training data. Both regress the code-quality intent of DDG.
 
 2. **Drift from project preset registry.** A first-class `ProvenPreset` already
    exists in `src/core/domains/trajectory/git/rerank/presets/proven.ts` with
