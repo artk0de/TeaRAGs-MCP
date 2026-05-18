@@ -9,11 +9,14 @@ describe("ProvenPreset", () => {
     expect(preset.name).toBe("proven");
   });
 
-  it("is available in semantic_search, hybrid_search, and search_code", () => {
+  it("is available in semantic_search, hybrid_search, search_code, and find_similar", () => {
     expect(preset.tools).toContain("semantic_search");
     expect(preset.tools).toContain("hybrid_search");
     expect(preset.tools).toContain("search_code");
-    expect(preset.tools).toHaveLength(3);
+    // find_similar is required so extract-project-patterns can pass rerank="proven"
+    // through find_similar (chunk-based template lookup).
+    expect(preset.tools).toContain("find_similar");
+    expect(preset.tools).toHaveLength(4);
   });
 
   it("uses all 6 expected weight keys", () => {
