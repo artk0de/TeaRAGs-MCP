@@ -23,7 +23,7 @@ export class ProvenPreset implements RerankPreset {
   readonly name = "proven";
   readonly description =
     "Battle-tested code: long-lived, stable, low-bug, multi-author. Use for finding reliable reference/template code.";
-  readonly tools = ["semantic_search", "hybrid_search", "search_code"];
+  readonly tools = ["semantic_search", "hybrid_search", "search_code", "find_similar"];
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     stability: 0.3,

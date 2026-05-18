@@ -62,6 +62,7 @@ benchmarks/
 | wave1-triggering (4.7 migration, 26 skills) | 2026-05-08 | 30    | 30/30 HIGH | 16 HIGH   | +14 HIGH·                                                                |
 | wave2-restructure (8 long skills, 4.7)      | 2026-05-08 | n/a·· | structural | n/a       | -247 dino lines + 6 ref files                                            |
 | tests-as-context (feature-creation)         | 2026-05-17 | 12    | deferred△  | deferred△ | Phase 2 baseline ready in `evals.json`, runs scheduled next eval session |
+| extract-project-patterns (feature-creation) | 2026-05-18 | 8     | 100%       | 37.5%     | +62.5pp                                                                  |
 
 \* Baseline was 100% because the skill was **hurting** behavior (10% with-rule).
 After fix, skill no longer degrades natural tool selection.
