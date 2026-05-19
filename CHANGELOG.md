@@ -1,3 +1,36 @@
+## [1.27.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.26.0...v1.27.0) (2026-05-19)
+
+### Features
+
+- **rerank:** add find_similar to ProvenPreset tools list
+  ([70c0695](https://github.com/artk0de/TeaRAGs-MCP/commit/70c069538d4023a92906a39bd90d4a2e19e8cbad))
+- **tea-rags:** add extract-project-patterns recipe skill
+  ([16546c5](https://github.com/artk0de/TeaRAGs-MCP/commit/16546c5acf251b6e0a4962df1a65025cdfc23566))
+
+### Improvements
+
+- **dinopowers:** wire extract-project-patterns into executing-plans per Task
+  ([33bbd9c](https://github.com/artk0de/TeaRAGs-MCP/commit/33bbd9c922746612fc34e9c241c1a55f4f0ef0d7))
+- **dinopowers:** wire extract-project-patterns into writing-plans per code-gen
+  Task
+  ([8a4a844](https://github.com/artk0de/TeaRAGs-MCP/commit/8a4a844ac31fbe18cc41c6675806827add5359ce))
+- **tea-rags:** delegate DDG Step 2 TEMPLATE to extract-project-patterns
+  ([4ac2b17](https://github.com/artk0de/TeaRAGs-MCP/commit/4ac2b17e514473f3ce0bf406f465a2d0d1860509))
+
+### Documentation
+
+- **ddg:** design spec for project-wide proven templates with locale fallback
+  ([f782ddb](https://github.com/artk0de/TeaRAGs-MCP/commit/f782ddb63facdd7566f60481e317361a6afe3e40))
+- **ddg:** fix gate expression mangled by markdownlint autofix
+  ([5aea14f](https://github.com/artk0de/TeaRAGs-MCP/commit/5aea14f2a7d683ff1580e37bb03c6ba65adba436))
+- **extract-project-patterns:** implementation plan with 5 tasks + beads sync
+  ([6208b55](https://github.com/artk0de/TeaRAGs-MCP/commit/6208b558a52776ecb6061c2312d82a7fcb3b57dd))
+- **extract-project-patterns:** rewrite spec — three-level locality cascade as
+  agent-only recipe
+  ([3499a15](https://github.com/artk0de/TeaRAGs-MCP/commit/3499a1523e67cd84d3b59ab786af63e6ba0e9e0e))
+- **website:** tighten incremental indexing claim and claude-context row
+  ([a747415](https://github.com/artk0de/TeaRAGs-MCP/commit/a74741551e28e04ea31a95bcb8287048cbdb0043))
+
 ## [1.26.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.25.1...v1.26.0) (2026-05-17)
 
 ### ⚠ BREAKING CHANGES
