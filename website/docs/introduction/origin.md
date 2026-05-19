@@ -97,7 +97,7 @@ research-grade experiments, not ready for enterprise scale (1M+ LOC):
 
 | Solution                      | Description                                                                               | Verdict                                                       |
 | ----------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| **claude-context**            | Most popular at the time. Fully cloud-based, no incremental indexing                      | Cloud dependency, doesn't scale for enterprise                |
+| **claude-context**            | Most popular at the time. Milvus + cloud-first defaults (Ollama optional), file-level Merkle incremental, no git enrichment | Cloud-first vendor lock-in on Zilliz/Milvus, no signal-based reranking, no enterprise-scale benchmarks |
 | **grepai**                    | Go-based, file-system watchers, multi-provider embeddings, GPU support, beginner-friendly | No AST chunking, embedded storage only — not enterprise-ready |
 | **quad-rag-code**             | Python, GPU acceleration, auto-watcher incremental reindex                                | Research-grade, Python-only, no embedding provider choice     |
 | **rag-code-mcp**              | Go, Qdrant + Ollama                                                                       | No incremental indexing, no Ruby support                      |
