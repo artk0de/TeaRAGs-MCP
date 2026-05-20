@@ -36,6 +36,17 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
     type: "boolean",
     description: "True when fanOut == 0 and fanIn > 0",
   },
+  {
+    // Slice 2 / B1 — transitive blast radius. Distinct file count
+    // reachable via reverse-BFS over the import graph from this file,
+    // bounded by getTransitiveImpact's default depth (5). Captures
+    // multi-hop dependencies — a utility imported by 3 files that are
+    // each imported by 20 has transitiveImpact ≈ 60+, far higher than
+    // its direct fanIn of 3.
+    key: "codegraph.file.transitiveImpact",
+    type: "number",
+    description: "Distinct files transitively importing this file (reverse BFS, depth-capped)",
+  },
 ];
 
 export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [

@@ -184,6 +184,16 @@ export interface GraphDbClient {
    *  definition; consumer is expected to feed them through
    *  `GlobalSymbolTable.hydrate`. */
   listAllSymbols: () => Promise<SymbolDefinition[]>;
+
+  // ── Tier 2 graph metrics (Slice 2 / B1) ──
+
+  /**
+   * Count of distinct files that transitively depend on `relPath` via
+   * import edges (reverse BFS). Bounded by `maxDepth` to keep cost
+   * predictable on large repos — depth 1 = direct fanIn, depth 5
+   * (default) captures most realistic blast radii.
+   */
+  getTransitiveImpact: (relPath: RelPath, maxDepth?: number) => Promise<number>;
 }
 
 export interface GraphFileNode {

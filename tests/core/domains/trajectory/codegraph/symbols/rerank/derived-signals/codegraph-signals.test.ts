@@ -53,7 +53,7 @@ describe("codegraph derived signals", () => {
     expect(sig.extract({ "codegraph.chunk.fanOut": 15 }, { bounds: { "chunk.fanOut": 30 } })).toBeCloseTo(0.5, 5);
   });
 
-  it("CODEGRAPH_SYMBOLS_DERIVED_SIGNALS contains all 7 signals", () => {
+  it("CODEGRAPH_SYMBOLS_DERIVED_SIGNALS contains all 8 signals (Slice 2 adds transitiveImpact)", () => {
     expect(CODEGRAPH_SYMBOLS_DERIVED_SIGNALS.map((s) => s.name).sort()).toEqual([
       "chunkFanIn",
       "chunkFanOut",
@@ -62,6 +62,7 @@ describe("codegraph derived signals", () => {
       "instability",
       "isHub",
       "isLeaf",
+      "transitiveImpact",
     ]);
   });
 

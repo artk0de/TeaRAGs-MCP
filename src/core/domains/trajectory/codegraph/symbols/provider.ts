@@ -247,6 +247,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       const fanIn = await this.deps.graphDb.getFanIn(relPath);
       const fanOut = await this.deps.graphDb.getFanOut(relPath);
       const denom = fanIn + fanOut;
+      // Slice 2 / B1 — transitive blast radius via reverse BFS over
+      // file edges. Depth defaults to 5 (in DuckDB client). Cheap on
+      // small files (early-empty); on hub files the DuckDB recursive
+      // CTE handles up to ~thousands of ancestors comfortably.
+      const transitiveImpact = await this.deps.graphDb.getTransitiveImpact(relPath);
       result.set(relPath, {
         "codegraph.file.fanIn": fanIn,
         "codegraph.file.fanOut": fanOut,
@@ -256,6 +261,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // place with a stable default so reranker overlays don't churn.
         "codegraph.file.isHub": false,
         "codegraph.file.isLeaf": fanOut === 0 && fanIn > 0,
+        "codegraph.file.transitiveImpact": transitiveImpact,
       });
     }
     return result;

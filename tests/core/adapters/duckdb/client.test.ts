@@ -136,6 +136,88 @@ describe("DuckDbGraphClient", () => {
     expect(rows.map((r) => r.relPath)).toEqual(["src/b.ts"]);
   });
 
+  // Slice 2 / B1 — transitive blast radius. Reverse BFS via DuckDB
+  // recursive CTE. Cycle-safe (UNION deduplicates).
+  describe("getTransitiveImpact (B1)", () => {
+    it("returns zero for an isolated file with no incoming edges", async () => {
+      await client.upsertFile({ relPath: "src/orphan.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+      expect(await client.getTransitiveImpact("src/orphan.ts")).toBe(0);
+    });
+
+    it("counts direct importers at depth 1", async () => {
+      await client.upsertFile({ relPath: "src/core.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/core.ts", importText: "./core" }], methodEdges: [] },
+      );
+      await client.upsertFile(
+        { relPath: "src/b.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/core.ts", importText: "./core" }], methodEdges: [] },
+      );
+      expect(await client.getTransitiveImpact("src/core.ts")).toBe(2);
+    });
+
+    it("walks multi-hop dependencies and dedupes diamond paths", async () => {
+      // graph: core <- mid1, core <- mid2, mid1 <- leaf, mid2 <- leaf
+      // transitive impact of core = {mid1, mid2, leaf} = 3 (leaf counted once)
+      await client.upsertFile({ relPath: "src/core.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+      await client.upsertFile(
+        { relPath: "src/mid1.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/core.ts", importText: "./core" }], methodEdges: [] },
+      );
+      await client.upsertFile(
+        { relPath: "src/mid2.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/core.ts", importText: "./core" }], methodEdges: [] },
+      );
+      await client.upsertFile(
+        { relPath: "src/leaf.ts", language: "typescript" },
+        {
+          fileEdges: [
+            { targetRelPath: "src/mid1.ts", importText: "./mid1" },
+            { targetRelPath: "src/mid2.ts", importText: "./mid2" },
+          ],
+          methodEdges: [],
+        },
+      );
+      expect(await client.getTransitiveImpact("src/core.ts")).toBe(3);
+    });
+
+    it("respects maxDepth cap", async () => {
+      // chain: a -> b -> c -> d -> e -> f (each file imports the next)
+      const chain = ["a", "b", "c", "d", "e", "f"].map((n) => `src/${n}.ts`);
+      for (let i = 0; i < chain.length; i++) {
+        await client.upsertFile(
+          { relPath: chain[i], language: "typescript" },
+          {
+            fileEdges: i + 1 < chain.length ? [{ targetRelPath: chain[i + 1], importText: `./${chain[i + 1]}` }] : [],
+            methodEdges: [],
+          },
+        );
+      }
+      // From f, ancestors via reverse BFS: e (d=1), d (d=2), c (d=3), b (d=4), a (d=5).
+      // maxDepth=2 limits to {e, d} = 2.
+      expect(await client.getTransitiveImpact("src/f.ts", 2)).toBe(2);
+      // maxDepth=5 captures all five ancestors.
+      expect(await client.getTransitiveImpact("src/f.ts", 5)).toBe(5);
+    });
+
+    it("is cycle-safe (UNION dedup terminates A↔B import loop)", async () => {
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/b.ts", importText: "./b" }], methodEdges: [] },
+      );
+      await client.upsertFile(
+        { relPath: "src/b.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/a.ts", importText: "./a" }], methodEdges: [] },
+      );
+      // Each file's transitive impact == 1 (the cycle partner). UNION
+      // deduplicates so the recursion terminates even though the graph
+      // is strongly connected.
+      expect(await client.getTransitiveImpact("src/a.ts")).toBe(1);
+      expect(await client.getTransitiveImpact("src/b.ts")).toBe(1);
+    });
+  });
+
   it("removeFile cascades into cg_symbols as well as the edge tables", async () => {
     await client.upsertFile({ relPath: "src/foo.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     await client.upsertSymbols("src/foo.ts", [

@@ -6,8 +6,18 @@ import { FanOutSignal } from "./fan-out.js";
 import { InstabilitySignal } from "./instability.js";
 import { IsHubSignal } from "./is-hub.js";
 import { IsLeafSignal } from "./is-leaf.js";
+import { TransitiveImpactSignal } from "./transitive-impact.js";
 
-export { ChunkFanInSignal, ChunkFanOutSignal, FanInSignal, FanOutSignal, InstabilitySignal, IsHubSignal, IsLeafSignal };
+export {
+  ChunkFanInSignal,
+  ChunkFanOutSignal,
+  FanInSignal,
+  FanOutSignal,
+  InstabilitySignal,
+  IsHubSignal,
+  IsLeafSignal,
+  TransitiveImpactSignal,
+};
 
 export const CODEGRAPH_SYMBOLS_DERIVED_SIGNALS: DerivedSignalDescriptor[] = [
   new FanInSignal(),
@@ -17,4 +27,5 @@ export const CODEGRAPH_SYMBOLS_DERIVED_SIGNALS: DerivedSignalDescriptor[] = [
   new IsLeafSignal(),
   new ChunkFanInSignal(),
   new ChunkFanOutSignal(),
+  new TransitiveImpactSignal(),
 ];

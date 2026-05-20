@@ -161,6 +161,44 @@ export class DuckDbGraphClient implements GraphDbClient {
     await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
   }
 
+  async getTransitiveImpact(relPath: RelPath, maxDepth = 5): Promise<number> {
+    // Reverse BFS via DuckDB recursive CTE. Seed = files that directly
+    // import `relPath`; each round walks one edge further. UNION (vs
+    // UNION ALL) deduplicates so each ancestor is counted once even
+    // when reached via multiple paths. The depth cap keeps cost
+    // predictable on large repos (depth 5 captures most realistic
+    // blast radii without exploding on hub files).
+    //
+    // safeDepth is INLINED rather than bound: bindParams in this client
+    // binds every value via bindVarchar (driver constraint — see
+    // `bindVarchar non-nullable in @duckdb/node-api 1.5.x` note in
+    // adapter docs). DuckDB compares varchar against integer with
+    // implicit casts that produce surprising results, so the integer
+    // comparison `i.depth < N` must stay literal. The value is
+    // sanitised to a small positive integer before substitution, so
+    // injection is structurally impossible.
+    const safeDepth = Math.max(1, Math.floor(maxDepth));
+    // The final WHERE filters the file itself out of the count: in a
+    // cyclic dependency graph (A imports B imports A) the recursive
+    // walk circles back to the source, but a file is not part of its
+    // own blast radius. UNION already ensures each path appears once.
+    const rows = await this.queryAll<{ n: number | bigint }>(
+      `WITH RECURSIVE impact(rel_path, depth) AS (
+         SELECT source_rel_path, 1
+         FROM cg_symbols_edges_file
+         WHERE target_rel_path = ?
+         UNION
+         SELECT e.source_rel_path, i.depth + 1
+         FROM cg_symbols_edges_file e
+         JOIN impact i ON e.target_rel_path = i.rel_path
+         WHERE i.depth < ${safeDepth}
+       )
+       SELECT COUNT(DISTINCT rel_path) AS n FROM impact WHERE rel_path != ?`,
+      [relPath, relPath],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
   async listAllSymbols(): Promise<SymbolDefinition[]> {
     const rows = await this.queryAll<{
       rel_path: string;
