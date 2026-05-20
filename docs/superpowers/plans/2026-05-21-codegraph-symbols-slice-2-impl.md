@@ -485,30 +485,61 @@ presets.
 - Tests: Python file gets isHub/isLeaf populated identically to TS file given
   same fanIn/fanOut shape
 
-### Task D4: Preset modifications using fan-graph (research-corrected weights)
+### Task D4: Composite preset overrides for existing names (architecture: registry → composite)
 
-Process-metric domination (Yatish 2020 — AUC 95% vs 54%) means fan-graph weights
-stay modest:
+**Architectural correction (2026-05-21):** existing trajectory presets MUST NOT
+be modified. The reranker resolution pipeline already supports a composite
+override channel — `resolvePresets(registry, composite)` in
+`src/core/domains/explore/rerank/presets/index.ts` merges by `(name, tool)` key,
+with the composite list winning. The composite list passed from `composition.ts`
+is currently empty (`resolvePresets(registry.getAllPresets(), [])`); Phase D
+populates it.
 
-| Preset              | Add to `weights`                | Add to `overlayMask` (raw) |
-| ------------------- | ------------------------------- | -------------------------- |
-| **`techDebt`**      | `fanIn` 0.1                     | file: `importedByCount`    |
-| **`dangerous`**     | `fanIn` 0.15                    | file: `importedByCount`    |
-| **`ownership`**     | `fanIn` 0.1                     | file: `importedByCount`    |
-| **`securityAudit`** | `fanIn` 0.1                     | file: `importedByCount`    |
-| **`codeReview`**    | `fanIn` 0.1                     | file: `importedByCount`    |
-| **`onboarding`**    | `fanOutPerLine` -0.1 (penalty)  | chunk: `fanOutPerLine`     |
-| **`stable`**        | `fanOutPerLine` -0.05 (penalty) | chunk: `fanOutPerLine`     |
+**Files:**
 
-Existing `blastRadius` preset (shipped in Slice 1) — re-tune to align with
-Yatish 2020 (process-dominant):
-
-- Current:
-  `similarity: 0.25, fanIn: 0.25, instability: 0.15, isHub: 0.15, churn: 0.1, chunkFanIn: 0.1`
-- New:
+- Create: `src/core/domains/explore/rerank/presets/composite/` directory
+- Create: `composite/index.ts` — exports `buildCompositePresets(opts)` returning
+  the composite preset list conditional on what trajectories are wired (e.g.
+  composites needing `fanIn` only emit when codegraph is wired)
+- Create: `composite/hotspots.ts` — override for git's `hotspots`, adds `fanIn`
+  to overlayMask
+- Create: `composite/techDebt.ts` — adds `fanIn` 0.1 weight
+- Create: `composite/dangerous.ts` — adds `fanIn` 0.15
+- Create: `composite/ownership.ts` — adds `fanIn` 0.1
+- Create: `composite/security-audit.ts` — adds `fanIn` 0.1
+- Create: `composite/code-review.ts` — adds `fanIn` 0.1
+- Create: `composite/onboarding.ts` — adds `fanOutPerLine` -0.1
+- Create: `composite/stable.ts` — adds `fanOutPerLine` -0.05
+- Create: `composite/blast-radius.ts` — overrides Slice 1's `blastRadius` with
+  research-corrected weights:
   `similarity: 0.2, fanIn: 0.3, churn: 0.2, bugFix: 0.15, isHub: 0.1, chunkFanIn: 0.05`
+- Modify: `src/core/api/internal/composition.ts` — pass
+  `buildCompositePresets({ codegraph: !!options.codegraph })` as the second arg
+  to `resolvePresets` (replacing the current empty `[]`).
 
-### Task D5: New composite presets (minus instability)
+**Process-metric domination (Yatish 2020 — AUC 95% vs 54%)** means fan-graph
+weights in composites stay modest. The override-by-name mechanism means a
+composite with the same name as a trajectory preset wins — original trajectory
+files stay untouched.
+
+**Tests:**
+
+- `tests/core/api/composition.test.ts` — assert composite overrides win the
+  `(name, tool)` resolution after composition; e.g. resolved `hotspots`
+  overlayMask contains `fanIn` raw signal only when codegraph is wired
+- Per-composite unit tests confirming weights + overlayMask shape
+
+**Why** (this exact factoring):
+
+- Existing trajectory presets stay pure (single-trajectory data only) — easier
+  to audit, test, and ship a single trajectory in isolation.
+- Composite weights live in one directory; review reads one folder to see all
+  cross-trajectory tuning. Re-tuning composites doesn't churn trajectory files.
+- When new trajectories arrive (e.g. temporal coupling — separate spec),
+  composites that need `temporalCoupling` get added without touching git or
+  codegraph trajectory files.
+
+### Task D5: New composite presets (minus instability, same composite/ directory)
 
 | Preset                   | `weights` (derived, research-corrected)                                                                                                    | `overlayMask` (raw)                                                                    |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |

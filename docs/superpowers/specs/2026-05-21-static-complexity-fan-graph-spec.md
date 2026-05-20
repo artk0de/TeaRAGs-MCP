@@ -81,7 +81,14 @@ Per HCC 2025: complexity and cognitiveLoad stay **separate** derived signals —
 do not merge into one composite. Each contributes independently to overlayMask
 and weights so agents can see them split.
 
-## Preset modifications using complexity (research-corrected weights)
+## Composite preset overrides using complexity (research-corrected weights)
+
+**Architecture (clarified 2026-05-21):** existing trajectory presets are NOT
+modified. The reranker's `resolvePresets(registry, composite)` pipeline already
+overrides by `(name, tool)` key — composite presets that share a name with a
+trajectory preset win the resolution. This spec creates **new composite preset
+classes** in `src/core/domains/explore/rerank/presets/composite/`; the original
+trajectory presets (`git/rerank/presets/hotspots.ts`, etc.) stay untouched.
 
 Process-metric domination (Yatish 2020) means complexity weights stay small.
 Cognitive weight is intentionally smaller than cyclomatic for refactoring,
@@ -89,18 +96,26 @@ opposite to the original proposal — refactoring readability matters but the
 empirical evidence (Lenarduzzi 2022) does not justify a dominant cognitive
 weight.
 
-| Preset                       | `weights` (derived) — original → corrected                                                        | `overlayMask` (raw)                                    | Source                                                 |
+| Composite preset (name)      | Original (trajectory) → composite weights override                                                | `overlayMask` (raw)                                    | Source                                                 |
 | ---------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------ |
-| **`hotspots`**               | ~~`complexity` 0.15, `cognitiveLoad` 0.05~~ → **`complexity` 0.08, `cognitiveLoad` 0.04**         | chunk: `cyclomatic`, `cognitive`                       | Yatish 2020 — process metrics dominate                 |
-| **`refactoring`**            | ~~`complexity` 0.15, `cognitiveLoad` 0.1~~ → **`complexity` 0.1, `cognitiveLoad` 0.1**            | chunk: `cyclomatic`, `cognitive`                       | Refactoring needs both; readability dominates slightly |
-| **`techDebt`**               | **`complexity` 0.1**                                                                              | file: `cyclomaticSum`                                  | Legacy + complex = real debt                           |
-| **`securityAudit`**          | **`complexity` 0.08**                                                                             | chunk: `cyclomatic`                                    | Shin 2010: CCC ↔ vuln                                  |
-| **`decomposition`** (static) | **`complexity` 0.15, `cognitiveLoad` 0.1**                                                        | chunk: `cyclomatic`, `cognitive`                       | AST-based decomposition vs size-only                   |
-| **`onboarding`**             | ~~`cognitiveLoad` -0.15~~ → **`complexity` -0.1, `cognitiveLoad` -0.05** (cognitive NOT stronger) | chunk: `cyclomatic`, `cognitive`; file: `cognitiveMax` | Lenarduzzi 2022 — cognitive evidence weak              |
+| **`hotspots`**               | ~~git: complexity 0.15, cognitiveLoad 0.05~~ → composite: **complexity 0.08, cognitiveLoad 0.04** | chunk: `cyclomatic`, `cognitive`                       | Yatish 2020 — process metrics dominate                 |
+| **`refactoring`**            | ~~git: complexity 0.15, cognitiveLoad 0.1~~ → composite: **complexity 0.1, cognitiveLoad 0.1**    | chunk: `cyclomatic`, `cognitive`                       | Refactoring needs both; readability dominates slightly |
+| **`techDebt`**               | composite override adds: **complexity 0.1**                                                       | file: `cyclomaticSum`                                  | Legacy + complex = real debt                           |
+| **`securityAudit`**          | composite override adds: **complexity 0.08**                                                      | chunk: `cyclomatic`                                    | Shin 2010: CCC ↔ vuln                                  |
+| **`decomposition`** (static) | composite override adds: **complexity 0.15, cognitiveLoad 0.1**                                   | chunk: `cyclomatic`, `cognitive`                       | AST-based decomposition vs size-only                   |
+| **`onboarding`**             | composite override adds: **complexity -0.1, cognitiveLoad -0.05** (cognitive NOT stronger)        | chunk: `cyclomatic`, `cognitive`; file: `cognitiveMax` | Lenarduzzi 2022 — cognitive evidence weak              |
 
-**Unchanged by this spec:** `bugHunt`, `recent`, `proven`, `relevance`,
+Each row above maps to a new file in `composite/` that returns a `RerankPreset`
+with the same `name` and `tools` as the trajectory original — `resolvePresets`
+will swap them in. The composite list is populated from
+`buildCompositePresets({...})` in `composite/index.ts`, threaded through
+`composition.ts`.
+
+**Untouched by this spec:** `bugHunt`, `recent`, `proven`, `relevance`,
 `documentationRelevance`, `stable`, `dangerous`, `ownership`, `codeReview`. The
-last four touch only fan-graph signals (in the codegraph spec).
+last four are touched by composite overrides in the codegraph Slice 2 plan
+(fan-graph weights); those overrides will need to absorb complexity overlay
+additions if both specs land simultaneously.
 
 ## Phased delivery
 
