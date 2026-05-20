@@ -81,6 +81,17 @@ export const trajectoryGitSchema = z.object({
   sessionGapMinutes: intWithDefault(30),
 });
 
+export const codegraphSchema = z.object({
+  /** Master switch for the codegraph trajectory family (Slice 1: TS symbols). */
+  enabled: booleanFromEnvWithDefault(true),
+  /**
+   * Override for the DuckDB graph DB path. When unset, the bootstrap
+   * factory derives it from the AppConfig data directory:
+   *   `<appDataDir>/codegraph.duckdb`
+   */
+  dbPath: z.string().optional(),
+});
+
 export const qdrantTuneSchema = z.object({
   upsertBatchSize: intWithDefault(100),
   upsertFlushIntervalMs: intWithDefault(500),
@@ -94,6 +105,7 @@ export const qdrantTuneSchema = z.object({
 export type CoreConfig = z.infer<typeof coreSchema>;
 export type IngestTuneConfig = z.infer<typeof ingestTuneSchema>;
 export type IngestConfig = z.infer<typeof ingestSchema>;
+export type CodegraphConfig = z.infer<typeof codegraphSchema>;
 
 // These types are defined in core/contracts — Zod schemas stay here, interfaces live there
 export type {

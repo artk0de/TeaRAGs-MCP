@@ -1,10 +1,12 @@
 import { ConfigValueInvalidError, ConfigValueMissingError } from "../errors.js";
 import {
+  codegraphSchema,
   coreSchema,
   embeddingSchema,
   ingestSchema,
   qdrantTuneSchema,
   trajectoryGitSchema,
+  type CodegraphConfig,
   type CoreConfig,
   type EmbeddingConfig,
   type IngestConfig,
@@ -122,6 +124,11 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     sessionGapMinutes: env("TRAJECTORY_GIT_SESSION_GAP_MINUTES"),
   };
 
+  const codegraph = {
+    enabled: env("CODEGRAPH_ENABLED"),
+    dbPath: env("CODEGRAPH_DB_PATH"),
+  };
+
   const qdrantTune = {
     upsertBatchSize: env("QDRANT_TUNE_UPSERT_BATCH_SIZE", "QDRANT_UPSERT_BATCH_SIZE", "CODE_BATCH_SIZE"),
     upsertFlushIntervalMs: env("QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS", "QDRANT_FLUSH_INTERVAL_MS"),
@@ -141,6 +148,7 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
     embedding,
     ingest,
     trajectoryGit,
+    codegraph,
     qdrantTune,
     userSetBatchSize,
     userSetChunkSize,
@@ -154,6 +162,7 @@ export function parseAppConfigZod(): {
   embedding: EmbeddingConfig;
   ingest: IngestConfig;
   trajectoryGit: TrajectoryGitConfig;
+  codegraph: CodegraphConfig;
   qdrantTune: QdrantTuneConfig;
   deprecations: DeprecationNotice[];
   flags: {
@@ -172,6 +181,7 @@ export function parseAppConfigZod(): {
   const embedding = validateSchema(embeddingSchema, inputs.embedding, "embedding");
   const ingest = validateSchema(ingestSchema, inputs.ingest, "ingest");
   const trajectoryGit = validateSchema(trajectoryGitSchema, inputs.trajectoryGit, "trajectoryGit");
+  const codegraph = validateSchema(codegraphSchema, inputs.codegraph, "codegraph");
   const qdrantTune = validateSchema(qdrantTuneSchema, inputs.qdrantTune, "qdrantTune");
 
   validateApiKey(embedding);
@@ -185,6 +195,7 @@ export function parseAppConfigZod(): {
     embedding,
     ingest,
     trajectoryGit,
+    codegraph,
     qdrantTune,
     deprecations,
     flags: {

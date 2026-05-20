@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import { DuckDbGraphClient } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
@@ -18,10 +19,15 @@ import {
   SchemaBuilder,
   type App,
 } from "../core/api/index.js";
+import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
+import type { CallResolver } from "../core/contracts/types/codegraph.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
+import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.js";
+import { loadTsConfig, TSCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ts/index.js";
+import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { CollectionRegistry } from "../core/infra/registry/index.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
@@ -146,10 +152,52 @@ async function resolveInfrastructure(
   return { qdrant, embeddings, modelGuard, embeddedRelease };
 }
 
-function wireComposition(): CompositionContext {
-  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition();
+function wireComposition(codegraph?: CodegraphDeps): CompositionContext {
+  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
+    codegraph,
+  });
   const schemaBuilder = new SchemaBuilder(reranker);
   return { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, schemaBuilder };
+}
+
+interface CodegraphContext {
+  deps: CodegraphDeps;
+  graphFacade: GraphFacade;
+  graphDb: DuckDbGraphClient;
+}
+
+async function wireCodegraph(
+  config: AppConfig,
+  zodConfig: ReturnType<typeof getZodConfig>,
+): Promise<CodegraphContext | undefined> {
+  // Defensive: legacy/mocked configs may omit the codegraph section
+  // entirely. Treat that as "disabled" so opt-in via env stays the
+  // only path to enable codegraph.
+  const { codegraph } = zodConfig;
+  if (!codegraph?.enabled) return undefined;
+
+  const dbPath = codegraph.dbPath ?? join(config.paths.appData, "codegraph.duckdb");
+  const graphDb = new DuckDbGraphClient({ path: dbPath });
+  await graphDb.init();
+
+  // Apply slice 1 schema. Migrations are idempotent — safe to re-run on
+  // every bootstrap. The runner consumes an inline array of
+  // `{ filename, sql }` so the compiled `build/` artifact ships them
+  // as plain JS (no SQL files to copy alongside the TS output).
+  const { runMigrations } = await import("../core/infra/migration/database/runner.js");
+  const { DATABASE_MIGRATIONS } = await import("../core/infra/migration/database/migrations/index.js");
+  await runMigrations(graphDb, DATABASE_MIGRATIONS);
+
+  const tsOptions = loadTsConfig(process.cwd());
+  const resolvers = new Map<string, CallResolver>([["typescript", new TSCallResolver(tsOptions)]]);
+
+  const deps: CodegraphDeps = {
+    graphDb,
+    symbolTable: new InMemoryGlobalSymbolTable(),
+    resolvers,
+  };
+  const graphFacade = new GraphFacade({ graphDb });
+  return { deps, graphFacade, graphDb };
 }
 
 export async function createAppContext(config: AppConfig): Promise<AppContext> {
@@ -157,7 +205,8 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   setDebug(zodConfig.core.debug);
 
   const infra = await resolveInfrastructure(config, zodConfig);
-  const composition = wireComposition();
+  const codegraphContext = await wireCodegraph(config, zodConfig);
+  const composition = wireComposition(codegraphContext?.deps);
 
   const statsCache = new StatsCache(config.paths.snapshots);
   const deleteConfig = {
@@ -231,6 +280,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     projectRegistryOps,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     modelGuard: infra.modelGuard,
+    graphFacade: codegraphContext?.graphFacade,
   });
 
   const cleanup = () => {

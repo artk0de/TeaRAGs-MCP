@@ -19,6 +19,12 @@
  * stats. The payload field stays present and stable.
  */
 
+import { readdirSync, readFileSync, type Dirent } from "node:fs";
+import { join, relative } from "node:path";
+
+import Parser from "tree-sitter";
+import TsLang from "tree-sitter-typescript";
+
 import type {
   CallResolver,
   ExtractionSink,
@@ -36,7 +42,11 @@ import type {
   FilterDescriptor,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import { extractFromTypescriptFile } from "../../../ingest/pipeline/chunker/extraction/typescript-walker.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
+
+const IGNORE_DIRS = new Set(["node_modules", "build", "dist", ".git", ".claude", "coverage", "tests", "test"]);
+const TS_EXTS = new Set([".ts", ".tsx"]);
 
 export interface CodegraphProviderDeps {
   graphDb: GraphDbClient;
@@ -90,10 +100,40 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     };
   }
 
-  async buildFileSignals(_root: string, options?: { paths?: string[] }): Promise<Map<string, FileSignalOverlay>> {
-    const paths = options?.paths ?? [];
+  async buildFileSignals(root: string, options?: { paths?: string[] }): Promise<Map<string, FileSignalOverlay>> {
+    // Discover the file set to walk. Caller-supplied paths win
+    // (incremental reindex); otherwise scan the repo for `.ts`/`.tsx`.
+    const targetRelPaths =
+      options?.paths && options.paths.length > 0
+        ? options.paths.filter((p) => TS_EXTS.has(extensionOf(p)))
+        : this.discoverTypescriptFiles(root);
+
+    // Populate the graph DB by walking each file's AST and feeding the
+    // resulting FileExtraction through this provider's own sink. This
+    // pass owns the codegraph ingest side — chunker pool integration
+    // is deferred to a future slice once worker IPC supports passing
+    // FileExtraction back across the boundary.
+    const sink = this.asExtractionSink();
+    for (const relPath of targetRelPaths) {
+      try {
+        await sink.write(this.extractOneFile(root, relPath));
+      } catch (err) {
+        // One bad file shouldn't take down the whole codegraph build —
+        // log the path on debug and keep going. The graph stays consistent
+        // because asExtractionSink buffers per file and resolves on finish.
+        if (process.env.DEBUG === "true") {
+          process.stderr.write(`[codegraph] skip ${relPath}: ${(err as Error).message}\n`);
+        }
+      }
+    }
+    await sink.finish();
+
+    // Second pass: emit the metric overlays per file. We emit a row for
+    // every relPath the caller listed (or every file we walked), so the
+    // enrichment coordinator sees a consistent overlay map shape.
+    const overlayPaths = options?.paths && options.paths.length > 0 ? options.paths : targetRelPaths;
     const result = new Map<string, FileSignalOverlay>();
-    for (const relPath of paths) {
+    for (const relPath of overlayPaths) {
       const fanIn = await this.deps.graphDb.getFanIn(relPath);
       const fanOut = await this.deps.graphDb.getFanOut(relPath);
       const denom = fanIn + fanOut;
@@ -109,6 +149,86 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       });
     }
     return result;
+  }
+
+  /**
+   * Recursively enumerate `.ts` / `.tsx` files under `root`, skipping
+   * `node_modules`, `build`, etc. Returns repo-relative POSIX paths.
+   * Slice 1 owns this walker; later slices will share the file-discovery
+   * pass already done by `processFiles` once the chunker pool returns
+   * AST artifacts alongside chunks.
+   */
+  private discoverTypescriptFiles(root: string): string[] {
+    const out: string[] = [];
+    const walk = (dir: string): void => {
+      let entries: Dirent[];
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.name.startsWith(".") && entry.name !== ".claude-plugin") continue;
+        if (IGNORE_DIRS.has(entry.name)) continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (entry.isFile() && TS_EXTS.has(extensionOf(entry.name))) {
+          out.push(relative(root, full).replace(/\\/g, "/"));
+        }
+      }
+    };
+    walk(root);
+    return out;
+  }
+
+  /**
+   * Parse a single TS file from disk and produce a `FileExtraction`
+   * matching the chunker's symbol shape. The chunker proper applies
+   * richer hooks (class-body, test-DSL, oversized split) — codegraph
+   * needs only the top-level symbol identifiers, so a simple walker
+   * over function/method/class declarations is sufficient for slice 1.
+   */
+  private extractOneFile(root: string, relPath: string): FileExtraction {
+    const code = readFileSync(join(root, relPath), "utf8");
+    const parser = new Parser();
+    parser.setLanguage((TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript);
+    const tree = parser.parse(code);
+    const chunks = this.collectSymbols(tree);
+    return extractFromTypescriptFile({
+      tree,
+      code,
+      relPath,
+      language: "typescript",
+      chunks,
+    });
+  }
+
+  private collectSymbols(
+    tree: Parser.Tree,
+  ): { symbolId: string; startLine: number; endLine: number; scope: string[] }[] {
+    const out: { symbolId: string; startLine: number; endLine: number; scope: string[] }[] = [];
+    const walk = (node: Parser.SyntaxNode, scope: string[]): void => {
+      const named = nameOf(node);
+      if (named) {
+        const fq = [...scope, named.name].join(".");
+        out.push({
+          symbolId: fq,
+          startLine: node.startPosition.row + 1,
+          endLine: node.endPosition.row + 1,
+          scope,
+        });
+        if (named.descendsInto) {
+          for (const child of node.children) walk(child, [...scope, named.name]);
+          return;
+        }
+      }
+      for (const child of node.children) walk(child, scope);
+    };
+    walk(tree.rootNode, []);
+    return out;
   }
 
   async buildChunkSignals(
@@ -187,4 +307,21 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 function lastSegment(name: string): string {
   const idx = Math.max(name.lastIndexOf("."), name.lastIndexOf("/"));
   return idx === -1 ? name : name.slice(idx + 1);
+}
+
+function extensionOf(path: string): string {
+  const dot = path.lastIndexOf(".");
+  return dot === -1 ? "" : path.slice(dot);
+}
+
+function nameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+  if (node.type === "function_declaration" || node.type === "method_definition") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false };
+  }
+  if (node.type === "class_declaration") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: true };
+  }
+  return null;
 }

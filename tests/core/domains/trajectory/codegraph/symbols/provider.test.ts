@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,6 +97,113 @@ describe("CodegraphEnrichmentProvider", () => {
     expect(mainOverlay?.["codegraph.file.instability"]).toBeCloseTo(1, 5);
     // isHub stays false in buildFileSignals — IsHubSignal finalises it at rerank time.
     expect(mainOverlay?.["codegraph.file.isHub"]).toBe(false);
+  });
+
+  it("resolveRoot is identity — the slice scans the literal absolute path it is given", () => {
+    expect(provider.resolveRoot("/abs/path")).toBe("/abs/path");
+  });
+
+  it("buildFileSignals auto-discovers TS/TSX files on disk when no paths option is provided", async () => {
+    // Build a small project tree under the worktree's tmp dir. The walker
+    // must:
+    //   1. Recurse into nested dirs.
+    //   2. Skip IGNORE_DIRS (node_modules, build, .git, ...).
+    //   3. Skip dotfiles other than .claude-plugin.
+    //   4. Pick up .ts and .tsx, skip other extensions and extensionless files.
+    //   5. Hand each picked file to extractOneFile -> collectSymbols, which
+    //      must handle both function_declaration and class_declaration nodes
+    //      (the descendsInto branch in nameOf).
+    const root = mkdtempSync(join(tmpdir(), "cg-discover-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      mkdirSync(join(root, "src", "nested"), { recursive: true });
+      mkdirSync(join(root, "node_modules", "junk"), { recursive: true });
+      mkdirSync(join(root, ".hidden"), { recursive: true });
+
+      // Exercises function_declaration in collectSymbols (descendsInto=false).
+      writeFileSync(
+        join(root, "src", "alpha.ts"),
+        "export function alpha(): number { return 1; }\nexport function beta(): number { return 2; }\n",
+      );
+      // Exercises class_declaration + nested method_definition
+      // (descendsInto=true branch in nameOf, and the recursion into
+      // children with extended scope).
+      writeFileSync(
+        join(root, "src", "nested", "service.tsx"),
+        "export class Service {\n  go(): number { return 3; }\n  stop(): number { return 4; }\n}\n",
+      );
+      // No .ts extension — must be ignored by TS_EXTS filter.
+      writeFileSync(join(root, "src", "notes.md"), "ignored");
+      // Inside node_modules — must be ignored by IGNORE_DIRS.
+      writeFileSync(join(root, "node_modules", "junk", "lib.ts"), "export const skip = 1;");
+      // Hidden dir (starts with '.') — must be ignored.
+      writeFileSync(join(root, ".hidden", "secret.ts"), "export const hidden = 1;");
+      // Extensionless file in a real dir — must be skipped silently by
+      // extensionOf returning "".
+      writeFileSync(join(root, "src", "Makefile"), "all:\n\techo hi\n");
+
+      const overlays = await provider.buildFileSignals(root);
+      // Both legitimate files appear; junk does not.
+      const keys = [...overlays.keys()].sort();
+      expect(keys).toEqual(["src/alpha.ts", "src/nested/service.tsx"]);
+      // Symbol table received both files' top-level decls. alpha.ts ->
+      // 2 functions, service.tsx -> 1 class + 2 methods (collectSymbols
+      // descends into class).
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("alpha").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("go").length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("buildFileSignals filters caller-supplied paths to .ts/.tsx", async () => {
+    // When the caller passes paths (incremental reindex), the provider
+    // still routes through extractOneFile for each. Mixed extensions
+    // are filtered to TS_EXTS only. This drives the
+    // `options.paths.length > 0` branch + the extensionOf filter on
+    // user input.
+    const root = mkdtempSync(join(tmpdir(), "cg-paths-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "src", "a.ts"), "export function a() { return 1; }\n");
+      writeFileSync(join(root, "src", "b.md"), "ignored");
+
+      const overlays = await provider.buildFileSignals(root, {
+        paths: ["src/a.ts", "src/b.md"],
+      });
+      // Overlay is emitted for every caller-listed path (consistent map
+      // shape for the enrichment coordinator), but only a.ts was actually
+      // walked + extracted. b.md is reported with zero-valued signals.
+      expect(overlays.has("src/a.ts")).toBe(true);
+      expect(overlays.has("src/b.md")).toBe(true);
+      expect(overlays.get("src/b.md")?.["codegraph.file.fanIn"]).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("buildFileSignals tolerates per-file extract errors and keeps going", async () => {
+    // extractOneFile reads from disk and parses with tree-sitter. A
+    // missing file makes readFileSync throw — the provider must catch
+    // and skip, so the walk completes and the overlay map is still
+    // populated for the well-formed neighbour.
+    const root = mkdtempSync(join(tmpdir(), "cg-err-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "src", "ok.ts"), "export function ok() { return 1; }\n");
+      // Caller-supplied path that does not exist on disk. extractOneFile
+      // will throw ENOENT inside readFileSync; provider catches it.
+      const overlays = await provider.buildFileSignals(root, {
+        paths: ["src/ok.ts", "src/missing.ts"],
+      });
+      expect(overlays.size).toBe(2);
+      expect(overlays.get("src/ok.ts")?.["codegraph.file.fanIn"]).toBe(0);
+      expect(overlays.get("src/missing.ts")?.["codegraph.file.fanIn"]).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("buildChunkSignals attaches calledByCount and callSiteCount per chunk by symbolId", async () => {

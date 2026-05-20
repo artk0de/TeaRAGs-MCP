@@ -12,6 +12,7 @@ import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.j
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
+import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
@@ -25,10 +26,25 @@ export interface CompositionResult {
   resolvedPresets: RerankPreset[];
 }
 
-export function createComposition(): CompositionResult {
+export interface CompositionOptions {
+  /**
+   * When provided, registers the codegraph L1 family (Slice 1: Symbols).
+   * Bootstrap supplies these deps when `CODEGRAPH_ENABLED` is true; tests
+   * pass them directly. Omitting opts the family out — the rest of the
+   * composition is unaffected.
+   */
+  codegraph?: CodegraphDeps;
+}
+
+export function createComposition(options: CompositionOptions = {}): CompositionResult {
   const registry = new TrajectoryRegistry();
   registry.register(new StaticTrajectory());
   registry.register(new GitTrajectory());
+  if (options.codegraph) {
+    for (const trajectory of createCodegraphTrajectories(options.codegraph)) {
+      registry.register(trajectory);
+    }
+  }
 
   const allPayloadSignalDescriptors = registry.getAllPayloadSignalDescriptors();
   // Fail-loud at composition time: if any descriptor's confidence block
