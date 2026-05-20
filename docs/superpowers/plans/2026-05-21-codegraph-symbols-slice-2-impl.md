@@ -487,6 +487,24 @@ presets.
 
 ### Task D4: Composite preset overrides for existing names (architecture: registry → composite)
 
+**Classification rule (clarified 2026-05-21):**
+
+- **Trajectory preset** — uses signals from one trajectory (+ `similarity`
+  explore-background). Lives in
+  `src/core/domains/trajectory/<key>/rerank/presets/`.
+- **Composite preset** — combines signals from 2+ trajectories. Lives in
+  **`src/core/domains/explore/rerank/presets/composite/`** — explore is the
+  composition layer; composites reference signals by string key, not by
+  importing trajectory code, so domain-boundary rules stay satisfied.
+
+**Slice 1 `blastRadius` mis-categorisation correction:** the preset shipped in
+`src/core/domains/trajectory/codegraph/symbols/rerank/presets/blast-radius.ts`
+already combines codegraph signals (`fanIn`, `isHub`, `chunkFanIn`) with the git
+`churn` weight — so it is **composite**, not a codegraph trajectory preset.
+Phase D4 **moves** it to `composite/blast-radius.ts` (with the
+research-corrected retune below) and removes the export from
+`codegraph/symbols/rerank/presets/index.ts` + `CODEGRAPH_SYMBOLS_PRESETS`.
+
 **Architectural correction (2026-05-21):** existing trajectory presets MUST NOT
 be modified. The reranker resolution pipeline already supports a composite
 override channel — `resolvePresets(registry, composite)` in
