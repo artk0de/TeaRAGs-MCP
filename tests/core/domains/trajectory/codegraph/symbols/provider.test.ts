@@ -629,7 +629,9 @@ describe("CodegraphEnrichmentProvider", () => {
       if (prevDebug === undefined) delete process.env.DEBUG;
       else process.env.DEBUG = prevDebug;
     }
-    expect(writes.some((w) => w.includes("[codegraph] cycle recompute failed"))).toBe(true);
+    // Slice 2 / B3 — message updated to "post-extract metric recompute"
+    // because the same try/catch now also covers PageRank recompute.
+    expect(writes.some((w) => w.includes("[codegraph] post-extract metric recompute failed"))).toBe(true);
   });
 
   // Slice 1 — discoverTypescriptFiles catch branch. When the walker

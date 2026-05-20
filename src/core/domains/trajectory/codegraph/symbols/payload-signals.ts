@@ -63,4 +63,13 @@ export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [
     type: "number",
     description: "Number of outgoing calls from this symbol",
   },
+  {
+    // Slice 2 / B3 — PageRank over the method call graph. Captures
+    // "central symbol everyone transitively calls" — a utility called
+    // by many high-rank methods inherits weight even when its direct
+    // fanIn is modest. damping = 0.85, eps = 1e-6, max 50 iters.
+    key: "codegraph.chunk.pageRank",
+    type: "number",
+    description: "PageRank score over the method call graph (damping 0.85, normalized to [0,1])",
+  },
 ];

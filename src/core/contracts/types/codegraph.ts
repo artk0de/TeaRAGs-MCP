@@ -213,6 +213,23 @@ export interface GraphDbClient {
    * cycle; can also be invoked manually after a force_reindex.
    */
   recomputeCycles: (scope: CycleScope) => Promise<void>;
+
+  // ── Tier 3 graph metric (Slice 2 / B3) ──
+
+  /**
+   * Recompute PageRank over the method call graph and rewrite
+   * `cg_symbols_metrics`. Iterative algorithm (damping 0.85, ε 1e-6,
+   * up to 50 iters). Called by the codegraph provider at sink.finish()
+   * so ranks stay in sync after every full enrichment cycle.
+   */
+  recomputePageRank: () => Promise<void>;
+
+  /**
+   * Look up the PageRank of a single symbol. Returns 0 when the symbol
+   * is unknown or the metrics table hasn't been populated yet — both
+   * cases are treated as "rank-irrelevant".
+   */
+  getPageRank: (symbolId: SymbolId) => Promise<number>;
 }
 
 export type CycleScope = "file" | "method";

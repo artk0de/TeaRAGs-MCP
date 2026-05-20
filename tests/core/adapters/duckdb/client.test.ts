@@ -338,6 +338,82 @@ describe("DuckDbGraphClient", () => {
     });
   });
 
+  // Slice 2 / B3 — PageRank persisted per symbol via Tarjan-shared adjacency.
+  describe("recomputePageRank + getPageRank (B3)", () => {
+    it("getPageRank returns 0 when the metrics table is empty (no recompute yet)", async () => {
+      expect(await client.getPageRank("Foo.bar")).toBe(0);
+    });
+
+    it("symmetric triangle yields equal ranks summing to ~1", async () => {
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            { sourceSymbolId: "A.foo", targetSymbolId: "B.bar", targetRelPath: "src/b.ts", callExpression: "B.bar()" },
+          ],
+        },
+      );
+      await client.upsertFile(
+        { relPath: "src/b.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            { sourceSymbolId: "B.bar", targetSymbolId: "C.baz", targetRelPath: "src/c.ts", callExpression: "C.baz()" },
+          ],
+        },
+      );
+      await client.upsertFile(
+        { relPath: "src/c.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            { sourceSymbolId: "C.baz", targetSymbolId: "A.foo", targetRelPath: "src/a.ts", callExpression: "A.foo()" },
+          ],
+        },
+      );
+      await client.recomputePageRank();
+      const rFoo = await client.getPageRank("A.foo");
+      const rBar = await client.getPageRank("B.bar");
+      const rBaz = await client.getPageRank("C.baz");
+      expect(rFoo).toBeGreaterThan(0);
+      expect(rFoo).toBeCloseTo(rBar, 3);
+      expect(rBar).toBeCloseTo(rBaz, 3);
+      expect(rFoo + rBar + rBaz).toBeCloseTo(1, 2);
+    });
+
+    it("recompute is idempotent across runs", async () => {
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            { sourceSymbolId: "A.foo", targetSymbolId: "B.bar", targetRelPath: "src/b.ts", callExpression: "B.bar()" },
+          ],
+        },
+      );
+      await client.upsertFile(
+        { relPath: "src/b.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            { sourceSymbolId: "B.bar", targetSymbolId: "A.foo", targetRelPath: "src/a.ts", callExpression: "A.foo()" },
+          ],
+        },
+      );
+      await client.recomputePageRank();
+      const first = await client.getPageRank("A.foo");
+      await client.recomputePageRank();
+      const second = await client.getPageRank("A.foo");
+      expect(first).toBeCloseTo(second, 6);
+    });
+
+    it("recompute on empty graph yields no rows (getPageRank stays 0)", async () => {
+      await client.recomputePageRank();
+      expect(await client.getPageRank("anything")).toBe(0);
+    });
+  });
+
   it("removeFile cascades into cg_symbols as well as the edge tables", async () => {
     await client.upsertFile({ relPath: "src/foo.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     await client.upsertSymbols("src/foo.ts", [

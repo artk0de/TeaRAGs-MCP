@@ -153,18 +153,20 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           await this.deps.graphDb.upsertSymbols(extraction.relPath, symbolDefs);
         }
         this.buffer.length = 0;
-        // Slice 2 / B2 — recompute Tarjan SCC for both scopes after the
-        // full extraction batch settles. Debounced by being on
-        // sink.finish (not per-write) so a 700-file run pays the cost
-        // once, not 700 times. Errors here are non-fatal — losing
-        // cycle freshness degrades find_cycles but doesn't corrupt the
-        // graph; the next sink.finish retries.
+        // Slice 2 / B2 + B3 — recompute Tarjan SCC for both scopes and
+        // PageRank over the method graph after the full extraction
+        // batch settles. Debounced by being on sink.finish (not
+        // per-write) so a 700-file run pays the cost once, not 700
+        // times. Errors here are non-fatal — losing cycle/PageRank
+        // freshness degrades find_cycles / rerank but doesn't corrupt
+        // the graph; the next sink.finish retries.
         try {
           await this.deps.graphDb.recomputeCycles("file");
           await this.deps.graphDb.recomputeCycles("method");
+          await this.deps.graphDb.recomputePageRank();
         } catch (err) {
           if (process.env.DEBUG === "true") {
-            process.stderr.write(`[codegraph] cycle recompute failed: ${(err as Error).message}\n`);
+            process.stderr.write(`[codegraph] post-extract metric recompute failed: ${(err as Error).message}\n`);
           }
         }
       },
@@ -379,9 +381,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         if (!symbolId) continue;
         const fanIn = await this.deps.graphDb.getCalledByCount(symbolId);
         const fanOut = await this.deps.graphDb.getCallSiteCount(symbolId);
+        // Slice 2 / B3 — per-symbol PageRank from cg_symbols_metrics
+        // (populated by recomputePageRank at sink.finish). Returns 0
+        // when the symbol isn't in the table yet (first index pass
+        // before recompute completes, or non-TS chunks without
+        // extraction edges).
+        const pageRankValue = await this.deps.graphDb.getPageRank(symbolId);
         perChunk.set(entry.chunkId, {
           "codegraph.chunk.fanIn": fanIn,
           "codegraph.chunk.fanOut": fanOut,
+          "codegraph.chunk.pageRank": pageRankValue,
         });
       }
       out.set(relPath, perChunk);

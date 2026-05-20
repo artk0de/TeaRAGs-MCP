@@ -30,6 +30,7 @@ import type {
   SymbolDefinition,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
+import { pageRank } from "../../infra/graph/page-rank.js";
 import { tarjanScc, type AdjacencyMap } from "../../infra/graph/tarjan-scc.js";
 
 export interface DuckDbGraphClientOptions {
@@ -272,6 +273,33 @@ export class DuckDbGraphClient implements GraphDbClient {
       else adj.set(row.source_symbol_id, [row.target_symbol_id]);
     }
     return adj;
+  }
+
+  async recomputePageRank(): Promise<void> {
+    // Reuse the same method-edge adjacency Tarjan uses; PageRank is
+    // structurally identical work (read all edges, compute, persist).
+    const adjacency = await this.loadAdjacencyFor("method");
+    const result = pageRank(adjacency);
+    await this.exec("BEGIN");
+    try {
+      await this.exec("DELETE FROM cg_symbols_metrics");
+      for (const [symbolId, rank] of result.ranks) {
+        await this.run("INSERT INTO cg_symbols_metrics (symbol_id, page_rank) VALUES (?, ?)", [symbolId, String(rank)]);
+      }
+      await this.exec("COMMIT");
+    } catch (err) {
+      await this.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  async getPageRank(symbolId: SymbolId): Promise<number> {
+    const rows = await this.queryAll<{ page_rank: number | bigint | string }>(
+      "SELECT page_rank FROM cg_symbols_metrics WHERE symbol_id = ?",
+      [symbolId],
+    );
+    const raw = rows[0]?.page_rank;
+    return raw === undefined ? 0 : Number(raw);
   }
 
   async listAllSymbols(): Promise<SymbolDefinition[]> {
