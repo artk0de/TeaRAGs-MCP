@@ -1,21 +1,31 @@
 # Static Complexity (Cyclomatic + Cognitive) — Spec
 
 **Status:** Draft, planning-ready. **Date:** 2026-05-21 **Owner:** tea-rags
-**Parent epic:** TBD (separate from codegraph epic `tea-rags-mcp-l26`) **Sibling
-spec:** `2026-04-25-codegraph-symbols-vertical-slice.md` (absorbs universal
-fanIn/fanOut + temporal coupling — see "Scope boundary" below).
+**Parent epic:** `tea-rags-mcp-968v` (separate from codegraph epic
+`tea-rags-mcp-l26`).
+
+**Sibling specs (orthogonal tracks):**
+
+- `2026-04-25-codegraph-symbols-vertical-slice.md` — codegraph (call/import
+  graph) absorbs **universal fanIn/fanOut + composite presets** (Phase D of
+  Slice 2 plan).
+- `2026-05-22-temporal-coupling-trajectory-spec.md` — separate trajectory
+  (process-derived co-change graph). Not folded into codegraph or this spec.
 
 ## Scope boundary
 
 This spec is **complexity-only** — tree-sitter-driven control-flow metrics
-inside a chunk + their file-level aggregates. Dependency-graph signals (fanIn,
-fanOut, temporalCoupling) and their composite presets land in the **codegraph
-spec** (sibling above) because they share lineage with the existing
-`codegraph.file.fanIn` / `codegraph.file.fanOut` and benefit from a unified
-namespace.
+inside a chunk + their file-level aggregates. Three independent tracks:
+
+| Track                    | Spec                                              | Slice                     |
+| ------------------------ | ------------------------------------------------- | ------------------------- |
+| Static complexity (this) | `2026-05-21-static-complexity-fan-graph-spec.md`  | Static complexity epic    |
+| Universal fan-graph      | codegraph Slice 2 plan, Phase D                   | Codegraph Slice 2         |
+| Temporal coupling        | `2026-05-22-temporal-coupling-trajectory-spec.md` | Separate trajectory (TBD) |
 
 Where this spec proposes a preset modification, it only assumes complexity
-signals; presets needing fan-graph signals are described in the codegraph spec.
+signals; presets needing fan-graph signals are described in the codegraph Slice
+2 plan.
 
 ## Why complexity is its own track
 
