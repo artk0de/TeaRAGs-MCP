@@ -1,9 +1,35 @@
 # Codegraph Symbols Sub-Trajectory — Vertical Slice 1 Design
 
-**Status:** Approved (brainstorming complete, 2026-04-25) **Epic:**
-`tea-rags-mcp-l26` **Supersedes:**
+**Status:** Approved (brainstorming complete, 2026-04-25); implementation plan
+landed 2026-05-20 — see
+`docs/superpowers/plans/2026-05-20-codegraph-symbols-slice-1-impl.md`
+(decomposes spec into 10 ordered Tasks; beads epic `tea-rags-mcp-l26`, Tasks
+T1-T10 wired 1:1).
+
+**Epic:** `tea-rags-mcp-l26` **Supersedes:**
 `docs/plans/2026-02-24-code-graph-enrichment-design.md` (treated as old draft;
 this spec restates decisions for the current architecture)
+
+## Plan-time refinements (2026-05-20)
+
+Three design decisions were locked at plan-writing time. The spec body below has
+been updated in place to reflect them; this section is a single-screen audit of
+what changed and why.
+
+1. **Extraction is a dedicated walker, not a `ChunkingHook`.** The existing hook
+   chain (`src/core/domains/ingest/pipeline/chunker/hooks/types.ts`) is
+   per-container — each hook receives `containerNode` + `validChildren`, never
+   the file root, so a hook cannot see top-level `import_statement` nodes.
+   Resolution: `TypeScriptExtractionWalker` is a standalone walker invoked once
+   per file by `TreeSitterChunker` after AST parse. The hook chain is untouched.
+2. **`App` gains flat methods `getCallers` / `getCallees`, not a `graph` sub-
+   object.** Today `App` exposes a flat method set (`semanticSearch`,
+   `findSymbol`, …); the spec's earlier `graph: GraphFacade` sub-object sketch
+   would have broken that pattern. `GraphFacade` exists internally per
+   `.claude/rules/facade-discipline.md` and is wired via `AppDeps.graphFacade`.
+3. **DuckDB driver locked: `@duckdb/node-api`.** Chosen over the older `duckdb`
+   Node bindings for the typed async API. The earlier "decided at plan-writing
+   time" hedge is closed.
 
 ## Motivation
 
@@ -460,25 +486,48 @@ MCP get_callers
 
 ## Slice 1 implementation
 
-### TS chunker hook extension
+### TS extraction walker
 
-`pipeline/chunker/hooks/typescript/` gains an extraction hook that accumulates
-imports and calls during the existing AST walk:
+The existing chunker hook chain runs **per container** — every
+`ChunkingHook.process(ctx)` call receives `containerNode` and `validChildren`,
+never the file root. Top-level `import_statement` nodes sit above all containers
+and are therefore invisible to a hook. Codegraph extraction needs both
+file-level imports and chunk-scoped calls, so it runs as a dedicated walker
+invoked once per file by `TreeSitterChunker` after AST parse — outside the hook
+chain.
 
 ```typescript
-// pipeline/chunker/hooks/typescript/extraction-hook.ts (new)
-export class TypeScriptExtractionHook implements ChunkingHook {
-  process(ctx: HookContext): void {
-    // Walks tree-sitter nodes:
-    //   - import_statement / import_clause → ImportRef[]
-    //   - call_expression scoped to current chunk → CallRef[]
-    // Stores results on ctx.extraction (a FileExtraction in progress).
-  }
+// pipeline/chunker/extraction/typescript-walker.ts (new)
+export function extractFromTypescriptFile(input: {
+  tree: Parser.Tree;
+  code: string;
+  relPath: string;
+  language: string;
+  chunks: {
+    symbolId: string;
+    startLine: number;
+    endLine: number;
+    scope: string[];
+  }[];
+}): FileExtraction {
+  // Walks tree-sitter nodes once:
+  //   - import_statement → ImportRef[]      (file-level)
+  //   - call_expression  → CallRef[]        (assigned to chunk whose
+  //                                          [startLine, endLine] range
+  //                                          contains the call)
+  // Returns a FileExtraction { imports, chunks: [{ symbolId, calls }] }.
 }
 ```
 
-The chunker's `processFile` writes `ctx.extraction` to the injected
-`ExtractionSink` after chunking finishes for the file.
+`TreeSitterChunker.chunk()` gains an optional `extractionSink?: ExtractionSink`
+constructor option. After the chunks array is built (and oversized methods have
+been split with stable symbolIds per the fix below), the chunker calls
+`extractFromTypescriptFile(...)` and writes the result to
+`extractionSink.write(extraction)`. The chunker pool threads this sink through
+`FileProcessorOptions.extractionSink`, and `processFiles` calls
+`extractionSink.finish()` once after all files in the batch have been chunked.
+The hook chain is unchanged — no new `ChunkingHook` is added to
+`langConfig.hooks`.
 
 ### symbolId stability fix
 
@@ -676,14 +725,27 @@ export class GraphFacade {
 }
 ```
 
-App interface (`core/api/public/app.ts`) gains:
+`App` interface (`core/api/public/app.ts`) gains two **flat** methods — matching
+the existing flat-method shape of `semanticSearch`, `findSymbol`, etc. (a
+sub-object `graph: GraphFacade` would have broken that pattern). `GraphFacade`
+lives behind `AppDeps.graphFacade` and is delegated to from `createApp`:
 
 ```typescript
 export interface App {
-  // existing...
-  graph: GraphFacade;
+  // existing methods...
+  getCallers: (request: GetCallersRequest) => Promise<GetCallersResponse>;
+  getCallees: (request: GetCalleesRequest) => Promise<GetCalleesResponse>;
+}
+
+export interface AppDeps {
+  // existing deps...
+  graphFacade: GraphFacade;
 }
 ```
+
+`wireFacades(deps)` returns `{ explore, ingest, graph: deps.graphFacade }`; the
+two new App methods delegate via `facades.graph.getCallers(req)` /
+`facades.graph.getCallees(req)`.
 
 ### DuckDB adapter
 
@@ -693,10 +755,12 @@ core/adapters/duckdb/
   index.ts
 ```
 
-`DuckDbGraphClient` uses the official `@duckdb/node-api` package (or `duckdb`
-Node bindings, decided at plan-writing time). Connection is a single in-process
-file-backed instance per `App` (the codegraph DB is per-collection, named
-`<collection>.codegraph.duckdb` in the data directory).
+`DuckDbGraphClient` uses the official `@duckdb/node-api` package (locked at
+plan-writing time over the older `duckdb` Node bindings — chosen for the typed
+async API and a packaging story that matches the rest of the adapter layer).
+Connection is a single in-process file-backed instance per `App` (the codegraph
+DB is per-collection, named `<collection>.codegraph.duckdb` in the data
+directory).
 
 ### Migration runner
 
@@ -875,26 +939,25 @@ core/domains/trajectory/codegraph/symbols/rerank/derived-signals/called-by-count
 core/domains/trajectory/codegraph/symbols/rerank/derived-signals/call-site-count.ts
 core/domains/trajectory/codegraph/symbols/rerank/presets/blast-radius.ts
 core/domains/trajectory/codegraph/symbols/rerank/presets/index.ts
-core/domains/ingest/pipeline/chunker/hooks/typescript/extraction-hook.ts
+core/domains/ingest/pipeline/chunker/extraction/typescript-walker.ts  # file-level walker (NOT a ChunkingHook)
 core/api/internal/facades/graph-facade.ts                    # GraphFacade
 core/api/public/dto/graph.ts                                  # DTOs
-mcp/tools/codegraph-tools.ts                                  # 2 tools
+mcp/tools/codegraph.ts                                        # 2 tools (get_callers, get_callees)
 ```
 
 ### Modified files
 
 ```
-core/contracts/types/provider.ts                              # add ExtractionSink ref (re-export from codegraph.ts)
-core/domains/ingest/pipeline/chunker/tree-sitter.ts           # symbolId fix in chunkOversizedNode
-core/domains/ingest/pipeline/chunker/hooks/typescript/index.ts  # register extraction hook
-core/domains/ingest/pipeline/file-processor.ts                # call ExtractionSink.write per file
-core/domains/ingest/pipeline/enrichment/coordinator.ts        # pass ExtractionSink to providers (if not already injectable)
+core/contracts/index.ts                                       # re-export codegraph types
+core/domains/ingest/pipeline/chunker/tree-sitter.ts           # symbolId fix in chunkOversizedNode (L194-219) + extractionSink injection
+core/domains/ingest/pipeline/file-processor.ts                # thread extractionSink; call finish() once per batch
+core/domains/ingest/pipeline/enrichment/coordinator.ts        # additive single-line injection of ExtractionSink (no refactor — file is high-churn active work)
 core/api/internal/composition.ts                              # call createCodegraphTrajectories, register L2s
-core/api/public/app.ts                                        # add `graph: GraphFacade` to App
+core/api/public/app.ts                                        # add flat `getCallers` / `getCallees` to App; `graphFacade` to AppDeps
 core/api/public/dto/index.ts                                  # re-export graph DTOs
-core/bootstrap/factory.ts                                     # construct GraphDbClient, run migrations
-core/infra/schema-drift-monitor.ts                            # codegraph drift check
-mcp/tools/index.ts                                            # register CODEGRAPH_TOOLS
+core/bootstrap/factory.ts                                     # construct DuckDbGraphClient, run migrations
+core/infra/schema-drift-monitor.ts                            # codegraph backfill check
+mcp/tools/index.ts                                            # call registerCodegraphTools
 ```
 
 `core/contracts/types/trajectory.ts` is **not** in this list — the `Trajectory`
@@ -914,18 +977,22 @@ tests/mcp/tools/codegraph-tools.test.ts
 tests/integration/codegraph-vertical-slice.test.ts             # full pipeline E2E
 ```
 
-## Open questions deferred to plan-writing
+## Open questions — resolved at plan-writing (2026-05-20)
 
-- **TS resolution depth**: relative-only vs tsconfig `paths`/`baseUrl` vs full
-  TS resolver. Affects `ts-path-mapper.ts` only. Decision: at plan-writing time
-  after measuring real-world coverage on an internal monorepo sample.
-- **DuckDB driver choice**: `@duckdb/node-api` vs `duckdb` (Node bindings).
-  Trade-off between API ergonomics and packaging overhead.
-- **Concurrency control during writes**: single AsyncQueue vs DB-level
-  transactions. Resolved at implementation time; either fits the `GraphDbClient`
-  interface as written.
-- **`imports[]` legacy field migration**: tracked as a separate ticket on the
-  epic, not part of Slice 1.
+- **TS resolution depth** — RESOLVED: Slice 1 ships relative paths + tsconfig
+  `paths` / `baseUrl`. Full TS resolver (node_modules, conditional exports)
+  deferred to Slice 3 alongside Python/Ruby resolvers. Affects
+  `ts-path-mapper.ts` only.
+- **DuckDB driver choice** — RESOLVED: `@duckdb/node-api` (see plan-time
+  refinement #3 in the header). The older `duckdb` Node bindings were rejected
+  on API ergonomics.
+- **Concurrency control during writes** — RESOLVED at implementation time: Slice
+  1 uses DB-level transactions (`BEGIN` / `COMMIT` per `upsertFile`). Either
+  approach fits the `GraphDbClient` interface as written; a Slice 2 optimisation
+  can introduce an AsyncQueue without contract change.
+- **`imports[]` legacy field migration** — DEFERRED: tracked as a separate
+  ticket on the epic, not part of Slice 1. Codegraph writes its own namespaced
+  `codegraph.file.*` fields and leaves the legacy field untouched.
 
 ## References
 
