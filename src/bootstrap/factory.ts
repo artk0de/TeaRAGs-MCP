@@ -152,8 +152,20 @@ async function resolveInfrastructure(
   return { qdrant, embeddings, modelGuard, embeddedRelease };
 }
 
-function wireComposition(codegraph?: CodegraphDeps): CompositionContext {
+function wireComposition(
+  zodConfig: ReturnType<typeof getZodConfig>,
+  trajectoryConfig: AppConfig["trajectoryIngest"],
+  codegraph?: CodegraphDeps,
+): CompositionContext {
+  // Thread git provider config into composition so the registry surfaces a
+  // fully-configured GitEnrichmentProvider via getAllEnrichmentProviders().
+  // IngestFacade no longer constructs git inline — single source of truth is
+  // the registry.
+  const squashOpts = trajectoryConfig.squashAwareSessions
+    ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
+    : undefined;
   const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
+    git: { config: zodConfig.trajectoryGit, squashOpts },
     codegraph,
   });
   const schemaBuilder = new SchemaBuilder(reranker);
@@ -225,7 +237,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
 
   const infra = await resolveInfrastructure(config, zodConfig);
   const codegraphContext = await wireCodegraph(config, zodConfig);
-  const composition = wireComposition(codegraphContext?.deps);
+  const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   const statsCache = new StatsCache(config.paths.snapshots);
   const deleteConfig = {
@@ -249,13 +261,15 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
 
   const collectionRegistry = new CollectionRegistry(config.paths.appData);
   const registryWatchStop = collectionRegistry.startWatching();
-  // Slice 1 codegraph integration: registry exposes the codegraph.symbols
-  // enrichment provider via getAllEnrichmentProviders(). Git is wired
-  // separately inside IngestFacade with its own config, so skip it
-  // here to avoid double-registration. Tracked by tea-rags-mcp-pwx5 as
-  // a quick scaffold — proper fix is teaching IngestFacade to consume
-  // the registry directly.
-  const extraEnrichmentProviders = composition.registry.getAllEnrichmentProviders().filter((p) => p.key !== "git");
+  // Registry is the single source of truth for enrichment providers. Git
+  // is now constructed inside GitTrajectory at composition time with
+  // proper config, so the registry returns a ready-to-use provider list.
+  // Bootstrap applies the user-visible toggle (`enableGitMetadata`) here
+  // rather than inside the facade — keeps IngestFacade free of provider
+  // construction or config-aware filtering.
+  const enrichmentProviders = composition.registry
+    .getAllEnrichmentProviders()
+    .filter((p) => p.key !== "git" || config.trajectoryIngest.enableGitMetadata);
 
   const ingest = new IngestFacade({
     qdrant: infra.qdrant,
@@ -273,7 +287,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     modelGuard: infra.modelGuard,
     collectionRegistry,
     teaRagsVersion: pkg.version,
-    extraEnrichmentProviders,
+    enrichmentProviders,
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [

@@ -14,6 +14,8 @@ import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
 import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
+import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
+import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
 
@@ -28,6 +30,14 @@ export interface CompositionResult {
 
 export interface CompositionOptions {
   /**
+   * Git trajectory provider configuration. The GitEnrichmentProvider is
+   * constructed inside GitTrajectory at composition time so the registry's
+   * `getAllEnrichmentProviders()` returns a fully-configured provider —
+   * IngestFacade consumes the registry list directly (no inline
+   * construction). When omitted, GitTrajectory wires with default config.
+   */
+  git?: { config?: Partial<GitProviderConfig>; squashOpts?: SquashOptions };
+  /**
    * When provided, registers the codegraph L1 family (Slice 1: Symbols).
    * Bootstrap supplies these deps when `CODEGRAPH_ENABLED` is true; tests
    * pass them directly. Omitting opts the family out — the rest of the
@@ -39,7 +49,7 @@ export interface CompositionOptions {
 export function createComposition(options: CompositionOptions = {}): CompositionResult {
   const registry = new TrajectoryRegistry();
   registry.register(new StaticTrajectory());
-  registry.register(new GitTrajectory());
+  registry.register(new GitTrajectory(options.git?.config, options.git?.squashOpts));
   if (options.codegraph) {
     for (const trajectory of createCodegraphTrajectories(options.codegraph)) {
       registry.register(trajectory);

@@ -45,6 +45,33 @@ describe("createComposition", () => {
     expect(reranker.getAvailablePresets("search_code")).toContain("relevance");
   });
 
+  describe("when git deps are supplied", () => {
+    // Registry-driven IngestFacade refactor: GitEnrichmentProvider is no
+    // longer constructed inline by the facade. Composition owns it via
+    // GitTrajectory and the registry surfaces it through
+    // getAllEnrichmentProviders(). This test pins the new contract: a
+    // git provider is always present, with or without explicit config.
+    it("returns a git enrichment provider from the registry without config", () => {
+      const { registry } = createComposition();
+      const providers = registry.getAllEnrichmentProviders();
+      expect(providers.some((p) => p.key === "git")).toBe(true);
+    });
+
+    it("threads git config through GitTrajectory to the registered provider", () => {
+      // The provider should construct without throwing; full config
+      // round-trip is verified by GitTrajectory unit tests. Here we only
+      // verify the option plumbing accepts the shape and the resulting
+      // composition is well-formed.
+      const { registry } = createComposition({
+        git: {
+          config: { logMaxAgeMonths: 6, chunkMaxAgeMonths: 6 },
+          squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 },
+        },
+      });
+      expect(registry.getAllEnrichmentProviders().some((p) => p.key === "git")).toBe(true);
+    });
+  });
+
   describe("when codegraph deps are supplied", () => {
     // Drives the `options.codegraph` branch in createComposition,
     // which in turn drives the codegraph L1 factory and the

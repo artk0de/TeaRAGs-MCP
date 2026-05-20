@@ -24,7 +24,6 @@ import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/a
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
-import { GitEnrichmentProvider } from "../../../domains/trajectory/git/provider.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
@@ -59,14 +58,16 @@ export interface IngestFacadeDeps {
   collectionRegistry?: CollectionRegistry;
   teaRagsVersion?: string;
   /**
-   * Additional enrichment providers wired alongside the hardcoded git
-   * provider. Bootstrap supplies registry-resolved trajectories whose
-   * providers were registered after composition (e.g. codegraph
-   * symbols). The list is appended to the providers array passed to
-   * EnrichmentCoordinator — order matters only for prefetch start
-   * time, not for marker-store keying (keys are per provider).
+   * Full enrichment provider list passed verbatim to EnrichmentCoordinator
+   * — single source of truth, owned by the caller (bootstrap). Bootstrap
+   * builds this list from `composition.registry.getAllEnrichmentProviders()`
+   * and applies config-driven filters (e.g. drops the git provider when
+   * `trajectoryConfig.enableGitMetadata` is false). Order matters only for
+   * prefetch start time, not for marker-store keying (keys are per provider).
+   * Defaults to empty when omitted — IngestFacade does not synthesize
+   * providers inline.
    */
-  extraEnrichmentProviders?: EnrichmentProvider[];
+  enrichmentProviders?: EnrichmentProvider[];
 }
 
 export class IngestFacade {
@@ -140,17 +141,10 @@ export class IngestFacade {
   } {
     const { qdrant, embeddings, config, trajectoryConfig, deleteConfig, pipelineTuning, syncTuning } = deps;
 
-    const squashOpts = trajectoryConfig.squashAwareSessions
-      ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
-      : undefined;
-    const providers: EnrichmentProvider[] = [];
-    if (trajectoryConfig.enableGitMetadata) {
-      providers.push(new GitEnrichmentProvider(trajectoryConfig.trajectoryGit ?? undefined, squashOpts));
-    }
-    // Registry-resolved providers (codegraph, future trajectories) — these
-    // come from `composition.registry.getAllEnrichmentProviders()` filtered
-    // to skip the git provider (which is wired here with its own config).
-    if (deps.extraEnrichmentProviders) providers.push(...deps.extraEnrichmentProviders);
+    // Providers come from the TrajectoryRegistry via bootstrap (no inline
+    // construction here). `trajectoryConfig.enableGitMetadata` filtering
+    // already happened upstream — IngestFacade trusts the list as-is.
+    const providers: EnrichmentProvider[] = deps.enrichmentProviders ?? [];
     const enrichmentProviderKey = providers.length > 0 ? providers[0].key : undefined;
 
     const ingestDeps = createIngestDependencies(
