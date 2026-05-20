@@ -414,6 +414,161 @@ chunks, ~700 files) before committing to this Task.
 
 ---
 
+## Phase D — Universal fan-graph extension (folded in 2026-05-21)
+
+Per parallel research (Yatish 2020, Santos 2017, arxiv 2106.04687, SonarQube),
+the codegraph signal namespace absorbs the **universal** fan-graph layer:
+
+1. Today `codegraph.file.fanIn` / `codegraph.file.fanOut` exist only for TS
+   files (extraction hook).
+2. Phase D extends them to **all indexed files** by reverse-pass over the
+   existing `imports[]` payload — language-agnostic fallback when no extraction
+   hook exists.
+3. Adds raw `chunk.fanOutPerLine = imports.length / chunkSize` to neutralize the
+   size-moderation effect on fan-out (arxiv 2106.04687) — replaces naïve
+   `fanOut` derived as the primary efferent-coupling signal.
+4. Expands raw signals: `codegraph.file.isHub` and `codegraph.file.isLeaf`
+   already exist (Slice 1) — Phase D ensures they're populated via the universal
+   fallback path as well, not only the TS extraction path.
+5. Removes the originally-proposed standalone `instability` (Martin) preset
+   (Santos 2017: 48% projects have I=1, no discrimination). Keeps `instability`
+   as a signal embedded in `architecturalHub` / `changeRisk`.
+
+**Out of scope for Phase D / Slice 2:**
+
+- `temporalCoupling` (co-change) signal + preset — different trajectory (process
+  metrics, not graph). Spec deferred to its own document:
+  `2026-05-22-temporal-coupling-trajectory-spec.md` (planning placeholder —
+  author when Slice 2 closes).
+
+### Task D1: Universal fanIn / fanOut via imports[] reverse-pass
+
+**Files:**
+
+- Modify: `src/core/domains/trajectory/codegraph/symbols/payload-signals.ts` —
+  broaden descriptor docs to clarify dual-source population (extraction edges OR
+  `imports[]` reverse-pass fallback)
+- Create: `src/core/domains/trajectory/codegraph/imports-reverse-pass.ts` —
+  accumulator over Qdrant scroll emits `file.importedByCount` reverse-index of
+  `imports[]`
+- Modify: `CodegraphEnrichmentProvider.buildFileSignals` — when a file has no
+  extraction edges, populate fanIn/fanOut from imports-reverse-pass +
+  `imports.length` respectively
+- Tests: Python file gets fanIn populated; TS file's fanIn from extraction takes
+  precedence over imports[] fallback; isHub/isLeaf computed from universal path
+  equal those from extraction path for cross-tested TS file
+
+### Task D2: fanOutPerLine raw signal
+
+**Files:**
+
+- Modify: `payload-signals.ts` — add `chunk.fanOutPerLine` raw payload signal =
+  `imports.length / chunkSize`
+- Modify: `CodegraphEnrichmentProvider.buildChunkSignals` — populate
+  `chunk.fanOutPerLine`
+- Modify: `chunk-fan-out.ts` derived signal — switch source from
+  `codegraph.chunk.fanOut` to `chunk.fanOutPerLine` (backward-compat: old raw
+  key stays in payload; new derived just reads the normalized one)
+
+**Why**: arxiv 2106.04687 — class size moderates fan-out's effect on defects.
+Without normalization, big files trigger false positives in fan-out-based
+presets.
+
+### Task D3: isHub / isLeaf universal-coverage parity
+
+**Files:**
+
+- Modify: `CodegraphEnrichmentProvider.buildFileSignals` — populate
+  `codegraph.file.isHub` and `codegraph.file.isLeaf` consistently for both
+  extraction-edge and reverse-pass paths (currently isHub/isLeaf use adaptive
+  percentiles which work on either source — verify in tests)
+- Tests: Python file gets isHub/isLeaf populated identically to TS file given
+  same fanIn/fanOut shape
+
+### Task D4: Preset modifications using fan-graph (research-corrected weights)
+
+Process-metric domination (Yatish 2020 — AUC 95% vs 54%) means fan-graph weights
+stay modest:
+
+| Preset              | Add to `weights`                | Add to `overlayMask` (raw) |
+| ------------------- | ------------------------------- | -------------------------- |
+| **`techDebt`**      | `fanIn` 0.1                     | file: `importedByCount`    |
+| **`dangerous`**     | `fanIn` 0.15                    | file: `importedByCount`    |
+| **`ownership`**     | `fanIn` 0.1                     | file: `importedByCount`    |
+| **`securityAudit`** | `fanIn` 0.1                     | file: `importedByCount`    |
+| **`codeReview`**    | `fanIn` 0.1                     | file: `importedByCount`    |
+| **`onboarding`**    | `fanOutPerLine` -0.1 (penalty)  | chunk: `fanOutPerLine`     |
+| **`stable`**        | `fanOutPerLine` -0.05 (penalty) | chunk: `fanOutPerLine`     |
+
+Existing `blastRadius` preset (shipped in Slice 1) — re-tune to align with
+Yatish 2020 (process-dominant):
+
+- Current:
+  `similarity: 0.25, fanIn: 0.25, instability: 0.15, isHub: 0.15, churn: 0.1, chunkFanIn: 0.1`
+- New:
+  `similarity: 0.2, fanIn: 0.3, churn: 0.2, bugFix: 0.15, isHub: 0.1, chunkFanIn: 0.05`
+
+### Task D5: New composite presets (minus instability)
+
+| Preset                   | `weights` (derived, research-corrected)                                                                                                    | `overlayMask` (raw)                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| **`changeRisk`**         | `similarity` 0.2, `churn` 0.15, `bugFix` 0.15, `volatility` 0.1, `complexity` 0.1, `cognitiveLoad` 0.05, `fanIn` 0.15, `knowledgeSilo` 0.1 | chunk: `cyclomatic`, `cognitive`, `bugFixRate`; file: `importedByCount`, `commitCount` |
+| **`architecturalHub`**   | `similarity` 0.2, `isHub` 0.4, `fanIn` 0.2, `fanOutPerLine` 0.1, `churn` 0.1                                                               | file: `importedByCount`, `imports`, `isHub`                                            |
+| **`safeToRefactor`**     | `similarity` 0.25, `isLeaf` 0.35, `stability` 0.2, `cognitiveLoad` -0.1                                                                    | file: `importedByCount`, `imports`, `isLeaf`, `ageDays`                                |
+| **`couplingComplexity`** | `similarity` 0.2, `fanOutPerLine` 0.25, `cognitiveLoad` 0.2, `chunkSize` 0.15, `complexity` 0.1                                            | chunk: `cognitive`, `cyclomatic`, `fanOutPerLine`                                      |
+| **`entryPoint`**         | `similarity` 0.3, `fanOutPerLine` 0.3, `fanIn` -0.2 (low = bonus), `chunkSize` 0.1                                                         | chunk: `fanOutPerLine`; file: `importedByCount`                                        |
+
+**Removed from original proposal:**
+
+- ~~`instability`~~ (Martin) standalone preset — Santos 2017: skewed
+  distribution, no discrimination. Signal stays embedded in `architecturalHub`.
+- ~~`temporalCoupling`~~ — moved to separate trajectory spec (out of codegraph
+  scope).
+
+**`changeRisk` weight rationale:** process metrics (churn + bugFix +
+volatility + knowledgeSilo = 0.5) dominate product metrics (complexity +
+cognitive + fanIn = 0.3), per Yatish 2020. Similarity preserved at 0.2 for
+relevance grounding.
+
+### Phase D Dependency DAG
+
+```
+D1 (universal fan-graph) ─→ D2 (fanOutPerLine) ─→ D3 (isHub/isLeaf parity) ─→ D4 (preset mods) ─→ D5 (new composites)
+```
+
+D1 is foundational — all subsequent tasks depend on universal-coverage fanIn.
+
+### Slice 2 placement decision
+
+Phase D adds 5 sub-tasks. Recommended order: D1 + D2 + D3 ship within Slice 2
+alongside Phase B; D4 + D5 are pure preset/weight changes and ship as the
+**closing batch** of Slice 2 (no schema migration, low risk).
+
+### Knowledge-base docs (post-merge)
+
+Update `website/docs`:
+
+- `signals/fan-in-out.md` — universal coverage now documented (was TS-only in
+  Slice 1); include `fanOutPerLine` derivation
+- `signals/is-hub-is-leaf.md` — explain adaptive-percentile thresholds (per
+  Santos 2017, no absolute reference value)
+- `presets/blast-radius.md` — updated weights with Yatish 2020 reference
+- `presets/change-risk.md` — NEW article explaining the process-dominant
+  three-axis composite
+- `presets/architectural-hub.md`, `safe-to-refactor.md`, `entry-point.md`,
+  `coupling-complexity.md` — NEW
+
+## Research sources (Phase D)
+
+- _Revisiting Process versus Product Metrics: A Large Scale Analysis_ — Yatish
+  et al. 2020 (ICSME) — process metrics dominate (AUC 95% vs 54%)
+- _Software Instability Analysis Based on Afferent and Efferent Coupling
+  Measures_ — Santos & Resende 2017 — instability rejected as preset
+- _Does class size matter? Effect of class size in software defect prediction_ —
+  arxiv 2106.04687 — motivates fanOutPerLine
+
+---
+
 ## Risk Register
 
 | Risk                                                           | Mitigation                                                                                 |
