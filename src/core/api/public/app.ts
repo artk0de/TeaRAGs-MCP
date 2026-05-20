@@ -21,6 +21,7 @@ import type { EmbeddingModelGuard } from "../../infra/embedding-model-guard.js";
 import type { ProjectInfo } from "../../infra/registry/index.js";
 import type { SchemaDriftMonitor } from "../../infra/schema-drift-monitor.js";
 import type { ExploreFacade } from "../internal/facades/explore-facade.js";
+import type { GraphFacade } from "../internal/facades/graph-facade.js";
 import type { IngestFacade } from "../internal/facades/ingest-facade.js";
 import { CollectionOps } from "../internal/ops/collection-ops.js";
 import { DocumentOps } from "../internal/ops/document-ops.js";
@@ -35,6 +36,10 @@ import type {
   ExploreResponse,
   FindSimilarRequest,
   FindSymbolRequest,
+  GetCalleesRequest,
+  GetCalleesResponse,
+  GetCallersRequest,
+  GetCallersResponse,
   HybridSearchRequest,
   IndexMetrics,
   IndexOptions,
@@ -93,6 +98,10 @@ export interface App {
   }) => Promise<{ collectionName: string; alreadyIndexed: boolean }>;
   listProjects: () => Promise<{ projects: ProjectInfo[] }>;
   unregisterProject: (input: { name: string }) => Promise<{ removed: boolean }>;
+
+  // -- Codegraph (→ internal/facades/graph-facade.ts) --
+  getCallers: (request: GetCallersRequest) => Promise<GetCallersResponse>;
+  getCallees: (request: GetCalleesRequest) => Promise<GetCalleesResponse>;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +118,8 @@ export interface AppDeps {
   projectRegistryOps: ProjectRegistryOps;
   quantizationScalar: boolean;
   modelGuard?: EmbeddingModelGuard;
+  /** Optional — present when CODEGRAPH_DISABLED is unset and DuckDB is wired. */
+  graphFacade?: GraphFacade;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,5 +226,12 @@ export function createApp(deps: AppDeps): App {
     registerProject: async (input) => ops.projectRegistry.register(input),
     listProjects: async () => ops.projectRegistry.list(),
     unregisterProject: async (input) => ops.projectRegistry.unregister(input),
+
+    // -- Codegraph — delegate to GraphFacade. When graphFacade is undefined
+    // (CODEGRAPH_DISABLED or DuckDB unavailable) surface an empty result
+    // rather than crashing the tool — the schema-drift monitor instructs
+    // the user to reindex.
+    getCallers: async (req) => (deps.graphFacade ? deps.graphFacade.getCallers(req) : { callers: [] }),
+    getCallees: async (req) => (deps.graphFacade ? deps.graphFacade.getCallees(req) : { callees: [] }),
   };
 }

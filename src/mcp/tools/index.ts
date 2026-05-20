@@ -7,6 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { App, SchemaBuilder } from "../../core/api/index.js";
 import { createRegisterTool, type HealthProbes } from "../middleware/error-handler.js";
 import { registerCodeTools } from "./code.js";
+import { registerCodegraphTools } from "./codegraph.js";
 import { registerCollectionTools } from "./collection.js";
 import { registerDocumentTools } from "./document.js";
 import { registerSearchTools } from "./explore.js";
@@ -30,6 +31,7 @@ export function registerAllTools(server: McpServer, deps: ToolDependencies): voi
   registerDocumentTools(server, { app: deps.app, register });
   registerSearchTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
   registerCodeTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
+  registerCodegraphTools(server, { app: deps.app, register });
   registerProjectTools(server, { app: deps.app, register });
   registerRegisterProjectTool(server, { app: deps.app, register });
   registerUnregisterProjectTool(server, { app: deps.app, register });
