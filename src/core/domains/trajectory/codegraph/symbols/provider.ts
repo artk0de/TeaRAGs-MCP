@@ -44,6 +44,8 @@ import type {
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { extractFromTypescriptFile } from "../../../ingest/pipeline/chunker/extraction/typescript-walker.js";
+import { pageRank } from "../infra/page-rank.js";
+import { tarjanScc } from "../infra/tarjan-scc.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 
 const IGNORE_DIRS = new Set(["node_modules", "build", "dist", ".git", ".claude", "coverage", "tests", "test"]);
@@ -156,14 +158,28 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // Slice 2 / B2 + B3 — recompute Tarjan SCC for both scopes and
         // PageRank over the method graph after the full extraction
         // batch settles. Debounced by being on sink.finish (not
-        // per-write) so a 700-file run pays the cost once, not 700
-        // times. Errors here are non-fatal — losing cycle/PageRank
-        // freshness degrades find_cycles / rerank but doesn't corrupt
-        // the graph; the next sink.finish retries.
+        // per-write) so a 700-file run pays the cost once.
+        //
+        // Algorithm ownership: adapter exposes pure CRUD primitives
+        // (`listAdjacency`, `replaceCycles`, `replacePageRanks`); the
+        // domain (this provider) runs Tarjan / PageRank from
+        // `codegraph/infra/` and persists results. Keeps adapter
+        // layer free of domain-level algorithm dependencies.
+        //
+        // Errors are non-fatal — losing cycle/PageRank freshness
+        // degrades find_cycles / rerank but doesn't corrupt the
+        // graph; the next sink.finish retries.
         try {
-          await this.deps.graphDb.recomputeCycles("file");
-          await this.deps.graphDb.recomputeCycles("method");
-          await this.deps.graphDb.recomputePageRank();
+          const fileAdj = await this.deps.graphDb.listAdjacency("file");
+          const fileSccs = tarjanScc(fileAdj);
+          await this.deps.graphDb.replaceCycles("file", fileSccs);
+
+          const methodAdj = await this.deps.graphDb.listAdjacency("method");
+          const methodSccs = tarjanScc(methodAdj);
+          await this.deps.graphDb.replaceCycles("method", methodSccs);
+
+          const rankResult = pageRank(methodAdj);
+          await this.deps.graphDb.replacePageRanks(rankResult.ranks);
         } catch (err) {
           if (process.env.DEBUG === "true") {
             process.stderr.write(`[codegraph] post-extract metric recompute failed: ${(err as Error).message}\n`);

@@ -30,8 +30,13 @@ import type {
   SymbolDefinition,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
-import { pageRank } from "../../infra/graph/page-rank.js";
-import { tarjanScc, type AdjacencyMap } from "../../infra/graph/tarjan-scc.js";
+
+// Graph algorithms (Tarjan SCC, PageRank) intentionally NOT imported
+// here. Per the layering rules in .claude/rules/domain-boundaries.md
+// adapters/ may not import from domains/. Cycle/PageRank computation
+// lives in domains/trajectory/codegraph/infra/ and the adapter only
+// exposes the primitives (listAdjacency, replaceCycles, replacePageRanks)
+// the domain orchestrator drives.
 
 export interface DuckDbGraphClientOptions {
   path: string;
@@ -218,38 +223,18 @@ export class DuckDbGraphClient implements GraphDbClient {
     return [...grouped.entries()].map(([cycleId, members]) => ({ cycleId, scope, members }));
   }
 
-  async recomputeCycles(scope: CycleScope): Promise<void> {
-    const adjacency = await this.loadAdjacencyFor(scope);
-    const sccs = tarjanScc(adjacency);
-    await this.exec("BEGIN");
-    try {
-      await this.run("DELETE FROM cg_symbols_cycles WHERE scope = ?", [scope]);
-      for (let cycleId = 0; cycleId < sccs.length; cycleId++) {
-        const members = sccs[cycleId];
-        for (let position = 0; position < members.length; position++) {
-          await this.run("INSERT INTO cg_symbols_cycles (cycle_id, scope, member, position) VALUES (?, ?, ?, ?)", [
-            cycleId,
-            scope,
-            members[position],
-            position,
-          ]);
-        }
-      }
-      await this.exec("COMMIT");
-    } catch (err) {
-      await this.exec("ROLLBACK");
-      throw err;
-    }
-  }
-
   /**
-   * Materialize the adjacency map for Tarjan from the appropriate edge
-   * table. For file scope, vertices are relPath; for method scope,
-   * vertices are symbolId. Method edges with null target_symbol_id
-   * (resolver couldn't pin the call) are skipped — they create
-   * phantom edges that pollute SCC detection.
+   * Materialise the adjacency map for the requested scope from the
+   * appropriate edge table. For file scope, vertices are relPath; for
+   * method scope, vertices are symbolId. Method edges with null
+   * target_symbol_id (resolver couldn't pin the call) are skipped —
+   * phantom edges pollute graph algorithms downstream.
+   *
+   * Pure read. Domain orchestrator owns the algorithm (Tarjan,
+   * PageRank, …) and calls `replaceCycles` / `replacePageRanks` to
+   * persist back. This keeps adapter at the CRUD layer.
    */
-  private async loadAdjacencyFor(scope: CycleScope): Promise<AdjacencyMap> {
+  async listAdjacency(scope: CycleScope): Promise<Map<string, string[]>> {
     if (scope === "file") {
       const rows = await this.queryAll<{ source_rel_path: string; target_rel_path: string }>(
         "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file",
@@ -275,15 +260,33 @@ export class DuckDbGraphClient implements GraphDbClient {
     return adj;
   }
 
-  async recomputePageRank(): Promise<void> {
-    // Reuse the same method-edge adjacency Tarjan uses; PageRank is
-    // structurally identical work (read all edges, compute, persist).
-    const adjacency = await this.loadAdjacencyFor("method");
-    const result = pageRank(adjacency);
+  async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {
+    await this.exec("BEGIN");
+    try {
+      await this.run("DELETE FROM cg_symbols_cycles WHERE scope = ?", [scope]);
+      for (let cycleId = 0; cycleId < sccs.length; cycleId++) {
+        const members = sccs[cycleId];
+        for (let position = 0; position < members.length; position++) {
+          await this.run("INSERT INTO cg_symbols_cycles (cycle_id, scope, member, position) VALUES (?, ?, ?, ?)", [
+            cycleId,
+            scope,
+            members[position],
+            position,
+          ]);
+        }
+      }
+      await this.exec("COMMIT");
+    } catch (err) {
+      await this.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {
     await this.exec("BEGIN");
     try {
       await this.exec("DELETE FROM cg_symbols_metrics");
-      for (const [symbolId, rank] of result.ranks) {
+      for (const [symbolId, rank] of ranks) {
         await this.run("INSERT INTO cg_symbols_metrics (symbol_id, page_rank) VALUES (?, ?)", [symbolId, String(rank)]);
       }
       await this.exec("COMMIT");

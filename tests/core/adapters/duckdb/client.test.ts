@@ -6,7 +6,27 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
+import { pageRank } from "../../../../src/core/domains/trajectory/codegraph/infra/page-rank.js";
+import { tarjanScc } from "../../../../src/core/domains/trajectory/codegraph/infra/tarjan-scc.js";
 import { runMigrations } from "../../../../src/core/infra/migration/database/runner.js";
+
+// Adapter exposes primitives only (listAdjacency / replaceCycles /
+// replacePageRanks); the orchestration that combines them with the
+// graph algorithms lives in the codegraph trajectory provider. Tests
+// mirror that orchestration here via these tiny helpers so the
+// per-primitive tests below still read like end-to-end recompute
+// scenarios — without re-coupling the adapter to the algorithms.
+async function recomputeCyclesViaPrimitives(client: DuckDbGraphClient, scope: "file" | "method"): Promise<void> {
+  const adj = await client.listAdjacency(scope);
+  const sccs = tarjanScc(adj);
+  await client.replaceCycles(scope, sccs);
+}
+
+async function recomputePageRankViaPrimitives(client: DuckDbGraphClient): Promise<void> {
+  const adj = await client.listAdjacency("method");
+  const result = pageRank(adj);
+  await client.replacePageRanks(result.ranks);
+}
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../src/core/infra/migration/database/migrations");
@@ -231,7 +251,7 @@ describe("DuckDbGraphClient", () => {
         { relPath: "src/b.ts", language: "typescript" },
         { fileEdges: [{ targetRelPath: "src/a.ts", importText: "./a" }], methodEdges: [] },
       );
-      await client.recomputeCycles("file");
+      await recomputeCyclesViaPrimitives(client, "file");
       const cycles = await client.findCycles("file");
       expect(cycles).toHaveLength(1);
       expect(cycles[0].scope).toBe("file");
@@ -247,8 +267,8 @@ describe("DuckDbGraphClient", () => {
         { relPath: "src/b.ts", language: "typescript" },
         { fileEdges: [{ targetRelPath: "src/a.ts", importText: "./a" }], methodEdges: [] },
       );
-      await client.recomputeCycles("file");
-      await client.recomputeCycles("file");
+      await recomputeCyclesViaPrimitives(client, "file");
+      await recomputeCyclesViaPrimitives(client, "file");
       const cycles = await client.findCycles("file");
       expect(cycles).toHaveLength(1);
     });
@@ -259,7 +279,7 @@ describe("DuckDbGraphClient", () => {
         { relPath: "src/source.ts", language: "typescript" },
         { fileEdges: [{ targetRelPath: "src/sink.ts", importText: "./sink" }], methodEdges: [] },
       );
-      await client.recomputeCycles("file");
+      await recomputeCyclesViaPrimitives(client, "file");
       expect(await client.findCycles("file")).toEqual([]);
     });
 
@@ -292,7 +312,7 @@ describe("DuckDbGraphClient", () => {
           ],
         },
       );
-      await client.recomputeCycles("method");
+      await recomputeCyclesViaPrimitives(client, "method");
       const cycles = await client.findCycles("method");
       expect(cycles).toHaveLength(1);
       expect(cycles[0].scope).toBe("method");
@@ -329,10 +349,10 @@ describe("DuckDbGraphClient", () => {
           ],
         },
       );
-      await client.recomputeCycles("file");
-      await client.recomputeCycles("method");
+      await recomputeCyclesViaPrimitives(client, "file");
+      await recomputeCyclesViaPrimitives(client, "method");
       // Now recompute file scope alone — method cycles must remain.
-      await client.recomputeCycles("file");
+      await recomputeCyclesViaPrimitives(client, "file");
       expect(await client.findCycles("file")).toHaveLength(1);
       expect(await client.findCycles("method")).toHaveLength(1);
     });
@@ -372,7 +392,7 @@ describe("DuckDbGraphClient", () => {
           ],
         },
       );
-      await client.recomputePageRank();
+      await recomputePageRankViaPrimitives(client);
       const rFoo = await client.getPageRank("A.foo");
       const rBar = await client.getPageRank("B.bar");
       const rBaz = await client.getPageRank("C.baz");
@@ -401,15 +421,15 @@ describe("DuckDbGraphClient", () => {
           ],
         },
       );
-      await client.recomputePageRank();
+      await recomputePageRankViaPrimitives(client);
       const first = await client.getPageRank("A.foo");
-      await client.recomputePageRank();
+      await recomputePageRankViaPrimitives(client);
       const second = await client.getPageRank("A.foo");
       expect(first).toBeCloseTo(second, 6);
     });
 
     it("recompute on empty graph yields no rows (getPageRank stays 0)", async () => {
-      await client.recomputePageRank();
+      await recomputePageRankViaPrimitives(client);
       expect(await client.getPageRank("anything")).toBe(0);
     });
   });
@@ -530,7 +550,7 @@ describe("DuckDbGraphClient", () => {
   it("recomputeCycles('method') succeeds on an empty method graph", async () => {
     // No method edges yet — recomputeCycles must walk the empty
     // adjacency and DELETE+INSERT a zero-row result.
-    await client.recomputeCycles("method");
+    await recomputeCyclesViaPrimitives(client, "method");
     expect(await client.findCycles("method")).toEqual([]);
   });
 

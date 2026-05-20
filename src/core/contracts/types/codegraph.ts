@@ -206,23 +206,32 @@ export interface GraphDbClient {
   findCycles: (scope: CycleScope) => Promise<CycleEntry[]>;
 
   /**
-   * Recompute Tarjan SCC from current edges for `scope` and rewrite
-   * the cycles table for that scope. Atomic: DELETE+INSERT in a
-   * transaction. Called by the codegraph provider at sink.finish() so
-   * cycles stay in sync with the graph after every full enrichment
-   * cycle; can also be invoked manually after a force_reindex.
+   * Read the adjacency (source -> target[]) for `scope` from the
+   * appropriate edge table. Domain orchestrators (codegraph provider,
+   * metrics service) consume this to run Tarjan / PageRank without
+   * the adapter knowing about either algorithm — keeps the adapter
+   * layer pure CRUD.
    */
-  recomputeCycles: (scope: CycleScope) => Promise<void>;
+  listAdjacency: (scope: CycleScope) => Promise<Map<string, string[]>>;
+
+  /**
+   * Atomically replace the cycles table for `scope` with the supplied
+   * SCC list. Domain runs Tarjan; adapter persists the result.
+   * Each inner array is one SCC's members in walk order; cycle_id is
+   * assigned by the adapter using the array index. Single-node SCCs
+   * are caller-filtered.
+   */
+  replaceCycles: (scope: CycleScope, sccs: readonly (readonly string[])[]) => Promise<void>;
 
   // ── Tier 3 graph metric (Slice 2 / B3) ──
 
   /**
-   * Recompute PageRank over the method call graph and rewrite
-   * `cg_symbols_metrics`. Iterative algorithm (damping 0.85, ε 1e-6,
-   * up to 50 iters). Called by the codegraph provider at sink.finish()
-   * so ranks stay in sync after every full enrichment cycle.
+   * Atomically replace the per-symbol PageRank table with the supplied
+   * ranks. Domain runs the iterative algorithm; adapter persists.
+   * Empty input wipes the table — useful after a force-reindex when
+   * the method graph is fully rebuilt.
    */
-  recomputePageRank: () => Promise<void>;
+  replacePageRanks: (ranks: ReadonlyMap<string, number>) => Promise<void>;
 
   /**
    * Look up the PageRank of a single symbol. Returns 0 when the symbol
