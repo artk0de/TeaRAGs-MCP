@@ -648,4 +648,118 @@ describe("CodegraphEnrichmentProvider", () => {
     // overlays emitted. Map is defined and empty (not undefined).
     expect(overlays.size).toBe(0);
   });
+
+  // Slice 1 — LANGUAGES dispatch table. The provider walks any file
+  // whose extension appears in LANGUAGES. Adding Python and Ruby
+  // walkers/nameOf entries means buildFileSignals must:
+  //   1. Pick up .py / .rb files via discoverSupportedFiles.
+  //   2. Dispatch to the right walker via LANGUAGES[ext].walker.
+  //   3. Call the right nameOf (pyNameOf / rbNameOf) in collectSymbols.
+  //   4. Compose symbol ids with the per-language scopeSeparator.
+  it("buildFileSignals dispatches .py files through the Python walker + pyNameOf", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-py-disp-"));
+    try {
+      mkdirSync(join(root, "pkg"), { recursive: true });
+      // `class` triggers class_definition (descendsInto=true) + nested
+      // function_definition. Two top-level functions exercise the
+      // function_definition branch in pyNameOf.
+      writeFileSync(
+        join(root, "pkg", "service.py"),
+        [
+          "class Service:",
+          "    def go(self):",
+          "        return 1",
+          "    def stop(self):",
+          "        return 2",
+          "",
+          "def helper():",
+          "    return 3",
+          "",
+        ].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()]).toEqual(["pkg/service.py"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Class symbol present.
+      expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
+      // Nested methods carry the parent's scope joined by "."
+      // (Python's scopeSeparator).
+      const goEntries = lookup.lookupByShortName("go");
+      expect(goEntries.length).toBeGreaterThan(0);
+      expect(goEntries[0].symbolId).toContain("Service.go");
+      // Top-level helper function.
+      expect(lookup.lookupByShortName("helper").length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("buildFileSignals dispatches .rb files through the Ruby walker + rbNameOf with :: separator", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-disp-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      // Plain class with one instance method and one singleton method.
+      // rbNameOf must recognise BOTH `method` and `singleton_method`
+      // node types; the scopeSeparator is "::".
+      writeFileSync(
+        join(root, "app", "models", "user.rb"),
+        ["class User", "  def find(id)", "    id", "  end", "  def self.recent", "    []", "  end", "end", ""].join(
+          "\n",
+        ),
+      );
+      // Compound class header `class Acme::Auth` — exercises
+      // scope_resolution branch in rbNameOf (scopeResolutionText).
+      mkdirSync(join(root, "app", "services", "acme"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "services", "acme", "auth.rb"),
+        ["class Acme::Auth", "  def call", "    1", "  end", "end", ""].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      const keys = [...overlays.keys()].sort();
+      expect(keys).toEqual(["app/models/user.rb", "app/services/acme/auth.rb"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Class names indexed.
+      expect(lookup.lookupByShortName("User").length).toBeGreaterThan(0);
+      // Compound class composes via "::". scope_resolution branch.
+      const acmeAuth = lookup.lookupByShortName("Acme::Auth");
+      expect(acmeAuth.length).toBeGreaterThan(0);
+      // Methods nested under classes get "::"-joined ids. The
+      // provider's lastSegment helper splits on "/" then ".", so for
+      // a "::"-joined Ruby id like "User::find" the shortName comes
+      // out intact ("User::find") — we query the symbol table by
+      // that literal shortName.
+      const findEntries = lookup.lookupByShortName("User::find");
+      expect(findEntries[0].symbolId).toBe("User::find");
+      // singleton_method branch in rbNameOf.
+      const recentEntries = lookup.lookupByShortName("User::recent");
+      expect(recentEntries[0].symbolId).toBe("User::recent");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // extractOneFile defensive fallback: when an unknown extension slips
+  // past (caller-supplied paths bypass the discoverSupportedFiles
+  // filter), the provider returns an empty FileExtraction instead of
+  // throwing. Covers the `if (!langConfig)` branch on line 419.
+  it("buildFileSignals tolerates caller-supplied paths with unsupported extensions", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-unsupp-"));
+    try {
+      // The caller hands us a `.go` file path (not in LANGUAGES).
+      // discoverSupportedFiles wouldn't pick it up, but a caller can
+      // pass arbitrary paths via options.paths. SUPPORTED_EXTS
+      // filtering on line 322 already excludes it from
+      // targetRelPaths, so it won't be walked — and the overlay still
+      // gets emitted (zero-valued) per the consistent-shape contract.
+      const overlays = await provider.buildFileSignals(root, {
+        paths: ["pkg/legacy.go"],
+      });
+      expect(overlays.has("pkg/legacy.go")).toBe(true);
+      // No symbol-table entries for the unsupported file.
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("anything")).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

@@ -23,6 +23,8 @@ import { readdirSync, readFileSync, type Dirent } from "node:fs";
 import { join, relative } from "node:path";
 
 import Parser from "tree-sitter";
+import PyLang from "tree-sitter-python";
+import RbLang from "tree-sitter-ruby";
 import TsLang from "tree-sitter-typescript";
 
 import type {
@@ -43,13 +45,82 @@ import type {
   ProviderRunMetrics,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import { extractFromPythonFile } from "../../../ingest/pipeline/chunker/extraction/python-walker.js";
+import { extractFromRubyFile } from "../../../ingest/pipeline/chunker/extraction/ruby-walker.js";
 import { extractFromTypescriptFile } from "../../../ingest/pipeline/chunker/extraction/typescript-walker.js";
 import { pageRank } from "../infra/page-rank.js";
 import { tarjanScc } from "../infra/tarjan-scc.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 
 const IGNORE_DIRS = new Set(["node_modules", "build", "dist", ".git", ".claude", "coverage", "tests", "test"]);
-const TS_EXTS = new Set([".ts", ".tsx"]);
+
+/**
+ * Per-language extraction dispatch table. Codegraph walks any file
+ * whose extension appears here. The walker emits a FileExtraction; the
+ * symbol collector pulls top-level symbols out of the parsed tree.
+ *
+ * Adding a language: add a tree-sitter parser to deps, create a walker
+ * in ingest/pipeline/chunker/extraction/, drop a row here.
+ */
+interface LanguageConfig {
+  language: string;
+  loadParser: () => Parser.Language;
+  walker: (input: {
+    tree: Parser.Tree;
+    code: string;
+    relPath: string;
+    language: string;
+    chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
+  }) => FileExtraction;
+  /**
+   * Maps a tree-sitter node to a (name, descendsInto) pair. Returns
+   * null for nodes that are not top-level symbols. `descendsInto: true`
+   * means the walker recurses into the node's children with extended
+   * scope (e.g. class bodies whose methods become nested symbols).
+   */
+  nameOf: (node: Parser.SyntaxNode) => { name: string; descendsInto: boolean } | null;
+  /**
+   * Joiner used to build the fully-qualified symbol id from the scope
+   * stack + the local node name. TypeScript / Python use ".", Ruby
+   * uses "::", Go uses ".", Rust uses "::". Wrong separator here
+   * silently misroutes resolver lookups — Ruby `Acme::User` indexed as
+   * `Acme.User` wouldn't match the receiver string the walker emits
+   * for the call site.
+   */
+  scopeSeparator: string;
+}
+
+const LANGUAGES: Record<string, LanguageConfig> = {
+  ".ts": {
+    language: "typescript",
+    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
+    walker: extractFromTypescriptFile,
+    nameOf: tsNameOf,
+    scopeSeparator: ".",
+  },
+  ".tsx": {
+    language: "typescript",
+    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).tsx,
+    walker: extractFromTypescriptFile,
+    nameOf: tsNameOf,
+    scopeSeparator: ".",
+  },
+  ".py": {
+    language: "python",
+    loadParser: () => PyLang as Parser.Language,
+    walker: extractFromPythonFile,
+    nameOf: pyNameOf,
+    scopeSeparator: ".",
+  },
+  ".rb": {
+    language: "ruby",
+    loadParser: () => RbLang as Parser.Language,
+    walker: extractFromRubyFile,
+    nameOf: rbNameOf,
+    scopeSeparator: "::",
+  },
+};
+const SUPPORTED_EXTS = new Set(Object.keys(LANGUAGES));
 
 export interface CodegraphProviderDeps {
   graphDb: GraphDbClient;
@@ -244,11 +315,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   async buildFileSignals(root: string, options?: { paths?: string[] }): Promise<Map<string, FileSignalOverlay>> {
     // Discover the file set to walk. Caller-supplied paths win
-    // (incremental reindex); otherwise scan the repo for `.ts`/`.tsx`.
+    // (incremental reindex); otherwise scan the repo for any
+    // supported language extension.
     const targetRelPaths =
       options?.paths && options.paths.length > 0
-        ? options.paths.filter((p) => TS_EXTS.has(extensionOf(p)))
-        : this.discoverTypescriptFiles(root);
+        ? options.paths.filter((p) => SUPPORTED_EXTS.has(extensionOf(p)))
+        : this.discoverSupportedFiles(root);
 
     // Populate the graph DB by walking each file's AST and feeding the
     // resulting FileExtraction through this provider's own sink. This
@@ -306,7 +378,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * pass already done by `processFiles` once the chunker pool returns
    * AST artifacts alongside chunks.
    */
-  private discoverTypescriptFiles(root: string): string[] {
+  private discoverSupportedFiles(root: string): string[] {
     const out: string[] = [];
     const walk = (dir: string): void => {
       let entries: Dirent[];
@@ -323,7 +395,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           walk(full);
           continue;
         }
-        if (entry.isFile() && TS_EXTS.has(extensionOf(entry.name))) {
+        if (entry.isFile() && SUPPORTED_EXTS.has(extensionOf(entry.name))) {
           out.push(relative(root, full).replace(/\\/g, "/"));
         }
       }
@@ -333,35 +405,46 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Parse a single TS file from disk and produce a `FileExtraction`
-   * matching the chunker's symbol shape. The chunker proper applies
-   * richer hooks (class-body, test-DSL, oversized split) — codegraph
-   * needs only the top-level symbol identifiers, so a simple walker
-   * over function/method/class declarations is sufficient for slice 1.
+   * Parse a single file from disk and produce a `FileExtraction`
+   * matching the chunker's symbol shape. Dispatches by file extension
+   * to the appropriate language config (parser + walker + symbol
+   * collector). The chunker proper applies richer hooks (class-body,
+   * test-DSL, oversized split) — codegraph needs only the top-level
+   * symbol identifiers, so a simple per-language walker over
+   * function/method/class declarations is sufficient.
    */
   private extractOneFile(root: string, relPath: string): FileExtraction {
+    const ext = extensionOf(relPath);
+    const langConfig = LANGUAGES[ext];
+    if (!langConfig) {
+      // discoverSupportedFiles already filters by SUPPORTED_EXTS; this
+      // is a defensive guard for callers that pass paths directly.
+      return { relPath, language: "", imports: [], chunks: [], fileScope: [] };
+    }
     const code = readFileSync(join(root, relPath), "utf8");
     const parser = new Parser();
-    parser.setLanguage((TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript);
+    parser.setLanguage(langConfig.loadParser());
     const tree = parser.parse(code);
-    const chunks = this.collectSymbols(tree);
-    return extractFromTypescriptFile({
+    const chunks = this.collectSymbols(tree, langConfig.nameOf, langConfig.scopeSeparator);
+    return langConfig.walker({
       tree,
       code,
       relPath,
-      language: "typescript",
+      language: langConfig.language,
       chunks,
     });
   }
 
   private collectSymbols(
     tree: Parser.Tree,
+    nameOf: (node: Parser.SyntaxNode) => { name: string; descendsInto: boolean } | null,
+    separator: string,
   ): { symbolId: string; startLine: number; endLine: number; scope: string[] }[] {
     const out: { symbolId: string; startLine: number; endLine: number; scope: string[] }[] = [];
     const walk = (node: Parser.SyntaxNode, scope: string[]): void => {
       const named = nameOf(node);
       if (named) {
-        const fq = [...scope, named.name].join(".");
+        const fq = [...scope, named.name].join(separator);
         out.push({
           symbolId: fq,
           startLine: node.startPosition.row + 1,
@@ -496,7 +579,7 @@ function extensionOf(path: string): string {
   return dot === -1 ? "" : path.slice(dot);
 }
 
-function nameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+function tsNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
   if (node.type === "function_declaration" || node.type === "method_definition") {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: false };
@@ -506,4 +589,45 @@ function nameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean 
     if (id) return { name: id.text, descendsInto: true };
   }
   return null;
+}
+
+function pyNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+  if (node.type === "function_definition") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false };
+  }
+  if (node.type === "class_definition") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: true };
+  }
+  return null;
+}
+
+function rbNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+  // tree-sitter-ruby: `class A; end`, `module B; end`, `def foo; end`.
+  // class/module name can itself be a scope_resolution (`class A::B`)
+  // — read the full chain as the local name so the symbol id
+  // composes correctly with the outer scope at join time.
+  if (node.type === "method" || node.type === "singleton_method") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false };
+  }
+  if (node.type === "class" || node.type === "module") {
+    const nameNode = node.childForFieldName("name");
+    if (!nameNode) return null;
+    const localName = nameNode.type === "scope_resolution" ? scopeResolutionText(nameNode) : nameNode.text;
+    return { name: localName, descendsInto: true };
+  }
+  return null;
+}
+
+function scopeResolutionText(node: Parser.SyntaxNode): string {
+  // Mirror ruby-walker's readScopeResolution; kept local to avoid an
+  // export from the walker just for the provider's nameOf.
+  const name = node.childForFieldName("name");
+  const scope = node.childForFieldName("scope");
+  if (!name) return "";
+  const left =
+    scope?.type === "scope_resolution" ? scopeResolutionText(scope) : scope?.type === "constant" ? scope.text : "";
+  return left ? `${left}::${name.text}` : name.text;
 }

@@ -22,6 +22,7 @@ import { ArchitecturalHubPreset } from "./architectural-hub.js";
 import { BlastRadiusPreset } from "./blast-radius.js";
 import { CodeReviewCompositePreset } from "./code-review.js";
 import { DangerousCompositePreset } from "./dangerous.js";
+import { EntryPointPreset } from "./entry-point.js";
 import { HotspotsCompositePreset } from "./hotspots.js";
 import { OwnershipCompositePreset } from "./ownership.js";
 import { SecurityAuditCompositePreset } from "./security-audit.js";
@@ -32,6 +33,7 @@ export {
   BlastRadiusPreset,
   CodeReviewCompositePreset,
   DangerousCompositePreset,
+  EntryPointPreset,
   HotspotsCompositePreset,
   OwnershipCompositePreset,
   SecurityAuditCompositePreset,
@@ -71,7 +73,7 @@ export function buildCompositePresets(opts: CompositePresetOptions): RerankPrese
       new CodeReviewCompositePreset(),
     );
     // New composite names — no trajectory equivalent.
-    out.push(new BlastRadiusPreset(), new ArchitecturalHubPreset());
+    out.push(new BlastRadiusPreset(), new ArchitecturalHubPreset(), new EntryPointPreset());
   }
   return out;
 }

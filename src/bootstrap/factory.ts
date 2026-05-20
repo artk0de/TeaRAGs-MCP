@@ -26,6 +26,8 @@ import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/in
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.js";
+import { PythonCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/python/index.js";
+import { RubyCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ruby/index.js";
 import { loadTsConfig, TSCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ts/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
@@ -220,7 +222,11 @@ async function wireCodegraph(
   }
 
   const tsOptions = loadTsConfig(process.cwd());
-  const resolvers = new Map<string, CallResolver>([["typescript", new TSCallResolver(tsOptions)]]);
+  const resolvers = new Map<string, CallResolver>([
+    ["typescript", new TSCallResolver(tsOptions)],
+    ["python", new PythonCallResolver()],
+    ["ruby", new RubyCallResolver()],
+  ]);
 
   // Hydrate the symbol table from disk on cold start. Without this,
   // an incremental reindex of file A cannot resolve calls into an
