@@ -40,6 +40,7 @@ import type {
   EnrichmentProvider,
   FileSignalOverlay,
   FilterDescriptor,
+  ProviderRunMetrics,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { extractFromTypescriptFile } from "../../../ingest/pipeline/chunker/extraction/typescript-walker.js";
@@ -73,6 +74,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * the public contract.
    */
   private readonly chunkSymbolByLine = new Map<string, Map<number, string>>();
+  /**
+   * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
+   * `CompletionRunner` at end of each enrichment cycle. Tracked here
+   * (not in the sink) so they survive across multiple sink.write/finish
+   * pairs within a single run (e.g. backfill paths).
+   */
+  private runStats = createEmptyRunStats();
 
   constructor(private readonly deps: CodegraphProviderDeps) {
     this.derivedSignals = deps.derivedSignals ?? [];
@@ -100,15 +108,35 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // a ChunkLookupEntry that only carries chunkId+startLine+endLine.
         this.indexChunkSymbolsByLine(extraction);
         this.buffer.push(extraction);
+        this.runStats.extractedFiles += 1;
       },
       finish: async () => {
         for (const extraction of this.buffer) {
           const edges = this.resolveExtraction(extraction);
           await this.deps.graphDb.upsertFile({ relPath: extraction.relPath, language: extraction.language }, edges);
+          this.runStats.fileEdgeCount += edges.fileEdges.length;
+          this.runStats.methodEdgeCount += edges.methodEdges.length;
         }
         this.buffer.length = 0;
       },
     };
+  }
+
+  /**
+   * Per-run counters for `EnrichmentMetrics.byProvider["codegraph.symbols"]`.
+   * Read-and-clear: returning the snapshot resets internal state so the
+   * next enrichment cycle starts at zero. CompletionRunner calls this
+   * once per cycle.
+   */
+  getRunMetrics(): ProviderRunMetrics | undefined {
+    const { extractedFiles, fileEdgeCount, methodEdgeCount, callsAttempted, callsResolved } = this.runStats;
+    if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
+      this.runStats = createEmptyRunStats();
+      return undefined;
+    }
+    const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / callsAttempted;
+    this.runStats = createEmptyRunStats();
+    return { extractedFiles, fileEdgeCount, methodEdgeCount, resolveSuccessRate };
   }
 
   private indexChunkSymbolsByLine(extraction: FileExtraction): void {
@@ -331,9 +359,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       }
     }
 
-    // Method-level edges from calls.
+    // Method-level edges from calls. Track resolve success ratio so the
+    // run metrics surface how many call sites the resolver couldn't pin
+    // to a target (low ratio = lots of dynamic / external calls).
     for (const chunk of extraction.chunks) {
       for (const call of chunk.calls) {
+        this.runStats.callsAttempted += 1;
         const target = resolver.resolve(call, {
           callerFile: extraction.relPath,
           callerScope: chunk.scope,
@@ -341,6 +372,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           symbolTable: this.deps.symbolTable,
         });
         if (!target) continue;
+        this.runStats.callsResolved += 1;
         methodEdges.push({
           sourceSymbolId: chunk.symbolId,
           targetSymbolId: target.targetSymbolId,
@@ -352,6 +384,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
     return { fileEdges, methodEdges };
   }
+}
+
+interface RunStats {
+  extractedFiles: number;
+  fileEdgeCount: number;
+  methodEdgeCount: number;
+  callsAttempted: number;
+  callsResolved: number;
+}
+
+function createEmptyRunStats(): RunStats {
+  return { extractedFiles: 0, fileEdgeCount: 0, methodEdgeCount: 0, callsAttempted: 0, callsResolved: 0 };
 }
 
 function lastSegment(name: string): string {

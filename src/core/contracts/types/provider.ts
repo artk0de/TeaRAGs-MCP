@@ -8,7 +8,7 @@
  */
 
 import type { QdrantFilterCondition } from "../../adapters/qdrant/types.js";
-import type { ChunkLookupEntry } from "../../types.js";
+import type { ChunkLookupEntry, ProviderRunMetrics } from "../../types.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
 import type { PayloadSignalDescriptor } from "./trajectory.js";
 
@@ -120,7 +120,16 @@ export interface EnrichmentProvider {
     chunkMap: Map<string, ChunkLookupEntry[]>,
     options?: ChunkSignalOptions,
   ) => Promise<Map<string, Map<string, ChunkSignalOverlay>>>;
+  /**
+   * Optional per-run counters surfaced via
+   * `EnrichmentMetrics.byProvider[provider.key]`. Returned shape is
+   * provider-defined; coordinator stores it verbatim. Called once per
+   * enrichment cycle by `CompletionRunner.run`; provider is expected to
+   * reset internal counters after each call (or return values aggregated
+   * since the last reset).
+   */
+  getRunMetrics?: () => ProviderRunMetrics | undefined;
 }
 
 // Re-export for convenience
-export type { ChunkLookupEntry } from "../../types.js";
+export type { ChunkLookupEntry, ProviderRunMetrics } from "../../types.js";

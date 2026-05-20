@@ -125,6 +125,46 @@ describe("EnrichmentCoordinator", () => {
     expect(metrics).toHaveProperty("missedFiles");
   });
 
+  // Slice 2 / A2 — per-provider counters reach EnrichmentMetrics.byProvider
+  // through the optional `provider.getRunMetrics()` hook on each provider
+  // CompletionRunner sees in its contexts map. Providers without the
+  // hook (or returning undefined) are silently skipped — byProvider is
+  // absent rather than emitted as an empty object.
+  it("awaitCompletion populates byProvider from provider.getRunMetrics()", async () => {
+    const provider: EnrichmentProvider = {
+      key: "codegraph.symbols",
+      signals: [],
+      derivedSignals: [],
+      filters: [],
+      presets: [],
+      resolveRoot: (p: string) => p,
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      getRunMetrics: vi.fn(() => ({ extractedFiles: 7, fileEdgeCount: 13, resolveSuccessRate: 0.92 })),
+    };
+    const coord = new EnrichmentCoordinator(mockQdrant, provider);
+    coord.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 10));
+    const metrics = await coord.awaitCompletion("test-col");
+    expect(metrics.byProvider).toBeDefined();
+    expect(metrics.byProvider?.["codegraph.symbols"]).toEqual({
+      extractedFiles: 7,
+      fileEdgeCount: 13,
+      resolveSuccessRate: 0.92,
+    });
+    expect(provider.getRunMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it("awaitCompletion omits byProvider when no provider reports counters", async () => {
+    // Default mock provider has no getRunMetrics hook — coordinator
+    // must not synthesize an empty byProvider object (would clutter
+    // get_index_status responses).
+    coordinator.prefetch("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 10));
+    const metrics = await coordinator.awaitCompletion("test-col");
+    expect(metrics.byProvider).toBeUndefined();
+  });
+
   it("handles multiple providers in parallel", async () => {
     const providerA: EnrichmentProvider = {
       key: "alpha",

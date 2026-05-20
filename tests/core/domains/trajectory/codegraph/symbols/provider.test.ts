@@ -40,6 +40,61 @@ describe("CodegraphEnrichmentProvider", () => {
     expect(provider.signals.map((s) => s.key)).toContain("codegraph.chunk.fanOut");
   });
 
+  // Slice 2 / A2 — per-provider EnrichmentMetrics. The provider tracks
+  // how many files it walked, how many graph edges it produced, and what
+  // fraction of call sites the resolver actually pinned to a target.
+  // CompletionRunner aggregates these into EnrichmentMetrics.byProvider.
+  it("getRunMetrics reports counters after a finished extraction cycle and resets them", async () => {
+    const sink = provider.asExtractionSink();
+    await sink.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
+      fileScope: [],
+    });
+    await sink.write({
+      relPath: "src/main.ts",
+      language: "typescript",
+      imports: [{ importText: "./foo", startLine: 1 }],
+      chunks: [
+        {
+          symbolId: "main",
+          scope: [],
+          calls: [
+            { callText: "Foo.bar()", receiver: "Foo", member: "bar", startLine: 4 },
+            // Receiver "Mystery" has no symbol-table entry → unresolved,
+            // contributes to callsAttempted but NOT callsResolved.
+            { callText: "Mystery.nope()", receiver: "Mystery", member: "nope", startLine: 5 },
+          ],
+        },
+      ],
+      fileScope: [],
+    });
+    await sink.finish();
+
+    const m = provider.getRunMetrics();
+    expect(m).toBeDefined();
+    expect(m).toMatchObject({
+      extractedFiles: 2,
+      fileEdgeCount: 1, // src/main.ts imports ./foo → src/foo.ts
+      methodEdgeCount: 1, // only Foo.bar() resolves
+    });
+    // 1 resolved / 2 attempted = 0.5
+    expect((m as { resolveSuccessRate: number }).resolveSuccessRate).toBeCloseTo(0.5, 5);
+
+    // Read-and-clear semantics — the next call must start from zero
+    // even before another sink cycle. Coordinator relies on this for
+    // per-run isolation.
+    const next = provider.getRunMetrics();
+    expect(next).toBeUndefined();
+  });
+
+  it("getRunMetrics returns undefined when no files were extracted", () => {
+    // Fresh provider, no sink activity → no counters to report.
+    expect(provider.getRunMetrics()).toBeUndefined();
+  });
+
   it("sink finish populates graphDb with file edges and method edges", async () => {
     const sink = provider.asExtractionSink();
     await sink.write({
