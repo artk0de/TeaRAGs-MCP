@@ -143,6 +143,61 @@ describe("CodegraphEnrichmentProvider", () => {
     await expect(provider.handleDeletedPaths([])).resolves.toBeUndefined();
   });
 
+  // Slice 2 / A4b — re-extraction of a modified file must clear stale
+  // edges before inserting new ones. Otherwise edge counts drift up
+  // permanently as the file is re-indexed. This exercises the end-to-end
+  // sink → graphDb path (not just the adapter unit test) to confirm the
+  // provider doesn't accidentally double-emit on its side either.
+  it("re-extracting same file via sink keeps edge counts stable (no doubling)", async () => {
+    const writeOnce = async (target: string, sym: string) => {
+      const sink = provider.asExtractionSink();
+      await sink.write({
+        relPath: "src/main.ts",
+        language: "typescript",
+        imports: [{ importText: `./${target}`, startLine: 1 }],
+        chunks: [
+          {
+            symbolId: "main",
+            scope: [],
+            calls: [
+              { callText: `${sym}()`, receiver: sym.split(".")[0], member: sym.split(".")[1] ?? sym, startLine: 4 },
+            ],
+          },
+        ],
+        fileScope: [],
+      });
+      await sink.finish();
+    };
+    // Seed targets so the resolver can pin them.
+    const seed = provider.asExtractionSink();
+    await seed.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
+      fileScope: [],
+    });
+    await seed.write({
+      relPath: "src/bar.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Bar.baz", scope: ["Bar"], calls: [] }],
+      fileScope: [],
+    });
+    await seed.finish();
+
+    await writeOnce("foo", "Foo.bar");
+    expect(await client.getFanOut("src/main.ts")).toBe(1);
+    expect(await client.getFanIn("src/foo.ts")).toBe(1);
+
+    // Modify main.ts — now imports bar instead of foo.
+    await writeOnce("bar", "Bar.baz");
+    // Stable fanOut (not 2), and old import target dropped.
+    expect(await client.getFanOut("src/main.ts")).toBe(1);
+    expect(await client.getFanIn("src/foo.ts")).toBe(0);
+    expect(await client.getFanIn("src/bar.ts")).toBe(1);
+  });
+
   it("sink finish populates graphDb with file edges and method edges", async () => {
     const sink = provider.asExtractionSink();
     await sink.write({

@@ -45,6 +45,59 @@ describe("DuckDbGraphClient", () => {
     expect(await client.hasData()).toBe(true);
   });
 
+  // Slice 2 / A4b — incremental modify semantics. When a file is
+  // re-extracted (modified between indexes), upsertFile must clear all
+  // edges sourced from that file before inserting new ones. Otherwise
+  // edges from previous versions accumulate and fanIn/fanOut drift
+  // permanently. The DELETE+INSERT pass at the head of upsertFile
+  // already enforces this; this test pins it as a regression guard.
+  it("upsertFile clears old edges before inserting new ones (incremental modify)", async () => {
+    // Initial extraction: src/main.ts has one import + one call edge.
+    await client.upsertFile({ relPath: "src/foo.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+    await client.upsertFile({ relPath: "src/bar.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+    await client.upsertFile(
+      { relPath: "src/main.ts", language: "typescript" },
+      {
+        fileEdges: [{ targetRelPath: "src/foo.ts", importText: "./foo" }],
+        methodEdges: [
+          {
+            sourceSymbolId: "main",
+            targetSymbolId: "Foo.bar",
+            targetRelPath: "src/foo.ts",
+            callExpression: "Foo.bar()",
+          },
+        ],
+      },
+    );
+    expect(await client.getFanOut("src/main.ts")).toBe(1);
+    expect(await client.getCallSiteCount("main")).toBe(1);
+
+    // Re-extract: now imports src/bar.ts instead, calls Bar.baz()
+    // instead. Old edges (foo, Foo.bar) must be gone.
+    await client.upsertFile(
+      { relPath: "src/main.ts", language: "typescript" },
+      {
+        fileEdges: [{ targetRelPath: "src/bar.ts", importText: "./bar" }],
+        methodEdges: [
+          {
+            sourceSymbolId: "main",
+            targetSymbolId: "Bar.baz",
+            targetRelPath: "src/bar.ts",
+            callExpression: "Bar.baz()",
+          },
+        ],
+      },
+    );
+
+    // fanOut stable at 1 (not doubled to 2), and old targets gone.
+    expect(await client.getFanOut("src/main.ts")).toBe(1);
+    expect(await client.getCallSiteCount("main")).toBe(1);
+    expect(await client.getFanIn("src/foo.ts")).toBe(0); // old import edge gone
+    expect(await client.getCalledByCount("Foo.bar")).toBe(0); // old call edge gone
+    expect(await client.getFanIn("src/bar.ts")).toBe(1);
+    expect(await client.getCalledByCount("Bar.baz")).toBe(1);
+  });
+
   it("removeFile cascades incoming + outgoing edges via ON DELETE CASCADE", async () => {
     await client.upsertFile({ relPath: "src/a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     await client.upsertFile(
