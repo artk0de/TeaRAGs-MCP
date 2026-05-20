@@ -37,7 +37,7 @@ describe("CodegraphEnrichmentProvider", () => {
   it("exposes the documented provider key and signal descriptors", () => {
     expect(provider.key).toBe("codegraph.symbols");
     expect(provider.signals.map((s) => s.key)).toContain("codegraph.file.fanIn");
-    expect(provider.signals.map((s) => s.key)).toContain("codegraph.chunk.callSiteCount");
+    expect(provider.signals.map((s) => s.key)).toContain("codegraph.chunk.fanOut");
   });
 
   it("sink finish populates graphDb with file edges and method edges", async () => {
@@ -206,13 +206,17 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
-  it("buildChunkSignals attaches calledByCount and callSiteCount per chunk by symbolId", async () => {
+  it("buildChunkSignals attaches chunk fanIn and fanOut per chunk by symbolId", async () => {
     const sink = provider.asExtractionSink();
+    // Each ChunkExtraction now carries startLine/endLine so the
+    // provider's internal chunkSymbolByLine map can recover symbolId
+    // for a later buildChunkSignals lookup that only sees
+    // ChunkLookupEntry { chunkId, startLine, endLine }.
     await sink.write({
       relPath: "src/foo.ts",
       language: "typescript",
       imports: [],
-      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [], startLine: 10, endLine: 20 }],
       fileScope: [],
     });
     await sink.write({
@@ -224,19 +228,23 @@ describe("CodegraphEnrichmentProvider", () => {
           symbolId: "main",
           scope: [],
           calls: [{ callText: "Foo.bar()", receiver: "Foo", member: "bar", startLine: 4 }],
+          startLine: 3,
+          endLine: 5,
         },
       ],
       fileScope: [],
     });
     await sink.finish();
-    const chunkMap = new Map([
-      ["src/main.ts", [{ id: "chunk-main", symbolId: "main" } as never]],
-      ["src/foo.ts", [{ id: "chunk-foo-bar", symbolId: "Foo.bar" } as never]],
+    // ChunkLookupEntry contract: { chunkId, startLine, endLine } — no
+    // symbolId field. Provider resolves symbolId via the line index.
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>([
+      ["src/main.ts", [{ chunkId: "chunk-main", startLine: 3, endLine: 5 }]],
+      ["src/foo.ts", [{ chunkId: "chunk-foo-bar", startLine: 10, endLine: 20 }]],
     ]);
     const overlays = await provider.buildChunkSignals("/", chunkMap);
     const main = overlays.get("src/main.ts")?.get("chunk-main");
-    expect(main?.["codegraph.chunk.callSiteCount"]).toBe(1);
+    expect(main?.["codegraph.chunk.fanOut"]).toBe(1);
     const fooBar = overlays.get("src/foo.ts")?.get("chunk-foo-bar");
-    expect(fooBar?.["codegraph.chunk.calledByCount"]).toBe(1);
+    expect(fooBar?.["codegraph.chunk.fanIn"]).toBe(1);
   });
 });

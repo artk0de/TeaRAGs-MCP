@@ -39,8 +39,12 @@ export function mapImportToFile(importText: string, callerFile: string, options:
 }
 
 function appendTsExtension(path: string): string {
-  if (path.endsWith(".ts") || path.endsWith(".tsx") || path.endsWith(".js") || path.endsWith(".jsx")) {
-    return path;
-  }
+  // TS NodeNext convention: source code writes `import "./foo.js"` but
+  // the actual file on disk is `./foo.ts`. Rewrite the suffix so graph
+  // edges land on paths that match the codegraph file table. `.ts`/`.tsx`
+  // pass through unchanged; extensionless paths get `.ts` appended.
+  if (path.endsWith(".ts") || path.endsWith(".tsx")) return path;
+  if (path.endsWith(".js")) return `${path.slice(0, -3)}.ts`;
+  if (path.endsWith(".jsx")) return `${path.slice(0, -4)}.tsx`;
   return `${path}.ts`;
 }

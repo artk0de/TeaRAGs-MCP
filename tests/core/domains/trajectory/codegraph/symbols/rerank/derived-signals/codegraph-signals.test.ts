@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CalledByCountSignal,
-  CallSiteCountSignal,
+  ChunkFanInSignal,
+  ChunkFanOutSignal,
   CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
   FanInSignal,
   FanOutSignal,
@@ -43,26 +43,20 @@ describe("codegraph derived signals", () => {
     expect(sig.extract({ "codegraph.file.isLeaf": false }, {})).toBe(0);
   });
 
-  it("CalledByCountSignal normalizes against bounds", () => {
-    const sig = new CalledByCountSignal();
-    expect(sig.extract({ "codegraph.chunk.calledByCount": 20 }, { bounds: { "chunk.calledByCount": 40 } })).toBeCloseTo(
-      0.5,
-      5,
-    );
+  it("ChunkFanInSignal normalizes codegraph.chunk.fanIn against bounds", () => {
+    const sig = new ChunkFanInSignal();
+    expect(sig.extract({ "codegraph.chunk.fanIn": 20 }, { bounds: { "chunk.fanIn": 40 } })).toBeCloseTo(0.5, 5);
   });
 
-  it("CallSiteCountSignal normalizes against bounds", () => {
-    const sig = new CallSiteCountSignal();
-    expect(sig.extract({ "codegraph.chunk.callSiteCount": 15 }, { bounds: { "chunk.callSiteCount": 30 } })).toBeCloseTo(
-      0.5,
-      5,
-    );
+  it("ChunkFanOutSignal normalizes codegraph.chunk.fanOut against bounds", () => {
+    const sig = new ChunkFanOutSignal();
+    expect(sig.extract({ "codegraph.chunk.fanOut": 15 }, { bounds: { "chunk.fanOut": 30 } })).toBeCloseTo(0.5, 5);
   });
 
   it("CODEGRAPH_SYMBOLS_DERIVED_SIGNALS contains all 7 signals", () => {
     expect(CODEGRAPH_SYMBOLS_DERIVED_SIGNALS.map((s) => s.name).sort()).toEqual([
-      "callSiteCount",
-      "calledByCount",
+      "chunkFanIn",
+      "chunkFanOut",
       "fanIn",
       "fanOut",
       "instability",
@@ -79,5 +73,6 @@ describe("codegraph derived signals", () => {
     expect(preset.tools).toContain("rank_chunks");
     expect(preset.weights.similarity).toBe(0.25);
     expect(preset.weights.fanIn).toBe(0.25);
+    expect(preset.weights.chunkFanIn).toBe(0.1);
   });
 });

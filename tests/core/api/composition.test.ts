@@ -78,7 +78,7 @@ describe("createComposition", () => {
       expect(registry.has("codegraph.symbols")).toBe(true);
       // Codegraph-owned payload signals are now part of the aggregated set.
       expect(allPayloadSignalDescriptors.find((s) => s.key === "codegraph.file.fanIn")).toBeDefined();
-      expect(allPayloadSignalDescriptors.find((s) => s.key === "codegraph.chunk.callSiteCount")).toBeDefined();
+      expect(allPayloadSignalDescriptors.find((s) => s.key === "codegraph.chunk.fanOut")).toBeDefined();
       // Resolved presets include the codegraph family's contributions —
       // checking the count is robust to preset renames.
       expect(resolvedPresets.length).toBeGreaterThan(0);

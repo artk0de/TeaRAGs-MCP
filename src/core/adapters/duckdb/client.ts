@@ -84,14 +84,23 @@ export class DuckDbGraphClient implements GraphDbClient {
       await this.run("DELETE FROM cg_symbols_edges_file WHERE source_rel_path = ?", [node.relPath]);
       await this.run("DELETE FROM cg_symbols_edges_method WHERE source_rel_path = ?", [node.relPath]);
       for (const e of edges.fileEdges) {
+        // INSERT OR IGNORE: dedupe (source, target) — a file may
+        // re-import the same module on different lines, producing the
+        // same edge twice in one extraction batch.
         await this.run(
-          "INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)",
+          "INSERT OR IGNORE INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)",
           [node.relPath, e.targetRelPath, e.importText],
         );
       }
       for (const e of edges.methodEdges) {
+        // INSERT OR IGNORE: same call shape may repeat — e.g.
+        // `this.cache.get(x)` invoked from multiple branches of the
+        // same method body. collectCalls walks every call_expression
+        // and emits one CallRef per occurrence; the PK
+        // (source_symbol_id, call_expression, target_symbol_id) is
+        // edge-existence semantics, not occurrence count.
         await this.run(
-          "INSERT INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression) VALUES (?, ?, ?, ?, ?)",
+          "INSERT OR IGNORE INTO cg_symbols_edges_method (source_symbol_id, source_rel_path, target_symbol_id, target_rel_path, call_expression) VALUES (?, ?, ?, ?, ?)",
           [e.sourceSymbolId, node.relPath, e.targetSymbolId, e.targetRelPath, e.callExpression],
         );
       }

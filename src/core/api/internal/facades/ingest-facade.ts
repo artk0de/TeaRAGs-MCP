@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
@@ -57,6 +58,15 @@ export interface IngestFacadeDeps {
   modelGuard?: EmbeddingModelGuard;
   collectionRegistry?: CollectionRegistry;
   teaRagsVersion?: string;
+  /**
+   * Additional enrichment providers wired alongside the hardcoded git
+   * provider. Bootstrap supplies registry-resolved trajectories whose
+   * providers were registered after composition (e.g. codegraph
+   * symbols). The list is appended to the providers array passed to
+   * EnrichmentCoordinator — order matters only for prefetch start
+   * time, not for marker-store keying (keys are per provider).
+   */
+  extraEnrichmentProviders?: EnrichmentProvider[];
 }
 
 export class IngestFacade {
@@ -133,9 +143,14 @@ export class IngestFacade {
     const squashOpts = trajectoryConfig.squashAwareSessions
       ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
       : undefined;
-    const providers = trajectoryConfig.enableGitMetadata
-      ? [new GitEnrichmentProvider(trajectoryConfig.trajectoryGit ?? undefined, squashOpts)]
-      : [];
+    const providers: EnrichmentProvider[] = [];
+    if (trajectoryConfig.enableGitMetadata) {
+      providers.push(new GitEnrichmentProvider(trajectoryConfig.trajectoryGit ?? undefined, squashOpts));
+    }
+    // Registry-resolved providers (codegraph, future trajectories) — these
+    // come from `composition.registry.getAllEnrichmentProviders()` filtered
+    // to skip the git provider (which is wired here with its own config).
+    if (deps.extraEnrichmentProviders) providers.push(...deps.extraEnrichmentProviders);
     const enrichmentProviderKey = providers.length > 0 ? providers[0].key : undefined;
 
     const ingestDeps = createIngestDependencies(

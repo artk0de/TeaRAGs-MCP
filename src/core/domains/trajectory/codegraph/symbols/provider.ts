@@ -65,6 +65,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   readonly presets: RerankPreset[];
 
   private readonly buffer: FileExtraction[] = [];
+  /**
+   * (relPath -> startLine -> symbolId) — populated by the walker pass
+   * in buildFileSignals so buildChunkSignals can resolve symbolId for
+   * each ChunkLookupEntry by line number. ChunkLookupEntry only
+   * carries `{chunkId, startLine, endLine}` — symbolId is not part of
+   * the public contract.
+   */
+  private readonly chunkSymbolByLine = new Map<string, Map<number, string>>();
 
   constructor(private readonly deps: CodegraphProviderDeps) {
     this.derivedSignals = deps.derivedSignals ?? [];
@@ -88,6 +96,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
             scope: c.scope,
           })),
         );
+        // Index by line so buildChunkSignals can recover symbolId from
+        // a ChunkLookupEntry that only carries chunkId+startLine+endLine.
+        this.indexChunkSymbolsByLine(extraction);
         this.buffer.push(extraction);
       },
       finish: async () => {
@@ -98,6 +109,42 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         this.buffer.length = 0;
       },
     };
+  }
+
+  private indexChunkSymbolsByLine(extraction: FileExtraction): void {
+    // The walker emits each chunk with line ranges driven by the AST
+    // node it came from — but the ingest chunker may split that range
+    // across multiple Qdrant chunks for oversize methods. We index the
+    // span [startLine..endLine] -> symbolId so lookup by any line
+    // inside the chunk resolves to the right symbol.
+    let lineMap = this.chunkSymbolByLine.get(extraction.relPath);
+    if (!lineMap) {
+      lineMap = new Map();
+      this.chunkSymbolByLine.set(extraction.relPath, lineMap);
+    } else {
+      lineMap.clear();
+    }
+    for (const c of extraction.chunks) {
+      if (c.startLine !== undefined) lineMap.set(c.startLine, c.symbolId);
+    }
+  }
+
+  private resolveChunkSymbolId(relPath: string, startLine: number, endLine: number): string | undefined {
+    const lineMap = this.chunkSymbolByLine.get(relPath);
+    if (!lineMap) return undefined;
+    // Exact match by startLine wins. If the chunker split an oversized
+    // method, intermediate chunks won't have a direct startLine match
+    // — fall back to the largest indexed startLine that's <= this
+    // chunk's startLine AND inside its end (best-effort containment).
+    const exact = lineMap.get(startLine);
+    if (exact) return exact;
+    let best: { start: number; sym: string } | undefined;
+    for (const [line, sym] of lineMap) {
+      if (line <= startLine && line <= endLine) {
+        if (!best || line > best.start) best = { start: line, sym };
+      }
+    }
+    return best?.sym;
   }
 
   async buildFileSignals(root: string, options?: { paths?: string[] }): Promise<Map<string, FileSignalOverlay>> {
@@ -240,15 +287,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     for (const [relPath, entries] of chunkMap) {
       const perChunk = new Map<string, ChunkSignalOverlay>();
       for (const entry of entries) {
-        const e = entry as { symbolId?: string; id?: string; chunkId?: string };
-        const { symbolId } = e;
+        // ChunkLookupEntry only carries chunkId + startLine/endLine;
+        // resolveChunkSymbolId pulls symbolId from the walker-indexed
+        // line map (populated when the same provider walked the file
+        // in buildFileSignals). If file isn't in the map (e.g. older
+        // chunks from before codegraph wiring, or non-TS files), skip.
+        const symbolId = this.resolveChunkSymbolId(relPath, entry.startLine, entry.endLine);
         if (!symbolId) continue;
-        const calledByCount = await this.deps.graphDb.getCalledByCount(symbolId);
-        const callSiteCount = await this.deps.graphDb.getCallSiteCount(symbolId);
-        const chunkKey = e.id ?? e.chunkId ?? symbolId;
-        perChunk.set(chunkKey, {
-          "codegraph.chunk.calledByCount": calledByCount,
-          "codegraph.chunk.callSiteCount": callSiteCount,
+        const fanIn = await this.deps.graphDb.getCalledByCount(symbolId);
+        const fanOut = await this.deps.graphDb.getCallSiteCount(symbolId);
+        perChunk.set(entry.chunkId, {
+          "codegraph.chunk.fanIn": fanIn,
+          "codegraph.chunk.fanOut": fanOut,
         });
       }
       out.set(relPath, perChunk);
@@ -305,8 +355,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 }
 
 function lastSegment(name: string): string {
-  const idx = Math.max(name.lastIndexOf("."), name.lastIndexOf("/"));
-  return idx === -1 ? name : name.slice(idx + 1);
+  // Two callers with different separator conventions:
+  //  - symbolIds like "Foo.bar" split on "." → "bar"
+  //  - import paths like "../core/api/index.js" split on "/" → "index.js"
+  // Path lookups must NOT split on "." or we'd return the extension
+  // ("js") instead of the basename. Prefer "/" when present; only fall
+  // back to "." for "/"-free symbolIds.
+  const slash = name.lastIndexOf("/");
+  if (slash !== -1) return name.slice(slash + 1);
+  const dot = name.lastIndexOf(".");
+  return dot === -1 ? name : name.slice(dot + 1);
 }
 
 function extensionOf(path: string): string {

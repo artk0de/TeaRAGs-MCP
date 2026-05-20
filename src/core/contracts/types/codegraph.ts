@@ -51,6 +51,11 @@ export interface ChunkExtraction {
   /** Lexical scope chain enclosing this chunk, e.g. `["Acme", "Auth", "User"]`. */
   scope: string[];
   calls: CallRef[];
+  /** 1-based start line of the chunk in the source file. Optional so
+   *  walkers that don't track line info keep working. */
+  startLine?: number;
+  /** 1-based end line of the chunk. Optional, see startLine. */
+  endLine?: number;
 }
 
 export interface CallRef {

@@ -35,6 +35,8 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   const byChunk: ChunkExtraction[] = input.chunks.map((c) => ({
     symbolId: c.symbolId,
     scope: c.scope,
+    startLine: c.startLine,
+    endLine: c.endLine,
     calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
   }));
   return {

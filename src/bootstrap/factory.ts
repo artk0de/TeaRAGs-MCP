@@ -178,15 +178,34 @@ async function wireCodegraph(
 
   const dbPath = codegraph.dbPath ?? join(config.paths.appData, "codegraph.duckdb");
   const graphDb = new DuckDbGraphClient({ path: dbPath });
-  await graphDb.init();
+  try {
+    await graphDb.init();
 
-  // Apply slice 1 schema. Migrations are idempotent — safe to re-run on
-  // every bootstrap. The runner consumes an inline array of
-  // `{ filename, sql }` so the compiled `build/` artifact ships them
-  // as plain JS (no SQL files to copy alongside the TS output).
-  const { runMigrations } = await import("../core/infra/migration/database/runner.js");
-  const { DATABASE_MIGRATIONS } = await import("../core/infra/migration/database/migrations/index.js");
-  await runMigrations(graphDb, DATABASE_MIGRATIONS);
+    // Apply slice 1 schema. Migrations are idempotent — safe to re-run
+    // on every bootstrap. The runner consumes an inline array of
+    // `{ filename, sql }` so the compiled `build/` ships them as plain
+    // JS (no SQL files to copy alongside the TS output).
+    const { runMigrations } = await import("../core/infra/migration/database/runner.js");
+    const { DATABASE_MIGRATIONS } = await import("../core/infra/migration/database/migrations/index.js");
+    await runMigrations(graphDb, DATABASE_MIGRATIONS);
+  } catch (err) {
+    // DuckDB is single-writer per file — if another tea-rags process
+    // (orphaned by a prior crash, or a parallel MCP session) is already
+    // holding the lock, we cannot open the DB. Rather than failing the
+    // whole bootstrap, log a warning and run with codegraph disabled
+    // for this instance. The first-comer keeps codegraph; later spawns
+    // serve search/index without it. Tracked by tea-rags-mcp-pwx5 —
+    // proper fix is a shared DuckDB daemon, mirror of the ONNX one.
+    const reason = (err as Error).message || String(err);
+    process.stderr.write(
+      `[tea-rags] codegraph disabled: failed to open ${dbPath} (${reason}). ` +
+        `Set CODEGRAPH_ENABLED=false to silence, or kill the other tea-rags process holding the lock.\n`,
+    );
+    await graphDb.close().catch(() => {
+      /* already closed or never opened */
+    });
+    return undefined;
+  }
 
   const tsOptions = loadTsConfig(process.cwd());
   const resolvers = new Map<string, CallResolver>([["typescript", new TSCallResolver(tsOptions)]]);
@@ -230,6 +249,14 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
 
   const collectionRegistry = new CollectionRegistry(config.paths.appData);
   const registryWatchStop = collectionRegistry.startWatching();
+  // Slice 1 codegraph integration: registry exposes the codegraph.symbols
+  // enrichment provider via getAllEnrichmentProviders(). Git is wired
+  // separately inside IngestFacade with its own config, so skip it
+  // here to avoid double-registration. Tracked by tea-rags-mcp-pwx5 as
+  // a quick scaffold — proper fix is teaching IngestFacade to consume
+  // the registry directly.
+  const extraEnrichmentProviders = composition.registry.getAllEnrichmentProviders().filter((p) => p.key !== "git");
+
   const ingest = new IngestFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -246,6 +273,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     modelGuard: infra.modelGuard,
     collectionRegistry,
     teaRagsVersion: pkg.version,
+    extraEnrichmentProviders,
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [

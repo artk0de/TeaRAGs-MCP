@@ -6,11 +6,11 @@ import type { OverlayMask, RerankPreset } from "../../../../../../contracts/type
  *
  * Combines:
  *   - 25% similarity — keep query relevance modest so structural signals win
- *   - 25% fanIn — files imported by many others sit higher
+ *   - 25% fanIn (file-level) — files imported by many others sit higher
  *   - 15% instability — Martin instability surfaces high-fanOut leaves
  *   - 15% isHub — boolean flag for cohort-p95 hubs
  *   - 10% churn — borrowed from git trajectory for "recently touched + hub" risk
- *   - 10% calledByCount — chunk-level dependency proxy
+ *   - 10% chunkFanIn (method-level) — symbols called from many sites
  */
 export class BlastRadiusPreset implements RerankPreset {
   readonly name = "blastRadius";
@@ -22,10 +22,10 @@ export class BlastRadiusPreset implements RerankPreset {
     instability: 0.15,
     isHub: 0.15,
     churn: 0.1,
-    calledByCount: 0.1,
+    chunkFanIn: 0.1,
   };
   readonly overlayMask: OverlayMask = {
     file: ["codegraph.file.fanIn", "codegraph.file.fanOut", "codegraph.file.instability", "codegraph.file.isHub"],
-    chunk: ["codegraph.chunk.calledByCount", "codegraph.chunk.callSiteCount"],
+    chunk: ["codegraph.chunk.fanIn", "codegraph.chunk.fanOut"],
   };
 }

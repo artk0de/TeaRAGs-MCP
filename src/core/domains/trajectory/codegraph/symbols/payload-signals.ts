@@ -40,12 +40,15 @@ export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
 
 export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [
   {
-    key: "codegraph.chunk.calledByCount",
+    // Method-level fan-in: incoming edges in the call graph. Named to
+    // match knowledge-base methodology (Henry & Kafura: fan-in/fan-out
+    // apply at method, class, and namespace levels).
+    key: "codegraph.chunk.fanIn",
     type: "number",
     description: "Number of distinct call sites invoking this symbol",
   },
   {
-    key: "codegraph.chunk.callSiteCount",
+    key: "codegraph.chunk.fanOut",
     type: "number",
     description: "Number of outgoing calls from this symbol",
   },

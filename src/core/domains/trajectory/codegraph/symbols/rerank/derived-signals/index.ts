@@ -1,21 +1,13 @@
 import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
-import { CallSiteCountSignal } from "./call-site-count.js";
-import { CalledByCountSignal } from "./called-by-count.js";
+import { ChunkFanInSignal } from "./chunk-fan-in.js";
+import { ChunkFanOutSignal } from "./chunk-fan-out.js";
 import { FanInSignal } from "./fan-in.js";
 import { FanOutSignal } from "./fan-out.js";
 import { InstabilitySignal } from "./instability.js";
 import { IsHubSignal } from "./is-hub.js";
 import { IsLeafSignal } from "./is-leaf.js";
 
-export {
-  CalledByCountSignal,
-  CallSiteCountSignal,
-  FanInSignal,
-  FanOutSignal,
-  InstabilitySignal,
-  IsHubSignal,
-  IsLeafSignal,
-};
+export { ChunkFanInSignal, ChunkFanOutSignal, FanInSignal, FanOutSignal, InstabilitySignal, IsHubSignal, IsLeafSignal };
 
 export const CODEGRAPH_SYMBOLS_DERIVED_SIGNALS: DerivedSignalDescriptor[] = [
   new FanInSignal(),
@@ -23,6 +15,6 @@ export const CODEGRAPH_SYMBOLS_DERIVED_SIGNALS: DerivedSignalDescriptor[] = [
   new InstabilitySignal(),
   new IsHubSignal(),
   new IsLeafSignal(),
-  new CalledByCountSignal(),
-  new CallSiteCountSignal(),
+  new ChunkFanInSignal(),
+  new ChunkFanOutSignal(),
 ];
