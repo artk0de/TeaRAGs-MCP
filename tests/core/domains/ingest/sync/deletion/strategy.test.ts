@@ -56,6 +56,55 @@ describe("performDeletion", () => {
     });
   });
 
+  // Slice 2 / A4d — provider-notification hook fires BEFORE Qdrant
+  // deletion so codegraph (and future trajectories) prune their own
+  // state first. Orphan graph edges are silent corruption; orphan
+  // Qdrant points are merely clutter — order is deliberate.
+  describe("preDeleteHook (A4d wiring)", () => {
+    it("invokes the hook with the same paths before the Qdrant delete runs", async () => {
+      const callOrder: string[] = [];
+      const deleteSpy = vi.spyOn(qdrant, "deletePointsByPathsBatched");
+      deleteSpy.mockImplementation((async (...args: any[]) => {
+        callOrder.push("qdrant.deletePointsByPathsBatched");
+        // Delegate to the original mock behaviour so the rest of
+        // performDeletion finds a happy L0 path.
+        const orig = MockQdrantManager.prototype.deletePointsByPathsBatched;
+        return orig.apply(qdrant, args as Parameters<typeof orig>);
+      }) as any);
+      const hook = vi.fn(async (paths: string[]) => {
+        callOrder.push(`hook(${paths.join(",")})`);
+      });
+
+      await performDeletion(qdrant as any, collectionName, ["a.ts", "b.ts"], deleteConfig, undefined, hook);
+      expect(hook).toHaveBeenCalledExactlyOnceWith(["a.ts", "b.ts"]);
+      expect(callOrder).toEqual(["hook(a.ts,b.ts)", "qdrant.deletePointsByPathsBatched"]);
+    });
+
+    it("skips the hook entirely on empty input (short-circuit fast path)", async () => {
+      const hook = vi.fn(async () => {
+        /* should not run */
+      });
+      const outcome = await performDeletion(qdrant as any, collectionName, [], deleteConfig, undefined, hook);
+      expect(hook).not.toHaveBeenCalled();
+      expect(outcome.succeeded.size).toBe(0);
+    });
+
+    it("hook failure aborts the operation before Qdrant is touched", async () => {
+      // If a provider hook crashes catastrophically (programmer error,
+      // not a normal provider failure — those are caught inside
+      // coordinator.notifyDeletions), the Qdrant delete must NOT run.
+      // Otherwise the ordering invariant is silently violated.
+      const deleteSpy = vi.spyOn(qdrant, "deletePointsByPathsBatched");
+      const hook = vi.fn(async () => {
+        throw new Error("coordinator wiring crashed");
+      });
+      await expect(
+        performDeletion(qdrant as any, collectionName, ["a.ts"], deleteConfig, undefined, hook),
+      ).rejects.toThrow("coordinator wiring crashed");
+      expect(deleteSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe("L0 batched success (happy path)", () => {
     it("marks every attempted path as succeeded and reports chunksDeleted", async () => {
       const outcome = await performDeletion(qdrant as any, collectionName, ["a.ts", "b.ts", "c.ts"], deleteConfig);

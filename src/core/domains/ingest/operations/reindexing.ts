@@ -324,6 +324,10 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       plan.filesToDelete,
       this.deleteConfig,
       progressCallback,
+      // A4d — notify providers (codegraph, …) BEFORE Qdrant deletion
+      // so graph-edge / symbol-table state stays consistent with disk
+      // truth even when Qdrant rejects the delete downstream.
+      async (paths) => this.enrichment.notifyDeletions(paths),
     ).then((outcome) => {
       deletionOutcome = outcome;
       ({ chunksDeleted } = outcome);
@@ -475,6 +479,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         filesToDelete,
         this.deleteConfig,
         progressCallback,
+        // Same provider-notification hook as the parallel path — the
+        // deletion-only branch must not skip it.
+        async (paths) => this.enrichment.notifyDeletions(paths),
       );
     } finally {
       await this.qdrant.resumeOptimizer(ctx.collectionName).catch((err) => {
