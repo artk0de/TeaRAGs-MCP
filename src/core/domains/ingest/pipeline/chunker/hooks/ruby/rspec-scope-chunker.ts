@@ -7,6 +7,23 @@
  * from ancestor scopes for self-contained context.
  *
  * Chunks get a 2-level symbolId: `TopLevelDescribe.leafScopeName`.
+ *
+ * ── Language-list pointer (MANDATORY) ────────────────────────────────
+ * This hook emits `chunkType: "test"` / `"test_setup"` for Ruby RSpec.
+ * The list of languages that support DSL test chunks is published in
+ * three skill files that consumers read; when you ADD a new language
+ * (or REMOVE one) you MUST update ALL of them in the same commit:
+ *
+ *   - .claude-plugin/dinopowers/skills/test-driven-development/SKILL.md
+ *     (Iron Rule fallback paragraph — supported-languages list)
+ *   - .claude-plugin/tea-rags/skills/tests-as-context/SKILL.md
+ *     (Step 0 SKIP block — currently-supported parenthesis)
+ *   - .claude-plugin/tea-rags/skills/filter-building/SKILL.md
+ *     (chunkType section — supported-languages table)
+ *
+ * The canonical structure for a new language's hook lives in
+ * `.claude/rules/test-spec-chunking.md`; that rule file also carries
+ * the "update the 3 skills" checklist.
  */
 
 import type Parser from "tree-sitter";

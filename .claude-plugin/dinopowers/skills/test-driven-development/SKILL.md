@@ -33,10 +33,18 @@ correct parameters (`metaOnly: false` to see actual test content) + correct
 ordering (search BEFORE draft) is the core value.
 
 If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (DSL test
-chunks absent — happens when primary language has no DSL test chunker; only
-TypeScript has one currently), fall back to a single
+chunks absent — happens when the primary language has no DSL test chunker;
+**currently supported: TypeScript (Vitest/Jest/Mocha) and Ruby (RSpec)** — see
+`src/core/domains/ingest/pipeline/chunker/hooks/<lang>/test-scope-chunker.ts`
+and `rspec-scope-chunker.ts` for the canonical list), fall back to a single
 `mcp__tea-rags__semantic_search` with `testFile: "only"` + `rerank: "proven"`
 and state "file-level fallback — DSL test chunks unavailable for this language".
+
+> **Maintainers:** when a new language gains a DSL test chunker, update the
+> supported-languages list above AND the same lists in
+> `tea-rags:tests-as-context` (Step 0 SKIP block) and `tea-rags:filter-building`
+> (chunkType section). The canonical checklist lives in
+> `.claude/rules/test-spec-chunking.md`.
 
 If this is the first test in the project (no existing tests): skip pattern
 search, invoke `superpowers:test-driven-development` directly. State it.
