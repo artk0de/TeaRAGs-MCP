@@ -211,6 +211,14 @@ export class TreeSitterChunker implements CodeChunker {
         metadata: {
           ...subChunk.metadata,
           chunkIndex: chunks.length,
+          // Inherit symbolId + chunkType from the oversized parent method so
+          // every split subChunk shares one symbolId. Without this fix the
+          // character-fallback chunker yields chunkType="block" and
+          // symbolId=undefined, breaking the "all chunks of one method
+          // share the same symbolId" invariant that the codegraph slice
+          // (and the existing MCP navigation layer) relies on.
+          symbolId: this.buildSymbolId(parentName),
+          chunkType: "function",
           parentSymbolId: parentName,
           parentType,
           methodLines: nodeMethodLines,
