@@ -1,9 +1,9 @@
 /**
- * Codegraph DTOs — request/response shapes for the `get_callers` and
- * `get_callees` MCP tools.
+ * Codegraph DTOs — request/response shapes for the `get_callers`,
+ * `get_callees`, and `find_cycles` MCP tools.
  */
 
-import type { RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
+import type { CycleScope, RelPath, SymbolId } from "../../../contracts/types/codegraph.js";
 
 export interface GetCallersRequest {
   path: string;
@@ -35,4 +35,26 @@ export interface CalleeResult {
 
 export interface GetCalleesResponse {
   callees: CalleeResult[];
+}
+
+// ── Slice 2 / B2 — find_cycles ──
+
+export interface FindCyclesRequest {
+  path: string;
+  /** 'file' = circular imports between files; 'method' = circular calls between symbols. */
+  scope: CycleScope;
+}
+
+export interface CycleResult {
+  /** Numeric id assigned at recompute time. Stable within one recompute. */
+  cycleId: number;
+  scope: CycleScope;
+  /** Members in walk order. */
+  members: string[];
+  /** Convenience — member count (always >= 2). */
+  length: number;
+}
+
+export interface FindCyclesResponse {
+  cycles: CycleResult[];
 }

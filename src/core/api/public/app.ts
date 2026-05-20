@@ -34,6 +34,8 @@ import type {
   DeleteDocumentsRequest,
   ExploreCodeRequest,
   ExploreResponse,
+  FindCyclesRequest,
+  FindCyclesResponse,
   FindSimilarRequest,
   FindSymbolRequest,
   GetCalleesRequest,
@@ -102,6 +104,7 @@ export interface App {
   // -- Codegraph (→ internal/facades/graph-facade.ts) --
   getCallers: (request: GetCallersRequest) => Promise<GetCallersResponse>;
   getCallees: (request: GetCalleesRequest) => Promise<GetCalleesResponse>;
+  findCycles: (request: FindCyclesRequest) => Promise<FindCyclesResponse>;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,5 +236,6 @@ export function createApp(deps: AppDeps): App {
     // the user to reindex.
     getCallers: async (req) => (deps.graphFacade ? deps.graphFacade.getCallers(req) : { callers: [] }),
     getCallees: async (req) => (deps.graphFacade ? deps.graphFacade.getCallees(req) : { callees: [] }),
+    findCycles: async (req) => (deps.graphFacade ? deps.graphFacade.findCycles(req) : { cycles: [] }),
   };
 }

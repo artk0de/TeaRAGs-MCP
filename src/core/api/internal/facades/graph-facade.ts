@@ -1,16 +1,18 @@
 /**
- * GraphFacade — thin orchestrator over `GraphDbClient` for the two MCP
- * graph tools (`get_callers`, `get_callees`).
+ * GraphFacade — thin orchestrator over `GraphDbClient` for the MCP
+ * graph tools (`get_callers`, `get_callees`, `find_cycles`).
  *
  * Per `.claude/rules/facade-discipline.md` the facade only validates
  * input and delegates. The body is intentionally tiny — when result
  * shaping grows past 20 lines (e.g. attaching `ChunkPreview` payloads
- * from `find_symbol`), extract a `GraphOps` class. Slice 1's reads are
- * direct edge reads so the facade itself is enough.
+ * from `find_symbol`), extract a `GraphOps` class. Slice 1+2's reads
+ * are direct table reads so the facade itself is enough.
  */
 
 import type { GraphDbClient } from "../../../contracts/types/codegraph.js";
 import type {
+  FindCyclesRequest,
+  FindCyclesResponse,
   GetCalleesRequest,
   GetCalleesResponse,
   GetCallersRequest,
@@ -34,5 +36,17 @@ export class GraphFacade {
   async getCallees(req: GetCalleesRequest): Promise<GetCalleesResponse> {
     const edges = await this.deps.graphDb.getCallees(req.symbolId);
     return { callees: edges.slice(0, req.limit ?? DEFAULT_LIMIT) };
+  }
+
+  async findCycles(req: FindCyclesRequest): Promise<FindCyclesResponse> {
+    const entries = await this.deps.graphDb.findCycles(req.scope);
+    return {
+      cycles: entries.map((e) => ({
+        cycleId: e.cycleId,
+        scope: e.scope,
+        members: e.members,
+        length: e.members.length,
+      })),
+    };
   }
 }

@@ -153,6 +153,20 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           await this.deps.graphDb.upsertSymbols(extraction.relPath, symbolDefs);
         }
         this.buffer.length = 0;
+        // Slice 2 / B2 — recompute Tarjan SCC for both scopes after the
+        // full extraction batch settles. Debounced by being on
+        // sink.finish (not per-write) so a 700-file run pays the cost
+        // once, not 700 times. Errors here are non-fatal — losing
+        // cycle freshness degrades find_cycles but doesn't corrupt the
+        // graph; the next sink.finish retries.
+        try {
+          await this.deps.graphDb.recomputeCycles("file");
+          await this.deps.graphDb.recomputeCycles("method");
+        } catch (err) {
+          if (process.env.DEBUG === "true") {
+            process.stderr.write(`[codegraph] cycle recompute failed: ${(err as Error).message}\n`);
+          }
+        }
       },
     };
   }

@@ -531,6 +531,107 @@ describe("CodegraphEnrichmentProvider", () => {
     expect(overlays.get("src/big.ts")?.has("chunk-orphan")).toBe(false);
   });
 
+  // Slice 2 / B2 — sink.finish recomputes Tarjan SCC after the batch
+  // settles. The recompute is best-effort: losing cycle freshness
+  // degrades find_cycles but must NOT corrupt the rest of the graph.
+  // The catch around recomputeCycles silences the error (debug-logging
+  // only when DEBUG=true). This test wires a graphDb stub whose
+  // recomputeCycles throws but everything else succeeds — finish must
+  // still resolve normally.
+  it("sink.finish swallows recomputeCycles failures (best-effort SCC refresh)", async () => {
+    const fakeGraphDb = {
+      upsertFile: async () => undefined,
+      upsertSymbols: async () => undefined,
+      removeFile: async () => undefined,
+      removeSymbolsForFile: async () => undefined,
+      recomputeCycles: async () => {
+        throw new Error("simulated cycle recompute failure");
+      },
+      // Unused-by-finish but required by the GraphDbClient shape.
+      findCycles: async () => [],
+      getFanIn: async () => 0,
+      getFanOut: async () => 0,
+      getTransitiveImpact: async () => 0,
+      getCallers: async () => [],
+      getCallees: async () => [],
+      getCalledByCount: async () => 0,
+      getCallSiteCount: async () => 0,
+      listAllSymbols: async () => [],
+      hasData: async () => false,
+    };
+    const failingProvider = new CodegraphEnrichmentProvider({
+      graphDb: fakeGraphDb as never,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+    });
+    const sink = failingProvider.asExtractionSink();
+    await sink.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
+      fileScope: [],
+    });
+    // recomputeCycles throws inside finish — the provider's try/catch
+    // must swallow it so the indexing pipeline doesn't abort.
+    await expect(sink.finish()).resolves.toBeUndefined();
+  });
+
+  // Same path but with DEBUG=true so the stderr.write branch executes
+  // (lines 166-167 of provider.ts). Restores DEBUG after the assertion
+  // to keep test isolation.
+  it("sink.finish emits stderr note on recompute failure when DEBUG=true", async () => {
+    const fakeGraphDb = {
+      upsertFile: async () => undefined,
+      upsertSymbols: async () => undefined,
+      removeFile: async () => undefined,
+      removeSymbolsForFile: async () => undefined,
+      recomputeCycles: async () => {
+        throw new Error("debug-path cycle failure");
+      },
+      findCycles: async () => [],
+      getFanIn: async () => 0,
+      getFanOut: async () => 0,
+      getTransitiveImpact: async () => 0,
+      getCallers: async () => [],
+      getCallees: async () => [],
+      getCalledByCount: async () => 0,
+      getCallSiteCount: async () => 0,
+      listAllSymbols: async () => [],
+      hasData: async () => false,
+    };
+    const failingProvider = new CodegraphEnrichmentProvider({
+      graphDb: fakeGraphDb as never,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+    });
+    const sink = failingProvider.asExtractionSink();
+    await sink.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
+      fileScope: [],
+    });
+
+    const prevDebug = process.env.DEBUG;
+    process.env.DEBUG = "true";
+    const writes: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array, ...rest: unknown[]): boolean => {
+      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+      return origWrite(chunk as never, ...(rest as []));
+    }) as typeof process.stderr.write;
+    try {
+      await expect(sink.finish()).resolves.toBeUndefined();
+    } finally {
+      process.stderr.write = origWrite;
+      if (prevDebug === undefined) delete process.env.DEBUG;
+      else process.env.DEBUG = prevDebug;
+    }
+    expect(writes.some((w) => w.includes("[codegraph] cycle recompute failed"))).toBe(true);
+  });
+
   // Slice 1 — discoverTypescriptFiles catch branch. When the walker
   // hits readdirSync against a non-existent or unreadable directory,
   // it must swallow the error and continue (one bad subtree shouldn't

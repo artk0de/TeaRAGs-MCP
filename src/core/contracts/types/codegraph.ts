@@ -194,6 +194,35 @@ export interface GraphDbClient {
    * (default) captures most realistic blast radii.
    */
   getTransitiveImpact: (relPath: RelPath, maxDepth?: number) => Promise<number>;
+
+  // ── Cycle detection (Slice 2 / B2) ──
+
+  /**
+   * Read the persisted cycles table. Each `CycleEntry` is one
+   * strongly-connected component of length >= 2 (single-node "cycles"
+   * are excluded — they're either harmless or surfaced by other
+   * signals). Sub-millisecond read for the MCP `find_cycles` tool.
+   */
+  findCycles: (scope: CycleScope) => Promise<CycleEntry[]>;
+
+  /**
+   * Recompute Tarjan SCC from current edges for `scope` and rewrite
+   * the cycles table for that scope. Atomic: DELETE+INSERT in a
+   * transaction. Called by the codegraph provider at sink.finish() so
+   * cycles stay in sync with the graph after every full enrichment
+   * cycle; can also be invoked manually after a force_reindex.
+   */
+  recomputeCycles: (scope: CycleScope) => Promise<void>;
+}
+
+export type CycleScope = "file" | "method";
+
+export interface CycleEntry {
+  /** Numeric id assigned at recompute time; stable within a single recompute, NOT across recomputes. */
+  cycleId: number;
+  scope: CycleScope;
+  /** Members in walk order (the order returned by Tarjan's pop sequence). */
+  members: string[];
 }
 
 export interface GraphFileNode {

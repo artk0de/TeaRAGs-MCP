@@ -21,6 +21,8 @@ import { DuckDBInstance, type DuckDBConnection } from "@duckdb/node-api";
 import type {
   CalleeEdge,
   CallerEdge,
+  CycleEntry,
+  CycleScope,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
@@ -28,6 +30,7 @@ import type {
   SymbolDefinition,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
+import { tarjanScc, type AdjacencyMap } from "../../infra/graph/tarjan-scc.js";
 
 export interface DuckDbGraphClientOptions {
   path: string;
@@ -197,6 +200,78 @@ export class DuckDbGraphClient implements GraphDbClient {
       [relPath, relPath],
     );
     return Number(rows[0]?.n ?? 0);
+  }
+
+  async findCycles(scope: CycleScope): Promise<CycleEntry[]> {
+    const rows = await this.queryAll<{ cycle_id: number | bigint; member: string; position: number | bigint }>(
+      "SELECT cycle_id, member, position FROM cg_symbols_cycles WHERE scope = ? ORDER BY cycle_id, position",
+      [scope],
+    );
+    const grouped = new Map<number, string[]>();
+    for (const row of rows) {
+      const cycleId = Number(row.cycle_id);
+      const arr = grouped.get(cycleId);
+      if (arr) arr.push(row.member);
+      else grouped.set(cycleId, [row.member]);
+    }
+    return [...grouped.entries()].map(([cycleId, members]) => ({ cycleId, scope, members }));
+  }
+
+  async recomputeCycles(scope: CycleScope): Promise<void> {
+    const adjacency = await this.loadAdjacencyFor(scope);
+    const sccs = tarjanScc(adjacency);
+    await this.exec("BEGIN");
+    try {
+      await this.run("DELETE FROM cg_symbols_cycles WHERE scope = ?", [scope]);
+      for (let cycleId = 0; cycleId < sccs.length; cycleId++) {
+        const members = sccs[cycleId];
+        for (let position = 0; position < members.length; position++) {
+          await this.run("INSERT INTO cg_symbols_cycles (cycle_id, scope, member, position) VALUES (?, ?, ?, ?)", [
+            cycleId,
+            scope,
+            members[position],
+            position,
+          ]);
+        }
+      }
+      await this.exec("COMMIT");
+    } catch (err) {
+      await this.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  /**
+   * Materialize the adjacency map for Tarjan from the appropriate edge
+   * table. For file scope, vertices are relPath; for method scope,
+   * vertices are symbolId. Method edges with null target_symbol_id
+   * (resolver couldn't pin the call) are skipped — they create
+   * phantom edges that pollute SCC detection.
+   */
+  private async loadAdjacencyFor(scope: CycleScope): Promise<AdjacencyMap> {
+    if (scope === "file") {
+      const rows = await this.queryAll<{ source_rel_path: string; target_rel_path: string }>(
+        "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file",
+      );
+      const adj = new Map<string, string[]>();
+      for (const row of rows) {
+        const list = adj.get(row.source_rel_path);
+        if (list) list.push(row.target_rel_path);
+        else adj.set(row.source_rel_path, [row.target_rel_path]);
+      }
+      return adj;
+    }
+    const rows = await this.queryAll<{ source_symbol_id: string; target_symbol_id: string | null }>(
+      "SELECT source_symbol_id, target_symbol_id FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL",
+    );
+    const adj = new Map<string, string[]>();
+    for (const row of rows) {
+      if (row.target_symbol_id === null) continue;
+      const list = adj.get(row.source_symbol_id);
+      if (list) list.push(row.target_symbol_id);
+      else adj.set(row.source_symbol_id, [row.target_symbol_id]);
+    }
+    return adj;
   }
 
   async listAllSymbols(): Promise<SymbolDefinition[]> {

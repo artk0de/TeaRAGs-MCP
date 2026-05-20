@@ -218,6 +218,126 @@ describe("DuckDbGraphClient", () => {
     });
   });
 
+  // Slice 2 / B2 — Tarjan SCC over file/method graph persisted to
+  // cg_symbols_cycles. Recompute is debounced by sink.finish; readers
+  // hit a sub-ms SELECT.
+  describe("findCycles + recomputeCycles (B2)", () => {
+    it("file scope: detects circular imports A↔B and persists them", async () => {
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/b.ts", importText: "./b" }], methodEdges: [] },
+      );
+      await client.upsertFile(
+        { relPath: "src/b.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/a.ts", importText: "./a" }], methodEdges: [] },
+      );
+      await client.recomputeCycles("file");
+      const cycles = await client.findCycles("file");
+      expect(cycles).toHaveLength(1);
+      expect(cycles[0].scope).toBe("file");
+      expect(cycles[0].members.slice().sort()).toEqual(["src/a.ts", "src/b.ts"]);
+    });
+
+    it("recompute is idempotent — re-running with same graph yields same cycles", async () => {
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/b.ts", importText: "./b" }], methodEdges: [] },
+      );
+      await client.upsertFile(
+        { relPath: "src/b.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/a.ts", importText: "./a" }], methodEdges: [] },
+      );
+      await client.recomputeCycles("file");
+      await client.recomputeCycles("file");
+      const cycles = await client.findCycles("file");
+      expect(cycles).toHaveLength(1);
+    });
+
+    it("file scope: DAG yields zero cycles", async () => {
+      await client.upsertFile({ relPath: "src/sink.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+      await client.upsertFile(
+        { relPath: "src/source.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "src/sink.ts", importText: "./sink" }], methodEdges: [] },
+      );
+      await client.recomputeCycles("file");
+      expect(await client.findCycles("file")).toEqual([]);
+    });
+
+    it("method scope: detects circular method calls Foo.bar ↔ Baz.qux", async () => {
+      await client.upsertFile(
+        { relPath: "src/foo.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            {
+              sourceSymbolId: "Foo.bar",
+              targetSymbolId: "Baz.qux",
+              targetRelPath: "src/baz.ts",
+              callExpression: "Baz.qux()",
+            },
+          ],
+        },
+      );
+      await client.upsertFile(
+        { relPath: "src/baz.ts", language: "typescript" },
+        {
+          fileEdges: [],
+          methodEdges: [
+            {
+              sourceSymbolId: "Baz.qux",
+              targetSymbolId: "Foo.bar",
+              targetRelPath: "src/foo.ts",
+              callExpression: "Foo.bar()",
+            },
+          ],
+        },
+      );
+      await client.recomputeCycles("method");
+      const cycles = await client.findCycles("method");
+      expect(cycles).toHaveLength(1);
+      expect(cycles[0].scope).toBe("method");
+      expect(cycles[0].members.slice().sort()).toEqual(["Baz.qux", "Foo.bar"]);
+    });
+
+    it("file and method scopes are independent — file recompute leaves method cycles intact", async () => {
+      // Seed both scopes with a cycle.
+      await client.upsertFile(
+        { relPath: "src/a.ts", language: "typescript" },
+        {
+          fileEdges: [{ targetRelPath: "src/b.ts", importText: "./b" }],
+          methodEdges: [
+            {
+              sourceSymbolId: "A.foo",
+              targetSymbolId: "B.bar",
+              targetRelPath: "src/b.ts",
+              callExpression: "B.bar()",
+            },
+          ],
+        },
+      );
+      await client.upsertFile(
+        { relPath: "src/b.ts", language: "typescript" },
+        {
+          fileEdges: [{ targetRelPath: "src/a.ts", importText: "./a" }],
+          methodEdges: [
+            {
+              sourceSymbolId: "B.bar",
+              targetSymbolId: "A.foo",
+              targetRelPath: "src/a.ts",
+              callExpression: "A.foo()",
+            },
+          ],
+        },
+      );
+      await client.recomputeCycles("file");
+      await client.recomputeCycles("method");
+      // Now recompute file scope alone — method cycles must remain.
+      await client.recomputeCycles("file");
+      expect(await client.findCycles("file")).toHaveLength(1);
+      expect(await client.findCycles("method")).toHaveLength(1);
+    });
+  });
+
   it("removeFile cascades into cg_symbols as well as the edge tables", async () => {
     await client.upsertFile({ relPath: "src/foo.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     await client.upsertSymbols("src/foo.ts", [
@@ -272,6 +392,70 @@ describe("DuckDbGraphClient", () => {
     );
     const callers = await client.getCallers("A.x");
     expect(callers.map((c) => c.sourceSymbolId).sort()).toEqual(["C.f", "D.g"]);
+  });
+
+  // Slice 1 — defensive guards. The client must fail loudly on misuse
+  // rather than emit silent SQL with undefined connection state or
+  // unsupported bind types. These are public surface contracts that
+  // the migration runner + facades rely on.
+  describe("defensive guards", () => {
+    it("operations throw when init() has not been called", async () => {
+      // Construct without init — the connection is still undefined.
+      // requireConn() must surface a clear error instead of letting a
+      // null-deref through into the @duckdb/node-api binding.
+      const uninit = new DuckDbGraphClient({ path: join(tmp, "uninit.duckdb") });
+      await expect(uninit.exec("SELECT 1")).rejects.toThrow(/init\(\) must be called/);
+    });
+
+    it("run() rejects unsupported bind param types (asBindable guard)", async () => {
+      // asBindable accepts string|number|boolean|null|undefined only.
+      // Passing an object/array would otherwise reach bindVarchar with
+      // a value that stringifies to "[object Object]" — silently wrong.
+      // The guard throws synchronously inside the helper.
+      await expect(client.run("SELECT ?", [{ unsupported: true } as unknown as string])).rejects.toThrow(
+        /unsupported bind param type/,
+      );
+    });
+
+    it("upsertSymbols tolerates a malformed scope_json round-trip via parseScope catch", async () => {
+      // parseScope catches JSON.parse failures and returns []. Write a
+      // row whose scope_json column is not valid JSON via the generic
+      // run() helper, then listAllSymbols must hydrate it as scope=[]
+      // rather than crashing the read path.
+      await client.run(
+        "INSERT INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json) VALUES (?, ?, ?, ?, ?)",
+        ["src/raw.ts", "Raw.x", "Raw.x", "x", "not-json{{"],
+      );
+      const rows = await client.listAllSymbols();
+      const raw = rows.find((r) => r.symbolId === "Raw.x");
+      expect(raw?.scope).toEqual([]);
+    });
+
+    it("bind path handles null params via bindNull (nullable import_text column)", async () => {
+      // bindParams routes null/undefined to bindNull(i+1). The
+      // cg_symbols_edges_file.import_text column is nullable; binding
+      // null there must reach the bindNull branch without crashing.
+      await client.run(
+        "INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)",
+        ["src/a.ts", "src/b.ts", null],
+      );
+      const rows = await client.queryAll<{ n: number | bigint }>(
+        "SELECT COUNT(*) AS n FROM cg_symbols_edges_file WHERE import_text IS NULL",
+      );
+      expect(Number(rows[0]?.n ?? 0)).toBe(1);
+    });
+  });
+
+  // Slice 2 / B2 — method-scope adjacency loader. Method edges may have
+  // null target_symbol_id (resolver couldn't pin the call). The loader
+  // must filter those out so they don't pollute SCC detection with
+  // phantom edges, AND the empty-method-graph path must yield zero
+  // cycles (loadAdjacencyFor returns an empty Map, tarjanScc returns []).
+  it("recomputeCycles('method') succeeds on an empty method graph", async () => {
+    // No method edges yet — recomputeCycles must walk the empty
+    // adjacency and DELETE+INSERT a zero-row result.
+    await client.recomputeCycles("method");
+    expect(await client.findCycles("method")).toEqual([]);
   });
 
   it("getCallees + getCalledByCount + getCallSiteCount track method edges", async () => {

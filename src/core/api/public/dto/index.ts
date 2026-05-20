@@ -49,6 +49,9 @@ export type {
   // Codegraph
   CalleeResult,
   CallerResult,
+  CycleResult,
+  FindCyclesRequest,
+  FindCyclesResponse,
   GetCalleesRequest,
   GetCalleesResponse,
   GetCallersRequest,

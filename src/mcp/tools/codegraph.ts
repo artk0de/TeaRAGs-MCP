@@ -1,9 +1,9 @@
 /**
  * Codegraph MCP tools — slice 1: get_callers, get_callees.
+ * Slice 2 adds: find_cycles.
  *
- * Both tools read directly from the codegraph DuckDB via the App's
- * GraphFacade (wired in createApp()). Slice 2 adds get_dependencies,
- * get_dependents, find_cycles.
+ * All tools read directly from the codegraph DuckDB via the App's
+ * GraphFacade (wired in createApp()).
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -23,6 +23,14 @@ const GetCalleesInputShape = {
   path: z.string().describe("Project path"),
   symbolId: z.string().describe("Source symbol id (e.g. main)"),
   limit: z.number().int().positive().max(500).optional().describe("Maximum number of callee edges (default 50)"),
+};
+
+const FindCyclesInputShape = {
+  path: z.string().describe("Project path"),
+  scope: z
+    .enum(["file", "method"])
+    .default("file")
+    .describe("'file' = circular imports between files; 'method' = circular calls between symbols"),
 };
 
 export function registerCodegraphTools(server: McpServer, deps: { app: App; register: RegisterToolFn }): void {
@@ -54,6 +62,24 @@ export function registerCodegraphTools(server: McpServer, deps: { app: App; regi
     },
     async ({ path, symbolId, limit }) => {
       const response = await app.getCallees({ path, symbolId, limit });
+      return formatMcpText(JSON.stringify(response, null, 2));
+    },
+  );
+
+  registerToolSafe(
+    server,
+    "find_cycles",
+    {
+      title: "Find Cycles",
+      description:
+        "Return strongly-connected components (cycles) from the import or call graph. " +
+        "Cycles of length >= 2; single-node 'cycles' are excluded. Read from a pre-computed " +
+        "table — sub-millisecond per call.",
+      inputSchema: FindCyclesInputShape,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ path, scope }) => {
+      const response = await app.findCycles({ path, scope });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );
