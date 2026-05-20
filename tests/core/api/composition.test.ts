@@ -138,5 +138,49 @@ describe("createComposition", () => {
       expect(blastRadiusWith?.weights.churn).toBe(0.2);
       expect(blastRadiusWith?.weights.fanIn).toBe(0.3);
     });
+
+    // Phase D4 — composite presets that override trajectory presets by
+    // (name, tools[i]). When codegraph is wired, every override below
+    // wins resolution — the resolved preset's overlayMask contains
+    // codegraph.file.fanIn (a key the trajectory preset never lists)
+    // and the weights include a non-zero `fanIn` entry. Without
+    // codegraph, the override is skipped and the trajectory preset
+    // wins unchanged.
+    it("composite overrides supersede trajectory presets for hotspots / techDebt / dangerous / ownership / securityAudit / codeReview", () => {
+      const resolvers = new Map<string, CallResolver>([
+        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+      ]);
+      const withCodegraph = createComposition({
+        codegraph: { graphDb, symbolTable: new InMemoryGlobalSymbolTable(), resolvers },
+      });
+      const withoutCodegraph = createComposition();
+      const overriddenNames = ["hotspots", "techDebt", "dangerous", "ownership", "securityAudit", "codeReview"];
+
+      for (const name of overriddenNames) {
+        const compositeWeights = withCodegraph.resolvedPresets.find((p) => p.name === name)?.weights;
+        const trajectoryWeights = withoutCodegraph.resolvedPresets.find((p) => p.name === name)?.weights;
+        // Composite override adds a non-zero fanIn weight; trajectory
+        // preset has no fanIn key at all (the override is the only
+        // place where the codegraph signal participates in scoring).
+        expect(compositeWeights?.fanIn, `composite ${name} should have fanIn weight`).toBeGreaterThan(0);
+        expect(trajectoryWeights?.fanIn, `trajectory ${name} should NOT have fanIn weight`).toBeUndefined();
+      }
+    });
+
+    it("architecturalHub is a new composite — present only when codegraph is wired", () => {
+      const resolvers = new Map<string, CallResolver>([
+        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+      ]);
+      const withCodegraph = createComposition({
+        codegraph: { graphDb, symbolTable: new InMemoryGlobalSymbolTable(), resolvers },
+      });
+      const withoutCodegraph = createComposition();
+
+      const hub = withCodegraph.resolvedPresets.find((p) => p.name === "architecturalHub");
+      expect(hub).toBeDefined();
+      expect(hub?.weights.isHub).toBe(0.35);
+      expect(hub?.weights.fanIn).toBe(0.2);
+      expect(withoutCodegraph.resolvedPresets.find((p) => p.name === "architecturalHub")).toBeUndefined();
+    });
   });
 });
