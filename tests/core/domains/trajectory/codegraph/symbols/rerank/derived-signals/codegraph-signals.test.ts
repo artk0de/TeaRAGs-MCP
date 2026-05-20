@@ -1,0 +1,83 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  CalledByCountSignal,
+  CallSiteCountSignal,
+  CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
+  FanInSignal,
+  FanOutSignal,
+  InstabilitySignal,
+  IsHubSignal,
+  IsLeafSignal,
+} from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/rerank/derived-signals/index.js";
+import { BlastRadiusPreset } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/rerank/presets/blast-radius.js";
+
+describe("codegraph derived signals", () => {
+  it("FanInSignal normalizes codegraph.file.fanIn against bounds", () => {
+    const sig = new FanInSignal();
+    expect(sig.extract({ "codegraph.file.fanIn": 10 }, { bounds: { "file.fanIn": 20 } })).toBeCloseTo(0.5, 5);
+    expect(sig.extract({}, {})).toBe(0);
+  });
+
+  it("FanOutSignal normalizes codegraph.file.fanOut against bounds", () => {
+    const sig = new FanOutSignal();
+    expect(sig.extract({ "codegraph.file.fanOut": 15 }, { bounds: { "file.fanOut": 30 } })).toBeCloseTo(0.5, 5);
+  });
+
+  it("InstabilitySignal passes through raw value clamped to [0,1]", () => {
+    const sig = new InstabilitySignal();
+    expect(sig.extract({ "codegraph.file.instability": 0.42 }, {})).toBe(0.42);
+    expect(sig.extract({ "codegraph.file.instability": 1.5 }, {})).toBe(1);
+    expect(sig.extract({ "codegraph.file.instability": -0.1 }, {})).toBe(0);
+  });
+
+  it("IsHubSignal returns 1 when raw boolean is true", () => {
+    const sig = new IsHubSignal();
+    expect(sig.extract({ "codegraph.file.isHub": true }, {})).toBe(1);
+    expect(sig.extract({ "codegraph.file.isHub": false }, {})).toBe(0);
+  });
+
+  it("IsLeafSignal returns 1 when raw boolean is true", () => {
+    const sig = new IsLeafSignal();
+    expect(sig.extract({ "codegraph.file.isLeaf": true }, {})).toBe(1);
+    expect(sig.extract({ "codegraph.file.isLeaf": false }, {})).toBe(0);
+  });
+
+  it("CalledByCountSignal normalizes against bounds", () => {
+    const sig = new CalledByCountSignal();
+    expect(sig.extract({ "codegraph.chunk.calledByCount": 20 }, { bounds: { "chunk.calledByCount": 40 } })).toBeCloseTo(
+      0.5,
+      5,
+    );
+  });
+
+  it("CallSiteCountSignal normalizes against bounds", () => {
+    const sig = new CallSiteCountSignal();
+    expect(sig.extract({ "codegraph.chunk.callSiteCount": 15 }, { bounds: { "chunk.callSiteCount": 30 } })).toBeCloseTo(
+      0.5,
+      5,
+    );
+  });
+
+  it("CODEGRAPH_SYMBOLS_DERIVED_SIGNALS contains all 7 signals", () => {
+    expect(CODEGRAPH_SYMBOLS_DERIVED_SIGNALS.map((s) => s.name).sort()).toEqual([
+      "callSiteCount",
+      "calledByCount",
+      "fanIn",
+      "fanOut",
+      "instability",
+      "isHub",
+      "isLeaf",
+    ]);
+  });
+
+  it("BlastRadiusPreset is registered for semantic_search/hybrid_search/rank_chunks", () => {
+    const preset = new BlastRadiusPreset();
+    expect(preset.name).toBe("blastRadius");
+    expect(preset.tools).toContain("semantic_search");
+    expect(preset.tools).toContain("hybrid_search");
+    expect(preset.tools).toContain("rank_chunks");
+    expect(preset.weights.similarity).toBe(0.25);
+    expect(preset.weights.fanIn).toBe(0.25);
+  });
+});
