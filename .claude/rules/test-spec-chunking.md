@@ -166,6 +166,26 @@ chunker).
   asserts `chunkType === "test"` for a real describe block via
   `TreeSitterChunker.chunk`.
 
+## Skill-list sync (MANDATORY when adding or removing a language)
+
+The list of languages that emit `chunkType: "test"` / `"test_setup"` is
+duplicated in three SKILL.md files that consumers read at query time. They MUST
+stay in lock-step with the actual `<lang>/test-*.ts` (or `rspec-*.ts`) hook
+chain. When you add a new language (or retire one), update ALL three in the same
+commit:
+
+| File                                                                | What to update                                                          |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `.claude-plugin/dinopowers/skills/test-driven-development/SKILL.md` | Iron Rule fallback paragraph — supported-languages list                 |
+| `.claude-plugin/tea-rags/skills/tests-as-context/SKILL.md`          | Step 0 SKIP block — parenthesised list under "primary language has no…" |
+| `.claude-plugin/tea-rags/skills/filter-building/SKILL.md`           | chunkType section — supported-languages table                           |
+
+The hook headers (`<lang>/test-scope-chunker.ts`,
+`<lang>/rspec-scope-chunker.ts`) also carry the same pointer block in their
+JSDoc — keep them aligned. Treat the 3-skill update as part of the language-add
+work, not a follow-up: the language is not "supported" until consumers know
+about it.
+
 ## Known limitations (do NOT work around silently)
 
 - **Dynamic-describe in loops** (`for (...) describe(name, ...)` /

@@ -94,12 +94,21 @@ Two test-related filters address different granularity. They compose freely.
 | Production code, not tests                               | `testFile: "exclude"`                    |
 
 **`chunkType: "test"` and `chunkType: "test_setup"` require DSL test chunking.**
-Currently only TypeScript has a DSL test chunker (`test-scope-chunker.ts`). For
-Ruby / Python / Go / others, file-level `testFile: "only"` is the only option.
+Currently supported:
+
+| Language   | Frameworks          | Hook file                                                                         |
+| ---------- | ------------------- | --------------------------------------------------------------------------------- |
+| TypeScript | Vitest, Jest, Mocha | `src/core/domains/ingest/pipeline/chunker/hooks/typescript/test-scope-chunker.ts` |
+| Ruby       | RSpec               | `src/core/domains/ingest/pipeline/chunker/hooks/ruby/rspec-scope-chunker.ts`      |
+
+For Python / Go / others, file-level `testFile: "only"` is the only option.
 Detect availability via the prime digest: DSL chunks are absent if no
 `git.chunk.*` signal shows a `test:` threshold row. For recipes that depend on
 DSL chunks, see `tea-rags:tests-as-context` (Step 0 preflight handles this
-automatically).
+automatically). When a new language is added, update this table in lock-step
+with the matching block in `tea-rags:tests-as-context` and
+`dinopowers:test-driven-development` — see
+`.claude/rules/test-spec-chunking.md`.
 
 ## Filter Level: file vs chunk
 
