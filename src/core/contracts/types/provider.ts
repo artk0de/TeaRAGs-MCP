@@ -129,6 +129,21 @@ export interface EnrichmentProvider {
    * since the last reset).
    */
   getRunMetrics?: () => ProviderRunMetrics | undefined;
+  /**
+   * Optional deletion hook — invoked by `EnrichmentCoordinator.notifyDeletions`
+   * before sync removes the corresponding Qdrant points. Provider clears
+   * its provider-owned state for those paths (e.g. codegraph deletes graph
+   * edges + symbol-table entries; future providers might clear per-file
+   * caches). Calling order is sync → coordinator → all providers →
+   * qdrant.deletePoints, so if Qdrant deletion fails the provider state
+   * is already consistent — preferable to the inverse: orphan graph
+   * edges are silent corruption, orphan Qdrant points are just clutter.
+   *
+   * `paths` are repo-relative POSIX (same shape as buildFileSignals
+   * `options.paths`). Provider is expected to be idempotent: receiving a
+   * path it never enriched must be a no-op, not an error.
+   */
+  handleDeletedPaths?: (paths: string[]) => Promise<void>;
 }
 
 // Re-export for convenience

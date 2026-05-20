@@ -104,6 +104,38 @@ export class EnrichmentCoordinator {
   }
 
   /**
+   * Notify all providers that a set of files has been removed from the
+   * project. Fans out to every provider implementing `handleDeletedPaths`;
+   * providers without the hook are silently skipped. Errors from one
+   * provider don't block others — failures are caught + logged so that
+   * a single provider's cleanup glitch doesn't strand the rest of the
+   * delete pipeline.
+   *
+   * Called by the sync layer BEFORE qdrant.deletePoints so provider-owned
+   * state (codegraph edges, symbol-table entries, etc.) is consistent
+   * even if Qdrant deletion itself fails. Orphan graph edges are silent
+   * corruption; orphan Qdrant points are just clutter — better the
+   * latter than the former.
+   */
+  async notifyDeletions(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    await Promise.all(
+      this.providers.map(async (provider) => {
+        if (!provider.handleDeletedPaths) return;
+        try {
+          await provider.handleDeletedPaths(paths);
+        } catch (err) {
+          pipelineLog.enrichmentPhase("DELETE_HOOK_FAILED", {
+            provider: provider.key,
+            count: paths.length,
+            error: (err as Error).message,
+          });
+        }
+      }),
+    );
+  }
+
+  /**
    * Run recovery + migration before the main enrichment pipeline.
    * Migration is one-time and idempotent. Recovery re-enriches chunks missing enrichedAt.
    * No-op when recovery was not provided at construction time.

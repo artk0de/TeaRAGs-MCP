@@ -95,6 +95,54 @@ describe("CodegraphEnrichmentProvider", () => {
     expect(provider.getRunMetrics()).toBeUndefined();
   });
 
+  // Slice 2 / A4a — deletion hook. When sync notices a file is gone the
+  // coordinator forwards the relPath to every provider implementing
+  // handleDeletedPaths. Codegraph must drop edges from DuckDB + symbol
+  // table + chunkSymbolByLine cache so subsequent reranks don't expose
+  // phantom callers/callees for a deleted file.
+  it("handleDeletedPaths removes file edges and symbol-table entries", async () => {
+    const sink = provider.asExtractionSink();
+    await sink.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
+      fileScope: [],
+    });
+    await sink.write({
+      relPath: "src/main.ts",
+      language: "typescript",
+      imports: [{ importText: "./foo", startLine: 1 }],
+      chunks: [
+        {
+          symbolId: "main",
+          scope: [],
+          calls: [{ callText: "Foo.bar()", receiver: "Foo", member: "bar", startLine: 4 }],
+        },
+      ],
+      fileScope: [],
+    });
+    await sink.finish();
+    // Sanity check baseline state — src/foo.ts has fanIn=1.
+    expect(await client.getFanIn("src/foo.ts")).toBe(1);
+
+    await provider.handleDeletedPaths(["src/main.ts"]);
+
+    // src/main.ts removed → src/foo.ts no longer has anyone importing it.
+    expect(await client.getFanIn("src/foo.ts")).toBe(0);
+    // Symbol table no longer surfaces the deleted file's symbols.
+    const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+    expect(lookup.lookupByShortName("main")).toEqual([]);
+  });
+
+  it("handleDeletedPaths is idempotent for unknown paths and empty input", async () => {
+    // Unknown path — graphDb.removeFile + symbolTable.removeFile both
+    // tolerate it. No throw, no side effects on existing state.
+    await expect(provider.handleDeletedPaths(["src/never-existed.ts"])).resolves.toBeUndefined();
+    // Empty list — fast exit, no DB calls.
+    await expect(provider.handleDeletedPaths([])).resolves.toBeUndefined();
+  });
+
   it("sink finish populates graphDb with file edges and method edges", async () => {
     const sink = provider.asExtractionSink();
     await sink.write({

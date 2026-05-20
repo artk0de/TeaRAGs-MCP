@@ -125,6 +125,59 @@ describe("EnrichmentCoordinator", () => {
     expect(metrics).toHaveProperty("missedFiles");
   });
 
+  // Slice 2 / A4a — sync layer routes file deletions through
+  // coordinator.notifyDeletions before pruning Qdrant points. Each
+  // provider that implements handleDeletedPaths gets the relPath list;
+  // providers without the hook are silently skipped. Order: notify
+  // providers → delete from Qdrant — so graph-edge consistency is
+  // preserved even when Qdrant deletion fails downstream.
+  it("notifyDeletions fans out to providers implementing handleDeletedPaths", async () => {
+    const handlerA = vi.fn().mockResolvedValue(undefined);
+    const handlerB = vi.fn().mockResolvedValue(undefined);
+    const providerA: EnrichmentProvider = {
+      ...mockProvider,
+      key: "alpha",
+      handleDeletedPaths: handlerA,
+    };
+    const providerB: EnrichmentProvider = {
+      ...mockProvider,
+      key: "beta",
+      handleDeletedPaths: handlerB,
+    };
+    const coord = new EnrichmentCoordinator(mockQdrant, [providerA, providerB]);
+    await coord.notifyDeletions(["src/foo.ts", "src/bar.ts"]);
+    expect(handlerA).toHaveBeenCalledWith(["src/foo.ts", "src/bar.ts"]);
+    expect(handlerB).toHaveBeenCalledWith(["src/foo.ts", "src/bar.ts"]);
+  });
+
+  it("notifyDeletions skips providers without the hook and is a no-op on empty paths", async () => {
+    const handlerOptIn = vi.fn().mockResolvedValue(undefined);
+    const providerNoHook: EnrichmentProvider = { ...mockProvider, key: "git" }; // no handleDeletedPaths
+    const providerOptIn: EnrichmentProvider = {
+      ...mockProvider,
+      key: "codegraph.symbols",
+      handleDeletedPaths: handlerOptIn,
+    };
+    const coord = new EnrichmentCoordinator(mockQdrant, [providerNoHook, providerOptIn]);
+    await coord.notifyDeletions([]);
+    expect(handlerOptIn).not.toHaveBeenCalled();
+    await coord.notifyDeletions(["src/x.ts"]);
+    expect(handlerOptIn).toHaveBeenCalledExactlyOnceWith(["src/x.ts"]);
+  });
+
+  it("notifyDeletions does not let one provider's error block the others", async () => {
+    const failing = vi.fn().mockRejectedValue(new Error("graphDb down"));
+    const working = vi.fn().mockResolvedValue(undefined);
+    const coord = new EnrichmentCoordinator(mockQdrant, [
+      { ...mockProvider, key: "a", handleDeletedPaths: failing },
+      { ...mockProvider, key: "b", handleDeletedPaths: working },
+    ]);
+    // Promise.all + try/catch per-provider => no rejection bubbles up
+    await expect(coord.notifyDeletions(["src/x.ts"])).resolves.toBeUndefined();
+    expect(failing).toHaveBeenCalled();
+    expect(working).toHaveBeenCalled();
+  });
+
   // Slice 2 / A2 — per-provider counters reach EnrichmentMetrics.byProvider
   // through the optional `provider.getRunMetrics()` hook on each provider
   // CompletionRunner sees in its contexts map. Providers without the

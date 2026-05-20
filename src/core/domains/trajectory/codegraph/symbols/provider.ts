@@ -91,6 +91,23 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return absolutePath;
   }
 
+  /**
+   * Drop codegraph state for files that no longer exist on disk. Called
+   * by `EnrichmentCoordinator.notifyDeletions` before sync prunes the
+   * corresponding Qdrant points — keeps `cg_symbols_edges_*` consistent
+   * with the file set. Idempotent: removing a path the provider never
+   * saw is a no-op (graphDb.removeFile + symbolTable.removeFile both
+   * tolerate unknown paths).
+   */
+  async handleDeletedPaths(paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    for (const relPath of paths) {
+      await this.deps.graphDb.removeFile(relPath);
+      this.deps.symbolTable.removeFile(relPath);
+      this.chunkSymbolByLine.delete(relPath);
+    }
+  }
+
   asExtractionSink(): ExtractionSink {
     return {
       write: async (extraction) => {
