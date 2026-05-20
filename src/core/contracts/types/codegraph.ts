@@ -97,6 +97,10 @@ export interface GlobalSymbolTable {
    *  resolution. */
   lookupByShortName: (name: string) => SymbolDefinition[];
   size: () => number;
+  /** Bulk-load symbol definitions, typically from disk-backed storage on
+   *  cold start. Equivalent to calling `upsertFile` once per file —
+   *  implementations may optimise the bulk path but are not required to. */
+  hydrate: (definitions: SymbolDefinition[]) => void;
 }
 
 export interface SymbolDefinition {
@@ -162,6 +166,24 @@ export interface GraphDbClient {
   /** Returns true if at least one row exists in `cg_symbols_files`. Used
    *  by drift detection. */
   hasData: () => Promise<boolean>;
+
+  // ── Symbol-table persistence (Slice 2 / A4c) ──
+  // The in-memory GlobalSymbolTable needs a disk-backed copy so cold
+  // starts and partial reindexes can hydrate without re-walking every
+  // file in the repo. Persistence is keyed by `(relPath, symbolId)`
+  // exactly like the in-memory map.
+
+  /** Atomic replacement of all symbols for a file (DELETE+INSERT inside
+   *  a transaction). Idempotent: empty `definitions` clears the file. */
+  upsertSymbols: (relPath: RelPath, definitions: SymbolDefinition[]) => Promise<void>;
+
+  /** Drop all persisted symbols for a file. Called by `handleDeletedPaths`. */
+  removeSymbolsForFile: (relPath: RelPath) => Promise<void>;
+
+  /** Bulk read for bootstrap hydration. Returns every persisted symbol
+   *  definition; consumer is expected to feed them through
+   *  `GlobalSymbolTable.hydrate`. */
+  listAllSymbols: () => Promise<SymbolDefinition[]>;
 }
 
 export interface GraphFileNode {

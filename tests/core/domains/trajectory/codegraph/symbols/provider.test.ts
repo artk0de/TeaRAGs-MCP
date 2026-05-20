@@ -148,6 +148,46 @@ describe("CodegraphEnrichmentProvider", () => {
   // permanently as the file is re-indexed. This exercises the end-to-end
   // sink → graphDb path (not just the adapter unit test) to confirm the
   // provider doesn't accidentally double-emit on its side either.
+
+  // Slice 2 / A4c — sink.finish persists symbol definitions so the next
+  // cold-start bootstrap can hydrate the in-memory symbol table from
+  // disk. Without this, partial reindex would lose cross-file
+  // resolution: the walker only touches changed files, so symbols
+  // defined in unchanged files would be invisible to the resolver.
+  it("sink.finish persists symbol definitions via graphDb.upsertSymbols", async () => {
+    const sink = provider.asExtractionSink();
+    await sink.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [
+        { symbolId: "Foo.bar", scope: ["Foo"], calls: [] },
+        { symbolId: "Foo.baz", scope: ["Foo"], calls: [] },
+      ],
+      fileScope: [],
+    });
+    await sink.finish();
+    const rows = await client.listAllSymbols();
+    expect(rows.map((r) => r.symbolId).sort()).toEqual(["Foo.bar", "Foo.baz"]);
+    expect(rows.find((r) => r.symbolId === "Foo.bar")?.scope).toEqual(["Foo"]);
+  });
+
+  it("handleDeletedPaths also removes persisted symbol rows", async () => {
+    const sink = provider.asExtractionSink();
+    await sink.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
+      fileScope: [],
+    });
+    await sink.finish();
+    expect(await client.listAllSymbols()).toHaveLength(1);
+
+    await provider.handleDeletedPaths(["src/foo.ts"]);
+    expect(await client.listAllSymbols()).toEqual([]);
+  });
+
   it("re-extracting same file via sink keeps edge counts stable (no doubling)", async () => {
     const writeOnce = async (target: string, sym: string) => {
       const sink = provider.asExtractionSink();

@@ -64,6 +64,31 @@ describe("InMemoryGlobalSymbolTable", () => {
     ).toEqual(["src/a.ts", "src/b.ts"]);
   });
 
+  // Slice 2 / A4c — bulk hydrate from disk-backed storage on cold start.
+  // Definitions arrive as a flat list (one row per symbol from the
+  // listAllSymbols SELECT); hydrate must group them by relPath and seed
+  // the same byFq/byShort/byFile indexes as upsertFile would.
+  it("hydrate groups flat definition list by relPath and indexes them like upsertFile", () => {
+    table.hydrate([
+      { symbolId: "Foo.bar", fqName: "Foo.bar", shortName: "bar", relPath: "src/foo.ts", scope: ["Foo"] },
+      { symbolId: "Foo.baz", fqName: "Foo.baz", shortName: "baz", relPath: "src/foo.ts", scope: ["Foo"] },
+      { symbolId: "Quux.f", fqName: "Quux.f", shortName: "f", relPath: "src/quux.ts", scope: ["Quux"] },
+    ]);
+    expect(table.size()).toBe(3);
+    expect(table.lookupByShortName("bar").map((d) => d.relPath)).toEqual(["src/foo.ts"]);
+    expect(table.lookup("Quux.f").map((d) => d.relPath)).toEqual(["src/quux.ts"]);
+    // Existing removeFile invariant still holds — hydrate is just a
+    // grouped upsertFile, the identity chain is intact.
+    table.removeFile("src/foo.ts");
+    expect(table.lookupByShortName("bar")).toEqual([]);
+    expect(table.size()).toBe(1);
+  });
+
+  it("hydrate is a no-op on empty input (no spurious file rows)", () => {
+    table.hydrate([]);
+    expect(table.size()).toBe(0);
+  });
+
   it("size() reflects total symbol count across files", () => {
     expect(table.size()).toBe(0);
     table.upsertFile("src/a.ts", [

@@ -25,6 +25,7 @@ import type {
   GraphEdges,
   GraphFileNode,
   RelPath,
+  SymbolDefinition,
   SymbolId,
 } from "../../contracts/types/codegraph.js";
 
@@ -126,12 +127,55 @@ export class DuckDbGraphClient implements GraphDbClient {
         relPath,
         relPath,
       ]);
+      await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       await this.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
       await this.exec("COMMIT");
     } catch (err) {
       await this.exec("ROLLBACK");
       throw err;
     }
+  }
+
+  async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
+    // DELETE+INSERT inside a transaction so a partial failure leaves
+    // either the full new set or the previous set — never a mix. Empty
+    // definitions list clears the file (idempotent with handleDeletedPaths).
+    await this.exec("BEGIN");
+    try {
+      await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
+      for (const def of definitions) {
+        await this.run(
+          "INSERT INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json) VALUES (?, ?, ?, ?, ?)",
+          [def.relPath, def.symbolId, def.fqName, def.shortName, JSON.stringify(def.scope ?? [])],
+        );
+      }
+      await this.exec("COMMIT");
+    } catch (err) {
+      await this.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  async removeSymbolsForFile(relPath: RelPath): Promise<void> {
+    // No transaction wrapper — single DELETE is atomic by itself.
+    await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
+  }
+
+  async listAllSymbols(): Promise<SymbolDefinition[]> {
+    const rows = await this.queryAll<{
+      rel_path: string;
+      symbol_id: string;
+      fq_name: string;
+      short_name: string;
+      scope_json: string;
+    }>("SELECT rel_path, symbol_id, fq_name, short_name, scope_json FROM cg_symbols");
+    return rows.map((row) => ({
+      relPath: row.rel_path,
+      symbolId: row.symbol_id,
+      fqName: row.fq_name,
+      shortName: row.short_name,
+      scope: parseScope(row.scope_json),
+    }));
   }
 
   async getFanIn(relPath: RelPath): Promise<number> {
@@ -218,5 +262,18 @@ function bindParams(prep: BindablePrep, params: BindablePrimitive[]): void {
     } else {
       prep.bindVarchar(i + 1, String(v));
     }
+  }
+}
+
+function parseScope(json: string): string[] {
+  // Scope is stored as JSON-encoded VARCHAR (see migration 002 — DuckDB
+  // list-type bindings add complexity for a small array). Tolerate a
+  // malformed scalar by returning empty: a missing scope chain degrades
+  // resolver precision but never crashes hydration.
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
   }
 }

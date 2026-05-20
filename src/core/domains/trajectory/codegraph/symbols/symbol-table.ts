@@ -60,6 +60,27 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     for (const defs of this.byFile.values()) n += defs.length;
     return n;
   }
+
+  /**
+   * Bulk-load definitions, typically from `GraphDbClient.listAllSymbols`
+   * on cold start. Groups by `relPath` and calls `upsertFile` once per
+   * file so the existing identity-chain invariants in `byFq`/`byShort`
+   * are preserved. Definitions for a file already in memory get
+   * overwritten (this is the same semantics as `upsertFile` which
+   * removes existing entries first).
+   */
+  hydrate(definitions: SymbolDefinition[]): void {
+    if (definitions.length === 0) return;
+    const grouped = new Map<RelPath, SymbolDefinition[]>();
+    for (const def of definitions) {
+      const arr = grouped.get(def.relPath);
+      if (arr) arr.push(def);
+      else grouped.set(def.relPath, [def]);
+    }
+    for (const [relPath, defs] of grouped) {
+      this.upsertFile(relPath, defs);
+    }
+  }
 }
 
 function pushTo(map: Map<string, SymbolDefinition[]>, key: string, def: SymbolDefinition): void {

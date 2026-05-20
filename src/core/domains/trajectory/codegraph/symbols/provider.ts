@@ -102,7 +102,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   async handleDeletedPaths(paths: string[]): Promise<void> {
     if (paths.length === 0) return;
     for (const relPath of paths) {
+      // `graphDb.removeFile` clears edges AND cg_symbols rows; the
+      // separate `removeSymbolsForFile` is intentionally idempotent so
+      // call sites that only want symbol-table cleanup (no edge
+      // pruning) can use it independently. Calling both here is safe —
+      // the second DELETE finds an empty set.
       await this.deps.graphDb.removeFile(relPath);
+      await this.deps.graphDb.removeSymbolsForFile(relPath);
       this.deps.symbolTable.removeFile(relPath);
       this.chunkSymbolByLine.delete(relPath);
     }
@@ -133,6 +139,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           await this.deps.graphDb.upsertFile({ relPath: extraction.relPath, language: extraction.language }, edges);
           this.runStats.fileEdgeCount += edges.fileEdges.length;
           this.runStats.methodEdgeCount += edges.methodEdges.length;
+          // Persist symbol definitions so the next cold-start bootstrap
+          // can hydrate the in-memory table from disk. Partial reindex
+          // (file A modified, file B untouched) can then resolve calls
+          // from A into B because B's symbols are loaded at startup.
+          const symbolDefs = extraction.chunks.map((c) => ({
+            symbolId: c.symbolId,
+            fqName: c.symbolId,
+            shortName: lastSegment(c.symbolId),
+            relPath: extraction.relPath,
+            scope: c.scope,
+          }));
+          await this.deps.graphDb.upsertSymbols(extraction.relPath, symbolDefs);
         }
         this.buffer.length = 0;
       },

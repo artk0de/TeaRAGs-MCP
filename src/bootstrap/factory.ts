@@ -222,9 +222,31 @@ async function wireCodegraph(
   const tsOptions = loadTsConfig(process.cwd());
   const resolvers = new Map<string, CallResolver>([["typescript", new TSCallResolver(tsOptions)]]);
 
+  // Hydrate the symbol table from disk on cold start. Without this,
+  // an incremental reindex of file A cannot resolve calls into an
+  // unchanged file B — the walker only touches the changed files, so
+  // B's symbols would be invisible. After hydration the in-memory
+  // table holds every previously-persisted definition; the streaming
+  // upsert path (sink.finish() → graphDb.upsertSymbols) keeps it
+  // current. Empty result on first run (fresh DB) is the no-op fast
+  // path.
+  const symbolTable = new InMemoryGlobalSymbolTable();
+  try {
+    const persisted = await graphDb.listAllSymbols();
+    if (persisted.length > 0) {
+      symbolTable.hydrate(persisted);
+    }
+  } catch (err) {
+    // Migration ran but the table query somehow failed — log and start
+    // empty rather than blocking bootstrap. The next sink.finish will
+    // rebuild affected files; cross-file resolution is degraded until
+    // then but the rest of the MCP server still functions.
+    process.stderr.write(`[tea-rags] codegraph symbol-table hydration failed: ${(err as Error).message}\n`);
+  }
+
   const deps: CodegraphDeps = {
     graphDb,
-    symbolTable: new InMemoryGlobalSymbolTable(),
+    symbolTable,
     resolvers,
   };
   const graphFacade = new GraphFacade({ graphDb });

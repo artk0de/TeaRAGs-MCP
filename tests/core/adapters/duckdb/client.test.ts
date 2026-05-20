@@ -98,6 +98,53 @@ describe("DuckDbGraphClient", () => {
     expect(await client.getCalledByCount("Bar.baz")).toBe(1);
   });
 
+  // Slice 2 / A4c — persisted symbol table. The in-memory
+  // GlobalSymbolTable hydrates from this table on cold start; partial
+  // reindex relies on it for cross-file resolution.
+  it("upsertSymbols + listAllSymbols round-trip preserves scope arrays", async () => {
+    await client.upsertSymbols("src/foo.ts", [
+      { symbolId: "Foo.bar", fqName: "Foo.bar", shortName: "bar", relPath: "src/foo.ts", scope: ["Foo"] },
+      { symbolId: "Foo.baz", fqName: "Foo.baz", shortName: "baz", relPath: "src/foo.ts", scope: ["Foo"] },
+    ]);
+    const rows = await client.listAllSymbols();
+    expect(rows).toHaveLength(2);
+    const bar = rows.find((r) => r.symbolId === "Foo.bar");
+    expect(bar?.scope).toEqual(["Foo"]);
+    expect(bar?.fqName).toBe("Foo.bar");
+  });
+
+  it("upsertSymbols replaces previous definitions for the same file (DELETE+INSERT)", async () => {
+    await client.upsertSymbols("src/foo.ts", [
+      { symbolId: "Foo.bar", fqName: "Foo.bar", shortName: "bar", relPath: "src/foo.ts", scope: ["Foo"] },
+    ]);
+    await client.upsertSymbols("src/foo.ts", [
+      { symbolId: "Foo.baz", fqName: "Foo.baz", shortName: "baz", relPath: "src/foo.ts", scope: ["Foo"] },
+    ]);
+    const rows = await client.listAllSymbols();
+    expect(rows.map((r) => r.symbolId)).toEqual(["Foo.baz"]);
+  });
+
+  it("removeSymbolsForFile drops the file's entries without touching others", async () => {
+    await client.upsertSymbols("src/a.ts", [
+      { symbolId: "A.x", fqName: "A.x", shortName: "x", relPath: "src/a.ts", scope: ["A"] },
+    ]);
+    await client.upsertSymbols("src/b.ts", [
+      { symbolId: "B.y", fqName: "B.y", shortName: "y", relPath: "src/b.ts", scope: ["B"] },
+    ]);
+    await client.removeSymbolsForFile("src/a.ts");
+    const rows = await client.listAllSymbols();
+    expect(rows.map((r) => r.relPath)).toEqual(["src/b.ts"]);
+  });
+
+  it("removeFile cascades into cg_symbols as well as the edge tables", async () => {
+    await client.upsertFile({ relPath: "src/foo.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+    await client.upsertSymbols("src/foo.ts", [
+      { symbolId: "Foo.bar", fqName: "Foo.bar", shortName: "bar", relPath: "src/foo.ts", scope: ["Foo"] },
+    ]);
+    await client.removeFile("src/foo.ts");
+    expect(await client.listAllSymbols()).toEqual([]);
+  });
+
   it("removeFile cascades incoming + outgoing edges via ON DELETE CASCADE", async () => {
     await client.upsertFile({ relPath: "src/a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     await client.upsertFile(
