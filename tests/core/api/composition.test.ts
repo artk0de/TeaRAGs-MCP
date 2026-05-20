@@ -110,5 +110,33 @@ describe("createComposition", () => {
       // checking the count is robust to preset renames.
       expect(resolvedPresets.length).toBeGreaterThan(0);
     });
+
+    // Slice 2 / Phase D foundation — composite presets (e.g. blastRadius
+    // weights codegraph.fanIn + git.churn) live in their own namespace at
+    // `domains/trajectory/composite/presets/` and are passed as the
+    // SECOND arg to resolvePresets. Trajectory presets stay pure
+    // (single-trajectory data). The override-by-(name,tools[i]) rule
+    // means a composite with the same name as a trajectory preset wins,
+    // without modifying the trajectory file. This test pins the new
+    // contract: codegraph enabled → composite blastRadius reaches the
+    // resolved set; codegraph disabled → blastRadius absent (its
+    // signals would be unpopulated).
+    it("composite blastRadius is in resolved presets only when codegraph is wired", () => {
+      const resolvers = new Map<string, CallResolver>([
+        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+      ]);
+      const withCodegraph = createComposition({
+        codegraph: { graphDb, symbolTable: new InMemoryGlobalSymbolTable(), resolvers },
+      });
+      const withoutCodegraph = createComposition();
+
+      const blastRadiusWith = withCodegraph.resolvedPresets.find((p) => p.name === "blastRadius");
+      const blastRadiusWithout = withoutCodegraph.resolvedPresets.find((p) => p.name === "blastRadius");
+      expect(blastRadiusWith).toBeDefined();
+      expect(blastRadiusWithout).toBeUndefined();
+      // Retuned (Slice 2) weights — process metrics dominate per Yatish 2020.
+      expect(blastRadiusWith?.weights.churn).toBe(0.2);
+      expect(blastRadiusWith?.weights.fanIn).toBe(0.3);
+    });
   });
 });

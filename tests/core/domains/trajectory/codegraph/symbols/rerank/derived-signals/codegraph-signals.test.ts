@@ -10,7 +10,7 @@ import {
   IsHubSignal,
   IsLeafSignal,
 } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/rerank/derived-signals/index.js";
-import { BlastRadiusPreset } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/rerank/presets/blast-radius.js";
+import { BlastRadiusPreset } from "../../../../../../../../src/core/domains/trajectory/composite/presets/blast-radius.js";
 
 describe("codegraph derived signals", () => {
   it("FanInSignal normalizes codegraph.file.fanIn against bounds", () => {
@@ -66,13 +66,18 @@ describe("codegraph derived signals", () => {
   });
 
   it("BlastRadiusPreset is registered for semantic_search/hybrid_search/rank_chunks", () => {
+    // BlastRadiusPreset lives in `domains/trajectory/composite/presets/`
+    // (mixes codegraph + git signals); weights retuned per Yatish 2020
+    // process-domination during Slice 2 reclassification.
     const preset = new BlastRadiusPreset();
     expect(preset.name).toBe("blastRadius");
     expect(preset.tools).toContain("semantic_search");
     expect(preset.tools).toContain("hybrid_search");
     expect(preset.tools).toContain("rank_chunks");
-    expect(preset.weights.similarity).toBe(0.25);
-    expect(preset.weights.fanIn).toBe(0.25);
-    expect(preset.weights.chunkFanIn).toBe(0.1);
+    expect(preset.weights.similarity).toBe(0.2);
+    expect(preset.weights.fanIn).toBe(0.3);
+    expect(preset.weights.churn).toBe(0.2);
+    expect(preset.weights.bugFix).toBe(0.15);
+    expect(preset.weights.chunkFanIn).toBe(0.05);
   });
 });

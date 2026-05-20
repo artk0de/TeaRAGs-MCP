@@ -405,4 +405,104 @@ describe("CodegraphEnrichmentProvider", () => {
     const fooBar = overlays.get("src/foo.ts")?.get("chunk-foo-bar");
     expect(fooBar?.["codegraph.chunk.fanIn"]).toBe(1);
   });
+
+  // Slice 1 — resolveChunkSymbolId containment fallback. When the
+  // ingest chunker splits an oversized method across multiple Qdrant
+  // chunks, the resulting ChunkLookupEntry rows carry intermediate
+  // startLines that don't exactly match any walker-indexed line. The
+  // provider must fall back to the largest indexed startLine that is
+  // <= the lookup's startLine AND <= its endLine — best-effort
+  // containment so the inner chunks still get fanIn/fanOut attached
+  // to the parent method's symbolId.
+  it("buildChunkSignals resolves symbolId via containment when startLine isn't an exact match", async () => {
+    const sink = provider.asExtractionSink();
+    // Method indexed at startLine=10 covering an oversized body. The
+    // ingest chunker may later split it into two Qdrant chunks: head
+    // at 10 (exact-match) and tail at 18 (containment fallback).
+    await sink.write({
+      relPath: "src/big.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Big.method", scope: ["Big"], calls: [], startLine: 10, endLine: 30 }],
+      fileScope: [],
+    });
+    await sink.write({
+      relPath: "src/caller.ts",
+      language: "typescript",
+      imports: [{ importText: "./big", startLine: 1 }],
+      chunks: [
+        {
+          symbolId: "caller",
+          scope: [],
+          calls: [{ callText: "Big.method()", receiver: "Big", member: "method", startLine: 4 }],
+          startLine: 3,
+          endLine: 5,
+        },
+      ],
+      fileScope: [],
+    });
+    await sink.finish();
+
+    // Two lookup entries for big.ts:
+    //   - exact match (startLine=10) — hits the early-return path
+    //   - non-exact (startLine=18, endLine=25) — drives the containment
+    //     loop: scans line=10, 10<=18 && 10<=25 → best={start:10,
+    //     sym:"Big.method"}. Returns Big.method.
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>([
+      [
+        "src/big.ts",
+        [
+          { chunkId: "chunk-head", startLine: 10, endLine: 17 },
+          { chunkId: "chunk-tail", startLine: 18, endLine: 25 },
+        ],
+      ],
+    ]);
+    const overlays = await provider.buildChunkSignals("/", chunkMap);
+    const head = overlays.get("src/big.ts")?.get("chunk-head");
+    const tail = overlays.get("src/big.ts")?.get("chunk-tail");
+    // Both head and tail must resolve to Big.method → same fanIn=1.
+    expect(head?.["codegraph.chunk.fanIn"]).toBe(1);
+    expect(tail?.["codegraph.chunk.fanIn"]).toBe(1);
+  });
+
+  it("buildChunkSignals skips chunks whose startLine has no containing indexed line", async () => {
+    // Containment loop returns undefined when no indexed startLine
+    // satisfies line<=startLine&&line<=endLine. Exercises the
+    // `best` stays undefined path through the loop, then the
+    // `if (!symbolId) continue` skip in buildChunkSignals.
+    const sink = provider.asExtractionSink();
+    await sink.write({
+      relPath: "src/big.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Big.method", scope: ["Big"], calls: [], startLine: 100, endLine: 120 }],
+      fileScope: [],
+    });
+    await sink.finish();
+
+    // Lookup at startLine=5: indexed line=100, 100<=5 is false → no
+    // best candidate → resolveChunkSymbolId returns undefined → skip.
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>([
+      ["src/big.ts", [{ chunkId: "chunk-orphan", startLine: 5, endLine: 8 }]],
+    ]);
+    const overlays = await provider.buildChunkSignals("/", chunkMap);
+    // Map for the file exists but no per-chunk entry because the
+    // lookup was skipped.
+    expect(overlays.get("src/big.ts")?.has("chunk-orphan")).toBe(false);
+  });
+
+  // Slice 1 — discoverTypescriptFiles catch branch. When the walker
+  // hits readdirSync against a non-existent or unreadable directory,
+  // it must swallow the error and continue (one bad subtree shouldn't
+  // crash the whole codegraph build). A non-existent root is the
+  // cleanest reproduction — the FIRST readdirSync call throws ENOENT
+  // and the catch returns from walk(), leaving out empty.
+  it("buildFileSignals returns an empty overlay map when root does not exist (readdirSync throws)", async () => {
+    const nonExistentRoot = join(tmpdir(), `cg-does-not-exist-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    // Don't create the directory — readdirSync should ENOENT.
+    const overlays = await provider.buildFileSignals(nonExistentRoot);
+    // Walker caught the error and returned empty; no files walked, no
+    // overlays emitted. Map is defined and empty (not undefined).
+    expect(overlays.size).toBe(0);
+  });
 });

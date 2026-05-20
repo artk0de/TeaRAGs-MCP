@@ -13,6 +13,7 @@ import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
 import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
+import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
 import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
 import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
@@ -65,7 +66,14 @@ export function createComposition(options: CompositionOptions = {}): Composition
   validateSignalDependencies(allPayloadSignalDescriptors);
   const allDerivedSignals = registry.getAllDerivedSignals();
   const allStatsAccumulators = registry.getAllStatsAccumulators();
-  const resolvedPresets = resolvePresets(registry.getAllPresets(), []);
+  // Trajectory presets come from the registry (one trajectory per preset);
+  // composite presets cross trajectories (e.g. blastRadius weights
+  // codegraph.fanIn + git.churn) and live in their own namespace under
+  // `domains/trajectory/composite/presets/`. The resolver merges by
+  // (name, tools[i]) and the composite list wins, so composites override
+  // trajectory presets of the same name without modifying them in place.
+  const compositePresets = buildCompositePresets({ codegraph: options.codegraph !== undefined });
+  const resolvedPresets = resolvePresets(registry.getAllPresets(), compositePresets);
   const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors);
 
   return {

@@ -87,7 +87,7 @@ and weights so agents can see them split.
 modified. The reranker's `resolvePresets(registry, composite)` pipeline already
 overrides by `(name, tool)` key — composite presets that share a name with a
 trajectory preset win the resolution. This spec creates **new composite preset
-classes** in `src/core/domains/explore/rerank/presets/composite/`; the original
+classes** in `src/core/domains/trajectory/composite/presets/`; the original
 trajectory presets (`git/rerank/presets/hotspots.ts`, etc.) stay untouched.
 
 Process-metric domination (Yatish 2020) means complexity weights stay small.

@@ -493,7 +493,7 @@ presets.
   explore-background). Lives in
   `src/core/domains/trajectory/<key>/rerank/presets/`.
 - **Composite preset** — combines signals from 2+ trajectories. Lives in
-  **`src/core/domains/explore/rerank/presets/composite/`** — explore is the
+  **`src/core/domains/trajectory/composite/presets/`** — explore is the
   composition layer; composites reference signals by string key, not by
   importing trajectory code, so domain-boundary rules stay satisfied.
 
@@ -515,7 +515,7 @@ populates it.
 
 **Files:**
 
-- Create: `src/core/domains/explore/rerank/presets/composite/` directory
+- Create: `src/core/domains/trajectory/composite/presets/` directory
 - Create: `composite/index.ts` — exports `buildCompositePresets(opts)` returning
   the composite preset list conditional on what trajectories are wired (e.g.
   composites needing `fanIn` only emit when codegraph is wired)
