@@ -26,11 +26,10 @@ describe("createComposition", () => {
 
   it("aggregates derived signals from trajectories + structural", () => {
     const { allDerivedSignals } = createComposition();
-    // Git: 15 derived + structural: 8 (Slice 2 adds fanOutPerLine)
-    expect(allDerivedSignals.length).toBe(23);
+    // Git: 15 derived + structural: 7
+    expect(allDerivedSignals.length).toBe(22);
     expect(allDerivedSignals.find((d) => d.name === "recency")).toBeDefined();
     expect(allDerivedSignals.find((d) => d.name === "similarity")).toBeDefined();
-    expect(allDerivedSignals.find((d) => d.name === "fanOutPerLine")).toBeDefined();
   });
 
   it("resolves presets from relevance + trajectory", () => {

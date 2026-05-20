@@ -23,14 +23,13 @@ describe("StaticTrajectory", () => {
     expect(keys).toContain("isTest");
   });
 
-  it("has 8 derived signals (Slice 2 adds fanOutPerLine)", () => {
-    expect(trajectory.derivedSignals).toHaveLength(8);
+  it("has 7 derived signals", () => {
+    expect(trajectory.derivedSignals).toHaveLength(7);
     const names = trajectory.derivedSignals.map((d) => d.name);
     expect(names).toContain("similarity");
     expect(names).toContain("chunkSize");
     expect(names).toContain("chunkDensity");
     expect(names).toContain("headingRelevance");
-    expect(names).toContain("fanOutPerLine");
   });
 
   it("has 3 presets", () => {

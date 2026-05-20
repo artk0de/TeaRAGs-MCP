@@ -5,6 +5,7 @@ import {
   ChunkFanOutSignal,
   CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,
   FanInSignal,
+  FanOutPerLineSignal,
   FanOutSignal,
   InstabilitySignal,
   IsHubSignal,
@@ -53,12 +54,61 @@ describe("codegraph derived signals", () => {
     expect(sig.extract({ "codegraph.chunk.fanOut": 15 }, { bounds: { "chunk.fanOut": 30 } })).toBeCloseTo(0.5, 5);
   });
 
-  it("CODEGRAPH_SYMBOLS_DERIVED_SIGNALS contains all 9 signals (Slice 2 adds transitiveImpact + pageRank)", () => {
+  describe("FanOutPerLineSignal", () => {
+    it("returns 0 when codegraph.file.fanOut is absent", () => {
+      const sig = new FanOutPerLineSignal();
+      expect(sig.extract({ chunkSize: 100 }, {})).toBe(0);
+    });
+
+    it("returns 0 when fanOut is 0 with implicit chunkSize=1", () => {
+      const sig = new FanOutPerLineSignal();
+      expect(sig.extract({}, {})).toBe(0);
+      expect(sig.extract({ "codegraph.file.fanOut": 0 }, {})).toBe(0);
+    });
+
+    it("normalises fanOut=10, chunkSize=100 against default bound 0.1 to clamp at 1.0", () => {
+      const sig = new FanOutPerLineSignal();
+      // ratio = 10 / 100 = 0.1; bound = 0.1; normalize(0.1, 0.1) = 1.0
+      expect(sig.extract({ "codegraph.file.fanOut": 10, chunkSize: 100 }, {})).toBe(1);
+    });
+
+    it("normalises a mid-range value against default bound 0.1", () => {
+      const sig = new FanOutPerLineSignal();
+      // ratio = 5 / 100 = 0.05; bound = 0.1; normalize(0.05, 0.1) = 0.5
+      expect(sig.extract({ "codegraph.file.fanOut": 5, chunkSize: 100 }, {})).toBeCloseTo(0.5, 5);
+    });
+
+    it("respects ctx.bounds['chunk.fanOutPerLine'] override over the default bound", () => {
+      const sig = new FanOutPerLineSignal();
+      // ratio = 10 / 100 = 0.1; override bound = 0.2; normalize(0.1, 0.2) = 0.5
+      expect(
+        sig.extract({ "codegraph.file.fanOut": 10, chunkSize: 100 }, { bounds: { "chunk.fanOutPerLine": 0.2 } }),
+      ).toBeCloseTo(0.5, 5);
+    });
+
+    it("guards chunkSize=0 via Math.max so fanOut/0 does not produce NaN", () => {
+      const sig = new FanOutPerLineSignal();
+      // size guarded to 1; ratio = 50 / 1 = 50; normalize(50, 0.1) clamps to 1
+      const result = sig.extract({ "codegraph.file.fanOut": 50, chunkSize: 0 }, {});
+      expect(Number.isNaN(result)).toBe(false);
+      expect(result).toBe(1);
+    });
+
+    it("exposes descriptor metadata: name, sources, defaultBound", () => {
+      const sig = new FanOutPerLineSignal();
+      expect(sig.name).toBe("fanOutPerLine");
+      expect(sig.sources).toEqual(["codegraph.file.fanOut"]);
+      expect(sig.defaultBound).toBe(0.1);
+    });
+  });
+
+  it("CODEGRAPH_SYMBOLS_DERIVED_SIGNALS contains all 10 signals (Slice 2 adds transitiveImpact + pageRank + fanOutPerLine)", () => {
     expect(CODEGRAPH_SYMBOLS_DERIVED_SIGNALS.map((s) => s.name).sort()).toEqual([
       "chunkFanIn",
       "chunkFanOut",
       "fanIn",
       "fanOut",
+      "fanOutPerLine",
       "instability",
       "isHub",
       "isLeaf",

@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { staticDerivedSignals as structuralSignals } from "../../../../src/core/domains/trajectory/static/rerank/derived-signals/index.js";
 
 describe("structuralSignals", () => {
-  it("has 8 descriptors (Slice 2 adds fanOutPerLine)", () => {
-    expect(structuralSignals).toHaveLength(8);
+  it("has 7 descriptors", () => {
+    expect(structuralSignals).toHaveLength(7);
   });
 
   it("structural signals declare correct sources", () => {

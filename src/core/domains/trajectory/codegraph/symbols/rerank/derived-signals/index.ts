@@ -2,6 +2,7 @@ import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/
 import { ChunkFanInSignal } from "./chunk-fan-in.js";
 import { ChunkFanOutSignal } from "./chunk-fan-out.js";
 import { FanInSignal } from "./fan-in.js";
+import { FanOutPerLineSignal } from "./fan-out-per-line.js";
 import { FanOutSignal } from "./fan-out.js";
 import { InstabilitySignal } from "./instability.js";
 import { IsHubSignal } from "./is-hub.js";
@@ -13,6 +14,7 @@ export {
   ChunkFanInSignal,
   ChunkFanOutSignal,
   FanInSignal,
+  FanOutPerLineSignal,
   FanOutSignal,
   InstabilitySignal,
   IsHubSignal,
@@ -24,6 +26,7 @@ export {
 export const CODEGRAPH_SYMBOLS_DERIVED_SIGNALS: DerivedSignalDescriptor[] = [
   new FanInSignal(),
   new FanOutSignal(),
+  new FanOutPerLineSignal(),
   new InstabilitySignal(),
   new IsHubSignal(),
   new IsLeafSignal(),
