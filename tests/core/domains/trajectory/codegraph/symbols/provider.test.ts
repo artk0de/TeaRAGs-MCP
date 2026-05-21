@@ -505,6 +505,25 @@ describe("CodegraphEnrichmentProvider", () => {
     expect(tail?.["codegraph.chunk.fanIn"]).toBe(1);
   });
 
+  // resolveChunkSymbolId's `if (!lineMap) return undefined` branch fires
+  // when buildChunkSignals receives chunks for a relPath the provider
+  // never walked (no chunkSymbolByLine entry). The skip path returns
+  // an empty per-chunk map for that file. Documented behaviour: the
+  // ingest coordinator can pass non-TS / non-codegraph files through
+  // here without crashing.
+  it("buildChunkSignals returns an empty per-chunk map for unwalked relPaths", async () => {
+    // Provider has never seen "src/never-walked.ts" — no sink.write,
+    // no buildFileSignals call. chunkSymbolByLine is empty.
+    const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>([
+      ["src/never-walked.ts", [{ chunkId: "chunk-x", startLine: 1, endLine: 10 }]],
+    ]);
+    const overlays = await provider.buildChunkSignals("/", chunkMap);
+    // Map exists for the file (per the loop-over-chunkMap contract) but
+    // contains no per-chunk entries because every lookup returned
+    // undefined and was `continue`'d.
+    expect(overlays.get("src/never-walked.ts")?.size).toBe(0);
+  });
+
   it("buildChunkSignals skips chunks whose startLine has no containing indexed line", async () => {
     // Containment loop returns undefined when no indexed startLine
     // satisfies line<=startLine&&line<=endLine. Exercises the
@@ -738,23 +757,240 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
-  // extractOneFile defensive fallback: when an unknown extension slips
-  // past (caller-supplied paths bypass the discoverSupportedFiles
-  // filter), the provider returns an empty FileExtraction instead of
-  // throwing. Covers the `if (!langConfig)` branch on line 419.
+  // Slice 1 — LANGUAGES dispatch for polyglot walkers. Each of the five
+  // new languages (.js, .go, .java, .rs, .sh) ships with its own walker
+  // + nameOf in the dispatch table. These tests drive buildFileSignals
+  // against real source files for each so the table's loadParser arrow
+  // is invoked AND the matching nameOf executes through collectSymbols.
+  // Without these, the per-language arrow functions and nameOf bodies
+  // for the new languages stay dead — they only exist to be looked up
+  // at extension dispatch time.
+
+  it("buildFileSignals dispatches .js files through extractFromJavascriptFile + tsNameOf", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-js-disp-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(
+        join(root, "src", "service.js"),
+        ["function helper() { return 1; }", "class Service {", "  go() { return 2; }", "}", ""].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()]).toEqual(["src/service.js"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("helper").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
+      // Method nested in class — descendsInto branch in tsNameOf applied
+      // to the JS class_declaration node.
+      const go = lookup.lookupByShortName("go");
+      expect(go.length).toBeGreaterThan(0);
+      expect(go[0].symbolId).toContain("Service.go");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("buildFileSignals dispatches .go files through extractFromGoFile + goNameOf", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-go-disp-"));
+    try {
+      mkdirSync(join(root, "pkg"), { recursive: true });
+      // function_declaration + type_declaration (struct). goNameOf must
+      // emit BOTH as top-level symbols. method_declaration as well.
+      writeFileSync(
+        join(root, "pkg", "service.go"),
+        [
+          "package pkg",
+          "",
+          "type Service struct {",
+          "  name string",
+          "}",
+          "",
+          "func (s *Service) Go() int { return 1 }",
+          "",
+          "func helper() int { return 2 }",
+          "",
+        ].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()]).toEqual(["pkg/service.go"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // type_declaration → struct emitted by goNameOf as top-level symbol.
+      expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
+      // method_declaration and function_declaration.
+      expect(lookup.lookupByShortName("Go").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("helper").length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("buildFileSignals dispatches .java files through extractFromJavaFile + javaNameOf", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-java-disp-"));
+    try {
+      mkdirSync(join(root, "com", "example"), { recursive: true });
+      // class_declaration + nested method_declaration + constructor_declaration.
+      // Also an interface_declaration to drive that branch in javaNameOf.
+      writeFileSync(
+        join(root, "com", "example", "Service.java"),
+        [
+          "package com.example;",
+          "",
+          "interface Greeter { String hello(); }",
+          "",
+          "public class Service {",
+          "  public Service() {}",
+          "  public int go() { return 1; }",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()]).toEqual(["com/example/Service.java"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // class_declaration (descendsInto=true) + interface_declaration.
+      expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("Greeter").length).toBeGreaterThan(0);
+      // method_declaration nested → scope joined by "." (Java's separator).
+      const go = lookup.lookupByShortName("go");
+      expect(go.length).toBeGreaterThan(0);
+      expect(go[0].symbolId).toContain("Service.go");
+      // constructor_declaration also surfaces.
+      expect(lookup.lookupByShortName("Service").some((s) => s.symbolId.includes("Service.Service"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("buildFileSignals dispatches .rs files through extractFromRustFile + rustNameOf with :: separator", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rs-disp-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      // Split across two files to exercise every branch of rustNameOf
+      // without conflicting in the cg_symbols PRIMARY KEY (relPath +
+      // symbolId). `mod_item` (mod helpers;), `struct_item`,
+      // `trait_item`, `enum_item`, `function_item` go in lib.rs. The
+      // `impl_item` branch — which uses the `type` field text as the
+      // local name and joins methods under it with "::" — lives in
+      // handler.rs against a distinct type name so it doesn't collide
+      // with anything in lib.rs.
+      writeFileSync(
+        join(root, "src", "lib.rs"),
+        [
+          "mod helpers;",
+          "",
+          "struct Service { name: String }",
+          "",
+          "trait Runnable { fn run(&self); }",
+          "",
+          "enum Status { Ok, Err }",
+          "",
+          "fn helper() -> i32 { 2 }",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        join(root, "src", "handler.rs"),
+        ["impl Handler {", "  fn go(&self) -> i32 { 1 }", "}", ""].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()].sort()).toEqual(["src/handler.rs", "src/lib.rs"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // lib.rs branches: struct_item, trait_item, enum_item, mod_item,
+      // function_item.
+      expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("Runnable").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("Status").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("helper").length).toBeGreaterThan(0);
+      // handler.rs: impl_item composes via "::" — Handler's `go` is at
+      // `Handler::go`. Drives the impl_item branch in rustNameOf plus
+      // the recursive descend (descendsInto: true).
+      const goEntries = lookup.lookupByShortName("Handler::go");
+      expect(goEntries.length).toBeGreaterThan(0);
+      expect(goEntries[0].symbolId).toBe("Handler::go");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("buildFileSignals dispatches .sh files through extractFromBashFile + bashNameOf", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-sh-disp-"));
+    try {
+      mkdirSync(join(root, "scripts"), { recursive: true });
+      // function_definition — bashNameOf's only branch.
+      writeFileSync(
+        join(root, "scripts", "deploy.sh"),
+        [
+          "#!/usr/bin/env bash",
+          "function deploy() {",
+          "  echo deploying",
+          "}",
+          "function rollback() {",
+          "  echo undo",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()]).toEqual(["scripts/deploy.sh"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("deploy").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("rollback").length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // The LANGUAGES dispatch table aliases additional JavaScript and Bash
+  // extensions onto the same walker/nameOf — .jsx, .mjs, .cjs all route
+  // to the JS walker; .bash also routes to the Bash walker. These rows
+  // exist because the loadParser arrows would otherwise be dead until
+  // a real codebase hands the indexer a file with one of these
+  // extensions. Drives every per-extension loadParser arrow.
+  it("buildFileSignals dispatches .jsx / .mjs / .cjs / .bash extension aliases", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-alias-disp-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      mkdirSync(join(root, "scripts"), { recursive: true });
+      // .jsx — JSX content; tree-sitter-javascript tolerates JSX nodes.
+      // We keep the body to plain JS so collectSymbols sees normal
+      // function_declaration regardless of JSX support level.
+      writeFileSync(join(root, "src", "view.jsx"), "function View() { return null; }\n");
+      // .mjs — ES module syntax.
+      writeFileSync(join(root, "src", "mod.mjs"), "export function moduleEntry() { return 1; }\n");
+      // .cjs — CommonJS.
+      writeFileSync(
+        join(root, "src", "cjs.cjs"),
+        "function commonjsEntry() { return 2; }\nmodule.exports = { commonjsEntry };\n",
+      );
+      // .bash — bashNameOf via the .bash alias row.
+      writeFileSync(join(root, "scripts", "tool.bash"), "function bashTool() { echo ok; }\n");
+
+      const overlays = await provider.buildFileSignals(root);
+      const keys = [...overlays.keys()].sort();
+      expect(keys).toEqual(["scripts/tool.bash", "src/cjs.cjs", "src/mod.mjs", "src/view.jsx"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("View").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("moduleEntry").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("commonjsEntry").length).toBeGreaterThan(0);
+      expect(lookup.lookupByShortName("bashTool").length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // extractOneFile defensive fallback: when a caller-supplied path
+  // points at an extension NOT in LANGUAGES, the provider returns an
+  // empty FileExtraction instead of throwing. Covers the
+  // `if (!langConfig)` branch on line 419. We use `.coffee` — not in
+  // the LANGUAGES table — so SUPPORTED_EXTS filtering keeps it out of
+  // targetRelPaths but the overlay still gets emitted (zero-valued)
+  // per the consistent-shape contract.
   it("buildFileSignals tolerates caller-supplied paths with unsupported extensions", async () => {
     const root = mkdtempSync(join(tmpdir(), "cg-unsupp-"));
     try {
-      // The caller hands us a `.go` file path (not in LANGUAGES).
-      // discoverSupportedFiles wouldn't pick it up, but a caller can
-      // pass arbitrary paths via options.paths. SUPPORTED_EXTS
-      // filtering on line 322 already excludes it from
-      // targetRelPaths, so it won't be walked — and the overlay still
-      // gets emitted (zero-valued) per the consistent-shape contract.
       const overlays = await provider.buildFileSignals(root, {
-        paths: ["pkg/legacy.go"],
+        paths: ["pkg/legacy.coffee"],
       });
-      expect(overlays.has("pkg/legacy.go")).toBe(true);
+      expect(overlays.has("pkg/legacy.coffee")).toBe(true);
       // No symbol-table entries for the unsupported file.
       const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
       expect(lookup.lookupByShortName("anything")).toEqual([]);

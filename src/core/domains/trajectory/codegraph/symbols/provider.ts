@@ -23,8 +23,13 @@ import { readdirSync, readFileSync, type Dirent } from "node:fs";
 import { join, relative } from "node:path";
 
 import Parser from "tree-sitter";
+import BashLang from "tree-sitter-bash";
+import GoLang from "tree-sitter-go";
+import JavaLang from "tree-sitter-java";
+import JsLang from "tree-sitter-javascript";
 import PyLang from "tree-sitter-python";
 import RbLang from "tree-sitter-ruby";
+import RustLang from "tree-sitter-rust";
 import TsLang from "tree-sitter-typescript";
 
 import type {
@@ -45,8 +50,13 @@ import type {
   ProviderRunMetrics,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import { extractFromBashFile } from "../../../ingest/pipeline/chunker/extraction/bash-walker.js";
+import { extractFromGoFile } from "../../../ingest/pipeline/chunker/extraction/go-walker.js";
+import { extractFromJavaFile } from "../../../ingest/pipeline/chunker/extraction/java-walker.js";
+import { extractFromJavascriptFile } from "../../../ingest/pipeline/chunker/extraction/javascript-walker.js";
 import { extractFromPythonFile } from "../../../ingest/pipeline/chunker/extraction/python-walker.js";
 import { extractFromRubyFile } from "../../../ingest/pipeline/chunker/extraction/ruby-walker.js";
+import { extractFromRustFile } from "../../../ingest/pipeline/chunker/extraction/rust-walker.js";
 import { extractFromTypescriptFile } from "../../../ingest/pipeline/chunker/extraction/typescript-walker.js";
 import { pageRank } from "../infra/page-rank.js";
 import { tarjanScc } from "../infra/tarjan-scc.js";
@@ -118,6 +128,74 @@ const LANGUAGES: Record<string, LanguageConfig> = {
     walker: extractFromRubyFile,
     nameOf: rbNameOf,
     scopeSeparator: "::",
+  },
+  // JavaScript variants share grammar node types — the JS walker
+  // handles ES module imports, CommonJS require(), and dynamic
+  // import() in one pass. tsNameOf works as-is because
+  // function_declaration / method_definition / class_declaration
+  // have the same shape in tree-sitter-javascript.
+  ".js": {
+    language: "javascript",
+    loadParser: () => JsLang as Parser.Language,
+    walker: extractFromJavascriptFile,
+    nameOf: tsNameOf,
+    scopeSeparator: ".",
+  },
+  ".jsx": {
+    language: "javascript",
+    loadParser: () => JsLang as Parser.Language,
+    walker: extractFromJavascriptFile,
+    nameOf: tsNameOf,
+    scopeSeparator: ".",
+  },
+  ".mjs": {
+    language: "javascript",
+    loadParser: () => JsLang as Parser.Language,
+    walker: extractFromJavascriptFile,
+    nameOf: tsNameOf,
+    scopeSeparator: ".",
+  },
+  ".cjs": {
+    language: "javascript",
+    loadParser: () => JsLang as Parser.Language,
+    walker: extractFromJavascriptFile,
+    nameOf: tsNameOf,
+    scopeSeparator: ".",
+  },
+  ".go": {
+    language: "go",
+    loadParser: () => GoLang as Parser.Language,
+    walker: extractFromGoFile,
+    nameOf: goNameOf,
+    scopeSeparator: ".",
+  },
+  ".java": {
+    language: "java",
+    loadParser: () => JavaLang as Parser.Language,
+    walker: extractFromJavaFile,
+    nameOf: javaNameOf,
+    scopeSeparator: ".",
+  },
+  ".rs": {
+    language: "rust",
+    loadParser: () => RustLang as Parser.Language,
+    walker: extractFromRustFile,
+    nameOf: rustNameOf,
+    scopeSeparator: "::",
+  },
+  ".sh": {
+    language: "bash",
+    loadParser: () => BashLang as Parser.Language,
+    walker: extractFromBashFile,
+    nameOf: bashNameOf,
+    scopeSeparator: ".",
+  },
+  ".bash": {
+    language: "bash",
+    loadParser: () => BashLang as Parser.Language,
+    walker: extractFromBashFile,
+    nameOf: bashNameOf,
+    scopeSeparator: ".",
   },
 };
 const SUPPORTED_EXTS = new Set(Object.keys(LANGUAGES));
@@ -617,6 +695,65 @@ function rbNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolea
     if (!nameNode) return null;
     const localName = nameNode.type === "scope_resolution" ? scopeResolutionText(nameNode) : nameNode.text;
     return { name: localName, descendsInto: true };
+  }
+  return null;
+}
+
+function goNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+  // Go has no nesting at the type level — methods declare on a
+  // receiver but are top-level. function_declaration is plain
+  // functions; method_declaration is methods (with field `name`).
+  if (node.type === "function_declaration" || node.type === "method_declaration") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false };
+  }
+  if (node.type === "type_declaration") {
+    // type Foo struct { ... } → emit Foo as a top-level symbol.
+    const spec = node.children.find((c) => c.type === "type_spec");
+    const id = spec?.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false };
+  }
+  return null;
+}
+
+function javaNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+  if (node.type === "class_declaration" || node.type === "interface_declaration" || node.type === "enum_declaration") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: true };
+  }
+  if (node.type === "method_declaration" || node.type === "constructor_declaration") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false };
+  }
+  return null;
+}
+
+function rustNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+  if (node.type === "function_item") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false };
+  }
+  if (node.type === "struct_item" || node.type === "enum_item" || node.type === "trait_item") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: true };
+  }
+  if (node.type === "mod_item") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: true };
+  }
+  if (node.type === "impl_item") {
+    // impl Foo { ... } — surface Foo's methods under `impl Foo` scope.
+    // tree-sitter-rust uses `type` field for the impl target.
+    const ty = node.childForFieldName("type");
+    if (ty) return { name: ty.text, descendsInto: true };
+  }
+  return null;
+}
+
+function bashNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+  if (node.type === "function_definition") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false };
   }
   return null;
 }

@@ -26,8 +26,13 @@ import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/in
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.js";
+import { BashCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/bash/index.js";
+import { GoCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/go/index.js";
+import { JavaCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/java/index.js";
+import { JavascriptCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/javascript/index.js";
 import { PythonCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/python/index.js";
 import { RubyCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ruby/index.js";
+import { RustCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/rust/index.js";
 import { loadTsConfig, TSCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ts/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
@@ -224,8 +229,13 @@ async function wireCodegraph(
   const tsOptions = loadTsConfig(process.cwd());
   const resolvers = new Map<string, CallResolver>([
     ["typescript", new TSCallResolver(tsOptions)],
+    ["javascript", new JavascriptCallResolver()],
     ["python", new PythonCallResolver()],
     ["ruby", new RubyCallResolver()],
+    ["go", new GoCallResolver()],
+    ["java", new JavaCallResolver()],
+    ["rust", new RustCallResolver()],
+    ["bash", new BashCallResolver()],
   ]);
 
   // Hydrate the symbol table from disk on cold start. Without this,
