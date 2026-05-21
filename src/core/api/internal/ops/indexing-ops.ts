@@ -8,6 +8,7 @@
  * orchestration lives here; the facade only dispatches.
  */
 
+import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
@@ -54,6 +55,12 @@ export interface IndexingOpsDeps {
   reranker?: Reranker;
   gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   modelGuard?: EmbeddingModelGuard;
+  /**
+   * Per-collection DuckDB pool. When present, `clear` and force-reindex
+   * paths drop the per-collection DuckDB file alongside the Qdrant
+   * collection so codegraph state does not outlive its parent index.
+   */
+  codegraphPool?: GraphDbClientPool;
 }
 
 export class IndexingOps {
@@ -70,6 +77,7 @@ export class IndexingOps {
   private readonly reranker?: Reranker;
   private readonly gitTimePeriods?: { fileMonths: number; chunkMonths: number };
   private readonly modelGuard?: EmbeddingModelGuard;
+  private readonly codegraphPool?: GraphDbClientPool;
   private readonly status: StatusModule;
 
   constructor(deps: IndexingOpsDeps) {
@@ -86,6 +94,7 @@ export class IndexingOps {
     this.reranker = deps.reranker;
     this.gitTimePeriods = deps.gitTimePeriods;
     this.modelGuard = deps.modelGuard;
+    this.codegraphPool = deps.codegraphPool;
     this.status = new StatusModule(deps.qdrant, deps.snapshotDir);
   }
 
@@ -94,6 +103,16 @@ export class IndexingOps {
     if (!options?.forceReindex) {
       const incremental = await this.tryIncrementalIndex(path, progressCallback);
       if (incremental) return incremental;
+    }
+    // Force-reindex: drop the per-collection codegraph DB before the
+    // pipeline rebuilds. The DuckDB file is keyed by the public alias
+    // (collection name), not by the versioned target — so without an
+    // explicit purge the new index would inherit stale symbol rows from
+    // the previous generation. Non-fatal when codegraph is disabled.
+    if (options?.forceReindex && this.codegraphPool) {
+      const absolutePath = await validatePath(path);
+      const collectionName = resolveCollectionName(absolutePath);
+      await this.codegraphPool.removeCollection(collectionName);
     }
     return this.fullIndex(path, options, progressCallback);
   }
@@ -155,7 +174,15 @@ export class IndexingOps {
     const absolutePath = await validatePath(path);
     const collectionName = resolveCollectionName(absolutePath);
     this.modelGuard?.invalidate(collectionName);
-    return this.status.clearIndex(path);
+    await this.status.clearIndex(path);
+    // Drop the per-collection codegraph DuckDB file once Qdrant has
+    // released its collection. Order matters: Qdrant first — if it
+    // fails, retaining the DuckDB file is safe (still shadows a live
+    // collection); after Qdrant succeeds, the DuckDB file is orphaned
+    // and removed here. Non-fatal when codegraph is disabled.
+    if (this.codegraphPool) {
+      await this.codegraphPool.removeCollection(collectionName);
+    }
   }
 
   /** Recompute collection stats from Qdrant and save to cache. Public for enrichment callback. */

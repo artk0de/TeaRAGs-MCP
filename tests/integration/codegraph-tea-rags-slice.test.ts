@@ -113,13 +113,21 @@ describe("codegraph slice 1 on real tea-rags sources", () => {
     await client.init();
     await runMigrations(client, MIG_DIR);
 
+    // Integration test uses direct (graphDb + symbolTable) mode — the
+    // pool-mode wiring is exercised by the dedicated isolation test;
+    // here we just want one fixed DB for assertion stability.
+    const symbolTable = new InMemoryGlobalSymbolTable();
     const trajectory = createSymbolsTrajectory({
       graphDb: client,
-      symbolTable: new InMemoryGlobalSymbolTable(),
+      symbolTable,
       resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: { "@/*": ["src/*"] } })]]),
     });
     provider = trajectory.enrichment as CodegraphEnrichmentProvider;
-    facade = new GraphFacade({ graphDb: client });
+    // GraphFacade takes a pool now — wrap the single client in a stub
+    // so the integration assertions read through the same surface
+    // production uses.
+    const { createStubPool } = await import("../core/__helpers__/codegraph-pool.js");
+    facade = new GraphFacade({ pool: createStubPool(client, symbolTable) });
 
     const sink = provider.asExtractionSink();
     for (const relPath of SAMPLE_FILES) {

@@ -59,6 +59,27 @@ describe("parsePathspecOutput (via private method)", () => {
     const result = gitParsers.parsePathspecOutput(stdout);
     expect(result).toHaveLength(0);
   });
+
+  it("skips empty numstat lines and lines with fewer than 3 tab-separated parts (defensive parsing)", () => {
+    // Exercises the `if (!line.trim()) continue;` and
+    // `if (parts.length < 3) continue;` branches inside the
+    // pathspec numstat section (parsers.ts lines 105-107).
+    const sha = "c".repeat(40);
+    const stdout = [
+      "",
+      sha,
+      "",
+      "Carol",
+      "carol@example.com",
+      String(Math.floor(Date.now() / 1000)),
+      "feat: mix valid + junk lines",
+      // Numstat section: blank line, two-part malformed line, then one valid row.
+      "\n\nincomplete\tline\n10\t5\tgood.ts\n",
+    ].join("\0");
+    const result = gitParsers.parsePathspecOutput(stdout);
+    expect(result).toHaveLength(1);
+    expect(result[0].changedFiles).toEqual(["good.ts"]);
+  });
 });
 
 describe("parseNumstatOutput — parent parsing", () => {

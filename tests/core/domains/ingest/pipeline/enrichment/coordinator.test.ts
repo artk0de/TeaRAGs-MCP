@@ -42,13 +42,19 @@ describe("EnrichmentCoordinator", () => {
     expect(divergentProvider.resolveRoot).toHaveBeenCalledWith("/sub/path");
     // Provider uses /git-root, absolutePath is /sub/path → REPO_ROOT_DIFFERS logged
     await new Promise((r) => setTimeout(r, 10));
-    expect(divergentProvider.buildFileSignals).toHaveBeenCalledWith("/git-root", undefined);
+    expect(divergentProvider.buildFileSignals).toHaveBeenCalledWith(
+      "/git-root",
+      expect.objectContaining({ collectionName: "test-col" }),
+    );
   });
 
   it("calls provider.resolveRoot and buildFileSignals on prefetch", () => {
     coordinator.prefetch("/repo", "test-col");
     expect(mockProvider.resolveRoot).toHaveBeenCalledWith("/repo");
-    expect(mockProvider.buildFileSignals).toHaveBeenCalledWith("/repo", undefined);
+    expect(mockProvider.buildFileSignals).toHaveBeenCalledWith(
+      "/repo",
+      expect.objectContaining({ collectionName: "test-col" }),
+    );
   });
 
   it("delegates .git check to provider (coordinator is generic)", () => {
@@ -146,8 +152,10 @@ describe("EnrichmentCoordinator", () => {
     };
     const coord = new EnrichmentCoordinator(mockQdrant, [providerA, providerB]);
     await coord.notifyDeletions(["src/foo.ts", "src/bar.ts"]);
-    expect(handlerA).toHaveBeenCalledWith(["src/foo.ts", "src/bar.ts"]);
-    expect(handlerB).toHaveBeenCalledWith(["src/foo.ts", "src/bar.ts"]);
+    // handleDeletedPaths receives `(paths, options?)`; this call site
+    // doesn't pass a collection so options is undefined.
+    expect(handlerA).toHaveBeenCalledWith(["src/foo.ts", "src/bar.ts"], undefined);
+    expect(handlerB).toHaveBeenCalledWith(["src/foo.ts", "src/bar.ts"], undefined);
   });
 
   it("notifyDeletions skips providers without the hook and is a no-op on empty paths", async () => {
@@ -162,7 +170,8 @@ describe("EnrichmentCoordinator", () => {
     await coord.notifyDeletions([]);
     expect(handlerOptIn).not.toHaveBeenCalled();
     await coord.notifyDeletions(["src/x.ts"]);
-    expect(handlerOptIn).toHaveBeenCalledExactlyOnceWith(["src/x.ts"]);
+    // Same as above — no collectionName supplied, options is undefined.
+    expect(handlerOptIn).toHaveBeenCalledExactlyOnceWith(["src/x.ts"], undefined);
   });
 
   it("notifyDeletions does not let one provider's error block the others", async () => {
@@ -243,8 +252,14 @@ describe("EnrichmentCoordinator", () => {
     multi.prefetch("/repo", "test-col");
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(providerA.buildFileSignals).toHaveBeenCalledWith("/repo", undefined);
-    expect(providerB.buildFileSignals).toHaveBeenCalledWith("/repo", undefined);
+    expect(providerA.buildFileSignals).toHaveBeenCalledWith(
+      "/repo",
+      expect.objectContaining({ collectionName: "test-col" }),
+    );
+    expect(providerB.buildFileSignals).toHaveBeenCalledWith(
+      "/repo",
+      expect.objectContaining({ collectionName: "test-col" }),
+    );
     expect(multi.providerKeys).toEqual(["alpha", "beta"]);
   });
 
@@ -453,7 +468,10 @@ describe("EnrichmentCoordinator — backfill missed files", () => {
 
     // buildFileSignals called twice: prefetch + backfill
     expect(mockProvider.buildFileSignals).toHaveBeenCalledTimes(2);
-    expect(mockProvider.buildFileSignals).toHaveBeenLastCalledWith("/repo", { paths: ["src/missing.ts"] });
+    expect(mockProvider.buildFileSignals).toHaveBeenLastCalledWith(
+      "/repo",
+      expect.objectContaining({ paths: ["src/missing.ts"], collectionName: "test-col" }),
+    );
 
     // Backfilled file should be written via batchSetPayload
     // At least 2 calls: one for initial apply, one for backfill
@@ -1103,6 +1121,78 @@ describe("EnrichmentCoordinator — file marker writes before chunk completion",
     expect(fileIdx).toBeGreaterThanOrEqual(0);
     expect(chunkIdx).toBeGreaterThanOrEqual(0);
     expect(fileIdx).toBeLessThan(chunkIdx);
+  });
+
+  // Regression for the 2026-05-21 tea-rags self-test bug: when qdrant
+  // setPayload latency is high, markStart's read-modify-write was
+  // landing AFTER markFileFinal/markChunkFinal, replacing the
+  // freshly-written "completed" markers with its stale snapshot
+  // (in_progress + pending). get_index_status then reported
+  // "in_progress" indefinitely for completed runs. The fix tracks
+  // markStartPromise on the run and CompletionRunner awaits it before
+  // step 4/7 finalization writes.
+  it("does not clobber 'completed' markers when markStart's persist is delayed past finalization", async () => {
+    const setPayloadCalls: { ts: number; payload: any }[] = [];
+    let releaseMarkStart: () => void = () => {};
+    const markStartPersistDelay = new Promise<void>((resolve) => {
+      releaseMarkStart = resolve;
+    });
+
+    const mockQdrant: any = {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+      // First setPayload call (markStart) is artificially delayed; all
+      // later writes resolve immediately. Recorded with timestamps to
+      // verify ordering at the end.
+      setPayload: vi.fn().mockImplementation(async (_coll: string, payload: any) => {
+        const idx = setPayloadCalls.length;
+        setPayloadCalls.push({ ts: Date.now(), payload });
+        if (idx === 0) await markStartPersistDelay;
+      }),
+    };
+
+    const mockProvider: any = {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", new Map([["c1", { commitCount: 5 }]])]])),
+    };
+
+    const recovery = { countUnenriched: vi.fn().mockResolvedValue(0) };
+    const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery as any);
+
+    coordinator.prefetch("/repo", "test-col");
+    coordinator.onChunksStored("test-col", "/repo", [
+      { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
+    ]);
+
+    // awaitCompletion should block until markStart persists.
+    const completionPromise = coordinator.awaitCompletion("test-col");
+    // Give the runtime several microtask cycles — without the gate the
+    // finalization writes would land here, and the delayed markStart
+    // would later overwrite them.
+    await new Promise((r) => setTimeout(r, 30));
+
+    // Until markStart releases, no finalization write should have run.
+    const completedBeforeRelease = setPayloadCalls.find(
+      (c) => c.payload?.enrichment?.git?.file?.status === "completed",
+    );
+    expect(completedBeforeRelease).toBeUndefined();
+
+    releaseMarkStart();
+    await completionPromise;
+
+    // Final state: file: completed AND chunk: completed.
+    const lastCall = setPayloadCalls.at(-1);
+    expect(
+      lastCall?.payload?.enrichment?.git?.file?.status === "completed" ||
+        setPayloadCalls.some((c) => c.payload?.enrichment?.git?.file?.status === "completed"),
+    ).toBe(true);
+    // markStart write happened first (index 0), all finalization writes after.
+    const markStartIdx = setPayloadCalls.findIndex((c) => c.payload?.enrichment?.git?.file?.status === "in_progress");
+    const fileCompletedIdx = setPayloadCalls.findIndex((c) => c.payload?.enrichment?.git?.file?.status === "completed");
+    expect(markStartIdx).toBe(0);
+    expect(fileCompletedIdx).toBeGreaterThan(markStartIdx);
   });
 });
 

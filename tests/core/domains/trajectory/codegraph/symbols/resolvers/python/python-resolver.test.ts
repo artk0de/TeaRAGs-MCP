@@ -149,4 +149,370 @@ describe("PythonCallResolver", () => {
     );
     expect(target?.targetRelPath).toBe("foo.py");
   });
+
+  describe("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", () => {
+    // Reproduces the ugnest false positive: `serializer.is_valid(...)` in a
+    // DRF view where `serializer` has no matching import (Serializer class
+    // ships from a 3rd-party venv excluded by `ignoreFilter`). The short-name
+    // `is_valid` is defined on multiple project models. Strict mode must NOT
+    // attribute the call to one of them; `first` mode keeps legacy behavior.
+    function ambiguousCtx(): {
+      resolverArgs: undefined;
+      table: InMemoryGlobalSymbolTable;
+      call: { callText: string; receiver: string; member: string; startLine: number };
+    } {
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("identity/confirmation.py", [
+        {
+          symbolId: "ConfirmationCode#is_valid",
+          fqName: "ConfirmationCode#is_valid",
+          shortName: "is_valid",
+          relPath: "identity/confirmation.py",
+          scope: ["ConfirmationCode"],
+        },
+      ]);
+      table.upsertFile("billing/coupon.py", [
+        {
+          symbolId: "Coupon#is_valid",
+          fqName: "Coupon#is_valid",
+          shortName: "is_valid",
+          relPath: "billing/coupon.py",
+          scope: ["Coupon"],
+        },
+      ]);
+      return {
+        resolverArgs: undefined,
+        table,
+        call: {
+          callText: "serializer.is_valid(raise_exception=True)",
+          receiver: "serializer",
+          member: "is_valid",
+          startLine: 12,
+        },
+      };
+    }
+
+    it("strict mode (default) drops ambiguous short-name fallback", () => {
+      const resolver = new PythonCallResolver();
+      const { table, call } = ambiguousCtx();
+      const target = resolver.resolve(call, makeCtx("engagement/views.py", [], table));
+      expect(target).toBeNull();
+    });
+
+    it("strict mode explicit drops ambiguous short-name fallback", () => {
+      const resolver = new PythonCallResolver("strict");
+      const { table, call } = ambiguousCtx();
+      const target = resolver.resolve(call, makeCtx("engagement/views.py", [], table));
+      expect(target).toBeNull();
+    });
+
+    it("`first` mode picks first candidate (legacy behavior)", () => {
+      const resolver = new PythonCallResolver("first");
+      const { table, call } = ambiguousCtx();
+      const target = resolver.resolve(call, makeCtx("engagement/views.py", [], table));
+      // Exactly the false positive the strict mode prevents — emitted ONLY
+      // when the user opts back into legacy `first` mode.
+      expect(target).not.toBeNull();
+      expect(target?.targetSymbolId).toBe("ConfirmationCode#is_valid");
+    });
+
+    it("unique short-name resolves identically in both modes", () => {
+      const tableUnique = new InMemoryGlobalSymbolTable();
+      tableUnique.upsertFile("svc/subscriptions.py", [
+        {
+          symbolId: "process_user_subscription",
+          fqName: "process_user_subscription",
+          shortName: "process_user_subscription",
+          relPath: "svc/subscriptions.py",
+          scope: [],
+        },
+      ]);
+      const call = {
+        callText: "process_user_subscription()",
+        receiver: null,
+        member: "process_user_subscription",
+        startLine: 1,
+      };
+
+      const strict = new PythonCallResolver("strict").resolve(call, makeCtx("main.py", [], tableUnique));
+      const first = new PythonCallResolver("first").resolve(call, makeCtx("main.py", [], tableUnique));
+      expect(strict?.targetSymbolId).toBe("process_user_subscription");
+      expect(first?.targetSymbolId).toBe("process_user_subscription");
+    });
+
+    it("zero candidates returns null in both modes", () => {
+      const empty = new InMemoryGlobalSymbolTable();
+      const call = { callText: "unknown()", receiver: null, member: "unknown", startLine: 1 };
+      expect(new PythonCallResolver("strict").resolve(call, makeCtx("main.py", [], empty))).toBeNull();
+      expect(new PythonCallResolver("first").resolve(call, makeCtx("main.py", [], empty))).toBeNull();
+    });
+
+    it("import-restricted path also honors mode: 2 same-file candidates → strict drops, first picks", () => {
+      // Same file declares two classes with same-named method. The
+      // import-restricted path filters to `targetFile`, but cardinality
+      // still > 1 — the mode controls the pick.
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("foo.py", [
+        { symbolId: "ClassA#run", fqName: "ClassA#run", shortName: "run", relPath: "foo.py", scope: ["ClassA"] },
+        { symbolId: "ClassB#run", fqName: "ClassB#run", shortName: "run", relPath: "foo.py", scope: ["ClassB"] },
+      ]);
+      const call = { callText: "foo.run()", receiver: "foo", member: "run", startLine: 1 };
+      const ctx = makeCtx("main.py", [{ importText: "foo", startLine: 1 }], table);
+
+      const strict = new PythonCallResolver("strict").resolve(call, ctx);
+      // Strict: same file, ambiguous → file-edge with null symbol, not arbitrary pick.
+      expect(strict?.targetRelPath).toBe("foo.py");
+      expect(strict?.targetSymbolId).toBeNull();
+
+      const first = new PythonCallResolver("first").resolve(call, ctx);
+      expect(first?.targetRelPath).toBe("foo.py");
+      expect(first?.targetSymbolId).toBe("ClassA#run");
+    });
+  });
+
+  describe("localBindings (walker-inferred receiver types)", () => {
+    function makeCtxLocal(
+      callerFile: string,
+      imports: { importText: string; startLine: number }[],
+      symbolTable: InMemoryGlobalSymbolTable,
+      localBindings?: Record<string, string>,
+    ): CallContext {
+      return { callerFile, callerScope: [], imports, symbolTable, localBindings };
+    }
+
+    it("drops false positive: serializer (no import) → is_valid in unrelated class is NOT attributed", () => {
+      // Reproduces the exact ugnest bug. `serializer = ToggleReactionSerializer(...)`
+      // — but ToggleReactionSerializer.is_valid is NOT in the symbol
+      // table (it lives in a 3rd-party DRF class outside the project).
+      // Project has ConfirmationCode#is_valid as the ONLY `is_valid`.
+      // Strict guard alone passes that single candidate through and
+      // wrongly attributes the call. With localBindings, the resolver
+      // sees the receiver's true type and refuses.
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("domains/identity/models/confirmation.py", [
+        {
+          symbolId: "ConfirmationCode#is_valid",
+          fqName: "ConfirmationCode#is_valid",
+          shortName: "is_valid",
+          relPath: "domains/identity/models/confirmation.py",
+          scope: ["ConfirmationCode"],
+        },
+      ]);
+      table.upsertFile("engagement/serializers/reaction.py", [
+        {
+          symbolId: "ToggleReactionSerializer",
+          fqName: "ToggleReactionSerializer",
+          shortName: "ToggleReactionSerializer",
+          relPath: "engagement/serializers/reaction.py",
+          scope: [],
+        },
+      ]);
+      const target = resolver.resolve(
+        {
+          callText: "serializer.is_valid(raise_exception=True)",
+          receiver: "serializer",
+          member: "is_valid",
+          startLine: 12,
+        },
+        makeCtxLocal("engagement/views.py", [{ importText: "engagement.serializers.reaction", startLine: 1 }], table, {
+          serializer: "ToggleReactionSerializer",
+        }),
+      );
+      // Type's file resolved (engagement/serializers/reaction.py) but
+      // is_valid not defined on ToggleReactionSerializer → file-only
+      // attribution, NEVER ConfirmationCode#is_valid.
+      expect(target?.targetSymbolId).toBeNull();
+      expect(target?.targetRelPath).toBe("engagement/serializers/reaction.py");
+    });
+
+    it("resolves correctly when the method IS defined on the bound type", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("services/reaction/toggle.py", [
+        {
+          symbolId: "ToggleReactionService",
+          fqName: "ToggleReactionService",
+          shortName: "ToggleReactionService",
+          relPath: "services/reaction/toggle.py",
+          scope: [],
+        },
+        {
+          symbolId: "ToggleReactionService#execute",
+          fqName: "ToggleReactionService#execute",
+          shortName: "execute",
+          relPath: "services/reaction/toggle.py",
+          scope: ["ToggleReactionService"],
+        },
+      ]);
+      const target = resolver.resolve(
+        { callText: "service.execute()", receiver: "service", member: "execute", startLine: 8 },
+        makeCtxLocal("engagement/views.py", [], table, { service: "ToggleReactionService" }),
+      );
+      expect(target?.targetSymbolId).toBe("ToggleReactionService#execute");
+      expect(target?.targetRelPath).toBe("services/reaction/toggle.py");
+    });
+
+    it("falls back to short-name path when localBindings is empty / receiver not bound", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("svc.py", [
+        { symbolId: "Helper.do", fqName: "Helper.do", shortName: "do", relPath: "svc.py", scope: ["Helper"] },
+      ]);
+      // No localBindings — same legacy behavior. `obj.do()` with no
+      // import or binding falls through to global short-name and the
+      // strict guard passes the single match.
+      const target = resolver.resolve(
+        { callText: "obj.do()", receiver: "obj", member: "do", startLine: 1 },
+        makeCtxLocal("main.py", [], table, {}),
+      );
+      expect(target?.targetSymbolId).toBe("Helper.do");
+    });
+
+    it("PEP 526 annotation binds the variable (var: ClassName = ...)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("domain/cls.py", [
+        { symbolId: "MyClass", fqName: "MyClass", shortName: "MyClass", relPath: "domain/cls.py", scope: [] },
+        {
+          symbolId: "MyClass#run",
+          fqName: "MyClass#run",
+          shortName: "run",
+          relPath: "domain/cls.py",
+          scope: ["MyClass"],
+        },
+      ]);
+      const target = resolver.resolve(
+        { callText: "obj.run()", receiver: "obj", member: "run", startLine: 1 },
+        makeCtxLocal("main.py", [], table, { obj: "MyClass" }),
+      );
+      expect(target?.targetSymbolId).toBe("MyClass#run");
+    });
+
+    it("function arg type hint binds the parameter inside the function body", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("http.py", [
+        { symbolId: "HttpRequest", fqName: "HttpRequest", shortName: "HttpRequest", relPath: "http.py", scope: [] },
+        {
+          symbolId: "HttpRequest#json",
+          fqName: "HttpRequest#json",
+          shortName: "json",
+          relPath: "http.py",
+          scope: ["HttpRequest"],
+        },
+      ]);
+      const target = resolver.resolve(
+        { callText: "request.json()", receiver: "request", member: "json", startLine: 5 },
+        makeCtxLocal("views.py", [], table, { request: "HttpRequest" }),
+      );
+      expect(target?.targetSymbolId).toBe("HttpRequest#json");
+    });
+
+    it("qualified constructor type (module.ClassName) — strips qualifier to find class", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      table.upsertFile("internal/cls.py", [
+        { symbolId: "Engine", fqName: "Engine", shortName: "Engine", relPath: "internal/cls.py", scope: [] },
+        {
+          symbolId: "Engine#start",
+          fqName: "Engine#start",
+          shortName: "start",
+          relPath: "internal/cls.py",
+          scope: ["Engine"],
+        },
+      ]);
+      const target = resolver.resolve(
+        { callText: "eng.start()", receiver: "eng", member: "start", startLine: 1 },
+        makeCtxLocal("main.py", [], table, { eng: "internal.cls.Engine" }),
+      );
+      expect(target?.targetSymbolId).toBe("Engine#start");
+    });
+
+    it("drops binding silently when the type is not in the symbol table AND no import resolves to it (external lib)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // No symbols at all — bare-identifier RHS like `factory()` was
+      // emitted as a binding by the walker but resolver can't find a
+      // class to attribute. Returns null rather than guessing.
+      const target = resolver.resolve(
+        { callText: "x.run()", receiver: "x", member: "run", startLine: 1 },
+        makeCtxLocal("main.py", [], table, { x: "factory" }),
+      );
+      expect(target).toBeNull();
+    });
+
+    // resolveTypeFile second pass — type appears in MULTIPLE files in
+    // the project's symbol table; disambiguation requires matching the
+    // file against the caller's import list. Covers the ambiguous
+    // branch (lines 133-142 of python-resolver.ts).
+    it("disambiguates an ambiguous bare class name via imports (multiple files declare same shortName)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // Two files declare a `User` class — only one is imported by the
+      // caller so disambiguation must pick that file.
+      table.upsertFile("domain/models/user.py", [
+        { symbolId: "User", fqName: "User", shortName: "User", relPath: "domain/models/user.py", scope: [] },
+        {
+          symbolId: "User#save",
+          fqName: "User#save",
+          shortName: "save",
+          relPath: "domain/models/user.py",
+          scope: ["User"],
+        },
+      ]);
+      table.upsertFile("legacy/user.py", [
+        { symbolId: "User", fqName: "User", shortName: "User", relPath: "legacy/user.py", scope: [] },
+      ]);
+      const target = resolver.resolve(
+        { callText: "u.save()", receiver: "u", member: "save", startLine: 5 },
+        makeCtxLocal("svc.py", [{ importText: "domain.models.user", startLine: 1 }], table, { u: "User" }),
+      );
+      expect(target?.targetSymbolId).toBe("User#save");
+      expect(target?.targetRelPath).toBe("domain/models/user.py");
+    });
+
+    it("returns null when ambiguous bare class still resolves to multiple imported files", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // BOTH `User` files are imported — disambiguation refuses to guess.
+      table.upsertFile("a/user.py", [
+        { symbolId: "User", fqName: "User", shortName: "User", relPath: "a/user.py", scope: [] },
+      ]);
+      table.upsertFile("b/user.py", [
+        { symbolId: "User", fqName: "User", shortName: "User", relPath: "b/user.py", scope: [] },
+      ]);
+      const target = resolver.resolve(
+        { callText: "u.foo()", receiver: "u", member: "foo", startLine: 1 },
+        makeCtxLocal(
+          "main.py",
+          [
+            { importText: "a.user", startLine: 1 },
+            { importText: "b.user", startLine: 2 },
+          ],
+          table,
+          { u: "User" },
+        ),
+      );
+      expect(target).toBeNull();
+    });
+
+    // resolveTypeFile third pass — type NOT in symbol table (external
+    // class like DRF Serializer); fall back to scanning imports whose
+    // last segment matches the bare type name. Covers lines 148-151.
+    it("attributes an external type via import path whose last segment matches the bare type (third-pass fallback)", () => {
+      const resolver = new PythonCallResolver();
+      const table = new InMemoryGlobalSymbolTable();
+      // No `Serializer` symbol in project — but caller imports it as
+      // `rest_framework.serializers.Serializer` (relative-resolved here
+      // via `.serializers.Serializer` for posix join).
+      const target = resolver.resolve(
+        { callText: "s.is_valid()", receiver: "s", member: "is_valid", startLine: 3 },
+        makeCtxLocal("views.py", [{ importText: ".lib.Serializer", startLine: 1 }], table, { s: "Serializer" }),
+      );
+      // mapPythonImportToFile resolves `.lib.Serializer` → "lib/Serializer.py"
+      expect(target?.targetRelPath).toBe("lib/Serializer.py");
+      expect(target?.targetSymbolId).toBeNull();
+    });
+  });
 });

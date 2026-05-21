@@ -21,17 +21,22 @@
 
 import { posix } from "node:path";
 
-import type {
-  CallContext,
-  CallRef,
-  CallResolver,
-  ResolvedTarget,
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  pickSingleCandidate,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type CallResolver,
+  type ResolvedTarget,
 } from "../../../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../../../../../ingest/pipeline/chunker/extraction/ruby-walker.js";
 import { resolveZeitwerkConstant } from "./zeitwerk.js";
 
 export class RubyCallResolver implements CallResolver {
   readonly language = "ruby";
+
+  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
 
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
     // Zeitwerk-style: receiver is a (possibly nested) constant chain.
@@ -43,7 +48,7 @@ export class RubyCallResolver implements CallResolver {
       const targetFile = this.resolveConstant(call.receiver, ctx);
       if (targetFile) {
         const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
-        const target = candidates[0];
+        const target = pickSingleCandidate(candidates, this.mode);
         if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
         return { targetRelPath: targetFile, targetSymbolId: null };
       }
@@ -66,7 +71,7 @@ export class RubyCallResolver implements CallResolver {
       const targetFile = this.resolveExplicitRequire(requireMatch.importText, ctx.callerFile, this.knownPaths(ctx));
       if (targetFile) {
         const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
-        const target = candidates[0];
+        const target = pickSingleCandidate(candidates, this.mode);
         if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
         return { targetRelPath: targetFile, targetSymbolId: null };
       }
@@ -75,9 +80,8 @@ export class RubyCallResolver implements CallResolver {
     // Last-ditch: global short-name lookup. Useful for top-level
     // helpers + Ruby's open-class additions to existing constants.
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
-    if (fallback.length === 1) {
-      return { targetRelPath: fallback[0].relPath, targetSymbolId: fallback[0].symbolId };
-    }
+    const target = pickSingleCandidate(fallback, this.mode);
+    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     return null;
   }
 

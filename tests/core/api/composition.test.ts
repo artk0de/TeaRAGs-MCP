@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { createStubPool } from "../__helpers__/codegraph-pool.js";
 import { DuckDbGraphClient } from "../../../src/core/adapters/duckdb/client.js";
 import { createComposition } from "../../../src/core/api/index.js";
 import type { CallResolver } from "../../../src/core/contracts/types/codegraph.js";
@@ -97,8 +98,7 @@ describe("createComposition", () => {
       ]);
       const { registry, allPayloadSignalDescriptors, resolvedPresets } = createComposition({
         codegraph: {
-          graphDb,
-          symbolTable: new InMemoryGlobalSymbolTable(),
+          pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()),
           resolvers,
         },
       });
@@ -126,7 +126,7 @@ describe("createComposition", () => {
         ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
       ]);
       const withCodegraph = createComposition({
-        codegraph: { graphDb, symbolTable: new InMemoryGlobalSymbolTable(), resolvers },
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers },
       });
       const withoutCodegraph = createComposition();
 
@@ -151,7 +151,7 @@ describe("createComposition", () => {
         ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
       ]);
       const withCodegraph = createComposition({
-        codegraph: { graphDb, symbolTable: new InMemoryGlobalSymbolTable(), resolvers },
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers },
       });
       const withoutCodegraph = createComposition();
       const overriddenNames = ["hotspots", "techDebt", "dangerous", "ownership", "securityAudit", "codeReview"];
@@ -172,7 +172,7 @@ describe("createComposition", () => {
         ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
       ]);
       const withCodegraph = createComposition({
-        codegraph: { graphDb, symbolTable: new InMemoryGlobalSymbolTable(), resolvers },
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers },
       });
       const withoutCodegraph = createComposition();
 

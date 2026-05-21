@@ -36,6 +36,12 @@ const FindCyclesInputShape = {
 export function registerCodegraphTools(server: McpServer, deps: { app: App; register: RegisterToolFn }): void {
   const { app, register: registerToolSafe } = deps;
 
+  // Provider gating — when codegraph.symbols isn't registered, none of these
+  // tools should appear in the MCP `list_tools` response. Silent no-op
+  // (no error, no log) — the upstream gate at composition is what controls
+  // the surface.
+  if (!app.hasProvider("codegraph.symbols")) return;
+
   registerToolSafe(
     server,
     "get_callers",

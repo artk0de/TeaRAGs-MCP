@@ -19,9 +19,14 @@
  * stats. The payload field stays present and stable.
  */
 
-import { readdirSync, readFileSync, type Dirent } from "node:fs";
-import { join, relative } from "node:path";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { createReadStream, createWriteStream, readdirSync, readFileSync, type Dirent, type WriteStream } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
+import { join, dirname as pathDirname, relative } from "node:path";
+import { createInterface } from "node:readline";
 
+import type { Ignore } from "ignore";
 import Parser from "tree-sitter";
 import BashLang from "tree-sitter-bash";
 import GoLang from "tree-sitter-go";
@@ -32,6 +37,7 @@ import RbLang from "tree-sitter-ruby";
 import RustLang from "tree-sitter-rust";
 import TsLang from "tree-sitter-typescript";
 
+import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
   CallResolver,
   ExtractionSink,
@@ -44,12 +50,18 @@ import type {
   ChunkLookupEntry,
   ChunkSignalOptions,
   ChunkSignalOverlay,
+  DeletedPathOptions,
   EnrichmentProvider,
+  FileSignalOptions,
   FileSignalOverlay,
   FilterDescriptor,
   ProviderRunMetrics,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import {
+  classifyMethod,
+  INSTANCE_METHOD_SEPARATOR as INFRA_INSTANCE_METHOD_SEPARATOR,
+} from "../../../../infra/symbolid/index.js";
 import { extractFromBashFile } from "../../../ingest/pipeline/chunker/extraction/bash-walker.js";
 import { extractFromGoFile } from "../../../ingest/pipeline/chunker/extraction/go-walker.js";
 import { extractFromJavaFile } from "../../../ingest/pipeline/chunker/extraction/java-walker.js";
@@ -58,11 +70,105 @@ import { extractFromPythonFile } from "../../../ingest/pipeline/chunker/extracti
 import { extractFromRubyFile } from "../../../ingest/pipeline/chunker/extraction/ruby-walker.js";
 import { extractFromRustFile } from "../../../ingest/pipeline/chunker/extraction/rust-walker.js";
 import { extractFromTypescriptFile } from "../../../ingest/pipeline/chunker/extraction/typescript-walker.js";
+import { pipelineLog } from "../../../ingest/pipeline/infra/debug-logger.js";
+import {
+  CodegraphCheckpointError,
+  CodegraphMetricsError,
+  CodegraphResolveError,
+  CodegraphSpillIoError,
+} from "../../errors.js";
+import { buildCodegraphExclusionFilter, type CodegraphExclusionOptions } from "../exclusion.js";
 import { pageRank } from "../infra/page-rank.js";
 import { tarjanScc } from "../infra/tarjan-scc.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 
-const IGNORE_DIRS = new Set(["node_modules", "build", "dist", ".git", ".claude", "coverage", "tests", "test"]);
+/**
+ * Layered ignore for `discoverSupportedFiles` (tea-rags-mcp-tf1o, hh4m):
+ *
+ *   Layer 1 — FileScanner `ignoreFilter` passed via `FileSignalOptions`.
+ *             Carries BUILTIN_IGNORE_PATTERNS (node_modules, build, dist,
+ *             .next, _nuxt, *.min.js, …) plus the user's `.gitignore` /
+ *             `.contextignore` rules. Same source of truth as the main
+ *             Qdrant ingest path — codegraph stays aligned with whatever
+ *             files actually ended up in the index.
+ *
+ *   Layer 2 — `codegraphExclusionFilter` (this provider's instance field).
+ *             Codegraph-specific patterns that DON'T apply to Qdrant
+ *             ingest, principally test files. Test sources are valuable
+ *             to index for semantic search ("show me tests for X") but
+ *             pollute the dependency fan-graph (fanIn=0, fanOut=many
+ *             dilutes hub/PageRank signals). Default `excludeTests:true`
+ *             keeps the graph clean.
+ *
+ * Two layers, not a union: the layers carry different semantics. Layer 1
+ * is "what the user excluded from indexing entirely" — must be honoured
+ * because the corresponding chunks don't exist in Qdrant either. Layer 2
+ * is "what codegraph specifically excludes from graph extraction while
+ * Qdrant still indexes". Merging them would either over-exclude
+ * (codegraph-only patterns leak into Qdrant) or under-exclude (test
+ * files re-enter the graph).
+ */
+
+/**
+ * Re-export the universal separator from infra so callers within this
+ * file (joinSymbol) read the same constant without an extra import in
+ * the body. See `.claude/rules/symbolid-convention.md`.
+ */
+const INSTANCE_METHOD_SEPARATOR = INFRA_INSTANCE_METHOD_SEPARATOR;
+
+/**
+ * Strip the `_vN` versioning suffix from a Qdrant collection name to
+ * recover the public alias. The codegraph DB is alias-keyed by design
+ * (per `IndexingOps.run`'s `removeCollection(alias)` contract) — but
+ * the ingest pipeline writes Qdrant chunks to the versioned target
+ * (`<alias>_v<N>`) because the alias doesn't exist yet during the
+ * first index pass. Without this strip, `pool.acquire("code_xxx_v6")`
+ * would open a per-version DuckDB file that the GraphFacade reader
+ * (which always resolves the alias from the path) never finds.
+ *
+ * Convention: `setupCollection` produces names of the form
+ * `${alias}_v${N}` where N is a positive integer. Anything that does
+ * not match this exact shape is returned unchanged — test fixtures
+ * pass arbitrary strings ("project-alpha") that must NOT be rewritten.
+ *
+ * Examples:
+ *   stripVersionSuffix("code_035da920_v6") → "code_035da920"
+ *   stripVersionSuffix("code_035da920")    → "code_035da920"
+ *   stripVersionSuffix("project-alpha")    → "project-alpha"
+ *   stripVersionSuffix("foo_v")            → "foo_v"  (no digit)
+ *   stripVersionSuffix("foo_v1_v2")        → "foo_v1" (only one strip)
+ */
+export function stripVersionSuffix(collectionName: string): string {
+  return collectionName.replace(/_v\d+$/, "");
+}
+
+interface NamedSymbol {
+  name: string;
+  descendsInto: boolean;
+  /**
+   * Distinguishes the universal class/method separator from the
+   * language's namespace separator. `"instance"` uses `#`; `"static"`
+   * uses `.`. Both override the language's `scopeSeparator` (which
+   * applies to namespaces / nested classes / top-level chains).
+   * Per `.claude/rules/symbolid-convention.md`.
+   */
+  methodKind?: "instance" | "static";
+}
+
+/**
+ * Compose the next fully-qualified id by appending `child.name` to
+ * `composed` with the correct separator:
+ *   - Top-level (`composed === ""`) → just the name.
+ *   - `methodKind: "instance"` → `composed#child.name` (any language).
+ *   - `methodKind: "static"`   → `composed.child.name` (any language).
+ *   - Otherwise → `composed{scopeSeparator}child.name` (language-local).
+ */
+function joinSymbol(composed: string, child: NamedSymbol, scopeSeparator: string): string {
+  if (composed.length === 0) return child.name;
+  const sep =
+    child.methodKind === "instance" ? INSTANCE_METHOD_SEPARATOR : child.methodKind === "static" ? "." : scopeSeparator;
+  return `${composed}${sep}${child.name}`;
+}
 
 /**
  * Per-language extraction dispatch table. Codegraph walks any file
@@ -83,12 +189,18 @@ interface LanguageConfig {
     chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
   }) => FileExtraction;
   /**
-   * Maps a tree-sitter node to a (name, descendsInto) pair. Returns
+   * Maps a tree-sitter node to a `NamedSymbol` descriptor. Returns
    * null for nodes that are not top-level symbols. `descendsInto: true`
    * means the walker recurses into the node's children with extended
    * scope (e.g. class bodies whose methods become nested symbols).
+   * `instanceMethod: true` flags methods that are invoked on an
+   * instance (NOT class methods, NOT static methods, NOT abstract).
+   * When true and the immediate parent is a class scope, the symbol id
+   * uses the `#` separator per the project-wide convention; otherwise
+   * the language's `scopeSeparator` is used. See
+   * `.claude/rules/symbolid-convention.md` for the full table.
    */
-  nameOf: (node: Parser.SyntaxNode) => { name: string; descendsInto: boolean } | null;
+  nameOf: (node: Parser.SyntaxNode) => NamedSymbol | null;
   /**
    * Joiner used to build the fully-qualified symbol id from the scope
    * stack + the local node name. TypeScript / Python use ".", Ruby
@@ -200,13 +312,44 @@ const LANGUAGES: Record<string, LanguageConfig> = {
 };
 const SUPPORTED_EXTS = new Set(Object.keys(LANGUAGES));
 
+/**
+ * Codegraph provider dependencies. Two routing modes are supported and
+ * exactly one MUST be supplied at construction time:
+ *
+ *   - **Pool mode (production).** `pool` is the per-collection
+ *     `GraphDbClientPool`. The provider resolves the active collection
+ *     via `options.collectionName` on every ingest/query call and
+ *     acquires the corresponding `<dataDir>/codegraph/<collection>.duckdb`.
+ *     This is the path bootstrap wires; see `wireCodegraph` in
+ *     `src/bootstrap/factory.ts`.
+ *
+ *   - **Direct mode (tests).** `graphDb` + `symbolTable` are a single
+ *     pre-opened pair. The provider ignores `collectionName` and uses
+ *     this pair for every call. Useful for unit tests that don't want
+ *     to instantiate a pool just to exercise a single in-memory DB.
+ *
+ * Mixing the two is a programming error — when `pool` is set, the
+ * direct fields are ignored.
+ */
 export interface CodegraphProviderDeps {
-  graphDb: GraphDbClient;
-  symbolTable: GlobalSymbolTable;
+  /** Pool mode — per-collection DuckDB files routed via collectionName. */
+  pool?: GraphDbClientPool;
+  /** Direct mode — pre-opened graph client. Mutually exclusive with `pool`. */
+  graphDb?: GraphDbClient;
+  /** Direct mode — pre-built symbol table. Mutually exclusive with `pool`. */
+  symbolTable?: GlobalSymbolTable;
   resolvers: Map<string, CallResolver>;
   /** Derived signals + presets are wired by `createSymbolsTrajectory` in T9. */
   derivedSignals?: DerivedSignalDescriptor[];
   presets?: RerankPreset[];
+  /**
+   * Codegraph-layer exclusion config — wired from
+   * `codegraphSchema.excludeTests` + `codegraphSchema.customExcludePatterns`
+   * by the bootstrap factory. Optional: tests/fixtures default to
+   * `{ excludeTests: false, customPatterns: [] }` (no codegraph-layer
+   * exclusions) for predictable behaviour without env wiring.
+   */
+  exclusion?: CodegraphExclusionOptions;
 }
 
 export class CodegraphEnrichmentProvider implements EnrichmentProvider {
@@ -216,15 +359,23 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   readonly filters: FilterDescriptor[] = [];
   readonly presets: RerankPreset[];
 
-  private readonly buffer: FileExtraction[] = [];
   /**
-   * (relPath -> startLine -> symbolId) — populated by the walker pass
-   * in buildFileSignals so buildChunkSignals can resolve symbolId for
-   * each ChunkLookupEntry by line number. ChunkLookupEntry only
-   * carries `{chunkId, startLine, endLine}` — symbolId is not part of
-   * the public contract.
+   * Per-collection (relPath -> startLine -> symbolId), populated by the
+   * walker pass in `buildFileSignals` so `buildChunkSignals` can resolve
+   * symbolId for each `ChunkLookupEntry` by line number.
+   *
+   * Keyed by collection name (`__direct__` sentinel in direct/test mode)
+   * to keep state strictly isolated between collections — a single
+   * `CodegraphEnrichmentProvider` instance is reused across the whole
+   * process lifetime, so multiple `index_codebase` calls run sequentially
+   * against the SAME provider. Sharing a flat `Map<relPath, ...>` would
+   * let paths from project A bleed into project B's `buildChunkSignals`
+   * lookups when a path string happens to repeat across roots.
+   *
+   * ChunkLookupEntry only carries `{chunkId, startLine, endLine}` —
+   * symbolId is not part of the public contract.
    */
-  private readonly chunkSymbolByLine = new Map<string, Map<number, string>>();
+  private readonly chunkSymbolByLine = new Map<string, Map<string, Map<number, string>>>();
   /**
    * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
    * `CompletionRunner` at end of each enrichment cycle. Tracked here
@@ -232,14 +383,66 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * pairs within a single run (e.g. backfill paths).
    */
   private runStats = createEmptyRunStats();
+  /**
+   * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
+   * Built once at construction from `deps.exclusion`. Empty filter
+   * (`excludeTests:false`, no custom patterns) is a valid no-op — every
+   * `ignores()` call returns false and the layer becomes transparent.
+   */
+  private readonly codegraphExclusionFilter: Ignore;
 
   constructor(private readonly deps: CodegraphProviderDeps) {
     this.derivedSignals = deps.derivedSignals ?? [];
     this.presets = deps.presets ?? [];
+    this.codegraphExclusionFilter = buildCodegraphExclusionFilter(
+      deps.exclusion ?? { excludeTests: false, customPatterns: [] },
+    );
+    // Configuration invariant: exactly one routing mode must be picked
+    // at construction. We accept either `pool` OR (`graphDb`+`symbolTable`),
+    // never both, never neither — silent fallback would mask wiring bugs
+    // in tests and bootstrap alike.
+    const hasDirect = deps.graphDb !== undefined && deps.symbolTable !== undefined;
+    const hasPool = deps.pool !== undefined;
+    if (hasPool && hasDirect) {
+      throw new Error("CodegraphEnrichmentProvider: deps.pool and deps.graphDb/symbolTable are mutually exclusive");
+    }
+    if (!hasPool && !hasDirect) {
+      throw new Error("CodegraphEnrichmentProvider: must provide either deps.pool OR deps.graphDb + deps.symbolTable");
+    }
   }
 
   resolveRoot(absolutePath: string): string {
     return absolutePath;
+  }
+
+  /**
+   * Resolve the (graphDb, symbolTable) pair for the active call. In pool
+   * mode this acquires the per-collection handle; in direct mode it
+   * returns the constructor-provided pair regardless of `collectionName`.
+   *
+   * Programming error (rather than typed): if pool mode is set but no
+   * `collectionName` was threaded through, the call surface is broken.
+   * Caller should always pass `options.collectionName` from the
+   * coordinator. We surface this loudly so bugs surface at the wire-up
+   * boundary instead of writing rows to the wrong DB.
+   */
+  private async getStore(collectionName?: string): Promise<{
+    graphDb: GraphDbClient;
+    symbolTable: GlobalSymbolTable;
+  }> {
+    if (this.deps.pool) {
+      if (!collectionName) {
+        throw new Error(
+          "CodegraphEnrichmentProvider: pool mode requires options.collectionName — caller did not thread it through",
+        );
+      }
+      return this.deps.pool.acquire(stripVersionSuffix(collectionName));
+    }
+    // Direct mode — both fields validated in the constructor.
+    return {
+      graphDb: this.deps.graphDb as GraphDbClient,
+      symbolTable: this.deps.symbolTable as GlobalSymbolTable,
+    };
   }
 
   /**
@@ -250,92 +453,347 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * saw is a no-op (graphDb.removeFile + symbolTable.removeFile both
    * tolerate unknown paths).
    */
-  async handleDeletedPaths(paths: string[]): Promise<void> {
+  async handleDeletedPaths(paths: string[], options?: DeletedPathOptions): Promise<void> {
     if (paths.length === 0) return;
+    const { graphDb, symbolTable } = await this.getStore(options?.collectionName);
+    const perColl = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName));
     for (const relPath of paths) {
       // `graphDb.removeFile` clears edges AND cg_symbols rows; the
       // separate `removeSymbolsForFile` is intentionally idempotent so
       // call sites that only want symbol-table cleanup (no edge
       // pruning) can use it independently. Calling both here is safe —
       // the second DELETE finds an empty set.
-      await this.deps.graphDb.removeFile(relPath);
-      await this.deps.graphDb.removeSymbolsForFile(relPath);
-      this.deps.symbolTable.removeFile(relPath);
-      this.chunkSymbolByLine.delete(relPath);
+      await graphDb.removeFile(relPath);
+      await graphDb.removeSymbolsForFile(relPath);
+      symbolTable.removeFile(relPath);
+      perColl?.delete(relPath);
     }
   }
 
-  asExtractionSink(): ExtractionSink {
+  /**
+   * Build an `ExtractionSink` bound to the active collection. The sink
+   * captures the per-collection (graphDb, symbolTable) pair so all
+   * downstream `write`/`finish` calls land in the right DuckDB file.
+   *
+   * `collectionName` is optional in direct mode (test fixtures), but
+   * MUST be supplied in pool mode (production bootstrap). The provider
+   * fails loud at the first store-resolution otherwise.
+   */
+  asExtractionSink(collectionName?: string): ExtractionSink {
+    // Slice 2 chunked-flush ingest. Three rules that replace the prior
+    // "buffer until finish" model and lift the indexing memory ceiling:
+    //
+    // 1. Symbol definitions are persisted on EVERY write — to the
+    //    in-memory `symbolTable` AND DuckDB via `upsertSymbols`. The
+    //    resolver in pass-2 needs the full cross-file symbol set, so
+    //    we cannot defer this to finish().
+    // 2. The raw `FileExtraction` is appended to an NDJSON spill file
+    //    on disk. JS heap only holds the current row; the parsed
+    //    tree-sitter AST and intermediate buffers can be reclaimed
+    //    immediately after this write returns. For ugnest-scale runs
+    //    (5574 files) this is the load-bearing optimisation — the
+    //    prior in-memory `FileExtraction[]` held every extraction's
+    //    chunk/call arrays simultaneously.
+    // 3. finish() drives `streamingResolveAndUpsert` which reads the
+    //    spill back line-by-line, resolves calls, issues per-file
+    //    upserts, and CHECKPOINTs every N files. This keeps the
+    //    DuckDB WAL bounded throughout the pass.
+    //
+    // The spill path is `<dataDir>/codegraph/.spill/<coll>-<runId>.ndjson`
+    // — `runId` from `randomUUID` so concurrent ingest passes (rare
+    // but possible across collections) get unique files. Stale spill
+    // files left by a prior crashed run are purged at pool init
+    // (DuckDbGraphClient.init when `tempDirectory` is set).
+    const runId = randomUUID();
+    const spillPath = this.deps.pool
+      ? this.deps.pool.spillPathFor(stripVersionSuffix(collectionName ?? "__direct__"), runId)
+      : // Direct mode (tests) has no pool — keep spill colocated with
+        // the test's working directory under a hidden subdir to avoid
+        // polluting the project root.
+        join(process.cwd(), ".tea-rags-codegraph-spill", `direct-${runId}.ndjson`);
+    let spillStream: WriteStream | null = null;
+    let spillWriteCount = 0;
+    let finished = false;
+
+    const ensureSpillStream = async (): Promise<WriteStream> => {
+      if (spillStream) return spillStream;
+      try {
+        await mkdir(pathDirname(spillPath), { recursive: true });
+        spillStream = createWriteStream(spillPath, { encoding: "utf8" });
+      } catch (err) {
+        throw new CodegraphSpillIoError(spillPath, "open", err instanceof Error ? err : undefined);
+      }
+      return spillStream;
+    };
+
+    const cleanupSpill = async (): Promise<void> => {
+      // Best-effort: unlink the spill regardless of success/failure
+      // so a failed run does not leak GBs of NDJSON. ENOENT means a
+      // prior cleanup already happened (idempotent), all other errors
+      // are swallowed because the pool init re-purges on next process
+      // start anyway.
+      await rm(spillPath, { force: true }).catch(() => undefined);
+    };
+
     return {
       write: async (extraction) => {
-        this.deps.symbolTable.upsertFile(
-          extraction.relPath,
-          extraction.chunks.map((c) => ({
-            symbolId: c.symbolId,
-            fqName: c.symbolId,
-            shortName: lastSegment(c.symbolId),
-            relPath: extraction.relPath,
-            scope: c.scope,
-          })),
-        );
-        // Index by line so buildChunkSignals can recover symbolId from
-        // a ChunkLookupEntry that only carries chunkId+startLine+endLine.
-        this.indexChunkSymbolsByLine(extraction);
-        this.buffer.push(extraction);
+        if (finished) {
+          // Caller bug — write after finish. Surface as a programming
+          // error so the test path catches it; typed error is overkill
+          // for an invariant.
+          throw new Error("CodegraphEnrichmentProvider sink: write() called after finish()");
+        }
+        const { graphDb, symbolTable } = await this.getStore(collectionName);
+        const defs = extraction.chunks.map((c) => ({
+          symbolId: c.symbolId,
+          fqName: c.symbolId,
+          shortName: lastSegment(c.symbolId),
+          relPath: extraction.relPath,
+          scope: c.scope,
+        }));
+        // Persist defs to both the in-memory table (for in-pass
+        // resolver lookups) AND DuckDB (for cold-start hydration of a
+        // later partial reindex). Streaming the symbols rather than
+        // batching at finish means the resolver in pass-2 can resolve
+        // calls into files that were walked earlier in pass-1 even
+        // when those rows already landed; the in-memory table is the
+        // source of truth during the run, DuckDB is the durable copy.
+        symbolTable.upsertFile(extraction.relPath, defs);
+        await graphDb.upsertSymbols(extraction.relPath, defs);
+        this.indexChunkSymbolsByLine(collectionName, extraction);
+
+        const stream = await ensureSpillStream();
+        const line = `${JSON.stringify(extraction)}\n`;
+        const ok = stream.write(line);
+        if (!ok) {
+          // Back-pressure — wait for the drain event before the next
+          // write returns. Prevents a fast walker from filling the
+          // OS pipe and ballooning kernel buffers.
+          try {
+            await once(stream, "drain");
+          } catch (err) {
+            throw new CodegraphSpillIoError(spillPath, "write", err instanceof Error ? err : undefined);
+          }
+        }
+        spillWriteCount += 1;
         this.runStats.extractedFiles += 1;
       },
       finish: async () => {
-        for (const extraction of this.buffer) {
-          const edges = this.resolveExtraction(extraction);
-          await this.deps.graphDb.upsertFile({ relPath: extraction.relPath, language: extraction.language }, edges);
-          this.runStats.fileEdgeCount += edges.fileEdges.length;
-          this.runStats.methodEdgeCount += edges.methodEdges.length;
-          // Persist symbol definitions so the next cold-start bootstrap
-          // can hydrate the in-memory table from disk. Partial reindex
-          // (file A modified, file B untouched) can then resolve calls
-          // from A into B because B's symbols are loaded at startup.
-          const symbolDefs = extraction.chunks.map((c) => ({
-            symbolId: c.symbolId,
-            fqName: c.symbolId,
-            shortName: lastSegment(c.symbolId),
-            relPath: extraction.relPath,
-            scope: c.scope,
-          }));
-          await this.deps.graphDb.upsertSymbols(extraction.relPath, symbolDefs);
+        finished = true;
+        const streamToClose = spillStream;
+        if (streamToClose) {
+          // Close the writable end before the reader opens it. `end`
+          // takes a callback and finishes the file with a final flush.
+          await new Promise<void>((resolve, reject) => {
+            streamToClose.end((err?: Error | null) => {
+              if (err) reject(new CodegraphSpillIoError(spillPath, "write", err));
+              else resolve();
+            });
+          });
         }
-        this.buffer.length = 0;
-        // Slice 2 / B2 + B3 — recompute Tarjan SCC for both scopes and
-        // PageRank over the method graph after the full extraction
-        // batch settles. Debounced by being on sink.finish (not
-        // per-write) so a 700-file run pays the cost once.
-        //
-        // Algorithm ownership: adapter exposes pure CRUD primitives
-        // (`listAdjacency`, `replaceCycles`, `replacePageRanks`); the
-        // domain (this provider) runs Tarjan / PageRank from
-        // `codegraph/infra/` and persists results. Keeps adapter
-        // layer free of domain-level algorithm dependencies.
-        //
-        // Errors are non-fatal — losing cycle/PageRank freshness
-        // degrades find_cycles / rerank but doesn't corrupt the
-        // graph; the next sink.finish retries.
         try {
-          const fileAdj = await this.deps.graphDb.listAdjacency("file");
-          const fileSccs = tarjanScc(fileAdj);
-          await this.deps.graphDb.replaceCycles("file", fileSccs);
-
-          const methodAdj = await this.deps.graphDb.listAdjacency("method");
-          const methodSccs = tarjanScc(methodAdj);
-          await this.deps.graphDb.replaceCycles("method", methodSccs);
-
-          const rankResult = pageRank(methodAdj);
-          await this.deps.graphDb.replacePageRanks(rankResult.ranks);
-        } catch (err) {
-          if (process.env.DEBUG === "true") {
-            process.stderr.write(`[codegraph] post-extract metric recompute failed: ${(err as Error).message}\n`);
+          if (spillWriteCount > 0) {
+            await this.streamingResolveAndUpsert(spillPath, collectionName);
           }
+          // Metric recompute is best-effort by contract: data integrity
+          // is preserved by streamingResolveAndUpsert; only cycle /
+          // pagerank freshness is at stake. A failure here degrades
+          // find_cycles and rerank rather than aborting the index pass,
+          // so we swallow CodegraphMetricsError after the debug log
+          // the helper itself emits. Other error types (spill IO,
+          // resolve) DO propagate from streamingResolveAndUpsert above.
+          try {
+            await this.recomputeGraphMetricsStreaming(collectionName);
+          } catch (err) {
+            if (!(err instanceof CodegraphMetricsError)) throw err;
+          }
+        } finally {
+          await cleanupSpill();
         }
       },
     };
+  }
+
+  /**
+   * Slice 2 streaming pass-2. Reads the NDJSON spill line-by-line,
+   * resolves calls against the now-complete `symbolTable`, issues one
+   * `upsertFile` per row, and CHECKPOINTs every `CHECKPOINT_EVERY`
+   * files so the DuckDB WAL stays bounded.
+   *
+   * Memory footprint: O(1) in the spill size — one JSON line resident
+   * at any time. The resolver's working set is the file's own chunks
+   * and the global symbol table (already loaded in-memory).
+   */
+  private async streamingResolveAndUpsert(spillPath: string, collectionName?: string): Promise<void> {
+    const { graphDb, symbolTable } = await this.getStore(collectionName);
+    const CHECKPOINT_EVERY = 500;
+    const PROGRESS_EVERY = 100;
+    // Cardinality cap per single upsertFile transaction. Minified
+    // JS/TS bundles (Vite/Nuxt/Webpack build artefacts that should
+    // really live behind .gitignore but sometimes don't) can produce
+    // tens of thousands of method edges in one file — DuckDB blows
+    // past its memory_limit trying to commit a single transaction with
+    // that many INSERTs. Skipping these files is safe: a minified
+    // bundle has no resolvable cross-file graph semantics anyway, and
+    // letting one pathological row abort pass-2 wipes hours of work
+    // for the entire project. Cap chosen by inspection of the ugnest
+    // failure (file with 96k method edges OOM'd at 1.8GB).
+    const MAX_EDGES_PER_FILE = 10000;
+    let processed = 0;
+    let lastRelPath: string | null = null;
+    let reader: ReturnType<typeof createInterface> | null = null;
+    try {
+      reader = createInterface({
+        input: createReadStream(spillPath, { encoding: "utf8" }),
+        crlfDelay: Number.POSITIVE_INFINITY,
+      });
+      for await (const line of reader) {
+        if (!line) continue;
+        let extraction: FileExtraction;
+        try {
+          extraction = JSON.parse(line) as FileExtraction;
+        } catch (err) {
+          throw new CodegraphResolveError(processed, err instanceof Error ? err : undefined);
+        }
+        lastRelPath = extraction.relPath;
+        let edges: GraphEdges;
+        try {
+          edges = this.resolveExtraction(extraction, symbolTable);
+        } catch (err) {
+          // Per-file resolver throw — wrap with file context so the
+          // marker / stderr surfaces "at file #N (relPath)" instead of
+          // a bare position counter.
+          const wrapped = err instanceof Error ? err : new Error(String(err));
+          throw new CodegraphResolveError(
+            processed,
+            Object.assign(wrapped, {
+              message: `resolveExtraction failed at file #${processed + 1} (${lastRelPath}): ${wrapped.message}`,
+            }),
+          );
+        }
+        const totalEdges = edges.fileEdges.length + edges.methodEdges.length;
+        if (totalEdges > MAX_EDGES_PER_FILE) {
+          // Skip pathological files (typically minified JS bundles) but
+          // record the skip so operators can surface them via marker
+          // log. Graph remains consistent because no partial state
+          // landed for this row.
+          pipelineLog.enrichmentPhase("CODEGRAPH_PASS2_SKIPPED_LARGE_FILE", {
+            processed: processed + 1,
+            relPath: extraction.relPath,
+            language: extraction.language,
+            fileEdges: edges.fileEdges.length,
+            methodEdges: edges.methodEdges.length,
+            cap: MAX_EDGES_PER_FILE,
+          });
+          processed += 1;
+          continue;
+        }
+        try {
+          await graphDb.upsertFile({ relPath: extraction.relPath, language: extraction.language }, edges);
+        } catch (err) {
+          // Per-file upsert throw — DuckDB constraint / connection /
+          // type error. Same wrap pattern as above.
+          const wrapped = err instanceof Error ? err : new Error(String(err));
+          throw new CodegraphResolveError(
+            processed,
+            Object.assign(wrapped, {
+              message: `graphDb.upsertFile failed at file #${processed + 1} (${lastRelPath}, edges=${edges.fileEdges.length}+${edges.methodEdges.length}): ${wrapped.message}`,
+            }),
+          );
+        }
+        this.runStats.fileEdgeCount += edges.fileEdges.length;
+        this.runStats.methodEdgeCount += edges.methodEdges.length;
+        processed += 1;
+        // Per-N debug log so a slow run shows where it stalled.
+        if (processed % PROGRESS_EVERY === 0) {
+          pipelineLog.enrichmentPhase("CODEGRAPH_PASS2_PROGRESS", {
+            processed,
+            lastRelPath,
+            fileEdges: this.runStats.fileEdgeCount,
+            methodEdges: this.runStats.methodEdgeCount,
+          });
+        }
+        if (processed % CHECKPOINT_EVERY === 0) {
+          try {
+            await graphDb.checkpoint();
+          } catch (err) {
+            throw new CodegraphCheckpointError(err instanceof Error ? err : undefined);
+          }
+        }
+      }
+      if (processed > 0 && processed % CHECKPOINT_EVERY !== 0) {
+        try {
+          await graphDb.checkpoint();
+        } catch (err) {
+          throw new CodegraphCheckpointError(err instanceof Error ? err : undefined);
+        }
+      }
+    } catch (err) {
+      if (
+        err instanceof CodegraphResolveError ||
+        err instanceof CodegraphCheckpointError ||
+        err instanceof CodegraphSpillIoError
+      ) {
+        throw err;
+      }
+      // Catch-all wrap: include last-seen file in the cause message so
+      // the propagated marker tells the operator WHERE the loop tripped.
+      const wrapped = err instanceof Error ? err : new Error(String(err));
+      throw new CodegraphResolveError(
+        processed,
+        Object.assign(wrapped, {
+          message: `loop fatal after ${processed} files (last seen: ${lastRelPath ?? "<none>"}): ${wrapped.message}`,
+        }),
+      );
+    } finally {
+      reader?.close();
+    }
+  }
+
+  /**
+   * Slice 2 / B2 + B3 — recompute Tarjan SCC for both scopes and
+   * PageRank over the method graph after the streaming pass-2 settles.
+   *
+   * Streaming variant: builds the adjacency one row at a time via
+   * `graphDb.streamAdjacency` rather than `listAdjacency` so the
+   * adapter does not pre-allocate a `Map<string, string[]>` of all
+   * edges (the prior code paid this cost twice — once on the DuckDB
+   * side, once in the consumer). The algorithms themselves still need
+   * full adjacency for the recursive DFS and rank vector iteration,
+   * but skipping the intermediate copy is the pragmatic minimum that
+   * still gives a meaningful win at slice-2 scale (25k method edges).
+   * A spill-to-disk Tarjan is a future optimisation if real graphs
+   * grow past JS-heap-friendly sizes.
+   *
+   * Errors are wrapped in `CodegraphMetricsError` so the prefetch
+   * marker carries the failing stage in its message — debug log
+   * alone is not enough when the failure happens silently mid-run.
+   */
+  private async recomputeGraphMetricsStreaming(collectionName?: string): Promise<void> {
+    const { graphDb } = await this.getStore(collectionName);
+    try {
+      const fileAdj = await collectAdjacency(graphDb, "file");
+      const fileSccs = tarjanScc(fileAdj);
+      await graphDb.replaceCycles("file", fileSccs);
+
+      const methodAdj = await collectAdjacency(graphDb, "method");
+      const methodSccs = tarjanScc(methodAdj);
+      await graphDb.replaceCycles("method", methodSccs);
+
+      const rankResult = pageRank(methodAdj);
+      await graphDb.replacePageRanks(rankResult.ranks);
+    } catch (err) {
+      // Non-fatal: data is consistent up to here, only metrics tables
+      // may be stale. Surface as a typed error so the caller's debug
+      // log carries the stage; the prefetch path catches and proceeds.
+      if (process.env.DEBUG === "true") {
+        process.stderr.write(`[codegraph] post-extract metric recompute failed: ${(err as Error).message}\n`);
+      }
+      throw new CodegraphMetricsError(
+        err instanceof CodegraphMetricsError ? "pagerank" : "tarjan",
+        err instanceof Error ? err : undefined,
+      );
+    }
   }
 
   /**
@@ -355,16 +813,29 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return { extractedFiles, fileEdgeCount, methodEdgeCount, resolveSuccessRate };
   }
 
-  private indexChunkSymbolsByLine(extraction: FileExtraction): void {
+  private collectionKey(collectionName?: string): string {
+    return collectionName ?? "__direct__";
+  }
+
+  private indexChunkSymbolsByLine(collectionName: string | undefined, extraction: FileExtraction): void {
     // The walker emits each chunk with line ranges driven by the AST
     // node it came from — but the ingest chunker may split that range
     // across multiple Qdrant chunks for oversize methods. We index the
     // span [startLine..endLine] -> symbolId so lookup by any line
     // inside the chunk resolves to the right symbol.
-    let lineMap = this.chunkSymbolByLine.get(extraction.relPath);
+    //
+    // Keyed by collection so two projects with overlapping rel_paths
+    // (e.g. both repos hold `src/index.ts`) never share line maps.
+    const key = this.collectionKey(collectionName);
+    let perColl = this.chunkSymbolByLine.get(key);
+    if (!perColl) {
+      perColl = new Map();
+      this.chunkSymbolByLine.set(key, perColl);
+    }
+    let lineMap = perColl.get(extraction.relPath);
     if (!lineMap) {
       lineMap = new Map();
-      this.chunkSymbolByLine.set(extraction.relPath, lineMap);
+      perColl.set(extraction.relPath, lineMap);
     } else {
       lineMap.clear();
     }
@@ -373,8 +844,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
   }
 
-  private resolveChunkSymbolId(relPath: string, startLine: number, endLine: number): string | undefined {
-    const lineMap = this.chunkSymbolByLine.get(relPath);
+  private resolveChunkSymbolId(
+    collectionName: string | undefined,
+    relPath: string,
+    startLine: number,
+    endLine: number,
+  ): string | undefined {
+    const perColl = this.chunkSymbolByLine.get(this.collectionKey(collectionName));
+    if (!perColl) return undefined;
+    const lineMap = perColl.get(relPath);
     if (!lineMap) return undefined;
     // Exact match by startLine wins. If the chunker split an oversized
     // method, intermediate chunks won't have a direct startLine match
@@ -391,21 +869,41 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return best?.sym;
   }
 
-  async buildFileSignals(root: string, options?: { paths?: string[] }): Promise<Map<string, FileSignalOverlay>> {
+  async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     // Discover the file set to walk. Caller-supplied paths win
     // (incremental reindex); otherwise scan the repo for any
-    // supported language extension.
+    // supported language extension. `ignoreFilter` is threaded from the
+    // EnrichmentCoordinator's ProviderContext (FileScanner's filter +
+    // BUILTIN_IGNORE_PATTERNS); when absent (direct/test mode) only the
+    // codegraph-layer filter applies.
+    //
+    // Codegraph-layer exclusion (CODEGRAPH_TEST_PATTERNS +
+    // CODEGRAPH_CUSTOM_EXCLUDE) MUST be applied in BOTH branches: the
+    // production ingest path threads its full file list as
+    // `options.paths` (so `discoverSupportedFiles` is bypassed), and
+    // without filtering here test files would land in the dependency
+    // graph despite `excludeTests:true`. The standalone-walk branch
+    // delegates to `discoverSupportedFiles`, which applies the filter
+    // internally — the explicit `.filter` here covers the
+    // caller-supplied branch with the same `codegraphExclusionFilter`
+    // instance to keep semantics identical.
     const targetRelPaths =
       options?.paths && options.paths.length > 0
-        ? options.paths.filter((p) => SUPPORTED_EXTS.has(extensionOf(p)))
-        : this.discoverSupportedFiles(root);
+        ? options.paths.filter((p) => SUPPORTED_EXTS.has(extensionOf(p)) && !this.codegraphExclusionFilter.ignores(p))
+        : this.discoverSupportedFiles(root, options?.ignoreFilter);
+
+    // Resolve the per-collection store ONCE for the whole pass — the
+    // overlay loop below uses the same handle. Pool mode threads
+    // collectionName from the coordinator; direct mode (tests) ignores
+    // it and returns the constructor-provided pair.
+    const { graphDb } = await this.getStore(options?.collectionName);
 
     // Populate the graph DB by walking each file's AST and feeding the
     // resulting FileExtraction through this provider's own sink. This
     // pass owns the codegraph ingest side — chunker pool integration
     // is deferred to a future slice once worker IPC supports passing
     // FileExtraction back across the boundary.
-    const sink = this.asExtractionSink();
+    const sink = this.asExtractionSink(options?.collectionName);
     for (const relPath of targetRelPaths) {
       try {
         await sink.write(this.extractOneFile(root, relPath));
@@ -426,14 +924,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const overlayPaths = options?.paths && options.paths.length > 0 ? options.paths : targetRelPaths;
     const result = new Map<string, FileSignalOverlay>();
     for (const relPath of overlayPaths) {
-      const fanIn = await this.deps.graphDb.getFanIn(relPath);
-      const fanOut = await this.deps.graphDb.getFanOut(relPath);
+      const fanIn = await graphDb.getFanIn(relPath);
+      const fanOut = await graphDb.getFanOut(relPath);
       const denom = fanIn + fanOut;
       // Slice 2 / B1 — transitive blast radius via reverse BFS over
       // file edges. Depth defaults to 5 (in DuckDB client). Cheap on
       // small files (early-empty); on hub files the DuckDB recursive
       // CTE handles up to ~thousands of ancestors comfortably.
-      const transitiveImpact = await this.deps.graphDb.getTransitiveImpact(relPath);
+      const transitiveImpact = await graphDb.getTransitiveImpact(relPath);
       result.set(relPath, {
         "codegraph.file.fanIn": fanIn,
         "codegraph.file.fanOut": fanOut,
@@ -450,13 +948,29 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Recursively enumerate `.ts` / `.tsx` files under `root`, skipping
-   * `node_modules`, `build`, etc. Returns repo-relative POSIX paths.
-   * Slice 1 owns this walker; later slices will share the file-discovery
-   * pass already done by `processFiles` once the chunker pool returns
-   * AST artifacts alongside chunks.
+   * Recursively enumerate supported-language files under `root`. Two
+   * ignore layers applied per entry:
+   *
+   *   Layer 1 — `scannerIgnoreFilter` (optional, from FileScanner via
+   *             `FileSignalOptions.ignoreFilter`). Same filter the main
+   *             ingest path uses: BUILTIN_IGNORE_PATTERNS + user
+   *             `.gitignore` / `.contextignore`. Catches `node_modules/`,
+   *             `_nuxt/`, `vendor/bundle/`, glob patterns like
+   *             `*.min.js`, AND project-specific user rules.
+   *   Layer 2 — `this.codegraphExclusionFilter` (always present;
+   *             empty filter is the no-op case). Carries
+   *             CODEGRAPH_TEST_PATTERNS when `excludeTests:true` plus
+   *             any `CODEGRAPH_CUSTOM_EXCLUDE` patterns.
+   *
+   * Directory-level early skip on both layers is a performance
+   * optimisation — `ignore` resolves trailing-slash patterns
+   * (`node_modules/`) against the dir path so we can skip recursion
+   * entirely instead of walking thousands of children just to filter
+   * them out file-by-file.
+   *
+   * Returns repo-relative POSIX paths.
    */
-  private discoverSupportedFiles(root: string): string[] {
+  private discoverSupportedFiles(root: string, scannerIgnoreFilter?: Ignore): string[] {
     const out: string[] = [];
     const walk = (dir: string): void => {
       let entries: Dirent[];
@@ -466,16 +980,28 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         return;
       }
       for (const entry of entries) {
+        // Hidden dotfiles still get pruned at the codegraph layer — the
+        // FileScanner filter doesn't carry a blanket dotfile rule
+        // (BUILTIN_IGNORE_PATTERNS only lists specific dotted entries
+        // like `.git/`, `.DS_Store`). Preserve `.claude-plugin/` as the
+        // one allowed exception because it ships shipped plugin source.
         if (entry.name.startsWith(".") && entry.name !== ".claude-plugin") continue;
-        if (IGNORE_DIRS.has(entry.name)) continue;
         const full = join(dir, entry.name);
+        const relPath = relative(root, full).replace(/\\/g, "/");
         if (entry.isDirectory()) {
+          // ignore.ignores() expects a path that semantically denotes
+          // a directory (trailing slash) so `node_modules/` matches.
+          const dirRel = `${relPath}/`;
+          if (scannerIgnoreFilter?.ignores(dirRel)) continue;
+          if (this.codegraphExclusionFilter.ignores(dirRel)) continue;
           walk(full);
           continue;
         }
-        if (entry.isFile() && SUPPORTED_EXTS.has(extensionOf(entry.name))) {
-          out.push(relative(root, full).replace(/\\/g, "/"));
-        }
+        if (!entry.isFile()) continue;
+        if (!SUPPORTED_EXTS.has(extensionOf(entry.name))) continue;
+        if (scannerIgnoreFilter?.ignores(relPath)) continue;
+        if (this.codegraphExclusionFilter.ignores(relPath)) continue;
+        out.push(relPath);
       }
     };
     walk(root);
@@ -515,36 +1041,54 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   private collectSymbols(
     tree: Parser.Tree,
-    nameOf: (node: Parser.SyntaxNode) => { name: string; descendsInto: boolean } | null,
+    nameOf: (node: Parser.SyntaxNode) => NamedSymbol | null,
     separator: string,
   ): { symbolId: string; startLine: number; endLine: number; scope: string[] }[] {
     const out: { symbolId: string; startLine: number; endLine: number; scope: string[] }[] = [];
-    const walk = (node: Parser.SyntaxNode, scope: string[]): void => {
+    const walk = (node: Parser.SyntaxNode, scope: string[], composed: string): void => {
       const named = nameOf(node);
+      // Stable nested-scope tracking lets each named declaration carry
+      // a unique fully-qualified id even when same-name declarations
+      // are nested in different parents (e.g. four `worker()` helpers
+      // inside different outer functions). The string `composed` is
+      // the fqName we've built so far; we extend it per-named symbol
+      // with the right separator (`#` for instance methods nested
+      // under a class; the language's `scopeSeparator` otherwise).
+      const childScope = named ? [...scope, named.name] : scope;
+      const childComposed = named ? joinSymbol(composed, named, separator) : composed;
       if (named) {
-        const fq = [...scope, named.name].join(separator);
         out.push({
-          symbolId: fq,
+          symbolId: childComposed,
           startLine: node.startPosition.row + 1,
           endLine: node.endPosition.row + 1,
           scope,
         });
-        if (named.descendsInto) {
-          for (const child of node.children) walk(child, [...scope, named.name]);
-          return;
-        }
       }
-      for (const child of node.children) walk(child, scope);
+      for (const child of node.children) walk(child, childScope, childComposed);
     };
-    walk(tree.rootNode, []);
-    return out;
+    walk(tree.rootNode, [], "");
+    // Dedup by symbolId — multiple AST nodes can legitimately share an
+    // identifier (TypeScript get/set accessor pairs, function overload
+    // signatures, etc.). The cg_symbols PK (rel_path, symbol_id) treats
+    // identity, not occurrences; the in-memory symbol table likewise
+    // benefits from one entry per name (lookups otherwise produce
+    // spurious ambiguity). Keep the FIRST occurrence — by line order
+    // that's the earliest declaration site, which is the deterministic
+    // anchor for downstream chunk-line bucketing.
+    const seen = new Set<string>();
+    return out.filter((s) => {
+      if (seen.has(s.symbolId)) return false;
+      seen.add(s.symbolId);
+      return true;
+    });
   }
 
   async buildChunkSignals(
     _root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
-    _options?: ChunkSignalOptions,
+    options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
+    const { graphDb } = await this.getStore(options?.collectionName);
     const out = new Map<string, Map<string, ChunkSignalOverlay>>();
     for (const [relPath, entries] of chunkMap) {
       const perChunk = new Map<string, ChunkSignalOverlay>();
@@ -554,16 +1098,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // line map (populated when the same provider walked the file
         // in buildFileSignals). If file isn't in the map (e.g. older
         // chunks from before codegraph wiring, or non-TS files), skip.
-        const symbolId = this.resolveChunkSymbolId(relPath, entry.startLine, entry.endLine);
+        const symbolId = this.resolveChunkSymbolId(options?.collectionName, relPath, entry.startLine, entry.endLine);
         if (!symbolId) continue;
-        const fanIn = await this.deps.graphDb.getCalledByCount(symbolId);
-        const fanOut = await this.deps.graphDb.getCallSiteCount(symbolId);
+        const fanIn = await graphDb.getCalledByCount(symbolId);
+        const fanOut = await graphDb.getCallSiteCount(symbolId);
         // Slice 2 / B3 — per-symbol PageRank from cg_symbols_metrics
         // (populated by recomputePageRank at sink.finish). Returns 0
         // when the symbol isn't in the table yet (first index pass
         // before recompute completes, or non-TS chunks without
         // extraction edges).
-        const pageRankValue = await this.deps.graphDb.getPageRank(symbolId);
+        const pageRankValue = await graphDb.getPageRank(symbolId);
         perChunk.set(entry.chunkId, {
           "codegraph.chunk.fanIn": fanIn,
           "codegraph.chunk.fanOut": fanOut,
@@ -575,7 +1119,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return out;
   }
 
-  private resolveExtraction(extraction: FileExtraction): GraphEdges {
+  private resolveExtraction(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
     const resolver = this.deps.resolvers.get(extraction.language);
     const fileEdges: GraphEdges["fileEdges"] = [];
     const methodEdges: GraphEdges["methodEdges"] = [];
@@ -592,7 +1136,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           callerFile: extraction.relPath,
           callerScope: extraction.fileScope,
           imports: extraction.imports,
-          symbolTable: this.deps.symbolTable,
+          symbolTable,
+          classFieldTypes: extraction.classFieldTypes,
         },
       );
       if (target) {
@@ -610,7 +1155,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           callerFile: extraction.relPath,
           callerScope: chunk.scope,
           imports: extraction.imports,
-          symbolTable: this.deps.symbolTable,
+          symbolTable,
+          classFieldTypes: extraction.classFieldTypes,
+          localBindings: chunk.localBindings,
         });
         if (!target) continue;
         this.runStats.callsResolved += 1;
@@ -640,14 +1187,18 @@ function createEmptyRunStats(): RunStats {
 }
 
 function lastSegment(name: string): string {
-  // Two callers with different separator conventions:
-  //  - symbolIds like "Foo.bar" split on "." → "bar"
+  // Three callers with different separator conventions:
+  //  - symbolIds like "Foo#bar" (instance) split on "#" → "bar"
+  //  - symbolIds like "Foo.bar" (static / nested namespace) split on "." → "bar"
   //  - import paths like "../core/api/index.js" split on "/" → "index.js"
   // Path lookups must NOT split on "." or we'd return the extension
-  // ("js") instead of the basename. Prefer "/" when present; only fall
-  // back to "." for "/"-free symbolIds.
+  // ("js") instead of the basename. Order is: "/" wins (path detection),
+  // then "#" (instance method short-name), then "." (static / namespace
+  // last component).
   const slash = name.lastIndexOf("/");
   if (slash !== -1) return name.slice(slash + 1);
+  const hash = name.lastIndexOf("#");
+  if (hash !== -1) return name.slice(hash + 1);
   const dot = name.lastIndexOf(".");
   return dot === -1 ? name : name.slice(dot + 1);
 }
@@ -657,8 +1208,26 @@ function extensionOf(path: string): string {
   return dot === -1 ? "" : path.slice(dot);
 }
 
-function tsNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
-  if (node.type === "function_declaration" || node.type === "method_definition") {
+/**
+ * Per-language `nameOf` functions. Each returns a `NamedSymbol`
+ * descriptor or null. The instance/static classification routes
+ * through `classifyMethod` in `core/infra/symbolid` — keeping the
+ * chunker's payload-side symbolId AND the codegraph DB symbolId
+ * derived from the SAME detection logic for any given AST node. See
+ * `.claude/rules/symbolid-convention.md`.
+ */
+
+function methodKindFromClassify(node: Parser.SyntaxNode): "instance" | "static" | undefined {
+  const c = classifyMethod(node);
+  return c === null ? undefined : c;
+}
+
+function tsNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
+  if (node.type === "method_definition") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
+  }
+  if (node.type === "function_declaration") {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: false };
   }
@@ -669,10 +1238,10 @@ function tsNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolea
   return null;
 }
 
-function pyNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+function pyNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
   if (node.type === "function_definition") {
     const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false };
+    if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
   }
   if (node.type === "class_definition") {
     const id = node.childForFieldName("name");
@@ -681,16 +1250,19 @@ function pyNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolea
   return null;
 }
 
-function rbNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
-  // tree-sitter-ruby: `class A; end`, `module B; end`, `def foo; end`.
-  // class/module name can itself be a scope_resolution (`class A::B`)
-  // — read the full chain as the local name so the symbol id
-  // composes correctly with the outer scope at join time.
-  if (node.type === "method" || node.type === "singleton_method") {
+function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
+  if (node.type === "method") {
     const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false };
+    if (id) return { name: id.text, descendsInto: false, methodKind: "instance" };
+  }
+  if (node.type === "singleton_method") {
+    // `def self.foo` — Ruby class method. Joins to its class with `.`.
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false, methodKind: "static" };
   }
   if (node.type === "class" || node.type === "module") {
+    // `class Acme::Auth` — read the scope_resolution chain so the
+    // qualified class name composes correctly with the outer scope.
     const nameNode = node.childForFieldName("name");
     if (!nameNode) return null;
     const localName = nameNode.type === "scope_resolution" ? scopeResolutionText(nameNode) : nameNode.text;
@@ -699,11 +1271,13 @@ function rbNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolea
   return null;
 }
 
-function goNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
-  // Go has no nesting at the type level — methods declare on a
-  // receiver but are top-level. function_declaration is plain
-  // functions; method_declaration is methods (with field `name`).
-  if (node.type === "function_declaration" || node.type === "method_declaration") {
+function goNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
+  if (node.type === "method_declaration") {
+    // Go receiver-bound methods are instance methods.
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false, methodKind: "instance" };
+  }
+  if (node.type === "function_declaration") {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: false };
   }
@@ -716,22 +1290,26 @@ function goNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolea
   return null;
 }
 
-function javaNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+function javaNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
   if (node.type === "class_declaration" || node.type === "interface_declaration" || node.type === "enum_declaration") {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: true };
   }
-  if (node.type === "method_declaration" || node.type === "constructor_declaration") {
+  if (node.type === "method_declaration") {
     const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false };
+    if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
+  }
+  if (node.type === "constructor_declaration") {
+    const id = node.childForFieldName("name");
+    if (id) return { name: id.text, descendsInto: false, methodKind: "instance" };
   }
   return null;
 }
 
-function rustNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+function rustNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
   if (node.type === "function_item") {
     const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false };
+    if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
   }
   if (node.type === "struct_item" || node.type === "enum_item" || node.type === "trait_item") {
     const id = node.childForFieldName("name");
@@ -743,14 +1321,13 @@ function rustNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: bool
   }
   if (node.type === "impl_item") {
     // impl Foo { ... } — surface Foo's methods under `impl Foo` scope.
-    // tree-sitter-rust uses `type` field for the impl target.
     const ty = node.childForFieldName("type");
     if (ty) return { name: ty.text, descendsInto: true };
   }
   return null;
 }
 
-function bashNameOf(node: Parser.SyntaxNode): { name: string; descendsInto: boolean } | null {
+function bashNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
   if (node.type === "function_definition") {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: false };
@@ -767,4 +1344,21 @@ function scopeResolutionText(node: Parser.SyntaxNode): string {
   const left =
     scope?.type === "scope_resolution" ? scopeResolutionText(scope) : scope?.type === "constant" ? scope.text : "";
   return left ? `${left}::${name.text}` : name.text;
+}
+
+/**
+ * Slice 2 helper — drain `graphDb.streamAdjacency(scope)` into the
+ * compact `Map<string, string[]>` shape that `tarjanScc` and
+ * `pageRank` consume. Differs from the legacy `listAdjacency` only in
+ * that the adapter no longer pre-bucketed the rows; we build the Map
+ * exactly once here.
+ */
+async function collectAdjacency(graphDb: GraphDbClient, scope: "file" | "method"): Promise<Map<string, string[]>> {
+  const adj = new Map<string, string[]>();
+  for await (const [source, target] of graphDb.streamAdjacency(scope)) {
+    const list = adj.get(source);
+    if (list) list.push(target);
+    else adj.set(source, [target]);
+  }
+  return adj;
 }

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { DuckDbGraphClient } from "../core/adapters/duckdb/index.js";
+import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
@@ -182,91 +182,90 @@ function wireComposition(
 interface CodegraphContext {
   deps: CodegraphDeps;
   graphFacade: GraphFacade;
-  graphDb: DuckDbGraphClient;
+  pool: GraphDbClientPool;
 }
 
-async function wireCodegraph(
-  config: AppConfig,
-  zodConfig: ReturnType<typeof getZodConfig>,
-): Promise<CodegraphContext | undefined> {
+function wireCodegraph(config: AppConfig, zodConfig: ReturnType<typeof getZodConfig>): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so opt-in via env stays the
   // only path to enable codegraph.
   const { codegraph } = zodConfig;
   if (!codegraph?.enabled) return undefined;
 
-  const dbPath = codegraph.dbPath ?? join(config.paths.appData, "codegraph.duckdb");
-  const graphDb = new DuckDbGraphClient({ path: dbPath });
-  try {
-    await graphDb.init();
+  // Per-collection DuckDB layout: `<rootDir>/codegraph/<collection>.duckdb`.
+  // The legacy `CODEGRAPH_DB_PATH` env var, when it points at a
+  // directory, is honoured as the rootDir override; pointing at a
+  // single file is no longer meaningful under per-collection routing
+  // and is treated as the parent directory's leaf override. Default
+  // is `paths.appData` so existing installs find their data in the
+  // same place.
+  const rootDir = codegraph.dbPath
+    ? codegraph.dbPath.endsWith(".duckdb")
+      ? dirname(codegraph.dbPath)
+      : codegraph.dbPath
+    : config.paths.appData;
 
-    // Apply slice 1 schema. Migrations are idempotent — safe to re-run
-    // on every bootstrap. The runner consumes an inline array of
-    // `{ filename, sql }` so the compiled `build/` ships them as plain
-    // JS (no SQL files to copy alongside the TS output).
-    const { runMigrations } = await import("../core/infra/migration/database/runner.js");
-    const { DATABASE_MIGRATIONS } = await import("../core/infra/migration/database/migrations/index.js");
-    await runMigrations(graphDb, DATABASE_MIGRATIONS);
-  } catch (err) {
-    // DuckDB is single-writer per file — if another tea-rags process
-    // (orphaned by a prior crash, or a parallel MCP session) is already
-    // holding the lock, we cannot open the DB. Rather than failing the
-    // whole bootstrap, log a warning and run with codegraph disabled
-    // for this instance. The first-comer keeps codegraph; later spawns
-    // serve search/index without it. Tracked by tea-rags-mcp-pwx5 —
-    // proper fix is a shared DuckDB daemon, mirror of the ONNX one.
-    const reason = (err as Error).message || String(err);
-    process.stderr.write(
-      `[tea-rags] codegraph disabled: failed to open ${dbPath} (${reason}). ` +
-        `Set CODEGRAPH_ENABLED=false to silence, or kill the other tea-rags process holding the lock.\n`,
-    );
-    await graphDb.close().catch(() => {
-      /* already closed or never opened */
-    });
-    return undefined;
-  }
-
-  const tsOptions = loadTsConfig(process.cwd());
+  const ambiguousMode = codegraph.ambiguousResolveMode;
   const resolvers = new Map<string, CallResolver>([
-    ["typescript", new TSCallResolver(tsOptions)],
-    ["javascript", new JavascriptCallResolver()],
-    ["python", new PythonCallResolver()],
-    ["ruby", new RubyCallResolver()],
-    ["go", new GoCallResolver()],
-    ["java", new JavaCallResolver()],
-    ["rust", new RustCallResolver()],
-    ["bash", new BashCallResolver()],
+    ["typescript", new TSCallResolver(loadTsConfig(process.cwd()), ambiguousMode)],
+    ["javascript", new JavascriptCallResolver(ambiguousMode)],
+    ["python", new PythonCallResolver(ambiguousMode)],
+    ["ruby", new RubyCallResolver(ambiguousMode)],
+    ["go", new GoCallResolver(ambiguousMode)],
+    ["java", new JavaCallResolver(ambiguousMode)],
+    ["rust", new RustCallResolver(ambiguousMode)],
+    ["bash", new BashCallResolver(ambiguousMode)],
   ]);
 
-  // Hydrate the symbol table from disk on cold start. Without this,
-  // an incremental reindex of file A cannot resolve calls into an
-  // unchanged file B — the walker only touches the changed files, so
-  // B's symbols would be invisible. After hydration the in-memory
-  // table holds every previously-persisted definition; the streaming
-  // upsert path (sink.finish() → graphDb.upsertSymbols) keeps it
-  // current. Empty result on first run (fresh DB) is the no-op fast
-  // path.
-  const symbolTable = new InMemoryGlobalSymbolTable();
-  try {
-    const persisted = await graphDb.listAllSymbols();
-    if (persisted.length > 0) {
-      symbolTable.hydrate(persisted);
-    }
-  } catch (err) {
-    // Migration ran but the table query somehow failed — log and start
-    // empty rather than blocking bootstrap. The next sink.finish will
-    // rebuild affected files; cross-file resolution is degraded until
-    // then but the rest of the MCP server still functions.
-    process.stderr.write(`[tea-rags] codegraph symbol-table hydration failed: ${(err as Error).message}\n`);
-  }
+  const pool = new GraphDbClientPool({
+    rootDir,
+    symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    // Slice 2 resource ceiling — caps per-collection DuckDB memory at
+    // CODEGRAPH_DB_MEMORY_LIMIT (default 2GB) with disk spill into
+    // `<rootDir>/codegraph/.spill/`. Without the cap DuckDB defaults
+    // to ~80% of system RAM which on large repos pushes the indexing
+    // pass OOM (14.3GB seen on ugnest = 5574 files before the cap).
+    // `preserveInsertionOrder: false` lets the driver reorder rows
+    // for memory wins; cg_symbols queries that need order use ORDER
+    // BY explicitly.
+    resources: {
+      memoryLimit: codegraph.dbMemoryLimit,
+      threads: codegraph.dbThreads,
+      preserveInsertionOrder: false,
+    },
+    // Hydrate the per-collection symbol table from disk on first open.
+    // Without this, an incremental reindex of file A cannot resolve
+    // calls into an unchanged file B — the walker only touches changed
+    // files, so B's symbols would be invisible. After hydration the
+    // in-memory table holds every previously-persisted definition;
+    // the streaming upsert path (sink.finish() → graphDb.upsertSymbols)
+    // keeps it current. Empty result on first run (fresh DB) is the
+    // no-op fast path.
+    initHook: async ({ collectionName, graphDb, symbolTable }) => {
+      try {
+        const persisted = await graphDb.listAllSymbols();
+        if (persisted.length > 0) symbolTable.hydrate(persisted);
+      } catch (err) {
+        process.stderr.write(
+          `[tea-rags] codegraph symbol-table hydration failed for ${collectionName}: ${(err as Error).message}\n`,
+        );
+      }
+    },
+  });
 
   const deps: CodegraphDeps = {
-    graphDb,
-    symbolTable,
+    pool,
     resolvers,
+    // Codegraph-layer exclusion (test files + user-supplied patterns).
+    // The shape mirrors `CodegraphExclusionOptions`; the provider
+    // builds the actual `Ignore` instance at construction time.
+    exclusion: {
+      excludeTests: codegraph.excludeTests,
+      customPatterns: codegraph.customExcludePatterns ?? [],
+    },
   };
-  const graphFacade = new GraphFacade({ graphDb });
-  return { deps, graphFacade, graphDb };
+  const graphFacade = new GraphFacade({ pool });
+  return { deps, graphFacade, pool };
 }
 
 export async function createAppContext(config: AppConfig): Promise<AppContext> {
@@ -274,7 +273,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   setDebug(zodConfig.core.debug);
 
   const infra = await resolveInfrastructure(config, zodConfig);
-  const codegraphContext = await wireCodegraph(config, zodConfig);
+  const codegraphContext = wireCodegraph(config, zodConfig);
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   const statsCache = new StatsCache(config.paths.snapshots);
@@ -326,6 +325,7 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     collectionRegistry,
     teaRagsVersion: pkg.version,
     enrichmentProviders,
+    codegraphPool: codegraphContext?.pool,
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [
@@ -361,6 +361,8 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     modelGuard: infra.modelGuard,
     graphFacade: codegraphContext?.graphFacade,
+    codegraphPool: codegraphContext?.pool,
+    registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
   });
 
   const cleanup = () => {
@@ -370,6 +372,12 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     }
     if (infra.embeddedRelease) {
       infra.embeddedRelease();
+    }
+    // Close every per-collection DuckDB the pool opened. Fire-and-forget:
+    // shutdown is best-effort and DuckDB releases the file lock when the
+    // GC sweeps the instance even if we miss the explicit close.
+    if (codegraphContext) {
+      void codegraphContext.pool.closeAll().catch(() => undefined);
     }
   };
 

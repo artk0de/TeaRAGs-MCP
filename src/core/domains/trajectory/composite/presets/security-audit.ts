@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../contracts/types/reranker.js";
+import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
 
 /**
  * Composite override for `securityAudit` — auth/crypto files imported
@@ -8,11 +8,12 @@ import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../contrac
  * links CCC + complexity ↔ vulnerability; fanIn approximates the
  * "imported by" half until complexity signals land.
  */
-export class SecurityAuditCompositePreset implements RerankPreset {
+export class SecurityAuditCompositePreset implements CompositeRerankPreset {
   readonly name = "securityAudit";
   readonly description = "Old security-critical paths with high blast radius (audit priority targets)";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar"];
+  readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     age: 0.15,

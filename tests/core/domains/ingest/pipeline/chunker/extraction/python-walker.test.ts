@@ -156,6 +156,159 @@ describe("extractFromPythonFile — calls", () => {
   });
 });
 
+describe("extractFromPythonFile — localBindings (type inference)", () => {
+  it("infers var = ClassName(...) → { var: ClassName }", () => {
+    const src =
+      "def view(request):\n    serializer = ToggleReactionSerializer(data=request.data)\n    return serializer\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "engagement/views.py",
+      language: "python",
+      chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ serializer: "ToggleReactionSerializer" });
+  });
+
+  it("infers var = module.ClassName(...) → { var: 'module.ClassName' } (qualifier preserved)", () => {
+    const src = "def view():\n    s = rest_framework.Serializer(data=x)\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ s: "rest_framework.Serializer" });
+  });
+
+  it("infers PEP 526 annotation var: ClassName = expr → { var: ClassName }", () => {
+    const src = "def view():\n    s: ConfirmCode = factory()\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ s: "ConfirmCode" });
+  });
+
+  it("infers PEP 526 annotation without RHS — var: SomeClass", () => {
+    const src = "def view():\n    s: SomeClass\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ s: "SomeClass" });
+  });
+
+  it("infers function-arg type hint — def f(self, req: HttpRequest)", () => {
+    const src = "class View:\n    def post(self, request: HttpRequest):\n        return None\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "View#post", scope: ["View"], startLine: 2, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ request: "HttpRequest" });
+  });
+
+  it("accumulates multiple bindings in one chunk; later assignment overwrites", () => {
+    const src = "def view():\n    s = Foo()\n    s = Bar()\n    t = Baz()\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 4 }],
+    });
+    // s rebound; last assignment wins. t separate binding.
+    expect(r.chunks[0].localBindings).toEqual({ s: "Bar", t: "Baz" });
+  });
+
+  it("emits binding for bare-identifier RHS calls (resolver decides whether the name is a class)", () => {
+    const src = "def view():\n    s = factory()\n    s2 = make_thing()\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 3 }],
+    });
+    // Walker is generous — emit the binding even when the callee
+    // looks like a factory. The resolver checks the symbol table
+    // (`factory` / `make_thing` as a class?) and drops the binding
+    // when the type cannot be located. Keeps walker rules simple.
+    expect(r.chunks[0].localBindings?.s).toBe("factory");
+    expect(r.chunks[0].localBindings?.s2).toBe("make_thing");
+  });
+
+  it("scopes bindings to chunk line range — function A bindings don't leak into function B", () => {
+    const src = "def a():\n    s = Foo()\n\ndef b():\n    t = Bar()\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [
+        { symbolId: "a", scope: [], startLine: 1, endLine: 2 },
+        { symbolId: "b", scope: [], startLine: 4, endLine: 5 },
+      ],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ s: "Foo" });
+    expect(r.chunks[1].localBindings).toEqual({ t: "Bar" });
+  });
+
+  it("does NOT emit localBindings when CODEGRAPH_PY_LOCAL_TYPE_TRACKING=false", () => {
+    const prev = process.env.CODEGRAPH_PY_LOCAL_TYPE_TRACKING;
+    process.env.CODEGRAPH_PY_LOCAL_TYPE_TRACKING = "false";
+    try {
+      const src = "def view():\n    s = Foo()\n";
+      const tree = parse(src);
+      const r = extractFromPythonFile({
+        tree,
+        code: src,
+        relPath: "x.py",
+        language: "python",
+        chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
+      });
+      expect(r.chunks[0].localBindings).toBeUndefined();
+    } finally {
+      if (prev === undefined) delete process.env.CODEGRAPH_PY_LOCAL_TYPE_TRACKING;
+      else process.env.CODEGRAPH_PY_LOCAL_TYPE_TRACKING = prev;
+    }
+  });
+
+  it("emits Record (plain object), NOT a Map — survives NDJSON spill round-trip", () => {
+    const src = "def view():\n    s = Foo()\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
+    });
+    const bindings = r.chunks[0].localBindings;
+    // Map serializes to {} via JSON.stringify; plain object preserves entries.
+    const roundTripped = JSON.parse(JSON.stringify(bindings ?? {})) as Record<string, string>;
+    expect(roundTripped).toEqual({ s: "Foo" });
+  });
+});
+
 describe("extractFromPythonFile — edge cases", () => {
   it("returns empty imports/chunks for an empty file", () => {
     const tree = parse("");

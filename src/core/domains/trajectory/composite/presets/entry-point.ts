@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset } from "../../../../contracts/types/reranker.js";
+import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
 /**
  * `entryPoint` — surfaces files that LOOK like composition roots:
@@ -20,10 +20,11 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
  * onboarding new contributors. Empirically aligns with files
  * containing `createApp`, `main`, `bootstrap`, register-* patterns.
  */
-export class EntryPointPreset implements RerankPreset {
+export class EntryPointPreset implements CompositeRerankPreset {
   readonly name = "entryPoint";
   readonly description = "Composition roots — high outgoing imports per line, no incoming";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly requires = ["codegraph.symbols"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.3,
     fanOutPerLine: 0.3,

@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset } from "../../../../contracts/types/reranker.js";
+import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
 /**
  * Composite override for `hotspots` — adds codegraph `fanIn` exposure so
@@ -12,11 +12,12 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
  * one as the second-pass winner whenever codegraph is wired. Trajectory
  * file stays untouched.
  */
-export class HotspotsCompositePreset implements RerankPreset {
+export class HotspotsCompositePreset implements CompositeRerankPreset {
   readonly name = "hotspots";
   readonly description =
     "Surface frequently-changing code areas with structural awareness (chunk churn + dependency fanIn)";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.18,
     chunkSize: 0.1,

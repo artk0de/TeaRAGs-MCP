@@ -71,4 +71,76 @@ describe("extractFromTypescriptFile", () => {
     expect(extraction.chunks).toEqual([]);
     expect(extraction.imports.map((i) => i.importText)).toEqual(["./x"]);
   });
+
+  describe("classFieldTypes — for cross-class resolver", () => {
+    it("collects field types from constructor parameter properties", () => {
+      const code = `import { MarkerStore } from "./store";\nclass Coordinator {\n  constructor(private readonly markerStore: MarkerStore) {}\n  go() { this.markerStore.write(); }\n}\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/coordinator.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "Coordinator#go", startLine: 4, endLine: 4, scope: ["Coordinator"] }],
+      });
+      expect(extraction.classFieldTypes).toBeDefined();
+      const fields = extraction.classFieldTypes?.get("Coordinator");
+      expect(fields).toBeDefined();
+      expect(fields?.get("markerStore")).toBe("MarkerStore");
+    });
+
+    it("collects field types from public field declarations", () => {
+      const code = `class Store {\n  private readonly client: QdrantClient = createClient();\n  read() { return this.client.get(); }\n}\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/store.ts",
+        language: "typescript",
+        chunks: [{ symbolId: "Store#read", startLine: 3, endLine: 3, scope: ["Store"] }],
+      });
+      const fields = extraction.classFieldTypes?.get("Store");
+      expect(fields?.get("client")).toBe("QdrantClient");
+    });
+
+    it("strips generic parameters — Foo<T> resolves to Foo", () => {
+      const code = `class Holder {\n  constructor(private readonly list: Array<number>) {}\n}\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/holder.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      expect(extraction.classFieldTypes?.get("Holder")?.get("list")).toBe("Array");
+    });
+
+    it("ignores constructor parameters WITHOUT accessibility modifier (plain params, not fields)", () => {
+      const code = `class Plain {\n  constructor(input: string) { this.x = input; }\n}\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/plain.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      // `input` has no `private`/`public`/`readonly` → not a field property
+      expect(extraction.classFieldTypes?.get("Plain")).toBeUndefined();
+    });
+
+    it("returns empty map for files with no class declarations", () => {
+      const code = `export function helper() { return 42; }\n`;
+      const tree = parse(code);
+      const extraction = extractFromTypescriptFile({
+        tree,
+        code,
+        relPath: "src/util.ts",
+        language: "typescript",
+        chunks: [],
+      });
+      expect(extraction.classFieldTypes?.size ?? 0).toBe(0);
+    });
+  });
 });

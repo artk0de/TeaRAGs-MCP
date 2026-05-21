@@ -10,6 +10,8 @@ import {
   InstabilitySignal,
   IsHubSignal,
   IsLeafSignal,
+  PageRankSignal,
+  TransitiveImpactSignal,
 } from "../../../../../../../../src/core/domains/trajectory/codegraph/symbols/rerank/derived-signals/index.js";
 import { BlastRadiusPreset } from "../../../../../../../../src/core/domains/trajectory/composite/presets/blast-radius.js";
 
@@ -99,6 +101,70 @@ describe("codegraph derived signals", () => {
       expect(sig.name).toBe("fanOutPerLine");
       expect(sig.sources).toEqual(["codegraph.file.fanOut"]);
       expect(sig.defaultBound).toBe(0.1);
+    });
+  });
+
+  describe("PageRankSignal", () => {
+    it("normalizes codegraph.chunk.pageRank against default bound 0.01", () => {
+      const sig = new PageRankSignal();
+      // raw=0.005, default bound=0.01, normalize -> 0.5
+      expect(sig.extract({ "codegraph.chunk.pageRank": 0.005 }, {})).toBeCloseTo(0.5, 5);
+    });
+
+    it("returns 0 when codegraph.chunk.pageRank is absent", () => {
+      const sig = new PageRankSignal();
+      expect(sig.extract({}, {})).toBe(0);
+    });
+
+    it("respects ctx.bounds['chunk.pageRank'] override over the default bound", () => {
+      const sig = new PageRankSignal();
+      // raw=0.01, override bound=0.02 -> 0.5
+      expect(sig.extract({ "codegraph.chunk.pageRank": 0.01 }, { bounds: { "chunk.pageRank": 0.02 } })).toBeCloseTo(
+        0.5,
+        5,
+      );
+    });
+
+    it("exposes descriptor metadata: name, sources, defaultBound", () => {
+      const sig = new PageRankSignal();
+      expect(sig.name).toBe("pageRank");
+      expect(sig.sources).toEqual(["codegraph.chunk.pageRank"]);
+      expect(sig.defaultBound).toBe(0.01);
+    });
+  });
+
+  describe("TransitiveImpactSignal", () => {
+    it("normalizes codegraph.file.transitiveImpact against default bound 50", () => {
+      const sig = new TransitiveImpactSignal();
+      // raw=25, default bound=50, normalize -> 0.5
+      expect(sig.extract({ "codegraph.file.transitiveImpact": 25 }, {})).toBeCloseTo(0.5, 5);
+    });
+
+    it("returns 0 when codegraph.file.transitiveImpact is absent", () => {
+      const sig = new TransitiveImpactSignal();
+      expect(sig.extract({}, {})).toBe(0);
+    });
+
+    it("respects ctx.bounds['file.transitiveImpact'] override", () => {
+      const sig = new TransitiveImpactSignal();
+      // raw=60, override bound=120 -> 0.5
+      expect(
+        sig.extract({ "codegraph.file.transitiveImpact": 60 }, { bounds: { "file.transitiveImpact": 120 } }),
+      ).toBeCloseTo(0.5, 5);
+    });
+
+    it("clamps to 1.0 when raw exceeds bound", () => {
+      const sig = new TransitiveImpactSignal();
+      expect(sig.extract({ "codegraph.file.transitiveImpact": 100 }, { bounds: { "file.transitiveImpact": 50 } })).toBe(
+        1,
+      );
+    });
+
+    it("exposes descriptor metadata: name, sources, defaultBound", () => {
+      const sig = new TransitiveImpactSignal();
+      expect(sig.name).toBe("transitiveImpact");
+      expect(sig.sources).toEqual(["codegraph.file.transitiveImpact"]);
+      expect(sig.defaultBound).toBe(50);
     });
   });
 

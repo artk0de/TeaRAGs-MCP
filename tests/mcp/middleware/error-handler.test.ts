@@ -118,6 +118,28 @@ class InfraQdrantError extends TeaRagsError {
   }
 }
 
+class InfraQdrantStartingError extends TeaRagsError {
+  constructor() {
+    super({
+      code: "INFRA_QDRANT_STARTING" as ErrorCode,
+      message: "Qdrant daemon is starting up",
+      hint: "Wait a few seconds and retry",
+      httpStatus: 503,
+    });
+  }
+}
+
+class InfraQdrantRecoveringError extends TeaRagsError {
+  constructor() {
+    super({
+      code: "INFRA_QDRANT_RECOVERING" as ErrorCode,
+      message: "Qdrant is recovering from snapshot",
+      hint: "Retry once recovery completes",
+      httpStatus: 503,
+    });
+  }
+}
+
 function makeProbes(overrides?: Partial<HealthProbes>): HealthProbes {
   return {
     checkQdrant: vi.fn().mockResolvedValue(true),
@@ -159,6 +181,67 @@ describe("health-aware error enrichment", () => {
     expect(text).toContain("Infrastructure status:");
     expect(text).toContain("Qdrant: unavailable");
     expect(text).toContain("Embedding (ollama): available");
+
+    stderrSpy.mockRestore();
+  });
+
+  it("labels Qdrant as 'starting' rather than 'unavailable' for INFRA_QDRANT_STARTING", async () => {
+    const probes = makeProbes();
+    const handler = vi.fn().mockRejectedValue(new InfraQdrantStartingError());
+    const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const wrapped = errorHandlerMiddleware(handler, probes);
+    const result = await wrapped({}, {} as never);
+
+    const text = result.content[0].type === "text" ? result.content[0].text : "";
+    expect(text).toContain("Qdrant: starting");
+    expect(text).toContain("Embedding (ollama): available");
+
+    stderrSpy.mockRestore();
+  });
+
+  it("labels Qdrant as 'recovering' for INFRA_QDRANT_RECOVERING", async () => {
+    const probes = makeProbes();
+    const handler = vi.fn().mockRejectedValue(new InfraQdrantRecoveringError());
+    const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const wrapped = errorHandlerMiddleware(handler, probes);
+    const result = await wrapped({}, {} as never);
+
+    const text = result.content[0].type === "text" ? result.content[0].text : "";
+    expect(text).toContain("Qdrant: recovering");
+
+    stderrSpy.mockRestore();
+  });
+
+  it("labels embedding as 'unavailable' when other-service probe says so (Ollama err + Qdrant probe false)", async () => {
+    // Forces the `otherHealthy ? "available" : "unavailable"` branch on the
+    // Qdrant label when the Ollama error came in — covers the fallback arm.
+    const probes = makeProbes({ checkQdrant: vi.fn().mockResolvedValue(false) });
+    const handler = vi.fn().mockRejectedValue(new InfraOllamaError());
+    const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const wrapped = errorHandlerMiddleware(handler, probes);
+    const result = await wrapped({}, {} as never);
+
+    const text = result.content[0].type === "text" ? result.content[0].text : "";
+    expect(text).toContain("Qdrant: unavailable");
+    expect(text).toContain("Embedding (ollama): unavailable");
+
+    stderrSpy.mockRestore();
+  });
+
+  it("omits embedding URL suffix when embeddingUrl is not configured", async () => {
+    const probes = makeProbes({ embeddingUrl: undefined });
+    const handler = vi.fn().mockRejectedValue(new InfraOllamaError());
+    const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const wrapped = errorHandlerMiddleware(handler, probes);
+    const result = await wrapped({}, {} as never);
+
+    const text = result.content[0].type === "text" ? result.content[0].text : "";
+    expect(text).toContain("Embedding (ollama): unavailable");
+    expect(text).not.toContain("Embedding (ollama): unavailable (");
 
     stderrSpy.mockRestore();
   });

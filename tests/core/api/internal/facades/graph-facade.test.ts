@@ -1,6 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
 import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-facade.js";
+
+/**
+ * Build a fake pool that returns the same graphDb (+ trivial symbolTable
+ * stub) for every collection name. Keeps each test focused on the
+ * facade's mapping behaviour without exercising real DuckDB I/O.
+ */
+function fakePool(graphDb: unknown): GraphDbClientPool {
+  const handle = {
+    graphDb,
+    symbolTable: {} as unknown as never,
+  };
+  return {
+    acquire: vi.fn().mockResolvedValue(handle),
+    peek: vi.fn().mockReturnValue(handle),
+  } as unknown as GraphDbClientPool;
+}
 
 describe("GraphFacade", () => {
   it("getCallers delegates to GraphDbClient and respects limit", async () => {
@@ -10,8 +27,8 @@ describe("GraphFacade", () => {
         { sourceSymbolId: "C.g", sourceRelPath: "src/c.ts", callExpression: "B.x()" },
       ]),
       getCallees: vi.fn(),
-    } as never;
-    const facade = new GraphFacade({ graphDb });
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb) });
     const response = await facade.getCallers({ path: "/proj", symbolId: "B.x", limit: 50 });
     expect(graphDb.getCallers).toHaveBeenCalledWith("B.x");
     expect(response.callers).toHaveLength(2);
@@ -27,8 +44,8 @@ describe("GraphFacade", () => {
         })),
       ),
       getCallees: vi.fn(),
-    } as never;
-    const facade = new GraphFacade({ graphDb });
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb) });
     const response = await facade.getCallers({ path: "/proj", symbolId: "B.x", limit: 3 });
     expect(response.callers).toHaveLength(3);
   });
@@ -42,8 +59,8 @@ describe("GraphFacade", () => {
     const graphDb = {
       getCallers: vi.fn(),
       getCallees: vi.fn().mockResolvedValue(callees),
-    } as never;
-    const facade = new GraphFacade({ graphDb });
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb) });
     const response = await facade.getCallees({ path: "/proj", symbolId: "main" });
     expect(graphDb.getCallees).toHaveBeenCalledWith("main");
     expect(response.callees).toHaveLength(50);
@@ -64,8 +81,8 @@ describe("GraphFacade", () => {
         { cycleId: 0, scope: "file", members: ["src/a.ts", "src/b.ts"] },
         { cycleId: 1, scope: "file", members: ["src/x.ts", "src/y.ts", "src/z.ts"] },
       ]),
-    } as never;
-    const facade = new GraphFacade({ graphDb });
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb) });
     const response = await facade.findCycles({ path: "/proj", scope: "file" });
     expect(graphDb.findCycles).toHaveBeenCalledWith("file");
     expect(response.cycles).toHaveLength(2);
@@ -83,10 +100,26 @@ describe("GraphFacade", () => {
       getCallers: vi.fn(),
       getCallees: vi.fn(),
       findCycles: vi.fn().mockResolvedValue([]),
-    } as never;
-    const facade = new GraphFacade({ graphDb });
+    };
+    const facade = new GraphFacade({ pool: fakePool(graphDb) });
     const response = await facade.findCycles({ path: "/proj", scope: "method" });
     expect(graphDb.findCycles).toHaveBeenCalledWith("method");
     expect(response.cycles).toEqual([]);
+  });
+
+  // New behaviour for slice-2 pool wiring: when the per-collection
+  // DuckDB can't be opened (lock held by another process, missing
+  // file, init failure), the facade surfaces empty results rather
+  // than propagating the error to the MCP tool. Mirrors the spec
+  // "codegraph optional" guarantee — the MCP server keeps responding.
+  it("returns empty response when the pool cannot open the collection", async () => {
+    const pool = {
+      acquire: vi.fn().mockRejectedValue(new Error("lock held")),
+      peek: vi.fn().mockReturnValue(undefined),
+    } as unknown as GraphDbClientPool;
+    const facade = new GraphFacade({ pool });
+    expect(await facade.getCallers({ path: "/proj", symbolId: "X" })).toEqual({ callers: [] });
+    expect(await facade.getCallees({ path: "/proj", symbolId: "X" })).toEqual({ callees: [] });
+    expect(await facade.findCycles({ path: "/proj", scope: "file" })).toEqual({ cycles: [] });
   });
 });

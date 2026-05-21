@@ -265,7 +265,12 @@ export class ChunkPhase {
     }
 
     const start = Date.now();
-    const opts = useSemaphore ? { concurrencySemaphore: this.semaphore, skipCache: true } : { skipCache: true };
+    // Carry the active collection on every chunk-signal call so codegraph
+    // routes per-collection DuckDB lookups correctly. `coll` is the
+    // ChunkPhase's bound collection name from `init`.
+    const opts = useSemaphore
+      ? { concurrencySemaphore: this.semaphore, skipCache: true, collectionName: coll }
+      : { skipCache: true, collectionName: coll };
 
     const work = ctx.provider
       .buildChunkSignals(root, chunkMap, opts)

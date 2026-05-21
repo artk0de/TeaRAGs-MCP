@@ -42,6 +42,22 @@ describe("EnrichmentMarkerStore", () => {
       expect(m.file.durationMs).toBe(4200);
       expect(m.chunk.status).toBe("failed");
     });
+
+    it("propagates errorMessage onto both file and chunk markers (slice 2 — surfaces concrete failure in get_index_status)", async () => {
+      await store.markStart(COLL, ["codegraph.symbols"], "r1", "2026-05-21T10:00:00Z");
+      await store.markPrefetchFailed(
+        COLL,
+        "codegraph.symbols",
+        "r1",
+        "2026-05-21T10:00:00Z",
+        3500,
+        "Codegraph spill write failed at /tmp/cg/.spill/run.ndjson",
+      );
+      const m = (await store.read(COLL))!["codegraph.symbols"] as any;
+      expect(m.file.status).toBe("failed");
+      expect(m.file.errorMessage).toBe("Codegraph spill write failed at /tmp/cg/.spill/run.ndjson");
+      expect(m.chunk.errorMessage).toBe("Codegraph spill write failed at /tmp/cg/.spill/run.ndjson");
+    });
   });
 
   describe("markRecoveryResult", () => {
@@ -87,6 +103,35 @@ describe("EnrichmentMarkerStore", () => {
       expect(m.chunk.status).toBe("degraded");
       expect(m.chunk.unenrichedChunks).toBe(12);
       expect(m.chunk.durationMs).toBe(8500);
+    });
+  });
+
+  // Regression for tea-rags self-test bug 2026-05-21: marker writes
+  // without `wait: true` race against subsequent reads. Sequential
+  // markFileFinal/markChunkFinal calls do read-modify-write; without
+  // wait, the next read may not see the prior write yet, and the new
+  // write clobbers the prior status back to its previous snapshot.
+  // Symptom: only the last write in a chain survives; all earlier
+  // statuses revert. Fixing this end-to-end requires `wait: true` on
+  // every setPayload call inside marker-store.write().
+  describe("setPayload wait flag", () => {
+    it("passes wait:true so qdrant reads see the new payload before the next write reads", async () => {
+      let observedWait: boolean | undefined;
+      const wrappedQdrant = {
+        ...qdrant,
+        getPoint: async (coll: string, id: string | number) => qdrant.getPoint(coll, id),
+        setPayload: async (
+          coll: string,
+          payload: Record<string, unknown>,
+          options: { points?: (string | number)[]; wait?: boolean },
+        ) => {
+          observedWait = options.wait;
+          return qdrant.setPayload(coll, payload, options as any);
+        },
+      } as unknown as typeof qdrant;
+      const isolatedStore = new EnrichmentMarkerStore(wrappedQdrant as any);
+      await isolatedStore.markStart(COLL, ["git"], "r-wait", "2026-05-07T10:00:00Z");
+      expect(observedWait).toBe(true);
     });
   });
 

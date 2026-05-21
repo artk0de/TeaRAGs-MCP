@@ -10,6 +10,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
@@ -68,6 +69,13 @@ export interface IngestFacadeDeps {
    * providers inline.
    */
   enrichmentProviders?: EnrichmentProvider[];
+  /**
+   * Per-collection DuckDB pool — present when codegraph is wired.
+   * `IndexingOps.clear` / force-reindex paths use it to drop the
+   * per-collection DuckDB file alongside the Qdrant collection. Omitted
+   * when codegraph is disabled.
+   */
+  codegraphPool?: GraphDbClientPool;
 }
 
 export class IngestFacade {
@@ -93,6 +101,7 @@ export class IngestFacade {
       reranker: deps.reranker,
       gitTimePeriods,
       modelGuard: deps.modelGuard,
+      codegraphPool: deps.codegraphPool,
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the

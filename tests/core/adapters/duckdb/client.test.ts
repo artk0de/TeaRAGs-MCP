@@ -51,6 +51,73 @@ describe("DuckDbGraphClient", () => {
     expect(await client.hasData()).toBe(false);
   });
 
+  // Real-world bug from incremental reindex of tea-rags-worktree on
+  // 2026-05-21: the reindex pipeline runs `notifyDeletions` (→
+  // `removeFile` BEGIN/COMMIT) and `processRelativeFiles` (→
+  // `upsertFile` BEGIN/COMMIT) in `Promise.all`. DuckDB on a single
+  // shared connection rejects the second BEGIN with "TransactionContext
+  // Error: cannot start a transaction within a transaction" and the
+  // pipeline emits `DELETE_HOOK_FAILED`. The adapter must serialize
+  // transactional writes so the BEGINs never overlap regardless of
+  // caller fan-out.
+  it("serializes overlapping transactional writes — no 'transaction within a transaction'", async () => {
+    // Seed two files so removeFile has something to delete.
+    await client.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+    await client.upsertFile({ relPath: "b.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+
+    // Kick off remove(a) and upsert(c importing b) concurrently.
+    await Promise.all([
+      client.removeFile("a.ts"),
+      client.upsertFile(
+        { relPath: "c.ts", language: "typescript" },
+        { fileEdges: [{ targetRelPath: "b.ts", importText: "./b" }], methodEdges: [] },
+      ),
+      client.upsertSymbols("c.ts", [{ symbolId: "C", fqName: "C", shortName: "C", relPath: "c.ts", scope: [] }]),
+      client.removeSymbolsForFile("a.ts"),
+    ]);
+
+    // a is gone, c arrived with its edge.
+    expect(await client.getFanIn("a.ts")).toBe(0);
+    expect(await client.getFanOut("c.ts")).toBe(1);
+    expect(await client.getFanIn("b.ts")).toBe(1);
+  });
+
+  // Slice 2 — polyglot resolvers can return targetSymbolId=null when an
+  // import resolves to a file but the called member isn't in that
+  // file's exported symbol table. GraphEdges.methodEdges allows null
+  // by contract, but the DuckDB schema's PK on cg_symbols_edges_method
+  // includes target_symbol_id (implicitly NOT NULL in DuckDB). The
+  // adapter must skip those edges at the boundary instead of throwing.
+  // File-level reach is captured separately via fileEdges.
+  it("upsertFile skips methodEdges with targetSymbolId=null without throwing", async () => {
+    await client.upsertFile({ relPath: "lib/foo.js", language: "javascript" }, { fileEdges: [], methodEdges: [] });
+    await client.upsertFile(
+      { relPath: "src/main.js", language: "javascript" },
+      {
+        fileEdges: [{ targetRelPath: "lib/foo.js", importText: "./foo" }],
+        methodEdges: [
+          {
+            sourceSymbolId: "main",
+            targetSymbolId: null,
+            targetRelPath: "lib/foo.js",
+            callExpression: "foo.ghost()",
+          },
+          {
+            sourceSymbolId: "main",
+            targetSymbolId: "foo.bar",
+            targetRelPath: "lib/foo.js",
+            callExpression: "foo.bar()",
+          },
+        ],
+      },
+    );
+    // File edge is recorded.
+    expect(await client.getFanOut("src/main.js")).toBe(1);
+    // Only the known-target call edge survived.
+    expect(await client.getCallSiteCount("main")).toBe(1);
+    expect(await client.getCalledByCount("foo.bar")).toBe(1);
+  });
+
   it("upsertFile inserts file row and outgoing edges atomically", async () => {
     await client.upsertFile({ relPath: "src/b.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
     await client.upsertFile(

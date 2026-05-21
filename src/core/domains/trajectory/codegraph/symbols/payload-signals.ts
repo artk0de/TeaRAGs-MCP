@@ -4,8 +4,9 @@
  * File-level signals are computed by `CodegraphEnrichmentProvider.
  * buildFileSignals` from `cg_symbols_edges_file`; chunk-level signals
  * are computed by `buildChunkSignals` from `cg_symbols_edges_method`.
- * Slice 1 ships Tier 1 only (no `transitiveImpact` / `pageRank` /
- * `betweenness` — those land in Slice 2).
+ * Slice 1 ships Tier 1 only; Slice 2 adds `transitiveImpact` and
+ * `pageRank`. Betweenness centrality was a Slice 2 candidate but cut
+ * 2026-05-21 — see Slice 2 plan Task B4 for rationale.
  */
 
 import type { PayloadSignalDescriptor } from "../../../../contracts/types/trajectory.js";

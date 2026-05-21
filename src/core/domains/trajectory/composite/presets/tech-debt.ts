@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset } from "../../../../contracts/types/reranker.js";
+import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
 /**
  * Composite override for `techDebt` — old + churning code that's ALSO
@@ -7,10 +7,11 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
  * trajectory preset alone scored "old + churning + sole owner" without
  * knowing whether anyone consumes it.
  */
-export class TechDebtCompositePreset implements RerankPreset {
+export class TechDebtCompositePreset implements CompositeRerankPreset {
   readonly name = "techDebt";
   readonly description = "Legacy code with high churn, bug rate, and architectural blast radius";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.13,
     age: 0.15,

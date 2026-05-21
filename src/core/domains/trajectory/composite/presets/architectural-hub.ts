@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../contracts/types/reranker.js";
+import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
 
 /**
  * `architecturalHub` — files at the centre of the dependency graph
@@ -15,11 +15,12 @@ import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../contrac
  * raw `codegraph.file.instability` overlay still surfaces in the
  * ranking overlay for human interpretation.
  */
-export class ArchitecturalHubPreset implements RerankPreset {
+export class ArchitecturalHubPreset implements CompositeRerankPreset {
   readonly name = "architecturalHub";
   readonly description = "Hub files at the centre of the dependency graph under active churn";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     isHub: 0.35,

@@ -98,4 +98,97 @@ describe("JavascriptCallResolver", () => {
     );
     expect(target).toBeNull();
   });
+
+  // The `this.X()` / `super.X()` block (lines 44-53) routes intra-class
+  // calls through the same instance/static lookup ladder the TS resolver
+  // uses, so JS classes get correct edges to instance methods on the
+  // enclosing class. These were uncovered until Slice 2.
+  describe("intra-class this/super dispatch (symbolId convention)", () => {
+    it("resolves this.X() to <EnclosingClass>#<member> in the SAME file (instance method)", () => {
+      const r = new JavascriptCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("src/store.js", [
+        {
+          symbolId: "Store#read",
+          fqName: "Store#read",
+          shortName: "read",
+          relPath: "src/store.js",
+          scope: ["Store"],
+        },
+      ]);
+      const target = r.resolve(
+        { callText: "this.read()", receiver: "this", member: "read", startLine: 5 },
+        {
+          callerFile: "src/store.js",
+          callerScope: ["Store"],
+          imports: [],
+          symbolTable: t,
+        },
+      );
+      expect(target?.targetRelPath).toBe("src/store.js");
+      expect(target?.targetSymbolId).toBe("Store#read");
+    });
+
+    it("resolves super.X() against the enclosing class in the SAME file", () => {
+      const r = new JavascriptCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("src/child.js", [
+        { symbolId: "Child#init", fqName: "Child#init", shortName: "init", relPath: "src/child.js", scope: ["Child"] },
+      ]);
+      const target = r.resolve(
+        { callText: "super.init()", receiver: "super", member: "init", startLine: 3 },
+        { callerFile: "src/child.js", callerScope: ["Child"], imports: [], symbolTable: t },
+      );
+      expect(target?.targetSymbolId).toBe("Child#init");
+    });
+
+    it("falls back to <EnclosingClass>.<member> (static dispatch) when instance form is absent", () => {
+      const r = new JavascriptCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("src/util.js", [
+        {
+          symbolId: "Util.make",
+          fqName: "Util.make",
+          shortName: "make",
+          relPath: "src/util.js",
+          scope: ["Util"],
+        },
+      ]);
+      const target = r.resolve(
+        { callText: "this.make()", receiver: "this", member: "make", startLine: 4 },
+        { callerFile: "src/util.js", callerScope: ["Util"], imports: [], symbolTable: t },
+      );
+      expect(target?.targetSymbolId).toBe("Util.make");
+    });
+
+    it("falls back to same-file short-name when no instance/static form matches", () => {
+      const r = new JavascriptCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("src/mixed.js", [
+        // top-level helper, NOT class-scoped — shortName lookup wins
+        { symbolId: "helper", fqName: "helper", shortName: "helper", relPath: "src/mixed.js", scope: [] },
+      ]);
+      const target = r.resolve(
+        { callText: "this.helper()", receiver: "this", member: "helper", startLine: 6 },
+        { callerFile: "src/mixed.js", callerScope: ["Container"], imports: [], symbolTable: t },
+      );
+      expect(target?.targetSymbolId).toBe("helper");
+    });
+
+    it("does NOT misroute this.X() when callerScope is empty (top-level function context)", () => {
+      const r = new JavascriptCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      t.upsertFile("src/other.js", [
+        { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "src/other.js", scope: ["Foo"] },
+      ]);
+      // Empty callerScope skips the this/super block entirely — the
+      // receiver path falls through to global short-name lookup.
+      const target = r.resolve(
+        { callText: "this.bar()", receiver: "this", member: "bar", startLine: 1 },
+        { callerFile: "src/caller.js", callerScope: [], imports: [], symbolTable: t },
+      );
+      expect(target?.targetRelPath).toBe("src/other.js");
+      expect(target?.targetSymbolId).toBe("Foo#bar");
+    });
+  });
 });

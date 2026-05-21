@@ -17,11 +17,14 @@
 
 import { posix } from "node:path";
 
-import type {
-  CallContext,
-  CallRef,
-  CallResolver,
-  ResolvedTarget,
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  pickSingleCandidate,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type CallResolver,
+  type ResolvedTarget,
 } from "../../../../../../contracts/types/codegraph.js";
 
 const JS_EXTS = [".js", ".jsx", ".mjs", ".cjs"];
@@ -29,23 +32,42 @@ const JS_EXTS = [".js", ".jsx", ".mjs", ".cjs"];
 export class JavascriptCallResolver implements CallResolver {
   readonly language = "javascript";
 
+  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
+
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
+    // Intra-class `this.X()` / `super.X()` — instance method dispatch.
+    // Target symbolId composes as `<EnclosingClass>#<member>` per the
+    // project convention (`.claude/rules/symbolid-convention.md`).
+    // Falls back to `.` (static) and same-file short-name only when
+    // the instance lookup misses.
+    if (call.receiver === "this" || call.receiver === "super") {
+      if (ctx.callerScope.length > 0) {
+        const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+        const fqName = `${enclosing}#${call.member}`;
+        const direct = ctx.symbolTable.lookup(fqName).find((def) => def.relPath === ctx.callerFile);
+        if (direct) return { targetRelPath: direct.relPath, targetSymbolId: direct.symbolId };
+        const staticFqName = `${enclosing}.${call.member}`;
+        const staticHit = ctx.symbolTable.lookup(staticFqName).find((def) => def.relPath === ctx.callerFile);
+        if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
+        const sameFile = ctx.symbolTable.lookupByShortName(call.member).find((def) => def.relPath === ctx.callerFile);
+        if (sameFile) return { targetRelPath: sameFile.relPath, targetSymbolId: sameFile.symbolId };
+      }
+    }
     if (call.receiver) {
       const match = ctx.imports.find((imp) => importMatchesReceiver(imp.importText, call.receiver as string));
       if (match) {
         const targetFile = mapJavascriptImportToFile(match.importText, ctx.callerFile);
         if (targetFile) {
           const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
-          const target = candidates[0];
+          const target = pickSingleCandidate(candidates, this.mode);
           if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
           return { targetRelPath: targetFile, targetSymbolId: null };
         }
       }
     }
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
-    if (fallback.length === 1) {
-      return { targetRelPath: fallback[0].relPath, targetSymbolId: fallback[0].symbolId };
-    }
+    const target = pickSingleCandidate(fallback, this.mode);
+    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     return null;
   }
 }

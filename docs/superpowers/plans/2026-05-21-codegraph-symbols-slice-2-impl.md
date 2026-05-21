@@ -27,11 +27,67 @@ done; Slice 2 deferred sections + new incremental-indexing requirement)
 
 ---
 
+## Execution status (snapshot 2026-05-21)
+
+| Phase / Task                             | Status              | Evidence (commit)                                                                                                     |
+| ---------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| A1 — Registry-driven IngestFacade        | ✅ DONE             | `61b20eed`                                                                                                            |
+| A2 — Per-provider EnrichmentMetrics      | ✅ DONE             | `cb2a447d`                                                                                                            |
+| A3 — DuckDB lock graceful disable        | ❌ OPEN             | `tea-rags-mcp-pwx5`                                                                                                   |
+| A4a — Deletion-hook contract             | ✅ DONE             | `fd4177ef`                                                                                                            |
+| A4b — Modify-semantics edge clearing     | ✅ DONE             | `359cc486`                                                                                                            |
+| A4c — Symbol-table hydration             | ✅ DONE             | `9ddac0fb`                                                                                                            |
+| A4d — Sync wiring                        | ✅ DONE             | `daca6c7d`                                                                                                            |
+| B1 — transitiveImpact                    | ✅ DONE             | `54c6b1f2`                                                                                                            |
+| B2 — find_cycles + Tarjan SCC            | ✅ DONE             | `b05ddd44`                                                                                                            |
+| B3 — PageRank over method graph          | ✅ DONE             | `a3092db5`                                                                                                            |
+| B4 — Betweenness centrality              | ❌ CUT (2026-05-21) | No preset references it; Slice 6 path tracing surfaces brokers organically; O(V·E) cost without consumer. No backlog. |
+| D1 — Universal fanIn/fanOut reverse-pass | ❎ OBSOLETE         | Superseded by polyglot walkers `c55d34df`, `3bef50f6` (8 languages)                                                   |
+| D2 — fanOutPerLine raw signal            | ✅ DONE             | `e3506a67`                                                                                                            |
+| D3 — isHub/isLeaf universal parity       | ✅ IMPLICIT         | Inherited from D1 supersession (adaptive-percentile derivation)                                                       |
+| D4 — Composite preset overrides          | ✅ DONE             | `5ac66b62`                                                                                                            |
+| D5 — `architecturalHub`                  | ✅ DONE             | `5ac66b62`                                                                                                            |
+| D5 — `entryPoint`                        | ✅ DONE             | `c55d34df`                                                                                                            |
+| D5 — `changeRisk`                        | ⏸ MOVED TO SLICE 4  | Blocked on C1+C2 (`wtkz`, `thca`); see `tea-rags-mcp-jkdp`                                                            |
+| D5 — `safeToRefactor`                    | ⏸ MOVED TO SLICE 4  | Blocked on C2 (`thca`); see `tea-rags-mcp-jkdp`                                                                       |
+| D5 — `couplingComplexity`                | ⏸ MOVED TO SLICE 4  | Blocked on C1+C2 (`wtkz`, `thca`); see `tea-rags-mcp-jkdp`                                                            |
+
+**Bonus work delivered in Slice 2 worktree (not originally scoped):**
+
+- Polyglot walkers: bash, go, java, javascript, python, ruby (Zeitwerk), rust
+- Cross-class TS resolver via `classFieldTypes`
+- Provider-gating epic (`tea-rags-mcp-igk6`) — `CompositeRerankPreset.requires`
+  - `App.hasProvider` + Reranker filtering + MCP tool conditional registration
+- PageRank infra refactor (`557635b0`) — graph algorithms moved into
+  `trajectory/codegraph/infra/`; adapter is now pure CRUD
+
+**Remaining for Slice 2 closure:**
+
+1. A3 — `tea-rags-mcp-pwx5` graceful DuckDB lock (option 1)
+2. B4 decision (cut or implement)
+3. Commit accumulated changes (provider-gating + cross-class) in thematic
+   batches
+4. Merge worktree → main + build + link + reconnect MCP
+
+---
+
 ## Non-Goals (Slice 3+)
 
-- Python / Ruby / Elixir extraction hooks (Slice 3)
+- Python / Ruby / Elixir extraction hooks (**Slice 3** — `tea-rags-mcp-qjgs`;
+  the 8 main walkers — bash, go, java, javascript, python, ruby, rust,
+  typescript — actually shipped inside Slice 2 worktree but the formal "Slice 3"
+  epic owns the regex-fallback hook + polyglot-repo validation closure)
 - Regex-fallback resolver for unknown languages (Slice 3)
-- PostgreSQL `GraphDbClient` backend with declarative FK + CASCADE (Slice 4)
+- **Static complexity track** (cyclomatic + cognitive + file aggregates) + the
+  D5 composite presets that depend on it (`changeRisk`, `safeToRefactor`,
+  `couplingComplexity`) — moved to **Slice 4** (`tea-rags-mcp-jkdp`) because
+  their weights require `complexity` + `cognitiveLoad` derived signals that
+  don't yet exist. `entryPoint` + `architecturalHub` D5 composites ship in Slice
+  2 (no complexity dependency).
+- PostgreSQL `GraphDbClient` backend with declarative FK + CASCADE — **extracted
+  to follow-up epic `tea-rags-mcp-wj4s` (P4)**. Activated only on concrete
+  multi-tenant demand; DuckDB graceful-disable (`factory.ts` `wireCodegraph`
+  lock catch) already handles single-host multi-process scenarios.
 - Temporal sub-graph (cg*temporal*\*) and `TemporalTrajectory` (Slice 5)
 - Path-tracing / cluster-detection MCP tools (Slice 6 — `tea-rags-mcp-uxsr`)
 - Auto-background backfill on activation (separate spec)
@@ -41,7 +97,7 @@ done; Slice 2 deferred sections + new incremental-indexing requirement)
 
 ```
 A1 (f5kk) ─────┐
-A2 (5qnw) ─────┼─→ A4a (deletion-hook) → A4b (modify-semantics) → A4c (symbol-hydration) → A4d (sync-wiring) ─→ B1 → B2 → B3 → [B4]
+A2 (5qnw) ─────┼─→ A4a (deletion-hook) → A4b (modify-semantics) → A4c (symbol-hydration) → A4d (sync-wiring) ─→ B1 → B2 → B3 ✕ B4 [CUT 2026-05-21]
 A3 (pwx5) ─────┘
 ```
 
@@ -51,7 +107,9 @@ A3 (pwx5) ─────┘
 - B1 (transitiveImpact) and B2 (find_cycles) share the cycle-aware traversal
   helper; B1 first so the helper is well-tested by B2.
 - B3 (pageRank) is independent of B1/B2 but later for compute-budget reasons.
-- B4 (betweenness) is a candidate cut — evaluate after B3 is live.
+- B4 (betweenness) — **CUT** (decided 2026-05-21). See Task B4 section for full
+  rationale. No backlog task created. Brokers will surface organically via Slice
+  6 path tracing.
 
 ---
 
@@ -406,30 +464,77 @@ size, e.g. top 5%).
 
 **Commit:** `feat(codegraph): pageRank method signal with iterative damping`
 
-### Task B4 (CANDIDATE CUT): betweenness centrality
+### Task B4 — ~~betweenness centrality~~ CUT (decided 2026-05-21)
 
-Compute betweenness only if B1-B3 ship under budget. Brandes' algorithm is
-O(V·E) — expensive on large graphs. Evaluate cost on tea-rags self-test (8k
-chunks, ~700 files) before committing to this Task.
+**Status:** CUT. No backlog task created.
+
+**Rationale:**
+
+1. **No preset references it.** Verified `grep "betweenness"` across
+   `src/core/domains/trajectory/codegraph/.../presets/` and
+   `src/core/domains/trajectory/composite/presets/` = 0 matches. Neither D4
+   overrides (blastRadius, hotspots, techDebt, dangerous, ownership,
+   securityAudit, codeReview) nor D5 composites (architecturalHub, entryPoint,
+   changeRisk, safeToRefactor, couplingComplexity) weight `betweenness`. Adding
+   a signal that no preset consumes adds cost without value.
+
+2. **Slice 6 path tracing (tea-rags-mcp-uxsr) solves the same job.** Broker /
+   architectural-seam files surface organically in high-risk paths produced by
+   `trace_paths` + enrichment join. The brokerage concept is a derived
+   observation of path tracing, not a dedicated metric.
+
+3. **Compute cost vs. value.** Brandes' algorithm is O(V·E) — ~3k method nodes ×
+   ~30k edges ≈ 90M operations on tea-rags self-test (1-3s indexing-time hit).
+   Larger codebases scale to tens of seconds. Sampling approximations
+   (Brandes-Pich) add complexity. No user has asked for broker detection.
+
+4. **Yatish 2020 caveat.** Structural metrics (betweenness, closeness) AUC ~54%
+   for defect prediction vs process metrics 95%. Investment ratio poor.
+
+5. **Zero cost of deferral.** Migration `004-cg-symbols-metrics.sql` already
+   open-extends `cg_symbols_metrics` with arbitrary columns. If concrete demand
+   surfaces post-Slice 6, betweenness can be added as a derived signal in any
+   later slice without schema change — same recursive-CTE / sql-graph
+   infrastructure stays.
+
+**Decision recorded by:** owner, 2026-05-21.
 
 ---
 
-## Phase D — Universal fan-graph extension (folded in 2026-05-21)
+## Phase D — Universal fan-graph extension (folded in 2026-05-21, revised 2026-05-21)
+
+> **REVISION 2026-05-21 (post-implementation):** the plan's original Phase D
+> assumed only TS had an extraction walker, so universal `fanIn` / `fanOut`
+> would come from a reverse-pass over the legacy `imports[]` payload field (D1).
+> During Slice 2 execution we instead landed **dedicated walkers** for bash, go,
+> java, javascript, python, ruby (Zeitwerk-aware), rust, and typescript (commits
+> `c55d34df`, `3bef50f6`). Each walker writes `cg_symbols_edges_file` directly,
+> so `getFanIn` / `getFanOut` (which read `COUNT(*) FROM cg_symbols_edges_file`)
+> are already universal across every language tea-rags indexes (primary
+> `typescript` + also `javascript`, `python`; `markdown` and `jsonc` have no
+> meaningful imports). **D1 is therefore obsolete as written** — the
+> imports[]-reverse-pass fallback is no longer needed. D3 also collapses:
+> `isHub` / `isLeaf` derive from `fanIn` / `fanOut` via adaptive percentiles and
+> inherit universal coverage automatically. D5 has been retitled and partially
+> moved out — see below.
 
 Per parallel research (Yatish 2020, Santos 2017, arxiv 2106.04687, SonarQube),
 the codegraph signal namespace absorbs the **universal** fan-graph layer:
 
-1. Today `codegraph.file.fanIn` / `codegraph.file.fanOut` exist only for TS
-   files (extraction hook).
-2. Phase D extends them to **all indexed files** by reverse-pass over the
+1. ~~Today `codegraph.file.fanIn` / `codegraph.file.fanOut` exist only for TS
+   files (extraction hook).~~ **Superseded:** all 8 walkers populate edges.
+2. ~~Phase D extends them to **all indexed files** by reverse-pass over the
    existing `imports[]` payload — language-agnostic fallback when no extraction
-   hook exists.
+   hook exists.~~ **Superseded by per-language walker coverage.**
 3. Adds raw `chunk.fanOutPerLine = imports.length / chunkSize` to neutralize the
    size-moderation effect on fan-out (arxiv 2106.04687) — replaces naïve
-   `fanOut` derived as the primary efferent-coupling signal.
-4. Expands raw signals: `codegraph.file.isHub` and `codegraph.file.isLeaf`
+   `fanOut` derived as the primary efferent-coupling signal. **(DONE —
+   `e3506a67`)**
+4. ~~Expands raw signals: `codegraph.file.isHub` and `codegraph.file.isLeaf`
    already exist (Slice 1) — Phase D ensures they're populated via the universal
-   fallback path as well, not only the TS extraction path.
+   fallback path as well, not only the TS extraction path.~~ **Universal
+   coverage inherited from D1 supersession; signals stay adaptive-percentile
+   derived from fanIn/fanOut and are already universal.**
 5. Removes the originally-proposed standalone `instability` (Martin) preset
    (Santos 2017: 48% projects have I=1, no discrimination). Keeps `instability`
    as a signal embedded in `architecturalHub` / `changeRisk`.
@@ -441,22 +546,17 @@ the codegraph signal namespace absorbs the **universal** fan-graph layer:
   `2026-05-22-temporal-coupling-trajectory-spec.md` (planning placeholder —
   author when Slice 2 closes).
 
-### Task D1: Universal fanIn / fanOut via imports[] reverse-pass
+### Task D1: ~~Universal fanIn / fanOut via imports[] reverse-pass~~ — OBSOLETE
 
-**Files:**
+**Status:** OBSOLETE (2026-05-21). Superseded by per-language walker coverage
+landed in commits `c55d34df` (Python + Ruby Zeitwerk-aware) and `3bef50f6`
+(JavaScript, Go, Java, Rust, Bash). All 8 walkers
+(`src/core/domains/ingest/pipeline/chunker/extraction/*-walker.ts`) write
+`cg_symbols_edges_file` directly; `DuckDbGraphClient.getFanIn` / `getFanOut`
+(`client.ts:389-403`) count over that table — universal across all indexed
+languages without a reverse-pass fallback.
 
-- Modify: `src/core/domains/trajectory/codegraph/symbols/payload-signals.ts` —
-  broaden descriptor docs to clarify dual-source population (extraction edges OR
-  `imports[]` reverse-pass fallback)
-- Create: `src/core/domains/trajectory/codegraph/imports-reverse-pass.ts` —
-  accumulator over Qdrant scroll emits `file.importedByCount` reverse-index of
-  `imports[]`
-- Modify: `CodegraphEnrichmentProvider.buildFileSignals` — when a file has no
-  extraction edges, populate fanIn/fanOut from imports-reverse-pass +
-  `imports.length` respectively
-- Tests: Python file gets fanIn populated; TS file's fanIn from extraction takes
-  precedence over imports[] fallback; isHub/isLeaf computed from universal path
-  equal those from extraction path for cross-tested TS file
+No files to create. The proposed `imports-reverse-pass.ts` is not needed.
 
 ### Task D2: fanOutPerLine raw signal
 
@@ -474,16 +574,15 @@ the codegraph signal namespace absorbs the **universal** fan-graph layer:
 Without normalization, big files trigger false positives in fan-out-based
 presets.
 
-### Task D3: isHub / isLeaf universal-coverage parity
+### Task D3: ~~isHub / isLeaf universal-coverage parity~~ — IMPLICITLY DONE
 
-**Files:**
+**Status:** IMPLICITLY DONE (2026-05-21). With D1 superseded by per-language
+walker coverage, `fanIn` / `fanOut` are populated universally and `isHub` /
+`isLeaf` (adaptive p95 thresholds on those rawscores) inherit universal coverage
+automatically. The "verify in tests" intent is covered by the polyglot
+validation task `tea-rags-mcp-wajk` (under Slice 3 epic `tea-rags-mcp-qjgs`).
 
-- Modify: `CodegraphEnrichmentProvider.buildFileSignals` — populate
-  `codegraph.file.isHub` and `codegraph.file.isLeaf` consistently for both
-  extraction-edge and reverse-pass paths (currently isHub/isLeaf use adaptive
-  percentiles which work on either source — verify in tests)
-- Tests: Python file gets isHub/isLeaf populated identically to TS file given
-  same fanIn/fanOut shape
+No files to modify under this task.
 
 ### Task D4: Composite preset overrides for existing names (architecture: registry → composite)
 
@@ -557,9 +656,26 @@ files stay untouched.
   composites that need `temporalCoupling` get added without touching git or
   codegraph trajectory files.
 
-### Task D5: New composite presets (minus instability, same composite/ directory)
+### Task D5: New composite presets — SPLIT BETWEEN SLICE 2 AND SLICE 4
 
-| Preset                   | `weights` (derived, research-corrected)                                                                                                    | `overlayMask` (raw)                                                                    |
+**Split 2026-05-21:** D5 weights mix two signal sources — fan-graph (already in
+Slice 2) and static-complexity (`complexity`, `cognitiveLoad` derived). The
+complexity-dependent presets need raw `chunk.cyclomatic` / `chunk.cognitive`
+payload fields that don't yet exist; they are the Slice 4 deliverable
+(`tea-rags-mcp-jkdp`).
+
+| Preset                   | Complexity dep? | Ships in                          | Status                                                                                                                   |
+| ------------------------ | --------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **`architecturalHub`**   | no              | **Slice 2** ✅                    | DONE (`5ac66b62`) — `isHub`, `fanIn`, `fanOutPerLine`, `churn` only                                                      |
+| **`entryPoint`**         | no              | **Slice 2** ✅                    | DONE (`c55d34df`) — `fanOutPerLine`, `fanIn` (negative), `chunkSize`                                                     |
+| **`changeRisk`**         | C1 + C2         | **Slice 4** (`tea-rags-mcp-jkdp`) | BLOCKED on `wtkz` (cyclomatic) + `thca` (cognitive); also uses `fanIn`, `churn`, `bugFix`, `volatility`, `knowledgeSilo` |
+| **`safeToRefactor`**     | C2              | **Slice 4** (`tea-rags-mcp-jkdp`) | BLOCKED on `thca` (cognitive); also uses `isLeaf`, `stability`                                                           |
+| **`couplingComplexity`** | C1 + C2         | **Slice 4** (`tea-rags-mcp-jkdp`) | BLOCKED on `wtkz` + `thca`; also uses `fanOutPerLine`, `chunkSize`                                                       |
+
+Weights (research-corrected, kept verbatim from original Phase D for the Slice 4
+deliverable):
+
+| Preset                   | `weights` (derived)                                                                                                                        | `overlayMask` (raw)                                                                    |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | **`changeRisk`**         | `similarity` 0.2, `churn` 0.15, `bugFix` 0.15, `volatility` 0.1, `complexity` 0.1, `cognitiveLoad` 0.05, `fanIn` 0.15, `knowledgeSilo` 0.1 | chunk: `cyclomatic`, `cognitive`, `bugFixRate`; file: `importedByCount`, `commitCount` |
 | **`architecturalHub`**   | `similarity` 0.2, `isHub` 0.4, `fanIn` 0.2, `fanOutPerLine` 0.1, `churn` 0.1                                                               | file: `importedByCount`, `imports`, `isHub`                                            |
@@ -579,19 +695,39 @@ volatility + knowledgeSilo = 0.5) dominate product metrics (complexity +
 cognitive + fanIn = 0.3), per Yatish 2020. Similarity preserved at 0.2 for
 relevance grounding.
 
-### Phase D Dependency DAG
+### Phase D Dependency DAG (revised 2026-05-21)
 
 ```
-D1 (universal fan-graph) ─→ D2 (fanOutPerLine) ─→ D3 (isHub/isLeaf parity) ─→ D4 (preset mods) ─→ D5 (new composites)
+D1 (OBSOLETE — superseded by polyglot walkers c55d34df + 3bef50f6)
+                                                        ↓
+                                                    D2 (DONE — e3506a67)
+                                                        ↓
+D3 (IMPLICIT — inherited from universal walker coverage)
+                                                        ↓
+                            D4 (DONE — 5ac66b62)
+                                                        ↓
+                  D5/Slice 2 ✅ ────────────  D5/Slice 4 (blocked on C1+C2)
+                  architecturalHub             changeRisk
+                  entryPoint                   safeToRefactor
+                                               couplingComplexity
 ```
 
-D1 is foundational — all subsequent tasks depend on universal-coverage fanIn.
+### Slice 2 placement decision (revised 2026-05-21)
 
-### Slice 2 placement decision
+Original recommendation (D1+D2+D3 within Slice 2 alongside Phase B; D4+D5 as
+closing batch) **was partially revised at execution time**:
 
-Phase D adds 5 sub-tasks. Recommended order: D1 + D2 + D3 ship within Slice 2
-alongside Phase B; D4 + D5 are pure preset/weight changes and ship as the
-**closing batch** of Slice 2 (no schema migration, low risk).
+- D1 → polyglot walkers absorbed the universal-coverage need (commits
+  `c55d34df`, `3bef50f6`); D1 marked obsolete.
+- D2 → DONE within Slice 2 (`e3506a67`).
+- D3 → implicit DONE via D1 supersession.
+- D4 → DONE within Slice 2 (`5ac66b62`).
+- **D5 split**: `architecturalHub` + `entryPoint` shipped in Slice 2; the three
+  complexity-dependent composites (`changeRisk`, `safeToRefactor`,
+  `couplingComplexity`) deferred to Slice 4 (`tea-rags-mcp-jkdp`) because their
+  weights name derived signals (`complexity`, `cognitiveLoad`) that require new
+  raw payload fields (`chunk.cyclomatic`, `chunk.cognitive`) delivered by the
+  static-complexity track (C1+C2).
 
 ### Knowledge-base docs (post-merge)
 

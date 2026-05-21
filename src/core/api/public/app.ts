@@ -14,6 +14,7 @@
  * 5. Register MCP tool in src/mcp/tools/
  */
 
+import type { GraphDbClientPool } from "../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
@@ -105,6 +106,11 @@ export interface App {
   getCallers: (request: GetCallersRequest) => Promise<GetCallersResponse>;
   getCallees: (request: GetCalleesRequest) => Promise<GetCalleesResponse>;
   findCycles: (request: FindCyclesRequest) => Promise<FindCyclesResponse>;
+
+  // -- Provider availability — sync query used by MCP tool registrars to
+  // skip registration when a required trajectory provider is not loaded.
+  // Source of truth is the registered trajectory keys at composition time.
+  hasProvider: (key: string) => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +129,21 @@ export interface AppDeps {
   modelGuard?: EmbeddingModelGuard;
   /** Optional — present when CODEGRAPH_DISABLED is unset and DuckDB is wired. */
   graphFacade?: GraphFacade;
+  /**
+   * Per-collection DuckDB pool — present when codegraph is wired.
+   * CollectionOps uses it to delete the per-collection DuckDB file when
+   * the Qdrant collection is dropped (clear / delete / force-reindex
+   * paths). Omitted when codegraph is disabled — ops degrades to
+   * Qdrant-only cleanup.
+   */
+  codegraphPool?: GraphDbClientPool;
+  /**
+   * Set of trajectory keys registered at composition time (from
+   * `TrajectoryRegistry.getRegisteredKeys()`). Backs `App.hasProvider` —
+   * MCP tool registrars consult it to skip registering tools whose
+   * required provider is not loaded. Defaults to empty when omitted.
+   */
+  registeredProviderKeys?: ReadonlySet<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +184,13 @@ function wireOps(deps: AppDeps): {
   projectRegistry: ProjectRegistryOps;
 } {
   return {
-    collection: new CollectionOps(deps.qdrant, deps.embeddings, deps.quantizationScalar, deps.modelGuard),
+    collection: new CollectionOps(
+      deps.qdrant,
+      deps.embeddings,
+      deps.quantizationScalar,
+      deps.modelGuard,
+      deps.codegraphPool,
+    ),
     document: new DocumentOps(deps.qdrant, deps.embeddings, deps.modelGuard),
     projectRegistry: deps.projectRegistryOps,
   };
@@ -237,5 +264,13 @@ export function createApp(deps: AppDeps): App {
     getCallers: async (req) => (deps.graphFacade ? deps.graphFacade.getCallers(req) : { callers: [] }),
     getCallees: async (req) => (deps.graphFacade ? deps.graphFacade.getCallees(req) : { callees: [] }),
     findCycles: async (req) => (deps.graphFacade ? deps.graphFacade.findCycles(req) : { cycles: [] }),
+
+    // -- Provider availability — backs MCP tool-registrar gating. Source
+    // of truth is `registeredProviderKeys` populated by composition from
+    // `TrajectoryRegistry.getRegisteredKeys()`.
+    hasProvider: (key) => (deps.registeredProviderKeys ?? EMPTY_PROVIDER_SET).has(key),
   };
 }
+
+/** Shared empty set so the default-fallback branch on every hasProvider call doesn't allocate. */
+const EMPTY_PROVIDER_SET: ReadonlySet<string> = new Set();

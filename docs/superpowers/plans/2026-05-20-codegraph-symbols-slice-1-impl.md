@@ -38,8 +38,9 @@ in lockstep with this plan per `.claude/rules/.local/plan-beads-sync.md`.
 - PostgreSQL adapter (Slice 4 — `GraphDbClient` interface ships now to keep
   refactor cost zero).
 - Non-TypeScript languages (Slice 3).
-- Tier 2-3 metrics: `transitiveImpact`, `pageRank`, `betweenness`, cycle
-  detection (Slice 2).
+- Tier 2-3 metrics: `transitiveImpact`, `pageRank`, cycle detection (Slice 2).
+  Betweenness was originally listed here too; cut from Slice 2 (2026-05-21) per
+  Slice 2 plan Task B4.
 - MCP tools beyond `get_callers`/`get_callees` (`get_dependencies`,
   `get_dependents`, `find_cycles` — Slice 2).
 - Temporal coupling and other sub-graphs `cg_<other>_*` (Slice 5+).
@@ -3081,8 +3082,8 @@ until they upgrade."
 ## Out of scope (Slice 2-5)
 
 - `get_dependencies`, `get_dependents`, `find_cycles` MCP tools (Slice 2)
-- `transitiveImpact`, `pageRank`, `betweenness` derived signals + recursive CTE
-  (Slice 2)
+- `transitiveImpact`, `pageRank` derived signals + recursive CTE (Slice 2 —
+  betweenness cut 2026-05-21, see Slice 2 plan Task B4)
 - `cg_symbols_cycles` table (Slice 2)
 - Python, Ruby, Elixir chunker hooks + resolvers (Slice 3)
 - Regex-fallback hook for unsupported languages (Slice 3)

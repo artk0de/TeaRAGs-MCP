@@ -13,15 +13,20 @@
  * `foo/bar/mod.rs`). External crates are out of scope.
  */
 
-import type {
-  CallContext,
-  CallRef,
-  CallResolver,
-  ResolvedTarget,
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  pickSingleCandidate,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type CallResolver,
+  type ResolvedTarget,
 } from "../../../../../../contracts/types/codegraph.js";
 
 export class RustCallResolver implements CallResolver {
   readonly language = "rust";
+
+  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
 
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
     if (call.receiver) {
@@ -32,15 +37,14 @@ export class RustCallResolver implements CallResolver {
           const candidates = ctx.symbolTable
             .lookupByShortName(call.member)
             .filter((def) => def.relPath.endsWith(`${suffix}.rs`) || def.relPath.endsWith(`${suffix}/mod.rs`));
-          const target = candidates[0];
+          const target = pickSingleCandidate(candidates, this.mode);
           if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
         }
       }
     }
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
-    if (fallback.length === 1) {
-      return { targetRelPath: fallback[0].relPath, targetSymbolId: fallback[0].symbolId };
-    }
+    const target = pickSingleCandidate(fallback, this.mode);
+    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     return null;
   }
 }

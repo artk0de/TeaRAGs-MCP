@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../contracts/types/reranker.js";
+import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../../contracts/types/reranker.js";
 
 /**
  * Composite override for `ownership` — fanIn amplifies bus-factor risk.
@@ -7,11 +7,12 @@ import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../contrac
  * file that's imported by 50 modules is the urgent knowledge-transfer
  * target. fanIn weight surfaces that distinction at rank time.
  */
-export class OwnershipCompositePreset implements RerankPreset {
+export class OwnershipCompositePreset implements CompositeRerankPreset {
   readonly name = "ownership";
   readonly description = "Silo-owned code that other files depend on — prioritised bus-factor target";
   readonly signalLevel: SignalLevel = "file";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];
+  readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.3,
     ownership: 0.3,

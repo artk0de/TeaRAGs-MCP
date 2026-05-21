@@ -15,6 +15,9 @@ import { CODEGRAPH_SYMBOLS_PRESETS } from "./rerank/presets/index.js";
 export type SymbolsTrajectoryDeps = CodegraphProviderDeps;
 
 export function createSymbolsTrajectory(deps: SymbolsTrajectoryDeps): Trajectory {
+  // Spread preserves both routing modes — pool (production via bootstrap)
+  // and direct graphDb/symbolTable (tests). `CodegraphEnrichmentProvider`
+  // enforces the "exactly one mode" invariant in its constructor.
   const provider = new CodegraphEnrichmentProvider({
     ...deps,
     derivedSignals: CODEGRAPH_SYMBOLS_DERIVED_SIGNALS,

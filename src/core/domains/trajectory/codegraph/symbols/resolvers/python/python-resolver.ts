@@ -2,6 +2,12 @@
  * Python implementation of the `CallResolver` contract.
  *
  * Resolution strategy mirrors TSCallResolver:
+ *   0. Local binding: if `ctx.localBindings[receiver]` carries a known
+ *      type name, resolve `<type>.<member>` against the symbol table.
+ *      When the type's import resolves to a file but the method is not
+ *      defined there, DROP the edge — never fall through to the global
+ *      short-name path, which is exactly the source of the ugnest false
+ *      positive (`serializer.is_valid()` attributed to `ConfirmationCode`).
  *   1. With a receiver: find the `import` whose last module segment
  *      matches the receiver name; map the module path to a file via
  *      `mapPythonImportToFile`; then look up the member in the symbol
@@ -18,36 +24,138 @@
  * AND the final segment as the receiver match.
  */
 
-import type {
-  CallContext,
-  CallRef,
-  CallResolver,
-  ResolvedTarget,
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  pickSingleCandidate,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type CallResolver,
+  type ResolvedTarget,
 } from "../../../../../../contracts/types/codegraph.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 
 export class PythonCallResolver implements CallResolver {
   readonly language = "python";
 
+  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
+
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
     if (call.receiver) {
+      // Step 0: walker-inferred local type wins over heuristic
+      // resolution. When the receiver maps to a known class via
+      // `var = ClassName(...)`, `var: ClassName`, or `def f(var: Cls)`,
+      // resolution is constrained to that class — if the method isn't
+      // defined on that class, the edge is dropped rather than guessed.
+      const localType = ctx.localBindings?.[call.receiver];
+      if (localType) {
+        const localTarget = this.resolveByLocalType(localType, call.member, ctx);
+        // `null` means "we know the type but cannot pin the method to
+        // its file" — DROP, do not fall through to the heuristic paths.
+        return localTarget;
+      }
       const match = ctx.imports.find((imp) => pythonImportMatchesReceiver(imp.importText, call.receiver as string));
       if (match) {
         const targetFile = mapPythonImportToFile(match.importText, ctx.callerFile);
         if (targetFile) {
           const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
-          const target = candidates[0];
+          const target = pickSingleCandidate(candidates, this.mode);
           if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
           return { targetRelPath: targetFile, targetSymbolId: null };
         }
       }
     }
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
-    if (fallback.length === 1) {
-      return { targetRelPath: fallback[0].relPath, targetSymbolId: fallback[0].symbolId };
-    }
+    const target = pickSingleCandidate(fallback, this.mode);
+    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     return null;
   }
+
+  /**
+   * Look up `<typeName>.<member>` from the walker's local-binding
+   * inference. Strategy:
+   *   1. Resolve `typeName` to a file via the receiver-matches-import
+   *      check on the bare class name (last segment for qualified
+   *      types like `module.ClassName`).
+   *   2. Within that file's symbols, look for `<member>` as a method.
+   *   3. If the type's import isn't found, broaden: look for ANY
+   *      symbol in the table whose shortName matches the bare type
+   *      name AND has scope ending in that type — the symbol file
+   *      becomes the target.
+   *   4. If the target file is identified but `<member>` is not in
+   *      it, return a partial edge (file-only) so the file-level fan
+   *      remains accurate even when the method is inherited from a
+   *      base class outside the project (DRF `is_valid` on
+   *      `Serializer`).
+   *   5. Return `null` only when even the type's file is unknown.
+   */
+  private resolveByLocalType(typeName: string, member: string, ctx: CallContext): ResolvedTarget | null {
+    // Bare class — `ToggleReactionSerializer`. Resolve via the import
+    // list: walker either imported the class directly (`from x import
+    // ToggleReactionSerializer`) or as a module path that ends in the
+    // class name (rare).
+    const bareType = lastSegment(typeName);
+    const targetFile = resolveTypeFile(bareType, ctx);
+    if (!targetFile) return null;
+
+    const candidates = ctx.symbolTable
+      .lookupByShortName(member)
+      .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType);
+    const target = pickSingleCandidate(candidates, this.mode);
+    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+    // The class itself lives in `targetFile` but `member` is inherited
+    // or defined elsewhere — record the file-level attribution so the
+    // file-edge stays accurate; drop the method-level edge by passing
+    // a null symbol id.
+    return { targetRelPath: targetFile, targetSymbolId: null };
+  }
+}
+
+/**
+ * Find the file path of a bare class name by walking the import list.
+ * Two shapes match:
+ *   - `from <module> import <Bare>` — importText is `<module>`; the
+ *     class name appears in the symbol table at the file `<module>`
+ *     resolves to.
+ *   - `import <module>` where `<module>` ends in the bare type name.
+ *
+ * Returns the file path of the class definition when an import
+ * resolves there, or `null` otherwise.
+ */
+function resolveTypeFile(bareType: string, ctx: CallContext): string | null {
+  // First pass: scan symbol table for ANY definition matching the
+  // bare type name. If it's unique we have the file directly.
+  const tableMatches = ctx.symbolTable.lookupByShortName(bareType);
+  if (tableMatches.length === 1) return tableMatches[0].relPath;
+
+  // Second pass: try to disambiguate via imports — the class file
+  // must be one of the files reachable from the caller's imports.
+  if (tableMatches.length > 1) {
+    const importedFiles = new Set<string>();
+    for (const imp of ctx.imports) {
+      const file = mapPythonImportToFile(imp.importText, ctx.callerFile);
+      if (file) importedFiles.add(file);
+    }
+    const filtered = tableMatches.filter((def) => importedFiles.has(def.relPath));
+    if (filtered.length === 1) return filtered[0].relPath;
+    // Still ambiguous — refuse to guess.
+    return null;
+  }
+
+  // Third pass: bare type not in symbol table (defined outside the
+  // project — e.g. DRF Serializer). Walk imports: if any import path
+  // ends in the type name and resolves to a file, attribute to that.
+  for (const imp of ctx.imports) {
+    if (lastSegment(imp.importText) !== bareType) continue;
+    const file = mapPythonImportToFile(imp.importText, ctx.callerFile);
+    if (file) return file;
+  }
+  return null;
+}
+
+function lastSegment(qualified: string): string {
+  const parts = qualified.split(".");
+  return parts[parts.length - 1] ?? qualified;
 }
 
 function pythonImportMatchesReceiver(importText: string, receiver: string): boolean {

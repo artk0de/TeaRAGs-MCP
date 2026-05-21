@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset } from "../../../../contracts/types/reranker.js";
+import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
 /**
  * Blast-radius composite preset — combines codegraph fan-graph signals
@@ -20,10 +20,11 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
  * - Santos 2017 — `instability` rejected as standalone preset (skewed
  *   distribution, no discrimination); kept here as overlay signal only.
  */
-export class BlastRadiusPreset implements RerankPreset {
+export class BlastRadiusPreset implements CompositeRerankPreset {
   readonly name = "blastRadius";
   readonly description = "Rank by blast radius — fanIn + churn dominant, structural overlays expose hub-ness";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks"];
+  readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     similarity: 0.2,
     fanIn: 0.3,

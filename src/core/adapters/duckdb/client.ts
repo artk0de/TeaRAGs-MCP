@@ -1,8 +1,9 @@
 /**
  * DuckDB implementation of the codegraph `GraphDbClient` contract.
  *
- * Slice 1 uses an embedded, file-backed DuckDB instance per `App`, named
- * `<collection>.codegraph.duckdb` under the data directory. Slice 4 adds
+ * Slice 1 uses an embedded, file-backed DuckDB instance per collection,
+ * routed by `GraphDbClientPool` to `<dataDir>/codegraph/<collection>.duckdb`.
+ * Slice 4 adds
  * `PostgresGraphClient` behind the same interface — this client owns
  * driver-specific concerns (prepared-statement reuse, BEGIN/COMMIT, value
  * binding) and the contract owns the SQL-agnostic shape.
@@ -40,11 +41,49 @@ import type {
 
 export interface DuckDbGraphClientOptions {
   path: string;
+  /**
+   * Slice 2 resource ceiling for the embedded DuckDB instance. When
+   * absent the driver picks its own defaults (≈80% of system RAM,
+   * #cores threads, no spill directory) which on large repos like
+   * ugnest causes the indexing pass to allocate 14GB+ and OOM.
+   *
+   * `memoryLimit` — DuckDB-formatted size string (`"2GB"`, `"512MB"`).
+   *   Caps per-connection RAM; once hit DuckDB spills sorts/joins to
+   *   `tempDirectory`.
+   * `threads` — number of worker threads. Codegraph is writer-bound so
+   *   2 is plenty; more inflates per-thread arena memory.
+   * `tempDirectory` — absolute path the driver may use for spill
+   *   files. Created lazily by the pool / client; cleaned of stale
+   *   files on init so a prior crashed process does not leak GB of
+   *   sort spills into the data dir.
+   * `preserveInsertionOrder` — when false, DuckDB is free to reorder
+   *   rows for memory wins. The codegraph schema enforces order via
+   *   ORDER BY at read time so flipping this off costs nothing at the
+   *   query layer.
+   */
+  resources?: {
+    memoryLimit?: string;
+    threads?: number;
+    tempDirectory?: string;
+    preserveInsertionOrder?: boolean;
+  };
 }
 
 export class DuckDbGraphClient implements GraphDbClient {
   private instance?: DuckDBInstance;
   private conn?: DuckDBConnection;
+  /**
+   * Serialize transactional writes. The incremental reindex path runs
+   * `notifyDeletions` (→ `handleDeletedPaths` → `removeFile` BEGIN/COMMIT)
+   * and `processRelativeFiles` (→ `upsertFile` BEGIN/COMMIT) in
+   * `Promise.all`. DuckDB on a single shared connection rejects the
+   * second BEGIN with "cannot start a transaction within a transaction".
+   * Per-method `await` on the connection isn't enough — the BEGIN itself
+   * needs a critical section spanning the entire transaction body. We
+   * chain transactional ops onto a shared promise so callers never see
+   * nested BEGINs even under aggressive Promise.all fan-out.
+   */
+  private writeQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly options: DuckDbGraphClientOptions) {}
 
@@ -52,6 +91,74 @@ export class DuckDbGraphClient implements GraphDbClient {
     mkdirSync(dirname(this.options.path), { recursive: true });
     this.instance = await DuckDBInstance.create(this.options.path);
     this.conn = await this.instance.connect();
+
+    // Slice 2 — apply resource ceiling BEFORE migrations so the
+    // schema bootstrap itself runs under the cap. Settings are issued
+    // as separate exec() calls because DuckDB rejects compound
+    // statements via PRAGMA. Each is best-effort: if the driver
+    // version doesn't recognise the option name (older 1.x) we
+    // swallow the error rather than break ingest — the cap is a
+    // protective layer, not a correctness invariant. Production builds
+    // ship the version listed in package.json so this is realistically
+    // a no-op fallback for test fixtures linked against older drivers.
+    //
+    // The spill directory is created (idempotent mkdir) but NOT
+    // purged here — the pool already owns concurrent collection
+    // opens, and a per-open purge would race with an in-flight NDJSON
+    // spill from another collection that shares the same `.spill`
+    // directory. The pool drives stale-file cleanup at construction
+    // time (one-shot, before any acquire); per-client init only
+    // ensures DuckDB has a writable temp_directory to spill into.
+    const r = this.options.resources;
+    if (r) {
+      const spillDir = r.tempDirectory;
+      if (spillDir) {
+        try {
+          mkdirSync(spillDir, { recursive: true });
+        } catch {
+          // Directory may already exist (concurrent first-callers from
+          // the pool). The SET below is the load-bearing step.
+        }
+        await this.execSilent(`SET temp_directory = '${spillDir.replace(/'/g, "''")}'`);
+      }
+      if (r.memoryLimit) {
+        await this.execSilent(`SET memory_limit = '${r.memoryLimit.replace(/'/g, "''")}'`);
+      }
+      if (r.threads !== undefined && r.threads > 0) {
+        await this.execSilent(`SET threads = ${Math.floor(r.threads)}`);
+      }
+      if (r.preserveInsertionOrder === false) {
+        await this.execSilent(`SET preserve_insertion_order = false`);
+      }
+    }
+  }
+
+  /**
+   * Issue a SET / PRAGMA-style statement that we WANT to apply but can
+   * tolerate a driver-version error on. Used by `init()` for resource
+   * ceilings — settings are advisory, not invariants.
+   */
+  private async execSilent(sql: string): Promise<void> {
+    try {
+      await this.requireConn().run(sql);
+    } catch {
+      // Older driver versions reject unrecognised setting names; allow
+      // the ingest path to continue without the cap.
+    }
+  }
+
+  /**
+   * Serialize a write through the queue. The wrapped op runs only after
+   * the previous queued op settled — successfully OR with an error. We
+   * intentionally swallow upstream errors at the queue level (failures
+   * are rethrown to the original caller via the returned promise) so
+   * one failed write never blocks subsequent writes from starting.
+   */
+  private async serialize<T>(op: () => Promise<T>): Promise<T> {
+    const next = this.writeQueue.then(op, op);
+    // Track the next slot without surfacing errors to the chain head.
+    this.writeQueue = next.catch(() => undefined);
+    return next;
   }
 
   async close(): Promise<void> {
@@ -85,6 +192,10 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async upsertFile(node: GraphFileNode, edges: GraphEdges): Promise<void> {
+    return this.serialize(async () => this.upsertFileImpl(node, edges));
+  }
+
+  private async upsertFileImpl(node: GraphFileNode, edges: GraphEdges): Promise<void> {
     await this.exec("BEGIN");
     try {
       await this.run("INSERT OR REPLACE INTO cg_symbols_files (rel_path, language) VALUES (?, ?)", [
@@ -103,6 +214,15 @@ export class DuckDbGraphClient implements GraphDbClient {
         );
       }
       for (const e of edges.methodEdges) {
+        // GraphEdges.methodEdges allows targetSymbolId=null (the
+        // resolver case where an import resolves to a file but the
+        // called member isn't in that file's exported symbol table).
+        // The cg_symbols_edges_method PK includes target_symbol_id —
+        // DuckDB enforces NOT NULL on PK columns, so we must skip
+        // null-target edges at the boundary. File-level reach is
+        // already captured by fileEdges; the method graph only carries
+        // edges with a known target symbol.
+        if (e.targetSymbolId === null) continue;
         // INSERT OR IGNORE: same call shape may repeat — e.g.
         // `this.cache.get(x)` invoked from multiple branches of the
         // same method body. collectCalls walks every call_expression
@@ -122,6 +242,10 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async removeFile(relPath: RelPath): Promise<void> {
+    return this.serialize(async () => this.removeFileImpl(relPath));
+  }
+
+  private async removeFileImpl(relPath: RelPath): Promise<void> {
     // DuckDB rejects ON DELETE CASCADE; emulate manually. Order matters —
     // delete every edge that references this rel_path (as source OR
     // target), then delete the file row itself. Wrapped in a transaction
@@ -146,15 +270,26 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
+    return this.serialize(async () => this.upsertSymbolsImpl(relPath, definitions));
+  }
+
+  private async upsertSymbolsImpl(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
     // DELETE+INSERT inside a transaction so a partial failure leaves
     // either the full new set or the previous set — never a mix. Empty
     // definitions list clears the file (idempotent with handleDeletedPaths).
+    //
+    // INSERT OR IGNORE because the walker can legitimately emit the same
+    // symbolId twice for one file: TypeScript get/set accessor pairs,
+    // function overload signatures sharing a name, and other language
+    // patterns where multiple AST nodes contribute to the same logical
+    // identifier. The PK (rel_path, symbol_id) is identity, not
+    // occurrence count — first row wins.
     await this.exec("BEGIN");
     try {
       await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       for (const def of definitions) {
         await this.run(
-          "INSERT INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json) VALUES (?, ?, ?, ?, ?)",
+          "INSERT OR IGNORE INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json) VALUES (?, ?, ?, ?, ?)",
           [def.relPath, def.symbolId, def.fqName, def.shortName, JSON.stringify(def.scope ?? [])],
         );
       }
@@ -166,8 +301,10 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async removeSymbolsForFile(relPath: RelPath): Promise<void> {
-    // No transaction wrapper — single DELETE is atomic by itself.
-    await this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
+    // Single DELETE is atomic by itself, but still routed through the
+    // write queue so it can't interleave with an in-flight BEGIN/COMMIT
+    // on the shared connection.
+    return this.serialize(async () => this.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]));
   }
 
   async getTransitiveImpact(relPath: RelPath, maxDepth = 5): Promise<number> {
@@ -224,6 +361,56 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   /**
+   * Flush the WAL to the main database file. Issued periodically by
+   * the slice 2 streaming pass-2 so a long-running indexing pass does
+   * not accumulate an unbounded write-ahead log (the WAL grows in JS
+   * heap-resident buffers and is the proximate cause of the pre-fix
+   * OOM seen on ugnest). Wrapped in the same write queue as the
+   * upsert path so a CHECKPOINT cannot interleave with a half-open
+   * BEGIN/COMMIT.
+   */
+  async checkpoint(): Promise<void> {
+    return this.serialize(async () => this.exec("CHECKPOINT"));
+  }
+
+  /**
+   * Stream the adjacency for the requested scope as
+   * `[source, target]` pairs. Domain consumer pulls one pair at a
+   * time without materialising a JS-side array of all rows first.
+   *
+   * The DuckDB driver (`runAndReadAll`) only exposes a "read all rows"
+   * shape today — there is no cursor primitive in @duckdb/node-api
+   * 1.5.x. We still benefit by: (a) yielding incrementally so the
+   * caller can build a compact id-keyed adjacency without a parallel
+   * row-array sitting in memory, and (b) leaving the door open for a
+   * true cursor when the driver adds one. Compared to `listAdjacency`,
+   * this avoids the intermediate `Map<string, string[]>` that the
+   * adapter previously built (caller decides whether/how to bucket).
+   *
+   * For very large method-edge counts (25k+ in ugnest) the saved
+   * footprint is the Map's overhead — the wins compound with the L1
+   * memory_limit cap and L3 checkpointing in the same indexing pass.
+   */
+  async *streamAdjacency(scope: CycleScope): AsyncIterableIterator<[string, string]> {
+    if (scope === "file") {
+      const rows = await this.queryAll<{ source_rel_path: string; target_rel_path: string }>(
+        "SELECT source_rel_path, target_rel_path FROM cg_symbols_edges_file",
+      );
+      for (const row of rows) {
+        yield [row.source_rel_path, row.target_rel_path];
+      }
+      return;
+    }
+    const rows = await this.queryAll<{ source_symbol_id: string; target_symbol_id: string | null }>(
+      "SELECT source_symbol_id, target_symbol_id FROM cg_symbols_edges_method WHERE target_symbol_id IS NOT NULL",
+    );
+    for (const row of rows) {
+      if (row.target_symbol_id === null) continue;
+      yield [row.source_symbol_id, row.target_symbol_id];
+    }
+  }
+
+  /**
    * Materialise the adjacency map for the requested scope from the
    * appropriate edge table. For file scope, vertices are relPath; for
    * method scope, vertices are symbolId. Method edges with null
@@ -233,6 +420,10 @@ export class DuckDbGraphClient implements GraphDbClient {
    * Pure read. Domain orchestrator owns the algorithm (Tarjan,
    * PageRank, …) and calls `replaceCycles` / `replacePageRanks` to
    * persist back. This keeps adapter at the CRUD layer.
+   *
+   * Kept for backward-compatibility with callers that want the
+   * pre-bucketed Map; new callers should prefer `streamAdjacency` and
+   * decide their own representation.
    */
   async listAdjacency(scope: CycleScope): Promise<Map<string, string[]>> {
     if (scope === "file") {
@@ -261,6 +452,10 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async replaceCycles(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {
+    return this.serialize(async () => this.replaceCyclesImpl(scope, sccs));
+  }
+
+  private async replaceCyclesImpl(scope: CycleScope, sccs: readonly (readonly string[])[]): Promise<void> {
     await this.exec("BEGIN");
     try {
       await this.run("DELETE FROM cg_symbols_cycles WHERE scope = ?", [scope]);
@@ -283,6 +478,10 @@ export class DuckDbGraphClient implements GraphDbClient {
   }
 
   async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {
+    return this.serialize(async () => this.replacePageRanksImpl(ranks));
+  }
+
+  private async replacePageRanksImpl(ranks: ReadonlyMap<string, number>): Promise<void> {
     await this.exec("BEGIN");
     try {
       await this.exec("DELETE FROM cg_symbols_metrics");

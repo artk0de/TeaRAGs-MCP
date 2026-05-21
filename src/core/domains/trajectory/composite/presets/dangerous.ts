@@ -1,5 +1,5 @@
 import type { ScoringWeights } from "../../../../contracts/types/provider.js";
-import type { OverlayMask, RerankPreset } from "../../../../contracts/types/reranker.js";
+import type { CompositeRerankPreset, OverlayMask } from "../../../../contracts/types/reranker.js";
 
 /**
  * Composite override for `dangerous` — adds blast-radius (fanIn) so
@@ -7,10 +7,11 @@ import type { OverlayMask, RerankPreset } from "../../../../contracts/types/rera
  * to the top. Pure git signal without fanIn told you which code is
  * risky to TOUCH; adding fanIn tells you which is risky to FAIL.
  */
-export class DangerousCompositePreset implements RerankPreset {
+export class DangerousCompositePreset implements CompositeRerankPreset {
   readonly name = "dangerous";
   readonly description = "High-risk code: bug-prone, volatile, single-owner, heavily depended on";
   readonly tools = ["semantic_search", "hybrid_search", "find_similar", "rank_chunks"];
+  readonly requires = ["codegraph.symbols", "git"] as const;
   readonly weights: ScoringWeights = {
     bugFix: 0.3,
     volatility: 0.2,

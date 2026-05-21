@@ -2,6 +2,7 @@
  * Collection CRUD operations — business logic extracted from MCP handlers.
  */
 
+import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
@@ -13,6 +14,7 @@ export class CollectionOps {
     private readonly embeddings: EmbeddingProvider,
     private readonly quantizationScalar: boolean,
     private readonly modelGuard?: EmbeddingModelGuard,
+    private readonly codegraphPool?: GraphDbClientPool,
   ) {}
 
   async create(request: CreateCollectionRequest): Promise<CollectionInfo> {
@@ -48,7 +50,19 @@ export class CollectionOps {
     return this.qdrant.getCollectionInfo(name);
   }
 
+  /**
+   * Delete a collection in Qdrant AND drop the per-collection codegraph
+   * DuckDB file (when codegraph is wired). Order matters: Qdrant first
+   * — if it fails we keep the DuckDB file so a retry doesn't lose
+   * symbol state that still has a live collection it shadows. After
+   * Qdrant succeeds, codegraph cleanup is best-effort — failure to
+   * unlink the DuckDB file is non-fatal and surfaces via the typed
+   * `DuckDbCloseFailedError`.
+   */
   async delete(name: string): Promise<void> {
     await this.qdrant.deleteCollection(name);
+    if (this.codegraphPool) {
+      await this.codegraphPool.removeCollection(name);
+    }
   }
 }

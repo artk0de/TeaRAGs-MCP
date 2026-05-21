@@ -3,8 +3,9 @@
  *
  * Persists per-symbol graph metrics that are too expensive to compute
  * at rerank time. Slice 2 ships PageRank only; future Tier 3 signals
- * (betweenness, closeness) can extend this table with additional
- * columns rather than spinning up new tables.
+ * (closeness, etc.) can extend this table with additional columns
+ * rather than spinning up new tables. (Betweenness was a Slice 2
+ * candidate but cut 2026-05-21 — see plan Task B4.)
  *
  * page_rank stays normalised so that sum(page_rank) ≈ 1 when the graph
  * has no dangling nodes; for typical codegraphs with leaf utilities,

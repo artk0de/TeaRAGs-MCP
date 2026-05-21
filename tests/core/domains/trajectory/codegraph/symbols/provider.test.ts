@@ -3,9 +3,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import ignore from "ignore";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
+import { BUILTIN_IGNORE_PATTERNS } from "../../../../../../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -305,7 +307,8 @@ describe("CodegraphEnrichmentProvider", () => {
     // Build a small project tree under the worktree's tmp dir. The walker
     // must:
     //   1. Recurse into nested dirs.
-    //   2. Skip IGNORE_DIRS (node_modules, build, .git, ...).
+    //   2. Skip FileScanner ignoreFilter matches (node_modules/ via
+    //      BUILTIN_IGNORE_PATTERNS).
     //   3. Skip dotfiles other than .claude-plugin.
     //   4. Pick up .ts and .tsx, skip other extensions and extensionless files.
     //   5. Hand each picked file to extractOneFile -> collectSymbols, which
@@ -330,17 +333,19 @@ describe("CodegraphEnrichmentProvider", () => {
         join(root, "src", "nested", "service.tsx"),
         "export class Service {\n  go(): number { return 3; }\n  stop(): number { return 4; }\n}\n",
       );
-      // No .ts extension — must be ignored by TS_EXTS filter.
+      // No .ts extension — must be ignored by SUPPORTED_EXTS filter.
       writeFileSync(join(root, "src", "notes.md"), "ignored");
-      // Inside node_modules — must be ignored by IGNORE_DIRS.
+      // Inside node_modules — must be ignored by FileScanner ignoreFilter
+      // (BUILTIN_IGNORE_PATTERNS lists `node_modules/`).
       writeFileSync(join(root, "node_modules", "junk", "lib.ts"), "export const skip = 1;");
-      // Hidden dir (starts with '.') — must be ignored.
+      // Hidden dir (starts with '.') — must be ignored by dotfile guard.
       writeFileSync(join(root, ".hidden", "secret.ts"), "export const hidden = 1;");
       // Extensionless file in a real dir — must be skipped silently by
       // extensionOf returning "".
       writeFileSync(join(root, "src", "Makefile"), "all:\n\techo hi\n");
 
-      const overlays = await provider.buildFileSignals(root);
+      const ignoreFilter = ignore().add(BUILTIN_IGNORE_PATTERNS);
+      const overlays = await provider.buildFileSignals(root, { ignoreFilter });
       // Both legitimate files appear; junk does not.
       const keys = [...overlays.keys()].sort();
       expect(keys).toEqual(["src/alpha.ts", "src/nested/service.tsx"]);
@@ -351,6 +356,219 @@ describe("CodegraphEnrichmentProvider", () => {
       expect(lookup.lookupByShortName("alpha").length).toBeGreaterThan(0);
       expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
       expect(lookup.lookupByShortName("go").length).toBeGreaterThan(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Real-world bug from ugnest indexing (2026-05-21): the discover walker
+  // descended into `legacy/uapi/frontend/_nuxt/` and extracted 96k method
+  // edges from one minified bundle. Post-tf1o the codegraph layer no
+  // longer owns a duplicate dir blocklist — the FileScanner ignoreFilter
+  // (passed via FileSignalOptions) carries BUILTIN_IGNORE_PATTERNS that
+  // covers framework build artefacts (`_nuxt/`, `.next/`, `target/`,
+  // `.gradle/`) and language caches (`__pycache__/`, `.venv/`). This
+  // test wires the same BUILTIN_IGNORE_PATTERNS the production pipeline
+  // uses, verifying the layered ignore prevents the regression.
+  it("discoverSupportedFiles skips framework build dirs / caches via FileScanner ignoreFilter", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-ignore-dirs-"));
+    try {
+      // Legitimate source — must survive.
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "src", "real.ts"), "export function real(): number { return 1; }\n");
+
+      // Framework dirs that previously slipped through.
+      mkdirSync(join(root, "_nuxt"), { recursive: true });
+      writeFileSync(join(root, "_nuxt", "bundle.ts"), "export const x = 1;");
+      mkdirSync(join(root, "target"), { recursive: true });
+      writeFileSync(join(root, "target", "Out.ts"), "export const out = 1;");
+      mkdirSync(join(root, "__pycache__"), { recursive: true });
+      writeFileSync(join(root, "__pycache__", "junk.py"), "x = 1");
+      mkdirSync(join(root, ".venv"), { recursive: true });
+      writeFileSync(join(root, ".venv", "stub.py"), "x = 1");
+
+      const ignoreFilter = ignore().add(BUILTIN_IGNORE_PATTERNS);
+      const overlays = await provider.buildFileSignals(root, { ignoreFilter });
+      const keys = [...overlays.keys()].sort();
+      // Only the legitimate file appears; every framework dir skipped.
+      expect(keys).toEqual(["src/real.ts"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // tea-rags-mcp-tf1o — FileScanner ignoreFilter integration. Codegraph
+  // honours the same `.gitignore`-style rules the main Qdrant ingest uses
+  // so the file sets stay aligned. Synthetic: caller's ignoreFilter
+  // excludes `legacy/`, and codegraph must NOT walk legacy/foo.ts.
+  it("discoverSupportedFiles honours an explicit ignoreFilter from FileScanner", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-ignore-filter-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      mkdirSync(join(root, "legacy"), { recursive: true });
+      writeFileSync(join(root, "src", "real.ts"), "export function real(): number { return 1; }\n");
+      writeFileSync(join(root, "legacy", "old.ts"), "export const legacy = 1;");
+
+      const ignoreFilter = ignore().add(["legacy/"]);
+      const overlays = await provider.buildFileSignals(root, { ignoreFilter });
+      const keys = [...overlays.keys()].sort();
+      expect(keys).toEqual(["src/real.ts"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // tea-rags-mcp-tf1o + hh4m — codegraph-layer test exclusion. Tests are
+  // legitimate Qdrant ingest targets but skew the fan-graph (fanIn=0,
+  // fanOut=many). Default `excludeTests:true` keeps them out of the
+  // graph without affecting search-side indexing.
+  it("discoverSupportedFiles skips test files when excludeTests=true", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-tests-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      mkdirSync(join(root, "tests"), { recursive: true });
+      mkdirSync(join(root, "lib"), { recursive: true });
+      writeFileSync(join(root, "src", "service.ts"), "export function service(): number { return 1; }\n");
+      writeFileSync(join(root, "src", "service.test.ts"), "export const test = 1;");
+      writeFileSync(join(root, "tests", "integration.ts"), "export const it = 1;");
+      writeFileSync(join(root, "lib", "service_test.go"), "package lib");
+      writeFileSync(join(root, "lib", "User_spec.rb"), "puts 1");
+
+      const testExcluder = new CodegraphEnrichmentProvider({
+        graphDb: client,
+        symbolTable: new InMemoryGlobalSymbolTable(),
+        resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+        exclusion: { excludeTests: true, customPatterns: [] },
+      });
+      const overlays = await testExcluder.buildFileSignals(root);
+      const keys = [...overlays.keys()].sort();
+      // Only the production source survives; every test-shaped path is
+      // filtered by CODEGRAPH_TEST_PATTERNS.
+      expect(keys).toEqual(["src/service.ts"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // tea-rags-mcp-tf1o — early dir-level skip is a perf optimisation but
+  // also a behaviour contract: ignoreFilter dir matches must short-circuit
+  // recursion. Synthetic: `_nuxt/` is a directory pattern in BUILTIN_IGNORE_PATTERNS;
+  // dropping a deeply-nested .ts file inside must NOT be visited.
+  it("discoverSupportedFiles short-circuits at the dir level when ignoreFilter matches", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-dir-skip-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      // Nested dir tree under _nuxt — provider MUST NOT recurse here.
+      mkdirSync(join(root, "_nuxt", "static", "chunks"), { recursive: true });
+      writeFileSync(join(root, "src", "main.ts"), "export const m = 1;\n");
+      writeFileSync(join(root, "_nuxt", "static", "chunks", "deep.ts"), "export const skip = 1;");
+
+      const ignoreFilter = ignore().add(BUILTIN_IGNORE_PATTERNS);
+      const overlays = await provider.buildFileSignals(root, { ignoreFilter });
+      const keys = [...overlays.keys()].sort();
+      expect(keys).toEqual(["src/main.ts"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // tea-rags-mcp-tf1o — custom user patterns layer on top of test
+  // exclusion. The user supplies `CODEGRAPH_CUSTOM_EXCLUDE` via env;
+  // patterns added to the codegraph filter alongside the test set.
+  it("discoverSupportedFiles applies customPatterns from CodegraphExclusionOptions", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-custom-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      mkdirSync(join(root, "generated"), { recursive: true });
+      writeFileSync(join(root, "src", "real.ts"), "export const r = 1;\n");
+      writeFileSync(join(root, "generated", "stub.ts"), "export const stub = 1;");
+
+      const customExcluder = new CodegraphEnrichmentProvider({
+        graphDb: client,
+        symbolTable: new InMemoryGlobalSymbolTable(),
+        resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+        exclusion: { excludeTests: false, customPatterns: ["generated/**"] },
+      });
+      const overlays = await customExcluder.buildFileSignals(root);
+      const keys = [...overlays.keys()].sort();
+      expect(keys).toEqual(["src/real.ts"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Real-world bug from the tea-rags self-test on 2026-05-21:
+  // `coordinator.ts` declares a getter + setter pair for the same
+  // property (`onChunkEnrichmentComplete`). Both AST nodes carry
+  // identical names — without dedup the symbol-table upsert blew up on
+  // the (rel_path, symbol_id) PK. Dedup at extraction time keeps the
+  // first occurrence (earliest line — the getter, by convention).
+  it("collectSymbols deduplicates same-name declarations within a class (get/set pair)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-getset-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(
+        join(root, "src", "accessors.ts"),
+        [
+          "export class Coordinator {",
+          "  private _cb?: () => void;",
+          "  get onComplete(): (() => void) | undefined { return this._cb; }",
+          "  set onComplete(cb: (() => void) | undefined) { this._cb = cb; }",
+          "}",
+          "",
+        ].join("\n"),
+      );
+
+      await provider.buildFileSignals(root);
+
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Exactly one entry for the accessor name — get/set collapse.
+      const entries = lookup.lookupByShortName("onComplete");
+      expect(entries).toHaveLength(1);
+      expect(entries[0].symbolId).toBe("Coordinator#onComplete");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Real-world bug from the tea-rags self-test on 2026-05-21:
+  // `benchmarks/lib/benchmarks.mjs` has four private `async function worker()`
+  // helpers, each nested inside a different outer benchmark function.
+  // collectSymbols used to push every nested function at the file's empty
+  // scope, producing four `worker` rows with the same symbolId and
+  // colliding on the (rel_path, symbol_id) PK of cg_symbols. The fix:
+  // recurse into a matched node's children under the EXTENDED scope (the
+  // matched name), regardless of `descendsInto`. Nested same-name
+  // declarations now get distinct ids like `outer.worker`.
+  it("collectSymbols qualifies nested same-name declarations under their enclosing scope", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-nested-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(
+        join(root, "src", "bench.js"),
+        [
+          "export function outerA() {",
+          "  async function worker() { return 1; }",
+          "  return worker();",
+          "}",
+          "export function outerB() {",
+          "  async function worker() { return 2; }",
+          "  return worker();",
+          "}",
+          "",
+        ].join("\n"),
+      );
+
+      // Should not throw; before the fix this would crash on the
+      // symbol-table upsert when the cg_symbols PK rejected the
+      // duplicate (rel_path, symbol_id) pair.
+      await provider.buildFileSignals(root);
+
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Both nested workers are tracked under distinct qualified ids.
+      const workers = lookup.lookupByShortName("worker");
+      const ids = workers.map((s) => s.symbolId).sort();
+      expect(ids).toEqual(["outerA.worker", "outerB.worker"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -377,6 +595,102 @@ describe("CodegraphEnrichmentProvider", () => {
       expect(overlays.has("src/a.ts")).toBe(true);
       expect(overlays.has("src/b.md")).toBe(true);
       expect(overlays.get("src/b.md")?.["codegraph.file.fanIn"]).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Regression — production ingest threads its file set as
+  // `options.paths` (so `discoverSupportedFiles` is bypassed entirely),
+  // and the codegraph-layer exclusion MUST still apply on that branch.
+  // Without filtering caller-supplied paths the live MCP path lets
+  // conftest.py / tests/**/*_admin.py / config/.../test_*.py through —
+  // observed on ugnest 2026-05-21 with `excludeTests:true` and 133+
+  // test paths landing in cg_symbols_files.
+  //
+  // Assertion strategy: check the symbol-table side (the walker's
+  // output that lands in cg_symbols_files in production). The overlay
+  // map intentionally includes a zero-valued row for every caller-listed
+  // path (consistent shape for EnrichmentApplier) — but the walker MUST
+  // NOT touch excluded paths, so no entries should land in the symbol
+  // table.
+  it("buildFileSignals applies codegraph exclusion to CALLER-supplied paths (production ingest path)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-paths-excl-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      mkdirSync(join(root, "config", "tests"), { recursive: true });
+      mkdirSync(join(root, "config", "management", "commands"), { recursive: true });
+      mkdirSync(join(root, "domains", "engagement", "tests", "test_admin"), { recursive: true });
+      writeFileSync(join(root, "src", "main.ts"), "export function main(): number { return 1; }\n");
+      // Real ugnest-shaped test-file layout the regression report listed.
+      writeFileSync(join(root, "conftest.py"), "import pytest\n");
+      writeFileSync(join(root, "config", "tests", "test_settings.py"), "def test_x(): pass\n");
+      writeFileSync(join(root, "config", "management", "commands", "test_vk_login.py"), "def test_y(): pass\n");
+      writeFileSync(
+        join(root, "domains", "engagement", "tests", "test_admin", "test_reaction_admin.py"),
+        "def test_z(): pass\n",
+      );
+
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      const excluder = new CodegraphEnrichmentProvider({
+        graphDb: client,
+        symbolTable,
+        resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+        exclusion: { excludeTests: true, customPatterns: [] },
+      });
+
+      // Caller (EnrichmentCoordinator -> FilePhase) hands the full set of
+      // walked files in options.paths. Without the fix, all 5 paths get
+      // walked + recorded in cg_symbols. With the fix, only src/main.ts
+      // is walked by extractOneFile + asExtractionSink.
+      await excluder.buildFileSignals(root, {
+        paths: [
+          "src/main.ts",
+          "conftest.py",
+          "config/tests/test_settings.py",
+          "config/management/commands/test_vk_login.py",
+          "domains/engagement/tests/test_admin/test_reaction_admin.py",
+        ],
+      });
+
+      // Walker output lives in the symbol table (the same data the
+      // production path persists to cg_symbols_files via the sink).
+      // Excluded test paths must NOT have produced any symbol rows.
+      const allFiles = new Set((await client.listAllSymbols()).map((s) => s.relPath));
+      expect(allFiles.has("src/main.ts")).toBe(true);
+      expect(allFiles.has("conftest.py")).toBe(false);
+      expect(allFiles.has("config/tests/test_settings.py")).toBe(false);
+      expect(allFiles.has("config/management/commands/test_vk_login.py")).toBe(false);
+      expect(allFiles.has("domains/engagement/tests/test_admin/test_reaction_admin.py")).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // Inverse: with excludeTests=false, caller-supplied test paths must
+  // still get processed — codegraphExclusionFilter is a no-op then.
+  it("buildFileSignals walks caller-supplied test paths when excludeTests=false", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-paths-no-excl-"));
+    try {
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "src", "main.ts"), "export function main(): number { return 1; }\n");
+      writeFileSync(join(root, "conftest.py"), "def configure(): return 1\n");
+
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      const noExcluder = new CodegraphEnrichmentProvider({
+        graphDb: client,
+        symbolTable,
+        resolvers: new Map([["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })]]),
+        exclusion: { excludeTests: false, customPatterns: [] },
+      });
+
+      await noExcluder.buildFileSignals(root, {
+        paths: ["src/main.ts", "conftest.py"],
+      });
+
+      const allFiles = new Set((await client.listAllSymbols()).map((s) => s.relPath));
+      expect(allFiles.has("src/main.ts")).toBe(true);
+      expect(allFiles.has("conftest.py")).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -558,15 +872,30 @@ describe("CodegraphEnrichmentProvider", () => {
   // recomputeCycles throws but everything else succeeds — finish must
   // still resolve normally.
   it("sink.finish swallows recomputeCycles failures (best-effort SCC refresh)", async () => {
+    // Slice 2 contract: recompute is driven via streamAdjacency + replaceCycles
+    // + replacePageRanks. Stub streamAdjacency to throw so the metric
+    // recompute path fails — finish() must still resolve because metric
+    // failures are wrapped in CodegraphMetricsError and swallowed.
     const fakeGraphDb = {
       upsertFile: async () => undefined,
       upsertSymbols: async () => undefined,
       removeFile: async () => undefined,
       removeSymbolsForFile: async () => undefined,
-      recomputeCycles: async () => {
-        throw new Error("simulated cycle recompute failure");
-      },
-      // Unused-by-finish but required by the GraphDbClient shape.
+      checkpoint: async () => undefined,
+      streamAdjacency: (): AsyncIterableIterator<[string, string]> => ({
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+        async next(): Promise<IteratorResult<[string, string]>> {
+          // Iterator throws on first .next() — exactly what the
+          // recompute path hits when it iterates streamAdjacency.
+          throw new Error("simulated cycle recompute failure");
+        },
+      }),
+      listAdjacency: async () => new Map<string, string[]>(),
+      replaceCycles: async () => undefined,
+      replacePageRanks: async () => undefined,
+      getPageRank: async () => 0,
       findCycles: async () => [],
       getFanIn: async () => 0,
       getFanOut: async () => 0,
@@ -591,8 +920,9 @@ describe("CodegraphEnrichmentProvider", () => {
       chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
       fileScope: [],
     });
-    // recomputeCycles throws inside finish — the provider's try/catch
-    // must swallow it so the indexing pipeline doesn't abort.
+    // streamAdjacency throws inside finish — wrapped as
+    // CodegraphMetricsError and swallowed so the indexing pipeline
+    // does not abort.
     await expect(sink.finish()).resolves.toBeUndefined();
   });
 
@@ -605,9 +935,19 @@ describe("CodegraphEnrichmentProvider", () => {
       upsertSymbols: async () => undefined,
       removeFile: async () => undefined,
       removeSymbolsForFile: async () => undefined,
-      recomputeCycles: async () => {
-        throw new Error("debug-path cycle failure");
-      },
+      checkpoint: async () => undefined,
+      streamAdjacency: (): AsyncIterableIterator<[string, string]> => ({
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+        async next(): Promise<IteratorResult<[string, string]>> {
+          throw new Error("debug-path cycle failure");
+        },
+      }),
+      listAdjacency: async () => new Map<string, string[]>(),
+      replaceCycles: async () => undefined,
+      replacePageRanks: async () => undefined,
+      getPageRank: async () => 0,
       findCycles: async () => [],
       getFanIn: async () => 0,
       getFanOut: async () => 0,
@@ -701,11 +1041,12 @@ describe("CodegraphEnrichmentProvider", () => {
       const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
       // Class symbol present.
       expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
-      // Nested methods carry the parent's scope joined by "."
-      // (Python's scopeSeparator).
+      // Nested instance method — Python `def go(self)` inside class
+      // is an instance method, joins to parent with `#` per
+      // symbolid-convention.md.
       const goEntries = lookup.lookupByShortName("go");
       expect(goEntries.length).toBeGreaterThan(0);
-      expect(goEntries[0].symbolId).toContain("Service.go");
+      expect(goEntries[0].symbolId).toContain("Service#go");
       // Top-level helper function.
       expect(lookup.lookupByShortName("helper").length).toBeGreaterThan(0);
     } finally {
@@ -742,16 +1083,17 @@ describe("CodegraphEnrichmentProvider", () => {
       // Compound class composes via "::". scope_resolution branch.
       const acmeAuth = lookup.lookupByShortName("Acme::Auth");
       expect(acmeAuth.length).toBeGreaterThan(0);
-      // Methods nested under classes get "::"-joined ids. The
-      // provider's lastSegment helper splits on "/" then ".", so for
-      // a "::"-joined Ruby id like "User::find" the shortName comes
-      // out intact ("User::find") — we query the symbol table by
-      // that literal shortName.
-      const findEntries = lookup.lookupByShortName("User::find");
-      expect(findEntries[0].symbolId).toBe("User::find");
-      // singleton_method branch in rbNameOf.
-      const recentEntries = lookup.lookupByShortName("User::recent");
-      expect(recentEntries[0].symbolId).toBe("User::recent");
+      // Ruby `def find` is an instance method → joins to its class
+      // with `#`. `def self.recent` is a singleton (class) method →
+      // joins with `.`. Per symbolid-convention.md the separator
+      // between class and method is universal (`#` instance / `.`
+      // static) regardless of language — Ruby's `::` is only the
+      // NAMESPACE separator (e.g. `Acme::Auth`).
+      const findEntries = lookup.lookupByShortName("find");
+      expect(findEntries[0].symbolId).toBe("User#find");
+      // singleton_method branch in rbNameOf — class method via `.`.
+      const recentEntries = lookup.lookupByShortName("recent");
+      expect(recentEntries[0].symbolId).toBe("User.recent");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -779,11 +1121,11 @@ describe("CodegraphEnrichmentProvider", () => {
       const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
       expect(lookup.lookupByShortName("helper").length).toBeGreaterThan(0);
       expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
-      // Method nested in class — descendsInto branch in tsNameOf applied
-      // to the JS class_declaration node.
+      // Method nested in class — JS class method without `static` is
+      // an instance method, joins with `#`.
       const go = lookup.lookupByShortName("go");
       expect(go.length).toBeGreaterThan(0);
-      expect(go[0].symbolId).toContain("Service.go");
+      expect(go[0].symbolId).toContain("Service#go");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -849,12 +1191,12 @@ describe("CodegraphEnrichmentProvider", () => {
       // class_declaration (descendsInto=true) + interface_declaration.
       expect(lookup.lookupByShortName("Service").length).toBeGreaterThan(0);
       expect(lookup.lookupByShortName("Greeter").length).toBeGreaterThan(0);
-      // method_declaration nested → scope joined by "." (Java's separator).
+      // method_declaration nested → instance method joins with `#`.
       const go = lookup.lookupByShortName("go");
       expect(go.length).toBeGreaterThan(0);
-      expect(go[0].symbolId).toContain("Service.go");
-      // constructor_declaration also surfaces.
-      expect(lookup.lookupByShortName("Service").some((s) => s.symbolId.includes("Service.Service"))).toBe(true);
+      expect(go[0].symbolId).toContain("Service#go");
+      // constructor_declaration is also instance-bound (`#`).
+      expect(lookup.lookupByShortName("Service").some((s) => s.symbolId.includes("Service#Service"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -900,12 +1242,13 @@ describe("CodegraphEnrichmentProvider", () => {
       expect(lookup.lookupByShortName("Runnable").length).toBeGreaterThan(0);
       expect(lookup.lookupByShortName("Status").length).toBeGreaterThan(0);
       expect(lookup.lookupByShortName("helper").length).toBeGreaterThan(0);
-      // handler.rs: impl_item composes via "::" — Handler's `go` is at
-      // `Handler::go`. Drives the impl_item branch in rustNameOf plus
-      // the recursive descend (descendsInto: true).
-      const goEntries = lookup.lookupByShortName("Handler::go");
+      // handler.rs: impl_item descends; `fn go(&self)` is an instance
+      // method (`&self` first param), joins to Handler with `#` per
+      // symbolid-convention.md. Rust's `::` remains only for module /
+      // type-name namespacing.
+      const goEntries = lookup.lookupByShortName("go");
       expect(goEntries.length).toBeGreaterThan(0);
-      expect(goEntries[0].symbolId).toBe("Handler::go");
+      expect(goEntries[0].symbolId).toBe("Handler#go");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

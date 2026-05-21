@@ -3,6 +3,12 @@
  *
  * Replaces scattered updateEnrichmentMarker calls with 5 domain-specific write
  * methods. Deep-merge of partial updates is an internal detail.
+ *
+ * Write-path notes:
+ * - `setPayload` MUST be called with `wait: true` — without it sequential
+ *   read-modify-write races clobber prior writes (see comment in `write()`).
+ * - All writes funnel through the private `write()` method so the deep-merge
+ *   and wait-flag invariants live in exactly one place.
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
@@ -32,26 +38,41 @@ export class EnrichmentMarkerStore {
     await this.write(coll, updates);
   }
 
-  /** Single-provider failure marker for prefetch error path. */
+  /**
+   * Single-provider failure marker for prefetch error path.
+   *
+   * `errorMessage` propagates the concrete failure string (e.g.
+   * "Codegraph spill write failed at /tmp/...") so `get_index_status`
+   * shows the cause instead of a stuck "in_progress" placeholder.
+   * Optional for back-compat with older call sites that didn't carry
+   * the message.
+   */
   async markPrefetchFailed(
     coll: string,
     providerKey: string,
     runId: string,
     startedAt: string,
     durationMs: number,
+    errorMessage?: string,
   ): Promise<void> {
     const completedAt = new Date().toISOString();
+    const file: Record<string, unknown> = {
+      status: "failed",
+      startedAt,
+      completedAt,
+      durationMs,
+      unenrichedChunks: 0,
+    };
+    const chunk: Record<string, unknown> = { status: "failed", unenrichedChunks: 0 };
+    if (errorMessage) {
+      file.errorMessage = errorMessage;
+      chunk.errorMessage = errorMessage;
+    }
     await this.write(coll, {
       [providerKey]: {
         runId,
-        file: {
-          status: "failed",
-          startedAt,
-          completedAt,
-          durationMs,
-          unenrichedChunks: 0,
-        },
-        chunk: { status: "failed", unenrichedChunks: 0 },
+        file,
+        chunk,
       },
     });
   }
@@ -146,7 +167,19 @@ export class EnrichmentMarkerStore {
         enrichment[providerKey] = merged;
       }
 
-      await this.qdrant.setPayload(coll, { enrichment }, { points: [INDEXING_METADATA_ID] });
+      // `wait: true` is mandatory for marker writes. Without it qdrant
+      // acknowledges the write before the payload is visible to
+      // subsequent `getPoint` reads — sequential read-modify-write
+      // calls (markFileFinal for provider A, then provider B) race:
+      // B reads STALE state (without A's write) and clobbers A's
+      // status back to whatever the prior read saw. Empirically on
+      // tea-rags self-test, ~90ms between markFileFinal calls was
+      // not enough for qdrant to settle, and four sequential final-
+      // marker writes ended with only the last provider's chunk
+      // status surviving — all other levels reverted to markStart's
+      // initial snapshot. Marker writes are infrequent metadata, so
+      // the synchronous wait penalty is irrelevant.
+      await this.qdrant.setPayload(coll, { enrichment }, { points: [INDEXING_METADATA_ID], wait: true });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       console.error(`[Enrichment] Failed to update marker for collection ${coll}:`, msg);

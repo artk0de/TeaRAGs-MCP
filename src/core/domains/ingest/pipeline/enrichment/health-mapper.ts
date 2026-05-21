@@ -75,13 +75,18 @@ function mapLevelHealth(level: EnrichmentLevelMarker | undefined, levelName: "fi
     };
   }
 
-  // failed
+  // failed — prefer the marker's persisted errorMessage when present
+  // so consumers see the concrete failure (e.g.
+  // "Codegraph spill write failed at …") rather than the generic
+  // fallback. Falls back to the level-specific default when no
+  // upstream error string was captured.
+  const fallbackMessage =
+    levelName === "file"
+      ? "File-level enrichment failed. All file-level signals missing. Will recover on next reindex."
+      : "Chunk enrichment failed. Will recover on next reindex.";
   return {
     ...base,
     status: "failed",
-    message:
-      levelName === "file"
-        ? "Git file enrichment failed. All file-level signals missing. Will recover on next reindex."
-        : "Chunk enrichment failed. Will recover on next reindex.",
+    message: level.errorMessage ? `${fallbackMessage} (${level.errorMessage})` : fallbackMessage,
   };
 }

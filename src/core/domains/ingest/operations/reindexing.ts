@@ -41,7 +41,15 @@ interface ReindexContext {
 interface ParallelExecutionPlan {
   pCtx: ProcessingContext;
   chunkMap: Map<string, ChunkLookupEntry[]>;
+  /** Paths Qdrant deletes — includes modified (chunker re-ingests them). */
   filesToDelete: string[];
+  /**
+   * Paths that are GENUINELY removed from disk (deleted + newly
+   * ignored) — modified files are NOT included. Used as the provider
+   * deletion-notification scope so codegraph and other providers
+   * don't wipe state for files about to be re-walked.
+   */
+  providerDeletedOnly: string[];
   addedFiles: string[];
   modifiedFiles: string[];
   processOpts: { enableGitMetadata: boolean; concurrency: number };
@@ -285,6 +293,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const chunkMap = new Map<string, ChunkLookupEntry[]>();
 
     const filesToDelete = [...changes.modified, ...changes.deleted, ...changes.newlyIgnored];
+    const providerDeletedOnly = [...changes.deleted, ...changes.newlyIgnored];
     const addedFiles = [...changes.added];
     const modifiedFiles = [...changes.modified];
 
@@ -296,7 +305,16 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const parallelStart = Date.now();
     this.logParallelStart(filesToDelete, addedFiles, modifiedFiles);
 
-    return { pCtx, chunkMap, filesToDelete, addedFiles, modifiedFiles, processOpts, parallelStart };
+    return {
+      pCtx,
+      chunkMap,
+      filesToDelete,
+      providerDeletedOnly,
+      addedFiles,
+      modifiedFiles,
+      processOpts,
+      parallelStart,
+    };
   }
 
   // ── Phase B: execute ─────────────────────────────────────
@@ -318,6 +336,16 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const deleteStartTime = Date.now();
     let chunksDeleted = 0;
     let deletionOutcome: DeletionOutcome | undefined;
+    // Providers' deletion hook must NOT fire for files in
+    // `changes.modified` — those files are being re-walked by the
+    // chunker / codegraph in this same run. The walker's upsert
+    // already does DELETE+INSERT atomically (clears old edges and
+    // re-inserts new ones inside a single transaction). Forwarding
+    // modified paths to notifyDeletions races with the walker's
+    // upsert on the shared graphDb connection and the loser wipes
+    // the winner — see the 2026-05-21 self-test regression that
+    // surfaced this. `plan.providerDeletedOnly` already excludes
+    // modified for the same reason.
     const deletePromise = performDeletion(
       this.qdrant,
       ctx.collectionName,
@@ -326,8 +354,12 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       progressCallback,
       // A4d — notify providers (codegraph, …) BEFORE Qdrant deletion
       // so graph-edge / symbol-table state stays consistent with disk
-      // truth even when Qdrant rejects the delete downstream.
-      async (paths) => this.enrichment.notifyDeletions(paths),
+      // truth even when Qdrant rejects the delete downstream. Only
+      // delivered-as-removed paths flow through; modified files are
+      // re-walked by the codegraph upsert below. The collection name
+      // is forwarded so collection-scoped providers (codegraph) prune
+      // the right per-collection DuckDB.
+      async () => this.enrichment.notifyDeletions(plan.providerDeletedOnly, ctx.collectionName),
     ).then((outcome) => {
       deletionOutcome = outcome;
       ({ chunksDeleted } = outcome);
@@ -481,7 +513,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         progressCallback,
         // Same provider-notification hook as the parallel path — the
         // deletion-only branch must not skip it.
-        async (paths) => this.enrichment.notifyDeletions(paths),
+        async (paths) => this.enrichment.notifyDeletions(paths, ctx.collectionName),
       );
     } finally {
       await this.qdrant.resumeOptimizer(ctx.collectionName).catch((err) => {

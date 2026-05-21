@@ -72,7 +72,10 @@ export function createComposition(options: CompositionOptions = {}): Composition
   // `domains/trajectory/composite/presets/`. The resolver merges by
   // (name, tools[i]) and the composite list wins, so composites override
   // trajectory presets of the same name without modifying them in place.
-  const compositePresets = buildCompositePresets({ codegraph: options.codegraph !== undefined });
+  // Gating: buildCompositePresets filters each composite against the
+  // registered trajectory keys — a composite whose `requires` references
+  // a non-registered trajectory is silently dropped.
+  const compositePresets = buildCompositePresets(new Set(registry.getRegisteredKeys()));
   const resolvedPresets = resolvePresets(registry.getAllPresets(), compositePresets);
   const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors);
 

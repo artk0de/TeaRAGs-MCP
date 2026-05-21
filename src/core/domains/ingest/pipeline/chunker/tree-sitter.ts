@@ -9,6 +9,7 @@
 
 import Parser from "tree-sitter";
 
+import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { isDebug } from "../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
@@ -729,7 +730,10 @@ export class TreeSitterChunker implements CodeChunker {
       }
 
       const childName = this.extractName(childNode, code, langConfig.nameExtractor);
-      const isStatic = this.hasModifier(childNode, "static");
+      // Universal `#` (instance) vs `.` (class/static) — single source
+      // of truth in `infra/symbolid`. See
+      // `.claude/rules/symbolid-convention.md`.
+      const isStatic = isStaticMethodNode(childNode);
       chunks.push({
         content: finalContent,
         startLine,

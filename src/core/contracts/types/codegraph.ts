@@ -36,6 +36,15 @@ export interface FileExtraction {
   /** Lexical scope chain at file top level — usually `[]` for TS, may be
    *  e.g. `["module Acme"]` for Ruby (slice 3). */
   fileScope: string[];
+  /**
+   * Optional per-class field-type map: `className → fieldName → typeName`.
+   * Populated by walkers for languages with static field-type annotations
+   * (TS, Java) so resolvers can resolve `this.field.method()` cross-class
+   * calls to `<typeName>#<method>` / `<typeName>.<method>`. Languages
+   * without type annotations (Ruby, Python untyped) leave this undefined
+   * or empty — resolver falls through to short-name lookup.
+   */
+  classFieldTypes?: ReadonlyMap<string, ReadonlyMap<string, string>>;
 }
 
 export interface ImportRef {
@@ -56,6 +65,25 @@ export interface ChunkExtraction {
   startLine?: number;
   /** 1-based end line of the chunk. Optional, see startLine. */
   endLine?: number;
+  /**
+   * Per-chunk variable-to-type bindings emitted by walkers that can
+   * statically infer the receiver type of a method call (`var.method()`).
+   * Currently populated by the Python walker (gated by
+   * `CODEGRAPH_PY_LOCAL_TYPE_TRACKING`) from three sources:
+   *   - constructor assignments: `var = ClassName(...)` → `{ var: "ClassName" }`
+   *   - PEP 526 variable annotations: `var: ClassName = ...` → `{ var: "ClassName" }`
+   *   - function argument type hints: `def f(self, req: HttpRequest)` →
+   *     `{ req: "HttpRequest" }` for the body of `f`.
+   *
+   * Resolvers consult this map BEFORE the import-receiver match so an
+   * unambiguous local type pins `var.method()` to that type's class even
+   * when the short-name has multiple project-wide definitions.
+   *
+   * Shape: `Record<string, string>` (NOT `Map`) so the structure
+   * round-trips through the NDJSON spill (`JSON.stringify` / `JSON.parse`)
+   * — `Map` would serialize to `{}` and silently lose data.
+   */
+  localBindings?: Record<string, string>;
 }
 
 export interface CallRef {
@@ -120,6 +148,40 @@ export interface CallResolver {
   resolve: (call: CallRef, ctx: CallContext) => ResolvedTarget | null;
 }
 
+/**
+ * Behavior for short-name lookups that return more than one candidate
+ * (e.g. `serializer.is_valid()` where `is_valid` is defined on N classes).
+ *
+ *   - `strict` (default): exactly one candidate is required, else the edge
+ *     is dropped. Eliminates false positives like the DRF `is_valid()` call
+ *     being attributed to an unrelated model class.
+ *   - `first`: legacy behavior — pick the first candidate when multiple
+ *     match. Higher recall, more false positives. Use only when downstream
+ *     consumers depend on arbitrary-but-non-null edges.
+ *
+ * Wired through `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE`; resolvers consume the
+ * mode via constructor injection so the choice is fixed at composition
+ * time, not per-call.
+ */
+export type AmbiguousResolveMode = "strict" | "first";
+
+export const DEFAULT_AMBIGUOUS_RESOLVE_MODE: AmbiguousResolveMode = "strict";
+
+/**
+ * Picks a single resolution from a candidate list. The cardinality guard
+ * is the same in every resolver — extracted so a global behavior change
+ * (e.g. flipping default mode, adding `unique-by-file`) lands in one spot.
+ *
+ * - `strict`: returns the sole element when `candidates.length === 1`,
+ *   else `null`. Drops both empty AND ambiguous results.
+ * - `first`: returns `candidates[0]` if any. Drops only empty results.
+ */
+export function pickSingleCandidate<T>(candidates: readonly T[], mode: AmbiguousResolveMode): T | null {
+  if (candidates.length === 0) return null;
+  if (mode === "first") return candidates[0];
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
 export interface CallContext {
   callerFile: RelPath;
   callerScope: string[];
@@ -128,6 +190,24 @@ export interface CallContext {
   symbolTable: GlobalSymbolTable;
   /** Optional language-specific config (tsconfig paths, Zeitwerk root, etc.). */
   languageConfig?: unknown;
+  /**
+   * Optional per-class field-type map propagated from `FileExtraction`.
+   * Resolvers use it to handle `this.<field>.<method>()` cross-class calls
+   * (TypeScript / Java): look up `<field>` in `classFieldTypes[callerScope]`
+   * to obtain the receiver type, then resolve the method against that type
+   * in the global symbol table.
+   */
+  classFieldTypes?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  /**
+   * Per-chunk local variable bindings (`varName → typeName`) inferred by
+   * the walker from assignments / type annotations within the enclosing
+   * function or method body. Set by the provider per-call from the
+   * caller chunk's `ChunkExtraction.localBindings`.
+   *
+   * Resolvers consult this BEFORE the receiver-matches-import path so a
+   * locally-typed variable wins over ambiguous short-name resolution.
+   */
+  localBindings?: Record<string, string>;
 }
 
 export interface ResolvedTarget {
@@ -211,8 +291,29 @@ export interface GraphDbClient {
    * metrics service) consume this to run Tarjan / PageRank without
    * the adapter knowing about either algorithm — keeps the adapter
    * layer pure CRUD.
+   *
+   * Prefer `streamAdjacency` for new callers — it lets the consumer
+   * build a compact id-keyed representation without the adapter
+   * pre-bucketing into `Map<string, string[]>`.
    */
   listAdjacency: (scope: CycleScope) => Promise<Map<string, string[]>>;
+
+  /**
+   * Stream the adjacency for `scope` one `[source, target]` pair at a
+   * time. Slice 2 hot-path replacement for `listAdjacency` — gives the
+   * domain layer freedom to bucket into a compact id-keyed structure
+   * (e.g. `Map<number, number[]>` with a separate id-table) instead of
+   * paying the string-keyed `Map<string, string[]>` overhead twice.
+   */
+  streamAdjacency: (scope: CycleScope) => AsyncIterableIterator<[string, string]>;
+
+  /**
+   * Flush the WAL to the main database file. Slice 2 streaming
+   * pass-2 issues this every N files so the WAL does not grow
+   * unbounded during a long indexing pass. Idempotent — a no-op
+   * checkpoint when the WAL is empty is cheap.
+   */
+  checkpoint: () => Promise<void>;
 
   /**
    * Atomically replace the cycles table for `scope` with the supplied

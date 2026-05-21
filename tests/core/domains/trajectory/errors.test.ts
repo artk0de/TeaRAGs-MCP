@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CodegraphCheckpointError,
+  CodegraphResolveError,
   GitBlameFailedError,
   GitLogTimeoutError,
   GitNotAvailableError,
@@ -104,6 +106,40 @@ describe("TrajectoryError hierarchy", () => {
       const cause = new Error("ENOENT: git");
       const err = new GitNotAvailableError(cause);
       expect(err.cause).toBe(cause);
+    });
+  });
+
+  describe("CodegraphResolveError", () => {
+    it("has correct code, message embeds filesProcessed count", () => {
+      const err = new CodegraphResolveError(1234);
+      expect(err.code).toBe("TRAJECTORY_CODEGRAPH_RESOLVE_FAILED");
+      expect(err.message).toContain("1234");
+      expect(err.name).toBe("CodegraphResolveError");
+      expect(err).toBeInstanceOf(TrajectoryError);
+    });
+
+    it("preserves cause when provided", () => {
+      const cause = new Error("DuckDB rejected upsert");
+      const err = new CodegraphResolveError(500, cause);
+      expect(err.cause).toBe(cause);
+      expect(err.toUserMessage()).toContain("CHECKPOINT");
+    });
+  });
+
+  describe("CodegraphCheckpointError", () => {
+    it("has correct code and message", () => {
+      const err = new CodegraphCheckpointError();
+      expect(err.code).toBe("TRAJECTORY_CODEGRAPH_CHECKPOINT_FAILED");
+      expect(err.message).toContain("CHECKPOINT failed");
+      expect(err.name).toBe("CodegraphCheckpointError");
+      expect(err).toBeInstanceOf(TrajectoryError);
+    });
+
+    it("preserves cause when provided", () => {
+      const cause = new Error("WAL out of space");
+      const err = new CodegraphCheckpointError(cause);
+      expect(err.cause).toBe(cause);
+      expect(err.toUserMessage()).toContain("WAL");
     });
   });
 

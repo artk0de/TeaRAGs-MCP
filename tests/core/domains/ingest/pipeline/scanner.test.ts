@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -123,6 +123,93 @@ describe("FileScanner", () => {
       // feature.ts must come back — its ignore pattern no longer exists.
       expect(after.some((f) => f.endsWith("app.ts"))).toBe(true);
       expect(after.some((f) => f.endsWith("feature.ts"))).toBe(true);
+    });
+  });
+
+  describe("BUILTIN_IGNORE_PATTERNS baseline", () => {
+    // Built-in baseline must drop framework build artefacts and minified
+    // bundles even when the project ships zero ignore files. Catches the
+    // ugnest scenario where `legacy/uapi/frontend/_nuxt/*.js` got indexed
+    // and codegraph extracted 96k method edges from a single minified
+    // bundle, blowing memory.
+    it("excludes framework build dirs, language caches, and minified bundles without any user ignore files", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-builtin-"));
+      // Framework build artefacts
+      mkdirSync(join(tmpDir, "_nuxt"), { recursive: true });
+      writeFileSync(join(tmpDir, "_nuxt", "ba60db8.js"), "export const x = 1;");
+      mkdirSync(join(tmpDir, ".next"), { recursive: true });
+      writeFileSync(join(tmpDir, ".next", "app.js"), "export const x = 1;");
+      mkdirSync(join(tmpDir, "target"), { recursive: true });
+      writeFileSync(join(tmpDir, "target", "Main.java"), "class Main {}");
+      // Language caches
+      mkdirSync(join(tmpDir, "__pycache__"), { recursive: true });
+      writeFileSync(join(tmpDir, "__pycache__", "module.cpython-311.pyc"), "compiled");
+      writeFileSync(join(tmpDir, "stale.pyc"), "compiled");
+      // Minified bundles at root
+      writeFileSync(join(tmpDir, "app.min.js"), "var a=1;");
+      writeFileSync(join(tmpDir, "vendor.bundle.js"), "var b=1;");
+      // Legitimate sources that must survive
+      writeFileSync(join(tmpDir, "main.ts"), "export const main = 1;");
+      writeFileSync(join(tmpDir, "lib.py"), "def x(): pass");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts", ".js", ".py", ".pyc", ".java"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      // Legitimate files present
+      expect(files.some((f) => f.endsWith("main.ts"))).toBe(true);
+      expect(files.some((f) => f.endsWith("lib.py"))).toBe(true);
+      // Framework artefacts excluded
+      expect(files.some((f) => f.includes("/_nuxt/"))).toBe(false);
+      expect(files.some((f) => f.includes("/.next/"))).toBe(false);
+      expect(files.some((f) => f.includes("/target/"))).toBe(false);
+      // Language caches excluded
+      expect(files.some((f) => f.includes("/__pycache__/"))).toBe(false);
+      expect(files.some((f) => f.endsWith(".pyc"))).toBe(false);
+      // Minified bundles excluded
+      expect(files.some((f) => f.endsWith("app.min.js"))).toBe(false);
+      expect(files.some((f) => f.endsWith("vendor.bundle.js"))).toBe(false);
+    });
+
+    // ignore-package supports negations (`!pattern`). A user .contextignore
+    // entry overrides any built-in baseline pattern — verifies the semantic
+    // assumption documented in ignore-defaults.ts.
+    it("honors user .contextignore negation overriding a built-in pattern", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-negation-"));
+      writeFileSync(join(tmpDir, "main.ts"), "export const main = 1;");
+      writeFileSync(join(tmpDir, "vendor.min.js"), "var a=1;");
+      // User explicitly re-includes the minified bundle they want indexed.
+      writeFileSync(join(tmpDir, ".contextignore"), "!vendor.min.js\n");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts", ".js"],
+        ignorePatterns: [],
+      });
+      await localScanner.loadIgnorePatterns(tmpDir);
+      const files = await localScanner.scanDirectory(tmpDir);
+
+      expect(files.some((f) => f.endsWith("main.ts"))).toBe(true);
+      // Negation re-includes vendor.min.js despite *.min.js baseline.
+      expect(files.some((f) => f.endsWith("vendor.min.js"))).toBe(true);
+    });
+
+    // User .contextignore that duplicates a baseline pattern must not
+    // raise — ignore-package add() is idempotent on duplicates.
+    it("accepts user patterns that duplicate the baseline without errors", async () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), "scanner-dup-"));
+      writeFileSync(join(tmpDir, "main.ts"), "export const main = 1;");
+      writeFileSync(join(tmpDir, ".contextignore"), "__pycache__/\n*.min.js\n");
+
+      const localScanner = new FileScanner({
+        supportedExtensions: [".ts"],
+        ignorePatterns: [],
+      });
+      await expect(localScanner.loadIgnorePatterns(tmpDir)).resolves.not.toThrow();
+      const files = await localScanner.scanDirectory(tmpDir);
+      expect(files.some((f) => f.endsWith("main.ts"))).toBe(true);
     });
   });
 

@@ -8,31 +8,41 @@
 
 import { posix } from "node:path";
 
-import type {
-  CallContext,
-  CallRef,
-  CallResolver,
-  ResolvedTarget,
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  pickSingleCandidate,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+  type CallResolver,
+  type ResolvedTarget,
 } from "../../../../../../contracts/types/codegraph.js";
 
 export class BashCallResolver implements CallResolver {
   readonly language = "bash";
 
+  constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
+
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
     // Bash functions are global within the sourced file set, so a
     // bare call resolves via short-name lookup across all known
-    // files. If the symbol is unique, return it.
+    // files. Strict mode keeps the existing N=1 guarantee; legacy
+    // `first` mode takes any candidate.
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
-    if (fallback.length === 1) {
-      return { targetRelPath: fallback[0].relPath, targetSymbolId: fallback[0].symbolId };
+    const unique = pickSingleCandidate(fallback, this.mode);
+    if (unique) {
+      return { targetRelPath: unique.relPath, targetSymbolId: unique.symbolId };
     }
-    // Multi-source case: filter to files that are sourced by this
-    // caller (via the imports list).
+    // Multi-source case (only reachable in strict mode): filter to
+    // files that are sourced by this caller (via the imports list).
+    // After the filter we still demand a unique pick — sourcing two
+    // files that both declare `cleanup()` is still ambiguous.
     if (fallback.length > 1) {
       const sourcedFiles = ctx.imports.map((imp) => mapBashSourceToFile(imp.importText, ctx.callerFile));
       const candidates = fallback.filter((def) => sourcedFiles.includes(def.relPath));
-      if (candidates.length === 1) {
-        return { targetRelPath: candidates[0].relPath, targetSymbolId: candidates[0].symbolId };
+      const sourced = pickSingleCandidate(candidates, this.mode);
+      if (sourced) {
+        return { targetRelPath: sourced.relPath, targetSymbolId: sourced.symbolId };
       }
     }
     return null;

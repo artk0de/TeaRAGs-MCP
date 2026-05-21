@@ -75,13 +75,15 @@ Ship a vertical slice that:
 
 ## Non-goals
 
-- **PostgreSQL adapter.** Deferred to Slice 4. Slice 1 ships DuckDB-only behind
-  a driver-agnostic `GraphDbClient` interface so Slice 4 plugs in without
-  refactor.
+- **PostgreSQL adapter.** Extracted from the slice roadmap into follow-up epic
+  `tea-rags-mcp-wj4s` (P4, activated only on concrete multi-tenant demand).
+  Slice 1 ships DuckDB-only behind a driver-agnostic `GraphDbClient` interface
+  so the follow-up adapter plugs in without refactor when the time comes.
 - **Languages other than TypeScript.** Python, Ruby, Elixir, regex-fallback
   hooks belong to Slice 3.
-- **Tier 2-3 metrics.** `transitiveImpact`, `pageRank`, `betweenness`, cycle
-  detection belong to Slice 2.
+- **Tier 2-3 metrics.** `transitiveImpact`, `pageRank`, cycle detection belong
+  to Slice 2. Betweenness centrality was a candidate; cut 2026-05-21 (no preset
+  references it; Slice 6 path tracing surfaces brokers organically).
 - **MCP tools beyond `get_callers` / `get_callees`.** `get_dependencies`,
   `get_dependents`, `find_cycles` belong to Slice 2.
 - **Temporal coupling and other sub-graphs.** `cg_temporal_*`, `cg_<other>_*`
@@ -152,7 +154,8 @@ Ship a vertical slice that:
   `TSCallResolver`. Slice 3 adds `RubyCallResolver`, `PythonCallResolver`,
   `ElixirCallResolver`.
 - **`GraphDbClient`** — driver-agnostic interface for graph DB read/write. Slice
-  1 ships `DuckDbGraphClient`. Slice 4 ships `PostgresGraphClient`.
+  1 ships `DuckDbGraphClient`. `PostgresGraphClient` is parked in follow-up epic
+  `tea-rags-mcp-wj4s` (P4) and ships on concrete multi-tenant demand.
 - **Edges by symbolId, not chunk_id.** Method-level edges reference
   `source_symbol_id` and `target_symbol_id`. SymbolId is stable across
   rechunking and integrates with the existing MCP navigation layer.
@@ -312,7 +315,7 @@ export interface ResolvedTarget {
 /**
  * Driver-agnostic graph DB client.
  * Slice 1: DuckDbGraphClient.
- * Slice 4: PostgresGraphClient.
+ * Follow-up epic tea-rags-mcp-wj4s: PostgresGraphClient (P4, on demand).
  */
 export interface GraphDbClient {
   init(): Promise<void>;
@@ -853,10 +856,11 @@ breaking changes later.
 - **`get_dependencies(file)`, `get_dependents(file)`, `find_cycles()`**: added
   to `GraphFacade` as new methods (additive). Each gets a new MCP tool
   descriptor in `CODEGRAPH_TOOLS`. No schema change.
-- **Tier 2-3 metrics** (`transitiveImpact`, `pageRank`, `betweenness`): computed
-  by recursive SQL queries against the existing edges tables. New signals
-  registered in `CODEGRAPH_FILE_SIGNALS`. Schema drift adds the new payload
-  fields, drift detector prompts reindex.
+- **Tier 2-3 metrics** (`transitiveImpact`, `pageRank`): computed by recursive
+  SQL queries against the existing edges tables. New signals registered in
+  `CODEGRAPH_FILE_SIGNALS`. Schema drift adds the new payload fields, drift
+  detector prompts reindex. (Betweenness centrality was originally listed here
+  too; cut from Slice 2 — see Slice 2 plan Task B4 for rationale.)
 - **Cycle detection results**: new table `cg_symbols_cycles` (matches the
   `cg_<subtype>_*` convention). Migration `002-cg-symbols-cycles.sql`.
 
@@ -875,7 +879,27 @@ breaking changes later.
   `pipeline/chunker/hooks/regex-fallback/`. Suitable for low-priority languages
   where AST hooks are not yet justified.
 
-### Slice 4 — PostgreSQL adapter
+### ~~Slice 4 — PostgreSQL adapter~~ — EXTRACTED to follow-up epic (2026-05-21)
+
+**Status:** EXTRACTED from slice roadmap into a separate P4 follow-up epic
+`tea-rags-mcp-wj4s`. Slice 4 of the codegraph roadmap is now the **static
+complexity track** (cyclomatic + cognitive + file aggregates + the 3 D5
+composites blocked on those) per `tea-rags-mcp-jkdp`.
+
+Rationale for extraction:
+
+- Postgres adapter is **infra-only**, no user-visible feature.
+- DuckDB graceful-disable (shipped in Slice 2: `factory.ts` `wireCodegraph`
+  catches lock conflict, logs warning, returns `undefined`) already handles
+  single-host multi-process scenarios — first-comer serves codegraph, later
+  spawns serve search/index without it. No bootstrap breakage.
+- Multi-tenant MCP (shared graph DB across separate tea-rags processes / hosts)
+  is **hypothetical** at this point — no current user demand.
+- ~2 weeks of effort better invested in user-visible features (path tracing,
+  temporal coupling, complexity-aware presets) until concrete demand appears.
+
+Scope when activated lives on the follow-up epic — the technical shape is
+preserved verbatim below for future reference:
 
 - `PostgresGraphClient` implements `GraphDbClient` at
   `core/adapters/postgres/client.ts`.

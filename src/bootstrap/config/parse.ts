@@ -127,6 +127,11 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
   const codegraph = {
     enabled: env("CODEGRAPH_ENABLED"),
     dbPath: env("CODEGRAPH_DB_PATH"),
+    dbMemoryLimit: env("CODEGRAPH_DB_MEMORY_LIMIT"),
+    dbThreads: env("CODEGRAPH_DB_THREADS"),
+    excludeTests: env("CODEGRAPH_EXCLUDE_TESTS"),
+    customExcludePatterns: env("CODEGRAPH_CUSTOM_EXCLUDE"),
+    ambiguousResolveMode: env("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE"),
   };
 
   const qdrantTune = {

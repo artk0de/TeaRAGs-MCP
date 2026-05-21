@@ -8,14 +8,37 @@
  * leaking a `family` marker into the shared contract.
  */
 
-import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../../contracts/types/codegraph.js";
+import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import type { CallResolver } from "../../../contracts/types/codegraph.js";
 import type { Trajectory } from "../../../contracts/types/trajectory.js";
+import type { CodegraphExclusionOptions } from "./exclusion.js";
 import { createSymbolsTrajectory } from "./symbols/index.js";
 
+/**
+ * Codegraph wiring deps — the trajectory family relies on a
+ * **per-collection** pool of DuckDB clients rather than a single shared
+ * graph DB. The pool lazily opens / migrates / hydrates
+ * `<dataDir>/codegraph/<collectionName>.duckdb` on first use for each
+ * indexed project, eliminating PK collisions between projects and
+ * localising DuckDB's single-writer file lock to within one project's
+ * scope.
+ *
+ * Resolvers (TS, Python, Go, …) are process-scoped — they hold language
+ * parsers and tsconfig state, neither of which depends on the indexed
+ * collection.
+ */
 export interface CodegraphDeps {
-  graphDb: GraphDbClient;
-  symbolTable: GlobalSymbolTable;
+  pool: GraphDbClientPool;
   resolvers: Map<string, CallResolver>;
+  /**
+   * Codegraph-layer exclusion config — applied AFTER FileScanner's
+   * ignoreFilter inside `discoverSupportedFiles`. Wired from
+   * `codegraphSchema.excludeTests` + `codegraphSchema.customExcludePatterns`
+   * by the bootstrap factory. Default (production wiring) is
+   * `{ excludeTests: true, customPatterns: [] }` — tests are kept out of
+   * the dependency graph but main Qdrant ingest still indexes them.
+   */
+  exclusion: CodegraphExclusionOptions;
 }
 
 /**
@@ -28,3 +51,5 @@ export function createCodegraphTrajectories(deps: CodegraphDeps): Trajectory[] {
 }
 
 export { createSymbolsTrajectory } from "./symbols/index.js";
+export { buildCodegraphExclusionFilter, CODEGRAPH_TEST_PATTERNS } from "./exclusion.js";
+export type { CodegraphExclusionOptions } from "./exclusion.js";
