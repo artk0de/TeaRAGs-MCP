@@ -392,6 +392,68 @@ describe("RubyCallResolver — explicit require with mixed import channels", () 
   });
 });
 
+describe("RubyCallResolver — Step 0 with qualified type name (scope tail = full FQN)", () => {
+  it("resolves member on a namespaced class when the symbol's scope tail is the FULL FQN", () => {
+    // The walker emits scope=["Product::IndexForm"] (one element, the
+    // full qualified name) for classes declared with a compound header
+    // like `class Product::IndexForm`. Step 0 matches against this
+    // form when typeName is also qualified — without the FQN-match
+    // branch, the filter compared bareType="IndexForm" against the
+    // tail="Product::IndexForm" and silently dropped the candidate.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/forms/product/index_form.rb", [
+      {
+        symbolId: "Product::IndexForm",
+        fqName: "Product::IndexForm",
+        shortName: "IndexForm",
+        relPath: "app/forms/product/index_form.rb",
+        scope: [],
+      },
+      {
+        symbolId: "Product::IndexForm#search_params",
+        fqName: "Product::IndexForm#search_params",
+        shortName: "search_params",
+        relPath: "app/forms/product/index_form.rb",
+        scope: ["Product::IndexForm"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/rpc/products_controller.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { form: "Product::IndexForm" },
+    };
+    const target = resolver.resolve(
+      { callText: "form.search_params", receiver: "form", member: "search_params", startLine: 5 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("Product::IndexForm#search_params");
+    expect(target?.targetRelPath).toBe("app/forms/product/index_form.rb");
+  });
+
+  it("still resolves a top-level class whose scope tail is the bare name", () => {
+    // Coverage twin: top-level `class Foo` produces scope=["Foo"], so
+    // the bareType branch of the filter must still match.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("foo.rb", [
+      { symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "foo.rb", scope: [] },
+      { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "foo.rb", scope: ["Foo"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "Foo" },
+    };
+    const target = resolver.resolve({ callText: "x.bar", receiver: "x", member: "bar", startLine: 1 }, ctx);
+    expect(target?.targetSymbolId).toBe("Foo#bar");
+  });
+});
+
 describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", () => {
   it("resolves method to superclass when bound class doesn't define it", () => {
     // Product::IndexForm < PaginatableForm. `form.page` where form bound

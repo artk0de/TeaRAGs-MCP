@@ -145,10 +145,17 @@ export class RubyCallResolver implements CallResolver {
     visited.add(typeName);
     const targetFile = this.resolveConstant(typeName, ctx);
     if (!targetFile) return null;
+    // The walker emits the scope's last element as the FULL qualified
+    // class name (`Product::IndexForm`) for nested-namespace classes,
+    // and as the bare class name (`PaginatableForm`) for top-level
+    // classes — both forms exist in the symbol table depending on how
+    // the class header was declared. Accept either to cover both.
     const bareType = lastConstantSegment(typeName);
-    const candidates = ctx.symbolTable
-      .lookupByShortName(member)
-      .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType);
+    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
+      if (def.relPath !== targetFile) return false;
+      const tail = def.scope[def.scope.length - 1];
+      return tail === typeName || tail === bareType;
+    });
     const target = pickSingleCandidate(candidates, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
 
