@@ -1099,6 +1099,173 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
+  it("emits synthetic methods from Ruby DSL macros (attr_accessor / attr_reader / attr_writer)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-attr-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "user.rb"),
+        ["class User", "  attr_accessor :name, :email", "  attr_reader :id", "  attr_writer :password", "end", ""].join(
+          "\n",
+        ),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // attr_accessor → reader + writer for each name.
+      expect(lookup.lookupByShortName("name").some((s) => s.symbolId === "User#name")).toBe(true);
+      expect(lookup.lookupByShortName("name=").some((s) => s.symbolId === "User#name=")).toBe(true);
+      expect(lookup.lookupByShortName("email").some((s) => s.symbolId === "User#email")).toBe(true);
+      expect(lookup.lookupByShortName("email=").some((s) => s.symbolId === "User#email=")).toBe(true);
+      // attr_reader → reader only.
+      expect(lookup.lookupByShortName("id").some((s) => s.symbolId === "User#id")).toBe(true);
+      expect(lookup.lookupByShortName("id=").some((s) => s.symbolId === "User#id=")).toBe(false);
+      // attr_writer → writer only.
+      expect(lookup.lookupByShortName("password").some((s) => s.symbolId === "User#password")).toBe(false);
+      expect(lookup.lookupByShortName("password=").some((s) => s.symbolId === "User#password=")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits synthetic methods from ActiveRecord associations (has_many / belongs_to / has_one)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-ar-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "user.rb"),
+        ["class User", "  has_many :products", "  belongs_to :company", "  has_one :profile", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // has_many :products → reader + writer.
+      expect(lookup.lookupByShortName("products").some((s) => s.symbolId === "User#products")).toBe(true);
+      expect(lookup.lookupByShortName("products=").some((s) => s.symbolId === "User#products=")).toBe(true);
+      // belongs_to :company → name + name= + name_id + name_id=.
+      expect(lookup.lookupByShortName("company").some((s) => s.symbolId === "User#company")).toBe(true);
+      expect(lookup.lookupByShortName("company=").some((s) => s.symbolId === "User#company=")).toBe(true);
+      expect(lookup.lookupByShortName("company_id").some((s) => s.symbolId === "User#company_id")).toBe(true);
+      expect(lookup.lookupByShortName("company_id=").some((s) => s.symbolId === "User#company_id=")).toBe(true);
+      // has_one :profile → reader + writer.
+      expect(lookup.lookupByShortName("profile").some((s) => s.symbolId === "User#profile")).toBe(true);
+      expect(lookup.lookupByShortName("profile=").some((s) => s.symbolId === "User#profile=")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits a class method from `scope :active, -> { ... }`", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-scope-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "post.rb"),
+        ["class Post", "  scope :active, -> { where(active: true) }", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // scope creates a class method, hence `Post.active` not `Post#active`.
+      expect(lookup.lookupByShortName("active").some((s) => s.symbolId === "Post.active")).toBe(true);
+      expect(lookup.lookupByShortName("active").some((s) => s.symbolId === "Post#active")).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does NOT emit DSL symbols for non-macro method calls (regular code)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-non-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "user.rb"),
+        ["class User", "  def something", "    save(:to_disk)", "    process(:other_arg)", "  end", "end", ""].join(
+          "\n",
+        ),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // `save(:to_disk)` is not a DSL macro — no symbol named `to_disk`
+      // should appear.
+      expect(lookup.lookupByShortName("to_disk")).toEqual([]);
+      expect(lookup.lookupByShortName("other_arg")).toEqual([]);
+      // The real method `something` remains.
+      expect(lookup.lookupByShortName("something").some((s) => s.symbolId === "User#something")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does NOT emit DSL symbols for receiver-qualified macro calls (`obj.attr_accessor :x`)", async () => {
+    // Guard branch: rubyMacroEmission must skip nodes whose `receiver` field
+    // is populated — those are regular method calls on an object, not the
+    // class-body DSL form. Without this guard, `obj.attr_accessor :name`
+    // would synthesize `User#name` accessors that don't exist at runtime.
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-receiver-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "user.rb"),
+        [
+          "class User",
+          "  def configure(obj)",
+          "    obj.attr_accessor :forwarded",
+          "    obj.has_many :proxied",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // No synthetic accessors emitted — receiver guard rejected both
+      // calls before the macro builder ran.
+      expect(lookup.lookupByShortName("forwarded")).toEqual([]);
+      expect(lookup.lookupByShortName("forwarded=")).toEqual([]);
+      expect(lookup.lookupByShortName("proxied")).toEqual([]);
+      // The real method `configure` is still extracted normally.
+      expect(lookup.lookupByShortName("configure").some((s) => s.symbolId === "User#configure")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does NOT emit DSL symbols when a macro is invoked with no arguments or with non-symbol args", async () => {
+    // Two guards exercised here:
+    //   1. `attr_accessor` standalone — no argument_list at all (line 1375
+    //      fallback: `if (!args) return null`).
+    //   2. `attr_accessor variable_name` — args present but none of them
+    //      are `simple_symbol` nodes, so symbolBases stays empty (line
+    //      1383: `if (symbolBases.length === 0) return null`).
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-no-args-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "user.rb"),
+        [
+          "class User",
+          "  attr_accessor",
+          "  attr_accessor variable_name",
+          "  has_many @runtime_list",
+          "  def real_method",
+          "    @x",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // No synthetic accessors from any of the malformed macro calls.
+      expect(lookup.lookupByShortName("variable_name")).toEqual([]);
+      expect(lookup.lookupByShortName("variable_name=")).toEqual([]);
+      expect(lookup.lookupByShortName("runtime_list")).toEqual([]);
+      expect(lookup.lookupByShortName("runtime_list=")).toEqual([]);
+      // The real method survives, confirming the file parsed and walked.
+      expect(lookup.lookupByShortName("real_method").some((s) => s.symbolId === "User#real_method")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("classifies `def foo` inside `class << self` block as a class method (Foo.foo, not Foo#foo)", async () => {
     // Two-channel singleton declaration: tree-sitter-ruby parses
     // `def self.bar` as `singleton_method` (handled by the existing

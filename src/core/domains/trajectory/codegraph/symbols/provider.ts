@@ -200,7 +200,15 @@ interface LanguageConfig {
    * the language's `scopeSeparator` is used. See
    * `.claude/rules/symbolid-convention.md` for the full table.
    */
-  nameOf: (node: Parser.SyntaxNode) => NamedSymbol | null;
+  /**
+   * Most languages emit zero or one symbol per AST node. Ruby DSL macros
+   * (`attr_accessor :a, :b`) emit MULTIPLE symbols from a single `call`
+   * node — returning an array tells `collectSymbols` to emit each
+   * synthetic symbol at the same scope (no descent, no scope mutation).
+   * Array members MUST have `descendsInto: false`; the array form is for
+   * leaf methods only.
+   */
+  nameOf: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null;
   /**
    * Joiner used to build the fully-qualified symbol id from the scope
    * stack + the local node name. TypeScript / Python use ".", Ruby
@@ -1041,12 +1049,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   private collectSymbols(
     tree: Parser.Tree,
-    nameOf: (node: Parser.SyntaxNode) => NamedSymbol | null,
+    nameOf: (node: Parser.SyntaxNode) => NamedSymbol | NamedSymbol[] | null,
     separator: string,
   ): { symbolId: string; startLine: number; endLine: number; scope: string[] }[] {
     const out: { symbolId: string; startLine: number; endLine: number; scope: string[] }[] = [];
     const walk = (node: Parser.SyntaxNode, scope: string[], composed: string): void => {
-      const named = nameOf(node);
+      const result = nameOf(node);
       // Stable nested-scope tracking lets each named declaration carry
       // a unique fully-qualified id even when same-name declarations
       // are nested in different parents (e.g. four `worker()` helpers
@@ -1054,6 +1062,27 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // the fqName we've built so far; we extend it per-named symbol
       // with the right separator (`#` for instance methods nested
       // under a class; the language's `scopeSeparator` otherwise).
+      //
+      // Array return form (Ruby DSL macros): emit each synthetic symbol
+      // at the current scope but do NOT descend through them — the
+      // call node itself has no useful interior for walking.
+      if (Array.isArray(result)) {
+        for (const ns of result) {
+          out.push({
+            symbolId: joinSymbol(composed, ns, separator),
+            startLine: node.startPosition.row + 1,
+            endLine: node.endPosition.row + 1,
+            scope,
+          });
+        }
+        // Continue walking children at the SAME scope (descendsInto is
+        // structurally false for array members — the call node is a leaf
+        // for symbol purposes; its children are argument expressions
+        // already covered by other nodes' nameOf).
+        for (const child of node.children) walk(child, scope, composed);
+        return;
+      }
+      const named = result;
       const childScope = named ? [...scope, named.name] : scope;
       const childComposed = named ? joinSymbol(composed, named, separator) : composed;
       if (named) {
@@ -1250,7 +1279,7 @@ function pyNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
   return null;
 }
 
-function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
+function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | NamedSymbol[] | null {
   // Both `method` and `singleton_method` route through classifyMethod
   // (in core/infra/symbolid) so the chunker and codegraph agree on the
   // separator for the same physical AST node. classifyMethod also walks
@@ -1271,7 +1300,100 @@ function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
     const localName = nameNode.type === "scope_resolution" ? scopeResolutionText(nameNode) : nameNode.text;
     return { name: localName, descendsInto: true };
   }
+  // Ruby DSL macros — `attr_accessor :a, :b`, `has_many :products`, etc.
+  // Each macro emits multiple synthetic methods at the current scope.
+  // Only fires when the macro looks like a class-body declaration: a
+  // `call` (or `method_call`) node with no receiver and a recognised
+  // method name. Argument shape: a sequence of `simple_symbol` nodes.
+  if (node.type === "call" || node.type === "method_call") {
+    const macro = rubyMacroEmission(node);
+    if (macro) return macro;
+  }
   return null;
+}
+
+/**
+ * Names of methods Ruby DSL macros emit at the enclosing class scope.
+ * Each entry maps a macro name to a builder that takes a base name
+ * (the symbol-argument text, with leading `:` stripped) and returns
+ * the list of synthetic method names + their methodKind.
+ *
+ * Coverage:
+ *   - attr_accessor / attr_reader / attr_writer — Ruby builtin
+ *   - has_many / has_one / belongs_to — ActiveRecord associations
+ *   - scope — ActiveRecord class-level query helper (rare static case)
+ *
+ * Out of scope (intentional):
+ *   - delegate :method, to: :other — would need second-arg lookup
+ *   - define_method(:name) — runtime, value passed in argument
+ *   - has_and_belongs_to_many — legacy AR association, low frequency
+ *   - method_missing — pure runtime dispatch, unrepresentable
+ */
+const RUBY_DSL_MACROS: Record<string, (base: string) => { name: string; kind: "instance" | "static" }[]> = {
+  attr_accessor: (b) => [
+    { name: b, kind: "instance" },
+    { name: `${b}=`, kind: "instance" },
+  ],
+  attr_reader: (b) => [{ name: b, kind: "instance" }],
+  attr_writer: (b) => [{ name: `${b}=`, kind: "instance" }],
+  has_many: (b) => [
+    { name: b, kind: "instance" },
+    { name: `${b}=`, kind: "instance" },
+  ],
+  has_one: (b) => [
+    { name: b, kind: "instance" },
+    { name: `${b}=`, kind: "instance" },
+  ],
+  belongs_to: (b) => [
+    { name: b, kind: "instance" },
+    { name: `${b}=`, kind: "instance" },
+    { name: `${b}_id`, kind: "instance" },
+    { name: `${b}_id=`, kind: "instance" },
+  ],
+  // AR `scope :active, -> { ... }` — adds a class method named after the
+  // first symbol argument. Only the first arg matters; the lambda is
+  // body, not an accessor target.
+  scope: (b) => [{ name: b, kind: "static" }],
+};
+
+function rubyMacroEmission(node: Parser.SyntaxNode): NamedSymbol[] | null {
+  // Macro calls in class body have no receiver field — they're direct
+  // method invocations like `attr_accessor :x` rather than `obj.attr_accessor`.
+  if (node.childForFieldName("receiver")) return null;
+  const methodField = node.childForFieldName("method");
+  // For tree-sitter-ruby `call` nodes the function position may also
+  // appear as the first identifier child when no `method` field is
+  // populated (parser-version variance — fall back tolerantly).
+  const methodNode = methodField ?? node.children.find((c) => c.type === "identifier");
+  if (!methodNode) return null;
+  const macroName = methodNode.text;
+  const builder = RUBY_DSL_MACROS[macroName];
+  if (!builder) return null;
+  // Argument list — `argument_list` field or the `arguments` field on
+  // newer grammars.
+  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  const symbolBases: string[] = [];
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "simple_symbol") continue;
+    // `:product_ids` → strip leading `:`.
+    const base = arg.text.startsWith(":") ? arg.text.slice(1) : arg.text;
+    if (base.length > 0) symbolBases.push(base);
+  }
+  if (symbolBases.length === 0) return null;
+  // For `scope :active, -> { ... }` only the first argument is the name;
+  // for accessor macros every symbol argument generates its own method
+  // set. Picking the first argument for `scope` is enforced by the
+  // builder consuming `b` once.
+  if (macroName === "scope") {
+    const first = symbolBases[0];
+    return builder(first).map((m) => ({ name: m.name, descendsInto: false, methodKind: m.kind }));
+  }
+  const out: NamedSymbol[] = [];
+  for (const base of symbolBases) {
+    for (const m of builder(base)) out.push({ name: m.name, descendsInto: false, methodKind: m.kind });
+  }
+  return out;
 }
 
 function goNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
