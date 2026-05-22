@@ -121,6 +121,61 @@ describe("classifyMethod — Ruby `method` vs `singleton_method`", () => {
   it("treats `singleton_method` (def self.foo) as static", () => {
     expect(classifyMethod(node({ type: "singleton_method" }) as never)).toBe("static");
   });
+
+  it("treats `method` inside `class << self` block as static", () => {
+    // class Foo
+    //   class << self
+    //     def bar
+    //     end
+    //   end
+    // end
+    // Build the chain: method → body → singleton_class → body → class
+    const classFoo = node({ type: "class" });
+    const classFooBody = node({ type: "body", parent: classFoo });
+    const singleton = node({ type: "singleton_class", parent: classFooBody });
+    const singletonBody = node({ type: "body", parent: singleton });
+    const method = node({ type: "method", parent: singletonBody });
+    expect(classifyMethod(method as never)).toBe("static");
+    expect(isStaticMethodNode(method as never)).toBe(true);
+  });
+
+  it("treats `method` inside a regular class (not singleton) as instance", () => {
+    // class Foo
+    //   def bar
+    //   end
+    // end
+    const classFoo = node({ type: "class" });
+    const classBody = node({ type: "body", parent: classFoo });
+    const method = node({ type: "method", parent: classBody });
+    expect(classifyMethod(method as never)).toBe("instance");
+  });
+
+  it("does NOT mis-classify inner method as static when outer has singleton_class sibling", () => {
+    // class Foo
+    //   class << self
+    //     def outer_static; end
+    //   end
+    //   class Bar
+    //     def inner; end  # this is INSTANCE on Bar, NOT static
+    //   end
+    // end
+    // Build only the inner-method chain — the rubyInsideSingletonClass
+    // walk should hit `class Bar` first and stop before reaching the
+    // outer singleton_class.
+    const classFoo = node({ type: "class" });
+    const fooBody = node({ type: "body", parent: classFoo });
+    const classBar = node({ type: "class", parent: fooBody });
+    const barBody = node({ type: "body", parent: classBar });
+    const inner = node({ type: "method", parent: barBody });
+    expect(classifyMethod(inner as never)).toBe("instance");
+  });
+
+  it("treats top-level `class << obj` (without enclosing class) singleton block as static", () => {
+    const singleton = node({ type: "singleton_class" });
+    const singletonBody = node({ type: "body", parent: singleton });
+    const method = node({ type: "method", parent: singletonBody });
+    expect(classifyMethod(method as never)).toBe("static");
+  });
 });
 
 describe("classifyMethod — Python `function_definition` decorator detection", () => {

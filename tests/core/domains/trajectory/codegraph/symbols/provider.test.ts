@@ -1099,6 +1099,49 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
+  it("classifies `def foo` inside `class << self` block as a class method (Foo.foo, not Foo#foo)", async () => {
+    // Two-channel singleton declaration: tree-sitter-ruby parses
+    // `def self.bar` as `singleton_method` (handled by the existing
+    // branch) AND `class << self / def bar / end` as a regular `method`
+    // node wrapped in `singleton_class`. Both should produce the
+    // class-method symbolId form `Class.method` per the convention.
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-singleton-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "post.rb"),
+        [
+          "class Post",
+          "  class << self",
+          "    def recent",
+          "      []",
+          "    end",
+          "    def published",
+          "      []",
+          "    end",
+          "  end",
+          "  def title",
+          "    @title",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Methods inside class << self → class form `.`.
+      const recent = lookup.lookupByShortName("recent");
+      expect(recent[0].symbolId).toBe("Post.recent");
+      const published = lookup.lookupByShortName("published");
+      expect(published[0].symbolId).toBe("Post.published");
+      // Methods OUTSIDE the singleton block remain instance form `#`.
+      const title = lookup.lookupByShortName("title");
+      expect(title[0].symbolId).toBe("Post#title");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // Slice 1 — LANGUAGES dispatch for polyglot walkers. Each of the five
   // new languages (.js, .go, .java, .rs, .sh) ships with its own walker
   // + nameOf in the dispatch table. These tests drive buildFileSignals

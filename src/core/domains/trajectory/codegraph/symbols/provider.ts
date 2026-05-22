@@ -1251,14 +1251,17 @@ function pyNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
 }
 
 function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
-  if (node.type === "method") {
+  // Both `method` and `singleton_method` route through classifyMethod
+  // (in core/infra/symbolid) so the chunker and codegraph agree on the
+  // separator for the same physical AST node. classifyMethod also walks
+  // up to detect `class << self` blocks — regular `method` nodes inside
+  // a singleton_class become class-level and join with `.` instead of `#`.
+  if (node.type === "method" || node.type === "singleton_method") {
     const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false, methodKind: "instance" };
-  }
-  if (node.type === "singleton_method") {
-    // `def self.foo` — Ruby class method. Joins to its class with `.`.
-    const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false, methodKind: "static" };
+    if (id) {
+      const kind = methodKindFromClassify(node) ?? "instance";
+      return { name: id.text, descendsInto: false, methodKind: kind };
+    }
   }
   if (node.type === "class" || node.type === "module") {
     // `class Acme::Auth` — read the scope_resolution chain so the

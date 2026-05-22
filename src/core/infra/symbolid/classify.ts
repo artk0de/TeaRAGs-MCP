@@ -47,10 +47,14 @@ export function classifyMethod(node: Parser.SyntaxNode): MethodClassification | 
   if (node.type === "method_declaration") return javaHasStaticModifier(node) ? "static" : "instance";
   // Java constructor — instance-bound (initializes an instance).
   if (node.type === "constructor_declaration") return "instance";
-  // Ruby — `def self.foo` is parsed as `singleton_method` (a class
-  // method), `def foo` as `method` (an instance method).
+  // Ruby — three shapes for class-level methods:
+  //   1. `def self.foo` — parsed as `singleton_method` directly.
+  //   2. `class << self` block with `def foo` inside — the `def` is a
+  //      regular `method` node, but its enclosing scope is a
+  //      `singleton_class`, which makes the method class-level.
+  //   3. Otherwise `def foo` is an instance method.
   if (node.type === "singleton_method") return "static";
-  if (node.type === "method") return "instance";
+  if (node.type === "method") return rubyInsideSingletonClass(node) ? "static" : "instance";
   // Python — `function_definition` decorated with `@classmethod` or
   // `@staticmethod` is class-level, otherwise instance. Module-level
   // functions also pass through here but the caller filters those
@@ -96,6 +100,25 @@ function pythonHasClassOrStaticDecorator(node: Parser.SyntaxNode): boolean {
     if (child.type !== "decorator") continue;
     const { text } = child;
     if (text.includes("@classmethod") || text.includes("@staticmethod")) return true;
+  }
+  return false;
+}
+
+/**
+ * Walk up the AST to find a `singleton_class` ancestor. Ruby's
+ * `class << self ... def foo ... end ... end` syntax wraps regular
+ * `method` nodes inside a `singleton_class` body — those `def`s are
+ * class-level methods even though their AST type is `method` and not
+ * `singleton_method`. Walking up stops at the first `class` / `module`
+ * ancestor (those reset the singleton-class scope) so a nested regular
+ * method declaration inside an inner class doesn't get mis-classified.
+ */
+function rubyInsideSingletonClass(node: Parser.SyntaxNode): boolean {
+  let p: Parser.SyntaxNode | null = node.parent;
+  while (p) {
+    if (p.type === "singleton_class") return true;
+    if (p.type === "class" || p.type === "module") return false;
+    p = p.parent;
   }
   return false;
 }
