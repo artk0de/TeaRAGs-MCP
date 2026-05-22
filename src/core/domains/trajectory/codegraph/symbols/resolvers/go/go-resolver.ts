@@ -35,6 +35,13 @@ export class GoCallResolver implements CallResolver {
         const target = pickSingleCandidate(candidates, this.mode);
         if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
       }
+      // Chained / method receivers (e.g. `c.Request.URL.Query()`) and
+      // bare receivers that don't match any import — we don't know the
+      // dynamic type. Dropping the edge is safer than a global
+      // short-name fallback, which fabricates false-positive cycles
+      // (e.g. matching `c.Request.URL.Query()` against the unique
+      // `Context#Query` symbol just because "Query" is unique).
+      return null;
     }
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const target = pickSingleCandidate(fallback, this.mode);

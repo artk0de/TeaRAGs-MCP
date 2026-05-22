@@ -1488,6 +1488,86 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
+  it("Go method_declaration emits Receiver#Method fqName so distinct receivers don't collide", async () => {
+    // Per .claude/rules/symbolid-convention.md, Go instance methods are
+    // Receiver#Method form. Without the receiver prefix, methods with the
+    // same shortName (e.g. (*Context).Query vs (*Bind).Query) collapse in
+    // the symbol table and fabricate false-positive cycles plus mis-routed
+    // call edges (gin: false cycle Query↔GetQuery↔GetQueryArray↔initQueryCache).
+    const root = mkdtempSync(join(tmpdir(), "cg-go-recv-"));
+    try {
+      mkdirSync(join(root, "pkg"), { recursive: true });
+      writeFileSync(
+        join(root, "pkg", "context.go"),
+        [
+          "package pkg",
+          "",
+          "type Context struct{}",
+          "type Bind struct{}",
+          "",
+          'func (c *Context) Query() string { return "" }',
+          'func (b *Bind) Query() string { return "" }',
+          "",
+        ].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()]).toEqual(["pkg/context.go"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Both qualified forms exist (no merge by shortName).
+      expect(lookup.lookup("Context#Query").length).toBe(1);
+      expect(lookup.lookup("Bind#Query").length).toBe(1);
+      // Pointer-receiver `*Context` strips to bare `Context`.
+      expect(lookup.lookup("Context#Query")[0]?.relPath).toBe("pkg/context.go");
+      // shortName lookup still works (single shortName "Query" → 2 hits).
+      expect(lookup.lookupByShortName("Query").length).toBe(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("extractGoReceiverType handles value and generic value receivers without collapsing into the same symbol", async () => {
+    // Exercises the non-pointer (value-receiver) and generic_type branches
+    // of extractGoReceiverType. Value receivers (`func (s Service) ...`)
+    // skip the pointer_type wrapper and read type_identifier directly;
+    // generic value receivers (`func (b Box[T]) ...`) carry typeNode as
+    // a generic_type whose `type` field is the bare base name. Both must
+    // compose as Receiver#Method (NOT Receiver[T]#Method) so distinct
+    // receivers with the same method name do not collide.
+    const root = mkdtempSync(join(tmpdir(), "cg-go-recv-variants-"));
+    try {
+      mkdirSync(join(root, "pkg"), { recursive: true });
+      writeFileSync(
+        join(root, "pkg", "variants.go"),
+        [
+          "package pkg",
+          "",
+          "type Service struct{}",
+          "type Box[T any] struct{ v T }",
+          "",
+          // Value receiver — typeNode is type_identifier directly (no pointer_type wrap).
+          'func (s Service) Open() string { return "" }',
+          // Generic value receiver — typeNode is generic_type directly
+          // (no pointer_type wrap). Drives the generic_type branch in
+          // extractGoReceiverType which reads the base name via the
+          // generic_type's `type` field.
+          'func (b Box[T]) Open() string { return "" }',
+          "",
+        ].join("\n"),
+      );
+      const overlays = await provider.buildFileSignals(root);
+      expect([...overlays.keys()]).toEqual(["pkg/variants.go"]);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Value-receiver branch resolves to bare `Service` (no generic, no pointer).
+      expect(lookup.lookup("Service#Open").length).toBe(1);
+      // Generic value-receiver branch strips the type-parameter list to bare `Box`.
+      expect(lookup.lookup("Box#Open").length).toBe(1);
+      // Both Open methods exist as distinct qualified symbols.
+      expect(lookup.lookupByShortName("Open").length).toBe(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("buildFileSignals dispatches .java files through extractFromJavaFile + javaNameOf", async () => {
     const root = mkdtempSync(join(tmpdir(), "cg-java-disp-"));
     try {

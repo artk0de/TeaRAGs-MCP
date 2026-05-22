@@ -37,6 +37,22 @@ export class JavaCallResolver implements CallResolver {
           return { targetRelPath: targetFile, targetSymbolId: null };
         }
       }
+      // No import matched. Salvage one safe case: wildcard imports
+      // (`import com.foo.*`) bring all classes from a package into scope
+      // without a per-class import line. We can still resolve
+      // `Bar.method()` IF some candidate's owning class name equals the
+      // receiver. This filter also rejects the false-positive cases that
+      // motivated the bug: `Character.isWhitespace` against
+      // `StringUtils.isWhitespace` (scope=[StringUtils] != "Character"),
+      // `cs.charAt` against `StrBuilder#charAt`
+      // (scope=[StrBuilder] != "cs"), `random().nextBytes()` against
+      // `RandomUtils.nextBytes` (scope=[RandomUtils] != "random()").
+      const filteredByScope = ctx.symbolTable
+        .lookupByShortName(call.member)
+        .filter((def) => def.scope[def.scope.length - 1] === call.receiver);
+      const target = pickSingleCandidate(filteredByScope, this.mode);
+      if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+      return null;
     }
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const target = pickSingleCandidate(fallback, this.mode);

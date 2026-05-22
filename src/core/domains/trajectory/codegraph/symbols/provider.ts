@@ -1468,9 +1468,17 @@ function rubyMacroEmission(node: Parser.SyntaxNode): NamedSymbol[] | null {
 
 function goNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
   if (node.type === "method_declaration") {
-    // Go receiver-bound methods are instance methods.
+    // Go receiver-bound methods are instance methods. The receiver type
+    // must be embedded in the emitted name as `Receiver#Method` —
+    // otherwise methods with the same shortName from different receivers
+    // (e.g. `(*Context).Query` and `(*Bind).Query`) collapse in the
+    // global symbol table and fabricate false-positive cycles plus
+    // mis-routed call edges. See .claude/rules/symbolid-convention.md.
     const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false, methodKind: "instance" };
+    if (!id) return null;
+    const receiverType = extractGoReceiverType(node);
+    const composed = receiverType ? `${receiverType}#${id.text}` : id.text;
+    return { name: composed, descendsInto: false, methodKind: "instance" };
   }
   if (node.type === "function_declaration") {
     const id = node.childForFieldName("name");
@@ -1483,6 +1491,30 @@ function goNameOf(node: Parser.SyntaxNode): NamedSymbol | null {
     if (id) return { name: id.text, descendsInto: false };
   }
   return null;
+}
+
+/**
+ * Extract the receiver type name from a Go `method_declaration` node,
+ * stripping pointer (`*Receiver` → `Receiver`) and dropping any generic
+ * type-parameter list. Returns null if the receiver cannot be parsed
+ * (defensive — tree-sitter-go is error-tolerant).
+ */
+function extractGoReceiverType(method: Parser.SyntaxNode): string | null {
+  const receiver = method.childForFieldName("receiver");
+  if (!receiver) return null;
+  const param = receiver.children.find((c) => c.type === "parameter_declaration");
+  if (!param) return null;
+  const typeNode = param.childForFieldName("type");
+  if (!typeNode) return null;
+  // `*Receiver` pointer types wrap the identifier.
+  const ident =
+    typeNode.type === "pointer_type" ? typeNode.children.find((c) => c.type === "type_identifier") : typeNode;
+  if (!ident) return null;
+  if (ident.type === "generic_type") {
+    const base = ident.childForFieldName("type");
+    return base?.text ?? null;
+  }
+  return ident.text;
 }
 
 function javaNameOf(node: Parser.SyntaxNode): NamedSymbol | null {

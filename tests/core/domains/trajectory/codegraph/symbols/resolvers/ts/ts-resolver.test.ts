@@ -367,4 +367,97 @@ describe("TSCallResolver", () => {
       expect(first?.targetSymbolId).toBe("Foo#bar");
     });
   });
+
+  // The symbolId convention (.claude/rules/symbolid-convention.md) requires
+  // instance methods to use `#` between class and member. When the symbol
+  // table holds the instance form `Store#read`, `this.read()` from inside
+  // `Store` MUST resolve via the EXACT `Class#member` lookup (ts-resolver
+  // line 50-52), NOT via the static `.` fallback nor the same-file
+  // short-name fallback. This guards against silent regressions where the
+  // resolver would degrade to short-name matching and misroute calls in
+  // codebases that have two instance methods with the same short name in
+  // different classes.
+  it("resolves this.X() to <Class>#<X> when the symbol table holds the instance form", () => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/store.ts", [
+      {
+        symbolId: "Store#read",
+        fqName: "Store#read",
+        shortName: "read",
+        relPath: "src/store.ts",
+        scope: ["Store"],
+      },
+    ]);
+    // Same short-name in another file. If the resolver fell through to
+    // the same-file short-name fallback OR the global short-name lookup,
+    // it would either miss (wrong file) or hit ambiguity. The exact
+    // `Store#read` lookup in the caller's file must win cleanly.
+    symbolTable.upsertFile("src/other.ts", [
+      {
+        symbolId: "Other#read",
+        fqName: "Other#read",
+        shortName: "read",
+        relPath: "src/other.ts",
+        scope: ["Other"],
+      },
+    ]);
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+    const result = resolver.resolve(
+      { callText: "this.read(coll)", receiver: "this", member: "read", startLine: 7 },
+      {
+        callerFile: "src/store.ts",
+        callerScope: ["Store"],
+        imports: [],
+        symbolTable,
+      },
+    );
+    expect(result).toEqual({ targetRelPath: "src/store.ts", targetSymbolId: "Store#read" });
+  });
+
+  // Same-file short-name fallback (ts-resolver line 61-62). Fires when
+  // neither the instance `Class#member` nor the static `Class.member`
+  // form is present in the symbol table, but a same-file definition with
+  // a matching shortName exists. Covers the "class instance shadowed via
+  // getter / decorator / mixin" comment in the resolver. The short-name
+  // match must be CONSTRAINED to the caller's file so a same-shortName
+  // symbol in another file doesn't misroute.
+  it("falls back to same-file short-name lookup when neither Class#X nor Class.X is in the table", () => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    // Caller file declares `read` but NOT under a Store-scoped fqName —
+    // simulates a getter / decorator-generated symbol whose composed
+    // name doesn't carry the class prefix.
+    symbolTable.upsertFile("src/store.ts", [
+      {
+        symbolId: "read",
+        fqName: "read",
+        shortName: "read",
+        relPath: "src/store.ts",
+        scope: [],
+      },
+    ]);
+    // Ambient `read` in another file. Without the SAME-FILE constraint
+    // on the short-name fallback, this would create ambiguity and the
+    // resolver would have to drop or guess.
+    symbolTable.upsertFile("src/other.ts", [
+      {
+        symbolId: "Other#read",
+        fqName: "Other#read",
+        shortName: "read",
+        relPath: "src/other.ts",
+        scope: ["Other"],
+      },
+    ]);
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+    const result = resolver.resolve(
+      { callText: "this.read(coll)", receiver: "this", member: "read", startLine: 7 },
+      {
+        callerFile: "src/store.ts",
+        callerScope: ["Store"],
+        imports: [],
+        symbolTable,
+      },
+    );
+    // Must pick the same-file `read`, not the cross-file `Other#read`.
+    expect(result).toEqual({ targetRelPath: "src/store.ts", targetSymbolId: "read" });
+  });
 });

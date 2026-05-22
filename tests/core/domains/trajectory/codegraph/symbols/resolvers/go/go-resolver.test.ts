@@ -50,4 +50,29 @@ describe("GoCallResolver", () => {
     );
     expect(target?.targetRelPath).toBe("helpers.go");
   });
+
+  it("drops the edge when receiver does NOT match any import (no global short-name fallback)", () => {
+    // Real-world case (gin): inside `(c *Context) initQueryCache()` the
+    // expression `c.Request.URL.Query()` has receiver "c.Request.URL".
+    // None of the imports match this receiver chain. The old behaviour
+    // fell back to a global short-name lookup of "Query" and matched the
+    // unique receiver-qualified `Context#Query` symbol, fabricating a
+    // false-positive cycle. The resolver must drop the edge instead.
+    const r = new GoCallResolver();
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("context.go", [
+      {
+        symbolId: "Context#Query",
+        fqName: "Context#Query",
+        shortName: "Query",
+        relPath: "context.go",
+        scope: [],
+      },
+    ]);
+    const target = r.resolve(
+      { callText: "c.Request.URL.Query()", receiver: "c.Request.URL", member: "Query", startLine: 1 },
+      ctx("context.go", [], t),
+    );
+    expect(target).toBeNull();
+  });
 });
