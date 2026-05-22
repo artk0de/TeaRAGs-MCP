@@ -21,6 +21,18 @@
 
 import ignore, { type Ignore } from "ignore";
 
+/**
+ * Generated / machine-authored files that look like source but never participate
+ * in the runtime call or import graph. Excluded unconditionally — there is no
+ * env-var opt-out because including them is never the right behaviour for a
+ * code-graph (no human edits, no real callers, no real callees).
+ */
+export const CODEGRAPH_GENERATED_PATTERNS: readonly string[] = [
+  // Rails generated AR schema — re-authored by `rails db:migrate`, declarative
+  // table defs with no method calls into the rest of the application.
+  "**/db/schema.rb",
+];
+
 export const CODEGRAPH_TEST_PATTERNS: readonly string[] = [
   // Generic test directories — match anywhere in tree.
   "**/tests/**",
@@ -86,6 +98,8 @@ export interface CodegraphExclusionOptions {
  */
 export function buildCodegraphExclusionFilter(options: CodegraphExclusionOptions): Ignore {
   const ig = ignore();
+  // Generated files are always excluded — invariant, not configurable.
+  ig.add(CODEGRAPH_GENERATED_PATTERNS as string[]);
   if (options.excludeTests) {
     ig.add(CODEGRAPH_TEST_PATTERNS as string[]);
   }
