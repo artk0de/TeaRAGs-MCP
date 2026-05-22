@@ -164,7 +164,7 @@ describe("TSCallResolver", () => {
         callerScope: ["Coordinator"],
         imports: [{ importText: "./store", startLine: 1 }],
         symbolTable,
-        classFieldTypes: new Map([["Coordinator", new Map([["markerStore", "MarkerStore"]])]]),
+        classFieldTypes: { Coordinator: { markerStore: "MarkerStore" } },
       };
       const call: CallRef = {
         callText: "this.markerStore.write(coll)",
@@ -193,7 +193,7 @@ describe("TSCallResolver", () => {
         callerScope: ["Main"],
         imports: [],
         symbolTable,
-        classFieldTypes: new Map([["Main", new Map([["util", "Util"]])]]),
+        classFieldTypes: { Main: { util: "Util" } },
       };
       const call: CallRef = {
         callText: "this.util.parse(x)",
@@ -247,7 +247,7 @@ describe("TSCallResolver", () => {
         callerScope: ["Main"],
         imports: [],
         symbolTable,
-        classFieldTypes: new Map([["Main", new Map([["a", "A"]])]]),
+        classFieldTypes: { Main: { a: "A" } },
       };
       const call: CallRef = {
         callText: "this.a.b.go()",
@@ -259,6 +259,42 @@ describe("TSCallResolver", () => {
       // Chained — cross-class branch does NOT engage. Falls through to
       // short-name lookup; `go` is unique → resolves via fallback path.
       expect(result).toEqual({ targetRelPath: "src/x.ts", targetSymbolId: "X#go" });
+    });
+
+    it("survives NDJSON spill — classFieldTypes round-trips through JSON without losing structure", () => {
+      // FileExtraction values may be spilled to NDJSON between walker-emit
+      // and resolver-consume. Map does NOT survive JSON.stringify — it
+      // serializes to {} and downstream `.get()` calls throw
+      // `classFieldTypes?.get is not a function`. Contract must use a
+      // JSON-safe shape.
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/store.ts", [
+        {
+          symbolId: "MarkerStore#write",
+          fqName: "MarkerStore#write",
+          shortName: "write",
+          relPath: "src/store.ts",
+          scope: ["MarkerStore"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+      const original = { Coordinator: { markerStore: "MarkerStore" } };
+      const afterSpill = JSON.parse(JSON.stringify(original)) as Record<string, Record<string, string>>;
+      const ctx: CallContext = {
+        callerFile: "src/coordinator.ts",
+        callerScope: ["Coordinator"],
+        imports: [{ importText: "./store", startLine: 1 }],
+        symbolTable,
+        classFieldTypes: afterSpill,
+      };
+      const call: CallRef = {
+        callText: "this.markerStore.write(coll)",
+        receiver: "this.markerStore",
+        member: "write",
+        startLine: 10,
+      };
+      const result = resolver.resolve(call, ctx);
+      expect(result).toEqual({ targetRelPath: "src/store.ts", targetSymbolId: "MarkerStore#write" });
     });
   });
 
@@ -318,7 +354,7 @@ describe("TSCallResolver", () => {
         callerScope: ["Caller"],
         imports: [],
         symbolTable: t,
-        classFieldTypes: new Map([["Caller", new Map([["helper", "Foo"]])]]),
+        classFieldTypes: { Caller: { helper: "Foo" } },
       };
 
       const strict = new TSCallResolver({ baseUrl: ".", paths: {} }).resolve(call, ctx);

@@ -33,6 +33,12 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   const imports = collectImports(input.tree.rootNode);
   const calls = collectCalls(input.tree.rootNode);
   const classFieldTypes = collectClassFieldTypes(input.tree.rootNode);
+  // Convert nested Map → nested Record so the contract survives NDJSON
+  // spill between walker emit and resolver consume.
+  const classFieldTypesRecord: Record<string, Record<string, string>> = {};
+  for (const [cls, fields] of classFieldTypes) {
+    classFieldTypesRecord[cls] = Object.fromEntries(fields);
+  }
   const byChunk: ChunkExtraction[] = input.chunks.map((c) => ({
     symbolId: c.symbolId,
     scope: c.scope,
@@ -46,7 +52,7 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
     imports,
     chunks: byChunk,
     fileScope: [],
-    classFieldTypes,
+    classFieldTypes: classFieldTypesRecord,
   };
 }
 

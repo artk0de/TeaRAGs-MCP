@@ -84,9 +84,9 @@ describe("extractFromTypescriptFile", () => {
         chunks: [{ symbolId: "Coordinator#go", startLine: 4, endLine: 4, scope: ["Coordinator"] }],
       });
       expect(extraction.classFieldTypes).toBeDefined();
-      const fields = extraction.classFieldTypes?.get("Coordinator");
+      const fields = extraction.classFieldTypes?.["Coordinator"];
       expect(fields).toBeDefined();
-      expect(fields?.get("markerStore")).toBe("MarkerStore");
+      expect(fields?.["markerStore"]).toBe("MarkerStore");
     });
 
     it("collects field types from public field declarations", () => {
@@ -99,8 +99,8 @@ describe("extractFromTypescriptFile", () => {
         language: "typescript",
         chunks: [{ symbolId: "Store#read", startLine: 3, endLine: 3, scope: ["Store"] }],
       });
-      const fields = extraction.classFieldTypes?.get("Store");
-      expect(fields?.get("client")).toBe("QdrantClient");
+      const fields = extraction.classFieldTypes?.["Store"];
+      expect(fields?.["client"]).toBe("QdrantClient");
     });
 
     it("strips generic parameters — Foo<T> resolves to Foo", () => {
@@ -113,7 +113,7 @@ describe("extractFromTypescriptFile", () => {
         language: "typescript",
         chunks: [],
       });
-      expect(extraction.classFieldTypes?.get("Holder")?.get("list")).toBe("Array");
+      expect(extraction.classFieldTypes?.["Holder"]?.["list"]).toBe("Array");
     });
 
     it("ignores constructor parameters WITHOUT accessibility modifier (plain params, not fields)", () => {
@@ -127,10 +127,10 @@ describe("extractFromTypescriptFile", () => {
         chunks: [],
       });
       // `input` has no `private`/`public`/`readonly` → not a field property
-      expect(extraction.classFieldTypes?.get("Plain")).toBeUndefined();
+      expect(extraction.classFieldTypes?.["Plain"]).toBeUndefined();
     });
 
-    it("returns empty map for files with no class declarations", () => {
+    it("returns empty record for files with no class declarations", () => {
       const code = `export function helper() { return 42; }\n`;
       const tree = parse(code);
       const extraction = extractFromTypescriptFile({
@@ -140,7 +140,7 @@ describe("extractFromTypescriptFile", () => {
         language: "typescript",
         chunks: [],
       });
-      expect(extraction.classFieldTypes?.size ?? 0).toBe(0);
+      expect(Object.keys(extraction.classFieldTypes ?? {}).length).toBe(0);
     });
   });
 });

@@ -44,7 +44,7 @@ export interface FileExtraction {
    * without type annotations (Ruby, Python untyped) leave this undefined
    * or empty — resolver falls through to short-name lookup.
    */
-  classFieldTypes?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  classFieldTypes?: Record<string, Record<string, string>>;
   /**
    * Optional per-class superclass + mixin map: `className → ancestor[]`.
    * Walkers populate this when the source declares an explicit inheritance
@@ -212,7 +212,7 @@ export interface CallContext {
    * to obtain the receiver type, then resolve the method against that type
    * in the global symbol table.
    */
-  classFieldTypes?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  classFieldTypes?: Record<string, Record<string, string>>;
   /**
    * Per-chunk local variable bindings (`varName → typeName`) inferred by
    * the walker from assignments / type annotations within the enclosing

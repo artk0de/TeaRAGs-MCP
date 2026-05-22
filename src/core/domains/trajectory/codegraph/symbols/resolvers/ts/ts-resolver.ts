@@ -73,7 +73,7 @@ export class TSCallResolver implements CallResolver {
       // out of scope for slice 1.
       if (!fieldSegment.includes(".")) {
         const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-        const typeName = ctx.classFieldTypes?.get(enclosing)?.get(fieldSegment);
+        const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
         if (typeName) {
           // Instance form first — most common dispatch shape. Strict
           // mode drops the edge when more than one type shares the
