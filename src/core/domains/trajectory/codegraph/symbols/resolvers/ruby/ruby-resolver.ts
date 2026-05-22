@@ -57,13 +57,17 @@ export class RubyCallResolver implements CallResolver {
     // The walker's `imports[]` already contains `zeitwerk:User`-shaped
     // entries; we re-derive from the receiver here so call sites
     // without a matching ImportRef (e.g. `User` referenced once and
-    // used by multiple calls) still resolve.
+    // used by multiple calls) still resolve. When the constant itself
+    // doesn't own the method, walk its classAncestors chain — this is
+    // the class-method form of the same inheritance fix used in Step 0.
     if (call.receiver && looksLikeConstant(call.receiver)) {
       const targetFile = this.resolveConstant(call.receiver, ctx);
       if (targetFile) {
         const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
         const target = pickSingleCandidate(candidates, this.mode);
         if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+        const inherited = this.walkAncestorsForConstantCall(call.receiver, call.member, ctx, new Set([call.receiver]));
+        if (inherited) return inherited;
         return { targetRelPath: targetFile, targetSymbolId: null };
       }
     }
@@ -178,6 +182,37 @@ export class RubyCallResolver implements CallResolver {
     // File known but method not found in this class scope or its
     // ancestors — file-level attribution preserved, method-level dropped.
     return { targetRelPath: targetFile, targetSymbolId: null };
+  }
+
+  /**
+   * Walk class ancestors for a Zeitwerk-style class-method call
+   * (`Klass.method`). Mirrors the Step 0 inheritance walk but for the
+   * Class.method dispatch surface — when ProductPolicy doesn't define
+   * `authorize!` but inherits it from AbstractPolicy, the
+   * ProductPolicy.authorize! call should land on AbstractPolicy.authorize!.
+   * `visited` defends against ancestor cycles.
+   */
+  private walkAncestorsForConstantCall(
+    receiver: string,
+    member: string,
+    ctx: CallContext,
+    visited: Set<string>,
+  ): ResolvedTarget | null {
+    const ancestors = ctx.classAncestors?.[receiver];
+    if (!ancestors) return null;
+    for (const ancestor of ancestors) {
+      if (visited.has(ancestor)) continue;
+      visited.add(ancestor);
+      const ancestorFile = this.resolveConstant(ancestor, ctx);
+      if (!ancestorFile) continue;
+      const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === ancestorFile);
+      const target = pickSingleCandidate(candidates, this.mode);
+      if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+      // Method not on this ancestor either — recurse one level deeper.
+      const deeper = this.walkAncestorsForConstantCall(ancestor, member, ctx, visited);
+      if (deeper && deeper.targetSymbolId !== null) return deeper;
+    }
+    return null;
   }
 
   private resolveConstant(qualified: string, ctx: CallContext): string | null {

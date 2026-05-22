@@ -392,6 +392,248 @@ describe("RubyCallResolver — explicit require with mixed import channels", () 
   });
 });
 
+describe("RubyCallResolver — Zeitwerk branch ancestor walk for class-method calls", () => {
+  it("resolves `ProductPolicy.authorize!` to inherited `AbstractPolicy.authorize!`", () => {
+    // `class ProductPolicy < AbstractPolicy` declares the inheritance.
+    // `ProductPolicy.authorize!(...)` is a class-method call — receiver
+    // is a constant, so it enters the Zeitwerk branch. ProductPolicy
+    // doesn't override authorize!, so without ancestor walk the edge
+    // drops to a file-only attribution. With the walk it should pin
+    // to AbstractPolicy.authorize! living in abstract_policy.rb.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/policies/product_policy.rb", [
+      {
+        symbolId: "ProductPolicy",
+        fqName: "ProductPolicy",
+        shortName: "ProductPolicy",
+        relPath: "app/policies/product_policy.rb",
+        scope: [],
+      },
+    ]);
+    table.upsertFile("app/policies/abstract_policy.rb", [
+      {
+        symbolId: "AbstractPolicy",
+        fqName: "AbstractPolicy",
+        shortName: "AbstractPolicy",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: [],
+      },
+      {
+        symbolId: "AbstractPolicy.authorize!",
+        fqName: "AbstractPolicy.authorize!",
+        shortName: "authorize!",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: ["AbstractPolicy"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/services/products/show.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { ProductPolicy: ["AbstractPolicy"] },
+    };
+    const target = resolver.resolve(
+      {
+        callText: "ProductPolicy.authorize!(@current_user, :see_draft, @product)",
+        receiver: "ProductPolicy",
+        member: "authorize!",
+        startLine: 12,
+      },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("AbstractPolicy.authorize!");
+    expect(target?.targetRelPath).toBe("app/policies/abstract_policy.rb");
+  });
+
+  it("falls back to file-only edge when neither class nor any ancestor owns the method", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/policies/product_policy.rb", [
+      {
+        symbolId: "ProductPolicy",
+        fqName: "ProductPolicy",
+        shortName: "ProductPolicy",
+        relPath: "app/policies/product_policy.rb",
+        scope: [],
+      },
+    ]);
+    table.upsertFile("app/policies/abstract_policy.rb", [
+      {
+        symbolId: "AbstractPolicy",
+        fqName: "AbstractPolicy",
+        shortName: "AbstractPolicy",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: [],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { ProductPolicy: ["AbstractPolicy"] },
+    };
+    const target = resolver.resolve(
+      { callText: "ProductPolicy.never_existed", receiver: "ProductPolicy", member: "never_existed", startLine: 1 },
+      ctx,
+    );
+    // Method-level dropped, file-level pinned to the bound class's file.
+    expect(target?.targetRelPath).toBe("app/policies/product_policy.rb");
+    expect(target?.targetSymbolId).toBeNull();
+  });
+
+  it("recurses through a 3-level inheritance chain to find the method on the grandparent", () => {
+    // class ConcretePolicy < MidPolicy; class MidPolicy < RootPolicy.
+    // ConcretePolicy.audit! — neither ConcretePolicy nor MidPolicy define
+    // audit!; only RootPolicy does. Exercises the recurse-one-level-deeper
+    // path inside walkAncestorsForConstantCall.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/policies/concrete_policy.rb", [
+      {
+        symbolId: "ConcretePolicy",
+        fqName: "ConcretePolicy",
+        shortName: "ConcretePolicy",
+        relPath: "app/policies/concrete_policy.rb",
+        scope: [],
+      },
+    ]);
+    table.upsertFile("app/policies/mid_policy.rb", [
+      {
+        symbolId: "MidPolicy",
+        fqName: "MidPolicy",
+        shortName: "MidPolicy",
+        relPath: "app/policies/mid_policy.rb",
+        scope: [],
+      },
+    ]);
+    table.upsertFile("app/policies/root_policy.rb", [
+      {
+        symbolId: "RootPolicy",
+        fqName: "RootPolicy",
+        shortName: "RootPolicy",
+        relPath: "app/policies/root_policy.rb",
+        scope: [],
+      },
+      {
+        symbolId: "RootPolicy.audit!",
+        fqName: "RootPolicy.audit!",
+        shortName: "audit!",
+        relPath: "app/policies/root_policy.rb",
+        scope: ["RootPolicy"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/services/audit.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      classAncestors: {
+        ConcretePolicy: ["MidPolicy"],
+        MidPolicy: ["RootPolicy"],
+      },
+    };
+    const target = resolver.resolve(
+      { callText: "ConcretePolicy.audit!(:thing)", receiver: "ConcretePolicy", member: "audit!", startLine: 5 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("RootPolicy.audit!");
+    expect(target?.targetRelPath).toBe("app/policies/root_policy.rb");
+  });
+
+  it("breaks an ancestor cycle (A → B → A) without overflow and falls back to file-only edge", () => {
+    // Pathological classAncestors: ChildPolicy → ParentPolicy → ChildPolicy.
+    // The visited guard in walkAncestorsForConstantCall must skip the
+    // already-walked ancestor and unwind to the file-only fallback.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/policies/child_policy.rb", [
+      {
+        symbolId: "ChildPolicy",
+        fqName: "ChildPolicy",
+        shortName: "ChildPolicy",
+        relPath: "app/policies/child_policy.rb",
+        scope: [],
+      },
+    ]);
+    table.upsertFile("app/policies/parent_policy.rb", [
+      {
+        symbolId: "ParentPolicy",
+        fqName: "ParentPolicy",
+        shortName: "ParentPolicy",
+        relPath: "app/policies/parent_policy.rb",
+        scope: [],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      classAncestors: {
+        ChildPolicy: ["ParentPolicy"],
+        ParentPolicy: ["ChildPolicy"],
+      },
+    };
+    const target = resolver.resolve(
+      { callText: "ChildPolicy.ghost!", receiver: "ChildPolicy", member: "ghost!", startLine: 3 },
+      ctx,
+    );
+    // No method anywhere → method-level dropped, file-level pinned to bound class.
+    expect(target?.targetRelPath).toBe("app/policies/child_policy.rb");
+    expect(target?.targetSymbolId).toBeNull();
+  });
+
+  it("skips an ancestor that doesn't resolve to a file and tries the next one", () => {
+    // ProductPolicy declares two ancestors: [GhostMixin, AbstractPolicy].
+    // GhostMixin has no symbol-table entry and no Zeitwerk path match —
+    // resolveConstant returns null, so the walker must `continue` past
+    // the ghost ancestor and try AbstractPolicy.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/policies/product_policy.rb", [
+      {
+        symbolId: "ProductPolicy",
+        fqName: "ProductPolicy",
+        shortName: "ProductPolicy",
+        relPath: "app/policies/product_policy.rb",
+        scope: [],
+      },
+    ]);
+    table.upsertFile("app/policies/abstract_policy.rb", [
+      {
+        symbolId: "AbstractPolicy",
+        fqName: "AbstractPolicy",
+        shortName: "AbstractPolicy",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: [],
+      },
+      {
+        symbolId: "AbstractPolicy.permit!",
+        fqName: "AbstractPolicy.permit!",
+        shortName: "permit!",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: ["AbstractPolicy"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/services/products/permit.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { ProductPolicy: ["GhostMixin", "AbstractPolicy"] },
+    };
+    const target = resolver.resolve(
+      { callText: "ProductPolicy.permit!(@user)", receiver: "ProductPolicy", member: "permit!", startLine: 7 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("AbstractPolicy.permit!");
+    expect(target?.targetRelPath).toBe("app/policies/abstract_policy.rb");
+  });
+});
+
 describe("RubyCallResolver — Step 0 with qualified type name (scope tail = full FQN)", () => {
   it("resolves member on a namespaced class when the symbol's scope tail is the FULL FQN", () => {
     // The walker emits scope=["Product::IndexForm"] (one element, the
