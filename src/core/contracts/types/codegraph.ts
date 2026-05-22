@@ -55,8 +55,11 @@ export interface FileExtraction {
    * AR methods like `User.find(id).save` find their target via
    * `User → ApplicationRecord → ActiveRecord::Base`. Languages without
    * explicit inheritance markers leave this undefined.
+   *
+   * Plain Record (NOT Map) so the value round-trips through the NDJSON
+   * spill: `Map` serialises to `{}` and loses every entry.
    */
-  classAncestors?: ReadonlyMap<string, readonly string[]>;
+  classAncestors?: Record<string, readonly string[]>;
 }
 
 export interface ImportRef {
@@ -227,8 +230,9 @@ export interface CallContext {
    * methods (`User.find(id).save` where `save` lives on
    * `ApplicationRecord`) still produce edges. First entry = direct
    * superclass; subsequent entries = mixins in declaration order.
+   * Plain Record (NOT Map) for NDJSON-spill round-trip.
    */
-  classAncestors?: ReadonlyMap<string, readonly string[]>;
+  classAncestors?: Record<string, readonly string[]>;
 }
 
 export interface ResolvedTarget {

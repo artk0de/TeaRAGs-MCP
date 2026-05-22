@@ -72,7 +72,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const explicitImports = collectRubyRequires(input.tree.rootNode);
   const constantRefs = collectRubyConstantRefs(input.tree.rootNode);
   const fileScope = collectRubyDefinedConstants(input.tree.rootNode);
-  const ancestors = collectRubyClassAncestors(input.tree.rootNode);
+  const ancestorMap = collectRubyClassAncestors(input.tree.rootNode);
   const calls = collectRubyCalls(input.tree.rootNode);
   const imports: ImportRef[] = [...explicitImports, ...constantRefs];
   const trackTypes = localTypeTrackingEnabled();
@@ -98,7 +98,14 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     chunks: byChunk,
     fileScope,
   };
-  if (ancestors.size > 0) out.classAncestors = ancestors;
+  if (ancestorMap.size > 0) {
+    // Convert Map → Record so the field round-trips through the NDJSON
+    // spill in the codegraph provider. Map serialises to {} and would
+    // lose every entry; plain objects survive JSON.stringify intact.
+    const ancestorRecord: Record<string, readonly string[]> = {};
+    for (const [k, v] of ancestorMap) ancestorRecord[k] = v;
+    out.classAncestors = ancestorRecord;
+  }
   return out;
 }
 

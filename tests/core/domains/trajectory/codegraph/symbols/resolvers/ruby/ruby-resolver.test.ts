@@ -429,7 +429,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       imports: [],
       symbolTable: table,
       localBindings: { form: "Product::IndexForm" },
-      classAncestors: new Map([["Product::IndexForm", ["PaginatableForm"]]]),
+      classAncestors: { "Product::IndexForm": ["PaginatableForm"] },
     };
     const target = resolver.resolve({ callText: "form.page", receiver: "form", member: "page", startLine: 5 }, ctx);
     expect(target?.targetSymbolId).toBe("PaginatableForm#page");
@@ -451,7 +451,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       imports: [],
       symbolTable: table,
       localBindings: { x: "Foo" },
-      classAncestors: new Map([["Foo", ["Bar"]]]),
+      classAncestors: { Foo: ["Bar"] },
     };
     const target = resolver.resolve({ callText: "x.m", receiver: "x", member: "m", startLine: 1 }, ctx);
     expect(target?.targetSymbolId).toBe("Bar#m");
@@ -480,7 +480,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       imports: [],
       symbolTable: table,
       localBindings: { u: "User" },
-      classAncestors: new Map([["User", ["ApplicationRecord"]]]),
+      classAncestors: { User: ["ApplicationRecord"] },
     };
     const target = resolver.resolve({ callText: "u.save", receiver: "u", member: "save", startLine: 1 }, ctx);
     // Method-level dropped, file-level edge preserved (the bound class's file).
@@ -500,7 +500,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       imports: [],
       symbolTable: table,
       localBindings: { x: "A" },
-      classAncestors: new Map([["A", ["A"]]]),
+      classAncestors: { A: ["A"] },
     };
     const target = resolver.resolve({ callText: "x.q", receiver: "x", member: "q", startLine: 1 }, ctx);
     expect(target?.targetRelPath).toBe("a.rb");
@@ -524,10 +524,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       imports: [],
       symbolTable: table,
       localBindings: { x: "A" },
-      classAncestors: new Map([
-        ["A", ["B"]],
-        ["B", ["A"]],
-      ]),
+      classAncestors: { A: ["B"], B: ["A"] },
     };
     // `m` doesn't exist on A or B — both file-only edges. A's loop sees
     // B's inherited result has targetSymbolId=null, rejects it, falls
@@ -557,7 +554,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       imports: [],
       symbolTable: table,
       localBindings: { x: "Foo" },
-      classAncestors: new Map([["Foo", ["Unknown", "Helper"]]]),
+      classAncestors: { Foo: ["Unknown", "Helper"] },
     };
     const target = resolver.resolve({ callText: "x.act", receiver: "x", member: "act", startLine: 1 }, ctx);
     expect(target?.targetSymbolId).toBe("Helper#act");
@@ -589,7 +586,7 @@ describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", (
       symbolTable: table,
       localBindings: { x: "Foo" },
       // Foo extends First, then includes Second — First wins for `shared`.
-      classAncestors: new Map([["Foo", ["First", "Second"]]]),
+      classAncestors: { Foo: ["First", "Second"] },
     };
     const target = resolver.resolve({ callText: "x.shared", receiver: "x", member: "shared", startLine: 1 }, ctx);
     expect(target?.targetSymbolId).toBe("First#shared");

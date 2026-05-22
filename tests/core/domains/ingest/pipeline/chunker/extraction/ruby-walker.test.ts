@@ -703,35 +703,35 @@ describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => 
     const src = "class Foo < Bar\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors?.get("Foo")).toEqual(["Bar"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Bar"]);
   });
 
   it("captures qualified superclass `class Foo < Acme::Base`", () => {
     const src = "class Foo < Acme::Base\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors?.get("Foo")).toEqual(["Acme::Base"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Acme::Base"]);
   });
 
   it("captures `include Mod` mixins in class body", () => {
     const src = "class Foo\n  include Bar\n  include Acme::Baz\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors?.get("Foo")).toEqual(["Bar", "Acme::Baz"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Bar", "Acme::Baz"]);
   });
 
   it("captures `extend Mod` and `prepend Mod` alongside `include`", () => {
     const src = "class Foo\n  extend Bar\n  prepend Baz\n  include Qux\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors?.get("Foo")).toEqual(["Bar", "Baz", "Qux"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Bar", "Baz", "Qux"]);
   });
 
   it("preserves order: superclass first, mixins in declaration order", () => {
     const src = "class Foo < Base\n  include First\n  include Second\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors?.get("Foo")).toEqual(["Base", "First", "Second"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Base", "First", "Second"]);
   });
 
   it("returns undefined classAncestors when no class declares ancestors", () => {
@@ -745,14 +745,14 @@ describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => 
     const src = "module Acme\n  class User < BaseModel\n  end\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors?.get("Acme::User")).toEqual(["BaseModel"]);
+    expect(r.classAncestors?.["Acme::User"]).toEqual(["BaseModel"]);
   });
 
   it("skips non-constant mixin args (`include some_var`)", () => {
     const src = "class Foo\n  include some_var\n  include Bar\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors?.get("Foo")).toEqual(["Bar"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Bar"]);
   });
 
   // `include()` parses as a `call` node with `arguments=argument_list` whose
@@ -765,7 +765,7 @@ describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => 
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
     // `include()` contributes nothing; only `include Bar` lands in ancestors.
-    expect(r.classAncestors?.get("Foo")).toEqual(["Bar"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Bar"]);
   });
 
   // `include 123` — first arg is an `integer` node, not `constant` or
@@ -777,7 +777,7 @@ describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => 
     const src = "class Foo\n  include 123\n  include Bar\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors?.get("Foo")).toEqual(["Bar"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Bar"]);
   });
 
   // A statement that LOOKS like a mixin (call with method = `include`) but
@@ -800,7 +800,7 @@ describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => 
     const src = "module Acme\n  include Configurable\nend\n";
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
-    expect(r.classAncestors?.get("Acme")).toEqual(["Configurable"]);
+    expect(r.classAncestors?.["Acme"]).toEqual(["Configurable"]);
   });
 
   // Mixin call with explicit receiver — `self.include Bar` or `Foo.include Bar`
@@ -812,6 +812,6 @@ describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => 
     const tree = parse(src);
     const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
     // `self.include Bar` has a receiver — skipped. Only `include Qux` lands.
-    expect(r.classAncestors?.get("Foo")).toEqual(["Qux"]);
+    expect(r.classAncestors?.["Foo"]).toEqual(["Qux"]);
   });
 });

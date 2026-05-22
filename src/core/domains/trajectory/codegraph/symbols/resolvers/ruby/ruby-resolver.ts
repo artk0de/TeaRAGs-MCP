@@ -157,7 +157,7 @@ export class RubyCallResolver implements CallResolver {
     // Walker emits these into FileExtraction.classAncestors and the
     // provider forwards via CallContext.classAncestors. Each ancestor is
     // tried in declaration order — the first that owns `member` wins.
-    const ancestors = ctx.classAncestors?.get(typeName);
+    const ancestors = ctx.classAncestors?.[typeName];
     if (ancestors) {
       for (const ancestor of ancestors) {
         const inherited = this.resolveByLocalTypeInternal(ancestor, member, ctx, visited);
