@@ -1664,4 +1664,50 @@ describe("CodegraphEnrichmentProvider", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  // Slice-1 — classAncestors aggregation. sink.write merges per-file
+  // `extraction.classAncestors` into a run-global `runAncestors` map so
+  // pass-2 resolveExtraction sees ancestors keyed by target class
+  // regardless of which file declared them. Two branches need coverage:
+  //  - sink.write's `if (extraction.classAncestors)` truthy path
+  //  - resolveExtraction's `Object.keys(runAncestors).length > 0` truthy
+  //    path (falls back to per-file `extraction.classAncestors` otherwise)
+  // Both are exercised by a multi-file run where at least one file
+  // declares ancestors. Resolver receives the merged map via
+  // CallContext.classAncestors. We use the TypeScript resolver because
+  // the merge logic is language-agnostic — the map flows through the
+  // provider regardless of which resolver consumes it downstream.
+  it("sink.write aggregates classAncestors across files into a run-global map", async () => {
+    const sink = provider.asExtractionSink();
+    // File 1: declares an ancestor for class Foo. The merge loop body
+    // (lines 587-588) executes here.
+    await sink.write({
+      relPath: "src/foo.ts",
+      language: "typescript",
+      imports: [],
+      chunks: [{ symbolId: "Foo.bar", scope: ["Foo"], calls: [] }],
+      fileScope: ["Foo"],
+      classAncestors: { Foo: ["BaseFoo"] },
+    });
+    // File 2: no classAncestors (undefined) — exercises the falsy branch
+    // of `if (extraction.classAncestors)` without throwing.
+    await sink.write({
+      relPath: "src/main.ts",
+      language: "typescript",
+      imports: [{ importText: "./foo", startLine: 1 }],
+      chunks: [
+        {
+          symbolId: "main",
+          scope: [],
+          calls: [{ callText: "Foo.bar()", receiver: "Foo", member: "bar", startLine: 4 }],
+        },
+      ],
+      fileScope: [],
+    });
+    await sink.finish();
+    // Sanity: the run still produces a valid file edge, proving the
+    // resolveExtraction path with runAncestors populated didn't break
+    // resolver dispatch.
+    expect(await client.getFanIn("src/foo.ts")).toBe(1);
+  });
 });

@@ -392,6 +392,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private runStats = createEmptyRunStats();
   /**
+   * Per-run aggregation of `FileExtraction.classAncestors` across every
+   * file walked in pass-1. The resolver needs ancestors keyed by
+   * `targetType` (the class a variable is bound to) — that target type's
+   * declaration usually lives in a DIFFERENT file than the caller, so
+   * per-file ancestor maps are insufficient. Reset on finish().
+   */
+  private runAncestors: Record<string, readonly string[]> = {};
+  /**
    * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
    * Built once at construction from `deps.exclusion`. Empty filter
    * (`excludeTests:false`, no custom patterns) is a valid no-op — every
@@ -569,6 +577,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         symbolTable.upsertFile(extraction.relPath, defs);
         await graphDb.upsertSymbols(extraction.relPath, defs);
         this.indexChunkSymbolsByLine(collectionName, extraction);
+        // Merge file-local ancestors into the run-global map so the
+        // resolver in pass-2 sees ancestors keyed by target class
+        // regardless of which file declared them. Last write wins on
+        // duplicate keys — same-class declarations across files are
+        // rare in Ruby; when they happen the later definition is what
+        // the runtime would see too.
+        if (extraction.classAncestors) {
+          for (const [k, v] of Object.entries(extraction.classAncestors)) {
+            this.runAncestors[k] = v;
+          }
+        }
 
         const stream = await ensureSpillStream();
         const line = `${JSON.stringify(extraction)}\n`;
@@ -814,10 +833,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const { extractedFiles, fileEdgeCount, methodEdgeCount, callsAttempted, callsResolved } = this.runStats;
     if (extractedFiles === 0 && fileEdgeCount === 0 && methodEdgeCount === 0) {
       this.runStats = createEmptyRunStats();
+      this.runAncestors = {};
       return undefined;
     }
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / callsAttempted;
     this.runStats = createEmptyRunStats();
+    this.runAncestors = {};
     return { extractedFiles, fileEdgeCount, methodEdgeCount, resolveSuccessRate };
   }
 
@@ -1154,6 +1175,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const methodEdges: GraphEdges["methodEdges"] = [];
     if (!resolver) return { fileEdges, methodEdges };
 
+    // Resolver receives the run-global `classAncestors` so it can walk
+    // a bound type's inheritance chain regardless of which file
+    // declares that class. Per-file ancestors are merged into
+    // `this.runAncestors` during pass-1 (sink.write).
+    const ancestorsForResolver =
+      Object.keys(this.runAncestors).length > 0 ? this.runAncestors : extraction.classAncestors;
     // File-level edges from imports. We synthesise a "call-shaped" lookup
     // so the same resolver contract handles both call resolution and
     // import-to-file resolution.
@@ -1167,7 +1194,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           imports: extraction.imports,
           symbolTable,
           classFieldTypes: extraction.classFieldTypes,
-          classAncestors: extraction.classAncestors,
+          classAncestors: ancestorsForResolver,
         },
       );
       if (target) {
@@ -1188,7 +1215,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           symbolTable,
           classFieldTypes: extraction.classFieldTypes,
           localBindings: chunk.localBindings,
-          classAncestors: extraction.classAncestors,
+          classAncestors: ancestorsForResolver,
         });
         if (!target) continue;
         this.runStats.callsResolved += 1;
