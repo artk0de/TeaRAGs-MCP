@@ -48,19 +48,48 @@ export interface RubyExtractInput {
 /** Prefix marker the resolver uses to recognise Zeitwerk constant refs. */
 export const ZEITWERK_PREFIX = "zeitwerk:";
 
+/**
+ * AR / ActiveRecord finder methods on a Model class that return a single
+ * model INSTANCE (not a Relation). Used by `collectLocalBindingsForChunk`
+ * to bind `var = Model.<finder>(...)` to the Model type. Methods like
+ * `where` / `order` / `joins` return a Relation, so chained `.first` /
+ * `.last` need separate Relation-aware tracking (not implemented here).
+ */
+const AR_INSTANCE_FINDERS = new Set(["find", "find_by", "find_by!", "create", "create!", "first", "last", "take"]);
+
+/**
+ * Env-gate for the Ruby local variable type inference path. When `false`,
+ * walker emits `localBindings: undefined` and the resolver falls back to
+ * legacy import + short-name resolution. Default `true`.
+ */
+function localTypeTrackingEnabled(): boolean {
+  const raw = process.env.CODEGRAPH_RB_LOCAL_TYPE_TRACKING;
+  if (raw === undefined) return true;
+  return raw !== "false" && raw !== "0";
+}
+
 export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const explicitImports = collectRubyRequires(input.tree.rootNode);
   const constantRefs = collectRubyConstantRefs(input.tree.rootNode);
   const fileScope = collectRubyDefinedConstants(input.tree.rootNode);
   const calls = collectRubyCalls(input.tree.rootNode);
   const imports: ImportRef[] = [...explicitImports, ...constantRefs];
-  const byChunk: ChunkExtraction[] = input.chunks.map((c) => ({
-    symbolId: c.symbolId,
-    scope: c.scope,
-    startLine: c.startLine,
-    endLine: c.endLine,
-    calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
-  }));
+  const trackTypes = localTypeTrackingEnabled();
+  const yardByLine = trackTypes ? collectYardParamTypes(input.code) : new Map<number, Record<string, string>>();
+  const byChunk: ChunkExtraction[] = input.chunks.map((c) => {
+    const base: ChunkExtraction = {
+      symbolId: c.symbolId,
+      scope: c.scope,
+      startLine: c.startLine,
+      endLine: c.endLine,
+      calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
+    };
+    if (trackTypes) {
+      const bindings = collectLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine, yardByLine);
+      if (Object.keys(bindings).length > 0) base.localBindings = bindings;
+    }
+    return base;
+  });
   return {
     relPath: input.relPath,
     language: input.language,
@@ -68,6 +97,110 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     chunks: byChunk,
     fileScope,
   };
+}
+
+/**
+ * Collect `varName → typeName` bindings inside the given line range.
+ * Sources scanned (in walker-emission order — later writes win):
+ *
+ *   1. YARD `@param NAME [TYPE]` comments preceding `def NAME(...)`.
+ *      Parsed line-by-line from the raw source — tree-sitter-ruby
+ *      strips comment text from a normalised form, so we work on raw
+ *      input.code via `collectYardParamTypes`.
+ *   2. Constructor-call assignments  (`var = ClassName.new(...)`).
+ *   3. AR-finder assignments         (`var = Model.find(...)`,
+ *      `.first`, `.last`, `.find_by`, `.create`, `.create!`, `.take`).
+ *
+ * Sources deliberately NOT inferred:
+ *   - Bare factory calls (`var = make_user()`) — no class name to attribute.
+ *   - Chained Relation tails (`Model.where(...).first`) — `.where` returns
+ *     a Relation, we'd need Relation-aware tracking. Bare `Model.first`
+ *     IS inferred (the chain root is the Model class itself).
+ *   - Tuple / multiple assignment (`a, b = ...`).
+ */
+function collectLocalBindingsForChunk(
+  root: Parser.SyntaxNode,
+  startLine: number,
+  endLine: number,
+  yardByLine: Map<number, Record<string, string>>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+
+  // YARD `@param` bindings — attach to the def whose line falls in the chunk
+  // range. `yardByLine` is keyed by the line of the `def` keyword.
+  for (const [line, params] of yardByLine.entries()) {
+    if (line < startLine || line > endLine) continue;
+    for (const [name, type] of Object.entries(params)) out[name] = type;
+  }
+
+  walk(root, (node) => {
+    const line = node.startPosition.row + 1;
+    if (line < startLine || line > endLine) return;
+    if (node.type !== "assignment") return;
+
+    // tree-sitter-ruby `assignment` shape: left/right fields.
+    const lhs = node.childForFieldName("left");
+    if (lhs?.type !== "identifier") return;
+    const varName = lhs.text;
+    const rhs = node.childForFieldName("right");
+    if (!rhs) return;
+    if (rhs.type !== "call" && rhs.type !== "method_call") return;
+
+    const receiver = rhs.childForFieldName("receiver");
+    const method = rhs.childForFieldName("method");
+    if (!receiver || !method) return;
+
+    // Receiver must look like a class constant (e.g. `User` or `Acme::Auth`).
+    const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
+    if (!/^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(receiverText)) return;
+
+    const methodName = method.text;
+    // `ClassName.new(...)` is the universal Ruby constructor pattern.
+    // AR finders also bind to the Model class.
+    if (methodName === "new" || AR_INSTANCE_FINDERS.has(methodName)) {
+      out[varName] = receiverText;
+    }
+  });
+  return out;
+}
+
+/**
+ * Parse YARD `# @param NAME [TYPE]` lines and group them by the line
+ * number of the `def NAME(...)` they precede. The grammar is light: any
+ * comment line matching the pattern attaches to the NEXT non-comment,
+ * non-blank line that starts with `def` (with optional `self.` prefix).
+ *
+ * YARD also supports `# @return [TYPE]` (not used — we bind params only)
+ * and bracket-less types (`# @param x String`) which we don't accept;
+ * the bracket form is the dominant convention and the only one Sorbet,
+ * Solargraph, and SteepGen treat as canonical.
+ */
+function collectYardParamTypes(code: string): Map<number, Record<string, string>> {
+  const lines = code.split(/\r?\n/);
+  const out = new Map<number, Record<string, string>>();
+  let pending: Record<string, string> | null = null;
+  const yardRegex = /^\s*#\s*@param\s+(\w+)\s+\[([\w:]+)\]/;
+  const defRegex = /^\s*def\s+(?:self\.)?(\w+)/;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i] ?? "";
+    const yardMatch = yardRegex.exec(raw);
+    if (yardMatch) {
+      const [, name, type] = yardMatch;
+      if (!pending) pending = {};
+      // SAFETY: regex capture groups (\w+) and ([\w:]+) are non-optional —
+      // a successful match guarantees both name and type are strings.
+      pending[name] = type;
+      continue;
+    }
+    // Blank or other comment — preserve pending block.
+    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+    // First non-blank, non-comment line. If it's a `def`, attach.
+    if (pending && defRegex.test(raw)) {
+      out.set(i + 1, pending);
+    }
+    pending = null;
+  }
+  return out;
 }
 
 /**

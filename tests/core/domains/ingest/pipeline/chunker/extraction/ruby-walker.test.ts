@@ -300,3 +300,245 @@ describe("extractFromRubyFile — edge cases", () => {
     expect(explicit.map((i) => i.importText)).toEqual(["bar"]);
   });
 });
+
+describe("extractFromRubyFile — localBindings (type inference)", () => {
+  it("binds `var = ClassName.new(...)` to the constructor's class", () => {
+    const src = "def foo\n  user = User.new(name: 'a')\n  user.save\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "foo", scope: ["foo"], startLine: 1, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ user: "User" });
+  });
+
+  it("binds qualified constructor `var = Acme::Auth::Login.new(...)` to the FQ class", () => {
+    const src = "def f\n  l = Acme::Auth::Login.new(creds)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ l: "Acme::Auth::Login" });
+  });
+
+  it("binds AR finder result `var = Model.find(id)` to the Model", () => {
+    const src = "def show\n  user = User.find(params[:id])\n  user.email\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "users_controller.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "show", scope: ["show"], startLine: 1, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ user: "User" });
+  });
+
+  it("binds AR finder variants .first / .last / .find_by / .create / .take", () => {
+    const src = [
+      "def all_finders",
+      "  a = User.first",
+      "  b = User.last",
+      "  c = User.find_by(email: 'x')",
+      "  d = User.create(name: 'y')",
+      "  e = User.create!(name: 'y')",
+      "  f = User.take",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "all_finders", scope: ["all_finders"], startLine: 1, endLine: 8 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ a: "User", b: "User", c: "User", d: "User", e: "User", f: "User" });
+  });
+
+  it("does NOT bind `var = Model.where(...)` (returns Relation, not instance)", () => {
+    const src = "def filter\n  rel = User.where(active: true)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "filter", scope: ["filter"], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  it("does NOT bind from bare factory call `var = make_user()`", () => {
+    const src = "def f\n  u = make_user()\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  it("binds YARD `@param NAME [Type]` for the def that follows", () => {
+    const src = [
+      "# @param user [User] the user",
+      "# @param ability [Symbol] the action",
+      "def authorize(user, ability)",
+      "  user.role",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "authorize", scope: ["authorize"], startLine: 3, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ user: "User", ability: "Symbol" });
+  });
+
+  it("binds YARD with qualified type `[Acme::User]`", () => {
+    const src = ["# @param u [Acme::User]", "def f(u)", "  u.role", "end"].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 2, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ u: "Acme::User" });
+  });
+
+  it("merges YARD + constructor bindings within the same chunk (later writes win)", () => {
+    const src = [
+      "# @param user [User]",
+      "def do_thing(user)",
+      "  policy = AbstractPolicy.new(user)",
+      "  policy.authorize!",
+      "end",
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "do_thing", scope: ["do_thing"], startLine: 2, endLine: 5 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ user: "User", policy: "AbstractPolicy" });
+  });
+
+  it("does NOT emit localBindings when CODEGRAPH_RB_LOCAL_TYPE_TRACKING=false", () => {
+    process.env.CODEGRAPH_RB_LOCAL_TYPE_TRACKING = "false";
+    try {
+      const src = "def f\n  u = User.new\nend\n";
+      const tree = parse(src);
+      const r = extractFromRubyFile({
+        tree,
+        code: src,
+        relPath: "x.rb",
+        language: "ruby",
+        chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+      });
+      expect(r.chunks[0].localBindings).toBeUndefined();
+    } finally {
+      delete process.env.CODEGRAPH_RB_LOCAL_TYPE_TRACKING;
+    }
+  });
+
+  it("splits bindings across two adjacent method chunks", () => {
+    const src = ["def one", "  a = User.new", "end", "def two", "  b = Order.new", "end"].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [
+        { symbolId: "one", scope: ["one"], startLine: 1, endLine: 3 },
+        { symbolId: "two", scope: ["two"], startLine: 4, endLine: 6 },
+      ],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ a: "User" });
+    expect(r.chunks[1].localBindings).toEqual({ b: "Order" });
+  });
+
+  // YARD `@param` block precedes a `def` that lives in a chunk OTHER than
+  // the one being scanned — the yardByLine entry is keyed by the def's
+  // line, but that line falls OUTSIDE the current chunk's [start,end]
+  // range. The loop must skip it (covers the line-range guard inside
+  // `collectLocalBindingsForChunk` against yardByLine).
+  it("skips YARD bindings whose def lives outside the chunk range", () => {
+    const src = [
+      "# @param a [User]", // line 1
+      "def one(a)", //         line 2
+      "  a.role", //            line 3
+      "end", //                line 4
+      "# @param b [Order]", // line 5
+      "def two(b)", //         line 6
+      "  b.total", //          line 7
+      "end", //                line 8
+    ].join("\n");
+    const tree = parse(`${src}\n`);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      // Only chunk for `one` — `two`'s YARD (line 6) is outside [1..4],
+      // forcing the `line < startLine || line > endLine` guard to fire.
+      chunks: [{ symbolId: "one", scope: ["one"], startLine: 1, endLine: 4 }],
+    });
+    expect(r.chunks[0].localBindings).toEqual({ a: "User" });
+  });
+
+  // RHS receiver is not a class constant (lowercase / chained call) —
+  // walker bails on the regex-guard line. Different from "make_user()"
+  // which is a bare call (no receiver); here the receiver exists but
+  // doesn't look like a constant.
+  it("does NOT bind `var = lower.new(...)` where receiver is not a class constant", () => {
+    const src = "def f\n  u = builder.new\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].localBindings).toBeUndefined();
+  });
+
+  // Env-gate numeric form: `CODEGRAPH_RB_LOCAL_TYPE_TRACKING=0` is the
+  // POSIX-shell-style disable that `localTypeTrackingEnabled` accepts in
+  // addition to "false". Covers the second operand of the `&&` guard.
+  it("does NOT emit localBindings when CODEGRAPH_RB_LOCAL_TYPE_TRACKING=0", () => {
+    process.env.CODEGRAPH_RB_LOCAL_TYPE_TRACKING = "0";
+    try {
+      const src = "def f\n  u = User.new\nend\n";
+      const tree = parse(src);
+      const r = extractFromRubyFile({
+        tree,
+        code: src,
+        relPath: "x.rb",
+        language: "ruby",
+        chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+      });
+      expect(r.chunks[0].localBindings).toBeUndefined();
+    } finally {
+      delete process.env.CODEGRAPH_RB_LOCAL_TYPE_TRACKING;
+    }
+  });
+});

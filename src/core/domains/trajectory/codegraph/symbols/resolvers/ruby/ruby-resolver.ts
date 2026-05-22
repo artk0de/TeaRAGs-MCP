@@ -39,6 +39,20 @@ export class RubyCallResolver implements CallResolver {
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
 
   resolve(call: CallRef, ctx: CallContext): ResolvedTarget | null {
+    // Step 0: walker-inferred local type wins over heuristic resolution.
+    // When the receiver maps to a known class via `var = ClassName.new`,
+    // `var = Model.find(id)`, or YARD `@param var [Class]`, resolution
+    // is constrained to that class — if the method isn't defined there,
+    // the edge is dropped rather than guessed (which is the source of
+    // false positives like `serializer.is_valid` resolving to user
+    // classes that happen to define an `is_valid` method).
+    if (call.receiver) {
+      const localType = ctx.localBindings?.[call.receiver];
+      if (localType) {
+        return this.resolveByLocalType(localType, call.member, ctx);
+      }
+    }
+
     // Zeitwerk-style: receiver is a (possibly nested) constant chain.
     // The walker's `imports[]` already contains `zeitwerk:User`-shaped
     // entries; we re-derive from the receiver here so call sites
@@ -83,6 +97,35 @@ export class RubyCallResolver implements CallResolver {
     const target = pickSingleCandidate(fallback, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     return null;
+  }
+
+  /**
+   * Look up `<typeName>.<member>` from the walker's local-binding
+   * inference. Mirrors PythonCallResolver.resolveByLocalType.
+   *
+   * 1. Resolve `typeName` to a file via the symbol table (constant lookup
+   *    falls through to Zeitwerk when uniqueness fails).
+   * 2. Within that file, look for `<member>` as an instance method whose
+   *    enclosing scope matches the class name.
+   * 3. If the target file is identified but `<member>` is not in it,
+   *    return a file-only edge so file-level fan stays accurate while
+   *    dropping the method-level attribution (the method is inherited
+   *    from a base class outside the project — common for AR `save`,
+   *    `update`, etc. on `ApplicationRecord` subclasses).
+   * 4. Return `null` only when the type's file is unknown.
+   */
+  private resolveByLocalType(typeName: string, member: string, ctx: CallContext): ResolvedTarget | null {
+    const targetFile = this.resolveConstant(typeName, ctx);
+    if (!targetFile) return null;
+    const bareType = lastConstantSegment(typeName);
+    const candidates = ctx.symbolTable
+      .lookupByShortName(member)
+      .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType);
+    const target = pickSingleCandidate(candidates, this.mode);
+    if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+    // File known but method not found in this class scope — file-level
+    // attribution preserved, method-level dropped.
+    return { targetRelPath: targetFile, targetSymbolId: null };
   }
 
   private resolveConstant(qualified: string, ctx: CallContext): string | null {
@@ -134,4 +177,9 @@ function looksLikeConstant(text: string): boolean {
   // Ruby constants begin with an uppercase letter. Scope_resolution
   // segments are joined by `::`. Both forms accepted.
   return /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(text);
+}
+
+function lastConstantSegment(qualified: string): string {
+  const parts = qualified.split("::");
+  return parts[parts.length - 1] ?? qualified;
 }

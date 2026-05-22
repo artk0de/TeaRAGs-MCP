@@ -244,6 +244,191 @@ describe("RubyCallResolver — explicit require path matching", () => {
   });
 });
 
+describe("RubyCallResolver — Step 0 resolveByLocalType (walker-inferred receiver types)", () => {
+  it("disambiguates colliding short-names by binding receiver to its constructor class", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/policies/abstract_policy.rb", [
+      {
+        symbolId: "AbstractPolicy",
+        fqName: "AbstractPolicy",
+        shortName: "AbstractPolicy",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: [],
+      },
+      {
+        symbolId: "AbstractPolicy#authorize!",
+        fqName: "AbstractPolicy#authorize!",
+        shortName: "authorize!",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: ["AbstractPolicy"],
+      },
+    ]);
+    // Colliding short-name in a different file — global short-name lookup
+    // would be ambiguous; localBindings constrains it.
+    table.upsertFile("app/services/other.rb", [
+      {
+        symbolId: "OtherThing#authorize!",
+        fqName: "OtherThing#authorize!",
+        shortName: "authorize!",
+        relPath: "app/services/other.rb",
+        scope: ["OtherThing"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/controllers/x.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { policy: "AbstractPolicy" },
+    };
+    const target = resolver.resolve(
+      { callText: "policy.authorize!", receiver: "policy", member: "authorize!", startLine: 5 },
+      ctx,
+    );
+    expect(target?.targetSymbolId).toBe("AbstractPolicy#authorize!");
+    expect(target?.targetRelPath).toBe("app/policies/abstract_policy.rb");
+  });
+
+  it("drops the false positive `obj.result()` to AbstractPolicy#result when receiver is NOT bound", () => {
+    // Without localBindings, the resolver fell back to global short-name
+    // lookup and picked AbstractPolicy#result for `Product.ransack(...).result(...)`.
+    // With Step 0 only kicking in when receiver IS in localBindings, the
+    // path here is identical to before — the chained call's receiver text
+    // (`Product.ransack(form)`) doesn't match any constant or local
+    // variable, so the resolver falls through to short-name lookup. This
+    // test pins the BEHAVIOUR we have: Step 0 doesn't make things worse.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/policies/abstract_policy.rb", [
+      {
+        symbolId: "AbstractPolicy#result",
+        fqName: "AbstractPolicy#result",
+        shortName: "result",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: ["AbstractPolicy"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/controllers/products_controller.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      // Note: `Product.ransack(form)` has no local binding (walker only
+      // tracks `var = X.new` / AR finders), so receiver here is a literal
+      // chain text — not in localBindings.
+    };
+    const target = resolver.resolve(
+      {
+        callText: "Product.ransack(form).result(distinct: true)",
+        receiver: "Product.ransack(form)",
+        member: "result",
+        startLine: 5,
+      },
+      ctx,
+    );
+    // Global short-name lookup still finds AbstractPolicy#result (legacy FP).
+    // Documenting current behaviour; a separate Relation-aware pass would fix this.
+    expect(target?.targetSymbolId).toBe("AbstractPolicy#result");
+  });
+
+  it("returns file-only edge when method is inherited from a base class outside the project", () => {
+    // Common Ruby pattern: `user = User.new; user.save` where `save` is
+    // defined on ApplicationRecord (not indexed) but User is.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/models/user.rb", [
+      {
+        symbolId: "User",
+        fqName: "User",
+        shortName: "User",
+        relPath: "app/models/user.rb",
+        scope: [],
+      },
+      // No `save` method indexed in user.rb.
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/controllers/users_controller.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { u: "User" },
+    };
+    const target = resolver.resolve({ callText: "u.save", receiver: "u", member: "save", startLine: 5 }, ctx);
+    // File-level edge preserved (user.rb), method-level dropped.
+    expect(target?.targetRelPath).toBe("app/models/user.rb");
+    expect(target?.targetSymbolId).toBeNull();
+  });
+
+  it("returns null when the bound type's file is unknown", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    const ctx: CallContext = {
+      callerFile: "app/controllers/x.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { thing: "UnknownClassNotInSymbolTable" },
+    };
+    const target = resolver.resolve({ callText: "thing.foo", receiver: "thing", member: "foo", startLine: 1 }, ctx);
+    expect(target).toBeNull();
+  });
+});
+
+describe("RubyCallResolver — explicit require with mixed import channels", () => {
+  // When ctx.imports contains both a zeitwerk-prefixed entry AND a plain
+  // require entry, the explicit-require scan must SKIP the zeitwerk one
+  // (it belongs to the constant-lookup channel, not the load-path one).
+  // Drives the `imp.importText.startsWith(ZEITWERK_PREFIX) → return false`
+  // branch in the requireMatch predicate.
+  it("ignores zeitwerk-prefixed imports during explicit-require search", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("vendor/lib/helper.rb", [
+      { symbolId: "helper", fqName: "helper", shortName: "helper", relPath: "vendor/lib/helper.rb", scope: [] },
+    ]);
+    // Receiver matches one import's importText to flip into the
+    // explicit-require branch; the zeitwerk-prefixed entry must be
+    // filtered out by the predicate.
+    const target = resolver.resolve(
+      { callText: "helper", receiver: "helper", member: "helper", startLine: 1 },
+      makeCtx(
+        "main.rb",
+        [
+          { importText: `${ZEITWERK_PREFIX}User`, startLine: 1 }, // must be skipped
+          { importText: "helper", startLine: 2 }, // bare require — matches receiver
+          { importText: "vendor/lib/helper.rb", startLine: 3 }, // for basename match
+        ],
+        table,
+      ),
+    );
+    expect(target?.targetRelPath).toBe("vendor/lib/helper.rb");
+    expect(target?.targetSymbolId).toBe("helper");
+  });
+
+  // resolveExplicitRequire's bare-require branch: when a path in
+  // knownPaths EQUALS the wanted basename (rather than ending in
+  // `/<basename>`), the first equality check fires (`p === wanted`).
+  // Realistic shape: caller file IS `foo.rb` at the project root, and
+  // a `require 'foo'` from within itself self-loops to that same file.
+  it("matches bare require by exact equality with knownPaths basename", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("foo.rb", [
+      { symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "foo.rb", scope: [] },
+      { symbolId: "Foo::bar", fqName: "Foo::bar", shortName: "bar", relPath: "foo.rb", scope: ["Foo"] },
+    ]);
+    const target = resolver.resolve(
+      { callText: "bar", receiver: "foo", member: "bar", startLine: 1 },
+      // Caller file is `foo.rb` itself — it gets added to knownPaths and
+      // equals the `foo.rb` wanted-basename, triggering the equality branch.
+      makeCtx("foo.rb", [{ importText: "foo", startLine: 1 }], table),
+    );
+    expect(target?.targetRelPath).toBe("foo.rb");
+    expect(target?.targetSymbolId).toBe("Foo::bar");
+  });
+});
+
 describe("RubyCallResolver — looksLikeConstant guard", () => {
   // Receiver text that doesn't match constant grammar (lowercase start,
   // e.g. `obj.method` rather than `Klass.method`) skips the
