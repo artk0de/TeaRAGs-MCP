@@ -45,6 +45,18 @@ export interface FileExtraction {
    * or empty — resolver falls through to short-name lookup.
    */
   classFieldTypes?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  /**
+   * Optional per-class superclass + mixin map: `className → ancestor[]`.
+   * Walkers populate this when the source declares an explicit inheritance
+   * chain (`class Foo < Bar` in Ruby) or module mixin (`include Mod`).
+   * The first entry is the direct superclass; subsequent entries are
+   * mixins in declaration order. Resolvers walk this list when a
+   * receiver-typed method lookup misses on the bound class, so inherited
+   * AR methods like `User.find(id).save` find their target via
+   * `User → ApplicationRecord → ActiveRecord::Base`. Languages without
+   * explicit inheritance markers leave this undefined.
+   */
+  classAncestors?: ReadonlyMap<string, readonly string[]>;
 }
 
 export interface ImportRef {
@@ -208,6 +220,15 @@ export interface CallContext {
    * locally-typed variable wins over ambiguous short-name resolution.
    */
   localBindings?: Record<string, string>;
+  /**
+   * Optional `className → ancestor[]` map propagated from
+   * `FileExtraction.classAncestors`. Resolvers walk this list when a
+   * receiver-typed method lookup misses on the bound class so inherited
+   * methods (`User.find(id).save` where `save` lives on
+   * `ApplicationRecord`) still produce edges. First entry = direct
+   * superclass; subsequent entries = mixins in declaration order.
+   */
+  classAncestors?: ReadonlyMap<string, readonly string[]>;
 }
 
 export interface ResolvedTarget {

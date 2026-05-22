@@ -72,6 +72,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const explicitImports = collectRubyRequires(input.tree.rootNode);
   const constantRefs = collectRubyConstantRefs(input.tree.rootNode);
   const fileScope = collectRubyDefinedConstants(input.tree.rootNode);
+  const ancestors = collectRubyClassAncestors(input.tree.rootNode);
   const calls = collectRubyCalls(input.tree.rootNode);
   const imports: ImportRef[] = [...explicitImports, ...constantRefs];
   const trackTypes = localTypeTrackingEnabled();
@@ -90,13 +91,99 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     }
     return base;
   });
-  return {
+  const out: FileExtraction = {
     relPath: input.relPath,
     language: input.language,
     imports,
     chunks: byChunk,
     fileScope,
   };
+  if (ancestors.size > 0) out.classAncestors = ancestors;
+  return out;
+}
+
+/**
+ * Walk class declarations to extract `className → ancestor[]` where the
+ * first ancestor is the explicit superclass (Ruby's `class Foo < Bar`)
+ * and the remaining entries are modules mixed in via `include Mod`
+ * inside the class body. `extend Mod` (class-method mixin) and
+ * `prepend Mod` (pre-pended ancestor) are also recognised — both
+ * contribute to method lookup chains.
+ *
+ * Returns an empty map when no class declarations or no mixins exist.
+ * Mixin module references are emitted as the textual qualified name
+ * the source uses (`PaginatableForm` or `Acme::Concern::Trackable`).
+ */
+function collectRubyClassAncestors(root: Parser.SyntaxNode): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const walkScope = (node: Parser.SyntaxNode, scope: string[]): void => {
+    if (node.type === "class" || node.type === "module") {
+      const nameNode = node.childForFieldName("name");
+      if (!nameNode) {
+        for (const child of node.children) walkScope(child, scope);
+        return;
+      }
+      const localName = nameNode.type === "scope_resolution" ? readScopeResolution(nameNode) : nameNode.text;
+      const fq = scope.length === 0 ? localName : `${scope.join("::")}::${localName}`;
+      const ancestors: string[] = [];
+      // Direct superclass — tree-sitter-ruby wraps `< Bar` in a `superclass`
+      // node whose first non-`<` child is the constant or scope_resolution.
+      if (node.type === "class") {
+        const sup = node.childForFieldName("superclass");
+        if (sup) {
+          for (const child of sup.namedChildren) {
+            if (child.type === "constant" || child.type === "scope_resolution") {
+              const supText = child.type === "scope_resolution" ? readScopeResolution(child) : child.text;
+              if (supText && /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(supText)) {
+                ancestors.push(supText);
+              }
+              break;
+            }
+          }
+        }
+      }
+      // Mixins — `include Mod`, `extend Mod`, `prepend Mod` calls inside
+      // the class. The `body` field can be undefined when the grammar
+      // attaches statements directly under the class node — scan both.
+      const body = node.childForFieldName("body");
+      const stmtSource = body ? body.children : node.children;
+      for (const stmt of stmtSource) {
+        const mixin = mixinTargetFromStatement(stmt);
+        if (mixin) ancestors.push(mixin);
+      }
+      if (ancestors.length > 0) out.set(fq, ancestors);
+      // Recurse — nested classes get their own ancestor maps. Children of
+      // the body are the canonical recursion target; without an explicit
+      // body field, fall back to scanning the class node's own children.
+      const recurseChildren = body ? body.children : node.children;
+      for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
+      return;
+    }
+    for (const child of node.children) walkScope(child, scope);
+  };
+  walkScope(root, []);
+  return out;
+}
+
+const RUBY_MIXIN_METHODS = new Set(["include", "extend", "prepend"]);
+
+function mixinTargetFromStatement(node: Parser.SyntaxNode): string | null {
+  if (node.type !== "call" && node.type !== "method_call") return null;
+  if (node.childForFieldName("receiver")) return null;
+  const methodField = node.childForFieldName("method") ?? node.children.find((c) => c.type === "identifier");
+  if (!methodField || !RUBY_MIXIN_METHODS.has(methodField.text)) return null;
+  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  const firstArg = args.namedChildren[0];
+  if (!firstArg) return null;
+  const text =
+    firstArg.type === "constant"
+      ? firstArg.text
+      : firstArg.type === "scope_resolution"
+        ? readScopeResolution(firstArg)
+        : null;
+  if (!text || !/^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(text)) return null;
+  return text;
 }
 
 /**

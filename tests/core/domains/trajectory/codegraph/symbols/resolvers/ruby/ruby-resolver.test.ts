@@ -392,6 +392,210 @@ describe("RubyCallResolver — explicit require with mixed import channels", () 
   });
 });
 
+describe("RubyCallResolver — Step 0 with classAncestors (inheritance walk)", () => {
+  it("resolves method to superclass when bound class doesn't define it", () => {
+    // Product::IndexForm < PaginatableForm. `form.page` where form bound
+    // to Product::IndexForm — page lives on PaginatableForm.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/forms/product/index_form.rb", [
+      {
+        symbolId: "Product::IndexForm",
+        fqName: "Product::IndexForm",
+        shortName: "IndexForm",
+        relPath: "app/forms/product/index_form.rb",
+        scope: ["Product"],
+      },
+    ]);
+    table.upsertFile("app/forms/paginatable_form.rb", [
+      {
+        symbolId: "PaginatableForm",
+        fqName: "PaginatableForm",
+        shortName: "PaginatableForm",
+        relPath: "app/forms/paginatable_form.rb",
+        scope: [],
+      },
+      {
+        symbolId: "PaginatableForm#page",
+        fqName: "PaginatableForm#page",
+        shortName: "page",
+        relPath: "app/forms/paginatable_form.rb",
+        scope: ["PaginatableForm"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/rpc/products_controller.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { form: "Product::IndexForm" },
+      classAncestors: new Map([["Product::IndexForm", ["PaginatableForm"]]]),
+    };
+    const target = resolver.resolve({ callText: "form.page", receiver: "form", member: "page", startLine: 5 }, ctx);
+    expect(target?.targetSymbolId).toBe("PaginatableForm#page");
+    expect(target?.targetRelPath).toBe("app/forms/paginatable_form.rb");
+  });
+
+  it("walks mixin ancestors when method not on direct superclass", () => {
+    // Foo includes Bar. method `m` on Bar.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("foo.rb", [{ symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "foo.rb", scope: [] }]);
+    table.upsertFile("bar.rb", [
+      { symbolId: "Bar", fqName: "Bar", shortName: "Bar", relPath: "bar.rb", scope: [] },
+      { symbolId: "Bar#m", fqName: "Bar#m", shortName: "m", relPath: "bar.rb", scope: ["Bar"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "Foo" },
+      classAncestors: new Map([["Foo", ["Bar"]]]),
+    };
+    const target = resolver.resolve({ callText: "x.m", receiver: "x", member: "m", startLine: 1 }, ctx);
+    expect(target?.targetSymbolId).toBe("Bar#m");
+  });
+
+  it("falls back to file-only edge when method missing on bound class AND all ancestors", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("user.rb", [
+      { symbolId: "User", fqName: "User", shortName: "User", relPath: "user.rb", scope: [] },
+    ]);
+    // ApplicationRecord exists but doesn't define `save` (it's inherited
+    // from ActiveRecord::Base outside the project).
+    table.upsertFile("application_record.rb", [
+      {
+        symbolId: "ApplicationRecord",
+        fqName: "ApplicationRecord",
+        shortName: "ApplicationRecord",
+        relPath: "application_record.rb",
+        scope: [],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { u: "User" },
+      classAncestors: new Map([["User", ["ApplicationRecord"]]]),
+    };
+    const target = resolver.resolve({ callText: "u.save", receiver: "u", member: "save", startLine: 1 }, ctx);
+    // Method-level dropped, file-level edge preserved (the bound class's file).
+    expect(target?.targetRelPath).toBe("user.rb");
+    expect(target?.targetSymbolId).toBeNull();
+  });
+
+  it("survives a self-referential ancestor cycle without stack overflow", () => {
+    // Pathological case: A's ancestor is A itself (impossible in real Ruby,
+    // defensive guard against malformed extraction).
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [{ symbolId: "A", fqName: "A", shortName: "A", relPath: "a.rb", scope: [] }]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "A" },
+      classAncestors: new Map([["A", ["A"]]]),
+    };
+    const target = resolver.resolve({ callText: "x.q", receiver: "x", member: "q", startLine: 1 }, ctx);
+    expect(target?.targetRelPath).toBe("a.rb");
+    expect(target?.targetSymbolId).toBeNull();
+  });
+
+  // Multi-step ancestor cycle: A → B → A. The visited set must prevent the
+  // re-entry on A causing infinite recursion. Exercises the `visited.has`
+  // guard via the inter-class loop rather than the trivial self-loop. The
+  // recursion enters A, walks to B, B's ancestor is A which short-circuits,
+  // B falls through to file-only edge but with targetSymbolId=null, so
+  // A's loop discards that and itself falls to file-only — A's own file.
+  it("breaks an A → B → A ancestor cycle via the visited guard", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("a.rb", [{ symbolId: "A", fqName: "A", shortName: "A", relPath: "a.rb", scope: [] }]);
+    table.upsertFile("b.rb", [{ symbolId: "B", fqName: "B", shortName: "B", relPath: "b.rb", scope: [] }]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "A" },
+      classAncestors: new Map([
+        ["A", ["B"]],
+        ["B", ["A"]],
+      ]),
+    };
+    // `m` doesn't exist on A or B — both file-only edges. A's loop sees
+    // B's inherited result has targetSymbolId=null, rejects it, falls
+    // through to A's own file edge.
+    const target = resolver.resolve({ callText: "x.m", receiver: "x", member: "m", startLine: 1 }, ctx);
+    expect(target?.targetRelPath).toBe("a.rb");
+    expect(target?.targetSymbolId).toBeNull();
+  });
+
+  // An ancestor that itself resolves to null (unknown class) — the loop
+  // continues to the next ancestor and finds the method on it. Drives the
+  // `inherited` null falsy branch after recursion, and the ancestor-loop
+  // continuation past a failed ancestor.
+  it("skips ancestor that doesn't resolve to a file and tries the next one", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("foo.rb", [{ symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "foo.rb", scope: [] }]);
+    // First ancestor `Unknown` not in symbol table → resolveConstant returns null.
+    // Second ancestor `Helper` defines `act`.
+    table.upsertFile("helper.rb", [
+      { symbolId: "Helper", fqName: "Helper", shortName: "Helper", relPath: "helper.rb", scope: [] },
+      { symbolId: "Helper#act", fqName: "Helper#act", shortName: "act", relPath: "helper.rb", scope: ["Helper"] },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "Foo" },
+      classAncestors: new Map([["Foo", ["Unknown", "Helper"]]]),
+    };
+    const target = resolver.resolve({ callText: "x.act", receiver: "x", member: "act", startLine: 1 }, ctx);
+    expect(target?.targetSymbolId).toBe("Helper#act");
+    expect(target?.targetRelPath).toBe("helper.rb");
+  });
+
+  it("tries ancestors in declaration order — first match wins", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("foo.rb", [{ symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "foo.rb", scope: [] }]);
+    table.upsertFile("first.rb", [
+      { symbolId: "First", fqName: "First", shortName: "First", relPath: "first.rb", scope: [] },
+      { symbolId: "First#shared", fqName: "First#shared", shortName: "shared", relPath: "first.rb", scope: ["First"] },
+    ]);
+    table.upsertFile("second.rb", [
+      { symbolId: "Second", fqName: "Second", shortName: "Second", relPath: "second.rb", scope: [] },
+      {
+        symbolId: "Second#shared",
+        fqName: "Second#shared",
+        shortName: "shared",
+        relPath: "second.rb",
+        scope: ["Second"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "main.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      localBindings: { x: "Foo" },
+      // Foo extends First, then includes Second — First wins for `shared`.
+      classAncestors: new Map([["Foo", ["First", "Second"]]]),
+    };
+    const target = resolver.resolve({ callText: "x.shared", receiver: "x", member: "shared", startLine: 1 }, ctx);
+    expect(target?.targetSymbolId).toBe("First#shared");
+  });
+});
+
 describe("RubyCallResolver — AR Relation chain guard", () => {
   it("drops resolution when receiver is a chained AR-relation call (.ransack/.where/...)", () => {
     const resolver = new RubyCallResolver();

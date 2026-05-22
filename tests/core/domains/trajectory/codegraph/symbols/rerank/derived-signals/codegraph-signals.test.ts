@@ -34,6 +34,15 @@ describe("codegraph derived signals", () => {
     expect(sig.extract({ "codegraph.file.instability": -0.1 }, {})).toBe(0);
   });
 
+  // Defensive guard against a payload value that can't be coerced to a
+  // number (e.g. stale schema or corrupt point). `Number("not-a-number")`
+  // yields NaN; the signal short-circuits to 0 rather than propagating a
+  // poisoned score through normalization.
+  it("InstabilitySignal returns 0 when raw value is non-numeric (NaN)", () => {
+    const sig = new InstabilitySignal();
+    expect(sig.extract({ "codegraph.file.instability": "not-a-number" }, {})).toBe(0);
+  });
+
   it("IsHubSignal returns 1 when raw boolean is true", () => {
     const sig = new IsHubSignal();
     expect(sig.extract({ "codegraph.file.isHub": true }, {})).toBe(1);

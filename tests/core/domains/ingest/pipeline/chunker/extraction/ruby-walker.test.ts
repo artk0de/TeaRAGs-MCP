@@ -697,3 +697,121 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
     }
   });
 });
+
+describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => {
+  it("captures `class Foo < Bar` superclass", () => {
+    const src = "class Foo < Bar\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.get("Foo")).toEqual(["Bar"]);
+  });
+
+  it("captures qualified superclass `class Foo < Acme::Base`", () => {
+    const src = "class Foo < Acme::Base\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.get("Foo")).toEqual(["Acme::Base"]);
+  });
+
+  it("captures `include Mod` mixins in class body", () => {
+    const src = "class Foo\n  include Bar\n  include Acme::Baz\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.get("Foo")).toEqual(["Bar", "Acme::Baz"]);
+  });
+
+  it("captures `extend Mod` and `prepend Mod` alongside `include`", () => {
+    const src = "class Foo\n  extend Bar\n  prepend Baz\n  include Qux\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.get("Foo")).toEqual(["Bar", "Baz", "Qux"]);
+  });
+
+  it("preserves order: superclass first, mixins in declaration order", () => {
+    const src = "class Foo < Base\n  include First\n  include Second\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.get("Foo")).toEqual(["Base", "First", "Second"]);
+  });
+
+  it("returns undefined classAncestors when no class declares ancestors", () => {
+    const src = "class Foo\nend\nclass Bar\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors).toBeUndefined();
+  });
+
+  it("qualifies nested class names via outer scope", () => {
+    const src = "module Acme\n  class User < BaseModel\n  end\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.get("Acme::User")).toEqual(["BaseModel"]);
+  });
+
+  it("skips non-constant mixin args (`include some_var`)", () => {
+    const src = "class Foo\n  include some_var\n  include Bar\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.get("Foo")).toEqual(["Bar"]);
+  });
+
+  // `include()` parses as a `call` node with `arguments=argument_list` whose
+  // namedChildren are empty. The walker reaches mixinTargetFromStatement's
+  // `firstArg = args.namedChildren[0]` lookup and falls through the
+  // `if (!firstArg) return null` guard. Exercises the empty-args branch
+  // independently from the "non-constant arg" path above.
+  it("skips empty mixin argument list (`include()`)", () => {
+    const src = "class Foo\n  include()\n  include Bar\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    // `include()` contributes nothing; only `include Bar` lands in ancestors.
+    expect(r.classAncestors?.get("Foo")).toEqual(["Bar"]);
+  });
+
+  // `include 123` — first arg is an `integer` node, not `constant` or
+  // `scope_resolution`. mixinTargetFromStatement's ternary returns `text=null`,
+  // tripping `if (!text || !regex.test(text))`. Different type from the
+  // "include some_var" identifier case to exercise the ternary's `: null`
+  // fall-through specifically.
+  it("skips literal-number mixin args (`include 123`)", () => {
+    const src = "class Foo\n  include 123\n  include Bar\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.get("Foo")).toEqual(["Bar"]);
+  });
+
+  // A statement that LOOKS like a mixin (call with method = `include`) but
+  // is itself nested under a method definition — the walker scans the
+  // class body's stmtSource, which includes the `def` node but not the
+  // nested call inside its body. The mixin inside def should NOT contribute
+  // to ancestors.
+  it("does not pick up mixin-shaped calls nested inside method bodies", () => {
+    const src = "class Foo\n  def m\n    include Bar\n  end\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors).toBeUndefined();
+  });
+
+  // Module-level mixin: `module Foo; include Bar; end`. The walker treats
+  // `module` like `class` for ancestor collection (skipping only the
+  // superclass step). Exercises the `node.type === "module"` branch of
+  // collectRubyClassAncestors with mixin statements present.
+  it("captures mixins inside `module` declarations", () => {
+    const src = "module Acme\n  include Configurable\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.get("Acme")).toEqual(["Configurable"]);
+  });
+
+  // Mixin call with explicit receiver — `self.include Bar` or `Foo.include Bar`
+  // — must NOT be treated as a class-level mixin. mixinTargetFromStatement
+  // bails on `node.childForFieldName("receiver")`. Drives the receiver-guard
+  // false branch.
+  it("ignores mixin-shaped calls with an explicit receiver", () => {
+    const src = "class Foo\n  self.include Bar\n  include Qux\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    // `self.include Bar` has a receiver — skipped. Only `include Qux` lands.
+    expect(r.classAncestors?.get("Foo")).toEqual(["Qux"]);
+  });
+});

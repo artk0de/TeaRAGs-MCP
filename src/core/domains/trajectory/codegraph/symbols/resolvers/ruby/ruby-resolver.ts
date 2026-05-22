@@ -126,6 +126,23 @@ export class RubyCallResolver implements CallResolver {
    * 4. Return `null` only when the type's file is unknown.
    */
   private resolveByLocalType(typeName: string, member: string, ctx: CallContext): ResolvedTarget | null {
+    return this.resolveByLocalTypeInternal(typeName, member, ctx, new Set());
+  }
+
+  /**
+   * Inner recursion guarded against ancestor cycles (`A < B < A` shouldn't
+   * be possible in Ruby but defensive — saves a stack overflow on malformed
+   * extractions). `visited` carries the fully-qualified class names already
+   * inspected so we don't re-check the same scope twice in a chain.
+   */
+  private resolveByLocalTypeInternal(
+    typeName: string,
+    member: string,
+    ctx: CallContext,
+    visited: Set<string>,
+  ): ResolvedTarget | null {
+    if (visited.has(typeName)) return null;
+    visited.add(typeName);
     const targetFile = this.resolveConstant(typeName, ctx);
     if (!targetFile) return null;
     const bareType = lastConstantSegment(typeName);
@@ -134,8 +151,25 @@ export class RubyCallResolver implements CallResolver {
       .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType);
     const target = pickSingleCandidate(candidates, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
-    // File known but method not found in this class scope — file-level
-    // attribution preserved, method-level dropped.
+
+    // Method not found on this class — walk the ancestor chain
+    // (`class Foo < Bar` superclass + `include Mod` / `extend Mod` mixins).
+    // Walker emits these into FileExtraction.classAncestors and the
+    // provider forwards via CallContext.classAncestors. Each ancestor is
+    // tried in declaration order — the first that owns `member` wins.
+    const ancestors = ctx.classAncestors?.get(typeName);
+    if (ancestors) {
+      for (const ancestor of ancestors) {
+        const inherited = this.resolveByLocalTypeInternal(ancestor, member, ctx, visited);
+        // Only accept ancestor resolution when method-level pin succeeded —
+        // a file-only fallback from the ancestor is no better than from
+        // the bound class itself, so prefer the bound class's file edge.
+        if (inherited && inherited.targetSymbolId !== null) return inherited;
+      }
+    }
+
+    // File known but method not found in this class scope or its
+    // ancestors — file-level attribution preserved, method-level dropped.
     return { targetRelPath: targetFile, targetSymbolId: null };
   }
 

@@ -1167,6 +1167,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           imports: extraction.imports,
           symbolTable,
           classFieldTypes: extraction.classFieldTypes,
+          classAncestors: extraction.classAncestors,
         },
       );
       if (target) {
@@ -1187,6 +1188,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           symbolTable,
           classFieldTypes: extraction.classFieldTypes,
           localBindings: chunk.localBindings,
+          classAncestors: extraction.classAncestors,
         });
         if (!target) continue;
         this.runStats.callsResolved += 1;

@@ -87,4 +87,16 @@ describe("resolveZeitwerkConstant", () => {
     // app/parsers isn't in default roots, so basename-fallback finds it.
     expect(resolveZeitwerkConstant("HTMLParser", paths)).toBe("app/parsers/html_parser.rb");
   });
+
+  // Direct equality path: a known path that IS exactly `<snake>.rb` with
+  // no directory prefix. Triggers `p === suffix` rather than the
+  // `endsWith('/' + suffix)` fall-through. Common in flat single-file
+  // gems and the project-root case (caller file is `foo.rb` at root).
+  it("matches a known path equal to the suffix directly (no directory prefix)", () => {
+    const paths = ["foo.rb"];
+    // `Foo` snake_cases to `foo.rb`; the root-prefixed candidates don't
+    // match (no app/foo.rb), so the basename loop runs and hits the
+    // strict-equality branch on `foo.rb === foo.rb`.
+    expect(resolveZeitwerkConstant("Foo", paths)).toBe("foo.rb");
+  });
 });
