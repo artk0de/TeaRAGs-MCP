@@ -63,7 +63,13 @@ export class RubyCallResolver implements CallResolver {
     if (call.receiver && looksLikeConstant(call.receiver)) {
       const targetFile = this.resolveConstant(call.receiver, ctx);
       if (targetFile) {
-        const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
+        // Class.method call → prefer the `.`-form (class/static method)
+        // over the `#`-form (instance method). A class can declare both
+        // `def self.authorize!` and `def authorize!` — only the former
+        // is reachable via `Klass.authorize!(...)`.
+        const candidates = ctx.symbolTable
+          .lookupByShortName(call.member)
+          .filter((def) => def.relPath === targetFile && symbolIdIsClassMethod(def.symbolId, call.member));
         const target = pickSingleCandidate(candidates, this.mode);
         if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
         const inherited = this.walkAncestorsForConstantCall(call.receiver, call.member, ctx, new Set([call.receiver]));
@@ -205,7 +211,12 @@ export class RubyCallResolver implements CallResolver {
       visited.add(ancestor);
       const ancestorFile = this.resolveConstant(ancestor, ctx);
       if (!ancestorFile) continue;
-      const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === ancestorFile);
+      // Same Class.method preference as the outer Zeitwerk branch:
+      // only consider class-form symbols (`Ancestor.method`), not
+      // instance-form (`Ancestor#method`).
+      const candidates = ctx.symbolTable
+        .lookupByShortName(member)
+        .filter((def) => def.relPath === ancestorFile && symbolIdIsClassMethod(def.symbolId, member));
       const target = pickSingleCandidate(candidates, this.mode);
       if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
       // Method not on this ancestor either — recurse one level deeper.
@@ -264,6 +275,25 @@ function looksLikeConstant(text: string): boolean {
   // Ruby constants begin with an uppercase letter. Scope_resolution
   // segments are joined by `::`. Both forms accepted.
   return /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(text);
+}
+
+/**
+ * True when a symbolId is a class-form method (uses `.` as the
+ * class↔method separator) rather than an instance-form (`#`). Used by
+ * the Zeitwerk constant-receiver resolution path to prefer
+ * `Klass.method` over `Klass#method` when both exist with the same
+ * short name. Top-level functions (no `.` or `#` between class and
+ * method) also match — they're callable as `name()` without a class
+ * prefix, but `Module.function()` style top-level helpers fit the
+ * `Class.method` shape and should resolve. The match is anchored on
+ * the final segment `.<member>` to avoid colliding with namespace
+ * separators like `Acme::Auth::Login.call`.
+ */
+function symbolIdIsClassMethod(symbolId: string, member: string): boolean {
+  // Top-level function — no separator at all, symbolId === member.
+  if (symbolId === member) return true;
+  // Class.method or Acme::Klass.method — last `.` connects class to member.
+  return symbolId.endsWith(`.${member}`);
 }
 
 function lastConstantSegment(qualified: string): string {

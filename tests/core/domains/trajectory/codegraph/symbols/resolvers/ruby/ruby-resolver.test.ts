@@ -22,8 +22,10 @@ describe("RubyCallResolver — Zeitwerk constant lookup", () => {
     table.upsertFile("app/models/user.rb", [
       { symbolId: "User", fqName: "User", shortName: "User", relPath: "app/models/user.rb", scope: [] },
       {
-        symbolId: "User::find",
-        fqName: "User::find",
+        // Per symbolid-convention.md: class methods (def self.find) join
+        // their class with `.`, not `::` (the namespace separator).
+        symbolId: "User.find",
+        fqName: "User.find",
         shortName: "find",
         relPath: "app/models/user.rb",
         scope: ["User"],
@@ -34,7 +36,7 @@ describe("RubyCallResolver — Zeitwerk constant lookup", () => {
       makeCtx("app/controllers/users_controller.rb", [{ importText: `${ZEITWERK_PREFIX}User`, startLine: 1 }], table),
     );
     expect(target?.targetRelPath).toBe("app/models/user.rb");
-    expect(target?.targetSymbolId).toBe("User::find");
+    expect(target?.targetSymbolId).toBe("User.find");
   });
 
   it("resolves qualified `Acme::Auth::Login` constants", () => {
@@ -393,6 +395,68 @@ describe("RubyCallResolver — explicit require with mixed import channels", () 
 });
 
 describe("RubyCallResolver — Zeitwerk branch ancestor walk for class-method calls", () => {
+  it("disambiguates Class.method vs Class#method when both share short_name + file", () => {
+    // Real production Rails monorepo situation: AbstractPolicy has BOTH a
+    // class method (def self.authorize! / class << self) AND an instance
+    // method (def authorize!) with the same name `authorize!` in the
+    // same file. ProductPolicy.authorize!(...) is a class-method call —
+    // the resolver must prefer the `.`-form (class method) over the
+    // `#`-form (instance method). Without that distinction strict mode
+    // picks neither and the edge drops.
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/policies/product_policy.rb", [
+      {
+        symbolId: "ProductPolicy",
+        fqName: "ProductPolicy",
+        shortName: "ProductPolicy",
+        relPath: "app/policies/product_policy.rb",
+        scope: [],
+      },
+    ]);
+    table.upsertFile("app/policies/abstract_policy.rb", [
+      {
+        symbolId: "AbstractPolicy",
+        fqName: "AbstractPolicy",
+        shortName: "AbstractPolicy",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: [],
+      },
+      {
+        symbolId: "AbstractPolicy.authorize!",
+        fqName: "AbstractPolicy.authorize!",
+        shortName: "authorize!",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: ["AbstractPolicy"],
+      },
+      {
+        symbolId: "AbstractPolicy#authorize!",
+        fqName: "AbstractPolicy#authorize!",
+        shortName: "authorize!",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: ["AbstractPolicy"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/services/products/show.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      classAncestors: { ProductPolicy: ["AbstractPolicy"] },
+    };
+    const target = resolver.resolve(
+      {
+        callText: "ProductPolicy.authorize!(@current_user, :see_draft, @product)",
+        receiver: "ProductPolicy",
+        member: "authorize!",
+        startLine: 12,
+      },
+      ctx,
+    );
+    // Must pick the class-method form.
+    expect(target?.targetSymbolId).toBe("AbstractPolicy.authorize!");
+  });
+
   it("resolves `ProductPolicy.authorize!` to inherited `AbstractPolicy.authorize!`", () => {
     // `class ProductPolicy < AbstractPolicy` declares the inheritance.
     // `ProductPolicy.authorize!(...)` is a class-method call — receiver
