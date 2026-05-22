@@ -1153,6 +1153,119 @@ describe("CodegraphEnrichmentProvider", () => {
     }
   });
 
+  it("emits synthetic methods from has_and_belongs_to_many", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-habtm-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "post.rb"),
+        ["class Post", "  has_and_belongs_to_many :tags", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("tags").some((s) => s.symbolId === "Post#tags")).toBe(true);
+      expect(lookup.lookupByShortName("tags=").some((s) => s.symbolId === "Post#tags=")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("emits forwarder methods from `delegate :a, :b, to: :other`", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-delegate-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "user.rb"),
+        ["class User", "  delegate :email, :name, to: :profile", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("email").some((s) => s.symbolId === "User#email")).toBe(true);
+      expect(lookup.lookupByShortName("name").some((s) => s.symbolId === "User#name")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("indexes `define_method(:literal)` as if it were a regular def", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-dm-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "router.rb"),
+        ["class Router", "  define_method(:get) { 1 }", '  define_method("post") { 2 }', "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      expect(lookup.lookupByShortName("get").some((s) => s.symbolId === "Router#get")).toBe(true);
+      expect(lookup.lookupByShortName("post").some((s) => s.symbolId === "Router#post")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does NOT index `define_method(var)` with a dynamic argument", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-dm-dyn-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "router.rb"),
+        ["class Router", "  [:get, :post].each do |verb|", "    define_method(verb) { 1 }", "  end", "end", ""].join(
+          "\n",
+        ),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Dynamic arg — nothing named `verb` indexed.
+      expect(lookup.lookupByShortName("verb")).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // `define_method()` with an empty argument list — the symbol-name slot
+  // exists but `firstArg` is undefined. `rubyDefineMethodEmission` must
+  // return null without crashing (covers the `if (!firstArg) return null;`
+  // guard). The file should still build with no synthetic method named
+  // `define_method` leaking into the symbol table.
+  it("does NOT index `define_method()` with no arguments", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-dm-empty-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "router.rb"),
+        ["class Router", "  define_method() { 1 }", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Nothing emitted under Router — the empty-arg form bails early.
+      expect(lookup.lookupByShortName("define_method")).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // `define_method(123)` — first arg is neither `simple_symbol` nor
+  // `string`/`string_literal`. Name stays null → emission returns null.
+  // Covers the fall-through in `rubyDefineMethodEmission` past both
+  // literal branches without matching.
+  it("does NOT index `define_method(123)` with a numeric argument", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cg-rb-dm-num-"));
+    try {
+      mkdirSync(join(root, "app", "models"), { recursive: true });
+      writeFileSync(
+        join(root, "app", "models", "router.rb"),
+        ["class Router", "  define_method(123) { 1 }", "end", ""].join("\n"),
+      );
+      await provider.buildFileSignals(root);
+      const lookup = (provider as unknown as { deps: { symbolTable: InMemoryGlobalSymbolTable } }).deps.symbolTable;
+      // Numeric arg is not a static method name.
+      expect(lookup.lookupByShortName("123")).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("emits a class method from `scope :active, -> { ... }`", async () => {
     const root = mkdtempSync(join(tmpdir(), "cg-rb-scope-"));
     try {

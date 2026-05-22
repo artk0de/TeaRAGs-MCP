@@ -290,47 +290,10 @@ describe("RubyCallResolver — Step 0 resolveByLocalType (walker-inferred receiv
     expect(target?.targetRelPath).toBe("app/policies/abstract_policy.rb");
   });
 
-  it("drops the false positive `obj.result()` to AbstractPolicy#result when receiver is NOT bound", () => {
-    // Without localBindings, the resolver fell back to global short-name
-    // lookup and picked AbstractPolicy#result for `Product.ransack(...).result(...)`.
-    // With Step 0 only kicking in when receiver IS in localBindings, the
-    // path here is identical to before — the chained call's receiver text
-    // (`Product.ransack(form)`) doesn't match any constant or local
-    // variable, so the resolver falls through to short-name lookup. This
-    // test pins the BEHAVIOUR we have: Step 0 doesn't make things worse.
-    const resolver = new RubyCallResolver();
-    const table = new InMemoryGlobalSymbolTable();
-    table.upsertFile("app/policies/abstract_policy.rb", [
-      {
-        symbolId: "AbstractPolicy#result",
-        fqName: "AbstractPolicy#result",
-        shortName: "result",
-        relPath: "app/policies/abstract_policy.rb",
-        scope: ["AbstractPolicy"],
-      },
-    ]);
-    const ctx: CallContext = {
-      callerFile: "app/controllers/products_controller.rb",
-      callerScope: [],
-      imports: [],
-      symbolTable: table,
-      // Note: `Product.ransack(form)` has no local binding (walker only
-      // tracks `var = X.new` / AR finders), so receiver here is a literal
-      // chain text — not in localBindings.
-    };
-    const target = resolver.resolve(
-      {
-        callText: "Product.ransack(form).result(distinct: true)",
-        receiver: "Product.ransack(form)",
-        member: "result",
-        startLine: 5,
-      },
-      ctx,
-    );
-    // Global short-name lookup still finds AbstractPolicy#result (legacy FP).
-    // Documenting current behaviour; a separate Relation-aware pass would fix this.
-    expect(target?.targetSymbolId).toBe("AbstractPolicy#result");
-  });
+  // This case used to demonstrate the FP — `Product.ransack(...).result(...)`
+  // resolving to AbstractPolicy#result via global short-name. The AR-relation
+  // chain guard now drops it. The behavioural test that PINS the new fix
+  // lives in the "AR Relation chain guard" describe block below.
 
   it("returns file-only edge when method is inherited from a base class outside the project", () => {
     // Common Ruby pattern: `user = User.new; user.save` where `save` is
@@ -426,6 +389,98 @@ describe("RubyCallResolver — explicit require with mixed import channels", () 
     );
     expect(target?.targetRelPath).toBe("foo.rb");
     expect(target?.targetSymbolId).toBe("Foo::bar");
+  });
+});
+
+describe("RubyCallResolver — AR Relation chain guard", () => {
+  it("drops resolution when receiver is a chained AR-relation call (.ransack/.where/...)", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    // Plant a tempting global short-name match — without the guard,
+    // the resolver would FP-attribute the call to this unrelated class.
+    table.upsertFile("app/policies/abstract_policy.rb", [
+      {
+        symbolId: "AbstractPolicy#result",
+        fqName: "AbstractPolicy#result",
+        shortName: "result",
+        relPath: "app/policies/abstract_policy.rb",
+        scope: ["AbstractPolicy"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/controllers/products_controller.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+    };
+    // `Product.ransack(form).result(distinct: true)` — chained on
+    // AR::Relation, not on AbstractPolicy.
+    const target = resolver.resolve(
+      {
+        callText: "Product.ransack(form).result(distinct: true)",
+        receiver: "Product.ransack(form)",
+        member: "result",
+        startLine: 5,
+      },
+      ctx,
+    );
+    expect(target).toBeNull();
+  });
+
+  it("triggers the guard for each AR relation builder marker", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/services/x.rb", [
+      {
+        symbolId: "X#first",
+        fqName: "X#first",
+        shortName: "first",
+        relPath: "app/services/x.rb",
+        scope: ["X"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/controllers/x.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+    };
+    for (const chain of [
+      "User.where(active: true)",
+      "User.order(:name)",
+      "User.joins(:posts)",
+      "User.includes(:posts)",
+      "User.select(:id)",
+      "User.group(:role)",
+    ]) {
+      const target = resolver.resolve(
+        { callText: `${chain}.first`, receiver: chain, member: "first", startLine: 1 },
+        ctx,
+      );
+      expect(target).toBeNull();
+    }
+  });
+
+  it("does NOT trigger the guard for plain receivers without dot-chained relation calls", () => {
+    const resolver = new RubyCallResolver();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("app/services/x.rb", [
+      {
+        symbolId: "Helper#go",
+        fqName: "Helper#go",
+        shortName: "go",
+        relPath: "app/services/x.rb",
+        scope: ["Helper"],
+      },
+    ]);
+    const ctx: CallContext = {
+      callerFile: "app/controllers/x.rb",
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+    };
+    const target = resolver.resolve({ callText: "obj.go", receiver: "obj", member: "go", startLine: 1 }, ctx);
+    expect(target?.targetSymbolId).toBe("Helper#go");
   });
 });
 

@@ -361,6 +361,14 @@ function collectRubyDefinedConstants(root: Parser.SyntaxNode): string[] {
   return out;
 }
 
+/**
+ * Methods that are dynamic-dispatch wrappers — when the first argument
+ * is a LITERAL symbol or string, the call is statically resolvable as
+ * if it were a direct method call. `Object#send`, `Object#public_send`,
+ * and the historical `__send__` alias all share the same shape.
+ */
+const RUBY_DYNAMIC_DISPATCH = new Set(["send", "public_send", "__send__"]);
+
 function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
@@ -369,17 +377,84 @@ function collectRubyCalls(root: Parser.SyntaxNode): CallRef[] {
     const method = node.childForFieldName("method");
     if (!method) return;
     const startLine = node.startPosition.row + 1;
-    if (receiver) {
-      // `Foo.bar(...)` or `obj.method(...)`. For Zeitwerk-style
-      // resolution, capture the receiver's text (which may itself be
-      // a scope_resolution like `Acme::Auth`).
-      const receiverText = receiver.type === "scope_resolution" ? readScopeResolution(receiver) : receiver.text;
+    const receiverText = receiver
+      ? receiver.type === "scope_resolution"
+        ? readScopeResolution(receiver)
+        : receiver.text
+      : null;
+
+    // Dynamic dispatch unwrap: `obj.send(:save)` / `obj.public_send("save")`
+    // — when the first arg is a literal symbol/string, the call is
+    // semantically a direct method call. Emit it as such; the resolver
+    // doesn't need to know send was involved.
+    if (RUBY_DYNAMIC_DISPATCH.has(method.text) && receiverText !== null) {
+      const unwrapped = extractLiteralSymbolOrString(node);
+      if (unwrapped !== null) {
+        out.push({ callText: node.text, receiver: receiverText, member: unwrapped, startLine });
+        // Note: we deliberately DROP the literal `send` edge — emitting
+        // both would double-count fan-out for the same logical call.
+        return;
+      }
+    }
+
+    if (receiverText !== null) {
       out.push({ callText: node.text, receiver: receiverText, member: method.text, startLine });
     } else {
       out.push({ callText: node.text, receiver: null, member: method.text, startLine });
     }
+
+    // Block-pass shorthand: `users.each(&:save)` — &:save desugars to
+    // `{ |u| u.save }`. The block-passed method is an additional call
+    // edge with no static receiver (the iterator's element type is
+    // out of scope here; the resolver falls back to short-name lookup).
+    const blockMember = extractBlockPassMethod(node);
+    if (blockMember !== null) {
+      out.push({ callText: `&:${blockMember}`, receiver: null, member: blockMember, startLine });
+    }
   });
   return out;
+}
+
+/**
+ * Pull the literal symbol or string text out of the first positional
+ * argument of a `call` node. Returns the stripped name (`:save` → `save`,
+ * `"save"` → `save`) or `null` when the argument is a variable,
+ * expression, or absent.
+ */
+function extractLiteralSymbolOrString(callNode: Parser.SyntaxNode): string | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  const firstArg = args.namedChildren[0];
+  if (!firstArg) return null;
+  if (firstArg.type === "simple_symbol") {
+    return firstArg.text.startsWith(":") ? firstArg.text.slice(1) : firstArg.text;
+  }
+  if (firstArg.type === "string" || firstArg.type === "string_literal") {
+    const inner = firstArg.namedChildren.find((c) => c.type === "string_content");
+    return inner ? inner.text : firstArg.text.replace(/^["']|["']$/g, "");
+  }
+  return null;
+}
+
+/**
+ * Detect `&:method_name` block argument and return the bare method
+ * name. tree-sitter-ruby exposes block-pass args as a `block_argument`
+ * node whose only child is the proc value — for symbol-to-proc that's
+ * a `simple_symbol`. Returns `null` for any other block shape
+ * (`&proc_var`, `&Method.method(:foo)`, full `do ... end` block).
+ */
+function extractBlockPassMethod(callNode: Parser.SyntaxNode): string | null {
+  const args = callNode.childForFieldName("arguments") ?? callNode.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  for (const arg of args.namedChildren) {
+    if (arg.type !== "block_argument") continue;
+    const child = arg.namedChildren[0];
+    if (!child) continue;
+    if (child.type === "simple_symbol") {
+      return child.text.startsWith(":") ? child.text.slice(1) : child.text;
+    }
+  }
+  return null;
 }
 
 function walk(node: Parser.SyntaxNode, visit: (n: Parser.SyntaxNode) => void): void {

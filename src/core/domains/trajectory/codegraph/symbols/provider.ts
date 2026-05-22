@@ -1306,10 +1306,40 @@ function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | NamedSymbol[] | null {
   // `call` (or `method_call`) node with no receiver and a recognised
   // method name. Argument shape: a sequence of `simple_symbol` nodes.
   if (node.type === "call" || node.type === "method_call") {
+    const defineMethodEmit = rubyDefineMethodEmission(node);
+    if (defineMethodEmit) return defineMethodEmit;
     const macro = rubyMacroEmission(node);
     if (macro) return macro;
   }
   return null;
+}
+
+/**
+ * `define_method(:foo) { ... }` — declares an instance method at
+ * runtime. When the first argument is a literal symbol or string, the
+ * method name is statically known and we treat the call as a regular
+ * method declaration on the enclosing class scope. Dynamic args
+ * (`define_method(verb) { ... }` where verb is a variable) remain
+ * unrepresentable.
+ */
+function rubyDefineMethodEmission(node: Parser.SyntaxNode): NamedSymbol | null {
+  if (node.childForFieldName("receiver")) return null;
+  const methodField = node.childForFieldName("method");
+  const methodNode = methodField ?? node.children.find((c) => c.type === "identifier");
+  if (methodNode?.text !== "define_method") return null;
+  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+  if (!args) return null;
+  const firstArg = args.namedChildren[0];
+  if (!firstArg) return null;
+  let name: string | null = null;
+  if (firstArg.type === "simple_symbol") {
+    name = firstArg.text.startsWith(":") ? firstArg.text.slice(1) : firstArg.text;
+  } else if (firstArg.type === "string" || firstArg.type === "string_literal") {
+    const inner = firstArg.namedChildren.find((c) => c.type === "string_content");
+    name = inner ? inner.text : firstArg.text.replace(/^["']|["']$/g, "");
+  }
+  if (!name || name.length === 0) return null;
+  return { name, descendsInto: false, methodKind: "instance" };
 }
 
 /**
@@ -1320,14 +1350,15 @@ function rbNameOf(node: Parser.SyntaxNode): NamedSymbol | NamedSymbol[] | null {
  *
  * Coverage:
  *   - attr_accessor / attr_reader / attr_writer — Ruby builtin
- *   - has_many / has_one / belongs_to — ActiveRecord associations
+ *   - has_many / has_one / has_and_belongs_to_many / belongs_to — AR associations
  *   - scope — ActiveRecord class-level query helper (rare static case)
+ *   - delegate — Forwardable / ActiveSupport delegation (instance forwarders)
  *
  * Out of scope (intentional):
- *   - delegate :method, to: :other — would need second-arg lookup
- *   - define_method(:name) — runtime, value passed in argument
- *   - has_and_belongs_to_many — legacy AR association, low frequency
  *   - method_missing — pure runtime dispatch, unrepresentable
+ *   - dynamically constructed names: `define_method("foo_#{x}")` etc.
+ *   - included do blocks (ActiveSupport::Concern) — needs mixin merge
+ *     pass (bd: see Concern follow-up)
  */
 const RUBY_DSL_MACROS: Record<string, (base: string) => { name: string; kind: "instance" | "static" }[]> = {
   attr_accessor: (b) => [
@@ -1344,6 +1375,11 @@ const RUBY_DSL_MACROS: Record<string, (base: string) => { name: string; kind: "i
     { name: b, kind: "instance" },
     { name: `${b}=`, kind: "instance" },
   ],
+  // Legacy AR many-to-many — same accessor shape as has_many.
+  has_and_belongs_to_many: (b) => [
+    { name: b, kind: "instance" },
+    { name: `${b}=`, kind: "instance" },
+  ],
   belongs_to: (b) => [
     { name: b, kind: "instance" },
     { name: `${b}=`, kind: "instance" },
@@ -1354,6 +1390,11 @@ const RUBY_DSL_MACROS: Record<string, (base: string) => { name: string; kind: "i
   // first symbol argument. Only the first arg matters; the lambda is
   // body, not an accessor target.
   scope: (b) => [{ name: b, kind: "static" }],
+  // `delegate :a, :b, to: :other` — emits forwarder methods on the
+  // includer. We don't trace through `to:` (would need second-arg
+  // type lookup); a forwarder being indexed in cg_symbols is enough
+  // so a caller writing `obj.a` finds SOMETHING on `obj`'s class.
+  delegate: (b) => [{ name: b, kind: "instance" }],
 };
 
 function rubyMacroEmission(node: Parser.SyntaxNode): NamedSymbol[] | null {

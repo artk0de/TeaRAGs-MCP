@@ -458,6 +458,161 @@ describe("extractFromRubyFile — localBindings (type inference)", () => {
     }
   });
 
+  it("unwraps `obj.send(:method)` into a direct receiver-call", () => {
+    const src = "def f\n  user.send(:save)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    const c = r.chunks[0].calls.find((cr) => cr.member === "save");
+    expect(c).toBeDefined();
+    expect(c?.receiver).toBe("user");
+    // The literal `send` edge must NOT also be emitted (double-counting).
+    expect(r.chunks[0].calls.find((cr) => cr.member === "send")).toBeUndefined();
+  });
+
+  it("unwraps `obj.public_send('save')` (string literal arg)", () => {
+    const src = 'def f\n  user.public_send("save")\nend\n';
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    const c = r.chunks[0].calls.find((cr) => cr.member === "save");
+    expect(c?.receiver).toBe("user");
+  });
+
+  it("keeps `obj.send(var)` as a literal send call when arg is not a literal", () => {
+    const src = "def f\n  user.send(action)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((cr) => cr.member === "send")).toBeDefined();
+  });
+
+  it("extracts &:method block-pass as a separate CallRef", () => {
+    const src = "def f\n  users.each(&:save)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    expect(r.chunks[0].calls.find((cr) => cr.member === "each")).toBeDefined();
+    const saveCall = r.chunks[0].calls.find((cr) => cr.member === "save" && cr.receiver === null);
+    expect(saveCall).toBeDefined();
+  });
+
+  // `__send__` — the historical alias of `send`. Same unwrap path; this
+  // exercises a different element of `RUBY_DYNAMIC_DISPATCH` than the
+  // `send` / `public_send` tests above so a regression that narrows the
+  // Set to only those two is caught.
+  it("unwraps `obj.__send__(:method)` like `send`", () => {
+    const src = "def f\n  user.__send__(:save)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    const c = r.chunks[0].calls.find((cr) => cr.member === "save");
+    expect(c?.receiver).toBe("user");
+    expect(r.chunks[0].calls.find((cr) => cr.member === "__send__")).toBeUndefined();
+  });
+
+  // Block-pass argument that is NOT a symbol (e.g. `&proc_var`). The
+  // walker's `extractBlockPassMethod` short-circuits on the
+  // `child.type === "simple_symbol"` guard, never reaching the symbol
+  // strip. Covers the false branch of that guard inside
+  // `extractBlockPassMethod` (block_argument child is `identifier`,
+  // not `simple_symbol`).
+  it("does NOT emit an extra CallRef for `&proc_var` block-pass (non-symbol child)", () => {
+    const src = "def f\n  users.each(&handler)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    // `each` is still recorded; nothing extra is emitted for the proc.
+    expect(r.chunks[0].calls.find((cr) => cr.member === "each")).toBeDefined();
+    expect(r.chunks[0].calls.find((cr) => cr.callText.startsWith("&:"))).toBeUndefined();
+  });
+
+  // Two references to the SAME constant on the SAME line — the
+  // walker's `seen` set keyed by `qualified@line` deduplicates so the
+  // import list does not double-count. Covers the `seen.has(key)`
+  // early-return in `collectRubyConstantRefs`.
+  it("deduplicates repeated constant references on the same line", () => {
+    const src = "def f\n  User.find_by(name: User.table_name)\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    const userRefs = r.imports.filter((i) => i.importText === `${ZEITWERK_PREFIX}User`);
+    // Two textual `User` mentions on line 2 produce ONE ImportRef.
+    expect(userRefs.length).toBe(1);
+  });
+
+  // `obj.send()` with an empty argument list — the argument_list parses
+  // but its namedChildren are empty, so `firstArg` is undefined. The
+  // unwrap path is reached but returns null → literal `send` edge stays.
+  // Covers `if (!firstArg) return null;` in extractLiteralSymbolOrString.
+  it("keeps `obj.send()` as a literal send when arg list is empty", () => {
+    const src = "def f\n  user.send()\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    const sendCall = r.chunks[0].calls.find((cr) => cr.member === "send");
+    expect(sendCall).toBeDefined();
+    expect(sendCall?.receiver).toBe("user");
+  });
+
+  // `obj.send` (no parens, no args) — `callNode.childForFieldName("arguments")`
+  // returns null AND the fallback `children.find(...)` finds no argument_list.
+  // Covers `if (!args) return null;` in extractLiteralSymbolOrString.
+  it("keeps `obj.send` (no parens) as a literal send", () => {
+    const src = "def f\n  user.send\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({
+      tree,
+      code: src,
+      relPath: "x.rb",
+      language: "ruby",
+      chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
+    });
+    const sendCall = r.chunks[0].calls.find((cr) => cr.member === "send");
+    expect(sendCall).toBeDefined();
+    expect(sendCall?.receiver).toBe("user");
+  });
+
   it("splits bindings across two adjacent method chunks", () => {
     const src = ["def one", "  a = User.new", "end", "def two", "  b = Order.new", "end"].join("\n");
     const tree = parse(`${src}\n`);

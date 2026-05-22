@@ -91,6 +91,17 @@ export class RubyCallResolver implements CallResolver {
       }
     }
 
+    // AR Relation chain guard: when the receiver text contains an
+    // ActiveRecord query-builder method (`where`/`order`/`joins`/etc.)
+    // the call is on an AR::Relation, not on a user-defined class.
+    // Falling through to global short-name lookup would pick the
+    // wrong target — `Product.ransack(form).result(distinct: true)`
+    // historically mis-resolved to `AbstractPolicy#result`. Drop the
+    // edge rather than guess.
+    if (call.receiver && receiverLooksLikeArRelationChain(call.receiver)) {
+      return null;
+    }
+
     // Last-ditch: global short-name lookup. Useful for top-level
     // helpers + Ruby's open-class additions to existing constants.
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
@@ -182,4 +193,41 @@ function looksLikeConstant(text: string): boolean {
 function lastConstantSegment(qualified: string): string {
   const parts = qualified.split("::");
   return parts[parts.length - 1] ?? qualified;
+}
+
+/**
+ * AR query-builder methods that return ActiveRecord::Relation. When the
+ * receiver text of a call contains one of these as a `.method(` segment,
+ * the receiver is a Relation rather than a user-defined class, and any
+ * global short-name match would be a false positive. The list is the
+ * conventional Rails AR API surface — narrow enough to avoid catching
+ * unrelated methods named `where` / `order` on non-AR classes (those
+ * trip when the receiver text is bare `obj.where`, but here we only
+ * match the dot-prefixed chain form to keep the heuristic safe).
+ */
+const AR_RELATION_BUILDERS = [
+  ".where(",
+  ".order(",
+  ".joins(",
+  ".select(",
+  ".group(",
+  ".having(",
+  ".includes(",
+  ".eager_load(",
+  ".preload(",
+  ".limit(",
+  ".offset(",
+  ".distinct(",
+  ".ransack(",
+  ".unscope(",
+  ".reorder(",
+  ".except(",
+  ".pluck(",
+];
+
+function receiverLooksLikeArRelationChain(receiver: string): boolean {
+  for (const marker of AR_RELATION_BUILDERS) {
+    if (receiver.includes(marker)) return true;
+  }
+  return false;
 }
