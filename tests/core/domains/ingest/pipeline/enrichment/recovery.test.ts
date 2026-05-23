@@ -120,6 +120,9 @@ describe("EnrichmentRecovery", () => {
 
       expect(mockProvider.buildFileSignals).toHaveBeenCalledWith("/repo", {
         paths: expect.arrayContaining(["src/foo.ts", "src/bar.ts"]),
+        // Recovery threads the collection name so collection-scoped
+        // providers (codegraph) recover the right per-collection DB.
+        collectionName: "test-collection",
       });
 
       expect(result.recoveredFiles).toBe(2);
@@ -176,7 +179,9 @@ describe("EnrichmentRecovery", () => {
         "2026-01-01T00:00:00Z",
       );
 
-      expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith("/repo", expect.any(Map));
+      expect(mockProvider.buildChunkSignals).toHaveBeenCalledWith("/repo", expect.any(Map), {
+        collectionName: "test-collection",
+      });
 
       const chunkMapArg: Map<string, { chunkId: string; startLine: number; endLine: number }[]> =
         mockProvider.buildChunkSignals.mock.calls[0][1];

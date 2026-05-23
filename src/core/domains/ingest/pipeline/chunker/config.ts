@@ -1,5 +1,6 @@
 import type Parser from "tree-sitter";
 
+import { javascriptHooks } from "./hooks/javascript/index.js";
 import { rubyHooks } from "./hooks/ruby/index.js";
 import type { ChunkingHook } from "./hooks/types.js";
 import { typescriptHooks } from "./hooks/typescript/index.js";
@@ -38,6 +39,48 @@ export interface LanguageDefinition {
   hooks?: ChunkingHook[];
   /** Custom name extraction for language-specific node types (e.g., RSpec call nodes) */
   nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined;
+  /**
+   * AST node types that act as **intermediate scope containers** between
+   * an outer chunkable container and a leaf child chunk. When set, the
+   * chunker accumulates names of these node types while traversing into
+   * the child chunk so the leaf's `parentSymbolId` matches the
+   * fully-qualified scope. Required for nested-namespace languages
+   * (Ruby `module A; module B; class C; def foo`). Without this the
+   * chunker's `parentName` stays at the OUTERMOST container's name and
+   * the leaf symbolId diverges from the codegraph's (bd tea-rags-mcp-bdvm).
+   * See `.claude/rules/symbolid-convention.md`.
+   */
+  scopeContainerTypes?: string[];
+  /**
+   * Separator joining intermediate scope names (e.g. `"::"` for Ruby).
+   * Used together with `scopeContainerTypes`. Defaults to `"."` when
+   * `scopeContainerTypes` is set but separator is omitted (matches the
+   * codegraph's default scopeSeparator for `.` languages).
+   */
+  scopeSeparator?: string;
+  /**
+   * Child chunk types that should bypass the 50-character minimum length
+   * floor in `processChildren`. By default the chunker drops short
+   * candidates to avoid emitting trivial one-line chunks, but for
+   * languages with **declaration-only** AST shapes (Java abstract /
+   * interface methods: `String findById(String id);`) the signature IS
+   * the symbol and must be emitted regardless of length so
+   * `find_symbol("Pair#getLeft")` resolves. bd tea-rags-mcp-52e8.
+   */
+  keepShortChildChunkTypes?: string[];
+  /**
+   * When true, duplicate composed symbolIds emitted by `processChildren`
+   * are disambiguated with `~N` (1-based; first stays unchanged, second
+   * becomes `~2`, etc.) instead of producing identical ids that collide
+   * on the Qdrant point id. Mirrors the codegraph provider convention
+   * so Qdrant payload + cg_symbols agree on a per-physical-AST-node
+   * identifier. Enable for languages where overloads are valid and
+   * carry distinct bodies (Java method overloads — bd tea-rags-mcp-a466).
+   * Leave false for languages where same-name siblings are typically
+   * accessor pairs (TS get/set) or singledispatch stub/impl pairs that
+   * should keep the first-occurrence behaviour.
+   */
+  disambiguateOverloads?: boolean;
 }
 
 export interface LanguageConfig {
@@ -48,6 +91,10 @@ export interface LanguageConfig {
   isDocumentation?: boolean;
   hooks?: ChunkingHook[];
   nameExtractor?: (node: Parser.SyntaxNode, code: string) => string | undefined;
+  scopeContainerTypes?: string[];
+  scopeSeparator?: string;
+  keepShortChildChunkTypes?: string[];
+  disambiguateOverloads?: boolean;
 }
 
 /**
@@ -78,12 +125,42 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
   javascript: {
     loadModule: async () => import("tree-sitter-javascript") as Promise<TreeSitterLanguageModule>,
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
-    chunkableTypes: ["function_declaration", "method_definition", "class_declaration", "export_statement"],
+    // `expression_statement` / `lexical_declaration` / `variable_declaration`
+    // are kept ONLY when they carry a function value — the
+    // `jsAssignmentFilterHook` drops the others so we don't chunk
+    // `const x = 1` or bare statements that have no symbolId. The chunker
+    // resolves the proper symbolId via `extractJsAssignmentSymbol` in
+    // `tree-sitter.ts:chunkSingleNode`. Mirrors codegraph `jsNameOf` —
+    // see `.claude/rules/symbolid-convention.md` (bd tea-rags-mcp-kfzx).
+    chunkableTypes: [
+      "function_declaration",
+      "method_definition",
+      "class_declaration",
+      "export_statement",
+      "expression_statement",
+      "lexical_declaration",
+      "variable_declaration",
+    ],
+    hooks: javascriptHooks,
   },
   python: {
     loadModule: async () => import("tree-sitter-python") as Promise<TreeSitterLanguageModule>,
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_definition", "class_definition", "decorated_definition"],
+    // bd tea-rags-mcp-t6sr — emit class methods as separate chunks so
+    // `find_symbol(symbol: "Flask#__init__")` resolves to the method
+    // body, matching cg_symbols.symbol_id from the codegraph provider.
+    // Without this, classes chunked whole (then split by enforceMaxChunkSize
+    // into anonymous `Foo#part1..partN`). `decorated_definition` covers
+    // `@classmethod`/`@staticmethod` methods — unwrapped in
+    // tree-sitter.ts:unwrapDecoratedDefinition for name + static detection.
+    childChunkTypes: ["function_definition", "decorated_definition"],
+    alwaysExtractChildren: true,
+    // Nested class declarations compose with `.` per
+    // .claude/rules/symbolid-convention.md (`Outer.Inner#method`). The
+    // default `scopeSeparator` in composeParentSymbol is `.` so we
+    // omit the explicit setting.
+    scopeContainerTypes: ["class_definition"],
   },
   go: {
     loadModule: async () => import("tree-sitter-go") as Promise<TreeSitterLanguageModule>,
@@ -93,12 +170,114 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
   rust: {
     loadModule: async () => import("tree-sitter-rust") as Promise<TreeSitterLanguageModule>,
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
-    chunkableTypes: ["function_item", "impl_item", "trait_item", "struct_item", "enum_item"],
+    // bd tea-rags-mcp-fwa1 / 2hbd / h82m / lk6i — emit impl-block methods
+    // as separate chunks so `find_symbol("Searcher#new")` resolves to the
+    // method body, matching cg_symbols.symbol_id from the codegraph
+    // provider's `rustNameOf`. Without this, impl blocks chunked whole
+    // (then split by enforceMaxChunkSize into anonymous `Foo#part1..partN`).
+    // Mirrors Python t6sr / Go n7x5 / Java c5wt. `self`-param detection
+    // lives in `infra/symbolid/classify.ts::rustHasSelfParam` (already
+    // wired into `isStaticMethodNode`).
+    chunkableTypes: [
+      "function_item",
+      "impl_item",
+      "trait_item",
+      "struct_item",
+      "enum_item",
+      "mod_item",
+      "macro_definition",
+    ],
+    // Leaf chunks emitted by the chunker: methods (function_item),
+    // top-level functions (also function_item), and macro definitions.
+    // `impl_item` / `trait_item` / `mod_item` are intentionally excluded
+    // here — they act as scope containers so `findChildChunkableNodes`
+    // traverses THROUGH them to reach methods. Per `chunker-hooks.md`.
+    childChunkTypes: ["function_item", "macro_definition"],
+    alwaysExtractChildren: true,
+    // bd tea-rags-mcp-h82m — strip generics + lifetimes from impl type
+    // name so `impl<'s> Worker<'s>` → `Worker#send`, not `Worker<'s>#send`.
+    // bd tea-rags-mcp-2hbd — for `impl Trait for Type`, the implementing
+    // TYPE owns the method scope, NOT the trait. Read `impl_item.type`
+    // field (which is the implementing type in both `impl T` and
+    // `impl Trait for T` shapes — tree-sitter-rust names the
+    // implementing type as the `type` field regardless of trait
+    // presence).
+    nameExtractor: (node: Parser.SyntaxNode, code: string): string | undefined => {
+      if (node.type !== "impl_item") return undefined;
+      const ty = node.childForFieldName("type");
+      if (!ty) return undefined;
+      const raw = code.substring(ty.startIndex, ty.endIndex);
+      // Strip generic params + lifetimes: `Worker<'s>` → `Worker`,
+      // `Container<T: Clone>` → `Container`. The bare type identifier
+      // is the part before the first `<`.
+      const lt = raw.indexOf("<");
+      return (lt === -1 ? raw : raw.slice(0, lt)).trim();
+    },
+    // Rust uses `::` for module/type namespacing. Methods still use
+    // `#`/`.` per symbolid-convention.md — the universal separator
+    // logic in composeParentSymbol handles that.
+    scopeSeparator: "::",
+    // Nested impl/trait/mod blocks contribute their name to the symbolId
+    // scope. `struct_item` / `enum_item` listed too so a method defined
+    // inside an `impl` whose type matches a previously-declared struct
+    // composes correctly.
+    scopeContainerTypes: ["impl_item", "trait_item", "mod_item"],
   },
   java: {
     loadModule: async () => import("tree-sitter-java") as Promise<TreeSitterLanguageModule>,
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
-    chunkableTypes: ["method_declaration", "class_declaration", "interface_declaration", "enum_declaration"],
+    chunkableTypes: [
+      "method_declaration",
+      "constructor_declaration",
+      "class_declaration",
+      "interface_declaration",
+      "enum_declaration",
+      "annotation_type_declaration",
+    ],
+    // bd tea-rags-mcp-c5wt — emit class/interface methods + constructors as
+    // separate chunks so `find_symbol(symbol: "StringUtils#isEmpty")` resolves
+    // to the method body, matching cg_symbols.symbol_id from the codegraph
+    // provider's `javaNameOf`. Without this, classes chunked whole (then
+    // split by enforceMaxChunkSize into anonymous `Foo#part1..partN`). Mirrors
+    // the Python t6sr / Go n7x5 fixes. `static` modifier detection lives in
+    // `infra/symbolid/classify.ts::javaHasStaticModifier` (already wired into
+    // the universal `isStaticMethodNode`). Constructor `name` field equals the
+    // class identifier in tree-sitter-java, so `Foo() {}` inside `class Foo`
+    // composes as `Foo#Foo` (instance) per .claude/rules/symbolid-convention.md.
+    //
+    // childChunkTypes lists ONLY the leaf chunks we want extracted — methods
+    // and constructors. We intentionally exclude `class_declaration` /
+    // `interface_declaration` / `enum_declaration` here so the descent in
+    // `findChildChunkableNodes` traverses THROUGH nested class bodies to
+    // reach methods without stopping at the nested class itself. Nested
+    // class scope-composition is handled instead by `scopeContainerTypes`
+    // below, which makes `collectIntermediateScopes` walk up from the leaf
+    // method and accumulate `Outer.Inner` into the symbolId. Mirrors the
+    // Python t6sr config exactly (where `class_definition` is in
+    // `scopeContainerTypes` but NOT in `childChunkTypes`).
+    childChunkTypes: ["method_declaration", "constructor_declaration"],
+    alwaysExtractChildren: true,
+    // Nested class/interface/enum declarations compose with `.` per
+    // .claude/rules/symbolid-convention.md (`Outer.Inner#method`). The
+    // default `scopeSeparator` in composeParentSymbol is `.` so we omit it.
+    scopeContainerTypes: [
+      "class_declaration",
+      "interface_declaration",
+      "enum_declaration",
+      "annotation_type_declaration",
+    ],
+    // bd tea-rags-mcp-52e8 — abstract / interface method declarations
+    // (`String findById(String id);`) are signature-only and routinely
+    // shorter than the default 50-char child-chunk floor. The declaration
+    // IS the symbol; emit it regardless of length so abstract API
+    // surfaces are searchable via `find_symbol("Pair#getLeft")`.
+    keepShortChildChunkTypes: ["method_declaration"],
+    // bd tea-rags-mcp-a466 — Java overloads share a name and would
+    // produce identical composed symbolIds (`StringUtils.upperCase` for
+    // every overload). Suffix the N-th duplicate with `~N` so each
+    // overload has a distinct symbolId addressable by find_symbol /
+    // get_callers / get_callees.
+    disambiguateOverloads: true,
   },
   bash: {
     loadModule: async () => import("tree-sitter-bash") as Promise<TreeSitterLanguageModule>,
@@ -135,6 +314,13 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // In Ruby, virtually all code lives inside class/module. Without this flag,
     // small classes become a single chunk and individual methods are not searchable.
     alwaysExtractChildren: true,
+    // Bug tea-rags-mcp-bdvm — `module A; module B; class C; def foo` must
+    // emit `A::B::C#foo` (matching the codegraph), not `A#foo`. Listing
+    // `class`/`module` here makes the chunker accumulate their names
+    // while traversing into the leaf method. `singleton_class` is the
+    // `class << self` form; named scope name handled by nameExtractor.
+    scopeContainerTypes: ["class", "module", "singleton_class"],
+    scopeSeparator: "::",
     hooks: rubyHooks,
     // Removed problematic types:
     // - "lambda", "block" → too small (1 line), fragments context

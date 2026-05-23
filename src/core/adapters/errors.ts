@@ -48,7 +48,9 @@ export type InfraErrorCode =
   | "INFRA_REGISTRY_FILE_CORRUPTED"
   | "INFRA_REGISTRY_WRITE_FAILED"
   | "INFRA_REGISTRY_CONCURRENCY"
-  | "INFRA_REGISTRY_NAME_CONFLICT";
+  | "INFRA_REGISTRY_NAME_CONFLICT"
+  // DuckDB (codegraph adapter)
+  | "INFRA_DUCKDB_OPEN_FAILED";
 
 /**
  * Abstract base class for infrastructure errors (adapters, external services).

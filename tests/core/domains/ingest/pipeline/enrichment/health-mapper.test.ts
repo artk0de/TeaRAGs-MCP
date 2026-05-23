@@ -61,7 +61,7 @@ describe("mapMarkerToHealth", () => {
     expect(result!.git.file).toMatchObject({
       status: "failed",
       unenrichedChunks: 5,
-      message: "Git file enrichment failed. All file-level signals missing. Will recover on next reindex.",
+      message: "File-level enrichment failed. All file-level signals missing. Will recover on next reindex.",
     });
   });
 
@@ -284,6 +284,47 @@ describe("mapMarkerToHealth", () => {
     const result = mapMarkerToHealth(map);
     expect(result!.git.file.status).toBe("failed");
     expect(result!.git.file.message).toMatch(/crashed|recovered/i);
+  });
+
+  it("surfaces errorMessage in the failed-status message (slice 2 — concrete codegraph spill / resolve / checkpoint failure)", () => {
+    const map: EnrichmentMarkerMap = {
+      "codegraph.symbols": makeMarker({
+        file: {
+          status: "failed",
+          unenrichedChunks: 0,
+          errorMessage: "Codegraph spill write failed at /tmp/cg/.spill/run.ndjson",
+        },
+        chunk: {
+          status: "failed",
+          unenrichedChunks: 0,
+          errorMessage: "Codegraph spill write failed at /tmp/cg/.spill/run.ndjson",
+        },
+      }),
+    };
+
+    const result = mapMarkerToHealth(map);
+    expect(result!["codegraph.symbols"].file.status).toBe("failed");
+    expect(result!["codegraph.symbols"].file.message).toContain(
+      "Codegraph spill write failed at /tmp/cg/.spill/run.ndjson",
+    );
+    expect(result!["codegraph.symbols"].chunk.status).toBe("failed");
+    expect(result!["codegraph.symbols"].chunk.message).toContain(
+      "Codegraph spill write failed at /tmp/cg/.spill/run.ndjson",
+    );
+  });
+
+  it("falls back to default failure message when errorMessage is not set (back-compat)", () => {
+    const map: EnrichmentMarkerMap = {
+      git: makeMarker({
+        file: { status: "failed", unenrichedChunks: 0 },
+        chunk: { status: "failed", unenrichedChunks: 0 },
+      }),
+    };
+    const result = mapMarkerToHealth(map);
+    expect(result!.git.file.message).toContain("File-level enrichment failed");
+    // No errorMessage to append — should not contain parenthesised
+    // suffix that the slice-2 path produces.
+    expect(result!.git.file.message).not.toContain("(");
   });
 
   it("does not recover when startedAt >1h but completedAt is set (completed run)", () => {

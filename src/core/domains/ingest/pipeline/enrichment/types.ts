@@ -36,6 +36,14 @@ export interface EnrichmentLevelMarker {
   lastProgressAt?: string;
   /** Enriched chunk count at last heartbeat */
   lastProgressChunks?: number;
+  /**
+   * Propagated error message when `status === "failed"`. Surfaced to
+   * `get_index_status` via the health mapper so MCP consumers see the
+   * concrete failure (e.g. "Codegraph spill write failed at .spill/…")
+   * instead of a generic "in_progress" stuck marker. Optional because
+   * the markStart / markFileFinal paths don't carry one.
+   */
+  errorMessage?: string;
 }
 
 export interface FileEnrichmentMarker extends EnrichmentLevelMarker {

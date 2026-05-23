@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { GraphDbClientPool } from "../../../src/core/adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../src/core/adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js";
 import { CollectionOps } from "../../../src/core/api/internal/ops/collection-ops.js";
@@ -116,6 +117,27 @@ describe("CollectionOps", () => {
     it("delegates to qdrant.deleteCollection", async () => {
       await ops.delete("test");
 
+      expect(qdrant.deleteCollection).toHaveBeenCalledWith("test");
+    });
+
+    it("also drops the per-collection codegraph DuckDB file when pool is wired", async () => {
+      const removeCollection = vi.fn().mockResolvedValue(true);
+      const pool = { removeCollection } as unknown as GraphDbClientPool;
+      ops = new CollectionOps(qdrant, embeddings, false, undefined, pool);
+
+      await ops.delete("test");
+
+      expect(qdrant.deleteCollection).toHaveBeenCalledWith("test");
+      expect(removeCollection).toHaveBeenCalledWith("test");
+      // Order matters: Qdrant first, codegraph cleanup after.
+      const qdrantOrder = (qdrant.deleteCollection as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+      const poolOrder = removeCollection.mock.invocationCallOrder[0];
+      expect(qdrantOrder).toBeLessThan(poolOrder);
+    });
+
+    it("skips codegraph cleanup gracefully when pool is not wired", async () => {
+      // Default ops constructed without pool — must not throw.
+      await expect(ops.delete("test")).resolves.toBeUndefined();
       expect(qdrant.deleteCollection).toHaveBeenCalledWith("test");
     });
   });

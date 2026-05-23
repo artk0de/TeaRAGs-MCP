@@ -7,8 +7,10 @@
  * buildChunkSignals) and the query side (signals, filters, presets).
  */
 
+import type { Ignore } from "ignore";
+
 import type { QdrantFilterCondition } from "../../adapters/qdrant/types.js";
-import type { ChunkLookupEntry } from "../../types.js";
+import type { ChunkLookupEntry, ProviderRunMetrics } from "../../types.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
 import type { PayloadSignalDescriptor } from "./trajectory.js";
 
@@ -87,6 +89,46 @@ export interface ChunkSignalOptions {
    * subset of the chunk map would corrupt the cache for the next full call.
    */
   skipCache?: boolean;
+  /**
+   * Active Qdrant collection name the chunks belong to. Threaded from
+   * EnrichmentCoordinator.prefetch so collection-scoped providers
+   * (codegraph) can route writes to their per-collection backing store
+   * (per-collection DuckDB file). Optional: providers that don't care
+   * about collection scope (git) ignore it.
+   */
+  collectionName?: string;
+}
+
+/**
+ * Options for buildFileSignals — symmetric to ChunkSignalOptions but the
+ * shape is simpler (no concurrency / cache concerns at file level today).
+ * Carries the active collection name so collection-scoped providers
+ * (codegraph) can pick their per-collection store before walking files.
+ */
+export interface FileSignalOptions {
+  /** Optional path subset for backfill / incremental reindex callers. */
+  paths?: string[];
+  /** Active Qdrant collection name — see ChunkSignalOptions.collectionName. */
+  collectionName?: string;
+  /**
+   * Shared `Ignore` instance from FileScanner — the same filter that
+   * `EnrichmentCoordinator` already holds in `ProviderContext.ignoreFilter`.
+   * Carries BUILTIN_IGNORE_PATTERNS + user `.gitignore` / `.contextignore`
+   * rules. Providers that walk the file tree themselves (codegraph) read
+   * this to stay aligned with the main ingest path's file selection.
+   * Providers that don't walk the tree (git) ignore it.
+   */
+  ignoreFilter?: Ignore;
+}
+
+/**
+ * Options for handleDeletedPaths — carries the active collection so the
+ * provider routes deletion to the correct per-collection store. Optional
+ * for callers that haven't been threaded yet (legacy paths fall back to
+ * the provider's default routing).
+ */
+export interface DeletedPathOptions {
+  collectionName?: string;
 }
 
 // --- Enrichment provider ---
@@ -113,14 +155,38 @@ export interface EnrichmentProvider {
   /** Optional per-file transform applied at write time. */
   readonly fileSignalTransform?: FileSignalTransform;
   /** File-level signal enrichment (prefetch at T=0, or backfill for specific paths) */
-  buildFileSignals: (root: string, options?: { paths?: string[] }) => Promise<Map<string, FileSignalOverlay>>;
+  buildFileSignals: (root: string, options?: FileSignalOptions) => Promise<Map<string, FileSignalOverlay>>;
   /** Chunk-level signal enrichment (streaming per-batch or post-flush). */
   buildChunkSignals: (
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
     options?: ChunkSignalOptions,
   ) => Promise<Map<string, Map<string, ChunkSignalOverlay>>>;
+  /**
+   * Optional per-run counters surfaced via
+   * `EnrichmentMetrics.byProvider[provider.key]`. Returned shape is
+   * provider-defined; coordinator stores it verbatim. Called once per
+   * enrichment cycle by `CompletionRunner.run`; provider is expected to
+   * reset internal counters after each call (or return values aggregated
+   * since the last reset).
+   */
+  getRunMetrics?: () => ProviderRunMetrics | undefined;
+  /**
+   * Optional deletion hook — invoked by `EnrichmentCoordinator.notifyDeletions`
+   * before sync removes the corresponding Qdrant points. Provider clears
+   * its provider-owned state for those paths (e.g. codegraph deletes graph
+   * edges + symbol-table entries; future providers might clear per-file
+   * caches). Calling order is sync → coordinator → all providers →
+   * qdrant.deletePoints, so if Qdrant deletion fails the provider state
+   * is already consistent — preferable to the inverse: orphan graph
+   * edges are silent corruption, orphan Qdrant points are just clutter.
+   *
+   * `paths` are repo-relative POSIX (same shape as buildFileSignals
+   * `options.paths`). Provider is expected to be idempotent: receiving a
+   * path it never enriched must be a no-op, not an error.
+   */
+  handleDeletedPaths?: (paths: string[], options?: DeletedPathOptions) => Promise<void>;
 }
 
 // Re-export for convenience
-export type { ChunkLookupEntry } from "../../types.js";
+export type { ChunkLookupEntry, ProviderRunMetrics } from "../../types.js";

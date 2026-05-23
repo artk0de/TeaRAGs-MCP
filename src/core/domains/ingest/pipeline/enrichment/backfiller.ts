@@ -46,6 +46,10 @@ export class EnrichmentBackfiller {
     try {
       backfillData = await ctx.provider.buildFileSignals(root, {
         paths: missedPaths,
+        // Forward the active collection so codegraph (and any other
+        // collection-scoped provider) backfills the right per-collection
+        // store, not a stale default one.
+        collectionName: coll,
       });
     } catch (error) {
       pipelineLog.enrichmentPhase("BACKFILL_FAILED", {
@@ -135,7 +139,7 @@ export class EnrichmentBackfiller {
 
     let overlays: Map<string, Map<string, ChunkSignalOverlay>>;
     try {
-      overlays = await ctx.provider.buildChunkSignals(root, map);
+      overlays = await ctx.provider.buildChunkSignals(root, map, { collectionName: coll });
     } catch (error) {
       pipelineLog.enrichmentPhase("CHUNK_BACKFILL_FAILED", {
         provider: ctx.key,

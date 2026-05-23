@@ -57,8 +57,12 @@ describe("ExploreFacade.findSymbol", () => {
   });
 
   it("returns resolved symbols from scroll results", async () => {
+    // Query form MUST match the stored symbolId form per the convention
+    // — `#` for instance methods, `.` for static (see
+    // `.claude/rules/symbolid-convention.md`). The mock chunk above has
+    // symbolId="Reranker#score" so the query uses `#` to match.
     const result = await facade.findSymbol({
-      symbol: "Reranker.score",
+      symbol: "Reranker#score",
       collection: "test_collection",
     });
 

@@ -29,15 +29,37 @@ export interface DeletionConfig {
  * so upstream callers can gate modified-file upsert on failed paths instead
  * of silently proceeding (2026-04-23 orphan-duplicate incident).
  */
+/**
+ * Optional hook invoked BEFORE any Qdrant delete is issued. Provider-owned
+ * state (codegraph edges, symbol-table entries, future trajectories) gets
+ * cleaned up first so a downstream Qdrant failure leaves graph data
+ * consistent. The opposite order — Qdrant first, providers second — risks
+ * orphaned graph edges when Qdrant rejects the delete: orphan Qdrant
+ * points are merely clutter, orphan graph edges are silent corruption.
+ * Errors thrown here propagate to the caller; the coordinator itself
+ * isolates per-provider failures.
+ */
+export type PreDeleteHook = (paths: string[]) => Promise<void>;
+
 export async function performDeletion(
   qdrant: QdrantManager,
   collectionName: string,
   filesToDelete: string[],
   deleteConfig: DeletionConfig,
   progressCallback?: ProgressCallback,
+  preDeleteHook?: PreDeleteHook,
 ): Promise<DeletionOutcome> {
   const outcome = createDeletionOutcome(filesToDelete);
   if (filesToDelete.length === 0) return outcome;
+
+  // Notify providers (codegraph, etc.) BEFORE touching Qdrant. The hook
+  // returns once every provider has finished its handleDeletedPaths;
+  // coordinator-level error isolation means one bad provider does NOT
+  // block the rest, so the only failure modes here are programmer
+  // errors (e.g. coordinator not wired) — let them propagate.
+  if (preDeleteHook) {
+    await preDeleteHook(filesToDelete);
+  }
 
   const totalBefore = (await qdrant.getCollectionInfo(collectionName)).pointsCount;
 

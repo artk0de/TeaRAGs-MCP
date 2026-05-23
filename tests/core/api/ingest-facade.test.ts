@@ -32,7 +32,9 @@ vi.mock("../../../src/core/domains/ingest/pipeline/status-module.js", () => ({
 const mockCoordinatorInstances: any[] = [];
 vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js", () => ({
   EnrichmentCoordinator: class {
-    constructor() {
+    public providers: any[];
+    constructor(_qdrant: any, providers: any[]) {
+      this.providers = providers;
       mockCoordinatorInstances.push(this);
     }
     runRecovery = vi.fn().mockResolvedValue(undefined);
@@ -111,6 +113,56 @@ describe("IngestFacade", () => {
 
     return { facade, statsCache, reranker, qdrant };
   }
+
+  // Registry-driven IngestFacade refactor: enrichment providers are now
+  // owned upstream (bootstrap reads them from TrajectoryRegistry). The
+  // facade trusts the list as-is and forwards it to EnrichmentCoordinator
+  // verbatim — no inline construction, no config-aware filtering. This
+  // pins both halves of the contract: deps.enrichmentProviders flows
+  // straight through, AND IngestFacade does NOT synthesize a git provider
+  // when the list is empty.
+  it("forwards deps.enrichmentProviders to EnrichmentCoordinator verbatim", () => {
+    const stubA = { key: "stubA" } as any;
+    const stubB = { key: "stubB" } as any;
+    new IngestFacade({
+      qdrant: {
+        collectionExists: vi.fn().mockResolvedValue(false),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        url: "http://localhost:6333",
+      } as any,
+      embeddings: {
+        embed: vi.fn(),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        getProviderName: vi.fn().mockReturnValue("mock"),
+      } as any,
+      config: {} as any,
+      trajectoryConfig: { enableGitMetadata: true } as any,
+      enrichmentProviders: [stubA, stubB],
+    });
+    const coordinator = mockCoordinatorInstances.at(-1);
+    expect(coordinator.providers).toEqual([stubA, stubB]);
+  });
+
+  it("registers zero providers when enrichmentProviders omitted (no inline git construction)", () => {
+    new IngestFacade({
+      qdrant: {
+        collectionExists: vi.fn().mockResolvedValue(false),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        url: "http://localhost:6333",
+      } as any,
+      embeddings: {
+        embed: vi.fn(),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        getProviderName: vi.fn().mockReturnValue("mock"),
+      } as any,
+      config: {} as any,
+      // Even with enableGitMetadata: true, the facade no longer constructs
+      // a GitEnrichmentProvider inline — bootstrap owns that decision now.
+      trajectoryConfig: { enableGitMetadata: true } as any,
+    });
+    const coordinator = mockCoordinatorInstances.at(-1);
+    expect(coordinator.providers).toEqual([]);
+  });
 
   it("delegates indexCodebase and refreshes stats", async () => {
     const { facade, statsCache } = makeFacade({ withStats: true, withReranker: true });

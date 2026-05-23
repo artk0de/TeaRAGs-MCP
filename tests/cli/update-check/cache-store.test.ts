@@ -72,4 +72,56 @@ describe("FileCacheStore", () => {
     const stray = readFileSync(cachePath, "utf-8");
     expect(stray).toContain(`"kind":"available"`);
   });
+
+  it("read() round-trips an 'up-to-date' entry", () => {
+    // Exercises the `isUpdateStatus` "up-to-date" branch on line 78.
+    const upToDate: CacheEntry = {
+      status: { kind: "up-to-date", current: "1.0.0" },
+      fetchedAt: 1_700_000_000_000,
+      ttlMs: 86_400_000,
+    };
+    writeFileSync(cachePath, JSON.stringify(upToDate), "utf-8");
+    const store = new FileCacheStore(cachePath);
+    expect(store.read()).toEqual(upToDate);
+  });
+
+  it("read() round-trips an 'unavailable' entry with reason='network'", () => {
+    // Exercises the `isUpdateStatus` "unavailable" branch (lines 79-80).
+    const unavail: CacheEntry = {
+      status: { kind: "unavailable", reason: "network" },
+      fetchedAt: 1_700_000_000_000,
+      ttlMs: 86_400_000,
+    };
+    writeFileSync(cachePath, JSON.stringify(unavail), "utf-8");
+    const store = new FileCacheStore(cachePath);
+    expect(store.read()).toEqual(unavail);
+  });
+
+  it("read() rejects an entry with unknown status.kind (fallthrough branch)", () => {
+    // Forces the `return false` fallthrough on line 82.
+    writeFileSync(
+      cachePath,
+      JSON.stringify({
+        status: { kind: "nonsense", current: "1.0.0" },
+        fetchedAt: 1,
+        ttlMs: 1,
+      }),
+      "utf-8",
+    );
+    const store = new FileCacheStore(cachePath);
+    expect(store.read()).toBeNull();
+  });
+
+  it("read() rejects an entry where status is not an object (primitive)", () => {
+    // Covers the `typeof v !== "object" || v === null` guard at line 73.
+    writeFileSync(cachePath, JSON.stringify({ status: "string-not-object", fetchedAt: 1, ttlMs: 1 }), "utf-8");
+    const store = new FileCacheStore(cachePath);
+    expect(store.read()).toBeNull();
+  });
+
+  it("read() rejects when root JSON is null (covers isCacheEntry null branch)", () => {
+    writeFileSync(cachePath, "null", "utf-8");
+    const store = new FileCacheStore(cachePath);
+    expect(store.read()).toBeNull();
+  });
 });

@@ -45,4 +45,17 @@ export type {
 
 export type { IndexMetrics, SignalMetrics } from "./metrics.js";
 
+export type {
+  // Codegraph
+  CalleeResult,
+  CallerResult,
+  CycleResult,
+  FindCyclesRequest,
+  FindCyclesResponse,
+  GetCalleesRequest,
+  GetCalleesResponse,
+  GetCallersRequest,
+  GetCallersResponse,
+} from "./graph.js";
+
 export { stripInternalFields } from "./sanitize.js";

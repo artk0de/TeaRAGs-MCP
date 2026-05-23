@@ -3,12 +3,22 @@ import type { ExtractContext } from "../../../../../contracts/types/trajectory.j
 import { normalize } from "../../../../../infra/signal-utils.js";
 
 /**
- * Measures the number of import/dependency statements in a chunk.
+ * @deprecated Legacy — predates the codegraph fan-graph signal layer.
  *
- * Purpose: proxy for coupling — heavily imported code has more dependents.
- * Detects: hub modules, utility barrels, core abstractions that many files rely on.
- * Scoring: normalized import count. More imports → higher score.
- * Used in: impactAnalysis preset (high imports = high blast radius when changed).
+ * Reads `imports.length` directly from static payload, which is the
+ * underlying raw value behind `codegraph.file.fanOut`. Per the
+ * `imports-field-semantics.md` rule, statistical and derived signals
+ * MUST source efferent coupling from `codegraph.file.fanOut` (or
+ * `codegraph.chunk.fanOut`) rather than `imports[]` — the codegraph
+ * layer is the single source of truth and will gain universal
+ * coverage via the Slice 2 D1 reverse-pass.
+ *
+ * Description here is also semantically wrong by modern naming —
+ * "heavily imported code has more dependents" describes fanIn, but the
+ * field measures fanOut. Kept around only for back-compat with
+ * existing presets that still reference the `imports` weight key.
+ * Removal is a `feat(presets)!` breaking change pending preset
+ * migration to `fanOut` / `fanOutPerLine`.
  */
 export class ImportsSignal implements DerivedSignalDescriptor {
   readonly name = "imports";

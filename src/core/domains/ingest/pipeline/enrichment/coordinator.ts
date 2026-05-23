@@ -56,6 +56,13 @@ interface RunState {
   donePromise: Promise<EnrichmentMetrics>;
   resolveDone: (m: EnrichmentMetrics) => void;
   rejectDone: (e: unknown) => void;
+  /**
+   * Fire-and-forget initial-marker write set in `prefetch()`. The
+   * CompletionRunner awaits it before step 4/7 finalize writes so the
+   * read-modify-write snapshot inside markStart can never clobber
+   * subsequently-written "completed" markers.
+   */
+  markStartPromise: Promise<void>;
 }
 
 export class EnrichmentCoordinator {
@@ -101,6 +108,44 @@ export class EnrichmentCoordinator {
   ) {
     this.markerStore = new EnrichmentMarkerStore(qdrant);
     this.providers = Array.isArray(providers) ? providers : [providers];
+  }
+
+  /**
+   * Notify all providers that a set of files has been removed from the
+   * project. Fans out to every provider implementing `handleDeletedPaths`;
+   * providers without the hook are silently skipped. Errors from one
+   * provider don't block others — failures are caught + logged so that
+   * a single provider's cleanup glitch doesn't strand the rest of the
+   * delete pipeline.
+   *
+   * Called by the sync layer BEFORE qdrant.deletePoints so provider-owned
+   * state (codegraph edges, symbol-table entries, etc.) is consistent
+   * even if Qdrant deletion itself fails. Orphan graph edges are silent
+   * corruption; orphan Qdrant points are just clutter — better the
+   * latter than the former.
+   */
+  async notifyDeletions(paths: string[], collectionName?: string): Promise<void> {
+    if (paths.length === 0) return;
+    await Promise.all(
+      this.providers.map(async (provider) => {
+        if (!provider.handleDeletedPaths) return;
+        try {
+          // Forward the active collection name so collection-scoped
+          // providers (codegraph) prune the right per-collection DB.
+          // Falls back to undefined when the caller (legacy test
+          // fixture, or a flow that never had a collection in hand)
+          // doesn't supply one — provider is responsible for failing
+          // loud in pool mode.
+          await provider.handleDeletedPaths(paths, collectionName ? { collectionName } : undefined);
+        } catch (err) {
+          pipelineLog.enrichmentPhase("DELETE_HOOK_FAILED", {
+            provider: provider.key,
+            count: paths.length,
+            error: (err as Error).message,
+          });
+        }
+      }),
+    );
   }
 
   /**
@@ -168,14 +213,20 @@ export class EnrichmentCoordinator {
     runState.filePhase.init(runState.contexts, collectionName ?? "", runState.runId, runState.startedAt);
     runState.chunkPhase.init(runState.contexts, collectionName ?? "", runState.startedAt);
 
-    if (collectionName) {
-      void this.markerStore.markStart(
-        collectionName,
-        [...runState.contexts.keys()],
-        runState.runId,
-        runState.startedAt,
-      );
-    }
+    // markStart writes the initial { file: in_progress, chunk: pending }
+    // marker via read-modify-write on the qdrant metadata point. It MUST
+    // persist BEFORE the CompletionRunner finalization writes (step 4 /
+    // step 7) land — otherwise the fire-and-forget markStart can race
+    // and clobber freshly-written "completed" markers with its stale
+    // snapshot (read before final writes). The fix tracks the promise
+    // on the run and CompletionRunner awaits it before writing
+    // finalizers. buildFileSignals stays unblocked (called immediately
+    // by startPrefetch below) so prefetch latency isn't affected.
+    runState.markStartPromise = collectionName
+      ? this.markerStore
+          .markStart(collectionName, [...runState.contexts.keys()], runState.runId, runState.startedAt)
+          .catch(() => undefined)
+      : Promise.resolve();
 
     // Defer ONLY the provider buildFileSignals call behind the previous run's
     // donePromise. Failure of run N must not block run N+1 — `.catch(() => undefined)`
@@ -218,6 +269,11 @@ export class EnrichmentCoordinator {
   async awaitCompletion(collectionName: string): Promise<EnrichmentMetrics> {
     const run = this.currentRun;
     if (!run || run.contexts.size === 0) return EMPTY_METRICS;
+    // Block until the run's initial markStart has persisted. Without
+    // this gate the fire-and-forget markStart can race past the final
+    // marker writes and clobber them with its stale snapshot — leaving
+    // get_index_status reporting "in_progress" for completed runs.
+    await run.markStartPromise;
     try {
       const metrics = await run.completion.run(
         collectionName,
@@ -268,6 +324,7 @@ export class EnrichmentCoordinator {
       donePromise,
       resolveDone,
       rejectDone,
+      markStartPromise: Promise.resolve(),
     };
   }
 

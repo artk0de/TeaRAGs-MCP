@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
 import { OllamaEmbeddings } from "../core/adapters/embeddings/ollama.js";
@@ -18,10 +19,22 @@ import {
   SchemaBuilder,
   type App,
 } from "../core/api/index.js";
+import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
+import type { CallResolver } from "../core/contracts/types/codegraph.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { setDebug } from "../core/domains/ingest/pipeline/infra/runtime.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
+import type { CodegraphDeps } from "../core/domains/trajectory/codegraph/index.js";
+import { BashCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/bash/index.js";
+import { GoCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/go/index.js";
+import { JavaCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/java/index.js";
+import { JavascriptCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/javascript/index.js";
+import { PythonCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/python/index.js";
+import { RubyCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ruby/index.js";
+import { RustCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/rust/index.js";
+import { loadTsConfig, TSCallResolver } from "../core/domains/trajectory/codegraph/symbols/resolvers/ts/index.js";
+import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { EmbeddingModelGuard } from "../core/infra/embedding-model-guard.js";
 import { CollectionRegistry } from "../core/infra/registry/index.js";
 import { SchemaDriftMonitor } from "../core/infra/schema-drift-monitor.js";
@@ -146,10 +159,113 @@ async function resolveInfrastructure(
   return { qdrant, embeddings, modelGuard, embeddedRelease };
 }
 
-function wireComposition(): CompositionContext {
-  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition();
+function wireComposition(
+  zodConfig: ReturnType<typeof getZodConfig>,
+  trajectoryConfig: AppConfig["trajectoryIngest"],
+  codegraph?: CodegraphDeps,
+): CompositionContext {
+  // Thread git provider config into composition so the registry surfaces a
+  // fully-configured GitEnrichmentProvider via getAllEnrichmentProviders().
+  // IngestFacade no longer constructs git inline — single source of truth is
+  // the registry.
+  const squashOpts = trajectoryConfig.squashAwareSessions
+    ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
+    : undefined;
+  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators } = createComposition({
+    git: { config: zodConfig.trajectoryGit, squashOpts },
+    codegraph,
+  });
   const schemaBuilder = new SchemaBuilder(reranker);
   return { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, schemaBuilder };
+}
+
+interface CodegraphContext {
+  deps: CodegraphDeps;
+  graphFacade: GraphFacade;
+  pool: GraphDbClientPool;
+}
+
+function wireCodegraph(config: AppConfig, zodConfig: ReturnType<typeof getZodConfig>): CodegraphContext | undefined {
+  // Defensive: legacy/mocked configs may omit the codegraph section
+  // entirely. Treat that as "disabled" so opt-in via env stays the
+  // only path to enable codegraph.
+  const { codegraph } = zodConfig;
+  if (!codegraph?.enabled) return undefined;
+
+  // Per-collection DuckDB layout: `<rootDir>/codegraph/<collection>.duckdb`.
+  // The legacy `CODEGRAPH_DB_PATH` env var, when it points at a
+  // directory, is honoured as the rootDir override; pointing at a
+  // single file is no longer meaningful under per-collection routing
+  // and is treated as the parent directory's leaf override. Default
+  // is `paths.appData` so existing installs find their data in the
+  // same place.
+  const rootDir = codegraph.dbPath
+    ? codegraph.dbPath.endsWith(".duckdb")
+      ? dirname(codegraph.dbPath)
+      : codegraph.dbPath
+    : config.paths.appData;
+
+  const ambiguousMode = codegraph.ambiguousResolveMode;
+  const resolvers = new Map<string, CallResolver>([
+    ["typescript", new TSCallResolver(loadTsConfig(process.cwd()), ambiguousMode)],
+    ["javascript", new JavascriptCallResolver(ambiguousMode)],
+    ["python", new PythonCallResolver(ambiguousMode)],
+    ["ruby", new RubyCallResolver(ambiguousMode)],
+    ["go", new GoCallResolver(ambiguousMode)],
+    ["java", new JavaCallResolver(ambiguousMode)],
+    ["rust", new RustCallResolver(ambiguousMode)],
+    ["bash", new BashCallResolver(ambiguousMode)],
+  ]);
+
+  const pool = new GraphDbClientPool({
+    rootDir,
+    symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+    // Slice 2 resource ceiling — caps per-collection DuckDB memory at
+    // CODEGRAPH_DB_MEMORY_LIMIT (default 2GB) with disk spill into
+    // `<rootDir>/codegraph/.spill/`. Without the cap DuckDB defaults
+    // to ~80% of system RAM which on large repos pushes the indexing
+    // pass OOM (14.3GB seen on ugnest = 5574 files before the cap).
+    // `preserveInsertionOrder: false` lets the driver reorder rows
+    // for memory wins; cg_symbols queries that need order use ORDER
+    // BY explicitly.
+    resources: {
+      memoryLimit: codegraph.dbMemoryLimit,
+      threads: codegraph.dbThreads,
+      preserveInsertionOrder: false,
+    },
+    // Hydrate the per-collection symbol table from disk on first open.
+    // Without this, an incremental reindex of file A cannot resolve
+    // calls into an unchanged file B — the walker only touches changed
+    // files, so B's symbols would be invisible. After hydration the
+    // in-memory table holds every previously-persisted definition;
+    // the streaming upsert path (sink.finish() → graphDb.upsertSymbols)
+    // keeps it current. Empty result on first run (fresh DB) is the
+    // no-op fast path.
+    initHook: async ({ collectionName, graphDb, symbolTable }) => {
+      try {
+        const persisted = await graphDb.listAllSymbols();
+        if (persisted.length > 0) symbolTable.hydrate(persisted);
+      } catch (err) {
+        process.stderr.write(
+          `[tea-rags] codegraph symbol-table hydration failed for ${collectionName}: ${(err as Error).message}\n`,
+        );
+      }
+    },
+  });
+
+  const deps: CodegraphDeps = {
+    pool,
+    resolvers,
+    // Codegraph-layer exclusion (test files + user-supplied patterns).
+    // The shape mirrors `CodegraphExclusionOptions`; the provider
+    // builds the actual `Ignore` instance at construction time.
+    exclusion: {
+      excludeTests: codegraph.excludeTests,
+      customPatterns: codegraph.customExcludePatterns ?? [],
+    },
+  };
+  const graphFacade = new GraphFacade({ pool });
+  return { deps, graphFacade, pool };
 }
 
 export async function createAppContext(config: AppConfig): Promise<AppContext> {
@@ -157,7 +273,8 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
   setDebug(zodConfig.core.debug);
 
   const infra = await resolveInfrastructure(config, zodConfig);
-  const composition = wireComposition();
+  const codegraphContext = wireCodegraph(config, zodConfig);
+  const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 
   const statsCache = new StatsCache(config.paths.snapshots);
   const deleteConfig = {
@@ -181,6 +298,16 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
 
   const collectionRegistry = new CollectionRegistry(config.paths.appData);
   const registryWatchStop = collectionRegistry.startWatching();
+  // Registry is the single source of truth for enrichment providers. Git
+  // is now constructed inside GitTrajectory at composition time with
+  // proper config, so the registry returns a ready-to-use provider list.
+  // Bootstrap applies the user-visible toggle (`enableGitMetadata`) here
+  // rather than inside the facade — keeps IngestFacade free of provider
+  // construction or config-aware filtering.
+  const enrichmentProviders = composition.registry
+    .getAllEnrichmentProviders()
+    .filter((p) => p.key !== "git" || config.trajectoryIngest.enableGitMetadata);
+
   const ingest = new IngestFacade({
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -197,6 +324,8 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     modelGuard: infra.modelGuard,
     collectionRegistry,
     teaRagsVersion: pkg.version,
+    enrichmentProviders,
+    codegraphPool: codegraphContext?.pool,
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [
@@ -231,6 +360,9 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     projectRegistryOps,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     modelGuard: infra.modelGuard,
+    graphFacade: codegraphContext?.graphFacade,
+    codegraphPool: codegraphContext?.pool,
+    registeredProviderKeys: new Set(composition.registry.getRegisteredKeys()),
   });
 
   const cleanup = () => {
@@ -240,6 +372,12 @@ export async function createAppContext(config: AppConfig): Promise<AppContext> {
     }
     if (infra.embeddedRelease) {
       infra.embeddedRelease();
+    }
+    // Close every per-collection DuckDB the pool opened. Fire-and-forget:
+    // shutdown is best-effort and DuckDB releases the file lock when the
+    // GC sweeps the instance even if we miss the explicit close.
+    if (codegraphContext) {
+      void codegraphContext.pool.closeAll().catch(() => undefined);
     }
   };
 

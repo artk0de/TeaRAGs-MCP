@@ -101,6 +101,18 @@ export class CompletionRunner {
     }
     metrics.estimatedSavedMs = Math.max(0, metrics.overlapMs);
 
+    // 5b. provider-specific counters (codegraph extractedFiles, etc.).
+    // Top-level fields above remain coordinator-owned and git-historical
+    // for back-compat; new providers expose their counters here.
+    let byProvider: Record<string, Record<string, unknown>> | undefined;
+    for (const ctx of contexts.values()) {
+      const providerMetrics = ctx.provider.getRunMetrics?.();
+      if (!providerMetrics) continue;
+      byProvider ??= {};
+      byProvider[ctx.key] = providerMetrics;
+    }
+    if (byProvider) metrics.byProvider = byProvider;
+
     // 6. drain chunkWork
     await chunkPhase.drain();
     const finalChunkMetrics = chunkPhase.getMetrics();

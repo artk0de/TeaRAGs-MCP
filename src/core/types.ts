@@ -118,7 +118,18 @@ export interface ChangeStats {
 
 export type IndexingStatus = "not_indexed" | "indexing" | "indexed" | "stale_indexing" | "unavailable";
 
-/** Metrics from streaming git enrichment (parallel with embedding) */
+/**
+ * Per-provider counters reported by an enrichment provider for a single run.
+ *
+ * Shape is provider-defined — coordinator stores them verbatim under
+ * `EnrichmentMetrics.byProvider[providerKey]` without interpreting the keys.
+ * Codegraph reports `extractedFiles`, `fileEdgeCount`, `methodEdgeCount`,
+ * `resolveSuccessRate`; future providers add their own. Top-level
+ * `EnrichmentMetrics` fields stay coordinator-owned and provider-agnostic.
+ */
+export type ProviderRunMetrics = Record<string, unknown>;
+
+/** Metrics from streaming enrichment (parallel with embedding) */
 export interface EnrichmentMetrics {
   /** Time spent reading git log */
   prefetchDurationMs: number;
@@ -144,6 +155,13 @@ export interface EnrichmentMetrics {
   gitLogFileCount: number;
   /** Estimated ms saved by streaming overlap vs sequential execution */
   estimatedSavedMs: number;
+  /**
+   * Provider-specific counters keyed by `provider.key`. Coordinator
+   * collects via the optional `provider.getRunMetrics()` hook. Absent
+   * when no provider exposes it. Top-level fields above remain
+   * coordinator-owned (git-historical keys preserved for back-compat).
+   */
+  byProvider?: Record<string, ProviderRunMetrics>;
 }
 
 export interface IndexStatus {

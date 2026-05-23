@@ -56,7 +56,22 @@ function createState(): FilePhaseState {
 }
 
 function extractErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  // Walk the cause chain so wrapped errors (e.g. CodegraphResolveError →
+  // DuckDB driver error) surface the underlying message instead of the
+  // generic outer wrapper. Without this, the marker only sees "Codegraph
+  // resolve failed after 291 files" while the actual cause (constraint
+  // violation, JSON parse, file-level resolver throw) is lost.
+  if (!(error instanceof Error)) return String(error);
+  const parts: string[] = [error.message];
+  let cur: unknown = (error as { cause?: unknown }).cause;
+  // Guard against pathological cycles (cause chain referencing itself).
+  const seen = new Set<unknown>([error]);
+  while (cur instanceof Error && !seen.has(cur)) {
+    seen.add(cur);
+    parts.push(`caused by: ${cur.message}`);
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return parts.join(" → ");
 }
 
 export interface FilePhaseMetrics {
@@ -119,7 +134,21 @@ export class FilePhase {
         path: root,
       });
       state.prefetchPromise = ctx.provider
-        .buildFileSignals(root, changedPaths ? { paths: changedPaths } : undefined)
+        .buildFileSignals(root, {
+          paths: changedPaths && changedPaths.length > 0 ? changedPaths : undefined,
+          // Coordinator threads the active Qdrant collection name in
+          // through `init(coll, ...)`. Providers that don't care
+          // (git) ignore it; codegraph routes per-collection DuckDB
+          // writes on it.
+          collectionName: this.coll || undefined,
+          // FileScanner ignore filter (BUILTIN_IGNORE_PATTERNS +
+          // user .gitignore / .contextignore). Providers that walk
+          // the file tree themselves (codegraph) honour it so their
+          // file set matches what Qdrant indexed. Providers that
+          // don't walk (git) ignore it. Null is normal when the
+          // pipeline didn't load a filter for this run.
+          ignoreFilter: ctx.ignoreFilter ?? undefined,
+        })
         .then((result) => {
           state.prefetchEndTime = Date.now();
           state.prefetchDurationMs = state.prefetchEndTime - state.prefetchStartTime;
@@ -152,12 +181,16 @@ export class FilePhase {
           if (this.coll) {
             // Await the marker write so awaitPrefetch() callers observe the
             // failed marker on storage. Internal write swallows its own errors.
+            // Propagate the concrete error message so get_index_status
+            // surfaces "Codegraph spill write failed at …" instead of
+            // a generic in_progress placeholder.
             await this.markerStore.markPrefetchFailed(
               this.coll,
               ctx.key,
               this.runId,
               this.runStartedAt,
               state.prefetchDurationMs,
+              msg,
             );
           }
           return new Map();

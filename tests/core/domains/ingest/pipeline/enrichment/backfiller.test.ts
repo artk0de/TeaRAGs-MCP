@@ -51,6 +51,10 @@ describe("EnrichmentBackfiller", () => {
 
     expect(buildFileSignals).toHaveBeenCalledWith("/repo", {
       paths: ["src/a.ts"],
+      // Backfiller threads the active collection name through so
+      // collection-scoped providers (codegraph) hit the right
+      // per-collection store.
+      collectionName: "coll",
     });
     expect(applier.matchedFiles).toBe(1);
     expect(applier.missedFiles).toBe(0);

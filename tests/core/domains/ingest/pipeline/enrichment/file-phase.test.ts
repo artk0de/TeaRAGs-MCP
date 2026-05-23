@@ -1,3 +1,4 @@
+import ignore from "ignore";
 import { describe, expect, it, vi } from "vitest";
 
 import { MockQdrantManager } from "../../__helpers__/test-helpers.js";
@@ -64,6 +65,63 @@ describe("FilePhase", () => {
     await phase.awaitPrefetch();
     await phase.drain();
     expect(applier.matchedFiles).toBeGreaterThanOrEqual(1);
+  });
+
+  // tea-rags-mcp-tf1o — FilePhase threads ctx.ignoreFilter to provider's
+  // buildFileSignals so providers walking the tree themselves (codegraph)
+  // see the same file set the main Qdrant ingest indexed.
+  it("passes ctx.ignoreFilter through to provider.buildFileSignals", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+
+    const buildFileSignals = vi.fn().mockResolvedValue(new Map());
+    const sharedFilter = ignore().add(["legacy/"]);
+    const ctx = {
+      key: "codegraph.symbols",
+      provider: {
+        key: "codegraph.symbols",
+        buildFileSignals,
+        buildChunkSignals: vi.fn(),
+        resolveRoot: (p: string) => p,
+        fileSignalTransform: undefined,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: sharedFilter,
+    };
+
+    const phase = new FilePhase(applier, marker);
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    phase.startPrefetch();
+    await phase.awaitPrefetch();
+
+    expect(buildFileSignals).toHaveBeenCalledTimes(1);
+    const [root, options] = buildFileSignals.mock.calls[0];
+    expect(root).toBe("/repo");
+    expect(options.ignoreFilter).toBe(sharedFilter);
+    expect(options.collectionName).toBe("coll");
+  });
+
+  // When ctx.ignoreFilter is null (no filter loaded for the run), the
+  // provider receives `ignoreFilter: undefined` — not a thrown error and
+  // not the `null` sentinel. Providers can use the `?? undefined` idiom
+  // freely.
+  it("passes undefined ignoreFilter when ctx.ignoreFilter is null", async () => {
+    const qdrant = new MockQdrantManager();
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+
+    const buildFileSignals = vi.fn().mockResolvedValue(new Map());
+    const ctx = buildCtx(buildFileSignals);
+
+    const phase = new FilePhase(applier, marker);
+    phase.init(new Map([[ctx.key, ctx]]), "coll", "run-1", "ts");
+    phase.startPrefetch();
+    await phase.awaitPrefetch();
+
+    expect(buildFileSignals).toHaveBeenCalledTimes(1);
+    const [, options] = buildFileSignals.mock.calls[0];
+    expect(options.ignoreFilter).toBeUndefined();
   });
 
   it("writes markPrefetchFailed when prefetch rejects", async () => {

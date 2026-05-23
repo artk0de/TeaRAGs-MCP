@@ -62,7 +62,7 @@ export class EnrichmentRecovery {
       const root = provider.resolveRoot(absolutePath);
       const uniquePaths = [...new Set(unenriched.map((p) => p.relativePath))];
 
-      const signals = await provider.buildFileSignals(root, { paths: uniquePaths });
+      const signals = await provider.buildFileSignals(root, { paths: uniquePaths, collectionName });
 
       // Build ChunkItem-like objects for applyFileSignals
       const items = unenriched.map((point) => ({
@@ -144,6 +144,7 @@ export class EnrichmentRecovery {
       const chunkSignals = await provider.buildChunkSignals(
         root,
         chunkMap as unknown as Map<string, ChunkLookupEntry[]>,
+        { collectionName },
       );
       const applied = await this.applier.applyChunkSignals(
         collectionName,

@@ -71,6 +71,30 @@ export interface RerankPreset {
   readonly signalLevel?: SignalLevel;
 }
 
+/**
+ * Composite preset — RerankPreset that blends signals from 2+ trajectories.
+ * Declares its trajectory dependencies via the mandatory `requires` field.
+ *
+ * Provider-specific presets (single-trajectory) implement plain `RerankPreset`
+ * and live under their owning trajectory's `rerank/presets/` directory; they
+ * are gated implicitly through trajectory registration (the class file is
+ * loaded only when the trajectory is registered).
+ *
+ * Composite presets live under `domains/trajectory/composite/presets/`.
+ * `buildCompositePresets(registeredKeys)` filters them by
+ * `requires.every(k => registeredKeys.has(k))` — a composite whose
+ * dependencies are not all registered is silently dropped, so it never
+ * reaches the Reranker, the SchemaBuilder, the MCP preset enum, or the
+ * custom-weights schema.
+ *
+ * Convention: do not list always-on trajectories (e.g. `"static"`) in
+ * `requires`. Only declare keys for trajectories that can be disabled.
+ */
+export interface CompositeRerankPreset extends RerankPreset {
+  /** Trajectory keys this preset depends on. ALL must be registered. */
+  readonly requires: readonly string[];
+}
+
 export type RerankMode<T extends string> = T | { custom: ScoringWeights; preset?: T };
 
 /** Ranking overlay attached to each reranked result — explains WHY it scored this way. */

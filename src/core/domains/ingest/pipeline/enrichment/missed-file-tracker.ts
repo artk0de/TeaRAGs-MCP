@@ -38,9 +38,21 @@ export class MissedFileTracker {
    * Adjust the missed counter after a successful backfill. Mirrors the
    * legacy semantics on EnrichmentApplier — sample/chunks maps are NOT
    * pruned, only the count moves.
+   *
+   * Clamped at zero: the backfiller decrements by the count of files it
+   * successfully re-enriched, but `_missedCount` is incremented by
+   * `applyFileSignals` per BATCH (a single file appearing in two
+   * batches with missing-then-arriving file metadata counts twice).
+   * Without the clamp, a backfill round produces a negative
+   * `missedFiles` reported by `get_index_status` (observed -133 on
+   * ugnest, where codegraph and git both backfilled paths the applier
+   * tracked once but the providers reported overlay for every file
+   * regardless of prior miss). Clamping is the right behavior — a
+   * negative `missedFiles` is nonsense and downstream consumers
+   * (health-mapper, marker-store) would propagate it into MCP output.
    */
   decrementMissed(count: number): void {
-    this._missedCount -= count;
+    this._missedCount = Math.max(0, this._missedCount - count);
   }
 
   get missedCount(): number {

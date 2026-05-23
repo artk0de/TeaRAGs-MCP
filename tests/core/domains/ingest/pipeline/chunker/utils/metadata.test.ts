@@ -147,6 +147,31 @@ describe("MetadataExtractor", () => {
 
       expect(extractor.generateChunkId(chunk1)).not.toBe(extractor.generateChunkId(chunk2));
     });
+
+    // bd tea-rags-mcp-z95o / d1f8 — sibling chunks emitted for forEach HTTP
+    // verb dispatch and Object.defineProperty(this, ...) share the SAME
+    // content / file / line range — they are N symbolIds extracted from one
+    // physical AST node. Without including symbolId in the hash, the chunk
+    // IDs collide and Qdrant overwrites all-but-one when the points are
+    // upserted. See chunker/tree-sitter.ts chunkSingleNode.
+    it("should generate different IDs for sibling chunks with same content/lines but different symbolId", () => {
+      const base = {
+        content: "methods.forEach(function (m) { app[m] = function () { return this; }; });",
+        startLine: 5,
+        endLine: 9,
+        metadata: {
+          filePath: "/path/to/application.js",
+          language: "javascript",
+          chunkIndex: 0,
+          chunkType: "function" as const,
+        },
+      };
+
+      const verbGet: CodeChunk = { ...base, metadata: { ...base.metadata, name: "app.get", symbolId: "app.get" } };
+      const verbPost: CodeChunk = { ...base, metadata: { ...base.metadata, name: "app.post", symbolId: "app.post" } };
+
+      expect(extractor.generateChunkId(verbGet)).not.toBe(extractor.generateChunkId(verbPost));
+    });
   });
 
   describe("containsSecrets", () => {

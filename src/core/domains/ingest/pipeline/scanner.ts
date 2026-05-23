@@ -8,6 +8,7 @@ import { extname, join, relative, resolve } from "node:path";
 import ignore, { type Ignore } from "ignore";
 
 import type { ScannerConfig } from "../../../types.js";
+import { BUILTIN_IGNORE_PATTERNS } from "./ignore-defaults.js";
 
 export class FileScanner {
   private ig: Ignore = ignore();
@@ -23,9 +24,25 @@ export class FileScanner {
    * Recreates the underlying ignore matcher on every call so reloads after
    * an ignore file is removed drop the now-stale patterns. Long-running
    * indexers (MCP server) reuse a single FileScanner across many syncs.
+   *
+   * Order:
+   *   1. BUILTIN_IGNORE_PATTERNS (universal framework artefacts, minified
+   *      bundles, language caches — see ignore-defaults.ts).
+   *   2. Project ignore files (.gitignore / .dockerignore / .npmignore /
+   *      .contextignore / .contextignore.local), in declared order.
+   *   3. config.ignorePatterns / config.customIgnorePatterns from bootstrap.
+   *
+   * Users can re-include any baseline pattern via explicit `!pattern`
+   * negation in their own .contextignore — the `ignore` package honors
+   * later negations.
    */
   async loadIgnorePatterns(rootPath: string): Promise<void> {
     this.ig = ignore();
+    // Baseline patterns always applied first — keep framework build dirs
+    // (_nuxt/, .next/, target/), minified bundles (*.min.js), and language
+    // caches (__pycache__/, .venv/) out of the index regardless of whether
+    // the project ships a .contextignore covering them.
+    this.ig.add(BUILTIN_IGNORE_PATTERNS);
     const ignoreFiles = [".gitignore", ".dockerignore", ".npmignore", ".contextignore", ".contextignore.local"];
 
     for (const ignoreFile of ignoreFiles) {

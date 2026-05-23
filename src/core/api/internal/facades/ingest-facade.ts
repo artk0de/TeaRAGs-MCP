@@ -10,8 +10,10 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
@@ -23,7 +25,6 @@ import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/a
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
-import { GitEnrichmentProvider } from "../../../domains/trajectory/git/provider.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import type { EmbeddingModelGuard } from "../../../infra/embedding-model-guard.js";
 import type { CollectionRegistry } from "../../../infra/registry/collection-registry.js";
@@ -57,6 +58,24 @@ export interface IngestFacadeDeps {
   modelGuard?: EmbeddingModelGuard;
   collectionRegistry?: CollectionRegistry;
   teaRagsVersion?: string;
+  /**
+   * Full enrichment provider list passed verbatim to EnrichmentCoordinator
+   * — single source of truth, owned by the caller (bootstrap). Bootstrap
+   * builds this list from `composition.registry.getAllEnrichmentProviders()`
+   * and applies config-driven filters (e.g. drops the git provider when
+   * `trajectoryConfig.enableGitMetadata` is false). Order matters only for
+   * prefetch start time, not for marker-store keying (keys are per provider).
+   * Defaults to empty when omitted — IngestFacade does not synthesize
+   * providers inline.
+   */
+  enrichmentProviders?: EnrichmentProvider[];
+  /**
+   * Per-collection DuckDB pool — present when codegraph is wired.
+   * `IndexingOps.clear` / force-reindex paths use it to drop the
+   * per-collection DuckDB file alongside the Qdrant collection. Omitted
+   * when codegraph is disabled.
+   */
+  codegraphPool?: GraphDbClientPool;
 }
 
 export class IngestFacade {
@@ -82,6 +101,7 @@ export class IngestFacade {
       reranker: deps.reranker,
       gitTimePeriods,
       modelGuard: deps.modelGuard,
+      codegraphPool: deps.codegraphPool,
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the
@@ -130,12 +150,10 @@ export class IngestFacade {
   } {
     const { qdrant, embeddings, config, trajectoryConfig, deleteConfig, pipelineTuning, syncTuning } = deps;
 
-    const squashOpts = trajectoryConfig.squashAwareSessions
-      ? { squashAwareSessions: true, sessionGapMinutes: trajectoryConfig.sessionGapMinutes ?? 30 }
-      : undefined;
-    const providers = trajectoryConfig.enableGitMetadata
-      ? [new GitEnrichmentProvider(trajectoryConfig.trajectoryGit ?? undefined, squashOpts)]
-      : [];
+    // Providers come from the TrajectoryRegistry via bootstrap (no inline
+    // construction here). `trajectoryConfig.enableGitMetadata` filtering
+    // already happened upstream — IngestFacade trusts the list as-is.
+    const providers: EnrichmentProvider[] = deps.enrichmentProviders ?? [];
     const enrichmentProviderKey = providers.length > 0 ? providers[0].key : undefined;
 
     const ingestDeps = createIngestDependencies(

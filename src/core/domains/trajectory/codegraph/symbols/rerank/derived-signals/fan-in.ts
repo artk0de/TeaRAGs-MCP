@@ -1,0 +1,15 @@
+import type { DerivedSignalDescriptor } from "../../../../../../contracts/types/reranker.js";
+import type { ExtractContext } from "../../../../../../contracts/types/trajectory.js";
+import { normalize } from "../../../../../../infra/signal-utils.js";
+
+export class FanInSignal implements DerivedSignalDescriptor {
+  readonly name = "fanIn";
+  readonly description = "Normalized number of files importing this file";
+  readonly sources = ["codegraph.file.fanIn"];
+  readonly defaultBound = 20;
+  extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {
+    const v = Number(raw["codegraph.file.fanIn"] ?? 0);
+    const bound = ctx?.bounds?.["file.fanIn"] ?? this.defaultBound;
+    return normalize(v, bound);
+  }
+}

@@ -12,7 +12,11 @@ import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.j
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
+import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
+import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
+import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
+import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
 import { StaticTrajectory } from "../../domains/trajectory/static/index.js";
 
@@ -25,10 +29,33 @@ export interface CompositionResult {
   resolvedPresets: RerankPreset[];
 }
 
-export function createComposition(): CompositionResult {
+export interface CompositionOptions {
+  /**
+   * Git trajectory provider configuration. The GitEnrichmentProvider is
+   * constructed inside GitTrajectory at composition time so the registry's
+   * `getAllEnrichmentProviders()` returns a fully-configured provider —
+   * IngestFacade consumes the registry list directly (no inline
+   * construction). When omitted, GitTrajectory wires with default config.
+   */
+  git?: { config?: Partial<GitProviderConfig>; squashOpts?: SquashOptions };
+  /**
+   * When provided, registers the codegraph L1 family (Slice 1: Symbols).
+   * Bootstrap supplies these deps when `CODEGRAPH_ENABLED` is true; tests
+   * pass them directly. Omitting opts the family out — the rest of the
+   * composition is unaffected.
+   */
+  codegraph?: CodegraphDeps;
+}
+
+export function createComposition(options: CompositionOptions = {}): CompositionResult {
   const registry = new TrajectoryRegistry();
   registry.register(new StaticTrajectory());
-  registry.register(new GitTrajectory());
+  registry.register(new GitTrajectory(options.git?.config, options.git?.squashOpts));
+  if (options.codegraph) {
+    for (const trajectory of createCodegraphTrajectories(options.codegraph)) {
+      registry.register(trajectory);
+    }
+  }
 
   const allPayloadSignalDescriptors = registry.getAllPayloadSignalDescriptors();
   // Fail-loud at composition time: if any descriptor's confidence block
@@ -39,7 +66,17 @@ export function createComposition(): CompositionResult {
   validateSignalDependencies(allPayloadSignalDescriptors);
   const allDerivedSignals = registry.getAllDerivedSignals();
   const allStatsAccumulators = registry.getAllStatsAccumulators();
-  const resolvedPresets = resolvePresets(registry.getAllPresets(), []);
+  // Trajectory presets come from the registry (one trajectory per preset);
+  // composite presets cross trajectories (e.g. blastRadius weights
+  // codegraph.fanIn + git.churn) and live in their own namespace under
+  // `domains/trajectory/composite/presets/`. The resolver merges by
+  // (name, tools[i]) and the composite list wins, so composites override
+  // trajectory presets of the same name without modifying them in place.
+  // Gating: buildCompositePresets filters each composite against the
+  // registered trajectory keys — a composite whose `requires` references
+  // a non-registered trajectory is silently dropped.
+  const compositePresets = buildCompositePresets(new Set(registry.getRegisteredKeys()));
+  const resolvedPresets = resolvePresets(registry.getAllPresets(), compositePresets);
   const reranker = new Reranker(allDerivedSignals, resolvedPresets, allPayloadSignalDescriptors);
 
   return {

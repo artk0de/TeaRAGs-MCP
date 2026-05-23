@@ -1,6 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { createStubPool } from "../__helpers__/codegraph-pool.js";
+import { DuckDbGraphClient } from "../../../src/core/adapters/duckdb/client.js";
 import { createComposition } from "../../../src/core/api/index.js";
+import type { CallResolver } from "../../../src/core/contracts/types/codegraph.js";
+import { TSCallResolver } from "../../../src/core/domains/trajectory/codegraph/symbols/resolvers/ts/ts-resolver.js";
+import { InMemoryGlobalSymbolTable } from "../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 describe("createComposition", () => {
   it("builds registry with GitTrajectory", () => {
@@ -35,5 +44,143 @@ describe("createComposition", () => {
     const { reranker } = createComposition();
     expect(reranker.getAvailablePresets("semantic_search")).toContain("techDebt");
     expect(reranker.getAvailablePresets("search_code")).toContain("relevance");
+  });
+
+  describe("when git deps are supplied", () => {
+    // Registry-driven IngestFacade refactor: GitEnrichmentProvider is no
+    // longer constructed inline by the facade. Composition owns it via
+    // GitTrajectory and the registry surfaces it through
+    // getAllEnrichmentProviders(). This test pins the new contract: a
+    // git provider is always present, with or without explicit config.
+    it("returns a git enrichment provider from the registry without config", () => {
+      const { registry } = createComposition();
+      const providers = registry.getAllEnrichmentProviders();
+      expect(providers.some((p) => p.key === "git")).toBe(true);
+    });
+
+    it("threads git config through GitTrajectory to the registered provider", () => {
+      // The provider should construct without throwing; full config
+      // round-trip is verified by GitTrajectory unit tests. Here we only
+      // verify the option plumbing accepts the shape and the resulting
+      // composition is well-formed.
+      const { registry } = createComposition({
+        git: {
+          config: { logMaxAgeMonths: 6, chunkMaxAgeMonths: 6 },
+          squashOpts: { squashAwareSessions: true, sessionGapMinutes: 30 },
+        },
+      });
+      expect(registry.getAllEnrichmentProviders().some((p) => p.key === "git")).toBe(true);
+    });
+  });
+
+  describe("when codegraph deps are supplied", () => {
+    // Drives the `options.codegraph` branch in createComposition,
+    // which in turn drives the codegraph L1 factory and the
+    // SymbolsTrajectory L2 wiring. Both lived as dead branches until
+    // bootstrap learned to opt in — covering them here means a
+    // regression in the wiring fails fast in unit tests instead of
+    // surfacing only on a live MCP run.
+    let tmp: string;
+    let graphDb: DuckDbGraphClient;
+    beforeAll(async () => {
+      tmp = mkdtempSync(join(tmpdir(), "comp-cg-"));
+      graphDb = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+      await graphDb.init();
+    });
+    afterAll(async () => {
+      await graphDb.close();
+      rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it("registers SymbolsTrajectory and surfaces its payload signals + presets", () => {
+      const resolvers = new Map<string, CallResolver>([
+        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+      ]);
+      const { registry, allPayloadSignalDescriptors, resolvedPresets } = createComposition({
+        codegraph: {
+          pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()),
+          resolvers,
+        },
+      });
+      expect(registry.has("codegraph.symbols")).toBe(true);
+      // Codegraph-owned payload signals are now part of the aggregated set.
+      expect(allPayloadSignalDescriptors.find((s) => s.key === "codegraph.file.fanIn")).toBeDefined();
+      expect(allPayloadSignalDescriptors.find((s) => s.key === "codegraph.chunk.fanOut")).toBeDefined();
+      // Resolved presets include the codegraph family's contributions —
+      // checking the count is robust to preset renames.
+      expect(resolvedPresets.length).toBeGreaterThan(0);
+    });
+
+    // Slice 2 / Phase D foundation — composite presets (e.g. blastRadius
+    // weights codegraph.fanIn + git.churn) live in their own namespace at
+    // `domains/trajectory/composite/presets/` and are passed as the
+    // SECOND arg to resolvePresets. Trajectory presets stay pure
+    // (single-trajectory data). The override-by-(name,tools[i]) rule
+    // means a composite with the same name as a trajectory preset wins,
+    // without modifying the trajectory file. This test pins the new
+    // contract: codegraph enabled → composite blastRadius reaches the
+    // resolved set; codegraph disabled → blastRadius absent (its
+    // signals would be unpopulated).
+    it("composite blastRadius is in resolved presets only when codegraph is wired", () => {
+      const resolvers = new Map<string, CallResolver>([
+        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+      ]);
+      const withCodegraph = createComposition({
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers },
+      });
+      const withoutCodegraph = createComposition();
+
+      const blastRadiusWith = withCodegraph.resolvedPresets.find((p) => p.name === "blastRadius");
+      const blastRadiusWithout = withoutCodegraph.resolvedPresets.find((p) => p.name === "blastRadius");
+      expect(blastRadiusWith).toBeDefined();
+      expect(blastRadiusWithout).toBeUndefined();
+      // Retuned (Slice 2) weights — process metrics dominate per Yatish 2020.
+      expect(blastRadiusWith?.weights.churn).toBe(0.2);
+      expect(blastRadiusWith?.weights.fanIn).toBe(0.3);
+    });
+
+    // Phase D4 — composite presets that override trajectory presets by
+    // (name, tools[i]). When codegraph is wired, every override below
+    // wins resolution — the resolved preset's overlayMask contains
+    // codegraph.file.fanIn (a key the trajectory preset never lists)
+    // and the weights include a non-zero `fanIn` entry. Without
+    // codegraph, the override is skipped and the trajectory preset
+    // wins unchanged.
+    it("composite overrides supersede trajectory presets for hotspots / techDebt / dangerous / ownership / securityAudit / codeReview", () => {
+      const resolvers = new Map<string, CallResolver>([
+        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+      ]);
+      const withCodegraph = createComposition({
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers },
+      });
+      const withoutCodegraph = createComposition();
+      const overriddenNames = ["hotspots", "techDebt", "dangerous", "ownership", "securityAudit", "codeReview"];
+
+      for (const name of overriddenNames) {
+        const compositeWeights = withCodegraph.resolvedPresets.find((p) => p.name === name)?.weights;
+        const trajectoryWeights = withoutCodegraph.resolvedPresets.find((p) => p.name === name)?.weights;
+        // Composite override adds a non-zero fanIn weight; trajectory
+        // preset has no fanIn key at all (the override is the only
+        // place where the codegraph signal participates in scoring).
+        expect(compositeWeights?.fanIn, `composite ${name} should have fanIn weight`).toBeGreaterThan(0);
+        expect(trajectoryWeights?.fanIn, `trajectory ${name} should NOT have fanIn weight`).toBeUndefined();
+      }
+    });
+
+    it("architecturalHub is a new composite — present only when codegraph is wired", () => {
+      const resolvers = new Map<string, CallResolver>([
+        ["typescript", new TSCallResolver({ baseUrl: ".", paths: {} })],
+      ]);
+      const withCodegraph = createComposition({
+        codegraph: { pool: createStubPool(graphDb, new InMemoryGlobalSymbolTable()), resolvers },
+      });
+      const withoutCodegraph = createComposition();
+
+      const hub = withCodegraph.resolvedPresets.find((p) => p.name === "architecturalHub");
+      expect(hub).toBeDefined();
+      expect(hub?.weights.isHub).toBe(0.35);
+      expect(hub?.weights.fanIn).toBe(0.2);
+      expect(withoutCodegraph.resolvedPresets.find((p) => p.name === "architecturalHub")).toBeUndefined();
+    });
   });
 });
